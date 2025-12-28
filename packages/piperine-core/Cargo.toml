@@ -1,0 +1,10 @@
+[package]
+name = "piperine-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+faer = { version = "0.23.2", features = ["sparse", "std", "sparse-linalg"] }
+num-complex = "0.4.6"
+num-traits = "0.2.19"
+serde = { version = "1.0.228", features = ["derive"] }
