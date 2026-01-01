@@ -8,3 +8,5 @@ faer = { version = "0.23.2", features = ["sparse", "std", "sparse-linalg"] }
 num-complex = "0.4.6"
 num-traits = "0.2.19"
 serde = { version = "1.0.228", features = ["derive"] }
+clap = { version = "4.5.53", features = ["derive"] }
+piperine-macros = { path = "../piperine-macros" }

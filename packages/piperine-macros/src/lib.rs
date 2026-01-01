@@ -1,13 +1,16 @@
 mod spice;
+mod stamp;
 
+use crate::spice::spice_impl;
+use crate::stamp::stamps_impl;
 use proc_macro::TokenStream;
-use syn::parse_macro_input;
-use crate::spice::SpiceFile;
 
 #[proc_macro]
 pub fn spice(input: TokenStream) -> TokenStream {
-    // let input_cln = input.clone();
-    // let circuit = parse_macro_input!(input as SpiceFile);
+    spice_impl(input)
+}
 
-    input
+#[proc_macro]
+pub fn stamps(input: TokenStream) -> TokenStream {
+    stamps_impl(input)
 }
