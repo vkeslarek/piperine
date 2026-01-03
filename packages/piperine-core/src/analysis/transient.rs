@@ -1,4 +1,5 @@
 use crate::component::{Component, Context};
+use crate::math::unit::Conductance;
 use crate::solver::Stamp;
 use crate::state::CircuitStates;
 
@@ -14,7 +15,7 @@ pub trait TransientAnalysis: Component {
         circuit_states: &CircuitStates,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
-    ) -> Vec<Stamp<f64>>;
+    ) -> Vec<Stamp<Conductance>>;
 
     fn check_convergence(
         &self,

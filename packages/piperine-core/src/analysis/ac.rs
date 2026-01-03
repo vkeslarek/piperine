@@ -3,6 +3,7 @@ use crate::component::{Component, Context};
 use crate::solver::Stamp;
 use crate::state::CircuitStates;
 use num_complex::Complex;
+use crate::math::unit::Admittance;
 
 pub struct AcAnalysisContext {
     pub omega: f64,
@@ -14,7 +15,7 @@ pub trait AcAnalysis: Component + DcAnalysis {
         circuit_states: &CircuitStates,
         ac_analysis_context: &AcAnalysisContext,
         context: &Context,
-    ) -> Vec<Stamp<Complex<f64>>>;
+    ) -> Vec<Stamp<Admittance>>;
 }
 
 pub struct AcFrequencyAnalysisOptions {

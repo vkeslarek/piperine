@@ -4,32 +4,15 @@ pub mod ind;
 pub mod res;
 pub mod vsrc;
 
+use std::any::Any;
 use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::transient::TransientAnalysis;
-use crate::numerical_method::{GearMethod, NumericalMethod};
+use crate::numerical_method::{GearMethod, History, NumericalMethod};
 use crate::state::CircuitStates;
 use std::collections::HashMap;
-
-pub struct Context {
-    pub numerical_method: &'static dyn NumericalMethod,
-    pub gmin: f64,
-    pub reltol: f64,
-    pub abstol: f64,
-    pub vntol: f64,
-}
-
-impl Default for Context {
-    fn default() -> Self {
-        Self {
-            numerical_method: &GearMethod(2),
-            gmin: 1e-12,
-            reltol: 1e-3,
-            abstol: 1e-12,
-            vntol: 1e-6,
-        }
-    }
-}
+use crate::circuit::Netlist;
+use crate::experiment::ModelResolver;
 
 pub trait Component {
     fn name(&self) -> String;
@@ -49,6 +32,8 @@ pub trait Component {
     ) -> crate::error::Result<()> {
         Ok(())
     }
+
+    // fn ask(&self, measure: &Measure, states: &CircuitStates, _: &Context) -> Option<f64>;
 
     fn as_dc(&self) -> Option<&dyn DcAnalysis> {
         None
@@ -71,24 +56,13 @@ pub trait Component {
     }
 }
 
-pub struct Components {
-    pub(crate) components: HashMap<String, Box<dyn Component>>,
-}
-
-impl Components {
-    pub fn new() -> Self {
-        Self {
-            components: HashMap::new(),
-        }
-    }
-
-    pub fn add_component(&mut self, component: Box<dyn Component>) {
-        self.components.insert(component.name(), component);
-    }
-
-    pub fn get_all(&self) -> Vec<&Box<dyn Component>> {
-        self.components.values().collect()
-    }
+pub trait ComponentBlueprint: Any {
+    fn instantiate(
+        &self,
+        netlist: &mut Netlist,
+        model_resolver: &ModelResolver,
+    ) -> crate::error::Result<Box<dyn Component>>;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 pub trait SecurityMonitor: Component {

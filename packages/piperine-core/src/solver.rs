@@ -1,8 +1,8 @@
 use crate::analysis::ac::AcAnalysisContext;
 use crate::analysis::transient::TransientAnalysisContext;
 use crate::circuit::{Circuit, CircuitReference, Netlist};
-use crate::component::{Component, Components, Context};
 use crate::error::{Error, Problem};
+use crate::numerical_method::{GearMethod, NumericalMethod};
 use crate::state::CircuitStates;
 use faer::prelude::{Solve, SparseColMat};
 use faer::sparse::linalg::solvers::SymbolicLu;
@@ -154,12 +154,38 @@ impl SymbolicMatrix {
     }
 }
 
-pub struct CircuitSolver {
+pub struct Context {
+    pub numerical_method: &'static dyn NumericalMethod,
+    pub gmin: f64,
+    pub reltol: f64,
+    pub abstol: f64,
+    pub vntol: f64,
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        Self {
+            numerical_method: &GearMethod(2),
+            gmin: 1e-12,
+            reltol: 1e-3,
+            abstol: 1e-12,
+            vntol: 1e-6,
+        }
+    }
+}
+
+pub struct Solver {
     pub circuit: Circuit,
     pub symbolic: SymbolicMatrix,
 }
 
-impl CircuitSolver {
+impl Solver {
+    pub fn build(circuit: Circuit, context: Context) -> Self {
+        todo!()
+    }
+}
+
+impl Solver {
     pub fn new(circuit: Circuit, context: &Context) -> crate::error::Result<Self> {
         let symbolic = SymbolicMatrix::new(&circuit.netlist, &circuit.components, context)?;
         Ok(Self { circuit, symbolic })
@@ -234,12 +260,7 @@ impl CircuitSolver {
         Ok(state)
     }
 
-    pub fn solve_transient(
-        &mut self,
-        stop_time: f64,
-        dt: f64,
-        context: &Context,
-    ) -> crate::error::Result<Vec<Vec<f64>>> {
+    pub fn transient(&mut self, stop_time: f64, dt: f64) -> crate::error::Result<Vec<Vec<f64>>> {
         // Initiate at rest
         let mut state = CircuitStates::new(self.symbolic.mapping.clone(), 2);
         state.push_commited(vec![0.0; self.symbolic.size], 0.0);

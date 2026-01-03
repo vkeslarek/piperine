@@ -1,7 +1,8 @@
-use crate::component::Components;
-use crate::measure::Measure;
+use crate::component::ComponentBlueprint;
+use crate::model::{AnyModel, ModelResolver};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum NodeIdentifier {
@@ -19,6 +20,37 @@ impl NodeIdentifier {
         }
     }
 }
+
+pub trait IntoNodeIdentifier: Into<NodeIdentifier> {}
+impl<T> IntoNodeIdentifier for T where T: Into<NodeIdentifier> {}
+
+impl Into<NodeIdentifier> for usize {
+    fn into(self) -> NodeIdentifier {
+        NodeIdentifier::Indexed(self)
+    }
+}
+
+impl From<&str> for NodeIdentifier {
+    fn from(name: &str) -> Self {
+        if name.to_uppercase() == "GND" {
+            NodeIdentifier::Gnd
+        } else {
+            NodeIdentifier::Named(name.to_string())
+        }
+    }
+}
+
+impl Into<NodeIdentifier> for String {
+    fn into(self) -> NodeIdentifier {
+        if self == "GND" {
+            NodeIdentifier::Gnd
+        } else {
+            NodeIdentifier::Named(self)
+        }
+    }
+}
+
+pub const GND: NodeIdentifier = NodeIdentifier::Gnd;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct BranchIdentifier {
@@ -107,42 +139,53 @@ impl Netlist {
     }
 }
 
+pub struct CircuitBuilder {
+    title: String,
+    model_resolver: ModelResolver,
+    components: HashMap<String, Box<dyn ComponentBlueprint>>,
+}
+
+impl CircuitBuilder {
+    pub(crate) fn insert_get<B: ComponentBlueprint>(
+        &mut self,
+        name: &str,
+        component: impl ComponentBlueprint,
+    ) -> Option<&mut B> {
+        let name_str = name.to_string();
+
+        self.components
+            .insert(name_str.clone(), Box::new(component));
+
+        self.components
+            .get_mut(&name_str)
+            .and_then(|b| b.as_any_mut().downcast_mut::<B>())
+    }
+
+    pub fn instantiate(&self) -> Circuit {
+        Circuit::new(self.title.clone())
+    }
+
+    pub fn model(&mut self, name: &str, model: impl AnyModel) {
+        self.model_resolver
+            .insert(name.to_string(), Arc::new(model));
+    }
+}
+
 pub struct Circuit {
-    pub components: Components,
-    pub netlist: Netlist,
-    pub measures: Vec<Measure>,
+    title: String,
+    model_resolver: ModelResolver,
+    components: HashMap<String, Box<dyn ComponentBlueprint>>,
 }
 
 impl Circuit {
-    pub fn new(components: Components, netlist: Netlist, measures: Vec<Measure>) -> Self {
+    fn new(title: String) -> Self {
         Self {
-            components,
-            netlist,
-            measures,
+            title: title.to_string(),
+            model_resolver: ModelResolver::new(),
+            components: Default::default(),
         }
     }
-
-    pub fn components(&self) -> &Components {
-        &self.components
-    }
-
-    pub fn components_mut(&mut self) -> &mut Components {
-        &mut self.components
-    }
-
-    pub fn netlist(&self) -> &Netlist {
-        &self.netlist
-    }
-
-    pub fn netlist_mut(&mut self) -> &mut Netlist {
-        &mut self.netlist
-    }
-
-    pub fn measures(&self) -> &Vec<Measure> {
-        &self.measures
-    }
-
-    pub fn measures_mut(&mut self) -> &mut Vec<Measure> {
-        &mut self.measures
+    pub fn build(name: &str, build_fn: fn(&mut CircuitBuilder)) -> Circuit {
+        todo!()
     }
 }

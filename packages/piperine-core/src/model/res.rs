@@ -1,4 +1,5 @@
 use crate::component::res::Resistor;
+use crate::math::unit::MetersExt;
 use crate::model::Model;
 use crate::state::CircuitStates;
 
@@ -26,7 +27,7 @@ impl Model for ResistorIdealModel {
         component: &mut Self::ComponentType,
         _: &CircuitStates,
     ) -> crate::error::Result<()> {
-        let mut res = component.resistance.unwrap_or(1e-03);
+        let mut res = component.resistance.unwrap_or(1.0.um());
         component.conductance = component.m / (res * component.scale);
         Ok(())
     }
