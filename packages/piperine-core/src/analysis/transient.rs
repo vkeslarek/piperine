@@ -1,7 +1,8 @@
-use crate::component::{Component, Context};
-use crate::math::unit::Conductance;
-use crate::solver::Stamp;
-use crate::state::CircuitStates;
+use crate::component::Component;
+use crate::math::linear::Stamp;
+use crate::netlist::CircuitReference;
+use crate::solver::Context;
+use crate::state::CircuitState;
 
 #[derive(Clone)]
 pub struct TransientAnalysisContext {
@@ -10,16 +11,25 @@ pub struct TransientAnalysisContext {
 }
 
 pub trait TransientAnalysis: Component {
-    fn load_transient(
+    fn update_transient(
         &self,
-        circuit_states: &CircuitStates,
+        circuit_states: &CircuitState<f64>,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
-    ) -> Vec<Stamp<Conductance>>;
+    ) -> crate::error::Result<()> {
+        Ok(())
+    }
+
+    fn load_transient(
+        &self,
+        circuit_states: &CircuitState<f64>,
+        transient_analysis_context: &TransientAnalysisContext,
+        context: &Context,
+    ) -> Vec<Stamp<CircuitReference, f64>>;
 
     fn check_convergence(
         &self,
-        circuit_states: &CircuitStates,
+        circuit_states: &CircuitState<f64>,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
     ) -> bool {

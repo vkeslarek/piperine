@@ -10,15 +10,25 @@ pub enum Problem {
 }
 
 #[derive(Debug)]
-pub struct Error {
+pub struct ErrorDetail {
     pub title: String,
     pub detail: String,
     pub problems: Vec<Problem>,
 }
 
-impl Error {
+impl ErrorDetail {
+    pub(crate) fn simple(title: &str, description: &str) -> ErrorDetail {
+        ErrorDetail {
+            title: title.to_string(),
+            detail: description.to_string(),
+            problems: vec![],
+        }
+    }
+}
+
+impl ErrorDetail {
     pub fn wrap(self, problem: Problem) -> Self {
-        let Error {
+        let ErrorDetail {
             title,
             detail,
             mut problems,
@@ -34,4 +44,4 @@ impl Error {
     }
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, ErrorDetail>;

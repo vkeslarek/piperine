@@ -1,21 +1,75 @@
 use crate::analysis::ac::{AcAnalysis, AcAnalysisContext};
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext};
-use crate::circuit::{BranchIdentifier, CircuitReference, Netlist, NodeIdentifier};
-use crate::component::{Component, Context};
-use crate::model::vsrc::VoltageSourceModel;
-use crate::solver::Stamp;
-use crate::state::CircuitStates;
+use crate::component::{Component, ComponentSpec, Context};
+use crate::math::linear::Stamp;
+use crate::math::param::{IntoParameter, Parameter};
+use crate::math::unit::Voltage;
+use crate::model::ModelResolver;
+use crate::model::vsrc::{VoltageSourceIdealModel, VoltageSourceModel};
+use crate::netlist::{
+    BranchIdentifier, CircuitReference, IntoNodeIdentifier, Netlist, NodeIdentifier,
+};
+use crate::state::CircuitState;
 use num_complex::Complex;
-use piperine_macros::stamps;
+use num_traits::One;
+use std::any::Any;
 use std::sync::Arc;
 
-pub struct VoltageSourceParameters {
+pub struct VoltageSourceSpec {
     pub name: String,
-    pub model: Arc<VoltageSourceModel>,
+    pub model: Option<String>,
     pub node_plus: NodeIdentifier,
     pub node_minus: NodeIdentifier,
-    pub voltage: f64,
+    pub voltage: Parameter<Voltage>,
+}
+
+impl VoltageSourceSpec {
+    pub fn new(
+        name: &str,
+        node_p: impl IntoNodeIdentifier,
+        node_n: impl IntoNodeIdentifier,
+        voltage: impl IntoParameter<Voltage>,
+    ) -> VoltageSourceSpec {
+        VoltageSourceSpec {
+            name: name.to_string(),
+            model: None,
+            node_plus: node_p.into(),
+            node_minus: node_n.into(),
+            voltage: voltage.into_parameter(),
+        }
+    }
+
+    pub fn with_model(&mut self, name: &str) -> &mut Self {
+        self.model = Some(name.to_string());
+        self
+    }
+}
+
+impl ComponentSpec for VoltageSourceSpec {
+    fn instantiate(
+        &self,
+        netlist: &mut Netlist,
+        model_resolver: &ModelResolver,
+    ) -> crate::error::Result<Box<dyn Component>> {
+        Ok(Box::new(VoltageSource {
+            name: self.name.to_string(),
+            model: model_resolver
+                .resolve(self.model.clone())
+                .unwrap_or_else(|| Arc::new(VoltageSourceIdealModel::new())),
+            node_plus: netlist.connect_node(self.node_plus.clone()),
+            node_minus: netlist.connect_node(self.node_minus.clone()),
+            branch: netlist.connect_branch(BranchIdentifier {
+                component: self.name.to_string(),
+                name: None,
+            }),
+            voltage: self.voltage.sample(),
+        }))
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 pub struct VoltageSource {
@@ -24,26 +78,7 @@ pub struct VoltageSource {
     pub node_plus: CircuitReference,
     pub node_minus: CircuitReference,
     pub branch: CircuitReference,
-    pub voltage: f64,
-}
-
-impl VoltageSource {
-    pub fn new(
-        netlist: &mut Netlist,
-        parameters: VoltageSourceParameters,
-    ) -> crate::error::Result<Self> {
-        Ok(Self {
-            name: parameters.name.clone(),
-            model: parameters.model,
-            node_plus: netlist.connect_node(parameters.node_plus),
-            node_minus: netlist.connect_node(parameters.node_minus),
-            branch: netlist.connect_branch(BranchIdentifier {
-                component: parameters.name,
-                name: None,
-            }),
-            voltage: parameters.voltage,
-        })
-    }
+    pub voltage: Voltage,
 }
 
 impl Component for VoltageSource {
@@ -51,74 +86,78 @@ impl Component for VoltageSource {
         self.name.clone()
     }
 
-    fn as_dc(&self) -> Option<&dyn DcAnalysis> {
+    fn as_dc_mut(&mut self) -> Option<&mut dyn DcAnalysis> {
         Some(self)
     }
 
-    fn as_transient(&self) -> Option<&dyn TransientAnalysis> {
+    fn as_transient_mut(&mut self) -> Option<&mut dyn TransientAnalysis> {
         Some(self)
     }
 
-    fn as_ac(&self) -> Option<&dyn AcAnalysis> {
+    fn as_ac_mut(&mut self) -> Option<&mut dyn AcAnalysis> {
         Some(self)
     }
 }
 
 impl DcAnalysis for VoltageSource {
-    fn load_dc(&self, context: &Context) -> Vec<Stamp<f64>> {
-        stamps!(
-           // Row = Branch Index, Col = Node Indices
-            KVL(self.branch): {
-                self.node_plus  => 1.0,
-                self.node_minus => -1.0,
-                RHS             => self.voltage
-            },
-            // Row = Node Index, Col = Branch Index
-            KCL(self.node_plus): {
-                self.branch     => 1.0
-            },
-            KCL(self.node_minus): {
-                self.branch     => -1.0
-            }
-        )
+    fn load_dc(&self, context: &Context) -> Vec<Stamp<CircuitReference, f64>> {
+        // let voltage = self.voltage.value.re;
+        let voltage = 0.0;
+        vec![
+            Stamp::Matrix(self.branch.clone(), self.node_plus.clone(), 1.0),
+            Stamp::Matrix(self.branch.clone(), self.node_minus.clone(), -1.0),
+            Stamp::Matrix(self.node_plus.clone(), self.branch.clone(), 1.0),
+            Stamp::Matrix(self.node_minus.clone(), self.branch.clone(), -1.0),
+            Stamp::Rhs(self.branch.clone(), voltage),
+        ]
     }
 }
 
 impl TransientAnalysis for VoltageSource {
     fn load_transient(
         &self,
-        _: &CircuitStates,
-        _: &TransientAnalysisContext,
+        _: &CircuitState<f64>,
+        transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
-    ) -> Vec<Stamp<f64>> {
-        self.load_dc(context)
+    ) -> Vec<Stamp<CircuitReference, f64>> {
+        let voltage = if transient_analysis_context.time > 2.0 * transient_analysis_context.dt {
+            5.0
+        } else {
+            0.0
+        };
+        vec![
+            Stamp::Matrix(self.branch.clone(), self.node_plus.clone(), 1.0),
+            Stamp::Matrix(self.branch.clone(), self.node_minus.clone(), -1.0),
+            Stamp::Matrix(self.node_plus.clone(), self.branch.clone(), 1.0),
+            Stamp::Matrix(self.node_minus.clone(), self.branch.clone(), -1.0),
+            Stamp::Rhs(self.branch.clone(), voltage),
+        ]
     }
 }
 
 impl AcAnalysis for VoltageSource {
     fn load_ac(
         &self,
-        _circuit_states: &CircuitStates,
+        _circuit_states: &CircuitState<Complex<f64>>,
         _: &AcAnalysisContext,
         context: &Context,
-    ) -> Vec<Stamp<Complex<f64>>> {
-        let one = Complex::new(1.0, 0.0);
-        let zero = Complex::new(0.0, 0.0);
-        // Usually, AC sources have a specific AC magnitude; defaulting to 1.0
+    ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
         let ac_volt = Complex::new(1.0, 0.0);
 
-        stamps!(
-            KCL(self.node_plus): {
-                self.branch => one
-            },
-            KCL(self.node_minus): {
-                self.branch => -one
-            },
-            Equation(self.branch): {
-                self.node_plus  => one,
-                self.node_minus => -one,
-                RHS             => ac_volt
-            }
-        )
+        vec![
+            Stamp::Matrix(self.node_plus.clone(), self.branch.clone(), Complex::one()),
+            Stamp::Matrix(
+                self.node_minus.clone(),
+                self.branch.clone(),
+                -Complex::one(),
+            ),
+            Stamp::Matrix(self.branch.clone(), self.node_plus.clone(), Complex::one()),
+            Stamp::Matrix(
+                self.branch.clone(),
+                self.node_minus.clone(),
+                -Complex::one(),
+            ),
+            Stamp::Rhs(self.branch.clone(), ac_volt),
+        ]
     }
 }

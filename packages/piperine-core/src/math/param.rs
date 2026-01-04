@@ -1,4 +1,5 @@
 use crate::math::rand::Distribution;
+use num_complex::Complex;
 use std::marker::PhantomData;
 use uom::si::Quantity;
 
@@ -22,6 +23,23 @@ where
                 dimension: PhantomData,
                 units: PhantomData,
                 value: dist.sample(),
+            },
+        }
+    }
+}
+
+impl<D, U> Parameter<Quantity<D, U, Complex<f64>>>
+where
+    D: Dimension + ?Sized,
+    U: Units<Complex<f64>> + ?Sized,
+{
+    pub fn sample(&self) -> Quantity<D, U, Complex<f64>> {
+        match self {
+            Parameter::Fixed(q) => q.clone(),
+            Parameter::Stochastic(dist, _) => Quantity {
+                dimension: PhantomData,
+                units: PhantomData,
+                value: Complex::new(dist.sample(), 0.0),
             },
         }
     }

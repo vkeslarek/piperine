@@ -1,7 +1,11 @@
-use crate::component::{Component, Context};
-use crate::math::unit::Conductance;
-use crate::solver::Stamp;
+use crate::component::Component;
+use crate::math::linear::Stamp;
+use crate::netlist::CircuitReference;
+use crate::solver::Context;
 
 pub trait DcAnalysis: Component {
-    fn load_dc(&self, context: &Context) -> Vec<Stamp<Conductance>>;
+    fn update_dc(&mut self, context: &Context) -> crate::error::Result<()> {
+        Ok(())
+    }
+    fn load_dc(&self, context: &Context) -> Vec<Stamp<CircuitReference, f64>>;
 }

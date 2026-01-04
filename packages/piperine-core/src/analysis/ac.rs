@@ -1,21 +1,33 @@
 use crate::analysis::dc::DcAnalysis;
-use crate::component::{Component, Context};
-use crate::solver::Stamp;
-use crate::state::CircuitStates;
+use crate::analysis::transient::TransientAnalysisContext;
+use crate::component::Component;
+use crate::math::linear::Stamp;
+use crate::math::unit::Frequency;
+use crate::netlist::CircuitReference;
+use crate::solver::Context;
+use crate::state::CircuitState;
 use num_complex::Complex;
-use crate::math::unit::Admittance;
 
 pub struct AcAnalysisContext {
-    pub omega: f64,
+    pub frequency: Frequency,
 }
 
 pub trait AcAnalysis: Component + DcAnalysis {
-    fn load_ac(
-        &self,
-        circuit_states: &CircuitStates,
+    fn update_ac(
+        &mut self,
+        circuit_states: &CircuitState<Complex<f64>>,
         ac_analysis_context: &AcAnalysisContext,
         context: &Context,
-    ) -> Vec<Stamp<Admittance>>;
+    ) -> crate::error::Result<()> {
+        Ok(())
+    }
+
+    fn load_ac(
+        &self,
+        circuit_states: &CircuitState<Complex<f64>>,
+        ac_analysis_context: &AcAnalysisContext,
+        context: &Context,
+    ) -> Vec<Stamp<CircuitReference, Complex<f64>>>;
 }
 
 pub struct AcFrequencyAnalysisOptions {

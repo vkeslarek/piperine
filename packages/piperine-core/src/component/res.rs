@@ -1,25 +1,22 @@
 use crate::analysis::ac::{AcAnalysis, AcAnalysisContext};
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext};
-use crate::circuit::{CircuitReference, IntoNodeIdentifier, Netlist, NodeIdentifier};
-use crate::component::{Component, Context};
-use crate::experiment::{ComponentBlueprint, ModelResolver};
+use crate::component::{Component, ComponentSpec, Context};
+use crate::math::linear::Stamp;
 use crate::math::param::{IntoOptionalParameter, IntoParameter, OptionalParameter, SampleOptional};
 use crate::math::unit::{
-    Admittance, AdmittanceConvert, Conductance, ConductanceExt, DimensionLessExt, Length,
-    MetersExt, OhmsPerCelsius, OhmsPerCelsiusSquared, Ratio, Resistance, TempCoeffExt, Temperature,
-    TemperatureExt,
+    AdmittanceConvert, Conductance, Length, LinearTemperatureCoefficient,
+    QuadraticTemperatureCoefficient, Ratio, Resistance, Temperature, TemperatureInterval, UnitExt,
 };
-use crate::model::res::ResistorModel;
-use crate::solver::Stamp;
-use crate::state::CircuitStates;
+use crate::model::ModelResolver;
+use crate::model::res::{ResistorIdealModel, ResistorModel};
+use crate::netlist::{CircuitReference, IntoNodeIdentifier, Netlist, NodeIdentifier};
+use crate::state::CircuitState;
 use num_complex::Complex;
-use num_traits::One;
-use piperine_macros::stamps;
 use std::any::Any;
 use std::sync::Arc;
 
-struct ResistorSpec {
+pub(crate) struct ResistorSpec {
     name: String,
     model: Option<String>,
     node_plus: NodeIdentifier,
@@ -33,14 +30,15 @@ struct ResistorSpec {
     multiplier: OptionalParameter<Ratio>,
 
     temp: OptionalParameter<Temperature>,
-    delta_temp: OptionalParameter<Temperature>,
-    tc1: OptionalParameter<OhmsPerCelsius>,
-    tc2: OptionalParameter<OhmsPerCelsiusSquared>,
+    delta_temp: OptionalParameter<TemperatureInterval>,
+    tc1: OptionalParameter<LinearTemperatureCoefficient>,
+    tc2: OptionalParameter<QuadraticTemperatureCoefficient>,
+    tce: OptionalParameter<Ratio>,
     noisy: bool,
 }
 
 impl ResistorSpec {
-    fn new(
+    pub(crate) fn new(
         name: &str,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
@@ -61,6 +59,7 @@ impl ResistorSpec {
             delta_temp: None,
             tc1: None,
             tc2: None,
+            tce: None,
             noisy: false,
         }
     }
@@ -111,7 +110,7 @@ impl ResistorSpec {
 
     pub fn with_delta_temp(
         &mut self,
-        delta_temp: impl IntoOptionalParameter<Temperature>,
+        delta_temp: impl IntoOptionalParameter<TemperatureInterval>,
     ) -> &mut ResistorSpec {
         self.delta_temp = delta_temp.into_optional_parameter();
         self
@@ -119,16 +118,24 @@ impl ResistorSpec {
 
     pub fn with_temperature_coefficients(
         &mut self,
-        tc1: impl IntoOptionalParameter<OhmsPerCelsius>,
-        tc2: impl IntoOptionalParameter<OhmsPerCelsiusSquared>,
+        tc1: impl IntoOptionalParameter<LinearTemperatureCoefficient>,
+        tc2: impl IntoOptionalParameter<QuadraticTemperatureCoefficient>,
     ) -> &mut ResistorSpec {
         self.tc1 = tc1.into_optional_parameter();
         self.tc2 = tc2.into_optional_parameter();
         self
     }
+
+    pub fn with_exponential_temperature_coefficient(
+        &mut self,
+        tce: impl IntoOptionalParameter<Ratio>,
+    ) -> &mut ResistorSpec {
+        self.tce = tce.into_optional_parameter();
+        self
+    }
 }
 
-impl ComponentBlueprint for ResistorSpec {
+impl ComponentSpec for ResistorSpec {
     fn instantiate(
         &self,
         netlist: &mut Netlist,
@@ -138,20 +145,20 @@ impl ComponentBlueprint for ResistorSpec {
             name: self.name.clone(),
             model: model_resolver
                 .resolve(self.model.clone())
-                .expect("failed to resolve model"),
+                .unwrap_or_else(|| Arc::new(ResistorIdealModel::new())),
             node_plus: netlist.connect_node(self.node_plus.clone()),
             node_minus: netlist.connect_node(self.node_minus.clone()),
             resistance: self.resistance.sample_opt(),
             conductance: 0.0.S(),
-            length: self.length.sample_opt().unwrap_or(10.0.um()),
-            width: self.length.sample_opt().unwrap_or(10.0.um()),
+            length: self.length.sample_opt(),
+            width: self.length.sample_opt(),
             scale: self.scale.sample_opt().unwrap_or(1.0.ratio()),
-            m: self.multiplier.sample_opt().unwrap_or(1.0.ratio()),
-            temp: self.temp.sample_opt().unwrap_or(27.0.degC()),
-            dtemp: self.delta_temp.sample_opt().unwrap_or(0.0.degC()),
-            tc1: self.tc1.sample_opt().unwrap_or(0.0.OhmsPerC()),
-            tc2: self.tc2.sample_opt().unwrap_or(0.0.OhmsPerC2()),
-            // tce: parameters.tce,
+            multiplier: self.multiplier.sample_opt().unwrap_or(1.0.ratio()),
+            temp: self.temp.sample_opt(),
+            dtemp: self.delta_temp.sample_opt(),
+            tc1: self.tc1.sample_opt(),
+            tc2: self.tc2.sample_opt(),
+            tce: self.tce.sample_opt(),
         }))
     }
 
@@ -170,19 +177,6 @@ pub trait ResistorFactory {
     ) -> &mut ResistorSpec;
 }
 
-impl ResistorFactory for crate::experiment::CircuitBuilder {
-    fn resistor(
-        &mut self,
-        name: &str,
-        node_p: impl IntoNodeIdentifier,
-        node_n: impl IntoNodeIdentifier,
-        resistance: impl IntoOptionalParameter<Resistance>,
-    ) -> &mut ResistorSpec {
-        self.insert_get(name, ResistorSpec::new(name, node_p, node_n, resistance))
-            .expect("Failed to insert component")
-    }
-}
-
 pub struct Resistor {
     pub name: String,
     pub model: Arc<ResistorModel>,
@@ -191,16 +185,16 @@ pub struct Resistor {
 
     pub resistance: Option<Resistance>,
     pub conductance: Conductance,
-    pub length: Length,
-    pub width: Length,
+    pub length: Option<Length>,
+    pub width: Option<Length>,
     pub scale: Ratio,
-    pub m: Ratio,
+    pub multiplier: Ratio,
 
-    pub temp: Temperature,
-    pub dtemp: Temperature,
-    pub tc1: OhmsPerCelsius,
-    pub tc2: OhmsPerCelsiusSquared,
-    // pub tce: Option<f64>,
+    pub temp: Option<Temperature>,
+    pub dtemp: Option<TemperatureInterval>,
+    pub tc1: Option<LinearTemperatureCoefficient>,
+    pub tc2: Option<QuadraticTemperatureCoefficient>,
+    pub tce: Option<Ratio>,
 }
 
 impl Component for Resistor {
@@ -208,75 +202,58 @@ impl Component for Resistor {
         self.name.clone()
     }
 
-    fn update(
-        &mut self,
-        circuit_states: &CircuitStates,
-        context: &Context,
-    ) -> crate::error::Result<()> {
+    fn update(&mut self) -> crate::error::Result<()> {
         let model = self.model.clone();
-        model.update(self, circuit_states)
+        model.update(self)
     }
 
-    fn as_dc(&self) -> Option<&dyn DcAnalysis> {
+    fn as_dc_mut(&mut self) -> Option<&mut dyn DcAnalysis> {
         Some(self)
     }
 
-    fn as_transient(&self) -> Option<&dyn TransientAnalysis> {
+    fn as_transient_mut(&mut self) -> Option<&mut dyn TransientAnalysis> {
         Some(self)
     }
 
-    fn as_ac(&self) -> Option<&dyn AcAnalysis> {
+    fn as_ac_mut(&mut self) -> Option<&mut dyn AcAnalysis> {
         Some(self)
     }
 }
 
-// impl Resistor {
-//     pub fn new(
-//         netlist: &mut Netlist,
-//         parameters: ResistorParameters,
-//     ) -> crate::error::Result<Self> {
-//         Ok(Self {
-//             name: parameters.name,
-//             model: parameters.model,
-//             node_plus: netlist.connect_node(parameters.node_plus),
-//             node_minus: netlist.connect_node(parameters.node_minus),
-//             resistance: parameters.resistance,
-//             conductance: 0.0,
-//             length: parameters.length.unwrap_or(10.0.um()),
-//             width: parameters.width.unwrap_or(10e-6),
-//             scale: parameters.scale.unwrap_or(1.0),
-//             m: parameters.m.unwrap_or(1.0),
-//             temp: parameters.temp,
-//             dtemp: parameters.dtemp.unwrap_or(0.0),
-//             tc1: parameters.tc1,
-//             tc2: parameters.tc2,
-//             tce: parameters.tce,
-//         })
-//     }
-// }
-
 impl DcAnalysis for Resistor {
-    fn load_dc(&self, context: &Context) -> Vec<Stamp<Conductance>> {
-        stamps!(
-            KCL(self.node_plus): {
-                self.node_plus  => self.conductance,
-                self.node_minus => -self.conductance
-            },
-            KCL(self.node_minus): {
-                self.node_plus  => -self.conductance,
-                self.node_minus => self.conductance
-            }
-        )
+    fn load_dc(&self, context: &Context) -> Vec<Stamp<CircuitReference, f64>> {
+        vec![
+            Stamp::Matrix(
+                self.node_plus.clone(),
+                self.node_plus.clone(),
+                self.conductance.value,
+            ),
+            Stamp::Matrix(
+                self.node_minus.clone(),
+                self.node_minus.clone(),
+                self.conductance.value,
+            ),
+            Stamp::Matrix(
+                self.node_plus.clone(),
+                self.node_minus.clone(),
+                -self.conductance.value,
+            ),
+            Stamp::Matrix(
+                self.node_minus.clone(),
+                self.node_plus.clone(),
+                -self.conductance.value,
+            ),
+        ]
     }
 }
 
 impl TransientAnalysis for Resistor {
     fn load_transient(
         &self,
-        _: &CircuitStates,
+        _: &CircuitState<f64>,
         _: &TransientAnalysisContext,
         context: &Context,
-    ) -> Vec<Stamp<Conductance>> {
+    ) -> Vec<Stamp<CircuitReference, f64>> {
         self.load_dc(context)
     }
 }
@@ -284,21 +261,17 @@ impl TransientAnalysis for Resistor {
 impl AcAnalysis for Resistor {
     fn load_ac(
         &self,
-        _circuit_states: &CircuitStates,
+        _circuit_states: &CircuitState<Complex<f64>>,
         _: &AcAnalysisContext,
         context: &Context,
-    ) -> Vec<Stamp<Admittance>> {
+    ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
         let g = self.conductance.to_admittance();
 
-        stamps!(
-            KCL(self.node_plus): {
-                self.node_plus  => g,
-                self.node_minus => g * -Complex::one()
-            },
-            KCL(self.node_minus): {
-                self.node_plus  => g * -Complex::one(),
-                self.node_minus => g
-            }
-        )
+        vec![
+            Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), g.value),
+            Stamp::Matrix(self.node_minus.clone(), self.node_minus.clone(), g.value),
+            Stamp::Matrix(self.node_plus.clone(), self.node_minus.clone(), -g.value),
+            Stamp::Matrix(self.node_minus.clone(), self.node_plus.clone(), -g.value),
+        ]
     }
 }

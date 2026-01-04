@@ -3,19 +3,14 @@ use crate::model::Model;
 
 pub type InductorModel = dyn Model<ComponentType = Inductor> + 'static;
 
-pub struct InductorIdealModel {
-    pub name: String,
-}
+pub struct InductorIdealModel {}
 
 impl InductorIdealModel {
-    pub fn new(name: String) -> Self {
-        Self { name }
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
 impl Model for InductorIdealModel {
     type ComponentType = Inductor;
-    fn name(&self) -> String {
-        self.name.clone()
-    }
 }

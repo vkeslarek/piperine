@@ -3,20 +3,14 @@ use crate::model::Model;
 
 pub type VoltageSourceModel = dyn Model<ComponentType = VoltageSource>;
 
-pub struct VoltageSourceIdealModel {
-    pub name: String,
-}
+pub struct VoltageSourceIdealModel {}
 
 impl VoltageSourceIdealModel {
-    pub fn new(name: String) -> Self {
-        VoltageSourceIdealModel { name }
+    pub fn new() -> Self {
+        VoltageSourceIdealModel {}
     }
 }
 
 impl Model for VoltageSourceIdealModel {
     type ComponentType = VoltageSource;
-
-    fn name(&self) -> String {
-        self.name.clone()
-    }
 }

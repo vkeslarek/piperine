@@ -5,7 +5,7 @@ pub mod res;
 pub mod vsrc;
 
 use crate::component::Component;
-use crate::state::CircuitStates;
+use crate::error::ErrorDetail;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -13,13 +13,7 @@ use std::sync::Arc;
 pub trait Model {
     type ComponentType: Component;
 
-    fn name(&self) -> String;
-
-    fn update(
-        &self,
-        component: &mut Self::ComponentType,
-        circuit_states: &CircuitStates,
-    ) -> crate::error::Result<()> {
+    fn update(&self, component: &mut Self::ComponentType) -> crate::error::Result<()> {
         Ok(())
     }
 }
@@ -93,13 +87,20 @@ impl ModelResolver {
         }
     }
 
-    pub fn insert(&mut self, name: String, model: Arc<impl AnyModel>) {
+    pub fn insert(&mut self, name: String, model: Arc<dyn AnyModel>) -> crate::error::Result<()> {
         if self
             .provider
             .capabilities()
             .contains(&ModelProviderCapabilities::INSERT)
         {
-            self.model_cache.insert(name, model);
+            self.model_cache.insert(name, model.clone());
+            Ok(())
+        } else {
+            Err(ErrorDetail {
+                title: "Model provider has no capabilities for this operation".to_string(),
+                detail: "The model provider doesn't support inserting new models".to_string(),
+                problems: vec![],
+            })
         }
     }
 
