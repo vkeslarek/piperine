@@ -5,6 +5,12 @@ use crate::solver::Context;
 use crate::state::CircuitState;
 
 #[derive(Clone)]
+pub struct TransientAnalysisOptions {
+    pub stop_time: f64,
+    pub dt: f64,
+}
+
+#[derive(Clone)]
 pub struct TransientAnalysisContext {
     pub time: f64,
     pub dt: f64,
@@ -12,7 +18,7 @@ pub struct TransientAnalysisContext {
 
 pub trait TransientAnalysis: Component {
     fn update_transient(
-        &self,
+        &mut self,
         circuit_states: &CircuitState<f64>,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,

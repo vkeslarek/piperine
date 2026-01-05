@@ -118,3 +118,14 @@ where
         self.as_ref().map(|param| param.sample())
     }
 }
+
+impl<D, U> SampleOptional<Quantity<D, U, Complex<f64>>>
+    for OptionalParameter<Quantity<D, U, Complex<f64>>>
+where
+    D: Dimension + ?Sized,
+    U: Units<Complex<f64>> + ?Sized,
+{
+    fn sample_opt(&self) -> Option<Quantity<D, U, Complex<f64>>> {
+        self.as_ref().map(|param| param.sample())
+    }
+}

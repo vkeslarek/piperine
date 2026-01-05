@@ -1,13 +1,11 @@
-use crate::analysis::transient::TransientAnalysisContext;
+use crate::analysis::transient::TransientAnalysisOptions;
 use crate::circuit::Circuit;
 use crate::component::StandardComponentsSpec;
 use crate::math::unit::UnitExt;
 use crate::model::ModelResolver;
-use crate::model::cap::CapacitorIdealModel;
-use crate::model::res::ResistorIdealModel;
-use crate::model::vsrc::VoltageSourceIdealModel;
-use crate::netlist::{BranchIdentifier, CircuitReference, GND, NodeIdentifier};
+use crate::netlist::{CircuitReference, GND, NodeIdentifier};
 use crate::solver::{Context, Solver};
+use num_traits::Zero;
 
 mod analysis;
 mod circuit;
@@ -24,23 +22,28 @@ pub fn test() {
     let mut model_resolver = ModelResolver::new();
     let circuit = Circuit::build("Test Circuit", |ctx| {
         ctx.voltage_source("VCC", "vcc", GND, 5.0.V());
-        ctx.resistor("R1", "vcc", "cap", 10.0.Ohms());
-        ctx.capacitor("C1", "cap", GND, 10.0.uF());
+        ctx.resistor("R1", "vcc", 1, 10.0.Ohms());
+        ctx.diode("D1", 1, GND);
+        ctx.capacitor("C1", 2, GND, 10.0.uF());
+        ctx.resistor("R2", 2, GND, 10.0.Ohms());
     })
     .instantiate(&mut model_resolver)
     .unwrap();
 
-    let stop_time = 0.0012;
-    let dt = 0.0000001;
+    let stop_time = 0.012;
+    let dt = 0.000001;
     let solution = Solver::build(circuit, Context::default())
         .unwrap()
-        .transient(TransientAnalysisContext {
-            time: stop_time,
-            dt,
-        })
+        .transient(TransientAnalysisOptions { stop_time, dt })
         .unwrap();
 
-    solution.iter().for_each(|(time, vec)| {
-        println!("{:0.9} {:?}", time, vec.get(&CircuitReference::Node(NodeIdentifier::Named("cap".to_string()))).cloned().unwrap_or(0.0));
+    // println!("{:?}", solution);
+    solution.iter().for_each(|(freq, vec)| {
+        let cap = vec
+            .get(&CircuitReference::Node(NodeIdentifier::Indexed(2)))
+            .cloned()
+            .unwrap_or(0.0);
+
+        println!("{:0.9} {:0.9}", freq, cap);
     });
 }

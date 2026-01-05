@@ -7,6 +7,7 @@ use crate::model::Model;
 
 pub type ResistorModel = dyn Model<ComponentType = Resistor> + 'static;
 
+#[derive(Debug)]
 pub struct ResistorIdealModel {}
 
 impl ResistorIdealModel {
@@ -66,6 +67,7 @@ impl Default for ResistorCompleteModelParameters {
     }
 }
 
+#[derive(Debug)]
 pub struct ResistorCompleteModel {
     pub name: String,
     // Temperature parameters

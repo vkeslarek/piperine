@@ -116,14 +116,10 @@ impl<E: CircuitStateElement> CircuitState<E> {
     }
 
     pub fn get_guess_value(&self, circuit_reference: &CircuitReference) -> Option<E> {
-        if self.has_guess_in_queue {
-            None
-        } else {
-            self.values
-                .get(0)
-                .and_then(|value| value.get(circuit_reference))
-                .cloned()
-        }
+        self.values
+            .get(0)
+            .and_then(|value| value.get(circuit_reference))
+            .cloned()
     }
 
     pub fn derivative_coefficients(&self, circuit_reference: &CircuitReference) -> (f64, E) {
@@ -141,7 +137,10 @@ impl<E: CircuitStateElement> CircuitState<E> {
         if self.order == 1 || history_count < 3 {
             let alpha_0 = 1.0 / h_n;
             let alpha_1 = -1.0 / h_n;
-            let hist = self.get_commited_value(circuit_reference, 0).unwrap_or(E::zero()) * alpha_1;
+            let hist = self
+                .get_commited_value(circuit_reference, 0)
+                .unwrap_or(E::zero())
+                * alpha_1;
             return (alpha_0, hist);
         }
 
@@ -152,7 +151,10 @@ impl<E: CircuitStateElement> CircuitState<E> {
         if h_prev <= 0.0 {
             let alpha_0 = 1.0 / h_n;
             let alpha_1 = -1.0 / h_n;
-            let hist = self.get_commited_value(circuit_reference, 0).unwrap_or(E::zero()) * alpha_1;
+            let hist = self
+                .get_commited_value(circuit_reference, 0)
+                .unwrap_or(E::zero())
+                * alpha_1;
             return (alpha_0, hist);
         }
 
@@ -164,8 +166,14 @@ impl<E: CircuitStateElement> CircuitState<E> {
         let alpha_2 = (r * r) / (1.0 + r);
 
         let mut hist = E::zero();
-        hist += self.get_commited_value(circuit_reference, 0).unwrap_or(E::zero()) * (alpha_1 / h_n);
-        hist += self.get_commited_value(circuit_reference, 1).unwrap_or(E::zero()) * (alpha_2 / h_n);
+        hist += self
+            .get_commited_value(circuit_reference, 0)
+            .unwrap_or(E::zero())
+            * (alpha_1 / h_n);
+        hist += self
+            .get_commited_value(circuit_reference, 1)
+            .unwrap_or(E::zero())
+            * (alpha_2 / h_n);
 
         (alpha_0 / h_n, hist)
     }

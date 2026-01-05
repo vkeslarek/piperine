@@ -128,14 +128,14 @@ impl AcAnalysis for Capacitor {
         &self,
         _circuit_states: &CircuitState<Complex<f64>>,
         ac_analysis_context: &AcAnalysisContext,
-        context: &Context,
+        _context: &Context,
     ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
+        // Convert Hz to rad/s
+        let omega = 2.0 * std::f64::consts::PI * ac_analysis_context.frequency;
+
         // Y = j * omega * C
-        let y = self
-            .capacitance
-            .to_impedance(ac_analysis_context.frequency)
-            .to_admittance()
-            .value;
+        // We create a Complex number with 0.0 real part and (omega * C) imaginary part
+        let y = Complex::new(0.0, omega.value * self.capacitance.value);
 
         vec![
             Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), y),

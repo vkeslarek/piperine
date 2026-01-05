@@ -1,26 +1,77 @@
 use crate::analysis::ac::{AcAnalysis, AcAnalysisContext};
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext};
-use crate::component::{Component, Context};
+use crate::component::{Component, ComponentSpec, Context};
 use crate::math::linear::Stamp;
+use crate::math::param::{IntoParameter, OptionalParameter, SampleOptional};
 use crate::math::unit::{Conductance, Current, Ratio, UnitExt, Voltage};
-use crate::model::dio::DiodeModel;
-use crate::netlist::{CircuitReference, Netlist, NodeIdentifier};
+use crate::model::ModelResolver;
+use crate::model::dio::{DiodeModel, DiodeShockleyModel};
+use crate::netlist::{CircuitReference, IntoNodeIdentifier, Netlist, NodeIdentifier};
 use crate::state::CircuitState;
-use num_complex::Complex;
+use num_complex::{Complex, ComplexFloat};
 use num_traits::Zero;
+use std::any::Any;
 use std::sync::Arc;
 
-pub struct DiodeParameters {
-    pub name: String,
-    pub model: Arc<DiodeModel>,
-    pub node_plus: NodeIdentifier,
-    pub node_minus: NodeIdentifier,
-    // Typical defaults: Is = 1e-14, n = 1.0
-    pub saturation_current: Current,
-    pub emission_coefficient: Ratio,
+pub struct DiodeSpec {
+    name: String,
+    model: Option<String>,
+    node_plus: NodeIdentifier,
+    node_minus: NodeIdentifier,
+    saturation_current: OptionalParameter<Current>,
+    emission_coefficient: OptionalParameter<Ratio>,
 }
 
+impl DiodeSpec {
+    pub fn new(
+        name: &str,
+        node_p: impl IntoNodeIdentifier,
+        node_n: impl IntoNodeIdentifier,
+    ) -> DiodeSpec {
+        DiodeSpec {
+            name: name.to_string(),
+            model: None,
+            node_plus: node_p.into(),
+            node_minus: node_n.into(),
+            saturation_current: None,
+            emission_coefficient: None,
+        }
+    }
+}
+
+impl ComponentSpec for DiodeSpec {
+    fn instantiate(
+        &self,
+        netlist: &mut Netlist,
+        resolver: &ModelResolver,
+    ) -> crate::error::Result<Box<dyn Component>> {
+        Ok(Box::new(Diode {
+            name: self.name.clone(),
+            model: resolver
+                .resolve(self.model.clone())
+                .unwrap_or_else(|| Arc::new(DiodeShockleyModel::new())),
+            node_plus: netlist.connect_node(self.node_plus.clone()),
+            node_minus: netlist.connect_node(self.node_minus.clone()),
+            saturation_current: self.saturation_current.sample_opt().unwrap_or(1e-12.A()),
+            emission_coefficient: self
+                .emission_coefficient
+                .sample_opt()
+                .unwrap_or(1.3.ratio()),
+            g_eq: 0.0.S(),
+            i_eq: 0.0.A(),
+            v_new: 0.0.V(),
+            v_old: 0.0.V(),
+            v_guess: 0.0.V(),
+            v_linearized: 0.0.V(),
+        }))
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+#[derive(Debug)]
 pub struct Diode {
     pub name: String,
     pub model: Arc<DiodeModel>,
@@ -30,8 +81,12 @@ pub struct Diode {
     pub emission_coefficient: Ratio,
     pub g_eq: Conductance,
     pub i_eq: Current,
-    pub i_d: Current,
-    pub v_prev_iter: Voltage,
+
+    // CHANGE HERE: Separate new guess from old linearization point
+    pub v_new: Voltage,        // The raw guess from the matrix (k)
+    pub v_old: Voltage,        // The limited voltage from the previous iteration (k-1)
+    pub v_guess: Voltage,      // The raw input from the matrix solver (Iteration K)
+    pub v_linearized: Voltage, // The safe, limited voltage we used last time (Iteration K-1)
 }
 
 impl Component for Diode {
@@ -39,9 +94,9 @@ impl Component for Diode {
         self.name.clone()
     }
 
-    // fn update(&mut self, circuit_states: &CircuitState, _: &Context) -> crate::error::Result<()> {
-    //     self.model.clone().update(self, circuit_states)
-    // }
+    fn update(&mut self) -> crate::error::Result<()> {
+        self.model.clone().update(self)
+    }
 
     fn as_dc_mut(&mut self) -> Option<&mut dyn DcAnalysis> {
         Some(self)
@@ -56,167 +111,95 @@ impl Component for Diode {
     }
 }
 
-impl Diode {
-    pub fn new(netlist: &mut Netlist, parameters: DiodeParameters) -> crate::error::Result<Self> {
-        Ok(Self {
-            name: parameters.name,
-            model: parameters.model,
-            node_plus: netlist.connect_node(parameters.node_plus),
-            node_minus: netlist.connect_node(parameters.node_minus),
-            saturation_current: parameters.saturation_current,
-            emission_coefficient: parameters.emission_coefficient,
-            g_eq: 0.0.S(), // Initial guess
-            i_eq: 0.0.A(),
-            i_d: 0.0.A(),
-            v_prev_iter: 0.0.V(),
-        })
-    }
-
-    // fn calculate_shockley(&self, vd: f64, vt: f64) -> (f64, f64) {
-    //     let nvt = self.emission_coefficient * vt;
-    //     let exp_term = (vd / nvt).exp();
-    //
-    //     let id = self.saturation_current * (exp_term - 1.0.ratio());
-    //     let gd = (self.saturation_current / nvt) * exp_term;
-    //
-    //     (id, gd)
-    // }
-
-    pub fn linearize(&mut self, vd_new: f64, vt: f64) -> crate::error::Result<()> {
-        let is = self.saturation_current;
-        let nvt = self.emission_coefficient * vt;
-
-        // 1. Voltage Limiting
-        let vd_old = self.v_prev_iter;
-        let mut vd = vd_new;
-
-        // let v_crit = nvt * (nvt / (2.0f64.sqrt() * is)).ln();
-        // if vd > v_crit && (vd - vd_old).abs() > (2.0 * nvt) {
-        //     vd = if vd > vd_old {
-        //         vd_old + 2.0 * nvt
-        //     } else {
-        //         // Logarithmic limiting is more stable for downward swings
-        //         vd_old - 2.0 * nvt * ((vd_old - vd) / (2.0 * nvt)).ln()
-        //     };
-        // }
-        //
-        // // 2. Physics calculation
-        // let exp_term = (vd / nvt).exp();
-        // let id = is * (exp_term - 1.0);
-        // let gd = (is / nvt) * exp_term;
-        //
-        // // 3. Update internal state
-        // self.g_eq = gd;
-        // self.i_eq = -(id - gd * vd);
-        // self.v_prev_iter = vd; // Save for the next iteration
-
-        Ok(())
-    }
-}
-
 impl DcAnalysis for Diode {
     fn load_dc(&self, _: &Context) -> Vec<Stamp<CircuitReference, f64>> {
+        let g_leak = 1e-9; // 1 Giga-Ohm leakage path (Conductance)
+
         vec![
-            Stamp::Matrix(
-                self.node_plus.clone(),
-                self.node_plus.clone(),
-                self.g_eq.value,
-            ),
-            Stamp::Matrix(
-                self.node_minus.clone(),
-                self.node_minus.clone(),
-                self.g_eq.value,
-            ),
-            Stamp::Matrix(
-                self.node_plus.clone(),
-                self.node_minus.clone(),
-                -self.g_eq.value,
-            ),
-            Stamp::Matrix(
-                self.node_minus.clone(),
-                self.node_plus.clone(),
-                -self.g_eq.value,
-            ),
-            Stamp::Rhs(self.node_plus.clone(), self.i_eq.value.re),
-            Stamp::Rhs(self.node_minus.clone(), self.i_eq.value.re),
+            // Place the fixed conductance in the matrix
+            Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), g_leak),
+            Stamp::Matrix(self.node_minus.clone(), self.node_minus.clone(), g_leak),
+            Stamp::Matrix(self.node_plus.clone(), self.node_minus.clone(), -g_leak),
+            Stamp::Matrix(self.node_minus.clone(), self.node_plus.clone(), -g_leak),
+            // NO RHS: Passive components have no current source I_eq in a fixed-G model.
+            // This effectively sets the initial guess for the diode current to 0.
         ]
     }
 }
 
 impl TransientAnalysis for Diode {
-    fn load_transient(
-        &self,
-        _: &CircuitState<f64>,
+    fn update_transient(
+        &mut self,
+        circuit_states: &CircuitState<f64>,
         _: &TransientAnalysisContext,
-        context: &Context,
-    ) -> Vec<Stamp<CircuitReference, f64>> {
-        self.load_dc(context)
+        _: &Context,
+    ) -> crate::error::Result<()> {
+        let v_plus = circuit_states
+            .get_guess_value(&self.node_plus)
+            .unwrap_or(0.0);
+        let v_minus = circuit_states
+            .get_guess_value(&self.node_minus)
+            .unwrap_or(0.0);
+
+        // STORE THE RAW GUESS. Do not touch v_linearized!
+        self.v_guess = (v_plus - v_minus).V();
+        Ok(())
     }
 
-    // fn check_convergence(
-    //     &self,
-    //     state: &CircuitStates,
-    //     _: &TransientAnalysisContext,
-    //     context: &Context,
-    // ) -> bool {
-    //     // Current solution (Iteration k)
-    //     let v_now = state.get_value(&self.node_plus, 0).unwrap_or(0.0)
-    //         - state.get_value(&self.node_minus, 0).unwrap_or(0.0);
-    //
-    //     // Previous guess (Iteration k-1)
-    //     let v_prev = state.get_value(&self.node_plus, 1).unwrap_or(0.0)
-    //         - state.get_value(&self.node_minus, 1).unwrap_or(0.0);
-    //
-    //     // 1. Voltage Convergence
-    //     let v_diff = (v_now - v_prev).abs();
-    //     let v_tol = context.reltol * v_now.abs().max(v_prev.abs()) + context.vntol;
-    //
-    //     if v_diff > v_tol {
-    //         return false;
-    //     }
-    //
-    //     // 2. Current Convergence
-    //     // We calculate current for both points to see if the physics settled
-    //     let vt = 0.02585;
-    //     let (i_now, _) = self.calculate_shockley(v_now, vt);
-    //     let (i_prev, _) = self.calculate_shockley(v_prev, vt);
-    //
-    //     let i_diff = (i_now - i_prev).abs();
-    //     let i_tol = context.reltol * i_now.abs().max(i_prev.abs()) + context.abstol;
-    //
-    //     i_diff < i_tol
-    // }
+    fn load_transient(
+        &self,
+        _states: &CircuitState<f64>,
+        _ctx: &TransientAnalysisContext,
+        context: &Context,
+    ) -> Vec<Stamp<CircuitReference, f64>> {
+        let g = self.g_eq.value.max(1e-9);
+        let i = self.i_eq.value.re.min(1e3);
+        vec![
+            Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), g),
+            Stamp::Matrix(self.node_minus.clone(), self.node_minus.clone(), g),
+            Stamp::Matrix(self.node_plus.clone(), self.node_minus.clone(), -g),
+            Stamp::Matrix(self.node_minus.clone(), self.node_plus.clone(), -g),
+            // RHS: Current Id flows PLUS -> MINUS
+            // So we subtract from the PLUS node and add to the MINUS node
+            Stamp::Rhs(self.node_plus.clone(), -i),
+            Stamp::Rhs(self.node_minus.clone(), i),
+        ]
+    }
+    fn check_convergence(
+        &self,
+        circuit_states: &CircuitState<f64>,
+        _ctx: &TransientAnalysisContext,
+        context: &Context,
+    ) -> bool {
+        let v_now = circuit_states
+            .get_guess_value(&self.node_plus)
+            .unwrap_or(0.0)
+            - circuit_states
+                .get_guess_value(&self.node_minus)
+                .unwrap_or(0.0);
+
+        // Compare the Solver's Result (v_now) against the Voltage we Linearized Around (v_linearized)
+        let v_lin = self.v_linearized.value.re;
+
+        (v_now - v_lin).abs() < (context.reltol * v_now.abs().max(v_lin.abs()) + context.vntol)
+    }
 }
 
 impl AcAnalysis for Diode {
     fn load_ac(
         &self,
-        circuit_states: &CircuitState<Complex<f64>>,
+        _: &CircuitState<Complex<f64>>,
         _: &AcAnalysisContext,
-        context: &Context,
+        _: &Context,
     ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
-        // 1. Get the DC operating point voltage from history (lookback 0)
-        let v_plus = circuit_states
-            .get_commited_value(&self.node_plus, 0)
-            .unwrap_or(Complex::zero());
-        let v_minus = circuit_states
-            .get_commited_value(&self.node_minus, 0)
-            .unwrap_or(Complex::zero());
-        let vd_dc = v_plus - v_minus;
+        // Use the g_eq calculated during the final OP/Transient step
+        let g = Complex::new(self.g_eq.value, 0.0);
 
-        // 2. Calculate small-signal conductance gd
-        let vt = 0.02585; // Thermal voltage
-        let nvt = self.emission_coefficient * vt;
-        // let gd_val = (self.saturation_current / nvt) * (vd_dc / nvt).exp();
-
-        // let gd = Complex::new(gd_val, 0.0);
-
-        // 3. Stamp as a linear conductance
         vec![
-            // Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), gd),
-            // Stamp::Matrix(self.node_plus.clone(), self.node_minus.clone(), -gd),
-            // Stamp::Matrix(self.node_minus.clone(), self.node_plus.clone(), -gd),
-            // Stamp::Matrix(self.node_minus.clone(), self.node_minus.clone(), gd),
+            Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), g),
+            Stamp::Matrix(self.node_minus.clone(), self.node_minus.clone(), g),
+            Stamp::Matrix(self.node_plus.clone(), self.node_minus.clone(), -g),
+            Stamp::Matrix(self.node_minus.clone(), self.node_plus.clone(), -g),
         ]
     }
 }

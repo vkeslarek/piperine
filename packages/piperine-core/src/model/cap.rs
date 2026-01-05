@@ -3,6 +3,7 @@ use crate::model::Model;
 
 pub type CapacitorModel = dyn Model<ComponentType = Capacitor> + 'static;
 
+#[derive(Debug)]
 pub struct CapacitorIdealModel {}
 
 impl CapacitorIdealModel {

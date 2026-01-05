@@ -8,9 +8,10 @@ use crate::component::Component;
 use crate::error::ErrorDetail;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
 use std::sync::Arc;
 
-pub trait Model {
+pub trait Model : Debug {
     type ComponentType: Component;
 
     fn update(&self, component: &mut Self::ComponentType) -> crate::error::Result<()> {

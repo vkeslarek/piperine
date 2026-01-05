@@ -1,3 +1,4 @@
+use crate::analysis::ac::AcAnalysisContext;
 use crate::analysis::transient::TransientAnalysisContext;
 use crate::component::{Component, ComponentSpec};
 use crate::math::linear::Stamp;
@@ -5,6 +6,7 @@ use crate::model::{AnyModel, ModelResolver};
 use crate::netlist::{CircuitReference, Netlist};
 use crate::solver::Context;
 use crate::state::CircuitState;
+use num_complex::Complex;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -203,5 +205,56 @@ impl Circuit {
         }
 
         Ok(true)
+    }
+
+    pub fn update_ac(
+        &mut self,
+        circuit_states: &CircuitState<Complex<f64>>,
+        ac_analysis_context: &AcAnalysisContext,
+        context: &Context,
+    ) -> crate::error::Result<()> {
+        for (_, component) in &mut self.components {
+            let dc_comp = component.as_ac_mut().unwrap();
+            dc_comp.update_ac(circuit_states, ac_analysis_context, context)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn load_ac(
+        &mut self,
+        circuit_states: &CircuitState<Complex<f64>>,
+        ac_analysis_context: &AcAnalysisContext,
+        context: &Context,
+    ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
+        let mut stamps = Vec::new();
+
+        for (_, component) in &mut self.components {
+            let dc_comp = component.as_ac_mut().unwrap();
+            stamps.extend(
+                dc_comp
+                    .load_ac(circuit_states, ac_analysis_context, context)
+                    .into_iter()
+                    .filter_map(|stamp| match stamp {
+                        Stamp::Matrix(r, c, val) => {
+                            // Only keep the stamp if NEITHER the row nor the column is ground
+                            if !r.is_ground() && !c.is_ground() {
+                                Some(Stamp::Matrix(r, c, val))
+                            } else {
+                                None
+                            }
+                        }
+                        Stamp::Rhs(r, val) => {
+                            if !r.is_ground() {
+                                Some(Stamp::Rhs(r, val))
+                            } else {
+                                None
+                            }
+                        }
+                    }),
+            );
+        }
+
+        stamps
     }
 }

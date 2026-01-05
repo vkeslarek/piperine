@@ -4,16 +4,17 @@ use faer::prelude::{Solve, SparseColMat};
 use faer::sparse::linalg::solvers::SymbolicLu;
 use faer::traits::ComplexField;
 use num_complex::Complex;
-use num_traits::Zero;
+use num_traits::{One, Zero};
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::ops::AddAssign;
+use std::ops::{AddAssign, Mul};
 
+use crate::netlist::CircuitReference;
 pub use faer::sparse::Triplet;
 
 pub trait Symbol: Clone + Eq + Hash {}
 
-pub trait Element: Copy + Zero + AddAssign + ComplexField {}
+pub trait Element: Copy + Zero + One + AddAssign + Mul<f64, Output = Self> + ComplexField {}
 
 impl Element for f64 {}
 impl Element for Complex<f64> {}
@@ -42,7 +43,13 @@ impl<E: Element> LinearSystem<E> {
         &mut self,
         symbolic: &SymbolicMatrix<S>,
         stamps: Vec<Stamp<S, E>>,
+        gmin: f64,
     ) {
+        for &index in symbolic.mapping.values() {
+            self.triplets
+                .push(Triplet::new(index, index, E::one() * gmin));
+        }
+
         for stamp in stamps {
             match stamp {
                 Stamp::Matrix(r, c, val) => {

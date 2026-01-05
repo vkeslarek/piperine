@@ -9,6 +9,7 @@ use crate::analysis::dc::DcAnalysis;
 use crate::analysis::transient::TransientAnalysis;
 use crate::circuit::CircuitSpec;
 use crate::component::cap::CapacitorSpec;
+use crate::component::dio::DiodeSpec;
 use crate::component::res::ResistorSpec;
 use crate::component::vsrc::VoltageSourceSpec;
 use crate::math::param::{IntoOptionalParameter, IntoParameter};
@@ -89,7 +90,7 @@ pub trait StandardComponentsSpec {
         name: &str,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
-    );
+    ) -> &mut DiodeSpec;
 }
 
 impl StandardComponentsSpec for CircuitSpec {
@@ -141,7 +142,8 @@ impl StandardComponentsSpec for CircuitSpec {
         name: &str,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
-    ) {
-        todo!()
+    ) -> &mut DiodeSpec {
+        self.insert_get(name, DiodeSpec::new(name, node_p, node_n))
+            .expect("Failed to insert diode")
     }
 }

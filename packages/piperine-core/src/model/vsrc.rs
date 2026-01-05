@@ -3,6 +3,7 @@ use crate::model::Model;
 
 pub type VoltageSourceModel = dyn Model<ComponentType = VoltageSource>;
 
+#[derive(Debug)]
 pub struct VoltageSourceIdealModel {}
 
 impl VoltageSourceIdealModel {

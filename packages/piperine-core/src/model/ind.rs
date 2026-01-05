@@ -3,6 +3,7 @@ use crate::model::Model;
 
 pub type InductorModel = dyn Model<ComponentType = Inductor> + 'static;
 
+#[derive(Debug)]
 pub struct InductorIdealModel {}
 
 impl InductorIdealModel {
