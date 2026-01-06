@@ -42,10 +42,7 @@ impl Solver {
         let mut stamps = circuit.load_dc(&context);
 
         let dummy_state = CircuitState::new(HashMap::new(), HashMap::new(), 1);
-        let dummy_tran = TransientAnalysisContext {
-            time: 0.0.Sec(),
-            dt: 1.0.Sec(),
-        };
+        let dummy_tran = TransientAnalysisContext { time: 0.0, dt: 1.0 };
         stamps.extend(circuit.load_transient(&dummy_state, &dummy_tran, &context));
 
         Ok(Self {
@@ -66,7 +63,7 @@ impl Solver {
 
         for i in 0..max_iters {
             // 1. Prepare stamps based on current guess in circuit_state
-            let stamps = if time_ctx.dt != 0.0.Sec() {
+            let stamps = if time_ctx.dt < 0.000001 {
                 self.circuit.update_dc(&self.context)?;
                 self.circuit.update()?;
                 self.circuit.load_dc(&self.context)
@@ -84,7 +81,7 @@ impl Solver {
             let next_solution = system.solve_with_backend(&self.symbolic)?;
 
             // 3. Update the guess in the state
-            circuit_state.push_guess(time_ctx.time.value, next_solution);
+            circuit_state.push_guess(time_ctx.time, next_solution);
 
             // 4. Check Convergence
             if self
@@ -106,10 +103,7 @@ impl Solver {
     pub fn op(&mut self) -> crate::error::Result<HashMap<CircuitReference, f64>> {
         // Create an empty state for DC
         let mut state = CircuitState::new(HashMap::new(), HashMap::new(), 1);
-        let dc_ctx = TransientAnalysisContext {
-            time: 0.0.Sec(),
-            dt: 0.0.Sec(),
-        };
+        let dc_ctx = TransientAnalysisContext { time: 0.0, dt: 0.0 };
 
         // Seed the first guess with zeros if empty
         state.push_guess(0.0, HashMap::new());
@@ -133,8 +127,8 @@ impl Solver {
         let mut t = options.dt;
         while t <= options.stop_time {
             let step_ctx = TransientAnalysisContext {
-                time: t.Sec(),
-                dt: options.dt.Sec(),
+                time: t,
+                dt: options.dt,
             };
 
             // Use the previous solution as the starting guess for the new time step

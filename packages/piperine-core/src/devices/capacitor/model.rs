@@ -1,0 +1,17 @@
+use crate::devices::Model;
+use crate::devices::capacitor::Capacitor;
+
+pub type CapacitorModelType = dyn Model<ComponentType = Capacitor> + 'static;
+
+#[derive(Debug)]
+pub struct CapacitorIdealModel {}
+
+impl CapacitorIdealModel {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Model for CapacitorIdealModel {
+    type ComponentType = Capacitor;
+}

@@ -1,16 +1,18 @@
 use crate::analysis::transient::TransientAnalysisOptions;
 use crate::circuit::Circuit;
-use crate::devices::ModelResolver;
+use crate::component::StandardComponentsSpec;
 use crate::math::unit::UnitExt;
+use crate::model::ModelResolver;
 use crate::netlist::{CircuitReference, GND, NodeIdentifier};
 use crate::solver::{Context, Solver};
 use num_traits::Zero;
 
 mod analysis;
 mod circuit;
-mod devices;
+mod component;
 mod error;
 mod math;
+mod model;
 mod netlist;
 mod solver;
 mod state;
@@ -21,9 +23,9 @@ pub fn test() {
     let circuit = Circuit::build("Test Circuit", |ctx| {
         ctx.voltage_source("VCC", "vcc", GND, 5.0.V());
         ctx.resistor("R1", "vcc", 1, 10.0.Ohms());
-        // ctx.diode("D1", 1, GND);
-        ctx.capacitor("C1", 1, GND, 10.0.uF());
-        ctx.resistor("R2", 1, GND, 10.0.Ohms());
+        ctx.diode("D1", 1, GND);
+        ctx.capacitor("C1", 2, GND, 10.0.uF());
+        ctx.resistor("R2", 2, GND, 10.0.Ohms());
     })
     .instantiate(&mut model_resolver)
     .unwrap();

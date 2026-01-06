@@ -1,7 +1,7 @@
 use num_complex::Complex;
 use paste::paste;
 use std::f64::consts::PI;
-use uom::si::{ISQ, Quantity, SI};
+use uom::si::{Quantity, ISQ, SI};
 use uom::typenum::{N1, N2, N3, P1, Z0};
 
 /*******************************************************
@@ -18,12 +18,10 @@ pub type Temperature = uom::si::f64::ThermodynamicTemperature;
 pub type TemperatureInterval = uom::si::f64::TemperatureInterval;
 pub type Ratio = uom::si::f64::Ratio;
 pub type Time = uom::si::f64::Time;
-pub type Voltage = uom::si::f64::ElectricPotential;
-pub type Current = uom::si::f64::ElectricCurrent;
 
 // Complex
-pub type ComplexVoltage = uom::si::f64::ElectricPotential;
-pub type ComplexCurrent = uom::si::f64::ElectricCurrent;
+pub type Voltage = uom::si::complex64::ElectricPotential;
+pub type Current = uom::si::complex64::ElectricCurrent;
 pub type Impedance = uom::si::complex64::ElectricalResistance;
 pub type Admittance = uom::si::complex64::ElectricalConductance;
 

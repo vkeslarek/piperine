@@ -497,7 +497,7 @@ pub struct GlobalOptions {
 - If the next line has a + it is a continuation of the previous line
 - Comments start with * or ; or $\s or //
 - If there is a continuation on the next line, the comment continues only the current line
-- Subcircuits are defined with .SUBCKT and .ENDS and defines a new "component" type. The netlist of the subcircuit is declared.
+- Subcircuits are defined with .SUBCKT and .ENDS and defines a new "device" type. The netlist of the subcircuit is declared.
 - Globals define nodes that can be accessed from anywhere in the circuit
 - String support is limited. SHould we consider in out designs?
 - Subcircuit can have parameters with default values declared like <ident>=<value>
@@ -547,7 +547,7 @@ Conditional execution:
 OBS: SUBCKT INC LIB and PARAM are not supported inside IF blocks.
 
 Params AND Functions are evaluated at compile time while non linear sources are the only place where runtime eval happens
-- The parameter m on a instance is replaced by multiple parallel instances of the same component. The devices that support it:
+- The parameter m on a instance is replaced by multiple parallel instances of the same device. The devices that support it:
     Capacitor
     Diode
     CCCS

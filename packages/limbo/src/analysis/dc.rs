@@ -1,4 +1,4 @@
-use crate::devices::Component;
+use crate::component::Component;
 use crate::math::linear::Stamp;
 use crate::netlist::CircuitReference;
 use crate::solver::Context;

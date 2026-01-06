@@ -1,6 +1,5 @@
-use crate::devices::Component;
+use crate::component::Component;
 use crate::math::linear::Stamp;
-use crate::math::unit::Time;
 use crate::netlist::CircuitReference;
 use crate::solver::Context;
 use crate::state::CircuitState;
@@ -13,8 +12,8 @@ pub struct TransientAnalysisOptions {
 
 #[derive(Clone)]
 pub struct TransientAnalysisContext {
-    pub time: Time,
-    pub dt: Time,
+    pub time: f64,
+    pub dt: f64,
 }
 
 pub trait TransientAnalysis: Component {

@@ -1,5 +1,6 @@
 use crate::analysis::dc::DcAnalysis;
-use crate::devices::Component;
+use crate::analysis::transient::TransientAnalysisContext;
+use crate::component::Component;
 use crate::math::linear::Stamp;
 use crate::math::unit::Frequency;
 use crate::netlist::CircuitReference;

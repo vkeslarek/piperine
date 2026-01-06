@@ -1,15 +1,9 @@
 use crate::analysis::ac::AcAnalysisContext;
 use crate::analysis::transient::TransientAnalysisContext;
-use crate::devices::capacitor::spec::CapacitorSpec;
-use crate::devices::diode::spec::DiodeSpec;
-use crate::devices::inductor::spec::InductorSpec;
-use crate::devices::resistor::spec::ResistorSpec;
-use crate::devices::voltage_source::spec::VoltageSourceSpec;
-use crate::devices::{AnyModel, Component, ComponentSpec, ModelResolver};
+use crate::component::{Component, ComponentSpec};
 use crate::math::linear::Stamp;
-use crate::math::param::{IntoOptionalParameter, IntoParameter};
-use crate::math::unit::{Capacitance, Inductance, Resistance, Voltage};
-use crate::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
+use crate::model::{AnyModel, ModelResolver};
+use crate::netlist::{CircuitReference, Netlist};
 use crate::solver::Context;
 use crate::state::CircuitState;
 use num_complex::Complex;
@@ -65,60 +59,6 @@ impl CircuitSpec {
         }
 
         Ok(Circuit::new(self.title.clone(), netlist, components))
-    }
-
-    pub fn resistor(
-        &mut self,
-        name: &str,
-        node_p: impl IntoNodeIdentifier,
-        node_n: impl IntoNodeIdentifier,
-        resistance: impl IntoOptionalParameter<Resistance>,
-    ) -> &mut ResistorSpec {
-        self.insert_get(name, ResistorSpec::new(name, node_p, node_n, resistance))
-            .expect("Failed to insert resistor")
-    }
-
-    pub fn voltage_source(
-        &mut self,
-        name: &str,
-        node_p: impl IntoNodeIdentifier,
-        node_n: impl IntoNodeIdentifier,
-        voltage: impl IntoParameter<Voltage>,
-    ) -> &mut VoltageSourceSpec {
-        self.insert_get(name, VoltageSourceSpec::new(name, node_p, node_n, voltage))
-            .expect("Failed to insert voltage source")
-    }
-
-    pub fn capacitor(
-        &mut self,
-        name: &str,
-        node_p: impl IntoNodeIdentifier,
-        node_n: impl IntoNodeIdentifier,
-        capacitance: impl IntoParameter<Capacitance>,
-    ) -> &mut CapacitorSpec {
-        self.insert_get(name, CapacitorSpec::new(name, node_p, node_n, capacitance))
-            .expect("Failed to insert capacitor")
-    }
-
-    pub fn inductor(
-        &mut self,
-        name: &str,
-        node_p: impl IntoNodeIdentifier,
-        node_n: impl IntoNodeIdentifier,
-        inductance: impl IntoParameter<Inductance>,
-    ) -> &mut InductorSpec {
-        self.insert_get(name, InductorSpec::new(name, node_p, node_n, inductance))
-            .expect("Failed to insert Inductor")
-    }
-
-    pub fn diode(
-        &mut self,
-        name: &str,
-        node_p: impl IntoNodeIdentifier,
-        node_n: impl IntoNodeIdentifier,
-    ) -> &mut DiodeSpec {
-        self.insert_get(name, DiodeSpec::new(name, node_p, node_n))
-            .expect("Failed to insert diode")
     }
 }
 
