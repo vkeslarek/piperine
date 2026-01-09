@@ -1,16 +1,27 @@
-use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext};
+use crate::analysis::transient::{
+    TransientAnalysis, TransientAnalysisContext, TransientCircuitState,
+};
 use crate::devices::resistor::Resistor;
 use crate::math::linear::Stamp;
 use crate::netlist::CircuitReference;
 use crate::solver::Context;
-use crate::state::CircuitState;
 
 impl TransientAnalysis for Resistor {
-    fn load_transient(
-        &self,
-        _: &CircuitState<f64>,
+    fn update_transient(
+        &mut self,
+        _: &TransientCircuitState,
         _: &TransientAnalysisContext,
         context: &Context,
+    ) -> crate::error::Result<()> {
+        self.model.clone().update_conductance(self, context);
+        Ok(())
+    }
+
+    fn load_transient(
+        &self,
+        _: &TransientCircuitState,
+        _: &TransientAnalysisContext,
+        _: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {
         vec![
             Stamp::Matrix(

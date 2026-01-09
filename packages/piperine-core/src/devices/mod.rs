@@ -1,6 +1,5 @@
 pub mod capacitor;
 pub mod diode;
-pub mod inductor;
 pub mod resistor;
 pub mod voltage_source;
 
@@ -8,39 +7,21 @@ use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::transient::TransientAnalysis;
 use crate::error::ErrorDetail;
-use crate::math::param::{IntoOptionalParameter, IntoParameter};
-use crate::netlist::{IntoNodeIdentifier, Netlist};
+use crate::netlist::Netlist;
+use crate::util::AsAny;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::Arc;
 
-pub trait Component {
+pub trait Component: Any + AsAny {
     fn name(&self) -> String;
 
-    fn commit(&mut self) -> crate::error::Result<()> {
-        Ok(())
-    }
+    fn as_dc(&mut self) -> Option<&mut dyn DcAnalysis>;
 
-    fn rollback(&mut self) -> crate::error::Result<()> {
-        Ok(())
-    }
+    fn as_ac(&mut self) -> Option<&mut dyn AcAnalysis>;
 
-    fn update(&mut self) -> crate::error::Result<()> {
-        Ok(())
-    }
-
-    fn as_dc_mut(&mut self) -> Option<&mut dyn DcAnalysis> {
-        None
-    }
-
-    fn as_transient_mut(&mut self) -> Option<&mut dyn TransientAnalysis> {
-        None
-    }
-
-    fn as_ac_mut(&mut self) -> Option<&mut dyn AcAnalysis> {
-        None
-    }
+    fn as_transient(&mut self) -> Option<&mut dyn TransientAnalysis>;
 }
 
 pub trait ComponentSpec: Any {
@@ -49,31 +30,15 @@ pub trait ComponentSpec: Any {
         netlist: &mut Netlist,
         model_resolver: &ModelResolver,
     ) -> crate::error::Result<Box<dyn Component>>;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-pub trait Model: Debug {
+pub trait Model: Debug + AsAny + Any {
     type ComponentType: Component;
-
-    fn update(&self, component: &mut Self::ComponentType) -> crate::error::Result<()> {
-        Ok(())
-    }
 }
 
-pub trait AnyModel: 'static + Any {
-    fn as_any(&self) -> &dyn Any;
-    fn name(&self) -> String;
-}
+pub trait AnyModel: 'static + AsAny {}
 
-impl<M: 'static + Model> AnyModel for M {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn name(&self) -> String {
-        M::name(self)
-    }
-}
+impl<M: 'static + Model> AnyModel for M {}
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum ModelProviderCapabilities {
@@ -146,18 +111,18 @@ impl ModelResolver {
         }
     }
 
-    pub fn resolve<C: Component + 'static>(
-        &self,
-        model: Option<String>,
-    ) -> Option<Arc<dyn Model<ComponentType = C>>> {
-        // Handles the default case -> TODO
-
-        let model = self
-            .model_cache
-            .get(&model.clone()?)
-            .cloned()
-            .or_else(|| self.provider.fetch(&model?));
-
-        model.and_then(|mdl| mdl.as_any().downcast_ref().cloned())
-    }
+    // pub fn resolve<C: Component + 'static>(
+    //     &self,
+    //     model: Option<String>,
+    // ) -> Option<Arc<dyn Model<ComponentType = C>>> {
+    //     // Handles the default case -> TODO
+    //
+    //     let model = self
+    //         .model_cache
+    //         .get(&model.clone()?)
+    //         .cloned()
+    //         .or_else(|| self.provider.fetch(&model?));
+    //
+    //     model.and_then(|mdl| mdl.as_any().downcast_ref().cloned())
+    // }
 }

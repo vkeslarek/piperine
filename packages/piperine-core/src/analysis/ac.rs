@@ -1,20 +1,18 @@
-use crate::analysis::dc::DcAnalysis;
-use crate::devices::Component;
+use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
 use crate::math::linear::Stamp;
 use crate::math::unit::Frequency;
 use crate::netlist::CircuitReference;
 use crate::solver::Context;
-use crate::state::CircuitState;
 use num_complex::Complex;
 
 pub struct AcAnalysisContext {
     pub frequency: Frequency,
 }
 
-pub trait AcAnalysis: Component + DcAnalysis {
+pub trait AcAnalysis: DcAnalysis {
     fn update_ac(
         &mut self,
-        circuit_states: &CircuitState<Complex<f64>>,
+        dc_analysis_result: &DcAnalysisResult,
         ac_analysis_context: &AcAnalysisContext,
         context: &Context,
     ) -> crate::error::Result<()> {
@@ -23,7 +21,7 @@ pub trait AcAnalysis: Component + DcAnalysis {
 
     fn load_ac(
         &self,
-        circuit_states: &CircuitState<Complex<f64>>,
+        dc_analysis_result: &DcAnalysisResult,
         ac_analysis_context: &AcAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<CircuitReference, Complex<f64>>>;
@@ -41,19 +39,19 @@ pub struct AcSweepAnalysisOptions {
 }
 
 pub struct AcAnalysisResult {
-    pub frequency: f64,
-    pub magnitude: f64,
-    pub phase: f64,
+    // TODO
 }
 
 pub trait AcAnalysisSolver {
     fn solve_frequency_ac_analysis(
         &self,
-        options: &AcFrequencyAnalysisOptions,
+        options: AcFrequencyAnalysisOptions,
+        context: Context,
     ) -> crate::error::Result<AcAnalysisResult>;
 
     fn solve_sweep_ac_analysis(
         &self,
-        options: &AcSweepAnalysisOptions,
-    ) -> crate::error::Result<Vec<AcAnalysisResult>>;
+        options: AcSweepAnalysisOptions,
+        context: Context,
+    ) -> crate::error::Result<AcAnalysisResult>;
 }

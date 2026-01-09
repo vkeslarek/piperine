@@ -1,17 +1,29 @@
+use std::any::Any;
 use crate::devices::Model;
 use crate::devices::capacitor::Capacitor;
+use crate::util::AsAny;
 
 pub type CapacitorModelType = dyn Model<ComponentType = Capacitor> + 'static;
 
 #[derive(Debug)]
-pub struct CapacitorIdealModel {}
+pub struct CapacitorModel {}
 
-impl CapacitorIdealModel {
+impl CapacitorModel {
     pub fn new() -> Self {
         Self {}
     }
 }
 
-impl Model for CapacitorIdealModel {
+impl AsAny for CapacitorModel {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl Model for CapacitorModel {
     type ComponentType = Capacitor;
 }

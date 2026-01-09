@@ -1,11 +1,11 @@
-use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext};
+use crate::analysis::transient::{TransientModelInstance, TransientAnalysisContext};
 use crate::devices::inductor::Inductor;
 use crate::math::linear::Stamp;
 use crate::netlist::CircuitReference;
 use crate::solver::Context;
 use crate::state::CircuitState;
 
-impl TransientAnalysis for Inductor {
+impl TransientModelInstance for Inductor {
     fn load_transient(
         &self,
         circuit_states: &CircuitState<f64>,

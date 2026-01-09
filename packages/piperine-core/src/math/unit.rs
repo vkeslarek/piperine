@@ -122,16 +122,16 @@ pub trait UnitExt {
     fn mSec(self) -> Time;
     fn uSec(self) -> Time;
 
-    fn degC(self) -> Temperature;
+    fn deg_C(self) -> Temperature;
     fn delta_C(self) -> TemperatureInterval;
 
     fn delta_K(self) -> TemperatureInterval;
 
-    fn OhmsPerC(self) -> LinearTemperatureCoefficient;
-    fn OhmsPerC2(self) -> QuadraticTemperatureCoefficient;
+    fn inv_C(self) -> LinearTemperatureCoefficient;
+    fn inv_C2(self) -> QuadraticTemperatureCoefficient;
 
-    fn OhmsPerMeter(self) -> LinearResistivity;
-    fn OhmsPerMeter2(self) -> SheetResistance;
+    fn Ohms_per_meter(self) -> LinearResistivity;
+    fn Ohms_per_meter2(self) -> SheetResistance;
 }
 
 impl UnitExt for f64 {
@@ -172,7 +172,7 @@ impl UnitExt for f64 {
         Time::new::<Second>(self * 1e-6)
     }
 
-    fn degC(self) -> Temperature {
+    fn deg_C(self) -> Temperature {
         Temperature::new::<Celsius>(self)
     }
 
@@ -184,7 +184,7 @@ impl UnitExt for f64 {
         TemperatureInterval::new::<DeltaKelvin>(self)
     }
 
-    fn OhmsPerC(self) -> LinearTemperatureCoefficient {
+    fn inv_C(self) -> LinearTemperatureCoefficient {
         // We use the direct struct initialization to bypass missing 'new' methods
         // on custom Dimension types.
         LinearTemperatureCoefficient {
@@ -193,7 +193,7 @@ impl UnitExt for f64 {
             value: self,
         }
     }
-    fn OhmsPerC2(self) -> QuadraticTemperatureCoefficient {
+    fn inv_C2(self) -> QuadraticTemperatureCoefficient {
         QuadraticTemperatureCoefficient {
             dimension: std::marker::PhantomData,
             units: std::marker::PhantomData,
@@ -201,14 +201,14 @@ impl UnitExt for f64 {
         }
     }
 
-    fn OhmsPerMeter(self) -> LinearResistivity {
+    fn Ohms_per_meter(self) -> LinearResistivity {
         LinearResistivity {
             dimension: std::marker::PhantomData,
             units: std::marker::PhantomData,
             value: self,
         }
     }
-    fn OhmsPerMeter2(self) -> SheetResistance {
+    fn Ohms_per_meter2(self) -> SheetResistance {
         SheetResistance {
             dimension: std::marker::PhantomData,
             units: std::marker::PhantomData,
@@ -233,8 +233,9 @@ impl ReactanceConvert for Inductance {
 
 impl ReactanceConvert for Capacitance {
     fn to_impedance(self, freq: Frequency) -> Impedance {
-        let val = -1.0 / (2.0 * PI * freq.get::<Hertz>() * self.get::<Farad>());
-        Impedance::new::<Ohm>(Complex::new(0.0, val))
+        let omega = 2.0 * PI * freq;
+
+        Impedance::new::<Ohm>(Complex::new(0.0, omega.get::<Hertz>() * self.get::<Farad>()))
     }
 }
 

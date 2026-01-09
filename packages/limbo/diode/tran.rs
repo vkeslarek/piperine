@@ -1,4 +1,4 @@
-use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext};
+use crate::analysis::transient::{TransientModelInstance, TransientAnalysisContext};
 use crate::devices::diode::Diode;
 use crate::math::linear::Stamp;
 use crate::math::unit::UnitExt;
@@ -6,7 +6,7 @@ use crate::netlist::CircuitReference;
 use crate::solver::Context;
 use crate::state::CircuitState;
 
-impl TransientAnalysis for Diode {
+impl TransientModelInstance for Diode {
     fn update_transient(
         &mut self,
         circuit_states: &CircuitState<f64>,

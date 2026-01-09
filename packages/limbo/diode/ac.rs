@@ -1,4 +1,4 @@
-use crate::analysis::ac::{AcAnalysis, AcAnalysisContext};
+use crate::analysis::ac::{AcModelInstance, AcAnalysisContext};
 use crate::devices::diode::Diode;
 use crate::math::linear::Stamp;
 use crate::netlist::CircuitReference;
@@ -6,7 +6,7 @@ use crate::solver::Context;
 use crate::state::CircuitState;
 use num_complex::Complex;
 
-impl AcAnalysis for Diode {
+impl AcModelInstance for Diode {
     fn load_ac(
         &self,
         _: &CircuitState<Complex<f64>>,

@@ -1,4 +1,5 @@
 use crate::analysis::ac::{AcAnalysis, AcAnalysisContext};
+use crate::analysis::dc::DcAnalysisResult;
 use crate::devices::resistor::Resistor;
 use crate::math::linear::Stamp;
 use crate::math::unit::AdmittanceConvert;
@@ -8,11 +9,21 @@ use crate::state::CircuitState;
 use num_complex::Complex;
 
 impl AcAnalysis for Resistor {
-    fn load_ac(
-        &self,
-        _circuit_states: &CircuitState<Complex<f64>>,
+    fn update_ac(
+        &mut self,
+        _: &DcAnalysisResult,
         _: &AcAnalysisContext,
         context: &Context,
+    ) -> crate::error::Result<()> {
+        self.model.clone().update_conductance(self, context);
+        Ok(())
+    }
+
+    fn load_ac(
+        &self,
+        _: &DcAnalysisResult,
+        _: &AcAnalysisContext,
+        _: &Context,
     ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
         let g = self.conductance.to_admittance();
 

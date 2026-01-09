@@ -1,4 +1,4 @@
-use crate::analysis::ac::{AcAnalysis, AcAnalysisContext};
+use crate::analysis::ac::{AcModelInstance, AcAnalysisContext};
 use crate::devices::inductor::Inductor;
 use crate::math::linear::Stamp;
 use crate::math::unit::ReactanceConvert;
@@ -8,7 +8,7 @@ use crate::state::CircuitState;
 use num_complex::Complex;
 use num_traits::One;
 
-impl AcAnalysis for Inductor {
+impl AcModelInstance for Inductor {
     fn load_ac(
         &self,
         _circuit_states: &CircuitState<Complex<f64>>,

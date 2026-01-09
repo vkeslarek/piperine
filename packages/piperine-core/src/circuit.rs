@@ -1,70 +1,76 @@
-use crate::analysis::ac::AcAnalysisContext;
-use crate::analysis::transient::TransientAnalysisContext;
-use crate::devices::capacitor::spec::CapacitorSpec;
-use crate::devices::diode::spec::DiodeSpec;
-use crate::devices::inductor::spec::InductorSpec;
-use crate::devices::resistor::spec::ResistorSpec;
-use crate::devices::voltage_source::spec::VoltageSourceSpec;
-use crate::devices::{AnyModel, Component, ComponentSpec, ModelResolver};
-use crate::math::linear::Stamp;
-use crate::math::param::{IntoOptionalParameter, IntoParameter};
-use crate::math::unit::{Capacitance, Inductance, Resistance, Voltage};
-use crate::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
+use crate::analysis::dc::DcSolver;
+use crate::devices::capacitor::Capacitor;
+use crate::devices::diode::Diode;
+use crate::devices::resistor::Resistor;
+use crate::devices::voltage_source::VoltageSource;
+use crate::devices::{AnyModel, Component};
+use crate::math::unit::{Capacitance, Resistance, Voltage};
+use crate::netlist::{IntoNodeIdentifier, Netlist};
 use crate::solver::Context;
-use crate::state::CircuitState;
-use num_complex::Complex;
+use crate::solver::dc::DcSolverImpl;
+use crate::util::AsAny;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub struct CircuitSpec {
+pub struct Circuit {
     title: String,
+    netlist: Netlist,
     models: HashMap<String, Arc<dyn AnyModel>>,
-    components: HashMap<String, Box<dyn ComponentSpec>>,
+    components: HashMap<String, Box<dyn Component>>,
 }
 
-impl CircuitSpec {
-    pub fn new(title: String) -> Self {
+impl Circuit {
+    pub fn new(title: &str) -> Self {
         Self {
-            title,
+            title: title.to_string(),
+            netlist: Netlist::new(),
             models: HashMap::new(),
             components: HashMap::new(),
         }
     }
 
-    pub fn insert_get<B: ComponentSpec>(
-        &mut self,
-        name: &str,
-        component: impl ComponentSpec,
-    ) -> Option<&mut B> {
+    pub fn insert_get<B: Component>(&mut self, name: &str, component: B) -> &mut B {
         let name_str = name.to_string();
 
         self.components
             .insert(name_str.clone(), Box::new(component));
 
-        self.components
-            .get_mut(&name_str)
-            .and_then(|b| b.as_any_mut().downcast_mut::<B>())
+        let boxed = self.components.get_mut(&name_str).unwrap();
+
+        // We get the &mut dyn Any from the component
+        let any_mut = boxed.as_any_mut();
+
+        // Attempt the downcast
+        match any_mut.downcast_mut::<B>() {
+            Some(concrete) => concrete,
+            None => {
+                panic!(
+                    "Downcast failed for component '{}'. Expected type {}, but found something else.",
+                    name_str,
+                    std::any::type_name::<B>()
+                );
+            }
+        }
     }
 
     pub fn model(&mut self, name: &str, model: impl AnyModel) {
         self.models.insert(name.to_string(), Arc::new(model));
     }
 
-    pub fn instantiate(&self, model_resolver: &mut ModelResolver) -> crate::error::Result<Circuit> {
-        for (name, model) in self.models.iter() {
-            model_resolver.insert(name.clone(), model.clone())?;
-        }
+    pub fn netlist(&self) -> &Netlist {
+        &self.netlist
+    }
 
-        let mut netlist = Netlist::new();
-        let mut components = HashMap::new();
-        for (name, spec) in &self.components {
-            components.insert(
-                name.clone(),
-                spec.instantiate(&mut netlist, model_resolver)?,
-            );
-        }
+    pub fn components(&self) -> &HashMap<String, Box<dyn Component>> {
+        &self.components
+    }
 
-        Ok(Circuit::new(self.title.clone(), netlist, components))
+    pub fn components_mut(&mut self) -> &mut HashMap<String, Box<dyn Component>> {
+        &mut self.components
+    }
+
+    pub fn dc(self, context: Context) -> crate::error::Result<impl DcSolver> {
+        DcSolverImpl::build(self, context)
     }
 
     pub fn resistor(
@@ -72,10 +78,10 @@ impl CircuitSpec {
         name: &str,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
-        resistance: impl IntoOptionalParameter<Resistance>,
-    ) -> &mut ResistorSpec {
-        self.insert_get(name, ResistorSpec::new(name, node_p, node_n, resistance))
-            .expect("Failed to insert resistor")
+        resistance: impl Into<Option<Resistance>>,
+    ) -> &mut Resistor {
+        let instance = Resistor::new(name, node_p, node_n, resistance.into(), &mut self.netlist);
+        self.insert_get(name, instance)
     }
 
     pub fn voltage_source(
@@ -83,10 +89,10 @@ impl CircuitSpec {
         name: &str,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
-        voltage: impl IntoParameter<Voltage>,
-    ) -> &mut VoltageSourceSpec {
-        self.insert_get(name, VoltageSourceSpec::new(name, node_p, node_n, voltage))
-            .expect("Failed to insert voltage source")
+        voltage: impl Into<Voltage>,
+    ) -> &mut VoltageSource {
+        let instance = VoltageSource::new(name, node_p, node_n, voltage.into(), &mut self.netlist);
+        self.insert_get(name, instance)
     }
 
     pub fn capacitor(
@@ -94,227 +100,30 @@ impl CircuitSpec {
         name: &str,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
-        capacitance: impl IntoParameter<Capacitance>,
-    ) -> &mut CapacitorSpec {
-        self.insert_get(name, CapacitorSpec::new(name, node_p, node_n, capacitance))
-            .expect("Failed to insert capacitor")
+        capacitance: impl Into<Capacitance>,
+    ) -> &mut Capacitor {
+        let instance = Capacitor::new(name, node_p, node_n, capacitance.into(), &mut self.netlist);
+        self.insert_get(name, instance)
     }
-
-    pub fn inductor(
-        &mut self,
-        name: &str,
-        node_p: impl IntoNodeIdentifier,
-        node_n: impl IntoNodeIdentifier,
-        inductance: impl IntoParameter<Inductance>,
-    ) -> &mut InductorSpec {
-        self.insert_get(name, InductorSpec::new(name, node_p, node_n, inductance))
-            .expect("Failed to insert Inductor")
-    }
-
+    //
+    // pub fn inductor(
+    //     &mut self,
+    //     name: &str,
+    //     node_p: impl IntoNodeIdentifier,
+    //     node_n: impl IntoNodeIdentifier,
+    //     inductance: impl IntoParameter<Inductance>,
+    // ) -> &mut InductorSpec {
+    //     self.insert_get(name, InductorSpec::new(name, node_p, node_n, inductance))
+    //         .expect("Failed to insert Inductor")
+    // }
+    //
     pub fn diode(
         &mut self,
         name: &str,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
-    ) -> &mut DiodeSpec {
-        self.insert_get(name, DiodeSpec::new(name, node_p, node_n))
-            .expect("Failed to insert diode")
-    }
-}
-
-pub struct Circuit {
-    title: String,
-    netlist: Netlist,
-    components: HashMap<String, Box<dyn Component>>,
-}
-
-impl Circuit {
-    pub fn new(
-        title: String,
-        netlist: Netlist,
-        components: HashMap<String, Box<dyn Component>>,
-    ) -> Self {
-        Self {
-            title,
-            netlist,
-            components,
-        }
-    }
-
-    pub fn netlist(&self) -> &Netlist {
-        &self.netlist
-    }
-
-    pub fn build(title: &str, build_fn: fn(&mut CircuitSpec)) -> CircuitSpec {
-        let mut circuit_spec = CircuitSpec::new(title.to_string());
-        (build_fn)(&mut circuit_spec);
-        circuit_spec
-    }
-
-    pub fn update(&mut self) -> crate::error::Result<()> {
-        for (_, component) in &mut self.components {
-            component.update()?;
-        }
-
-        Ok(())
-    }
-
-    pub fn update_dc(&mut self, context: &Context) -> crate::error::Result<()> {
-        for (_, component) in &mut self.components {
-            let dc_comp = component.as_dc_mut().unwrap();
-            dc_comp.update_dc(context)?;
-        }
-
-        Ok(())
-    }
-
-    pub fn load_dc(&mut self, context: &Context) -> Vec<Stamp<CircuitReference, f64>> {
-        let mut stamps = Vec::new();
-
-        for (_, component) in &mut self.components {
-            let dc_comp = component.as_dc_mut().unwrap();
-            stamps.extend(
-                dc_comp
-                    .load_dc(context)
-                    .into_iter()
-                    .filter_map(|stamp| match stamp {
-                        Stamp::Matrix(r, c, val) => {
-                            // Only keep the stamp if NEITHER the row nor the column is ground
-                            if !r.is_ground() && !c.is_ground() {
-                                Some(Stamp::Matrix(r, c, val))
-                            } else {
-                                None
-                            }
-                        }
-                        Stamp::Rhs(r, val) => {
-                            if !r.is_ground() {
-                                Some(Stamp::Rhs(r, val))
-                            } else {
-                                None
-                            }
-                        }
-                    }),
-            );
-        }
-
-        stamps
-    }
-
-    pub fn update_transient(
-        &mut self,
-        circuit_state: &CircuitState<f64>,
-        transient_analysis_context: &TransientAnalysisContext,
-        context: &Context,
-    ) -> crate::error::Result<()> {
-        for (_, component) in &mut self.components {
-            let tran_comp = component.as_transient_mut().unwrap();
-            tran_comp.update_transient(circuit_state, transient_analysis_context, context)?;
-        }
-
-        Ok(())
-    }
-
-    pub fn load_transient(
-        &mut self,
-        circuit_state: &CircuitState<f64>,
-        transient_analysis_context: &TransientAnalysisContext,
-        context: &Context,
-    ) -> Vec<Stamp<CircuitReference, f64>> {
-        let mut stamps = Vec::new();
-
-        for (_, component) in &mut self.components {
-            let tran_comp = component.as_transient_mut().unwrap();
-            stamps.extend(
-                tran_comp
-                    .load_transient(circuit_state, transient_analysis_context, context)
-                    .into_iter()
-                    .filter_map(|stamp| match stamp {
-                        Stamp::Matrix(r, c, val) => {
-                            // Only keep the stamp if NEITHER the row nor the column is ground
-                            if !r.is_ground() && !c.is_ground() {
-                                Some(Stamp::Matrix(r, c, val))
-                            } else {
-                                None
-                            }
-                        }
-                        Stamp::Rhs(r, val) => {
-                            if !r.is_ground() {
-                                Some(Stamp::Rhs(r, val))
-                            } else {
-                                None
-                            }
-                        }
-                    }),
-            );
-        }
-
-        stamps
-    }
-
-    pub fn check_convergence(
-        &mut self,
-        circuit_state: &CircuitState<f64>,
-        transient_analysis_context: &TransientAnalysisContext,
-        context: &Context,
-    ) -> crate::error::Result<bool> {
-        for (_, component) in &mut self.components {
-            let tran_comp = component.as_transient_mut().unwrap();
-            if !tran_comp.check_convergence(circuit_state, transient_analysis_context, context) {
-                return Ok(false);
-            }
-        }
-
-        Ok(true)
-    }
-
-    pub fn update_ac(
-        &mut self,
-        circuit_states: &CircuitState<Complex<f64>>,
-        ac_analysis_context: &AcAnalysisContext,
-        context: &Context,
-    ) -> crate::error::Result<()> {
-        for (_, component) in &mut self.components {
-            let dc_comp = component.as_ac_mut().unwrap();
-            dc_comp.update_ac(circuit_states, ac_analysis_context, context)?;
-        }
-
-        Ok(())
-    }
-
-    pub fn load_ac(
-        &mut self,
-        circuit_states: &CircuitState<Complex<f64>>,
-        ac_analysis_context: &AcAnalysisContext,
-        context: &Context,
-    ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
-        let mut stamps = Vec::new();
-
-        for (_, component) in &mut self.components {
-            let dc_comp = component.as_ac_mut().unwrap();
-            stamps.extend(
-                dc_comp
-                    .load_ac(circuit_states, ac_analysis_context, context)
-                    .into_iter()
-                    .filter_map(|stamp| match stamp {
-                        Stamp::Matrix(r, c, val) => {
-                            // Only keep the stamp if NEITHER the row nor the column is ground
-                            if !r.is_ground() && !c.is_ground() {
-                                Some(Stamp::Matrix(r, c, val))
-                            } else {
-                                None
-                            }
-                        }
-                        Stamp::Rhs(r, val) => {
-                            if !r.is_ground() {
-                                Some(Stamp::Rhs(r, val))
-                            } else {
-                                None
-                            }
-                        }
-                    }),
-            );
-        }
-
-        stamps
+    ) -> &mut Diode {
+        let instance = Diode::new(name, node_p, node_n, &mut self.netlist);
+        self.insert_get(name, instance)
     }
 }

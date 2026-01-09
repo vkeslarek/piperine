@@ -4,9 +4,9 @@ pub mod dc;
 pub mod tran;
 pub mod ac;
 
-use crate::analysis::ac::{AcAnalysis, AcAnalysisContext};
+use crate::analysis::ac::{AcModelInstance, AcAnalysisContext};
 use crate::analysis::dc::DcAnalysis;
-use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext};
+use crate::analysis::transient::{TransientModelInstance, TransientAnalysisContext};
 use crate::devices::inductor::model::InductorModelType;
 use crate::devices::{Component, ComponentSpec, ModelResolver};
 use crate::math::linear::Stamp;
@@ -46,11 +46,11 @@ impl Component for Inductor {
         Some(self)
     }
 
-    fn as_transient_mut(&mut self) -> Option<&mut dyn TransientAnalysis> {
+    fn as_transient_mut(&mut self) -> Option<&mut dyn TransientModelInstance> {
         Some(self)
     }
 
-    fn as_ac_mut(&mut self) -> Option<&mut dyn AcAnalysis> {
+    fn as_ac_mut(&mut self) -> Option<&mut dyn AcModelInstance> {
         Some(self)
     }
 }

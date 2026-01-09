@@ -1,4 +1,5 @@
 use crate::analysis::ac::{AcAnalysis, AcAnalysisContext};
+use crate::analysis::dc::DcAnalysisResult;
 use crate::devices::voltage_source::VoltageSource;
 use crate::math::linear::Stamp;
 use crate::netlist::CircuitReference;
@@ -10,9 +11,9 @@ use num_traits::One;
 impl AcAnalysis for VoltageSource {
     fn load_ac(
         &self,
-        _circuit_states: &CircuitState<Complex<f64>>,
+        _: &DcAnalysisResult,
         _: &AcAnalysisContext,
-        context: &Context,
+        _: &Context,
     ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
         let ac_volt = Complex::new(1.0, 0.0);
 

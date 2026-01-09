@@ -1,16 +1,15 @@
 use crate::error::{ErrorDetail, Problem};
+use crate::netlist::CircuitReference;
 use faer::Col;
-use faer::prelude::{Solve, SparseColMat};
+use faer::prelude::Solve;
 use faer::sparse::linalg::solvers::SymbolicLu;
+use faer::sparse::{SparseColMat, Triplet};
 use faer::traits::ComplexField;
 use num_complex::Complex;
 use num_traits::{One, Zero};
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::ops::{AddAssign, Mul};
-
-use crate::netlist::CircuitReference;
-pub use faer::sparse::Triplet;
+use std::ops::{Add, AddAssign, Mul, Sub};
 
 pub trait Symbol: Clone + Eq + Hash {}
 
@@ -19,9 +18,19 @@ pub trait Element: Copy + Zero + One + AddAssign + Mul<f64, Output = Self> + Com
 impl Element for f64 {}
 impl Element for Complex<f64> {}
 
+#[derive(Debug, Clone)]
 pub enum Stamp<S: Symbol, E: Element> {
     Matrix(S, S, E),
     Rhs(S, E),
+}
+
+impl<E: Element> Stamp<CircuitReference, E> {
+    pub fn has_ground_node(&self) -> bool {
+        match self {
+            Stamp::Matrix(a, b, _) => a.is_ground() || b.is_ground(),
+            Stamp::Rhs(a, _) => a.is_ground(),
+        }
+    }
 }
 
 pub struct LinearSystem<E: Element> {
@@ -43,13 +52,7 @@ impl<E: Element> LinearSystem<E> {
         &mut self,
         symbolic: &SymbolicMatrix<S>,
         stamps: Vec<Stamp<S, E>>,
-        gmin: f64,
     ) {
-        for &index in symbolic.mapping.values() {
-            self.triplets
-                .push(Triplet::new(index, index, E::one() * gmin));
-        }
-
         for stamp in stamps {
             match stamp {
                 Stamp::Matrix(r, c, val) => {
@@ -71,7 +74,7 @@ impl<E: Element> LinearSystem<E> {
     pub fn solve_with_backend<S: Symbol>(
         self,
         symbolic: &SymbolicMatrix<S>,
-    ) -> crate::error::Result<HashMap<S, E>> {
+    ) -> crate::error::Result<Col<E>> {
         let a = SparseColMat::try_new_from_triplets(self.size, self.size, &self.triplets).map_err(
             |err| ErrorDetail {
                 title: "Problem assembling the space matrix".to_string(),
@@ -97,14 +100,7 @@ impl<E: Element> LinearSystem<E> {
             problems: vec![Problem::FaerLuError(err)],
         })?;
 
-        let sol = lu.solve(&b);
-
-        let mut ret: HashMap<S, E> = HashMap::new();
-        for (reference, index) in &symbolic.mapping {
-            ret.insert(reference.clone(), sol[*index]);
-        }
-
-        Ok(ret)
+        Ok(lu.solve(&b))
     }
 }
 

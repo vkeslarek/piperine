@@ -12,7 +12,6 @@ pub enum NodeIdentifier {
 impl NodeIdentifier {
     pub fn is_ground(&self) -> bool {
         match self {
-            NodeIdentifier::Named(name) => name.to_uppercase() == "GND",
             NodeIdentifier::Gnd => true,
             _ => false,
         }

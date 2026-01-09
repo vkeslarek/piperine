@@ -1,21 +1,31 @@
-use crate::analysis::dc::DcAnalysis;
+use crate::analysis::dc::{DcAnalysis, DcCircuitState};
 use crate::devices::diode::Diode;
 use crate::math::linear::Stamp;
 use crate::netlist::CircuitReference;
 use crate::solver::Context;
 
 impl DcAnalysis for Diode {
-    fn load_dc(&self, _: &Context) -> Vec<Stamp<CircuitReference, f64>> {
-        let g_leak = 1e-9; // 1 Giga-Ohm leakage path (Conductance)
+    fn update_dc(&mut self, state: &DcCircuitState, context: &Context) -> crate::error::Result<()> {
+        self.model
+            .clone()
+            .update_linearization(self, state, context);
+        Ok(())
+    }
 
+    fn load_dc(&self, _: &DcCircuitState, _: &Context) -> Vec<Stamp<CircuitReference, f64>> {
+        let g = self.g_eq.value;
+        let i_rhs = self.i_eq.value;
+
+        // MNA Stamps for a Conductor + Current Source in parallel
         vec![
-            // Place the fixed conductance in the matrix
-            Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), g_leak),
-            Stamp::Matrix(self.node_minus.clone(), self.node_minus.clone(), g_leak),
-            Stamp::Matrix(self.node_plus.clone(), self.node_minus.clone(), -g_leak),
-            Stamp::Matrix(self.node_minus.clone(), self.node_plus.clone(), -g_leak),
-            // NO RHS: Passive components have no current source I_eq in a fixed-G model.
-            // This effectively sets the initial guess for the diode current to 0.
+            // Matrix: Conductance Terms (Similar to Resistor)
+            Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), g),
+            Stamp::Matrix(self.node_minus.clone(), self.node_minus.clone(), g),
+            Stamp::Matrix(self.node_plus.clone(), self.node_minus.clone(), -g),
+            Stamp::Matrix(self.node_minus.clone(), self.node_plus.clone(), -g),
+            // RHS Vector: Current Source Terms
+            Stamp::Rhs(self.node_plus.clone(), -i_rhs),
+            Stamp::Rhs(self.node_minus.clone(), i_rhs),
         ]
     }
 }

@@ -1,32 +1,16 @@
+mod op;
+
 use crate::analysis::ac::AcAnalysisContext;
 use crate::analysis::transient::{TransientAnalysisContext, TransientAnalysisOptions};
 use crate::circuit::Circuit;
 use crate::error::ErrorDetail;
 use crate::math::linear::{LinearSystem, Stamp, SymbolicMatrix};
-use crate::math::unit::{Conductance, Frequency, UnitExt};
+use crate::math::unit::{Conductance, Frequency, Resistance, UnitExt};
 use crate::netlist::CircuitReference;
 use crate::state::CircuitState;
 use num_complex::Complex;
 use num_traits::real::Real;
 use std::collections::HashMap;
-
-pub struct Context {
-    pub gmin: Conductance,
-    pub reltol: f64,
-    pub abstol: f64,
-    pub vntol: f64,
-}
-
-impl Default for Context {
-    fn default() -> Self {
-        Self {
-            gmin: 1.0.pS(),
-            reltol: 1e-3,
-            abstol: 1e-12,
-            vntol: 1e-6,
-        }
-    }
-}
 
 pub struct Solver {
     circuit: Circuit,

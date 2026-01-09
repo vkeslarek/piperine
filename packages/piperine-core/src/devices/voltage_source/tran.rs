@@ -1,4 +1,6 @@
-use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext};
+use crate::analysis::transient::{
+    TransientAnalysis, TransientAnalysisContext, TransientCircuitState,
+};
 use crate::devices::voltage_source::VoltageSource;
 use crate::math::linear::Stamp;
 use crate::math::unit::UnitExt;
@@ -9,9 +11,9 @@ use crate::state::CircuitState;
 impl TransientAnalysis for VoltageSource {
     fn update_transient(
         &mut self,
-        circuit_states: &CircuitState<f64>,
+        _: &TransientCircuitState,
         transient_analysis_context: &TransientAnalysisContext,
-        context: &Context,
+        _: &Context,
     ) -> crate::error::Result<()> {
         let t = transient_analysis_context.time;
 
@@ -27,7 +29,7 @@ impl TransientAnalysis for VoltageSource {
 
     fn load_transient(
         &self,
-        _: &CircuitState<f64>,
+        circuit_states: &TransientCircuitState,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {

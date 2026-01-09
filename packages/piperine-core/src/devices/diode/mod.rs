@@ -1,58 +1,75 @@
-pub mod ac;
-pub mod dc;
-pub mod model;
-pub mod spec;
-pub mod tran;
-
-use crate::analysis::ac::AcAnalysis;
-use crate::analysis::dc::DcAnalysis;
-use crate::analysis::transient::TransientAnalysis;
-use crate::devices::diode::model::DiodeModelType;
-use crate::devices::{Component, ComponentSpec};
-use crate::math::param::{IntoParameter, SampleOptional};
-use crate::math::unit::{Conductance, Current, Ratio, UnitExt, Voltage};
-use crate::netlist::{CircuitReference, IntoNodeIdentifier};
-use num_complex::ComplexFloat;
-use num_traits::Zero;
 use std::any::Any;
+use crate::analysis::dc::DcAnalysis;
+use crate::devices::Component;
+use crate::devices::diode::model::{DiodeModel, DiodeModelType};
+use crate::math::unit::{Conductance, Current, Temperature, UnitExt};
+use crate::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
+use crate::util::AsAny;
 use std::sync::Arc;
 
-#[derive(Debug)]
-pub struct Diode {
-    pub name: String,
-    pub model: Arc<DiodeModelType>,
-    pub node_plus: CircuitReference,
-    pub node_minus: CircuitReference,
-    pub saturation_current: Current,
-    pub emission_coefficient: Ratio,
-    pub g_eq: Conductance,
-    pub i_eq: Current,
+mod dc;
+mod model;
 
-    // CHANGE HERE: Separate new guess from old linearization point
-    pub v_new: Voltage,        // The raw guess from the matrix (k)
-    pub v_old: Voltage,        // The limited voltage from the previous iteration (k-1)
-    pub v_guess: Voltage,      // The raw input from the matrix solver (Iteration K)
-    pub v_linearized: Voltage, // The safe, limited voltage we used last time (Iteration K-1)
+#[derive(Clone)]
+pub struct Diode {
+    name: String,
+    model: Arc<dyn DiodeModelType>,
+    node_plus: CircuitReference,
+    node_minus: CircuitReference,
+
+    pub temp: Option<Temperature>,
+
+    // Runtime State (Calculated during linearization)
+    pub g_eq: Conductance, // Dynamic Conductance (gd = dI/dV)
+    pub i_eq: Current,     // Equivalent Current Source offset
+}
+
+impl Diode {
+    pub fn new(
+        name: &str,
+        node_p: impl IntoNodeIdentifier,
+        node_n: impl IntoNodeIdentifier,
+        netlist: &mut Netlist,
+    ) -> Self {
+        Self {
+            name: name.to_string(),
+            model: Arc::new(DiodeModel::default()),
+            node_plus: netlist.connect_node(node_p.into()),
+            node_minus: netlist.connect_node(node_n.into()),
+            temp: None,
+            // Initial guess: Start as a very small conductance (almost open)
+            g_eq: 0.0.pS(),
+            i_eq: 0.0.A(),
+        }
+    }
+
+    pub fn with_model(&mut self, model: Arc<dyn DiodeModelType>) -> &mut Self {
+        self.model = model;
+        self
+    }
+}
+
+// Standard Boilerplate
+impl AsAny for Diode {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 impl Component for Diode {
     fn name(&self) -> String {
         self.name.clone()
     }
-
-    fn update(&mut self) -> crate::error::Result<()> {
-        self.model.clone().update(self)
-    }
-
-    fn as_dc_mut(&mut self) -> Option<&mut dyn DcAnalysis> {
+    fn as_dc(&mut self) -> Option<&mut dyn DcAnalysis> {
         Some(self)
     }
-
-    fn as_transient_mut(&mut self) -> Option<&mut dyn TransientAnalysis> {
-        Some(self)
+    fn as_ac(&mut self) -> Option<&mut dyn crate::analysis::ac::AcAnalysis> {
+        None
     }
-
-    fn as_ac_mut(&mut self) -> Option<&mut dyn AcAnalysis> {
-        Some(self)
+    fn as_transient(&mut self) -> Option<&mut dyn crate::analysis::transient::TransientAnalysis> {
+        None
     }
 }

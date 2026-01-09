@@ -1,78 +1,107 @@
+use crate::analysis::dc::DcCircuitState;
 use crate::devices::Model;
 use crate::devices::diode::Diode;
-use crate::math::unit::{Conductance, Siemens, UnitExt};
-use num_complex::ComplexFloat;
+use crate::math::unit::{Current, Temperature, UnitExt, Voltage};
+use crate::solver::Context;
+use crate::util::AsAny;
+use std::any::Any;
 
-pub type DiodeModelType = dyn Model<ComponentType = Diode> + 'static;
-
-#[derive(Debug)]
-pub struct DiodeShockleyModel {
-    pub vt: f64, // Thermal voltage
+pub trait DiodeModelType: Model<ComponentType = Diode> {
+    fn update_linearization(
+        &self,
+        component: &mut Diode,
+        state: &DcCircuitState,
+        context: &Context,
+    );
 }
 
-impl DiodeShockleyModel {
-    pub fn new() -> Self {
-        Self { vt: 0.02585 } // ~25.85mV at 300K
+#[derive(Debug)]
+pub struct DiodeModel {
+    pub name: String,
+    pub is: Current,       // Saturation Current
+    pub n: f64,            // Emission Coefficient
+    pub tnom: Temperature, // Nominal Temperature
+}
+
+impl Default for DiodeModel {
+    fn default() -> Self {
+        Self {
+            name: "DefaultDiode".to_string(),
+            is: 1e-14.A(),
+            n: 1.0,
+            tnom: 27.0.deg_C(),
+        }
     }
 }
 
-impl Model for DiodeShockleyModel {
+impl Model for DiodeModel {
     type ComponentType = Diode;
+}
 
-    fn update(&self, diode: &mut Diode) -> crate::error::Result<()> {
-        let nvt = diode.emission_coefficient.value * self.vt;
-        let is = diode.saturation_current.value; // Complex, use .re
+impl AsAny for DiodeModel {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
 
-        // 1. Retrieve the two DISTINCT voltages
-        let v_new = diode.v_guess.value; // Raw 5V guess
-        let v_old = diode.v_linearized.value; // Safe 0.16V from previous step
+impl DiodeModelType for DiodeModel {
+    fn update_linearization(
+        &self,
+        component: &mut Diode,
+        state: &DcCircuitState,
+        context: &Context,
+    ) {
+        // 1. What the Linear Solver suggested (Raw Step)
+        let v_anode_new = state.get_value(&component.node_plus, 0).unwrap_or(0.0);
+        let v_cathode_new = state.get_value(&component.node_minus, 0).unwrap_or(0.0);
+        let v_d_proposed = v_anode_new - v_cathode_new;
 
-        // if !v_new.is_finite() {
-        //     // If the solver blew up, do not corrupt the model state.
-        //     // Stick to the old safe value or try a small step.
-        //     eprintln!("Warning: Solver returned non-finite voltage for {}. Retaining v_old.", diode.name);
-        //     // Returning early keeps v_linearized, g_eq, and i_eq at their last known good values.
-        //     // This often allows the solver to recover in the next time step (if transient).
-        //     return Ok(());
-        // }
+        // 2. What we used in the PREVIOUS iteration (The Guess)
+        // Note: You need to make sure your state stores the values
+        // from the iteration BEFORE the solver was called.
+        let v_anode_old = state.get_value(&component.node_plus, 1).unwrap_or(0.0);
+        let v_cathode_old = state.get_value(&component.node_minus, 1).unwrap_or(0.0);
+        let v_d_old = v_anode_old - v_cathode_old;
 
-        // 2. Critical Voltage
-        let vcrit = nvt * (nvt / (std::f64::consts::SQRT_2 * is)).ln();
+        // 3. Simple Damping Logic (Limit step to 2*Vt ≈ 52mV)
+        let vt = 0.02585; // Thermal voltage at room temp
+        let max_step = 2.0 * vt;
 
-        // 3. PnJLim: Compare v_new vs v_old
-        // Since they are different variables, (v_new - v_old) is now 4.84V, NOT 0.0!
-        let vd_limited = if v_new > vcrit && (v_new - v_old).abs() > (2.0 * nvt) {
-            let arg = 1.0 + (v_new - v_old) / nvt;
-            if arg > 0.0 {
-                // This dampens the step: 5V -> ~0.3V
-                v_old + nvt * arg.ln()
+        let v_d = if (v_d_proposed - v_d_old).abs() > max_step {
+            if v_d_proposed > v_d_old {
+                v_d_old + max_step // Clamp the rise
             } else {
-                vcrit
-            }
-        } else if v_new < -vcrit {
-            if v_new < v_old - 2.0 * nvt {
-                v_old - 2.0 * nvt
-            } else {
-                v_new
+                v_d_old - max_step // Clamp the fall
             }
         } else {
-            v_new
+            v_d_proposed // Step is small enough, accept it
         };
 
-        // 4. Physics using the LIMITED voltage
-        let exp_term = (vd_limited / nvt).exp();
-        let id = is * (exp_term - 1.0);
-        let gd = (is / nvt) * exp_term;
+        // 4. Calculate Conductance (g_d) and Current (i_d)
+        let nvt = self.n * vt;
+        let arg = v_d / nvt;
 
-        diode.g_eq = gd.S();
-        diode.i_eq = (id - gd * vd_limited).A();
+        // Shockley Equation with protection against float overflow
+        let (i_d, g_d) = if arg > 50.0 {
+            // Very high bias - use linear approximation to prevent Infinity
+            let ev_limit = 50.0f64.exp();
+            let g = (self.is.value / nvt) * ev_limit;
+            let i = self.is.value * (ev_limit - 1.0) + g * (v_d - 50.0 * nvt);
+            (i, g)
+        } else if arg > -50.0 {
+            let ev = arg.exp();
+            let i = self.is.value * (ev - 1.0);
+            let g = (self.is.value / nvt) * ev;
+            (i, g)
+        } else {
+            (-self.is.value, context.gmin.value)
+        };
 
-        // 5. COMMIT the limited voltage.
-        // This saves the "safe" point (e.g., 0.3V) so the next iteration starts from there.
-        diode.v_linearized = vd_limited.V();
-
-        // println!("{:?}", diode);
-
-        Ok(())
+        // 5. Calculate RHS Source (i_eq = i_actual - g_d * v_d)
+        component.g_eq = (g_d + context.gmin.value).S();
+        component.i_eq = (i_d - g_d * v_d).A();
     }
 }
