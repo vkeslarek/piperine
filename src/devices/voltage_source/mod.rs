@@ -3,16 +3,40 @@ pub mod dc;
 pub mod model;
 pub mod tran;
 
-use std::any::Any;
 use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::transient::TransientAnalysis;
 use crate::devices::Component;
 use crate::devices::voltage_source::model::{VoltageSourceModel, VoltageSourceModelType};
-use crate::math::unit::Voltage;
-use crate::netlist::{BranchIdentifier, CircuitReference, IntoNodeIdentifier, Netlist};
-use std::sync::Arc;
+use crate::math::unit::{Angle, Frequency, UnitExt, Voltage};
+use crate::circuit::netlist::{BranchIdentifier, CircuitReference, IntoNodeIdentifier, Netlist};
 use crate::util::AsAny;
+use std::any::Any;
+use std::sync::Arc;
+
+pub enum Waveform {
+    DC(Voltage),
+    Sine {
+        amplitude: Voltage,
+        frequency: Frequency,
+        phase: Angle,
+    },
+}
+
+impl Into<Waveform> for Voltage {
+    fn into(self) -> Waveform {
+        Waveform::DC(self)
+    }
+}
+
+impl Waveform {
+    pub fn dc_value(&self) -> Voltage {
+        match self {
+            Waveform::DC(v) => *v,
+            Waveform::Sine { amplitude, .. } => *amplitude,
+        }
+    }
+}
 
 pub struct VoltageSource {
     pub name: String,
@@ -20,6 +44,9 @@ pub struct VoltageSource {
     pub node_plus: CircuitReference,
     pub node_minus: CircuitReference,
     pub branch: CircuitReference,
+    pub waveform: Waveform,
+
+    // Runtime parameters
     pub voltage: Voltage,
 }
 
@@ -28,7 +55,7 @@ impl VoltageSource {
         name: &str,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
-        voltage: Voltage,
+        waveform: Waveform,
         netlist: &mut Netlist,
     ) -> Self {
         Self {
@@ -40,7 +67,8 @@ impl VoltageSource {
                 component: name.to_string(),
                 name: None,
             }),
-            voltage,
+            waveform,
+            voltage: 0.0.V(),
         }
     }
 

@@ -1,7 +1,7 @@
 use crate::analysis::dc::{DcAnalysis, DcCircuitState};
 use crate::devices::resistor::Resistor;
 use crate::math::linear::Stamp;
-use crate::netlist::CircuitReference;
+use crate::circuit::netlist::CircuitReference;
 use crate::solver::Context;
 
 impl DcAnalysis for Resistor {

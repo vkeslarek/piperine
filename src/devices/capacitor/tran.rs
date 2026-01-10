@@ -3,7 +3,7 @@ use crate::analysis::transient::{
 };
 use crate::devices::capacitor::Capacitor;
 use crate::math::linear::Stamp;
-use crate::netlist::CircuitReference;
+use crate::circuit::netlist::CircuitReference;
 use crate::solver::Context;
 
 impl TransientAnalysis for Capacitor {

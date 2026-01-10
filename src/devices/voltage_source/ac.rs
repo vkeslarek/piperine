@@ -2,7 +2,7 @@ use crate::analysis::ac::{AcAnalysis, AcAnalysisContext};
 use crate::analysis::dc::DcAnalysisResult;
 use crate::devices::voltage_source::VoltageSource;
 use crate::math::linear::Stamp;
-use crate::netlist::CircuitReference;
+use crate::circuit::netlist::CircuitReference;
 use crate::solver::Context;
 use num_complex::Complex;
 use num_traits::One;

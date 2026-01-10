@@ -1,7 +1,7 @@
 use crate::circuit::Circuit;
 use crate::devices::Component;
 use crate::math::linear::Stamp;
-use crate::netlist::CircuitReference;
+use crate::circuit::netlist::CircuitReference;
 use crate::solver::Context;
 use faer::Col;
 use std::collections::{HashMap, VecDeque};

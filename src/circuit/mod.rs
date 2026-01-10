@@ -1,16 +1,21 @@
 use crate::analysis::dc::DcSolver;
+use crate::analysis::transient::{TransientAnalysisOptions, TransientSolver};
+use crate::circuit::netlist::{IntoNodeIdentifier, Netlist};
 use crate::devices::capacitor::Capacitor;
 use crate::devices::diode::Diode;
 use crate::devices::resistor::Resistor;
-use crate::devices::voltage_source::VoltageSource;
+use crate::devices::voltage_source::{VoltageSource, Waveform};
 use crate::devices::{AnyModel, Component};
-use crate::math::unit::{Capacitance, Resistance, Voltage};
-use crate::netlist::{IntoNodeIdentifier, Netlist};
+use crate::math::unit::{Capacitance, Resistance};
 use crate::solver::Context;
 use crate::solver::dc::DcSolverImpl;
+use crate::solver::transient::TransientSolverImpl;
 use crate::util::AsAny;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+pub mod netlist;
+pub mod state;
 
 pub struct Circuit {
     title: String,
@@ -73,6 +78,14 @@ impl Circuit {
         DcSolverImpl::build(self, context)
     }
 
+    pub fn transient(
+        self,
+        transient_options: TransientAnalysisOptions,
+        context: Context,
+    ) -> crate::result::Result<impl TransientSolver> {
+        TransientSolverImpl::build(self, transient_options, context)
+    }
+
     pub fn resistor(
         &mut self,
         name: &str,
@@ -89,9 +102,9 @@ impl Circuit {
         name: &str,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
-        voltage: impl Into<Voltage>,
+        waveform: impl Into<Waveform>,
     ) -> &mut VoltageSource {
-        let instance = VoltageSource::new(name, node_p, node_n, voltage.into(), &mut self.netlist);
+        let instance = VoltageSource::new(name, node_p, node_n, waveform.into(), &mut self.netlist);
         self.insert_get(name, instance)
     }
 

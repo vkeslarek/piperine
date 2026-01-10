@@ -1,11 +1,15 @@
 use crate::analysis::transient::{
     TransientAnalysis, TransientAnalysisContext, TransientCircuitState,
 };
-use crate::devices::voltage_source::VoltageSource;
+use crate::devices::voltage_source::{VoltageSource, Waveform};
 use crate::math::linear::Stamp;
-use crate::math::unit::UnitExt;
-use crate::netlist::CircuitReference;
+use crate::math::unit::{
+    Angle, AngularVelocity, Frequency, Hertz, Radian, RadianPerSecond, Ratio, UnitExt,
+};
+use crate::circuit::netlist::CircuitReference;
 use crate::solver::Context;
+use std::f64::consts::PI;
+use uom::ConversionFactor;
 
 impl TransientAnalysis for VoltageSource {
     fn update_transient(
@@ -14,15 +18,22 @@ impl TransientAnalysis for VoltageSource {
         transient_analysis_context: &TransientAnalysisContext,
         _: &Context,
     ) -> crate::result::Result<()> {
-        let t = transient_analysis_context.time;
+        let voltage = match self.waveform {
+            Waveform::DC(value) => value,
+            Waveform::Sine {
+                amplitude,
+                frequency,
+                phase,
+            } => {
+                let t = transient_analysis_context.time;
+                let omega: AngularVelocity = (frequency * Angle::new::<Radian>(2.0 * PI)).into();
+                let phase_ratio: Ratio = phase.into();
 
-        // Configuration: 5V Amplitude, 500Hz Frequency
-        let amplitude = 5.0.V();
-        let frequency = 500.0.Hz(); // 1 / 0.002
+                amplitude * (omega * t + phase_ratio).value.sin()
+            }
+        };
 
-        // V(t) = A * sin(2 * pi * f * t)
-        let omega = 2.0 * std::f64::consts::PI * frequency;
-        self.voltage = amplitude * (omega * t).value.sin();
+        self.voltage = voltage;
         Ok(())
     }
 

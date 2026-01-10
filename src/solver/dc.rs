@@ -1,14 +1,15 @@
 use crate::analysis::dc::{DcAnalysis, DcAnalysisResult, DcCircuitState, DcSolver};
 use crate::circuit::Circuit;
 use crate::error::Error;
-use crate::math::linear::{LinearSystem, Stamp, SymbolicMatrix};
-use crate::netlist::CircuitReference;
+use crate::math::faer::{FaerLinearSystem, FaerSymbolicMatrix};
+use crate::math::linear::{Stamp, LinearSystem, SymbolicMatrix};
+use crate::circuit::netlist::CircuitReference;
 use crate::solver::Context;
 
 pub struct DcSolverImpl {
     circuit: Circuit,
     context: Context,
-    symbolic_matrix: SymbolicMatrix<CircuitReference>,
+    symbolic_matrix: FaerSymbolicMatrix<CircuitReference>,
     state: DcCircuitState,
 }
 
@@ -19,7 +20,7 @@ impl DcSolver for DcSolverImpl {
         let mut zero_state = DcCircuitState::new(std::collections::HashMap::new(), 0, 2);
         let stamps = Self::linearize_circuit(&mut circuit, &mut zero_state, &context)?;
 
-        let symbolic_matrix = SymbolicMatrix::new(symbols, stamps)?;
+        let symbolic_matrix = FaerSymbolicMatrix::new(symbols, stamps)?;
 
         let state = DcCircuitState::new(symbolic_matrix.mapping.clone(), symbolic_matrix.size, 2);
 
@@ -36,7 +37,8 @@ impl DcSolver for DcSolverImpl {
             let stamps =
                 Self::linearize_circuit(&mut self.circuit, &mut self.state, &self.context)?;
 
-            let mut linear_system = LinearSystem::new(self.symbolic_matrix.size());
+            let mut linear_system: FaerLinearSystem<CircuitReference, f64> =
+                FaerLinearSystem::new(self.symbolic_matrix.size());
             linear_system.apply_stamps(&self.symbolic_matrix, stamps);
 
             let new_values = linear_system.solve_with_backend(&self.symbolic_matrix)?;
@@ -56,7 +58,7 @@ impl DcSolver for DcSolverImpl {
                 println!("Solved in {} iterations", iteration);
                 return Ok(DcAnalysisResult {
                     values: new_values,
-                    mapping: self.symbolic_matrix.mapping.clone(),
+                    mapping: self.symbolic_matrix.mapping().clone(),
                 });
             }
 

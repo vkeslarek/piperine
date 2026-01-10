@@ -1,30 +1,18 @@
-use crate::error::Error;
-use crate::netlist::CircuitReference;
-use faer::Col;
-use faer::prelude::Solve;
-use faer::sparse::linalg::solvers::SymbolicLu;
-use faer::sparse::{SparseColMat, Triplet};
-use faer::traits::ComplexField;
-use num_complex::Complex;
-use num_traits::{One, Zero};
+use crate::circuit::netlist::CircuitReference;
+use crate::math::num::Field;
+use crate::math::vector::Vector;
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::ops::{Add, AddAssign, Mul, Sub};
 
 pub trait Symbol: Clone + Eq + Hash {}
 
-pub trait Element: Copy + Zero + One + AddAssign + Mul<f64, Output = Self> + ComplexField {}
-
-impl Element for f64 {}
-impl Element for Complex<f64> {}
-
 #[derive(Debug, Clone)]
-pub enum Stamp<S: Symbol, E: Element> {
+pub enum Stamp<S: Symbol, E: Field> {
     Matrix(S, S, E),
     Rhs(S, E),
 }
 
-impl<E: Element> Stamp<CircuitReference, E> {
+impl<E: Field> Stamp<CircuitReference, E> {
     pub fn has_ground_node(&self) -> bool {
         match self {
             Stamp::Matrix(a, b, _) => a.is_ground() || b.is_ground(),
@@ -33,125 +21,20 @@ impl<E: Element> Stamp<CircuitReference, E> {
     }
 }
 
-pub struct LinearSystem<E: Element> {
-    pub triplets: Vec<Triplet<usize, usize, E>>,
-    pub b_vec: Vec<E>,
-    pub size: usize,
-}
+pub trait LinearSystem<S: Symbol, E: Field> {
+    type VectorType: Vector<E>;
+    type SymbolicType: SymbolicMatrix<S>;
 
-impl<E: Element> LinearSystem<E> {
-    pub fn new(size: usize) -> Self {
-        Self {
-            triplets: Vec::with_capacity(size * 4),
-            b_vec: vec![E::zero(); size],
-            size,
-        }
-    }
-
-    pub fn apply_stamps<S: Symbol>(
-        &mut self,
-        symbolic: &SymbolicMatrix<S>,
-        stamps: Vec<Stamp<S, E>>,
-    ) {
-        for stamp in stamps {
-            match stamp {
-                Stamp::Matrix(r, c, val) => {
-                    if let (Some(&ri), Some(&ci)) =
-                        (symbolic.mapping.get(&r), symbolic.mapping.get(&c))
-                    {
-                        self.triplets.push(Triplet::new(ri, ci, val));
-                    }
-                }
-                Stamp::Rhs(r, val) => {
-                    if let Some(&ri) = symbolic.mapping.get(&r) {
-                        self.b_vec[ri] += val;
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn solve_with_backend<S: Symbol>(
+    fn new(size: usize) -> Self;
+    fn apply_stamps(&mut self, symbolic: &Self::SymbolicType, stamps: Vec<Stamp<S, E>>);
+    fn solve_with_backend(
         self,
-        symbolic: &SymbolicMatrix<S>,
-    ) -> crate::result::Result<Col<E>> {
-        let a = SparseColMat::try_new_from_triplets(self.size, self.size, &self.triplets).map_err(
-            |err| Error::cause("Problem assembling the space matrix", "The library threw an error while trying to create the LHS of the sparse matrix", Box::new(err)) 
-        )?;
-
-        let b = Col::from_fn(self.size, |i| self.b_vec[i]);
-
-        // REUSE Symbolic
-        let lu = faer::sparse::linalg::solvers::Lu::try_new_with_symbolic(
-            symbolic.pattern.clone(),
-            a.as_ref(),
-        )
-        .map_err(|err| {
-            Error::cause(
-                "Problem assembling the space matrix",
-                "The library threw an error while trying to create the RHS of the sparse matrix",
-                Box::new(err),
-            )
-        })?;
-
-        Ok(lu.solve(&b))
-    }
+        symbolic: &Self::SymbolicType,
+    ) -> crate::result::Result<Self::VectorType>;
 }
 
-pub struct SymbolicMatrix<S: Symbol> {
-    pub mapping: HashMap<S, usize>,
-    pub size: usize,
-    pub pattern: SymbolicLu<usize>,
-}
+pub trait SymbolicMatrix<S: Symbol> {
+    fn size(&self) -> usize;
 
-impl<T: Symbol> SymbolicMatrix<T> {
-    pub fn new<D: Element>(
-        symbols: Vec<T>,
-        stamps: Vec<Stamp<T, D>>,
-    ) -> crate::result::Result<Self> {
-        let mut mapping = HashMap::new();
-        let mut index = 0;
-
-        for symbol in symbols {
-            mapping.insert(symbol, index);
-            index += 1;
-        }
-
-        let mut triplets = Vec::new();
-
-        for stamp in stamps {
-            if let Stamp::Matrix(a, b, val) = stamp {
-                let a_mapped = mapping.get(&a).unwrap();
-                let b_mapped = mapping.get(&b).unwrap();
-                triplets.push(Triplet::new(*a_mapped, *b_mapped, val));
-            }
-        }
-
-        let size = mapping.len();
-        let mat = SparseColMat::try_new_from_triplets(size, size, &triplets).map_err(|err| {
-            Error::cause(
-                "Problem assembling the space matrix",
-                "The library threw an error while trying to create the symbolic matrix",
-                Box::new(err),
-            )
-        })?;
-
-        let pattern = SymbolicLu::try_new(mat.symbolic()).map_err(|err| {
-            Error::cause(
-                "Problem assembling the space matrix",
-                "The library threw an error while trying to create the symbolic matrix",
-                Box::new(err),
-            )
-        })?;
-
-        Ok(Self {
-            mapping,
-            size,
-            pattern,
-        })
-    }
-
-    pub fn size(&self) -> usize {
-        self.size
-    }
+    fn mapping(&self) -> &HashMap<S, usize>;
 }

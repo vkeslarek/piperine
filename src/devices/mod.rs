@@ -7,7 +7,7 @@ use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::transient::TransientAnalysis;
 use crate::error::Error;
-use crate::netlist::Netlist;
+use crate::circuit::netlist::Netlist;
 use crate::util::AsAny;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};

@@ -10,7 +10,8 @@ pub trait DiodeModelType: Model<ComponentType = Diode> {
     fn update_linearization(
         &self,
         component: &mut Diode,
-        state: &DcCircuitState,
+        v_now: f64,
+        v_old: f64,
         context: &Context,
     );
 }
@@ -51,20 +52,17 @@ impl DiodeModelType for DiodeModel {
     fn update_linearization(
         &self,
         component: &mut Diode,
-        state: &DcCircuitState,
+        v_now: f64,
+        v_old: f64,
         context: &Context,
     ) {
         // 1. What the Linear Solver suggested (Raw Step)
-        let v_anode_new = state.get_value(&component.node_plus, 0).unwrap_or(0.0);
-        let v_cathode_new = state.get_value(&component.node_minus, 0).unwrap_or(0.0);
-        let v_d_proposed = v_anode_new - v_cathode_new;
+        let v_d_proposed = v_now;
 
         // 2. What we used in the PREVIOUS iteration (The Guess)
         // Note: You need to make sure your state stores the values
         // from the iteration BEFORE the solver was called.
-        let v_anode_old = state.get_value(&component.node_plus, 1).unwrap_or(0.0);
-        let v_cathode_old = state.get_value(&component.node_minus, 1).unwrap_or(0.0);
-        let v_d_old = v_anode_old - v_cathode_old;
+        let v_d_old = v_old;
 
         // 3. Simple Damping Logic (Limit step to 2*Vt ≈ 52mV)
         let vt = 0.02585; // Thermal voltage at room temp

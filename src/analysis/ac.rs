@@ -1,7 +1,7 @@
 use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
 use crate::math::linear::Stamp;
 use crate::math::unit::Frequency;
-use crate::netlist::CircuitReference;
+use crate::circuit::netlist::CircuitReference;
 use crate::solver::Context;
 use num_complex::Complex;
 

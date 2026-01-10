@@ -14,6 +14,8 @@ pub type Inductance = uom::si::f64::Inductance;
 pub type Length = uom::si::f64::Length;
 pub type Conductance = uom::si::f64::ElectricalConductance;
 pub type Frequency = uom::si::f64::Frequency;
+pub type Angle = uom::si::f64::Angle;
+pub type AngularVelocity = uom::si::f64::AngularVelocity;
 pub type Temperature = uom::si::f64::ThermodynamicTemperature;
 pub type TemperatureInterval = uom::si::f64::TemperatureInterval;
 pub type Ratio = uom::si::f64::Ratio;
@@ -62,6 +64,9 @@ pub type Celsius = uom::si::thermodynamic_temperature::degree_celsius;
 pub type DeltaCelsius = uom::si::temperature_interval::degree_celsius;
 pub type Kelvin = uom::si::thermodynamic_temperature::kelvin;
 pub type DeltaKelvin = uom::si::temperature_interval::kelvin;
+pub type Radian = uom::si::angle::radian;
+pub type Degree = uom::si::angle::degree;
+pub type RadianPerSecond = uom::si::angular_velocity::radian_per_second;
 
 /*******************************************************
 SCALE METHODS EXT
@@ -121,6 +126,7 @@ pub trait UnitExt {
     fn Sec(self) -> Time;
     fn mSec(self) -> Time;
     fn uSec(self) -> Time;
+    fn deg(self) -> Angle;
 
     fn deg_C(self) -> Temperature;
     fn delta_C(self) -> TemperatureInterval;
@@ -170,6 +176,10 @@ impl UnitExt for f64 {
     }
     fn uSec(self) -> uom::si::f64::Time {
         Time::new::<Second>(self * 1e-6)
+    }
+
+    fn deg(self) -> Angle {
+        Angle::new::<Degree>(self)
     }
 
     fn deg_C(self) -> Temperature {
@@ -235,7 +245,10 @@ impl ReactanceConvert for Capacitance {
     fn to_impedance(self, freq: Frequency) -> Impedance {
         let omega = 2.0 * PI * freq;
 
-        Impedance::new::<Ohm>(Complex::new(0.0, omega.get::<Hertz>() * self.get::<Farad>()))
+        Impedance::new::<Ohm>(Complex::new(
+            0.0,
+            omega.get::<Hertz>() * self.get::<Farad>(),
+        ))
     }
 }
 

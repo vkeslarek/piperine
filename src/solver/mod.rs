@@ -1,6 +1,7 @@
 use crate::math::unit::{Conductance, Resistance, UnitExt};
 
 pub mod dc;
+pub mod transient;
 
 pub struct Context {
     pub gmin: Conductance,

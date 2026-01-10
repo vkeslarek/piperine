@@ -5,7 +5,7 @@ use crate::analysis::transient::TransientAnalysis;
 use crate::devices::Model;
 use crate::devices::voltage_source::VoltageSource;
 use crate::math::unit::{UnitExt, Voltage};
-use crate::netlist::{BranchIdentifier, CircuitReference, Netlist};
+use crate::circuit::netlist::{BranchIdentifier, CircuitReference, Netlist};
 use crate::util::AsAny;
 
 pub type VoltageSourceModelType = dyn Model<ComponentType = VoltageSource>;

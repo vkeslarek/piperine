@@ -1,0 +1,31 @@
+use faer::traits::ComplexField;
+use num_complex::Complex;
+use num_traits::{One, Zero};
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::process::Output;
+
+pub trait Field:
+    Copy
+    + Clone
+    + PartialEq
+    + Zero
+    + One
+    + Add<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + Div<Output = Self>
+    + Neg<Output = Self>
+    + AddAssign
+    + SubAssign
+    + MulAssign
+    + DivAssign
+{
+}
+
+pub trait ScalableByReal: Mul<f64, Output = Self> {}
+
+impl Field for f64 {}
+impl ScalableByReal for f64 {}
+
+impl Field for Complex<f64> {}
+impl ScalableByReal for Complex<f64> {}

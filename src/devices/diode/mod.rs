@@ -1,14 +1,15 @@
-use std::any::Any;
 use crate::analysis::dc::DcAnalysis;
 use crate::devices::Component;
 use crate::devices::diode::model::{DiodeModel, DiodeModelType};
 use crate::math::unit::{Conductance, Current, Temperature, UnitExt};
-use crate::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
+use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
 use crate::util::AsAny;
+use std::any::Any;
 use std::sync::Arc;
 
 mod dc;
 mod model;
+mod transient;
 
 #[derive(Clone)]
 pub struct Diode {
@@ -70,6 +71,6 @@ impl Component for Diode {
         None
     }
     fn as_transient(&mut self) -> Option<&mut dyn crate::analysis::transient::TransientAnalysis> {
-        None
+        Some(self)
     }
 }

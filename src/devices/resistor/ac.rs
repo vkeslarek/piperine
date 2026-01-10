@@ -3,7 +3,7 @@ use crate::analysis::dc::DcAnalysisResult;
 use crate::devices::resistor::Resistor;
 use crate::math::linear::Stamp;
 use crate::math::unit::AdmittanceConvert;
-use crate::netlist::CircuitReference;
+use crate::circuit::netlist::CircuitReference;
 use crate::solver::Context;
 use num_complex::Complex;
 

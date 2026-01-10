@@ -8,7 +8,7 @@ use crate::math::unit::{
     Conductance, Length, LinearTemperatureCoefficient, QuadraticTemperatureCoefficient, Ratio,
     Resistance, Temperature, TemperatureInterval, UnitExt,
 };
-use crate::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
+use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
 use std::sync::Arc;
 use crate::util::AsAny;
 

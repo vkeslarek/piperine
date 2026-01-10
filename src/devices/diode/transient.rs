@@ -1,13 +1,16 @@
-use crate::analysis::dc::{DcAnalysis, DcCircuitState};
+use crate::analysis::transient::{
+    TransientAnalysis, TransientAnalysisContext, TransientCircuitState,
+};
 use crate::devices::diode::Diode;
 use crate::math::linear::Stamp;
 use crate::circuit::netlist::CircuitReference;
 use crate::solver::Context;
 
-impl DcAnalysis for Diode {
-    fn update_dc(
+impl TransientAnalysis for Diode {
+    fn update_transient(
         &mut self,
-        state: &DcCircuitState,
+        state: &TransientCircuitState,
+        transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
     ) -> crate::result::Result<()> {
         let v_anode_new = state.get_value(&self.node_plus, 0).unwrap_or(0.0);
@@ -25,7 +28,12 @@ impl DcAnalysis for Diode {
         Ok(())
     }
 
-    fn load_dc(&self, _: &DcCircuitState, _: &Context) -> Vec<Stamp<CircuitReference, f64>> {
+    fn load_transient(
+        &self,
+        circuit_states: &TransientCircuitState,
+        transient_analysis_context: &TransientAnalysisContext,
+        context: &Context,
+    ) -> Vec<Stamp<CircuitReference, f64>> {
         let g = self.g_eq.value;
         let i_rhs = self.i_eq.value;
 

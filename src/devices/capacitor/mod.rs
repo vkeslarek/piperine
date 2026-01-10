@@ -10,7 +10,7 @@ use crate::devices::capacitor::model::{CapacitorModel, CapacitorModelType};
 use crate::devices::{Component, Model};
 use crate::math::param::IntoParameter;
 use crate::math::unit::Capacitance;
-use crate::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
+use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
 use crate::util::AsAny;
 use std::any::Any;
 use std::sync::Arc;

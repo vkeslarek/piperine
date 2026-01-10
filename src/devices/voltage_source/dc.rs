@@ -1,7 +1,7 @@
 use crate::analysis::dc::{DcAnalysis, DcCircuitState};
 use crate::devices::voltage_source::VoltageSource;
 use crate::math::linear::Stamp;
-use crate::netlist::CircuitReference;
+use crate::circuit::netlist::CircuitReference;
 use crate::solver::Context;
 
 impl DcAnalysis for VoltageSource {
@@ -11,7 +11,7 @@ impl DcAnalysis for VoltageSource {
             Stamp::Matrix(self.branch.clone(), self.node_minus.clone(), -1.0),
             Stamp::Matrix(self.node_plus.clone(), self.branch.clone(), 1.0),
             Stamp::Matrix(self.node_minus.clone(), self.branch.clone(), -1.0),
-            Stamp::Rhs(self.branch.clone(), self.voltage.value),
+            Stamp::Rhs(self.branch.clone(), self.waveform.dc_value().value),
         ]
     }
 }
