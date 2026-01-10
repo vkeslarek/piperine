@@ -21,3 +21,4 @@ paste = "1.0.15"
 uom = { version = "0.37.0", features = ["complex64", "f64", "autoconvert"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.22"
+ndarray = { version = "0.17.1", features = ["rayon"] }

@@ -7,15 +7,14 @@ use crate::devices::resistor::Resistor;
 use crate::devices::voltage_source::{VoltageSource, Waveform};
 use crate::devices::{AnyModel, Component};
 use crate::math::unit::{Capacitance, Resistance};
-use crate::solver::Context;
-use crate::solver::dc::DcSolverImpl;
+use crate::solver::{Context, Solver};
+use crate::solver::dc::{DcBackend, DcSolverImpl};
 use crate::solver::transient::TransientSolverImpl;
 use crate::util::AsAny;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 pub mod netlist;
-pub mod state;
 
 pub struct Circuit {
     title: String,
@@ -74,8 +73,8 @@ impl Circuit {
         &mut self.components
     }
 
-    pub fn dc(self, context: Context) -> crate::result::Result<impl DcSolver> {
-        DcSolverImpl::build(self, context)
+    pub fn dc(self, context: Context) -> crate::result::Result<Solver<DcBackend>> {
+        Solver::build(self, (), context)
     }
 
     pub fn transient(

@@ -1,96 +1,140 @@
+use crate::analysis::InitialValue;
 use crate::circuit::Circuit;
+use crate::circuit::netlist::CircuitReference;
 use crate::devices::Component;
 use crate::math::linear::Stamp;
-use crate::circuit::netlist::CircuitReference;
-use crate::solver::Context;
+use crate::solver::{AnalysisResult, CircuitState, Context};
 use faer::Col;
-use std::collections::{HashMap, VecDeque};
+use ndarray::{Array1, Array2, ArrayView1, ArrayViewMut1, Zip, s};
+use std::collections::HashMap;
 
 pub struct DcCircuitState {
     pub mapping: HashMap<CircuitReference, usize>,
-    pub values: VecDeque<Col<f64>>,
-    pub num_symbols: usize,
-    pub size: usize,
+    pub values: Array2<f64>,
+    is_branch: Array1<bool>,
 }
 
 impl DcCircuitState {
-    pub fn new(mapping: HashMap<CircuitReference, usize>, num_symbols: usize, size: usize) -> Self {
+    pub fn new(
+        mapping: HashMap<CircuitReference, usize>,
+        num_symbols: usize,
+        history_depth: usize,
+    ) -> Self {
+        // 1. Pre-calculate the Branch Mask (O(N) once, instead of O(N^2) every check)
+        // We create a boolean array where index 'i' is true if mapping[i] is a Branch.
+        let mut is_branch = Array1::from_elem(num_symbols, false);
+
+        for (reference, &index) in &mapping {
+            if let CircuitReference::Branch(_) = reference {
+                if index < num_symbols {
+                    is_branch[index] = true;
+                }
+            }
+        }
+
         Self {
             mapping,
-            values: VecDeque::with_capacity(size),
-            num_symbols,
-            size,
+            // Initialize history with zeros
+            values: Array2::zeros((history_depth, num_symbols)),
+            is_branch,
         }
     }
 
-    pub fn update_guess(&mut self, new_values: Col<f64>) {
-        self.values.push_front(new_values);
-
-        while self.values.len() > self.size {
-            self.values.pop_back();
+    /// Pushes a new solution vector into history.
+    /// This acts like a sliding window: [t_0, t_-1] -> [new, t_0]
+    pub fn push(&mut self, new_values: ArrayView1<f64>) {
+        let rows = self.values.nrows();
+        if rows > 1 {
+            let (mut older, newer) = self.values.multi_slice_mut((
+                s![1..rows, ..],     // Destination
+                s![0..rows - 1, ..], // Source
+            ));
+            older.assign(&newer);
         }
+
+        // Write new values to Row 0 (Current)
+        self.values.row_mut(0).assign(&new_values);
     }
 
-    pub fn get_diff(&self, new_guess: &Col<f64>) -> Col<f64> {
-        self.values
-            .get(0)
-            .unwrap_or(&Col::zeros(new_guess.shape().0))
-            - new_guess
+    pub fn current_guess_mut(&mut self) -> ArrayViewMut1<f64> {
+        if self.values.nrows() == 0 {
+            self.values
+                .push_row(Array1::zeros(self.mapping.len()).view())
+                .unwrap()
+        }
+
+        self.values.row_mut(0)
+    }
+
+    /// Overwrites the current guess (Row 0) without shifting history.
+    /// Used during Newton-Raphson iterations.
+    pub fn update_current_guess(&mut self, new_values: ArrayView1<f64>) {
+        self.values.row_mut(0).assign(&new_values);
+    }
+
+    /// Returns: (Last Guess - New Guess)
+    pub fn get_diff(&self, new_guess: ArrayView1<f64>) -> Array1<f64> {
+        &self.values.row(0) - &new_guess
     }
 
     pub fn get_value(&self, reference: &CircuitReference, lookback: usize) -> Option<f64> {
         let index = self.mapping.get(reference)?;
-        let value = self.values.get(lookback)?;
-
-        Some(value[*index])
+        // Check bounds manually to return Option instead of panic
+        if lookback >= self.values.nrows() {
+            return None;
+        }
+        Some(self.values[[lookback, *index]])
     }
 
+    /// Vectorized SPICE convergence check.
+    /// Returns true if ALL nodes/branches are within tolerance.
     pub fn check_convergence(
         &self,
-        new_values: &Col<f64>,
+        new_values: ArrayView1<f64>,
         reltol: f64,
         vntol: f64,
         abstol: f64,
     ) -> bool {
-        // 1. Get the most recent guess (v_k) to compare against the solution (v_k+1)
-        let old_values = match self.values.back() {
-            Some(v) => v,
-            // If there's no history yet, we haven't converged
-            None => return false,
-        };
+        // Get the previous iteration's guess (Row 0)
+        let old_values = self.values.row(1);
 
-        // 2. Iterate over every entry in the solution vector (num_symbols)
-        for i in 0..self.num_symbols {
-            let old_v = old_values[i];
-            let new_v = new_values[i];
-            let diff = (new_v - old_v).abs();
+        // We use Zip to iterate through 3 arrays simultaneously:
+        // 1. Old Values
+        // 2. New Values
+        // 3. Is_Branch mask
+        // This usually compiles down to very efficient SIMD instructions.
+        Zip::from(&old_values)
+            .and(&new_values)
+            .and(&self.is_branch)
+            .all(|&old_v, &new_v, &is_branch| {
+                let diff = (new_v - old_v).abs();
 
-            // 3. Determine if this index is a Voltage or a Current
-            // This is important because 1mA is huge if you treat it like 1V,
-            // and 1uV is tiny if you treat it like 1A.
-            let abstol_to_use = if self.is_index_branch(i) {
-                abstol
-            } else {
-                vntol
-            };
+                // Select absolute tolerance based on component type
+                let abs_limit = if is_branch { abstol } else { vntol };
 
-            // 4. The SPICE Hybrid Check:
-            // Convergence is met if the change is smaller than the relative
-            // tolerance AND the absolute floor.
-            let limit = reltol * old_v.abs().max(new_v.abs()) + abstol_to_use;
+                // SPICE Formula: |new - old| < RELTOL * max(|new|, |old|) + ABSTOL
+                let limit = reltol * old_v.abs().max(new_v.abs()) + abs_limit;
 
-            if diff > limit {
-                return false;
-            }
-        }
+                diff <= limit
+            })
+    }
+}
 
-        true
+impl CircuitState for DcCircuitState {
+    type NumType = f64;
+
+    fn current_guess_mut(&mut self) -> ArrayViewMut1<Self::NumType> {
+        self.values.row_mut(0)
     }
 
-    fn is_index_branch(&self, index: usize) -> bool {
-        self.mapping
-            .iter()
-            .any(|(ref_type, &idx)| idx == index && matches!(ref_type, CircuitReference::Branch(_)))
+    fn hist_deriv(&self) -> (Self::NumType, ArrayView1<Self::NumType>) {
+        // In DC, there is no time derivative (d/dt = 0).
+        // alpha = 0, history = vector of zeros.
+        (0.0, self.values.row(0)) // Using row(0) as a dummy view of correct size
+    }
+
+    fn push(&mut self, new_values: ArrayView1<Self::NumType>) {
+        self.push(new_values);
     }
 }
 
@@ -108,12 +152,38 @@ pub trait DcAnalysis: Component {
         dc_circuit_state: &DcCircuitState,
         context: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>>;
+
+    fn initial_dc_values(&self, context: &Context) -> Vec<InitialValue> {
+        Vec::new()
+    }
 }
 
 #[derive(Debug)]
 pub struct DcAnalysisResult {
     pub values: Col<f64>,
     pub mapping: HashMap<CircuitReference, usize>,
+}
+
+impl AnalysisResult for DcAnalysisResult {
+    type NumType = f64;
+
+    fn new() -> Self {
+        Self {
+            values: faer::Col::zeros(0),
+            mapping: HashMap::new(),
+        }
+    }
+
+    fn push_converged(
+        &mut self,
+        mapping: &HashMap<CircuitReference, usize>,
+        values: ArrayView1<Self::NumType>,
+    ) {
+        // For a simple DC analysis, we just store the final result.
+        // We use our FaerToNdarray logic (the inverse) or manually build the Col.
+        self.values = faer::Col::from_fn(values.len(), |i| values[i]);
+        self.mapping = mapping.clone();
+    }
 }
 
 pub trait DcSolver {

@@ -6,7 +6,8 @@ use faer::prelude::{Solve, SparseColMat};
 use faer::sparse::Triplet;
 use faer::sparse::linalg::solvers::SymbolicLu;
 use faer::traits::ComplexField;
-use faer::{Col, Scale};
+use faer::{Col, ColRef, Scale};
+use ndarray::{Array1, ArrayView1};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
@@ -154,5 +155,15 @@ impl<S: Symbol> SymbolicMatrix<S> for FaerSymbolicMatrix<S> {
 
     fn mapping(&self) -> &HashMap<S, usize> {
         &self.mapping
+    }
+}
+
+pub trait FaerToNdarray<E> {
+    fn to_ndarray(&self) -> Array1<E>;
+}
+
+impl<E: Clone + 'static> FaerToNdarray<E> for Col<E> {
+    fn to_ndarray(&self) -> Array1<E> {
+        self.as_ref().iter().cloned().collect()
     }
 }
