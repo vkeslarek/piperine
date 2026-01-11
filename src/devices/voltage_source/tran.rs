@@ -1,20 +1,16 @@
-use crate::analysis::transient::{
-    TransientAnalysis, TransientAnalysisContext, TransientCircuitState,
-};
+use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext};
 use crate::circuit::netlist::CircuitReference;
+use crate::circuit::state::CircuitState;
 use crate::devices::voltage_source::{VoltageSource, Waveform};
 use crate::math::linear::Stamp;
-use crate::math::unit::{
-    Angle, AngularVelocity, Frequency, Hertz, Radian, RadianPerSecond, Ratio, UnitExt, Voltage,
-};
+use crate::math::unit::{Angle, AngularVelocity, Radian, Ratio, Voltage};
 use crate::solver::Context;
 use std::f64::consts::PI;
-use uom::ConversionFactor;
 
 impl TransientAnalysis for VoltageSource {
     fn update_transient(
         &mut self,
-        _: &TransientCircuitState,
+        _: &CircuitState<f64>,
         transient_analysis_context: &TransientAnalysisContext,
         _: &Context,
     ) -> crate::result::Result<()> {
@@ -57,7 +53,7 @@ impl TransientAnalysis for VoltageSource {
 
     fn load_transient(
         &self,
-        circuit_states: &TransientCircuitState,
+        circuit_states: &CircuitState<f64>,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {

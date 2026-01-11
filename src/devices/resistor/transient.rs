@@ -1,15 +1,14 @@
-use crate::analysis::transient::{
-    TransientAnalysis, TransientAnalysisContext, TransientCircuitState,
-};
+use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext};
+use crate::circuit::netlist::CircuitReference;
+use crate::circuit::state::CircuitState;
 use crate::devices::resistor::Resistor;
 use crate::math::linear::Stamp;
-use crate::circuit::netlist::CircuitReference;
 use crate::solver::Context;
 
 impl TransientAnalysis for Resistor {
     fn update_transient(
         &mut self,
-        _: &TransientCircuitState,
+        _: &CircuitState<f64>,
         _: &TransientAnalysisContext,
         context: &Context,
     ) -> crate::result::Result<()> {
@@ -19,7 +18,7 @@ impl TransientAnalysis for Resistor {
 
     fn load_transient(
         &self,
-        _: &TransientCircuitState,
+        _: &CircuitState<f64>,
         _: &TransientAnalysisContext,
         _: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {

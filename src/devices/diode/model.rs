@@ -1,4 +1,3 @@
-use crate::analysis::dc::DcCircuitState;
 use crate::devices::Model;
 use crate::devices::diode::Diode;
 use crate::math::unit::{Current, Temperature, UnitExt, Voltage};

@@ -1,20 +1,25 @@
-use crate::analysis::dc::{DcAnalysis, DcCircuitState};
+use crate::analysis::dc::DcAnalysis;
+use crate::circuit::netlist::CircuitReference;
+use crate::circuit::state::CircuitState;
 use crate::devices::diode::Diode;
 use crate::math::linear::Stamp;
-use crate::circuit::netlist::CircuitReference;
 use crate::solver::Context;
 
 impl DcAnalysis for Diode {
     fn update_dc(
         &mut self,
-        state: &DcCircuitState,
+        state: &CircuitState<f64>,
         context: &Context,
     ) -> crate::result::Result<()> {
-        let v_anode_new = state.get_value(&self.node_plus, 0).unwrap_or(0.0);
-        let v_cathode_new = state.get_value(&self.node_minus, 0).unwrap_or(0.0);
+        let v_anode_new = state.get_dependent_value(&self.node_plus, 0).unwrap_or(0.0);
+        let v_cathode_new = state
+            .get_dependent_value(&self.node_minus, 0)
+            .unwrap_or(0.0);
 
-        let v_anode_old = state.get_value(&self.node_plus, 1).unwrap_or(0.0);
-        let v_cathode_old = state.get_value(&self.node_minus, 1).unwrap_or(0.0);
+        let v_anode_old = state.get_dependent_value(&self.node_plus, 1).unwrap_or(0.0);
+        let v_cathode_old = state
+            .get_dependent_value(&self.node_minus, 1)
+            .unwrap_or(0.0);
 
         self.model.clone().update_linearization(
             self,
@@ -25,7 +30,7 @@ impl DcAnalysis for Diode {
         Ok(())
     }
 
-    fn load_dc(&self, _: &DcCircuitState, _: &Context) -> Vec<Stamp<CircuitReference, f64>> {
+    fn load_dc(&self, _: &CircuitState<f64>, _: &Context) -> Vec<Stamp<CircuitReference, f64>> {
         let g = self.g_eq.value;
         let i_rhs = self.i_eq.value;
 

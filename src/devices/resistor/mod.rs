@@ -1,21 +1,21 @@
-use std::any::Any;
 use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::transient::TransientAnalysis;
+use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
 use crate::devices::resistor::model::{ResistorModel, ResistorModelType};
 use crate::devices::{Component, Model};
 use crate::math::unit::{
     Conductance, Length, LinearTemperatureCoefficient, QuadraticTemperatureCoefficient, Ratio,
     Resistance, Temperature, TemperatureInterval, UnitExt,
 };
-use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
-use std::sync::Arc;
 use crate::util::AsAny;
+use std::any::Any;
+use std::sync::Arc;
 
 pub mod ac;
 pub mod dc;
 pub mod model;
-pub mod tran;
+pub mod transient;
 
 #[derive(Clone)]
 pub struct Resistor {

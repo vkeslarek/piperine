@@ -10,6 +10,7 @@ use std::sync::Arc;
 mod dc;
 mod model;
 mod transient;
+mod ac;
 
 #[derive(Clone)]
 pub struct Diode {

@@ -5,7 +5,7 @@ use crate::util::AsAny;
 
 pub type CapacitorModelType = dyn Model<ComponentType = Capacitor> + 'static;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CapacitorModel {}
 
 impl CapacitorModel {

@@ -1,4 +1,5 @@
-use crate::analysis::transient::{TransientAnalysisOptions, TransientSolver};
+use crate::analysis::ac::AcFrequencyAnalysisOptions;
+use crate::analysis::transient::TransientAnalysisOptions;
 use crate::circuit::netlist::{IntoNodeIdentifier, Netlist};
 use crate::devices::capacitor::Capacitor;
 use crate::devices::diode::Diode;
@@ -6,14 +7,16 @@ use crate::devices::resistor::Resistor;
 use crate::devices::voltage_source::{VoltageSource, Waveform};
 use crate::devices::{AnyModel, Component};
 use crate::math::unit::{Capacitance, Resistance};
+use crate::solver::Context;
+use crate::solver::ac::AcSolver;
 use crate::solver::dc::DcSolver;
-use crate::solver::transient::TransientSolverImpl;
-use crate::solver::{Context, SolverA};
+use crate::solver::transient::TransientSolver;
 use crate::util::AsAny;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 pub mod netlist;
+pub mod state;
 
 pub struct Circuit {
     title: String,
@@ -23,17 +26,17 @@ pub struct Circuit {
 }
 
 impl Circuit {
-    pub fn new(title: &str) -> Self {
+    pub fn new(title: impl Into<String>) -> Self {
         Self {
-            title: title.to_string(),
+            title: title.into(),
             netlist: Netlist::new(),
             models: HashMap::new(),
             components: HashMap::new(),
         }
     }
 
-    pub fn insert_get<B: Component>(&mut self, name: &str, component: B) -> &mut B {
-        let name_str = name.to_string();
+    pub fn insert_get<B: Component>(&mut self, name: impl Into<String>, component: B) -> &mut B {
+        let name_str = name.into();
 
         self.components
             .insert(name_str.clone(), Box::new(component));
@@ -56,8 +59,8 @@ impl Circuit {
         }
     }
 
-    pub fn model(&mut self, name: &str, model: impl AnyModel) {
-        self.models.insert(name.to_string(), Arc::new(model));
+    pub fn model(&mut self, name: impl Into<String>, model: impl AnyModel) {
+        self.models.insert(name.into(), Arc::new(model));
     }
 
     pub fn netlist(&self) -> &Netlist {
@@ -72,7 +75,11 @@ impl Circuit {
         &mut self.components
     }
 
-    pub fn dc(self, context: Context) -> crate::result::Result<DcSolver> {
+    pub fn ac(&mut self, context: Context) -> crate::result::Result<AcSolver> {
+        AcSolver::build(self, context)
+    }
+
+    pub fn dc(&mut self, context: Context) -> crate::result::Result<DcSolver> {
         DcSolver::build(self, context)
     }
 
@@ -80,8 +87,8 @@ impl Circuit {
         self,
         transient_options: TransientAnalysisOptions,
         context: Context,
-    ) -> crate::result::Result<impl TransientSolver> {
-        TransientSolverImpl::build(self, transient_options, context)
+    ) -> crate::result::Result<TransientSolver> {
+        TransientSolver::build(self, transient_options, context)
     }
 
     pub fn resistor(

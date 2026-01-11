@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use ndarray::Array2;
 use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
 use crate::math::linear::Stamp;
 use crate::math::unit::Frequency;
@@ -39,7 +41,16 @@ pub struct AcSweepAnalysisOptions {
 }
 
 pub struct AcAnalysisResult {
-    // TODO
+    pub mapping: HashMap<CircuitReference, usize>,
+    pub frequencies: Vec<f64>,
+    pub data: Array2<Complex<f64>>, // [Frequency_Index, Node_Index]
+}
+
+impl AcAnalysisResult {
+    pub fn get_phasor(&self, reference: &CircuitReference, freq_idx: usize) -> Option<Complex<f64>> {
+        let col = *self.mapping.get(reference)?;
+        Some(self.data[[freq_idx, col]])
+    }
 }
 
 pub trait AcAnalysisSolver {

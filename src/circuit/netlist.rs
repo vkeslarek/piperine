@@ -68,10 +68,31 @@ impl CircuitReference {
             _ => false,
         }
     }
+
+    pub fn is_dependent(&self) -> bool {
+        if self.is_ground() {
+            return false;
+        }
+
+        match self {
+            CircuitReference::Node(_) => true,
+            CircuitReference::Branch(_) => true,
+            _ => false,
+        }
+    }
 }
 
 impl Symbol for CircuitReference {}
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub enum IndependentVariable {
+    Time,
+    Frequency,
+}
+
+impl Symbol for IndependentVariable {}
+
+#[derive(Debug, Clone)]
 pub struct Netlist {
     circuit_references: HashSet<CircuitReference>,
 }

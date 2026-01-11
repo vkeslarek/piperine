@@ -1,9 +1,9 @@
 use crate::analysis::ac::{AcAnalysis, AcAnalysisContext};
 use crate::analysis::dc::DcAnalysisResult;
+use crate::circuit::netlist::CircuitReference;
 use crate::devices::capacitor::Capacitor;
 use crate::math::linear::Stamp;
-use crate::math::unit::ReactanceConvert;
-use crate::circuit::netlist::CircuitReference;
+use crate::math::unit::{Farad, Hertz};
 use crate::solver::Context;
 use num_complex::Complex;
 
@@ -14,29 +14,16 @@ impl AcAnalysis for Capacitor {
         ac_analysis_context: &AcAnalysisContext,
         _: &Context,
     ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
-        let impedance = self.capacitance.to_impedance(ac_analysis_context.frequency);
+        let omega = 2.0 * std::f64::consts::PI * ac_analysis_context.frequency.get::<Hertz>();
+        let cap_val = self.capacitance.get::<Farad>();
+
+        let admittance = Complex::new(0.0, omega * cap_val);
 
         vec![
-            Stamp::Matrix(
-                self.node_plus.clone(),
-                self.node_plus.clone(),
-                impedance.value,
-            ),
-            Stamp::Matrix(
-                self.node_minus.clone(),
-                self.node_minus.clone(),
-                impedance.value,
-            ),
-            Stamp::Matrix(
-                self.node_plus.clone(),
-                self.node_minus.clone(),
-                -impedance.value,
-            ),
-            Stamp::Matrix(
-                self.node_minus.clone(),
-                self.node_plus.clone(),
-                -impedance.value,
-            ),
+            Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), admittance),
+            Stamp::Matrix(self.node_minus.clone(), self.node_minus.clone(), admittance),
+            Stamp::Matrix(self.node_plus.clone(), self.node_minus.clone(), -admittance),
+            Stamp::Matrix(self.node_minus.clone(), self.node_plus.clone(), -admittance),
         ]
     }
 }
