@@ -25,10 +25,10 @@ impl TransientAnalysis for Capacitor {
         let c = self.capacitance.value;
 
         vec![
-            Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), -c),
-            Stamp::Matrix(self.node_minus.clone(), self.node_minus.clone(), -c),
-            Stamp::Matrix(self.node_plus.clone(), self.node_minus.clone(), c),
-            Stamp::Matrix(self.node_minus.clone(), self.node_plus.clone(), c),
+            Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), c),
+            Stamp::Matrix(self.node_minus.clone(), self.node_minus.clone(), c),
+            Stamp::Matrix(self.node_plus.clone(), self.node_minus.clone(), -c),
+            Stamp::Matrix(self.node_minus.clone(), self.node_plus.clone(), -c),
         ]
     }
 }

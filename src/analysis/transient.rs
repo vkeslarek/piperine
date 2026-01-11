@@ -42,7 +42,10 @@ impl TransientCircuitState {
     pub fn integration_parameters(&self, order: usize) -> (f64, Array1<f64>) {
         let ts_window = self.timestamps.slice(s![0..=order]);
 
-        let coeffs_opt = BdfCoefficientGenerator::generate(order, ts_window.to_vec());
+        let mut ts_vec = ts_window.to_vec();
+        ts_vec.reverse();
+
+        let coeffs_opt = BdfCoefficientGenerator::generate(order, ts_vec);
 
         if coeffs_opt.is_none() {
             return (0.0, Array1::zeros(self.history.ncols()));
