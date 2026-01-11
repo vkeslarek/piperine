@@ -1,6 +1,6 @@
 use crate::circuit::netlist::CircuitReference;
 use crate::math::num::Field;
-use crate::math::vector::Vector;
+use ndarray::Array1;
 use std::collections::HashMap;
 use std::hash::Hash;
 
@@ -22,15 +22,11 @@ impl<E: Field> Stamp<CircuitReference, E> {
 }
 
 pub trait LinearSystem<S: Symbol, E: Field> {
-    type VectorType: Vector<E>;
     type SymbolicType: SymbolicMatrix<S>;
 
     fn new(size: usize) -> Self;
     fn apply_stamps(&mut self, symbolic: &Self::SymbolicType, stamps: Vec<Stamp<S, E>>);
-    fn solve_with_backend(
-        self,
-        symbolic: &Self::SymbolicType,
-    ) -> crate::result::Result<Self::VectorType>;
+    fn solve_with_backend(self, symbolic: &Self::SymbolicType) -> crate::result::Result<Array1<E>>;
 }
 
 pub trait SymbolicMatrix<S: Symbol> {

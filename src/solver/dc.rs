@@ -1,44 +1,44 @@
-use crate::analysis::dc::{DcAnalysis, DcAnalysisResult, DcCircuitState, DcSolver};
+use crate::analysis::dc::{DcAnalysis, DcAnalysisResult, DcCircuitState};
 use crate::circuit::Circuit;
 use crate::circuit::netlist::CircuitReference;
 use crate::error::Error;
-use crate::math::faer::{FaerLinearSystem, FaerSymbolicMatrix, FaerToNdarray};
+use crate::math::faer::{FaerLinearSystem, FaerSymbolicMatrix};
 use crate::math::linear::{LinearSystem, Stamp, SymbolicMatrix};
-use crate::solver::{Context, SolverCore};
-use ndarray::{ArrayView1, ArrayViewMut1};
+use crate::solver::Context;
 use std::collections::HashMap;
 
-pub struct DcSolverImpl {
+pub struct DcSolver {
     circuit: Circuit,
     context: Context,
-    symbolic_matrix: FaerSymbolicMatrix<CircuitReference>,
+    symbolic: FaerSymbolicMatrix<CircuitReference>,
     state: DcCircuitState,
 }
 
-impl DcSolver for DcSolverImpl {
-    fn build(mut circuit: Circuit, context: Context) -> crate::result::Result<DcSolverImpl> {
-        let symbols = Self::get_active_symbols(&circuit);
+impl DcSolver {
+    pub fn build(mut circuit: Circuit, context: Context) -> crate::result::Result<Self> {
+        // 1. Linearize once with dummy state to determine Matrix Structure (Sparsity)
+        let symbols = circuit
+            .netlist()
+            .all_references()
+            .into_iter()
+            .filter(|s| !s.is_ground())
+            .collect();
 
-        let mut zero_state = DcCircuitState::new(std::collections::HashMap::new(), 0, 2);
-        let stamps = Self::linearize_circuit(&mut circuit, &mut zero_state, &context)?;
+        let mut temp_state = DcCircuitState::new(HashMap::new(), 0, 1);
+        let stamps = Self::linearize(&mut circuit, &mut temp_state, &context)?;
 
-        let symbolic_matrix = FaerSymbolicMatrix::new(symbols, stamps)?;
+        let symbolic = FaerSymbolicMatrix::new(symbols, stamps)?;
 
-        let mut state =
-            DcCircuitState::new(symbolic_matrix.mapping.clone(), symbolic_matrix.size, 2);
-        let mut initial_state = state.current_guess_mut();
-        for (name, component_box) in circuit.components_mut().iter_mut() {
-            let component = component_box.as_dc().ok_or_else(|| {
-                Error::simple(
-                    format!("Component '{}' invalid for DC", name),
-                    "Component does not implement DcAnalysis.",
-                )
-            })?;
+        // 2. Initialize Real State & Apply Initial Conditions
+        let mut state = DcCircuitState::new(symbolic.mapping.clone(), symbolic.size, 2);
+        let mut guess = state.current_guess_mut();
 
-            let initial_values = component.initial_dc_values(&context);
-            for init in initial_values {
-                if let Some(&idx) = symbolic_matrix.mapping.get(&init.reference) {
-                    initial_state[idx] = init.value;
+        for (_, comp) in circuit.components_mut() {
+            if let Some(dc) = comp.as_dc() {
+                for init in dc.initial_dc_values(&context) {
+                    if let Some(&idx) = symbolic.mapping.get(&init.reference) {
+                        guess[idx] = init.value;
+                    }
                 }
             }
         }
@@ -46,173 +46,71 @@ impl DcSolver for DcSolverImpl {
         Ok(Self {
             circuit,
             context,
-            symbolic_matrix,
+            symbolic: symbolic,
             state,
         })
     }
 
-    fn solve(&mut self) -> crate::result::Result<DcAnalysisResult> {
-        for iteration in 0..self.context.max_iter {
-            let stamps =
-                Self::linearize_circuit(&mut self.circuit, &mut self.state, &self.context)?;
+    pub fn solve(&mut self) -> crate::result::Result<DcAnalysisResult> {
+        for _ in 0..self.context.max_iter {
+            // 1. Physics: Linearize Circuit around current state
+            let stamps = Self::linearize(&mut self.circuit, &mut self.state, &self.context)?;
 
-            let mut linear_system: FaerLinearSystem<CircuitReference, f64> =
-                FaerLinearSystem::new(self.symbolic_matrix.size());
-            linear_system.apply_stamps(&self.symbolic_matrix, stamps);
+            // 2. Math: Build & Solve Matrix
+            let mut system = FaerLinearSystem::new(self.symbolic.size());
+            system.apply_stamps(&self.symbolic, stamps);
 
-            let new_values = linear_system.solve_with_backend(&self.symbolic_matrix)?;
-            let arr = new_values.to_ndarray();
-            let converged = self.state.check_convergence(
-                arr.view(),
-                self.context.reltol,
-                self.context.vntol,
-                self.context.abstol,
+            let solution = system.solve_with_backend(&self.symbolic)?;
+
+            // 3. Convergence: Check Input (row 0) vs Output (solution)
+            // We verify if the physics has settled before updating the history.
+            let converged = self.context.has_converged(
+                self.state.values.row(0),
+                solution.view(),
+                &self.symbolic.mapping,
             );
 
-            println!("ITERATION: {}", iteration);
-            println!("NEWV: {:?}", new_values);
-            println!("ABS: {:?}", self.state.get_diff(arr.view()));
+            // 4. Update History
+            self.state.push(solution.view());
 
             if converged {
-                println!("Solved in {} iterations", iteration);
                 return Ok(DcAnalysisResult {
-                    values: new_values,
-                    mapping: self.symbolic_matrix.mapping().clone(),
+                    values: solution,
+                    mapping: self.symbolic.mapping().clone(),
                 });
             }
-
-            self.state.push(arr.view());
         }
 
         Err(Error::simple(
-            "Convergence Failure",
-            "Newton-Raphson loop exceeded max iterations without converging.",
+            "DC Solver did not converge",
+            "Maximum iterations reached without convergence",
         ))
     }
-}
 
-impl DcSolverImpl {
-    fn linearize_circuit(
+    fn linearize(
         circuit: &mut Circuit,
         state: &mut DcCircuitState,
-        context: &Context,
+        ctx: &Context,
     ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
         let mut stamps = Vec::new();
 
-        for (name, component_box) in circuit.components_mut().iter_mut() {
-            let component = component_box.as_dc().ok_or_else(|| {
+        for (name, comp) in circuit.components_mut() {
+            let dc = comp.as_dc().ok_or_else(|| {
                 Error::simple(
                     format!("Component '{}' invalid for DC", name),
-                    "Component does not implement DcAnalysis.",
+                    "Missing DcAnalysis implementation",
                 )
             })?;
 
-            component.update_dc(state, context)?;
+            dc.update_dc(state, ctx)?;
 
-            let new_stamps = component.load_dc(state, context);
-
-            stamps.extend(new_stamps.into_iter().filter(|s| !s.has_ground_node()));
+            stamps.extend(
+                dc.load_dc(state, ctx)
+                    .into_iter()
+                    .filter(|s| !s.has_ground_node()),
+            );
         }
 
         Ok(stamps)
-    }
-
-    fn get_active_symbols(circuit: &Circuit) -> Vec<CircuitReference> {
-        circuit
-            .netlist()
-            .all_references()
-            .into_iter()
-            .filter(|s| !s.is_ground())
-            .collect()
-    }
-}
-
-pub struct DcBackend;
-
-#[derive(Default)]
-pub struct DcOptions; // Add fields if you want to support Gmin stepping later
-
-impl SolverCore for DcBackend {
-    type StateType = DcCircuitState;
-    type AnalysisResultType = DcAnalysisResult;
-    type AnalysisOptionsType = ();
-    type NumType = f64;
-
-    fn new_state(
-        mapping: HashMap<CircuitReference, usize>,
-        size: usize,
-        history_depth: usize,
-    ) -> Self::StateType {
-        DcCircuitState::new(mapping, size, history_depth)
-    }
-
-    fn static_linearize_circuit(
-        circuit: &mut Circuit,
-        state: &Self::StateType,
-        _options: &Self::AnalysisOptionsType,
-        context: &Context,
-    ) -> crate::result::Result<Vec<Stamp<CircuitReference, Self::NumType>>> {
-        let mut stamps = Vec::new();
-
-        for (name, component_box) in circuit.components_mut().iter_mut() {
-            let component = component_box.as_dc().ok_or_else(|| {
-                crate::error::Error::simple(
-                    format!("Component '{}' invalid for DC", name),
-                    "Component does not implement DcAnalysis.",
-                )
-            })?;
-
-            // Update internal non-linear states (Vbe, etc.)
-            component.update_dc(state, context)?;
-
-            // Load stamps and filter ground
-            let new_stamps = component.load_dc(state, context);
-            stamps.extend(new_stamps.into_iter().filter(|s| !s.has_ground_node()));
-        }
-
-        // Apply Gmin for numerical stability on every active node
-        for (reference, &idx) in &state.mapping {
-            if let CircuitReference::Node(_) = reference {
-                stamps.push(Stamp::Matrix(
-                    reference.clone(),
-                    reference.clone(),
-                    context.gmin.value,
-                ));
-            }
-        }
-
-        Ok(stamps)
-    }
-
-    fn dynamic_linearize_circuit(
-        _circuit: &mut Circuit,
-        _state: &Self::StateType,
-        _options: &Self::AnalysisOptionsType,
-        _context: &Context,
-    ) -> crate::result::Result<Vec<Stamp<CircuitReference, Self::NumType>>> {
-        // DC Analysis ignores Mass/Dynamic stamps (Capacitors = Open, Inductors = Short)
-        Ok(Vec::new())
-    }
-
-    fn apply_initial_conditions(
-        mapping: &HashMap<CircuitReference, usize>,
-        context: &Context,
-        mut initial_state: ArrayViewMut1<Self::NumType>,
-    ) -> crate::result::Result<()> {
-        // Since we don't have direct access to the circuit here (following the SolverCore trait),
-        // we assume initial_state starts at zero. If you need component-specific
-        // initial values, the circuit linearization handles it in the first iteration.
-        // Alternatively, you can pass the circuit through a modified trait.
-        Ok(())
-    }
-
-    fn check_convergence(
-        state: &Self::StateType,
-        new_values: ArrayView1<Self::NumType>,
-        reltol: f64,
-        vntol: f64,
-        abstol: f64,
-    ) -> bool {
-        state.check_convergence(new_values, reltol, vntol, abstol)
     }
 }

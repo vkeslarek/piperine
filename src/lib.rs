@@ -1,8 +1,9 @@
-use crate::analysis::dc::DcSolver;
 use crate::analysis::transient::TransientAnalysisOptions;
 use crate::analysis::transient::TransientSolver;
 use crate::circuit::Circuit;
+use crate::circuit::netlist::CircuitReference;
 use crate::devices::voltage_source::Waveform;
+use crate::devices::voltage_source::Waveform::{Sine, Step};
 use crate::math::unit::UnitExt;
 use crate::solver::Context;
 use circuit::netlist::GND;
@@ -42,31 +43,44 @@ pub fn test() {
     debug!("Starting test circuit simulation...");
 
     let mut circuit = Circuit::new("Test Circuit");
-    circuit.voltage_source("VCC", "vcc", GND, 5.0.V());
+    circuit.voltage_source(
+        "VCC",
+        "vcc",
+        GND,
+        Sine {
+            amplitude: 5.0.V(),
+            frequency: 10.0.kHz(),
+            phase: 0.0.deg(),
+        },
+    );
     circuit.resistor("R1", "vcc", 1, 10.0.Ohms());
     circuit.diode("D1", 1, 2);
     circuit.capacitor("C1", 2, GND, 10.0.uF());
-    circuit.resistor("R2", 2, GND, 10.0.Ohms());
+    circuit.resistor("R2", 2, GND, 1.0.kOhms());
 
-    let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
-    println!("{:?}", result);
+    let result = circuit
+        .transient(
+            TransientAnalysisOptions {
+                stop_time: 0.01,
+                dt: 5e-7,
+            },
+            Context::default(),
+        )
+        .unwrap()
+        .solve()
+        .unwrap();
+    // println!("{:?}", result);
 
-    // let stop_time = 0.012;
-    // let dt = 0.000001;
-    // let solution = Solver::build(circuit, Context::default())
-    //     .unwrap()
-    //     .transient(TransientAnalysisOptions { stop_time, dt })
-    //     .unwrap();
-    //
-    // // println!("{:?}", solution);
-    // solution.iter().for_each(|(freq, vec)| {
-    //     let cap = vec
-    //         .get(&CircuitReference::Node(NodeIdentifier::Indexed(2)))
-    //         .cloned()
-    //         .unwrap_or(0.0);
-    //
-    //     println!("{:0.9} {:0.9}", freq, cap);
-    // });
+    let times = result.timestamps(); // ArrayView1
+    let matrix = result.values(); // ArrayView2
+    for (i, row_values) in matrix.outer_iter().enumerate() {
+        let t = times[i];
+        println!(
+            "{:.8} {:.8}",
+            t,
+            row_values[result.mapping[&CircuitReference::Node(2.into())]]
+        );
+    }
 }
 
 #[test]

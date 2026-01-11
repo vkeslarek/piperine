@@ -6,10 +6,10 @@ pub mod tran;
 use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::transient::TransientAnalysis;
+use crate::circuit::netlist::{BranchIdentifier, CircuitReference, IntoNodeIdentifier, Netlist};
 use crate::devices::Component;
 use crate::devices::voltage_source::model::{VoltageSourceModel, VoltageSourceModelType};
 use crate::math::unit::{Angle, Frequency, UnitExt, Voltage};
-use crate::circuit::netlist::{BranchIdentifier, CircuitReference, IntoNodeIdentifier, Netlist};
 use crate::util::AsAny;
 use std::any::Any;
 use std::sync::Arc;
@@ -20,6 +20,12 @@ pub enum Waveform {
         amplitude: Voltage,
         frequency: Frequency,
         phase: Angle,
+    },
+    Step {
+        initial: Voltage,
+        final_value: Voltage,
+        delay: f64,
+        rise_time: f64,
     },
 }
 
@@ -34,6 +40,7 @@ impl Waveform {
         match self {
             Waveform::DC(v) => *v,
             Waveform::Sine { amplitude, .. } => *amplitude,
+            Waveform::Step { initial, .. } => *initial,
         }
     }
 }

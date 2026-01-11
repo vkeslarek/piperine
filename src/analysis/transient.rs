@@ -1,12 +1,12 @@
 use crate::circuit::Circuit;
+use crate::circuit::netlist::CircuitReference;
 use crate::devices::Component;
 use crate::math::deriv::BdfCoefficientGenerator;
 use crate::math::linear::Stamp;
 use crate::math::unit::Time;
-use crate::circuit::netlist::CircuitReference;
 use crate::solver::Context;
-use faer::Col;
-use std::collections::{HashMap, VecDeque};
+use ndarray::{Array1, Array2, ArrayView1, ArrayView2, s};
+use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct TransientAnalysisOptions {
@@ -21,13 +21,9 @@ pub struct TransientAnalysisContext {
 }
 
 pub struct TransientCircuitState {
-    pub mapping: HashMap<CircuitReference, usize>, // Made public for solver access
-    pub values: VecDeque<Col<f64>>,
-    pub timestamps: VecDeque<f64>,
-    pub current_guess: Col<f64>,
-    pub current_dt: f64,
-    pub size: usize,
-    pub num_symbols: usize,
+    pub mapping: HashMap<CircuitReference, usize>,
+    pub history: Array2<f64>,
+    pub timestamps: Array1<f64>,
 }
 
 impl TransientCircuitState {
@@ -36,188 +32,96 @@ impl TransientCircuitState {
         size: usize,
         history_depth: usize,
     ) -> Self {
-        let num_symbols = mapping.len(); // Or use size if mapping includes ground
-
-        // Initialize with zeros. For transient, we usually need at least
-        // 2 steps of history + current guess = 3
         Self {
             mapping,
-            values: VecDeque::from(vec![Col::zeros(size); history_depth]),
-            timestamps: VecDeque::from(vec![0.0; history_depth]),
-            current_guess: Col::zeros(size),
-            current_dt: 0.0,
-            size,
-            num_symbols,
+            history: Array2::zeros((history_depth, size)),
+            timestamps: Array1::zeros(history_depth),
         }
     }
 
-    // --- Data Access Methods (Crucial for Component Linearization) ---
+    pub fn integration_parameters(&self, order: usize) -> (f64, Array1<f64>) {
+        let ts_window = self.timestamps.slice(s![0..=order]);
 
-    /// Get a value (Voltage or Current) for a specific circuit node/branch.
-    /// `lookback`: 0 = current iteration guess, 1 = previous time step, etc.
-    pub fn get_value(&self, reference: &CircuitReference, lookback: usize) -> Option<f64> {
-        let index = self.mapping.get(reference)?;
-        let col = self.values.get(lookback)?;
-        Some(col[*index])
+        let coeffs_opt = BdfCoefficientGenerator::generate(order, ts_window.to_vec());
+
+        if coeffs_opt.is_none() {
+            return (0.0, Array1::zeros(self.history.ncols()));
+        }
+        let coeffs = coeffs_opt.unwrap();
+
+        let mut history_sum = Array1::zeros(self.history.ncols());
+
+        for (i, &c) in coeffs.history_coeffs.iter().enumerate() {
+            let history_idx = i + 1;
+            if history_idx < self.history.nrows() {
+                history_sum.scaled_add(c, &self.history.row(history_idx));
+            }
+        }
+
+        (coeffs.alpha, history_sum)
     }
 
-    /// Helper to get (V_plus - V_minus) easily
-    pub fn get_voltage_diff(
-        &self,
-        positive: &CircuitReference,
-        negative: &CircuitReference,
-        lookback: usize,
-    ) -> f64 {
-        let v_p = self.get_value(positive, lookback).unwrap_or(0.0);
-        let v_n = self.get_value(negative, lookback).unwrap_or(0.0);
-        v_p - v_n
+    pub fn update_guess(&mut self, new_values: Array1<f64>) {
+        self.history.row_mut(0).assign(&new_values);
     }
 
-    // --- Convergence Logic ---
+    pub fn push_timestep(&mut self, next_time: f64) {
+        let rows = self.history.nrows();
+        let cols = self.history.ncols();
 
-    pub fn check_convergence(
-        &self,
-        new_values: &Col<f64>,
-        reltol: f64,
-        vntol: f64,
-        abstol: f64,
-    ) -> bool {
-        // We compare the NEW result against the CURRENT guess (values[0])
-        // values[0] holds the result of the previous Newton-Raphson iteration.
-        let old_values = &self.values[0];
+        // 1. Prediction (Linear Extrapolation)
+        // (Same logic as before...)
+        let prediction = if rows >= 2 && self.timestamps[0] > self.timestamps[1] {
+            let dt_new = next_time - self.timestamps[0];
+            let dt_old = self.timestamps[0] - self.timestamps[1];
 
-        for i in 0..self.size {
-            let old_v = old_values[i];
-            let new_v = new_values[i];
-            let diff = (new_v - old_v).abs();
-
-            // Distinguish between Voltage (Nodes) and Current (Branches)
-            // for appropriate Absolute Tolerance.
-            let abs_limit = if self.is_index_branch(i) {
-                abstol
+            if dt_old > 1e-12 {
+                let slope = (&self.history.row(0) - &self.history.row(1)) / dt_old;
+                &self.history.row(0) + &(slope * dt_new)
             } else {
-                vntol
-            };
-
-            // SPICE Standard "Hybrid" Check
-            let limit = reltol * old_v.abs().max(new_v.abs()) + abs_limit;
-
-            if diff > limit {
-                return false;
+                self.history.row(0).to_owned()
             }
-        }
-        true
-    }
-
-    /// Helper to determine if an index corresponds to a Branch (Current) or Node (Voltage)
-    fn is_index_branch(&self, index: usize) -> bool {
-        // This is O(N) but negligible compared to matrix solve.
-        // Can be optimized by storing a BitVec if needed.
-        self.mapping
-            .iter()
-            .any(|(k, &v)| v == index && matches!(k, CircuitReference::Branch(_)))
-    }
-
-    // --- BDF / Integration Logic (Preserved) ---
-
-    pub fn last_derivative(&self) -> Col<f64> {
-        // We use order 1 or 2 based on points available *before* the new step
-        let available_points = self.values.len();
-        let order = if available_points > 2 { 2 } else { 1 };
-
-        // We pass the timestamps starting from index 0 (which is t_n-1 relative to the push)
-        // Note: Logic here assumes timestamps are synchronized with values
-        let ts = self
-            .timestamps
-            .iter()
-            .take(order + 1)
-            .cloned()
-            .collect::<Vec<_>>();
-
-        // Safety check if we have enough points for BDF
-        if ts.len() < 2 {
-            return Col::zeros(self.size);
-        }
-
-        let coeffs = BdfCoefficientGenerator::generate(order, ts).unwrap();
-
-        // v_dot = alpha * v[0] + sum(c_i * v[i+1])
-        let mut v_dot = &self.values[0] * coeffs.alpha;
-        for i in 0..coeffs.history_coeffs.len() {
-            // Check bounds just in case
-            if i + 1 < self.values.len() {
-                v_dot += &self.values[i + 1] * coeffs.history_coeffs[i];
-            }
-        }
-        v_dot
-    }
-
-    pub fn update_guess(&mut self, corrected_v: Col<f64>) {
-        // Overwrite the current iteration's value
-        if !self.values.is_empty() {
-            self.values[0] = corrected_v;
-        }
-    }
-
-    pub fn deriv_guess(&self) -> (f64, Col<f64>) {
-        let order = (self.values.len() - 1).min(2);
-
-        if order < 1 {
-            return (0.0, Col::zeros(self.size));
-        }
-
-        // timestamps[0] is current time t_n
-        let ts = self
-            .timestamps
-            .iter()
-            .take(order + 1)
-            .cloned()
-            .collect::<Vec<_>>();
-        let coeffs = BdfCoefficientGenerator::generate(order, ts).unwrap();
-
-        let mut vec_sum = Col::zeros(self.size);
-        // History starts at values[1] (which is t_n-1)
-        for i in 0..coeffs.history_coeffs.len() {
-            if i + 1 < self.values.len() {
-                vec_sum += coeffs.history_coeffs[i] * &self.values[i + 1];
-            }
-        }
-
-        (coeffs.alpha, vec_sum)
-    }
-
-    pub fn push_new_step(&mut self, next_timestamp: f64) {
-        // 1. Calculate the prediction BEFORE pushing to the queue
-        // We need at least 2 points (t_n-1, t_n-2) to do a meaningful derivative extrapolation
-        // or just 1 point (t_n-1) for simple Forward Euler prediction.
-
-        let prediction = if self.values.len() >= 2 {
-            // Predict based on previous derivative
-            // v_n_guess = v_n-1 + dt * v_dot_n-1
-            let prev_val = &self.values[0];
-            let dt = next_timestamp - self.timestamps[0];
-
-            // Note: last_derivative calculation needs to be careful about which '0' index it uses.
-            // If we haven't pushed yet, values[0] is the solution at t_prev.
-            prev_val + (self.last_derivative() * dt)
-        } else if !self.values.is_empty() {
-            // Fallback: Use previous value as guess (Zero-Order Hold)
-            self.values[0].clone()
         } else {
-            Col::zeros(self.size)
+            self.history.row(0).to_owned()
         };
 
-        // 2. Commit the new time and the predicted guess
-        self.timestamps.push_front(next_timestamp);
-        self.values.push_front(prediction);
+        // 2. Shift History (The Fix)
+        if rows > 1 {
+            // We want to move [Row 0..Row N-1] into [Row 1..Row N]
+            // Source Range: Start (0) to End of second-to-last row ((rows-1)*cols)
+            // Dest Start: Start of Row 1 (cols)
 
-        // Limit history depth (usually order + 2 is enough)
-        if self.values.len() > 7 {
-            self.values.pop_back();
-            self.timestamps.pop_back();
+            if let Some(slice) = self.history.as_slice_mut() {
+                // OPTIMIZED: copy_within handles overlapping memory safely
+                slice.copy_within(0..((rows - 1) * cols), cols);
+            } else {
+                // FALLBACK: If array is somehow not contiguous, we loop manually
+                for i in (1..rows).rev() {
+                    let (mut to, from) = self.history.multi_slice_mut((s![i, ..], s![i - 1, ..]));
+                    to.assign(&from);
+                }
+            }
+
+            // Shift timestamps too
+            if let Some(ts_slice) = self.timestamps.as_slice_mut() {
+                ts_slice.copy_within(0..(rows - 1), 1);
+            }
         }
+
+        // 3. Set New State
+        self.timestamps[0] = next_time;
+        self.history.row_mut(0).assign(&prediction);
+    }
+
+    pub fn get_value(&self, reference: &CircuitReference, lookback: usize) -> Option<f64> {
+        let index = self.mapping.get(reference)?;
+        if lookback >= self.history.nrows() {
+            return None;
+        }
+        Some(self.history[[lookback, *index]])
     }
 }
+
 pub trait TransientAnalysis: Component {
     fn update_transient(
         &mut self,
@@ -243,38 +147,48 @@ pub trait TransientAnalysis: Component {
     ) -> Vec<Stamp<CircuitReference, f64>> {
         vec![]
     }
-
-    fn check_convergence(
-        &self,
-        circuit_states: &TransientCircuitState,
-        transient_analysis_context: &TransientAnalysisContext,
-        context: &Context,
-    ) -> bool {
-        true
-    }
 }
 
 #[derive(Debug)]
 pub struct TransientAnalysisResult {
-    pub(crate) mapping: HashMap<CircuitReference, usize>,
-    pub(crate) values: VecDeque<Col<f64>>,
-    pub(crate) timestamps: VecDeque<f64>,
-}
-
-impl TransientAnalysisResult {
-    pub fn push(&mut self, timestamp: f64, datapoint: Col<f64>) {
-        self.values.push_front(datapoint);
-        self.timestamps.push_front(timestamp);
-    }
+    pub mapping: HashMap<CircuitReference, usize>,
+    pub data: Vec<f64>,
+    times: Vec<f64>,
 }
 
 impl TransientAnalysisResult {
     pub fn new(mapping: HashMap<CircuitReference, usize>) -> Self {
+        let num_symbols = mapping.len();
         Self {
             mapping,
-            values: VecDeque::new(),
-            timestamps: VecDeque::new(),
+            data: Vec::with_capacity(num_symbols * 1024),
+            times: Vec::with_capacity(1024),
         }
+    }
+
+    pub fn push(&mut self, timestamp: f64, datapoint: ArrayView1<f64>) {
+        if datapoint.len() != self.mapping.len() {
+            panic!("Data point size mismatch");
+        }
+
+        self.times.push(timestamp);
+        self.data.extend(datapoint.iter());
+    }
+
+    pub fn values(&self) -> ArrayView2<f64> {
+        let rows = self.times.len();
+        let cols = self.mapping.len();
+
+        ArrayView2::from_shape((rows, cols), &self.data).expect("Data buffer corruption")
+    }
+
+    pub fn timestamps(&self) -> ArrayView1<f64> {
+        ArrayView1::from(&self.times)
+    }
+
+    pub fn get_trace(&self, reference: &CircuitReference) -> Option<Array1<f64>> {
+        let col_idx = *self.mapping.get(reference)?;
+        Some(self.values().column(col_idx).to_owned())
     }
 }
 

@@ -1,12 +1,12 @@
 use crate::analysis::transient::{
     TransientAnalysis, TransientAnalysisContext, TransientCircuitState,
 };
+use crate::circuit::netlist::CircuitReference;
 use crate::devices::voltage_source::{VoltageSource, Waveform};
 use crate::math::linear::Stamp;
 use crate::math::unit::{
-    Angle, AngularVelocity, Frequency, Hertz, Radian, RadianPerSecond, Ratio, UnitExt,
+    Angle, AngularVelocity, Frequency, Hertz, Radian, RadianPerSecond, Ratio, UnitExt, Voltage,
 };
-use crate::circuit::netlist::CircuitReference;
 use crate::solver::Context;
 use std::f64::consts::PI;
 use uom::ConversionFactor;
@@ -30,6 +30,24 @@ impl TransientAnalysis for VoltageSource {
                 let phase_ratio: Ratio = phase.into();
 
                 amplitude * (omega * t + phase_ratio).value.sin()
+            }
+            Waveform::Step {
+                initial,
+                final_value,
+                delay,
+                rise_time,
+            } => {
+                let t = transient_analysis_context.time.value;
+                if t < delay {
+                    initial
+                } else if t >= delay && t < delay + rise_time {
+                    let slope = (final_value - initial).value / rise_time;
+                    Voltage::new::<uom::si::electric_potential::volt>(
+                        initial.value + slope * (t - delay),
+                    )
+                } else {
+                    final_value
+                }
             }
         };
 

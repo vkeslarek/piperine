@@ -1,4 +1,3 @@
-use crate::analysis::dc::DcSolver;
 use crate::analysis::transient::{TransientAnalysisOptions, TransientSolver};
 use crate::circuit::netlist::{IntoNodeIdentifier, Netlist};
 use crate::devices::capacitor::Capacitor;
@@ -7,9 +6,9 @@ use crate::devices::resistor::Resistor;
 use crate::devices::voltage_source::{VoltageSource, Waveform};
 use crate::devices::{AnyModel, Component};
 use crate::math::unit::{Capacitance, Resistance};
-use crate::solver::{Context, Solver};
-use crate::solver::dc::{DcBackend, DcSolverImpl};
+use crate::solver::dc::DcSolver;
 use crate::solver::transient::TransientSolverImpl;
+use crate::solver::{Context, SolverA};
 use crate::util::AsAny;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -73,8 +72,8 @@ impl Circuit {
         &mut self.components
     }
 
-    pub fn dc(self, context: Context) -> crate::result::Result<Solver<DcBackend>> {
-        Solver::build(self, (), context)
+    pub fn dc(self, context: Context) -> crate::result::Result<DcSolver> {
+        DcSolver::build(self, context)
     }
 
     pub fn transient(

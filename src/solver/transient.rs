@@ -1,14 +1,15 @@
 use crate::analysis::transient::{
-    TransientAnalysisOptions, TransientAnalysisResult, TransientCircuitState, TransientSolver,
+    TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisResult,
+    TransientCircuitState, TransientSolver,
 };
 use crate::circuit::Circuit;
+use crate::circuit::netlist::CircuitReference;
 use crate::error::Error;
 use crate::math::faer::{FaerLinearSystem, FaerSymbolicMatrix};
-use crate::math::linear::{Stamp, LinearSystem, SymbolicMatrix};
-use crate::math::unit::{Second, Time};
-use crate::circuit::netlist::CircuitReference;
+use crate::math::linear::{LinearSystem, Stamp, SymbolicMatrix};
+use crate::math::unit::UnitExt;
 use crate::solver::Context;
-use faer::Col;
+use std::ops::Sub;
 
 pub struct TransientSolverImpl {
     circuit: Circuit,
@@ -26,10 +27,27 @@ impl TransientSolver for TransientSolverImpl {
     ) -> crate::result::Result<Self> {
         let symbols = Self::get_active_symbols(&circuit);
 
-        let mut zero_state = TransientCircuitState::new(std::collections::HashMap::new(), 0, 3);
-        let stamps = Self::linearize_circuit(&mut circuit, &mut zero_state, &context, 0.0)?;
+        let mut dummy_state = TransientCircuitState::new(std::collections::HashMap::new(), 0, 1);
+        let initial_context = TransientAnalysisContext {
+            time: 0.0.Sec(),
+            dt: options.dt.Sec(),
+        };
 
-        let symbolic_matrix = FaerSymbolicMatrix::new(symbols, stamps)?;
+        let mut all_stamps = Vec::new();
+        all_stamps.extend(Self::linearize_static(
+            &mut circuit,
+            &mut dummy_state,
+            &initial_context,
+            &context,
+        )?);
+        all_stamps.extend(Self::linearize_dynamic(
+            &mut circuit,
+            &mut dummy_state,
+            &initial_context,
+            &context,
+        )?);
+
+        let symbolic_matrix = FaerSymbolicMatrix::new(symbols, all_stamps)?;
 
         let state =
             TransientCircuitState::new(symbolic_matrix.mapping.clone(), symbolic_matrix.size, 3);
@@ -46,28 +64,34 @@ impl TransientSolver for TransientSolverImpl {
     fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
         let mut result = TransientAnalysisResult::new(self.symbolic_matrix.mapping.clone());
 
-        println!("--- Starting Transient Analysis ---");
+        let mut initial_context = TransientAnalysisContext {
+            time: 0.0.Sec(),
+            dt: self.options.dt.Sec(),
+        };
 
-        self.solve_newton_raphson(0.0, 0.0)?;
+        self.solve_newton_raphson(&initial_context, 0.0, 0.0)?;
 
-        let initial_solution = self.state.values[0].clone();
-        result.push(0.0, initial_solution.clone());
+        result.push(0.0, self.state.history.row(0).view());
+        self.state.push_timestep(self.options.dt);
 
-        self.state.push_new_step(self.options.dt);
+        initial_context.time = self.options.dt.Sec();
 
-        let mut current_time = self.options.dt;
+        while initial_context.time.value <= self.options.stop_time {
+            self.solve_newton_raphson(
+                &initial_context,
+                initial_context.time.value,
+                self.options.dt,
+            )?;
 
-        while current_time <= self.options.stop_time {
-            self.solve_newton_raphson(current_time, self.options.dt)?;
+            let converged_values = self.state.history.row(0).to_owned();
+            result.push(initial_context.time.value, converged_values.view());
 
-            let converged_values = self.state.values[0].clone();
-            result.push(current_time, converged_values.clone());
-
-            current_time += self.options.dt;
-
-            if current_time <= self.options.stop_time {
-                self.state.push_new_step(current_time);
+            let next_time = initial_context.time.value + self.options.dt;
+            if next_time <= self.options.stop_time {
+                self.state.push_timestep(next_time);
             }
+
+            initial_context.time = next_time.Sec();
         }
 
         Ok(result)
@@ -75,29 +99,59 @@ impl TransientSolver for TransientSolverImpl {
 }
 
 impl TransientSolverImpl {
-    /// The Newton-Raphson Solver Loop
-    fn solve_newton_raphson(&mut self, time: f64, dt: f64) -> crate::result::Result<()> {
-        for iteration in 0..self.context.max_iter {
-            let stamps =
-                Self::linearize_circuit(&mut self.circuit, &mut self.state, &self.context, dt)?;
+    /// The Core Newton-Raphson Loop
+    /// Handles both Static Physics (R) and Dynamic Physics (C * dv/dt)
+    fn solve_newton_raphson(
+        &mut self,
+        transient_analysis_context: &TransientAnalysisContext,
+        time: f64,
+        dt: f64,
+    ) -> crate::result::Result<()> {
+        let (alpha, history_vec) = if dt > 0.0 {
+            self.state.integration_parameters(2) // Order 2 (BDF2)
+        } else {
+            (0.0, ndarray::Array1::zeros(self.symbolic_matrix.size()))
+        };
 
-            // 2. Build Linear System (Ax = b)
+        for _iteration in 0..self.context.max_iter {
+            let mut stamps = Self::linearize_static(
+                &mut self.circuit,
+                &self.state,
+                transient_analysis_context,
+                &self.context,
+            )?;
+
+            let dynamic_stamps = Self::linearize_dynamic(
+                &mut self.circuit,
+                &self.state,
+                transient_analysis_context,
+                &self.context,
+            )?;
+
+            for s in dynamic_stamps {
+                match s {
+                    Stamp::Matrix(r, c, val) => {
+                        stamps.push(Stamp::Matrix(r.clone(), c.clone(), val * alpha));
+                        if let Some(&col_idx) = self.symbolic_matrix.mapping.get(&c) {
+                            let h_val = history_vec[col_idx];
+                            stamps.push(Stamp::Rhs(r, -val * h_val));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
             let mut linear_system = FaerLinearSystem::new(self.symbolic_matrix.size());
             linear_system.apply_stamps(&self.symbolic_matrix, stamps);
+            let solution = linear_system.solve_with_backend(&self.symbolic_matrix)?;
 
-            // 3. Solve for New Voltage Vector
-            let new_values = linear_system.solve_with_backend(&self.symbolic_matrix)?;
-
-            // 4. Check Convergence
-            let converged = self.check_convergence_internal(
-                &new_values,
-                self.context.reltol,
-                self.context.vntol,
-                self.context.abstol,
+            let converged = self.context.has_converged(
+                self.state.history.row(0),
+                solution.view(),
+                &self.symbolic_matrix.mapping,
             );
 
-            // Update the current guess (values[0]) with the Newton-Raphson result
-            self.state.update_guess(new_values);
+            self.state.update_guess(solution);
 
             if converged {
                 return Ok(());
@@ -106,64 +160,50 @@ impl TransientSolverImpl {
 
         Err(Error::simple(
             "Convergence Failure",
-            format!(
-                "Transient step at t={} failed to converge after {} iterations.",
-                time, self.context.max_iter
-            ),
+            format!("Transient step at t={} failed to converge.", time),
         ))
     }
 
-    /// Helper to iterate over all components and collect their stamps
-    fn linearize_circuit(
+    fn linearize_static(
         circuit: &mut Circuit,
-        state: &mut TransientCircuitState,
-        context: &Context,
-        dt: f64,
+        state: &TransientCircuitState,
+        transient_analysis_context: &TransientAnalysisContext,
+        ctx: &Context,
     ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
         let mut stamps = Vec::new();
+        for (_, comp) in circuit.components_mut() {
+            if let Some(t_comp) = comp.as_transient() {
+                t_comp.update_transient(state, transient_analysis_context, ctx)?;
 
-        // Note: Creating a temporary context for the component.
-        // Ideally, you would update your Context struct to carry 'time' and 'dt'.
-        // For now, we assume components use the state history for time info.
-
-        // Update state.current_dt for components to access if needed
-        state.current_dt = dt;
-
-        for (name, component_box) in circuit.components_mut().iter_mut() {
-            // Assuming your components implement a trait that accepts TransientCircuitState
-            // You likely need to define `as_transient()` on your Component trait
-            // For now, we cast assuming the component handles the specific state type
-
-            // NOTE: You will need to ensure your Component trait exposes a method
-            // that accepts `TransientCircuitState`.
-            // Here I assume `load_transient` is available or bridged.
-
-            /* WARNING: The code below assumes you have updated the Component trait
-               to support `load_transient`. If not, you must bridge it here.
-            */
-
-            let component = component_box.as_transient().ok_or_else(|| {
-                Error::simple(
-                    format!("Component '{}' invalid", name),
-                    "Component does not implement TransientAnalysis.",
-                )
-            })?;
-
-            // Use dummy context for now if your signature requires it
-            let trans_ctx = crate::analysis::transient::TransientAnalysisContext {
-                time: Time::new::<Second>(state.timestamps[0]),
-                dt: Time::new::<Second>(dt),
-            };
-
-            // Call the component's update logic (calculating G_eq, I_eq)
-            component.update_transient(state, &trans_ctx, context)?;
-
-            // Get the MNA stamps
-            let new_stamps = component.load_transient(state, &trans_ctx, context);
-
-            stamps.extend(new_stamps.into_iter().filter(|s| !s.has_ground_node()));
+                stamps.extend(
+                    t_comp
+                        .load_transient(state, transient_analysis_context, ctx)
+                        .into_iter()
+                        .filter(|s| !s.has_ground_node()),
+                );
+            }
         }
 
+        Ok(stamps)
+    }
+
+    fn linearize_dynamic(
+        circuit: &mut Circuit,
+        state: &TransientCircuitState,
+        transient_analysis_context: &TransientAnalysisContext,
+        ctx: &Context,
+    ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
+        let mut stamps = Vec::new();
+        for (_, comp) in circuit.components_mut() {
+            if let Some(t_comp) = comp.as_transient() {
+                stamps.extend(
+                    t_comp
+                        .load_dynamic(state, transient_analysis_context, ctx)
+                        .into_iter()
+                        .filter(|s| !s.has_ground_node()),
+                );
+            }
+        }
         Ok(stamps)
     }
 
@@ -174,32 +214,5 @@ impl TransientSolverImpl {
             .into_iter()
             .filter(|s| !s.is_ground())
             .collect()
-    }
-
-    /// Re-implementation of convergence check since TransientCircuitState
-    /// didn't implement it in your provided snippet.
-    fn check_convergence_internal(
-        &self,
-        new_values: &Col<f64>,
-        reltol: f64,
-        vntol: f64,
-        abstol: f64,
-    ) -> bool {
-        let old_values = &self.state.values[0];
-
-        for i in 0..self.symbolic_matrix.size {
-            let old_v = old_values[i];
-            let new_v = new_values[i];
-            let diff = (new_v - old_v).abs();
-
-            // Determine if index is branch or node (simple check via mapping usually needed)
-            // Defaulting to vntol for simplicity unless mapped
-            let limit = reltol * old_v.abs().max(new_v.abs()) + vntol;
-
-            if diff > limit {
-                return false;
-            }
-        }
-        true
     }
 }

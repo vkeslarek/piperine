@@ -1,7 +1,6 @@
 use crate::error::Error;
 use crate::math::linear::{LinearSystem, Stamp, Symbol, SymbolicMatrix};
 use crate::math::num::Field;
-use crate::math::vector::{Vector, VectorZero};
 use faer::prelude::{Solve, SparseColMat};
 use faer::sparse::Triplet;
 use faer::sparse::linalg::solvers::SymbolicLu;
@@ -11,20 +10,6 @@ use ndarray::{Array1, ArrayView1};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-impl<E: ComplexField> VectorZero for Col<E> {
-    fn zero(dimension: usize) -> Self {
-        Col::zeros(dimension)
-    }
-}
-
-impl<E: ComplexField + Field> Vector<E> for Col<E> {
-    fn scale(&self, factor: E) -> Self {
-        let mut out = self.clone();
-        out *= Scale(factor);
-        out
-    }
-}
-
 pub struct FaerLinearSystem<S: Symbol, E: Field> {
     pub triplets: Vec<Triplet<usize, usize, E>>,
     pub b_vec: Vec<E>,
@@ -32,8 +17,7 @@ pub struct FaerLinearSystem<S: Symbol, E: Field> {
     _phantom: PhantomData<S>,
 }
 
-impl<S: Symbol, E: Field + ComplexField> LinearSystem<S, E> for FaerLinearSystem<S, E> {
-    type VectorType = Col<E>;
+impl<S: Symbol, E: Field + ComplexField + 'static> LinearSystem<S, E> for FaerLinearSystem<S, E> {
     type SymbolicType = FaerSymbolicMatrix<S>;
 
     fn new(size: usize) -> Self {
@@ -64,10 +48,7 @@ impl<S: Symbol, E: Field + ComplexField> LinearSystem<S, E> for FaerLinearSystem
         }
     }
 
-    fn solve_with_backend(
-        self,
-        symbolic: &Self::SymbolicType,
-    ) -> crate::result::Result<Self::VectorType> {
+    fn solve_with_backend(self, symbolic: &Self::SymbolicType) -> crate::result::Result<Array1<E>> {
         let a = SparseColMat::try_new_from_triplets(self.size, self.size, &self.triplets).map_err(
             |err| Error::cause("Problem assembling the space matrix", "The library threw an error while trying to create the LHS of the sparse matrix", Box::new(err))
         )?;
@@ -87,7 +68,7 @@ impl<S: Symbol, E: Field + ComplexField> LinearSystem<S, E> for FaerLinearSystem
             )
         })?;
 
-        Ok(lu.solve(&b))
+        Ok(lu.solve(&b).to_ndarray())
     }
 }
 

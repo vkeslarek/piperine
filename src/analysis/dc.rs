@@ -11,7 +11,6 @@ use std::collections::HashMap;
 pub struct DcCircuitState {
     pub mapping: HashMap<CircuitReference, usize>,
     pub values: Array2<f64>,
-    is_branch: Array1<bool>,
 }
 
 impl DcCircuitState {
@@ -20,28 +19,12 @@ impl DcCircuitState {
         num_symbols: usize,
         history_depth: usize,
     ) -> Self {
-        // 1. Pre-calculate the Branch Mask (O(N) once, instead of O(N^2) every check)
-        // We create a boolean array where index 'i' is true if mapping[i] is a Branch.
-        let mut is_branch = Array1::from_elem(num_symbols, false);
-
-        for (reference, &index) in &mapping {
-            if let CircuitReference::Branch(_) = reference {
-                if index < num_symbols {
-                    is_branch[index] = true;
-                }
-            }
-        }
-
         Self {
             mapping,
-            // Initialize history with zeros
             values: Array2::zeros((history_depth, num_symbols)),
-            is_branch,
         }
     }
 
-    /// Pushes a new solution vector into history.
-    /// This acts like a sliding window: [t_0, t_-1] -> [new, t_0]
     pub fn push(&mut self, new_values: ArrayView1<f64>) {
         let rows = self.values.nrows();
         if rows > 1 {
@@ -85,39 +68,6 @@ impl DcCircuitState {
         }
         Some(self.values[[lookback, *index]])
     }
-
-    /// Vectorized SPICE convergence check.
-    /// Returns true if ALL nodes/branches are within tolerance.
-    pub fn check_convergence(
-        &self,
-        new_values: ArrayView1<f64>,
-        reltol: f64,
-        vntol: f64,
-        abstol: f64,
-    ) -> bool {
-        // Get the previous iteration's guess (Row 0)
-        let old_values = self.values.row(1);
-
-        // We use Zip to iterate through 3 arrays simultaneously:
-        // 1. Old Values
-        // 2. New Values
-        // 3. Is_Branch mask
-        // This usually compiles down to very efficient SIMD instructions.
-        Zip::from(&old_values)
-            .and(&new_values)
-            .and(&self.is_branch)
-            .all(|&old_v, &new_v, &is_branch| {
-                let diff = (new_v - old_v).abs();
-
-                // Select absolute tolerance based on component type
-                let abs_limit = if is_branch { abstol } else { vntol };
-
-                // SPICE Formula: |new - old| < RELTOL * max(|new|, |old|) + ABSTOL
-                let limit = reltol * old_v.abs().max(new_v.abs()) + abs_limit;
-
-                diff <= limit
-            })
-    }
 }
 
 impl CircuitState for DcCircuitState {
@@ -160,7 +110,7 @@ pub trait DcAnalysis: Component {
 
 #[derive(Debug)]
 pub struct DcAnalysisResult {
-    pub values: Col<f64>,
+    pub values: Array1<f64>,
     pub mapping: HashMap<CircuitReference, usize>,
 }
 
@@ -169,7 +119,7 @@ impl AnalysisResult for DcAnalysisResult {
 
     fn new() -> Self {
         Self {
-            values: faer::Col::zeros(0),
+            values: Array1::zeros(0),
             mapping: HashMap::new(),
         }
     }
@@ -177,16 +127,9 @@ impl AnalysisResult for DcAnalysisResult {
     fn push_converged(
         &mut self,
         mapping: &HashMap<CircuitReference, usize>,
-        values: ArrayView1<Self::NumType>,
+        values: Array1<Self::NumType>,
     ) {
-        // For a simple DC analysis, we just store the final result.
-        // We use our FaerToNdarray logic (the inverse) or manually build the Col.
-        self.values = faer::Col::from_fn(values.len(), |i| values[i]);
+        self.values = values;
         self.mapping = mapping.clone();
     }
-}
-
-pub trait DcSolver {
-    fn build(circuit: Circuit, context: Context) -> crate::result::Result<impl DcSolver>;
-    fn solve(&mut self) -> crate::result::Result<DcAnalysisResult>;
 }

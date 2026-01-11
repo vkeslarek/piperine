@@ -1,9 +1,9 @@
 use crate::analysis::transient::{
     TransientAnalysis, TransientAnalysisContext, TransientCircuitState,
 };
+use crate::circuit::netlist::CircuitReference;
 use crate::devices::capacitor::Capacitor;
 use crate::math::linear::Stamp;
-use crate::circuit::netlist::CircuitReference;
 use crate::solver::Context;
 
 impl TransientAnalysis for Capacitor {
@@ -25,10 +25,10 @@ impl TransientAnalysis for Capacitor {
         let c = self.capacitance.value;
 
         vec![
-            Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), c),
-            Stamp::Matrix(self.node_minus.clone(), self.node_minus.clone(), c),
-            Stamp::Matrix(self.node_plus.clone(), self.node_minus.clone(), -c),
-            Stamp::Matrix(self.node_minus.clone(), self.node_plus.clone(), -c),
+            Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), -c),
+            Stamp::Matrix(self.node_minus.clone(), self.node_minus.clone(), -c),
+            Stamp::Matrix(self.node_plus.clone(), self.node_minus.clone(), c),
+            Stamp::Matrix(self.node_minus.clone(), self.node_plus.clone(), c),
         ]
     }
 }
