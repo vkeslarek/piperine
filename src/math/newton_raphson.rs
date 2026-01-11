@@ -8,6 +8,7 @@ use crate::solver::Context;
 use ndarray::{Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
 use std::collections::HashMap;
 
+#[derive(Clone)]
 pub struct SolverState<S: Symbol, E: Field> {
     pub solver_variables: Array2<E>,
     pub solver_mapping: HashMap<S, usize>,
@@ -287,6 +288,7 @@ impl<S: Symbol, E: 'static + Field + ScalableByReal> NewtonRaphsonSolver<S, E> {
     }
 }
 
+#[derive(Clone)]
 pub struct NewtonRaphsonSolver<S: Symbol, E: Field> {
     pub symbolic_matrix: FaerSymbolicMatrix<S>,
     pub state: SolverState<S, E>,

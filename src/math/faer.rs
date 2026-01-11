@@ -72,6 +72,7 @@ impl<S: Symbol, E: Field + ComplexField + 'static> LinearSystem<S, E> for FaerLi
     }
 }
 
+#[derive(Clone)]
 pub struct FaerSymbolicMatrix<S: Symbol> {
     pub mapping: HashMap<S, usize>,
     pub size: usize,

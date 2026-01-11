@@ -4,7 +4,7 @@ use crate::analysis::transient::{
 use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitReference, IndependentVariable};
 use crate::math::linear::{InitialValue, LinearSystem, Stamp};
-use crate::math::newton_raphson::{SolverState, NewtonRaphsonSolver, NewtonRaphsonStamper};
+use crate::math::newton_raphson::{NewtonRaphsonSolver, NewtonRaphsonStamper, SolverState};
 use crate::math::unit::UnitExt;
 use crate::solver::Context;
 use ndarray::{Array1, ArrayView1};
@@ -51,15 +51,15 @@ impl<'a> TransientSolver<'a> {
 }
 
 pub struct TransientAnalysisStamper<'a> {
-    pub circuit: &'a mut Circuit,
+    circuit: &'a mut Circuit,
 }
 
 impl<'a> TransientAnalysisStamper<'a> {
-    /// Helper to extract timing info from state and build the context
-    fn get_context(
-        &self,
-        state: &SolverState<CircuitReference, f64>,
-    ) -> TransientAnalysisContext {
+    pub fn new(circuit: &'a mut Circuit) -> Self {
+        Self { circuit }
+    }
+
+    fn get_context(&self, state: &SolverState<CircuitReference, f64>) -> TransientAnalysisContext {
         let t0 = state
             .get_independent_value(&IndependentVariable::Time, 0)
             .unwrap_or(0.0);

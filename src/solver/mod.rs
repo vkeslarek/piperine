@@ -12,6 +12,7 @@ use std::hash::Hash;
 
 pub mod ac;
 pub mod dc;
+pub mod pss;
 pub mod transient;
 
 #[derive(Debug, Clone)]

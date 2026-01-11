@@ -1,4 +1,5 @@
 use crate::analysis::ac::AcSweepAnalysisOptions;
+use crate::analysis::pss::PssAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
 use crate::circuit::Circuit;
 use crate::circuit::netlist::{BranchIdentifier, CircuitReference};
@@ -78,6 +79,93 @@ pub fn test() {
             "{:.8} {:.8}",
             t,
             row_values[result.mapping[&CircuitReference::Node(2.into())]]
+        );
+    }
+}
+
+#[test]
+pub fn pss_test() {
+    init_config();
+    let mut circuit = Circuit::new("Test Rectifier PSS");
+
+    let freq = 10.0.kHz(); // 10 kHz
+    let period_val = 1.0 / 10000.0; // 100 microseconds
+
+    circuit.voltage_source(
+        "VCC",
+        "vcc",
+        GND,
+        Sine {
+            amplitude: 12.0.V(),
+            frequency: 10.0.kHz(),
+            phase: 0.0.deg(),
+        },
+    );
+    circuit.resistor("R1", "vcc", "1", 10.0.Ohms());
+    circuit.diode("D1", "1", "2");
+    circuit.capacitor("C1", "2", GND, 10.0.uF());
+    circuit.resistor("R2", "2", GND, 1.0.kOhms());
+
+    let options = PssAnalysisOptions {
+        period: period_val,    // 0.0001s
+        dt: period_val / 50.0, // 50 points per period (2us)
+        max_pss_iter: 20,      // PSS Newton usually converges in < 10 iters
+        pss_reltol: 1e-4,
+        t_stab: period_val * 500.0,
+    };
+
+    let result = circuit
+        .pss(Context::default())
+        .unwrap()
+        .solve(options)
+        .unwrap();
+
+    println!("PSS Converged State: {:?}", result);
+}
+
+#[test]
+pub fn pss_tran_val_test() {
+    init_config();
+    let mut circuit = Circuit::new("Test Rectifier PSS");
+
+    let freq = 10.0.kHz(); // 10 kHz
+    let period_val = 1.0 / 10000.0; // 100 microseconds
+
+    circuit.voltage_source(
+        "VCC",
+        "vcc",
+        GND,
+        Sine {
+            amplitude: 12.0.V(),
+            frequency: 10.0.kHz(),
+            phase: 0.0.deg(),
+        },
+    );
+    circuit.resistor("R1", "vcc", "1", 10.0.Ohms());
+    circuit.diode("D1", "1", "2");
+    circuit.capacitor("C1", "2", GND, 10.0.uF());
+    circuit.resistor("R2", "2", GND, 1.0.kOhms());
+
+    let result = circuit
+        .transient(
+            TransientAnalysisOptions {
+                stop_time: period_val * 10.0,
+                dt: period_val,
+            },
+            Context::default(),
+        )
+        .unwrap()
+        .solve()
+        .unwrap();
+
+    let times = result.timestamps(); // ArrayView1
+    let matrix = result.values(); // ArrayView2
+    for (i, row_values) in matrix.outer_iter().enumerate() {
+        let t = times[i];
+        println!(
+            "{:.8} {:.8}",
+            t,
+            row_values[result.mapping[&CircuitReference::Node("2".into())]]
         );
     }
 }
@@ -258,14 +346,12 @@ pub fn test_diode_ac_bias_dependency() {
         let result = circuit
             .ac(Context::default())
             .unwrap()
-            .solve_sweep(
-                AcSweepAnalysisOptions {
-                    start_frequency: 1000.0,
-                    stop_frequency: 1000.0,
-                    steps: 1,
-                    logarithmic: false,
-                },
-            )
+            .solve_sweep(AcSweepAnalysisOptions {
+                start_frequency: 1000.0,
+                stop_frequency: 1000.0,
+                steps: 1,
+                logarithmic: false,
+            })
             .unwrap();
 
         let v_out = result
