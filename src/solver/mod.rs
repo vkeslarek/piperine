@@ -1,14 +1,14 @@
-use crate::circuit::Circuit;
 use crate::circuit::netlist::CircuitReference;
-use crate::math::faer::{FaerLinearSystem, FaerSymbolicMatrix, FaerToNdarray};
-use crate::math::linear::{LinearSystem, Stamp, SymbolicMatrix};
+use crate::math::deriv::DifferentiableIndependentScalar;
+use crate::math::faer::FaerToNdarray;
+use crate::math::linear::{LinearSystem, Symbol, SymbolicMatrix};
 use crate::math::num::{Field, ScalableByReal};
 use crate::math::unit::{Conductance, Resistance, UnitExt};
 use faer::traits::ComplexField;
-use ndarray::{Array1, Array2, ArrayView1, ArrayViewMut1, Zip, s};
+use ndarray::ArrayView1;
 use num_traits::real::Real;
 use std::collections::HashMap;
-use tracing::debug;
+use std::hash::Hash;
 
 pub mod ac;
 pub mod dc;
@@ -40,8 +40,8 @@ impl Default for Context {
 impl Context {
     pub fn has_converged(
         &self,
-        old_values: ArrayView1<f64>,
-        new_values: ArrayView1<f64>,
+        old_values: &ArrayView1<f64>,
+        new_values: &ArrayView1<f64>,
         mapping: &HashMap<CircuitReference, usize>,
     ) -> bool {
         mapping.iter().all(|(reference, &index)| {

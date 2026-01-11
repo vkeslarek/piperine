@@ -1,95 +1,126 @@
 use crate::analysis::ac::{AcAnalysisContext, AcAnalysisResult, AcSweepAnalysisOptions};
 use crate::analysis::dc::DcAnalysisResult;
 use crate::circuit::Circuit;
-use crate::circuit::netlist::CircuitReference;
-use crate::math::faer::{FaerLinearSystem, FaerSymbolicMatrix};
-use crate::math::linear::{LinearSystem, Stamp, SymbolicMatrix};
+use crate::circuit::netlist::{CircuitReference, IndependentVariable};
+use crate::math::linear::{InitialValue, Stamp, SymbolicMatrix};
+use crate::math::newton_raphson::{SolverState, NewtonRaphsonSolver, NewtonRaphsonStamper};
 use crate::math::unit::UnitExt;
 use crate::solver::Context;
-use ndarray::{Array1, Array2};
+use ndarray::{Array1, Array2, ArrayView1};
 use num_complex::Complex;
-use std::collections::HashMap;
 
-pub struct AcSolver<'a> {
-    circuit: &'a mut Circuit,
-    context: Context,
-    symbolic: FaerSymbolicMatrix<CircuitReference>,
+pub struct AcAnalysisStamper<'a> {
+    pub circuit: &'a mut Circuit,
+    pub dc_point: DcAnalysisResult,
+    pub current_frequency: f64,
 }
 
-impl<'a> AcSolver<'a> {
-    pub fn build(circuit: &'a mut Circuit, context: Context) -> crate::result::Result<Self> {
-        let symbols: Vec<_> = circuit
+impl<'a> NewtonRaphsonStamper<CircuitReference, Complex<f64>> for AcAnalysisStamper<'a> {
+    fn static_stamps(
+        &mut self,
+        _state: &SolverState<CircuitReference, Complex<f64>>,
+        context: &Context,
+    ) -> crate::result::Result<Vec<Stamp<CircuitReference, Complex<f64>>>> {
+        let ac_ctx = AcAnalysisContext {
+            frequency: self.current_frequency.Hz(),
+        };
+
+        // Linearize around the stored DC operating point
+        Ok(self
+            .circuit
+            .components_mut()
+            .values_mut()
+            .filter_map(|c| c.as_ac())
+            .flat_map(|ac| ac.load_ac(&self.dc_point, &ac_ctx, context))
+            .filter(|s| !s.has_ground_node())
+            .collect())
+    }
+
+    fn dynamic_stamps(
+        &mut self,
+        _state: &SolverState<CircuitReference, Complex<f64>>,
+        _context: &Context,
+    ) -> crate::result::Result<Vec<Stamp<CircuitReference, Complex<f64>>>> {
+        // In AC, reactive elements are part of the static complex matrix (jωC)
+        Ok(Vec::new())
+    }
+
+    fn initial_conditions(
+        &mut self,
+        _context: &Context,
+    ) -> crate::result::Result<Vec<InitialValue<CircuitReference, Complex<f64>>>> {
+        Ok(Vec::new()) // AC usually starts from zero/source phasors
+    }
+
+    fn active_symbols(&self) -> Vec<CircuitReference> {
+        self.circuit
             .netlist()
             .all_references()
             .into_iter()
             .filter(|s| s.is_dependent())
-            .collect();
+            .collect()
+    }
 
-        // Dummy context for structural analysis
-        let dummy_ctx = AcAnalysisContext {
-            frequency: 1.0.Hz(),
-        };
-        let dummy_dc = DcAnalysisResult {
-            values: Array1::zeros(symbols.len()),
-            mapping: HashMap::new(),
-        };
+    fn independent_symbols(&self) -> Vec<IndependentVariable> {
+        vec![IndependentVariable::Time] // Using Time as the proxy for Frequency/Omega
+    }
 
-        let stamps = Self::linearize_ac(circuit, &context, &dummy_dc, &dummy_ctx)?;
-        let symbolic = FaerSymbolicMatrix::new(symbols, stamps)?;
+    fn converged(
+        &self,
+        _state: &SolverState<CircuitReference, Complex<f64>>,
+        _sol: &ArrayView1<Complex<f64>>,
+        _ctx: &Context,
+    ) -> bool {
+        true // AC is linear; it "converges" in one step
+    }
+}
 
-        Ok(Self {
+pub struct AcSolver<'a> {
+    pub linearizer: AcAnalysisStamper<'a>,
+    pub solver: NewtonRaphsonSolver<CircuitReference, Complex<f64>>,
+}
+
+impl<'a> AcSolver<'a> {
+    pub fn new(circuit: &'a mut Circuit, context: Context) -> crate::result::Result<Self> {
+        // 1. AC requires a DC operating point first
+        let dc_point = circuit.dc(context.clone())?.solve()?;
+
+        let mut linearizer = AcAnalysisStamper {
             circuit,
-            context,
-            symbolic,
-        })
+            dc_point,
+            current_frequency: 1.0,
+        };
+
+        // 2. Build the complex symbolic solver
+        let solver = NewtonRaphsonSolver::create(&mut linearizer, context)?;
+
+        Ok(Self { linearizer, solver })
     }
 
     pub fn solve_sweep(
         &mut self,
         options: AcSweepAnalysisOptions,
-        context: Context,
     ) -> crate::result::Result<AcAnalysisResult> {
-        let dc_result = self.circuit.dc(context.clone())?.solve()?;
-
         let frequencies = self.generate_frequencies(&options);
-        let mut data = Array2::zeros((frequencies.len(), self.symbolic.size()));
+        let mut data = Array2::zeros((frequencies.len(), self.solver.symbolic_matrix.size()));
 
         for (idx, &f) in frequencies.iter().enumerate() {
-            let ac_ctx = AcAnalysisContext { frequency: f.Hz() };
-            let stamps = Self::linearize_ac(self.circuit, &self.context, &dc_result, &ac_ctx)?;
+            self.linearizer.current_frequency = f;
 
-            let mut system = FaerLinearSystem::new(self.symbolic.size());
-            system.apply_stamps(&self.symbolic, stamps);
+            let solution = self.solver.step(
+                &mut self.linearizer,
+                &Array1::from_elem(1, f).view(),
+                &IndependentVariable::Frequency,
+            )?;
 
-            let solution = system.solve_with_backend(&self.symbolic)?;
             data.row_mut(idx).assign(&solution);
         }
 
         Ok(AcAnalysisResult {
-            mapping: self.symbolic.mapping.clone(),
+            mapping: self.solver.symbolic_matrix.mapping.clone(),
             frequencies,
             data,
         })
-    }
-
-    fn linearize_ac(
-        circuit: &mut Circuit,
-        context: &Context,
-        dc_point: &DcAnalysisResult,
-        ac_ctx: &AcAnalysisContext,
-    ) -> crate::result::Result<Vec<Stamp<CircuitReference, Complex<f64>>>> {
-        let mut stamps = Vec::new();
-
-        for comp in circuit.components_mut().values_mut() {
-            if let Some(ac) = comp.as_ac() {
-                stamps.extend(
-                    ac.load_ac(dc_point, ac_ctx, &context)
-                        .into_iter()
-                        .filter(|s| !s.has_ground_node()),
-                );
-            }
-        }
-        Ok(stamps)
     }
 
     fn generate_frequencies(&self, opt: &AcSweepAnalysisOptions) -> Vec<f64> {

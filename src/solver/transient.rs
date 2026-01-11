@@ -3,162 +3,92 @@ use crate::analysis::transient::{
 };
 use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitReference, IndependentVariable};
-use crate::circuit::state::CircuitState;
-use crate::error::Error;
-use crate::map;
-use crate::math::faer::{FaerLinearSystem, FaerSymbolicMatrix};
-use crate::math::linear::{LinearSystem, Stamp, SymbolicMatrix};
+use crate::math::linear::{InitialValue, LinearSystem, Stamp};
+use crate::math::newton_raphson::{SolverState, NewtonRaphsonSolver, NewtonRaphsonStamper};
 use crate::math::unit::UnitExt;
 use crate::solver::Context;
-use ndarray::Array1;
-use std::collections::HashMap;
+use ndarray::{Array1, ArrayView1};
 
-pub struct TransientSolver {
-    circuit: Circuit,
-    context: Context,
-    options: TransientAnalysisOptions,
-    symbolic_matrix: FaerSymbolicMatrix<CircuitReference>,
-    state: CircuitState<f64>,
+pub struct TransientSolver<'a> {
+    pub linearizer: TransientAnalysisStamper<'a>,
+    pub options: TransientAnalysisOptions,
+    pub solver: NewtonRaphsonSolver<CircuitReference, f64>,
 }
 
-impl TransientSolver {
-    pub fn build(
-        mut circuit: Circuit,
+impl<'a> TransientSolver<'a> {
+    pub fn new(
+        circuit: &'a mut Circuit,
         options: TransientAnalysisOptions,
         context: Context,
     ) -> crate::result::Result<Self> {
-        let symbols = Self::get_active_symbols(&circuit);
-        let mut dummy_state = CircuitState::new(HashMap::new(), HashMap::new(), 0);
-        let init_ctx = TransientAnalysisContext {
-            time: 0.0.Sec(),
-            dt: options.dt.Sec(),
-        };
-
-        // Collect stamps for symbolic analysis
-        let stamps = [Self::linearize_static, Self::linearize_dynamic]
-            .iter()
-            .flat_map(|f| {
-                f(&mut circuit, &mut dummy_state, &init_ctx, &context).unwrap_or_default()
-            })
-            .collect();
-
-        let symbolic_matrix = FaerSymbolicMatrix::new(symbols, stamps)?;
-        let mut state = CircuitState::new(
-            symbolic_matrix.mapping.clone(),
-            map![IndependentVariable::Time => 0],
-            3,
-        );
-
-        // Apply initial conditions
-        circuit.components_mut().values_mut().for_each(|comp| {
-            if let Some(tran) = comp.as_transient() {
-                state.apply_initial_conditions(tran.initial_transient_values(&context));
-            }
-        });
+        let mut linearizer = TransientAnalysisStamper { circuit };
+        let solver = NewtonRaphsonSolver::create(&mut linearizer, context)?;
 
         Ok(Self {
-            circuit,
-            context,
+            linearizer,
             options,
-            symbolic_matrix,
-            state,
+            solver,
         })
     }
 
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
-        let mut result = TransientAnalysisResult::new(self.symbolic_matrix.mapping.clone());
+        let mut result = TransientAnalysisResult::new(self.solver.symbolic_matrix.mapping.clone());
         let mut t = 0.0;
 
         while t <= self.options.stop_time {
-            let dt = if t == 0.0 { 0.0 } else { self.options.dt };
-            let ctx = TransientAnalysisContext {
-                time: t.Sec(),
-                dt: dt.Sec(),
-            };
+            // NewtonRaphsonSolver::step now handles the commit internally
+            let solution = self.solver.step(
+                &mut self.linearizer,
+                &Array1::from_elem(1, t).view(),
+                &IndependentVariable::Time,
+            )?;
 
-            if let Err(e) = self.solve_newton_raphson(&ctx, t, dt) {
-                self.state.rollback();
-                return Err(e);
-            }
-
-            self.state.commit();
-            result.push(t, self.state.get_dependent_column(0));
+            result.push(t, solution.view());
             t += self.options.dt;
         }
         Ok(result)
     }
+}
 
-    fn solve_newton_raphson(
-        &mut self,
-        ctx: &TransientAnalysisContext,
-        time: f64,
-        dt: f64,
-    ) -> crate::result::Result<()> {
-        self.state.prepare_next(&Array1::from_elem(1, time).view());
+pub struct TransientAnalysisStamper<'a> {
+    pub circuit: &'a mut Circuit,
+}
 
-        let (alpha, history) = self
-            .state
-            .integration_parameters(IndependentVariable::Time)
-            .unwrap_or((0.0, Array1::zeros(self.symbolic_matrix.size())));
-
-        for iter in 0..self.context.max_iter {
-            let mut stamps =
-                Self::linearize_static(&mut self.circuit, &self.state, ctx, &self.context)?;
-            let dynamic =
-                Self::linearize_dynamic(&mut self.circuit, &self.state, ctx, &self.context)?;
-
-            // Apply BDF dynamic stamps
-            for s in dynamic {
-                if let Stamp::Matrix(r, c, val) = s {
-                    stamps.push(Stamp::Matrix(r.clone(), c.clone(), val * alpha));
-                    if let Some(&idx) = self.symbolic_matrix.mapping.get(&c) {
-                        stamps.push(Stamp::Rhs(r, -val * history[idx]));
-                    }
-                }
-            }
-
-            let solution = self.solve_linear_system(stamps)?;
-            let converged = self.context.has_converged(
-                self.state.get_dependent_column(0),
-                solution.view(),
-                &self.symbolic_matrix.mapping,
-            );
-
-            self.state.get_current_dependent_column().assign(&solution);
-
-            if converged {
-                println!("t={:.3e} iters={}", time, iter);
-                return Ok(());
-            }
-        }
-        Err(Error::simple(
-            "Convergence Failure",
-            format!("Failed at t={}", time),
-        ))
-    }
-    
-    fn solve_linear_system(
+impl<'a> TransientAnalysisStamper<'a> {
+    /// Helper to extract timing info from state and build the context
+    fn get_context(
         &self,
-        stamps: Vec<Stamp<CircuitReference, f64>>,
-    ) -> crate::result::Result<Array1<f64>> {
-        let mut system = FaerLinearSystem::new(self.symbolic_matrix.size());
-        system.apply_stamps(&self.symbolic_matrix, stamps);
-        system.solve_with_backend(&self.symbolic_matrix)
-    }
+        state: &SolverState<CircuitReference, f64>,
+    ) -> TransientAnalysisContext {
+        let t0 = state
+            .get_independent_value(&IndependentVariable::Time, 0)
+            .unwrap_or(0.0);
+        let t1 = state
+            .get_independent_value(&IndependentVariable::Time, 1)
+            .unwrap_or(t0);
 
-    fn linearize_static(
-        circuit: &mut Circuit,
-        state: &CircuitState<f64>,
-        ctx: &TransientAnalysisContext,
-        solver_ctx: &Context,
+        TransientAnalysisContext {
+            time: t0.Sec(),
+            dt: (t0 - t1).Sec(),
+        }
+    }
+}
+
+impl<'a> NewtonRaphsonStamper<CircuitReference, f64> for TransientAnalysisStamper<'a> {
+    fn static_stamps(
+        &mut self,
+        state: &SolverState<CircuitReference, f64>,
+        context: &Context,
     ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
+        let tran_ctx = self.get_context(state);
+
         let mut stamps = Vec::new();
-        for comp in circuit.components_mut().values_mut() {
+        for comp in self.circuit.components_mut().values_mut() {
             if let Some(t_comp) = comp.as_transient() {
-                t_comp.update_transient(state, ctx, solver_ctx)?;
+                t_comp.update_transient(state, &tran_ctx, context)?;
                 stamps.extend(
                     t_comp
-                        .load_transient(state, ctx, solver_ctx)
+                        .load_transient(state, &tran_ctx, context)
                         .into_iter()
                         .filter(|s| !s.has_ground_node()),
                 );
@@ -167,32 +97,59 @@ impl TransientSolver {
         Ok(stamps)
     }
 
-    fn linearize_dynamic(
-        circuit: &mut Circuit,
-        state: &CircuitState<f64>,
-        ctx: &TransientAnalysisContext,
-        solver_ctx: &Context,
+    fn dynamic_stamps(
+        &mut self,
+        state: &SolverState<CircuitReference, f64>,
+        context: &Context,
     ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
-        let mut stamps = Vec::new();
-        for comp in circuit.components_mut().values_mut() {
-            if let Some(t_comp) = comp.as_transient() {
-                stamps.extend(
-                    t_comp
-                        .load_transient_dynamic(state, ctx, solver_ctx)
-                        .into_iter()
-                        .filter(|s| !s.has_ground_node()),
-                );
-            }
-        }
-        Ok(stamps)
+        let tran_ctx = self.get_context(state);
+
+        Ok(self
+            .circuit
+            .components_mut()
+            .values_mut()
+            .filter_map(|c| c.as_transient())
+            .flat_map(|t| t.load_transient_dynamic(state, &tran_ctx, context))
+            .filter(|s| !s.has_ground_node())
+            .collect())
     }
 
-    fn get_active_symbols(circuit: &Circuit) -> Vec<CircuitReference> {
-        circuit
+    fn initial_conditions(
+        &mut self,
+        context: &Context,
+    ) -> crate::result::Result<Vec<InitialValue<CircuitReference, f64>>> {
+        Ok(self
+            .circuit
+            .components_mut()
+            .values_mut()
+            .filter_map(|c| c.as_transient())
+            .flat_map(|t| t.initial_transient_values(context))
+            .collect())
+    }
+
+    fn active_symbols(&self) -> Vec<CircuitReference> {
+        self.circuit
             .netlist()
             .all_references()
             .into_iter()
             .filter(|s| s.is_dependent())
             .collect()
+    }
+
+    fn independent_symbols(&self) -> Vec<IndependentVariable> {
+        vec![IndependentVariable::Time]
+    }
+
+    fn converged(
+        &self,
+        state: &SolverState<CircuitReference, f64>,
+        solution: &ArrayView1<f64>,
+        context: &Context,
+    ) -> bool {
+        context.has_converged(
+            &state.get_dependent_column(0),
+            solution,
+            &state.solver_mapping,
+        )
     }
 }

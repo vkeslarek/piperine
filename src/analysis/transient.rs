@@ -1,13 +1,10 @@
-use crate::analysis::InitialValue;
-use crate::circuit::Circuit;
 use crate::circuit::netlist::CircuitReference;
 use crate::circuit::state::CircuitState;
 use crate::devices::Component;
-use crate::math::deriv::BdfCoefficientGenerator;
-use crate::math::linear::Stamp;
+use crate::math::linear::{InitialValue, Stamp};
 use crate::math::unit::Time;
 use crate::solver::Context;
-use ndarray::{Array1, Array2, ArrayView1, ArrayView2, s};
+use ndarray::{Array1, ArrayView1, ArrayView2};
 use std::collections::HashMap;
 
 #[derive(Clone)]
@@ -48,7 +45,10 @@ pub trait TransientAnalysis: Component {
         vec![]
     }
 
-    fn initial_transient_values(&self, context: &Context) -> Vec<InitialValue<f64>> {
+    fn initial_transient_values(
+        &self,
+        context: &Context,
+    ) -> Vec<InitialValue<CircuitReference, f64>> {
         Vec::new()
     }
 }

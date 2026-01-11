@@ -1,4 +1,3 @@
-use crate::analysis::ac::AcFrequencyAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
 use crate::circuit::netlist::{IntoNodeIdentifier, Netlist};
 use crate::devices::capacitor::Capacitor;
@@ -6,7 +5,7 @@ use crate::devices::diode::Diode;
 use crate::devices::resistor::Resistor;
 use crate::devices::voltage_source::{VoltageSource, Waveform};
 use crate::devices::{AnyModel, Component};
-use crate::math::unit::{Capacitance, Resistance};
+use crate::math::unit::{Capacitance, Resistance, UnitExt};
 use crate::solver::Context;
 use crate::solver::ac::AcSolver;
 use crate::solver::dc::DcSolver;
@@ -76,19 +75,19 @@ impl Circuit {
     }
 
     pub fn ac(&mut self, context: Context) -> crate::result::Result<AcSolver> {
-        AcSolver::build(self, context)
+        AcSolver::new(self, context)
     }
 
     pub fn dc(&mut self, context: Context) -> crate::result::Result<DcSolver> {
-        DcSolver::build(self, context)
+        DcSolver::new(self, context)
     }
 
     pub fn transient(
-        self,
+        &mut self,
         transient_options: TransientAnalysisOptions,
         context: Context,
     ) -> crate::result::Result<TransientSolver> {
-        TransientSolver::build(self, transient_options, context)
+        TransientSolver::new(self, transient_options, context)
     }
 
     pub fn resistor(

@@ -6,6 +6,11 @@ use std::hash::Hash;
 
 pub trait Symbol: Clone + Eq + Hash {}
 
+pub struct InitialValue<S: Symbol, E: Field> {
+    pub reference: S,
+    pub value: E,
+}
+
 #[derive(Debug, Clone)]
 pub enum Stamp<S: Symbol, E: Field> {
     Matrix(S, S, E),

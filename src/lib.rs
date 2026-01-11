@@ -198,15 +198,12 @@ pub fn ac_testing_circuit() {
     let result = circuit
         .ac(Context::default())
         .unwrap()
-        .solve_sweep(
-            AcSweepAnalysisOptions {
-                start_frequency: 10.0,
-                stop_frequency: 100_000.0,
-                steps: 50,
-                logarithmic: true,
-            },
-            Context::default(),
-        )
+        .solve_sweep(AcSweepAnalysisOptions {
+            start_frequency: 10.0,
+            stop_frequency: 100_000.0,
+            steps: 50,
+            logarithmic: true,
+        })
         .unwrap();
 
     for (i, &f) in result.frequencies.iter().enumerate() {
@@ -235,11 +232,16 @@ pub fn test_diode_ac_bias_dependency() {
 
         // 1. DC Bias + AC Signal
         // We use a Sine source for AC, but the DC solver sees the 'bias'
-        circuit.voltage_source("V1", "in", GND, Sine {
-            amplitude: 1.0.V(),
-            frequency: 1.0.kHz(),
-            phase: 0.0.deg(),
-        });
+        circuit.voltage_source(
+            "V1",
+            "in",
+            GND,
+            Sine {
+                amplitude: 1.0.V(),
+                frequency: 1.0.kHz(),
+                phase: 0.0.deg(),
+            },
+        );
 
         // Offset the input to bias the diode
         // (Assuming your VoltageSource supports a DC offset or we use a separate DC source)
@@ -263,7 +265,6 @@ pub fn test_diode_ac_bias_dependency() {
                     steps: 1,
                     logarithmic: false,
                 },
-                Context::default(),
             )
             .unwrap();
 

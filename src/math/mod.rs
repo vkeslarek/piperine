@@ -5,3 +5,4 @@ pub mod num;
 pub mod param;
 pub mod rand;
 pub mod unit;
+pub mod newton_raphson;

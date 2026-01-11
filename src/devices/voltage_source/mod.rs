@@ -35,16 +35,6 @@ impl Into<Waveform> for Voltage {
     }
 }
 
-impl Waveform {
-    pub fn dc_value(&self) -> Voltage {
-        match self {
-            Waveform::DC(v) => *v,
-            Waveform::Sine { amplitude, .. } => *amplitude,
-            Waveform::Step { initial, .. } => *initial,
-        }
-    }
-}
-
 pub struct VoltageSource {
     pub name: String,
     pub model: Arc<VoltageSourceModelType>,
