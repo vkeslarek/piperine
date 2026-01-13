@@ -1,4 +1,3 @@
-use std::any::Any;
 use crate::devices::Model;
 use crate::devices::resistor::Resistor;
 use crate::math::unit::{
@@ -7,10 +6,7 @@ use crate::math::unit::{
 };
 use crate::solver::Context;
 use crate::util::AsAny;
-
-pub trait ResistorModelType: Model<ComponentType = Resistor> {
-    fn update_conductance(&self, component: &mut Resistor, context: &Context);
-}
+use std::any::Any;
 
 #[derive(Debug)]
 pub struct ResistorModel {
@@ -31,6 +27,8 @@ pub struct ResistorModel {
     pub lf: Ratio,
     pub wf: Ratio,
     pub ef: Ratio,
+    pub kf: Ratio,
+    pub af: Ratio,
 }
 
 impl Default for ResistorModel {
@@ -50,6 +48,8 @@ impl Default for ResistorModel {
             lf: 1.0.ratio(),
             wf: 1.0.ratio(),
             ef: 1.0.ratio(),
+            kf: 1.0.ratio(),
+            af: 1.0.ratio(),
         }
     }
 }
@@ -105,32 +105,20 @@ impl ResistorModel {
         self
     }
 
-    // TODO: lf, wf, ef
-}
-
-impl AsAny for ResistorModel {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
+    pub fn with_noise_parameters(&mut self, lf: Ratio, wf: Ratio, ef: Ratio) -> &mut Self {
+        self.lf = lf;
+        self.wf = wf;
+        self.ef = ef;
         self
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-impl Model for ResistorModel {
-    type ComponentType = Resistor;
-}
-
-impl ResistorModelType for ResistorModel {
-    fn update_conductance(&self, component: &mut Resistor, context: &Context) {
+    pub fn update_conductance(&self, component: &mut Resistor, context: &Context) {
         let r_nom = match component.resistance {
             Some(r) => r,
             None => {
                 let effective_length =
                     component.length.unwrap_or(self.def_length) - 2.0 * self.short;
-                let effective_width =
-                    component.width.unwrap_or(self.def_width) - 2.0 * self.narrow;
+                let effective_width = component.width.unwrap_or(self.def_width) - 2.0 * self.narrow;
 
                 // Physics: R = Rsh * (L / W)
                 if self.sheet_res > 0.0.Ohms_per_meter2() {
@@ -166,4 +154,18 @@ impl ResistorModelType for ResistorModel {
         component.conductance = component.multiplier.unwrap_or(1.0.ratio())
             / (r_nom * factor * component.scale.unwrap_or(1.0.ratio()));
     }
+}
+
+impl AsAny for ResistorModel {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl Model for ResistorModel {
+    type ComponentType = Resistor;
 }

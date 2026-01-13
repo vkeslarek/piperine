@@ -1,17 +1,18 @@
-use std::collections::HashMap;
-use ndarray::Array2;
 use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
-use crate::math::linear::Stamp;
-use crate::math::unit::Frequency;
 use crate::circuit::netlist::CircuitReference;
+use crate::math::Stamp;
+use crate::math::unit::Frequency;
 use crate::solver::Context;
+use ndarray::Array2;
 use num_complex::Complex;
+use std::collections::HashMap;
+use crate::devices::Component;
 
 pub struct AcAnalysisContext {
     pub frequency: Frequency,
 }
 
-pub trait AcAnalysis: DcAnalysis {
+pub trait AcAnalysis: Component + DcAnalysis {
     fn update_ac(
         &mut self,
         dc_analysis_result: &DcAnalysisResult,
@@ -33,6 +34,7 @@ pub struct AcFrequencyAnalysisOptions {
     pub frequency: f64,
 }
 
+#[derive(Clone, Debug)]
 pub struct AcSweepAnalysisOptions {
     pub start_frequency: f64,
     pub stop_frequency: f64,
@@ -47,7 +49,11 @@ pub struct AcAnalysisResult {
 }
 
 impl AcAnalysisResult {
-    pub fn get_phasor(&self, reference: &CircuitReference, freq_idx: usize) -> Option<Complex<f64>> {
+    pub fn get_phasor(
+        &self,
+        reference: &CircuitReference,
+        freq_idx: usize,
+    ) -> Option<Complex<f64>> {
         let col = *self.mapping.get(reference)?;
         Some(self.data[[freq_idx, col]])
     }

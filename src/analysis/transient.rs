@@ -1,11 +1,11 @@
 use crate::circuit::netlist::CircuitReference;
 use crate::circuit::state::CircuitState;
 use crate::devices::Component;
-use crate::math::linear::{InitialValue, Stamp};
 use crate::math::unit::Time;
 use crate::solver::Context;
 use ndarray::{Array1, ArrayView1, ArrayView2};
 use std::collections::HashMap;
+use crate::math::{InitialValue, Stamp};
 
 #[derive(Clone)]
 pub struct TransientAnalysisOptions {

@@ -1,7 +1,7 @@
 use crate::circuit::netlist::CircuitReference;
 use crate::math::deriv::DifferentiableIndependentScalar;
 use crate::math::faer::FaerToNdarray;
-use crate::math::linear::{LinearSystem, Symbol, SymbolicMatrix};
+use crate::math::linear::{SparseLinearSystem, SymbolicMatrix};
 use crate::math::num::{Field, ScalableByReal};
 use crate::math::unit::{Conductance, Resistance, UnitExt};
 use faer::traits::ComplexField;
@@ -9,11 +9,13 @@ use ndarray::ArrayView1;
 use num_traits::real::Real;
 use std::collections::HashMap;
 use std::hash::Hash;
+use crate::math::Symbol;
 
 pub mod ac;
 pub mod dc;
 pub mod pss;
 pub mod transient;
+pub mod noise;
 
 #[derive(Debug, Clone)]
 pub struct Context {

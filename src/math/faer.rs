@@ -1,23 +1,26 @@
 use crate::error::Error;
-use crate::math::linear::{LinearSystem, Stamp, Symbol, SymbolicMatrix};
+use crate::math::linear::{DenseLinearSystem, SparseLinearSystem, SymbolicMatrix};
 use crate::math::num::Field;
+use crate::math::{Stamp, Symbol};
 use faer::prelude::{Solve, SparseColMat};
 use faer::sparse::Triplet;
 use faer::sparse::linalg::solvers::SymbolicLu;
 use faer::traits::ComplexField;
-use faer::{Col, ColRef, Scale};
-use ndarray::{Array1, ArrayView1};
+use faer::{Col, Mat};
+use ndarray::{Array1, Array2};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-pub struct FaerLinearSystem<S: Symbol, E: Field> {
+pub struct FaerSparseLinearSystem<S: Symbol, E: Field> {
     pub triplets: Vec<Triplet<usize, usize, E>>,
     pub b_vec: Vec<E>,
     pub size: usize,
     _phantom: PhantomData<S>,
 }
 
-impl<S: Symbol, E: Field + ComplexField + 'static> LinearSystem<S, E> for FaerLinearSystem<S, E> {
+impl<S: Symbol, E: Field + ComplexField + 'static> SparseLinearSystem<S, E>
+    for FaerSparseLinearSystem<S, E>
+{
     type SymbolicType = FaerSymbolicMatrix<S>;
 
     fn new(size: usize) -> Self {
@@ -147,5 +150,54 @@ pub trait FaerToNdarray<E> {
 impl<E: Clone + 'static> FaerToNdarray<E> for Col<E> {
     fn to_ndarray(&self) -> Array1<E> {
         self.as_ref().iter().cloned().collect()
+    }
+}
+
+pub struct FaerDenseSolver<E: Field> {
+    matrix: Mat<E>,
+    rhs: Mat<E>,
+}
+
+impl<E: Field> FaerDenseSolver<E> {
+    pub fn new(size: usize) -> Self {
+        Self {
+            matrix: Mat::<E>::zeros(size, size),
+            rhs: Mat::<E>::zeros(size, 1),
+        }
+    }
+}
+
+impl<E: Field> DenseLinearSystem<E> for FaerDenseSolver<E> {
+    fn set_matrix(&mut self, matrix: &Array2<E>) {
+        assert_eq!(matrix.nrows(), self.matrix.nrows());
+        assert_eq!(matrix.ncols(), self.matrix.ncols());
+
+        for r in 0..matrix.nrows() {
+            for c in 0..matrix.ncols() {
+                let val = matrix[[r, c]];
+                self.matrix[(r, c)] = val;
+            }
+        }
+    }
+
+    fn set_rhs(&mut self, rhs: &Array1<E>) {
+        assert_eq!(rhs.len(), self.rhs.nrows());
+
+        for r in 0..rhs.ndim() {
+            self.rhs[(r, 0)] = rhs[r];
+        }
+    }
+
+    fn solve(&self) -> crate::result::Result<Array1<E>> {
+        let lu = self.matrix.partial_piv_lu();
+        let solution_mat = lu.solve(&self.rhs);
+
+        let vec_size = self.rhs.nrows();
+        let mut solution_array = Array1::<E>::zeros(vec_size);
+        for i in 0..vec_size {
+            solution_array[i] = solution_mat[(i, 0)];
+        }
+
+        Ok(solution_array)
     }
 }

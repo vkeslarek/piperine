@@ -1,9 +1,9 @@
 use crate::analysis::ac::AcSweepAnalysisOptions;
+use crate::analysis::noise::NoiseAnalysisOptions;
 use crate::analysis::pss::PssAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
 use crate::circuit::Circuit;
 use crate::circuit::netlist::{BranchIdentifier, CircuitReference};
-use crate::devices::voltage_source::Waveform;
 use crate::devices::voltage_source::Waveform::{Sine, Step};
 use crate::math::unit::UnitExt;
 use crate::solver::Context;
@@ -366,4 +366,71 @@ pub fn test_diode_ac_bias_dependency() {
             v_out.norm() / (1.0 - v_out.norm()) / 10000.0 // rough g_d estimation
         );
     }
+}
+
+#[test]
+pub fn test_noise_verification() {
+    init_config();
+    // 1. Setup - The "Johnson-Nyquist" Test
+    // Theory: A resistor R in parallel with a capacitor C produces total integrated noise voltage
+    // V_rms = sqrt(k * T / C), independent of Resistance!
+    //
+    // Constants:
+    // k = 1.380649e-23
+    // T = 300.15 K (Default SPICE temp 27C)
+    // C = 1.0 nF
+    // Expected V_rms = sqrt(1.38e-23 * 300.15 / 1e-9) = 2.035 uV
+
+    let mut circuit = Circuit::new("Noise Verification - RC");
+
+    // We rely on the resistor's internal thermal noise model.
+    // The Voltage Source is a short to ground (0V) effectively.
+    circuit
+        .resistor("R1", "out", GND, 100.0.kOhms())
+        .with_noise(true);
+    circuit.capacitor("C1", "out", GND, 1.0.nF());
+
+    // 2. Configure Noise Analysis
+    // Bandwidth: RC Cutoff is 1 / (2*pi*100k*1n) ≈ 1.59 kHz
+    // We need to sweep well beyond this to capture the total energy (integrate to infinity).
+    let result = circuit
+        .noise(
+            NoiseAnalysisOptions {
+                sweep_options: AcSweepAnalysisOptions {
+                    start_frequency: 1.0,  // 1 Hz
+                    stop_frequency: 1.0e6, // 1 MHz (>> 1.59 kHz)
+                    steps: 500,            // High resolution for integration accuracy
+                    logarithmic: true,
+                },
+                output_node: "out".into(),
+                reference_node: GND,
+                input_source_name: None,
+            },
+            Context::default(),
+        )
+        .unwrap()
+        .solve()
+        .unwrap();
+
+    // 3. Validation
+    let k_b = 1.380649e-23;
+    let temp = 300.15;
+    let cap = 1.0e-9;
+
+    let expected_rms = f64::sqrt(k_b * temp / cap);
+    let simulated_rms = result.integrated_noise;
+
+    println!("--- Noise Simulation Results ---");
+    println!("Circuit: R=100k, C=1nF");
+    println!("Theory (sqrt(kT/C)): {:.4} uV", expected_rms * 1e6);
+    println!("Simulated:           {:.4} uV", simulated_rms * 1e6);
+
+    let error_pct = (simulated_rms - expected_rms).abs() / expected_rms * 100.0;
+    println!("Error: {:.2}%", error_pct);
+
+    // Allow small error due to finite integration range (1Hz-1MHz vs 0-Inf)
+    assert!(
+        error_pct < 2.0,
+        "Noise simulation deviated significantly from theory!"
+    );
 }

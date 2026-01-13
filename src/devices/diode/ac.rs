@@ -2,7 +2,7 @@ use crate::analysis::ac::{AcAnalysis, AcAnalysisContext};
 use crate::analysis::dc::DcAnalysisResult;
 use crate::circuit::netlist::CircuitReference;
 use crate::devices::diode::Diode;
-use crate::math::linear::Stamp;
+use crate::math::Stamp;
 use crate::solver::Context;
 use num_complex::Complex;
 

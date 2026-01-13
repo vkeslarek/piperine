@@ -1,10 +1,10 @@
 use crate::circuit::netlist::CircuitReference;
 use crate::circuit::state::CircuitState;
 use crate::devices::Component;
-use crate::math::linear::{InitialValue, Stamp};
 use crate::solver::Context;
 use ndarray::Array1;
 use std::collections::HashMap;
+use crate::math::{InitialValue, Stamp};
 
 pub trait DcAnalysis: Component {
     fn update_dc(

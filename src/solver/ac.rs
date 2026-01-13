@@ -2,12 +2,13 @@ use crate::analysis::ac::{AcAnalysisContext, AcAnalysisResult, AcSweepAnalysisOp
 use crate::analysis::dc::DcAnalysisResult;
 use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitReference, IndependentVariable};
-use crate::math::linear::{InitialValue, Stamp, SymbolicMatrix};
-use crate::math::newton_raphson::{SolverState, NewtonRaphsonSolver, NewtonRaphsonStamper};
+use crate::math::linear::SymbolicMatrix;
+use crate::math::newton_raphson::{NewtonRaphsonSolver, NewtonRaphsonStamper, SolverState};
 use crate::math::unit::UnitExt;
 use crate::solver::Context;
 use ndarray::{Array1, Array2, ArrayView1};
 use num_complex::Complex;
+use crate::math::{InitialValue, Stamp};
 
 pub struct AcAnalysisStamper<'a> {
     pub circuit: &'a mut Circuit,

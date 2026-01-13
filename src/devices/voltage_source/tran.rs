@@ -2,7 +2,7 @@ use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext};
 use crate::circuit::netlist::CircuitReference;
 use crate::circuit::state::CircuitState;
 use crate::devices::voltage_source::{VoltageSource, Waveform};
-use crate::math::linear::Stamp;
+use crate::math::Stamp;
 use crate::math::unit::{Angle, AngularVelocity, Radian, Ratio, Voltage};
 use crate::solver::Context;
 use std::f64::consts::PI;

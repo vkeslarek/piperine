@@ -1,10 +1,11 @@
 use crate::analysis::dc::DcAnalysisResult;
 use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitReference, IndependentVariable};
-use crate::math::linear::{InitialValue, LinearSystem, Stamp};
-use crate::math::newton_raphson::{SolverState, NewtonRaphsonSolver, NewtonRaphsonStamper};
+use crate::math::linear::SparseLinearSystem;
+use crate::math::newton_raphson::{NewtonRaphsonSolver, NewtonRaphsonStamper, SolverState};
 use crate::solver::Context;
 use ndarray::{Array1, ArrayView1};
+use crate::math::{InitialValue, Stamp};
 
 pub struct DcAnalysisStamper<'a> {
     pub circuit: &'a mut Circuit,

@@ -2,7 +2,7 @@ use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext};
 use crate::circuit::netlist::CircuitReference;
 use crate::circuit::state::CircuitState;
 use crate::devices::resistor::Resistor;
-use crate::math::linear::Stamp;
+use crate::math::Stamp;
 use crate::solver::Context;
 
 impl TransientAnalysis for Resistor {

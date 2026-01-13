@@ -2,7 +2,7 @@ use crate::analysis::dc::DcAnalysis;
 use crate::circuit::netlist::CircuitReference;
 use crate::circuit::state::CircuitState;
 use crate::devices::voltage_source::{VoltageSource, Waveform};
-use crate::math::linear::Stamp;
+use crate::math::Stamp;
 use crate::math::unit::UnitExt;
 use crate::solver::Context;
 

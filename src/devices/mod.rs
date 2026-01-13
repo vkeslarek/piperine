@@ -5,9 +5,10 @@ pub mod voltage_source;
 
 use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
+use crate::analysis::noise::NoiseSource;
 use crate::analysis::transient::TransientAnalysis;
-use crate::error::Error;
 use crate::circuit::netlist::Netlist;
+use crate::error::Error;
 use crate::util::AsAny;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
@@ -22,6 +23,10 @@ pub trait Component: Any + AsAny {
     fn as_ac(&mut self) -> Option<&mut dyn AcAnalysis>;
 
     fn as_transient(&mut self) -> Option<&mut dyn TransientAnalysis>;
+
+    fn as_noise_source(&mut self) -> Option<&mut dyn NoiseSource> {
+        None
+    }
 }
 
 pub trait ComponentSpec: Any {
@@ -109,19 +114,4 @@ impl ModelResolver {
             ))
         }
     }
-
-    // pub fn resolve<C: Component + 'static>(
-    //     &self,
-    //     model: Option<String>,
-    // ) -> Option<Arc<dyn Model<ComponentType = C>>> {
-    //     // Handles the default case -> TODO
-    //
-    //     let model = self
-    //         .model_cache
-    //         .get(&model.clone()?)
-    //         .cloned()
-    //         .or_else(|| self.provider.fetch(&model?));
-    //
-    //     model.and_then(|mdl| mdl.as_any().downcast_ref().cloned())
-    // }
 }

@@ -2,7 +2,7 @@ use num_complex::Complex;
 use paste::paste;
 use std::f64::consts::PI;
 use uom::si::{ISQ, Quantity, SI};
-use uom::typenum::{N1, N2, N3, P1, Z0};
+use uom::typenum::{N1, N2, N3, P1, P2, Z0};
 
 /*******************************************************
 TYPE ALIASES -> Measurements
@@ -22,6 +22,7 @@ pub type Ratio = uom::si::f64::Ratio;
 pub type Time = uom::si::f64::Time;
 pub type Voltage = uom::si::f64::ElectricPotential;
 pub type Current = uom::si::f64::ElectricCurrent;
+pub type HeatCapacity = uom::si::f64::HeatCapacity;
 
 // Complex
 pub type ComplexVoltage = uom::si::f64::ElectricPotential;
@@ -43,6 +44,9 @@ pub type LinearResistivity = Quantity<ISQ<P1, P1, N3, N2, Z0, Z0, Z0>, SI<f64>, 
 
 // Ohms/m^2: [L:0, M:1, T:-3, I:-2, Th:0] (Sheet Resistance / Resistivity context)
 pub type SheetResistance = Quantity<ISQ<Z0, P1, N3, N2, Z0, Z0, Z0>, SI<f64>, f64>;
+
+// Definition: Current² * Time (A²s)
+pub type CurrentNoisePower = Quantity<ISQ<Z0, Z0, P1, P2, Z0, Z0, Z0>, SI<f64>, f64>;
 
 /*******************************************************
 TYPE ALIASES -> Units
@@ -67,6 +71,8 @@ pub type DeltaKelvin = uom::si::temperature_interval::kelvin;
 pub type Radian = uom::si::angle::radian;
 pub type Degree = uom::si::angle::degree;
 pub type RadianPerSecond = uom::si::angular_velocity::radian_per_second;
+pub type JoulePerKelvin = uom::si::heat_capacity::joule_per_kelvin;
+pub type Dimensionless = uom::si::ratio::ratio;
 
 /*******************************************************
 SCALE METHODS EXT

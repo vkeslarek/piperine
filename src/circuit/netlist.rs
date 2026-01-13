@@ -1,4 +1,4 @@
-use crate::math::linear::Symbol;
+use crate::math::Symbol;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 

@@ -1,8 +1,9 @@
 use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
+use crate::analysis::noise::NoiseSource;
 use crate::analysis::transient::TransientAnalysis;
 use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
-use crate::devices::resistor::model::{ResistorModel, ResistorModelType};
+use crate::devices::resistor::model::ResistorModel;
 use crate::devices::{Component, Model};
 use crate::math::unit::{
     Conductance, Length, LinearTemperatureCoefficient, QuadraticTemperatureCoefficient, Ratio,
@@ -15,12 +16,13 @@ use std::sync::Arc;
 pub mod ac;
 pub mod dc;
 pub mod model;
+mod noise;
 pub mod transient;
 
 #[derive(Clone)]
 pub struct Resistor {
     name: String,
-    model: Arc<dyn ResistorModelType>,
+    model: Arc<ResistorModel>,
     node_plus: CircuitReference,
     node_minus: CircuitReference,
 
@@ -71,7 +73,7 @@ impl Resistor {
         }
     }
 
-    pub fn with_model(&mut self, model: Arc<dyn ResistorModelType>) -> &mut Resistor {
+    pub fn with_model(&mut self, model: Arc<ResistorModel>) -> &mut Resistor {
         self.model = model;
         self
     }
@@ -121,6 +123,11 @@ impl Resistor {
         self.tce = Some(tce);
         self
     }
+
+    pub fn with_noise(&mut self, enable: bool) -> &mut Resistor {
+        self.noisy = enable;
+        self
+    }
 }
 
 impl AsAny for Resistor {
@@ -147,6 +154,10 @@ impl Component for Resistor {
     }
 
     fn as_transient(&mut self) -> Option<&mut dyn TransientAnalysis> {
+        Some(self)
+    }
+
+    fn as_noise_source(&mut self) -> Option<&mut dyn NoiseSource> {
         Some(self)
     }
 }

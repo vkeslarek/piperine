@@ -1,9 +1,10 @@
 use crate::circuit::netlist::IndependentVariable;
 use crate::error::Error;
 use crate::math::deriv::BdfCoefficientGenerator;
-use crate::math::faer::{FaerLinearSystem, FaerSymbolicMatrix};
-use crate::math::linear::{InitialValue, LinearSystem, Stamp, Symbol, SymbolicMatrix};
+use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
+use crate::math::linear::{SparseLinearSystem, SymbolicMatrix};
 use crate::math::num::{Field, ScalableByReal};
+use crate::math::{InitialValue, Stamp, Symbol};
 use crate::solver::Context;
 use ndarray::{Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
 use std::collections::HashMap;
@@ -282,7 +283,7 @@ impl<S: Symbol, E: 'static + Field + ScalableByReal> NewtonRaphsonSolver<S, E> {
     }
 
     fn solve_linear_system(&self, stamps: Vec<Stamp<S, E>>) -> crate::result::Result<Array1<E>> {
-        let mut system = FaerLinearSystem::new(self.symbolic_matrix.size());
+        let mut system = FaerSparseLinearSystem::new(self.symbolic_matrix.size());
         system.apply_stamps(&self.symbolic_matrix, stamps);
         system.solve_with_backend(&self.symbolic_matrix)
     }
