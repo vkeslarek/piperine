@@ -13,7 +13,6 @@ use crate::math::Symbol;
 
 pub mod ac;
 pub mod dc;
-pub mod pss;
 pub mod transient;
 pub mod noise;
 

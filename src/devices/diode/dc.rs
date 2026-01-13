@@ -11,20 +11,15 @@ impl DcAnalysis for Diode {
         state: &CircuitState<f64>,
         context: &Context,
     ) -> crate::result::Result<()> {
-        let v_anode_new = state.get_dependent_value(&self.node_plus, 0).unwrap_or(0.0);
-        let v_cathode_new = state
+        let v_anode = state.get_dependent_value(&self.node_plus, 0).unwrap_or(0.0);
+        let v_cathode = state
             .get_dependent_value(&self.node_minus, 0)
-            .unwrap_or(0.0);
-
-        let v_anode_old = state.get_dependent_value(&self.node_plus, 1).unwrap_or(0.0);
-        let v_cathode_old = state
-            .get_dependent_value(&self.node_minus, 1)
             .unwrap_or(0.0);
 
         self.model.clone().update_linearization(
             self,
-            v_anode_new - v_cathode_new,
-            v_anode_old - v_cathode_old,
+            v_anode - v_cathode,
+            v_anode - v_cathode,
             context,
         );
         Ok(())

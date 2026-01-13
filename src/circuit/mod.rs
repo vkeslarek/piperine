@@ -11,7 +11,6 @@ use crate::solver::Context;
 use crate::solver::ac::AcSolver;
 use crate::solver::dc::DcSolver;
 use crate::solver::noise::NoiseSolver;
-use crate::solver::pss::PssSolver;
 use crate::solver::transient::TransientSolver;
 use crate::util::AsAny;
 use std::collections::HashMap;
@@ -91,10 +90,6 @@ impl Circuit {
         context: Context,
     ) -> crate::result::Result<NoiseSolver> {
         NoiseSolver::new(self, options, context)
-    }
-
-    pub fn pss(&mut self, context: Context) -> crate::result::Result<PssSolver> {
-        PssSolver::new(self, context)
     }
 
     pub fn transient(

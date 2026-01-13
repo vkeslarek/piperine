@@ -881,6 +881,7 @@ version = "0.1.0"
 dependencies = [
  "bindgen",
  "faer",
+ "log",
  "ndarray",
  "num-complex",
  "num-traits",

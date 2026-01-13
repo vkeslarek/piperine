@@ -8,8 +8,9 @@ use crate::math::{InitialValue, Stamp, Symbol};
 use crate::solver::Context;
 use ndarray::{Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
 use std::collections::HashMap;
+use tracing::debug;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SolverState<S: Symbol, E: Field> {
     pub solver_variables: Array2<E>,
     pub solver_mapping: HashMap<S, usize>,
@@ -193,7 +194,7 @@ pub trait NewtonRaphsonStamper<S: Symbol, E: Field> {
     ) -> bool;
 }
 
-impl<S: Symbol, E: 'static + Field + ScalableByReal> NewtonRaphsonSolver<S, E> {
+impl<S: Symbol + std::fmt::Debug, E: 'static + Field + ScalableByReal> NewtonRaphsonSolver<S, E> {
     pub fn create(
         stamper: &mut dyn NewtonRaphsonStamper<S, E>,
         context: Context,
@@ -235,12 +236,14 @@ impl<S: Symbol, E: 'static + Field + ScalableByReal> NewtonRaphsonSolver<S, E> {
         independent_vars: &ArrayView1<f64>,
         integration_var: &IndependentVariable,
     ) -> crate::result::Result<Array1<E>> {
+        debug!("Starting Newton-Raphson Step with state {:?}", self.state);
         let (alpha, history) = self
             .state
             .integration_parameters(integration_var)
             .unwrap_or((0.0, Array1::zeros(self.symbolic_matrix.size())));
 
         for iter in 0..self.context.max_iter {
+            debug!("Iteration {}", iter + 1);
             let mut stamps = stamper.static_stamps(&self.state, &self.context)?;
             let dynamic = stamper.dynamic_stamps(&self.state, &self.context)?;
 
@@ -249,6 +252,8 @@ impl<S: Symbol, E: 'static + Field + ScalableByReal> NewtonRaphsonSolver<S, E> {
 
             let solution = self.solve_linear_system(stamps)?;
             let converged = stamper.converged(&self.state, &solution.view(), &self.context);
+
+            debug!("Solution: {:?} Converged: {:?}", solution, converged);
 
             self.state.update_current_guess(&solution);
 
