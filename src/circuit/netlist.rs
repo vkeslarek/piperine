@@ -1,6 +1,5 @@
 use crate::math::Symbol;
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum NodeIdentifier {
@@ -59,6 +58,9 @@ pub struct BranchIdentifier {
 pub enum CircuitReference {
     Node(NodeIdentifier),
     Branch(BranchIdentifier),
+    Time,
+    Frequency,
+    None,
 }
 
 impl CircuitReference {

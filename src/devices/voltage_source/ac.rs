@@ -3,7 +3,6 @@ use crate::analysis::dc::DcAnalysisResult;
 use crate::circuit::netlist::CircuitReference;
 use crate::devices::voltage_source::{VoltageSource, Waveform};
 use crate::math::Stamp;
-use crate::math::unit::Radian;
 use crate::solver::Context;
 use num_complex::Complex;
 use num_traits::One;
@@ -18,8 +17,8 @@ impl AcAnalysis for VoltageSource {
         let (mag, phase_rad) = match &self.waveform {
             Waveform::Sine {
                 amplitude, phase, ..
-            } => (amplitude.value, phase.get::<Radian>()),
-            Waveform::Step { final_value, .. } => (final_value.value, 0.0),
+            } => (*amplitude, *phase),
+            Waveform::Step { final_value, .. } => (*final_value, 0.0),
             _ => (0.0, 0.0),
         };
 

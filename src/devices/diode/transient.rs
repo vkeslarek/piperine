@@ -37,8 +37,8 @@ impl TransientAnalysis for Diode {
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {
-        let g = self.g_eq.value;
-        let i_rhs = self.i_eq.value;
+        let g = self.g_eq;
+        let i_rhs = self.i_eq;
 
         // MNA Stamps for a Conductor + Current Source in parallel
         vec![

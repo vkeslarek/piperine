@@ -1,29 +1,29 @@
 use crate::circuit::netlist::CircuitReference;
+use crate::math::Symbol;
 use crate::math::deriv::DifferentiableIndependentScalar;
 use crate::math::faer::FaerToNdarray;
 use crate::math::linear::{SparseLinearSystem, SymbolicMatrix};
 use crate::math::num::{Field, ScalableByReal};
-use crate::math::unit::{Conductance, Resistance, UnitExt};
+use crate::math::unit::{Ohm, Siemens, UnitExt};
 use faer::traits::ComplexField;
 use ndarray::ArrayView1;
 use num_traits::real::Real;
 use std::collections::HashMap;
 use std::hash::Hash;
-use crate::math::Symbol;
 
 pub mod ac;
 pub mod dc;
-pub mod transient;
 pub mod noise;
+pub mod transient;
 
 #[derive(Debug, Clone)]
 pub struct Context {
-    pub gmin: Conductance,
+    pub gmin: Siemens,
     pub reltol: f64,
     pub vntol: f64,
     pub abstol: f64,
     pub max_iter: usize,
-    pub min_res: Resistance,
+    pub min_res: Ohm,
 }
 
 impl Default for Context {

@@ -1,6 +1,6 @@
 use crate::devices::Model;
 use crate::devices::diode::Diode;
-use crate::math::unit::{Current, Temperature, UnitExt, Voltage};
+use crate::math::unit::{Ampere, Kelvin, UnitExt};
 use crate::solver::Context;
 use crate::util::AsAny;
 use std::any::Any;
@@ -18,9 +18,9 @@ pub trait DiodeModelType: Model<ComponentType = Diode> {
 #[derive(Debug)]
 pub struct DiodeModel {
     pub name: String,
-    pub is: Current,       // Saturation Current
-    pub n: f64,            // Emission Coefficient
-    pub tnom: Temperature, // Nominal Temperature
+    pub is: Ampere,   // Saturation Current
+    pub n: f64,       // Emission Coefficient
+    pub tnom: Kelvin, // Nominal Temperature
 }
 
 impl Default for DiodeModel {
@@ -85,20 +85,20 @@ impl DiodeModelType for DiodeModel {
         let (i_d, g_d) = if arg > 50.0 {
             // Very high bias - use linear approximation to prevent Infinity
             let ev_limit = 50.0f64.exp();
-            let g = (self.is.value / nvt) * ev_limit;
-            let i = self.is.value * (ev_limit - 1.0) + g * (v_d - 50.0 * nvt);
+            let g = (self.is / nvt) * ev_limit;
+            let i = self.is * (ev_limit - 1.0) + g * (v_d - 50.0 * nvt);
             (i, g)
         } else if arg > -50.0 {
             let ev = arg.exp();
-            let i = self.is.value * (ev - 1.0);
-            let g = (self.is.value / nvt) * ev;
+            let i = self.is * (ev - 1.0);
+            let g = (self.is / nvt) * ev;
             (i, g)
         } else {
-            (-self.is.value, context.gmin.value)
+            (-self.is, context.gmin)
         };
 
         // 5. Calculate RHS Source (i_eq = i_actual - g_d * v_d)
-        component.g_eq = (g_d + context.gmin.value).S();
+        component.g_eq = (g_d + context.gmin).S();
         component.i_eq = (i_d - g_d * v_d).A();
     }
 }

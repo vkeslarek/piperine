@@ -3,11 +3,12 @@ use crate::analysis::dc::DcAnalysisResult;
 use crate::analysis::noise::{NoiseAnalysisOptions, NoiseAnalysisResult};
 use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitReference, IndependentVariable};
+use crate::math::Stamp;
 use crate::math::faer::FaerDenseSolver;
 use crate::math::linear::{DenseLinearSystem, SymbolicMatrix};
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NewtonRaphsonStamper, SolverState};
 use crate::math::unit::UnitExt;
-use crate::math::{InitialValue, Stamp};
+use crate::math::vector::InitialValue;
 use crate::solver::Context;
 use ndarray::{Array1, Array2, ArrayView1};
 use num_complex::Complex;
@@ -189,7 +190,7 @@ impl<'a> NoiseSolver<'a> {
 
                         let h_vec = z_p - z_n;
                         let gain_sq = h_vec.norm_sqr();
-                        let s_noise = n.value.value;
+                        let s_noise = n.value;
 
                         total_density += gain_sq * s_noise;
                     }

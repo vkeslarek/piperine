@@ -1,234 +1,133 @@
-use num_complex::Complex;
 use paste::paste;
-use std::f64::consts::PI;
-use uom::si::{ISQ, Quantity, SI};
-use uom::typenum::{N1, N2, N3, P1, P2, Z0};
 
-/*******************************************************
-TYPE ALIASES -> Measurements
-********************************************************/
-// Real
-pub type Resistance = uom::si::f64::ElectricalResistance;
-pub type Capacitance = uom::si::f64::Capacitance;
-pub type Inductance = uom::si::f64::Inductance;
-pub type Length = uom::si::f64::Length;
-pub type Conductance = uom::si::f64::ElectricalConductance;
-pub type Frequency = uom::si::f64::Frequency;
-pub type Angle = uom::si::f64::Angle;
-pub type AngularVelocity = uom::si::f64::AngularVelocity;
-pub type Temperature = uom::si::f64::ThermodynamicTemperature;
-pub type TemperatureInterval = uom::si::f64::TemperatureInterval;
-pub type Ratio = uom::si::f64::Ratio;
-pub type Time = uom::si::f64::Time;
-pub type Voltage = uom::si::f64::ElectricPotential;
-pub type Current = uom::si::f64::ElectricCurrent;
-pub type HeatCapacity = uom::si::f64::HeatCapacity;
+pub type Volt = f64;
+pub type Ampere = f64;
+pub type Ohm = f64;
+pub type Farad = f64;
+pub type Henry = f64;
+pub type Hertz = f64;
+pub type Meter = f64;
+pub type Siemens = f64;
+pub type Kelvin = f64;
+pub type Celsius = f64;
+pub type InvCelsius = f64;
+pub type InvCelsiusSquared = f64;
+pub type Radian = f64;
+pub type Second = f64;
+pub type JoulePerKelvin = f64;
+pub type AmpereSquaredSecond = f64;
+pub type Dimensionless = f64;
 
-// Complex
-pub type ComplexVoltage = uom::si::f64::ElectricPotential;
-pub type ComplexCurrent = uom::si::f64::ElectricCurrent;
-pub type Impedance = uom::si::complex64::ElectricalResistance;
-pub type Admittance = uom::si::complex64::ElectricalConductance;
-
-/*******************************************************
-TYPE ALIASES -> Custom Measurements
-********************************************************/
-// 1/C: [L:0, M:0, T:0, I:0, Th:-1]
-pub type LinearTemperatureCoefficient = Quantity<ISQ<Z0, Z0, Z0, Z0, N1, Z0, Z0>, SI<f64>, f64>;
-
-// 1/C^2: [L:0, M:0, T:0, I:0, Th:-2]
-pub type QuadraticTemperatureCoefficient = Quantity<ISQ<Z0, Z0, Z0, Z0, N2, Z0, Z0>, SI<f64>, f64>;
-
-// Ohms/m: [L:1, M:1, T:-3, I:-2, Th:0]
-pub type LinearResistivity = Quantity<ISQ<P1, P1, N3, N2, Z0, Z0, Z0>, SI<f64>, f64>;
-
-// Ohms/m^2: [L:0, M:1, T:-3, I:-2, Th:0] (Sheet Resistance / Resistivity context)
-pub type SheetResistance = Quantity<ISQ<Z0, P1, N3, N2, Z0, Z0, Z0>, SI<f64>, f64>;
-
-// Definition: Current² * Time (A²s)
-pub type CurrentNoisePower = Quantity<ISQ<Z0, Z0, P1, P2, Z0, Z0, Z0>, SI<f64>, f64>;
-
-/*******************************************************
-TYPE ALIASES -> Units
-********************************************************/
-pub type Volt = uom::si::electric_potential::volt;
-pub type Ampere = uom::si::electric_current::ampere;
-pub type Ohm = uom::si::electrical_resistance::ohm;
-pub type Siemens = uom::si::electrical_conductance::siemens;
-pub type Farad = uom::si::capacitance::farad;
-pub type Henry = uom::si::inductance::henry;
-pub type Hertz = uom::si::frequency::hertz;
-pub type Meter = uom::si::length::meter;
-pub type Unitless = uom::si::ratio::ratio;
-pub type Second = uom::si::time::second;
-pub type Minute = uom::si::time::minute;
-pub type Hour = uom::si::time::hour;
-pub type Day = uom::si::time::day;
-pub type Celsius = uom::si::thermodynamic_temperature::degree_celsius;
-pub type DeltaCelsius = uom::si::temperature_interval::degree_celsius;
-pub type Kelvin = uom::si::thermodynamic_temperature::kelvin;
-pub type DeltaKelvin = uom::si::temperature_interval::kelvin;
-pub type Radian = uom::si::angle::radian;
-pub type Degree = uom::si::angle::degree;
-pub type RadianPerSecond = uom::si::angular_velocity::radian_per_second;
-pub type JoulePerKelvin = uom::si::heat_capacity::joule_per_kelvin;
-pub type Dimensionless = uom::si::ratio::ratio;
-
-/*******************************************************
-SCALE METHODS EXT
-********************************************************/
 macro_rules! def_unit_ext {
-    ($meas_type:ty, $method_suffix:ident) => {
+    ($suffix:ident, $type:ty) => {
         paste! {
-            fn [< T $method_suffix >](self) -> $meas_type;
-            fn [< G $method_suffix >](self) -> $meas_type;
-            fn [< M $method_suffix >](self) -> $meas_type;
-            fn [< k $method_suffix >](self) -> $meas_type;
-            fn [<$method_suffix>](self) -> $meas_type;
-            fn [< m $method_suffix >](self) -> $meas_type;
-            fn [< u $method_suffix >](self) -> $meas_type;
-            fn [< n $method_suffix >](self) -> $meas_type;
-            fn [< p $method_suffix >](self) -> $meas_type;
-            fn [< f $method_suffix >](self) -> $meas_type;
+            fn [< T $suffix >](self) -> $type;
+            fn [< G $suffix >](self) -> $type;
+            fn [< M $suffix >](self) -> $type;
+            fn [< k $suffix >](self) -> $type;
+            fn [<$suffix>](self) -> $type;
+            fn [< m $suffix >](self) -> $type;
+            fn [< u $suffix >](self) -> $type;
+            fn [< n $suffix >](self) -> $type;
+            fn [< p $suffix >](self) -> $type;
+            fn [< f $suffix >](self) -> $type;
         }
     };
 }
 
 macro_rules! impl_unit_ext {
-    ($meas_type:ty, $method_suffix:ident, $unit:ident) => {
+    ($suffix:ident, $type:ty) => {
         paste! {
-            fn [< T $method_suffix >](self) -> $meas_type { $meas_type::new::<$unit>((self * 1e12).into()) }
-            fn [< G $method_suffix >](self) -> $meas_type { $meas_type::new::<$unit>((self * 1e9).into()) }
-            fn [< M $method_suffix >](self) -> $meas_type { $meas_type::new::<$unit>((self * 1e6).into()) }
-            fn [< k $method_suffix >](self) -> $meas_type { $meas_type::new::<$unit>((self * 1e3).into()) }
-            fn [<$method_suffix>](self) -> $meas_type { $meas_type::new::<$unit>((self).into()) }
-            fn [< m $method_suffix >](self) -> $meas_type { $meas_type::new::<$unit>((self * 1e-3).into()) }
-            fn [< u $method_suffix >](self) -> $meas_type { $meas_type::new::<$unit>((self * 1e-6).into()) }
-            fn [< n $method_suffix >](self) -> $meas_type { $meas_type::new::<$unit>((self * 1e-9).into()) }
-            fn [< p $method_suffix >](self) -> $meas_type { $meas_type::new::<$unit>((self * 1e-12).into()) }
-            fn [< f $method_suffix >](self) -> $meas_type { $meas_type::new::<$unit>((self * 1e-15).into()) }
+            #[inline(always)] fn [< T $suffix >](self) -> $type { self * 1e12 }
+            #[inline(always)] fn [< G $suffix >](self) -> $type { self * 1e9 }
+            #[inline(always)] fn [< M $suffix >](self) -> $type { self * 1e6 }
+            #[inline(always)] fn [< k $suffix >](self) -> $type { self * 1e3 }
+
+            #[inline(always)] fn [<$suffix>](self) -> $type { self }
+
+            #[inline(always)] fn [< m $suffix >](self) -> $type { self * 1e-3 }
+            #[inline(always)] fn [< u $suffix >](self) -> $type { self * 1e-6 }
+            #[inline(always)] fn [< n $suffix >](self) -> $type { self * 1e-9 }
+            #[inline(always)] fn [< p $suffix >](self) -> $type { self * 1e-12 }
+            #[inline(always)] fn [< f $suffix >](self) -> $type { self * 1e-15 }
         }
     };
 }
 
 pub trait UnitExt {
-    def_unit_ext!(Voltage, V);
-    def_unit_ext!(Current, A);
-    def_unit_ext!(Resistance, Ohms);
-    def_unit_ext!(Capacitance, F);
-    def_unit_ext!(Inductance, H);
-    def_unit_ext!(Frequency, Hz);
-    def_unit_ext!(Length, m);
-    def_unit_ext!(Conductance, S);
-    def_unit_ext!(Temperature, K);
+    def_unit_ext!(V, Volt);
+    def_unit_ext!(A, Ampere);
+    def_unit_ext!(Ohms, Ohm);
+    def_unit_ext!(F, Farad);
+    def_unit_ext!(H, Henry);
+    def_unit_ext!(Hz, Hertz);
+    def_unit_ext!(m, Meter);
+    def_unit_ext!(S, Siemens);
+    def_unit_ext!(K, Kelvin);
+    def_unit_ext!(JpK, JoulePerKelvin);
+    def_unit_ext!(A2Sec, AmpereSquaredSecond);
+    def_unit_ext!(s, Second);
 
-    // Custom ext methods
-    fn ratio(self) -> Ratio;
+    fn Week(self) -> Second;
+    fn Day(self) -> Second;
+    fn Hour(self) -> Second;
+    fn Min(self) -> Second;
 
-    fn Week(self) -> Time;
-    fn Day(self) -> Time;
-    fn Hour(self) -> Time;
-    fn Min(self) -> Time;
-    fn Sec(self) -> Time;
-    fn mSec(self) -> Time;
-    fn uSec(self) -> Time;
-    fn deg(self) -> Angle;
+    fn deg(self) -> Radian;
+    fn deg_C(self) -> Kelvin;
 
-    fn deg_C(self) -> Temperature;
-    fn delta_C(self) -> TemperatureInterval;
-
-    fn delta_K(self) -> TemperatureInterval;
-
-    fn inv_C(self) -> LinearTemperatureCoefficient;
-    fn inv_C2(self) -> QuadraticTemperatureCoefficient;
-
-    fn Ohms_per_meter(self) -> LinearResistivity;
-    fn Ohms_per_meter2(self) -> SheetResistance;
+    fn inv_C(self) -> InvCelsius;
+    fn inv_C2(self) -> InvCelsiusSquared;
 }
 
 impl UnitExt for f64 {
-    impl_unit_ext!(Voltage, V, Volt);
-    impl_unit_ext!(Current, A, Ampere);
-    impl_unit_ext!(Resistance, Ohms, Ohm);
-    impl_unit_ext!(Capacitance, F, Farad);
-    impl_unit_ext!(Inductance, H, Henry);
-    impl_unit_ext!(Frequency, Hz, Hertz);
-    impl_unit_ext!(Length, m, Meter);
-    impl_unit_ext!(Conductance, S, Siemens);
-    impl_unit_ext!(Temperature, K, Kelvin);
+    impl_unit_ext!(V, Volt);
+    impl_unit_ext!(A, Ampere);
+    impl_unit_ext!(Ohms, Ohm);
+    impl_unit_ext!(F, Farad);
+    impl_unit_ext!(H, Henry);
+    impl_unit_ext!(Hz, Hertz);
+    impl_unit_ext!(m, Meter);
+    impl_unit_ext!(S, Siemens);
+    impl_unit_ext!(K, Kelvin);
+    impl_unit_ext!(JpK, JoulePerKelvin);
+    impl_unit_ext!(A2Sec, AmpereSquaredSecond);
+    impl_unit_ext!(s, Second);
 
-    // Custom ext impls
-    fn ratio(self) -> Ratio {
-        Ratio::new::<Unitless>(self)
+    #[inline(always)]
+    fn Week(self) -> Second {
+        self * 604800.0
     }
-
-    fn Week(self) -> Time {
-        Time::new::<Day>(self * 7.0)
+    #[inline(always)]
+    fn Day(self) -> Second {
+        self * 86400.0
     }
-    fn Day(self) -> Time {
-        Time::new::<Day>(self)
+    #[inline(always)]
+    fn Hour(self) -> Second {
+        self * 3600.0
     }
-    fn Hour(self) -> Time {
-        Time::new::<Hour>(self)
-    }
-    fn Min(self) -> Time {
-        Time::new::<Minute>(self)
-    }
-    fn Sec(self) -> uom::si::f64::Time {
-        Time::new::<Second>(self)
-    }
-    fn mSec(self) -> uom::si::f64::Time {
-        Time::new::<Second>(self * 1e-3)
-    }
-    fn uSec(self) -> uom::si::f64::Time {
-        Time::new::<Second>(self * 1e-6)
+    #[inline(always)]
+    fn Min(self) -> Second {
+        self * 60.0
     }
 
-    fn deg(self) -> Angle {
-        Angle::new::<Degree>(self)
+    #[inline(always)]
+    fn deg(self) -> Radian {
+        self.to_radians()
     }
 
-    fn deg_C(self) -> Temperature {
-        Temperature::new::<Celsius>(self)
+    #[inline(always)]
+    fn deg_C(self) -> Kelvin {
+        self + 273.15
     }
 
-    fn delta_C(self) -> TemperatureInterval {
-        TemperatureInterval::new::<DeltaCelsius>(self)
+    #[inline(always)]
+    fn inv_C(self) -> InvCelsius {
+        self
     }
 
-    fn delta_K(self) -> TemperatureInterval {
-        TemperatureInterval::new::<DeltaKelvin>(self)
-    }
-
-    fn inv_C(self) -> LinearTemperatureCoefficient {
-        // We use the direct struct initialization to bypass missing 'new' methods
-        // on custom Dimension types.
-        LinearTemperatureCoefficient {
-            dimension: std::marker::PhantomData,
-            units: std::marker::PhantomData,
-            value: self,
-        }
-    }
-    fn inv_C2(self) -> QuadraticTemperatureCoefficient {
-        QuadraticTemperatureCoefficient {
-            dimension: std::marker::PhantomData,
-            units: std::marker::PhantomData,
-            value: self,
-        }
-    }
-
-    fn Ohms_per_meter(self) -> LinearResistivity {
-        LinearResistivity {
-            dimension: std::marker::PhantomData,
-            units: std::marker::PhantomData,
-            value: self,
-        }
-    }
-    fn Ohms_per_meter2(self) -> SheetResistance {
-        SheetResistance {
-            dimension: std::marker::PhantomData,
-            units: std::marker::PhantomData,
-            value: self,
-        }
+    #[inline(always)]
+    fn inv_C2(self) -> InvCelsiusSquared {
+        self
     }
 }

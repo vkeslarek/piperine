@@ -52,7 +52,9 @@ fn test_dc_resistive_divider() {
 
     let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
 
-    let v_out = get_node_voltage(&result.values, &result.mapping, "out");
+    let v_out = result
+        .get_value(&CircuitReference::Node("out".into()))
+        .unwrap();
 
     println!("DC Divider: V_out = {:.4} V", v_out);
     assert!((v_out - 5.0).abs() < 1e-6, "Divider failed: Expected 5.0V");
@@ -69,7 +71,9 @@ fn test_dc_diode_bias() {
     circuit.diode("D1", "anode", GND);
 
     let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
-    let v_d = get_node_voltage(&result.values, &result.mapping, "anode");
+    let v_d = result
+        .get_value(&CircuitReference::Node("anode".into()))
+        .unwrap();
 
     println!("Diode Forward Voltage: {:.4} V", v_d);
 
@@ -171,14 +175,14 @@ fn test_transient_rc_step() {
     circuit.resistor("R1", "in", "out", 1.0.kOhms());
     circuit.capacitor("C1", "out", GND, 1.0.uF());
 
-    let dt = 100.0.uSec();
-    let sim_time = 5.0.mSec(); // 5 Tau
+    let dt = 100.0.us();
+    let sim_time = 5.0.ms(); // 5 Tau
 
     let result = circuit
         .transient(
             TransientAnalysisOptions {
-                stop_time: sim_time.get::<Second>(),
-                dt: dt.get::<Second>(),
+                stop_time: sim_time,
+                dt: dt,
             },
             Context::default(),
         )

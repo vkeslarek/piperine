@@ -1,16 +1,16 @@
 use crate::analysis::dc::DcAnalysis;
+use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
 use crate::devices::Component;
 use crate::devices::diode::model::{DiodeModel, DiodeModelType};
-use crate::math::unit::{Conductance, Current, Temperature, UnitExt};
-use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
+use crate::math::unit::{Ampere, Kelvin, Siemens, UnitExt};
 use crate::util::AsAny;
 use std::any::Any;
 use std::sync::Arc;
 
+mod ac;
 mod dc;
 mod model;
 mod transient;
-mod ac;
 
 #[derive(Clone)]
 pub struct Diode {
@@ -19,11 +19,11 @@ pub struct Diode {
     node_plus: CircuitReference,
     node_minus: CircuitReference,
 
-    pub temp: Option<Temperature>,
+    pub temp: Option<Kelvin>,
 
     // Runtime State (Calculated during linearization)
-    pub g_eq: Conductance, // Dynamic Conductance (gd = dI/dV)
-    pub i_eq: Current,     // Equivalent Current Source offset
+    pub g_eq: Siemens, // Dynamic Conductance (gd = dI/dV)
+    pub i_eq: Ampere,  // Equivalent Current Source offset
 }
 
 impl Diode {

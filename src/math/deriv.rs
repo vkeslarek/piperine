@@ -43,7 +43,7 @@ impl BdfCoefficientGenerator {
         if order == 0 {
             return Some(BdfCoefficients { alpha: T::zero(), history_coeffs: vec![] });
         }
-        
+
         let len = timestamps.len();
 
         // 1. Basic Validation (Optimized: Fail fast)

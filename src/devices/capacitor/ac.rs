@@ -14,8 +14,8 @@ impl AcAnalysis for Capacitor {
         ac_analysis_context: &AcAnalysisContext,
         _: &Context,
     ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
-        let omega = 2.0 * std::f64::consts::PI * ac_analysis_context.frequency.get::<Hertz>();
-        let cap_val = self.capacitance.get::<Farad>();
+        let omega = 2.0 * std::f64::consts::PI * ac_analysis_context.frequency;
+        let cap_val = self.capacitance;
 
         let admittance = Complex::new(0.0, omega * cap_val);
 

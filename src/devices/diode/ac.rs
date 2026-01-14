@@ -35,7 +35,7 @@ impl AcAnalysis for Diode {
     ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
         // Use the g_eq calculated during update_ac (or the last DC iteration)
         // In AC, g_eq is a real conductance.
-        let g_d = Complex::new(self.g_eq.value, 0.0);
+        let g_d = Complex::new(self.g_eq, 0.0);
 
         // Note: For high-frequency AC, you would eventually add
         // Junction Capacitance here: Complex::new(g_d, omega * C_j)

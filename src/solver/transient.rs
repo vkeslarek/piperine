@@ -3,12 +3,13 @@ use crate::analysis::transient::{
 };
 use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitReference, IndependentVariable};
+use crate::math::Stamp;
 use crate::math::linear::SparseLinearSystem;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NewtonRaphsonStamper, SolverState};
 use crate::math::unit::UnitExt;
+use crate::math::vector::InitialValue;
 use crate::solver::Context;
 use ndarray::{Array1, ArrayView1};
-use crate::math::{InitialValue, Stamp};
 
 pub struct TransientSolver<'a> {
     pub linearizer: TransientAnalysisStamper<'a>,
@@ -69,8 +70,8 @@ impl<'a> TransientAnalysisStamper<'a> {
             .unwrap_or(t0);
 
         TransientAnalysisContext {
-            time: t0.Sec(),
-            dt: (t0 - t1).Sec(),
+            time: t0.s(),
+            dt: (t0 - t1).s(),
         }
     }
 }

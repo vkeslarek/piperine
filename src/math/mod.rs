@@ -11,13 +11,9 @@ pub mod num;
 pub mod param;
 pub mod rand;
 pub mod unit;
+pub mod vector;
 
 pub trait Symbol: Clone + Eq + Hash {}
-
-pub struct InitialValue<S: Symbol, E: Field> {
-    pub reference: S,
-    pub value: E,
-}
 
 #[derive(Debug, Clone)]
 pub enum Stamp<S: Symbol, E: Field> {

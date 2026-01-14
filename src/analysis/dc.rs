@@ -1,10 +1,12 @@
 use crate::circuit::netlist::CircuitReference;
 use crate::circuit::state::CircuitState;
 use crate::devices::Component;
+use crate::devices::soa::SoaViolation;
+use crate::math::Stamp;
+use crate::math::vector::{InitialValue, SymbolicVector1};
 use crate::solver::Context;
 use ndarray::Array1;
 use std::collections::HashMap;
-use crate::math::{InitialValue, Stamp};
 
 pub trait DcAnalysis: Component {
     fn update_dc(
@@ -28,14 +30,12 @@ pub trait DcAnalysis: Component {
 
 #[derive(Debug)]
 pub struct DcAnalysisResult {
-    pub values: Array1<f64>,
-    pub mapping: HashMap<CircuitReference, usize>,
+    pub values: SymbolicVector1<CircuitReference, f64>,
+    pub soa_violations: Vec<SoaViolation>,
 }
 
 impl DcAnalysisResult {
     pub fn get_value(&self, reference: &CircuitReference) -> Option<f64> {
-        self.mapping
-            .get(reference)
-            .and_then(|&idx| self.values.get(idx).cloned())
+        self.values.get(reference).cloned()
     }
 }

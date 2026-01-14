@@ -5,10 +5,7 @@ use crate::analysis::transient::TransientAnalysis;
 use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
 use crate::devices::resistor::model::ResistorModel;
 use crate::devices::{Component, Model};
-use crate::math::unit::{
-    Conductance, Length, LinearTemperatureCoefficient, QuadraticTemperatureCoefficient, Ratio,
-    Resistance, Temperature, TemperatureInterval, UnitExt,
-};
+use crate::math::unit::{Dimensionless, Kelvin, Meter, Ohm, Siemens, UnitExt};
 use crate::util::AsAny;
 use std::any::Any;
 use std::sync::Arc;
@@ -18,6 +15,7 @@ pub mod dc;
 pub mod model;
 mod noise;
 pub mod transient;
+mod soa;
 
 #[derive(Clone)]
 pub struct Resistor {
@@ -26,22 +24,22 @@ pub struct Resistor {
     node_plus: CircuitReference,
     node_minus: CircuitReference,
 
-    resistance: Option<Resistance>,
-    ac_resistance: Option<Resistance>,
-    length: Option<Length>,
-    width: Option<Length>,
-    scale: Option<Ratio>,
-    multiplier: Option<Ratio>,
+    resistance: Option<Ohm>,
+    ac_resistance: Option<Ohm>,
+    length: Option<Meter>,
+    width: Option<Meter>,
+    scale: Option<Dimensionless>,
+    multiplier: Option<Dimensionless>,
 
-    temp: Option<Temperature>,
-    delta_temp: Option<TemperatureInterval>,
-    tc1: Option<LinearTemperatureCoefficient>,
-    tc2: Option<QuadraticTemperatureCoefficient>,
-    tce: Option<Ratio>,
+    temp: Option<Kelvin>,
+    delta_temp: Option<Kelvin>,
+    tc1: Option<Dimensionless>,
+    tc2: Option<Dimensionless>,
+    tce: Option<Dimensionless>,
     noisy: bool,
 
     // Runtime parameters
-    conductance: Conductance,
+    conductance: Siemens,
 }
 
 impl Resistor {
@@ -49,7 +47,7 @@ impl Resistor {
         name: &str,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
-        resistance: Option<Resistance>,
+        resistance: Option<Ohm>,
         netlist: &mut Netlist,
     ) -> Resistor {
         Resistor {
@@ -78,48 +76,51 @@ impl Resistor {
         self
     }
 
-    pub fn with_ac_resistance(&mut self, ac_resistance: Resistance) -> &mut Resistor {
+    pub fn with_ac_resistance(&mut self, ac_resistance: Ohm) -> &mut Resistor {
         self.ac_resistance = Some(ac_resistance);
         self
     }
 
-    pub fn with_dimensions(&mut self, width: Length, length: Length) -> &mut Resistor {
+    pub fn with_dimensions(&mut self, width: Meter, length: Meter) -> &mut Resistor {
         self.width = Some(width);
         self.length = Some(length);
         self
     }
 
-    pub fn with_scale(&mut self, scale: Ratio) -> &mut Resistor {
+    pub fn with_scale(&mut self, scale: Dimensionless) -> &mut Resistor {
         self.scale = Some(scale);
         self
     }
 
-    pub fn with_multiplier(&mut self, multiplier: Ratio) -> &mut Resistor {
+    pub fn with_multiplier(&mut self, multiplier: Dimensionless) -> &mut Resistor {
         self.multiplier = Some(multiplier);
         self
     }
 
-    pub fn with_temp(&mut self, temp: Temperature) -> &mut Resistor {
+    pub fn with_temp(&mut self, temp: Kelvin) -> &mut Resistor {
         self.temp = Some(temp);
         self
     }
 
-    pub fn with_delta_temp(&mut self, delta_temp: TemperatureInterval) -> &mut Resistor {
+    pub fn with_delta_temp(&mut self, delta_temp: Kelvin) -> &mut Resistor {
         self.delta_temp = Some(delta_temp);
         self
     }
 
     pub fn with_temperature_coefficients(
         &mut self,
-        tc1: LinearTemperatureCoefficient,
-        tc2: QuadraticTemperatureCoefficient,
+        tc1: Dimensionless,
+        tc2: Dimensionless,
     ) -> &mut Resistor {
         self.tc1 = Some(tc1);
         self.tc2 = Some(tc2);
         self
     }
 
-    pub fn with_exponential_temperature_coefficient(&mut self, tce: Ratio) -> &mut Resistor {
+    pub fn with_exponential_temperature_coefficient(
+        &mut self,
+        tce: Dimensionless,
+    ) -> &mut Resistor {
         self.tce = Some(tce);
         self
     }

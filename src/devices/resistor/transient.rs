@@ -26,22 +26,22 @@ impl TransientAnalysis for Resistor {
             Stamp::Matrix(
                 self.node_plus.clone(),
                 self.node_plus.clone(),
-                self.conductance.value,
+                self.conductance,
             ),
             Stamp::Matrix(
                 self.node_minus.clone(),
                 self.node_minus.clone(),
-                self.conductance.value,
+                self.conductance,
             ),
             Stamp::Matrix(
                 self.node_plus.clone(),
                 self.node_minus.clone(),
-                -self.conductance.value,
+                -self.conductance,
             ),
             Stamp::Matrix(
                 self.node_minus.clone(),
                 self.node_plus.clone(),
-                -self.conductance.value,
+                -self.conductance,
             ),
         ]
     }

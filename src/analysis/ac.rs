@@ -1,15 +1,15 @@
 use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
 use crate::circuit::netlist::CircuitReference;
+use crate::devices::Component;
 use crate::math::Stamp;
-use crate::math::unit::Frequency;
+use crate::math::unit::Hertz;
 use crate::solver::Context;
 use ndarray::Array2;
 use num_complex::Complex;
 use std::collections::HashMap;
-use crate::devices::Component;
 
 pub struct AcAnalysisContext {
-    pub frequency: Frequency,
+    pub frequency: Hertz,
 }
 
 pub trait AcAnalysis: Component + DcAnalysis {

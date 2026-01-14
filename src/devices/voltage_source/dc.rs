@@ -25,7 +25,7 @@ impl DcAnalysis for VoltageSource {
             Stamp::Matrix(self.branch.clone(), self.node_minus.clone(), -1.0),
             Stamp::Matrix(self.node_plus.clone(), self.branch.clone(), 1.0),
             Stamp::Matrix(self.node_minus.clone(), self.branch.clone(), -1.0),
-            Stamp::Rhs(self.branch.clone(), dc_value.value),
+            Stamp::Rhs(self.branch.clone(), dc_value),
         ]
     }
 }

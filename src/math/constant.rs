@@ -1,9 +1,3 @@
-use crate::math::unit::HeatCapacity;
-use std::marker::PhantomData;
-use uom::si::{SI, heat_capacity};
+use crate::math::unit::JoulePerKelvin;
 
-pub const BOLTZMANN_CONSTANT: HeatCapacity = HeatCapacity {
-    dimension: PhantomData::<heat_capacity::Dimension>,
-    units: PhantomData::<SI<f64>>,
-    value: 1.380_649_E-23,
-};
+pub const BOLTZMANN_CONSTANT: JoulePerKelvin = 1.380_649_E-23;

@@ -3,7 +3,6 @@ use crate::circuit::netlist::CircuitReference;
 use crate::circuit::state::CircuitState;
 use crate::devices::voltage_source::{VoltageSource, Waveform};
 use crate::math::Stamp;
-use crate::math::unit::{Angle, AngularVelocity, Radian, Ratio, Voltage};
 use crate::solver::Context;
 use std::f64::consts::PI;
 
@@ -22,10 +21,9 @@ impl TransientAnalysis for VoltageSource {
                 phase,
             } => {
                 let t = transient_analysis_context.time;
-                let omega: AngularVelocity = (frequency * Angle::new::<Radian>(2.0 * PI)).into();
-                let phase_ratio: Ratio = phase.into();
+                let omega = 2.0 * PI * frequency;
 
-                amplitude * (omega * t + phase_ratio).value.sin()
+                amplitude * (omega * t + phase).sin()
             }
             Waveform::Step {
                 initial,
@@ -33,14 +31,12 @@ impl TransientAnalysis for VoltageSource {
                 delay,
                 rise_time,
             } => {
-                let t = transient_analysis_context.time.value;
+                let t = transient_analysis_context.time;
                 if t < delay {
                     initial
                 } else if t >= delay && t < delay + rise_time {
-                    let slope = (final_value - initial).value / rise_time;
-                    Voltage::new::<uom::si::electric_potential::volt>(
-                        initial.value + slope * (t - delay),
-                    )
+                    let slope = (final_value - initial) / rise_time;
+                    initial + slope * (t - delay)
                 } else {
                     final_value
                 }
@@ -66,7 +62,7 @@ impl TransientAnalysis for VoltageSource {
             Stamp::Matrix(self.node_plus.clone(), self.branch.clone(), 1.0),
             Stamp::Matrix(self.node_minus.clone(), self.branch.clone(), -1.0),
             // RHS: The value of the voltage source at time t
-            Stamp::Rhs(self.branch.clone(), self.voltage.value),
+            Stamp::Rhs(self.branch.clone(), self.voltage),
         ]
     }
 }

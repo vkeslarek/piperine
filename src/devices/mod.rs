@@ -1,6 +1,7 @@
 pub mod capacitor;
 pub mod diode;
 pub mod resistor;
+pub mod soa;
 pub mod voltage_source;
 
 use crate::analysis::ac::AcAnalysis;
@@ -8,6 +9,7 @@ use crate::analysis::dc::DcAnalysis;
 use crate::analysis::noise::NoiseSource;
 use crate::analysis::transient::TransientAnalysis;
 use crate::circuit::netlist::Netlist;
+use crate::devices::soa::SoaCheck;
 use crate::error::Error;
 use crate::util::AsAny;
 use std::any::Any;
@@ -25,6 +27,10 @@ pub trait Component: Any + AsAny {
     fn as_transient(&mut self) -> Option<&mut dyn TransientAnalysis>;
 
     fn as_noise_source(&mut self) -> Option<&mut dyn NoiseSource> {
+        None
+    }
+
+    fn as_soa_check(&mut self) -> Option<&mut dyn SoaCheck> {
         None
     }
 }

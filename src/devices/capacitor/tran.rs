@@ -21,7 +21,7 @@ impl TransientAnalysis for Capacitor {
         _: &TransientAnalysisContext,
         _: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {
-        let c = self.capacitance.value;
+        let c = self.capacitance;
 
         vec![
             Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), c),

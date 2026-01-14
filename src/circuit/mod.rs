@@ -6,7 +6,7 @@ use crate::devices::diode::Diode;
 use crate::devices::resistor::Resistor;
 use crate::devices::voltage_source::{VoltageSource, Waveform};
 use crate::devices::{AnyModel, Component};
-use crate::math::unit::{Capacitance, Resistance, UnitExt};
+use crate::math::unit::{Farad, Ohm, UnitExt};
 use crate::solver::Context;
 use crate::solver::ac::AcSolver;
 use crate::solver::dc::DcSolver;
@@ -105,7 +105,7 @@ impl Circuit {
         name: &str,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
-        resistance: impl Into<Option<Resistance>>,
+        resistance: impl Into<Option<Ohm>>,
     ) -> &mut Resistor {
         let instance = Resistor::new(name, node_p, node_n, resistance.into(), &mut self.netlist);
         self.insert_get(name, instance)
@@ -127,7 +127,7 @@ impl Circuit {
         name: &str,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
-        capacitance: impl Into<Capacitance>,
+        capacitance: impl Into<Farad>,
     ) -> &mut Capacitor {
         let instance = Capacitor::new(name, node_p, node_n, capacitance.into(), &mut self.netlist);
         self.insert_get(name, instance)

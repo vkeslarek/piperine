@@ -9,27 +9,27 @@ use crate::analysis::transient::TransientAnalysis;
 use crate::circuit::netlist::{BranchIdentifier, CircuitReference, IntoNodeIdentifier, Netlist};
 use crate::devices::Component;
 use crate::devices::voltage_source::model::{VoltageSourceModel, VoltageSourceModelType};
-use crate::math::unit::{Angle, Frequency, UnitExt, Voltage};
+use crate::math::unit::{Hertz, Radian, Second, UnitExt, Volt};
 use crate::util::AsAny;
 use std::any::Any;
 use std::sync::Arc;
 
 pub enum Waveform {
-    DC(Voltage),
+    DC(Volt),
     Sine {
-        amplitude: Voltage,
-        frequency: Frequency,
-        phase: Angle,
+        amplitude: Volt,
+        frequency: Hertz,
+        phase: Radian,
     },
     Step {
-        initial: Voltage,
-        final_value: Voltage,
-        delay: f64,
-        rise_time: f64,
+        initial: Volt,
+        final_value: Volt,
+        delay: Second,
+        rise_time: Second,
     },
 }
 
-impl Into<Waveform> for Voltage {
+impl Into<Waveform> for Volt {
     fn into(self) -> Waveform {
         Waveform::DC(self)
     }
@@ -44,7 +44,7 @@ pub struct VoltageSource {
     pub waveform: Waveform,
 
     // Runtime parameters
-    pub voltage: Voltage,
+    pub voltage: Volt,
 }
 
 impl VoltageSource {

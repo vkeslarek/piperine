@@ -3,7 +3,6 @@ use faer::rand;
 use rand_distr::{Distribution as _, Normal, Uniform};
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
-use uom::si::{Dimension, Quantity, Units};
 
 #[derive(Clone, Copy, Debug)]
 pub enum Distribution {
@@ -41,23 +40,19 @@ pub trait ParameterRangeExt<Q> {
     fn gaussian(self, sigma: f64) -> Parameter<Q>;
 }
 
-impl<D, S> ParameterRangeExt<Quantity<D, S, f64>> for RangeInclusive<Quantity<D, S, f64>>
-where
-    D: Dimension + ?Sized,
-    S: Units<f64> + ?Sized,
-{
-    fn uniform(self) -> Parameter<Quantity<D, S, f64>> {
+impl ParameterRangeExt<f64> for RangeInclusive<f64> {
+    fn uniform(self) -> Parameter<f64> {
         Parameter::Stochastic(
             Distribution::Uniform {
-                lower: self.start().value,
-                upper: self.end().value,
+                lower: *self.start(),
+                upper: *self.end(),
             },
             PhantomData,
         )
     }
 
-    fn gaussian(self, sigma: f64) -> Parameter<Quantity<D, S, f64>> {
-        let mean = (self.start().value + self.end().value) / 2.0;
+    fn gaussian(self, sigma: f64) -> Parameter<f64> {
+        let mean = (self.start() + self.end()) / 2.0;
         Parameter::Stochastic(
             Distribution::Gaussian {
                 mean,
@@ -72,15 +67,11 @@ pub trait ParameterRelativeExt<Q> {
     fn pom(self, tolerance: f64) -> Parameter<Q>;
 }
 
-impl<D, S> ParameterRelativeExt<Quantity<D, S, f64>> for Quantity<D, S, f64>
-where
-    D: Dimension + ?Sized,
-    S: Units<f64> + ?Sized,
-{
-    fn pom(self, tolerance: f64) -> Parameter<Quantity<D, S, f64>> {
+impl ParameterRelativeExt<f64> for f64 {
+    fn pom(self, tolerance: f64) -> Parameter<f64> {
         Parameter::Stochastic(
             Distribution::RelativeUniform {
-                nominal: self.value,
+                nominal: self,
                 tolerance,
             },
             PhantomData,

@@ -1,11 +1,12 @@
 use crate::analysis::dc::DcAnalysisResult;
 use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitReference, IndependentVariable};
+use crate::math::Stamp;
 use crate::math::linear::SparseLinearSystem;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NewtonRaphsonStamper, SolverState};
+use crate::math::vector::{InitialValue, SymbolicVector1};
 use crate::solver::Context;
 use ndarray::{Array1, ArrayView1};
-use crate::math::{InitialValue, Stamp};
 
 pub struct DcAnalysisStamper<'a> {
     pub circuit: &'a mut Circuit,
@@ -114,8 +115,11 @@ impl<'a> DcSolver<'a> {
             .step(&mut self.linearizer, &dummy_vars.view(), &dummy_var)?;
 
         Ok(DcAnalysisResult {
-            values: solution,
-            mapping: self.solver.symbolic_matrix.mapping.clone(),
+            values: SymbolicVector1::from_values(
+                solution,
+                self.solver.symbolic_matrix.mapping.clone(),
+            ),
+            soa_violations: vec![],
         })
     }
 }

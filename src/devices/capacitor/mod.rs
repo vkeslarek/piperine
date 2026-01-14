@@ -9,18 +9,18 @@ use crate::analysis::transient::TransientAnalysis;
 use crate::devices::capacitor::model::{CapacitorModel, CapacitorModelType};
 use crate::devices::{Component, Model};
 use crate::math::param::IntoParameter;
-use crate::math::unit::Capacitance;
 use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
 use crate::util::AsAny;
 use std::any::Any;
 use std::sync::Arc;
+use crate::math::unit::Farad;
 
 pub struct Capacitor {
     pub name: String,
     pub model: Arc<CapacitorModelType>,
     pub node_plus: CircuitReference,
     pub node_minus: CircuitReference,
-    pub capacitance: Capacitance,
+    pub capacitance: Farad,
 }
 
 impl Capacitor {
@@ -28,7 +28,7 @@ impl Capacitor {
         name: &str,
         node_p: impl IntoNodeIdentifier,
         node_m: impl IntoNodeIdentifier,
-        capacitance: Capacitance,
+        capacitance: Farad,
         netlist: &mut Netlist,
     ) -> Self {
         Self {
