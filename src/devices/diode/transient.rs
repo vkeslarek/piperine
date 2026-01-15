@@ -1,25 +1,34 @@
-use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext};
+use crate::analysis::transient::{
+    TransientAnalysis, TransientAnalysisContext, TransientAnalysisState,
+};
 use crate::circuit::netlist::CircuitReference;
-use crate::circuit::state::CircuitState;
 use crate::devices::diode::Diode;
-use crate::math::Stamp;
+use crate::math::linear::Stamp;
 use crate::solver::Context;
 
 impl TransientAnalysis for Diode {
     fn update_transient(
         &mut self,
-        state: &CircuitState<f64>,
+        state: &TransientAnalysisState,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
     ) -> crate::result::Result<()> {
-        let v_anode_new = state.get_dependent_value(&self.node_plus, 0).unwrap_or(0.0);
+        let v_anode_new = state
+            .latest()
+            .and_then(|val| val.get(&self.node_plus).cloned())
+            .unwrap_or(0.0);
         let v_cathode_new = state
-            .get_dependent_value(&self.node_minus, 0)
+            .latest()
+            .and_then(|val| val.get(&self.node_minus).cloned())
             .unwrap_or(0.0);
 
-        let v_anode_old = state.get_dependent_value(&self.node_plus, 1).unwrap_or(0.0);
+        let v_anode_old = state
+            .view(1)
+            .and_then(|val| val.get(&self.node_plus).cloned())
+            .unwrap_or(0.0);
         let v_cathode_old = state
-            .get_dependent_value(&self.node_minus, 1)
+            .view(1)
+            .and_then(|val| val.get(&self.node_minus).cloned())
             .unwrap_or(0.0);
 
         self.model.clone().update_linearization(
@@ -33,7 +42,7 @@ impl TransientAnalysis for Diode {
 
     fn load_transient(
         &self,
-        circuit_states: &CircuitState<f64>,
+        circuit_states: &TransientAnalysisState,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {

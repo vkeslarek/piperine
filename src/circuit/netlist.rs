@@ -60,7 +60,7 @@ pub enum CircuitReference {
     Branch(BranchIdentifier),
     Time,
     Frequency,
-    None,
+    Iteration,
 }
 
 impl CircuitReference {

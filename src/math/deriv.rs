@@ -1,4 +1,3 @@
-use ndarray::{ArrayD, ArrayView1, ArrayViewD, Axis, Zip, s};
 use num_complex::Complex;
 use num_traits::{One, Zero};
 use std::ops::{Add, Div, Mul, Neg, Sub};
@@ -41,7 +40,10 @@ impl BdfCoefficientGenerator {
         timestamps: Vec<T>,
     ) -> Option<BdfCoefficients<T>> {
         if order == 0 {
-            return Some(BdfCoefficients { alpha: T::zero(), history_coeffs: vec![] });
+            return Some(BdfCoefficients {
+                alpha: T::zero(),
+                history_coeffs: vec![],
+            });
         }
 
         let len = timestamps.len();
@@ -155,93 +157,5 @@ impl BdfCoefficientGenerator {
             }
             _ => None, // Not implemented
         }
-    }
-}
-
-pub struct Differentiator<E, T> {
-    order: usize,
-    _phantom_data: std::marker::PhantomData<(E, T)>,
-}
-
-impl<E, T> Differentiator<E, T>
-where
-    T: DifferentiableIndependentScalar,
-    E: DifferentiableDependentScalar<T>,
-{
-    pub fn new(order: usize) -> Self {
-        Self {
-            order,
-            _phantom_data: std::marker::PhantomData,
-        }
-    }
-
-    pub fn differentiate(
-        &self,
-        data: &ArrayViewD<E>,
-        times: &ArrayView1<T>,
-        time_axis_idx: usize,
-    ) -> Option<ArrayD<E>> {
-        let time_axis = Axis(time_axis_idx);
-        let len = data.len_of(time_axis);
-
-        // Validation: Return None instead of panic
-        if len != times.len() || len <= self.order {
-            return None;
-        }
-
-        let output_len = len - self.order;
-
-        // Prepare Output Shape
-        let mut out_shape = data.shape().to_vec();
-        out_shape[time_axis_idx] = output_len;
-
-        let mut output = ArrayD::<E>::zeros(out_shape);
-
-        // Main Loop
-        for i in 0..output_len {
-            let data_idx = i + self.order;
-
-            // 1. Get Time Window
-            // Slice: [t_{n-order}, ..., t_{n}]
-            // We pass this slice directly to the generator (Zero-Copy)
-            let time_window = times.slice(s![data_idx - self.order..=data_idx]);
-
-            // 2. Generate Coefficients
-            // We can convert the ArrayView directly to a slice for the function
-            let coeffs = BdfCoefficientGenerator::generate(
-                self.order,
-                time_window.to_vec(), // Safe because we just sliced it contiguously
-            )?;
-
-            // 3. Apply
-            let mut out_slice = output.index_axis_mut(time_axis, i);
-
-            // Apply History Terms (c1 * v[n-1] + c2 * v[n-2]...)
-            // Note: history_coeffs[0] corresponds to n-1 (most recent history)
-            for (k, &coeff) in coeffs.history_coeffs.iter().enumerate() {
-                // history_idx = n - 1 - k
-                let history_idx = (data_idx - 1) - k;
-
-                let data_slice = data.index_axis(time_axis, history_idx);
-
-                Zip::from(&mut out_slice)
-                    .and(&data_slice)
-                    .for_each(|out_val, &in_val| {
-                        *out_val = *out_val + (in_val * coeff);
-                    });
-            }
-
-            // Apply Current Term (alpha * v[n])
-            let current_slice = data.index_axis(time_axis, data_idx);
-            let alpha = coeffs.alpha;
-
-            Zip::from(&mut out_slice)
-                .and(&current_slice)
-                .for_each(|out_val, &in_val| {
-                    *out_val = *out_val + (in_val * alpha);
-                });
-        }
-
-        Some(output)
     }
 }

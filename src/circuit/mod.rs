@@ -17,7 +17,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 pub mod netlist;
-pub mod state;
 
 pub struct Circuit {
     title: String,

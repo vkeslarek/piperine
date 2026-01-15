@@ -1,7 +1,7 @@
 use crate::error::Error;
-use crate::math::linear::{DenseLinearSystem, SparseLinearSystem, SymbolicMatrix};
+use crate::math::Symbol;
+use crate::math::linear::{DenseLinearSystem, SparseLinearSystem, Stamp, SymbolicMatrix};
 use crate::math::num::Field;
-use crate::math::{Stamp, Symbol};
 use faer::prelude::{Solve, SparseColMat};
 use faer::sparse::Triplet;
 use faer::sparse::linalg::solvers::SymbolicLu;
@@ -70,6 +70,35 @@ impl<S: Symbol, E: Field + ComplexField + 'static> SparseLinearSystem<S, E>
                 Box::new(err),
             )
         })?;
+
+        Ok(lu.solve(&b).to_ndarray())
+    }
+
+    fn solve(self) -> crate::result::Result<Array1<E>> {
+        let a = SparseColMat::try_new_from_triplets(self.size, self.size, &self.triplets).map_err(
+            |err| Error::cause("Problem assembling the space matrix", "The library threw an error while trying to create the LHS of the sparse matrix", Box::new(err))
+        )?;
+
+        let b = Col::from_fn(self.size, |i| self.b_vec[i]);
+
+        // COMPLETED IMPL: Calculate symbolic pattern on the fly
+        let symbolic_pattern = SymbolicLu::try_new(a.symbolic()).map_err(|err| {
+            Error::cause(
+                "Linear Solve Error",
+                "Symbolic analysis (LU) failed",
+                Box::new(err),
+            )
+        })?;
+
+        let lu =
+            faer::sparse::linalg::solvers::Lu::try_new_with_symbolic(symbolic_pattern, a.as_ref())
+                .map_err(|err| {
+                    Error::cause(
+                        "Linear Solve Error",
+                        "LU Factorization failed",
+                        Box::new(err),
+                    )
+                })?;
 
         Ok(lu.solve(&b).to_ndarray())
     }

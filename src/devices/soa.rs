@@ -1,8 +1,11 @@
-use crate::circuit::state::CircuitState;
+use crate::circuit::netlist::CircuitReference;
 use crate::devices::Component;
+use crate::math::array::IndexedArray2;
 use crate::solver::Context;
 use std::collections::{HashMap, HashSet};
 use std::path::Components;
+
+pub type SoaCheckState = IndexedArray2<CircuitReference, f64>;
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub enum SoaViolationSeverity {
@@ -57,5 +60,5 @@ impl SoaViolations {
 }
 
 pub trait SoaCheck: Component {
-    fn soa_check(&self, circuit_state: CircuitState<f64>, context: &Context) -> Vec<SoaViolation>;
+    fn soa_check(&self, circuit_state: &SoaCheckState, context: &Context) -> Vec<SoaViolation>;
 }

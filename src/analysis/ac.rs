@@ -1,7 +1,7 @@
 use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
 use crate::circuit::netlist::CircuitReference;
 use crate::devices::Component;
-use crate::math::Stamp;
+use crate::math::linear::Stamp;
 use crate::math::unit::Hertz;
 use crate::solver::Context;
 use ndarray::Array2;

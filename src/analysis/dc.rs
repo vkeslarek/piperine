@@ -1,17 +1,17 @@
 use crate::circuit::netlist::CircuitReference;
-use crate::circuit::state::CircuitState;
 use crate::devices::Component;
 use crate::devices::soa::SoaViolation;
-use crate::math::Stamp;
-use crate::math::vector::{InitialValue, SymbolicVector1};
+use crate::math::array::{IndexedArray1, IndexedArray2};
+use crate::math::iv::InitialValue;
+use crate::math::linear::Stamp;
 use crate::solver::Context;
-use ndarray::Array1;
-use std::collections::HashMap;
+
+pub type DcAnalysisState = IndexedArray2<CircuitReference, f64>;
 
 pub trait DcAnalysis: Component {
     fn update_dc(
         &mut self,
-        dc_circuit_state: &CircuitState<f64>,
+        dc_circuit_state: &DcAnalysisState,
         context: &Context,
     ) -> crate::result::Result<()> {
         Ok(())
@@ -19,7 +19,7 @@ pub trait DcAnalysis: Component {
 
     fn load_dc(
         &self,
-        dc_circuit_state: &CircuitState<f64>,
+        dc_circuit_state: &DcAnalysisState,
         context: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>>;
 
@@ -30,7 +30,7 @@ pub trait DcAnalysis: Component {
 
 #[derive(Debug)]
 pub struct DcAnalysisResult {
-    pub values: SymbolicVector1<CircuitReference, f64>,
+    pub values: IndexedArray1<CircuitReference, f64>,
     pub soa_violations: Vec<SoaViolation>,
 }
 

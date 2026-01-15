@@ -2,14 +2,15 @@ use crate::analysis::transient::{
     TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisResult,
 };
 use crate::circuit::Circuit;
-use crate::circuit::netlist::{CircuitReference, IndependentVariable};
-use crate::math::Stamp;
-use crate::math::linear::SparseLinearSystem;
-use crate::math::newton_raphson::{NewtonRaphsonSolver, NewtonRaphsonStamper, SolverState};
+use crate::circuit::netlist::CircuitReference;
+use crate::math::array::IndexedArray2;
+use crate::math::iv::InitialValue;
+use crate::math::linear::Stamp;
+use crate::math::newton_raphson::{NewtonRaphsonSolver, NewtonRaphsonStamper};
 use crate::math::unit::UnitExt;
-use crate::math::vector::InitialValue;
 use crate::solver::Context;
-use ndarray::{Array1, ArrayView1};
+use ndarray::ArrayView1;
+use std::collections::HashMap;
 
 pub struct TransientSolver<'a> {
     pub linearizer: TransientAnalysisStamper<'a>,
@@ -24,6 +25,8 @@ impl<'a> TransientSolver<'a> {
         context: Context,
     ) -> crate::result::Result<Self> {
         let mut linearizer = TransientAnalysisStamper { circuit };
+
+        // 1. Create solver (Handles analysis + ICs internally now)
         let solver = NewtonRaphsonSolver::create(&mut linearizer, context)?;
 
         Ok(Self {
@@ -34,20 +37,40 @@ impl<'a> TransientSolver<'a> {
     }
 
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
-        let mut result = TransientAnalysisResult::new(self.solver.symbolic_matrix.mapping.clone());
+        // 1. Initialize Result with the FULL State Mapping
+        // This includes Unknowns (Nodes/Branches) AND Independent Vars (Time)
+        let mut result = TransientAnalysisResult::new(self.solver.state.mapping.clone());
         let mut t = 0.0;
 
-        while t <= self.options.stop_time {
-            // NewtonRaphsonSolver::step now handles the commit internally
-            let solution = self.solver.step(
-                &mut self.linearizer,
-                &Array1::from_elem(1, t).view(),
-                &IndependentVariable::Time,
-            )?;
+        // 2. Record Initial Condition (t=0)
+        // The solver is already initialized with ICs at t=0
+        if let Some(initial_state) = self.solver.state.latest() {
+            result.push(t, initial_state.values.view());
+        }
 
-            result.push(t, solution.view());
+        // 3. Start stepping
+        t += self.options.dt;
+
+        let mut inputs = HashMap::new();
+
+        while t <= self.options.stop_time {
+            inputs.insert(CircuitReference::Time, t);
+
+            // A. Step the solver
+            // This calculates the unknowns and updates the internal state
+            self.solver
+                .step_dynamic(&mut self.linearizer, &inputs, &CircuitReference::Time)?;
+
+            // B. Record the FULL State
+            // We read back from the solver's state, which now contains:
+            // [ Computed Voltages | Computed Currents | Current Time ]
+            if let Some(current_state) = self.solver.state.latest() {
+                result.push(t, current_state.values.view());
+            }
+
             t += self.options.dt;
         }
+
         Ok(result)
     }
 }
@@ -57,16 +80,18 @@ pub struct TransientAnalysisStamper<'a> {
 }
 
 impl<'a> TransientAnalysisStamper<'a> {
-    pub fn new(circuit: &'a mut Circuit) -> Self {
-        Self { circuit }
-    }
-
-    fn get_context(&self, state: &SolverState<CircuitReference, f64>) -> TransientAnalysisContext {
+    fn get_context(
+        &self,
+        state: &IndexedArray2<CircuitReference, f64>,
+    ) -> TransientAnalysisContext {
         let t0 = state
-            .get_independent_value(&IndependentVariable::Time, 0)
+            .latest()
+            .and_then(|val| val.get(&CircuitReference::Time).cloned())
             .unwrap_or(0.0);
+
         let t1 = state
-            .get_independent_value(&IndependentVariable::Time, 1)
+            .view(1)
+            .and_then(|v| v.get(&CircuitReference::Time).cloned())
             .unwrap_or(t0);
 
         TransientAnalysisContext {
@@ -79,7 +104,7 @@ impl<'a> TransientAnalysisStamper<'a> {
 impl<'a> NewtonRaphsonStamper<CircuitReference, f64> for TransientAnalysisStamper<'a> {
     fn static_stamps(
         &mut self,
-        state: &SolverState<CircuitReference, f64>,
+        state: &IndexedArray2<CircuitReference, f64>,
         context: &Context,
     ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
         let tran_ctx = self.get_context(state);
@@ -87,7 +112,10 @@ impl<'a> NewtonRaphsonStamper<CircuitReference, f64> for TransientAnalysisStampe
         let mut stamps = Vec::new();
         for comp in self.circuit.components_mut().values_mut() {
             if let Some(t_comp) = comp.as_transient() {
+                // Update physics state (e.g. diode conductance based on new V)
                 t_comp.update_transient(state, &tran_ctx, context)?;
+
+                // Collect Jacobian (G) and RHS (I) stamps
                 stamps.extend(
                     t_comp
                         .load_transient(state, &tran_ctx, context)
@@ -101,11 +129,13 @@ impl<'a> NewtonRaphsonStamper<CircuitReference, f64> for TransientAnalysisStampe
 
     fn dynamic_stamps(
         &mut self,
-        state: &SolverState<CircuitReference, f64>,
+        state: &IndexedArray2<CircuitReference, f64>,
         context: &Context,
     ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
         let tran_ctx = self.get_context(state);
 
+        // Capacitors/Inductors return stamps here (C terms)
+        // The solver will automatically multiply these by Alpha (1/dt) and handle history
         Ok(self
             .circuit
             .components_mut()
@@ -138,20 +168,18 @@ impl<'a> NewtonRaphsonStamper<CircuitReference, f64> for TransientAnalysisStampe
             .collect()
     }
 
-    fn independent_symbols(&self) -> Vec<IndependentVariable> {
-        vec![IndependentVariable::Time]
+    fn independent_symbols(&self) -> Vec<CircuitReference> {
+        // We now declare 'Time' as an independent variable managed by the solver state
+        vec![CircuitReference::Time]
     }
 
     fn converged(
         &self,
-        state: &SolverState<CircuitReference, f64>,
+        state: &IndexedArray2<CircuitReference, f64>,
         solution: &ArrayView1<f64>,
         context: &Context,
     ) -> bool {
-        context.has_converged(
-            &state.get_dependent_column(0),
-            solution,
-            &state.solver_mapping,
-        )
+        // The fixed convergence logic from the previous step
+        context.has_converged(&state.latest().unwrap().values, solution, &state.mapping)
     }
 }

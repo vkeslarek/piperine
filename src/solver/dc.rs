@@ -1,12 +1,14 @@
-use crate::analysis::dc::DcAnalysisResult;
+use crate::analysis::dc::{DcAnalysisResult, DcAnalysisState};
+use crate::circuit::netlist::CircuitReference;
 use crate::circuit::Circuit;
-use crate::circuit::netlist::{CircuitReference, IndependentVariable};
-use crate::math::Stamp;
+use crate::map;
+use crate::math::array::IndexedArray1;
+use crate::math::iv::InitialValue;
 use crate::math::linear::SparseLinearSystem;
-use crate::math::newton_raphson::{NewtonRaphsonSolver, NewtonRaphsonStamper, SolverState};
-use crate::math::vector::{InitialValue, SymbolicVector1};
+use crate::math::linear::Stamp;
+use crate::math::newton_raphson::{NewtonRaphsonSolver, NewtonRaphsonStamper};
 use crate::solver::Context;
-use ndarray::{Array1, ArrayView1};
+use ndarray::ArrayView1;
 
 pub struct DcAnalysisStamper<'a> {
     pub circuit: &'a mut Circuit,
@@ -15,7 +17,7 @@ pub struct DcAnalysisStamper<'a> {
 impl<'a> NewtonRaphsonStamper<CircuitReference, f64> for DcAnalysisStamper<'a> {
     fn static_stamps(
         &mut self,
-        state: &SolverState<CircuitReference, f64>,
+        state: &DcAnalysisState,
         context: &Context,
     ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
         let mut stamps = Vec::new();
@@ -27,7 +29,6 @@ impl<'a> NewtonRaphsonStamper<CircuitReference, f64> for DcAnalysisStamper<'a> {
                 )
             })?;
 
-            // DC physics: Update linearization and collect stamps
             dc.update_dc(state, context)?;
             stamps.extend(
                 dc.load_dc(state, context)
@@ -40,7 +41,7 @@ impl<'a> NewtonRaphsonStamper<CircuitReference, f64> for DcAnalysisStamper<'a> {
 
     fn dynamic_stamps(
         &mut self,
-        _state: &SolverState<CircuitReference, f64>,
+        _state: &DcAnalysisState,
         _context: &Context,
     ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
         // In DC steady state, capacitors are open and inductors are shorts.
@@ -70,23 +71,17 @@ impl<'a> NewtonRaphsonStamper<CircuitReference, f64> for DcAnalysisStamper<'a> {
             .collect()
     }
 
-    fn independent_symbols(&self) -> Vec<IndependentVariable> {
-        // DC doesn't strictly depend on Time, but we provide an empty set
-        // or a dummy if the generic solver requires one.
-        Vec::new()
+    fn independent_symbols(&self) -> Vec<CircuitReference> {
+        vec![CircuitReference::Iteration]
     }
 
     fn converged(
         &self,
-        state: &SolverState<CircuitReference, f64>,
+        state: &DcAnalysisState,
         solution: &ArrayView1<f64>,
         context: &Context,
     ) -> bool {
-        context.has_converged(
-            &state.get_dependent_column(0),
-            solution,
-            &state.solver_mapping,
-        )
+        context.has_converged(&state.latest().unwrap().values, solution, &state.mapping)
     }
 }
 
@@ -106,16 +101,13 @@ impl<'a> DcSolver<'a> {
     }
 
     pub fn solve(&mut self) -> crate::result::Result<DcAnalysisResult> {
-        // We use a dummy independent variable because DC is static
-        let dummy_vars = Array1::zeros(0);
-        let dummy_var = IndependentVariable::Time;
-
-        let solution = self
-            .solver
-            .step(&mut self.linearizer, &dummy_vars.view(), &dummy_var)?;
+        let solution = self.solver.step_steady_state(
+            &mut self.linearizer,
+            &map![CircuitReference::Iteration => 0.0],
+        )?;
 
         Ok(DcAnalysisResult {
-            values: SymbolicVector1::from_values(
+            values: IndexedArray1::from_values(
                 solution,
                 self.solver.symbolic_matrix.mapping.clone(),
             ),

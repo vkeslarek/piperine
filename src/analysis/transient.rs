@@ -1,12 +1,14 @@
 use crate::circuit::netlist::CircuitReference;
-use crate::circuit::state::CircuitState;
 use crate::devices::Component;
-use crate::math::Stamp;
+use crate::math::array::IndexedArray2;
+use crate::math::iv::InitialValue;
+use crate::math::linear::Stamp;
 use crate::math::unit::Second;
-use crate::math::vector::InitialValue;
 use crate::solver::Context;
 use ndarray::{Array1, ArrayView1, ArrayView2};
 use std::collections::HashMap;
+
+pub type TransientAnalysisState = IndexedArray2<CircuitReference, f64>;
 
 #[derive(Clone)]
 pub struct TransientAnalysisOptions {
@@ -23,7 +25,7 @@ pub struct TransientAnalysisContext {
 pub trait TransientAnalysis: Component {
     fn update_transient(
         &mut self,
-        circuit_states: &CircuitState<f64>,
+        circuit_states: &TransientAnalysisState,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
     ) -> crate::result::Result<()> {
@@ -32,14 +34,14 @@ pub trait TransientAnalysis: Component {
 
     fn load_transient(
         &self,
-        circuit_states: &CircuitState<f64>,
+        circuit_states: &TransientAnalysisState,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>>;
 
     fn load_transient_dynamic(
         &self,
-        circuit_states: &CircuitState<f64>,
+        circuit_states: &TransientAnalysisState,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {

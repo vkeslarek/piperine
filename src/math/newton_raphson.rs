@@ -1,183 +1,27 @@
-use crate::circuit::netlist::IndependentVariable;
 use crate::error::Error;
-use crate::math::deriv::BdfCoefficientGenerator;
+use crate::math::Symbol;
+use crate::math::array::{IndexedArray1, IndexedArray2};
+use crate::math::deriv::DifferentiableIndependentScalar;
 use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
-use crate::math::linear::{SparseLinearSystem, SymbolicMatrix};
-use crate::math::num::{Field, ScalableByReal};
-use crate::math::vector::InitialValue;
-use crate::math::{Stamp, Symbol};
+use crate::math::iv::InitialValue;
+use crate::math::linear::{SparseLinearSystem, Stamp, SymbolicMatrix};
+use crate::math::num::Field;
 use crate::solver::Context;
-use ndarray::{Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
+use ndarray::{Array1, ArrayView1};
 use std::collections::HashMap;
+use std::fmt::Debug;
 use tracing::debug;
-
-#[derive(Clone, Debug)]
-pub struct SolverState<S: Symbol, E: Field> {
-    pub solver_variables: Array2<E>,
-    pub solver_mapping: HashMap<S, usize>,
-    pub independent_variables: Array2<f64>,
-    pub independent_mapping: HashMap<IndependentVariable, usize>,
-    current_index: usize,
-    available_datapoints: usize,
-    history_depth: usize,
-}
-
-impl<S: Symbol, E: Field> SolverState<S, E> {
-    fn with_symbol_mapping(
-        solver_mapping: HashMap<S, usize>,
-        independent_mapping: HashMap<IndependentVariable, usize>,
-        history_depth: usize,
-    ) -> Self {
-        Self {
-            solver_variables: Array2::<E>::zeros((history_depth, solver_mapping.len())),
-            solver_mapping,
-            independent_variables: Array2::<f64>::zeros((history_depth, independent_mapping.len())),
-            independent_mapping,
-            current_index: 0,
-            available_datapoints: 0,
-            history_depth,
-        }
-    }
-
-    fn new() -> Self {
-        Self {
-            solver_variables: Array2::zeros((0, 0)),
-            solver_mapping: HashMap::new(),
-            independent_variables: Array2::zeros((0, 0)),
-            independent_mapping: HashMap::new(),
-            current_index: 0,
-            available_datapoints: 0,
-            history_depth: 0,
-        }
-    }
-
-    fn apply_initial_conditions(&mut self, initial_conditions: Vec<InitialValue<S, E>>) {
-        for initial_value in initial_conditions {
-            let idx = self.solver_mapping.get(&initial_value.reference).unwrap();
-            let phys_idx = self.get_physical_index(0);
-            self.solver_variables[[phys_idx, *idx]] = initial_value.value;
-        }
-    }
-
-    fn prepare_iteration(&mut self, independent_variables: &ArrayView1<f64>) {
-        let phys_idx = self.get_physical_index(0);
-        self.independent_variables
-            .row_mut(phys_idx)
-            .assign(&independent_variables);
-
-        let prev_phys_idx = self.get_physical_index(1);
-        let prev_values = self.solver_variables.row(prev_phys_idx).to_owned();
-        self.solver_variables.row_mut(phys_idx).assign(&prev_values);
-    }
-
-    fn rollback(&mut self) {
-        self.current_index = (self.current_index + self.history_depth - 1) % self.history_depth;
-        self.available_datapoints = self.available_datapoints.saturating_sub(1);
-    }
-
-    pub fn update_current_guess(&mut self, values: &Array1<E>) {
-        let phys_idx = self.get_physical_index(0);
-        self.solver_variables.row_mut(phys_idx).assign(values);
-    }
-
-    pub fn commit(&mut self, independent_vars: &ArrayView1<f64>) {
-        let next_idx = (self.current_index + 1) % self.history_depth;
-
-        // Use the current converged values as the seed for the next step's guess
-        let current_vals = self.solver_variables.row(self.current_index).to_owned();
-        self.solver_variables
-            .row_mut(next_idx)
-            .assign(&current_vals);
-        self.independent_variables
-            .row_mut(next_idx)
-            .assign(independent_vars);
-
-        self.current_index = next_idx;
-        self.available_datapoints = (self.available_datapoints + 1).min(self.history_depth);
-    }
-
-    pub fn get_dependent_value(&self, reference: &S, lookback: usize) -> Option<E> {
-        let idx = *self.solver_mapping.get(reference)?;
-        let phys_idx = self.get_physical_index(lookback);
-        Some(self.solver_variables[[phys_idx, idx]])
-    }
-
-    pub fn get_independent_value(
-        &self,
-        variable: &IndependentVariable,
-        lookback: usize,
-    ) -> Option<f64> {
-        let idx = *self.independent_mapping.get(variable)?;
-        let phys_idx = self.get_physical_index(lookback);
-        Some(self.independent_variables[[phys_idx, idx]])
-    }
-
-    pub fn get_dependent_column(&self, lookback: usize) -> ArrayView1<E> {
-        let phys_idx = self.get_physical_index(lookback);
-        self.solver_variables.row(phys_idx)
-    }
-
-    pub fn get_independent_column(&self, lookback: usize) -> ArrayView1<f64> {
-        let phys_idx = self.get_physical_index(lookback);
-        self.independent_variables.row(phys_idx)
-    }
-
-    pub fn get_current_dependent_column(&mut self) -> ArrayViewMut1<E> {
-        let phys_idx = self.get_physical_index(0);
-        self.solver_variables.row_mut(phys_idx)
-    }
-
-    pub fn get_current_independent_column(&mut self) -> ArrayViewMut1<f64> {
-        let phys_idx = self.get_physical_index(0);
-        self.independent_variables.row_mut(phys_idx)
-    }
-
-    pub fn get_available_datapoints(&self) -> usize {
-        self.available_datapoints
-    }
-
-    fn get_physical_index(&self, lookback: usize) -> usize {
-        (self.current_index + self.history_depth - lookback) % self.history_depth
-    }
-}
-
-impl<S: Symbol, E: Field + ScalableByReal> SolverState<S, E> {
-    pub fn integration_parameters(&self, dx: &IndependentVariable) -> Option<(f64, Array1<E>)> {
-        let dx_idx = *self.independent_mapping.get(dx)?;
-        let order = self.available_datapoints.saturating_sub(1).min(3);
-
-        let ts_vec: Vec<_> = (0..=order)
-            .map(|i| self.independent_variables[[self.get_physical_index(i), dx_idx]])
-            .rev()
-            .collect(); // Matches BdfCoefficientGenerator expectation
-
-        let coeffs = BdfCoefficientGenerator::generate(order, ts_vec)?;
-
-        // Matrix multiplication-like logic for history sum
-        let mut history_sum = Array1::<E>::zeros(self.solver_variables.ncols());
-        for (i, &c) in coeffs.history_coeffs.iter().enumerate() {
-            let view = self.get_dependent_column(i + 1);
-            Zip::from(&mut history_sum)
-                .and(&view)
-                .for_each(|sum, &val| {
-                    *sum += val * c;
-                });
-        }
-
-        Some((coeffs.alpha, history_sum))
-    }
-}
 
 pub trait NewtonRaphsonStamper<S: Symbol, E: Field> {
     fn static_stamps(
         &mut self,
-        state: &SolverState<S, E>,
+        state: &IndexedArray2<S, E>,
         context: &Context,
     ) -> crate::result::Result<Vec<Stamp<S, E>>>;
 
     fn dynamic_stamps(
         &mut self,
-        state: &SolverState<S, E>,
+        state: &IndexedArray2<S, E>,
         context: &Context,
     ) -> crate::result::Result<Vec<Stamp<S, E>>>;
 
@@ -185,44 +29,57 @@ pub trait NewtonRaphsonStamper<S: Symbol, E: Field> {
         &mut self,
         context: &Context,
     ) -> crate::result::Result<Vec<InitialValue<S, E>>>;
+
     fn active_symbols(&self) -> Vec<S>;
-    fn independent_symbols(&self) -> Vec<IndependentVariable>;
+    fn independent_symbols(&self) -> Vec<S>;
+
     fn converged(
         &self,
-        state: &SolverState<S, E>,
+        state: &IndexedArray2<S, E>,
         solution: &ArrayView1<E>,
         context: &Context,
     ) -> bool;
 }
 
-impl<S: Symbol + std::fmt::Debug, E: 'static + Field + ScalableByReal> NewtonRaphsonSolver<S, E> {
+#[derive(Clone)]
+pub struct NewtonRaphsonSolver<S: Symbol, E: Field> {
+    pub symbolic_matrix: FaerSymbolicMatrix<S>,
+    pub state: IndexedArray2<S, E>,
+    pub context: Context,
+}
+
+impl<S: Symbol + std::fmt::Debug, E: 'static + Field> NewtonRaphsonSolver<S, E> {
     pub fn create(
         stamper: &mut dyn NewtonRaphsonStamper<S, E>,
         context: Context,
     ) -> crate::result::Result<Self> {
-        let symbols = stamper.active_symbols();
-
-        // Structural analysis using empty state
-        let null_state = SolverState::new();
+        let null_state = IndexedArray2::new(HashMap::new(), 0);
         let stamps: Vec<_> = [
             stamper.static_stamps(&null_state, &context)?,
             stamper.dynamic_stamps(&null_state, &context)?,
         ]
         .into_iter()
-        .flat_map(|f| f.into_iter())
+        .flatten()
         .collect();
 
-        let symbolic_matrix = FaerSymbolicMatrix::new(symbols, stamps)?;
-        let indep_map: HashMap<_, _> = stamper
-            .independent_symbols()
-            .into_iter()
-            .enumerate()
-            .map(|(i, s)| (s, i))
-            .collect();
+        let active_syms = stamper.active_symbols();
+        let symbolic_matrix = FaerSymbolicMatrix::new(active_syms, stamps)?;
 
-        let mut state =
-            SolverState::with_symbol_mapping(symbolic_matrix.mapping.clone(), indep_map, 3);
-        state.apply_initial_conditions(stamper.initial_conditions(&context)?);
+        let mut state_map = symbolic_matrix.mapping.clone();
+        let mut next_idx = state_map.values().max().cloned().unwrap_or(0) + 1;
+
+        for var in stamper.independent_symbols() {
+            if state_map.insert(var, next_idx).is_none() {
+                next_idx += 1;
+            }
+        }
+
+        let mut state = IndexedArray2::new(state_map, 3);
+
+        state.push_align(&IndexedArray1::from_iv(
+            stamper.initial_conditions(&context)?,
+            symbolic_matrix.mapping.clone(),
+        ));
 
         Ok(Self {
             symbolic_matrix,
@@ -231,73 +88,142 @@ impl<S: Symbol + std::fmt::Debug, E: 'static + Field + ScalableByReal> NewtonRap
         })
     }
 
-    pub fn step(
+    pub fn step_steady_state(
         &mut self,
         stamper: &mut dyn NewtonRaphsonStamper<S, E>,
-        independent_vars: &ArrayView1<f64>,
-        integration_var: &IndependentVariable,
+        independent_values: &HashMap<S, E>,
     ) -> crate::result::Result<Array1<E>> {
-        debug!("Starting Newton-Raphson Step with state {:?}", self.state);
-        let (alpha, history) = self
+        let guess = self
             .state
-            .integration_parameters(integration_var)
-            .unwrap_or((0.0, Array1::zeros(self.symbolic_matrix.size())));
+            .latest()
+            .expect("Solver uninitialized")
+            .to_owned();
+        self.state.push(&guess);
+
+        self.update_knowns(independent_values);
 
         for iter in 0..self.context.max_iter {
-            debug!("Iteration {}", iter + 1);
-            let mut stamps = stamper.static_stamps(&self.state, &self.context)?;
-            let dynamic = stamper.dynamic_stamps(&self.state, &self.context)?;
+            debug!("Newton Iteration {}", iter + 1);
 
-            // Compact dynamic integration logic
-            self.apply_dynamic_stamps(&mut stamps, dynamic, alpha, &history);
+            let stamps = stamper.static_stamps(&self.state, &self.context)?;
 
-            let solution = self.solve_linear_system(stamps)?;
+            let solution = self.solve_system(stamps)?;
+
             let converged = stamper.converged(&self.state, &solution.view(), &self.context);
 
-            debug!("Solution: {:?} Converged: {:?}", solution, converged);
+            let mapping = self.symbolic_matrix.mapping();
+            self.state
+                .latest_mut()
+                .unwrap()
+                .assign(&solution.view(), mapping);
 
-            self.state.update_current_guess(&solution);
+            self.update_knowns(independent_values);
 
             if converged {
-                self.state.commit(independent_vars);
+                debug!("Converged in {} iterations", iter + 1);
                 return Ok(solution);
             }
         }
 
-        self.state.rollback();
+        self.state.pop();
+
         Err(Error::simple(
             "Convergence Failure",
-            format!("Failed at iteration {}", self.context.max_iter),
+            format!(
+                "Failed to converge after {} iterations",
+                self.context.max_iter
+            ),
         ))
     }
 
-    fn apply_dynamic_stamps(
-        &self,
-        target: &mut Vec<Stamp<S, E>>,
-        dynamic: Vec<Stamp<S, E>>,
-        alpha: f64,
-        history: &Array1<E>,
-    ) {
-        for s in dynamic {
-            if let Stamp::Matrix(r, c, val) = s {
-                target.push(Stamp::Matrix(r.clone(), c.clone(), val * alpha));
-                if let Some(&idx) = self.symbolic_matrix.mapping.get(&c) {
-                    target.push(Stamp::Rhs(r, -val * history[idx]));
-                }
-            }
+    fn update_knowns(&mut self, values: &HashMap<S, E>) {
+        let mut view = self.state.latest_mut().unwrap();
+        for (sym, val) in values {
+            view.set(sym, val);
         }
     }
 
-    fn solve_linear_system(&self, stamps: Vec<Stamp<S, E>>) -> crate::result::Result<Array1<E>> {
+    fn solve_system(&self, stamps: Vec<Stamp<S, E>>) -> crate::result::Result<Array1<E>> {
         let mut system = FaerSparseLinearSystem::new(self.symbolic_matrix.size());
         system.apply_stamps(&self.symbolic_matrix, stamps);
         system.solve_with_backend(&self.symbolic_matrix)
     }
 }
 
-#[derive(Clone)]
-pub struct NewtonRaphsonSolver<S: Symbol, E: Field> {
-    pub symbolic_matrix: FaerSymbolicMatrix<S>,
-    pub state: SolverState<S, E>,
-    pub context: Context,
+impl<S: Symbol + Debug, E: Field + DifferentiableIndependentScalar> NewtonRaphsonSolver<S, E> {
+    pub fn step_dynamic(
+        &mut self,
+        stamper: &mut dyn NewtonRaphsonStamper<S, E>,
+        independent_values: &HashMap<S, E>,
+        integration_symbol: &S,
+    ) -> crate::result::Result<Array1<E>> {
+        let guess = self
+            .state
+            .latest()
+            .expect("Solver uninitialized")
+            .to_owned();
+        self.state.push(&guess);
+
+        self.update_knowns(independent_values);
+
+        let (alpha, history) = self
+            .state
+            .integration_parameters(integration_symbol)
+            .unwrap_or((E::zero(), Array1::zeros(self.symbolic_matrix.size())));
+
+        for iter in 0..self.context.max_iter {
+            debug!("Newton Iteration {}", iter + 1);
+
+            let mut stamps = stamper.static_stamps(&self.state, &self.context)?;
+            let dynamic = stamper.dynamic_stamps(&self.state, &self.context)?;
+
+            self.apply_dynamics(&mut stamps, dynamic, alpha, &history);
+
+            let solution = self.solve_system(stamps)?;
+
+            let converged = stamper.converged(&self.state, &solution.view(), &self.context);
+
+            let mapping = self.symbolic_matrix.mapping();
+            self.state
+                .latest_mut()
+                .unwrap()
+                .assign(&solution.view(), mapping);
+
+            self.update_knowns(independent_values);
+
+            if converged {
+                debug!("Converged in {} iterations", iter + 1);
+                return Ok(solution);
+            }
+        }
+
+        self.state.pop();
+
+        Err(Error::simple(
+            "Convergence Failure",
+            format!(
+                "Failed to converge after {} iterations",
+                self.context.max_iter
+            ),
+        ))
+    }
+
+    fn apply_dynamics(
+        &self,
+        stamps: &mut Vec<Stamp<S, E>>,
+        dynamic_stamps: Vec<Stamp<S, E>>,
+        alpha: E,
+        history: &Array1<E>,
+    ) {
+        for s in dynamic_stamps {
+            if let Stamp::Matrix(row, col, val) = s {
+                stamps.push(Stamp::Matrix(row.clone(), col.clone(), val * alpha));
+
+                if let Some(&idx) = self.symbolic_matrix.mapping.get(&col) {
+                    let rhs_contribution = val * history[idx];
+                    stamps.push(Stamp::Rhs(row, -rhs_contribution));
+                }
+            }
+        }
+    }
 }

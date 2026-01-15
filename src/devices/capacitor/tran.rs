@@ -1,14 +1,13 @@
-use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext};
+use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext, TransientAnalysisState};
 use crate::circuit::netlist::CircuitReference;
-use crate::circuit::state::CircuitState;
 use crate::devices::capacitor::Capacitor;
-use crate::math::Stamp;
+use crate::math::linear::Stamp;
 use crate::solver::Context;
 
 impl TransientAnalysis for Capacitor {
     fn load_transient(
         &self,
-        _: &CircuitState<f64>,
+        _: &TransientAnalysisState,
         _: &TransientAnalysisContext,
         _: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {
@@ -17,7 +16,7 @@ impl TransientAnalysis for Capacitor {
 
     fn load_transient_dynamic(
         &self,
-        _: &CircuitState<f64>,
+        _: &TransientAnalysisState,
         _: &TransientAnalysisContext,
         _: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {

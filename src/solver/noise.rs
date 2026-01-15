@@ -2,13 +2,13 @@ use crate::analysis::ac::{AcAnalysisContext, AcSweepAnalysisOptions};
 use crate::analysis::dc::DcAnalysisResult;
 use crate::analysis::noise::{NoiseAnalysisOptions, NoiseAnalysisResult};
 use crate::circuit::Circuit;
-use crate::circuit::netlist::{CircuitReference, IndependentVariable};
-use crate::math::Stamp;
-use crate::math::faer::FaerDenseSolver;
-use crate::math::linear::{DenseLinearSystem, SymbolicMatrix};
-use crate::math::newton_raphson::{NewtonRaphsonSolver, NewtonRaphsonStamper, SolverState};
+use crate::circuit::netlist::CircuitReference;
+use crate::math::array::IndexedArray2;
+use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
+use crate::math::iv::InitialValue;
+use crate::math::linear::{SparseLinearSystem, Stamp, SymbolicMatrix};
+use crate::math::newton_raphson::{NewtonRaphsonSolver, NewtonRaphsonStamper};
 use crate::math::unit::UnitExt;
-use crate::math::vector::InitialValue;
 use crate::solver::Context;
 use ndarray::{Array1, Array2, ArrayView1};
 use num_complex::Complex;
@@ -16,20 +16,34 @@ use num_complex::Complex;
 pub struct NoiseAnalysisStamper<'a> {
     pub circuit: &'a mut Circuit,
     pub dc_point: DcAnalysisResult,
-    pub current_frequency: f64,
+}
+
+impl<'a> NoiseAnalysisStamper<'a> {
+    fn get_context(
+        &self,
+        state: &IndexedArray2<CircuitReference, Complex<f64>>,
+    ) -> AcAnalysisContext {
+        let freq = state
+            .latest()
+            .and_then(|vals| vals.get(&CircuitReference::Frequency).cloned())
+            .map(|c| c.re)
+            .unwrap_or(1.0);
+
+        AcAnalysisContext {
+            frequency: freq.Hz(),
+        }
+    }
 }
 
 impl<'a> NewtonRaphsonStamper<CircuitReference, Complex<f64>> for NoiseAnalysisStamper<'a> {
     fn static_stamps(
         &mut self,
-        _state: &SolverState<CircuitReference, Complex<f64>>,
+        state: &IndexedArray2<CircuitReference, Complex<f64>>,
         context: &Context,
     ) -> crate::result::Result<Vec<Stamp<CircuitReference, Complex<f64>>>> {
-        let ac_ctx = AcAnalysisContext {
-            frequency: self.current_frequency.Hz(),
-        };
+        let ac_ctx = self.get_context(state);
 
-        // Reuse AC implementations
+        // Reuse AC implementations for component linearization
         Ok(self
             .circuit
             .components_mut()
@@ -42,7 +56,7 @@ impl<'a> NewtonRaphsonStamper<CircuitReference, Complex<f64>> for NoiseAnalysisS
 
     fn dynamic_stamps(
         &mut self,
-        _state: &SolverState<CircuitReference, Complex<f64>>,
+        _state: &IndexedArray2<CircuitReference, Complex<f64>>,
         _context: &Context,
     ) -> crate::result::Result<Vec<Stamp<CircuitReference, Complex<f64>>>> {
         Ok(Vec::new())
@@ -64,13 +78,13 @@ impl<'a> NewtonRaphsonStamper<CircuitReference, Complex<f64>> for NoiseAnalysisS
             .collect()
     }
 
-    fn independent_symbols(&self) -> Vec<IndependentVariable> {
-        vec![IndependentVariable::Frequency]
+    fn independent_symbols(&self) -> Vec<CircuitReference> {
+        vec![CircuitReference::Frequency]
     }
 
     fn converged(
         &self,
-        _state: &SolverState<CircuitReference, Complex<f64>>,
+        _state: &IndexedArray2<CircuitReference, Complex<f64>>,
         _sol: &ArrayView1<Complex<f64>>,
         _ctx: &Context,
     ) -> bool {
@@ -80,9 +94,9 @@ impl<'a> NewtonRaphsonStamper<CircuitReference, Complex<f64>> for NoiseAnalysisS
 
 pub struct NoiseSolver<'a> {
     pub linearizer: NoiseAnalysisStamper<'a>,
-    // We use the generic solver mainly as a container for the SymbolicMatrix and State
     pub solver: NewtonRaphsonSolver<CircuitReference, Complex<f64>>,
     pub options: NoiseAnalysisOptions,
+    pub adjoint_symbolic_matrix: FaerSymbolicMatrix<CircuitReference>,
 }
 
 impl<'a> NoiseSolver<'a> {
@@ -91,23 +105,32 @@ impl<'a> NoiseSolver<'a> {
         options: NoiseAnalysisOptions,
         context: Context,
     ) -> crate::result::Result<Self> {
-        // 1. Solve DC Operating Point first
         let dc_point = circuit.dc(context.clone())?.solve()?;
 
-        let mut linearizer = NoiseAnalysisStamper {
-            circuit,
-            dc_point,
-            current_frequency: 1.0,
-        };
+        let mut linearizer = NoiseAnalysisStamper { circuit, dc_point };
 
-        // 2. Create the solver
-        // This initializes the SymbolicMatrix and SolverState correctly via the stamper
-        let solver = NewtonRaphsonSolver::create(&mut linearizer, context)?;
+        // 2. Create the Standard Solver (for state management)
+        let solver = NewtonRaphsonSolver::create(&mut linearizer, context.clone())?;
+
+        let stamps = linearizer.static_stamps(&solver.state, &context)?;
+        let adjoint_stamps: Vec<_> = stamps
+            .into_iter()
+            .map(|s| match s {
+                Stamp::Matrix(r, c, val) => Stamp::Matrix(c, r, val), // Transpose!
+                s => s,
+            })
+            .collect();
+
+        let adjoint_symbolic_matrix = FaerSymbolicMatrix::new(
+            solver.symbolic_matrix.mapping().keys().cloned().collect(),
+            adjoint_stamps,
+        )?;
 
         Ok(Self {
             linearizer,
             solver,
             options,
+            adjoint_symbolic_matrix,
         })
     }
 
@@ -115,61 +138,43 @@ impl<'a> NoiseSolver<'a> {
         let frequencies = self.generate_frequencies(&self.options.sweep_options);
         let mut out_noise_sq = Vec::with_capacity(frequencies.len());
 
-        let mapping = self.solver.symbolic_matrix.mapping().clone();
-        let matrix_size = self.solver.symbolic_matrix.size();
+        let mapping = self.adjoint_symbolic_matrix.mapping().clone();
+        let matrix_size = self.adjoint_symbolic_matrix.size();
 
-        // Output indices
         let out_idx = mapping
             .get(&CircuitReference::Node(self.options.output_node.clone()))
             .ok_or_else(|| crate::error::Error::simple("Noise", "Output node not found"))?;
         let ref_idx = mapping.get(&CircuitReference::Node(self.options.reference_node.clone()));
 
-        // Pre-allocate the dense solver
-        let mut dense_solver = FaerDenseSolver::<Complex<f64>>::new(matrix_size);
-
-        // Pre-allocate reusable arrays
-        let mut y_transposed = Array2::<Complex<f64>>::zeros((matrix_size, matrix_size));
-        let mut rhs = Array1::<Complex<f64>>::zeros(matrix_size);
-
         for &f in &frequencies {
-            // 1. Update Frequency
-            self.linearizer.current_frequency = f;
+            if let Some(mut view) = self.solver.state.latest_mut() {
+                view.set(&CircuitReference::Frequency, &Complex::new(f, 0.0));
+            }
 
-            // 2. Get Stamps directly (Bypassing NR solver step logic)
-            // We pass the existing state, though Noise stamps usually don't depend on state variables
             let stamps = self
                 .linearizer
                 .static_stamps(&self.solver.state, &self.solver.context)?;
 
-            // 3. Build the Transposed Y Matrix
-            // Reset matrix to zero
-            y_transposed.fill(Complex::new(0.0, 0.0));
+            let mut sparse_system = FaerSparseLinearSystem::new(matrix_size);
 
-            for stamp in stamps {
-                if let Stamp::Matrix(r, c, val) = stamp {
-                    // Transpose Logic: swap rows and columns
-                    // Matrix[col, row] += val
-                    if let (Some(&r_i), Some(&c_i)) = (mapping.get(&r), mapping.get(&c)) {
-                        y_transposed[[c_i, r_i]] += val;
-                    }
-                }
-            }
+            let adjoint_stamps: Vec<_> = stamps
+                .into_iter()
+                .map(|s| match s {
+                    Stamp::Matrix(r, c, val) => Stamp::Matrix(c, r, val),
+                    _ => s,
+                })
+                .collect();
 
-            // 4. Configure Dense Solver
-            dense_solver.set_matrix(&y_transposed);
+            sparse_system.apply_stamps(&self.adjoint_symbolic_matrix, adjoint_stamps);
 
-            // 5. Setup RHS (Test Current of 1.0 at Output)
-            rhs.fill(Complex::new(0.0, 0.0));
-            rhs[*out_idx] = Complex::new(1.0, 0.0);
+            sparse_system.b_vec[*out_idx] = Complex::new(1.0, 0.0);
             if let Some(&r_i) = ref_idx {
-                rhs[r_i] = Complex::new(-1.0, 0.0);
+                sparse_system.b_vec[r_i] = Complex::new(-1.0, 0.0);
             }
-            dense_solver.set_rhs(&rhs);
 
-            // 6. Solve Adjoint System
-            let adjoint_solution = dense_solver.solve()?;
+            let adjoint_solution =
+                sparse_system.solve_with_backend(&self.adjoint_symbolic_matrix)?;
 
-            // 7. Accumulate Noise
             let mut total_density = 0.0;
             let ac_ctx = AcAnalysisContext { frequency: f.Hz() };
 
@@ -190,16 +195,13 @@ impl<'a> NoiseSolver<'a> {
 
                         let h_vec = z_p - z_n;
                         let gain_sq = h_vec.norm_sqr();
-                        let s_noise = n.value;
-
-                        total_density += gain_sq * s_noise;
+                        total_density += gain_sq * n.value;
                     }
                 }
             }
             out_noise_sq.push(total_density);
         }
 
-        // 8. Integrate
         let integrated_noise = self.integrate_noise(&frequencies, &out_noise_sq);
 
         Ok(NoiseAnalysisResult {
@@ -211,9 +213,12 @@ impl<'a> NoiseSolver<'a> {
     }
 
     fn generate_frequencies(&self, opt: &AcSweepAnalysisOptions) -> Vec<f64> {
+        if opt.steps <= 1 {
+            return vec![opt.start_frequency];
+        }
         (0..opt.steps)
             .map(|i| {
-                let ratio = i as f64 / (opt.steps - 1).max(1) as f64;
+                let ratio = i as f64 / (opt.steps - 1) as f64;
                 if opt.logarithmic {
                     opt.start_frequency * (opt.stop_frequency / opt.start_frequency).powf(ratio)
                 } else {

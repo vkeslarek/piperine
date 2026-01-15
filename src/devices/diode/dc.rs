@@ -1,19 +1,22 @@
-use crate::analysis::dc::DcAnalysis;
+use crate::analysis::dc::{DcAnalysis, DcAnalysisState};
 use crate::circuit::netlist::CircuitReference;
-use crate::circuit::state::CircuitState;
 use crate::devices::diode::Diode;
-use crate::math::Stamp;
+use crate::math::linear::Stamp;
 use crate::solver::Context;
 
 impl DcAnalysis for Diode {
     fn update_dc(
         &mut self,
-        state: &CircuitState<f64>,
+        state: &DcAnalysisState,
         context: &Context,
     ) -> crate::result::Result<()> {
-        let v_anode = state.get_dependent_value(&self.node_plus, 0).unwrap_or(0.0);
+        let v_anode = state
+            .latest()
+            .and_then(|val| val.get(&self.node_plus).cloned())
+            .unwrap_or(0.0);
         let v_cathode = state
-            .get_dependent_value(&self.node_minus, 0)
+            .latest()
+            .and_then(|val| val.get(&self.node_minus).cloned())
             .unwrap_or(0.0);
 
         self.model.clone().update_linearization(
@@ -25,7 +28,7 @@ impl DcAnalysis for Diode {
         Ok(())
     }
 
-    fn load_dc(&self, _: &CircuitState<f64>, _: &Context) -> Vec<Stamp<CircuitReference, f64>> {
+    fn load_dc(&self, _: &DcAnalysisState, _: &Context) -> Vec<Stamp<CircuitReference, f64>> {
         let g = self.g_eq;
         let i_rhs = self.i_eq;
 

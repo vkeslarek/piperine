@@ -166,8 +166,8 @@ fn test_transient_rc_step() {
         Step {
             initial: 0.0.V(),
             final_value: 1.0.V(),
-            delay: 0.0,      // Immediate start
-            rise_time: 1e-9, // 1 ns rise (effectively instant for this timescale)
+            delay: 0.0,
+            rise_time: 1e-9,
         },
     );
 
@@ -229,7 +229,7 @@ fn test_noise_johnson_nyquist() {
                     logarithmic: true,
                 },
                 output_node: "out".into(),
-                reference_node: GND.into(), // Using String/Into<String>
+                reference_node: GND.into(),
                 input_source_name: None,
             },
             Context::default(),

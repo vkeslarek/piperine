@@ -50,10 +50,11 @@ pub fn test() {
         "VCC",
         "vcc",
         GND,
-        Sine {
-            amplitude: 12.0.V(),
-            frequency: 10.0.kHz(),
-            phase: 0.0.deg(),
+        Step {
+            initial: 0.0,
+            final_value: 12.0,
+            delay: 1e-6,
+            rise_time: 5e-7,
         },
     );
     circuit.resistor("R1", "vcc", 1, 10.0.Ohms());
@@ -64,8 +65,8 @@ pub fn test() {
     let result = circuit
         .transient(
             TransientAnalysisOptions {
-                stop_time: 0.01,
-                dt: 5e-6,
+                stop_time: 0.0006,
+                dt: 5e-7,
             },
             Context::default(),
         )

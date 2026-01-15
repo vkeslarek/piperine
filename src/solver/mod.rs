@@ -38,7 +38,6 @@ impl Default for Context {
         }
     }
 }
-
 impl Context {
     pub fn has_converged(
         &self,
@@ -48,16 +47,16 @@ impl Context {
     ) -> bool {
         mapping.iter().all(|(reference, &index)| {
             if index >= old_values.len() || index >= new_values.len() {
-                return false;
+                return true;
             }
 
             let old_v = old_values[index];
             let new_v = new_values[index];
 
             let abs_limit = if matches!(reference, CircuitReference::Branch(_)) {
-                self.abstol // Current (Amps)
+                self.abstol
             } else {
-                self.vntol // Voltage (Volts)
+                self.vntol
             };
 
             let magnitude = old_v.abs().max(new_v.abs());
