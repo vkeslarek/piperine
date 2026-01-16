@@ -2,15 +2,15 @@ use crate::analysis::ac::{AcAnalysisContext, AcAnalysisResult, AcSweepAnalysisOp
 use crate::analysis::dc::DcAnalysisResult;
 use crate::circuit::Circuit;
 use crate::circuit::netlist::CircuitReference;
+use crate::map;
 use crate::math::array::IndexedArray2;
 use crate::math::iv::InitialValue;
-use crate::math::linear::{Stamp, SymbolicMatrix};
+use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NewtonRaphsonStamper};
 use crate::math::unit::UnitExt;
 use crate::solver::Context;
-use ndarray::{Array1, Array2, ArrayView1};
+use ndarray::ArrayView1;
 use num_complex::Complex;
-use std::collections::HashMap;
 
 pub struct AcSolver<'a> {
     pub linearizer: AcAnalysisStamper<'a>,
@@ -34,24 +34,18 @@ impl<'a> AcSolver<'a> {
     ) -> crate::result::Result<AcAnalysisResult> {
         let frequencies = self.generate_frequencies(&options);
 
-        let mut data = Array2::zeros((frequencies.len(), self.solver.symbolic_matrix.size()));
-        let mut inputs = HashMap::new();
+        let mut data = AcAnalysisResult::new(self.solver.state.mapping.clone());
 
-        for (idx, &f_hz) in frequencies.iter().enumerate() {
-            inputs.insert(CircuitReference::Frequency, Complex::new(f_hz, 0.0));
+        for &f_hz in frequencies.iter() {
+            let solution = self.solver.step_steady_state(
+                &mut self.linearizer,
+                &map![CircuitReference::Frequency => Complex::new(f_hz, 0.0)],
+            )?;
 
-            let solution = self
-                .solver
-                .step_steady_state(&mut self.linearizer, &inputs)?;
-
-            data.row_mut(idx).assign(&solution);
+            data.push(&solution);
         }
 
-        Ok(AcAnalysisResult {
-            mapping: self.solver.symbolic_matrix.mapping.clone(),
-            frequencies,
-            data,
-        })
+        Ok(data)
     }
 
     fn generate_frequencies(&self, opt: &AcSweepAnalysisOptions) -> Vec<f64> {

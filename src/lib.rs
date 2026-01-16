@@ -74,14 +74,19 @@ pub fn test() {
         .solve()
         .unwrap();
 
-    let times = result.timestamps(); // ArrayView1
-    let matrix = result.values(); // ArrayView2
-    for (i, row_values) in matrix.outer_iter().enumerate() {
-        let t = times[i];
-        println!(
-            "{:.8} {:.8}",
-            t,
-            row_values[result.mapping[&CircuitReference::Node(2.into())]]
-        );
-    }
+    result.values.iter().for_each(|val| {
+        let t = val
+            .get(*result.mapping.get(&CircuitReference::Time).unwrap())
+            .unwrap();
+        let v_out = val
+            .get(
+                *result
+                    .mapping
+                    .get(&CircuitReference::Node(2.into()))
+                    .unwrap(),
+            )
+            .unwrap();
+
+        println!("{:.8} {:.8}", t, v_out);
+    });
 }

@@ -10,7 +10,7 @@ use crate::math::linear::{SparseLinearSystem, Stamp, SymbolicMatrix};
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NewtonRaphsonStamper};
 use crate::math::unit::UnitExt;
 use crate::solver::Context;
-use ndarray::{Array1, Array2, ArrayView1};
+use ndarray::ArrayView1;
 use num_complex::Complex;
 
 pub struct NoiseAnalysisStamper<'a> {

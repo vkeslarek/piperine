@@ -1,8 +1,31 @@
-use crate::math::param::Parameter;
 use faer::rand;
+use num_complex::Complex;
 use rand_distr::{Distribution as _, Normal, Uniform};
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
+
+pub enum Parameter<Q> {
+    Fixed(Q),
+    Stochastic(Distribution, PhantomData<Q>),
+}
+
+impl Parameter<f64> {
+    pub fn sample(&self) -> f64 {
+        match self {
+            Parameter::Fixed(q) => q.clone(),
+            Parameter::Stochastic(dist, _) => dist.sample(),
+        }
+    }
+}
+
+impl Parameter<Complex<f64>> {
+    pub fn sample(&self) -> Complex<f64> {
+        match self {
+            Parameter::Fixed(q) => q.clone(),
+            Parameter::Stochastic(dist, _) => Complex::new(dist.sample(), 0.0),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum Distribution {

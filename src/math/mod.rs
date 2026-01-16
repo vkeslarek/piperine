@@ -9,7 +9,6 @@ pub mod iv;
 pub mod linear;
 pub mod newton_raphson;
 pub mod num;
-pub mod param;
 pub mod rand;
 pub mod unit;
 pub mod vector;

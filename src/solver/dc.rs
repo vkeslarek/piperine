@@ -1,6 +1,6 @@
 use crate::analysis::dc::{DcAnalysisResult, DcAnalysisState};
-use crate::circuit::netlist::CircuitReference;
 use crate::circuit::Circuit;
+use crate::circuit::netlist::CircuitReference;
 use crate::map;
 use crate::math::array::IndexedArray1;
 use crate::math::iv::InitialValue;
@@ -107,10 +107,7 @@ impl<'a> DcSolver<'a> {
         )?;
 
         Ok(DcAnalysisResult {
-            values: IndexedArray1::from_values(
-                solution,
-                self.solver.symbolic_matrix.mapping.clone(),
-            ),
+            values: solution,
             soa_violations: vec![],
         })
     }

@@ -1,3 +1,4 @@
+use crate::circuit::netlist::CircuitReference;
 use crate::error::Error;
 use crate::math::Symbol;
 use crate::math::array::{IndexedArray1, IndexedArray2};
@@ -92,7 +93,7 @@ impl<S: Symbol + std::fmt::Debug, E: 'static + Field> NewtonRaphsonSolver<S, E> 
         &mut self,
         stamper: &mut dyn NewtonRaphsonStamper<S, E>,
         independent_values: &HashMap<S, E>,
-    ) -> crate::result::Result<Array1<E>> {
+    ) -> crate::result::Result<IndexedArray1<S, E>> {
         let guess = self
             .state
             .latest()
@@ -121,7 +122,7 @@ impl<S: Symbol + std::fmt::Debug, E: 'static + Field> NewtonRaphsonSolver<S, E> 
 
             if converged {
                 debug!("Converged in {} iterations", iter + 1);
-                return Ok(solution);
+                return Ok(self.state.latest().unwrap().to_owned());
             }
         }
 
@@ -156,7 +157,7 @@ impl<S: Symbol + Debug, E: Field + DifferentiableIndependentScalar> NewtonRaphso
         stamper: &mut dyn NewtonRaphsonStamper<S, E>,
         independent_values: &HashMap<S, E>,
         integration_symbol: &S,
-    ) -> crate::result::Result<Array1<E>> {
+    ) -> crate::result::Result<IndexedArray1<S, E>> {
         let guess = self
             .state
             .latest()
@@ -193,7 +194,7 @@ impl<S: Symbol + Debug, E: Field + DifferentiableIndependentScalar> NewtonRaphso
 
             if converged {
                 debug!("Converged in {} iterations", iter + 1);
-                return Ok(solution);
+                return Ok(self.state.latest().unwrap().to_owned());
             }
         }
 

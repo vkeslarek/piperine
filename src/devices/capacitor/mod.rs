@@ -6,14 +6,13 @@ pub mod tran;
 use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::transient::TransientAnalysis;
-use crate::devices::capacitor::model::{CapacitorModel, CapacitorModelType};
-use crate::devices::{Component, Model};
-use crate::math::param::IntoParameter;
 use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
+use crate::devices::Component;
+use crate::devices::capacitor::model::{CapacitorModel, CapacitorModelType};
+use crate::math::unit::Farad;
 use crate::util::AsAny;
 use std::any::Any;
 use std::sync::Arc;
-use crate::math::unit::Farad;
 
 pub struct Capacitor {
     pub name: String,

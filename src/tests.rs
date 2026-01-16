@@ -93,14 +93,14 @@ fn test_ac_rc_filter() {
     init_config();
     let mut circuit = Circuit::new("AC Low Pass");
 
-    // R = 1k, C = 159.15nF => Cutoff Frequency fc = 1/(2*pi*R*C) approx 1kHz
+    // R = 1k, C = 159.15nF => Cutoff approx 1kHz
     circuit.voltage_source(
         "V1",
         "in",
         GND,
         Sine {
             amplitude: 1.0.V(),
-            frequency: 0.0.Hz(),
+            frequency: 0.0.Hz(), // Placeholder, overridden by sweep
             phase: 0.0.deg(),
         },
     );
@@ -113,26 +113,33 @@ fn test_ac_rc_filter() {
         .solve_sweep(AcSweepAnalysisOptions {
             start_frequency: 100.0,
             stop_frequency: 10_000.0,
-            // FIX: 21 steps ensures we hit the exact center of 2 decades (1kHz)
-            // Log math: 100 * (10000/100)^(10/20) = 1000.0
             steps: 21,
             logarithmic: true,
         })
         .unwrap();
 
-    // Check value at approx 1kHz (Cutoff)
+    // 1. Resolve indices via the mapping ONCE
+    // Frequency is now just a variable in the vector
+    let freq_ref = CircuitReference::Frequency;
+    let out_ref = CircuitReference::Node("out".into());
+
+    let freq_idx = *result.mapping.get(&freq_ref).expect("Frequency not in result");
+    let out_idx = *result.mapping.get(&out_ref).expect("Output node not in result");
+
     let mut found_cutoff = false;
-    for (i, &f) in result.frequencies.iter().enumerate() {
+
+    // 2. Iterate through the snapshots (rows)
+    for vector in &result.values {
+        // Extract frequency from this snapshot (Real part of Complex)
+        let f = vector[freq_idx].re;
+
         if (f - 1000.0).abs() < 1.0 {
-            // Tight tolerance now possible
-            let v_out = result
-                .get_phasor(&CircuitReference::Node("out".into()), i)
-                .unwrap();
+            // Found 1kHz point
+            let v_out = vector[out_idx];
             let mag = v_out.norm();
 
             println!("At {:.1} Hz: Mag = {:.4} V (Expected ~0.707)", f, mag);
 
-            // At cutoff, magnitude should be 1/sqrt(2) = 0.707106
             assert!(
                 (mag - 0.7071).abs() < 0.001,
                 "Filter cutoff magnitude incorrect"
@@ -141,11 +148,8 @@ fn test_ac_rc_filter() {
             break;
         }
     }
-    assert!(
-        found_cutoff,
-        "Sweep did not cover 1kHz correctly. Frequencies generated: {:?}",
-        result.frequencies
-    );
+
+    assert!(found_cutoff, "Sweep did not cover 1kHz correctly.");
 }
 
 // ========================================================================
@@ -157,8 +161,6 @@ fn test_transient_rc_step() {
     init_config();
     let mut circuit = Circuit::new("RC Step Response");
 
-    // Step from 0V to 1V at t=0
-    // Using your struct definition:
     circuit.voltage_source(
         "V1",
         "in",
@@ -171,18 +173,14 @@ fn test_transient_rc_step() {
         },
     );
 
-    // Tau = R*C = 1k * 1u = 1ms
     circuit.resistor("R1", "in", "out", 1.0.kOhms());
     circuit.capacitor("C1", "out", GND, 1.0.uF());
-
-    let dt = 100.0.us();
-    let sim_time = 5.0.ms(); // 5 Tau
 
     let result = circuit
         .transient(
             TransientAnalysisOptions {
-                stop_time: sim_time,
-                dt: dt,
+                stop_time: 5.0.ms(), // 5 Tau
+                dt: 100.0.us(),
             },
             Context::default(),
         )
@@ -190,15 +188,24 @@ fn test_transient_rc_step() {
         .solve()
         .unwrap();
 
-    // Check final value (should be fully charged to 1V)
-    let final_idx = result.timestamps().len() - 1;
-    let mapping_idx = result.mapping[&CircuitReference::Node("out".into())];
-    let v_final = result.values()[[final_idx, mapping_idx]];
+    // 1. Resolve the column index for "out"
+    let out_idx = *result
+        .mapping
+        .get(&CircuitReference::Node("out".into()))
+        .expect("Output node not found");
 
-    println!("Transient Final Voltage (5*Tau): {:.4} V", v_final);
+    // 2. Get the last snapshot (Final State) directly from the vector
+    let final_snapshot = result.values.last().expect("Simulation returned no data");
+    let v_final = final_snapshot[out_idx];
+
+    // Optional: If you wanted to verify the time of this snapshot
+    // let time_idx = *result.mapping.get(&CircuitReference::Time).unwrap();
+    // let t_final = final_snapshot[time_idx];
+
+    println!("Transient Final Voltage: {:.4} V", v_final);
     assert!(
         (v_final - 1.0).abs() < 0.01,
-        "Capacitor did not charge to 1V"
+        "Capacitor did not charge to 1V. Got {}", v_final
     );
 }
 

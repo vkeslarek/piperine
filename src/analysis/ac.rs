@@ -3,10 +3,9 @@ use crate::circuit::netlist::CircuitReference;
 use crate::devices::Component;
 use crate::math::linear::Stamp;
 use crate::math::unit::Hertz;
+use crate::math::vector::IndexedVec1;
 use crate::solver::Context;
-use ndarray::Array2;
 use num_complex::Complex;
-use std::collections::HashMap;
 
 pub struct AcAnalysisContext {
     pub frequency: Hertz,
@@ -42,22 +41,7 @@ pub struct AcSweepAnalysisOptions {
     pub logarithmic: bool,
 }
 
-pub struct AcAnalysisResult {
-    pub mapping: HashMap<CircuitReference, usize>,
-    pub frequencies: Vec<f64>,
-    pub data: Array2<Complex<f64>>, // [Frequency_Index, Node_Index]
-}
-
-impl AcAnalysisResult {
-    pub fn get_phasor(
-        &self,
-        reference: &CircuitReference,
-        freq_idx: usize,
-    ) -> Option<Complex<f64>> {
-        let col = *self.mapping.get(reference)?;
-        Some(self.data[[freq_idx, col]])
-    }
-}
+pub type AcAnalysisResult = IndexedVec1<CircuitReference, Complex<f64>>;
 
 pub trait AcAnalysisSolver {
     fn solve_frequency_ac_analysis(

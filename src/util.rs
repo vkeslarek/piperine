@@ -7,8 +7,6 @@ pub trait AsAny {
 
 #[macro_export]
 macro_rules! map {
-    // Match: key => value, (repeating)
-    // The optional comma at the end ensures [A => B, ] also works.
     ( $( $key:expr => $val:expr ),* $(,)? ) => {{
         let mut _map = std::collections::HashMap::new();
         $(
