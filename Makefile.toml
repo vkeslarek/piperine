@@ -1,0 +1,39 @@
+[config]
+default_to_workspace = false
+
+[tasks.docs-install-tool]
+description = "Install sphinx-rustdocgen if missing"
+condition = { files_not_exist = ["${HOME}/.cargo/bin/sphinx-rustdocgen"] }
+command = "cargo"
+args = ["install", "sphinx-rustdocgen"]
+
+[tasks.docs-venv]
+description = "Create venv and install Python requirements"
+workspace = false
+cwd = "docs"
+script = '''
+#!/usr/bin/env bash
+if [ ! -d ".venv" ]; then
+    python3 -m venv .venv
+fi
+.venv/bin/pip install --upgrade pip
+.venv/bin/pip install -r requirements.txt
+'''
+
+[tasks.docs-build]
+description = "Build the final Sphinx HTML"
+workspace = false
+cwd = "docs"
+dependencies = ["docs-venv"]
+script = '''
+#!/usr/bin/env bash
+.venv/bin/sphinx-build -M html . _build
+'''
+
+[tasks.docs-clean]
+description = "Remove all documentation artifacts"
+workspace = false
+cwd = "docs"
+script = '''
+rm -rf .venv _build docs crates
+'''

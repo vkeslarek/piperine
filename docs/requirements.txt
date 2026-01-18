@@ -1,0 +1,6 @@
+sphinx>=7.0
+furo
+sphinxcontrib-mermaid
+sphinx-tags
+sphinxcontrib-rust
+sphinxawesome-theme
