@@ -54,6 +54,7 @@ macro_rules! impl_unit_ext {
     };
 }
 
+#[allow(non_snake_case)]
 pub trait UnitExt {
     def_unit_ext!(V, Volt);
     def_unit_ext!(A, Ampere);

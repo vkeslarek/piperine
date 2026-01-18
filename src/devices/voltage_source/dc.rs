@@ -9,7 +9,7 @@ impl DcAnalysis for VoltageSource {
     fn load_dc(&self, _: &DcAnalysisState, _: &Context) -> Vec<Stamp<CircuitReference, f64>> {
         let dc_value = match self.waveform {
             Waveform::DC(v) => v,
-            Waveform::Sine { amplitude, .. } => 0.0.V(),
+            Waveform::Sine { amplitude: _, .. } => 0.0.V(),
             Waveform::Step { initial, delay, .. } => {
                 if delay > 0.0 {
                     initial

@@ -24,9 +24,9 @@ pub struct TransientAnalysisContext {
 pub trait TransientAnalysis: Component {
     fn update_transient(
         &mut self,
-        circuit_states: &TransientAnalysisState,
-        transient_analysis_context: &TransientAnalysisContext,
-        context: &Context,
+        _circuit_states: &TransientAnalysisState,
+        _transient_analysis_context: &TransientAnalysisContext,
+        _context: &Context,
     ) -> crate::result::Result<()> {
         Ok(())
     }
@@ -40,16 +40,16 @@ pub trait TransientAnalysis: Component {
 
     fn load_transient_dynamic(
         &self,
-        circuit_states: &TransientAnalysisState,
-        transient_analysis_context: &TransientAnalysisContext,
-        context: &Context,
+        _circuit_states: &TransientAnalysisState,
+        _transient_analysis_context: &TransientAnalysisContext,
+        _context: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {
         vec![]
     }
 
     fn initial_transient_values(
         &self,
-        context: &Context,
+        _context: &Context,
     ) -> Vec<InitialValue<CircuitReference, f64>> {
         Vec::new()
     }

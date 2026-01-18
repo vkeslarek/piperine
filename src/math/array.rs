@@ -243,7 +243,7 @@ impl<S: Symbol, E: Field> IndexedArray2<S, E> {
         }
     }
 
-    pub fn pop_raw(&mut self) -> Option<ArrayView1<E>> {
+    pub fn pop_raw(&mut self) -> Option<ArrayView1<'_, E>> {
         if self.filled == 0 {
             return None;
         }

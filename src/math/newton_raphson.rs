@@ -1,4 +1,3 @@
-use crate::circuit::netlist::CircuitReference;
 use crate::error::Error;
 use crate::math::Symbol;
 use crate::math::array::{IndexedArray1, IndexedArray2};

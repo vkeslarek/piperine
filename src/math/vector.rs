@@ -18,12 +18,12 @@ impl<S: Symbol, E: Field> IndexedVec1<S, E> {
         }
     }
 
-    pub fn get(&self, symbol: &S) -> Option<ArrayView1<E>> {
+    pub fn get(&self, symbol: &S) -> Option<ArrayView1<'_, E>> {
         let idx = *self.mapping.get(symbol)?;
         self.values.get(idx).map(|arr| arr.view())
     }
 
-    pub fn get_mut(&mut self, symbol: &S) -> Option<ArrayViewMut1<E>> {
+    pub fn get_mut(&mut self, symbol: &S) -> Option<ArrayViewMut1<'_, E>> {
         let idx = *self.mapping.get(symbol)?;
         self.values.get_mut(idx).map(|arr| arr.view_mut())
     }

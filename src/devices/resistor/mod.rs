@@ -4,7 +4,7 @@ use crate::analysis::noise::NoiseSource;
 use crate::analysis::transient::TransientAnalysis;
 use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
 use crate::devices::resistor::model::ResistorModel;
-use crate::devices::{Component, Model};
+use crate::devices::Component;
 use crate::math::unit::{Dimensionless, Kelvin, Meter, Ohm, Siemens, UnitExt};
 use crate::util::AsAny;
 use std::any::Any;

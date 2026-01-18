@@ -1,15 +1,7 @@
 use crate::circuit::netlist::CircuitReference;
-use crate::math::Symbol;
-use crate::math::deriv::DifferentiableIndependentScalar;
-use crate::math::faer::FaerToNdarray;
-use crate::math::linear::{SparseLinearSystem, SymbolicMatrix};
-use crate::math::num::{Field, ScalableByReal};
 use crate::math::unit::{Ohm, Siemens, UnitExt};
-use faer::traits::ComplexField;
 use ndarray::ArrayView1;
-use num_traits::real::Real;
 use std::collections::HashMap;
-use std::hash::Hash;
 
 pub mod ac;
 pub mod dc;

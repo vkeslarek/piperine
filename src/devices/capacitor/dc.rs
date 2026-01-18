@@ -8,7 +8,7 @@ impl DcAnalysis for Capacitor {
     fn load_dc(
         &self,
         _: &DcAnalysisState,
-        context: &Context,
+        _context: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {
         vec![]
     }

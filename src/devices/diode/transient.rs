@@ -10,7 +10,7 @@ impl TransientAnalysis for Diode {
     fn update_transient(
         &mut self,
         state: &TransientAnalysisState,
-        transient_analysis_context: &TransientAnalysisContext,
+        _transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
     ) -> crate::result::Result<()> {
         let v_anode_new = state
@@ -42,9 +42,9 @@ impl TransientAnalysis for Diode {
 
     fn load_transient(
         &self,
-        circuit_states: &TransientAnalysisState,
-        transient_analysis_context: &TransientAnalysisContext,
-        context: &Context,
+        _circuit_states: &TransientAnalysisState,
+        _transient_analysis_context: &TransientAnalysisContext,
+        _context: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {
         let g = self.g_eq;
         let i_rhs = self.i_eq;

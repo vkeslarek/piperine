@@ -2,8 +2,7 @@ use crate::circuit::netlist::CircuitReference;
 use crate::devices::Component;
 use crate::math::array::IndexedArray2;
 use crate::solver::Context;
-use std::collections::{HashMap, HashSet};
-use std::path::Components;
+use std::collections::HashSet;
 
 pub type SoaCheckState = IndexedArray2<CircuitReference, f64>;
 

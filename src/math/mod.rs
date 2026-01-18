@@ -1,4 +1,3 @@
-use crate::math::num::Field;
 use std::hash::Hash;
 
 pub mod array;

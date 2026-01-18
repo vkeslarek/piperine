@@ -4,7 +4,7 @@ use crate::analysis::transient::TransientAnalysisOptions;
 use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitReference, GND};
 use crate::devices::voltage_source::Waveform::{Sine, Step};
-use crate::math::unit::{Second, UnitExt};
+use crate::math::unit::UnitExt;
 use crate::solver::Context;
 use faer::{Par, set_global_parallelism};
 use std::num::NonZeroUsize;
@@ -23,15 +23,6 @@ fn init_config() {
 
         set_global_parallelism(Par::Rayon(NonZeroUsize::new(4).unwrap()));
     });
-}
-
-// Helper to extract scalar voltage from results
-fn get_node_voltage(
-    values: &ndarray::Array1<f64>,
-    mapping: &std::collections::HashMap<CircuitReference, usize>,
-    node: &str,
-) -> f64 {
-    values[mapping[&CircuitReference::Node(node.into())]]
 }
 
 // ========================================================================
@@ -123,8 +114,14 @@ fn test_ac_rc_filter() {
     let freq_ref = CircuitReference::Frequency;
     let out_ref = CircuitReference::Node("out".into());
 
-    let freq_idx = *result.mapping.get(&freq_ref).expect("Frequency not in result");
-    let out_idx = *result.mapping.get(&out_ref).expect("Output node not in result");
+    let freq_idx = *result
+        .mapping
+        .get(&freq_ref)
+        .expect("Frequency not in result");
+    let out_idx = *result
+        .mapping
+        .get(&out_ref)
+        .expect("Output node not in result");
 
     let mut found_cutoff = false;
 
@@ -205,7 +202,8 @@ fn test_transient_rc_step() {
     println!("Transient Final Voltage: {:.4} V", v_final);
     assert!(
         (v_final - 1.0).abs() < 0.01,
-        "Capacitor did not charge to 1V. Got {}", v_final
+        "Capacitor did not charge to 1V. Got {}",
+        v_final
     );
 }
 

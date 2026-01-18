@@ -3,7 +3,7 @@ use crate::devices::soa::{SoaCheck, SoaCheckState, SoaViolation, SoaViolationSev
 use crate::solver::Context;
 
 impl SoaCheck for Resistor {
-    fn soa_check(&self, circuit_state: &SoaCheckState, context: &Context) -> Vec<SoaViolation> {
+    fn soa_check(&self, circuit_state: &SoaCheckState, _context: &Context) -> Vec<SoaViolation> {
         let mut soa_violations = Vec::new();
 
         if let Some(bv_max) = self.model.bv_max {

@@ -1,18 +1,13 @@
-use crate::analysis::ac::AcSweepAnalysisOptions;
-use crate::analysis::noise::NoiseAnalysisOptions;
-use crate::analysis::transient::TransientAnalysisOptions;
-use crate::circuit::Circuit;
-use crate::circuit::netlist::{BranchIdentifier, CircuitReference};
-use crate::devices::voltage_source::Waveform::{Sine, Step};
-use crate::math::unit::UnitExt;
-use crate::solver::Context;
-use circuit::netlist::GND;
-use faer::prelude::Solve;
 use faer::{Par, set_global_parallelism};
 use std::num::NonZeroUsize;
-use std::rc::Rc;
 use std::sync::Once;
 use tracing::debug;
+use crate::analysis::transient::TransientAnalysisOptions;
+use crate::circuit::Circuit;
+use crate::circuit::netlist::{CircuitReference, GND};
+use crate::devices::voltage_source::Waveform::Step;
+use crate::math::unit::UnitExt;
+use crate::solver::Context;
 
 pub mod analysis;
 pub mod circuit;

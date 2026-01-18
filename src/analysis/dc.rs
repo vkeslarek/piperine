@@ -11,8 +11,8 @@ pub type DcAnalysisState = IndexedArray2<CircuitReference, f64>;
 pub trait DcAnalysis: Component {
     fn update_dc(
         &mut self,
-        dc_circuit_state: &DcAnalysisState,
-        context: &Context,
+        _dc_circuit_state: &DcAnalysisState,
+        _context: &Context,
     ) -> crate::result::Result<()> {
         Ok(())
     }
@@ -23,7 +23,7 @@ pub trait DcAnalysis: Component {
         context: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>>;
 
-    fn initial_dc_values(&self, context: &Context) -> Vec<InitialValue<CircuitReference, f64>> {
+    fn initial_dc_values(&self, _context: &Context) -> Vec<InitialValue<CircuitReference, f64>> {
         Vec::new()
     }
 }

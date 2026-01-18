@@ -6,13 +6,12 @@ use crate::devices::diode::Diode;
 use crate::devices::resistor::Resistor;
 use crate::devices::voltage_source::{VoltageSource, Waveform};
 use crate::devices::{AnyModel, Component};
-use crate::math::unit::{Farad, Ohm, UnitExt};
+use crate::math::unit::{Farad, Ohm};
 use crate::solver::Context;
 use crate::solver::ac::AcSolver;
 use crate::solver::dc::DcSolver;
 use crate::solver::noise::NoiseSolver;
 use crate::solver::transient::TransientSolver;
-use crate::util::AsAny;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -75,11 +74,15 @@ impl Circuit {
         &mut self.components
     }
 
-    pub fn ac(&mut self, context: Context) -> crate::result::Result<AcSolver> {
+    pub fn title(&self) -> &String {
+        &self.title
+    }
+
+    pub fn ac(&mut self, context: Context) -> crate::result::Result<AcSolver<'_>> {
         AcSolver::new(self, context)
     }
 
-    pub fn dc(&mut self, context: Context) -> crate::result::Result<DcSolver> {
+    pub fn dc(&mut self, context: Context) -> crate::result::Result<DcSolver<'_>> {
         DcSolver::new(self, context)
     }
 
@@ -87,7 +90,7 @@ impl Circuit {
         &mut self,
         options: NoiseAnalysisOptions,
         context: Context,
-    ) -> crate::result::Result<NoiseSolver> {
+    ) -> crate::result::Result<NoiseSolver<'_>> {
         NoiseSolver::new(self, options, context)
     }
 
@@ -95,7 +98,7 @@ impl Circuit {
         &mut self,
         transient_options: TransientAnalysisOptions,
         context: Context,
-    ) -> crate::result::Result<TransientSolver> {
+    ) -> crate::result::Result<TransientSolver<'_>> {
         TransientSolver::new(self, transient_options, context)
     }
 
@@ -107,7 +110,13 @@ impl Circuit {
         resistance: impl Into<Option<Ohm>>,
     ) -> &mut Resistor {
         let name = name.into();
-        let instance = Resistor::new(name.clone(), node_p, node_n, resistance.into(), &mut self.netlist);
+        let instance = Resistor::new(
+            name.clone(),
+            node_p,
+            node_n,
+            resistance.into(),
+            &mut self.netlist,
+        );
         self.insert_get(name, instance)
     }
 
@@ -119,7 +128,13 @@ impl Circuit {
         waveform: impl Into<Waveform>,
     ) -> &mut VoltageSource {
         let name = name.into();
-        let instance = VoltageSource::new(name.clone(), node_p, node_n, waveform.into(), &mut self.netlist);
+        let instance = VoltageSource::new(
+            name.clone(),
+            node_p,
+            node_n,
+            waveform.into(),
+            &mut self.netlist,
+        );
         self.insert_get(name, instance)
     }
 
@@ -131,7 +146,13 @@ impl Circuit {
         capacitance: impl Into<Farad>,
     ) -> &mut Capacitor {
         let name = name.into();
-        let instance = Capacitor::new(name.clone(), node_p, node_n, capacitance.into(), &mut self.netlist);
+        let instance = Capacitor::new(
+            name.clone(),
+            node_p,
+            node_n,
+            capacitance.into(),
+            &mut self.netlist,
+        );
         self.insert_get(name, instance)
     }
     //

@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use piperine::analysis::transient::TransientAnalysisOptions;
 use piperine::circuit::Circuit;
 use piperine::circuit::netlist::{CircuitReference, GND};

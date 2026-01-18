@@ -50,9 +50,9 @@ impl TransientAnalysis for VoltageSource {
 
     fn load_transient(
         &self,
-        circuit_states: &TransientAnalysisState,
-        transient_analysis_context: &TransientAnalysisContext,
-        context: &Context,
+        _circuit_states: &TransientAnalysisState,
+        _transient_analysis_context: &TransientAnalysisContext,
+        _context: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {
         vec![
             // Stamp the voltage source into the matrix (MNA format)

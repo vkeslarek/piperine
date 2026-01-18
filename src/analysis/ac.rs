@@ -14,9 +14,9 @@ pub struct AcAnalysisContext {
 pub trait AcAnalysis: Component + DcAnalysis {
     fn update_ac(
         &mut self,
-        dc_analysis_result: &DcAnalysisResult,
-        ac_analysis_context: &AcAnalysisContext,
-        context: &Context,
+        _dc_analysis_result: &DcAnalysisResult,
+        _ac_analysis_context: &AcAnalysisContext,
+        _context: &Context,
     ) -> crate::result::Result<()> {
         Ok(())
     }

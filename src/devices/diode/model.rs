@@ -17,7 +17,6 @@ pub trait DiodeModelType: Model<ComponentType = Diode> {
 
 #[derive(Debug)]
 pub struct DiodeModel {
-    pub name: String,
     pub is: Ampere,   // Saturation Current
     pub n: f64,       // Emission Coefficient
     pub tnom: Kelvin, // Nominal Temperature
@@ -26,7 +25,6 @@ pub struct DiodeModel {
 impl Default for DiodeModel {
     fn default() -> Self {
         Self {
-            name: "DefaultDiode".to_string(),
             is: 1e-14.A(),
             n: 1.0,
             tnom: 27.0.deg_C(),
