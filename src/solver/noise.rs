@@ -109,7 +109,6 @@ impl<'a> NoiseSolver<'a> {
 
         let mut linearizer = NoiseAnalysisStamper { circuit, dc_point };
 
-        // 2. Create the Standard Solver (for state management)
         let solver = NewtonRaphsonSolver::create(&mut linearizer, context.clone())?;
 
         let stamps = linearizer.static_stamps(&solver.state, &context)?;

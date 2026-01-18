@@ -10,18 +10,19 @@ use circuit::netlist::GND;
 use faer::prelude::Solve;
 use faer::{Par, set_global_parallelism};
 use std::num::NonZeroUsize;
+use std::rc::Rc;
 use std::sync::Once;
 use tracing::debug;
 
-mod analysis;
-mod circuit;
-mod devices;
-mod error;
-mod math;
-mod result;
-mod solver;
-mod spice;
-mod util;
+pub mod analysis;
+pub mod circuit;
+pub mod devices;
+pub mod error;
+pub mod math;
+pub mod result;
+pub mod solver;
+pub mod spice;
+pub mod util;
 
 #[cfg(test)]
 mod tests;
@@ -31,12 +32,12 @@ static INIT: Once = Once::new();
 pub fn init_config() {
     INIT.call_once(|| {
         tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::DEBUG)
+            .with_max_level(tracing::Level::INFO)
             .with_thread_ids(true)
             .with_thread_names(true)
             .init();
 
-        set_global_parallelism(Par::Rayon(NonZeroUsize::new(16).unwrap()));
+        set_global_parallelism(Par::Rayon(NonZeroUsize::new(1).unwrap()));
     });
 }
 

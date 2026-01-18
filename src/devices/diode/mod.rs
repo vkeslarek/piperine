@@ -28,7 +28,7 @@ pub struct Diode {
 
 impl Diode {
     pub fn new(
-        name: &str,
+        name: String,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
         netlist: &mut Netlist,

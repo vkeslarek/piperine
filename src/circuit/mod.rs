@@ -101,34 +101,37 @@ impl Circuit {
 
     pub fn resistor(
         &mut self,
-        name: &str,
+        name: impl Into<String>,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
         resistance: impl Into<Option<Ohm>>,
     ) -> &mut Resistor {
-        let instance = Resistor::new(name, node_p, node_n, resistance.into(), &mut self.netlist);
+        let name = name.into();
+        let instance = Resistor::new(name.clone(), node_p, node_n, resistance.into(), &mut self.netlist);
         self.insert_get(name, instance)
     }
 
     pub fn voltage_source(
         &mut self,
-        name: &str,
+        name: impl Into<String>,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
         waveform: impl Into<Waveform>,
     ) -> &mut VoltageSource {
-        let instance = VoltageSource::new(name, node_p, node_n, waveform.into(), &mut self.netlist);
+        let name = name.into();
+        let instance = VoltageSource::new(name.clone(), node_p, node_n, waveform.into(), &mut self.netlist);
         self.insert_get(name, instance)
     }
 
     pub fn capacitor(
         &mut self,
-        name: &str,
+        name: impl Into<String>,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
         capacitance: impl Into<Farad>,
     ) -> &mut Capacitor {
-        let instance = Capacitor::new(name, node_p, node_n, capacitance.into(), &mut self.netlist);
+        let name = name.into();
+        let instance = Capacitor::new(name.clone(), node_p, node_n, capacitance.into(), &mut self.netlist);
         self.insert_get(name, instance)
     }
     //
@@ -145,11 +148,12 @@ impl Circuit {
     //
     pub fn diode(
         &mut self,
-        name: &str,
+        name: impl Into<String>,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
     ) -> &mut Diode {
-        let instance = Diode::new(name, node_p, node_n, &mut self.netlist);
+        let name = name.into();
+        let instance = Diode::new(name.clone(), node_p, node_n, &mut self.netlist);
         self.insert_get(name, instance)
     }
 }

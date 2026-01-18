@@ -86,14 +86,6 @@ impl CircuitReference {
 
 impl Symbol for CircuitReference {}
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum IndependentVariable {
-    Time,
-    Frequency,
-}
-
-impl Symbol for IndependentVariable {}
-
 #[derive(Debug, Clone)]
 pub struct Netlist {
     circuit_references: HashSet<CircuitReference>,

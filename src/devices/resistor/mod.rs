@@ -44,7 +44,7 @@ pub struct Resistor {
 
 impl Resistor {
     pub fn new(
-        name: &str,
+        name: String,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
         resistance: Option<Ohm>,

@@ -49,7 +49,7 @@ pub struct VoltageSource {
 
 impl VoltageSource {
     pub fn new(
-        name: &str,
+        name: String,
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
         waveform: Waveform,

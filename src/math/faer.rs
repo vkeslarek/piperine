@@ -51,7 +51,7 @@ impl<S: Symbol, E: Field + ComplexField + 'static> SparseLinearSystem<S, E>
         }
     }
 
-    fn solve_with_backend(self, symbolic: &Self::SymbolicType) -> crate::result::Result<Array1<E>> {
+    fn solve_with_backend(&self, symbolic: &Self::SymbolicType) -> crate::result::Result<Array1<E>> {
         let a = SparseColMat::try_new_from_triplets(self.size, self.size, &self.triplets).map_err(
             |err| Error::cause("Problem assembling the space matrix", "The library threw an error while trying to create the LHS of the sparse matrix", Box::new(err))
         )?;
@@ -74,7 +74,7 @@ impl<S: Symbol, E: Field + ComplexField + 'static> SparseLinearSystem<S, E>
         Ok(lu.solve(&b).to_ndarray())
     }
 
-    fn solve(self) -> crate::result::Result<Array1<E>> {
+    fn solve(&self) -> crate::result::Result<Array1<E>> {
         let a = SparseColMat::try_new_from_triplets(self.size, self.size, &self.triplets).map_err(
             |err| Error::cause("Problem assembling the space matrix", "The library threw an error while trying to create the LHS of the sparse matrix", Box::new(err))
         )?;

@@ -26,7 +26,6 @@ impl<'a> TransientSolver<'a> {
     ) -> crate::result::Result<Self> {
         let mut linearizer = TransientAnalysisStamper { circuit };
 
-        // 1. Create solver (Handles analysis + ICs internally now)
         let solver = NewtonRaphsonSolver::create(&mut linearizer, context)?;
 
         Ok(Self {

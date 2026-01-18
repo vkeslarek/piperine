@@ -44,8 +44,6 @@ impl<'a> NewtonRaphsonStamper<CircuitReference, f64> for DcAnalysisStamper<'a> {
         _state: &DcAnalysisState,
         _context: &Context,
     ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
-        // In DC steady state, capacitors are open and inductors are shorts.
-        // These are handled by the component's DC implementation or ignored.
         Ok(Vec::new())
     }
 

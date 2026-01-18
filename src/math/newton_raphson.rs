@@ -42,9 +42,9 @@ pub trait NewtonRaphsonStamper<S: Symbol, E: Field> {
     ) -> bool;
 }
 
-#[derive(Clone)]
 pub struct NewtonRaphsonSolver<S: Symbol, E: Field> {
     pub symbolic_matrix: FaerSymbolicMatrix<S>,
+    pub linear_system : FaerSparseLinearSystem<S, E>,
     pub state: IndexedArray2<S, E>,
     pub context: Context,
 }
@@ -64,6 +64,7 @@ impl<S: Symbol + std::fmt::Debug, E: 'static + Field> NewtonRaphsonSolver<S, E> 
         .collect();
 
         let active_syms = stamper.active_symbols();
+        let linear_system = FaerSparseLinearSystem::new(active_syms.len());
         let symbolic_matrix = FaerSymbolicMatrix::new(active_syms, stamps)?;
 
         let mut state_map = symbolic_matrix.mapping.clone();
@@ -84,6 +85,7 @@ impl<S: Symbol + std::fmt::Debug, E: 'static + Field> NewtonRaphsonSolver<S, E> 
 
         Ok(Self {
             symbolic_matrix,
+            linear_system,
             state,
             context,
         })

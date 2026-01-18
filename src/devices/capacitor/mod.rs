@@ -24,7 +24,7 @@ pub struct Capacitor {
 
 impl Capacitor {
     pub fn new(
-        name: &str,
+        name: String,
         node_p: impl IntoNodeIdentifier,
         node_m: impl IntoNodeIdentifier,
         capacitance: Farad,

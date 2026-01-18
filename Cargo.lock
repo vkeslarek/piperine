@@ -886,6 +886,7 @@ dependencies = [
  "num-traits",
  "paste",
  "rand_distr",
+ "rayon",
  "tracing",
  "tracing-subscriber",
 ]

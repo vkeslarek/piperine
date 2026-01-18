@@ -24,8 +24,8 @@ pub trait SparseLinearSystem<S: Symbol, E: Field> {
 
     fn new(size: usize) -> Self;
     fn apply_stamps(&mut self, symbolic: &Self::SymbolicType, stamps: Vec<Stamp<S, E>>);
-    fn solve_with_backend(self, symbolic: &Self::SymbolicType) -> crate::result::Result<Array1<E>>;
-    fn solve(self) -> crate::result::Result<Array1<E>>;
+    fn solve_with_backend(&self, symbolic: &Self::SymbolicType) -> crate::result::Result<Array1<E>>;
+    fn solve(&self) -> crate::result::Result<Array1<E>>;
 }
 
 pub trait SymbolicMatrix<S: Symbol> {
