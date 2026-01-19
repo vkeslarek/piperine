@@ -5,11 +5,24 @@ use crate::math::linear::Stamp;
 use crate::solver::Context;
 
 impl DcAnalysis for Capacitor {
-    fn load_dc(
-        &self,
-        _: &DcAnalysisState,
-        _context: &Context,
-    ) -> Vec<Stamp<CircuitReference, f64>> {
-        vec![]
+    fn load_dc(&self, _: &DcAnalysisState, context: &Context) -> Vec<Stamp<CircuitReference, f64>> {
+        vec![
+            Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), context.gmin),
+            Stamp::Matrix(
+                self.node_minus.clone(),
+                self.node_minus.clone(),
+                context.gmin,
+            ),
+            Stamp::Matrix(
+                self.node_plus.clone(),
+                self.node_minus.clone(),
+                -context.gmin,
+            ),
+            Stamp::Matrix(
+                self.node_minus.clone(),
+                self.node_plus.clone(),
+                -context.gmin,
+            ),
+        ]
     }
 }

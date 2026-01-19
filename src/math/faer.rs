@@ -18,6 +18,13 @@ pub struct FaerSparseLinearSystem<S: Symbol, E: Field> {
     _phantom: PhantomData<S>,
 }
 
+impl<S: Symbol, E: Field> FaerSparseLinearSystem<S, E> {
+    pub fn apply_diagonal_damping(&mut self, value: E) {
+        self.triplets
+            .extend((0..self.size).map(|i| Triplet::new(i, i, value)));
+    }
+}
+
 impl<S: Symbol, E: Field + ComplexField + 'static> SparseLinearSystem<S, E>
     for FaerSparseLinearSystem<S, E>
 {
@@ -51,7 +58,10 @@ impl<S: Symbol, E: Field + ComplexField + 'static> SparseLinearSystem<S, E>
         }
     }
 
-    fn solve_with_backend(&self, symbolic: &Self::SymbolicType) -> crate::result::Result<Array1<E>> {
+    fn solve_with_backend(
+        &self,
+        symbolic: &Self::SymbolicType,
+    ) -> crate::result::Result<Array1<E>> {
         let a = SparseColMat::try_new_from_triplets(self.size, self.size, &self.triplets).map_err(
             |err| Error::cause("Problem assembling the space matrix", "The library threw an error while trying to create the LHS of the sparse matrix", Box::new(err))
         )?;

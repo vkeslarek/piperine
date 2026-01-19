@@ -90,7 +90,6 @@ impl<'a> DcSolver<'a> {
     pub fn new(circuit: &'a mut Circuit, context: Context) -> crate::result::Result<Self> {
         let mut linearizer = DcAnalysisStamper { circuit };
 
-        // NewtonRaphsonSolver::create handles symbolic analysis and IC application
         let solver = NewtonRaphsonSolver::create(&mut linearizer, context)?;
 
         Ok(Self { linearizer, solver })

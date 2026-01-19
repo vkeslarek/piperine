@@ -1,33 +1,8 @@
 use faer::rand;
-use num_complex::Complex;
 use rand_distr::{Distribution as _, Normal, Uniform};
-use std::marker::PhantomData;
 use std::ops::RangeInclusive;
 
-pub enum Parameter<Q> {
-    Fixed(Q),
-    Stochastic(Distribution, PhantomData<Q>),
-}
-
-impl Parameter<f64> {
-    pub fn sample(&self) -> f64 {
-        match self {
-            Parameter::Fixed(q) => q.clone(),
-            Parameter::Stochastic(dist, _) => dist.sample(),
-        }
-    }
-}
-
-impl Parameter<Complex<f64>> {
-    pub fn sample(&self) -> Complex<f64> {
-        match self {
-            Parameter::Fixed(q) => q.clone(),
-            Parameter::Stochastic(dist, _) => Complex::new(dist.sample(), 0.0),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Distribution {
     Uniform { lower: f64, upper: f64 },
     Gaussian { mean: f64, std_dev: f64 },
@@ -59,45 +34,36 @@ impl Distribution {
 }
 
 pub trait ParameterRangeExt<Q> {
-    fn uniform(self) -> Parameter<Q>;
-    fn gaussian(self, sigma: f64) -> Parameter<Q>;
+    fn uniform(self) -> Distribution;
+    fn gaussian(self, sigma: f64) -> Distribution;
 }
 
 impl ParameterRangeExt<f64> for RangeInclusive<f64> {
-    fn uniform(self) -> Parameter<f64> {
-        Parameter::Stochastic(
-            Distribution::Uniform {
-                lower: *self.start(),
-                upper: *self.end(),
-            },
-            PhantomData,
-        )
+    fn uniform(self) -> Distribution {
+        Distribution::Uniform {
+            lower: *self.start(),
+            upper: *self.end(),
+        }
     }
 
-    fn gaussian(self, sigma: f64) -> Parameter<f64> {
+    fn gaussian(self, sigma: f64) -> Distribution {
         let mean = (self.start() + self.end()) / 2.0;
-        Parameter::Stochastic(
-            Distribution::Gaussian {
-                mean,
-                std_dev: sigma,
-            },
-            PhantomData,
-        )
+        Distribution::Gaussian {
+            mean,
+            std_dev: sigma,
+        }
     }
 }
 
 pub trait ParameterRelativeExt<Q> {
-    fn pom(self, tolerance: f64) -> Parameter<Q>;
+    fn pom(self, tolerance: f64) -> Distribution;
 }
 
 impl ParameterRelativeExt<f64> for f64 {
-    fn pom(self, tolerance: f64) -> Parameter<f64> {
-        Parameter::Stochastic(
-            Distribution::RelativeUniform {
-                nominal: self,
-                tolerance,
-            },
-            PhantomData,
-        )
+    fn pom(self, tolerance: f64) -> Distribution {
+        Distribution::RelativeUniform {
+            nominal: self,
+            tolerance,
+        }
     }
 }

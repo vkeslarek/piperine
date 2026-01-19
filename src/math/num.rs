@@ -3,6 +3,8 @@ use num_complex::Complex;
 use num_traits::{One, Zero};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
+pub trait ScalableByReal: Mul<f64, Output = Self> {}
+
 pub trait Field:
     Copy
     + Clone
@@ -19,11 +21,10 @@ pub trait Field:
     + SubAssign
     + MulAssign
     + DivAssign
+    + ScalableByReal
 {
     fn abs(self) -> f64;
 }
-
-pub trait ScalableByReal: Mul<f64, Output = Self> {}
 
 impl Field for f64 {
     fn abs(self) -> f64 {

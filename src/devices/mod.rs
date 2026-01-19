@@ -1,3 +1,4 @@
+pub mod ask;
 pub mod capacitor;
 pub mod diode;
 pub mod resistor;
@@ -8,10 +9,14 @@ use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::noise::NoiseSource;
 use crate::analysis::transient::TransientAnalysis;
-use crate::circuit::netlist::Netlist;
+use crate::circuit::netlist::{CircuitReference, Netlist};
+use crate::devices::ask::Ask;
 use crate::devices::soa::SoaCheck;
 use crate::error::Error;
+use crate::math::array::IndexedArray2;
+use crate::math::expression::Quantity;
 use crate::util::AsAny;
+use num_complex::Complex;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -31,6 +36,26 @@ pub trait Component: Any + AsAny {
     }
 
     fn as_soa_check(&mut self) -> Option<&mut dyn SoaCheck> {
+        None
+    }
+
+    fn terminals(&self) -> Vec<String> {
+        vec![]
+    }
+
+    fn ask_dc(
+        &self,
+        request: Ask,
+        solution: &IndexedArray2<CircuitReference, f64>,
+    ) -> Option<Quantity> {
+        None
+    }
+
+    fn ask_ac(
+        &self,
+        request: Ask,
+        solution: &IndexedArray2<CircuitReference, Complex<f64>>,
+    ) -> Option<Quantity> {
         None
     }
 }

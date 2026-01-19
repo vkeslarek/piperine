@@ -7,6 +7,7 @@ pub type Farad = f64;
 pub type Henry = f64;
 pub type Hertz = f64;
 pub type Meter = f64;
+pub type MeterPerSecond = f64;
 pub type Siemens = f64;
 pub type Kelvin = f64;
 pub type Celsius = f64;
@@ -14,9 +15,12 @@ pub type InvCelsius = f64;
 pub type InvCelsiusSquared = f64;
 pub type Radian = f64;
 pub type Second = f64;
-pub type JoulePerKelvin = f64;
 pub type AmpereSquaredSecond = f64;
 pub type Dimensionless = f64;
+pub type Coulomb = f64;
+pub type Joule = f64;
+pub type JoulePerKelvin = f64;
+pub type JouleSecond = f64;
 
 macro_rules! def_unit_ext {
     ($suffix:ident, $type:ty) => {

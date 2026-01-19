@@ -11,5 +11,8 @@ pub mod num;
 pub mod rand;
 pub mod unit;
 pub mod vector;
+pub mod expression;
 
 pub trait Symbol: Clone + Eq + Hash {}
+
+impl Symbol for usize {}

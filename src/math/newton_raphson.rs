@@ -43,7 +43,7 @@ pub trait NewtonRaphsonStamper<S: Symbol, E: Field> {
 
 pub struct NewtonRaphsonSolver<S: Symbol, E: Field> {
     pub symbolic_matrix: FaerSymbolicMatrix<S>,
-    pub linear_system : FaerSparseLinearSystem<S, E>,
+    pub linear_system: FaerSparseLinearSystem<S, E>,
     pub state: IndexedArray2<S, E>,
     pub context: Context,
 }
@@ -148,6 +148,7 @@ impl<S: Symbol + std::fmt::Debug, E: 'static + Field> NewtonRaphsonSolver<S, E> 
     fn solve_system(&self, stamps: Vec<Stamp<S, E>>) -> crate::result::Result<Array1<E>> {
         let mut system = FaerSparseLinearSystem::new(self.symbolic_matrix.size());
         system.apply_stamps(&self.symbolic_matrix, stamps);
+        // system.apply_diagonal_damping(E::one() * self.context.gmin);
         system.solve_with_backend(&self.symbolic_matrix)
     }
 }

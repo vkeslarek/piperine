@@ -10,7 +10,6 @@ use faer::{Par, set_global_parallelism};
 use std::num::NonZeroUsize;
 use std::sync::Once;
 
-// --- Test Setup ---
 static INIT: Once = Once::new();
 
 fn init_config() {
@@ -25,9 +24,6 @@ fn init_config() {
     });
 }
 
-// ========================================================================
-// 1. DC ANALYSIS TESTS
-// ========================================================================
 
 #[test]
 fn test_dc_resistive_divider() {
@@ -74,10 +70,6 @@ fn test_dc_diode_bias() {
         "Diode voltage outside realistic range"
     );
 }
-
-// ========================================================================
-// 2. AC ANALYSIS TESTS
-// ========================================================================
 
 #[test]
 fn test_ac_rc_filter() {
@@ -149,10 +141,6 @@ fn test_ac_rc_filter() {
     assert!(found_cutoff, "Sweep did not cover 1kHz correctly.");
 }
 
-// ========================================================================
-// 3. TRANSIENT ANALYSIS TESTS
-// ========================================================================
-
 #[test]
 fn test_transient_rc_step() {
     init_config();
@@ -207,10 +195,6 @@ fn test_transient_rc_step() {
     );
 }
 
-// ========================================================================
-// 4. NOISE ANALYSIS TESTS
-// ========================================================================
-
 #[test]
 fn test_noise_johnson_nyquist() {
     init_config();
@@ -261,4 +245,78 @@ fn test_noise_johnson_nyquist() {
         "Noise simulation accuracy error: {:.2}%",
         error_pct
     );
+}
+
+#[test]
+fn test_dc_floating_node_crash() {
+    init_config();
+    let mut circuit = Circuit::new("Floating Node (Series Caps)");
+
+    circuit.voltage_source("V1", "in", GND, 10.0.V());
+
+    circuit.capacitor("C1", "in", "mid", 1.0.uF());
+    circuit.capacitor("C2", "mid", GND, 1.0.uF());
+
+    let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
+
+    let v_mid = result
+        .get_value(&CircuitReference::Node("mid".into()))
+        .unwrap();
+
+    println!("Floating Node Voltage (stabilized by Gmin): {:.4} V", v_mid);
+
+    assert!(
+        (v_mid - 5.0).abs() < 1e-3,
+        "Gmin failed to stabilize floating node! Expected 5.0V, got {}",
+        v_mid
+    );
+}
+
+#[test]
+fn test_transient_rc_charging() {
+    init_config();
+    let mut circuit = Circuit::new("RC Transient Demo");
+
+    // 1. A Step Source: 0V -> 5V at t=0
+    circuit.voltage_source(
+        "V1",
+        "in",
+        GND,
+        Step {
+            initial: 0.0.V(),
+            final_value: 5.0.V(),
+            delay: 0.0,
+            rise_time: 1.0.us(), // Sharp rise
+        }
+    );
+
+    // 2. RC Network (tau = 1ms)
+    circuit.resistor("R1", "in", "out", 1.0.kOhms());
+    circuit.capacitor("C1", "out", GND, 1.0.uF());
+
+    // 3. Run Transient Analysis
+    let options = TransientAnalysisOptions {
+        stop_time: 5.0.ms(),
+        dt: 100.0.us(), // Sample 10 times per time constant
+    };
+
+    let result = circuit
+        .transient(options, Context::default())
+        .unwrap()
+        .solve()
+        .unwrap();
+
+    let out_idx = *result.mapping.get(&CircuitReference::Node("out".into())).unwrap();
+    let time_idx = *result.mapping.get(&CircuitReference::Time).unwrap();
+
+    let one_tau_step = result.values.iter().find(|v| (v[time_idx] - 0.001).abs() < 1e-6).unwrap();
+    let v_at_1ms = one_tau_step[out_idx];
+
+    println!("At 1ms (1 Tau): {:.4} V", v_at_1ms);
+    assert!((v_at_1ms - 3.16).abs() < 0.1);
+
+    // Check at t = 5ms (End)
+    let final_v = result.values.last().unwrap()[out_idx];
+    println!("At 5ms (Final): {:.4} V", final_v);
+    assert!((final_v - 5.0).abs() < 0.05);
 }
