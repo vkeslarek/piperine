@@ -24,11 +24,16 @@ pub trait Field:
     + ScalableByReal
 {
     fn abs(self) -> f64;
+    fn is_finite(&self) -> bool;
 }
 
 impl Field for f64 {
     fn abs(self) -> f64 {
         self.abs()
+    }
+
+    fn is_finite(&self) -> bool {
+        f64::is_finite(self.clone())
     }
 }
 impl ScalableByReal for f64 {}
@@ -36,6 +41,10 @@ impl ScalableByReal for f64 {}
 impl Field for Complex<f64> {
     fn abs(self) -> f64 {
         self.norm()
+    }
+
+    fn is_finite(&self) -> bool {
+        Complex::is_finite(self.clone())
     }
 }
 impl ScalableByReal for Complex<f64> {}

@@ -1,7 +1,7 @@
 use crate::analysis::ac::{AcAnalysisContext, AcAnalysisResult, AcSweepAnalysisOptions};
 use crate::analysis::dc::DcAnalysisResult;
 use crate::circuit::Circuit;
-use crate::circuit::netlist::CircuitReference;
+use crate::circuit::netlist::CircuitVariable;
 use crate::map;
 use crate::math::array::IndexedArray2;
 use crate::math::iv::InitialValue;
@@ -14,7 +14,7 @@ use num_complex::Complex;
 
 pub struct AcSolver<'a> {
     pub linearizer: AcAnalysisStamper<'a>,
-    pub solver: NewtonRaphsonSolver<CircuitReference, Complex<f64>>,
+    pub solver: NewtonRaphsonSolver<CircuitVariable, Complex<f64>>,
 }
 
 impl<'a> AcSolver<'a> {
@@ -39,7 +39,7 @@ impl<'a> AcSolver<'a> {
         for &f_hz in frequencies.iter() {
             let solution = self.solver.step_steady_state(
                 &mut self.linearizer,
-                &map![CircuitReference::Frequency => Complex::new(f_hz, 0.0)],
+                &map![CircuitVariable::Frequency => Complex::new(f_hz, 0.0)],
             )?;
 
             data.push(&solution);
@@ -74,11 +74,11 @@ pub struct AcAnalysisStamper<'a> {
 impl<'a> AcAnalysisStamper<'a> {
     fn get_context(
         &self,
-        state: &IndexedArray2<CircuitReference, Complex<f64>>,
+        state: &IndexedArray2<CircuitVariable, Complex<f64>>,
     ) -> AcAnalysisContext {
         let freq = state
             .latest()
-            .and_then(|vals| vals.get(&CircuitReference::Frequency).cloned())
+            .and_then(|vals| vals.get(&CircuitVariable::Frequency).cloned())
             .map(|c| c.re)
             .unwrap_or(1.0);
 
@@ -88,12 +88,12 @@ impl<'a> AcAnalysisStamper<'a> {
     }
 }
 
-impl<'a> NewtonRaphsonStamper<CircuitReference, Complex<f64>> for AcAnalysisStamper<'a> {
+impl<'a> NewtonRaphsonStamper<CircuitVariable, Complex<f64>> for AcAnalysisStamper<'a> {
     fn static_stamps(
         &mut self,
-        state: &IndexedArray2<CircuitReference, Complex<f64>>,
+        state: &IndexedArray2<CircuitVariable, Complex<f64>>,
         context: &Context,
-    ) -> crate::result::Result<Vec<Stamp<CircuitReference, Complex<f64>>>> {
+    ) -> crate::result::Result<Vec<Stamp<CircuitVariable, Complex<f64>>>> {
         let ac_ctx = self.get_context(state);
 
         Ok(self
@@ -108,35 +108,35 @@ impl<'a> NewtonRaphsonStamper<CircuitReference, Complex<f64>> for AcAnalysisStam
 
     fn dynamic_stamps(
         &mut self,
-        _state: &IndexedArray2<CircuitReference, Complex<f64>>,
+        _state: &IndexedArray2<CircuitVariable, Complex<f64>>,
         _context: &Context,
-    ) -> crate::result::Result<Vec<Stamp<CircuitReference, Complex<f64>>>> {
+    ) -> crate::result::Result<Vec<Stamp<CircuitVariable, Complex<f64>>>> {
         Ok(Vec::new())
     }
 
     fn initial_conditions(
         &mut self,
         _context: &Context,
-    ) -> crate::result::Result<Vec<InitialValue<CircuitReference, Complex<f64>>>> {
+    ) -> crate::result::Result<Vec<InitialValue<CircuitVariable, Complex<f64>>>> {
         Ok(Vec::new())
     }
 
-    fn active_symbols(&self) -> Vec<CircuitReference> {
+    fn active_symbols(&self) -> Vec<CircuitVariable> {
         self.circuit
             .netlist()
-            .all_references()
+            .all_variables()
             .into_iter()
             .filter(|s| s.is_dependent())
             .collect()
     }
 
-    fn independent_symbols(&self) -> Vec<CircuitReference> {
-        vec![CircuitReference::Frequency]
+    fn independent_symbols(&self) -> Vec<CircuitVariable> {
+        vec![CircuitVariable::Frequency]
     }
 
     fn converged(
         &self,
-        _state: &IndexedArray2<CircuitReference, Complex<f64>>,
+        _state: &IndexedArray2<CircuitVariable, Complex<f64>>,
         _sol: &ArrayView1<Complex<f64>>,
         _ctx: &Context,
     ) -> bool {

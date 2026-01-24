@@ -1,5 +1,8 @@
 use crate::math::Symbol;
-use std::collections::HashSet;
+use crate::math::linear::AsIndex;
+use bimap::BiMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum NodeIdentifier {
@@ -55,7 +58,7 @@ pub struct BranchIdentifier {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum CircuitReference {
+pub enum CircuitVariable {
     Node(NodeIdentifier),
     Branch(BranchIdentifier),
     Time,
@@ -63,10 +66,10 @@ pub enum CircuitReference {
     Iteration,
 }
 
-impl CircuitReference {
+impl CircuitVariable {
     pub fn is_ground(&self) -> bool {
         match self {
-            CircuitReference::Node(identifier) => identifier.is_ground(),
+            CircuitVariable::Node(identifier) => identifier.is_ground(),
             _ => false,
         }
     }
@@ -77,45 +80,137 @@ impl CircuitReference {
         }
 
         match self {
-            CircuitReference::Node(_) => true,
-            CircuitReference::Branch(_) => true,
+            CircuitVariable::Node(_) => true,
+            CircuitVariable::Branch(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_branch(&self) -> bool {
+        match self {
+            CircuitVariable::Branch(_) => true,
             _ => false,
         }
     }
 }
 
-impl Symbol for CircuitReference {}
+impl Symbol for CircuitVariable {}
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CircuitReference {
+    variable: Arc<CircuitVariable>,
+    idx: Option<usize>,
+}
+
+impl CircuitReference {
+    fn new(variable: Arc<CircuitVariable>, idx: usize) -> Self {
+        Self {
+            variable,
+            idx: Some(idx),
+        }
+    }
+
+    fn new_unmapped(variable: Arc<CircuitVariable>) -> Self {
+        Self {
+            variable,
+            idx: None,
+        }
+    }
+
+    pub fn variable(&self) -> &Arc<CircuitVariable> {
+        &self.variable
+    }
+
+    pub fn idx(&self) -> Option<usize> {
+        self.idx
+    }
+
+    pub fn is_branch(&self) -> bool {
+        self.variable.is_branch()
+    }
+}
+
+impl AsIndex for CircuitReference {
+    fn as_index(&self) -> Option<usize> {
+        self.idx
+    }
+}
+
 pub struct Netlist {
-    circuit_references: HashSet<CircuitReference>,
+    // circuit_variables: HashSet<CircuitVariable>,
+    circuit_map: BiMap<CircuitReference, Arc<CircuitVariable>>,
+    last_seen_idx: AtomicUsize,
 }
 
 impl Netlist {
     pub fn new() -> Self {
         Self {
-            circuit_references: HashSet::new(),
+            // circuit_variables: HashSet::new(),
+            circuit_map: BiMap::new(),
+            last_seen_idx: AtomicUsize::new(0),
         }
     }
 
-    pub fn connect_node(&mut self, node: NodeIdentifier) -> CircuitReference {
-        if node.is_ground() {
-            return CircuitReference::Node(NodeIdentifier::Gnd);
+    // pub fn connect_node(&mut self, node: NodeIdentifier) -> CircuitVariable {
+    //     if node.is_ground() {
+    //         return CircuitVariable::Node(NodeIdentifier::Gnd);
+    //     }
+    //
+    //     let circuit_reference = CircuitVariable::Node(node);
+    //     self.circuit_variables.insert(circuit_reference.clone());
+    //
+    //     circuit_reference
+    // }
+
+    pub fn connect_node_for_real(&mut self, node: NodeIdentifier) -> CircuitReference {
+        let circuit_reference = CircuitVariable::Node(node);
+        if let Some(existing_ref) = self.circuit_map.get_by_right(&circuit_reference) {
+            return existing_ref.clone();
         }
 
-        let circuit_reference = CircuitReference::Node(node);
-        self.circuit_references.insert(circuit_reference.clone());
+        if circuit_reference.is_ground() {
+            return CircuitReference::new_unmapped(Arc::new(circuit_reference));
+        }
 
-        circuit_reference
+        let ref_arc = Arc::new(circuit_reference.clone());
+        let idx = self.last_seen_idx.fetch_add(1, Ordering::SeqCst);
+        let identifier = CircuitReference::new(ref_arc.clone(), idx);
+
+        self.circuit_map.insert(identifier.clone(), ref_arc);
+
+        identifier
     }
 
-    pub fn connect_branch(&mut self, branch: BranchIdentifier) -> CircuitReference {
-        let circuit_reference = CircuitReference::Branch(branch);
-        self.circuit_references.insert(circuit_reference.clone());
-        circuit_reference
+    // pub fn connect_branch(&mut self, branch: BranchIdentifier) -> CircuitVariable {
+    //     let circuit_reference = CircuitVariable::Branch(branch);
+    //     self.circuit_variables.insert(circuit_reference.clone());
+    //     circuit_reference
+    // }
+
+    pub fn connect_branch_for_real(&mut self, branch: BranchIdentifier) -> CircuitReference {
+        let circuit_reference = CircuitVariable::Branch(branch);
+        if let Some(existing_ref) = self.circuit_map.get_by_right(&circuit_reference) {
+            return existing_ref.clone();
+        }
+
+        let ref_arc = Arc::new(circuit_reference.clone());
+        let idx = self.last_seen_idx.fetch_add(1, Ordering::SeqCst);
+        let identifier = CircuitReference::new(ref_arc.clone(), idx);
+
+        self.circuit_map.insert(identifier.clone(), ref_arc);
+
+        identifier
     }
 
-    pub fn all_references(&self) -> Vec<CircuitReference> {
-        self.circuit_references.iter().cloned().collect()
+    pub fn all_references(&self) -> Vec<&CircuitReference> {
+        self.circuit_map.left_values().collect()
+    }
+
+    pub fn reference_for(&self, variable: &CircuitVariable) -> Option<&CircuitReference> {
+        self.circuit_map.get_by_right(variable)
+    }
+
+    pub fn variable_for(&self, identifier: &CircuitReference) -> Option<&Arc<CircuitVariable>> {
+        self.circuit_map.get_by_left(identifier)
     }
 }

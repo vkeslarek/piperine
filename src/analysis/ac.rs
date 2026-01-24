@@ -1,7 +1,8 @@
 use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
-use crate::circuit::netlist::CircuitReference;
+use crate::circuit::netlist::{CircuitReference, CircuitVariable};
 use crate::devices::Component;
-use crate::math::linear::Stamp;
+use crate::math::circular_array::CircularArrayBuffer2;
+use crate::math::linear::{Stamp, Stamp2};
 use crate::math::unit::Hertz;
 use crate::math::vector::IndexedVec1;
 use crate::solver::Context;
@@ -26,7 +27,7 @@ pub trait AcAnalysis: Component + DcAnalysis {
         dc_analysis_result: &DcAnalysisResult,
         ac_analysis_context: &AcAnalysisContext,
         context: &Context,
-    ) -> Vec<Stamp<CircuitReference, Complex<f64>>>;
+    ) -> Vec<Stamp2<CircuitReference, Complex<f64>>>;
 }
 
 pub struct AcFrequencyAnalysisOptions {
@@ -41,7 +42,7 @@ pub struct AcSweepAnalysisOptions {
     pub logarithmic: bool,
 }
 
-pub type AcAnalysisResult = IndexedVec1<CircuitReference, Complex<f64>>;
+pub type AcAnalysisResult = CircularArrayBuffer2<Complex<f64>>;
 
 pub trait AcAnalysisSolver {
     fn solve_frequency_ac_analysis(

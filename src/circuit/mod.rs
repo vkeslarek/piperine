@@ -1,4 +1,3 @@
-use crate::analysis::noise::NoiseAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
 use crate::circuit::netlist::{IntoNodeIdentifier, Netlist};
 use crate::devices::capacitor::Capacitor;
@@ -8,9 +7,7 @@ use crate::devices::voltage_source::{VoltageSource, Waveform};
 use crate::devices::{AnyModel, Component};
 use crate::math::unit::{Farad, Ohm};
 use crate::solver::Context;
-use crate::solver::ac::AcSolver;
 use crate::solver::dc::DcSolver;
-use crate::solver::noise::NoiseSolver;
 use crate::solver::transient::TransientSolver;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -78,21 +75,21 @@ impl Circuit {
         &self.title
     }
 
-    pub fn ac(&mut self, context: Context) -> crate::result::Result<AcSolver<'_>> {
-        AcSolver::new(self, context)
-    }
+    // pub fn ac(&mut self, context: Context) -> crate::result::Result<AcSolver<'_>> {
+    //     AcSolver::new(self, context)
+    // }
 
     pub fn dc(&mut self, context: Context) -> crate::result::Result<DcSolver<'_>> {
         DcSolver::new(self, context)
     }
 
-    pub fn noise(
-        &mut self,
-        options: NoiseAnalysisOptions,
-        context: Context,
-    ) -> crate::result::Result<NoiseSolver<'_>> {
-        NoiseSolver::new(self, options, context)
-    }
+    // pub fn noise(
+    //     &mut self,
+    //     options: NoiseAnalysisOptions,
+    //     context: Context,
+    // ) -> crate::result::Result<NoiseSolver<'_>> {
+    //     NoiseSolver::new(self, options, context)
+    // }
 
     pub fn transient(
         &mut self,

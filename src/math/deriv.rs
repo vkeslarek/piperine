@@ -1,3 +1,5 @@
+use crate::math::circular_array::CircularArrayBuffer2;
+use ndarray::{Array1, Zip};
 use num_complex::Complex;
 use num_traits::{One, Zero};
 use std::ops::{Add, Div, Mul, Neg, Sub};
@@ -157,5 +159,51 @@ impl BdfCoefficientGenerator {
             }
             _ => None, // Not implemented
         }
+    }
+}
+
+pub trait Integrable<E: DifferentiableIndependentScalar> {
+    fn integration_parameters(&self, independent_variables: Vec<E>) -> Option<(E, Array1<E>)>;
+}
+impl<E> Integrable<E> for CircularArrayBuffer2<E>
+where
+    E: DifferentiableIndependentScalar,
+{
+    fn integration_parameters(&self, independent_variables: Vec<E>) -> Option<(E, Array1<E>)> {
+        let available_buffer_history = self.len().saturating_sub(1);
+        let available_time_history = independent_variables.len().saturating_sub(1);
+
+        let order = available_buffer_history.min(available_time_history).min(3);
+
+        if order == 0 {
+            return None;
+        }
+
+        let mut bdf_timestamps = independent_variables
+            .iter()
+            .take(order + 1)
+            .cloned()
+            .collect::<Vec<E>>();
+
+        bdf_timestamps.reverse();
+
+        let coeffs = BdfCoefficientGenerator::generate(order, bdf_timestamps)?;
+
+        let size = self.size();
+        let mut history_sum = Array1::<E>::zeros(size);
+
+        for (i, &beta) in coeffs.history_coeffs.iter().enumerate() {
+            let lookback = i + 1;
+
+            if let Some(view) = self.view(lookback) {
+                Zip::from(&mut history_sum).and(view).for_each(|sum, &val| {
+                    *sum = *sum + val * beta;
+                });
+            } else {
+                return None;
+            }
+        }
+
+        Some((coeffs.alpha, history_sum))
     }
 }

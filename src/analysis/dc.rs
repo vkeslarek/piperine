@@ -1,12 +1,16 @@
-use crate::circuit::netlist::CircuitReference;
+use crate::circuit::netlist::{CircuitReference, CircuitVariable};
 use crate::devices::Component;
 use crate::devices::soa::SoaViolation;
 use crate::math::array::{IndexedArray1, IndexedArray2};
-use crate::math::iv::InitialValue;
-use crate::math::linear::Stamp;
+use crate::math::circular_array::CircularArrayBuffer2;
+use crate::math::iv::{InitialValue, InitialValue2};
+use crate::math::linear::{Stamp, Stamp2};
+use crate::math::vector::IndexedVec1;
 use crate::solver::Context;
+use std::collections::HashMap;
+use std::sync::Arc;
 
-pub type DcAnalysisState = IndexedArray2<CircuitReference, f64>;
+pub type DcAnalysisState = CircularArrayBuffer2<f64>;
 
 pub trait DcAnalysis: Component {
     fn update_dc(
@@ -21,21 +25,21 @@ pub trait DcAnalysis: Component {
         &self,
         dc_circuit_state: &DcAnalysisState,
         context: &Context,
-    ) -> Vec<Stamp<CircuitReference, f64>>;
+    ) -> Vec<Stamp2<CircuitReference, f64>>;
 
-    fn initial_dc_values(&self, _context: &Context) -> Vec<InitialValue<CircuitReference, f64>> {
+    fn initial_dc_values(&self, _context: &Context) -> Vec<InitialValue2<CircuitReference, f64>> {
         Vec::new()
     }
 }
 
 #[derive(Debug)]
 pub struct DcAnalysisResult {
-    pub values: IndexedArray1<CircuitReference, f64>,
+    pub values: HashMap<Arc<CircuitVariable>, f64>,
     pub soa_violations: Vec<SoaViolation>,
 }
 
 impl DcAnalysisResult {
     pub fn get_value(&self, reference: &CircuitReference) -> Option<f64> {
-        self.values.get(reference).cloned()
+        self.values.get(reference.variable()).cloned()
     }
 }

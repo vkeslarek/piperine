@@ -2,7 +2,7 @@ use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::noise::NoiseSource;
 use crate::analysis::transient::TransientAnalysis;
-use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
+use crate::circuit::netlist::{CircuitReference, CircuitVariable, IntoNodeIdentifier, Netlist};
 use crate::devices::resistor::model::ResistorModel;
 use crate::devices::Component;
 use crate::math::unit::{Dimensionless, Kelvin, Meter, Ohm, Siemens, UnitExt};
@@ -53,8 +53,8 @@ impl Resistor {
         Resistor {
             name: name.to_string(),
             model: Arc::new(ResistorModel::default()),
-            node_plus: netlist.connect_node(node_p.into()),
-            node_minus: netlist.connect_node(node_n.into()),
+            node_plus: netlist.connect_node_for_real(node_p.into()),
+            node_minus: netlist.connect_node_for_real(node_n.into()),
             resistance,
             ac_resistance: None,
             length: None,

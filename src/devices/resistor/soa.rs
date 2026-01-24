@@ -1,5 +1,6 @@
 use crate::devices::resistor::Resistor;
 use crate::devices::soa::{SoaCheck, SoaCheckState, SoaViolation, SoaViolationSeverity};
+use crate::math::linear::AsIndexGetExt;
 use crate::solver::Context;
 
 impl SoaCheck for Resistor {

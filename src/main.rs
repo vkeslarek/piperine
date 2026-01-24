@@ -1,14 +1,12 @@
 use piperine::analysis::transient::TransientAnalysisOptions;
 use piperine::circuit::Circuit;
-use piperine::circuit::netlist::{CircuitReference, GND};
+use piperine::circuit::netlist::{CircuitVariable, GND};
 use piperine::devices::voltage_source::Waveform::Step;
-use piperine::init_config;
 use piperine::math::unit::UnitExt;
 use piperine::solver::Context;
 
 pub fn main() {
-    init_config();
-    let grid_size = 150; // 50x50 = 2500 Nodes + Gnd
+    let grid_size = 50;
     let mut circuit = Circuit::new("Titan RC Grid");
 
     println!(
@@ -73,7 +71,6 @@ pub fn main() {
         dt: 20.0.us(), // 100 Steps
     };
 
-    // Note: We unwrap here to panic if simulation fails (which fails the test)
     let result = circuit
         .transient(options, Context::default())
         .expect("Analysis configuration failed")
@@ -88,28 +85,51 @@ pub fn main() {
     println!("TITAN BENCHMARK RESULTS (Release Mode Recommended)");
     println!("--------------------------------------------------");
     println!(
-        "Grid Size:      {}x{} ({} nodes)",
+        "Grid Size:      {}x{} ({} nodes + Ground)",
         grid_size,
         grid_size,
         grid_size * grid_size
     );
     println!("Total Time:     {:?}", total_time);
     println!("Total Steps:    {}", steps);
-    println!("Time/Step:      {:?}", total_time / steps as u32);
+    println!(
+        "Time/Step:      {:?}",
+        if steps > 0 {
+            total_time / steps as u32
+        } else {
+            std::time::Duration::ZERO
+        }
+    );
     println!("--------------------------------------------------");
 
-    // Validation (Check if corner node charged)
-    let last_step = result.values.last().unwrap();
-    // We need to look up the index for n_0_0 and the far corner
-    let n00_idx = *result
-        .mapping
-        .get(&CircuitReference::Node("n_0_0".into()))
-        .unwrap();
-    let v_start = last_step[n00_idx];
+    // 5. Validation
+    let last_step = result.values.last().expect("No result steps produced");
+
+    // Retrieve Keys
+    let n00_key = circuit
+        .netlist()
+        .reference_for(&CircuitVariable::Node("n_0_0".into()))
+        .expect("Node n_0_0 not found")
+        .variable();
+
+    // Optional: Check far corner to see propagation delay
+    let far_corner_name = format!("n_{}_{}", grid_size - 1, grid_size - 1);
+    let far_corner_key = circuit
+        .netlist()
+        .reference_for(&CircuitVariable::Node(far_corner_name.clone().into()))
+        .expect("Far corner node not found")
+        .variable();
+
+    // Get Values
+    let v_start = *last_step.values.get(n00_key).unwrap_or(&0.0);
+    let v_far = *last_step.values.get(far_corner_key).unwrap_or(&0.0);
+
+    println!("V(n_0_0) final:   {:.4} V", v_start);
+    println!("V({}) final: {:.4} V", far_corner_name, v_far);
 
     assert!(
-        v_start > 4.0,
-        "Input node did not rise! Got {:.2}V",
+        v_start > 4.9,
+        "Input node did not stabilize to 5V! Got {:.2}V",
         v_start
     );
 }

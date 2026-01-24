@@ -1,7 +1,7 @@
 use crate::analysis::transient::{TransientAnalysis, TransientAnalysisContext, TransientAnalysisState};
-use crate::circuit::netlist::CircuitReference;
+use crate::circuit::netlist::{CircuitReference, CircuitVariable};
 use crate::devices::capacitor::Capacitor;
-use crate::math::linear::Stamp;
+use crate::math::linear::{Stamp, Stamp2};
 use crate::solver::Context;
 
 impl TransientAnalysis for Capacitor {
@@ -10,7 +10,7 @@ impl TransientAnalysis for Capacitor {
         _: &TransientAnalysisState,
         _: &TransientAnalysisContext,
         _: &Context,
-    ) -> Vec<Stamp<CircuitReference, f64>> {
+    ) -> Vec<Stamp2<CircuitReference, f64>> {
         vec![]
     }
 
@@ -19,14 +19,14 @@ impl TransientAnalysis for Capacitor {
         _: &TransientAnalysisState,
         _: &TransientAnalysisContext,
         _: &Context,
-    ) -> Vec<Stamp<CircuitReference, f64>> {
+    ) -> Vec<Stamp2<CircuitReference, f64>> {
         let c = self.capacitance;
 
         vec![
-            Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), c),
-            Stamp::Matrix(self.node_minus.clone(), self.node_minus.clone(), c),
-            Stamp::Matrix(self.node_plus.clone(), self.node_minus.clone(), -c),
-            Stamp::Matrix(self.node_minus.clone(), self.node_plus.clone(), -c),
+            Stamp2::Matrix(self.node_plus.clone(), self.node_plus.clone(), c),
+            Stamp2::Matrix(self.node_minus.clone(), self.node_minus.clone(), c),
+            Stamp2::Matrix(self.node_plus.clone(), self.node_minus.clone(), -c),
+            Stamp2::Matrix(self.node_minus.clone(), self.node_plus.clone(), -c),
         ]
     }
 }

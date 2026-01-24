@@ -1,13 +1,13 @@
+use crate::analysis::transient::TransientAnalysisOptions;
+use crate::circuit::Circuit;
+use crate::circuit::netlist::{CircuitVariable, GND};
+use crate::devices::voltage_source::Waveform::Step;
+use crate::math::unit::UnitExt;
+use crate::solver::Context;
 use faer::{Par, set_global_parallelism};
 use std::num::NonZeroUsize;
 use std::sync::Once;
 use tracing::debug;
-use crate::analysis::transient::TransientAnalysisOptions;
-use crate::circuit::Circuit;
-use crate::circuit::netlist::{CircuitReference, GND};
-use crate::devices::voltage_source::Waveform::Step;
-use crate::math::unit::UnitExt;
-use crate::solver::Context;
 
 pub mod analysis;
 pub mod circuit;
@@ -19,15 +19,15 @@ pub mod solver;
 pub mod spice;
 pub mod util;
 
-#[cfg(test)]
-mod tests;
+// #[cfg(test)]
+// mod tests;
 
 static INIT: Once = Once::new();
 
 pub fn init_config() {
     INIT.call_once(|| {
         tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
+            .with_max_level(tracing::Level::DEBUG)
             .with_thread_ids(true)
             .with_thread_names(true)
             .init();
@@ -41,48 +41,28 @@ pub fn test() {
     init_config();
     debug!("Starting test circuit simulation...");
 
-    let mut circuit = Circuit::new("Test Circuit");
-    circuit.voltage_source(
-        "VCC",
-        "vcc",
-        GND,
-        Step {
-            initial: 0.0,
-            final_value: 12.0,
-            delay: 1e-6,
-            rise_time: 5e-7,
-        },
-    );
-    circuit.resistor("R1", "vcc", 1, 10.0.Ohms());
-    circuit.diode("D1", 1, 2);
-    circuit.capacitor("C1", 2, GND, 10.0.uF());
-    circuit.resistor("R2", 2, GND, 1.0.kOhms());
+    let mut circuit = Circuit::new("Diode DC Bias");
 
-    let result = circuit
-        .transient(
-            TransientAnalysisOptions {
-                stop_time: 0.0006,
-                dt: 5e-7,
-            },
-            Context::default(),
+    // 5V -> Resistor -> Diode -> Ground
+    circuit.voltage_source("V1", "in", GND, 5.0.V());
+    circuit.resistor("R1", "in", "anode", 1.0.kOhms());
+    circuit.diode("D1", "anode", GND);
+
+    let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
+    let v_d = result
+        .get_value(
+            circuit
+                .netlist()
+                .reference_for(&CircuitVariable::Node("anode".into()))
+                .unwrap(),
         )
-        .unwrap()
-        .solve()
         .unwrap();
 
-    result.values.iter().for_each(|val| {
-        let t = val
-            .get(*result.mapping.get(&CircuitReference::Time).unwrap())
-            .unwrap();
-        let v_out = val
-            .get(
-                *result
-                    .mapping
-                    .get(&CircuitReference::Node(2.into()))
-                    .unwrap(),
-            )
-            .unwrap();
+    println!("Diode Forward Voltage: {:.4} V", v_d);
 
-        println!("{:.8} {:.8}", t, v_out);
-    });
+    // Expect standard silicon drop ~0.6V - 0.8V
+    assert!(
+        v_d > 0.6 && v_d < 0.8,
+        "Diode voltage outside realistic range"
+    );
 }

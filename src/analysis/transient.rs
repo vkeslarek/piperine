@@ -1,13 +1,15 @@
-use crate::circuit::netlist::CircuitReference;
+use crate::circuit::netlist::{CircuitReference, CircuitVariable};
 use crate::devices::Component;
 use crate::math::array::IndexedArray2;
-use crate::math::iv::InitialValue;
-use crate::math::linear::Stamp;
+use crate::math::circular_array::CircularArrayBuffer2;
+use crate::math::iv::{InitialValue, InitialValue2};
+use crate::math::linear::{Stamp, Stamp2};
 use crate::math::unit::Second;
 use crate::math::vector::IndexedVec1;
 use crate::solver::Context;
+use crate::solver::transient::TransientStep;
 
-pub type TransientAnalysisState = IndexedArray2<CircuitReference, f64>;
+pub type TransientAnalysisState = CircularArrayBuffer2<f64>;
 
 #[derive(Clone)]
 pub struct TransientAnalysisOptions {
@@ -36,23 +38,26 @@ pub trait TransientAnalysis: Component {
         circuit_states: &TransientAnalysisState,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
-    ) -> Vec<Stamp<CircuitReference, f64>>;
+    ) -> Vec<Stamp2<CircuitReference, f64>>;
 
     fn load_transient_dynamic(
         &self,
         _circuit_states: &TransientAnalysisState,
         _transient_analysis_context: &TransientAnalysisContext,
         _context: &Context,
-    ) -> Vec<Stamp<CircuitReference, f64>> {
+    ) -> Vec<Stamp2<CircuitReference, f64>> {
         vec![]
     }
 
     fn initial_transient_values(
         &self,
         _context: &Context,
-    ) -> Vec<InitialValue<CircuitReference, f64>> {
+    ) -> Vec<InitialValue2<CircuitReference, f64>> {
         Vec::new()
     }
 }
 
-pub type TransientAnalysisResult = IndexedVec1<CircuitReference, f64>;
+#[derive(Debug, Clone)]
+pub struct TransientAnalysisResult {
+    pub values: Vec<TransientStep>,
+}

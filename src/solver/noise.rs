@@ -2,7 +2,7 @@ use crate::analysis::ac::{AcAnalysisContext, AcSweepAnalysisOptions};
 use crate::analysis::dc::DcAnalysisResult;
 use crate::analysis::noise::{NoiseAnalysisOptions, NoiseAnalysisResult};
 use crate::circuit::Circuit;
-use crate::circuit::netlist::CircuitReference;
+use crate::circuit::netlist::CircuitVariable;
 use crate::math::array::IndexedArray2;
 use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
 use crate::math::iv::InitialValue;
@@ -21,11 +21,11 @@ pub struct NoiseAnalysisStamper<'a> {
 impl<'a> NoiseAnalysisStamper<'a> {
     fn get_context(
         &self,
-        state: &IndexedArray2<CircuitReference, Complex<f64>>,
+        state: &IndexedArray2<CircuitVariable, Complex<f64>>,
     ) -> AcAnalysisContext {
         let freq = state
             .latest()
-            .and_then(|vals| vals.get(&CircuitReference::Frequency).cloned())
+            .and_then(|vals| vals.get(&CircuitVariable::Frequency).cloned())
             .map(|c| c.re)
             .unwrap_or(1.0);
 
@@ -35,12 +35,12 @@ impl<'a> NoiseAnalysisStamper<'a> {
     }
 }
 
-impl<'a> NewtonRaphsonStamper<CircuitReference, Complex<f64>> for NoiseAnalysisStamper<'a> {
+impl<'a> NewtonRaphsonStamper<CircuitVariable, Complex<f64>> for NoiseAnalysisStamper<'a> {
     fn static_stamps(
         &mut self,
-        state: &IndexedArray2<CircuitReference, Complex<f64>>,
+        state: &IndexedArray2<CircuitVariable, Complex<f64>>,
         context: &Context,
-    ) -> crate::result::Result<Vec<Stamp<CircuitReference, Complex<f64>>>> {
+    ) -> crate::result::Result<Vec<Stamp<CircuitVariable, Complex<f64>>>> {
         let ac_ctx = self.get_context(state);
 
         // Reuse AC implementations for component linearization
@@ -56,35 +56,35 @@ impl<'a> NewtonRaphsonStamper<CircuitReference, Complex<f64>> for NoiseAnalysisS
 
     fn dynamic_stamps(
         &mut self,
-        _state: &IndexedArray2<CircuitReference, Complex<f64>>,
+        _state: &IndexedArray2<CircuitVariable, Complex<f64>>,
         _context: &Context,
-    ) -> crate::result::Result<Vec<Stamp<CircuitReference, Complex<f64>>>> {
+    ) -> crate::result::Result<Vec<Stamp<CircuitVariable, Complex<f64>>>> {
         Ok(Vec::new())
     }
 
     fn initial_conditions(
         &mut self,
         _context: &Context,
-    ) -> crate::result::Result<Vec<InitialValue<CircuitReference, Complex<f64>>>> {
+    ) -> crate::result::Result<Vec<InitialValue<CircuitVariable, Complex<f64>>>> {
         Ok(Vec::new())
     }
 
-    fn active_symbols(&self) -> Vec<CircuitReference> {
+    fn active_symbols(&self) -> Vec<CircuitVariable> {
         self.circuit
             .netlist()
-            .all_references()
+            .all_variables()
             .into_iter()
             .filter(|s| s.is_dependent())
             .collect()
     }
 
-    fn independent_symbols(&self) -> Vec<CircuitReference> {
-        vec![CircuitReference::Frequency]
+    fn independent_symbols(&self) -> Vec<CircuitVariable> {
+        vec![CircuitVariable::Frequency]
     }
 
     fn converged(
         &self,
-        _state: &IndexedArray2<CircuitReference, Complex<f64>>,
+        _state: &IndexedArray2<CircuitVariable, Complex<f64>>,
         _sol: &ArrayView1<Complex<f64>>,
         _ctx: &Context,
     ) -> bool {
@@ -94,9 +94,9 @@ impl<'a> NewtonRaphsonStamper<CircuitReference, Complex<f64>> for NoiseAnalysisS
 
 pub struct NoiseSolver<'a> {
     pub linearizer: NoiseAnalysisStamper<'a>,
-    pub solver: NewtonRaphsonSolver<CircuitReference, Complex<f64>>,
+    pub solver: NewtonRaphsonSolver<CircuitVariable, Complex<f64>>,
     pub options: NoiseAnalysisOptions,
-    pub adjoint_symbolic_matrix: FaerSymbolicMatrix<CircuitReference>,
+    pub adjoint_symbolic_matrix: FaerSymbolicMatrix<CircuitVariable>,
 }
 
 impl<'a> NoiseSolver<'a> {
@@ -141,13 +141,13 @@ impl<'a> NoiseSolver<'a> {
         let matrix_size = self.adjoint_symbolic_matrix.size();
 
         let out_idx = mapping
-            .get(&CircuitReference::Node(self.options.output_node.clone()))
+            .get(&CircuitVariable::Node(self.options.output_node.clone()))
             .ok_or_else(|| crate::error::Error::simple("Noise", "Output node not found"))?;
-        let ref_idx = mapping.get(&CircuitReference::Node(self.options.reference_node.clone()));
+        let ref_idx = mapping.get(&CircuitVariable::Node(self.options.reference_node.clone()));
 
         for &f in &frequencies {
             if let Some(mut view) = self.solver.state.latest_mut() {
-                view.set(&CircuitReference::Frequency, &Complex::new(f, 0.0));
+                view.set(&CircuitVariable::Frequency, &Complex::new(f, 0.0));
             }
 
             let stamps = self

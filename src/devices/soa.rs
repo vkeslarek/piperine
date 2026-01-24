@@ -1,10 +1,11 @@
-use crate::circuit::netlist::CircuitReference;
+use crate::circuit::netlist::CircuitVariable;
 use crate::devices::Component;
 use crate::math::array::IndexedArray2;
+use crate::math::circular_array::CircularArrayBuffer2;
 use crate::solver::Context;
 use std::collections::HashSet;
 
-pub type SoaCheckState = IndexedArray2<CircuitReference, f64>;
+pub type SoaCheckState = CircularArrayBuffer2<f64>;
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub enum SoaViolationSeverity {

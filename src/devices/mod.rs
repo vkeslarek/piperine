@@ -9,7 +9,7 @@ use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::noise::NoiseSource;
 use crate::analysis::transient::TransientAnalysis;
-use crate::circuit::netlist::{CircuitReference, Netlist};
+use crate::circuit::netlist::{CircuitVariable, Netlist};
 use crate::devices::ask::Ask;
 use crate::devices::soa::SoaCheck;
 use crate::error::Error;
@@ -46,7 +46,7 @@ pub trait Component: Any + AsAny {
     fn ask_dc(
         &self,
         request: Ask,
-        solution: &IndexedArray2<CircuitReference, f64>,
+        solution: &IndexedArray2<CircuitVariable, f64>,
     ) -> Option<Quantity> {
         None
     }
@@ -54,7 +54,7 @@ pub trait Component: Any + AsAny {
     fn ask_ac(
         &self,
         request: Ask,
-        solution: &IndexedArray2<CircuitReference, Complex<f64>>,
+        solution: &IndexedArray2<CircuitVariable, Complex<f64>>,
     ) -> Option<Quantity> {
         None
     }
