@@ -2,13 +2,12 @@ use crate::analysis::transient::{
     TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisResult,
 };
 use crate::circuit::Circuit;
-use crate::circuit::netlist::{CircuitReference, CircuitVariable, GND};
+use crate::circuit::netlist::{CircuitReference, CircuitVariable};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::deriv::Integrable;
-use crate::math::faer::FaerSparseLinearSystem2;
-use crate::math::linear::{AsIndex, Stamp2};
-use crate::math::newton_raphson2::{NewtonRaphsonSolver2, NonLinearSystem};
-use crate::math::unit::UnitExt;
+use crate::math::faer::FaerSparseLinearSystem;
+use crate::math::linear::Stamp2;
+use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::solver::dc::DcSolver;
 use crate::solver::{Context, init_solver_configuration};
 use log::debug;
@@ -16,7 +15,6 @@ use ndarray::{Array1, ArrayView1, ArrayViewMut1};
 use num_traits::Zero;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::devices::voltage_source::Waveform::Step;
 
 pub struct TransientSystem<'a> {
     pub circuit: &'a mut Circuit,
@@ -133,7 +131,7 @@ pub struct TransientStep {
 
 pub struct TransientSolver<'a> {
     pub system: TransientSystem<'a>,
-    pub solver: NewtonRaphsonSolver2<CircuitReference, f64, FaerSparseLinearSystem2<f64>>,
+    pub solver: NewtonRaphsonSolver<CircuitReference, f64, FaerSparseLinearSystem<f64>>,
     pub options: TransientAnalysisOptions,
 }
 
@@ -165,7 +163,7 @@ impl<'a> TransientSolver<'a> {
             time_history: Vec::with_capacity(16),
         };
 
-        let solver = NewtonRaphsonSolver2::new(&mut system, size, 4, context)?;
+        let solver = NewtonRaphsonSolver::new(&mut system, size, 4, context)?;
 
         Ok(Self {
             system,
@@ -247,112 +245,121 @@ impl<'a> TransientSolver<'a> {
     }
 }
 
-#[test]
-fn test_transient_rc_charging() {
-    let mut circuit = Circuit::new("RC Transient Demo");
+mod test {
+    use crate::analysis::transient::TransientAnalysisOptions;
+    use crate::circuit::Circuit;
+    use crate::circuit::netlist::{CircuitVariable, GND};
+    use crate::devices::voltage_source::Waveform::Step;
+    use crate::math::unit::UnitExt;
+    use crate::solver::Context;
 
-    circuit.voltage_source(
-        "V1",
-        "in",
-        GND,
-        Step {
-            initial: 0.0.V(),
-            final_value: 5.0.V(),
-            delay: 0.0,
-            rise_time: 1.0.us(),
-        },
-    );
+    #[test]
+    fn test_transient_rc_charging() {
+        let mut circuit = Circuit::new("RC Transient Demo");
 
-    circuit.resistor("R1", "in", "out", 1.0.kOhms());
-    circuit.capacitor("C1", "out", GND, 1.0.uF());
-
-    let options = TransientAnalysisOptions {
-        stop_time: 5.0.ms(),
-        dt: 100.0.us(),
-    };
-
-    let result = circuit
-        .transient(options, Context::default())
-        .unwrap()
-        .solve()
-        .unwrap();
-
-    let out_key = circuit
-        .netlist()
-        .reference_for(&CircuitVariable::Node("out".into()))
-        .expect("Node 'out' not found in netlist")
-        .variable();
-
-    let one_tau_step = result
-        .values
-        .iter()
-        .find(|step| (step.time - 0.001).abs() < 1e-6)
-        .expect("Time point 1.0ms not found in simulation results");
-
-    let v_at_1ms = *one_tau_step
-        .values
-        .get(out_key)
-        .expect("Variable 'out' missing in result step");
-
-    println!("At 1ms (1 Tau): {:.4} V", v_at_1ms);
-    assert!((v_at_1ms - 3.16).abs() < 0.1);
-
-    // D. Check Final State (t = 5ms)
-    let final_step = result.values.last().unwrap();
-    let final_v = *final_step.values.get(out_key).unwrap();
-
-    println!("At 5ms (Final): {:.4} V", final_v);
-    assert!((final_v - 5.0).abs() < 0.05);
-}
-
-#[test]
-fn test_transient_rc_step() {
-    let mut circuit = Circuit::new("RC Step Response");
-
-    circuit.voltage_source(
-        "V1",
-        "in",
-        GND,
-        Step {
-            initial: 0.0.V(),
-            final_value: 1.0.V(),
-            delay: 0.0,
-            rise_time: 1e-9,
-        },
-    );
-
-    circuit.resistor("R1", "in", "out", 1.0.kOhms());
-    circuit.capacitor("C1", "out", GND, 1.0.uF());
-
-    let result = circuit
-        .transient(
-            TransientAnalysisOptions {
-                stop_time: 5.0.ms(),
-                dt: 100.0.us(),
+        circuit.voltage_source(
+            "V1",
+            "in",
+            GND,
+            Step {
+                initial: 0.0.V(),
+                final_value: 5.0.V(),
+                delay: 0.0,
+                rise_time: 1.0.us(),
             },
-            Context::default(),
-        )
-        .unwrap()
-        .solve()
-        .unwrap();
+        );
 
-    let out_key = circuit
-        .netlist()
-        .reference_for(&CircuitVariable::Node("out".into()))
-        .expect("Output node not found in netlist")
-        .variable();
+        circuit.resistor("R1", "in", "out", 1.0.kOhms());
+        circuit.capacitor("C1", "out", GND, 1.0.uF());
 
-    let final_snapshot = result.values.last().expect("Simulation returned no data");
+        let options = TransientAnalysisOptions {
+            stop_time: 5.0.ms(),
+            dt: 100.0.us(),
+        };
 
-    let v_final = *final_snapshot
-        .values
-        .get(out_key)
-        .expect("Voltage value for 'out' missing");
+        let result = circuit
+            .transient(options, Context::default())
+            .unwrap()
+            .solve()
+            .unwrap();
 
-    println!("Transient Final Voltage: {:.4} V", v_final);
-    assert!(
-        (v_final - 1.0).abs() < 0.01,
-        "Capacitor did not charge to 1V. Got {}",
-        v_final
-    );
+        let out_key = circuit
+            .netlist()
+            .reference_for(&CircuitVariable::Node("out".into()))
+            .expect("Node 'out' not found in netlist")
+            .variable();
+
+        let one_tau_step = result
+            .values
+            .iter()
+            .find(|step| (step.time - 0.001).abs() < 1e-6)
+            .expect("Time point 1.0ms not found in simulation results");
+
+        let v_at_1ms = *one_tau_step
+            .values
+            .get(out_key)
+            .expect("Variable 'out' missing in result step");
+
+        println!("At 1ms (1 Tau): {:.4} V", v_at_1ms);
+        assert!((v_at_1ms - 3.16).abs() < 0.1);
+
+        // D. Check Final State (t = 5ms)
+        let final_step = result.values.last().unwrap();
+        let final_v = *final_step.values.get(out_key).unwrap();
+
+        println!("At 5ms (Final): {:.4} V", final_v);
+        assert!((final_v - 5.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn test_transient_rc_step() {
+        let mut circuit = Circuit::new("RC Step Response");
+
+        circuit.voltage_source(
+            "V1",
+            "in",
+            GND,
+            Step {
+                initial: 0.0.V(),
+                final_value: 1.0.V(),
+                delay: 0.0,
+                rise_time: 1e-9,
+            },
+        );
+
+        circuit.resistor("R1", "in", "out", 1.0.kOhms());
+        circuit.capacitor("C1", "out", GND, 1.0.uF());
+
+        let result = circuit
+            .transient(
+                TransientAnalysisOptions {
+                    stop_time: 5.0.ms(),
+                    dt: 100.0.us(),
+                },
+                Context::default(),
+            )
+            .unwrap()
+            .solve()
+            .unwrap();
+
+        let out_key = circuit
+            .netlist()
+            .reference_for(&CircuitVariable::Node("out".into()))
+            .expect("Output node not found in netlist")
+            .variable();
+
+        let final_snapshot = result.values.last().expect("Simulation returned no data");
+
+        let v_final = *final_snapshot
+            .values
+            .get(out_key)
+            .expect("Voltage value for 'out' missing");
+
+        println!("Transient Final Voltage: {:.4} V", v_final);
+        assert!(
+            (v_final - 1.0).abs() < 0.01,
+            "Capacitor did not charge to 1V. Got {}",
+            v_final
+        );
+    }
 }

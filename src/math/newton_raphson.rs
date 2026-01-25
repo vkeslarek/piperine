@@ -1,232 +1,132 @@
 use crate::error::Error;
-use crate::math::Symbol;
-use crate::math::array::{IndexedArray1, IndexedArray2};
-use crate::math::deriv::DifferentiableIndependentScalar;
-use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
-use crate::math::iv::InitialValue;
-use crate::math::linear::{SparseLinearSystem, Stamp, SymbolicMatrix};
+use crate::math::circular_array::CircularArrayBuffer2;
+use crate::math::iv::{InitialValue, InitialValueApplyExt};
+use crate::math::linear::{AsIndex, SparseLinearSystem, Stamp2, SymbolicMatrix};
 use crate::math::num::Field;
 use crate::solver::Context;
-use ndarray::{Array1, ArrayView1};
-use std::collections::HashMap;
-use std::fmt::Debug;
+use ndarray::{Array1, ArrayView1, ArrayViewMut1};
+use num_traits::Zero;
 use tracing::debug;
 
-pub trait NewtonRaphsonStamper<S: Symbol, E: Field> {
-    fn static_stamps(
+pub trait NonLinearSystem<A: AsIndex, E: Field> {
+    fn assemble(
         &mut self,
-        state: &IndexedArray2<S, E>,
+        state: &CircularArrayBuffer2<E>,
+        alpha: E,
         context: &Context,
-    ) -> crate::result::Result<Vec<Stamp<S, E>>>;
-
-    fn dynamic_stamps(
-        &mut self,
-        state: &IndexedArray2<S, E>,
-        context: &Context,
-    ) -> crate::result::Result<Vec<Stamp<S, E>>>;
-
-    fn initial_conditions(
-        &mut self,
-        context: &Context,
-    ) -> crate::result::Result<Vec<InitialValue<S, E>>>;
-
-    fn active_symbols(&self) -> Vec<S>;
-    fn independent_symbols(&self) -> Vec<S>;
+    ) -> crate::result::Result<Vec<Stamp2<A, E>>>;
 
     fn converged(
         &self,
-        state: &IndexedArray2<S, E>,
-        solution: &ArrayView1<E>,
+        state: &CircularArrayBuffer2<E>,
+        delta: &ArrayView1<E>,
         context: &Context,
     ) -> bool;
+
+    fn apply_limit(
+        &mut self,
+        state: &CircularArrayBuffer2<E>,
+        current_guess: ArrayViewMut1<E>,
+        context: &Context,
+    );
+
+    fn update_sources(&mut self, state: &mut CircularArrayBuffer2<E>, context: &Context);
 }
 
-pub struct NewtonRaphsonSolver<S: Symbol, E: Field> {
-    pub symbolic_matrix: FaerSymbolicMatrix<S>,
-    pub linear_system: FaerSparseLinearSystem<S, E>,
-    pub state: IndexedArray2<S, E>,
-    pub context: Context,
+pub struct NewtonRaphsonSolver<A, E, L>
+where
+    A: AsIndex,
+    E: Field,
+    L: SparseLinearSystem<E>,
+{
+    linear_system: L,
+    pub(crate) symbolic: L::SymbolicType,
+    pub state: CircularArrayBuffer2<E>,
+    pub(crate) context: Context,
+    _marker: std::marker::PhantomData<A>,
 }
 
-impl<S: Symbol + std::fmt::Debug, E: 'static + Field> NewtonRaphsonSolver<S, E> {
-    pub fn create(
-        stamper: &mut dyn NewtonRaphsonStamper<S, E>,
+impl<A, E, L> NewtonRaphsonSolver<A, E, L>
+where
+    A: AsIndex,
+    E: Field,
+    L: SparseLinearSystem<E>,
+{
+    pub fn new(
+        system: &mut dyn NonLinearSystem<A, E>,
+        size: usize,
+        history_depth: usize,
         context: Context,
     ) -> crate::result::Result<Self> {
-        let null_state = IndexedArray2::new(HashMap::new(), 0);
-        let stamps: Vec<_> = [
-            stamper.static_stamps(&null_state, &context)?,
-            stamper.dynamic_stamps(&null_state, &context)?,
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-
-        let active_syms = stamper.active_symbols();
-        let linear_system = FaerSparseLinearSystem::new(active_syms.len());
-        let symbolic_matrix = FaerSymbolicMatrix::new(active_syms, stamps)?;
-
-        let mut state_map = symbolic_matrix.mapping.clone();
-        let mut next_idx = state_map.values().max().cloned().unwrap_or(0) + 1;
-
-        for var in stamper.independent_symbols() {
-            if state_map.insert(var, next_idx).is_none() {
-                next_idx += 1;
-            }
-        }
-
-        let mut state = IndexedArray2::new(state_map, 3);
-
-        state.push_align(&IndexedArray1::from_iv(
-            stamper.initial_conditions(&context)?,
-            symbolic_matrix.mapping.clone(),
-        ));
+        let state = CircularArrayBuffer2::new(history_depth, size);
+        let dry_run_stamps = system.assemble(&state, E::zero(), &context)?;
+        let symbolic = L::SymbolicType::new(size, dry_run_stamps)?;
+        let linear_system = L::new(size);
 
         Ok(Self {
-            symbolic_matrix,
             linear_system,
+            symbolic,
             state,
             context,
+            _marker: std::marker::PhantomData,
         })
     }
 
-    pub fn step_steady_state(
+    pub fn set_initial_conditions(&mut self, ivs: Vec<InitialValue<A, E>>) {
+        self.state.apply_iv(ivs);
+    }
+
+    pub fn solve(
         &mut self,
-        stamper: &mut dyn NewtonRaphsonStamper<S, E>,
-        independent_values: &HashMap<S, E>,
-    ) -> crate::result::Result<IndexedArray1<S, E>> {
-        let guess = self
-            .state
-            .latest()
-            .expect("Solver uninitialized")
-            .to_owned();
-        self.state.push(&guess);
-
-        self.update_knowns(independent_values);
-
-        for iter in 0..self.context.max_iter {
-            debug!("Newton Iteration {}", iter + 1);
-
-            let stamps = stamper.static_stamps(&self.state, &self.context)?;
-
-            let solution = self.solve_system(stamps)?;
-
-            let converged = stamper.converged(&self.state, &solution.view(), &self.context);
-
-            let mapping = self.symbolic_matrix.mapping();
-            self.state
-                .latest_mut()
-                .unwrap()
-                .assign(&solution.view(), mapping);
-
-            self.update_knowns(independent_values);
-
-            if converged {
-                debug!("Converged in {} iterations", iter + 1);
-                return Ok(self.state.latest().unwrap().to_owned());
-            }
-        }
-
-        self.state.pop();
-
-        Err(Error::simple(
-            "Convergence Failure",
-            format!(
-                "Failed to converge after {} iterations",
-                self.context.max_iter
-            ),
-        ))
-    }
-
-    fn update_knowns(&mut self, values: &HashMap<S, E>) {
-        let mut view = self.state.latest_mut().unwrap();
-        for (sym, val) in values {
-            view.set(sym, val);
-        }
-    }
-
-    fn solve_system(&self, stamps: Vec<Stamp<S, E>>) -> crate::result::Result<Array1<E>> {
-        let mut system = FaerSparseLinearSystem::new(self.symbolic_matrix.size());
-        system.apply_stamps(&self.symbolic_matrix, stamps);
-        // system.apply_diagonal_damping(E::one() * self.context.gmin);
-        system.solve_with_backend(&self.symbolic_matrix)
-    }
-}
-
-impl<S: Symbol + Debug, E: Field + DifferentiableIndependentScalar> NewtonRaphsonSolver<S, E> {
-    pub fn step_dynamic(
-        &mut self,
-        stamper: &mut dyn NewtonRaphsonStamper<S, E>,
-        independent_values: &HashMap<S, E>,
-        integration_symbol: &S,
-    ) -> crate::result::Result<IndexedArray1<S, E>> {
-        let guess = self
-            .state
-            .latest()
-            .expect("Solver uninitialized")
-            .to_owned();
-        self.state.push(&guess);
-
-        self.update_knowns(independent_values);
-
-        let (alpha, history) = self
-            .state
-            .integration_parameters(integration_symbol)
-            .unwrap_or((E::zero(), Array1::zeros(self.symbolic_matrix.size())));
-
-        for iter in 0..self.context.max_iter {
-            debug!("Newton Iteration {}", iter + 1);
-
-            let mut stamps = stamper.static_stamps(&self.state, &self.context)?;
-            let dynamic = stamper.dynamic_stamps(&self.state, &self.context)?;
-
-            self.apply_dynamics(&mut stamps, dynamic, alpha, &history);
-
-            let solution = self.solve_system(stamps)?;
-
-            let converged = stamper.converged(&self.state, &solution.view(), &self.context);
-
-            let mapping = self.symbolic_matrix.mapping();
-            self.state
-                .latest_mut()
-                .unwrap()
-                .assign(&solution.view(), mapping);
-
-            self.update_knowns(independent_values);
-
-            if converged {
-                debug!("Converged in {} iterations", iter + 1);
-                return Ok(self.state.latest().unwrap().to_owned());
-            }
-        }
-
-        self.state.pop();
-
-        Err(Error::simple(
-            "Convergence Failure",
-            format!(
-                "Failed to converge after {} iterations",
-                self.context.max_iter
-            ),
-        ))
-    }
-
-    fn apply_dynamics(
-        &self,
-        stamps: &mut Vec<Stamp<S, E>>,
-        dynamic_stamps: Vec<Stamp<S, E>>,
+        system: &mut dyn NonLinearSystem<A, E>,
         alpha: E,
-        history: &Array1<E>,
-    ) {
-        for s in dynamic_stamps {
-            if let Stamp::Matrix(row, col, val) = s {
-                stamps.push(Stamp::Matrix(row.clone(), col.clone(), val * alpha));
+    ) -> crate::result::Result<Array1<E>> {
+        let guess = if let Some(prev) = self.state.latest() {
+            prev.to_owned()
+        } else {
+            Array1::zeros(self.state.size())
+        };
+        self.state.push(&guess.view());
 
-                if let Some(&idx) = self.symbolic_matrix.mapping.get(&col) {
-                    let rhs_contribution = val * history[idx];
-                    stamps.push(Stamp::Rhs(row, -rhs_contribution));
-                }
+        system.update_sources(&mut self.state, &self.context);
+
+        for iter in 0..self.context.max_iter {
+            debug!("Newton Iteration {}", iter + 1);
+
+            let stamps = system.assemble(&self.state, alpha, &self.context)?;
+
+            self.linear_system = L::new(self.symbolic.size());
+            self.linear_system.apply_stamps(stamps);
+            let mut current_guess = self.linear_system.solve_with_backend(&self.symbolic)?;
+
+            if current_guess.iter().any(|x| !x.is_finite()) {
+                return Err(Error::simple(
+                    "Convergence Failure",
+                    "Linear solver returned NaN/Inf",
+                ));
             }
+
+            debug!("New guess: {:?}", current_guess);
+
+            system.apply_limit(&self.state, current_guess.view_mut(), &self.context);
+
+            if system.converged(&self.state, &current_guess.view(), &self.context) {
+                debug!("Converged in {} iterations", iter + 1);
+                return Ok(current_guess);
+            }
+
+            self.state
+                .latest_mut()
+                .unwrap()
+                .assign(&current_guess.view());
         }
+
+        Err(Error::simple(
+            "Convergence Failure",
+            format!(
+                "Failed to converge after {} iterations",
+                self.context.max_iter
+            ),
+        ))
     }
 }

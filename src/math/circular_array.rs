@@ -1,4 +1,4 @@
-use ndarray::{Array1, Array2, ArrayView1, ArrayViewMut1};
+use ndarray::{Array2, ArrayView1, ArrayViewMut1};
 use num_traits::Zero;
 
 #[derive(Debug, Clone)]
@@ -35,7 +35,7 @@ impl<V: Zero + Clone> CircularArrayBuffer2<V> {
         }
     }
 
-    pub fn view(&self, lookback: usize) -> Option<ArrayView1<V>> {
+    pub fn view(&self, lookback: usize) -> Option<ArrayView1<'_, V>> {
         if lookback > self.count {
             None
         } else {
@@ -44,16 +44,16 @@ impl<V: Zero + Clone> CircularArrayBuffer2<V> {
         }
     }
 
-    pub fn view_mut(&mut self, lookback: usize) -> Option<ArrayViewMut1<V>> {
+    pub fn view_mut(&mut self, lookback: usize) -> Option<ArrayViewMut1<'_, V>> {
         let idx = self.get_physical_index(lookback);
         Some(self.buffer.row_mut(idx?))
     }
 
-    pub fn latest(&self) -> Option<ArrayView1<V>> {
+    pub fn latest(&self) -> Option<ArrayView1<'_, V>> {
         if self.count == 0 { None } else { self.view(0) }
     }
 
-    pub fn latest_mut(&mut self) -> Option<ArrayViewMut1<V>> {
+    pub fn latest_mut(&mut self) -> Option<ArrayViewMut1<'_, V>> {
         if self.count == 0 {
             None
         } else {

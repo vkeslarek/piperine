@@ -7,7 +7,7 @@ use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::transient::TransientAnalysis;
 use crate::circuit::netlist::{
-    BranchIdentifier, CircuitReference, CircuitVariable, IntoNodeIdentifier, Netlist,
+    BranchIdentifier, CircuitReference, IntoNodeIdentifier, Netlist,
 };
 use crate::devices::Component;
 use crate::devices::voltage_source::model::{VoltageSourceModel, VoltageSourceModelType};
@@ -60,9 +60,9 @@ impl VoltageSource {
         Self {
             name: name.to_string(),
             model: Arc::new(VoltageSourceModel::new()),
-            node_plus: netlist.connect_node_for_real(node_p.into()),
-            node_minus: netlist.connect_node_for_real(node_n.into()),
-            branch: netlist.connect_branch_for_real(BranchIdentifier {
+            node_plus: netlist.connect_node(node_p.into()),
+            node_minus: netlist.connect_node(node_n.into()),
+            branch: netlist.connect_branch(BranchIdentifier {
                 component: name.to_string(),
                 name: None,
             }),

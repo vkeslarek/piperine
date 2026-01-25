@@ -1,9 +1,9 @@
 use crate::analysis::transient::{
     TransientAnalysis, TransientAnalysisContext, TransientAnalysisState,
 };
-use crate::circuit::netlist::{CircuitReference, CircuitVariable};
+use crate::circuit::netlist::CircuitReference;
 use crate::devices::voltage_source::{VoltageSource, Waveform};
-use crate::math::linear::{Stamp, Stamp2};
+use crate::math::linear::Stamp2;
 use crate::solver::Context;
 use std::f64::consts::PI;
 

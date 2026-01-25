@@ -1,5 +1,5 @@
 use crate::analysis::dc::DcAnalysis;
-use crate::circuit::netlist::{CircuitReference, CircuitVariable, IntoNodeIdentifier, Netlist};
+use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
 use crate::devices::Component;
 use crate::devices::diode::model::{DiodeModel, DiodeModelType};
 use crate::math::unit::{Ampere, Kelvin, Siemens, UnitExt};
@@ -36,8 +36,8 @@ impl Diode {
         Self {
             name: name.to_string(),
             model: Arc::new(DiodeModel::default()),
-            node_plus: netlist.connect_node_for_real(node_p.into()),
-            node_minus: netlist.connect_node_for_real(node_n.into()),
+            node_plus: netlist.connect_node(node_p.into()),
+            node_minus: netlist.connect_node(node_n.into()),
             temp: None,
             // Initial guess: Start as a very small conductance (almost open)
             g_eq: 0.0.pS(),

@@ -3,8 +3,6 @@ use num_complex::Complex;
 use num_traits::{One, Zero};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-pub trait ScalableByReal: Mul<f64, Output = Self> {}
-
 pub trait Field:
     Copy
     + Clone
@@ -21,7 +19,6 @@ pub trait Field:
     + SubAssign
     + MulAssign
     + DivAssign
-    + ScalableByReal
 {
     fn abs(self) -> f64;
     fn is_finite(&self) -> bool;
@@ -36,7 +33,6 @@ impl Field for f64 {
         f64::is_finite(self.clone())
     }
 }
-impl ScalableByReal for f64 {}
 
 impl Field for Complex<f64> {
     fn abs(self) -> f64 {
@@ -47,4 +43,3 @@ impl Field for Complex<f64> {
         Complex::is_finite(self.clone())
     }
 }
-impl ScalableByReal for Complex<f64> {}

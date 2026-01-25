@@ -1,11 +1,9 @@
-use crate::circuit::netlist::{CircuitReference, CircuitVariable};
+use crate::circuit::netlist::CircuitReference;
 use crate::devices::Component;
-use crate::math::array::IndexedArray2;
 use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::iv::{InitialValue, InitialValue2};
-use crate::math::linear::{Stamp, Stamp2};
+use crate::math::iv::InitialValue;
+use crate::math::linear::Stamp2;
 use crate::math::unit::Second;
-use crate::math::vector::IndexedVec1;
 use crate::solver::Context;
 use crate::solver::transient::TransientStep;
 
@@ -52,7 +50,7 @@ pub trait TransientAnalysis: Component {
     fn initial_transient_values(
         &self,
         _context: &Context,
-    ) -> Vec<InitialValue2<CircuitReference, f64>> {
+    ) -> Vec<InitialValue<CircuitReference, f64>> {
         Vec::new()
     }
 }

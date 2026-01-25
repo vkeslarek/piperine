@@ -1,9 +1,9 @@
 use crate::analysis::transient::{
     TransientAnalysis, TransientAnalysisContext, TransientAnalysisState,
 };
-use crate::circuit::netlist::{CircuitReference, CircuitVariable};
+use crate::circuit::netlist::CircuitReference;
 use crate::devices::diode::Diode;
-use crate::math::linear::{AsIndexGetExt, Stamp, Stamp2};
+use crate::math::linear::{AsIndexGetExt, Stamp2};
 use crate::solver::Context;
 
 impl TransientAnalysis for Diode {

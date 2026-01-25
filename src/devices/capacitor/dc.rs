@@ -1,7 +1,7 @@
 use crate::analysis::dc::{DcAnalysis, DcAnalysisState};
-use crate::circuit::netlist::{CircuitReference, CircuitVariable};
+use crate::circuit::netlist::CircuitReference;
 use crate::devices::capacitor::Capacitor;
-use crate::math::linear::{Stamp, Stamp2};
+use crate::math::linear::Stamp2;
 use crate::solver::Context;
 
 impl DcAnalysis for Capacitor {

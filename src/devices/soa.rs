@@ -1,6 +1,4 @@
-use crate::circuit::netlist::CircuitVariable;
 use crate::devices::Component;
-use crate::math::array::IndexedArray2;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::solver::Context;
 use std::collections::HashSet;

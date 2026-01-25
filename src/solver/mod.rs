@@ -1,15 +1,13 @@
-use crate::circuit::netlist::{CircuitVariable, Netlist};
+use crate::circuit::netlist::Netlist;
 use crate::math::unit::{Ohm, Siemens, UnitExt};
+use faer::{Par, set_global_parallelism};
 use ndarray::ArrayView1;
-use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Once;
-use faer::{set_global_parallelism, Par};
-use tracing::debug;
 
-// pub mod ac;
+pub mod ac;
 pub mod dc;
-// pub mod noise;
+pub mod noise;
 pub mod transient;
 
 static INIT: Once = Once::new();

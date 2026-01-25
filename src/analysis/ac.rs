@@ -1,10 +1,9 @@
 use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
-use crate::circuit::netlist::{CircuitReference, CircuitVariable};
+use crate::circuit::netlist::CircuitReference;
 use crate::devices::Component;
 use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::linear::{Stamp, Stamp2};
+use crate::math::linear::Stamp2;
 use crate::math::unit::Hertz;
-use crate::math::vector::IndexedVec1;
 use crate::solver::Context;
 use num_complex::Complex;
 

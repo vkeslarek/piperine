@@ -13,7 +13,7 @@ use crate::circuit::netlist::{CircuitVariable, Netlist};
 use crate::devices::ask::Ask;
 use crate::devices::soa::SoaCheck;
 use crate::error::Error;
-use crate::math::array::IndexedArray2;
+use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::expression::Quantity;
 use crate::util::AsAny;
 use num_complex::Complex;
@@ -43,18 +43,14 @@ pub trait Component: Any + AsAny {
         vec![]
     }
 
-    fn ask_dc(
-        &self,
-        request: Ask,
-        solution: &IndexedArray2<CircuitVariable, f64>,
-    ) -> Option<Quantity> {
+    fn ask_dc(&self, _request: Ask, _solution: &CircularArrayBuffer2<f64>) -> Option<Quantity> {
         None
     }
 
     fn ask_ac(
         &self,
-        request: Ask,
-        solution: &IndexedArray2<CircuitVariable, Complex<f64>>,
+        _request: Ask,
+        _solution: &CircularArrayBuffer2<Complex<f64>>,
     ) -> Option<Quantity> {
         None
     }

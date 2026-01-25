@@ -1,7 +1,5 @@
-use crate::analysis::transient::TransientAnalysisOptions;
 use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitVariable, GND};
-use crate::devices::voltage_source::Waveform::Step;
 use crate::math::unit::UnitExt;
 use crate::solver::Context;
 use faer::{Par, set_global_parallelism};

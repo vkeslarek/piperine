@@ -26,7 +26,6 @@ pub struct NoiseAnalysisOptions {
 }
 
 pub struct NoiseAnalysisResult {
-    pub mapping: HashMap<CircuitVariable, usize>,
     pub frequencies: Vec<f64>,
     pub out_noise_sq: Vec<f64>,
     pub integrated_noise: f64,

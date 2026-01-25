@@ -1,4 +1,3 @@
-use crate::math::Symbol;
 use crate::math::linear::AsIndex;
 use bimap::BiMap;
 use std::sync::Arc;
@@ -94,8 +93,6 @@ impl CircuitVariable {
     }
 }
 
-impl Symbol for CircuitVariable {}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CircuitReference {
     variable: Arc<CircuitVariable>,
@@ -137,7 +134,6 @@ impl AsIndex for CircuitReference {
 }
 
 pub struct Netlist {
-    // circuit_variables: HashSet<CircuitVariable>,
     circuit_map: BiMap<CircuitReference, Arc<CircuitVariable>>,
     last_seen_idx: AtomicUsize,
 }
@@ -145,31 +141,24 @@ pub struct Netlist {
 impl Netlist {
     pub fn new() -> Self {
         Self {
-            // circuit_variables: HashSet::new(),
             circuit_map: BiMap::new(),
             last_seen_idx: AtomicUsize::new(0),
         }
     }
 
-    // pub fn connect_node(&mut self, node: NodeIdentifier) -> CircuitVariable {
-    //     if node.is_ground() {
-    //         return CircuitVariable::Node(NodeIdentifier::Gnd);
-    //     }
-    //
-    //     let circuit_reference = CircuitVariable::Node(node);
-    //     self.circuit_variables.insert(circuit_reference.clone());
-    //
-    //     circuit_reference
-    // }
-
-    pub fn connect_node_for_real(&mut self, node: NodeIdentifier) -> CircuitReference {
+    pub fn connect_node(&mut self, node: NodeIdentifier) -> CircuitReference {
         let circuit_reference = CircuitVariable::Node(node);
         if let Some(existing_ref) = self.circuit_map.get_by_right(&circuit_reference) {
             return existing_ref.clone();
         }
 
         if circuit_reference.is_ground() {
-            return CircuitReference::new_unmapped(Arc::new(circuit_reference));
+            let reference = CircuitReference::new_unmapped(Arc::new(circuit_reference));
+            self.circuit_map.insert(
+                reference.clone(),
+                Arc::new(CircuitVariable::Node(NodeIdentifier::Gnd)),
+            );
+            return reference;
         }
 
         let ref_arc = Arc::new(circuit_reference.clone());
@@ -181,13 +170,7 @@ impl Netlist {
         identifier
     }
 
-    // pub fn connect_branch(&mut self, branch: BranchIdentifier) -> CircuitVariable {
-    //     let circuit_reference = CircuitVariable::Branch(branch);
-    //     self.circuit_variables.insert(circuit_reference.clone());
-    //     circuit_reference
-    // }
-
-    pub fn connect_branch_for_real(&mut self, branch: BranchIdentifier) -> CircuitReference {
+    pub fn connect_branch(&mut self, branch: BranchIdentifier) -> CircuitReference {
         let circuit_reference = CircuitVariable::Branch(branch);
         if let Some(existing_ref) = self.circuit_map.get_by_right(&circuit_reference) {
             return existing_ref.clone();

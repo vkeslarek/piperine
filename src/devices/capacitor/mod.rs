@@ -6,7 +6,7 @@ pub mod tran;
 use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::transient::TransientAnalysis;
-use crate::circuit::netlist::{CircuitReference, CircuitVariable, IntoNodeIdentifier, Netlist};
+use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
 use crate::devices::Component;
 use crate::devices::capacitor::model::{CapacitorModel, CapacitorModelType};
 use crate::math::unit::Farad;
@@ -33,8 +33,8 @@ impl Capacitor {
         Self {
             name: name.to_string(),
             model: Arc::new(CapacitorModel::new()),
-            node_plus: netlist.connect_node_for_real(node_p.into().clone()),
-            node_minus: netlist.connect_node_for_real(node_m.into().clone()),
+            node_plus: netlist.connect_node(node_p.into().clone()),
+            node_minus: netlist.connect_node(node_m.into().clone()),
             capacitance,
         }
     }

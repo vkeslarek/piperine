@@ -1,12 +1,11 @@
-use crate::analysis::dc::{DcAnalysisResult, DcAnalysisState};
-use crate::circuit::netlist::{CircuitReference, CircuitVariable, GND};
+use crate::analysis::dc::DcAnalysisResult;
 use crate::circuit::Circuit;
+use crate::circuit::netlist::CircuitReference;
 use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::faer::FaerSparseLinearSystem2;
+use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp2;
-use crate::math::newton_raphson2::{NewtonRaphsonSolver2, NonLinearSystem};
-use crate::math::unit::UnitExt;
-use crate::solver::{init_solver_configuration, Context};
+use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
+use crate::solver::{Context, init_solver_configuration};
 use log::debug;
 use ndarray::{ArrayView1, ArrayViewMut1};
 use std::collections::HashMap;
@@ -84,7 +83,7 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for DcSystem<'a> {
 
 pub struct DcSolver<'a> {
     pub system: DcSystem<'a>,
-    pub solver: NewtonRaphsonSolver2<CircuitReference, f64, FaerSparseLinearSystem2<f64>>,
+    pub solver: NewtonRaphsonSolver<CircuitReference, f64, FaerSparseLinearSystem<f64>>,
 }
 
 impl<'a> DcSolver<'a> {
@@ -118,7 +117,7 @@ impl<'a> DcSolver<'a> {
 
         let mut system = DcSystem { circuit };
 
-        let solver = NewtonRaphsonSolver2::new(&mut system, size, 2, context)?;
+        let solver = NewtonRaphsonSolver::new(&mut system, size, 2, context)?;
 
         Ok(Self { system, solver })
     }
@@ -129,7 +128,7 @@ impl<'a> DcSolver<'a> {
         let mut values = HashMap::new();
         let netlist = self.system.circuit.netlist();
 
-        for (reference) in netlist.all_references() {
+        for reference in netlist.all_references() {
             if let Some(reference_idx) = reference.idx() {
                 values.insert(
                     reference.variable().clone(),
@@ -145,81 +144,88 @@ impl<'a> DcSolver<'a> {
     }
 }
 
-#[test]
-fn test_dc_resistive_divider() {
-    let mut circuit = Circuit::new("DC Divider");
+mod test {
+    use crate::circuit::Circuit;
+    use crate::circuit::netlist::{CircuitVariable, GND};
+    use crate::math::unit::UnitExt;
+    use crate::solver::Context;
 
-    circuit.voltage_source("V1", "in", GND, 10.0.V());
+    #[test]
+    fn test_dc_resistive_divider() {
+        let mut circuit = Circuit::new("DC Divider");
 
-    circuit.resistor("R1", "in", "out", 1.0.kOhms());
-    circuit.resistor("R2", "out", GND, 1.0.kOhms());
+        circuit.voltage_source("V1", "in", GND, 10.0.V());
 
-    let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
+        circuit.resistor("R1", "in", "out", 1.0.kOhms());
+        circuit.resistor("R2", "out", GND, 1.0.kOhms());
 
-    let v_out = result
-        .get_value(
-            circuit
-                .netlist()
-                .reference_for(&CircuitVariable::Node("out".into()))
-                .unwrap(),
-        )
-        .unwrap();
+        let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
 
-    println!("DC Divider: V_out = {:.4} V", v_out);
-    assert!((v_out - 5.0).abs() < 1e-6, "Divider failed: Expected 5.0V");
-}
+        let v_out = result
+            .get_value(
+                circuit
+                    .netlist()
+                    .reference_for(&CircuitVariable::Node("out".into()))
+                    .unwrap(),
+            )
+            .unwrap();
 
-#[test]
-fn test_dc_diode_bias() {
-    let mut circuit = Circuit::new("Diode DC Bias");
+        println!("DC Divider: V_out = {:.4} V", v_out);
+        assert!((v_out - 5.0).abs() < 1e-6, "Divider failed: Expected 5.0V");
+    }
 
-    circuit.voltage_source("V1", "in", GND, 5.0.V());
-    circuit.resistor("R1", "in", "anode", 1.0.kOhms());
-    circuit.diode("D1", "anode", GND);
+    #[test]
+    fn test_dc_diode_bias() {
+        let mut circuit = Circuit::new("Diode DC Bias");
 
-    let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
-    let v_d = result
-        .get_value(
-            circuit
-                .netlist()
-                .reference_for(&CircuitVariable::Node("anode".into()))
-                .unwrap(),
-        )
-        .unwrap();
+        circuit.voltage_source("V1", "in", GND, 5.0.V());
+        circuit.resistor("R1", "in", "anode", 1.0.kOhms());
+        circuit.diode("D1", "anode", GND);
 
-    println!("Diode Forward Voltage: {:.4} V", v_d);
+        let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
+        let v_d = result
+            .get_value(
+                circuit
+                    .netlist()
+                    .reference_for(&CircuitVariable::Node("anode".into()))
+                    .unwrap(),
+            )
+            .unwrap();
 
-    assert!(
-        v_d > 0.6 && v_d < 0.8,
-        "Diode voltage outside realistic range"
-    );
-}
+        println!("Diode Forward Voltage: {:.4} V", v_d);
 
-#[test]
-fn test_dc_floating_node_crash() {
-    let mut circuit = Circuit::new("Floating Node (Series Caps)");
+        assert!(
+            v_d > 0.6 && v_d < 0.8,
+            "Diode voltage outside realistic range"
+        );
+    }
 
-    circuit.voltage_source("V1", "in", GND, 10.0.V());
+    #[test]
+    fn test_dc_floating_node_crash() {
+        let mut circuit = Circuit::new("Floating Node (Series Caps)");
 
-    circuit.capacitor("C1", "in", "mid", 1.0.uF());
-    circuit.capacitor("C2", "mid", GND, 1.0.uF());
+        circuit.voltage_source("V1", "in", GND, 10.0.V());
 
-    let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
+        circuit.capacitor("C1", "in", "mid", 1.0.uF());
+        circuit.capacitor("C2", "mid", GND, 1.0.uF());
 
-    let v_mid = result
-        .get_value(
-            circuit
-                .netlist()
-                .reference_for(&CircuitVariable::Node("mid".into()))
-                .unwrap(),
-        )
-        .unwrap();
+        let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
 
-    println!("Floating Node Voltage (stabilized by Gmin): {:.4} V", v_mid);
+        let v_mid = result
+            .get_value(
+                circuit
+                    .netlist()
+                    .reference_for(&CircuitVariable::Node("mid".into()))
+                    .unwrap(),
+            )
+            .unwrap();
 
-    assert!(
-        (v_mid - 5.0).abs() < 1e-3,
-        "Gmin failed to stabilize floating node! Expected 5.0V, got {}",
-        v_mid
-    );
+        println!("Floating Node Voltage (stabilized by Gmin): {:.4} V", v_mid);
+
+        assert!(
+            (v_mid - 5.0).abs() < 1e-3,
+            "Gmin failed to stabilize floating node! Expected 5.0V, got {}",
+            v_mid
+        );
+    }
 }
