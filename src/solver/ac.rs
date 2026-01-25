@@ -2,24 +2,26 @@ use crate::analysis::ac::{
     AcAnalysisContext, AcAnalysisResult, AcAnalysisStep, AcSweepAnalysisOptions,
 };
 use crate::analysis::dc::DcAnalysisResult;
-use crate::circuit::Circuit;
 use crate::circuit::netlist::CircuitReference;
+use crate::circuit::Circuit;
+use crate::devices::soa::SoaViolations;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::math::unit::UnitExt;
 use crate::solver::dc::DcSolver;
-use crate::solver::{Context, init_solver_configuration};
-use ndarray::{ArrayView1, ArrayViewMut1};
+use crate::solver::{init_solver_configuration, Context};
 use num_complex::Complex;
 use num_traits::Zero;
 use std::collections::HashMap;
 
 pub struct AcSystem<'a> {
     pub circuit: &'a mut Circuit,
+    pub context: Context,
     pub dc_point: DcAnalysisResult,
     pub frequency: f64,
+    pub soa_violations: SoaViolations,
 }
 
 impl<'a> NonLinearSystem<CircuitReference, Complex<f64>> for AcSystem<'a> {
@@ -27,7 +29,6 @@ impl<'a> NonLinearSystem<CircuitReference, Complex<f64>> for AcSystem<'a> {
         &mut self,
         _state: &CircularArrayBuffer2<Complex<f64>>,
         _alpha: Complex<f64>,
-        context: &Context,
     ) -> crate::result::Result<Vec<Stamp<CircuitReference, Complex<f64>>>> {
         let ac_ctx = AcAnalysisContext {
             frequency: self.frequency.Hz(),
@@ -37,36 +38,12 @@ impl<'a> NonLinearSystem<CircuitReference, Complex<f64>> for AcSystem<'a> {
 
         for (_name, comp) in self.circuit.components_mut() {
             if let Some(ac) = comp.as_ac() {
-                ac.update_ac(&self.dc_point, &ac_ctx, context)?;
+                ac.update_ac(&self.dc_point, &ac_ctx, &self.context)?;
 
-                all_stamps.extend(ac.load_ac(&self.dc_point, &ac_ctx, context));
+                all_stamps.extend(ac.load_ac(&self.dc_point, &ac_ctx, &self.context));
             }
         }
         Ok(all_stamps)
-    }
-
-    fn converged(
-        &self,
-        _state: &CircularArrayBuffer2<Complex<f64>>,
-        _new_guess: &ArrayView1<Complex<f64>>,
-        _context: &Context,
-    ) -> bool {
-        true
-    }
-
-    fn apply_limit(
-        &mut self,
-        _state: &CircularArrayBuffer2<Complex<f64>>,
-        _current_guess: ArrayViewMut1<Complex<f64>>,
-        _context: &Context,
-    ) {
-    }
-
-    fn update_sources(
-        &mut self,
-        _state: &mut CircularArrayBuffer2<Complex<f64>>,
-        _context: &Context,
-    ) {
     }
 }
 
@@ -84,26 +61,18 @@ impl<'a> AcSolver<'a> {
         let dc_point = dc_solver.solve()?;
 
         let netlist = circuit.netlist();
-
-        let mut mapped_vars: Vec<_> = netlist
-            .all_references()
-            .into_iter()
-            .filter(|id| id.idx().is_some())
-            .collect();
-        mapped_vars.sort_by_key(|id| id.idx().unwrap());
-
-        let size = mapped_vars
-            .last()
-            .map(|id| id.idx().unwrap() + 1)
-            .unwrap_or(0);
+        let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
+        let soa_violations = SoaViolations::from_vec(dc_point.soa_violations().clone());
 
         let mut system = AcSystem {
             circuit,
+            context,
             dc_point,
             frequency: 0.0,
+            soa_violations,
         };
 
-        let solver = NewtonRaphsonSolver::new(&mut system, size, 1, context)?;
+        let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
 
         Ok(Self { system, solver })
     }
@@ -114,12 +83,15 @@ impl<'a> AcSolver<'a> {
     ) -> crate::result::Result<AcAnalysisResult> {
         let frequencies = self.generate_frequencies(&options);
 
-        let mut data = AcAnalysisResult::new(frequencies.len());
+        let mut data = Vec::new();
 
         for &f_hz in frequencies.iter() {
             self.system.frequency = f_hz;
 
-            let solution = self.solver.solve(&mut self.system, Complex::zero())?;
+            let max_iter = self.system.context.max_iter;
+            let solution = self
+                .solver
+                .solve(&mut self.system, Complex::zero(), max_iter)?;
 
             let mut values = HashMap::new();
             for reference in self.system.circuit.netlist().all_references() {
@@ -130,7 +102,10 @@ impl<'a> AcSolver<'a> {
             data.push(AcAnalysisStep::new(f_hz, values));
         }
 
-        Ok(data)
+        Ok(AcAnalysisResult::new(
+            data,
+            self.system.soa_violations.clone(),
+        ))
     }
 
     fn generate_frequencies(&self, opt: &AcSweepAnalysisOptions) -> Vec<f64> {
@@ -213,9 +188,7 @@ mod test {
             let f = frequencies[i];
 
             if (f - 1000.0).abs() < 1.0 {
-                let v_out = vector
-                    .get(&CircuitVariable::Node("out".into()))
-                    .unwrap();
+                let v_out = vector.get(&CircuitVariable::Node("out".into())).unwrap();
                 let mag = v_out.norm();
 
                 println!("At {:.1} Hz: Mag = {:.4} V (Expected ~0.707)", f, mag);

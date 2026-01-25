@@ -3,68 +3,21 @@ use crate::analysis::dc::DcAnalysisResult;
 use crate::analysis::noise::{NoiseAnalysisOptions, NoiseAnalysisResult};
 use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitReference, CircuitVariable};
-use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::faer::FaerSparseLinearSystem;
-use crate::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem};
-use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
+use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
+use crate::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
+use crate::math::newton_raphson::NonLinearSystem;
 use crate::math::unit::UnitExt;
 use crate::solver::dc::DcSolver;
 use crate::solver::{Context, init_solver_configuration};
-use ndarray::{ArrayView1, ArrayViewMut1};
+use ndarray::Array1;
 use num_complex::Complex;
 use num_traits::Zero;
 
-pub struct NoiseSystem<'a> {
-    pub circuit: &'a mut Circuit,
-    pub dc_point: DcAnalysisResult,
-    pub frequency: f64,
-}
-
-impl<'a> NonLinearSystem<CircuitReference, Complex<f64>> for NoiseSystem<'a> {
-    fn assemble(
-        &mut self,
-        _state: &CircularArrayBuffer2<Complex<f64>>,
-        _alpha: Complex<f64>,
-        context: &Context,
-    ) -> crate::result::Result<Vec<Stamp<CircuitReference, Complex<f64>>>> {
-        let ac_ctx = AcAnalysisContext {
-            frequency: self.frequency.Hz(),
-        };
-
-        let mut all_stamps = Vec::new();
-
-        for (_name, comp) in self.circuit.components_mut() {
-            if let Some(ac) = comp.as_ac() {
-                all_stamps.extend(ac.load_ac(&self.dc_point, &ac_ctx, context));
-            }
-        }
-        Ok(all_stamps)
-    }
-
-    fn converged(
-        &self,
-        _: &CircularArrayBuffer2<Complex<f64>>,
-        _: &ArrayView1<Complex<f64>>,
-        _: &Context,
-    ) -> bool {
-        true
-    }
-
-    fn apply_limit(
-        &mut self,
-        _: &CircularArrayBuffer2<Complex<f64>>,
-        _: ArrayViewMut1<Complex<f64>>,
-        _: &Context,
-    ) {
-    }
-
-    fn update_sources(&mut self, _: &mut CircularArrayBuffer2<Complex<f64>>, _: &Context) {}
-}
-
 pub struct NoiseSolver<'a> {
-    pub system: NoiseSystem<'a>,
-    pub solver:
-        NewtonRaphsonSolver<CircuitReference, Complex<f64>, FaerSparseLinearSystem<Complex<f64>>>,
+    pub circuit: &'a mut Circuit,
+    pub context: Context,
+    pub dc_point: DcAnalysisResult,
+    pub symbolic_matrix: FaerSymbolicMatrix,
     pub options: NoiseAnalysisOptions,
     pub out_ref: CircuitReference,
     pub ref_ref: CircuitReference,
@@ -78,51 +31,19 @@ impl<'a> NoiseSolver<'a> {
     ) -> crate::result::Result<Self> {
         init_solver_configuration();
 
-        let mut dc_solver = DcSolver::new(circuit, context.clone())?;
-        let dc_point = dc_solver.solve()?;
+        let dc_point = DcSolver::new(circuit, context.clone())?.solve()?;
 
-        let mut mapped_vars: Vec<_> = circuit
-            .netlist()
-            .all_references()
-            .into_iter()
-            .filter(|id| id.idx().is_some())
-            .collect();
-        mapped_vars.sort_by_key(|id| id.idx().unwrap());
+        let (out_ref, ref_ref) = Self::resolve_nodes(circuit, &options)?;
+        let size = circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
 
-        let size = mapped_vars
-            .last()
-            .map(|id| id.idx().unwrap() + 1)
-            .unwrap_or(0);
-
-        let out_ref = circuit
-            .netlist()
-            .reference_for(&CircuitVariable::Node(options.output_node.clone()))
-            .ok_or(crate::error::Error::simple(
-                "Output reference not found for identifier",
-                "The output reference provided for the noise analysis doesn't exist on the circuit",
-            ))?
-            .clone();
-
-        let ref_ref = circuit
-            .netlist()
-            .reference_for(&CircuitVariable::Node(options.reference_node.clone()))
-            .ok_or(crate::error::Error::simple(
-                "Reference node not found for identifier",
-                "The reference node provided for the noise analysis doesn't exist on the circuit",
-            ))?
-            .clone();
-
-        let mut system = NoiseSystem {
-            circuit,
-            dc_point,
-            frequency: 0.0,
-        };
-
-        let solver = NewtonRaphsonSolver::new(&mut system, size, 1, context)?;
+        let symbolic_stamps = Self::assemble_linearized(circuit, &dc_point, 1.0, &context)?;
+        let symbolic_matrix = FaerSymbolicMatrix::new(size, symbolic_stamps)?;
 
         Ok(Self {
-            system,
-            solver,
+            circuit,
+            context,
+            dc_point,
+            symbolic_matrix,
             options,
             out_ref,
             ref_ref,
@@ -134,68 +55,95 @@ impl<'a> NoiseSolver<'a> {
         let mut out_noise_sq = Vec::with_capacity(frequencies.len());
 
         for &f in &frequencies {
-            self.system.frequency = f;
             let ac_ctx = AcAnalysisContext { frequency: f.Hz() };
 
-            let stamps =
-                self.system
-                    .assemble(&self.solver.state, Complex::zero(), &self.solver.context)?;
+            let stamps = Self::assemble_linearized(self.circuit, &self.dc_point, f, &self.context)?;
+            let adjoint_sol = self.solve_adjoint_system(stamps)?;
 
-            let mut adjoint_system =
-                FaerSparseLinearSystem::<Complex<f64>>::new(self.solver.state.size());
-            for stamp in stamps {
-                match stamp {
-                    Stamp::Matrix(r, c, val) => {
-                        adjoint_system.apply_stamps(vec![Stamp::Matrix(c, r, val)]);
-                    }
-                    _ => {}
+            let mut step_density = 0.0;
+            for source in self
+                .circuit
+                .components_mut()
+                .values_mut()
+                .filter_map(|c| c.as_noise_source())
+            {
+                let noises = source.noise_current_psd(&self.dc_point, &ac_ctx);
+                for n in noises {
+                    let z_p = self
+                        .out_ref
+                        .idx()
+                        .map(|i| adjoint_sol[i])
+                        .unwrap_or_default();
+                    let z_n = self
+                        .ref_ref
+                        .idx()
+                        .map(|i| adjoint_sol[i])
+                        .unwrap_or_default();
+                    let gain_sq = (z_p - z_n).norm_sqr();
+
+                    step_density += gain_sq * n.value;
                 }
             }
-
-            adjoint_system.apply_stamps(vec![Stamp::Rhs(
-                self.out_ref.clone(),
-                Complex::new(1.0, 0.0),
-            )]);
-            adjoint_system.apply_stamps(vec![Stamp::Rhs(
-                self.ref_ref.clone(),
-                Complex::new(-1.0, 0.0),
-            )]);
-
-            let adjoint_solution = adjoint_system.solve_with_backend(&self.solver.symbolic)?;
-
-            let mut total_density = 0.0;
-            for comp in self.system.circuit.components_mut().values_mut() {
-                if let Some(source) = comp.as_noise_source() {
-                    let noises = source.noise_current_psd(&self.system.dc_point, &ac_ctx);
-                    for n in noises {
-                        let z_p = n
-                            .terminals
-                            .0
-                            .idx()
-                            .map(|i| adjoint_solution[i])
-                            .unwrap_or_default();
-                        let z_n = n
-                            .terminals
-                            .1
-                            .idx()
-                            .map(|i| adjoint_solution[i])
-                            .unwrap_or_default();
-
-                        let gain_sq = (z_p - z_n).norm_sqr();
-                        total_density += gain_sq * n.value;
-                    }
-                }
-            }
-            out_noise_sq.push(total_density);
+            out_noise_sq.push(step_density);
         }
 
         let integrated_noise = self.integrate_noise(&frequencies, &out_noise_sq);
-
         Ok(NoiseAnalysisResult {
             frequencies,
-            out_noise_sq,
             integrated_noise,
+            out_noise_sq,
         })
+    }
+
+    fn solve_adjoint_system(
+        &self,
+        stamps: Vec<Stamp<CircuitReference, Complex<f64>>>,
+    ) -> crate::result::Result<Array1<Complex<f64>>> {
+        let mut system = FaerSparseLinearSystem::new(self.symbolic_matrix.size());
+
+        for stamp in stamps {
+            if let Stamp::Matrix(r, c, val) = stamp {
+                system.apply_stamps(vec![Stamp::Matrix(c, r, val)]);
+            }
+        }
+
+        system.apply_stamps(vec![
+            Stamp::Rhs(self.out_ref.clone(), Complex::new(1.0, 0.0)),
+            Stamp::Rhs(self.ref_ref.clone(), Complex::new(-1.0, 0.0)),
+        ]);
+
+        system.solve_with_backend(&self.symbolic_matrix)
+    }
+
+    fn assemble_linearized(
+        circuit: &mut Circuit,
+        dc_point: &DcAnalysisResult,
+        f_hz: f64,
+        context: &Context,
+    ) -> crate::result::Result<Vec<Stamp<CircuitReference, Complex<f64>>>> {
+        let ac_ctx = AcAnalysisContext {
+            frequency: f_hz.Hz(),
+        };
+        Ok(circuit
+            .components_mut()
+            .values_mut()
+            .filter_map(|c| c.as_ac())
+            .flat_map(|ac| ac.load_ac(dc_point, &ac_ctx, context))
+            .collect())
+    }
+
+    fn resolve_nodes(
+        circuit: &Circuit,
+        opt: &NoiseAnalysisOptions,
+    ) -> crate::result::Result<(CircuitReference, CircuitReference)> {
+        let net = circuit.netlist();
+        let out = net
+            .reference_for(&CircuitVariable::Node(opt.output_node.clone()))
+            .ok_or_else(|| crate::error::Error::simple("Noise", "Output node not found"))?;
+        let ref_ = net
+            .reference_for(&CircuitVariable::Node(opt.reference_node.clone()))
+            .ok_or_else(|| crate::error::Error::simple("Noise", "Reference node not found"))?;
+        Ok((out.clone(), ref_.clone()))
     }
 
     fn generate_frequencies(&self, opt: &AcSweepAnalysisOptions) -> Vec<f64> {
@@ -235,9 +183,9 @@ impl<'a> NoiseSolver<'a> {
 mod test {
     use crate::analysis::ac::AcSweepAnalysisOptions;
     use crate::analysis::noise::NoiseAnalysisOptions;
-    use crate::devices::builder::CircuitBuilderExt;
     use crate::circuit::Circuit;
     use crate::circuit::netlist::GND;
+    use crate::devices::builder::CircuitBuilderExt;
     use crate::math::unit::UnitExt;
     use crate::solver::Context;
 

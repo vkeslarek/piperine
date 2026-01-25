@@ -1,17 +1,20 @@
 use crate::analysis::dc::DcAnalysisResult;
-use crate::circuit::Circuit;
 use crate::circuit::netlist::CircuitReference;
+use crate::circuit::Circuit;
+use crate::devices::soa::SoaViolations;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
-use crate::solver::{Context, init_solver_configuration};
+use crate::solver::{init_solver_configuration, Context};
 use log::debug;
 use ndarray::{ArrayView1, ArrayViewMut1};
 use std::collections::HashMap;
 
 pub struct DcSystem<'a> {
     pub circuit: &'a mut Circuit,
+    pub context: Context,
+    pub soa_violations: SoaViolations,
 }
 
 impl<'a> NonLinearSystem<CircuitReference, f64> for DcSystem<'a> {
@@ -19,7 +22,6 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for DcSystem<'a> {
         &mut self,
         state: &CircularArrayBuffer2<f64>,
         _alpha: f64,
-        context: &Context,
     ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
         let mut all_stamps = Vec::new();
 
@@ -31,28 +33,23 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for DcSystem<'a> {
                 )
             })?;
 
-            dc.update_dc(state, context)?;
+            dc.update_dc(state, &self.context)?;
 
-            all_stamps.extend(dc.load_dc(state, context));
+            all_stamps.extend(dc.load_dc(state, &self.context));
         }
         Ok(all_stamps)
     }
 
-    fn converged(
-        &self,
-        state: &CircularArrayBuffer2<f64>,
-        new_guess: &ArrayView1<f64>,
-        context: &Context,
-    ) -> bool {
+    fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
         let netlist = self.circuit.netlist();
-        context.has_converged(state.view(0), new_guess, netlist)
+        self.context
+            .has_converged(state.view(0), new_guess, netlist)
     }
 
     fn apply_limit(
         &mut self,
         state: &CircularArrayBuffer2<f64>,
         mut current_guess: ArrayViewMut1<f64>,
-        context: &Context,
     ) {
         let last_guess = match state.latest() {
             Some(guess) => guess,
@@ -66,19 +63,30 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for DcSystem<'a> {
 
         let diff_norm = diff_norm_sq.sqrt();
 
-        if diff_norm >= context.dc_damp_tolerance {
+        if diff_norm >= self.context.dc_damp_tolerance {
             for (curr, prev) in current_guess.iter_mut().zip(last_guess.iter()) {
                 *curr = (*curr + *prev) * 0.5;
             }
 
             debug!(
                 "Damping applied: Step norm {:.2e} > Tolerance {:.2e}",
-                diff_norm, context.dc_damp_tolerance
+                diff_norm, self.context.dc_damp_tolerance
             );
         }
     }
 
-    fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<f64>, _context: &Context) {}
+    fn convergence_success_callback(
+        &mut self,
+        state: &CircularArrayBuffer2<f64>,
+        _: &ArrayView1<f64>,
+    ) {
+        for (_, component) in self.circuit.components() {
+            if let Some(soa_comp) = component.as_soa_check() {
+                self.soa_violations
+                    .add_all(soa_comp.soa_check(state, &self.context));
+            }
+        }
+    }
 }
 
 pub struct DcSolver<'a> {
@@ -90,40 +98,22 @@ impl<'a> DcSolver<'a> {
     pub fn new(circuit: &'a mut Circuit, context: Context) -> crate::result::Result<Self> {
         init_solver_configuration();
         let netlist = circuit.netlist();
-        let mut max_idx = 0;
-        let mut variables_by_index = Vec::new();
+        let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
 
-        let mut mapped_vars: Vec<_> = netlist
-            .all_references()
-            .into_iter()
-            .filter(|id| id.idx().is_some())
-            .collect();
-
-        mapped_vars.sort_by_key(|id| id.idx().unwrap());
-
-        if let Some(last) = mapped_vars.last() {
-            max_idx = last.idx().unwrap();
-
-            for id in mapped_vars {
-                variables_by_index.push(id.clone());
-            }
-        }
-
-        let size = if variables_by_index.is_empty() {
-            0
-        } else {
-            max_idx + 1
+        let mut system = DcSystem {
+            circuit,
+            context,
+            soa_violations: SoaViolations::new(),
         };
 
-        let mut system = DcSystem { circuit };
-
-        let solver = NewtonRaphsonSolver::new(&mut system, size, 2, context)?;
+        let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
 
         Ok(Self { system, solver })
     }
 
     pub fn solve(&mut self) -> crate::result::Result<DcAnalysisResult> {
-        let raw_solution = self.solver.solve(&mut self.system, 0.0)?;
+        let max_iter = self.system.context.max_iter;
+        let raw_solution = self.solver.solve(&mut self.system, 0.0, max_iter)?;
 
         let mut values = HashMap::new();
         let netlist = self.system.circuit.netlist();
@@ -137,14 +127,17 @@ impl<'a> DcSolver<'a> {
             }
         }
 
-        Ok(DcAnalysisResult::new(values))
+        Ok(DcAnalysisResult::new(
+            values,
+            self.system.soa_violations.clone().as_vec(),
+        ))
     }
 }
 
 #[cfg(test)]
 mod test {
+    use crate::circuit::netlist::GND;
     use crate::circuit::Circuit;
-    use crate::circuit::netlist::{CircuitVariable, GND};
     use crate::devices::builder::CircuitBuilderExt;
     use crate::math::unit::UnitExt;
     use crate::solver::Context;

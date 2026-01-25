@@ -35,6 +35,7 @@ impl SoaViolation {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SoaViolations {
     violations: HashSet<SoaViolation>,
 }
@@ -44,6 +45,12 @@ impl SoaViolations {
         Self {
             violations: HashSet::new(),
         }
+    }
+
+    pub fn from_vec(soa_violations_vec: Vec<SoaViolation>) -> Self {
+        let mut soa_violations = SoaViolations::new();
+        soa_violations.add_all(soa_violations_vec);
+        soa_violations
     }
 
     pub fn add_all(&mut self, violations: Vec<SoaViolation>) {

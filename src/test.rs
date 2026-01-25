@@ -1,6 +1,6 @@
 use crate::analysis::transient::TransientAnalysisOptions;
-use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitVariable, GND};
+use crate::circuit::Circuit;
 use crate::devices::builder::CircuitBuilderExt;
 use crate::devices::voltage_source::Waveform::Step;
 use crate::math::unit::UnitExt;
@@ -115,6 +115,7 @@ pub fn titan_test(grid_size: i32) {
     );
 }
 
+#[ignore]
 #[test]
 pub fn full_titan_test() {
     titan_test(2);

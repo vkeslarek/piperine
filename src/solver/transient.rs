@@ -1,15 +1,16 @@
 use crate::analysis::transient::{
     TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisResult, TransientStep,
 };
-use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitReference, CircuitVariable};
+use crate::circuit::Circuit;
+use crate::devices::soa::{SoaViolation, SoaViolations};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::deriv::Integrable;
 use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::solver::dc::DcSolver;
-use crate::solver::{Context, init_solver_configuration};
+use crate::solver::{init_solver_configuration, Context};
 use log::debug;
 use ndarray::{Array1, ArrayView1, ArrayViewMut1};
 use num_traits::Zero;
@@ -18,9 +19,11 @@ use std::sync::Arc;
 
 pub struct TransientSystem<'a> {
     pub circuit: &'a mut Circuit,
+    pub context: Context,
     pub time: f64,
     pub dt: f64,
     pub time_history: Vec<f64>,
+    pub soa_violations: SoaViolations,
 }
 
 impl<'a> TransientSystem<'a> {
@@ -57,7 +60,6 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for TransientSystem<'a> {
         &mut self,
         state: &CircularArrayBuffer2<f64>,
         _alpha_hint: f64,
-        context: &Context,
     ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
         let tran_ctx = TransientAnalysisContext {
             time: self.time.into(),
@@ -72,11 +74,11 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for TransientSystem<'a> {
 
         for (name, comp) in self.circuit.components_mut() {
             if let Some(tran) = comp.as_transient() {
-                tran.update_transient(state, &tran_ctx, context)?;
+                tran.update_transient(state, &tran_ctx, &self.context)?;
 
-                all_stamps.extend(tran.load_transient(state, &tran_ctx, context));
+                all_stamps.extend(tran.load_transient(state, &tran_ctx, &self.context));
 
-                let raw_dynamic = tran.load_transient_dynamic(state, &tran_ctx, context);
+                let raw_dynamic = tran.load_transient_dynamic(state, &tran_ctx, &self.context);
                 all_stamps.extend(Self::map_dynamic_stamps(alpha, &history, raw_dynamic));
             } else {
                 debug!("Component '{}' ignored in transient", name);
@@ -85,21 +87,16 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for TransientSystem<'a> {
         Ok(all_stamps)
     }
 
-    fn converged(
-        &self,
-        state: &CircularArrayBuffer2<f64>,
-        new_guess: &ArrayView1<f64>,
-        context: &Context,
-    ) -> bool {
+    fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
         let netlist = self.circuit.netlist();
-        context.has_converged(state.latest(), new_guess, netlist)
+        self.context
+            .has_converged(state.latest(), new_guess, netlist)
     }
 
     fn apply_limit(
         &mut self,
         state: &CircularArrayBuffer2<f64>,
         mut current_guess: ArrayViewMut1<f64>,
-        context: &Context,
     ) {
         let last_guess = match state.latest() {
             Some(guess) => guess,
@@ -113,14 +110,27 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for TransientSystem<'a> {
 
         let diff_norm = diff_norm_sq.sqrt();
 
-        if diff_norm >= context.dc_damp_tolerance {
+        if diff_norm >= self.context.dc_damp_tolerance {
             for (curr, prev) in current_guess.iter_mut().zip(last_guess.iter()) {
                 *curr = (*curr + *prev) * 0.5;
             }
         }
     }
 
-    fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<f64>, _context: &Context) {}
+    fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<f64>) {}
+
+    fn convergence_success_callback(
+        &mut self,
+        state: &CircularArrayBuffer2<f64>,
+        _: &ArrayView1<f64>,
+    ) {
+        for (_, component) in self.circuit.components() {
+            if let Some(soa_comp) = component.as_soa_check() {
+                self.soa_violations
+                    .add_all(soa_comp.soa_check(state, &self.context));
+            }
+        }
+    }
 }
 
 pub struct TransientSolver<'a> {
@@ -136,28 +146,19 @@ impl<'a> TransientSolver<'a> {
         context: Context,
     ) -> crate::result::Result<Self> {
         init_solver_configuration();
-        let netlist = circuit.netlist();
 
-        let mut mapped_vars: Vec<_> = netlist
-            .all_references()
-            .into_iter()
-            .filter(|id| id.idx().is_some())
-            .collect();
-        mapped_vars.sort_by_key(|id| id.idx().unwrap());
-
-        let size = mapped_vars
-            .last()
-            .map(|id| id.idx().unwrap() + 1)
-            .unwrap_or(0);
+        let size = circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
 
         let mut system = TransientSystem {
             circuit,
+            context,
             time: 0.0,
             dt: options.dt,
             time_history: Vec::with_capacity(16),
+            soa_violations: SoaViolations::new(),
         };
 
-        let solver = NewtonRaphsonSolver::new(&mut system, size, 4, context)?;
+        let solver = NewtonRaphsonSolver::new(&mut system, size, 4)?;
 
         Ok(Self {
             system,
@@ -175,21 +176,12 @@ impl<'a> TransientSolver<'a> {
         let mut dc_solver = DcSolver::new(self.system.circuit, Context::default())?;
         let dc_result = dc_solver.solve()?;
 
-        let mut initial_vector = ndarray::Array1::<f64>::zeros(self.solver.state.size());
         let netlist = self.system.circuit.netlist();
 
-        for (var, val) in dc_result.values() {
-            if let Some(id) = netlist.reference_for(var) {
-                if let Some(idx) = id.idx() {
-                    if idx < initial_vector.len() {
-                        initial_vector[idx] = *val;
-                    }
-                }
-            }
-        }
+        let iv_dc = dc_result.as_iv(netlist);
 
-        self.solver.state.push(&initial_vector.view());
-        self.solver.state.push(&initial_vector.view());
+        self.solver.push_initial_conditions(iv_dc.clone());
+        self.solver.push_initial_conditions(iv_dc);
 
         self.system.time_history.insert(0, 0.0);
         self.system.time_history.insert(0, 0.0 - dt);
@@ -208,11 +200,11 @@ impl<'a> TransientSolver<'a> {
 
             debug!("Solving Transient Step: t = {:.6}s", current_time);
 
-            let result = self.solver.solve(&mut self.system, 1.0 / dt);
+            let max_iter = self.system.context.max_iter;
+            let result = self.solver.solve(&mut self.system, 1.0 / dt, max_iter);
 
             if result.is_ok() {
                 steps.push(self.snapshot(current_time));
-
                 if self.system.time_history.len() > 10 {
                     self.system.time_history.truncate(10);
                 }
@@ -221,13 +213,16 @@ impl<'a> TransientSolver<'a> {
             }
         }
 
-        Ok(TransientAnalysisResult::new(steps))
+        Ok(TransientAnalysisResult::new(
+            steps,
+            self.system.soa_violations.clone(),
+        ))
     }
 
     fn snapshot(&self, time: f64) -> TransientStep {
         let mut values = HashMap::new();
         let netlist = self.system.circuit.netlist();
-        let latest_state = self.solver.state.latest().unwrap();
+        let latest_state = self.solver.current_guess().unwrap();
 
         for reference in netlist.all_references() {
             if let Some(idx) = reference.idx() {
@@ -242,8 +237,8 @@ impl<'a> TransientSolver<'a> {
 #[cfg(test)]
 mod test {
     use crate::analysis::transient::TransientAnalysisOptions;
+    use crate::circuit::netlist::GND;
     use crate::circuit::Circuit;
-    use crate::circuit::netlist::{CircuitVariable, GND};
     use crate::devices::builder::CircuitBuilderExt;
     use crate::devices::voltage_source::Waveform::Step;
     use crate::math::unit::UnitExt;

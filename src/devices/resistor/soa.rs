@@ -30,3 +30,55 @@ impl SoaCheck for Resistor {
         soa_violations
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::devices::builder::CircuitBuilderExt;
+    use crate::devices::resistor::model::ResistorModel;
+
+    #[test]
+    fn test_dc_resistor_soa_violation() {
+        use crate::circuit::Circuit;
+        use crate::circuit::netlist::GND;
+        use crate::devices::soa::SoaViolationSeverity;
+        use crate::math::unit::UnitExt;
+        use crate::solver::Context;
+
+        let mut circuit = Circuit::new("Resistor SOA Test");
+
+        let resistor_model = circuit.model(
+            "SOA_MODEL",
+            ResistorModel {
+                bv_max: Some(50.0),
+                ..Default::default()
+            },
+        );
+        circuit
+            .resistor("R1", "high_volt", GND, 10.0.kOhms())
+            .with_model(resistor_model);
+
+        circuit.voltage_source("V1", "high_volt", GND, 100.0.V());
+
+        let result = circuit
+            .dc(Context::default())
+            .expect("Solver failed")
+            .solve()
+            .expect("Simulation failed to converge");
+
+        let violations = result.soa_violations();
+
+        println!("Detected {} SOA violations", violations.len());
+        for v in violations {
+            println!("[{:?}] Device {}: {}", v.severity, v.component, v.message);
+        }
+
+        assert!(!violations.is_empty(), "SOA violation was not detected!");
+
+        let r1_violation = violations
+            .iter()
+            .find(|v| v.component == "R1" && v.id == "BVMAX_EXCEEDED")
+            .expect("Specific BVMAX violation for R1 not found");
+
+        assert_eq!(r1_violation.severity, SoaViolationSeverity::HIGH);
+    }
+}

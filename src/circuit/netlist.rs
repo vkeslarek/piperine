@@ -1,7 +1,7 @@
 use crate::math::linear::AsIndex;
 use bimap::BiMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum NodeIdentifier {
@@ -234,5 +234,17 @@ impl Netlist {
 
     pub fn variable_for(&self, identifier: &CircuitReference) -> Option<&Arc<CircuitVariable>> {
         self.circuit_map.get_by_left(identifier)
+    }
+
+    pub fn max_index(&self) -> Option<usize> {
+        let mut mapped_vars: Vec<_> = self
+            .all_references()
+            .into_iter()
+            .filter(|id| id.idx().is_some())
+            .collect();
+
+        mapped_vars.sort_by_key(|id| id.idx().unwrap());
+
+        mapped_vars.last().map(|id| id.idx().unwrap())
     }
 }

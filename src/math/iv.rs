@@ -3,6 +3,7 @@ use crate::math::linear::AsIndex;
 use crate::math::num::Field;
 use ndarray::Array1;
 
+#[derive(Clone)]
 pub struct InitialValue<A: AsIndex, E: Field> {
     pub reference: A,
     pub value: E,

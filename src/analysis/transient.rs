@@ -3,6 +3,7 @@ use crate::circuit::netlist::{
     BranchIdentifier, CircuitReference, CircuitVariable, NodeIdentifier,
 };
 use crate::devices::Component;
+use crate::devices::soa::SoaViolations;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::InitialValue;
 use crate::math::linear::Stamp;
@@ -63,11 +64,15 @@ pub trait TransientAnalysis: Component {
 #[derive(Debug, Clone)]
 pub struct TransientAnalysisResult {
     values: Vec<TransientStep>,
+    soa_violations: SoaViolations,
 }
 
 impl TransientAnalysisResult {
-    pub fn new(values: Vec<TransientStep>) -> Self {
-        Self { values }
+    pub fn new(values: Vec<TransientStep>, soa_violations: SoaViolations) -> Self {
+        Self {
+            values,
+            soa_violations,
+        }
     }
 
     pub fn push(&mut self, step: TransientStep) {

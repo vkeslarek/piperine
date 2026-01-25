@@ -2,6 +2,7 @@ use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
 use crate::circuit::netlist::{
     BranchIdentifier, CircuitReference, CircuitVariable, NodeIdentifier,
 };
+use crate::devices::soa::SoaViolations;
 use crate::devices::Component;
 use crate::math::linear::Stamp;
 use crate::math::unit::Hertz;
@@ -47,17 +48,15 @@ pub struct AcSweepAnalysisOptions {
 
 pub struct AcAnalysisResult {
     values: Vec<AcAnalysisStep>,
+    soa_violations: SoaViolations,
 }
 
 impl AcAnalysisResult {
-    pub fn new(num_frequencies: usize) -> Self {
+    pub fn new(values: Vec<AcAnalysisStep>, soa_violations: SoaViolations) -> Self {
         Self {
-            values: Vec::with_capacity(num_frequencies),
+            values,
+            soa_violations,
         }
-    }
-
-    pub fn push(&mut self, step: AcAnalysisStep) {
-        self.values.push(step)
     }
 
     pub fn len(&self) -> usize {

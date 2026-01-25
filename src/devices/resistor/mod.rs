@@ -3,8 +3,9 @@ use crate::analysis::dc::DcAnalysis;
 use crate::analysis::noise::NoiseSource;
 use crate::analysis::transient::TransientAnalysis;
 use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
-use crate::devices::resistor::model::ResistorModel;
 use crate::devices::Component;
+use crate::devices::resistor::model::ResistorModel;
+use crate::devices::soa::SoaCheck;
 use crate::math::unit::{Dimensionless, Kelvin, Meter, Ohm, Siemens, UnitExt};
 use crate::util::AsAny;
 use std::any::Any;
@@ -14,8 +15,8 @@ pub mod ac;
 pub mod dc;
 pub mod model;
 mod noise;
-pub mod transient;
 mod soa;
+pub mod transient;
 
 #[derive(Clone)]
 pub struct Resistor {
@@ -159,6 +160,10 @@ impl Component for Resistor {
     }
 
     fn as_noise_source(&mut self) -> Option<&mut dyn NoiseSource> {
+        Some(self)
+    }
+
+    fn as_soa_check(&self) -> Option<&dyn SoaCheck> {
         Some(self)
     }
 }

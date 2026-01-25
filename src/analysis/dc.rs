@@ -1,8 +1,8 @@
 use crate::circuit::netlist::{
-    BranchIdentifier, CircuitReference, CircuitVariable, NodeIdentifier,
+    BranchIdentifier, CircuitReference, CircuitVariable, Netlist, NodeIdentifier,
 };
-use crate::devices::Component;
 use crate::devices::soa::SoaViolation;
+use crate::devices::Component;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::InitialValue;
 use crate::math::linear::Stamp;
@@ -39,10 +39,13 @@ pub struct DcAnalysisResult {
 }
 
 impl DcAnalysisResult {
-    pub fn new(values: HashMap<Arc<CircuitVariable>, f64>) -> Self {
+    pub fn new(
+        values: HashMap<Arc<CircuitVariable>, f64>,
+        soa_violations: Vec<SoaViolation>,
+    ) -> Self {
         Self {
             values,
-            soa_violations: vec![],
+            soa_violations,
         }
     }
     pub fn get(&self, variable: impl Into<Arc<CircuitVariable>>) -> Option<f64> {
@@ -59,5 +62,24 @@ impl DcAnalysisResult {
 
     pub fn values(&self) -> &HashMap<Arc<CircuitVariable>, f64> {
         &self.values
+    }
+
+    pub fn soa_violations(&self) -> &Vec<SoaViolation> {
+        &self.soa_violations
+    }
+
+    /// This method is useful because many analysis types use DC as a starting point
+    pub fn as_iv(&self, netlist: &Netlist) -> Vec<InitialValue<CircuitReference, f64>> {
+        let mut initial_values = Vec::with_capacity(self.values.len());
+        for (var, value) in &self.values {
+            if let Some(reference) = netlist.reference_for(&var).cloned() {
+                initial_values.push(InitialValue {
+                    reference,
+                    value: *value,
+                });
+            }
+        }
+
+        initial_values
     }
 }

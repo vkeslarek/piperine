@@ -37,7 +37,7 @@ pub trait Component: Any + AsAny {
         None
     }
 
-    fn as_soa_check(&mut self) -> Option<&mut dyn SoaCheck> {
+    fn as_soa_check(&self) -> Option<&dyn SoaCheck> {
         None
     }
 
