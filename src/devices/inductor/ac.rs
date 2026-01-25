@@ -1,36 +1,47 @@
-use crate::analysis::ac::{AcModelInstance, AcAnalysisContext};
+use crate::analysis::ac::{AcAnalysis, AcAnalysisContext};
+use crate::analysis::dc::DcAnalysisResult;
+use crate::circuit::netlist::CircuitReference;
 use crate::devices::inductor::Inductor;
 use crate::math::linear::Stamp;
-use crate::math::unit::ReactanceConvert;
-use crate::netlist::CircuitReference;
 use crate::solver::Context;
-use crate::state::CircuitState;
 use num_complex::Complex;
-use num_traits::One;
 
-impl AcModelInstance for Inductor {
+impl AcAnalysis for Inductor {
     fn load_ac(
         &self,
-        _circuit_states: &CircuitState<Complex<f64>>,
-        ac_analysis_context: &AcAnalysisContext,
-        context: &Context,
+        _: &DcAnalysisResult,
+        ac_ctx: &AcAnalysisContext,
+        _: &Context,
     ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
-        let z = self.inductance.to_impedance(ac_analysis_context.frequency);
+        let omega = 2.0 * std::f64::consts::PI * ac_ctx.frequency;
+        let impedance = Complex::new(0.0, omega * self.inductance);
 
         vec![
-            Stamp::Matrix(self.node_plus.clone(), self.branch.clone(), Complex::one()),
+            Stamp::Matrix(
+                self.node_plus.clone(),
+                self.current_ref.clone(),
+                Complex::new(1.0, 0.0),
+            ),
             Stamp::Matrix(
                 self.node_minus.clone(),
-                self.branch.clone(),
-                -Complex::one(),
+                self.current_ref.clone(),
+                Complex::new(-1.0, 0.0),
             ),
-            Stamp::Matrix(self.branch.clone(), self.node_plus.clone(), Complex::one()),
             Stamp::Matrix(
-                self.branch.clone(),
-                self.node_minus.clone(),
-                -Complex::one(),
+                self.current_ref.clone(),
+                self.node_plus.clone(),
+                Complex::new(1.0, 0.0),
             ),
-            Stamp::Matrix(self.branch.clone(), self.branch.clone(), -z.value),
+            Stamp::Matrix(
+                self.current_ref.clone(),
+                self.node_minus.clone(),
+                Complex::new(-1.0, 0.0),
+            ),
+            Stamp::Matrix(
+                self.current_ref.clone(),
+                self.current_ref.clone(),
+                -impedance,
+            ),
         ]
     }
 }

@@ -1,4 +1,6 @@
-use crate::circuit::netlist::{CircuitReference, CircuitVariable};
+use crate::circuit::netlist::{
+    BranchIdentifier, CircuitReference, CircuitVariable, NodeIdentifier,
+};
 use crate::devices::Component;
 use crate::devices::soa::SoaViolation;
 use crate::math::circular_array::CircularArrayBuffer2;
@@ -32,12 +34,30 @@ pub trait DcAnalysis: Component {
 
 #[derive(Debug)]
 pub struct DcAnalysisResult {
-    pub values: HashMap<Arc<CircuitVariable>, f64>,
-    pub soa_violations: Vec<SoaViolation>,
+    values: HashMap<Arc<CircuitVariable>, f64>,
+    soa_violations: Vec<SoaViolation>,
 }
 
 impl DcAnalysisResult {
-    pub fn get_value(&self, reference: &CircuitReference) -> Option<f64> {
-        self.values.get(reference.variable()).cloned()
+    pub fn new(values: HashMap<Arc<CircuitVariable>, f64>) -> Self {
+        Self {
+            values,
+            soa_violations: vec![],
+        }
+    }
+    pub fn get(&self, variable: impl Into<Arc<CircuitVariable>>) -> Option<f64> {
+        self.values.get(&variable.into()).cloned()
+    }
+
+    pub fn get_node(&self, node_identifier: impl Into<NodeIdentifier>) -> Option<f64> {
+        self.get(CircuitVariable::Node(node_identifier.into()))
+    }
+
+    pub fn get_branch(&self, branch_identifier: impl Into<BranchIdentifier>) -> Option<f64> {
+        self.get(CircuitVariable::Branch(branch_identifier.into()))
+    }
+
+    pub fn values(&self) -> &HashMap<Arc<CircuitVariable>, f64> {
+        &self.values
     }
 }

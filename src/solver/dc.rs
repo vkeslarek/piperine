@@ -137,10 +137,7 @@ impl<'a> DcSolver<'a> {
             }
         }
 
-        Ok(DcAnalysisResult {
-            values,
-            soa_violations: vec![],
-        })
+        Ok(DcAnalysisResult::new(values))
     }
 }
 
@@ -148,6 +145,7 @@ impl<'a> DcSolver<'a> {
 mod test {
     use crate::circuit::Circuit;
     use crate::circuit::netlist::{CircuitVariable, GND};
+    use crate::devices::builder::CircuitBuilderExt;
     use crate::math::unit::UnitExt;
     use crate::solver::Context;
 
@@ -162,14 +160,7 @@ mod test {
 
         let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
 
-        let v_out = result
-            .get_value(
-                circuit
-                    .netlist()
-                    .reference_for(&CircuitVariable::Node("out".into()))
-                    .unwrap(),
-            )
-            .unwrap();
+        let v_out = result.get_node("out").unwrap();
 
         println!("DC Divider: V_out = {:.4} V", v_out);
         assert!((v_out - 5.0).abs() < 1e-6, "Divider failed: Expected 5.0V");
@@ -184,14 +175,7 @@ mod test {
         circuit.diode("D1", "anode", GND);
 
         let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
-        let v_d = result
-            .get_value(
-                circuit
-                    .netlist()
-                    .reference_for(&CircuitVariable::Node("anode".into()))
-                    .unwrap(),
-            )
-            .unwrap();
+        let v_d = result.get_node("anode").unwrap();
 
         println!("Diode Forward Voltage: {:.4} V", v_d);
 
@@ -212,14 +196,7 @@ mod test {
 
         let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
 
-        let v_mid = result
-            .get_value(
-                circuit
-                    .netlist()
-                    .reference_for(&CircuitVariable::Node("mid".into()))
-                    .unwrap(),
-            )
-            .unwrap();
+        let v_mid = result.get_node("mid").unwrap();
 
         println!("Floating Node Voltage (stabilized by Gmin): {:.4} V", v_mid);
 

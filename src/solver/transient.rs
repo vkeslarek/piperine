@@ -1,11 +1,11 @@
 use crate::analysis::transient::{
-    TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisResult,
+    TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisResult, TransientStep,
 };
 use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitReference, CircuitVariable};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::deriv::Integrable;
-use crate::math::faer::{FaerSparseLinearSystem};
+use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::solver::dc::DcSolver;
@@ -123,12 +123,6 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for TransientSystem<'a> {
     fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<f64>, _context: &Context) {}
 }
 
-#[derive(Debug, Clone)]
-pub struct TransientStep {
-    pub time: f64,
-    pub values: HashMap<Arc<CircuitVariable>, f64>,
-}
-
 pub struct TransientSolver<'a> {
     pub system: TransientSystem<'a>,
     pub solver: NewtonRaphsonSolver<CircuitReference, f64, FaerSparseLinearSystem<f64>>,
@@ -184,7 +178,7 @@ impl<'a> TransientSolver<'a> {
         let mut initial_vector = ndarray::Array1::<f64>::zeros(self.solver.state.size());
         let netlist = self.system.circuit.netlist();
 
-        for (var, val) in &dc_result.values {
+        for (var, val) in dc_result.values() {
             if let Some(id) = netlist.reference_for(var) {
                 if let Some(idx) = id.idx() {
                     if idx < initial_vector.len() {
@@ -227,7 +221,7 @@ impl<'a> TransientSolver<'a> {
             }
         }
 
-        Ok(TransientAnalysisResult { values: steps })
+        Ok(TransientAnalysisResult::new(steps))
     }
 
     fn snapshot(&self, time: f64) -> TransientStep {
@@ -241,7 +235,7 @@ impl<'a> TransientSolver<'a> {
             }
         }
 
-        TransientStep { time, values }
+        TransientStep::new(time, values)
     }
 }
 
@@ -250,6 +244,7 @@ mod test {
     use crate::analysis::transient::TransientAnalysisOptions;
     use crate::circuit::Circuit;
     use crate::circuit::netlist::{CircuitVariable, GND};
+    use crate::devices::builder::CircuitBuilderExt;
     use crate::devices::voltage_source::Waveform::Step;
     use crate::math::unit::UnitExt;
     use crate::solver::Context;
@@ -284,29 +279,21 @@ mod test {
             .solve()
             .unwrap();
 
-        let out_key = circuit
-            .netlist()
-            .reference_for(&CircuitVariable::Node("out".into()))
-            .expect("Node 'out' not found in netlist")
-            .variable();
-
         let one_tau_step = result
-            .values
             .iter()
-            .find(|step| (step.time - 0.001).abs() < 1e-6)
+            .find(|step| (step.time() - 0.001).abs() < 1e-6)
             .expect("Time point 1.0ms not found in simulation results");
 
-        let v_at_1ms = *one_tau_step
-            .values
-            .get(out_key)
+        let v_at_1ms = one_tau_step
+            .get_node("out")
             .expect("Variable 'out' missing in result step");
 
         println!("At 1ms (1 Tau): {:.4} V", v_at_1ms);
         assert!((v_at_1ms - 3.16).abs() < 0.1);
 
         // D. Check Final State (t = 5ms)
-        let final_step = result.values.last().unwrap();
-        let final_v = *final_step.values.get(out_key).unwrap();
+        let final_step = result.last().unwrap();
+        let final_v = final_step.get_node("out").unwrap();
 
         println!("At 5ms (Final): {:.4} V", final_v);
         assert!((final_v - 5.0).abs() < 0.05);
@@ -343,17 +330,10 @@ mod test {
             .solve()
             .unwrap();
 
-        let out_key = circuit
-            .netlist()
-            .reference_for(&CircuitVariable::Node("out".into()))
-            .expect("Output node not found in netlist")
-            .variable();
+        let final_snapshot = result.last().expect("Simulation returned no data");
 
-        let final_snapshot = result.values.last().expect("Simulation returned no data");
-
-        let v_final = *final_snapshot
-            .values
-            .get(out_key)
+        let v_final = final_snapshot
+            .get_node("out")
             .expect("Voltage value for 'out' missing");
 
         println!("Transient Final Voltage: {:.4} V", v_final);

@@ -56,6 +56,40 @@ pub struct BranchIdentifier {
     pub name: Option<String>,
 }
 
+impl BranchIdentifier {
+    pub fn new(component_name: impl Into<String>, branch_name: impl Into<String>) -> Self {
+        Self {
+            component: component_name.into(),
+            name: Some(branch_name.into()),
+        }
+    }
+
+    pub fn from_component(component_name: impl Into<String>) -> Self {
+        Self {
+            component: component_name.into(),
+            name: None,
+        }
+    }
+}
+
+impl Into<BranchIdentifier> for String {
+    fn into(self) -> BranchIdentifier {
+        BranchIdentifier {
+            component: self,
+            name: None,
+        }
+    }
+}
+
+impl Into<BranchIdentifier> for &str {
+    fn into(self) -> BranchIdentifier {
+        BranchIdentifier {
+            component: self.to_string(),
+            name: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum CircuitVariable {
     Node(NodeIdentifier),
@@ -73,21 +107,16 @@ impl CircuitVariable {
         }
     }
 
-    pub fn is_dependent(&self) -> bool {
-        if self.is_ground() {
-            return false;
-        }
-
+    pub fn is_branch(&self) -> bool {
         match self {
-            CircuitVariable::Node(_) => true,
             CircuitVariable::Branch(_) => true,
             _ => false,
         }
     }
 
-    pub fn is_branch(&self) -> bool {
+    pub fn is_node(&self) -> bool {
         match self {
-            CircuitVariable::Branch(_) => true,
+            CircuitVariable::Node(_) => true,
             _ => false,
         }
     }
@@ -124,6 +153,16 @@ impl CircuitReference {
 
     pub fn is_branch(&self) -> bool {
         self.variable.is_branch()
+    }
+
+    pub fn is_node(&self) -> bool {
+        self.variable.is_node()
+    }
+}
+
+impl Into<Arc<CircuitVariable>> for CircuitReference {
+    fn into(self) -> Arc<CircuitVariable> {
+        self.variable
     }
 }
 

@@ -1,20 +1,16 @@
+use crate::analysis::noise::NoiseAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
 use crate::circuit::netlist::{IntoNodeIdentifier, Netlist};
-use crate::devices::capacitor::Capacitor;
-use crate::devices::diode::Diode;
-use crate::devices::resistor::Resistor;
-use crate::devices::voltage_source::{VoltageSource, Waveform};
 use crate::devices::{AnyModel, Component};
-use crate::math::unit::{Farad, Ohm};
 use crate::solver::Context;
 use crate::solver::ac::AcSolver;
 use crate::solver::dc::DcSolver;
+use crate::solver::noise::NoiseSolver;
 use crate::solver::transient::TransientSolver;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::analysis::noise::NoiseAnalysisOptions;
-use crate::solver::noise::NoiseSolver;
 
+pub mod measure;
 pub mod netlist;
 
 pub struct Circuit {
@@ -34,7 +30,7 @@ impl Circuit {
         }
     }
 
-    pub fn insert_get<B: Component>(&mut self, name: impl Into<String>, component: B) -> &mut B {
+    pub fn add_component<B: Component>(&mut self, name: impl Into<String>, component: B) -> &mut B {
         let name_str = name.into();
 
         self.components
@@ -42,10 +38,8 @@ impl Circuit {
 
         let boxed = self.components.get_mut(&name_str).unwrap();
 
-        // We get the &mut dyn Any from the component
         let any_mut = boxed.as_any_mut();
 
-        // Attempt the downcast
         match any_mut.downcast_mut::<B>() {
             Some(concrete) => concrete,
             None => {
@@ -58,12 +52,16 @@ impl Circuit {
         }
     }
 
-    pub fn model(&mut self, name: impl Into<String>, model: impl AnyModel) {
-        self.models.insert(name.into(), Arc::new(model));
+    pub fn add_model(&mut self, name: impl Into<String>, model: Arc<dyn AnyModel>) {
+        self.models.insert(name.into(), model);
     }
 
     pub fn netlist(&self) -> &Netlist {
         &self.netlist
+    }
+
+    pub fn netlist_mut(&mut self) -> &mut Netlist {
+        &mut self.netlist
     }
 
     pub fn components(&self) -> &HashMap<String, Box<dyn Component>> {
@@ -100,81 +98,5 @@ impl Circuit {
         context: Context,
     ) -> crate::result::Result<TransientSolver<'_>> {
         TransientSolver::new(self, transient_options, context)
-    }
-
-    pub fn resistor(
-        &mut self,
-        name: impl Into<String>,
-        node_p: impl IntoNodeIdentifier,
-        node_n: impl IntoNodeIdentifier,
-        resistance: impl Into<Option<Ohm>>,
-    ) -> &mut Resistor {
-        let name = name.into();
-        let instance = Resistor::new(
-            name.clone(),
-            node_p,
-            node_n,
-            resistance.into(),
-            &mut self.netlist,
-        );
-        self.insert_get(name, instance)
-    }
-
-    pub fn voltage_source(
-        &mut self,
-        name: impl Into<String>,
-        node_p: impl IntoNodeIdentifier,
-        node_n: impl IntoNodeIdentifier,
-        waveform: impl Into<Waveform>,
-    ) -> &mut VoltageSource {
-        let name = name.into();
-        let instance = VoltageSource::new(
-            name.clone(),
-            node_p,
-            node_n,
-            waveform.into(),
-            &mut self.netlist,
-        );
-        self.insert_get(name, instance)
-    }
-
-    pub fn capacitor(
-        &mut self,
-        name: impl Into<String>,
-        node_p: impl IntoNodeIdentifier,
-        node_n: impl IntoNodeIdentifier,
-        capacitance: impl Into<Farad>,
-    ) -> &mut Capacitor {
-        let name = name.into();
-        let instance = Capacitor::new(
-            name.clone(),
-            node_p,
-            node_n,
-            capacitance.into(),
-            &mut self.netlist,
-        );
-        self.insert_get(name, instance)
-    }
-    //
-    // pub fn inductor(
-    //     &mut self,
-    //     name: &str,
-    //     node_p: impl IntoNodeIdentifier,
-    //     node_n: impl IntoNodeIdentifier,
-    //     inductance: impl IntoParameter<Inductance>,
-    // ) -> &mut InductorSpec {
-    //     self.insert_get(name, InductorSpec::new(name, node_p, node_n, inductance))
-    //         .expect("Failed to insert Inductor")
-    // }
-    //
-    pub fn diode(
-        &mut self,
-        name: impl Into<String>,
-        node_p: impl IntoNodeIdentifier,
-        node_n: impl IntoNodeIdentifier,
-    ) -> &mut Diode {
-        let name = name.into();
-        let instance = Diode::new(name.clone(), node_p, node_n, &mut self.netlist);
-        self.insert_get(name, instance)
     }
 }

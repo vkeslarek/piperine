@@ -57,8 +57,8 @@ impl NoiseSource for Resistor {
             let geometry_factor = l_val_m.powf(lf) * w_val_m.powf(wf);
 
             // 2. Calculate DC Current (I_dc = V * G)
-            let v_plus = dc_point.get_value(&self.node_plus).unwrap_or(0.0);
-            let v_minus = dc_point.get_value(&self.node_minus).unwrap_or(0.0);
+            let v_plus = dc_point.get(self.node_plus.clone()).unwrap_or(0.0);
+            let v_minus = dc_point.get(self.node_minus.clone()).unwrap_or(0.0);
 
             let v_dc = v_plus - v_minus;
             let i_dc = v_dc * g_val;

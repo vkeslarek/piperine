@@ -1,6 +1,7 @@
 use crate::analysis::transient::TransientAnalysisOptions;
 use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitVariable, GND};
+use crate::devices::builder::CircuitBuilderExt;
 use crate::devices::voltage_source::Waveform::Step;
 use crate::math::unit::UnitExt;
 use crate::solver::Context;
@@ -73,7 +74,7 @@ pub fn titan_test(grid_size: i32) {
         .expect("Simulation failed to converge");
 
     let total_time = sim_start.elapsed();
-    let steps = result.values.len();
+    let steps = result.len();
 
     println!("--------------------------------------------------");
     println!("TITAN BENCHMARK RESULTS (Release Mode Recommended)");
@@ -96,24 +97,13 @@ pub fn titan_test(grid_size: i32) {
     );
     println!("--------------------------------------------------");
 
-    let last_step = result.values.last().expect("No result steps produced");
-
-    let n00_key = circuit
-        .netlist()
-        .reference_for(&CircuitVariable::Node("n_0_0".into()))
-        .expect("Node n_0_0 not found")
-        .variable();
+    let last_step = result.last().expect("No result steps produced");
 
     let far_corner_name = format!("n_{}_{}", grid_size - 1, grid_size - 1);
-    let far_corner_key = circuit
-        .netlist()
-        .reference_for(&CircuitVariable::Node(far_corner_name.clone().into()))
-        .expect("Far corner node not found")
-        .variable();
 
     // Get Values
-    let v_start = *last_step.values.get(n00_key).unwrap_or(&0.0);
-    let v_far = *last_step.values.get(far_corner_key).unwrap_or(&0.0);
+    let v_start = last_step.get_node("n_0_0").unwrap_or(0.0);
+    let v_far = last_step.get_node(far_corner_name.clone()).unwrap_or(0.0);
 
     println!("V(n_0_0) final:   {:.4} V", v_start);
     println!("V({}) final: {:.4} V", far_corner_name, v_far);
@@ -151,14 +141,7 @@ pub fn test() {
     circuit.diode("D1", "anode", GND);
 
     let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
-    let v_d = result
-        .get_value(
-            circuit
-                .netlist()
-                .reference_for(&CircuitVariable::Node("anode".into()))
-                .unwrap(),
-        )
-        .unwrap();
+    let v_d = result.get_node("anode").unwrap();
 
     println!("Diode Forward Voltage: {:.4} V", v_d);
 

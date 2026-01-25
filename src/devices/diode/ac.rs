@@ -13,10 +13,11 @@ impl AcAnalysis for Diode {
         _ac_analysis_context: &AcAnalysisContext,
         context: &Context,
     ) -> crate::result::Result<()> {
-        // 1. Get the converged DC voltages
-        let v_plus = dc_analysis_result.get_value(&self.node_plus).unwrap_or(0.0);
+        let v_plus = dc_analysis_result
+            .get(self.node_plus.clone())
+            .unwrap_or(0.0);
         let v_minus = dc_analysis_result
-            .get_value(&self.node_minus)
+            .get(self.node_minus.clone())
             .unwrap_or(0.0);
         let v_d = v_plus - v_minus;
 
@@ -33,12 +34,7 @@ impl AcAnalysis for Diode {
         _ac_analysis_context: &AcAnalysisContext,
         _context: &Context,
     ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
-        // Use the g_eq calculated during update_ac (or the last DC iteration)
-        // In AC, g_eq is a real conductance.
         let g_d = Complex::new(self.g_eq, 0.0);
-
-        // Note: For high-frequency AC, you would eventually add
-        // Junction Capacitance here: Complex::new(g_d, omega * C_j)
 
         vec![
             Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), g_d),

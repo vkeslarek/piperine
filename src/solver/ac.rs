@@ -1,17 +1,20 @@
-use crate::analysis::ac::{AcAnalysisContext, AcAnalysisResult, AcSweepAnalysisOptions};
+use crate::analysis::ac::{
+    AcAnalysisContext, AcAnalysisResult, AcAnalysisStep, AcSweepAnalysisOptions,
+};
 use crate::analysis::dc::DcAnalysisResult;
-use crate::circuit::netlist::CircuitReference;
 use crate::circuit::Circuit;
+use crate::circuit::netlist::CircuitReference;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::math::unit::UnitExt;
 use crate::solver::dc::DcSolver;
-use crate::solver::{init_solver_configuration, Context};
+use crate::solver::{Context, init_solver_configuration};
 use ndarray::{ArrayView1, ArrayViewMut1};
 use num_complex::Complex;
 use num_traits::Zero;
+use std::collections::HashMap;
 
 pub struct AcSystem<'a> {
     pub circuit: &'a mut Circuit,
@@ -111,14 +114,20 @@ impl<'a> AcSolver<'a> {
     ) -> crate::result::Result<AcAnalysisResult> {
         let frequencies = self.generate_frequencies(&options);
 
-        let mut data = AcAnalysisResult::new(frequencies.len(), self.solver.state.size());
+        let mut data = AcAnalysisResult::new(frequencies.len());
 
         for &f_hz in frequencies.iter() {
             self.system.frequency = f_hz;
 
             let solution = self.solver.solve(&mut self.system, Complex::zero())?;
 
-            data.push(&solution.view());
+            let mut values = HashMap::new();
+            for reference in self.system.circuit.netlist().all_references() {
+                if let Some(idx) = reference.idx() {
+                    values.insert(reference.variable().clone(), solution[idx]);
+                }
+            }
+            data.push(AcAnalysisStep::new(f_hz, values));
         }
 
         Ok(data)
@@ -146,6 +155,7 @@ impl<'a> AcSolver<'a> {
 mod test {
     use crate::analysis::ac::AcSweepAnalysisOptions;
     use crate::circuit::Circuit;
+    use crate::devices::builder::CircuitBuilderExt;
     use crate::solver::Context;
 
     #[test]
@@ -182,7 +192,8 @@ mod test {
             .solve_sweep(sweep_options.clone())
             .unwrap();
 
-        let _out_var = circuit.netlist()
+        let _out_var = circuit
+            .netlist()
             .reference_for(&CircuitVariable::Node("out".into()))
             .expect("Output node not found")
             .variable();
@@ -190,32 +201,29 @@ mod test {
         let frequencies = (0..sweep_options.steps)
             .map(|i| {
                 let ratio = i as f64 / (sweep_options.steps - 1) as f64;
-                sweep_options.start_frequency * (sweep_options.stop_frequency / sweep_options.start_frequency).powf(ratio)
+                sweep_options.start_frequency
+                    * (sweep_options.stop_frequency / sweep_options.start_frequency).powf(ratio)
             })
             .collect::<Vec<f64>>();
 
         let mut found_cutoff = false;
 
         for i in 0..result.len() {
-            let lookback = result.len() - 1 - i;
-            let vector = result.view(lookback).unwrap();
+            let vector = result.get(i).unwrap();
             let f = frequencies[i];
 
             if (f - 1000.0).abs() < 1.0 {
-                let out_idx = circuit.netlist()
-                    .reference_for(&CircuitVariable::Node("out".into()))
-                    .unwrap()
-                    .idx()
+                let v_out = vector
+                    .get(&CircuitVariable::Node("out".into()))
                     .unwrap();
-
-                let v_out = vector[out_idx];
                 let mag = v_out.norm();
 
                 println!("At {:.1} Hz: Mag = {:.4} V (Expected ~0.707)", f, mag);
 
                 assert!(
                     (mag - 0.7071).abs() < 0.01,
-                    "Filter cutoff magnitude incorrect. Got {:.4}", mag
+                    "Filter cutoff magnitude incorrect. Got {:.4}",
+                    mag
                 );
                 found_cutoff = true;
                 break;

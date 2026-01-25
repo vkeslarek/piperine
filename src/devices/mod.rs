@@ -1,9 +1,11 @@
 pub mod ask;
 pub mod capacitor;
 pub mod diode;
+pub mod inductor;
 pub mod resistor;
 pub mod soa;
 pub mod voltage_source;
+pub mod builder;
 
 use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;

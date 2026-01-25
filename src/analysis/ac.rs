@@ -1,11 +1,15 @@
 use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
-use crate::circuit::netlist::CircuitReference;
+use crate::circuit::netlist::{
+    BranchIdentifier, CircuitReference, CircuitVariable, NodeIdentifier,
+};
 use crate::devices::Component;
-use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::linear::Stamp;
 use crate::math::unit::Hertz;
 use crate::solver::Context;
 use num_complex::Complex;
+use std::collections::HashMap;
+use std::slice::Iter;
+use std::sync::Arc;
 
 pub struct AcAnalysisContext {
     pub frequency: Hertz,
@@ -41,7 +45,61 @@ pub struct AcSweepAnalysisOptions {
     pub logarithmic: bool,
 }
 
-pub type AcAnalysisResult = CircularArrayBuffer2<Complex<f64>>;
+pub struct AcAnalysisResult {
+    values: Vec<AcAnalysisStep>,
+}
+
+impl AcAnalysisResult {
+    pub fn new(num_frequencies: usize) -> Self {
+        Self {
+            values: Vec::with_capacity(num_frequencies),
+        }
+    }
+
+    pub fn push(&mut self, step: AcAnalysisStep) {
+        self.values.push(step)
+    }
+
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn get(&self, index: usize) -> Option<&AcAnalysisStep> {
+        assert!(index < self.values.len());
+
+        self.values.get(index)
+    }
+
+    pub fn iter(&self) -> Iter<'_, AcAnalysisStep> {
+        self.values.iter()
+    }
+}
+
+pub struct AcAnalysisStep {
+    frequency: Hertz,
+    values: HashMap<Arc<CircuitVariable>, Complex<f64>>,
+}
+
+impl AcAnalysisStep {
+    pub fn new(frequency: Hertz, values: HashMap<Arc<CircuitVariable>, Complex<f64>>) -> Self {
+        Self { frequency, values }
+    }
+
+    pub fn get(&self, circuit_var: &CircuitVariable) -> Option<&Complex<f64>> {
+        self.values.get(circuit_var)
+    }
+
+    pub fn get_branch(
+        &self,
+        branch_identifier: impl Into<BranchIdentifier>,
+    ) -> Option<&Complex<f64>> {
+        self.get(&CircuitVariable::Branch(branch_identifier.into()))
+    }
+
+    pub fn get_node(&self, node_identifier: impl Into<NodeIdentifier>) -> Option<&Complex<f64>> {
+        self.get(&CircuitVariable::Node(node_identifier.into()))
+    }
+}
 
 pub trait AcAnalysisSolver {
     fn solve_frequency_ac_analysis(

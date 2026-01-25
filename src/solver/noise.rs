@@ -235,6 +235,7 @@ impl<'a> NoiseSolver<'a> {
 mod test {
     use crate::analysis::ac::AcSweepAnalysisOptions;
     use crate::analysis::noise::NoiseAnalysisOptions;
+    use crate::devices::builder::CircuitBuilderExt;
     use crate::circuit::Circuit;
     use crate::circuit::netlist::GND;
     use crate::math::unit::UnitExt;
