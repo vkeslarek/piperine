@@ -2,7 +2,7 @@ use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
 use crate::circuit::netlist::CircuitReference;
 use crate::devices::Component;
 use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::linear::Stamp2;
+use crate::math::linear::Stamp;
 use crate::math::unit::Hertz;
 use crate::solver::Context;
 use num_complex::Complex;
@@ -26,7 +26,7 @@ pub trait AcAnalysis: Component + DcAnalysis {
         dc_analysis_result: &DcAnalysisResult,
         ac_analysis_context: &AcAnalysisContext,
         context: &Context,
-    ) -> Vec<Stamp2<CircuitReference, Complex<f64>>>;
+    ) -> Vec<Stamp<CircuitReference, Complex<f64>>>;
 }
 
 pub struct AcFrequencyAnalysisOptions {

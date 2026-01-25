@@ -3,7 +3,7 @@ use crate::analysis::transient::{
 };
 use crate::circuit::netlist::CircuitReference;
 use crate::devices::resistor::Resistor;
-use crate::math::linear::Stamp2;
+use crate::math::linear::Stamp;
 use crate::solver::Context;
 
 impl TransientAnalysis for Resistor {
@@ -22,24 +22,24 @@ impl TransientAnalysis for Resistor {
         _: &TransientAnalysisState,
         _: &TransientAnalysisContext,
         _: &Context,
-    ) -> Vec<Stamp2<CircuitReference, f64>> {
+    ) -> Vec<Stamp<CircuitReference, f64>> {
         vec![
-            Stamp2::Matrix(
+            Stamp::Matrix(
                 self.node_plus.clone(),
                 self.node_plus.clone(),
                 self.conductance,
             ),
-            Stamp2::Matrix(
+            Stamp::Matrix(
                 self.node_minus.clone(),
                 self.node_minus.clone(),
                 self.conductance,
             ),
-            Stamp2::Matrix(
+            Stamp::Matrix(
                 self.node_plus.clone(),
                 self.node_minus.clone(),
                 -self.conductance,
             ),
-            Stamp2::Matrix(
+            Stamp::Matrix(
                 self.node_minus.clone(),
                 self.node_plus.clone(),
                 -self.conductance,

@@ -3,7 +3,7 @@ use crate::analysis::transient::{
 };
 use crate::circuit::netlist::CircuitReference;
 use crate::devices::diode::Diode;
-use crate::math::linear::{AsIndexGetExt, Stamp2};
+use crate::math::linear::{AsIndexGetExt, Stamp};
 use crate::solver::Context;
 
 impl TransientAnalysis for Diode {
@@ -45,20 +45,20 @@ impl TransientAnalysis for Diode {
         _circuit_states: &TransientAnalysisState,
         _transient_analysis_context: &TransientAnalysisContext,
         _context: &Context,
-    ) -> Vec<Stamp2<CircuitReference, f64>> {
+    ) -> Vec<Stamp<CircuitReference, f64>> {
         let g = self.g_eq;
         let i_rhs = self.i_eq;
 
         // MNA Stamps for a Conductor + Current Source in parallel
         vec![
             // Matrix: Conductance Terms (Similar to Resistor)
-            Stamp2::Matrix(self.node_plus.clone(), self.node_plus.clone(), g),
-            Stamp2::Matrix(self.node_minus.clone(), self.node_minus.clone(), g),
-            Stamp2::Matrix(self.node_plus.clone(), self.node_minus.clone(), -g),
-            Stamp2::Matrix(self.node_minus.clone(), self.node_plus.clone(), -g),
+            Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), g),
+            Stamp::Matrix(self.node_minus.clone(), self.node_minus.clone(), g),
+            Stamp::Matrix(self.node_plus.clone(), self.node_minus.clone(), -g),
+            Stamp::Matrix(self.node_minus.clone(), self.node_plus.clone(), -g),
             // RHS Vector: Current Source Terms
-            Stamp2::Rhs(self.node_plus.clone(), -i_rhs),
-            Stamp2::Rhs(self.node_minus.clone(), i_rhs),
+            Stamp::Rhs(self.node_plus.clone(), -i_rhs),
+            Stamp::Rhs(self.node_minus.clone(), i_rhs),
         ]
     }
 }

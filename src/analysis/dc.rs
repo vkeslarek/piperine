@@ -3,7 +3,7 @@ use crate::devices::Component;
 use crate::devices::soa::SoaViolation;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::InitialValue;
-use crate::math::linear::Stamp2;
+use crate::math::linear::Stamp;
 use crate::solver::Context;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -23,7 +23,7 @@ pub trait DcAnalysis: Component {
         &self,
         dc_circuit_state: &DcAnalysisState,
         context: &Context,
-    ) -> Vec<Stamp2<CircuitReference, f64>>;
+    ) -> Vec<Stamp<CircuitReference, f64>>;
 
     fn initial_dc_values(&self, _context: &Context) -> Vec<InitialValue<CircuitReference, f64>> {
         Vec::new()

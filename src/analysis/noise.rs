@@ -1,8 +1,7 @@
 use crate::analysis::ac::{AcAnalysis, AcAnalysisContext, AcSweepAnalysisOptions};
 use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
-use crate::circuit::netlist::{CircuitReference, CircuitVariable, NodeIdentifier};
+use crate::circuit::netlist::{CircuitReference, NodeIdentifier};
 use crate::devices::Component;
-use std::collections::HashMap;
 use crate::math::unit::AmpereSquaredSecond;
 
 pub struct Noise {

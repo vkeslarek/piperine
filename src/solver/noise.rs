@@ -1,15 +1,15 @@
 use crate::analysis::ac::{AcAnalysisContext, AcSweepAnalysisOptions};
 use crate::analysis::dc::DcAnalysisResult;
 use crate::analysis::noise::{NoiseAnalysisOptions, NoiseAnalysisResult};
-use crate::circuit::netlist::{CircuitReference, CircuitVariable};
 use crate::circuit::Circuit;
+use crate::circuit::netlist::{CircuitReference, CircuitVariable};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
-use crate::math::linear::{SparseLinearSystem, Stamp2};
+use crate::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem};
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::math::unit::UnitExt;
 use crate::solver::dc::DcSolver;
-use crate::solver::{init_solver_configuration, Context};
+use crate::solver::{Context, init_solver_configuration};
 use ndarray::{ArrayView1, ArrayViewMut1};
 use num_complex::Complex;
 use num_traits::Zero;
@@ -26,7 +26,7 @@ impl<'a> NonLinearSystem<CircuitReference, Complex<f64>> for NoiseSystem<'a> {
         _state: &CircularArrayBuffer2<Complex<f64>>,
         _alpha: Complex<f64>,
         context: &Context,
-    ) -> crate::result::Result<Vec<Stamp2<CircuitReference, Complex<f64>>>> {
+    ) -> crate::result::Result<Vec<Stamp<CircuitReference, Complex<f64>>>> {
         let ac_ctx = AcAnalysisContext {
             frequency: self.frequency.Hz(),
         };
@@ -145,18 +145,18 @@ impl<'a> NoiseSolver<'a> {
                 FaerSparseLinearSystem::<Complex<f64>>::new(self.solver.state.size());
             for stamp in stamps {
                 match stamp {
-                    Stamp2::Matrix(r, c, val) => {
-                        adjoint_system.apply_stamps(vec![Stamp2::Matrix(c, r, val)]);
+                    Stamp::Matrix(r, c, val) => {
+                        adjoint_system.apply_stamps(vec![Stamp::Matrix(c, r, val)]);
                     }
                     _ => {}
                 }
             }
 
-            adjoint_system.apply_stamps(vec![Stamp2::Rhs(
+            adjoint_system.apply_stamps(vec![Stamp::Rhs(
                 self.out_ref.clone(),
                 Complex::new(1.0, 0.0),
             )]);
-            adjoint_system.apply_stamps(vec![Stamp2::Rhs(
+            adjoint_system.apply_stamps(vec![Stamp::Rhs(
                 self.ref_ref.clone(),
                 Complex::new(-1.0, 0.0),
             )]);
@@ -231,11 +231,12 @@ impl<'a> NoiseSolver<'a> {
     }
 }
 
+#[cfg(test)]
 mod test {
     use crate::analysis::ac::AcSweepAnalysisOptions;
     use crate::analysis::noise::NoiseAnalysisOptions;
-    use crate::circuit::netlist::GND;
     use crate::circuit::Circuit;
+    use crate::circuit::netlist::GND;
     use crate::math::unit::UnitExt;
     use crate::solver::Context;
 

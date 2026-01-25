@@ -5,8 +5,8 @@ use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitReference, CircuitVariable};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::deriv::Integrable;
-use crate::math::faer::FaerSparseLinearSystem;
-use crate::math::linear::Stamp2;
+use crate::math::faer::{FaerSparseLinearSystem};
+use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::solver::dc::DcSolver;
 use crate::solver::{Context, init_solver_configuration};
@@ -27,23 +27,23 @@ impl<'a> TransientSystem<'a> {
     pub fn map_dynamic_stamps(
         alpha: f64,
         history: &Array1<f64>,
-        dynamic_stamps: Vec<Stamp2<CircuitReference, f64>>,
-    ) -> Vec<Stamp2<CircuitReference, f64>> {
+        dynamic_stamps: Vec<Stamp<CircuitReference, f64>>,
+    ) -> Vec<Stamp<CircuitReference, f64>> {
         let mut stamps = Vec::with_capacity(dynamic_stamps.len() * 2);
 
         for s in dynamic_stamps {
             match s {
-                Stamp2::Matrix(row, col, val) => {
-                    stamps.push(Stamp2::Matrix(row.clone(), col.clone(), val * alpha));
+                Stamp::Matrix(row, col, val) => {
+                    stamps.push(Stamp::Matrix(row.clone(), col.clone(), val * alpha));
 
                     if let Some(idx) = col.idx() {
                         let rhs_contribution = val * history[idx];
 
-                        stamps.push(Stamp2::Rhs(row, -rhs_contribution));
+                        stamps.push(Stamp::Rhs(row, -rhs_contribution));
                     }
                 }
-                Stamp2::Rhs(row, val) => {
-                    stamps.push(Stamp2::Rhs(row, val));
+                Stamp::Rhs(row, val) => {
+                    stamps.push(Stamp::Rhs(row, val));
                 }
             }
         }
@@ -58,7 +58,7 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for TransientSystem<'a> {
         state: &CircularArrayBuffer2<f64>,
         _alpha_hint: f64,
         context: &Context,
-    ) -> crate::result::Result<Vec<Stamp2<CircuitReference, f64>>> {
+    ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
         let tran_ctx = TransientAnalysisContext {
             time: self.time.into(),
             dt: self.dt.into(),
@@ -245,6 +245,7 @@ impl<'a> TransientSolver<'a> {
     }
 }
 
+#[cfg(test)]
 mod test {
     use crate::analysis::transient::TransientAnalysisOptions;
     use crate::circuit::Circuit;

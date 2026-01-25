@@ -9,7 +9,7 @@ use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::noise::NoiseSource;
 use crate::analysis::transient::TransientAnalysis;
-use crate::circuit::netlist::{CircuitVariable, Netlist};
+use crate::circuit::netlist::Netlist;
 use crate::devices::ask::Ask;
 use crate::devices::soa::SoaCheck;
 use crate::error::Error;

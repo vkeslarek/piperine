@@ -2,7 +2,7 @@ use crate::analysis::ac::{AcAnalysis, AcAnalysisContext};
 use crate::analysis::dc::DcAnalysisResult;
 use crate::circuit::netlist::CircuitReference;
 use crate::devices::voltage_source::{VoltageSource, Waveform};
-use crate::math::linear::Stamp2;
+use crate::math::linear::Stamp;
 use crate::solver::Context;
 use num_complex::Complex;
 use num_traits::One;
@@ -13,7 +13,7 @@ impl AcAnalysis for VoltageSource {
         _dc_analysis_result: &DcAnalysisResult,
         _ac_analysis_context: &AcAnalysisContext,
         _context: &Context,
-    ) -> Vec<Stamp2<CircuitReference, Complex<f64>>> {
+    ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
         let (mag, phase_rad) = match &self.waveform {
             Waveform::Sine {
                 amplitude, phase, ..
@@ -25,19 +25,19 @@ impl AcAnalysis for VoltageSource {
         let phasor = Complex::from_polar(mag, phase_rad);
 
         vec![
-            Stamp2::Matrix(self.branch.clone(), self.node_plus.clone(), Complex::one()),
-            Stamp2::Matrix(
+            Stamp::Matrix(self.branch.clone(), self.node_plus.clone(), Complex::one()),
+            Stamp::Matrix(
                 self.branch.clone(),
                 self.node_minus.clone(),
                 -Complex::one(),
             ),
-            Stamp2::Matrix(self.node_plus.clone(), self.branch.clone(), Complex::one()),
-            Stamp2::Matrix(
+            Stamp::Matrix(self.node_plus.clone(), self.branch.clone(), Complex::one()),
+            Stamp::Matrix(
                 self.node_minus.clone(),
                 self.branch.clone(),
                 -Complex::one(),
             ),
-            Stamp2::Rhs(self.branch.clone(), phasor),
+            Stamp::Rhs(self.branch.clone(), phasor),
         ]
     }
 }

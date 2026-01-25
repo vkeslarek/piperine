@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::{InitialValue, InitialValueApplyExt};
-use crate::math::linear::{AsIndex, SparseLinearSystem, Stamp2, SymbolicMatrix};
+use crate::math::linear::{AsIndex, LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
 use crate::math::num::Field;
 use crate::solver::Context;
 use ndarray::{Array1, ArrayView1, ArrayViewMut1};
@@ -14,7 +14,7 @@ pub trait NonLinearSystem<A: AsIndex, E: Field> {
         state: &CircularArrayBuffer2<E>,
         alpha: E,
         context: &Context,
-    ) -> crate::result::Result<Vec<Stamp2<A, E>>>;
+    ) -> crate::result::Result<Vec<Stamp<A, E>>>;
 
     fn converged(
         &self,
@@ -37,7 +37,7 @@ pub struct NewtonRaphsonSolver<A, E, L>
 where
     A: AsIndex,
     E: Field,
-    L: SparseLinearSystem<E>,
+    L: SymbolicLinearSystem<E>,
 {
     linear_system: L,
     pub(crate) symbolic: L::SymbolicType,
@@ -50,7 +50,7 @@ impl<A, E, L> NewtonRaphsonSolver<A, E, L>
 where
     A: AsIndex,
     E: Field,
-    L: SparseLinearSystem<E>,
+    L: SymbolicLinearSystem<E>,
 {
     pub fn new(
         system: &mut dyn NonLinearSystem<A, E>,

@@ -3,7 +3,7 @@ use crate::circuit::Circuit;
 use crate::circuit::netlist::CircuitReference;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
-use crate::math::linear::Stamp2;
+use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::solver::{Context, init_solver_configuration};
 use log::debug;
@@ -20,7 +20,7 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for DcSystem<'a> {
         state: &CircularArrayBuffer2<f64>,
         _alpha: f64,
         context: &Context,
-    ) -> crate::result::Result<Vec<Stamp2<CircuitReference, f64>>> {
+    ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
         let mut all_stamps = Vec::new();
 
         for (name, comp) in self.circuit.components_mut() {
@@ -144,6 +144,7 @@ impl<'a> DcSolver<'a> {
     }
 }
 
+#[cfg(test)]
 mod test {
     use crate::circuit::Circuit;
     use crate::circuit::netlist::{CircuitVariable, GND};

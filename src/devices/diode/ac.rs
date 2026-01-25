@@ -2,7 +2,7 @@ use crate::analysis::ac::{AcAnalysis, AcAnalysisContext};
 use crate::analysis::dc::DcAnalysisResult;
 use crate::circuit::netlist::CircuitReference;
 use crate::devices::diode::Diode;
-use crate::math::linear::Stamp2;
+use crate::math::linear::Stamp;
 use crate::solver::Context;
 use num_complex::Complex;
 
@@ -32,7 +32,7 @@ impl AcAnalysis for Diode {
         _dc_analysis_result: &DcAnalysisResult,
         _ac_analysis_context: &AcAnalysisContext,
         _context: &Context,
-    ) -> Vec<Stamp2<CircuitReference, Complex<f64>>> {
+    ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
         // Use the g_eq calculated during update_ac (or the last DC iteration)
         // In AC, g_eq is a real conductance.
         let g_d = Complex::new(self.g_eq, 0.0);
@@ -41,10 +41,10 @@ impl AcAnalysis for Diode {
         // Junction Capacitance here: Complex::new(g_d, omega * C_j)
 
         vec![
-            Stamp2::Matrix(self.node_plus.clone(), self.node_plus.clone(), g_d),
-            Stamp2::Matrix(self.node_minus.clone(), self.node_minus.clone(), g_d),
-            Stamp2::Matrix(self.node_plus.clone(), self.node_minus.clone(), -g_d),
-            Stamp2::Matrix(self.node_minus.clone(), self.node_plus.clone(), -g_d),
+            Stamp::Matrix(self.node_plus.clone(), self.node_plus.clone(), g_d),
+            Stamp::Matrix(self.node_minus.clone(), self.node_minus.clone(), g_d),
+            Stamp::Matrix(self.node_plus.clone(), self.node_minus.clone(), -g_d),
+            Stamp::Matrix(self.node_minus.clone(), self.node_plus.clone(), -g_d),
         ]
     }
 }

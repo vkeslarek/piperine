@@ -1,14 +1,14 @@
 use crate::analysis::ac::{AcAnalysisContext, AcAnalysisResult, AcSweepAnalysisOptions};
 use crate::analysis::dc::DcAnalysisResult;
-use crate::circuit::Circuit;
 use crate::circuit::netlist::CircuitReference;
+use crate::circuit::Circuit;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
-use crate::math::linear::Stamp2;
+use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::math::unit::UnitExt;
 use crate::solver::dc::DcSolver;
-use crate::solver::{Context, init_solver_configuration};
+use crate::solver::{init_solver_configuration, Context};
 use ndarray::{ArrayView1, ArrayViewMut1};
 use num_complex::Complex;
 use num_traits::Zero;
@@ -25,7 +25,7 @@ impl<'a> NonLinearSystem<CircuitReference, Complex<f64>> for AcSystem<'a> {
         _state: &CircularArrayBuffer2<Complex<f64>>,
         _alpha: Complex<f64>,
         context: &Context,
-    ) -> crate::result::Result<Vec<Stamp2<CircuitReference, Complex<f64>>>> {
+    ) -> crate::result::Result<Vec<Stamp<CircuitReference, Complex<f64>>>> {
         let ac_ctx = AcAnalysisContext {
             frequency: self.frequency.Hz(),
         };
@@ -142,15 +142,14 @@ impl<'a> AcSolver<'a> {
     }
 }
 
+#[cfg(test)]
 mod test {
     use crate::analysis::ac::AcSweepAnalysisOptions;
     use crate::circuit::Circuit;
-    use crate::solver::{init_solver_configuration, Context};
+    use crate::solver::Context;
 
     #[test]
     fn test_ac_rc_filter() {
-        init_solver_configuration();
-
         use crate::circuit::netlist::{CircuitVariable, GND};
         use crate::devices::voltage_source::Waveform::Sine;
         use crate::math::unit::UnitExt;
@@ -183,7 +182,7 @@ mod test {
             .solve_sweep(sweep_options.clone())
             .unwrap();
 
-        let out_var = circuit.netlist()
+        let _out_var = circuit.netlist()
             .reference_for(&CircuitVariable::Node("out".into()))
             .expect("Output node not found")
             .variable();
