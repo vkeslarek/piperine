@@ -1,9 +1,10 @@
 use crate::analysis::transient::TransientAnalysisOptions;
-use crate::circuit::netlist::GND;
+use crate::circuit::builder::{circuit, CircuitBuilder, IntoCircuit};
+use crate::circuit::netlist::{NodeIdentifier, GND};
 use crate::circuit::Circuit;
 use crate::devices::builder::CircuitBuilderExt;
 use crate::devices::voltage_source::Waveform::Step;
-use crate::math::unit::UnitExt;
+use crate::math::unit::{Ohm, UnitExt};
 use crate::solver::Context;
 use tracing::debug;
 
@@ -134,21 +135,82 @@ pub fn full_titan_test() {
 pub fn test() {
     debug!("Starting test circuit simulation...");
 
-    let mut circuit = Circuit::new("Diode DC Bias");
-
-    // 5V -> Resistor -> Diode -> Ground
-    circuit.voltage_source("V1", "in", GND, 5.0.V());
-    circuit.resistor("R1", "in", "anode", 1.0.kOhms());
-    circuit.diode("D1", "anode", GND);
+    let mut circuit = circuit("Diode DC Bias", |builder: &mut CircuitBuilder| {
+        builder.voltage_source("V1", "in", GND, 5.0.V());
+        builder.resistor("R1", "in", "anode", 1.0.kOhms());
+        builder.diode("D1", "anode", GND);
+    });
 
     let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
     let v_d = result.get_node("anode").unwrap();
 
     println!("Diode Forward Voltage: {:.4} V", v_d);
 
-    // Expect standard silicon drop ~0.6V - 0.8V
     assert!(
         v_d > 0.6 && v_d < 0.8,
         "Diode voltage outside realistic range"
     );
 }
+
+// fn controller(
+//     shunt_voltage_plus: impl Into<VoltageMeasure>,
+//     shunt_voltage_minus: impl Into<VoltageMeasure>,
+//     shunt_resistance: Ohm,
+//     mosfet_gate_drive: impl Into<NodeIdentifier>,
+// ) -> impl IntoCircuit {
+//     // Mock for now!
+//     circuit("Controller", |builder: &mut CircuitBuilder| {
+//         builder.proc_voltage_source("Mock Proc Source", 1, GND, |proc| {
+//             let mosfet_gate_drive = mosfet_gate_drive.into();
+//
+//             proc.change_list(&[&shunt_voltage_plus, &shunt_voltage_minus]);
+//             let duty_cycle =
+//                 proc.measure(shunt_voltage_plus - shunt_voltage_minus) / shunt_resistance;
+//             proc.pwm(mosfet_gate_drive.clone(), 12.0.MHz(), duty_cycle);
+//         });
+//         builder.resistor("R1", 1, mosfet_gate_drive, 220.0.Ohms())
+//     })
+// }
+//
+// fn buck_stage(
+//     input: impl Into<NodeIdentifier>,
+//     output: impl Into<NodeIdentifier>,
+// ) -> impl IntoCircuit {
+//     circuit("Buck Stage", |builder: &mut CircuitBuilder| {
+//         // Fetch the model from the web. Can be specified manually
+//         let transistor_model = builder.model_from_http("IFR520").unwrap();
+//
+//         // The MOSFET driver
+//         builder.mosfet("Q1", input, "gate_drive", 1, transistor_model);
+//
+//         // The inductor and diode
+//         builder.diode("D1", GND, 1);
+//         builder.inductor("L1", 1, 2);
+//
+//         // Sensing and control
+//         let shunt_resistor = 1.0.Ohms();
+//         builder.resistor("Rsense", 2, output, 1.0.Ohms());
+//         builder.subcircuit(controller(
+//             Vp!("Rsense"),
+//             Vm!("Rsense"),
+//             shunt_resistor,
+//             "gate_drive",
+//         ));
+//     })
+// }
+//
+// #[test]
+// #[cfg(test)]
+// pub fn buck_design() {
+//     let circuit = circuit("Buck design", |builder: &mut CircuitBuilder| {
+//         builder.voltage_source("Vin", "in", GND, 5.0.V());
+//
+//         // Instance a buck stage
+//         builder.subcircuit("Buck stage1", buck_stage("Vin", "Vout"));
+//
+//         // Simulate a range of loads
+//         builder.resistor("Rload", "Vout", GND, 200.0.Ohms()..10.0.kOhms().uniform());
+//     });
+//
+//     // ... The other simulations stuff
+// }

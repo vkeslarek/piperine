@@ -2,14 +2,15 @@ use crate::analysis::noise::NoiseAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
 use crate::circuit::netlist::Netlist;
 use crate::devices::{AnyModel, Component};
-use crate::solver::Context;
 use crate::solver::ac::AcSolver;
 use crate::solver::dc::DcSolver;
 use crate::solver::noise::NoiseSolver;
 use crate::solver::transient::TransientSolver;
+use crate::solver::Context;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+pub mod builder;
 pub mod measure;
 pub mod netlist;
 
@@ -27,6 +28,20 @@ impl Circuit {
             netlist: Netlist::new(),
             models: HashMap::new(),
             components: HashMap::new(),
+        }
+    }
+
+    pub fn from_raw(
+        title: String,
+        netlist: Netlist,
+        models: HashMap<String, Arc<dyn AnyModel>>,
+        components: HashMap<String, Box<dyn Component>>,
+    ) -> Self {
+        Self {
+            title,
+            netlist,
+            models,
+            components,
         }
     }
 
