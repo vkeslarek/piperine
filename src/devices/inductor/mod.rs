@@ -10,7 +10,7 @@ use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::transient::TransientAnalysis;
 use crate::circuit::netlist::{
-    BranchIdentifier, CircuitReference, CircuitVariable, IntoNodeIdentifier, Netlist,
+    BranchIdentifier, CircuitReference, IntoNodeIdentifier, Netlist,
 };
 use crate::devices::Component;
 use crate::devices::inductor::model::{InductorModel, InductorModelType};

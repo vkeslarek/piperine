@@ -1,5 +1,5 @@
 use crate::analysis::transient::TransientAnalysisOptions;
-use crate::circuit::netlist::{CircuitVariable, GND};
+use crate::circuit::netlist::GND;
 use crate::circuit::Circuit;
 use crate::devices::builder::CircuitBuilderExt;
 use crate::devices::voltage_source::Waveform::Step;

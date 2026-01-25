@@ -13,26 +13,26 @@ pub trait NonLinearSystem<A: AsIndex, E: Field> {
         alpha: E,
     ) -> crate::result::Result<Vec<Stamp<A, E>>>;
 
-    fn converged(&self, state: &CircularArrayBuffer2<E>, delta: &ArrayView1<E>) -> bool {
+    fn converged(&self, _state: &CircularArrayBuffer2<E>, _delta: &ArrayView1<E>) -> bool {
         true
     }
 
-    fn apply_limit(&mut self, state: &CircularArrayBuffer2<E>, current_guess: ArrayViewMut1<E>) {}
-    fn update_sources(&mut self, state: &mut CircularArrayBuffer2<E>) {}
-    fn before_iter_callback(&mut self, state: &CircularArrayBuffer2<E>, iteration_number: usize) {}
+    fn apply_limit(&mut self, _state: &CircularArrayBuffer2<E>, _current_guess: ArrayViewMut1<E>) {}
+    fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<E>) {}
+    fn before_iter_callback(&mut self, _state: &CircularArrayBuffer2<E>, _iteration_number: usize) {}
 
     fn convergence_failed_callback(
         &mut self,
-        state: &CircularArrayBuffer2<E>,
-        iteration_number: usize,
-        current_guess: &ArrayView1<E>,
+        _state: &CircularArrayBuffer2<E>,
+        _iteration_number: usize,
+        _current_guess: &ArrayView1<E>,
     ) {
     }
 
     fn convergence_success_callback(
         &mut self,
-        state: &CircularArrayBuffer2<E>,
-        converged_guess: &ArrayView1<E>,
+        _state: &CircularArrayBuffer2<E>,
+        _converged_guess: &ArrayView1<E>,
     ) {
     }
 }
@@ -60,7 +60,7 @@ where
         size: usize,
         history_depth: usize,
     ) -> crate::result::Result<Self> {
-        let mut state = CircularArrayBuffer2::new(history_depth, size);
+        let state = CircularArrayBuffer2::new(history_depth, size);
         let dry_run_stamps = system.assemble(&state, E::zero())?;
         let symbolic = L::SymbolicType::new(size, dry_run_stamps)?;
         let linear_system = L::new(size);
@@ -134,7 +134,7 @@ where
         ))
     }
 
-    pub fn current_guess(&self) -> Option<ArrayView1<E>> {
+    pub fn current_guess(&self) -> Option<ArrayView1<'_, E>> {
         self.state.latest()
     }
 }

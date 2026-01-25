@@ -5,13 +5,11 @@ use crate::circuit::Circuit;
 use crate::circuit::netlist::{CircuitReference, CircuitVariable};
 use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
 use crate::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
-use crate::math::newton_raphson::NonLinearSystem;
 use crate::math::unit::UnitExt;
 use crate::solver::dc::DcSolver;
 use crate::solver::{Context, init_solver_configuration};
 use ndarray::Array1;
 use num_complex::Complex;
-use num_traits::Zero;
 
 pub struct NoiseSolver<'a> {
     pub circuit: &'a mut Circuit,

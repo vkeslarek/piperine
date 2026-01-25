@@ -1,4 +1,3 @@
-use crate::analysis::ac::AcAnalysisStep;
 use crate::circuit::netlist::{
     BranchIdentifier, CircuitReference, CircuitVariable, NodeIdentifier,
 };

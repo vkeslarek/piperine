@@ -1,7 +1,7 @@
 use crate::analysis::ac::AcSweepAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
 use crate::circuit::Circuit;
-use crate::circuit::netlist::{BranchIdentifier, CircuitVariable, GND};
+use crate::circuit::netlist::GND;
 use crate::devices::builder::CircuitBuilderExt;
 use crate::devices::voltage_source::Waveform::{Sine, Step};
 use crate::math::unit::UnitExt;

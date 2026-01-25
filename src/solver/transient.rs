@@ -1,9 +1,9 @@
 use crate::analysis::transient::{
     TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisResult, TransientStep,
 };
-use crate::circuit::netlist::{CircuitReference, CircuitVariable};
+use crate::circuit::netlist::CircuitReference;
 use crate::circuit::Circuit;
-use crate::devices::soa::{SoaViolation, SoaViolations};
+use crate::devices::soa::SoaViolations;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::deriv::Integrable;
 use crate::math::faer::FaerSparseLinearSystem;
@@ -15,7 +15,6 @@ use log::debug;
 use ndarray::{Array1, ArrayView1, ArrayViewMut1};
 use num_traits::Zero;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 pub struct TransientSystem<'a> {
     pub circuit: &'a mut Circuit,

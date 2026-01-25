@@ -1,6 +1,6 @@
 use crate::analysis::noise::NoiseAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
-use crate::circuit::netlist::{IntoNodeIdentifier, Netlist};
+use crate::circuit::netlist::Netlist;
 use crate::devices::{AnyModel, Component};
 use crate::solver::Context;
 use crate::solver::ac::AcSolver;
