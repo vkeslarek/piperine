@@ -180,3 +180,5 @@ This is a permissive license that allows you to do almost anything with this cod
 I chose this license because I want to remove barriers to entry. Whether you are a student exploring numerical analysis,
 a researcher testing new algorithms, or a developer building a commercial tool, you should be able to use Piperine
 freely without legal friction. I believe open tools foster better engineering for everyone.
+
+**Author:** Vinicius Blasio Keslarek
