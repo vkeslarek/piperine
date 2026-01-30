@@ -1,13 +1,16 @@
 use crate::analysis::ac::AcAnalysis;
-use crate::analysis::dc::DcAnalysis;
+use crate::analysis::dc::{DcAnalysis, DcAnalysisState};
+use crate::analysis::dc2::DcAnalysis2;
 use crate::analysis::noise::NoiseSource;
 use crate::analysis::transient::TransientAnalysis;
 use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
 use crate::devices::dynamic::Dynamic;
 use crate::devices::resistor::model::ResistorModel;
 use crate::devices::soa::SoaCheck;
-use crate::devices::Component;
+use crate::devices::{Component, Runtime};
+use crate::math::linear::Stamp;
 use crate::math::unit::{Celsius, Dimensionless, Kelvin, Meter, Ohm, Siemens, UnitExt};
+use crate::solver::Context;
 use crate::util::AsAny;
 use std::any::Any;
 use std::sync::Arc;
@@ -131,6 +134,18 @@ impl Resistor {
         self
     }
 
+    pub fn node_plus(&self) -> &CircuitReference {
+        &self.node_plus
+    }
+
+    pub fn node_minus(&self) -> &CircuitReference {
+        &self.node_minus
+    }
+
+    pub fn model(&self) -> &Arc<ResistorModel> {
+        &self.model
+    }
+
     pub fn resistance(&self) -> &Dynamic<Ohm> {
         &self.resistance
     }
@@ -212,6 +227,60 @@ impl Component for Resistor {
     }
 
     fn as_soa_check(&self) -> Option<&dyn SoaCheck> {
+        Some(self)
+    }
+}
+
+pub struct ResistorRuntime {
+    conductance: Siemens,
+}
+
+impl DcAnalysis2 for ResistorRuntime {
+    // fn update_dc(
+    //     &mut self,
+    //     component: &Self::ComponentType,
+    //     _: &DcAnalysisState,
+    //     context: &Context,
+    // ) -> crate::result::Result<()> {
+    //     component.model().clone().update_conductance(component, context);
+    //     Ok(())
+    // }
+
+    fn load_dc(
+        &self,
+        component: &Self::ComponentType,
+        _: &DcAnalysisState,
+        _: &Context,
+    ) -> Vec<Stamp<CircuitReference, f64>> {
+        vec![
+            Stamp::Matrix(
+                component.node_plus().clone(),
+                component.node_plus().clone(),
+                self.conductance,
+            ),
+            Stamp::Matrix(
+                component.node_minus().clone(),
+                component.node_minus().clone(),
+                self.conductance,
+            ),
+            Stamp::Matrix(
+                component.node_plus().clone(),
+                component.node_minus().clone(),
+                -self.conductance,
+            ),
+            Stamp::Matrix(
+                component.node_minus().clone(),
+                component.node_plus().clone(),
+                -self.conductance,
+            ),
+        ]
+    }
+}
+
+impl Runtime for ResistorRuntime {
+    type ComponentType = Resistor;
+
+    fn as_dc(&mut self) -> Option<&mut dyn DcAnalysis2<ComponentType = Self::ComponentType>> {
         Some(self)
     }
 }

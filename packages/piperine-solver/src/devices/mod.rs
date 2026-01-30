@@ -1,14 +1,15 @@
 pub mod ask;
 pub mod capacitor;
 pub mod diode;
+pub mod dynamic;
 pub mod inductor;
 pub mod resistor;
 pub mod soa;
 pub mod source;
-pub mod dynamic;
 
 use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
+use crate::analysis::dc2::DcAnalysis2;
 use crate::analysis::noise::NoiseSource;
 use crate::analysis::transient::TransientAnalysis;
 use crate::circuit::netlist::Netlist;
@@ -73,6 +74,12 @@ pub trait Model: Debug + AsAny + Any + Send + Sync {
 pub trait AnyModel: 'static + AsAny {}
 
 impl<M: 'static + Model> AnyModel for M {}
+
+pub trait Runtime {
+    type ComponentType: Component;
+
+    fn as_dc(&mut self) -> Option<&mut dyn DcAnalysis2<ComponentType = Self::ComponentType>>;
+}
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum ModelProviderCapabilities {
