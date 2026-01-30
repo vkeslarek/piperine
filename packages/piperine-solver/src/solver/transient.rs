@@ -1,0 +1,343 @@
+use crate::analysis::transient::{
+    TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisResult, TransientStep,
+};
+use crate::circuit::netlist::CircuitReference;
+use crate::circuit::Circuit;
+use crate::devices::soa::SoaViolations;
+use crate::math::circular_array::CircularArrayBuffer2;
+use crate::math::deriv::Integrable;
+use crate::math::faer::FaerSparseLinearSystem;
+use crate::math::linear::Stamp;
+use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
+use crate::solver::dc::DcSolver;
+use crate::solver::{init_solver_configuration, Context};
+use log::debug;
+use ndarray::{Array1, ArrayView1, ArrayViewMut1};
+use num_traits::Zero;
+use rayon::iter::{ParallelBridge, ParallelIterator};
+use std::collections::HashMap;
+
+pub struct TransientSystem<'a> {
+    pub circuit: &'a mut Circuit,
+    pub context: Context,
+    pub time: f64,
+    pub dt: f64,
+    pub time_history: Vec<f64>,
+    pub soa_violations: SoaViolations,
+}
+
+impl<'a> TransientSystem<'a> {
+    pub fn map_dynamic_stamps(
+        alpha: f64,
+        history: &Array1<f64>,
+        dynamic_stamps: Vec<Stamp<CircuitReference, f64>>,
+    ) -> Vec<Stamp<CircuitReference, f64>> {
+        let mut stamps = Vec::with_capacity(dynamic_stamps.len() * 2);
+
+        for s in dynamic_stamps {
+            match s {
+                Stamp::Matrix(row, col, val) => {
+                    stamps.push(Stamp::Matrix(row.clone(), col.clone(), val * alpha));
+
+                    if let Some(idx) = col.idx() {
+                        let rhs_contribution = val * history[idx];
+
+                        stamps.push(Stamp::Rhs(row, -rhs_contribution));
+                    }
+                }
+                Stamp::Rhs(row, val) => {
+                    stamps.push(Stamp::Rhs(row, val));
+                }
+            }
+        }
+
+        stamps
+    }
+}
+
+impl<'a> NonLinearSystem<CircuitReference, f64> for TransientSystem<'a> {
+    fn assemble(
+        &mut self,
+        state: &CircularArrayBuffer2<f64>,
+        _alpha_hint: f64,
+    ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
+        let tran_ctx = TransientAnalysisContext {
+            time: self.time.into(),
+            dt: self.dt.into(),
+        };
+
+        let (alpha, history) = state
+            .integration_parameters(self.time_history.clone())
+            .unwrap_or((f64::zero(), Array1::zeros(state.size())));
+
+        let mut all_stamps = Vec::new();
+
+        for (name, comp) in self.circuit.components_mut() {
+            if let Some(tran) = comp.as_transient() {
+                tran.update_transient(state, &tran_ctx, &self.context)?;
+
+                all_stamps.extend(tran.load_transient(state, &tran_ctx, &self.context));
+
+                let raw_dynamic = tran.load_transient_dynamic(state, &tran_ctx, &self.context);
+                all_stamps.extend(Self::map_dynamic_stamps(alpha, &history, raw_dynamic));
+            } else {
+                debug!("Component '{}' ignored in transient", name);
+            }
+        }
+        Ok(all_stamps)
+    }
+
+    fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
+        let netlist = self.circuit.netlist();
+        self.context
+            .has_converged(state.latest(), new_guess, netlist)
+    }
+
+    fn apply_limit(
+        &mut self,
+        state: &CircularArrayBuffer2<f64>,
+        mut current_guess: ArrayViewMut1<f64>,
+    ) {
+        let last_guess = match state.latest() {
+            Some(guess) => guess,
+            None => return,
+        };
+
+        let diff_norm_sq: f64 = current_guess
+            .iter()
+            .zip(last_guess.iter())
+            .fold(0.0, |acc, (curr, prev)| acc + (curr - prev).powi(2));
+
+        let diff_norm = diff_norm_sq.sqrt();
+
+        if diff_norm >= self.context.dc_damp_tolerance {
+            for (curr, prev) in current_guess.iter_mut().zip(last_guess.iter()) {
+                *curr = (*curr + *prev) * 0.5;
+            }
+        }
+    }
+
+    fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<f64>) {}
+
+    fn convergence_success_callback(
+        &mut self,
+        state: &CircularArrayBuffer2<f64>,
+        _: &ArrayView1<f64>,
+    ) {
+        for (_, component) in self.circuit.components() {
+            if let Some(soa_comp) = component.as_soa_check() {
+                self.soa_violations
+                    .add_all(soa_comp.soa_check(state, &self.context));
+            }
+        }
+    }
+}
+
+pub struct TransientSolver<'a> {
+    pub system: TransientSystem<'a>,
+    pub solver: NewtonRaphsonSolver<CircuitReference, f64, FaerSparseLinearSystem<f64>>,
+    pub options: TransientAnalysisOptions,
+}
+
+impl<'a> TransientSolver<'a> {
+    pub fn new(
+        circuit: &'a mut Circuit,
+        options: TransientAnalysisOptions,
+        context: Context,
+    ) -> crate::result::Result<Self> {
+        init_solver_configuration();
+
+        let size = circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
+
+        let mut system = TransientSystem {
+            circuit,
+            context,
+            time: 0.0,
+            dt: options.dt,
+            time_history: Vec::with_capacity(16),
+            soa_violations: SoaViolations::new(),
+        };
+
+        let solver = NewtonRaphsonSolver::new(&mut system, size, 4)?;
+
+        Ok(Self {
+            system,
+            solver,
+            options,
+        })
+    }
+
+    pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
+        let mut steps = Vec::new();
+        let stop_time = self.options.stop_time;
+        let dt = self.options.dt;
+
+        debug!("Calculaing DC Operating Point...");
+        let mut dc_solver = DcSolver::new(self.system.circuit, Context::default())?;
+        let dc_result = dc_solver.solve()?;
+
+        let netlist = self.system.circuit.netlist();
+
+        let iv_dc = dc_result.as_iv(netlist);
+
+        self.solver.push_initial_conditions(iv_dc.clone());
+        self.solver.push_initial_conditions(iv_dc);
+
+        self.system.time_history.insert(0, 0.0);
+        self.system.time_history.insert(0, 0.0 - dt);
+
+        steps.push(self.snapshot(0.0));
+
+        let mut current_time = 0.0;
+
+        while current_time < stop_time {
+            current_time += dt;
+
+            self.system.time = current_time;
+            self.system.dt = dt;
+
+            self.system.time_history.insert(0, current_time);
+
+            debug!("Solving Transient Step: t = {:.6}s", current_time);
+
+            let max_iter = self.system.context.max_iter;
+            let result = self.solver.solve(&mut self.system, 1.0 / dt, max_iter);
+
+            if result.is_ok() {
+                steps.push(self.snapshot(current_time));
+                if self.system.time_history.len() > 10 {
+                    self.system.time_history.truncate(10);
+                }
+            } else {
+                return Err(result.unwrap_err());
+            }
+        }
+
+        Ok(TransientAnalysisResult::new(
+            steps,
+            self.system.soa_violations.clone(),
+        ))
+    }
+
+    fn snapshot(&self, time: f64) -> TransientStep {
+        let mut values = HashMap::new();
+        let netlist = self.system.circuit.netlist();
+        let latest_state = self.solver.current_guess().unwrap();
+
+        for reference in netlist.all_references() {
+            if let Some(idx) = reference.idx() {
+                values.insert(reference.variable().clone(), latest_state[idx]);
+            }
+        }
+
+        TransientStep::new(time, values)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::analysis::transient::TransientAnalysisOptions;
+    use crate::circuit::builder::builder;
+    use crate::circuit::netlist::GND;
+    use crate::circuit::Circuit;
+    use crate::devices::source::Waveform::Step;
+    use crate::math::unit::UnitExt;
+    use crate::solver::Context;
+
+    #[test]
+    fn test_transient_rc_charging() {
+        let mut circuit: Circuit = builder("RC Transient Demo", |builder| {
+            builder.voltage_source(
+                "V1",
+                "in",
+                GND,
+                Step {
+                    initial: 0.0.V(),
+                    final_value: 5.0.V(),
+                    delay: 0.0,
+                    rise_time: 1.0.us(),
+                },
+            );
+
+            builder.resistor("R1", "in", "out", 1.0.kOhms());
+            builder.capacitor("C1", "out", GND, 1.0.uF());
+        })
+        .into();
+
+        let options = TransientAnalysisOptions {
+            stop_time: 5.0.ms(),
+            dt: 100.0.us(),
+        };
+
+        let result = circuit
+            .transient(options, Context::default())
+            .unwrap()
+            .solve()
+            .unwrap();
+
+        let one_tau_step = result
+            .iter()
+            .find(|step| (step.time() - 0.001).abs() < 1e-6)
+            .expect("Time point 1.0ms not found in simulation results");
+
+        let v_at_1ms = one_tau_step
+            .get_node("out")
+            .expect("Variable 'out' missing in result step");
+
+        println!("At 1ms (1 Tau): {:.4} V", v_at_1ms);
+        assert!((v_at_1ms - 3.16).abs() < 0.1);
+
+        // D. Check Final State (t = 5ms)
+        let final_step = result.last().unwrap();
+        let final_v = final_step.get_node("out").unwrap();
+
+        println!("At 5ms (Final): {:.4} V", final_v);
+        assert!((final_v - 5.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn test_transient_rc_step() {
+        let mut circuit: Circuit = builder("RC Step Response", |builder| {
+            builder.voltage_source(
+                "V1",
+                "in",
+                GND,
+                Step {
+                    initial: 0.0.V(),
+                    final_value: 1.0.V(),
+                    delay: 0.0,
+                    rise_time: 1e-9,
+                },
+            );
+
+            builder.resistor("R1", "in", "out", 1.0.kOhms());
+            builder.capacitor("C1", "out", GND, 1.0.uF());
+        })
+        .into();
+
+        let result = circuit
+            .transient(
+                TransientAnalysisOptions {
+                    stop_time: 5.0.ms(),
+                    dt: 100.0.us(),
+                },
+                Context::default(),
+            )
+            .unwrap()
+            .solve()
+            .unwrap();
+
+        let final_snapshot = result.last().expect("Simulation returned no data");
+
+        let v_final = final_snapshot
+            .get_node("out")
+            .expect("Voltage value for 'out' missing");
+
+        println!("Transient Final Voltage: {:.4} V", v_final);
+        assert!(
+            (v_final - 1.0).abs() < 0.01,
+            "Capacitor did not charge to 1V. Got {}",
+            v_final
+        );
+    }
+}
