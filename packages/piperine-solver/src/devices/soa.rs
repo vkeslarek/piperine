@@ -1,4 +1,3 @@
-use crate::devices::Component;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::solver::Context;
 use std::collections::HashSet;
@@ -64,6 +63,6 @@ impl SoaViolations {
     }
 }
 
-pub trait SoaCheck: Component {
+pub trait SoaCheck {
     fn soa_check(&self, circuit_state: &SoaCheckState, context: &Context) -> Vec<SoaViolation>;
 }

@@ -1,7 +1,6 @@
 use crate::circuit::netlist::{
     BranchIdentifier, CircuitReference, CircuitVariable, NodeIdentifier,
 };
-use crate::devices::Component;
 use crate::devices::soa::SoaViolations;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::InitialValue;
@@ -26,16 +25,7 @@ pub struct TransientAnalysisContext {
     pub dt: Second,
 }
 
-pub trait TransientAnalysis: Component {
-    fn update_transient(
-        &mut self,
-        _circuit_states: &TransientAnalysisState,
-        _transient_analysis_context: &TransientAnalysisContext,
-        _context: &Context,
-    ) -> crate::result::Result<()> {
-        Ok(())
-    }
-
+pub trait TransientAnalysis {
     fn load_transient(
         &self,
         circuit_states: &TransientAnalysisState,

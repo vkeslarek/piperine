@@ -3,7 +3,7 @@ use num_complex::Complex;
 use num_traits::{One, Zero};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-pub trait Field:
+pub trait Scalar:
     Copy
     + Clone
     + PartialEq
@@ -24,7 +24,7 @@ pub trait Field:
     fn is_finite(&self) -> bool;
 }
 
-impl Field for f64 {
+impl Scalar for f64 {
     fn abs(self) -> f64 {
         self.abs()
     }
@@ -34,7 +34,7 @@ impl Field for f64 {
     }
 }
 
-impl Field for Complex<f64> {
+impl Scalar for Complex<f64> {
     fn abs(self) -> f64 {
         self.norm()
     }

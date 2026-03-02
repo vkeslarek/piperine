@@ -1,8 +1,8 @@
 use crate::analysis::ac::{AcAnalysisContext, AcSweepAnalysisOptions};
 use crate::analysis::dc::DcAnalysisResult;
 use crate::analysis::noise::{NoiseAnalysisOptions, NoiseAnalysisResult};
+use crate::circuit::instance::CircuitInstance;
 use crate::circuit::netlist::{CircuitReference, CircuitVariable};
-use crate::circuit::Circuit;
 use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
 use crate::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
 use crate::math::unit::UnitExt;
@@ -12,7 +12,7 @@ use ndarray::Array1;
 use num_complex::Complex;
 
 pub struct NoiseSolver<'a> {
-    pub circuit: &'a mut Circuit,
+    pub circuit: &'a mut CircuitInstance,
     pub context: Context,
     pub dc_point: DcAnalysisResult,
     pub symbolic_matrix: FaerSymbolicMatrix,
@@ -23,7 +23,7 @@ pub struct NoiseSolver<'a> {
 
 impl<'a> NoiseSolver<'a> {
     pub fn new(
-        circuit: &'a mut Circuit,
+        circuit: &'a mut CircuitInstance,
         options: NoiseAnalysisOptions,
         context: Context,
     ) -> crate::result::Result<Self> {
@@ -59,12 +59,7 @@ impl<'a> NoiseSolver<'a> {
             let adjoint_sol = self.solve_adjoint_system(stamps)?;
 
             let mut step_density = 0.0;
-            for source in self
-                .circuit
-                .components_mut()
-                .values_mut()
-                .filter_map(|c| c.as_noise_source())
-            {
+            for source in self.circuit.noise_runtimes() {
                 let noises = source.noise_current_psd(&self.dc_point, &ac_ctx);
                 for n in noises {
                     let z_p = self
@@ -114,7 +109,7 @@ impl<'a> NoiseSolver<'a> {
     }
 
     fn assemble_linearized(
-        circuit: &mut Circuit,
+        circuit: &mut CircuitInstance,
         dc_point: &DcAnalysisResult,
         f_hz: f64,
         context: &Context,
@@ -123,15 +118,14 @@ impl<'a> NoiseSolver<'a> {
             frequency: f_hz.Hz(),
         };
         Ok(circuit
-            .components_mut()
-            .values_mut()
-            .filter_map(|c| c.as_ac())
+            .ac_runtimes()
+            .iter()
             .flat_map(|ac| ac.load_ac(dc_point, &ac_ctx, context))
             .collect())
     }
 
     fn resolve_nodes(
-        circuit: &Circuit,
+        circuit: &CircuitInstance,
         opt: &NoiseAnalysisOptions,
     ) -> crate::result::Result<(CircuitReference, CircuitReference)> {
         let net = circuit.netlist();
@@ -181,15 +175,15 @@ impl<'a> NoiseSolver<'a> {
 mod test {
     use crate::analysis::ac::AcSweepAnalysisOptions;
     use crate::analysis::noise::NoiseAnalysisOptions;
-    use crate::circuit::builder::builder;
+    use crate::circuit::builder;
+    use crate::circuit::instance::CircuitInstance;
     use crate::circuit::netlist::GND;
-    use crate::circuit::Circuit;
     use crate::math::unit::UnitExt;
     use crate::solver::Context;
 
     #[test]
     fn test_noise_johnson_nyquist() {
-        let mut circuit: Circuit = builder("Noise Verification - RC", |builder| {
+        let mut circuit: CircuitInstance = builder("Noise Verification - RC", |builder| {
             builder
                 .resistor("R1", "out", GND, 100.0.kOhms())
                 .with_noise(true);

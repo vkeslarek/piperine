@@ -2,8 +2,8 @@ use crate::analysis::ac::{
     AcAnalysisContext, AcAnalysisResult, AcAnalysisStep, AcSweepAnalysisOptions,
 };
 use crate::analysis::dc::DcAnalysisResult;
+use crate::circuit::instance::CircuitInstance;
 use crate::circuit::netlist::CircuitReference;
-use crate::circuit::Circuit;
 use crate::devices::soa::SoaViolations;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
@@ -17,7 +17,7 @@ use num_traits::Zero;
 use std::collections::HashMap;
 
 pub struct AcSystem<'a> {
-    pub circuit: &'a mut Circuit,
+    pub circuit: &'a mut CircuitInstance,
     pub context: Context,
     pub dc_point: DcAnalysisResult,
     pub frequency: f64,
@@ -36,12 +36,10 @@ impl<'a> NonLinearSystem<CircuitReference, Complex<f64>> for AcSystem<'a> {
 
         let mut all_stamps = Vec::new();
 
-        for (_name, comp) in self.circuit.components_mut() {
-            if let Some(ac) = comp.as_ac() {
-                ac.update_ac(&self.dc_point, &ac_ctx, &self.context)?;
-
-                all_stamps.extend(ac.load_ac(&self.dc_point, &ac_ctx, &self.context));
-            }
+        // AC analysis is linear - no need to update runtimes
+        // We use the DC operating point that was already computed
+        for ac in self.circuit.ac_runtimes() {
+            all_stamps.extend(ac.load_ac(&self.dc_point, &ac_ctx, &self.context));
         }
         Ok(all_stamps)
     }
@@ -54,7 +52,7 @@ pub struct AcSolver<'a> {
 }
 
 impl<'a> AcSolver<'a> {
-    pub fn new(circuit: &'a mut Circuit, context: Context) -> crate::result::Result<Self> {
+    pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::result::Result<Self> {
         init_solver_configuration();
 
         let mut dc_solver = DcSolver::new(circuit, context.clone())?;
@@ -129,8 +127,8 @@ impl<'a> AcSolver<'a> {
 #[cfg(test)]
 mod test {
     use crate::analysis::ac::AcSweepAnalysisOptions;
-    use crate::circuit::builder::builder;
-    use crate::circuit::Circuit;
+    use crate::circuit::builder;
+    use crate::circuit::instance::CircuitInstance;
     use crate::solver::Context;
 
     #[test]
@@ -139,7 +137,7 @@ mod test {
         use crate::devices::source::Waveform::Sine;
         use crate::math::unit::UnitExt;
 
-        let mut circuit: Circuit = builder("AC Low Pass", |builder| {
+        let mut circuit: CircuitInstance = builder("AC Low Pass", |builder| {
             builder.voltage_source(
                 "V1",
                 "in",

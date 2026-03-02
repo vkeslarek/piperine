@@ -2,11 +2,11 @@ use crate::error::Error;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::{InitialValue, InitialValueApplyExt};
 use crate::math::linear::{AsIndex, Stamp, SymbolicLinearSystem, SymbolicMatrix};
-use crate::math::num::Field;
+use crate::math::num::Scalar;
 use ndarray::{Array1, ArrayView1, ArrayViewMut1};
 use tracing::debug;
 
-pub trait NonLinearSystem<A: AsIndex, E: Field> {
+pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
     fn assemble(
         &mut self,
         state: &CircularArrayBuffer2<E>,
@@ -40,7 +40,7 @@ pub trait NonLinearSystem<A: AsIndex, E: Field> {
 pub struct NewtonRaphsonSolver<A, E, L>
 where
     A: AsIndex,
-    E: Field,
+    E: Scalar,
     L: SymbolicLinearSystem<E>,
 {
     linear_system: L,
@@ -52,7 +52,7 @@ where
 impl<A, E, L> NewtonRaphsonSolver<A, E, L>
 where
     A: AsIndex,
-    E: Field,
+    E: Scalar,
     L: SymbolicLinearSystem<E>,
 {
     pub fn new(

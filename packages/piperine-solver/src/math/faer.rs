@@ -2,10 +2,10 @@ use crate::error::Error;
 use crate::math::linear::{
     AsIndex, LinearSystem, NoSymbolic, Stamp, SymbolicLinearSystem, SymbolicMatrix,
 };
-use crate::math::num::Field;
+use crate::math::num::Scalar;
 use faer::prelude::{Solve, SparseColMat};
-use faer::sparse::Triplet;
 use faer::sparse::linalg::solvers::SymbolicLu;
+use faer::sparse::Triplet;
 use faer::{Col, Mat};
 use ndarray::Array1;
 
@@ -20,7 +20,7 @@ impl SymbolicMatrix for FaerSymbolicMatrix {
         self.size
     }
 
-    fn new<A: AsIndex, E: Field>(
+    fn new<A: AsIndex, E: Scalar>(
         size: usize,
         stamps: Vec<Stamp<A, E>>,
     ) -> crate::result::Result<Self> {
@@ -54,13 +54,13 @@ impl SymbolicMatrix for FaerSymbolicMatrix {
     }
 }
 
-pub struct FaerSparseLinearSystem<E: Field> {
+pub struct FaerSparseLinearSystem<E: Scalar> {
     pub triplets: Vec<Triplet<usize, usize, E>>,
     pub b_vec: Vec<E>,
     pub size: usize,
 }
 
-impl<E: 'static + Field> LinearSystem<E> for FaerSparseLinearSystem<E> {
+impl<E: 'static + Scalar> LinearSystem<E> for FaerSparseLinearSystem<E> {
     fn new(size: usize) -> Self {
         Self {
             triplets: Vec::with_capacity(size * 4),
@@ -115,7 +115,7 @@ impl<E: 'static + Field> LinearSystem<E> for FaerSparseLinearSystem<E> {
     }
 }
 
-impl<E: Field + 'static> SymbolicLinearSystem<E> for FaerSparseLinearSystem<E> {
+impl<E: Scalar + 'static> SymbolicLinearSystem<E> for FaerSparseLinearSystem<E> {
     type SymbolicType = FaerSymbolicMatrix;
 
     fn solve_with_backend(
@@ -156,13 +156,13 @@ impl<E: Clone + 'static> FaerToNdarray<E> for Col<E> {
     }
 }
 
-pub struct FaerDenseLinearSystem<E: Field> {
+pub struct FaerDenseLinearSystem<E: Scalar> {
     pub matrix: Mat<E>,
     pub rhs: Col<E>,
     pub size: usize,
 }
 
-impl<E: 'static + Field> LinearSystem<E> for FaerDenseLinearSystem<E> {
+impl<E: 'static + Scalar> LinearSystem<E> for FaerDenseLinearSystem<E> {
     fn new(size: usize) -> Self {
         Self {
             matrix: Mat::zeros(size, size),
@@ -202,7 +202,7 @@ impl<E: 'static + Field> LinearSystem<E> for FaerDenseLinearSystem<E> {
     }
 }
 
-impl<E: Field + 'static> SymbolicLinearSystem<E> for FaerDenseLinearSystem<E> {
+impl<E: Scalar + 'static> SymbolicLinearSystem<E> for FaerDenseLinearSystem<E> {
     type SymbolicType = NoSymbolic;
 
     fn solve_with_backend(

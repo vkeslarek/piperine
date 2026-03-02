@@ -9,38 +9,25 @@ pub mod source;
 
 use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
-use crate::analysis::dc2::DcAnalysis2;
 use crate::analysis::noise::NoiseSource;
 use crate::analysis::transient::TransientAnalysis;
 use crate::circuit::netlist::Netlist;
 use crate::devices::ask::Ask;
 use crate::devices::soa::SoaCheck;
-use crate::error::Error;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::expression::Quantity;
+use crate::math::num::Scalar;
+use crate::solver::Context;
 use crate::util::AsAny;
 use num_complex::Complex;
 use std::any::Any;
-use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::Arc;
 
 pub trait Component: Any + AsAny + Send + Sync {
     fn name(&self) -> String;
 
-    fn as_dc(&mut self) -> Option<&mut dyn DcAnalysis>;
-
-    fn as_ac(&mut self) -> Option<&mut dyn AcAnalysis>;
-
-    fn as_transient(&mut self) -> Option<&mut dyn TransientAnalysis>;
-
-    fn as_noise_source(&mut self) -> Option<&mut dyn NoiseSource> {
-        None
-    }
-
-    fn as_soa_check(&self) -> Option<&dyn SoaCheck> {
-        None
-    }
+    fn runtime(&self, netlist: &mut Netlist) -> Box<dyn AnyRuntime>;
 
     fn terminals(&self) -> Vec<String> {
         vec![]
@@ -59,14 +46,6 @@ pub trait Component: Any + AsAny + Send + Sync {
     }
 }
 
-pub trait ComponentSpec: Any {
-    fn instantiate(
-        &self,
-        netlist: &mut Netlist,
-        model_resolver: &ModelResolver,
-    ) -> crate::result::Result<Box<dyn Component>>;
-}
-
 pub trait Model: Debug + AsAny + Any + Send + Sync {
     type ComponentType: Component;
 }
@@ -78,76 +57,72 @@ impl<M: 'static + Model> AnyModel for M {}
 pub trait Runtime {
     type ComponentType: Component;
 
-    fn as_dc(&mut self) -> Option<&mut dyn DcAnalysis2<ComponentType = Self::ComponentType>>;
-}
+    fn allocate(component: Arc<Self::ComponentType>, netlist: &mut Netlist) -> Self
+    where
+        Self: Sized;
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-pub enum ModelProviderCapabilities {
-    INSERT,
-    FETCH,
-}
+    fn update(&mut self, _: &CircularArrayBuffer2<f64>, _: &Context);
 
-pub trait ModelProvider {
-    fn fetch(&self, name: &str) -> Option<Arc<dyn AnyModel>>;
-    fn insert(&mut self, name: &str, model: Arc<dyn AnyModel>);
-    fn capabilities(&self) -> HashSet<ModelProviderCapabilities>;
-}
+    fn as_dc(&self) -> Option<&dyn DcAnalysis> {
+        None
+    }
 
-pub struct LocalProvider {
-    storage: HashMap<String, Arc<dyn AnyModel>>,
-}
+    fn as_ac(&self) -> Option<&dyn AcAnalysis> {
+        None
+    }
 
-impl LocalProvider {
-    pub fn new() -> Self {
-        Self {
-            storage: HashMap::new(),
-        }
+    fn as_transient(&self) -> Option<&dyn TransientAnalysis> {
+        None
+    }
+
+    fn as_noise_source(&self) -> Option<&dyn NoiseSource> {
+        None
+    }
+
+    fn as_soa_check(&self) -> Option<&dyn SoaCheck> {
+        None
     }
 }
 
-impl ModelProvider for LocalProvider {
-    fn fetch(&self, name: &str) -> Option<Arc<dyn AnyModel>> {
-        self.storage.get(name).cloned()
-    }
+pub trait AnyRuntime {
+    fn update(&mut self, state: &CircularArrayBuffer2<f64>, context: &Context);
 
-    fn insert(&mut self, name: &str, model: Arc<dyn AnyModel>) {
-        self.storage.insert(name.to_string(), model);
-    }
+    fn as_dc(&self) -> Option<&dyn DcAnalysis>;
 
-    fn capabilities(&self) -> HashSet<ModelProviderCapabilities> {
-        HashSet::from_iter(vec![
-            ModelProviderCapabilities::INSERT,
-            ModelProviderCapabilities::FETCH,
-        ])
-    }
+    fn as_ac(&self) -> Option<&dyn AcAnalysis>;
+
+    fn as_transient(&self) -> Option<&dyn TransientAnalysis>;
+
+    fn as_noise_source(&self) -> Option<&dyn NoiseSource>;
+
+    fn as_soa_check(&self) -> Option<&dyn SoaCheck>;
 }
 
-pub struct ModelResolver {
-    provider: Box<dyn ModelProvider>,
-    model_cache: HashMap<String, Arc<dyn AnyModel>>,
-}
-
-impl ModelResolver {
-    pub(crate) fn new() -> ModelResolver {
-        ModelResolver {
-            provider: Box::new(LocalProvider::new()),
-            model_cache: HashMap::new(),
-        }
+impl<R: Runtime> AnyRuntime for R
+where
+    R: Sized,
+{
+    fn update(&mut self, state: &CircularArrayBuffer2<f64>, context: &Context) {
+        R::update(self, state, context);
     }
 
-    pub fn insert(&mut self, name: String, model: Arc<dyn AnyModel>) -> crate::result::Result<()> {
-        if self
-            .provider
-            .capabilities()
-            .contains(&ModelProviderCapabilities::INSERT)
-        {
-            self.model_cache.insert(name, model.clone());
-            Ok(())
-        } else {
-            Err(Error::simple(
-                "Model provider has no capabilities for this operation",
-                "The model provider doesn't support inserting new models",
-            ))
-        }
+    fn as_dc(&self) -> Option<&dyn DcAnalysis> {
+        R::as_dc(self)
+    }
+
+    fn as_ac(&self) -> Option<&dyn AcAnalysis> {
+        R::as_ac(self)
+    }
+
+    fn as_transient(&self) -> Option<&dyn TransientAnalysis> {
+        R::as_transient(self)
+    }
+
+    fn as_noise_source(&self) -> Option<&dyn NoiseSource> {
+        R::as_noise_source(self)
+    }
+
+    fn as_soa_check(&self) -> Option<&dyn SoaCheck> {
+        R::as_soa_check(self)
     }
 }

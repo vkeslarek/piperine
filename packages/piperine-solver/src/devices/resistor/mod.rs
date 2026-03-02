@@ -1,33 +1,27 @@
 use crate::analysis::ac::AcAnalysis;
-use crate::analysis::dc::{DcAnalysis, DcAnalysisState};
-use crate::analysis::dc2::DcAnalysis2;
+use crate::analysis::dc::DcAnalysis;
 use crate::analysis::noise::NoiseSource;
 use crate::analysis::transient::TransientAnalysis;
-use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
+use crate::circuit::netlist::{IntoNodeIdentifier, Netlist, NodeIdentifier};
 use crate::devices::dynamic::Dynamic;
 use crate::devices::resistor::model::ResistorModel;
+use crate::devices::resistor::runtime::ResistorRuntime;
 use crate::devices::soa::SoaCheck;
-use crate::devices::{Component, Runtime};
-use crate::math::linear::Stamp;
-use crate::math::unit::{Celsius, Dimensionless, Kelvin, Meter, Ohm, Siemens, UnitExt};
-use crate::solver::Context;
+use crate::devices::{AnyRuntime, Component, Runtime};
+use crate::math::unit::{Celsius, Dimensionless, Kelvin, Meter, Ohm, UnitExt};
 use crate::util::AsAny;
 use std::any::Any;
 use std::sync::Arc;
 
-pub mod ac;
-pub mod dc;
 pub mod model;
-mod noise;
-mod soa;
-pub mod transient;
+mod runtime;
 
 #[derive(Clone)]
 pub struct Resistor {
     name: String,
     model: Arc<ResistorModel>,
-    node_plus: CircuitReference,
-    node_minus: CircuitReference,
+    node_plus: NodeIdentifier,
+    node_minus: NodeIdentifier,
 
     resistance: Dynamic<Ohm>,
     ac: Option<Ohm>,
@@ -42,8 +36,6 @@ pub struct Resistor {
     tc2: Option<Dimensionless>,
     tce: Option<Dimensionless>,
     noisy: bool,
-
-    conductance: Siemens,
 }
 
 impl Resistor {
@@ -52,13 +44,12 @@ impl Resistor {
         node_p: impl IntoNodeIdentifier,
         node_n: impl IntoNodeIdentifier,
         resistance: impl Into<Dynamic<Ohm>>,
-        netlist: &mut Netlist,
     ) -> Resistor {
         Resistor {
             name: name.to_string(),
             model: Arc::new(ResistorModel::default()),
-            node_plus: netlist.connect_node(node_p.into()),
-            node_minus: netlist.connect_node(node_n.into()),
+            node_plus: node_p.into(),
+            node_minus: node_n.into(),
             resistance: resistance.into(),
             ac: None,
             length: None,
@@ -71,7 +62,6 @@ impl Resistor {
             tc2: None,
             tce: None,
             noisy: false,
-            conductance: 1.0.pS(),
         }
     }
 
@@ -134,11 +124,11 @@ impl Resistor {
         self
     }
 
-    pub fn node_plus(&self) -> &CircuitReference {
+    pub fn node_plus(&self) -> &NodeIdentifier {
         &self.node_plus
     }
 
-    pub fn node_minus(&self) -> &CircuitReference {
+    pub fn node_minus(&self) -> &NodeIdentifier {
         &self.node_minus
     }
 
@@ -210,77 +200,7 @@ impl Component for Resistor {
         self.name.clone()
     }
 
-    fn as_dc(&mut self) -> Option<&mut dyn DcAnalysis> {
-        Some(self)
-    }
-
-    fn as_ac(&mut self) -> Option<&mut dyn AcAnalysis> {
-        Some(self)
-    }
-
-    fn as_transient(&mut self) -> Option<&mut dyn TransientAnalysis> {
-        Some(self)
-    }
-
-    fn as_noise_source(&mut self) -> Option<&mut dyn NoiseSource> {
-        Some(self)
-    }
-
-    fn as_soa_check(&self) -> Option<&dyn SoaCheck> {
-        Some(self)
-    }
-}
-
-pub struct ResistorRuntime {
-    conductance: Siemens,
-}
-
-impl DcAnalysis2 for ResistorRuntime {
-    // fn update_dc(
-    //     &mut self,
-    //     component: &Self::ComponentType,
-    //     _: &DcAnalysisState,
-    //     context: &Context,
-    // ) -> crate::result::Result<()> {
-    //     component.model().clone().update_conductance(component, context);
-    //     Ok(())
-    // }
-
-    fn load_dc(
-        &self,
-        component: &Self::ComponentType,
-        _: &DcAnalysisState,
-        _: &Context,
-    ) -> Vec<Stamp<CircuitReference, f64>> {
-        vec![
-            Stamp::Matrix(
-                component.node_plus().clone(),
-                component.node_plus().clone(),
-                self.conductance,
-            ),
-            Stamp::Matrix(
-                component.node_minus().clone(),
-                component.node_minus().clone(),
-                self.conductance,
-            ),
-            Stamp::Matrix(
-                component.node_plus().clone(),
-                component.node_minus().clone(),
-                -self.conductance,
-            ),
-            Stamp::Matrix(
-                component.node_minus().clone(),
-                component.node_plus().clone(),
-                -self.conductance,
-            ),
-        ]
-    }
-}
-
-impl Runtime for ResistorRuntime {
-    type ComponentType = Resistor;
-
-    fn as_dc(&mut self) -> Option<&mut dyn DcAnalysis2<ComponentType = Self::ComponentType>> {
-        Some(self)
+    fn runtime(&self, netlist: &mut Netlist) -> Box<dyn AnyRuntime> {
+        Box::new(ResistorRuntime::allocate(Arc::new(self.clone()), netlist))
     }
 }

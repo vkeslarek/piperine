@@ -1,40 +1,36 @@
-pub mod ac;
-pub mod dc;
 pub mod model;
-pub mod tran;
+mod runtime;
 
-use crate::analysis::ac::AcAnalysis;
-use crate::analysis::dc::DcAnalysis;
-use crate::analysis::transient::TransientAnalysis;
-use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
-use crate::devices::Component;
+use crate::circuit::netlist::{IntoNodeIdentifier, Netlist, NodeIdentifier};
 use crate::devices::capacitor::model::{CapacitorModel, CapacitorModelType};
+use crate::devices::capacitor::runtime::CapacitorRuntime;
+use crate::devices::{AnyRuntime, Component, Runtime};
 use crate::math::unit::Farad;
 use crate::util::AsAny;
 use std::any::Any;
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct Capacitor {
     pub name: String,
     pub model: Arc<CapacitorModelType>,
-    pub node_plus: CircuitReference,
-    pub node_minus: CircuitReference,
+    pub node_plus: NodeIdentifier,
+    pub node_minus: NodeIdentifier,
     pub capacitance: Farad,
 }
 
 impl Capacitor {
     pub fn new(
         name: String,
-        node_p: impl IntoNodeIdentifier,
-        node_m: impl IntoNodeIdentifier,
+        node_plus: impl IntoNodeIdentifier,
+        node_minus: impl IntoNodeIdentifier,
         capacitance: Farad,
-        netlist: &mut Netlist,
     ) -> Self {
         Self {
             name: name.to_string(),
             model: Arc::new(CapacitorModel::new()),
-            node_plus: netlist.connect_node(node_p.into().clone()),
-            node_minus: netlist.connect_node(node_m.into().clone()),
+            node_plus: node_plus.into(),
+            node_minus: node_minus.into(),
             capacitance,
         }
     }
@@ -59,15 +55,7 @@ impl Component for Capacitor {
         self.name.clone()
     }
 
-    fn as_dc(&mut self) -> Option<&mut dyn DcAnalysis> {
-        Some(self)
-    }
-
-    fn as_ac(&mut self) -> Option<&mut dyn AcAnalysis> {
-        Some(self)
-    }
-
-    fn as_transient(&mut self) -> Option<&mut dyn TransientAnalysis> {
-        Some(self)
+    fn runtime(&self, netlist: &mut Netlist) -> Box<dyn AnyRuntime> {
+        Box::new(CapacitorRuntime::allocate(Arc::new(self.clone()), netlist))
     }
 }

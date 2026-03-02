@@ -1,7 +1,7 @@
 use crate::analysis::transient::TransientAnalysisOptions;
-use crate::circuit::builder::{builder, CircuitBuilder, IntoCircuit};
+use crate::circuit::instance::CircuitInstance;
 use crate::circuit::netlist::{NodeIdentifier, GND};
-use crate::circuit::Circuit;
+use crate::circuit::{builder, Circuit};
 use crate::devices::source::Waveform::Step;
 use crate::math::unit::{Ohm, UnitExt};
 use crate::solver::Context;
@@ -16,7 +16,7 @@ pub fn titan_test(grid_size: i32) {
         grid_size * grid_size
     );
 
-    let mut circuit: Circuit = builder("Titan RC Grid", |builder| {
+    let mut circuit: CircuitInstance = builder("Titan RC Grid", |builder| {
         for x in 0..grid_size {
             for y in 0..grid_size {
                 let node_name = format!("n_{}_{}", x, y);
@@ -130,7 +130,7 @@ pub fn full_titan_test() {
 pub fn test() {
     debug!("Starting test circuit simulation...");
 
-    let mut circuit: Circuit = builder("Diode DC Bias", |builder: &mut CircuitBuilder| {
+    let mut circuit: CircuitInstance = builder("Diode DC Bias", |builder| {
         builder.voltage_source("V1", "in", GND, 5.0.V());
         builder.resistor("R1", "in", "anode", 1.0.kOhms());
         builder.diode("D1", "anode", GND);

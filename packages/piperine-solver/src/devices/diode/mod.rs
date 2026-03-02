@@ -1,53 +1,48 @@
 use crate::analysis::dc::DcAnalysis;
-use crate::circuit::netlist::{CircuitReference, IntoNodeIdentifier, Netlist};
-use crate::devices::Component;
+use crate::circuit::netlist::{IntoNodeIdentifier, Netlist, NodeIdentifier};
 use crate::devices::diode::model::{DiodeModel, DiodeModelType};
-use crate::math::unit::{Ampere, Kelvin, Siemens, UnitExt};
+use crate::devices::diode::runtime::DiodeRuntime;
+use crate::devices::{AnyRuntime, Component, Runtime};
+use crate::math::unit::{Kelvin, UnitExt};
 use crate::util::AsAny;
 use std::any::Any;
 use std::sync::Arc;
 
-mod ac;
-mod dc;
 mod model;
-mod transient;
+mod runtime;
 
 #[derive(Clone)]
 pub struct Diode {
     name: String,
     model: Arc<dyn DiodeModelType>,
-    node_plus: CircuitReference,
-    node_minus: CircuitReference,
+    node_plus: NodeIdentifier,
+    node_minus: NodeIdentifier,
 
     pub temp: Option<Kelvin>,
-
-    // Runtime State (Calculated during linearization)
-    pub g_eq: Siemens, // Dynamic Conductance (gd = dI/dV)
-    pub i_eq: Ampere,  // Equivalent Current Source offset
 }
 
 impl Diode {
     pub fn new(
         name: String,
-        node_p: impl IntoNodeIdentifier,
-        node_n: impl IntoNodeIdentifier,
-        netlist: &mut Netlist,
+        node_plus: impl IntoNodeIdentifier,
+        node_minus: impl IntoNodeIdentifier,
     ) -> Self {
         Self {
             name: name.to_string(),
             model: Arc::new(DiodeModel::default()),
-            node_plus: netlist.connect_node(node_p.into()),
-            node_minus: netlist.connect_node(node_n.into()),
+            node_plus: node_plus.into(),
+            node_minus: node_minus.into(),
             temp: None,
-            // Initial guess: Start as a very small conductance (almost open)
-            g_eq: 0.0.pS(),
-            i_eq: 0.0.A(),
         }
     }
 
     pub fn with_model(&mut self, model: Arc<dyn DiodeModelType>) -> &mut Self {
         self.model = model;
         self
+    }
+
+    pub fn model(&self) -> &Arc<dyn DiodeModelType> {
+        &self.model
     }
 }
 
@@ -65,13 +60,8 @@ impl Component for Diode {
     fn name(&self) -> String {
         self.name.clone()
     }
-    fn as_dc(&mut self) -> Option<&mut dyn DcAnalysis> {
-        Some(self)
-    }
-    fn as_ac(&mut self) -> Option<&mut dyn crate::analysis::ac::AcAnalysis> {
-        None
-    }
-    fn as_transient(&mut self) -> Option<&mut dyn crate::analysis::transient::TransientAnalysis> {
-        Some(self)
+
+    fn runtime(&self, netlist: &mut Netlist) -> Box<dyn AnyRuntime> {
+        Box::new(DiodeRuntime::allocate(Arc::new(self.clone()), netlist))
     }
 }

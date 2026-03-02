@@ -2,7 +2,6 @@ use crate::circuit::netlist::{
     BranchIdentifier, CircuitReference, CircuitVariable, Netlist, NodeIdentifier,
 };
 use crate::devices::soa::SoaViolation;
-use crate::devices::Component;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::InitialValue;
 use crate::math::linear::Stamp;
@@ -12,15 +11,7 @@ use std::sync::Arc;
 
 pub type DcAnalysisState = CircularArrayBuffer2<f64>;
 
-pub trait DcAnalysis: Component {
-    fn update_dc(
-        &mut self,
-        _dc_circuit_state: &DcAnalysisState,
-        _context: &Context,
-    ) -> crate::result::Result<()> {
-        Ok(())
-    }
-
+pub trait DcAnalysis {
     fn load_dc(
         &self,
         dc_circuit_state: &DcAnalysisState,
@@ -68,7 +59,6 @@ impl DcAnalysisResult {
         &self.soa_violations
     }
 
-    /// This method is useful because many analysis types use DC as a starting point
     pub fn as_iv(&self, netlist: &Netlist) -> Vec<InitialValue<CircuitReference, f64>> {
         let mut initial_values = Vec::with_capacity(self.values.len());
         for (var, value) in &self.values {

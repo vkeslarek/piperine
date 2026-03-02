@@ -1,7 +1,6 @@
 use crate::analysis::ac::{AcAnalysis, AcAnalysisContext, AcSweepAnalysisOptions};
 use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
 use crate::circuit::netlist::{CircuitReference, NodeIdentifier};
-use crate::devices::Component;
 use crate::math::unit::AmpereSquaredSecond;
 
 pub struct Noise {
@@ -9,7 +8,7 @@ pub struct Noise {
     pub value: AmpereSquaredSecond,
 }
 
-pub trait NoiseSource: Component + AcAnalysis + DcAnalysis {
+pub trait NoiseSource: AcAnalysis + DcAnalysis {
     fn noise_current_psd(
         &self,
         dc_point: &DcAnalysisResult,

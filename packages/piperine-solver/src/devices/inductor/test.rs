@@ -1,15 +1,15 @@
 use crate::analysis::ac::AcSweepAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
-use crate::circuit::builder::builder;
+use crate::circuit::builder;
+use crate::circuit::instance::CircuitInstance;
 use crate::circuit::netlist::GND;
-use crate::circuit::Circuit;
 use crate::devices::source::Waveform::{Sine, Step};
 use crate::math::unit::UnitExt;
 use crate::solver::Context;
 
 #[test]
 fn test_dc_inductor_short() {
-    let mut circuit: Circuit = builder("DC Inductor Short", |builder| {
+    let mut circuit: CircuitInstance = builder("DC Inductor Short", |builder| {
         builder.voltage_source("V1", "in", GND, 10.0.V());
         builder.resistor("R1", "in", "out", 1.0.kOhms());
         builder.inductor("L1", "out", GND, 1.0.mH());
@@ -26,7 +26,7 @@ fn test_dc_inductor_short() {
 
 #[test]
 fn test_ac_lc_resonance() {
-    let mut circuit: Circuit = builder("AC LC Resonance", |builder| {
+    let mut circuit: CircuitInstance = builder("AC LC Resonance", |builder| {
         builder.voltage_source(
             "V1",
             "in",
@@ -70,7 +70,7 @@ fn test_ac_lc_resonance() {
 
 #[test]
 fn test_transient_rl_current_rise() {
-    let mut circuit: Circuit = builder("RL Step Response", |builder| {
+    let mut circuit: CircuitInstance = builder("RL Step Response", |builder| {
         builder.voltage_source(
             "V1",
             "in",

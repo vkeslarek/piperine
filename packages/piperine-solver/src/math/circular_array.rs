@@ -50,7 +50,11 @@ impl<V: Zero + Clone> CircularArrayBuffer2<V> {
     }
 
     pub fn latest(&self) -> Option<ArrayView1<'_, V>> {
-        if self.count == 0 { None } else { self.view(0) }
+        if self.count == 0 {
+            None
+        } else {
+            self.view(0)
+        }
     }
 
     pub fn latest_mut(&mut self) -> Option<ArrayViewMut1<'_, V>> {
@@ -74,10 +78,11 @@ impl<V: Zero + Clone> CircularArrayBuffer2<V> {
     }
 
     fn get_physical_index(&self, lookback: usize) -> Option<usize> {
-        if lookback > self.count {
+        if lookback >= self.count || self.count == 0 {
             None
         } else {
             let capacity = self.buffer.nrows();
+            // Safe: lookback < count, and cursor is always < capacity
             Some((self.cursor + capacity - 1 - lookback) % capacity)
         }
     }

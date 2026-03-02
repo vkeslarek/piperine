@@ -1,6 +1,6 @@
 use crate::analysis::dc::DcAnalysisResult;
+use crate::circuit::instance::CircuitInstance;
 use crate::circuit::netlist::CircuitReference;
-use crate::circuit::Circuit;
 use crate::devices::soa::SoaViolations;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
@@ -12,7 +12,7 @@ use ndarray::{ArrayView1, ArrayViewMut1};
 use std::collections::HashMap;
 
 pub struct DcSystem<'a> {
-    pub circuit: &'a mut Circuit,
+    pub circuit: &'a mut CircuitInstance,
     pub context: Context,
     pub soa_violations: SoaViolations,
 }
@@ -25,18 +25,11 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for DcSystem<'a> {
     ) -> crate::result::Result<Vec<Stamp<CircuitReference, f64>>> {
         let mut all_stamps = Vec::new();
 
-        for (name, comp) in self.circuit.components_mut() {
-            let dc = comp.as_dc().ok_or_else(|| {
-                crate::error::Error::simple(
-                    format!("Component '{}' invalid for DC", name),
-                    "Missing DC implementation",
-                )
-            })?;
-
-            dc.update_dc(state, &self.context)?;
-
+        self.circuit.update_all(state, &self.context);
+        for dc in self.circuit.dc_runtimes().iter() {
             all_stamps.extend(dc.load_dc(state, &self.context));
         }
+
         Ok(all_stamps)
     }
 
@@ -80,11 +73,9 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for DcSystem<'a> {
         state: &CircularArrayBuffer2<f64>,
         _: &ArrayView1<f64>,
     ) {
-        for (_, component) in self.circuit.components() {
-            if let Some(soa_comp) = component.as_soa_check() {
-                self.soa_violations
-                    .add_all(soa_comp.soa_check(state, &self.context));
-            }
+        for soa_comp in self.circuit.soa_runtimes() {
+            self.soa_violations
+                .add_all(soa_comp.soa_check(state, &self.context));
         }
     }
 }
@@ -95,7 +86,7 @@ pub struct DcSolver<'a> {
 }
 
 impl<'a> DcSolver<'a> {
-    pub fn new(circuit: &'a mut Circuit, context: Context) -> crate::result::Result<Self> {
+    pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::result::Result<Self> {
         init_solver_configuration();
         let netlist = circuit.netlist();
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
@@ -136,15 +127,15 @@ impl<'a> DcSolver<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::circuit::builder::builder;
+    use crate::circuit::builder;
+    use crate::circuit::instance::CircuitInstance;
     use crate::circuit::netlist::GND;
-    use crate::circuit::Circuit;
     use crate::math::unit::UnitExt;
     use crate::solver::Context;
 
     #[test]
     fn test_dc_resistive_divider() {
-        let mut circuit: Circuit = builder("DC Divider", |builder| {
+        let mut circuit: CircuitInstance = builder("DC Divider", |builder| {
             builder.voltage_source("V1", "in", GND, 10.0.V());
 
             builder.resistor("R1", "in", "out", 1.0.kOhms());
@@ -162,7 +153,7 @@ mod test {
 
     #[test]
     fn test_dc_diode_bias() {
-        let mut circuit: Circuit = builder("Diode DC Bias", |builder| {
+        let mut circuit: CircuitInstance = builder("Diode DC Bias", |builder| {
             builder.voltage_source("V1", "in", GND, 5.0.V());
             builder.resistor("R1", "in", "anode", 1.0.kOhms());
             builder.diode("D1", "anode", GND);
@@ -182,7 +173,7 @@ mod test {
 
     #[test]
     fn test_dc_floating_node_crash() {
-        let mut circuit: Circuit = builder("Floating Node (Series Caps)", |builder| {
+        let mut circuit: CircuitInstance = builder("Floating Node (Series Caps)", |builder| {
             builder.voltage_source("V1", "in", GND, 10.0.V());
 
             builder.capacitor("C1", "in", "mid", 1.0.uF());

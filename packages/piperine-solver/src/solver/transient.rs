@@ -1,8 +1,8 @@
 use crate::analysis::transient::{
     TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisResult, TransientStep,
 };
+use crate::circuit::instance::CircuitInstance;
 use crate::circuit::netlist::CircuitReference;
-use crate::circuit::Circuit;
 use crate::devices::soa::SoaViolations;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::deriv::Integrable;
@@ -14,11 +14,10 @@ use crate::solver::{init_solver_configuration, Context};
 use log::debug;
 use ndarray::{Array1, ArrayView1, ArrayViewMut1};
 use num_traits::Zero;
-use rayon::iter::{ParallelBridge, ParallelIterator};
 use std::collections::HashMap;
 
 pub struct TransientSystem<'a> {
-    pub circuit: &'a mut Circuit,
+    pub circuit: &'a mut CircuitInstance,
     pub context: Context,
     pub time: f64,
     pub dt: f64,
@@ -72,17 +71,14 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for TransientSystem<'a> {
 
         let mut all_stamps = Vec::new();
 
-        for (name, comp) in self.circuit.components_mut() {
-            if let Some(tran) = comp.as_transient() {
-                tran.update_transient(state, &tran_ctx, &self.context)?;
+        // Update context time before calling update_all so sources can evaluate waveforms
+        self.context.time = self.time;
+        self.circuit.update_all(state, &self.context);
+        for tran in self.circuit.transient_runtimes() {
+            all_stamps.extend(tran.load_transient(state, &tran_ctx, &self.context));
 
-                all_stamps.extend(tran.load_transient(state, &tran_ctx, &self.context));
-
-                let raw_dynamic = tran.load_transient_dynamic(state, &tran_ctx, &self.context);
-                all_stamps.extend(Self::map_dynamic_stamps(alpha, &history, raw_dynamic));
-            } else {
-                debug!("Component '{}' ignored in transient", name);
-            }
+            let raw_dynamic = tran.load_transient_dynamic(state, &tran_ctx, &self.context);
+            all_stamps.extend(Self::map_dynamic_stamps(alpha, &history, raw_dynamic));
         }
         Ok(all_stamps)
     }
@@ -124,11 +120,9 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for TransientSystem<'a> {
         state: &CircularArrayBuffer2<f64>,
         _: &ArrayView1<f64>,
     ) {
-        for (_, component) in self.circuit.components() {
-            if let Some(soa_comp) = component.as_soa_check() {
-                self.soa_violations
-                    .add_all(soa_comp.soa_check(state, &self.context));
-            }
+        for soa_comp in self.circuit.soa_runtimes() {
+            self.soa_violations
+                .add_all(soa_comp.soa_check(state, &self.context));
         }
     }
 }
@@ -141,7 +135,7 @@ pub struct TransientSolver<'a> {
 
 impl<'a> TransientSolver<'a> {
     pub fn new(
-        circuit: &'a mut Circuit,
+        circuit: &'a mut CircuitInstance,
         options: TransientAnalysisOptions,
         context: Context,
     ) -> crate::result::Result<Self> {
@@ -237,16 +231,16 @@ impl<'a> TransientSolver<'a> {
 #[cfg(test)]
 mod test {
     use crate::analysis::transient::TransientAnalysisOptions;
-    use crate::circuit::builder::builder;
+    use crate::circuit::builder;
+    use crate::circuit::instance::CircuitInstance;
     use crate::circuit::netlist::GND;
-    use crate::circuit::Circuit;
     use crate::devices::source::Waveform::Step;
     use crate::math::unit::UnitExt;
     use crate::solver::Context;
 
     #[test]
     fn test_transient_rc_charging() {
-        let mut circuit: Circuit = builder("RC Transient Demo", |builder| {
+        let mut circuit: CircuitInstance = builder("RC Transient Demo", |builder| {
             builder.voltage_source(
                 "V1",
                 "in",
@@ -297,7 +291,7 @@ mod test {
 
     #[test]
     fn test_transient_rc_step() {
-        let mut circuit: Circuit = builder("RC Step Response", |builder| {
+        let mut circuit: CircuitInstance = builder("RC Step Response", |builder| {
             builder.voltage_source(
                 "V1",
                 "in",

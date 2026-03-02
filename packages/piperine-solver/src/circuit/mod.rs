@@ -1,21 +1,21 @@
-use crate::analysis::noise::NoiseAnalysisOptions;
-use crate::analysis::transient::TransientAnalysisOptions;
-use crate::circuit::netlist::Netlist;
-use crate::devices::{AnyModel, Component};
-use crate::solver::ac::AcSolver;
-use crate::solver::dc::DcSolver;
-use crate::solver::noise::NoiseSolver;
-use crate::solver::transient::TransientSolver;
-use crate::solver::Context;
+use crate::circuit::instance::CircuitInstance;
+use crate::circuit::netlist::IntoNodeIdentifier;
+use crate::devices::capacitor::Capacitor;
+use crate::devices::diode::Diode;
+use crate::devices::dynamic::Dynamic;
+use crate::devices::inductor::Inductor;
+use crate::devices::resistor::Resistor;
+use crate::devices::source::{VoltageSource, Waveform};
+use crate::devices::{AnyModel, Component, Model};
+use crate::math::unit::{Farad, Henry, Ohm};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub mod builder;
+pub mod instance;
 pub mod netlist;
 
 pub struct Circuit {
     title: String,
-    netlist: Netlist,
     models: HashMap<String, Arc<dyn AnyModel>>,
     components: HashMap<String, Box<dyn Component>>,
 }
@@ -24,23 +24,8 @@ impl Circuit {
     pub fn new(title: impl Into<String>) -> Self {
         Self {
             title: title.into(),
-            netlist: Netlist::new(),
             models: HashMap::new(),
             components: HashMap::new(),
-        }
-    }
-
-    pub fn from_raw(
-        title: String,
-        netlist: Netlist,
-        models: HashMap<String, Arc<dyn AnyModel>>,
-        components: HashMap<String, Box<dyn Component>>,
-    ) -> Self {
-        Self {
-            title,
-            netlist,
-            models,
-            components,
         }
     }
 
@@ -70,12 +55,70 @@ impl Circuit {
         self.models.insert(name.into(), model);
     }
 
-    pub fn netlist(&self) -> &Netlist {
-        &self.netlist
+    pub fn model<M: Model>(&mut self, name: impl Into<String>, model: M) -> Arc<M> {
+        let instance = Arc::new(model);
+        self.add_model(name, instance.clone());
+        instance
     }
 
-    pub fn netlist_mut(&mut self) -> &mut Netlist {
-        &mut self.netlist
+    pub fn capacitor(
+        &mut self,
+        name: impl Into<String>,
+        node_p: impl IntoNodeIdentifier,
+        node_n: impl IntoNodeIdentifier,
+        capacitance: impl Into<Farad>,
+    ) -> &mut Capacitor {
+        let name = name.into();
+        let instance = Capacitor::new(name.clone(), node_p, node_n, capacitance.into());
+        self.add_component(name, instance)
+    }
+
+    pub fn diode(
+        &mut self,
+        name: impl Into<String>,
+        node_p: impl IntoNodeIdentifier,
+        node_n: impl IntoNodeIdentifier,
+    ) -> &mut Diode {
+        let name = name.into();
+        let instance = Diode::new(name.clone(), node_p, node_n);
+        self.add_component(name, instance)
+    }
+
+    pub fn inductor(
+        &mut self,
+        name: impl Into<String>,
+        node_p: impl IntoNodeIdentifier,
+        node_n: impl IntoNodeIdentifier,
+        inductance: impl Into<Henry>,
+    ) -> &mut Inductor {
+        let name = name.into();
+        let instance = Inductor::new(name.clone(), node_p, node_n, inductance.into());
+
+        self.add_component(name, instance)
+    }
+
+    pub fn resistor(
+        &mut self,
+        name: impl Into<String>,
+        node_p: impl IntoNodeIdentifier,
+        node_n: impl IntoNodeIdentifier,
+        resistance: impl Into<Dynamic<Ohm>>,
+    ) -> &mut Resistor {
+        let name = name.into();
+        let instance = Resistor::new(name.clone(), node_p, node_n, resistance.into());
+        self.add_component(name, instance)
+    }
+
+    pub fn voltage_source(
+        &mut self,
+        name: impl Into<String>,
+        node_p: impl IntoNodeIdentifier,
+        node_n: impl IntoNodeIdentifier,
+        waveform: impl Into<Waveform>,
+    ) -> &mut VoltageSource {
+        let name = name.into();
+        let instance = VoltageSource::new(name.clone(), node_p, node_n, waveform.into());
+        self.add_component(name, instance)
     }
 
     pub fn components(&self) -> &HashMap<String, Box<dyn Component>> {
@@ -89,28 +132,16 @@ impl Circuit {
     pub fn title(&self) -> &String {
         &self.title
     }
+}
 
-    pub fn ac(&mut self, context: Context) -> crate::result::Result<AcSolver<'_>> {
-        AcSolver::new(self, context)
-    }
+pub fn builder<F: FnOnce(&mut Circuit)>(title: impl Into<String>, builder_fn: F) -> Circuit {
+    let mut builder = Circuit::new(title);
+    builder_fn(&mut builder);
+    builder
+}
 
-    pub fn dc(&mut self, context: Context) -> crate::result::Result<DcSolver<'_>> {
-        DcSolver::new(self, context)
-    }
-
-    pub fn noise(
-        &mut self,
-        options: NoiseAnalysisOptions,
-        context: Context,
-    ) -> crate::result::Result<NoiseSolver<'_>> {
-        NoiseSolver::new(self, options, context)
-    }
-
-    pub fn transient(
-        &mut self,
-        transient_options: TransientAnalysisOptions,
-        context: Context,
-    ) -> crate::result::Result<TransientSolver<'_>> {
-        TransientSolver::new(self, transient_options, context)
+impl Into<CircuitInstance> for Circuit {
+    fn into(self) -> CircuitInstance {
+        CircuitInstance::instantiate(&self).expect("Failed to instantiate circuit")
     }
 }

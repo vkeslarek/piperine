@@ -1,18 +1,14 @@
-use crate::devices::Model;
 use crate::devices::diode::Diode;
-use crate::math::unit::{Ampere, Kelvin, UnitExt};
+use crate::devices::Model;
+use crate::math::num::Scalar;
+use crate::math::unit::{Ampere, Kelvin, Siemens, UnitExt};
 use crate::solver::Context;
 use crate::util::AsAny;
 use std::any::Any;
 
 pub trait DiodeModelType: Model<ComponentType = Diode> {
-    fn update_linearization(
-        &self,
-        component: &mut Diode,
-        v_now: f64,
-        v_old: f64,
-        context: &Context,
-    );
+    /// Returns (g_eq, i_eq, v_d_damped) - the last value is the voltage after damping
+    fn get_g_eq_i_eq(&self, v_now: f64, v_old: f64, context: &Context) -> (Siemens, Ampere, f64);
 }
 
 #[derive(Debug)]
@@ -46,13 +42,7 @@ impl AsAny for DiodeModel {
 }
 
 impl DiodeModelType for DiodeModel {
-    fn update_linearization(
-        &self,
-        component: &mut Diode,
-        v_now: f64,
-        v_old: f64,
-        context: &Context,
-    ) {
+    fn get_g_eq_i_eq(&self, v_now: f64, v_old: f64, context: &Context) -> (Siemens, Ampere, f64) {
         // 1. What the Linear Solver suggested (Raw Step)
         let v_d_proposed = v_now;
 
@@ -96,7 +86,7 @@ impl DiodeModelType for DiodeModel {
         };
 
         // 5. Calculate RHS Source (i_eq = i_actual - g_d * v_d)
-        component.g_eq = (g_d + context.gmin).S();
-        component.i_eq = (i_d - g_d * v_d).A();
+        // Also return the damped voltage for the runtime to store
+        ((g_d + context.gmin).S(), (i_d - g_d * v_d), v_d)
     }
 }

@@ -1,6 +1,6 @@
 use crate::devices::resistor::Resistor;
 use crate::devices::Model;
-use crate::math::unit::{Dimensionless, Kelvin, Meter, Ohm, UnitExt, Volt};
+use crate::math::unit::{Dimensionless, Kelvin, Meter, Ohm, Siemens, UnitExt, Volt};
 use crate::solver::Context;
 use crate::util::AsAny;
 use std::any::Any;
@@ -8,18 +8,15 @@ use std::any::Any;
 #[derive(Debug)]
 pub struct ResistorModel {
     pub name: String,
-    // Temperature parameters
     pub tnom: Kelvin,
     pub tc1: Dimensionless,
     pub tc2: Dimensionless,
     pub tce: Dimensionless,
-    // Geometry parameters
     pub sheet_res: Ohm,
     pub def_width: Meter,
     pub def_length: Meter,
     pub narrow: Meter,
     pub short: Meter,
-    // Noise and Limits
     pub bv_max: Option<Volt>,
     pub lf: Dimensionless,
     pub wf: Dimensionless,
@@ -114,12 +111,11 @@ impl ResistorModel {
         self
     }
 
-    pub fn update_conductance(&self, component: &mut Resistor, context: &Context) {
+    pub fn eval_conductance(&self, component: &Resistor, context: &Context) -> Siemens {
         let r_nom = component.resistance.eval_or({
             let effective_length = component.length.unwrap_or(self.def_length) - 2.0 * self.short;
             let effective_width = component.width.unwrap_or(self.def_width) - 2.0 * self.narrow;
 
-            // Physics: R = Rsh * (L / W)
             if self.sheet_res > 0.0.Ohms() {
                 if effective_width > 0.0.m() {
                     self.sheet_res * effective_length * effective_width
@@ -131,11 +127,9 @@ impl ResistorModel {
             }
         });
 
-        // 2. Temperature Factor Calculation
         let current_temp: Kelvin = component.temp.unwrap_or(self.tnom);
         let delta_t = current_temp + component.delta_temp.unwrap_or(0.0.K()) - self.tnom;
 
-        // Resolve coefficients (Priority: Component > Model > Default 0.0)
         let tc1 = component.tc1.unwrap_or(self.tc1);
         let tc2 = component.tc2.unwrap_or(self.tc2);
         let tce = component.tce.unwrap_or(self.tce);
@@ -143,9 +137,8 @@ impl ResistorModel {
         let exp_fact = 1.01f64.powf(tce * delta_t);
         let poly_fact = (tc2 * delta_t * delta_t) + (tc1 * delta_t) + 1.0;
         let factor = exp_fact * poly_fact;
-        
-        component.conductance =
-            component.multiplier.unwrap_or(1.0) / (r_nom * factor * component.scale.unwrap_or(1.0));
+
+        component.multiplier.unwrap_or(1.0) / (r_nom * factor * component.scale.unwrap_or(1.0))
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::math::num::Field;
+use crate::math::num::Scalar;
 use ndarray::{Array1, ArrayRef, ArrayView1};
 
 pub trait AsIndex {
@@ -16,12 +16,12 @@ impl<A: AsIndex, E> AsIndexGetExt<A, E> for ArrayView1<'_, E> {
 }
 
 #[derive(Debug, Clone)]
-pub enum Stamp<A: AsIndex, E: Field> {
+pub enum Stamp<A: AsIndex, E: Scalar> {
     Matrix(A, A, E),
     Rhs(A, E),
 }
 
-pub trait LinearSystem<E: Field> {
+pub trait LinearSystem<E: Scalar> {
     fn new(size: usize) -> Self;
     fn apply_stamps<A: AsIndex>(&mut self, stamps: Vec<Stamp<A, E>>);
     fn solve(&self) -> crate::result::Result<Array1<E>>;
@@ -29,7 +29,7 @@ pub trait LinearSystem<E: Field> {
 
 pub trait SymbolicMatrix {
     fn size(&self) -> usize;
-    fn new<A: AsIndex, E: Field>(
+    fn new<A: AsIndex, E: Scalar>(
         size: usize,
         stamp: Vec<Stamp<A, E>>,
     ) -> crate::result::Result<Self>
@@ -37,7 +37,7 @@ pub trait SymbolicMatrix {
         Self: Sized;
 }
 
-pub trait SymbolicLinearSystem<E: Field>: LinearSystem<E> {
+pub trait SymbolicLinearSystem<E: Scalar>: LinearSystem<E> {
     type SymbolicType: SymbolicMatrix;
 
     fn solve_with_backend(&self, symbolic: &Self::SymbolicType)
@@ -54,7 +54,7 @@ impl SymbolicMatrix for NoSymbolic {
     fn size(&self) -> usize {
         self.size
     }
-    fn new<A: AsIndex, E: Field>(size: usize, _: Vec<Stamp<A, E>>) -> crate::result::Result<Self> {
+    fn new<A: AsIndex, E: Scalar>(size: usize, _: Vec<Stamp<A, E>>) -> crate::result::Result<Self> {
         Ok(Self { size })
     }
 }
