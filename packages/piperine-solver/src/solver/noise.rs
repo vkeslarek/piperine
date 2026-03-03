@@ -175,19 +175,22 @@ impl<'a> NoiseSolver<'a> {
 mod test {
     use crate::analysis::ac::AcSweepAnalysisOptions;
     use crate::analysis::noise::NoiseAnalysisOptions;
-    use crate::circuit::builder;
     use crate::circuit::instance::CircuitInstance;
     use crate::circuit::netlist::GND;
+    use crate::circuit::Circuit;
     use crate::math::unit::UnitExt;
     use crate::solver::Context;
 
     #[test]
     fn test_noise_johnson_nyquist() {
-        let mut circuit: CircuitInstance = builder("Noise Verification - RC", |builder| {
-            builder
-                .resistor("R1", "out", GND, 100.0.kOhms())
+        let mut v_out = GND;
+
+        let mut circuit: CircuitInstance = Circuit::builder("Noise Verification - RC", |b| {
+            v_out = b.port();
+
+            b.resistor("R1", v_out.clone(), GND, 100.0.kOhms())
                 .with_noise(true);
-            builder.capacitor("C1", "out", GND, 1.0.nF());
+            b.capacitor("C1", v_out.clone(), GND, 1.0.nF());
         })
         .into();
 
@@ -200,8 +203,8 @@ mod test {
                         steps: 500,
                         logarithmic: true,
                     },
-                    output_node: "out".into(),
-                    reference_node: GND.into(),
+                    output_node: v_out,
+                    reference_node: GND,
                     input_source_name: None,
                 },
                 Context::default(),

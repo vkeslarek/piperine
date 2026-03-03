@@ -85,8 +85,8 @@ impl AcAnalysisStep {
         self.get(&CircuitVariable::Branch(branch_identifier.into()))
     }
 
-    pub fn get_node(&self, node_identifier: impl Into<NodeIdentifier>) -> Option<&Complex<f64>> {
-        self.get(&CircuitVariable::Node(node_identifier.into()))
+    pub fn get_node(&self, node_identifier: &NodeIdentifier) -> Option<&Complex<f64>> {
+        self.get(&CircuitVariable::Node(node_identifier.clone()))
     }
 }
 

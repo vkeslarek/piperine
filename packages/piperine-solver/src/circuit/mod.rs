@@ -1,5 +1,5 @@
 use crate::circuit::instance::CircuitInstance;
-use crate::circuit::netlist::IntoNodeIdentifier;
+use crate::circuit::netlist::{IntoNodeIdentifier, NodeIdentifier};
 use crate::devices::capacitor::Capacitor;
 use crate::devices::diode::Diode;
 use crate::devices::dynamic::Dynamic;
@@ -9,6 +9,7 @@ use crate::devices::source::{VoltageSource, Waveform};
 use crate::devices::{AnyModel, Component, Model};
 use crate::math::unit::{Farad, Henry, Ohm};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 pub mod instance;
@@ -18,6 +19,8 @@ pub struct Circuit {
     title: String,
     models: HashMap<String, Arc<dyn AnyModel>>,
     components: HashMap<String, Box<dyn Component>>,
+    node_counter: AtomicUsize,
+    scope_stack: Vec<String>,
 }
 
 impl Circuit {
@@ -26,16 +29,25 @@ impl Circuit {
             title: title.into(),
             models: HashMap::new(),
             components: HashMap::new(),
+            node_counter: AtomicUsize::new(0),
+            scope_stack: Vec::new(),
         }
     }
 
     pub fn add_component<B: Component>(&mut self, name: impl Into<String>, component: B) -> &mut B {
         let name_str = name.into();
 
-        self.components
-            .insert(name_str.clone(), Box::new(component));
+        // Apply scope prefix if we're inside a scope
+        let prefixed_name = if self.scope_stack.is_empty() {
+            name_str.clone()
+        } else {
+            format!("{}.{}", self.scope_stack.join("."), name_str)
+        };
 
-        let boxed = self.components.get_mut(&name_str).unwrap();
+        self.components
+            .insert(prefixed_name.clone(), Box::new(component));
+
+        let boxed = self.components.get_mut(&prefixed_name).unwrap();
 
         let any_mut = boxed.as_any_mut();
 
@@ -44,7 +56,7 @@ impl Circuit {
             None => {
                 panic!(
                     "Downcast failed for component '{}'. Expected type {}, but found something else.",
-                    name_str,
+                    prefixed_name,
                     std::any::type_name::<B>()
                 );
             }
@@ -53,6 +65,44 @@ impl Circuit {
 
     pub fn add_model(&mut self, name: impl Into<String>, model: Arc<dyn AnyModel>) {
         self.models.insert(name.into(), model);
+    }
+
+    pub fn port(&self) -> NodeIdentifier {
+        NodeIdentifier::Anonymous(self.node_counter.fetch_add(1, Ordering::Relaxed))
+    }
+
+    pub fn scoped<F, R>(&mut self, name: &str, f: F) -> R
+    where
+        F: FnOnce(&mut Self) -> R,
+    {
+        self.scope_stack.push(name.to_string());
+        let result = f(self);
+        self.scope_stack.pop();
+        result
+    }
+
+    pub fn subcircuit(&mut self, name: &str, subcircuit: Circuit) {
+        // Enter the scope for this subcircuit
+        self.scope_stack.push(name.to_string());
+
+        // Merge all components from the subcircuit
+        for (comp_name, component) in subcircuit.components {
+            // Component names will be prefixed by add_component
+            self.components.insert(
+                if self.scope_stack.is_empty() {
+                    comp_name
+                } else {
+                    format!("{}.{}", self.scope_stack.join("."), comp_name)
+                },
+                component,
+            );
+        }
+
+        // Merge all models
+        self.models.extend(subcircuit.models);
+
+        // Exit the scope
+        self.scope_stack.pop();
     }
 
     pub fn model<M: Model>(&mut self, name: impl Into<String>, model: M) -> Arc<M> {
@@ -132,12 +182,12 @@ impl Circuit {
     pub fn title(&self) -> &String {
         &self.title
     }
-}
 
-pub fn builder<F: FnOnce(&mut Circuit)>(title: impl Into<String>, builder_fn: F) -> Circuit {
-    let mut builder = Circuit::new(title);
-    builder_fn(&mut builder);
-    builder
+    pub fn builder<F: FnOnce(&mut Circuit)>(title: impl Into<String>, builder_fn: F) -> Circuit {
+        let mut circuit = Circuit::new(title);
+        builder_fn(&mut circuit);
+        circuit
+    }
 }
 
 impl Into<CircuitInstance> for Circuit {

@@ -43,8 +43,8 @@ impl DcAnalysisResult {
         self.values.get(&variable.into()).cloned()
     }
 
-    pub fn get_node(&self, node_identifier: impl Into<NodeIdentifier>) -> Option<f64> {
-        self.get(CircuitVariable::Node(node_identifier.into()))
+    pub fn get_node(&self, node_identifier: &NodeIdentifier) -> Option<f64> {
+        self.get(CircuitVariable::Node(node_identifier.clone()))
     }
 
     pub fn get_branch(&self, branch_identifier: impl Into<BranchIdentifier>) -> Option<f64> {

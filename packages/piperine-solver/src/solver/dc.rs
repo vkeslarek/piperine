@@ -127,41 +127,53 @@ impl<'a> DcSolver<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::circuit::builder;
     use crate::circuit::instance::CircuitInstance;
     use crate::circuit::netlist::GND;
+    use crate::circuit::Circuit;
     use crate::math::unit::UnitExt;
     use crate::solver::Context;
 
     #[test]
     fn test_dc_resistive_divider() {
-        let mut circuit: CircuitInstance = builder("DC Divider", |builder| {
-            builder.voltage_source("V1", "in", GND, 10.0.V());
+        let mut v_out = GND;
 
-            builder.resistor("R1", "in", "out", 1.0.kOhms());
-            builder.resistor("R2", "out", GND, 1.0.kOhms());
+        let mut circuit: CircuitInstance = Circuit::builder("DC Divider", |b| {
+            let v_in = b.port();
+            v_out = b.port();
+
+            b.voltage_source("V1", v_in.clone(), GND, 10.0.V());
+            b.resistor("R1", v_in, v_out.clone(), 1.0.kOhms());
+            b.resistor("R2", v_out.clone(), GND, 1.0.kOhms());
         })
         .into();
 
         let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
 
-        let v_out = result.get_node("out").unwrap();
+        let v_out_value = result.get_node(&v_out).unwrap();
 
-        println!("DC Divider: V_out = {:.4} V", v_out);
-        assert!((v_out - 5.0).abs() < 1e-6, "Divider failed: Expected 5.0V");
+        println!("DC Divider: V_out = {:.4} V", v_out_value);
+        assert!(
+            (v_out_value - 5.0).abs() < 1e-6,
+            "Divider failed: Expected 5.0V"
+        );
     }
 
     #[test]
     fn test_dc_diode_bias() {
-        let mut circuit: CircuitInstance = builder("Diode DC Bias", |builder| {
-            builder.voltage_source("V1", "in", GND, 5.0.V());
-            builder.resistor("R1", "in", "anode", 1.0.kOhms());
-            builder.diode("D1", "anode", GND);
+        let mut anode = GND;
+
+        let mut circuit: CircuitInstance = Circuit::builder("Diode DC Bias", |b| {
+            let v_in = b.port();
+            anode = b.port();
+
+            b.voltage_source("V1", v_in.clone(), GND, 5.0.V());
+            b.resistor("R1", v_in, anode.clone(), 1.0.kOhms());
+            b.diode("D1", anode.clone(), GND);
         })
         .into();
 
         let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
-        let v_d = result.get_node("anode").unwrap();
+        let v_d = result.get_node(&anode).unwrap();
 
         println!("Diode Forward Voltage: {:.4} V", v_d);
 
@@ -173,24 +185,121 @@ mod test {
 
     #[test]
     fn test_dc_floating_node_crash() {
-        let mut circuit: CircuitInstance = builder("Floating Node (Series Caps)", |builder| {
-            builder.voltage_source("V1", "in", GND, 10.0.V());
+        let mut v_mid = GND;
 
-            builder.capacitor("C1", "in", "mid", 1.0.uF());
-            builder.capacitor("C2", "mid", GND, 1.0.uF());
+        let mut circuit: CircuitInstance = Circuit::builder("Floating Node (Series Caps)", |b| {
+            let v_in = b.port();
+            v_mid = b.port();
+
+            b.voltage_source("V1", v_in.clone(), GND, 10.0.V());
+            b.capacitor("C1", v_in, v_mid.clone(), 1.0.uF());
+            b.capacitor("C2", v_mid.clone(), GND, 1.0.uF());
         })
         .into();
 
         let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
 
-        let v_mid = result.get_node("mid").unwrap();
+        let v_mid_value = result.get_node(&v_mid).unwrap();
 
-        println!("Floating Node Voltage (stabilized by Gmin): {:.4} V", v_mid);
+        println!(
+            "Floating Node Voltage (stabilized by Gmin): {:.4} V",
+            v_mid_value
+        );
 
         assert!(
-            (v_mid - 5.0).abs() < 1e-3,
+            (v_mid_value - 5.0).abs() < 1e-3,
             "Gmin failed to stabilize floating node! Expected 5.0V, got {}",
-            v_mid
+            v_mid_value
+        );
+    }
+
+    #[test]
+    fn test_subcircuit_voltage_dividers() {
+        use crate::circuit::netlist::NodeIdentifier;
+
+        // Define a voltage divider subcircuit as a function returning Circuit
+        fn voltage_divider(
+            input: NodeIdentifier,
+            output: NodeIdentifier,
+            gnd: NodeIdentifier,
+        ) -> Circuit {
+            let mut c = Circuit::new("Voltage Divider");
+            c.resistor("R1", input, output.clone(), 1.0.kOhms());
+            c.resistor("R2", output, gnd, 1.0.kOhms());
+            c
+        }
+
+        let mut circuit = Circuit::new("Subcircuit Test");
+        let v_in = circuit.port();
+        let v_out1 = circuit.port();
+        let v_out2 = circuit.port();
+
+        circuit.voltage_source("V1", v_in.clone(), GND, 10.0.V());
+
+        // First divider instance - components will be prefixed with "DIV1."
+        circuit.subcircuit("DIV1", voltage_divider(v_in.clone(), v_out1.clone(), GND));
+
+        // Second divider instance - components will be prefixed with "DIV2."
+        circuit.subcircuit("DIV2", voltage_divider(v_out1.clone(), v_out2.clone(), GND));
+
+        let mut circuit: CircuitInstance = circuit.into();
+
+        let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
+
+        let v_out1_value = result.get_node(&v_out1).unwrap();
+        let v_out2_value = result.get_node(&v_out2).unwrap();
+
+        println!("Subcircuit Test Results:");
+        println!("  DIV1 output: {:.4} V", v_out1_value);
+        println!("  DIV2 output: {:.4} V", v_out2_value);
+
+        // With 10V input:
+        // - DIV1.R1 (1k) from v_in to v_out1
+        // - DIV1.R2 (1k) from v_out1 to GND
+        // - DIV2.R1 (1k) from v_out1 to v_out2 (loads DIV1 output)
+        // - DIV2.R2 (1k) from v_out2 to GND
+        //
+        // This creates:
+        // v_out1 = 10V * (1k || 2k) / (1k + (1k || 2k)) = 10V * (2/3) / (1 + 2/3) = 4V
+        // v_out2 = v_out1 * 1k / (1k + 1k) = 4V / 2 = 2V
+
+        // Verify voltages (component names are scoped as DIV1.R1, DIV1.R2, DIV2.R1, DIV2.R2)
+        assert!(
+            (v_out1_value - 4.0).abs() < 1e-6,
+            "First divider failed: Expected 4.0V, got {}",
+            v_out1_value
+        );
+        assert!(
+            (v_out2_value - 2.0).abs() < 1e-6,
+            "Second divider failed: Expected 2.0V, got {}",
+            v_out2_value
+        );
+    }
+
+    #[test]
+    fn test_circuit_new_direct() {
+        // Test using Circuit::new() directly instead of builder closure
+        let mut circuit = Circuit::new("Direct API Test");
+
+        let v_in = circuit.port();
+        let v_out = circuit.port();
+
+        circuit.voltage_source("V1", v_in.clone(), GND, 5.0.V());
+        circuit.resistor("R1", v_in, v_out.clone(), 2.0.kOhms());
+        circuit.resistor("R2", v_out.clone(), GND, 3.0.kOhms());
+
+        let mut instance: CircuitInstance = circuit.into();
+        let result = instance.dc(Context::default()).unwrap().solve().unwrap();
+
+        let v_out_value = result.get_node(&v_out).unwrap();
+
+        println!("Direct API V_out: {:.4} V", v_out_value);
+
+        // 5V * 3k / (2k + 3k) = 3V
+        assert!(
+            (v_out_value - 3.0).abs() < 1e-6,
+            "Expected 3.0V, got {}",
+            v_out_value
         );
     }
 }

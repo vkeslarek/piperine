@@ -1,12 +1,12 @@
 use crate::math::linear::AsIndex;
 use bimap::BiMap;
+use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum NodeIdentifier {
-    Named(String),
-    Indexed(usize),
+    Anonymous(usize),
     Gnd,
 }
 
@@ -19,34 +19,17 @@ impl NodeIdentifier {
     }
 }
 
+impl fmt::Display for NodeIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NodeIdentifier::Anonymous(n) => write!(f, "n{}", n),
+            NodeIdentifier::Gnd => write!(f, "GND"),
+        }
+    }
+}
+
 pub trait IntoNodeIdentifier: Into<NodeIdentifier> {}
 impl<T> IntoNodeIdentifier for T where T: Into<NodeIdentifier> {}
-
-impl Into<NodeIdentifier> for usize {
-    fn into(self) -> NodeIdentifier {
-        NodeIdentifier::Indexed(self)
-    }
-}
-
-impl From<&str> for NodeIdentifier {
-    fn from(name: &str) -> Self {
-        if name.to_uppercase() == "GND" {
-            NodeIdentifier::Gnd
-        } else {
-            NodeIdentifier::Named(name.to_string())
-        }
-    }
-}
-
-impl Into<NodeIdentifier> for String {
-    fn into(self) -> NodeIdentifier {
-        if self == "GND" {
-            NodeIdentifier::Gnd
-        } else {
-            NodeIdentifier::Named(self)
-        }
-    }
-}
 
 pub const GND: NodeIdentifier = NodeIdentifier::Gnd;
 

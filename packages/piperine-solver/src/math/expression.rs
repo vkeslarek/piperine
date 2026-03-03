@@ -682,10 +682,14 @@ impl Expr {
     }
 }
 
-pub fn example_usage() -> Expr {
-    let base_eq = V!(1) - 12.0 * I!("L1") + ask!("C1", Ask::ModelParam("Capacitance".into()));
-
-    let ac_source = sin!(param!(time) * 2.0 * PI * 60.0);
-
-    If!(V!(1).gt(5.0) => 10.0; else max!(base_eq, ac_source))
-}
+// NOTE: This example function is commented out because it uses integer node references
+// which are no longer supported after removing NodeIdentifier::Indexed.
+// Nodes must now be created with Circuit::port() instead.
+//
+// pub fn example_usage() -> Expr {
+//     let base_eq = V!(1) - 12.0 * I!("L1") + ask!("C1", Ask::ModelParam("Capacitance".into()));
+//
+//     let ac_source = sin!(param!(time) * 2.0 * PI * 60.0);
+//
+//     If!(V!(1).gt(5.0) => 10.0; else max!(base_eq, ac_source))
+// }

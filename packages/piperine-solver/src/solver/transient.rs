@@ -231,19 +231,24 @@ impl<'a> TransientSolver<'a> {
 #[cfg(test)]
 mod test {
     use crate::analysis::transient::TransientAnalysisOptions;
-    use crate::circuit::builder;
     use crate::circuit::instance::CircuitInstance;
     use crate::circuit::netlist::GND;
+    use crate::circuit::Circuit;
     use crate::devices::source::Waveform::Step;
     use crate::math::unit::UnitExt;
     use crate::solver::Context;
 
     #[test]
     fn test_transient_rc_charging() {
-        let mut circuit: CircuitInstance = builder("RC Transient Demo", |builder| {
-            builder.voltage_source(
+        let mut v_out = GND;
+
+        let mut circuit: CircuitInstance = Circuit::builder("RC Transient Demo", |b| {
+            let v_in = b.port();
+            v_out = b.port();
+
+            b.voltage_source(
                 "V1",
-                "in",
+                v_in.clone(),
                 GND,
                 Step {
                     initial: 0.0.V(),
@@ -253,8 +258,8 @@ mod test {
                 },
             );
 
-            builder.resistor("R1", "in", "out", 1.0.kOhms());
-            builder.capacitor("C1", "out", GND, 1.0.uF());
+            b.resistor("R1", v_in, v_out.clone(), 1.0.kOhms());
+            b.capacitor("C1", v_out.clone(), GND, 1.0.uF());
         })
         .into();
 
@@ -275,7 +280,7 @@ mod test {
             .expect("Time point 1.0ms not found in simulation results");
 
         let v_at_1ms = one_tau_step
-            .get_node("out")
+            .get_node(&v_out)
             .expect("Variable 'out' missing in result step");
 
         println!("At 1ms (1 Tau): {:.4} V", v_at_1ms);
@@ -283,7 +288,7 @@ mod test {
 
         // D. Check Final State (t = 5ms)
         let final_step = result.last().unwrap();
-        let final_v = final_step.get_node("out").unwrap();
+        let final_v = final_step.get_node(&v_out).unwrap();
 
         println!("At 5ms (Final): {:.4} V", final_v);
         assert!((final_v - 5.0).abs() < 0.05);
@@ -291,10 +296,15 @@ mod test {
 
     #[test]
     fn test_transient_rc_step() {
-        let mut circuit: CircuitInstance = builder("RC Step Response", |builder| {
-            builder.voltage_source(
+        let mut v_out = GND;
+
+        let mut circuit: CircuitInstance = Circuit::builder("RC Step Response", |b| {
+            let v_in = b.port();
+            v_out = b.port();
+
+            b.voltage_source(
                 "V1",
-                "in",
+                v_in.clone(),
                 GND,
                 Step {
                     initial: 0.0.V(),
@@ -304,8 +314,8 @@ mod test {
                 },
             );
 
-            builder.resistor("R1", "in", "out", 1.0.kOhms());
-            builder.capacitor("C1", "out", GND, 1.0.uF());
+            b.resistor("R1", v_in, v_out.clone(), 1.0.kOhms());
+            b.capacitor("C1", v_out.clone(), GND, 1.0.uF());
         })
         .into();
 
@@ -324,7 +334,7 @@ mod test {
         let final_snapshot = result.last().expect("Simulation returned no data");
 
         let v_final = final_snapshot
-            .get_node("out")
+            .get_node(&v_out)
             .expect("Voltage value for 'out' missing");
 
         println!("Transient Final Voltage: {:.4} V", v_final);

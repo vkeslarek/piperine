@@ -127,20 +127,25 @@ impl<'a> AcSolver<'a> {
 #[cfg(test)]
 mod test {
     use crate::analysis::ac::AcSweepAnalysisOptions;
-    use crate::circuit::builder;
     use crate::circuit::instance::CircuitInstance;
+    use crate::circuit::Circuit;
     use crate::solver::Context;
 
     #[test]
     fn test_ac_rc_filter() {
-        use crate::circuit::netlist::{CircuitVariable, GND};
+        use crate::circuit::netlist::GND;
         use crate::devices::source::Waveform::Sine;
         use crate::math::unit::UnitExt;
 
-        let mut circuit: CircuitInstance = builder("AC Low Pass", |builder| {
-            builder.voltage_source(
+        let mut v_out = GND;
+
+        let mut circuit: CircuitInstance = Circuit::builder("AC Low Pass", |b| {
+            let v_in = b.port();
+            v_out = b.port();
+
+            b.voltage_source(
                 "V1",
-                "in",
+                v_in.clone(),
                 GND,
                 Sine {
                     amplitude: 1.0.V(),
@@ -148,8 +153,8 @@ mod test {
                     phase: 0.0.deg(),
                 },
             );
-            builder.resistor("R1", "in", "out", 1.0.kOhms());
-            builder.capacitor("C1", "out", GND, 159.15.nF());
+            b.resistor("R1", v_in, v_out.clone(), 1.0.kOhms());
+            b.capacitor("C1", v_out.clone(), GND, 159.15.nF());
         })
         .into();
 
@@ -166,12 +171,6 @@ mod test {
             .solve_sweep(sweep_options.clone())
             .unwrap();
 
-        let _out_var = circuit
-            .netlist()
-            .reference_for(&CircuitVariable::Node("out".into()))
-            .expect("Output node not found")
-            .variable();
-
         let frequencies = (0..sweep_options.steps)
             .map(|i| {
                 let ratio = i as f64 / (sweep_options.steps - 1) as f64;
@@ -187,8 +186,8 @@ mod test {
             let f = frequencies[i];
 
             if (f - 1000.0).abs() < 1.0 {
-                let v_out = vector.get(&CircuitVariable::Node("out".into())).unwrap();
-                let mag = v_out.norm();
+                let v_out_value = vector.get_node(&v_out).unwrap();
+                let mag = v_out_value.norm();
 
                 println!("At {:.1} Hz: Mag = {:.4} V (Expected ~0.707)", f, mag);
 

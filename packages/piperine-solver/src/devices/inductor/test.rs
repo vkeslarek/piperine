@@ -1,35 +1,45 @@
 use crate::analysis::ac::AcSweepAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
-use crate::circuit::builder;
 use crate::circuit::instance::CircuitInstance;
 use crate::circuit::netlist::GND;
+use crate::circuit::Circuit;
 use crate::devices::source::Waveform::{Sine, Step};
 use crate::math::unit::UnitExt;
 use crate::solver::Context;
 
 #[test]
 fn test_dc_inductor_short() {
-    let mut circuit: CircuitInstance = builder("DC Inductor Short", |builder| {
-        builder.voltage_source("V1", "in", GND, 10.0.V());
-        builder.resistor("R1", "in", "out", 1.0.kOhms());
-        builder.inductor("L1", "out", GND, 1.0.mH());
+    let mut v_out = GND;
+
+    let mut circuit: CircuitInstance = Circuit::builder("DC Inductor Short", |b| {
+        let v_in = b.port();
+        v_out = b.port();
+
+        b.voltage_source("V1", v_in.clone(), GND, 10.0.V());
+        b.resistor("R1", v_in, v_out.clone(), 1.0.kOhms());
+        b.inductor("L1", v_out.clone(), GND, 1.0.mH());
     })
     .into();
 
     let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
 
-    let v_out = result.get_node("out").unwrap();
+    let v_out_value = result.get_node(&v_out).unwrap();
 
-    println!("Inductor DC Voltage: {:.4} V", v_out);
-    assert!(v_out.abs() < 1e-9, "Inductor is not a short in DC!");
+    println!("Inductor DC Voltage: {:.4} V", v_out_value);
+    assert!(v_out_value.abs() < 1e-9, "Inductor is not a short in DC!");
 }
 
 #[test]
 fn test_ac_lc_resonance() {
-    let mut circuit: CircuitInstance = builder("AC LC Resonance", |builder| {
-        builder.voltage_source(
+    let mut v_tank = GND;
+
+    let mut circuit: CircuitInstance = Circuit::builder("AC LC Resonance", |b| {
+        let v_in = b.port();
+        v_tank = b.port();
+
+        b.voltage_source(
             "V1",
-            "in",
+            v_in.clone(),
             GND,
             Sine {
                 amplitude: 1.0.V(),
@@ -37,9 +47,9 @@ fn test_ac_lc_resonance() {
                 phase: 0.0.deg(),
             },
         );
-        builder.resistor("R_limit", "in", "tank", 1.0.Ohms());
-        builder.inductor("L1", "tank", GND, 1.0.mH());
-        builder.capacitor("C1", "tank", GND, 1.0.uF());
+        b.resistor("R_limit", v_in, v_tank.clone(), 1.0.Ohms());
+        b.inductor("L1", v_tank.clone(), GND, 1.0.mH());
+        b.capacitor("C1", v_tank.clone(), GND, 1.0.uF());
     })
     .into();
 
@@ -58,7 +68,7 @@ fn test_ac_lc_resonance() {
 
     let mut max_mag = 0.0;
     for vector in result.iter() {
-        let mag = vector.get_node("tank").unwrap().norm();
+        let mag = vector.get_node(&v_tank).unwrap().norm();
         if mag > max_mag {
             max_mag = mag;
         }
@@ -70,10 +80,13 @@ fn test_ac_lc_resonance() {
 
 #[test]
 fn test_transient_rl_current_rise() {
-    let mut circuit: CircuitInstance = builder("RL Step Response", |builder| {
-        builder.voltage_source(
+    let mut circuit: CircuitInstance = Circuit::builder("RL Step Response", |b| {
+        let v_in = b.port();
+        let v_out = b.port();
+
+        b.voltage_source(
             "V1",
-            "in",
+            v_in.clone(),
             GND,
             Step {
                 initial: 0.0.V(),
@@ -83,8 +96,8 @@ fn test_transient_rl_current_rise() {
             },
         );
 
-        builder.resistor("R1", "in", "out", 1.0.kOhms());
-        builder.inductor("L1", "out", GND, 1.0.H());
+        b.resistor("R1", v_in, v_out.clone(), 1.0.kOhms());
+        b.inductor("L1", v_out, GND, 1.0.H());
     })
     .into();
 

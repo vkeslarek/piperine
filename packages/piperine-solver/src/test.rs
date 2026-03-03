@@ -1,9 +1,9 @@
 use crate::analysis::transient::TransientAnalysisOptions;
 use crate::circuit::instance::CircuitInstance;
 use crate::circuit::netlist::{NodeIdentifier, GND};
-use crate::circuit::{builder, Circuit};
+use crate::circuit::Circuit;
 use crate::devices::source::Waveform::Step;
-use crate::math::unit::{Ohm, UnitExt};
+use crate::math::unit::UnitExt;
 use crate::solver::Context;
 use tracing::debug;
 
@@ -16,18 +16,37 @@ pub fn titan_test(grid_size: i32) {
         grid_size * grid_size
     );
 
-    let mut circuit: CircuitInstance = builder("Titan RC Grid", |builder| {
+    // We need to track two nodes: start and far corner
+    let mut n_start = GND;
+    let mut n_far_corner = GND;
+
+    let mut circuit: CircuitInstance = Circuit::builder("Titan RC Grid", |builder| {
+        // Create a grid of nodes
+        let mut nodes = vec![vec![NodeIdentifier::Gnd; grid_size as usize]; grid_size as usize];
+
+        // Create all nodes first
         for x in 0..grid_size {
             for y in 0..grid_size {
-                let node_name = format!("n_{}_{}", x, y);
+                nodes[x as usize][y as usize] = builder.port();
+            }
+        }
 
-                builder.capacitor(format!("C_{}_{}", x, y), node_name.clone(), GND, 1.0.nF());
+        // Store the nodes we need to track
+        n_start = nodes[0][0].clone();
+        n_far_corner = nodes[(grid_size - 1) as usize][(grid_size - 1) as usize].clone();
+
+        // Now connect components
+        for x in 0..grid_size {
+            for y in 0..grid_size {
+                let node = nodes[x as usize][y as usize].clone();
+
+                builder.capacitor(format!("C_{}_{}", x, y), node.clone(), GND, 1.0.nF());
 
                 if x < grid_size - 1 {
                     builder.resistor(
                         format!("R_h_{}_{}", x, y),
-                        node_name.clone(),
-                        format!("n_{}_{}", x + 1, y),
+                        node.clone(),
+                        nodes[(x + 1) as usize][y as usize].clone(),
                         1.0.kOhms(),
                     );
                 }
@@ -36,8 +55,8 @@ pub fn titan_test(grid_size: i32) {
                 if y < grid_size - 1 {
                     builder.resistor(
                         format!("R_v_{}_{}", x, y),
-                        node_name,
-                        format!("n_{}_{}", x, y + 1),
+                        node,
+                        nodes[x as usize][(y + 1) as usize].clone(),
                         1.0.kOhms(),
                     );
                 }
@@ -46,7 +65,7 @@ pub fn titan_test(grid_size: i32) {
 
         builder.voltage_source(
             "V_Input",
-            "n_0_0",
+            n_start.clone(),
             GND,
             Step {
                 initial: 0.0.V(),
@@ -100,14 +119,12 @@ pub fn titan_test(grid_size: i32) {
 
     let last_step = result.last().expect("No result steps produced");
 
-    let far_corner_name = format!("n_{}_{}", grid_size - 1, grid_size - 1);
+    // Get Values using NodeIdentifier references
+    let v_start = last_step.get_node(&n_start).unwrap_or(0.0);
+    let v_far = last_step.get_node(&n_far_corner).unwrap_or(0.0);
 
-    // Get Values
-    let v_start = last_step.get_node("n_0_0").unwrap_or(0.0);
-    let v_far = last_step.get_node(far_corner_name.clone()).unwrap_or(0.0);
-
-    println!("V(n_0_0) final:   {:.4} V", v_start);
-    println!("V({}) final: {:.4} V", far_corner_name, v_far);
+    println!("V({}) final:   {:.4} V", n_start, v_start);
+    println!("V({}) final: {:.4} V", n_far_corner, v_far);
 
     assert!(
         v_start > 4.9,
@@ -130,15 +147,19 @@ pub fn full_titan_test() {
 pub fn test() {
     debug!("Starting test circuit simulation...");
 
-    let mut circuit: CircuitInstance = builder("Diode DC Bias", |builder| {
-        builder.voltage_source("V1", "in", GND, 5.0.V());
-        builder.resistor("R1", "in", "anode", 1.0.kOhms());
-        builder.diode("D1", "anode", GND);
+    let mut anode = GND;
+
+    let mut circuit: CircuitInstance = Circuit::builder("Diode DC Bias", |b| {
+        let iin = b.port();
+        anode = b.port();
+        b.voltage_source("V1", iin.clone(), GND, 5.0.V());
+        b.resistor("R1", iin, anode.clone(), 1.0.kOhms());
+        b.diode("D1", anode.clone(), GND);
     })
     .into();
 
     let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
-    let v_d = result.get_node("anode").unwrap();
+    let v_d = result.get_node(&anode).unwrap();
 
     println!("Diode Forward Voltage: {:.4} V", v_d);
 
