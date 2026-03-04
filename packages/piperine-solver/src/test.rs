@@ -82,10 +82,7 @@ pub fn titan_test(grid_size: i32) {
     println!("Starting Transient Analysis...");
     let sim_start = std::time::Instant::now();
 
-    let options = TransientAnalysisOptions {
-        stop_time: 2.0.ms(),
-        dt: 20.0.us(), // 100 Steps
-    };
+    let options = TransientAnalysisOptions::new(2.0.ms(), 20.0.us());
 
     let result = circuit
         .transient(options, Context::default())

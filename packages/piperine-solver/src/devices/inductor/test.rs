@@ -101,10 +101,7 @@ fn test_transient_rl_current_rise() {
     })
     .into();
 
-    let options = TransientAnalysisOptions {
-        stop_time: 5.0.ms(),
-        dt: 50.0.us(),
-    };
+    let options = TransientAnalysisOptions::new(5.0.ms(), 50.0.us());
 
     let result = circuit
         .transient(options, Context::default())

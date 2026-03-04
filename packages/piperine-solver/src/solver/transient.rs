@@ -263,10 +263,7 @@ mod test {
         })
         .into();
 
-        let options = TransientAnalysisOptions {
-            stop_time: 5.0.ms(),
-            dt: 100.0.us(),
-        };
+        let options = TransientAnalysisOptions::new(5.0.ms(), 100.0.us());
 
         let result = circuit
             .transient(options, Context::default())
@@ -321,10 +318,7 @@ mod test {
 
         let result = circuit
             .transient(
-                TransientAnalysisOptions {
-                    stop_time: 5.0.ms(),
-                    dt: 100.0.us(),
-                },
+                TransientAnalysisOptions::new(5.0.ms(), 100.0.us()),
                 Context::default(),
             )
             .unwrap()
