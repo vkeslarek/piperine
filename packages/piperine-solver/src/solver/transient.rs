@@ -412,4 +412,122 @@ mod test {
             v_final
         );
     }
+
+    #[test]
+    fn test_adaptive_timestep_rc_charging() {
+        let mut v_out = GND;
+
+        // RC circuit: tau = R*C = 1kΩ * 1µF = 1ms
+        let mut circuit: CircuitInstance = Circuit::builder("Adaptive RC Test", |b| {
+            let v_in = b.port();
+            v_out = b.port();
+
+            b.voltage_source(
+                "V1",
+                v_in.clone(),
+                GND,
+                Step {
+                    initial: 0.0.V(),
+                    final_value: 5.0.V(),
+                    delay: 0.0,
+                    rise_time: 1.0.us(),
+                },
+            );
+
+            b.resistor("R1", v_in, v_out.clone(), 1.0.kOhms());
+            b.capacitor("C1", v_out.clone(), GND, 1.0.uF());
+        })
+        .into();
+
+        // Test with adaptive timestep
+        println!("\n=== ADAPTIVE TIMESTEP TEST ===");
+        let options_adaptive = TransientAnalysisOptions::new_adaptive(5.0.ms(), 100.0.us())
+            .with_dt_min(1.0.ns())
+            .with_dt_max(500.0.us());
+
+        let result_adaptive = circuit
+            .transient(options_adaptive, Context::default())
+            .unwrap()
+            .solve()
+            .unwrap();
+
+        println!("Adaptive: {} steps", result_adaptive.len());
+
+        // Compare with fixed timestep
+        println!("\n=== FIXED TIMESTEP TEST ===");
+        let mut circuit_fixed: CircuitInstance = Circuit::builder("Fixed RC Test", |b| {
+            let v_in = b.port();
+            let v_out_fixed = b.port();
+
+            b.voltage_source(
+                "V1",
+                v_in.clone(),
+                GND,
+                Step {
+                    initial: 0.0.V(),
+                    final_value: 5.0.V(),
+                    delay: 0.0,
+                    rise_time: 1.0.us(),
+                },
+            );
+
+            b.resistor("R1", v_in, v_out_fixed.clone(), 1.0.kOhms());
+            b.capacitor("C1", v_out_fixed.clone(), GND, 1.0.uF());
+        })
+        .into();
+
+        let options_fixed = TransientAnalysisOptions::new(5.0.ms(), 100.0.us());
+
+        let result_fixed = circuit_fixed
+            .transient(options_fixed, Context::default())
+            .unwrap()
+            .solve()
+            .unwrap();
+
+        println!("Fixed: {} steps", result_fixed.len());
+
+        // Verify both reach approximately the same final voltage
+        let v_adaptive_final = result_adaptive.last().unwrap().get_node(&v_out).unwrap();
+
+        let v_fixed_final = result_fixed.last().unwrap().get_node(&v_out).unwrap();
+
+        println!("\nFinal voltages:");
+        println!("  Adaptive: {:.6} V", v_adaptive_final);
+        println!("  Fixed:    {:.6} V", v_fixed_final);
+        println!("\nStep count:");
+        println!("  Adaptive: {}", result_adaptive.len());
+        println!("  Fixed:    {}", result_fixed.len());
+
+        // Both should reach approximately 5V * (1 - e^(-5)) ≈ 4.966V
+        let expected_final = 5.0 * (1.0 - (-5.0_f64).exp());
+
+        assert!(
+            (v_adaptive_final - expected_final).abs() < 0.1,
+            "Adaptive timestep final voltage {:.4}V doesn't match expected {:.4}V",
+            v_adaptive_final,
+            expected_final
+        );
+
+        assert!(
+            (v_fixed_final - expected_final).abs() < 0.1,
+            "Fixed timestep final voltage {:.4}V doesn't match expected {:.4}V",
+            v_fixed_final,
+            expected_final
+        );
+
+        // Voltages should be close to each other
+        assert!(
+            (v_adaptive_final - v_fixed_final).abs() < 0.05,
+            "Adaptive ({:.4}V) and Fixed ({:.4}V) results differ too much",
+            v_adaptive_final,
+            v_fixed_final
+        );
+
+        println!("\n✓ Adaptive timestep test passed!");
+        println!("  - Both methods converged to ~{:.4}V", expected_final);
+        println!(
+            "  - Difference: {:.6}V",
+            (v_adaptive_final - v_fixed_final).abs()
+        );
+    }
 }
