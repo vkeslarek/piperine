@@ -242,28 +242,145 @@ impl<'a> TransientSolver<'a> {
         }
     }
 
-    pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
-        let mut steps = Vec::new();
-        let stop_time: f64 = self.options.stop_time.into();
-        let mut dt: f64 = self.options.dt.into();
-
+    /// Computes the DC operating point and initializes the transient solver state.
+    ///
+    /// This sets up initial conditions by:
+    /// 1. Solving for DC operating point
+    /// 2. Pushing DC solution as initial state (twice for history buffer)
+    /// 3. Initializing time history
+    ///
+    /// # Returns
+    ///
+    /// The initial timestep value and the first snapshot at t=0.
+    fn compute_initial_conditions(&mut self, dt: f64) -> crate::result::Result<TransientStep> {
         debug!("Calculating DC Operating Point...");
         let mut dc_solver = DcSolver::new(self.system.circuit, Context::default())?;
         let dc_result = dc_solver.solve()?;
 
         let netlist = self.system.circuit.netlist();
-
         let iv_dc = dc_result.as_iv(netlist);
 
+        // Push DC solution twice to fill history buffer
         self.solver.push_initial_conditions(iv_dc.clone());
         self.solver.push_initial_conditions(iv_dc);
 
+        // Initialize time history
         self.system.time_history.insert(0, 0.0);
         self.system.time_history.insert(0, 0.0 - dt);
 
-        steps.push(self.snapshot(0.0));
+        Ok(self.snapshot(0.0))
+    }
 
-        // Collect all breakpoints from sources
+    /// Computes the next timestep value, considering adaptive control and breakpoints.
+    ///
+    /// # Parameters
+    ///
+    /// - `current_time`: Current simulation time
+    /// - `current_dt`: Current timestep
+    /// - `stop_time`: Simulation stop time
+    /// - `breakpoints`: List of time breakpoints that must not be overstepped
+    ///
+    /// # Returns
+    ///
+    /// The next timestep to use, limited by:
+    /// - Adaptive timestep suggestions (if enabled)
+    /// - Breakpoints (to ensure we hit critical time points)
+    /// - Stop time (to avoid overshooting)
+    fn compute_next_timestep(
+        &self,
+        current_time: f64,
+        current_dt: f64,
+        stop_time: f64,
+        breakpoints: &[f64],
+    ) -> f64 {
+        let mut dt = current_dt;
+
+        // Apply adaptive timestep control if enabled
+        if self.options.adaptive {
+            if let Some(suggested_dt) = self.calculate_next_timestep(current_time, breakpoints) {
+                dt = suggested_dt;
+                debug!("Adaptive timestep: dt = {:.3e}s", dt);
+            }
+        }
+
+        // Don't overshoot stop_time
+        if current_time + dt > stop_time {
+            dt = stop_time - current_time;
+        }
+
+        dt
+    }
+
+    /// Executes a single timestep of the transient simulation.
+    ///
+    /// # Parameters
+    ///
+    /// - `current_time`: Time for this step
+    /// - `dt`: Timestep size
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Some(snapshot))`: Step succeeded, returns snapshot
+    /// - `Ok(None)`: Step failed but can retry (for adaptive mode)
+    /// - `Err`: Fatal error, cannot continue
+    fn execute_timestep(
+        &mut self,
+        current_time: f64,
+        dt: f64,
+    ) -> crate::result::Result<Option<TransientStep>> {
+        self.system.time = current_time;
+        self.system.dt = dt;
+        self.system.time_history.insert(0, current_time);
+
+        debug!(
+            "Solving Transient Step: t = {:.6}s, dt = {:.3e}s",
+            current_time, dt
+        );
+
+        let max_iter = self.system.context.max_iter;
+        let result = self.solver.solve(&mut self.system, 1.0 / dt, max_iter);
+
+        if result.is_ok() {
+            let snapshot = self.snapshot(current_time);
+
+            // Trim history to prevent unbounded growth
+            if self.system.time_history.len() > 10 {
+                self.system.time_history.truncate(10);
+            }
+
+            Ok(Some(snapshot))
+        } else {
+            // Convergence failed - check if we can retry
+            if self.options.adaptive && dt > self.options.dt_min.into() {
+                // Signal that we should retry with smaller timestep
+                Ok(None)
+            } else {
+                // Cannot retry, propagate error
+                Err(result.unwrap_err())
+            }
+        }
+    }
+
+    /// Main transient analysis solver.
+    ///
+    /// Performs time-domain simulation from t=0 to `stop_time` using:
+    /// - DC operating point as initial condition
+    /// - Fixed or adaptive timestep control
+    /// - Breakpoint-aware timestep limiting
+    /// - Automatic retry on convergence failure (adaptive mode)
+    ///
+    /// # Returns
+    ///
+    /// `TransientAnalysisResult` containing voltage/current vs time data
+    pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
+        let stop_time: f64 = self.options.stop_time.into();
+        let mut dt: f64 = self.options.dt.into();
+
+        // Initialize with DC operating point
+        let initial_snapshot = self.compute_initial_conditions(dt)?;
+        let mut steps = vec![initial_snapshot];
+
+        // Collect breakpoints from sources
         let breakpoints = self.collect_breakpoints(0.0, stop_time);
         if !breakpoints.is_empty() {
             debug!("Collected {} breakpoints", breakpoints.len());
@@ -271,51 +388,26 @@ impl<'a> TransientSolver<'a> {
 
         let mut current_time = 0.0;
 
+        // Main simulation loop
         while current_time < stop_time {
-            // Calculate next timestep (adaptive or fixed)
-            if self.options.adaptive {
-                if let Some(suggested_dt) = self.calculate_next_timestep(current_time, &breakpoints)
-                {
-                    dt = suggested_dt;
-                    debug!("Adaptive timestep: dt = {:.3e}s", dt);
-                }
-            }
-
-            // Don't overshoot stop_time
-            if current_time + dt > stop_time {
-                dt = stop_time - current_time;
-            }
+            // Determine next timestep
+            dt = self.compute_next_timestep(current_time, dt, stop_time, &breakpoints);
 
             current_time += dt;
 
-            self.system.time = current_time;
-            self.system.dt = dt;
-
-            self.system.time_history.insert(0, current_time);
-
-            debug!(
-                "Solving Transient Step: t = {:.6}s, dt = {:.3e}s",
-                current_time, dt
-            );
-
-            let max_iter = self.system.context.max_iter;
-            let result = self.solver.solve(&mut self.system, 1.0 / dt, max_iter);
-
-            if result.is_ok() {
-                steps.push(self.snapshot(current_time));
-                if self.system.time_history.len() > 10 {
-                    self.system.time_history.truncate(10);
+            // Execute timestep
+            match self.execute_timestep(current_time, dt)? {
+                Some(snapshot) => {
+                    // Success - save snapshot and continue
+                    steps.push(snapshot);
                 }
-            } else {
-                // On convergence failure with adaptive timestep, retry with half the timestep
-                if self.options.adaptive && dt > self.options.dt_min.into() {
+                None => {
+                    // Convergence failed - retry with smaller timestep
                     debug!("Convergence failed, retrying with dt/2");
                     current_time -= dt; // Rewind time
                     dt = (dt / 2.0).max(self.options.dt_min.into());
-                    self.system.time_history.remove(0); // Remove failed timestep from history
-                    continue; // Retry with smaller timestep
-                } else {
-                    return Err(result.unwrap_err());
+                    self.system.time_history.remove(0); // Remove failed attempt from history
+                                                        // Loop will retry with new (smaller) dt
                 }
             }
         }
