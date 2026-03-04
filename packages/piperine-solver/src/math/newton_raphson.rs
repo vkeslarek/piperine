@@ -19,7 +19,8 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
 
     fn apply_limit(&mut self, _state: &CircularArrayBuffer2<E>, _current_guess: ArrayViewMut1<E>) {}
     fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<E>) {}
-    fn before_iter_callback(&mut self, _state: &CircularArrayBuffer2<E>, _iteration_number: usize) {}
+    fn before_iter_callback(&mut self, _state: &CircularArrayBuffer2<E>, _iteration_number: usize) {
+    }
 
     fn convergence_failed_callback(
         &mut self,
@@ -136,5 +137,9 @@ where
 
     pub fn current_guess(&self) -> Option<ArrayView1<'_, E>> {
         self.state.latest()
+    }
+
+    pub fn state(&self) -> &CircularArrayBuffer2<E> {
+        &self.state
     }
 }

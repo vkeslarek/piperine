@@ -1,6 +1,7 @@
 use crate::analysis::transient::{
     TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisResult, TransientStep,
 };
+use crate::analysis::truncation::IntegrationMethod;
 use crate::circuit::instance::CircuitInstance;
 use crate::circuit::netlist::CircuitReference;
 use crate::devices::soa::SoaViolations;
@@ -161,12 +162,60 @@ impl<'a> TransientSolver<'a> {
         })
     }
 
+    /// Calculate next timestep based on truncation error from all devices
+    fn calculate_next_timestep(&self) -> Option<f64> {
+        if !self.options.adaptive {
+            return None; // Use fixed timestep
+        }
+
+        // Using Gear order 2 for now (hardcoded, can be made configurable later)
+        let method = IntegrationMethod::Gear { order: 2 };
+
+        let state_history = self.solver.state();
+        let time_history = &self.system.time_history;
+
+        // Collect timestep suggestions from all devices with truncation error
+        let mut min_dt = f64::MAX;
+        let mut suggestions_count = 0;
+
+        for runtime in self.system.circuit.all_runtimes() {
+            if let Some(truncation_device) = runtime.as_truncation_error() {
+                if let Some(suggested_dt) = truncation_device.suggest_timestep(
+                    state_history,
+                    time_history,
+                    method,
+                    &self.system.context,
+                ) {
+                    let dt_value: f64 = suggested_dt.into();
+                    min_dt = min_dt.min(dt_value);
+                    suggestions_count += 1;
+                }
+            }
+        }
+
+        if suggestions_count > 0 {
+            // Limit growth to 2x per step
+            let current_dt = self.system.dt;
+            let max_growth = current_dt * 2.0;
+            min_dt = min_dt.min(max_growth);
+
+            // Clamp to user-specified limits
+            let dt_min: f64 = self.options.dt_min.into();
+            let dt_max: f64 = self.options.dt_max.into();
+            min_dt = min_dt.clamp(dt_min, dt_max);
+
+            Some(min_dt)
+        } else {
+            None // No devices provided suggestions, use fixed timestep
+        }
+    }
+
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
         let mut steps = Vec::new();
         let stop_time = self.options.stop_time;
-        let dt = self.options.dt;
+        let mut dt = self.options.dt;
 
-        debug!("Calculaing DC Operating Point...");
+        debug!("Calculating DC Operating Point...");
         let mut dc_solver = DcSolver::new(self.system.circuit, Context::default())?;
         let dc_result = dc_solver.solve()?;
 
@@ -185,6 +234,19 @@ impl<'a> TransientSolver<'a> {
         let mut current_time = 0.0;
 
         while current_time < stop_time {
+            // Calculate next timestep (adaptive or fixed)
+            if self.options.adaptive {
+                if let Some(suggested_dt) = self.calculate_next_timestep() {
+                    dt = suggested_dt;
+                    debug!("Adaptive timestep: dt = {:.3e}s", dt);
+                }
+            }
+
+            // Don't overshoot stop_time
+            if current_time + dt > stop_time {
+                dt = stop_time - current_time;
+            }
+
             current_time += dt;
 
             self.system.time = current_time;
@@ -192,7 +254,10 @@ impl<'a> TransientSolver<'a> {
 
             self.system.time_history.insert(0, current_time);
 
-            debug!("Solving Transient Step: t = {:.6}s", current_time);
+            debug!(
+                "Solving Transient Step: t = {:.6}s, dt = {:.3e}s",
+                current_time, dt
+            );
 
             let max_iter = self.system.context.max_iter;
             let result = self.solver.solve(&mut self.system, 1.0 / dt, max_iter);
@@ -203,7 +268,16 @@ impl<'a> TransientSolver<'a> {
                     self.system.time_history.truncate(10);
                 }
             } else {
-                return Err(result.unwrap_err());
+                // On convergence failure with adaptive timestep, retry with half the timestep
+                if self.options.adaptive && dt > self.options.dt_min.into() {
+                    debug!("Convergence failed, retrying with dt/2");
+                    current_time -= dt; // Rewind time
+                    dt = (dt / 2.0).max(self.options.dt_min.into());
+                    self.system.time_history.remove(0); // Remove failed timestep from history
+                    continue; // Retry with smaller timestep
+                } else {
+                    return Err(result.unwrap_err());
+                }
             }
         }
 

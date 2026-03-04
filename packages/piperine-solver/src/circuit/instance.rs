@@ -103,4 +103,8 @@ impl CircuitInstance {
             .filter_map(|runtime| runtime.as_soa_check())
             .collect()
     }
+
+    pub fn all_runtimes(&self) -> &[Box<dyn AnyRuntime>] {
+        &self.runtimes
+    }
 }
