@@ -183,18 +183,21 @@ impl<'a> TransientSolver<'a> {
     }
 
     /// Calculate next timestep based on truncation error from all devices
-    fn calculate_next_timestep(&self, current_time: f64, breakpoints: &[f64]) -> Option<f64> {
-        if !self.options.adaptive {
-            return None; // Use fixed timestep
-        }
-
+    /// Collects timestep suggestions from all devices with truncation error.
+    ///
+    /// Queries capacitors and inductors for their recommended maximum timestep
+    /// based on local truncation error (LTE) estimation.
+    ///
+    /// # Returns
+    ///
+    /// The minimum suggested timestep from all devices, or None if no suggestions.
+    fn collect_device_timestep_suggestions(&self) -> Option<f64> {
         // Using Gear order 2 for now (hardcoded, can be made configurable later)
         let method = IntegrationMethod::Gear { order: 2 };
 
         let state_history = self.solver.state();
         let time_history = &self.system.time_history;
 
-        // Collect timestep suggestions from all devices with truncation error
         let mut min_dt = f64::MAX;
         let mut suggestions_count = 0;
 
@@ -214,32 +217,91 @@ impl<'a> TransientSolver<'a> {
         }
 
         if suggestions_count > 0 {
-            // Limit growth to 2x per step
-            let current_dt = self.system.dt;
-            let max_growth = current_dt * 2.0;
-            min_dt = min_dt.min(max_growth);
-
-            // Check breakpoints - don't step over them
-            for &bp in breakpoints {
-                if bp > current_time && bp < current_time + min_dt {
-                    // There's a breakpoint ahead, limit timestep to reach it
-                    min_dt = bp - current_time;
-                    debug!(
-                        "Breakpoint limiting: dt reduced to {:.3e}s to hit breakpoint at {:.6}s",
-                        min_dt, bp
-                    );
-                }
-            }
-
-            // Clamp to user-specified limits
-            let dt_min: f64 = self.options.dt_min.into();
-            let dt_max: f64 = self.options.dt_max.into();
-            min_dt = min_dt.clamp(dt_min, dt_max);
-
             Some(min_dt)
         } else {
-            None // No devices provided suggestions, use fixed timestep
+            None
         }
+    }
+
+    /// Applies breakpoint limiting to ensure timestep doesn't overstep critical time points.
+    ///
+    /// # Parameters
+    ///
+    /// - `dt`: Candidate timestep
+    /// - `current_time`: Current simulation time
+    /// - `breakpoints`: List of breakpoint times
+    ///
+    /// # Returns
+    ///
+    /// Timestep limited to not exceed the nearest breakpoint
+    fn apply_breakpoint_limits(&self, mut dt: f64, current_time: f64, breakpoints: &[f64]) -> f64 {
+        for &bp in breakpoints {
+            if bp > current_time && bp < current_time + dt {
+                // There's a breakpoint ahead, limit timestep to reach it exactly
+                dt = bp - current_time;
+                debug!(
+                    "Breakpoint limiting: dt reduced to {:.3e}s to hit breakpoint at {:.6}s",
+                    dt, bp
+                );
+            }
+        }
+        dt
+    }
+
+    /// Applies timestep growth limiting and user-specified min/max constraints.
+    ///
+    /// # Parameters
+    ///
+    /// - `suggested_dt`: Timestep suggested by truncation error
+    ///
+    /// # Returns
+    ///
+    /// Timestep clamped to valid range
+    fn apply_timestep_limits(&self, suggested_dt: f64) -> f64 {
+        let current_dt = self.system.dt;
+
+        // Limit growth to 2x per step for stability
+        let max_growth = current_dt * 2.0;
+        let dt = suggested_dt.min(max_growth);
+
+        // Clamp to user-specified limits
+        let dt_min: f64 = self.options.dt_min.into();
+        let dt_max: f64 = self.options.dt_max.into();
+        dt.clamp(dt_min, dt_max)
+    }
+
+    /// Calculates next timestep based on truncation error and breakpoints.
+    ///
+    /// This method orchestrates adaptive timestep selection by:
+    /// 1. Collecting suggestions from devices (capacitors, inductors)
+    /// 2. Limiting growth rate for stability
+    /// 3. Checking breakpoints to ensure critical times are hit
+    /// 4. Applying user-specified min/max constraints
+    ///
+    /// # Parameters
+    ///
+    /// - `current_time`: Current simulation time
+    /// - `breakpoints`: List of time breakpoints to respect
+    ///
+    /// # Returns
+    ///
+    /// - `Some(dt)`: Suggested timestep for adaptive mode
+    /// - `None`: Use fixed timestep (adaptive disabled or no suggestions)
+    fn calculate_next_timestep(&self, current_time: f64, breakpoints: &[f64]) -> Option<f64> {
+        if !self.options.adaptive {
+            return None;
+        }
+
+        // Get device suggestions
+        let suggested_dt = self.collect_device_timestep_suggestions()?;
+
+        // Apply growth limits
+        let mut dt = self.apply_timestep_limits(suggested_dt);
+
+        // Apply breakpoint limits
+        dt = self.apply_breakpoint_limits(dt, current_time, breakpoints);
+
+        Some(dt)
     }
 
     /// Computes the DC operating point and initializes the transient solver state.
