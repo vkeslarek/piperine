@@ -162,8 +162,28 @@ impl<'a> TransientSolver<'a> {
         })
     }
 
+    /// Collect all breakpoints from devices (sources with time-varying waveforms)
+    fn collect_breakpoints(&self, start_time: f64, stop_time: f64) -> Vec<f64> {
+        let mut breakpoints = Vec::new();
+
+        for runtime in self.system.circuit.all_runtimes() {
+            if let Some(bp_provider) = runtime.as_breakpoint_provider() {
+                let device_bps = bp_provider.get_breakpoints(start_time.into(), stop_time.into());
+                for bp in device_bps {
+                    let bp_time: f64 = bp.into();
+                    breakpoints.push(bp_time);
+                }
+            }
+        }
+
+        // Sort and deduplicate breakpoints
+        breakpoints.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        breakpoints.dedup();
+        breakpoints
+    }
+
     /// Calculate next timestep based on truncation error from all devices
-    fn calculate_next_timestep(&self) -> Option<f64> {
+    fn calculate_next_timestep(&self, current_time: f64, breakpoints: &[f64]) -> Option<f64> {
         if !self.options.adaptive {
             return None; // Use fixed timestep
         }
@@ -199,6 +219,18 @@ impl<'a> TransientSolver<'a> {
             let max_growth = current_dt * 2.0;
             min_dt = min_dt.min(max_growth);
 
+            // Check breakpoints - don't step over them
+            for &bp in breakpoints {
+                if bp > current_time && bp < current_time + min_dt {
+                    // There's a breakpoint ahead, limit timestep to reach it
+                    min_dt = bp - current_time;
+                    debug!(
+                        "Breakpoint limiting: dt reduced to {:.3e}s to hit breakpoint at {:.6}s",
+                        min_dt, bp
+                    );
+                }
+            }
+
             // Clamp to user-specified limits
             let dt_min: f64 = self.options.dt_min.into();
             let dt_max: f64 = self.options.dt_max.into();
@@ -212,8 +244,8 @@ impl<'a> TransientSolver<'a> {
 
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
         let mut steps = Vec::new();
-        let stop_time = self.options.stop_time;
-        let mut dt = self.options.dt;
+        let stop_time: f64 = self.options.stop_time.into();
+        let mut dt: f64 = self.options.dt.into();
 
         debug!("Calculating DC Operating Point...");
         let mut dc_solver = DcSolver::new(self.system.circuit, Context::default())?;
@@ -231,12 +263,19 @@ impl<'a> TransientSolver<'a> {
 
         steps.push(self.snapshot(0.0));
 
+        // Collect all breakpoints from sources
+        let breakpoints = self.collect_breakpoints(0.0, stop_time);
+        if !breakpoints.is_empty() {
+            debug!("Collected {} breakpoints", breakpoints.len());
+        }
+
         let mut current_time = 0.0;
 
         while current_time < stop_time {
             // Calculate next timestep (adaptive or fixed)
             if self.options.adaptive {
-                if let Some(suggested_dt) = self.calculate_next_timestep() {
+                if let Some(suggested_dt) = self.calculate_next_timestep(current_time, &breakpoints)
+                {
                     dt = suggested_dt;
                     debug!("Adaptive timestep: dt = {:.3e}s", dt);
                 }

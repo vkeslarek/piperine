@@ -4,13 +4,14 @@ use crate::analysis::noise::NoiseSource;
 use crate::analysis::transient::{
     TransientAnalysis, TransientAnalysisContext, TransientAnalysisState,
 };
+use crate::analysis::truncation::BreakpointProvider;
 use crate::circuit::netlist::{BranchIdentifier, CircuitReference, Netlist};
 use crate::devices::soa::SoaCheck;
 use crate::devices::source::{VoltageSource, Waveform};
 use crate::devices::Runtime;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::linear::Stamp;
-use crate::math::unit::{UnitExt, Volt};
+use crate::math::unit::{Second, UnitExt, Volt};
 use crate::solver::Context;
 use num_complex::Complex;
 use num_traits::One;
@@ -99,6 +100,10 @@ impl Runtime for VoltageSourceRuntime {
     fn as_soa_check(&self) -> Option<&dyn SoaCheck> {
         None
     }
+
+    fn as_breakpoint_provider(&self) -> Option<&dyn BreakpointProvider> {
+        Some(self)
+    }
 }
 
 impl DcAnalysis for VoltageSourceRuntime {
@@ -174,5 +179,49 @@ impl TransientAnalysis for VoltageSourceRuntime {
             Stamp::Matrix(self.node_minus.clone(), self.branch.clone(), -1.0),
             Stamp::Rhs(self.branch.clone(), self.voltage),
         ]
+    }
+}
+
+impl BreakpointProvider for VoltageSourceRuntime {
+    fn get_breakpoints(&self, start_time: Second, stop_time: Second) -> Vec<Second> {
+        let mut breakpoints = Vec::new();
+        let start: f64 = start_time.into();
+        let stop: f64 = stop_time.into();
+
+        match self.component.waveform {
+            Waveform::DC(_) => {
+                // DC sources don't need breakpoints
+            }
+            Waveform::Sine { .. } => {
+                // Sine waves are smooth, don't need breakpoints
+                // (could add period-based breakpoints for very long simulations, but not critical)
+            }
+            Waveform::Step {
+                delay, rise_time, ..
+            } => {
+                // Add breakpoints at the beginning, middle, and end of the step transition
+                // This ensures we capture the edge properly with at least 3 points
+
+                let t_start = delay;
+                let t_end = delay + rise_time;
+
+                // Only add breakpoints within the simulation time window
+                if t_start >= start && t_start <= stop {
+                    breakpoints.push(t_start.into());
+                }
+
+                // Add a breakpoint in the middle of the rise for better accuracy
+                let t_mid = delay + rise_time / 2.0;
+                if t_mid >= start && t_mid <= stop {
+                    breakpoints.push(t_mid.into());
+                }
+
+                if t_end >= start && t_end <= stop {
+                    breakpoints.push(t_end.into());
+                }
+            }
+        }
+
+        breakpoints
     }
 }

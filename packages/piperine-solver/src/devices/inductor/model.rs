@@ -1,5 +1,5 @@
-use crate::devices::Model;
 use crate::devices::inductor::Inductor;
+use crate::devices::Model;
 use crate::util::AsAny;
 use std::any::Any;
 

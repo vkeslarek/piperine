@@ -1,7 +1,7 @@
-use std::any::Any;
-use crate::devices::Model;
 use crate::devices::capacitor::Capacitor;
+use crate::devices::Model;
 use crate::util::AsAny;
+use std::any::Any;
 
 pub type CapacitorModelType = dyn Model<ComponentType = Capacitor> + 'static;
 
