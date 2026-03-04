@@ -2,7 +2,6 @@ use crate::circuit::netlist::{BranchIdentifier, NodeIdentifier};
 use crate::devices::ask::Ask;
 use crate::math::rand::Distribution;
 use num_complex::Complex64;
-use std::f64::consts::PI;
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Sub};
 
 #[derive(Debug, Clone, PartialEq)]

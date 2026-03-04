@@ -5,7 +5,7 @@ use crate::analysis::transient::{TransientAnalysis, TransientAnalysisOptions};
 use crate::circuit::netlist::Netlist;
 use crate::circuit::Circuit;
 use crate::devices::soa::SoaCheck;
-use crate::devices::{AnyRuntime, Component};
+use crate::devices::AnyRuntime;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::solver::ac::AcSolver;
 use crate::solver::dc::DcSolver;

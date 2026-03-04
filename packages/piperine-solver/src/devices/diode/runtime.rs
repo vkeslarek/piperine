@@ -66,7 +66,7 @@ impl Runtime for DiodeRuntime {
             None => 0.0, // GND
         };
 
-        let v_anode_old = match self.node_plus.idx() {
+        let _v_anode_old = match self.node_plus.idx() {
             Some(idx) => state
                 .view(1)
                 .and_then(|val| val.get(idx).cloned())
@@ -74,7 +74,7 @@ impl Runtime for DiodeRuntime {
             None => 0.0, // GND
         };
 
-        let v_cathode_old = match self.node_minus.idx() {
+        let _v_cathode_old = match self.node_minus.idx() {
             Some(idx) => state
                 .view(1)
                 .and_then(|val| val.get(idx).cloned())
@@ -118,8 +118,8 @@ impl Runtime for DiodeRuntime {
 impl DcAnalysis for DiodeRuntime {
     fn load_dc(
         &self,
-        dc_circuit_state: &DcAnalysisState,
-        context: &Context,
+        _dc_circuit_state: &DcAnalysisState,
+        _context: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {
         let g = self.g_eq;
         let i_rhs = self.i_eq;

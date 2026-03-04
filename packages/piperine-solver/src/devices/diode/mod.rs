@@ -1,9 +1,8 @@
-use crate::analysis::dc::DcAnalysis;
 use crate::circuit::netlist::{IntoNodeIdentifier, Netlist, NodeIdentifier};
 use crate::devices::diode::model::{DiodeModel, DiodeModelType};
 use crate::devices::diode::runtime::DiodeRuntime;
 use crate::devices::{AnyRuntime, Component, Runtime};
-use crate::math::unit::{Kelvin, UnitExt};
+use crate::math::unit::Kelvin;
 use crate::util::AsAny;
 use std::any::Any;
 use std::sync::Arc;

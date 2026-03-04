@@ -133,9 +133,9 @@ impl DcAnalysis for VoltageSourceRuntime {
 impl AcAnalysis for VoltageSourceRuntime {
     fn load_ac(
         &self,
-        dc_analysis_result: &DcAnalysisResult,
-        ac_analysis_context: &AcAnalysisContext,
-        context: &Context,
+        _dc_analysis_result: &DcAnalysisResult,
+        _ac_analysis_context: &AcAnalysisContext,
+        _context: &Context,
     ) -> Vec<Stamp<CircuitReference, Complex<f64>>> {
         let (mag, phase_rad) = match &self.component.waveform {
             Waveform::Sine {
@@ -168,9 +168,9 @@ impl AcAnalysis for VoltageSourceRuntime {
 impl TransientAnalysis for VoltageSourceRuntime {
     fn load_transient(
         &self,
-        circuit_states: &TransientAnalysisState,
-        transient_analysis_context: &TransientAnalysisContext,
-        context: &Context,
+        _circuit_states: &TransientAnalysisState,
+        _transient_analysis_context: &TransientAnalysisContext,
+        _context: &Context,
     ) -> Vec<Stamp<CircuitReference, f64>> {
         vec![
             Stamp::Matrix(self.branch.clone(), self.node_plus.clone(), 1.0),

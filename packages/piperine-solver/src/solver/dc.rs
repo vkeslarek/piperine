@@ -11,6 +11,11 @@ use log::debug;
 use ndarray::{ArrayView1, ArrayViewMut1};
 use std::collections::HashMap;
 
+/// Non-linear system representation for DC analysis.
+///
+/// This structure implements the [`NonLinearSystem`] trait to enable Newton-Raphson
+/// iteration for DC operating point calculation. It manages circuit state updates,
+/// convergence checking, damping, and Safe Operating Area (SOA) violation detection.
 pub struct DcSystem<'a> {
     pub circuit: &'a mut CircuitInstance,
     pub context: Context,
@@ -18,6 +23,10 @@ pub struct DcSystem<'a> {
 }
 
 impl<'a> NonLinearSystem<CircuitReference, f64> for DcSystem<'a> {
+    /// Assembles the system matrix and RHS vector for DC analysis.
+    ///
+    /// Updates all device models and collects their DC contributions (G, I stamps).
+    /// This is called by the Newton-Raphson solver at each iteration.
     fn assemble(
         &mut self,
         state: &CircularArrayBuffer2<f64>,
@@ -33,12 +42,21 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for DcSystem<'a> {
         Ok(all_stamps)
     }
 
+    /// Checks if the Newton-Raphson iteration has converged.
+    ///
+    /// Compares the current guess against the previous state using tolerance
+    /// criteria defined in the solver context.
     fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
         let netlist = self.circuit.netlist();
         self.context
             .has_converged(state.view(0), new_guess, netlist)
     }
 
+    /// Applies damping to limit step size and improve convergence stability.
+    ///
+    /// If the L2 norm of the update vector exceeds `dc_damp_tolerance`, this method
+    /// averages the current guess with the previous guess (0.5 damping factor).
+    /// This prevents large oscillations that can destabilize the Newton-Raphson solver.
     fn apply_limit(
         &mut self,
         state: &CircularArrayBuffer2<f64>,
@@ -68,6 +86,10 @@ impl<'a> NonLinearSystem<CircuitReference, f64> for DcSystem<'a> {
         }
     }
 
+    /// Called after successful convergence to check for Safe Operating Area violations.
+    ///
+    /// Iterates through all devices that implement SOA checking and collects any
+    /// violations (e.g., power dissipation limits, voltage/current limits).
     fn convergence_success_callback(
         &mut self,
         state: &CircularArrayBuffer2<f64>,

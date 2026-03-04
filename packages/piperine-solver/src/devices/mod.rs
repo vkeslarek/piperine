@@ -17,7 +17,6 @@ use crate::devices::ask::Ask;
 use crate::devices::soa::SoaCheck;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::expression::Quantity;
-use crate::math::num::Scalar;
 use crate::solver::Context;
 use crate::util::AsAny;
 use num_complex::Complex;

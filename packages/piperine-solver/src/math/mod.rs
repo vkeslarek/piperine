@@ -7,6 +7,5 @@ pub mod iv;
 pub mod linear;
 pub mod newton_raphson;
 pub mod num;
-mod pnjlim;
 pub mod rand;
 pub mod unit;

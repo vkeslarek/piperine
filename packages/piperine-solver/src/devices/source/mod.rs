@@ -5,7 +5,7 @@ use crate::circuit::netlist::{IntoNodeIdentifier, Netlist, NodeIdentifier};
 use crate::devices::source::model::{VoltageSourceModel, VoltageSourceModelType};
 use crate::devices::source::runtime::VoltageSourceRuntime;
 use crate::devices::{AnyRuntime, Component, Runtime};
-use crate::math::unit::{Hertz, Radian, Second, UnitExt, Volt};
+use crate::math::unit::{Hertz, Radian, Second, Volt};
 use crate::util::AsAny;
 use std::any::Any;
 use std::sync::Arc;

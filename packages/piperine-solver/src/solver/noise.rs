@@ -1,4 +1,4 @@
-use crate::analysis::ac::{AcAnalysisContext, AcSweepAnalysisOptions};
+use crate::analysis::ac::AcAnalysisContext;
 use crate::analysis::dc::DcAnalysisResult;
 use crate::analysis::noise::{NoiseAnalysisOptions, NoiseAnalysisResult};
 use crate::circuit::instance::CircuitInstance;
