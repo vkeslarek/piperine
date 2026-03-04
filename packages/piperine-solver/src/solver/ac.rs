@@ -79,7 +79,7 @@ impl<'a> AcSolver<'a> {
         &mut self,
         options: AcSweepAnalysisOptions,
     ) -> crate::result::Result<AcAnalysisResult> {
-        let frequencies = self.generate_frequencies(&options);
+        let frequencies = options.generate_frequencies();
 
         let mut data = Vec::new();
 
@@ -104,23 +104,6 @@ impl<'a> AcSolver<'a> {
             data,
             self.system.soa_violations.clone(),
         ))
-    }
-
-    fn generate_frequencies(&self, opt: &AcSweepAnalysisOptions) -> Vec<f64> {
-        if opt.steps <= 1 {
-            return vec![opt.start_frequency];
-        }
-
-        (0..opt.steps)
-            .map(|i| {
-                let ratio = i as f64 / (opt.steps - 1) as f64;
-                if opt.logarithmic {
-                    opt.start_frequency * (opt.stop_frequency / opt.start_frequency).powf(ratio)
-                } else {
-                    opt.start_frequency + (opt.stop_frequency - opt.start_frequency) * ratio
-                }
-            })
-            .collect()
     }
 }
 

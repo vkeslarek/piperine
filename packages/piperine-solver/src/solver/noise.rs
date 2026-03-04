@@ -49,7 +49,7 @@ impl<'a> NoiseSolver<'a> {
     }
 
     pub fn solve(&mut self) -> crate::result::Result<NoiseAnalysisResult> {
-        let frequencies = self.generate_frequencies(&self.options.sweep_options);
+        let frequencies = self.options.sweep_options.generate_frequencies();
         let mut out_noise_sq = Vec::with_capacity(frequencies.len());
 
         for &f in &frequencies {
@@ -136,28 +136,6 @@ impl<'a> NoiseSolver<'a> {
             .reference_for(&CircuitVariable::Node(opt.reference_node.clone()))
             .ok_or_else(|| crate::error::Error::simple("Noise", "Reference node not found"))?;
         Ok((out.clone(), ref_.clone()))
-    }
-
-    fn generate_frequencies(&self, opt: &AcSweepAnalysisOptions) -> Vec<f64> {
-        if opt.steps <= 1 {
-            return vec![opt.start_frequency];
-        }
-
-        let n_steps = opt.steps;
-        let start = opt.start_frequency;
-        let stop = opt.stop_frequency;
-
-        (0..n_steps)
-            .map(|i| {
-                let ratio = i as f64 / (n_steps - 1) as f64;
-
-                if opt.logarithmic {
-                    start * (stop / start).powf(ratio)
-                } else {
-                    start + ratio * (stop - start)
-                }
-            })
-            .collect()
     }
 
     fn integrate_noise(&self, freqs: &[f64], psd: &[f64]) -> f64 {
