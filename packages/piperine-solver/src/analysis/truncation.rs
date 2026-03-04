@@ -26,7 +26,9 @@
 //! - ngSpice: `src/spicelib/devices/cap/captrunc.c` - Capacitor implementation
 //! - ngSpice: `src/spicelib/devices/ind/indtrunc.c` - Inductor implementation
 
+use crate::analysis::transient::TransientAnalysisState;
 use crate::math::unit::Second;
+use crate::solver::Context;
 
 /// Integration method used for transient analysis.
 ///
@@ -108,9 +110,10 @@ pub trait TruncationError {
     ///
     /// # Parameters
     ///
+    /// - `state_history`: Historical circuit states (voltages/currents)
+    /// - `time_history`: Historical timesteps corresponding to states
     /// - `method`: The integration method being used
-    /// - `trtol`: Truncation tolerance (typical: 7.0)
-    /// - `chgtol`: Charge tolerance in Coulombs (typical: 1e-14)
+    /// - `context`: Solver context containing tolerances (trtol, chgtol, abstol, reltol)
     ///
     /// # Returns
     ///
@@ -118,9 +121,10 @@ pub trait TruncationError {
     /// - `None`: Unable to estimate (e.g., first few steps, no state change)
     fn suggest_timestep(
         &self,
+        state_history: &TransientAnalysisState,
+        time_history: &[f64],
         method: IntegrationMethod,
-        trtol: f64,
-        chgtol: f64,
+        context: &Context,
     ) -> Option<Second>;
 }
 

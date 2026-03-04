@@ -11,6 +11,7 @@ use crate::analysis::ac::AcAnalysis;
 use crate::analysis::dc::DcAnalysis;
 use crate::analysis::noise::NoiseSource;
 use crate::analysis::transient::TransientAnalysis;
+use crate::analysis::truncation::TruncationError;
 use crate::circuit::netlist::Netlist;
 use crate::devices::ask::Ask;
 use crate::devices::soa::SoaCheck;
@@ -82,6 +83,10 @@ pub trait Runtime {
     fn as_soa_check(&self) -> Option<&dyn SoaCheck> {
         None
     }
+
+    fn as_truncation_error(&self) -> Option<&dyn TruncationError> {
+        None
+    }
 }
 
 pub trait AnyRuntime {
@@ -96,6 +101,8 @@ pub trait AnyRuntime {
     fn as_noise_source(&self) -> Option<&dyn NoiseSource>;
 
     fn as_soa_check(&self) -> Option<&dyn SoaCheck>;
+
+    fn as_truncation_error(&self) -> Option<&dyn TruncationError>;
 }
 
 impl<R: Runtime> AnyRuntime for R
@@ -124,5 +131,9 @@ where
 
     fn as_soa_check(&self) -> Option<&dyn SoaCheck> {
         R::as_soa_check(self)
+    }
+
+    fn as_truncation_error(&self) -> Option<&dyn TruncationError> {
+        R::as_truncation_error(self)
     }
 }

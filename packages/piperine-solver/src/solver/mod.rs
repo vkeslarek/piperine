@@ -34,6 +34,10 @@ pub struct Context {
     pub max_iter: usize,
     pub min_res: Ohm,
     pub dc_damp_tolerance: f64,
+    /// Truncation error tolerance for adaptive timestep (default: 7.0)
+    pub trtol: f64,
+    /// Charge tolerance in Coulombs for truncation error (default: 1e-14)
+    pub chgtol: f64,
 }
 
 impl Default for Context {
@@ -47,6 +51,8 @@ impl Default for Context {
             max_iter: 500,
             min_res: 1e-12,
             dc_damp_tolerance: 0.5,
+            trtol: 7.0,
+            chgtol: 1e-14,
         }
     }
 }
