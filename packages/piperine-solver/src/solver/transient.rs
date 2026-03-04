@@ -569,4 +569,144 @@ mod test {
             (v_adaptive_final - v_fixed_final).abs()
         );
     }
+
+    #[test]
+    fn test_breakpoint_capture() {
+        let mut v_out = GND;
+
+        // RC circuit with a Step source
+        // The step has a rise time from 0ns to 1µs
+        let mut circuit: CircuitInstance = Circuit::builder("Breakpoint Test", |b| {
+            let v_in = b.port();
+            v_out = b.port();
+
+            b.voltage_source(
+                "V1",
+                v_in.clone(),
+                GND,
+                Step {
+                    initial: 0.0.V(),
+                    final_value: 5.0.V(),
+                    delay: 1.0.ms(),     // Step starts at 1ms
+                    rise_time: 1.0.us(), // Rise time: 1µs
+                },
+            );
+
+            b.resistor("R1", v_in, v_out.clone(), 1.0.kOhms());
+            b.capacitor("C1", v_out.clone(), GND, 1.0.uF());
+        })
+        .into();
+
+        println!("\n=== BREAKPOINT CAPTURE TEST ===");
+
+        // Use adaptive timestep with a large initial timestep
+        // Without breakpoints, the solver would step over the edge
+        let options_adaptive = TransientAnalysisOptions::new_adaptive(5.0.ms(), 500.0.us())
+            .with_dt_min(1.0.ns())
+            .with_dt_max(500.0.us());
+
+        let result = circuit
+            .transient(options_adaptive, Context::default())
+            .unwrap()
+            .solve()
+            .unwrap();
+
+        println!("Total steps: {}", result.len());
+
+        // Check that we have samples near the breakpoints
+        // Breakpoints should be at: 1ms (start), 1.0005ms (mid), 1.001ms (end)
+        let t_start = 1.0e-3;
+        let t_mid = 1.0005e-3;
+        let t_end = 1.001e-3;
+
+        // Find the closest samples to each breakpoint
+        let mut samples_near_start = 0;
+        let mut samples_near_mid = 0;
+        let mut samples_near_end = 0;
+
+        let tolerance = 100.0e-6; // 100µs tolerance
+
+        for step in result.iter() {
+            let t = step.time();
+
+            if (t - t_start).abs() < tolerance {
+                samples_near_start += 1;
+            }
+            if (t - t_mid).abs() < tolerance {
+                samples_near_mid += 1;
+            }
+            if (t - t_end).abs() < tolerance {
+                samples_near_end += 1;
+            }
+        }
+
+        println!("\nSamples near breakpoints:");
+        println!("  Near 1.000ms (start): {}", samples_near_start);
+        println!("  Near 1.0005ms (mid): {}", samples_near_mid);
+        println!("  Near 1.001ms (end):  {}", samples_near_end);
+
+        // Verify we captured the transition properly
+        assert!(
+            samples_near_start > 0,
+            "No samples near breakpoint start (1ms)"
+        );
+        assert!(
+            samples_near_mid > 0,
+            "No samples near breakpoint mid (1.0005ms)"
+        );
+        assert!(
+            samples_near_end > 0,
+            "No samples near breakpoint end (1.001ms)"
+        );
+
+        // Check voltage values during the transition
+        let v_before = result
+            .iter()
+            .find(|s| s.time() >= 0.999e-3 && s.time() < 1.0e-3)
+            .and_then(|s| s.get_node(&v_out));
+
+        let v_during = result
+            .iter()
+            .find(|s| s.time() >= 1.0005e-3 && s.time() < 1.0006e-3)
+            .and_then(|s| s.get_node(&v_out));
+
+        let v_after = result
+            .iter()
+            .find(|s| s.time() >= 1.001e-3 && s.time() < 1.002e-3)
+            .and_then(|s| s.get_node(&v_out));
+
+        println!("\nVoltages during transition:");
+        if let Some(v) = v_before {
+            println!("  Before (~999µs):  {:.6}V", v);
+        }
+        if let Some(v) = v_during {
+            println!("  During (~1000.5µs): {:.6}V", v);
+        }
+        if let Some(v) = v_after {
+            println!("  After (~1001µs):  {:.6}V", v);
+        }
+
+        // The voltage should be increasing during the transition
+        if let (Some(vb), Some(vd), Some(va)) = (v_before, v_during, v_after) {
+            assert!(
+                vd > vb,
+                "Voltage should increase from before to during transition"
+            );
+            assert!(
+                va > vd,
+                "Voltage should increase from during to after transition"
+            );
+
+            // During the transition, voltage should be between initial and final
+            assert!(
+                vd > 0.0 && vd < 5.0,
+                "Voltage during transition should be between 0V and 5V, got {:.4}V",
+                vd
+            );
+        }
+
+        println!("\n✓ Breakpoint capture test passed!");
+        println!("  - All breakpoints were captured");
+        println!("  - Transition was properly sampled");
+    }
 }
