@@ -8,6 +8,7 @@ use std::sync::Once;
 pub mod ac;
 pub mod dc;
 pub mod noise;
+pub mod tf;
 pub mod transient;
 
 static INIT: Once = Once::new();
