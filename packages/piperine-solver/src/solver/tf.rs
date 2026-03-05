@@ -5,7 +5,7 @@ use crate::analysis::tf::{
 use crate::circuit::instance::CircuitInstance;
 use crate::circuit::netlist::{CircuitReference, CircuitVariable};
 use crate::math::faer::FaerSymbolicMatrix;
-use crate::math::linear::SymbolicMatrix;
+use crate::math::linear::{SymbolicLinearSystem, SymbolicMatrix};
 use crate::solver::dc::DcSolver;
 use crate::solver::{init_solver_configuration, Context};
 use ndarray::Array1;
@@ -65,6 +65,10 @@ impl<'a> TransferFunctionSolver<'a> {
 
         // Solve DC operating point
         let dc_point = DcSolver::new(circuit, context.clone())?.solve()?;
+        eprintln!(
+            "DEBUG TF::new - DC point solved. Values: {:?}",
+            dc_point.values()
+        );
 
         // Resolve input source branch reference
         let input_branch_var = CircuitVariable::Branch(options.input_source.clone());
@@ -90,6 +94,12 @@ impl<'a> TransferFunctionSolver<'a> {
                 crate::error::Error::simple("TF", "Output variable not found in circuit")
             })?
             .clone();
+
+        eprintln!(
+            "DEBUG: Output ref = {:?}, idx = {:?}",
+            output_ref.variable(),
+            output_ref.idx()
+        );
 
         // Resolve output reference node (for differential voltage)
         let output_ref_node = if let Some(ref_node) = &options.output_ref {
@@ -167,17 +177,22 @@ impl<'a> TransferFunctionSolver<'a> {
         // Create state buffer with DC operating point values
         let netlist = circuit.netlist();
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
-        let mut state = crate::math::circular_array::CircularArrayBuffer2::new(size, 2);
 
-        // Initialize state with DC point values as initial guess
-        let dc_values = dc_point.as_iv(netlist);
-        let mut initial_state = ndarray::Array1::zeros(size);
-        for iv in dc_values {
+        // Get DC values and populate state array
+        let dc_values_iv = dc_point.as_iv(netlist);
+        let mut dc_state_array = ndarray::Array1::zeros(size);
+        for iv in dc_values_iv {
             if let Some(idx) = iv.reference.idx() {
-                initial_state[idx] = iv.value;
+                dc_state_array[idx] = iv.value;
             }
         }
-        state.push(&initial_state.view());
+
+        // Create a temporary state buffer for update_all
+        // CircularArrayBuffer2::new(capacity, size) where:
+        // - capacity = number of state snapshots to keep
+        // - size = number of variables in each snapshot
+        let mut state = crate::math::circular_array::CircularArrayBuffer2::new(1, size);
+        state.push(&dc_state_array.view());
 
         // Update all devices at DC operating point
         circuit.update_all(&state, context);
@@ -217,21 +232,187 @@ impl<'a> TransferFunctionSolver<'a> {
     ///
     /// Returns (gain, solution_vector) tuple.
     /// Solution vector is reused for input resistance calculation.
+    ///
+    /// Algorithm (from ngspice):
+    /// 1. Build Jacobian matrix at DC operating point (no RHS terms)
+    /// 2. Apply ONLY unit excitation at input (all other RHS = 0)
+    /// 3. Solve linearized system
+    /// 4. Read output response
     fn calculate_gain(&mut self) -> crate::result::Result<(f64, Array1<f64>)> {
-        // TODO: Implement gain calculation
-        Ok((1.0, Array1::zeros(self.symbolic_matrix.size())))
+        use crate::math::faer::FaerSparseLinearSystem;
+        use crate::math::linear::{LinearSystem, Stamp};
+
+        // Build linear system with ONLY matrix stamps (no RHS)
+        // Filter out RHS stamps - we only want the Jacobian matrix
+        let all_stamps = Self::assemble_dc_stamps(self.circuit, &self.dc_point, &self.context)?;
+        let matrix_only_stamps: Vec<_> = all_stamps
+            .into_iter()
+            .filter(|stamp| !matches!(stamp, Stamp::Rhs(_, _)))
+            .collect();
+
+        let mut system = FaerSparseLinearSystem::new(self.symbolic_matrix.size());
+        system.apply_stamps(matrix_only_stamps);
+
+        // Now apply ONLY the unit excitation at input
+        let input_is_voltage = self.is_voltage_source();
+
+        if input_is_voltage {
+            // Voltage source: apply 1V by setting RHS[branch] = 1.0
+            system.apply_stamps(vec![Stamp::Rhs(self.input_branch_ref.clone(), 1.0)]);
+        } else {
+            // Current source: apply 1A between source nodes
+            // TODO: Get current source nodes and apply +1A / -1A
+            return Err(crate::error::Error::simple(
+                "TransferFunction",
+                "Current source input not yet fully implemented",
+            ));
+        }
+
+        // Solve: Y × V = RHS
+        let solution = system.solve_with_backend(&self.symbolic_matrix)?;
+
+        // Extract output from solution
+        let output_value = if self.options.output.is_node() {
+            // Output is voltage V(node) or V(n1, n2)
+            let v_pos = if let Some(idx) = self.output_ref.idx() {
+                solution[idx]
+            } else {
+                0.0
+            };
+
+            let v_neg = if let Some(ref_node) = &self.output_ref_node {
+                if let Some(idx) = ref_node.idx() {
+                    solution[idx]
+                } else {
+                    0.0
+                }
+            } else {
+                0.0 // GND reference
+            };
+
+            v_pos - v_neg
+        } else {
+            // Output is current I(branch)
+            if let Some(idx) = self.output_ref.idx() {
+                solution[idx]
+            } else {
+                0.0
+            }
+        };
+
+        // Gain = output_value / 1.0 (unit input)
+        let gain = output_value;
+
+        Ok((gain, solution))
     }
 
     /// Calculates input resistance from the gain solution.
-    fn calculate_input_resistance(&self, _solution: &Array1<f64>) -> crate::result::Result<f64> {
-        // TODO: Implement input resistance calculation
-        Ok(1000.0) // Placeholder
+    ///
+    /// For voltage source: R_in = V_source / I_source = 1V / I_branch
+    /// For current source: R_in = V_across / I_source
+    fn calculate_input_resistance(&self, solution: &Array1<f64>) -> crate::result::Result<f64> {
+        let input_is_voltage = self.is_voltage_source();
+
+        if input_is_voltage {
+            // Voltage source: R_in = -1.0 / I_branch
+            // The current through voltage source branch tells us input current
+            if let Some(idx) = self.input_branch_ref.idx() {
+                let i_source = solution[idx];
+
+                if i_source.abs() < 1e-20 {
+                    // Open circuit - infinite resistance
+                    Ok(1e20)
+                } else {
+                    // R_in = V / I, where V = 1.0 was applied
+                    Ok(-1.0 / i_source)
+                }
+            } else {
+                Ok(1e20) // No valid index
+            }
+        } else {
+            // Current source: measure voltage across source
+            // R_in = V_across / 1.0 (1A was applied)
+            // TODO: Get current source nodes
+            Ok(1e20) // Placeholder for current source
+        }
     }
 
     /// Calculates output resistance with new solve.
+    ///
+    /// Applies unit perturbation at output and measures response.
+    /// For voltage output: Apply 1A test current, measure voltage change
+    /// For current output: Apply 1V test voltage, measure current change
     fn calculate_output_resistance(&mut self) -> crate::result::Result<f64> {
-        // TODO: Implement output resistance calculation
-        Ok(500.0) // Placeholder
+        use crate::math::faer::FaerSparseLinearSystem;
+        use crate::math::linear::{LinearSystem, Stamp};
+
+        // Build linear system (same as gain calculation)
+        let stamps = Self::assemble_dc_stamps(self.circuit, &self.dc_point, &self.context)?;
+        let mut system = FaerSparseLinearSystem::new(self.symbolic_matrix.size());
+        system.apply_stamps(stamps);
+
+        // Apply unit excitation at OUTPUT
+        if self.options.output.is_node() {
+            // Voltage output: apply 1A test current between output nodes
+            let out_stamps = if let Some(ref_node) = &self.output_ref_node {
+                // Differential: I flows from output to ref
+                vec![
+                    Stamp::Rhs(self.output_ref.clone(), -1.0),
+                    Stamp::Rhs(ref_node.clone(), 1.0),
+                ]
+            } else {
+                // Single-ended: I flows from output to GND
+                vec![Stamp::Rhs(self.output_ref.clone(), -1.0)]
+            };
+
+            system.apply_stamps(out_stamps);
+
+            // Solve
+            let solution = system.solve_with_backend(&self.symbolic_matrix)?;
+
+            // Measure voltage response
+            let v_pos = if let Some(idx) = self.output_ref.idx() {
+                solution[idx]
+            } else {
+                0.0
+            };
+
+            let v_neg = if let Some(ref_node) = &self.output_ref_node {
+                if let Some(idx) = ref_node.idx() {
+                    solution[idx]
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            };
+
+            let v_response = v_pos - v_neg;
+
+            // R_out = V_response / I_test
+            // Note: Thévenin resistance has opposite sign from what we get
+            Ok(-v_response / 1.0)
+        } else {
+            // Current output: apply 1V test voltage at branch
+            system.apply_stamps(vec![Stamp::Rhs(self.output_ref.clone(), 1.0)]);
+
+            // Solve
+            let solution = system.solve_with_backend(&self.symbolic_matrix)?;
+
+            // Measure current response
+            let i_response = if let Some(idx) = self.output_ref.idx() {
+                solution[idx]
+            } else {
+                0.0
+            };
+
+            if i_response.abs() < 1e-20 {
+                Ok(1e20) // Open circuit
+            } else {
+                // R_out = V_test / I_response
+                Ok(1.0 / i_response)
+            }
+        }
     }
 }
 
@@ -281,9 +462,25 @@ mod test {
         // R_in = R1 + R2 = 2kΩ
         // R_out = R1||R2 = 500Ω
 
-        // TODO: Uncomment when implementation is complete
-        // assert!((result.gain - 0.5).abs() < 1e-6, "Gain should be 0.5");
-        // assert!((result.input_resistance - 2000.0).abs() < 1.0, "R_in should be 2kΩ");
-        // assert!((result.output_resistance - 500.0).abs() < 1.0, "R_out should be 500Ω");
+        println!("\nExpected:");
+        println!("  Gain: 0.5");
+        println!("  R_in: 2000 Ω");
+        println!("  R_out: 500 Ω");
+
+        assert!(
+            (result.gain - 0.5).abs() < 1e-3,
+            "Gain should be 0.5, got {}",
+            result.gain
+        );
+        assert!(
+            (result.input_resistance - 2000.0).abs() < 10.0,
+            "R_in should be 2kΩ, got {}",
+            result.input_resistance
+        );
+        assert!(
+            (result.output_resistance - 500.0).abs() < 10.0,
+            "R_out should be 500Ω, got {}",
+            result.output_resistance
+        );
     }
 }
