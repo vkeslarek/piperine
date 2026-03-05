@@ -11,6 +11,17 @@ use crate::solver::{init_solver_configuration, Context};
 use ndarray::Array1;
 use num_complex::Complex;
 
+/// Noise analysis solver for computing circuit noise floor.
+///
+/// This solver uses the adjoint method to efficiently compute the noise contribution
+/// from all noise sources (thermal, shot, flicker) to the output. It performs:
+/// 1. DC operating point calculation
+/// 2. Circuit linearization at each frequency
+/// 3. Adjoint system solution to find noise transfer
+/// 4. Integration of noise power spectral density
+///
+/// The adjoint method solves the transposed system once per frequency, which is
+/// more efficient than solving for each noise source individually.
 pub struct NoiseSolver<'a> {
     pub circuit: &'a mut CircuitInstance,
     pub context: Context,
@@ -22,6 +33,21 @@ pub struct NoiseSolver<'a> {
 }
 
 impl<'a> NoiseSolver<'a> {
+    /// Creates a new noise solver and computes DC operating point.
+    ///
+    /// # Process
+    /// 1. Initialize solver configuration
+    /// 2. Solve for DC operating point (required for small-signal parameters)
+    /// 3. Resolve output and reference node references
+    /// 4. Build symbolic matrix structure (sparsity pattern) for efficiency
+    ///
+    /// # Arguments
+    /// * `circuit` - Circuit instance to analyze
+    /// * `options` - Noise analysis parameters (frequency sweep, output nodes)
+    /// * `context` - Solver context with tolerances and temperature
+    ///
+    /// # Returns
+    /// Initialized noise solver ready for analysis
     pub fn new(
         circuit: &'a mut CircuitInstance,
         options: NoiseAnalysisOptions,
@@ -48,6 +74,23 @@ impl<'a> NoiseSolver<'a> {
         })
     }
 
+    /// Performs noise analysis across the frequency sweep.
+    ///
+    /// # Algorithm
+    /// For each frequency:
+    /// 1. Linearize circuit at current frequency
+    /// 2. Solve adjoint system (transposed matrix) to find noise transfer
+    /// 3. For each noise source:
+    ///    - Get noise power spectral density (PSD)
+    ///    - Calculate transfer from source to output: |H(f)|²
+    ///    - Accumulate: total_PSD += |H(f)|² × source_PSD
+    /// 4. Integrate total PSD over frequency to get RMS noise voltage
+    ///
+    /// # Returns
+    /// Noise analysis result containing:
+    /// - Frequency points
+    /// - Output noise PSD at each frequency (V²/Hz)
+    /// - Integrated RMS noise voltage (V)
     pub fn solve(&mut self) -> crate::result::Result<NoiseAnalysisResult> {
         let frequencies = self.options.sweep_options.generate_frequencies();
         let mut out_noise_sq = Vec::with_capacity(frequencies.len());
@@ -88,6 +131,24 @@ impl<'a> NoiseSolver<'a> {
         })
     }
 
+    /// Solves the adjoint system to find noise transfer functions.
+    ///
+    /// The adjoint method transposes the system matrix and solves with a unit
+    /// excitation at the output nodes. This gives the transfer function from
+    /// every node to the output in a single solve, which is much more efficient
+    /// than solving for each noise source individually.
+    ///
+    /// # Algorithm
+    /// 1. Build transposed system: swap row/col indices of all stamps
+    /// 2. Apply unit current at output: I_out = +1, I_ref = -1
+    /// 3. Solve: [Y^T] × Z = I_unit
+    /// 4. Result Z contains transfer impedances to output
+    ///
+    /// # Arguments
+    /// * `stamps` - Linearized AC stamps at current frequency
+    ///
+    /// # Returns
+    /// Adjoint solution vector (transfer impedances)
     fn solve_adjoint_system(
         &self,
         stamps: Vec<Stamp<CircuitReference, Complex<f64>>>,
@@ -108,6 +169,19 @@ impl<'a> NoiseSolver<'a> {
         system.solve_with_backend(&self.symbolic_matrix)
     }
 
+    /// Assembles linearized circuit stamps at a given frequency.
+    ///
+    /// Uses the DC operating point to get small-signal parameters from all
+    /// AC-capable devices (resistors, capacitors, inductors, diodes, etc.).
+    ///
+    /// # Arguments
+    /// * `circuit` - Circuit instance
+    /// * `dc_point` - DC operating point for linearization
+    /// * `f_hz` - Frequency in Hz
+    /// * `context` - Solver context
+    ///
+    /// # Returns
+    /// Vector of complex-valued stamps for the linearized system
     fn assemble_linearized(
         circuit: &mut CircuitInstance,
         dc_point: &DcAnalysisResult,
@@ -124,6 +198,17 @@ impl<'a> NoiseSolver<'a> {
             .collect())
     }
 
+    /// Resolves output and reference node identifiers to circuit references.
+    ///
+    /// # Arguments
+    /// * `circuit` - Circuit instance
+    /// * `opt` - Noise analysis options containing node identifiers
+    ///
+    /// # Returns
+    /// Tuple of (output_reference, reference_reference)
+    ///
+    /// # Errors
+    /// Returns error if either node is not found in the netlist
     fn resolve_nodes(
         circuit: &CircuitInstance,
         opt: &NoiseAnalysisOptions,
@@ -138,6 +223,18 @@ impl<'a> NoiseSolver<'a> {
         Ok((out.clone(), ref_.clone()))
     }
 
+    /// Integrates noise power spectral density to get RMS noise voltage.
+    ///
+    /// Uses trapezoidal integration to calculate total noise power:
+    ///   P_total = ∫ PSD(f) df
+    ///   V_rms = √P_total
+    ///
+    /// # Arguments
+    /// * `freqs` - Frequency points (Hz)
+    /// * `psd` - Noise power spectral density at each frequency (V²/Hz)
+    ///
+    /// # Returns
+    /// Integrated RMS noise voltage (V)
     fn integrate_noise(&self, freqs: &[f64], psd: &[f64]) -> f64 {
         let mut sum_sq = 0.0;
         for i in 0..freqs.len() - 1 {

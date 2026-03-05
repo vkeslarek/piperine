@@ -16,6 +16,11 @@ use num_complex::Complex;
 use num_traits::Zero;
 use std::collections::HashMap;
 
+/// Linear system representation for AC small-signal analysis.
+///
+/// AC analysis computes the small-signal frequency response of a circuit around
+/// its DC operating point. The system is linearized, so Newton-Raphson iteration
+/// typically converges in a single step.
 pub struct AcSystem<'a> {
     pub circuit: &'a mut CircuitInstance,
     pub context: Context,
@@ -25,6 +30,11 @@ pub struct AcSystem<'a> {
 }
 
 impl<'a> NonLinearSystem<CircuitReference, Complex<f64>> for AcSystem<'a> {
+    /// Assembles the linearized AC system matrix for the current frequency.
+    ///
+    /// AC analysis is inherently linear (small-signal approximation around DC bias),
+    /// so this simply collects the complex-valued stamps from all AC-capable devices.
+    /// No iterative updates are needed since the system doesn't change during solving.
     fn assemble(
         &mut self,
         _state: &CircularArrayBuffer2<Complex<f64>>,
@@ -45,6 +55,11 @@ impl<'a> NonLinearSystem<CircuitReference, Complex<f64>> for AcSystem<'a> {
     }
 }
 
+/// AC analysis solver for computing small-signal frequency response.
+///
+/// This solver performs AC sweep analysis, computing the circuit's response at
+/// multiple frequency points. It first calculates the DC operating point, then
+/// linearizes the circuit and solves the complex-valued linear system at each frequency.
 pub struct AcSolver<'a> {
     pub system: AcSystem<'a>,
     pub solver:
@@ -52,6 +67,20 @@ pub struct AcSolver<'a> {
 }
 
 impl<'a> AcSolver<'a> {
+    /// Creates a new AC solver and computes the DC operating point.
+    ///
+    /// # Process
+    /// 1. Initialize solver configuration
+    /// 2. Solve for DC operating point (required for linearization)
+    /// 3. Set up complex-valued linear system
+    /// 4. Initialize Newton-Raphson solver (converges in 1 iteration for linear systems)
+    ///
+    /// # Arguments
+    /// * `circuit` - Circuit instance to analyze
+    /// * `context` - Solver context with tolerances and limits
+    ///
+    /// # Returns
+    /// Initialized AC solver ready for frequency sweep
     pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::result::Result<Self> {
         init_solver_configuration();
 
@@ -75,6 +104,24 @@ impl<'a> AcSolver<'a> {
         Ok(Self { system, solver })
     }
 
+    /// Performs AC frequency sweep analysis.
+    ///
+    /// Solves the linearized circuit at each frequency point specified in the options.
+    /// The frequency points can be linearly or logarithmically spaced.
+    ///
+    /// # Process
+    /// 1. Generate frequency points from options (linear or log spacing)
+    /// 2. For each frequency:
+    ///    - Update system frequency
+    ///    - Solve linear system (single iteration, no Newton needed)
+    ///    - Store complex voltages/currents
+    /// 3. Return complete frequency response
+    ///
+    /// # Arguments
+    /// * `options` - Sweep parameters (start/stop frequency, steps, spacing type)
+    ///
+    /// # Returns
+    /// AC analysis result containing complex values at each frequency point
     pub fn solve_sweep(
         &mut self,
         options: AcSweepAnalysisOptions,
