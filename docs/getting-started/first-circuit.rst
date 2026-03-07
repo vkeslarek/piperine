@@ -32,25 +32,24 @@ Create a new file ``main.rs``:
    use piperine::prelude::*;
 
    fn main() {
-       // Declare node to access outside builder
-       let mut n_out = GND;
+       // Create circuit with Circuit::new() to access nodes later
+       let mut circuit = Circuit::new("Voltage Divider");
        
-       // Define the circuit using the builder pattern
-       let mut circuit: CircuitInstance = Circuit::builder("Voltage Divider", |b| {
-           // Create nodes
-           let n_in = b.port();
-           n_out = b.port();
-           
-           // 10V DC voltage source
-           b.voltage_source("Vin", n_in.clone(), GND, 10.0.V());
-           
-           // R1: 1 kΩ
-           b.resistor("R1", n_in, n_out.clone(), 1.0.kOhms());
-           
-           // R2: 1 kΩ
-           b.resistor("R2", n_out.clone(), GND, 1.0.kOhms());
-       })
-       .into();
+       // Create nodes
+       let n_in = circuit.port();
+       let n_out = circuit.port();
+       
+       // 10V DC voltage source
+       circuit.voltage_source("Vin", n_in.clone(), GND, 10.0.V());
+       
+       // R1: 1 kΩ
+       circuit.resistor("R1", n_in, n_out.clone(), 1.0.kOhms());
+       
+       // R2: 1 kΩ
+       circuit.resistor("R2", n_out.clone(), GND, 1.0.kOhms());
+       
+       // Convert to CircuitInstance
+       let mut circuit: CircuitInstance = circuit.into();
 
        // Solve the DC operating point
        let result = circuit
@@ -89,53 +88,51 @@ Code Walkthrough
    
    This imports all common types and traits.
 
-2. **Declare node for external access**
+2. **Create circuit with ``Circuit::new()``**
    
    .. code-block:: rust
    
-      let mut n_out = GND;
+      let mut circuit = Circuit::new("Voltage Divider");
    
-   Nodes created inside the builder are scoped to the closure. To access them later, declare them outside as mutable.
+   Use ``Circuit::new()`` when you need to access nodes after creating them.
 
-3. **Create circuit with builder**
+3. **Create nodes with ``port()``**
    
    .. code-block:: rust
    
-      let mut circuit: CircuitInstance = Circuit::builder("Voltage Divider", |b| {
-          // ... add devices here
-      }).into();
+      let n_in = circuit.port();
+      let n_out = circuit.port();
    
-   The builder is a static method on ``Circuit`` that takes a closure receiving ``&mut Circuit``.
+   Each call to ``circuit.port()`` creates a unique node identifier that you can use later.
 
-4. **Create nodes with ``port()``**
+4. **Add voltage source**
    
    .. code-block:: rust
    
-      let n_in = b.port();
-      n_out = b.port();  // Assign to outer variable
-   
-   Each call to ``b.port()`` creates a unique node identifier.
-
-5. **Add voltage source**
-   
-   .. code-block:: rust
-   
-      b.voltage_source("Vin", n_in.clone(), GND, 10.0.V());
+      circuit.voltage_source("Vin", n_in.clone(), GND, 10.0.V());
    
    * ``"Vin"`` - device name
    * ``n_in.clone()`` - positive node (clone when reused)
    * ``GND`` - negative node (ground reference)
    * ``10.0.V()`` - 10 volts with unit extension
 
-6. **Add resistors**
+5. **Add resistors**
    
    .. code-block:: rust
    
-      b.resistor("R1", n_in, n_out.clone(), 1.0.kOhms());
+      circuit.resistor("R1", n_in, n_out.clone(), 1.0.kOhms());
    
    * Connects node ``n_in`` to ``n_out``
    * Use ``.clone()`` when a node is used multiple times
    * Resistance: 1kΩ (using ``.kOhms()`` unit extension)
+
+6. **Convert to ``CircuitInstance``**
+   
+   .. code-block:: rust
+   
+      let mut circuit: CircuitInstance = circuit.into();
+   
+   Convert the ``Circuit`` to ``CircuitInstance`` before running analyses.
 
 7. **Run DC analysis**
    
@@ -188,14 +185,14 @@ Example with 2kΩ / 1kΩ:
 
 .. code-block:: rust
 
-   let mut n_out = GND;
+   let mut circuit = Circuit::new("2:1 Divider");
    
-   let circuit: CircuitInstance = Circuit::builder("2:1 Divider", |b| {
-       let n_in = b.port();
-       n_out = b.port();
-       
-       b.voltage_source("Vin", n_in.clone(), GND, 10.0.V());
-       b.resistor("R1", n_in, n_out.clone(), 2.0.kOhms());
-       b.resistor("R2", n_out.clone(), GND, 1.0.kOhms());
-   }).into();
+   let n_in = circuit.port();
+   let n_out = circuit.port();
+   
+   circuit.voltage_source("Vin", n_in.clone(), GND, 10.0.V());
+   circuit.resistor("R1", n_in, n_out.clone(), 2.0.kOhms());
+   circuit.resistor("R2", n_out.clone(), GND, 1.0.kOhms());
+   
+   let circuit: CircuitInstance = circuit.into();
    // Expected: V_out = 10V × (1kΩ / 3kΩ) = 3.333V

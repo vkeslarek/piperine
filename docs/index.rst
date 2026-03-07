@@ -15,17 +15,16 @@ Quick Example
    use piperine::prelude::*;
 
    fn main() {
-       let mut vout = GND;
+       let mut circuit = Circuit::new("Voltage Divider");
        
-       let mut circuit: CircuitInstance = Circuit::builder("Voltage Divider", |b| {
-           let vin = b.port();
-           vout = b.port();
-           
-           b.voltage_source("V1", vin.clone(), GND, 10.0.V());
-           b.resistor("R1", vin, vout.clone(), 1.0.kOhms());
-           b.resistor("R2", vout.clone(), GND, 1.0.kOhms());
-       }).into();
-
+       let vin = circuit.port();
+       let vout = circuit.port();
+       
+       circuit.voltage_source("V1", vin.clone(), GND, 10.0.V());
+       circuit.resistor("R1", vin, vout.clone(), 1.0.kOhms());
+       circuit.resistor("R2", vout.clone(), GND, 1.0.kOhms());
+       
+       let mut circuit: CircuitInstance = circuit.into();
        let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
        println!("V_out = {:.4} V", result.get_node(&vout).unwrap());  // 5.0000 V
    }
@@ -132,13 +131,13 @@ Problems: Cryptic syntax, no IDE support, hard to parameterize
 
 .. code-block:: rust
 
-   let circuit: CircuitInstance = Circuit::builder("Divider", |b| {
-       let n1 = b.port();
-       let n2 = b.port();
-       b.voltage_source("V1", n1.clone(), GND, 10.0.V());
-       b.resistor("R1", n1, n2.clone(), 1.0.kOhms());
-       b.resistor("R2", n2.clone(), GND, 1.0.kOhms());
-   }).into();
+   let mut circuit = Circuit::new("Divider");
+   let n1 = circuit.port();
+   let n2 = circuit.port();
+   circuit.voltage_source("V1", n1.clone(), GND, 10.0.V());
+   circuit.resistor("R1", n1, n2.clone(), 1.0.kOhms());
+   circuit.resistor("R2", n2.clone(), GND, 1.0.kOhms());
+   let circuit: CircuitInstance = circuit.into();
 
 Advantages: Type-safe, IDE autocompletion, use loops/functions, clear errors
 

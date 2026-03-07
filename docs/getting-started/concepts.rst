@@ -38,14 +38,15 @@ In Piperine, circuits are Rust structs:
 
    use piperine::prelude::*;
 
-   let circuit: CircuitInstance = Circuit::builder("Voltage Divider", |b| {
-       let n1 = b.port();
-       let n2 = b.port();
-       
-       b.voltage_source("V1", n1.clone(), GND, 10.0.V());
-       b.resistor("R1", n1, n2.clone(), 1.0.kOhms());
-       b.resistor("R2", n2.clone(), GND, 1.0.kOhms());
-   }).into();
+   let mut circuit = Circuit::new("Voltage Divider");
+   let n1 = circuit.port();
+   let n2 = circuit.port();
+   
+   circuit.voltage_source("V1", n1.clone(), GND, 10.0.V());
+   circuit.resistor("R1", n1, n2.clone(), 1.0.kOhms());
+   circuit.resistor("R2", n2.clone(), GND, 1.0.kOhms());
+   
+   let circuit: CircuitInstance = circuit.into();
 
 **Advantages:**
 
@@ -55,35 +56,53 @@ In Piperine, circuits are Rust structs:
 * ✅ Easy parameterization
 * ✅ Unit-safe (can't mix volts and amps!)
 
-The Builder Pattern
-===================
+Two Ways to Build Circuits
+===========================
 
-Piperine uses the **builder pattern** for circuit construction:
+Piperine provides **two APIs** for building circuits:
+
+Circuit::new() - Direct API (Recommended)
+------------------------------------------
+
+Use when you need to access nodes after creating the circuit:
 
 .. code-block:: rust
 
-   let circuit: CircuitInstance = Circuit::builder("Circuit Name", |b| {
-       // Create nodes
-       let n1 = b.port();
-       let n2 = b.port();
-       
-       // Add devices using 'b'
-       b.resistor("R1", n1, n2.clone(), 1.0.kOhms());
-       b.capacitor("C1", n2.clone(), GND, 10.0.nF());
-   }).into();
+   let mut circuit = Circuit::new("Circuit Name");
+   
+   // Create nodes
+   let n1 = circuit.port();
+   let n2 = circuit.port();
+   
+   // Add devices
+   circuit.resistor("R1", n1, n2.clone(), 1.0.kOhms());
+   circuit.capacitor("C1", n2.clone(), GND, 10.0.nF());
+   
+   // Convert to CircuitInstance
+   let circuit: CircuitInstance = circuit.into();
 
-The closure receives ``&mut Circuit`` (aliased as ``b``) that provides methods for adding devices.
+**This is the recommended approach** for most use cases because you can access nodes later to read simulation results.
 
-Why a closure?
---------------
+Circuit::builder() - Closure API
+---------------------------------
 
-The closure pattern:
+Use for subcircuit definitions or when you don't need node access:
 
-1. Provides a clean scope for device definitions
-2. Automatically handles internal bookkeeping
-3. Ensures all devices are added before circuit instantiation
-4. Makes code more readable
-5. Allows capturing variables from outer scope
+.. code-block:: rust
+
+   fn my_subcircuit(...) -> Circuit {
+       Circuit::builder("Subcircuit Name", |b| {
+           let n1 = b.port();
+           let n2 = b.port();
+           
+           b.resistor("R1", n1, n2.clone(), 1.0.kOhms());
+           b.capacitor("C1", n2.clone(), GND, 10.0.nF());
+       })
+   }
+
+The closure receives ``&mut Circuit`` that provides methods for adding devices.
+
+**Learn more:** See :doc:`two-apis` for a detailed comparison and subcircuit usage.
 
 Type-Safe Units
 ===============

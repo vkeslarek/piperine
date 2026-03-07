@@ -11,6 +11,7 @@ Piperine is a modern circuit simulator that lets you define circuits as **code**
    
    installation
    first-circuit
+   two-apis
    concepts
 
 Quick Start
@@ -35,17 +36,16 @@ Quick Start
       use piperine::prelude::*;
 
       fn main() {
-          let mut n_out = GND;
+          let mut circuit = Circuit::new("Voltage Divider");
           
-          let mut circuit: CircuitInstance = Circuit::builder("Voltage Divider", |b| {
-              let n_in = b.port();
-              n_out = b.port();
-              
-              b.voltage_source("Vin", n_in.clone(), GND, 10.0.V());
-              b.resistor("R1", n_in, n_out.clone(), 1.0.kOhms());
-              b.resistor("R2", n_out.clone(), GND, 1.0.kOhms());
-          }).into();
-
+          let n_in = circuit.port();
+          let n_out = circuit.port();
+          
+          circuit.voltage_source("Vin", n_in.clone(), GND, 10.0.V());
+          circuit.resistor("R1", n_in, n_out.clone(), 1.0.kOhms());
+          circuit.resistor("R2", n_out.clone(), GND, 1.0.kOhms());
+          
+          let mut circuit: CircuitInstance = circuit.into();
           let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
           let v_out = result.get_node(&n_out).unwrap();
           
@@ -85,14 +85,15 @@ Piperine
 
 .. code-block:: rust
 
-   let circuit: CircuitInstance = Circuit::builder("Voltage Divider", |b| {
-       let n1 = b.port();
-       let n2 = b.port();
-       
-       b.voltage_source("V1", n1.clone(), GND, 10.0.V());
-       b.resistor("R1", n1, n2.clone(), 1.0.kOhms());
-       b.resistor("R2", n2.clone(), GND, 1.0.kOhms());
-   }).into();
+   let mut circuit = Circuit::new("Voltage Divider");
+   let n1 = circuit.port();
+   let n2 = circuit.port();
+   
+   circuit.voltage_source("V1", n1.clone(), GND, 10.0.V());
+   circuit.resistor("R1", n1, n2.clone(), 1.0.kOhms());
+   circuit.resistor("R2", n2.clone(), GND, 1.0.kOhms());
+   
+   let circuit: CircuitInstance = circuit.into();
 
 Advantages:
 
