@@ -460,6 +460,52 @@ Use the `Ask` trait (under development) to query device internals like power dis
 4. **Use tracing:** Enable `RUST_LOG=debug` for detailed solver output
 5. **Test standalone devices:** Write unit tests for each device's runtime
 
+## Documentation Requirements
+
+**IMPORTANT:** All new features, analyses, and devices MUST be documented in `docs/`.
+
+### When Adding New Features
+
+1. **Update User Guide** (`docs/user-guide/`)
+   - Add device to `devices.rst`
+   - Add analysis to `analyses.rst`
+   - Update examples with new functionality
+
+2. **Update Getting Started** (if user-facing)
+   - Add to `concepts.rst` if it's a core concept
+   - Create tutorial in `tutorials/` (future)
+
+3. **Update Examples**
+   - Add working code example
+   - Show expected output
+   - Validate against ngspice when applicable
+
+4. **API Documentation**
+   - Use Rust doc comments (`///`)
+   - Explain parameters and return values
+   - Include code examples in docstrings
+
+### Documentation Build
+
+Check documentation builds successfully:
+
+```bash
+cd docs
+.venv/bin/sphinx-build -b html . _build/html
+```
+
+Fix any warnings before committing.
+
+### Documentation Style
+
+- Use `Circuit::new()` for examples (not `Circuit::builder()`)
+- Show complete, runnable code
+- Include expected output as comments
+- Use type-safe units (`.V()`, `.kOhms()`, etc.)
+- Document state vs. definition separation
+
+**Remember:** Undocumented features don't exist for users!
+
 ## Notes
 
 - **SPICE compatibility:** Limited - we're building a modern API, not parsing SPICE syntax
