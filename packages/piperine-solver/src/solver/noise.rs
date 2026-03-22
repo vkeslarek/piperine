@@ -7,7 +7,7 @@ use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
 use crate::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
 use crate::math::unit::UnitExt;
 use crate::solver::dc::DcSolver;
-use crate::solver::{init_solver_configuration, Context};
+use crate::solver::{Context, init_solver_configuration};
 use ndarray::Array1;
 use num_complex::Complex;
 
@@ -250,9 +250,9 @@ impl<'a> NoiseSolver<'a> {
 mod test {
     use crate::analysis::ac::AcSweepAnalysisOptions;
     use crate::analysis::noise::NoiseAnalysisOptions;
+    use crate::circuit::Circuit;
     use crate::circuit::instance::CircuitInstance;
     use crate::circuit::netlist::GND;
-    use crate::circuit::Circuit;
     use crate::math::unit::UnitExt;
     use crate::solver::Context;
 

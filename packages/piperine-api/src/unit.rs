@@ -24,6 +24,7 @@ pub type Coulomb = f64;
 pub type Joule = f64;
 pub type JoulePerKelvin = f64;
 pub type JouleSecond = f64;
+pub type Watt = f64;
 
 macro_rules! def_unit_ext {
     ($suffix:ident, $type:ty) => {

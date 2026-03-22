@@ -1,8 +1,8 @@
 use crate::analysis::ac::AcSweepAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
+use crate::circuit::Circuit;
 use crate::circuit::instance::CircuitInstance;
 use crate::circuit::netlist::GND;
-use crate::circuit::Circuit;
 use crate::devices::source::Waveform::{Sine, Step};
 use crate::math::unit::UnitExt;
 use crate::solver::Context;

@@ -1,5 +1,5 @@
-use crate::devices::capacitor::Capacitor;
 use crate::devices::Model;
+use crate::devices::capacitor::Capacitor;
 use crate::util::AsAny;
 use std::any::Any;
 

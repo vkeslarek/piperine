@@ -4,8 +4,8 @@ use crate::math::linear::{
 };
 use crate::math::num::Scalar;
 use faer::prelude::{Solve, SparseColMat};
-use faer::sparse::linalg::solvers::SymbolicLu;
 use faer::sparse::Triplet;
+use faer::sparse::linalg::solvers::SymbolicLu;
 use faer::{Col, Mat};
 use ndarray::Array1;
 

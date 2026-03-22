@@ -1,5 +1,9 @@
 [workspace]
-members = ["packages/piperine-api","packages/piperine-solver"]
+members = [
+    "packages/piperine-api",
+    "packages/piperine-solver",
+    "packages/piperine-spice"
+]
 
 [workspace.package]
 version = "0.1.0"

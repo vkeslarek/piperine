@@ -11,7 +11,7 @@ use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::solver::dc::DcSolver;
-use crate::solver::{init_solver_configuration, Context};
+use crate::solver::{Context, init_solver_configuration};
 use log::debug;
 use ndarray::{Array1, ArrayView1, ArrayViewMut1};
 use num_traits::Zero;
@@ -469,7 +469,7 @@ impl<'a> TransientSolver<'a> {
                     current_time -= dt; // Rewind time
                     dt = (dt / 2.0).max(self.options.dt_min.into());
                     self.system.time_history.remove(0); // Remove failed attempt from history
-                                                        // Loop will retry with new (smaller) dt
+                    // Loop will retry with new (smaller) dt
                 }
             }
         }
@@ -498,9 +498,9 @@ impl<'a> TransientSolver<'a> {
 #[cfg(test)]
 mod test {
     use crate::analysis::transient::TransientAnalysisOptions;
+    use crate::circuit::Circuit;
     use crate::circuit::instance::CircuitInstance;
     use crate::circuit::netlist::GND;
-    use crate::circuit::Circuit;
     use crate::devices::source::Waveform::Step;
     use crate::math::unit::UnitExt;
     use crate::solver::Context;

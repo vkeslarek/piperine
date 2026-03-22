@@ -1,6 +1,6 @@
 use crate::circuit::netlist::Netlist;
 use crate::math::unit::{Ohm, Siemens, UnitExt};
-use faer::{set_global_parallelism, Par};
+use faer::{Par, set_global_parallelism};
 use ndarray::ArrayView1;
 use std::num::NonZeroUsize;
 use std::sync::Once;

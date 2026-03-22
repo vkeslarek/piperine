@@ -3,17 +3,17 @@ use crate::analysis::dc::DcAnalysis;
 use crate::analysis::noise::{NoiseAnalysisOptions, NoiseSource};
 use crate::analysis::tf::TransferFunctionAnalysisOptions;
 use crate::analysis::transient::{TransientAnalysis, TransientAnalysisOptions};
-use crate::circuit::netlist::Netlist;
 use crate::circuit::Circuit;
-use crate::devices::soa::SoaCheck;
+use crate::circuit::netlist::Netlist;
 use crate::devices::AnyRuntime;
+use crate::devices::soa::SoaCheck;
 use crate::math::circular_array::CircularArrayBuffer2;
+use crate::solver::Context;
 use crate::solver::ac::AcSolver;
 use crate::solver::dc::DcSolver;
 use crate::solver::noise::NoiseSolver;
 use crate::solver::tf::TransferFunctionSolver;
 use crate::solver::transient::TransientSolver;
-use crate::solver::Context;
 
 pub struct CircuitInstance {
     title: String,

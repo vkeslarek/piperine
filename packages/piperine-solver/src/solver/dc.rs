@@ -6,7 +6,7 @@ use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
-use crate::solver::{init_solver_configuration, Context};
+use crate::solver::{Context, init_solver_configuration};
 use log::debug;
 use ndarray::{ArrayView1, ArrayViewMut1};
 use std::collections::HashMap;
@@ -149,9 +149,9 @@ impl<'a> DcSolver<'a> {
 
 #[cfg(test)]
 mod test {
+    use crate::circuit::Circuit;
     use crate::circuit::instance::CircuitInstance;
     use crate::circuit::netlist::GND;
-    use crate::circuit::Circuit;
     use crate::math::unit::UnitExt;
     use crate::solver::Context;
 

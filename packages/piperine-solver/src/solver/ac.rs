@@ -11,7 +11,7 @@ use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::math::unit::UnitExt;
 use crate::solver::dc::DcSolver;
-use crate::solver::{init_solver_configuration, Context};
+use crate::solver::{Context, init_solver_configuration};
 use num_complex::Complex;
 use num_traits::Zero;
 use std::collections::HashMap;
@@ -157,8 +157,8 @@ impl<'a> AcSolver<'a> {
 #[cfg(test)]
 mod test {
     use crate::analysis::ac::AcSweepAnalysisOptions;
-    use crate::circuit::instance::CircuitInstance;
     use crate::circuit::Circuit;
+    use crate::circuit::instance::CircuitInstance;
     use crate::solver::Context;
 
     #[test]

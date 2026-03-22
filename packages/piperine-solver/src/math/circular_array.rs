@@ -50,11 +50,7 @@ impl<V: Zero + Clone> CircularArrayBuffer2<V> {
     }
 
     pub fn latest(&self) -> Option<ArrayView1<'_, V>> {
-        if self.count == 0 {
-            None
-        } else {
-            self.view(0)
-        }
+        if self.count == 0 { None } else { self.view(0) }
     }
 
     pub fn latest_mut(&mut self) -> Option<ArrayViewMut1<'_, V>> {

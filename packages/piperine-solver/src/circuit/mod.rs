@@ -9,8 +9,8 @@ use crate::devices::source::{VoltageSource, Waveform};
 use crate::devices::{AnyModel, Component, Model};
 use crate::math::unit::{Farad, Henry, Ohm};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub mod instance;
 pub mod netlist;

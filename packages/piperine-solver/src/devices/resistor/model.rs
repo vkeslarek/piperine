@@ -1,5 +1,5 @@
-use crate::devices::resistor::Resistor;
 use crate::devices::Model;
+use crate::devices::resistor::Resistor;
 use crate::math::unit::{Dimensionless, Kelvin, Meter, Ohm, Siemens, UnitExt, Volt};
 use crate::solver::Context;
 use crate::util::AsAny;

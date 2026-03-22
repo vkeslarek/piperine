@@ -6,5 +6,4 @@ use std::sync::Arc;
 pub struct Circuit {
     title: String,
     components: Vec<Arc<dyn Component>>,
-
 }

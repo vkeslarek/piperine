@@ -5,9 +5,9 @@ use crate::analysis::transient::{
     TransientAnalysis, TransientAnalysisContext, TransientAnalysisState,
 };
 use crate::circuit::netlist::{CircuitReference, Netlist};
+use crate::devices::Runtime;
 use crate::devices::resistor::Resistor;
 use crate::devices::soa::{SoaCheck, SoaCheckState, SoaViolation, SoaViolationSeverity};
-use crate::devices::Runtime;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::constant::BOLTZMANN_CONSTANT;
 use crate::math::linear::Stamp;

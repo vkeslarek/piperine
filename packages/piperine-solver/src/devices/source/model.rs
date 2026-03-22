@@ -1,5 +1,5 @@
-use crate::devices::source::VoltageSource;
 use crate::devices::Model;
+use crate::devices::source::VoltageSource;
 use crate::util::AsAny;
 use std::any::Any;
 

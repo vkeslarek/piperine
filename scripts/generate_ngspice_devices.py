@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""Generate structured device modules from ngspice sources."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import shutil
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Iterable, List
+
+VALUE_TYPE_MAP = {
+    "IF_REAL": "Real",
+    "IF_INTEGER": "Integer",
+    "IF_COMPLEX": "Complex",
+    "IF_FLAG": "Flag",
+    "IF_STRING": "String",
+    "IF_NODE": "Node",
+    "IF_INSTANCE": "InstanceRef",
+    "IF_PARSETREE": "Parsetree",
+    "IF_REALVEC": "RealVector",
+    "IF_INTVEC": "IntVector",
+    "IF_STRINGVEC": "StringVector",
+}
+
+
+class ParamKind:
+    INSTANCE = "ParameterKind::Instance"
+    MODEL = "ParameterKind::Model"
+    OUTPUT = "ParameterKind::Output"
+
+
+@dataclass
+class Parameter:
+    keyword: str
+    value_type: str
+    description: str
+    kind: str
+
+
+@dataclass
+class Device:
+    key: str
+    prefix: str
+    nodes: List[str] = field(default_factory=list)
+    instance_params: List[Parameter] = field(default_factory=list)
+    model_params: List[Parameter] = field(default_factory=list)
+    output_params: List[Parameter] = field(default_factory=list)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--ngspice",
+        type=Path,
+        default=Path(os.environ.get("NGSPICE_SRC", "/home/keslarek/RustroverProjects/ngspice")),
+        help="Path to ngspice repository",
+    )
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=Path("packages/piperine-api/src/devices/generated"),
+        help="Destination directory for generated device modules",
+    )
+    args = parser.parse_args()
+
+    devices_dir = args.ngspice / "src" / "spicelib" / "devices"
+    if not devices_dir.exists():
+        raise SystemExit(f"devices directory not found at {devices_dir}")
+
+    devices: List[Device] = []
+    for entry in sorted(devices_dir.iterdir()):
+        if entry.is_dir():
+            dev = parse_device(entry)
+            if dev:
+                devices.append(dev)
+
+    write_modules(args.out_dir, devices)
+    print(f"Written {len(devices)} devices to {args.out_dir}")
+
+
+def parse_device(path: Path) -> Device | None:
+    stem = path.name
+    source = path / f"{stem}.c"
+    if not source.exists():
+        return None
+
+    content = source.read_text(encoding="utf-8", errors="ignore")
+    tables = parse_tables(content)
+    if not tables:
+        return None
+
+    prefix = tables[0][0]
+    device = Device(key=stem, prefix=prefix)
+    for _pref, kind, params in tables:
+        if kind == ParamKind.MODEL:
+            device.model_params.extend(params)
+        else:
+            device.instance_params.extend(p for p in params if p.kind != ParamKind.OUTPUT)
+            device.output_params.extend(p for p in params if p.kind == ParamKind.OUTPUT)
+    device.nodes = parse_nodes(content, prefix)
+    return device
+
+
+def parse_tables(content: str) -> List[tuple[str, str, List[Parameter]]]:
+    table_re = re.compile(r"IFparm\s+(\w+)Table\[\]\s*=\s*\{(.*?)\};", re.S)
+    tables = []
+    for name, body in table_re.findall(content):
+        prefix = extract_prefix(name)
+        kind = ParamKind.MODEL if "mT" in name else ParamKind.INSTANCE
+        params = list(parse_parameters(body, kind))
+        tables.append((prefix, kind, params))
+    return tables
+
+
+def parse_parameters(body: str, default_kind: str) -> Iterable[Parameter]:
+    param_re = re.compile(
+        r"(IOP[A-Z]*|IP[A-Z]*|OP[A-Z]*)\s*\(\s*\"([^\"]*)\"\s*,\s*[A-Za-z0-9_]+\s*,\s*(IF_[A-Z0-9_]+)(?:\s*,\s*\"([^\"]*?)\")?\s*\)",
+        re.S,
+    )
+    for macro, keyword, data_type, description in param_re.findall(body):
+        kind = ParamKind.OUTPUT if macro.startswith("OP") else default_kind
+        value_type = VALUE_TYPE_MAP.get(data_type, "Unknown")
+        yield Parameter(
+            keyword=keyword,
+            value_type=value_type,
+            description=(description or "").replace("\n", " ").strip(),
+            kind=kind,
+        )
+
+
+def parse_nodes(content: str, prefix: str) -> List[str]:
+    pattern = re.compile(rf"char\s*\*\s*{prefix}names\[\]\s*=\s*\{{(.*?)\}};", re.S)
+    match = pattern.search(content)
+    if not match:
+        return []
+    return [token.strip().strip('"') for token in match.group(1).split(',') if token.strip()]
+
+
+def extract_prefix(table_name: str) -> str:
+    trimmed = table_name
+    for suffix in ("Table", "table", "pTable", "mPTable", "PTable"):
+        if trimmed.endswith(suffix):
+            trimmed = trimmed[: -len(suffix)]
+    trimmed = trimmed.rstrip('p')
+    letters = ''.join(ch for ch in trimmed if ch.isupper())
+    return letters or trimmed.upper()
+
+
+def write_modules(out_dir: Path, devices: List[Device]) -> None:
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    mod_lines = ["// @generated by scripts/generate_ngspice_devices.py", "use crate::devices::DeviceMetadata;", ""]
+    metadata_entries = []
+
+    for dev in devices:
+        module_name = module_ident(dev.key)
+        (out_dir / f"{module_name}.rs").write_text(render_device_module(dev), encoding="utf-8")
+        mod_lines.append(f"pub mod {module_name};")
+        metadata_entries.append(f"    {module_name}::METADATA,")
+
+    mod_lines.append("")
+    mod_lines.append("pub const DEVICE_METADATA: &[DeviceMetadata] = &[")
+    mod_lines.extend(metadata_entries)
+    mod_lines.append("];")
+
+    (out_dir / "mod.rs").write_text("\n".join(mod_lines), encoding="utf-8")
+
+
+def render_device_module(dev: Device) -> str:
+    ident = make_ident(dev.key)
+    lines = [
+        "// @generated by scripts/generate_ngspice_devices.py",
+        "use crate::devices::{DeviceMetadata, ParameterKind, ParameterMeta, ValueType};",
+        "",
+    ]
+
+    nodes = ','.join(format_str(n) for n in dev.nodes)
+    lines.append(f"pub const NODES: &[&str] = &[{nodes}];")
+    lines.append(render_param_array(ident, "INSTANCE", dev.instance_params, visibility="pub"))
+    lines.append(render_param_array(ident, "MODEL", dev.model_params, visibility="pub"))
+    lines.append(render_param_array(ident, "OUTPUT", dev.output_params, visibility="pub"))
+    lines.append(
+        "pub const METADATA: DeviceMetadata = DeviceMetadata { key: %s, prefix: %s, nodes: NODES, instance_params: PARAMS_%s_INSTANCE, model_params: PARAMS_%s_MODEL, output_params: PARAMS_%s_OUTPUT };"
+        % (
+            format_str(dev.key),
+            format_str(dev.prefix),
+            ident,
+            ident,
+            ident,
+        )
+    )
+
+    return "\n".join(lines)
+
+
+def render_param_array(ident: str, suffix: str, params: List[Parameter], visibility: str = "const") -> str:
+    lines = [f"{visibility} const PARAMS_{ident}_{suffix}: &[ParameterMeta] = &["]
+    for param in params:
+        lines.append(
+            "    ParameterMeta { keyword: %s, value_type: ValueType::%s, description: %s, kind: %s },"
+            % (
+                format_str(param.keyword),
+                param.value_type,
+                format_str(param.description),
+                param.kind,
+            )
+        )
+    lines.append("];")
+    return "\n".join(lines)
+
+
+def format_str(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def make_ident(key: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]", "_", key).upper()
+
+
+def module_ident(key: str) -> str:
+    ident = re.sub(r"[^A-Za-z0-9]", "_", key).lower()
+    if ident and ident[0].isdigit():
+        ident = f"d_{ident}"
+    return ident or "device"
+
+
+if __name__ == "__main__":
+    main()

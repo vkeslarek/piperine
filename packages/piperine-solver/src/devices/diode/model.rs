@@ -1,5 +1,5 @@
-use crate::devices::diode::Diode;
 use crate::devices::Model;
+use crate::devices::diode::Diode;
 use crate::math::num::Scalar;
 use crate::math::unit::{Ampere, Kelvin, Siemens, UnitExt};
 use crate::solver::Context;

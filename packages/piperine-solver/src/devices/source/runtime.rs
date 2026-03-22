@@ -6,9 +6,9 @@ use crate::analysis::transient::{
 };
 use crate::analysis::truncation::BreakpointProvider;
 use crate::circuit::netlist::{BranchIdentifier, CircuitReference, Netlist};
+use crate::devices::Runtime;
 use crate::devices::soa::SoaCheck;
 use crate::devices::source::{VoltageSource, Waveform};
-use crate::devices::Runtime;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::linear::Stamp;
 use crate::math::unit::{Second, UnitExt, Volt};

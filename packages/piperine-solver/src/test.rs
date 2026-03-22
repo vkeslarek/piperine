@@ -1,7 +1,7 @@
 use crate::analysis::transient::TransientAnalysisOptions;
-use crate::circuit::instance::CircuitInstance;
-use crate::circuit::netlist::{NodeIdentifier, GND};
 use crate::circuit::Circuit;
+use crate::circuit::instance::CircuitInstance;
+use crate::circuit::netlist::{GND, NodeIdentifier};
 use crate::devices::source::Waveform::Step;
 use crate::math::unit::UnitExt;
 use crate::solver::Context;

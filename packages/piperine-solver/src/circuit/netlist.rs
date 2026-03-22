@@ -1,8 +1,8 @@
 use crate::math::linear::AsIndex;
 use bimap::BiMap;
 use std::fmt;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum NodeIdentifier {

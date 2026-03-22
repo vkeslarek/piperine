@@ -7,7 +7,7 @@ use crate::circuit::netlist::{CircuitReference, CircuitVariable};
 use crate::math::faer::FaerSymbolicMatrix;
 use crate::math::linear::{SymbolicLinearSystem, SymbolicMatrix};
 use crate::solver::dc::DcSolver;
-use crate::solver::{init_solver_configuration, Context};
+use crate::solver::{Context, init_solver_configuration};
 use ndarray::Array1;
 
 /// Transfer Function solver.
@@ -419,9 +419,9 @@ impl<'a> TransferFunctionSolver<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::circuit::Circuit;
     use crate::circuit::instance::CircuitInstance;
     use crate::circuit::netlist::{BranchIdentifier, CircuitVariable, GND};
-    use crate::circuit::Circuit;
     use crate::math::unit::UnitExt;
 
     #[test]

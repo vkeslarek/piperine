@@ -5,9 +5,9 @@ use crate::analysis::transient::{
     TransientAnalysis, TransientAnalysisContext, TransientAnalysisState,
 };
 use crate::circuit::netlist::{CircuitReference, Netlist};
+use crate::devices::Runtime;
 use crate::devices::diode::Diode;
 use crate::devices::soa::SoaCheck;
-use crate::devices::Runtime;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::linear::Stamp;
 use crate::math::unit::{Ampere, Siemens};

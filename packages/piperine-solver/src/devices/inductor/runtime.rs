@@ -6,9 +6,9 @@ use crate::analysis::transient::{
 };
 use crate::analysis::truncation::{IntegrationMethod, TruncationError};
 use crate::circuit::netlist::{BranchIdentifier, CircuitReference, Netlist};
+use crate::devices::Runtime;
 use crate::devices::inductor::Inductor;
 use crate::devices::soa::SoaCheck;
-use crate::devices::Runtime;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::linear::Stamp;
 use crate::math::unit::{Henry, Second};
