@@ -16,7 +16,10 @@ edition.workspace = true
 
 [dependencies]
 piperine-core = { path = "crates/piperine-core" }
+piperine-ngspice = { path = "crates/piperine-ngspice" }
 piperine-pool = { path = "crates/piperine-pool" }
+serde = { workspace = true }
+bincode = { workspace = true }
 
 [build-dependencies]
 bindgen = "0.72.1"
