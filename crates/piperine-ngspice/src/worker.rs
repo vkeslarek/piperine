@@ -1,17 +1,16 @@
 //! Worker process entry point.
 //!
-//! When the piperine binary is invoked with `--worker`, it calls `worker_main()`
-//! which enters the IPC loop: read commands from stdin, execute ngspice operations,
-//! write results to stdout.
+//! For external sources: the callback writes a request directly to stdout (dup'd fd)
+//! and reads the response from stdin (dup'd fd). Fully synchronous — no extra threads.
+//! This works because ngspice calls callbacks synchronously from the simulation thread.
 
 use crate::instance::NgspiceInstance;
 use crate::protocol::*;
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
-use std::sync::atomic::AtomicU64;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
-/// Length-prefixed bincode read from a reader.
 fn read_msg<T: serde::de::DeserializeOwned>(r: &mut impl Read) -> io::Result<T> {
     let mut len_buf = [0u8; 4];
     r.read_exact(&mut len_buf)?;
@@ -22,7 +21,6 @@ fn read_msg<T: serde::de::DeserializeOwned>(r: &mut impl Read) -> io::Result<T> 
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
-/// Length-prefixed bincode write to a writer.
 fn write_msg<T: serde::Serialize>(w: &mut impl Write, msg: &T) -> io::Result<()> {
     let bytes = bincode::serialize(msg)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
@@ -31,7 +29,24 @@ fn write_msg<T: serde::Serialize>(w: &mut impl Write, msg: &T) -> io::Result<()>
     w.flush()
 }
 
-/// Main entry point for the worker process.
+/// Create dup'd file descriptors that don't conflict with Rust's stdin/stdout locks.
+mod dup_io {
+    use std::fs::File;
+    use std::os::unix::io::FromRawFd;
+
+    pub fn dup_stdin() -> File {
+        let fd = unsafe { libc::dup(0) };
+        assert!(fd >= 0, "dup(0) failed");
+        unsafe { File::from_raw_fd(fd) }
+    }
+
+    pub fn dup_stdout() -> File {
+        let fd = unsafe { libc::dup(1) };
+        assert!(fd >= 0, "dup(1) failed");
+        unsafe { File::from_raw_fd(fd) }
+    }
+}
+
 pub fn worker_main() -> io::Result<()> {
     let instance = NgspiceInstance::new()
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
@@ -39,7 +54,6 @@ pub fn worker_main() -> io::Result<()> {
     let mut stdin = io::stdin().lock();
     let mut stdout = io::stdout().lock();
 
-    // Signal ready
     write_msg(&mut stdout, &WorkerToMain::Ready)?;
 
     loop {
@@ -55,14 +69,21 @@ pub fn worker_main() -> io::Result<()> {
                 control_commands,
                 has_external_sources,
             } => {
-                let result = run_simulation(
-                    &instance,
-                    &netlist_lines,
-                    &control_commands,
-                    has_external_sources,
-                    &mut stdin,
-                    &mut stdout,
-                );
+                let result = if has_external_sources {
+                    // Drop Rust's locked stdin/stdout — we'll use dup'd fds in callbacks
+                    drop(stdin);
+                    drop(stdout);
+
+                    let r = run_with_external(&instance, &netlist_lines, &control_commands);
+
+                    // Re-acquire Rust locks for the main loop
+                    stdin = io::stdin().lock();
+                    stdout = io::stdout().lock();
+                    r
+                } else {
+                    run_simple(&instance, &netlist_lines, &control_commands)
+                };
+
                 match result {
                     Ok(resp) => write_msg(&mut stdout, &resp)?,
                     Err(e) => write_msg(&mut stdout, &WorkerToMain::Error {
@@ -74,64 +95,103 @@ pub fn worker_main() -> io::Result<()> {
                 let _ = instance.command("destroy all");
                 write_msg(&mut stdout, &WorkerToMain::Ok)?;
             }
-            MainToWorker::Shutdown => {
-                break;
-            }
-            MainToWorker::ExternalSourceValue { .. } => {
-                // Unexpected outside of simulation - ignore
-            }
+            MainToWorker::Shutdown => break,
+            MainToWorker::ExternalSourceValue { .. } => {}
         }
     }
 
     Ok(())
 }
 
-fn run_simulation(
+fn run_simple(
     instance: &NgspiceInstance,
-    netlist_lines: &[String],
-    control_commands: &[String],
-    has_external_sources: bool,
-    _stdin: &mut impl Read,
-    stdout: &mut impl Write,
+    netlist: &[String],
+    commands: &[String],
 ) -> Result<WorkerToMain, Box<dyn std::error::Error>> {
-    // If we have external sources, set up the bridge
-    if has_external_sources {
-        let bridge = Arc::new(ExternalSourceBridge::new(stdout as *mut _ as usize));
-        let bridge_clone = bridge.clone();
-
-        instance.set_vsrc_handler(move |name, time| {
-            bridge_clone.request_value(name, time)
-        });
-        // Note: for a full implementation, isrc_handler would also be set up similarly
+    instance.load_circuit(netlist)?;
+    for cmd in commands {
+        instance.command(cmd)?;
     }
+    let result = instance.collect_results()?;
+    let _ = instance.command("destroy all");
+    Ok(to_protocol(result))
+}
 
-    // Load circuit
-    instance.load_circuit(netlist_lines)?;
+fn run_with_external(
+    instance: &NgspiceInstance,
+    netlist: &[String],
+    commands: &[String],
+) -> Result<WorkerToMain, Box<dyn std::error::Error>> {
+    // Synchronous bridge: callbacks write request to dup'd stdout,
+    // read response from dup'd stdin. No threads needed.
+    let bridge = Arc::new(SyncBridge::new());
 
-    // Execute control commands
-    for cmd in control_commands {
+    let vb = bridge.clone();
+    instance.set_vsrc_handler(move |name, time| vb.request_value(name, time));
+    let ib = bridge.clone();
+    instance.set_isrc_handler(move |name, time| ib.request_value(name, time));
+
+    instance.load_circuit(netlist)?;
+    for cmd in commands {
         instance.command(cmd)?;
     }
 
-    // Collect results
     let result = instance.collect_results()?;
-
-    // Clear handlers
     instance.clear_external_handlers();
+    let _ = instance.command("destroy all");
 
-    // Convert to protocol types
+    Ok(to_protocol(result))
+}
+
+/// Synchronous bridge for external source callbacks.
+///
+/// Callbacks happen on the same thread as ngSpice_Command (synchronous simulation).
+/// We write the request and read the response directly on dup'd fds.
+struct SyncBridge {
+    next_id: AtomicU64,
+    io: Mutex<(std::fs::File, std::fs::File)>,
+}
+
+impl SyncBridge {
+    fn new() -> Self {
+        Self {
+            next_id: AtomicU64::new(0),
+            io: Mutex::new((dup_io::dup_stdin(), dup_io::dup_stdout())),
+        }
+    }
+
+    fn request_value(&self, source_name: &str, time: f64) -> f64 {
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let mut io = self.io.lock().unwrap();
+        let (ref mut inp, ref mut out) = *io;
+
+        let req = WorkerToMain::ExternalSourceRequest {
+            request_id: id,
+            source_name: source_name.to_string(),
+            time,
+        };
+        if write_msg(out, &req).is_err() {
+            return 0.0;
+        }
+
+        match read_msg::<MainToWorker>(inp) {
+            Ok(MainToWorker::ExternalSourceValue { value, .. }) => value,
+            _ => 0.0,
+        }
+    }
+}
+
+fn to_protocol(result: piperine_core::result::SimulationResult) -> WorkerToMain {
     let mut plots = HashMap::new();
     for (name, plot) in &result.plots {
         let mut vectors = HashMap::new();
         for (vname, vec) in &plot.vectors {
             let vdata = match vec {
                 piperine_core::result::Vector::Real(rv) => VectorData::Real {
-                    name: rv.name.clone(),
-                    data: rv.data.clone(),
+                    name: rv.name.clone(), data: rv.data.clone(),
                 },
                 piperine_core::result::Vector::Complex(cv) => VectorData::Complex {
-                    name: cv.name.clone(),
-                    data: cv.data.clone(),
+                    name: cv.name.clone(), data: cv.data.clone(),
                 },
             };
             vectors.insert(vname.clone(), vdata);
@@ -142,48 +202,9 @@ fn run_simulation(
             vectors,
         });
     }
-
-    // Reset for next simulation
-    let _ = instance.command("destroy all");
-
-    Ok(WorkerToMain::SimulationComplete {
+    WorkerToMain::SimulationComplete {
         plots,
         measurements: result.measurements,
         log: result.log,
-    })
-}
-
-/// Bridge for external source callbacks.
-///
-/// When ngspice calls back requesting an external source value,
-/// this bridge sends a request to the main process via IPC and
-/// blocks until it receives the response.
-///
-/// NOTE: This is a simplified single-threaded version. The full
-/// bilateral async version with separate IPC thread will be
-/// implemented when background simulation (bg_run) is used.
-struct ExternalSourceBridge {
-    _next_id: AtomicU64,
-    // For the simple synchronous case, we store pending values here.
-    // In the full implementation, this would use channels.
-    _stdout_addr: usize,
-}
-
-impl ExternalSourceBridge {
-    fn new(stdout_addr: usize) -> Self {
-        Self {
-            _next_id: AtomicU64::new(0),
-            _stdout_addr: stdout_addr,
-        }
-    }
-
-    fn request_value(&self, _source_name: &str, _time: f64) -> f64 {
-        // TODO: Full bilateral IPC implementation.
-        // For now, return 0.0 as a placeholder.
-        // The real implementation will:
-        // 1. Send ExternalSourceRequest to main via stdout
-        // 2. Block waiting for ExternalSourceValue response from main via stdin
-        // 3. Return the value
-        0.0
     }
 }
