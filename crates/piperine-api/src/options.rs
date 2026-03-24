@@ -119,7 +119,7 @@ impl IntegrationMethod {
     }
 }
 
-/// AC frequency variation type.
+/// AC frequency sweep variation type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Variation {
     Dec,
@@ -137,7 +137,7 @@ impl Variation {
     }
 }
 
-/// Circuit-level options (physical properties, emitted as .options in netlist).
+/// Circuit-level options (physical properties, emitted as `.options` in netlist).
 #[derive(Debug, Clone, Default)]
 pub struct CircuitOptions {
     pub temp: Option<f64>,
@@ -168,8 +168,8 @@ macro_rules! impl_solver_options {
             pub fn gmin(mut self, v: f64) -> Self { self.solver.gmin = Some(v); self }
             pub fn itl1(mut self, v: u32) -> Self { self.solver.itl1 = Some(v); self }
             pub fn itl2(mut self, v: u32) -> Self { self.solver.itl2 = Some(v); self }
-            pub fn temp(mut self, v: f64) -> Self { self.solver.temp = Some(v); self }
-            pub fn tnom(mut self, v: f64) -> Self { self.solver.tnom = Some(v); self }
+            pub fn solver_temp(mut self, v: f64) -> Self { self.solver.temp = Some(v); self }
+            pub fn solver_tnom(mut self, v: f64) -> Self { self.solver.tnom = Some(v); self }
             pub fn with_solver(mut self, opts: $crate::options::SolverOptions) -> Self {
                 self.solver = opts; self
             }
@@ -177,22 +177,16 @@ macro_rules! impl_solver_options {
     };
 }
 
-/// Macro to implement common analysis builder methods (save, meas, nodeset).
+/// Macro to implement common analysis builder methods (save, nodeset).
 #[macro_export]
 macro_rules! impl_analysis_common {
     ($ty:ty) => {
         impl $ty {
-            pub fn save(mut self, what: &str) -> Self {
-                self.saves.push(what.to_string()); self
+            pub fn save(mut self, probe: $crate::spice::Probe) -> Self {
+                self.saves.push(probe); self
             }
-            pub fn meas(mut self, name: &str, expr: &str) -> Self {
-                self.measurements.push($crate::analysis::Measurement {
-                    name: name.to_string(),
-                    expr: expr.to_string(),
-                }); self
-            }
-            pub fn nodeset(mut self, node: &str, voltage: f64) -> Self {
-                self.nodesets.push((node.to_string(), voltage)); self
+            pub fn nodeset(mut self, node: $crate::node::Node, voltage: f64) -> Self {
+                self.nodesets.push((node, voltage)); self
             }
         }
     };

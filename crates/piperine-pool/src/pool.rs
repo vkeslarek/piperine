@@ -57,7 +57,7 @@ impl WorkerHandle {
     /// Drive a simulation, handling external source callbacks.
     pub fn drive_simulation(
         &mut self,
-        handler: Option<&dyn piperine_core::engine::ExternalSourceHandler>,
+        handler: Option<&dyn piperine_api::engine::ExternalSourceHandler>,
     ) -> io::Result<WorkerToMain> {
         loop {
             let msg = self.recv()?;

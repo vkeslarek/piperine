@@ -1,0 +1,10 @@
+[package]
+name = "piperine-api"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+paste = "1.0.15"
+num-traits = "0.2.19"
+num-complex = "0.4.6"
+serde = { workspace = true }

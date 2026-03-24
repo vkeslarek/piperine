@@ -1,10 +1,9 @@
 //! NgspiceEngine: implements SimulationEngine using a worker pool.
 
 use crate::pool::WorkerPool;
-use piperine_core::analysis::ToControl;
-use piperine_core::engine::{ExternalSourceHandler, SimulationEngine};
-use piperine_core::netlist::ToNetlist;
-use piperine_core::result::*;
+use piperine_api::engine::{ExternalSourceHandler, SimulationEngine};
+use piperine_api::result::*;
+use piperine_api::spice::{SpiceAnalysis, ToSpiceNetlist};
 use piperine_ngspice::protocol::*;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -51,11 +50,11 @@ impl SimulationEngine for NgspiceEngine {
 
     fn run(
         &self,
-        circuit: &dyn ToNetlist,
-        analysis: &dyn ToControl,
+        circuit: &dyn ToSpiceNetlist,
+        analysis: &dyn SpiceAnalysis,
     ) -> Result<SimulationResult, Self::Error> {
-        let netlist_lines = circuit.to_netlist_lines();
-        let control_commands = analysis.to_control_commands();
+        let netlist_lines = circuit.to_spice_netlist();
+        let control_commands = analysis.to_spice_control_commands();
 
         let (idx, mut worker) = {
             let mut pool = self.pool.lock().unwrap();
@@ -88,12 +87,12 @@ impl SimulationEngine for NgspiceEngine {
 
     fn run_with_external_sources(
         &self,
-        circuit: &dyn ToNetlist,
-        analysis: &dyn ToControl,
+        circuit: &dyn ToSpiceNetlist,
+        analysis: &dyn SpiceAnalysis,
         handler: &dyn ExternalSourceHandler,
     ) -> Result<SimulationResult, Self::Error> {
-        let netlist_lines = circuit.to_netlist_lines();
-        let control_commands = analysis.to_control_commands();
+        let netlist_lines = circuit.to_spice_netlist();
+        let control_commands = analysis.to_spice_control_commands();
 
         let (idx, mut worker) = {
             let mut pool = self.pool.lock().unwrap();
@@ -125,7 +124,7 @@ impl SimulationEngine for NgspiceEngine {
 
     fn run_batch(
         &self,
-        jobs: &[(&dyn ToNetlist, &dyn ToControl)],
+        jobs: &[(&dyn ToSpiceNetlist, &dyn SpiceAnalysis)],
     ) -> Vec<Result<SimulationResult, Self::Error>> {
         // Simple sequential implementation for now.
         // Parallel version would take multiple workers and use threads.

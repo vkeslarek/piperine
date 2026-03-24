@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-piperine-core = { path = "../piperine-core" }
+piperine-api = { path = "../piperine-api" }
 piperine-ngspice = { path = "../piperine-ngspice" }
 serde = { workspace = true }
 bincode = { workspace = true }

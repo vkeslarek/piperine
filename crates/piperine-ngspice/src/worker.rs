@@ -181,16 +181,16 @@ impl SyncBridge {
     }
 }
 
-fn to_protocol(result: piperine_core::result::SimulationResult) -> WorkerToMain {
+fn to_protocol(result: piperine_api::result::SimulationResult) -> WorkerToMain {
     let mut plots = HashMap::new();
     for (name, plot) in &result.plots {
         let mut vectors = HashMap::new();
         for (vname, vec) in &plot.vectors {
             let vdata = match vec {
-                piperine_core::result::Vector::Real(rv) => VectorData::Real {
+                piperine_api::result::Vector::Real(rv) => VectorData::Real {
                     name: rv.name.clone(), data: rv.data.clone(),
                 },
-                piperine_core::result::Vector::Complex(cv) => VectorData::Complex {
+                piperine_api::result::Vector::Complex(cv) => VectorData::Complex {
                     name: cv.name.clone(), data: cv.data.clone(),
                 },
             };

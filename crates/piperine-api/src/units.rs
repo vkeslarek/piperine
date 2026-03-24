@@ -20,6 +20,13 @@ pub type Dimensionless = f64;
 pub type Coulomb = f64;
 pub type Joule = f64;
 pub type Watt = f64;
+pub type ElectronVolt = f64;
+pub type PerCelsius = f64;
+pub type PerCelsiusSquared = f64;
+pub type FaradPerMeter = f64;
+pub type FaradPerMeterSquared = f64;
+pub type OhmPerSquare = f64;
+pub type Degree = f64;
 
 macro_rules! def_unit_ext {
     ($suffix:ident, $type:ty) => {
@@ -91,6 +98,8 @@ pub trait UnitExt {
 
     fn deg(self) -> Radian;
     fn deg_C(self) -> Celsius;
+    fn inv_C(self) -> InvCelsius;
+    fn inv_C2(self) -> InvCelsiusSquared;
 }
 
 impl UnitExt for f64 {
@@ -115,6 +124,14 @@ impl UnitExt for f64 {
     fn deg_C(self) -> Celsius {
         self
     }
+
+    fn inv_C(self) -> InvCelsius {
+        self
+    }
+
+    fn inv_C2(self) -> InvCelsiusSquared {
+        self
+    }
 }
 
 impl UnitExt for i64 {
@@ -137,6 +154,14 @@ impl UnitExt for i64 {
 
     #[inline(always)]
     fn deg_C(self) -> Celsius {
+        self as f64
+    }
+
+    fn inv_C(self) -> InvCelsius {
+        self as f64
+    }
+
+    fn inv_C2(self) -> InvCelsiusSquared {
         self as f64
     }
 }

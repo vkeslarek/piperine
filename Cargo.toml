@@ -1,6 +1,5 @@
 [workspace]
-members = [
-    "crates/piperine-core",
+members = ["crates/piperine-api",
     "crates/piperine-ngspice",
     "crates/piperine-pool",
 ]
@@ -15,7 +14,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-piperine-core = { path = "crates/piperine-core" }
+piperine-api = { path = "crates/piperine-api" }
 piperine-ngspice = { path = "crates/piperine-ngspice" }
 piperine-pool = { path = "crates/piperine-pool" }
 serde = { workspace = true }

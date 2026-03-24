@@ -10,7 +10,7 @@ pub struct SimulationResult {
 }
 
 impl SimulationResult {
-    /// Get a named measurement value (from .meas).
+    /// Get a named measurement value (from `.meas`).
     pub fn measurement(&self, name: &str) -> Option<f64> {
         self.measurements.get(name).copied()
     }
@@ -95,14 +95,14 @@ pub enum Vector {
     Complex(ComplexVector),
 }
 
-/// Real-valued vector.
+/// Real-valued vector (time-domain, DC sweep).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RealVector {
     pub name: String,
     pub data: Vec<f64>,
 }
 
-/// Complex-valued vector.
+/// Complex-valued vector (AC analysis).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComplexVector {
     pub name: String,

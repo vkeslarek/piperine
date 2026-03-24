@@ -50,7 +50,7 @@ pub enum WorkerToMain {
     Ready,
 }
 
-/// Serializable plot data (mirrors piperine_core::result::Plot).
+/// Serializable plot data (mirrors piperine_api::result::Plot).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PlotData {
     pub name: String,

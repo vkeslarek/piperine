@@ -1,9 +1,0 @@
-[package]
-name = "piperine-core"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-paste = { workspace = true }
-serde = { workspace = true }
-thiserror = { workspace = true }

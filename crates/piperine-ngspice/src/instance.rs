@@ -10,7 +10,7 @@ use std::ffi::{CStr, CString};
 use std::ptr;
 use std::sync::Arc;
 
-use piperine_core::result::{
+use piperine_api::result::{
     ComplexVector, Plot, PlotType, RealVector, SimulationResult, Vector,
 };
 
