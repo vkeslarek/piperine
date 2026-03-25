@@ -1,5 +1,5 @@
-use std::fmt;
 use crate::units::{Degree, Dimensionless, Hertz, Second};
+use std::fmt;
 
 /// Transient waveform types for independent voltage/current sources.
 ///
@@ -42,16 +42,42 @@ pub struct Pulse {
 
 impl Pulse {
     pub fn new(v1: f64, v2: f64) -> Self {
-        Self { v1, v2, delay: None, rise_time: None, fall_time: None,
-               pulse_width: None, period: None, n_pulses: None }
+        Self {
+            v1,
+            v2,
+            delay: None,
+            rise_time: None,
+            fall_time: None,
+            pulse_width: None,
+            period: None,
+            n_pulses: None,
+        }
     }
 
-    pub fn with_delay(mut self, v: Second) -> Self { self.delay = Some(v); self }
-    pub fn with_rise_time(mut self, v: Second) -> Self { self.rise_time = Some(v); self }
-    pub fn with_fall_time(mut self, v: Second) -> Self { self.fall_time = Some(v); self }
-    pub fn with_pulse_width(mut self, v: Second) -> Self { self.pulse_width = Some(v); self }
-    pub fn with_period(mut self, v: Second) -> Self { self.period = Some(v); self }
-    pub fn with_n_pulses(mut self, n: u32) -> Self { self.n_pulses = Some(n); self }
+    pub fn with_delay(mut self, v: Second) -> Self {
+        self.delay = Some(v);
+        self
+    }
+    pub fn with_rise_time(mut self, v: Second) -> Self {
+        self.rise_time = Some(v);
+        self
+    }
+    pub fn with_fall_time(mut self, v: Second) -> Self {
+        self.fall_time = Some(v);
+        self
+    }
+    pub fn with_pulse_width(mut self, v: Second) -> Self {
+        self.pulse_width = Some(v);
+        self
+    }
+    pub fn with_period(mut self, v: Second) -> Self {
+        self.period = Some(v);
+        self
+    }
+    pub fn with_n_pulses(mut self, n: u32) -> Self {
+        self.n_pulses = Some(n);
+        self
+    }
 }
 
 /// Sinusoidal waveform — §4.1.2.
@@ -75,14 +101,32 @@ pub struct Sinusoidal {
 
 impl Sinusoidal {
     pub fn new(offset: f64, amplitude: f64) -> Self {
-        Self { offset, amplitude, frequency: None, delay: None,
-               damping: None, phase: None }
+        Self {
+            offset,
+            amplitude,
+            frequency: None,
+            delay: None,
+            damping: None,
+            phase: None,
+        }
     }
 
-    pub fn with_frequency(mut self, v: Hertz) -> Self { self.frequency = Some(v); self }
-    pub fn with_delay(mut self, v: Second) -> Self { self.delay = Some(v); self }
-    pub fn with_damping(mut self, v: f64) -> Self { self.damping = Some(v); self }
-    pub fn with_phase(mut self, v: Degree) -> Self { self.phase = Some(v); self }
+    pub fn with_frequency(mut self, v: Hertz) -> Self {
+        self.frequency = Some(v);
+        self
+    }
+    pub fn with_delay(mut self, v: Second) -> Self {
+        self.delay = Some(v);
+        self
+    }
+    pub fn with_damping(mut self, v: f64) -> Self {
+        self.damping = Some(v);
+        self
+    }
+    pub fn with_phase(mut self, v: Degree) -> Self {
+        self.phase = Some(v);
+        self
+    }
 }
 
 /// Exponential waveform — §4.1.3.
@@ -106,14 +150,32 @@ pub struct Exponential {
 
 impl Exponential {
     pub fn new(v1: f64, v2: f64) -> Self {
-        Self { v1, v2, rise_delay: None, rise_tau: None,
-               fall_delay: None, fall_tau: None }
+        Self {
+            v1,
+            v2,
+            rise_delay: None,
+            rise_tau: None,
+            fall_delay: None,
+            fall_tau: None,
+        }
     }
 
-    pub fn with_rise_delay(mut self, v: Second) -> Self { self.rise_delay = Some(v); self }
-    pub fn with_rise_tau(mut self, v: Second) -> Self { self.rise_tau = Some(v); self }
-    pub fn with_fall_delay(mut self, v: Second) -> Self { self.fall_delay = Some(v); self }
-    pub fn with_fall_tau(mut self, v: Second) -> Self { self.fall_tau = Some(v); self }
+    pub fn with_rise_delay(mut self, v: Second) -> Self {
+        self.rise_delay = Some(v);
+        self
+    }
+    pub fn with_rise_tau(mut self, v: Second) -> Self {
+        self.rise_tau = Some(v);
+        self
+    }
+    pub fn with_fall_delay(mut self, v: Second) -> Self {
+        self.fall_delay = Some(v);
+        self
+    }
+    pub fn with_fall_tau(mut self, v: Second) -> Self {
+        self.fall_tau = Some(v);
+        self
+    }
 }
 
 /// Piece-wise linear waveform — §4.1.4.
@@ -131,11 +193,21 @@ pub struct Pwl {
 
 impl Pwl {
     pub fn new(points: Vec<(Second, f64)>) -> Self {
-        Self { points, repeat_start: None, delay: None }
+        Self {
+            points,
+            repeat_start: None,
+            delay: None,
+        }
     }
 
-    pub fn with_repeat(mut self, r: Second) -> Self { self.repeat_start = Some(r); self }
-    pub fn with_delay(mut self, v: Second) -> Self { self.delay = Some(v); self }
+    pub fn with_repeat(mut self, r: Second) -> Self {
+        self.repeat_start = Some(r);
+        self
+    }
+    pub fn with_delay(mut self, v: Second) -> Self {
+        self.delay = Some(v);
+        self
+    }
 }
 
 /// Single-frequency FM waveform — §4.1.5.
@@ -163,16 +235,42 @@ pub struct Sfm {
 
 impl Sfm {
     pub fn new(offset: f64, amplitude: f64) -> Self {
-        Self { offset, amplitude, mod_freq: None, mod_index: None,
-               carrier_freq: None, delay: None, phase_mod: None, phase_carrier: None }
+        Self {
+            offset,
+            amplitude,
+            mod_freq: None,
+            mod_index: None,
+            carrier_freq: None,
+            delay: None,
+            phase_mod: None,
+            phase_carrier: None,
+        }
     }
 
-    pub fn with_mod_freq(mut self, v: Hertz) -> Self { self.mod_freq = Some(v); self }
-    pub fn with_mod_index(mut self, v: Dimensionless) -> Self { self.mod_index = Some(v); self }
-    pub fn with_carrier_freq(mut self, v: Hertz) -> Self { self.carrier_freq = Some(v); self }
-    pub fn with_delay(mut self, v: Second) -> Self { self.delay = Some(v); self }
-    pub fn with_phase_mod(mut self, v: Degree) -> Self { self.phase_mod = Some(v); self }
-    pub fn with_phase_carrier(mut self, v: Degree) -> Self { self.phase_carrier = Some(v); self }
+    pub fn with_mod_freq(mut self, v: Hertz) -> Self {
+        self.mod_freq = Some(v);
+        self
+    }
+    pub fn with_mod_index(mut self, v: Dimensionless) -> Self {
+        self.mod_index = Some(v);
+        self
+    }
+    pub fn with_carrier_freq(mut self, v: Hertz) -> Self {
+        self.carrier_freq = Some(v);
+        self
+    }
+    pub fn with_delay(mut self, v: Second) -> Self {
+        self.delay = Some(v);
+        self
+    }
+    pub fn with_phase_mod(mut self, v: Degree) -> Self {
+        self.phase_mod = Some(v);
+        self
+    }
+    pub fn with_phase_carrier(mut self, v: Degree) -> Self {
+        self.phase_carrier = Some(v);
+        self
+    }
 }
 
 /// Amplitude modulated waveform — §4.1.6.
@@ -200,16 +298,42 @@ pub struct Am {
 
 impl Am {
     pub fn new(offset: f64, mod_offset: f64) -> Self {
-        Self { offset, mod_offset, mod_amplitude: None, mod_freq: None,
-               carrier_freq: None, delay: None, phase_mod: None, phase_carrier: None }
+        Self {
+            offset,
+            mod_offset,
+            mod_amplitude: None,
+            mod_freq: None,
+            carrier_freq: None,
+            delay: None,
+            phase_mod: None,
+            phase_carrier: None,
+        }
     }
 
-    pub fn with_mod_amplitude(mut self, v: f64) -> Self { self.mod_amplitude = Some(v); self }
-    pub fn with_mod_freq(mut self, v: Hertz) -> Self { self.mod_freq = Some(v); self }
-    pub fn with_carrier_freq(mut self, v: Hertz) -> Self { self.carrier_freq = Some(v); self }
-    pub fn with_delay(mut self, v: Second) -> Self { self.delay = Some(v); self }
-    pub fn with_phase_mod(mut self, v: Degree) -> Self { self.phase_mod = Some(v); self }
-    pub fn with_phase_carrier(mut self, v: Degree) -> Self { self.phase_carrier = Some(v); self }
+    pub fn with_mod_amplitude(mut self, v: f64) -> Self {
+        self.mod_amplitude = Some(v);
+        self
+    }
+    pub fn with_mod_freq(mut self, v: Hertz) -> Self {
+        self.mod_freq = Some(v);
+        self
+    }
+    pub fn with_carrier_freq(mut self, v: Hertz) -> Self {
+        self.carrier_freq = Some(v);
+        self
+    }
+    pub fn with_delay(mut self, v: Second) -> Self {
+        self.delay = Some(v);
+        self
+    }
+    pub fn with_phase_mod(mut self, v: Degree) -> Self {
+        self.phase_mod = Some(v);
+        self
+    }
+    pub fn with_phase_carrier(mut self, v: Degree) -> Self {
+        self.phase_carrier = Some(v);
+        self
+    }
 }
 
 /// Transient noise source — §4.1.7.
@@ -235,12 +359,25 @@ pub struct TrNoise {
 
 impl TrNoise {
     pub fn new(rms_amplitude: f64, time_step: Second) -> Self {
-        Self { rms_amplitude, time_step, alpha: None, noise_amplitude: None,
-               rts_amplitude: None, rts_capture_time: None, rts_emission_time: None }
+        Self {
+            rms_amplitude,
+            time_step,
+            alpha: None,
+            noise_amplitude: None,
+            rts_amplitude: None,
+            rts_capture_time: None,
+            rts_emission_time: None,
+        }
     }
 
-    pub fn with_alpha(mut self, v: f64) -> Self { self.alpha = Some(v); self }
-    pub fn with_noise_amplitude(mut self, v: f64) -> Self { self.noise_amplitude = Some(v); self }
+    pub fn with_alpha(mut self, v: f64) -> Self {
+        self.alpha = Some(v);
+        self
+    }
+    pub fn with_noise_amplitude(mut self, v: f64) -> Self {
+        self.noise_amplitude = Some(v);
+        self
+    }
     pub fn with_rts(mut self, amplitude: f64, capture: Second, emission: Second) -> Self {
         self.rts_amplitude = Some(amplitude);
         self.rts_capture_time = Some(capture);
@@ -281,10 +418,19 @@ pub struct TrRandom {
 
 impl TrRandom {
     pub fn new(distribution: RandomDistribution, duration: Second) -> Self {
-        Self { distribution, duration, delay: None, param1: None, param2: None }
+        Self {
+            distribution,
+            duration,
+            delay: None,
+            param1: None,
+            param2: None,
+        }
     }
 
-    pub fn with_delay(mut self, v: Second) -> Self { self.delay = Some(v); self }
+    pub fn with_delay(mut self, v: Second) -> Self {
+        self.delay = Some(v);
+        self
+    }
     pub fn with_params(mut self, p1: f64, p2: f64) -> Self {
         self.param1 = Some(p1);
         self.param2 = Some(p2);
@@ -322,10 +468,7 @@ fn fmt_positional(args: &[Option<String>]) -> String {
 
 impl fmt::Display for Pulse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut args = vec![
-            Some(self.v1.to_string()),
-            Some(self.v2.to_string()),
-        ];
+        let mut args = vec![Some(self.v1.to_string()), Some(self.v2.to_string())];
         let optionals: Vec<Option<String>> = vec![
             self.delay.map(|v| v.to_string()),
             self.rise_time.map(|v| v.to_string()),
@@ -358,10 +501,7 @@ impl fmt::Display for Sinusoidal {
 
 impl fmt::Display for Exponential {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut args = vec![
-            Some(self.v1.to_string()),
-            Some(self.v2.to_string()),
-        ];
+        let mut args = vec![Some(self.v1.to_string()), Some(self.v2.to_string())];
         let optionals: Vec<Option<String>> = vec![
             self.rise_delay.map(|v| v.to_string()),
             self.rise_tau.map(|v| v.to_string()),
@@ -375,7 +515,9 @@ impl fmt::Display for Exponential {
 
 impl fmt::Display for Pwl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let pairs: Vec<String> = self.points.iter()
+        let pairs: Vec<String> = self
+            .points
+            .iter()
             .map(|(t, v)| format!("{} {}", t, v))
             .collect();
         let mut s = format!("PWL({})", pairs.join(" "));

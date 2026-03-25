@@ -179,20 +179,57 @@ impl DefaultModel {
         }
     }
 
-    pub fn name(&self) -> &String { &self.name }
-    pub fn mos_type(&self) -> MosfetType { self.mos_type }
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+    pub fn mos_type(&self) -> MosfetType {
+        self.mos_type
+    }
 
-    pub fn with_level(&mut self, level: u32) -> &mut Self { self.level = level; self }
-    pub fn with_vto(&mut self, vto: Volt) -> &mut Self { self.vto = vto; self }
-    pub fn with_kp(&mut self, kp: Dimensionless) -> &mut Self { self.kp = kp; self }
-    pub fn with_gamma(&mut self, gamma: Dimensionless) -> &mut Self { self.gamma = gamma; self }
-    pub fn with_phi(&mut self, phi: Volt) -> &mut Self { self.phi = phi; self }
-    pub fn with_lambda(&mut self, lambda: Dimensionless) -> &mut Self { self.lambda = lambda; self }
-    pub fn with_rd(&mut self, rd: Ohm) -> &mut Self { self.rd = rd; self }
-    pub fn with_rs(&mut self, rs: Ohm) -> &mut Self { self.rs = rs; self }
-    pub fn with_tox(&mut self, tox: Meter) -> &mut Self { self.tox = tox; self }
-    pub fn with_nsub(&mut self, nsub: Dimensionless) -> &mut Self { self.nsub = nsub; self }
-    pub fn with_tnom(&mut self, tnom: Celsius) -> &mut Self { self.tnom = tnom; self }
+    pub fn with_level(&mut self, level: u32) -> &mut Self {
+        self.level = level;
+        self
+    }
+    pub fn with_vto(&mut self, vto: Volt) -> &mut Self {
+        self.vto = vto;
+        self
+    }
+    pub fn with_kp(&mut self, kp: Dimensionless) -> &mut Self {
+        self.kp = kp;
+        self
+    }
+    pub fn with_gamma(&mut self, gamma: Dimensionless) -> &mut Self {
+        self.gamma = gamma;
+        self
+    }
+    pub fn with_phi(&mut self, phi: Volt) -> &mut Self {
+        self.phi = phi;
+        self
+    }
+    pub fn with_lambda(&mut self, lambda: Dimensionless) -> &mut Self {
+        self.lambda = lambda;
+        self
+    }
+    pub fn with_rd(&mut self, rd: Ohm) -> &mut Self {
+        self.rd = rd;
+        self
+    }
+    pub fn with_rs(&mut self, rs: Ohm) -> &mut Self {
+        self.rs = rs;
+        self
+    }
+    pub fn with_tox(&mut self, tox: Meter) -> &mut Self {
+        self.tox = tox;
+        self
+    }
+    pub fn with_nsub(&mut self, nsub: Dimensionless) -> &mut Self {
+        self.nsub = nsub;
+        self
+    }
+    pub fn with_tnom(&mut self, tnom: Celsius) -> &mut Self {
+        self.tnom = tnom;
+        self
+    }
     pub fn with_noise_parameters(&mut self, kf: Dimensionless, af: Dimensionless) -> &mut Self {
         self.kf = kf;
         self.af = af;

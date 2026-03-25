@@ -1,7 +1,7 @@
 use crate::devices::Component;
 use crate::node::Node;
 use crate::num::Dynamic;
-use crate::spice::{SpiceElement, ElementRef, SpiceComponent};
+use crate::spice::{ElementRef, SpiceComponent, SpiceElement};
 use crate::units::{Dimensionless, Siemens};
 
 /// Voltage-Controlled Current Source (`G`).
@@ -48,13 +48,27 @@ impl Vccs {
         self
     }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn node_plus(&self) -> &Node { &self.node_plus }
-    pub fn node_minus(&self) -> &Node { &self.node_minus }
-    pub fn ctrl_plus(&self) -> &Node { &self.ctrl_plus }
-    pub fn ctrl_minus(&self) -> &Node { &self.ctrl_minus }
-    pub fn transconductance(&self) -> &Dynamic<Siemens> { &self.transconductance }
-    pub fn multiplier(&self) -> Option<&Dynamic<Dimensionless>> { self.multiplier.as_ref() }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn node_plus(&self) -> &Node {
+        &self.node_plus
+    }
+    pub fn node_minus(&self) -> &Node {
+        &self.node_minus
+    }
+    pub fn ctrl_plus(&self) -> &Node {
+        &self.ctrl_plus
+    }
+    pub fn ctrl_minus(&self) -> &Node {
+        &self.ctrl_minus
+    }
+    pub fn transconductance(&self) -> &Dynamic<Siemens> {
+        &self.transconductance
+    }
+    pub fn multiplier(&self) -> Option<&Dynamic<Dimensionless>> {
+        self.multiplier.as_ref()
+    }
 }
 
 impl Component for Vccs {}
@@ -73,9 +87,12 @@ impl SpiceComponent for Vccs {
     fn into_spice(&self) -> String {
         let mut s = format!(
             "{}{} {} {} {} {} {}",
-            Self::SYMBOL, self.name(),
-            self.node_plus(), self.node_minus(),
-            self.ctrl_plus(), self.ctrl_minus(),
+            Self::SYMBOL,
+            self.name(),
+            self.node_plus(),
+            self.node_minus(),
+            self.ctrl_plus(),
+            self.ctrl_minus(),
             self.transconductance()
         );
         if let Some(m) = &self.multiplier {

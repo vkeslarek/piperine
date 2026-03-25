@@ -1,8 +1,8 @@
+pub mod engine;
 pub mod ipc;
 pub mod pool;
-pub mod engine;
 
-pub use engine::{NgspiceEngine, EngineError};
+pub use engine::{EngineError, NgspiceEngine};
 pub use pool::WorkerPool;
 
 /// Re-export worker_main for the binary crate.

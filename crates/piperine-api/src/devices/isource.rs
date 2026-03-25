@@ -1,7 +1,7 @@
 use crate::devices::Component;
 use crate::node::Node;
 use crate::num::Dynamic;
-use crate::spice::{SpiceElement, ElementRef, SpiceComponent};
+use crate::spice::{ElementRef, SpiceComponent, SpiceElement};
 use crate::units::{Ampere, Degree};
 use crate::waveform::Waveform;
 
@@ -77,13 +77,27 @@ impl CurrentSource {
         self
     }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn node_plus(&self) -> &Node { &self.node_plus }
-    pub fn node_minus(&self) -> &Node { &self.node_minus }
-    pub fn dc_value(&self) -> Option<&Dynamic<Ampere>> { self.dc_value.as_ref() }
-    pub fn ac_mag(&self) -> Option<&Dynamic<Ampere>> { self.ac_mag.as_ref() }
-    pub fn ac_phase(&self) -> Option<&Dynamic<Degree>> { self.ac_phase.as_ref() }
-    pub fn waveform(&self) -> Option<&Waveform> { self.waveform.as_ref() }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn node_plus(&self) -> &Node {
+        &self.node_plus
+    }
+    pub fn node_minus(&self) -> &Node {
+        &self.node_minus
+    }
+    pub fn dc_value(&self) -> Option<&Dynamic<Ampere>> {
+        self.dc_value.as_ref()
+    }
+    pub fn ac_mag(&self) -> Option<&Dynamic<Ampere>> {
+        self.ac_mag.as_ref()
+    }
+    pub fn ac_phase(&self) -> Option<&Dynamic<Degree>> {
+        self.ac_phase.as_ref()
+    }
+    pub fn waveform(&self) -> Option<&Waveform> {
+        self.waveform.as_ref()
+    }
 }
 
 impl Component for CurrentSource {}
@@ -102,7 +116,10 @@ impl SpiceComponent for CurrentSource {
     fn into_spice(&self) -> String {
         let mut s = format!(
             "{}{} {} {}",
-            Self::SYMBOL, self.name(), self.node_plus(), self.node_minus()
+            Self::SYMBOL,
+            self.name(),
+            self.node_plus(),
+            self.node_minus()
         );
 
         if let Some(dc) = &self.dc_value {

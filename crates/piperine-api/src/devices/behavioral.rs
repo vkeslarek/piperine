@@ -1,6 +1,6 @@
 use crate::devices::Component;
 use crate::node::Node;
-use crate::spice::{SpiceElement, ElementRef, SpiceComponent};
+use crate::spice::{ElementRef, SpiceComponent, SpiceElement};
 use crate::units::Celsius;
 
 /// Behavioral source output type.
@@ -48,7 +48,10 @@ impl BehavioralSource {
             node_plus: node_plus.into(),
             node_minus: node_minus.into(),
             kind: BehavioralKind::Voltage(expression.into()),
-            tc1: None, tc2: None, temp: None, delta_temp: None,
+            tc1: None,
+            tc2: None,
+            temp: None,
+            delta_temp: None,
         }
     }
 
@@ -64,7 +67,10 @@ impl BehavioralSource {
             node_plus: node_plus.into(),
             node_minus: node_minus.into(),
             kind: BehavioralKind::Current(expression.into()),
-            tc1: None, tc2: None, temp: None, delta_temp: None,
+            tc1: None,
+            tc2: None,
+            temp: None,
+            delta_temp: None,
         }
     }
 
@@ -84,14 +90,30 @@ impl BehavioralSource {
         self
     }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn node_plus(&self) -> &Node { &self.node_plus }
-    pub fn node_minus(&self) -> &Node { &self.node_minus }
-    pub fn kind(&self) -> &BehavioralKind { &self.kind }
-    pub fn tc1(&self) -> Option<f64> { self.tc1 }
-    pub fn tc2(&self) -> Option<f64> { self.tc2 }
-    pub fn temp(&self) -> Option<Celsius> { self.temp }
-    pub fn delta_temp(&self) -> Option<Celsius> { self.delta_temp }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn node_plus(&self) -> &Node {
+        &self.node_plus
+    }
+    pub fn node_minus(&self) -> &Node {
+        &self.node_minus
+    }
+    pub fn kind(&self) -> &BehavioralKind {
+        &self.kind
+    }
+    pub fn tc1(&self) -> Option<f64> {
+        self.tc1
+    }
+    pub fn tc2(&self) -> Option<f64> {
+        self.tc2
+    }
+    pub fn temp(&self) -> Option<Celsius> {
+        self.temp
+    }
+    pub fn delta_temp(&self) -> Option<Celsius> {
+        self.delta_temp
+    }
 }
 
 impl Component for BehavioralSource {}
@@ -110,7 +132,10 @@ impl SpiceComponent for BehavioralSource {
     fn into_spice(&self) -> String {
         let mut s = format!(
             "{}{} {} {}",
-            Self::SYMBOL, self.name(), self.node_plus(), self.node_minus()
+            Self::SYMBOL,
+            self.name(),
+            self.node_plus(),
+            self.node_minus()
         );
 
         match &self.kind {

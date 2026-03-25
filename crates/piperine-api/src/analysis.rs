@@ -1,13 +1,12 @@
 use crate::node::Node;
 use crate::options::*;
-use crate::spice::{ElementRef, Probe, SpiceAnalysis};
+use crate::spice::{ElementRef, SpiceAnalysis, Measurement};
 
-// Helper: emit common control lines (options, nodesets, saves).
+// Helper: emit common control lines (options, nodesets).
 fn emit_common(
     solver: &SolverOptions,
     extra_options: &str,
     nodesets: &[(Node, f64)],
-    saves: &[Probe],
     lines: &mut Vec<String>,
 ) {
     let solver_opts = solver.to_options_string();
@@ -25,10 +24,12 @@ fn emit_common(
     for (node, voltage) in nodesets {
         lines.push(format!(".nodeset V({})={}", node, voltage));
     }
+}
 
-    if !saves.is_empty() {
-        let exprs: Vec<String> = saves.iter().map(|p| p.to_spice_save()).collect();
-        lines.push(format!("save {}", exprs.join(" ")));
+// Helper: emit meas commands.
+fn emit_meas(measurements: &[Measurement], analysis_type: &str, lines: &mut Vec<String>) {
+    for m in measurements {
+        lines.push(m.to_meas_cmd(analysis_type));
     }
 }
 
@@ -37,12 +38,14 @@ fn emit_common(
 #[derive(Debug, Clone, Default)]
 pub struct OpAnalysis {
     pub solver: SolverOptions,
-    pub saves: Vec<Probe>,
+    pub measurements: Vec<Measurement>,
     pub nodesets: Vec<(Node, f64)>,
 }
 
 impl OpAnalysis {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 crate::impl_solver_options!(OpAnalysis);
@@ -51,8 +54,9 @@ crate::impl_analysis_common!(OpAnalysis);
 impl SpiceAnalysis for OpAnalysis {
     fn to_spice_control_commands(&self) -> Vec<String> {
         let mut lines = Vec::new();
-        emit_common(&self.solver, "", &self.nodesets, &self.saves, &mut lines);
+        emit_common(&self.solver, "", &self.nodesets, &mut lines);
         lines.push("op".to_string());
+        emit_meas(&self.measurements, "op", &mut lines);
         lines
     }
 }
@@ -66,16 +70,19 @@ pub struct DcAnalysis {
     pub stop: f64,
     pub step: f64,
     pub solver: SolverOptions,
-    pub saves: Vec<Probe>,
+    pub measurements: Vec<Measurement>,
     pub nodesets: Vec<(Node, f64)>,
 }
 
 impl DcAnalysis {
     pub fn new(source: ElementRef, start: f64, stop: f64, step: f64) -> Self {
         Self {
-            source, start, stop, step,
+            source,
+            start,
+            stop,
+            step,
             solver: SolverOptions::default(),
-            saves: Vec::new(),
+            measurements: Vec::new(),
             nodesets: Vec::new(),
         }
     }
@@ -87,9 +94,15 @@ crate::impl_analysis_common!(DcAnalysis);
 impl SpiceAnalysis for DcAnalysis {
     fn to_spice_control_commands(&self) -> Vec<String> {
         let mut lines = Vec::new();
-        emit_common(&self.solver, "", &self.nodesets, &self.saves, &mut lines);
-        lines.push(format!("dc {} {} {} {}",
-            self.source.spice_name(), self.start, self.stop, self.step));
+        emit_common(&self.solver, "", &self.nodesets, &mut lines);
+        lines.push(format!(
+            "dc {} {} {} {}",
+            self.source.spice_name(),
+            self.start,
+            self.stop,
+            self.step
+        ));
+        emit_meas(&self.measurements, "dc", &mut lines);
         lines
     }
 }
@@ -104,17 +117,20 @@ pub struct AcAnalysis {
     pub fstop: f64,
     pub solver: SolverOptions,
     pub ac_options: AcOptions,
-    pub saves: Vec<Probe>,
+    pub measurements: Vec<Measurement>,
     pub nodesets: Vec<(Node, f64)>,
 }
 
 impl AcAnalysis {
     pub fn new(variation: Variation, npoints: u32, fstart: f64, fstop: f64) -> Self {
         Self {
-            variation, npoints, fstart, fstop,
+            variation,
+            npoints,
+            fstart,
+            fstop,
             solver: SolverOptions::default(),
             ac_options: AcOptions::default(),
-            saves: Vec::new(),
+            measurements: Vec::new(),
             nodesets: Vec::new(),
         }
     }
@@ -132,9 +148,15 @@ impl SpiceAnalysis for AcAnalysis {
     fn to_spice_control_commands(&self) -> Vec<String> {
         let mut lines = Vec::new();
         let extra = self.ac_options.to_options_string();
-        emit_common(&self.solver, &extra, &self.nodesets, &self.saves, &mut lines);
-        lines.push(format!("ac {} {} {} {}",
-            self.variation.to_spice(), self.npoints, self.fstart, self.fstop));
+        emit_common(&self.solver, &extra, &self.nodesets, &mut lines);
+        lines.push(format!(
+            "ac {} {} {} {}",
+            self.variation.to_spice(),
+            self.npoints,
+            self.fstart,
+            self.fstop
+        ));
+        emit_meas(&self.measurements, "ac", &mut lines);
         lines
     }
 }
@@ -150,31 +172,65 @@ pub struct TranAnalysis {
     pub uic: bool,
     pub solver: SolverOptions,
     pub tran_options: TranOptions,
-    pub saves: Vec<Probe>,
+    pub measurements: Vec<Measurement>,
     pub nodesets: Vec<(Node, f64)>,
 }
 
 impl TranAnalysis {
     pub fn new(tstep: f64, tstop: f64) -> Self {
         Self {
-            tstep, tstop, tstart: None, tmax: None, uic: false,
+            tstep,
+            tstop,
+            tstart: None,
+            tmax: None,
+            uic: false,
             solver: SolverOptions::default(),
             tran_options: TranOptions::default(),
-            saves: Vec::new(),
+            measurements: Vec::new(),
             nodesets: Vec::new(),
         }
     }
 
-    pub fn tstart(mut self, v: f64) -> Self { self.tstart = Some(v); self }
-    pub fn tmax(mut self, v: f64) -> Self { self.tmax = Some(v); self }
-    pub fn uic(mut self) -> Self { self.uic = true; self }
-    pub fn method(mut self, m: IntegrationMethod) -> Self { self.tran_options.method = Some(m); self }
-    pub fn maxord(mut self, v: u32) -> Self { self.tran_options.maxord = Some(v); self }
-    pub fn trtol(mut self, v: f64) -> Self { self.tran_options.trtol = Some(v); self }
-    pub fn chgtol(mut self, v: f64) -> Self { self.tran_options.chgtol = Some(v); self }
-    pub fn ramptime(mut self, v: f64) -> Self { self.tran_options.ramptime = Some(v); self }
-    pub fn autostop(mut self) -> Self { self.tran_options.autostop = Some(true); self }
-    pub fn interp(mut self) -> Self { self.tran_options.interp = Some(true); self }
+    pub fn tstart(mut self, v: f64) -> Self {
+        self.tstart = Some(v);
+        self
+    }
+    pub fn tmax(mut self, v: f64) -> Self {
+        self.tmax = Some(v);
+        self
+    }
+    pub fn uic(mut self) -> Self {
+        self.uic = true;
+        self
+    }
+    pub fn method(mut self, m: IntegrationMethod) -> Self {
+        self.tran_options.method = Some(m);
+        self
+    }
+    pub fn maxord(mut self, v: u32) -> Self {
+        self.tran_options.maxord = Some(v);
+        self
+    }
+    pub fn trtol(mut self, v: f64) -> Self {
+        self.tran_options.trtol = Some(v);
+        self
+    }
+    pub fn chgtol(mut self, v: f64) -> Self {
+        self.tran_options.chgtol = Some(v);
+        self
+    }
+    pub fn ramptime(mut self, v: f64) -> Self {
+        self.tran_options.ramptime = Some(v);
+        self
+    }
+    pub fn autostop(mut self) -> Self {
+        self.tran_options.autostop = Some(true);
+        self
+    }
+    pub fn interp(mut self) -> Self {
+        self.tran_options.interp = Some(true);
+        self
+    }
 }
 
 crate::impl_solver_options!(TranAnalysis);
@@ -184,13 +240,20 @@ impl SpiceAnalysis for TranAnalysis {
     fn to_spice_control_commands(&self) -> Vec<String> {
         let mut lines = Vec::new();
         let extra = self.tran_options.to_options_string();
-        emit_common(&self.solver, &extra, &self.nodesets, &self.saves, &mut lines);
+        emit_common(&self.solver, &extra, &self.nodesets, &mut lines);
 
         let mut cmd = format!("tran {} {}", self.tstep, self.tstop);
-        if let Some(ts) = self.tstart { cmd.push_str(&format!(" {ts}")); }
-        if let Some(tm) = self.tmax { cmd.push_str(&format!(" {tm}")); }
-        if self.uic { cmd.push_str(" UIC"); }
+        if let Some(ts) = self.tstart {
+            cmd.push_str(&format!(" {ts}"));
+        }
+        if let Some(tm) = self.tmax {
+            cmd.push_str(&format!(" {tm}"));
+        }
+        if self.uic {
+            cmd.push_str(" UIC");
+        }
         lines.push(cmd);
+        emit_meas(&self.measurements, "tran", &mut lines);
         lines
     }
 }
@@ -207,22 +270,37 @@ pub struct NoiseAnalysis {
     pub fstop: f64,
     pub pts_per_summary: Option<u32>,
     pub solver: SolverOptions,
-    pub saves: Vec<Probe>,
+    pub measurements: Vec<Measurement>,
     pub nodesets: Vec<(Node, f64)>,
 }
 
 impl NoiseAnalysis {
-    pub fn new(output: Node, src: ElementRef, variation: Variation, npoints: u32, fstart: f64, fstop: f64) -> Self {
+    pub fn new(
+        output: Node,
+        src: ElementRef,
+        variation: Variation,
+        npoints: u32,
+        fstart: f64,
+        fstop: f64,
+    ) -> Self {
         Self {
-            output, src, variation, npoints, fstart, fstop,
+            output,
+            src,
+            variation,
+            npoints,
+            fstart,
+            fstop,
             pts_per_summary: None,
             solver: SolverOptions::default(),
-            saves: Vec::new(),
+            measurements: Vec::new(),
             nodesets: Vec::new(),
         }
     }
 
-    pub fn pts_per_summary(mut self, n: u32) -> Self { self.pts_per_summary = Some(n); self }
+    pub fn pts_per_summary(mut self, n: u32) -> Self {
+        self.pts_per_summary = Some(n);
+        self
+    }
 }
 
 crate::impl_solver_options!(NoiseAnalysis);
@@ -231,13 +309,22 @@ crate::impl_analysis_common!(NoiseAnalysis);
 impl SpiceAnalysis for NoiseAnalysis {
     fn to_spice_control_commands(&self) -> Vec<String> {
         let mut lines = Vec::new();
-        emit_common(&self.solver, "", &self.nodesets, &self.saves, &mut lines);
+        emit_common(&self.solver, "", &self.nodesets, &mut lines);
 
-        let mut cmd = format!("noise V({}) {} {} {} {} {}",
-            self.output, self.src.spice_name(), self.variation.to_spice(),
-            self.npoints, self.fstart, self.fstop);
-        if let Some(n) = self.pts_per_summary { cmd.push_str(&format!(" {n}")); }
+        let mut cmd = format!(
+            "noise V({}) {} {} {} {} {}",
+            self.output,
+            self.src.spice_name(),
+            self.variation.to_spice(),
+            self.npoints,
+            self.fstart,
+            self.fstop
+        );
+        if let Some(n) = self.pts_per_summary {
+            cmd.push_str(&format!(" {n}"));
+        }
         lines.push(cmd);
+        emit_meas(&self.measurements, "noise", &mut lines);
         lines
     }
 }
@@ -249,16 +336,17 @@ pub struct TfAnalysis {
     pub output: Node,
     pub input_source: ElementRef,
     pub solver: SolverOptions,
-    pub saves: Vec<Probe>,
+    pub measurements: Vec<Measurement>,
     pub nodesets: Vec<(Node, f64)>,
 }
 
 impl TfAnalysis {
     pub fn new(output: Node, input_source: ElementRef) -> Self {
         Self {
-            output, input_source,
+            output,
+            input_source,
             solver: SolverOptions::default(),
-            saves: Vec::new(),
+            measurements: Vec::new(),
             nodesets: Vec::new(),
         }
     }
@@ -270,8 +358,13 @@ crate::impl_analysis_common!(TfAnalysis);
 impl SpiceAnalysis for TfAnalysis {
     fn to_spice_control_commands(&self) -> Vec<String> {
         let mut lines = Vec::new();
-        emit_common(&self.solver, "", &self.nodesets, &self.saves, &mut lines);
-        lines.push(format!("tf V({}) {}", self.output, self.input_source.spice_name()));
+        emit_common(&self.solver, "", &self.nodesets, &mut lines);
+        lines.push(format!(
+            "tf V({}) {}",
+            self.output,
+            self.input_source.spice_name()
+        ));
+        emit_meas(&self.measurements, "tf", &mut lines);
         lines
     }
 }
@@ -283,7 +376,7 @@ pub struct SensAnalysis {
     pub output: Node,
     pub ac_variation: Option<(Variation, u32, f64, f64)>,
     pub solver: SolverOptions,
-    pub saves: Vec<Probe>,
+    pub measurements: Vec<Measurement>,
     pub nodesets: Vec<(Node, f64)>,
 }
 
@@ -294,7 +387,7 @@ impl SensAnalysis {
             output,
             ac_variation: None,
             solver: SolverOptions::default(),
-            saves: Vec::new(),
+            measurements: Vec::new(),
             nodesets: Vec::new(),
         }
     }
@@ -305,7 +398,7 @@ impl SensAnalysis {
             output,
             ac_variation: Some((variation, npoints, fstart, fstop)),
             solver: SolverOptions::default(),
-            saves: Vec::new(),
+            measurements: Vec::new(),
             nodesets: Vec::new(),
         }
     }
@@ -317,12 +410,20 @@ crate::impl_analysis_common!(SensAnalysis);
 impl SpiceAnalysis for SensAnalysis {
     fn to_spice_control_commands(&self) -> Vec<String> {
         let mut lines = Vec::new();
-        emit_common(&self.solver, "", &self.nodesets, &self.saves, &mut lines);
+        emit_common(&self.solver, "", &self.nodesets, &mut lines);
         if let Some((var, np, fs, fe)) = &self.ac_variation {
-            lines.push(format!("sens V({}) ac {} {} {} {}", self.output, var.to_spice(), np, fs, fe));
+            lines.push(format!(
+                "sens V({}) ac {} {} {} {}",
+                self.output,
+                var.to_spice(),
+                np,
+                fs,
+                fe
+            ));
         } else {
             lines.push(format!("sens V({})", self.output));
         }
+        emit_meas(&self.measurements, "sens", &mut lines);
         lines
     }
 }

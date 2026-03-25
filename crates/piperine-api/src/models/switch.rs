@@ -58,15 +58,37 @@ impl DefaultModel {
         }
     }
 
-    pub fn name(&self) -> &String { &self.name }
-    pub fn switch_type(&self) -> SwitchType { self.switch_type }
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+    pub fn switch_type(&self) -> SwitchType {
+        self.switch_type
+    }
 
-    pub fn with_vt(&mut self, vt: Volt) -> &mut Self { self.vt = vt; self }
-    pub fn with_it(&mut self, it: Ampere) -> &mut Self { self.it = it; self }
-    pub fn with_vh(&mut self, vh: Volt) -> &mut Self { self.vh = vh; self }
-    pub fn with_ih(&mut self, ih: Ampere) -> &mut Self { self.ih = ih; self }
-    pub fn with_ron(&mut self, ron: Ohm) -> &mut Self { self.ron = ron; self }
-    pub fn with_roff(&mut self, roff: Ohm) -> &mut Self { self.roff = roff; self }
+    pub fn with_vt(&mut self, vt: Volt) -> &mut Self {
+        self.vt = vt;
+        self
+    }
+    pub fn with_it(&mut self, it: Ampere) -> &mut Self {
+        self.it = it;
+        self
+    }
+    pub fn with_vh(&mut self, vh: Volt) -> &mut Self {
+        self.vh = vh;
+        self
+    }
+    pub fn with_ih(&mut self, ih: Ampere) -> &mut Self {
+        self.ih = ih;
+        self
+    }
+    pub fn with_ron(&mut self, ron: Ohm) -> &mut Self {
+        self.ron = ron;
+        self
+    }
+    pub fn with_roff(&mut self, roff: Ohm) -> &mut Self {
+        self.roff = roff;
+        self
+    }
 }
 
 impl Model for DefaultModel {

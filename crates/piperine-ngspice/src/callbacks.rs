@@ -35,7 +35,9 @@ pub unsafe extern "C" fn send_char(msg: *mut c_char, _id: c_int, user_data: *mut
         return 0;
     }
     let state = unsafe { &*(user_data as *const CallbackState) };
-    let s = unsafe { CStr::from_ptr(msg) }.to_string_lossy().into_owned();
+    let s = unsafe { CStr::from_ptr(msg) }
+        .to_string_lossy()
+        .into_owned();
     if let Ok(mut log) = state.log.lock() {
         log.push(s);
     }
@@ -48,7 +50,9 @@ pub unsafe extern "C" fn send_stat(msg: *mut c_char, _id: c_int, user_data: *mut
         return 0;
     }
     let state = unsafe { &*(user_data as *const CallbackState) };
-    let s = unsafe { CStr::from_ptr(msg) }.to_string_lossy().into_owned();
+    let s = unsafe { CStr::from_ptr(msg) }
+        .to_string_lossy()
+        .into_owned();
     if let Ok(mut log) = state.log.lock() {
         log.push(format!("[status] {s}"));
     }

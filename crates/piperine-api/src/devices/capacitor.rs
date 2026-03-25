@@ -1,7 +1,7 @@
 use crate::devices::Component;
 use crate::node::Node;
 use crate::num::Dynamic;
-use crate::spice::{SpiceElement, ElementRef, SpiceComponent};
+use crate::spice::{ElementRef, SpiceComponent, SpiceElement};
 use crate::units::{Celsius, Dimensionless, Farad, Meter, PerCelsius, PerCelsiusSquared, Volt};
 use std::sync::Arc;
 
@@ -42,8 +42,8 @@ impl Clone for Capacitor {
     fn clone(&self) -> Self {
         Self {
             name: self.name.clone(),
-            node_plus: self.node_plus.clone(),
-            node_minus: self.node_minus.clone(),
+            node_plus: self.node_plus,
+            node_minus: self.node_minus,
             capacitance: self.capacitance.clone(),
             model: self.model.as_ref().map(Arc::clone),
             ic: self.ic.clone(),
@@ -90,7 +90,10 @@ impl Capacitor {
     }
 
     /// Sets the model for semiconductor capacitor.
-    pub fn with_model(&mut self, model: Arc<dyn crate::models::capacitor::CapacitorModel + Send + Sync>) -> &mut Self {
+    pub fn with_model(
+        &mut self,
+        model: Arc<dyn crate::models::capacitor::CapacitorModel + Send + Sync>,
+    ) -> &mut Self {
         self.model = Some(model);
         self
     }
@@ -147,21 +150,51 @@ impl Capacitor {
         self
     }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn node_plus(&self) -> &Node { &self.node_plus }
-    pub fn node_minus(&self) -> &Node { &self.node_minus }
-    pub fn nodes(&self) -> (&Node, &Node) { (&self.node_plus, &self.node_minus) }
-    pub fn capacitance(&self) -> &Dynamic<Farad> { &self.capacitance }
-    pub fn model_name(&self) -> Option<&str> { self.model.as_ref().map(|m| m.model_name()) }
-    pub fn ic(&self) -> Option<&Dynamic<Volt>> { self.ic.as_ref() }
-    pub fn length(&self) -> Option<&Dynamic<Meter>> { self.length.as_ref() }
-    pub fn width(&self) -> Option<&Dynamic<Meter>> { self.width.as_ref() }
-    pub fn scale(&self) -> &Dynamic<Dimensionless> { &self.scale }
-    pub fn multiplier(&self) -> &Dynamic<Dimensionless> { &self.multiplier }
-    pub fn temp(&self) -> Option<&Dynamic<Celsius>> { self.temp.as_ref() }
-    pub fn delta_temp(&self) -> Option<&Dynamic<Celsius>> { self.delta_temp.as_ref() }
-    pub fn tc1(&self) -> Option<&Dynamic<PerCelsius>> { self.tc1.as_ref() }
-    pub fn tc2(&self) -> Option<&Dynamic<PerCelsiusSquared>> { self.tc2.as_ref() }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn node_plus(&self) -> &Node {
+        &self.node_plus
+    }
+    pub fn node_minus(&self) -> &Node {
+        &self.node_minus
+    }
+    pub fn nodes(&self) -> (&Node, &Node) {
+        (&self.node_plus, &self.node_minus)
+    }
+    pub fn capacitance(&self) -> &Dynamic<Farad> {
+        &self.capacitance
+    }
+    pub fn model_name(&self) -> Option<&str> {
+        self.model.as_ref().map(|m| m.model_name())
+    }
+    pub fn ic(&self) -> Option<&Dynamic<Volt>> {
+        self.ic.as_ref()
+    }
+    pub fn length(&self) -> Option<&Dynamic<Meter>> {
+        self.length.as_ref()
+    }
+    pub fn width(&self) -> Option<&Dynamic<Meter>> {
+        self.width.as_ref()
+    }
+    pub fn scale(&self) -> &Dynamic<Dimensionless> {
+        &self.scale
+    }
+    pub fn multiplier(&self) -> &Dynamic<Dimensionless> {
+        &self.multiplier
+    }
+    pub fn temp(&self) -> Option<&Dynamic<Celsius>> {
+        self.temp.as_ref()
+    }
+    pub fn delta_temp(&self) -> Option<&Dynamic<Celsius>> {
+        self.delta_temp.as_ref()
+    }
+    pub fn tc1(&self) -> Option<&Dynamic<PerCelsius>> {
+        self.tc1.as_ref()
+    }
+    pub fn tc2(&self) -> Option<&Dynamic<PerCelsiusSquared>> {
+        self.tc2.as_ref()
+    }
 }
 
 impl Component for Capacitor {}
@@ -176,7 +209,9 @@ impl SpiceElement for Capacitor {
     }
 
     fn spice_model(&self) -> Option<Arc<dyn crate::spice::SpiceModel>> {
-        self.model.as_ref().map(|m| Arc::clone(m) as Arc<dyn crate::spice::SpiceModel>)
+        self.model
+            .as_ref()
+            .map(|m| Arc::clone(m) as Arc<dyn crate::spice::SpiceModel>)
     }
 }
 
@@ -184,7 +219,11 @@ impl SpiceComponent for Capacitor {
     fn into_spice(&self) -> String {
         let mut s = format!(
             "{}{} {} {} {}",
-            Self::SYMBOL, self.name(), self.node_plus(), self.node_minus(), self.capacitance()
+            Self::SYMBOL,
+            self.name(),
+            self.node_plus(),
+            self.node_minus(),
+            self.capacitance()
         );
 
         if let Some(model_name) = self.model.as_ref().map(|m| m.model_name()) {

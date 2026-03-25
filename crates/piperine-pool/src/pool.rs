@@ -35,12 +35,14 @@ impl WorkerHandle {
         let msg: WorkerToMain = ipc::read_msg(&mut handle.reader)?;
         match msg {
             WorkerToMain::Ready => Ok(handle),
-            WorkerToMain::Error { message } => {
-                Err(io::Error::new(io::ErrorKind::Other, format!("worker init failed: {message}")))
-            }
-            other => {
-                Err(io::Error::new(io::ErrorKind::Other, format!("unexpected message: {other:?}")))
-            }
+            WorkerToMain::Error { message } => Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("worker init failed: {message}"),
+            )),
+            other => Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("unexpected message: {other:?}"),
+            )),
         }
     }
 
@@ -64,7 +66,11 @@ impl WorkerHandle {
             match msg {
                 WorkerToMain::SimulationComplete { .. } => return Ok(msg),
                 WorkerToMain::Error { .. } => return Ok(msg),
-                WorkerToMain::ExternalSourceRequest { request_id, source_name, time } => {
+                WorkerToMain::ExternalSourceRequest {
+                    request_id,
+                    source_name,
+                    time,
+                } => {
                     let value = handler
                         .map(|h| h.get_value(&source_name, time))
                         .unwrap_or(0.0);

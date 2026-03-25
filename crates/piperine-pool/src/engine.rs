@@ -35,13 +35,17 @@ impl NgspiceEngine {
         let exe = std::env::current_exe()
             .map_err(|e| EngineError::Pool(format!("cannot find executable: {e}")))?;
         let pool = WorkerPool::new(exe.to_str().unwrap(), n)?;
-        Ok(Self { pool: Mutex::new(pool) })
+        Ok(Self {
+            pool: Mutex::new(pool),
+        })
     }
 
     /// Create engine with a specific executable path.
     pub fn with_exe(exe_path: &str, n: usize) -> Result<Self, EngineError> {
         let pool = WorkerPool::new(exe_path, n)?;
-        Ok(Self { pool: Mutex::new(pool) })
+        Ok(Self {
+            pool: Mutex::new(pool),
+        })
     }
 }
 
@@ -77,9 +81,11 @@ impl SimulationEngine for NgspiceEngine {
         }
 
         match response {
-            WorkerToMain::SimulationComplete { plots, measurements, log } => {
-                Ok(convert_result(plots, measurements, log))
-            }
+            WorkerToMain::SimulationComplete {
+                plots,
+                measurements,
+                log,
+            } => Ok(convert_result(plots, measurements, log)),
             WorkerToMain::Error { message } => Err(EngineError::Simulation(message)),
             _ => Err(EngineError::Simulation("unexpected response".into())),
         }
@@ -114,9 +120,11 @@ impl SimulationEngine for NgspiceEngine {
         }
 
         match response {
-            WorkerToMain::SimulationComplete { plots, measurements, log } => {
-                Ok(convert_result(plots, measurements, log))
-            }
+            WorkerToMain::SimulationComplete {
+                plots,
+                measurements,
+                log,
+            } => Ok(convert_result(plots, measurements, log)),
             WorkerToMain::Error { message } => Err(EngineError::Simulation(message)),
             _ => Err(EngineError::Simulation("unexpected response".into())),
         }
@@ -163,11 +171,14 @@ fn convert_result(
             _ => PlotType::Unknown,
         };
 
-        result_plots.insert(name.clone(), Plot {
-            name: pd.name,
-            plot_type,
-            vectors,
-        });
+        result_plots.insert(
+            name.clone(),
+            Plot {
+                name: pd.name,
+                plot_type,
+                vectors,
+            },
+        );
     }
 
     SimulationResult {

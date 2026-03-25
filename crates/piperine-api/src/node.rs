@@ -1,35 +1,29 @@
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::RwLock;
 
-/// Global node counter for auto-generated names.
-static NODE_COUNTER: AtomicU64 = AtomicU64::new(1);
+/// Global counter for auto-generated node IDs.
+static AUTO_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-/// Internal representation of a node identifier.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+/// Global interner for named nodes. Index = Named(idx).
+static NAMED_NODES: RwLock<Vec<String>> = RwLock::new(Vec::new());
+
+/// Internal node identifier. All variants are Copy.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 enum NodeId {
     /// Ground reference (SPICE "0").
     Ground,
-    /// Named node — either user-labeled or auto-generated.
-    Named(String),
+    /// Auto-generated node. SPICE name = "net_{id}". No storage needed.
+    Auto(u64),
+    /// User-named node. SPICE name looked up in NAMED_NODES[idx].
+    Named(u64),
 }
 
-/// An opaque circuit node handle.
+/// An opaque, zero-cost circuit node handle.
 ///
-/// Nodes are the connection points between devices. They are created by
-/// [`Circuit::node()`] or [`SubCircuit::internal_node()`] and passed to
-/// device constructors. The user never needs to know the underlying SPICE
-/// name — it is auto-generated internally.
-///
-/// # Ground
-///
-/// Use [`Node::GROUND`] for the ground reference node.
-///
-/// # Ergonomics
-///
-/// `From<&str>` and `From<usize>` are provided for convenience (e.g. in tests
-/// or when interfacing with external `.lib` files), but the canonical way to
-/// create nodes is via the circuit/subcircuit builders.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+/// `Node` is `Copy` — pass it around freely without `.clone()`.
+/// The SPICE name is resolved lazily via `spice_name()`.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct Node(NodeId);
 
 impl Node {
@@ -38,13 +32,17 @@ impl Node {
 
     /// Creates a node with an auto-generated unique name (`net_1`, `net_2`, …).
     pub(crate) fn auto() -> Self {
-        let id = NODE_COUNTER.fetch_add(1, Ordering::Relaxed);
-        Node(NodeId::Named(format!("net_{}", id)))
+        let id = AUTO_COUNTER.fetch_add(1, Ordering::Relaxed);
+        Node(NodeId::Auto(id))
     }
 
-    /// Creates a node with a user-provided label (used as the SPICE name).
+    /// Creates a node with a user-provided label (interned globally).
     pub(crate) fn named(label: impl Into<String>) -> Self {
-        Node(NodeId::Named(label.into()))
+        let name = label.into();
+        let mut names = NAMED_NODES.write().unwrap();
+        let idx = names.len() as u64;
+        names.push(name);
+        Node(NodeId::Named(idx))
     }
 
     /// Returns `true` if this is the ground node.
@@ -53,18 +51,34 @@ impl Node {
     }
 
     /// Returns the SPICE name of this node.
-    pub fn spice_name(&self) -> &str {
-        match &self.0 {
-            NodeId::Ground => "0",
-            NodeId::Named(name) => name,
+    ///
+    /// - Ground → "0"
+    /// - Auto(id) → "net_{id}"
+    /// - Named(idx) → lookup in global interner
+    pub fn spice_name(&self) -> String {
+        match self.0 {
+            NodeId::Ground => "0".to_string(),
+            NodeId::Auto(id) => format!("net_{}", id),
+            NodeId::Named(idx) => {
+                let names = NAMED_NODES.read().unwrap();
+                names[idx as usize].clone()
+            }
         }
     }
 
     /// Creates a new node with a prefixed name. Ground is never prefixed.
+    /// Used internally by SubCircuit flatten.
     pub(crate) fn with_prefix(&self, prefix: &str) -> Node {
-        match &self.0 {
+        match self.0 {
             NodeId::Ground => Node::GROUND,
-            NodeId::Named(name) => Node::named(format!("{}_{}", prefix, name)),
+            NodeId::Auto(id) => Node::named(format!("{}_net_{}", prefix, id)),
+            NodeId::Named(idx) => {
+                let old_name = {
+                    let names = NAMED_NODES.read().unwrap();
+                    names[idx as usize].clone()
+                };
+                Node::named(format!("{}_{}", prefix, old_name))
+            }
         }
     }
 }
@@ -75,7 +89,7 @@ impl fmt::Display for Node {
     }
 }
 
-// --- Ergonomic conversions (for tests, external lib interop) ---
+// --- Ergonomic conversions ---
 
 impl From<&str> for Node {
     fn from(s: &str) -> Self {
@@ -97,17 +111,22 @@ impl From<String> for Node {
 
 impl From<usize> for Node {
     fn from(n: usize) -> Self {
-        if n == 0 { Node::GROUND } else { Node::named(n.to_string()) }
+        if n == 0 {
+            Node::GROUND
+        } else {
+            Node::named(n.to_string())
+        }
     }
 }
 
+// Node is Copy, so From<&Node> just copies.
 impl From<&Node> for Node {
     fn from(n: &Node) -> Self {
-        n.clone()
+        *n
     }
 }
 
-/// Convenience alias — deprecated, prefer `Node::GROUND`.
+/// Convenience alias.
 pub const GND: Node = Node::GROUND;
 
 #[cfg(test)]
@@ -125,7 +144,8 @@ mod tests {
     #[test]
     fn display() {
         assert_eq!(Node::GROUND.to_string(), "0");
-        assert_eq!(Node::named("out").to_string(), "out");
+        let n = Node::named("out");
+        assert_eq!(n.to_string(), "out");
     }
 
     #[test]
@@ -138,7 +158,15 @@ mod tests {
     #[test]
     fn prefix() {
         let n = Node::named("net_1");
-        assert_eq!(n.with_prefix("inv1").to_string(), "inv1_net_1");
+        let prefixed = n.with_prefix("inv1");
+        assert_eq!(prefixed.to_string(), "inv1_net_1");
         assert_eq!(Node::GROUND.with_prefix("inv1"), Node::GROUND);
+    }
+
+    #[test]
+    fn node_is_copy() {
+        let a = Node::auto();
+        let b = a; // Copy, not move
+        assert_eq!(a, b); // both still valid
     }
 }

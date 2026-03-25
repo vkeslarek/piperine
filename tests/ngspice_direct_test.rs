@@ -2,9 +2,22 @@
 //! This tests that ngspice FFI + EXTERNAL sources work at all.
 
 use piperine_ngspice::NgspiceInstance;
+use std::sync::Once;
+use tracing::info;
+
+fn init_tracing_for_tests() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let _ = tracing_subscriber::fmt()
+            .with_test_writer()
+            .with_max_level(tracing::Level::INFO)
+            .try_init();
+    });
+}
 
 #[test]
-fn direct_op() {
+fn direct_ngspice_smoke() {
+    init_tracing_for_tests();
     let ng = NgspiceInstance::new().expect("init failed");
     ng.load_circuit(&[
         "Direct OP Test".into(),
@@ -12,23 +25,21 @@ fn direct_op() {
         "R1 in out 1k".into(),
         "R2 out 0 1k".into(),
         ".end".into(),
-    ]).expect("load failed");
+    ])
+    .expect("load failed");
 
     ng.command("op").expect("op failed");
 
     let plots = ng.all_plots();
-    println!("Plots: {:?}", plots);
+    info!(plots = ?plots, "direct_op plots");
 
     let result = ng.collect_results().expect("collect failed");
-    println!("Result plots: {}", result.plots.len());
+    info!(plot_count = result.plots.len(), "direct_op result plots");
     for (name, plot) in &result.plots {
-        println!("  Plot '{}': {:?}", name, plot.vectors.keys().collect::<Vec<_>>());
+        info!(plot = %name, vectors = ?plot.vectors.keys().collect::<Vec<_>>(), "direct_op vectors");
     }
-}
 
-#[test]
-fn direct_external_source() {
-    let ng = NgspiceInstance::new().expect("init failed");
+    let _ = ng.command("destroy all");
 
     // Set handler BEFORE loading circuit
     ng.set_vsrc_handler(|_name, _time| {
@@ -41,14 +52,18 @@ fn direct_external_source() {
         "R1 sig out 1k".into(),
         "R2 out 0 1k".into(),
         ".end".into(),
-    ]).expect("load failed");
+    ])
+    .expect("load failed");
 
     ng.command("tran 1e-4 1e-3").expect("tran failed");
 
     let result = ng.collect_results().expect("collect failed");
-    println!("External source test: {} plots", result.plots.len());
+    info!(
+        plot_count = result.plots.len(),
+        "direct_external_source plots"
+    );
     for (name, plot) in &result.plots {
-        println!("  Plot '{}': {:?}", name, plot.vectors.keys().collect::<Vec<_>>());
+        info!(plot = %name, vectors = ?plot.vectors.keys().collect::<Vec<_>>(), "direct_external_source vectors");
     }
 
     ng.clear_external_handlers();

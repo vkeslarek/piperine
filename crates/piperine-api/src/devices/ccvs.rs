@@ -1,7 +1,7 @@
 use crate::devices::Component;
 use crate::node::Node;
 use crate::num::Dynamic;
-use crate::spice::{SpiceElement, ElementRef, SpiceComponent};
+use crate::spice::{ElementRef, SpiceComponent, SpiceElement};
 use crate::units::Ohm;
 
 /// Current-Controlled Voltage Source (`H`).
@@ -38,11 +38,21 @@ impl Ccvs {
         }
     }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn node_plus(&self) -> &Node { &self.node_plus }
-    pub fn node_minus(&self) -> &Node { &self.node_minus }
-    pub fn v_source(&self) -> &str { &self.v_source }
-    pub fn transresistance(&self) -> &Dynamic<Ohm> { &self.transresistance }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn node_plus(&self) -> &Node {
+        &self.node_plus
+    }
+    pub fn node_minus(&self) -> &Node {
+        &self.node_minus
+    }
+    pub fn v_source(&self) -> &str {
+        &self.v_source
+    }
+    pub fn transresistance(&self) -> &Dynamic<Ohm> {
+        &self.transresistance
+    }
 }
 
 impl Component for Ccvs {}
@@ -61,9 +71,12 @@ impl SpiceComponent for Ccvs {
     fn into_spice(&self) -> String {
         format!(
             "{}{} {} {} {} {}",
-            Self::SYMBOL, self.name(),
-            self.node_plus(), self.node_minus(),
-            self.v_source(), self.transresistance()
+            Self::SYMBOL,
+            self.name(),
+            self.node_plus(),
+            self.node_minus(),
+            self.v_source(),
+            self.transresistance()
         )
     }
 }

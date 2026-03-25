@@ -19,6 +19,12 @@ piperine-ngspice = { path = "crates/piperine-ngspice" }
 piperine-pool = { path = "crates/piperine-pool" }
 serde = { workspace = true }
 bincode = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [build-dependencies]
 bindgen = "0.72.1"

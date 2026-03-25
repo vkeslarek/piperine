@@ -2,36 +2,27 @@ use crate::devices::Component;
 use crate::node::Node;
 use crate::num::Dynamic;
 use crate::spice::{ElementRef, SpiceComponent, SpiceElement};
-use crate::units::{Celsius, Dimensionless, Volt};
+use crate::units::{Dimensionless, Volt};
 use std::sync::Arc;
 
-/// Junction Field-Effect Transistor (`J`).
+/// MESFET (`Z`).
 ///
-/// `JXXXX nd ng ns mname <area=val> <off> <ic=vds,vgs> <temp=val> <m=val>`
-/// See ngspice manual §10.1.
+/// `ZXXXX ND NG NS MNAME <AREA=val> <OFF> <IC=VDS,VGS> <M=val>`
 #[derive(Debug)]
-pub struct Jfet {
+pub struct Mesfet {
     name: String,
     drain: Node,
     gate: Node,
     source: Node,
-    /// Model (required).
-    model: Arc<dyn crate::models::jfet::JfetModel + Send + Sync>,
-    /// AREA: Area factor.
+    model: Arc<dyn crate::models::mesfet::MesfetModel + Send + Sync>,
     area: Option<Dynamic<Dimensionless>>,
-    /// M: Multiplier.
     multiplier: Option<Dynamic<Dimensionless>>,
-    /// OFF: Initial condition hint.
     off: bool,
-    /// IC: Initial VDS.
     ic_vds: Option<Dynamic<Volt>>,
-    /// IC: Initial VGS.
     ic_vgs: Option<Dynamic<Volt>>,
-    /// TEMP: Instance temperature.
-    temp: Option<Dynamic<Celsius>>,
 }
 
-impl Clone for Jfet {
+impl Clone for Mesfet {
     fn clone(&self) -> Self {
         Self {
             name: self.name.clone(),
@@ -44,20 +35,19 @@ impl Clone for Jfet {
             off: self.off,
             ic_vds: self.ic_vds.clone(),
             ic_vgs: self.ic_vgs.clone(),
-            temp: self.temp.clone(),
         }
     }
 }
 
-impl Jfet {
-    pub const SYMBOL: &str = "J";
+impl Mesfet {
+    pub const SYMBOL: &str = "Z";
 
     pub fn new(
         name: impl Into<String>,
         drain: impl Into<Node>,
         gate: impl Into<Node>,
         source: impl Into<Node>,
-        model: Arc<dyn crate::models::jfet::JfetModel + Send + Sync>,
+        model: Arc<dyn crate::models::mesfet::MesfetModel + Send + Sync>,
     ) -> Self {
         Self {
             name: name.into(),
@@ -70,7 +60,6 @@ impl Jfet {
             off: false,
             ic_vds: None,
             ic_vgs: None,
-            temp: None,
         }
     }
 
@@ -95,31 +84,15 @@ impl Jfet {
         self.ic_vgs = Some(vgs.into());
         self
     }
-    pub fn with_temp(&mut self, v: impl Into<Dynamic<Celsius>>) -> &mut Self {
-        self.temp = Some(v.into());
-        self
-    }
 
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn drain(&self) -> &Node {
-        &self.drain
-    }
-    pub fn gate(&self) -> &Node {
-        &self.gate
-    }
-    pub fn source(&self) -> &Node {
-        &self.source
-    }
-    pub fn model_name(&self) -> &str {
-        self.model.model_name()
-    }
 }
 
-impl Component for Jfet {}
+impl Component for Mesfet {}
 
-impl SpiceElement for Jfet {
+impl SpiceElement for Mesfet {
     fn element_name(&self) -> &str {
         &self.name
     }
@@ -133,33 +106,46 @@ impl SpiceElement for Jfet {
     }
 }
 
-impl SpiceComponent for Jfet {
+impl SpiceComponent for Mesfet {
     fn into_spice(&self) -> String {
-        let model_name = self.model.model_name();
         let mut s = format!(
             "{}{} {} {} {} {}",
             Self::SYMBOL,
-            self.name(),
-            self.drain(),
-            self.gate(),
-            self.source(),
-            model_name
+            self.name,
+            self.drain,
+            self.gate,
+            self.source,
+            self.model.model_name()
         );
-        if let Some(a) = &self.area {
-            s.push_str(&format!(" AREA={}", a));
+        if let Some(v) = &self.area {
+            s.push_str(&format!(" AREA={v}"));
         }
-        if let Some(m) = &self.multiplier {
-            s.push_str(&format!(" M={}", m));
+        if let Some(v) = &self.multiplier {
+            s.push_str(&format!(" M={v}"));
         }
         if self.off {
             s.push_str(" OFF");
         }
         if let (Some(vds), Some(vgs)) = (&self.ic_vds, &self.ic_vgs) {
-            s.push_str(&format!(" IC={},{}", vds, vgs));
-        }
-        if let Some(t) = &self.temp {
-            s.push_str(&format!(" TEMP={}", t));
+            s.push_str(&format!(" IC={vds},{vgs}"));
         }
         s
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::mesfet::{DefaultModel, MesfetType};
+
+    #[test]
+    fn serializes_mesfet() {
+        let model = Arc::new(DefaultModel::new("ZM1", MesfetType::Nmf));
+        let mut z = Mesfet::new("1", "d", "g", "s", model);
+        z.with_area(2.0)
+            .with_off()
+            .with_ic(1.0, -0.2)
+            .with_multiplier(4.0);
+        assert_eq!(z.into_spice(), "Z1 d g s ZM1 AREA=2 M=4 OFF IC=1,-0.2");
     }
 }

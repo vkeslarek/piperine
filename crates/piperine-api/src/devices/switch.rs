@@ -1,6 +1,6 @@
 use crate::devices::Component;
 use crate::node::Node;
-use crate::spice::{SpiceElement, ElementRef, SpiceComponent};
+use crate::spice::{ElementRef, SpiceComponent, SpiceElement};
 use std::sync::Arc;
 
 /// Initial state of a switch.
@@ -29,8 +29,8 @@ impl Clone for VoltageSwitch {
     fn clone(&self) -> Self {
         Self {
             name: self.name.clone(),
-            node_plus: self.node_plus.clone(),
-            node_minus: self.node_minus.clone(),
+            node_plus: self.node_plus,
+            node_minus: self.node_minus,
             ctrl_plus: self.ctrl_plus.clone(),
             ctrl_minus: self.ctrl_minus.clone(),
             model: Arc::clone(&self.model),
@@ -66,8 +66,12 @@ impl VoltageSwitch {
         self
     }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn model_name(&self) -> &str { self.model.model_name() }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn model_name(&self) -> &str {
+        self.model.model_name()
+    }
 }
 
 impl Component for VoltageSwitch {}
@@ -91,9 +95,12 @@ impl SpiceComponent for VoltageSwitch {
         let model_name = self.model.model_name();
         let mut s = format!(
             "{}{} {} {} {} {} {}",
-            Self::SYMBOL, self.name(),
-            self.node_plus, self.node_minus,
-            self.ctrl_plus, self.ctrl_minus,
+            Self::SYMBOL,
+            self.name(),
+            self.node_plus,
+            self.node_minus,
+            self.ctrl_plus,
+            self.ctrl_minus,
             model_name
         );
         if let Some(state) = &self.initial_state {
@@ -125,8 +132,8 @@ impl Clone for CurrentSwitch {
     fn clone(&self) -> Self {
         Self {
             name: self.name.clone(),
-            node_plus: self.node_plus.clone(),
-            node_minus: self.node_minus.clone(),
+            node_plus: self.node_plus,
+            node_minus: self.node_minus,
             v_source: self.v_source.clone(),
             model: Arc::clone(&self.model),
             initial_state: self.initial_state,
@@ -159,9 +166,15 @@ impl CurrentSwitch {
         self
     }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn model_name(&self) -> &str { self.model.model_name() }
-    pub fn v_source(&self) -> &str { &self.v_source }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn model_name(&self) -> &str {
+        self.model.model_name()
+    }
+    pub fn v_source(&self) -> &str {
+        &self.v_source
+    }
 }
 
 impl Component for CurrentSwitch {}
@@ -185,9 +198,12 @@ impl SpiceComponent for CurrentSwitch {
         let model_name = self.model.model_name();
         let mut s = format!(
             "{}{} {} {} {} {}",
-            Self::SYMBOL, self.name(),
-            self.node_plus, self.node_minus,
-            self.v_source(), model_name
+            Self::SYMBOL,
+            self.name(),
+            self.node_plus,
+            self.node_minus,
+            self.v_source(),
+            model_name
         );
         if let Some(state) = &self.initial_state {
             match state {

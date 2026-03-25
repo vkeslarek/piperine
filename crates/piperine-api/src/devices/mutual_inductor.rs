@@ -1,6 +1,6 @@
 use crate::devices::Component;
 use crate::num::Dynamic;
-use crate::spice::{SpiceElement, ElementRef, SpiceComponent};
+use crate::spice::{ElementRef, SpiceComponent, SpiceElement};
 use crate::units::Dimensionless;
 
 /// Coupled (mutual) inductor element (`K`).
@@ -42,10 +42,18 @@ impl MutualInductor {
         }
     }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn inductor1(&self) -> &str { &self.inductor1 }
-    pub fn inductor2(&self) -> &str { &self.inductor2 }
-    pub fn coupling(&self) -> &Dynamic<Dimensionless> { &self.coupling }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn inductor1(&self) -> &str {
+        &self.inductor1
+    }
+    pub fn inductor2(&self) -> &str {
+        &self.inductor2
+    }
+    pub fn coupling(&self) -> &Dynamic<Dimensionless> {
+        &self.coupling
+    }
 }
 
 impl Component for MutualInductor {}
@@ -64,7 +72,11 @@ impl SpiceComponent for MutualInductor {
     fn into_spice(&self) -> String {
         format!(
             "{}{} {} {} {}",
-            Self::SYMBOL, self.name(), self.inductor1(), self.inductor2(), self.coupling()
+            Self::SYMBOL,
+            self.name(),
+            self.inductor1(),
+            self.inductor2(),
+            self.coupling()
         )
     }
 }

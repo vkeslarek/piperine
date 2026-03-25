@@ -1,7 +1,7 @@
 use crate::devices::Component;
 use crate::node::Node;
 use crate::num::Dynamic;
-use crate::spice::{SpiceElement, ElementRef, SpiceComponent};
+use crate::spice::{ElementRef, SpiceComponent, SpiceElement};
 use crate::units::Dimensionless;
 
 /// Voltage-Controlled Voltage Source (`E`).
@@ -40,12 +40,24 @@ impl Vcvs {
         }
     }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn node_plus(&self) -> &Node { &self.node_plus }
-    pub fn node_minus(&self) -> &Node { &self.node_minus }
-    pub fn ctrl_plus(&self) -> &Node { &self.ctrl_plus }
-    pub fn ctrl_minus(&self) -> &Node { &self.ctrl_minus }
-    pub fn gain(&self) -> &Dynamic<Dimensionless> { &self.gain }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn node_plus(&self) -> &Node {
+        &self.node_plus
+    }
+    pub fn node_minus(&self) -> &Node {
+        &self.node_minus
+    }
+    pub fn ctrl_plus(&self) -> &Node {
+        &self.ctrl_plus
+    }
+    pub fn ctrl_minus(&self) -> &Node {
+        &self.ctrl_minus
+    }
+    pub fn gain(&self) -> &Dynamic<Dimensionless> {
+        &self.gain
+    }
 }
 
 impl Component for Vcvs {}
@@ -64,9 +76,12 @@ impl SpiceComponent for Vcvs {
     fn into_spice(&self) -> String {
         format!(
             "{}{} {} {} {} {} {}",
-            Self::SYMBOL, self.name(),
-            self.node_plus(), self.node_minus(),
-            self.ctrl_plus(), self.ctrl_minus(),
+            Self::SYMBOL,
+            self.name(),
+            self.node_plus(),
+            self.node_minus(),
+            self.ctrl_plus(),
+            self.ctrl_minus(),
             self.gain()
         )
     }

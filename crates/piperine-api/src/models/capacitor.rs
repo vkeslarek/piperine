@@ -1,7 +1,9 @@
 use crate::devices::Capacitor;
 use crate::models::Model;
 use crate::spice::SpiceModel;
-use crate::units::{Celsius, Dimensionless, FaradPerMeter, FaradPerMeterSquared, Farad, Meter, UnitExt};
+use crate::units::{
+    Celsius, Dimensionless, Farad, FaradPerMeter, FaradPerMeterSquared, Meter, UnitExt,
+};
 use std::fmt::Debug;
 use std::sync::{Arc, LazyLock};
 
@@ -67,38 +69,106 @@ impl DefaultModel {
         }
     }
 
-    pub fn name(&self) -> &String { &self.name }
-    pub fn tnom(&self) -> &Celsius { &self.tnom }
-    pub fn cap(&self) -> &Farad { &self.cap }
-    pub fn cj(&self) -> &FaradPerMeterSquared { &self.cj }
-    pub fn cjsw(&self) -> &FaradPerMeter { &self.cjsw }
-    pub fn defw(&self) -> &Meter { &self.defw }
-    pub fn defl(&self) -> &Meter { &self.defl }
-    pub fn narrow(&self) -> &Meter { &self.narrow }
-    pub fn short(&self) -> &Meter { &self.short }
-    pub fn tc1(&self) -> &Dimensionless { &self.tc1 }
-    pub fn tc2(&self) -> &Dimensionless { &self.tc2 }
-    pub fn di(&self) -> &Dimensionless { &self.di }
-    pub fn thick(&self) -> &Meter { &self.thick }
-    pub fn vc1(&self) -> &Dimensionless { &self.vc1 }
-    pub fn vc2(&self) -> &Dimensionless { &self.vc2 }
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+    pub fn tnom(&self) -> &Celsius {
+        &self.tnom
+    }
+    pub fn cap(&self) -> &Farad {
+        &self.cap
+    }
+    pub fn cj(&self) -> &FaradPerMeterSquared {
+        &self.cj
+    }
+    pub fn cjsw(&self) -> &FaradPerMeter {
+        &self.cjsw
+    }
+    pub fn defw(&self) -> &Meter {
+        &self.defw
+    }
+    pub fn defl(&self) -> &Meter {
+        &self.defl
+    }
+    pub fn narrow(&self) -> &Meter {
+        &self.narrow
+    }
+    pub fn short(&self) -> &Meter {
+        &self.short
+    }
+    pub fn tc1(&self) -> &Dimensionless {
+        &self.tc1
+    }
+    pub fn tc2(&self) -> &Dimensionless {
+        &self.tc2
+    }
+    pub fn di(&self) -> &Dimensionless {
+        &self.di
+    }
+    pub fn thick(&self) -> &Meter {
+        &self.thick
+    }
+    pub fn vc1(&self) -> &Dimensionless {
+        &self.vc1
+    }
+    pub fn vc2(&self) -> &Dimensionless {
+        &self.vc2
+    }
 
-    pub fn with_tnom(&mut self, tnom: Celsius) -> &mut Self { self.tnom = tnom; self }
-    pub fn with_cap(&mut self, cap: Farad) -> &mut Self { self.cap = cap; self }
-    pub fn with_cj(&mut self, cj: FaradPerMeterSquared) -> &mut Self { self.cj = cj; self }
-    pub fn with_cjsw(&mut self, cjsw: FaradPerMeter) -> &mut Self { self.cjsw = cjsw; self }
-    pub fn with_defw(&mut self, defw: Meter) -> &mut Self { self.defw = defw; self }
-    pub fn with_defl(&mut self, defl: Meter) -> &mut Self { self.defl = defl; self }
-    pub fn with_narrow(&mut self, narrow: Meter) -> &mut Self { self.narrow = narrow; self }
-    pub fn with_short(&mut self, short: Meter) -> &mut Self { self.short = short; self }
-    pub fn with_temperature_coefficients(&mut self, tc1: Dimensionless, tc2: Dimensionless) -> &mut Self {
+    pub fn with_tnom(&mut self, tnom: Celsius) -> &mut Self {
+        self.tnom = tnom;
+        self
+    }
+    pub fn with_cap(&mut self, cap: Farad) -> &mut Self {
+        self.cap = cap;
+        self
+    }
+    pub fn with_cj(&mut self, cj: FaradPerMeterSquared) -> &mut Self {
+        self.cj = cj;
+        self
+    }
+    pub fn with_cjsw(&mut self, cjsw: FaradPerMeter) -> &mut Self {
+        self.cjsw = cjsw;
+        self
+    }
+    pub fn with_defw(&mut self, defw: Meter) -> &mut Self {
+        self.defw = defw;
+        self
+    }
+    pub fn with_defl(&mut self, defl: Meter) -> &mut Self {
+        self.defl = defl;
+        self
+    }
+    pub fn with_narrow(&mut self, narrow: Meter) -> &mut Self {
+        self.narrow = narrow;
+        self
+    }
+    pub fn with_short(&mut self, short: Meter) -> &mut Self {
+        self.short = short;
+        self
+    }
+    pub fn with_temperature_coefficients(
+        &mut self,
+        tc1: Dimensionless,
+        tc2: Dimensionless,
+    ) -> &mut Self {
         self.tc1 = tc1;
         self.tc2 = tc2;
         self
     }
-    pub fn with_di(&mut self, di: Dimensionless) -> &mut Self { self.di = di; self }
-    pub fn with_thick(&mut self, thick: Meter) -> &mut Self { self.thick = thick; self }
-    pub fn with_voltage_coefficients(&mut self, vc1: Dimensionless, vc2: Dimensionless) -> &mut Self {
+    pub fn with_di(&mut self, di: Dimensionless) -> &mut Self {
+        self.di = di;
+        self
+    }
+    pub fn with_thick(&mut self, thick: Meter) -> &mut Self {
+        self.thick = thick;
+        self
+    }
+    pub fn with_voltage_coefficients(
+        &mut self,
+        vc1: Dimensionless,
+        vc2: Dimensionless,
+    ) -> &mut Self {
         self.vc1 = vc1;
         self.vc2 = vc2;
         self

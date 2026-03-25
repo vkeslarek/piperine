@@ -1,9 +1,7 @@
 use crate::devices::Jfet;
 use crate::models::Model;
 use crate::spice::SpiceModel;
-use crate::units::{
-    Ampere, Celsius, Dimensionless, ElectronVolt, Farad, Ohm, UnitExt, Volt,
-};
+use crate::units::{Ampere, Celsius, Dimensionless, ElectronVolt, Farad, Ohm, UnitExt, Volt};
 use std::fmt::Debug;
 use std::sync::{Arc, LazyLock};
 
@@ -117,23 +115,69 @@ impl DefaultModel {
         }
     }
 
-    pub fn name(&self) -> &String { &self.name }
-    pub fn jfet_type(&self) -> JfetType { self.jfet_type }
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+    pub fn jfet_type(&self) -> JfetType {
+        self.jfet_type
+    }
 
-    pub fn with_vto(&mut self, vto: Volt) -> &mut Self { self.vto = vto; self }
-    pub fn with_beta(&mut self, beta: Dimensionless) -> &mut Self { self.beta = beta; self }
-    pub fn with_lambda(&mut self, lambda: Dimensionless) -> &mut Self { self.lambda = lambda; self }
-    pub fn with_rd(&mut self, rd: Ohm) -> &mut Self { self.rd = rd; self }
-    pub fn with_rs(&mut self, rs: Ohm) -> &mut Self { self.rs = rs; self }
-    pub fn with_is(&mut self, is: Ampere) -> &mut Self { self.is = is; self }
-    pub fn with_b(&mut self, b: Dimensionless) -> &mut Self { self.b = b; self }
-    pub fn with_cgs(&mut self, cgs: Farad) -> &mut Self { self.cgs = cgs; self }
-    pub fn with_cgd(&mut self, cgd: Farad) -> &mut Self { self.cgd = cgd; self }
-    pub fn with_pb(&mut self, pb: Volt) -> &mut Self { self.pb = pb; self }
-    pub fn with_fc(&mut self, fc: Dimensionless) -> &mut Self { self.fc = fc; self }
-    pub fn with_tnom(&mut self, tnom: Celsius) -> &mut Self { self.tnom = tnom; self }
-    pub fn with_eg(&mut self, eg: ElectronVolt) -> &mut Self { self.eg = eg; self }
-    pub fn with_xti(&mut self, xti: Dimensionless) -> &mut Self { self.xti = xti; self }
+    pub fn with_vto(&mut self, vto: Volt) -> &mut Self {
+        self.vto = vto;
+        self
+    }
+    pub fn with_beta(&mut self, beta: Dimensionless) -> &mut Self {
+        self.beta = beta;
+        self
+    }
+    pub fn with_lambda(&mut self, lambda: Dimensionless) -> &mut Self {
+        self.lambda = lambda;
+        self
+    }
+    pub fn with_rd(&mut self, rd: Ohm) -> &mut Self {
+        self.rd = rd;
+        self
+    }
+    pub fn with_rs(&mut self, rs: Ohm) -> &mut Self {
+        self.rs = rs;
+        self
+    }
+    pub fn with_is(&mut self, is: Ampere) -> &mut Self {
+        self.is = is;
+        self
+    }
+    pub fn with_b(&mut self, b: Dimensionless) -> &mut Self {
+        self.b = b;
+        self
+    }
+    pub fn with_cgs(&mut self, cgs: Farad) -> &mut Self {
+        self.cgs = cgs;
+        self
+    }
+    pub fn with_cgd(&mut self, cgd: Farad) -> &mut Self {
+        self.cgd = cgd;
+        self
+    }
+    pub fn with_pb(&mut self, pb: Volt) -> &mut Self {
+        self.pb = pb;
+        self
+    }
+    pub fn with_fc(&mut self, fc: Dimensionless) -> &mut Self {
+        self.fc = fc;
+        self
+    }
+    pub fn with_tnom(&mut self, tnom: Celsius) -> &mut Self {
+        self.tnom = tnom;
+        self
+    }
+    pub fn with_eg(&mut self, eg: ElectronVolt) -> &mut Self {
+        self.eg = eg;
+        self
+    }
+    pub fn with_xti(&mut self, xti: Dimensionless) -> &mut Self {
+        self.xti = xti;
+        self
+    }
     pub fn with_noise_parameters(&mut self, kf: Dimensionless, af: Dimensionless) -> &mut Self {
         self.kf = kf;
         self.af = af;

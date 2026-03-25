@@ -1,7 +1,7 @@
 use crate::devices::Component;
 use crate::node::Node;
 use crate::num::Dynamic;
-use crate::spice::{SpiceElement, ElementRef, SpiceComponent};
+use crate::spice::{ElementRef, SpiceComponent, SpiceElement};
 use crate::units::{Celsius, Dimensionless, Meter, MeterSquared, Volt};
 use std::sync::Arc;
 
@@ -94,23 +94,63 @@ impl Mosfet {
             source: source.into(),
             bulk: bulk.into(),
             model,
-            length: None, width: None, ad: None, as_area: None,
-            pd: None, ps: None, nrd: None, nrs: None,
-            multiplier: None, off: false,
-            ic_vds: None, ic_vgs: None, ic_vbs: None, temp: None,
+            length: None,
+            width: None,
+            ad: None,
+            as_area: None,
+            pd: None,
+            ps: None,
+            nrd: None,
+            nrs: None,
+            multiplier: None,
+            off: false,
+            ic_vds: None,
+            ic_vgs: None,
+            ic_vbs: None,
+            temp: None,
         }
     }
 
-    pub fn with_length(&mut self, v: impl Into<Dynamic<Meter>>) -> &mut Self { self.length = Some(v.into()); self }
-    pub fn with_width(&mut self, v: impl Into<Dynamic<Meter>>) -> &mut Self { self.width = Some(v.into()); self }
-    pub fn with_ad(&mut self, v: impl Into<Dynamic<MeterSquared>>) -> &mut Self { self.ad = Some(v.into()); self }
-    pub fn with_as(&mut self, v: impl Into<Dynamic<MeterSquared>>) -> &mut Self { self.as_area = Some(v.into()); self }
-    pub fn with_pd(&mut self, v: impl Into<Dynamic<Meter>>) -> &mut Self { self.pd = Some(v.into()); self }
-    pub fn with_ps(&mut self, v: impl Into<Dynamic<Meter>>) -> &mut Self { self.ps = Some(v.into()); self }
-    pub fn with_nrd(&mut self, v: impl Into<Dynamic<Dimensionless>>) -> &mut Self { self.nrd = Some(v.into()); self }
-    pub fn with_nrs(&mut self, v: impl Into<Dynamic<Dimensionless>>) -> &mut Self { self.nrs = Some(v.into()); self }
-    pub fn with_multiplier(&mut self, v: impl Into<Dynamic<Dimensionless>>) -> &mut Self { self.multiplier = Some(v.into()); self }
-    pub fn with_off(&mut self) -> &mut Self { self.off = true; self }
+    pub fn with_length(&mut self, v: impl Into<Dynamic<Meter>>) -> &mut Self {
+        self.length = Some(v.into());
+        self
+    }
+    pub fn with_width(&mut self, v: impl Into<Dynamic<Meter>>) -> &mut Self {
+        self.width = Some(v.into());
+        self
+    }
+    pub fn with_ad(&mut self, v: impl Into<Dynamic<MeterSquared>>) -> &mut Self {
+        self.ad = Some(v.into());
+        self
+    }
+    pub fn with_as(&mut self, v: impl Into<Dynamic<MeterSquared>>) -> &mut Self {
+        self.as_area = Some(v.into());
+        self
+    }
+    pub fn with_pd(&mut self, v: impl Into<Dynamic<Meter>>) -> &mut Self {
+        self.pd = Some(v.into());
+        self
+    }
+    pub fn with_ps(&mut self, v: impl Into<Dynamic<Meter>>) -> &mut Self {
+        self.ps = Some(v.into());
+        self
+    }
+    pub fn with_nrd(&mut self, v: impl Into<Dynamic<Dimensionless>>) -> &mut Self {
+        self.nrd = Some(v.into());
+        self
+    }
+    pub fn with_nrs(&mut self, v: impl Into<Dynamic<Dimensionless>>) -> &mut Self {
+        self.nrs = Some(v.into());
+        self
+    }
+    pub fn with_multiplier(&mut self, v: impl Into<Dynamic<Dimensionless>>) -> &mut Self {
+        self.multiplier = Some(v.into());
+        self
+    }
+    pub fn with_off(&mut self) -> &mut Self {
+        self.off = true;
+        self
+    }
     pub fn with_ic(
         &mut self,
         vds: impl Into<Dynamic<Volt>>,
@@ -122,14 +162,29 @@ impl Mosfet {
         self.ic_vbs = Some(vbs.into());
         self
     }
-    pub fn with_temp(&mut self, v: impl Into<Dynamic<Celsius>>) -> &mut Self { self.temp = Some(v.into()); self }
+    pub fn with_temp(&mut self, v: impl Into<Dynamic<Celsius>>) -> &mut Self {
+        self.temp = Some(v.into());
+        self
+    }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn drain(&self) -> &Node { &self.drain }
-    pub fn gate(&self) -> &Node { &self.gate }
-    pub fn source(&self) -> &Node { &self.source }
-    pub fn bulk(&self) -> &Node { &self.bulk }
-    pub fn model_name(&self) -> &str { self.model.model_name() }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn drain(&self) -> &Node {
+        &self.drain
+    }
+    pub fn gate(&self) -> &Node {
+        &self.gate
+    }
+    pub fn source(&self) -> &Node {
+        &self.source
+    }
+    pub fn bulk(&self) -> &Node {
+        &self.bulk
+    }
+    pub fn model_name(&self) -> &str {
+        self.model.model_name()
+    }
 }
 
 impl Component for Mosfet {}
@@ -153,24 +208,50 @@ impl SpiceComponent for Mosfet {
         let model_name = self.model.model_name();
         let mut s = format!(
             "{}{} {} {} {} {} {}",
-            Self::SYMBOL, self.name(),
-            self.drain(), self.gate(), self.source(), self.bulk(),
+            Self::SYMBOL,
+            self.name(),
+            self.drain(),
+            self.gate(),
+            self.source(),
+            self.bulk(),
             model_name
         );
-        if let Some(v) = &self.length { s.push_str(&format!(" L={}", v)); }
-        if let Some(v) = &self.width { s.push_str(&format!(" W={}", v)); }
-        if let Some(v) = &self.ad { s.push_str(&format!(" AD={}", v)); }
-        if let Some(v) = &self.as_area { s.push_str(&format!(" AS={}", v)); }
-        if let Some(v) = &self.pd { s.push_str(&format!(" PD={}", v)); }
-        if let Some(v) = &self.ps { s.push_str(&format!(" PS={}", v)); }
-        if let Some(v) = &self.nrd { s.push_str(&format!(" NRD={}", v)); }
-        if let Some(v) = &self.nrs { s.push_str(&format!(" NRS={}", v)); }
-        if let Some(v) = &self.multiplier { s.push_str(&format!(" M={}", v)); }
-        if self.off { s.push_str(" OFF"); }
+        if let Some(v) = &self.length {
+            s.push_str(&format!(" L={}", v));
+        }
+        if let Some(v) = &self.width {
+            s.push_str(&format!(" W={}", v));
+        }
+        if let Some(v) = &self.ad {
+            s.push_str(&format!(" AD={}", v));
+        }
+        if let Some(v) = &self.as_area {
+            s.push_str(&format!(" AS={}", v));
+        }
+        if let Some(v) = &self.pd {
+            s.push_str(&format!(" PD={}", v));
+        }
+        if let Some(v) = &self.ps {
+            s.push_str(&format!(" PS={}", v));
+        }
+        if let Some(v) = &self.nrd {
+            s.push_str(&format!(" NRD={}", v));
+        }
+        if let Some(v) = &self.nrs {
+            s.push_str(&format!(" NRS={}", v));
+        }
+        if let Some(v) = &self.multiplier {
+            s.push_str(&format!(" M={}", v));
+        }
+        if self.off {
+            s.push_str(" OFF");
+        }
         if let (Some(vds), Some(vgs), Some(vbs)) = (&self.ic_vds, &self.ic_vgs, &self.ic_vbs) {
             s.push_str(&format!(" IC={},{},{}", vds, vgs, vbs));
         }
-        if let Some(v) = &self.temp { s.push_str(&format!(" TEMP={}", v)); }
+        if let Some(v) = &self.temp {
+            s.push_str(&format!(" TEMP={}", v));
+        }
         s
     }
 }

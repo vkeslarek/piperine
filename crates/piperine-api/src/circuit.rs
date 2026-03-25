@@ -46,7 +46,7 @@ impl Circuit {
     /// Creates a new opaque node with an auto-generated name.
     pub fn node(&mut self) -> Node {
         let node = Node::auto();
-        self.nodes.insert(node.clone());
+        self.nodes.insert(node);
         node
     }
 
@@ -54,7 +54,7 @@ impl Circuit {
     /// The label is used as the SPICE node name for readability.
     pub fn node_label(&mut self, label: &str) -> Node {
         let node = Node::named(label);
-        self.nodes.insert(node.clone());
+        self.nodes.insert(node);
         node
     }
 
@@ -94,7 +94,6 @@ impl Circuit {
         self.initial_conditions.push((node, voltage));
         self
     }
-
 }
 
 impl ToSpiceNetlist for Circuit {
@@ -127,7 +126,9 @@ impl ToSpiceNetlist for Circuit {
 
         // .ic
         if !self.initial_conditions.is_empty() {
-            let ics: Vec<String> = self.initial_conditions.iter()
+            let ics: Vec<String> = self
+                .initial_conditions
+                .iter()
                 .map(|(node, v)| format!("V({})={}", node, v))
                 .collect();
             lines.push(format!(".ic {}", ics.join(" ")));
@@ -150,7 +151,7 @@ mod tests {
         let _vdd = circuit.node_label("vdd");
         circuit.param("rval", "10k");
 
-        let lines = circuit.to_netlist_lines();
+        let lines = circuit.to_spice_netlist();
         assert_eq!(lines[0], "Test Circuit");
         assert!(lines.contains(&".param rval=10k".to_string()));
         assert_eq!(lines.last().unwrap(), ".end");
@@ -162,7 +163,7 @@ mod tests {
         let out = circuit.node_label("out");
         circuit.ic(out, 2.5);
 
-        let lines = circuit.to_netlist_lines();
+        let lines = circuit.to_spice_netlist();
         assert!(lines.iter().any(|l| l.starts_with(".ic V(out)=2.5")));
     }
 }

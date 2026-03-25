@@ -10,9 +10,7 @@ use std::ffi::{CStr, CString};
 use std::ptr;
 use std::sync::Arc;
 
-use piperine_api::result::{
-    ComplexVector, Plot, PlotType, RealVector, SimulationResult, Vector,
-};
+use piperine_api::result::{ComplexVector, Plot, PlotType, RealVector, SimulationResult, Vector};
 
 /// Error type for ngspice operations.
 #[derive(Debug, thiserror::Error)]
@@ -85,7 +83,9 @@ impl NgspiceInstance {
             .map_err(|_| NgspiceError::CommandFailed(format!("invalid command string: {cmd}")))?;
         let ret = unsafe { ffi::ngSpice_Command(c_cmd.as_ptr() as *mut _) };
         if ret != 0 {
-            return Err(NgspiceError::CommandFailed(format!("command '{cmd}' returned {ret}")));
+            return Err(NgspiceError::CommandFailed(format!(
+                "command '{cmd}' returned {ret}"
+            )));
         }
         self.check_exit()?;
         Ok(())
@@ -98,10 +98,8 @@ impl NgspiceInstance {
             .iter()
             .map(|l| CString::new(l.as_str()).unwrap())
             .collect();
-        let mut ptrs: Vec<*mut libc::c_char> = c_strings
-            .iter()
-            .map(|cs| cs.as_ptr() as *mut _)
-            .collect();
+        let mut ptrs: Vec<*mut libc::c_char> =
+            c_strings.iter().map(|cs| cs.as_ptr() as *mut _).collect();
         ptrs.push(ptr::null_mut()); // NULL terminator
 
         let ret = unsafe { ffi::ngSpice_Circ(ptrs.as_mut_ptr()) };
@@ -134,7 +132,9 @@ impl NgspiceInstance {
         if ptr.is_null() {
             return Err(NgspiceError::NullPointer("ngSpice_CurPlot".into()));
         }
-        Ok(unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned())
+        Ok(unsafe { CStr::from_ptr(ptr) }
+            .to_string_lossy()
+            .into_owned())
     }
 
     /// Get all plot names.
@@ -150,7 +150,11 @@ impl NgspiceInstance {
             if entry.is_null() {
                 break;
             }
-            plots.push(unsafe { CStr::from_ptr(entry) }.to_string_lossy().into_owned());
+            plots.push(
+                unsafe { CStr::from_ptr(entry) }
+                    .to_string_lossy()
+                    .into_owned(),
+            );
             i += 1;
         }
         plots
@@ -170,7 +174,11 @@ impl NgspiceInstance {
             if entry.is_null() {
                 break;
             }
-            vecs.push(unsafe { CStr::from_ptr(entry) }.to_string_lossy().into_owned());
+            vecs.push(
+                unsafe { CStr::from_ptr(entry) }
+                    .to_string_lossy()
+                    .into_owned(),
+            );
             i += 1;
         }
         vecs
@@ -205,7 +213,9 @@ impl NgspiceInstance {
                 data,
             }))
         } else {
-            Err(NgspiceError::NullPointer(format!("vector '{name}' has no data")))
+            Err(NgspiceError::NullPointer(format!(
+                "vector '{name}' has no data"
+            )))
         }
     }
 
@@ -221,7 +231,9 @@ impl NgspiceInstance {
             for vname in &vec_names {
                 let full_name = format!("{pname}.{vname}");
                 match self.get_vector(&full_name) {
-                    Ok(v) => { vectors.insert(vname.clone(), v); }
+                    Ok(v) => {
+                        vectors.insert(vname.clone(), v);
+                    }
                     Err(_) => {
                         // Try without plot prefix
                         if let Ok(v) = self.get_vector(vname) {
@@ -232,11 +244,14 @@ impl NgspiceInstance {
             }
 
             let plot_type = classify_plot(pname);
-            plots.insert(pname.clone(), Plot {
-                name: pname.clone(),
-                plot_type,
-                vectors,
-            });
+            plots.insert(
+                pname.clone(),
+                Plot {
+                    name: pname.clone(),
+                    plot_type,
+                    vectors,
+                },
+            );
         }
 
         // Extract measurements from log
@@ -257,16 +272,36 @@ impl NgspiceInstance {
         std::mem::take(&mut *log)
     }
 
-    /// Parse .meas results from the log output.
+    /// Parse meas results from the log output.
+    ///
+    /// ngspice outputs measurements in interactive mode as:
+    ///   `ppm_0              =  5.00000e+00`
+    /// or with extra context:
+    ///   `ppm_0              =  5.00000e+00  from=  0  to=  1.00000e-03`
+    ///
+    /// Failed measurements output `1e+30`, which we pass through as-is.
     fn extract_measurements(&self) -> HashMap<String, f64> {
         let log = self.state.log.lock().unwrap();
         let mut measurements = HashMap::new();
         for line in log.iter() {
-            // ngspice outputs measurements as: "name = value"
-            if let Some(eq_pos) = line.find('=') {
-                let key = line[..eq_pos].trim();
-                let val_str = line[eq_pos + 1..].trim();
+            let mut raw = line.trim();
+            if let Some(rest) = raw.strip_prefix("stdout ") {
+                raw = rest;
+            } else if let Some(rest) = raw.strip_prefix("stderr ") {
+                raw = rest;
+            }
+
+            if let Some(eq_pos) = raw.find('=') {
+                let key = raw[..eq_pos].split_whitespace().next().unwrap_or("").trim();
+                if key.is_empty() || !key.to_ascii_lowercase().starts_with("ppm_") {
+                    continue;
+                }
+
+                // Take only the first whitespace-delimited token after '='
+                let after_eq = raw[eq_pos + 1..].trim();
+                let val_str = after_eq.split_whitespace().next().unwrap_or("");
                 if let Ok(v) = val_str.parse::<f64>() {
+                    measurements.insert(key.to_string(), v);
                     measurements.insert(key.to_lowercase(), v);
                 }
             }
@@ -286,14 +321,25 @@ impl NgspiceInstance {
 
 fn classify_plot(name: &str) -> PlotType {
     let lower = name.to_lowercase();
-    if lower.contains("op") { PlotType::OpPoint }
-    else if lower.contains("dc") { PlotType::DcSweep }
-    else if lower.contains("ac") { PlotType::AcAnalysis }
-    else if lower.contains("tran") { PlotType::Transient }
-    else if lower.contains("noise") { PlotType::Noise }
-    else if lower.contains("pz") { PlotType::PoleZero }
-    else if lower.contains("sens") { PlotType::Sensitivity }
-    else if lower.contains("tf") { PlotType::TransferFunction }
-    else if lower.contains("sp") { PlotType::SParameter }
-    else { PlotType::Unknown }
+    if lower.contains("op") {
+        PlotType::OpPoint
+    } else if lower.contains("dc") {
+        PlotType::DcSweep
+    } else if lower.contains("ac") {
+        PlotType::AcAnalysis
+    } else if lower.contains("tran") {
+        PlotType::Transient
+    } else if lower.contains("noise") {
+        PlotType::Noise
+    } else if lower.contains("pz") {
+        PlotType::PoleZero
+    } else if lower.contains("sens") {
+        PlotType::Sensitivity
+    } else if lower.contains("tf") {
+        PlotType::TransferFunction
+    } else if lower.contains("sp") {
+        PlotType::SParameter
+    } else {
+        PlotType::Unknown
+    }
 }

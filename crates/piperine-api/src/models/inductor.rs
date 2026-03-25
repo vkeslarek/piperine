@@ -52,29 +52,74 @@ impl DefaultModel {
         }
     }
 
-    pub fn name(&self) -> &String { &self.name }
-    pub fn tnom(&self) -> &Celsius { &self.tnom }
-    pub fn ind(&self) -> &Henry { &self.ind }
-    pub fn csect(&self) -> &MeterSquared { &self.csect }
-    pub fn dia(&self) -> &Meter { &self.dia }
-    pub fn length(&self) -> &Meter { &self.length }
-    pub fn tc1(&self) -> &Dimensionless { &self.tc1 }
-    pub fn tc2(&self) -> &Dimensionless { &self.tc2 }
-    pub fn nt(&self) -> &Dimensionless { &self.nt }
-    pub fn mu(&self) -> &Dimensionless { &self.mu }
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+    pub fn tnom(&self) -> &Celsius {
+        &self.tnom
+    }
+    pub fn ind(&self) -> &Henry {
+        &self.ind
+    }
+    pub fn csect(&self) -> &MeterSquared {
+        &self.csect
+    }
+    pub fn dia(&self) -> &Meter {
+        &self.dia
+    }
+    pub fn length(&self) -> &Meter {
+        &self.length
+    }
+    pub fn tc1(&self) -> &Dimensionless {
+        &self.tc1
+    }
+    pub fn tc2(&self) -> &Dimensionless {
+        &self.tc2
+    }
+    pub fn nt(&self) -> &Dimensionless {
+        &self.nt
+    }
+    pub fn mu(&self) -> &Dimensionless {
+        &self.mu
+    }
 
-    pub fn with_tnom(&mut self, tnom: Celsius) -> &mut Self { self.tnom = tnom; self }
-    pub fn with_ind(&mut self, ind: Henry) -> &mut Self { self.ind = ind; self }
-    pub fn with_csect(&mut self, csect: MeterSquared) -> &mut Self { self.csect = csect; self }
-    pub fn with_dia(&mut self, dia: Meter) -> &mut Self { self.dia = dia; self }
-    pub fn with_length(&mut self, length: Meter) -> &mut Self { self.length = length; self }
-    pub fn with_temperature_coefficients(&mut self, tc1: Dimensionless, tc2: Dimensionless) -> &mut Self {
+    pub fn with_tnom(&mut self, tnom: Celsius) -> &mut Self {
+        self.tnom = tnom;
+        self
+    }
+    pub fn with_ind(&mut self, ind: Henry) -> &mut Self {
+        self.ind = ind;
+        self
+    }
+    pub fn with_csect(&mut self, csect: MeterSquared) -> &mut Self {
+        self.csect = csect;
+        self
+    }
+    pub fn with_dia(&mut self, dia: Meter) -> &mut Self {
+        self.dia = dia;
+        self
+    }
+    pub fn with_length(&mut self, length: Meter) -> &mut Self {
+        self.length = length;
+        self
+    }
+    pub fn with_temperature_coefficients(
+        &mut self,
+        tc1: Dimensionless,
+        tc2: Dimensionless,
+    ) -> &mut Self {
         self.tc1 = tc1;
         self.tc2 = tc2;
         self
     }
-    pub fn with_nt(&mut self, nt: Dimensionless) -> &mut Self { self.nt = nt; self }
-    pub fn with_mu(&mut self, mu: Dimensionless) -> &mut Self { self.mu = mu; self }
+    pub fn with_nt(&mut self, nt: Dimensionless) -> &mut Self {
+        self.nt = nt;
+        self
+    }
+    pub fn with_mu(&mut self, mu: Dimensionless) -> &mut Self {
+        self.mu = mu;
+        self
+    }
 }
 
 impl Model for DefaultModel {

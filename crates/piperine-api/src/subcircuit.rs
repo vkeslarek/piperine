@@ -51,7 +51,7 @@ impl SubCircuit {
     pub fn internal_node(&mut self) -> Node {
         self.node_counter += 1;
         let node = Node::named(format!("n{}", self.node_counter));
-        self.internal_nodes.insert(node.clone());
+        self.internal_nodes.insert(node);
         node
     }
 
@@ -111,14 +111,17 @@ impl SubCircuit {
 
     /// Consumes this SubCircuit and returns its elements with prefixed names/nodes.
     pub(crate) fn flatten_with_prefix(self, prefix: &str) -> Vec<Box<dyn SpiceElement>> {
-        self.elements.into_iter().map(|elem| {
-            let wrapper = PrefixedElement {
-                inner: elem,
-                prefix: prefix.to_string(),
-                internal_nodes: self.internal_nodes.clone(),
-            };
-            Box::new(wrapper) as Box<dyn SpiceElement>
-        }).collect()
+        self.elements
+            .into_iter()
+            .map(|elem| {
+                let wrapper = PrefixedElement {
+                    inner: elem,
+                    prefix: prefix.to_string(),
+                    internal_nodes: self.internal_nodes.clone(),
+                };
+                Box::new(wrapper) as Box<dyn SpiceElement>
+            })
+            .collect()
     }
 
     /// Consumes this SubCircuit and returns its raw elements (no prefix).
@@ -167,7 +170,7 @@ impl crate::spice::SpiceComponent for PrefixedElement {
         for internal in &self.internal_nodes {
             let old_name = internal.spice_name();
             let new_name = format!("{}_{}", self.prefix, old_name);
-            result = result.replace(old_name, &new_name);
+            result = result.replace(&old_name, &new_name);
         }
 
         result

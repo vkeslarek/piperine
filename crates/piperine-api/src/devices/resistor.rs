@@ -2,7 +2,7 @@ use crate::devices::Component;
 use crate::models::resistor::ResistorModel;
 use crate::node::Node;
 use crate::num::Dynamic;
-use crate::spice::{SpiceElement, ElementRef, SpiceComponent};
+use crate::spice::{ElementRef, SpiceComponent, SpiceElement};
 use crate::units::{Dimensionless, Kelvin, Meter, Ohm};
 use std::sync::Arc;
 
@@ -43,7 +43,7 @@ pub struct Resistor {
 }
 
 impl Resistor {
-    pub const SYMBOL : &str = "R";
+    pub const SYMBOL: &str = "R";
     pub const DEFAULT_WIDTH: Meter = 10e-6;
     pub const DEFAULT_LENGTH: Meter = 10e-6;
     pub const DEFAULT_SCALE: Dimensionless = 1.0;
@@ -249,30 +249,48 @@ impl SpiceElement for Resistor {
 
 impl SpiceComponent for Resistor {
     fn into_spice(&self) -> String {
-        let mut spice = format!(
-            "{} {} {} {}",
-            Self::SYMBOL,
-            self.name(),
-            self.node_plus(),
-            self.node_minus()
-        );
+        // Resistors come in two forms:
+        //   Simple:       R<name> n+ n- <value> [TC1=...] [TC2=...] [TEMP=...] ...
+        //   Semiconductor: R<name> n+ n- <model> [RES=...] [L=...] [W=...] ...
+        //
+        // Use simple form unless the model has non-zero sheet resistance (RSH ≠ 0),
+        // which is a reliable indicator that geometry-based computation is intended.
+        // For the DEFAULT model (RSH=0) this produces the compact positional form.
+        let use_model = self.model.model_name() != "default";
 
-        // Required parameter: resistance
-        spice.push_str(&format!(" RES={}", self.resistance()));
+        let mut spice = if use_model {
+            // Semiconductor form: symbol+name n+ n- model RES=value
+            format!(
+                "{}{} {} {} {} RES={}",
+                Self::SYMBOL,
+                self.name(),
+                self.node_plus(),
+                self.node_minus(),
+                self.model.model_name(),
+                self.resistance()
+            )
+        } else {
+            // Simple form: symbol+name n+ n- value
+            format!(
+                "{}{} {} {} {}",
+                Self::SYMBOL,
+                self.name(),
+                self.node_plus(),
+                self.node_minus(),
+                self.resistance()
+            )
+        };
 
-        // Optional parameters
+        // Optional parameters (valid in both simple and semiconductor form)
         if let Some(ac) = self.ac() {
-            spice.push_str(&format!(" ACRES={}", ac));
+            spice.push_str(&format!(" ACRESIST={}", ac));
         }
-
         if let Some(temp) = self.temp() {
             spice.push_str(&format!(" TEMP={}", temp));
         }
-
         if let Some(delta_temp) = self.delta_temp() {
             spice.push_str(&format!(" DTEMP={}", delta_temp));
         }
-
         if let Some(tc1) = self.tc1() {
             spice.push_str(&format!(" TC1={}", tc1));
         }

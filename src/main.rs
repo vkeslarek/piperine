@@ -1,20 +1,26 @@
 use std::env;
+use tracing::{error, info};
 
 fn main() {
+    let _ = tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_max_level(tracing::Level::INFO)
+        .try_init();
+
     let args: Vec<String> = env::args().collect();
 
     // Worker mode: when invoked with --worker, enter the IPC loop
     if args.iter().any(|a| a == "--worker") {
         if let Err(e) = piperine_ngspice_worker() {
-            eprintln!("worker error: {e}");
+            error!(error = %e, "worker error");
             std::process::exit(1);
         }
         return;
     }
 
     // Normal mode: demonstrate the API
-    println!("Piperine — ergonomic ngspice wrapper");
-    println!("Use as a library, or pass --worker for subprocess mode.");
+    info!("Piperine - ergonomic ngspice wrapper");
+    info!("Use as a library, or pass --worker for subprocess mode.");
 }
 
 fn piperine_ngspice_worker() -> Result<(), Box<dyn std::error::Error>> {

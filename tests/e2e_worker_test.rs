@@ -2,8 +2,20 @@
 
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
+use std::sync::Once;
 
 use piperine_ngspice::protocol::*;
+use tracing::{info, warn};
+
+fn init_tracing_for_tests() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let _ = tracing_subscriber::fmt()
+            .with_test_writer()
+            .with_max_level(tracing::Level::INFO)
+            .try_init();
+    });
+}
 
 fn write_msg<T: serde::Serialize>(w: &mut impl Write, msg: &T) {
     let bytes = bincode::serialize(msg).unwrap();
@@ -23,6 +35,7 @@ fn read_msg<T: serde::de::DeserializeOwned>(r: &mut impl Read) -> T {
 
 #[test]
 fn worker_op_simulation() {
+    init_tracing_for_tests();
     let exe = env!("CARGO_BIN_EXE_piperine");
 
     let mut child = Command::new(exe)
@@ -52,32 +65,39 @@ fn worker_op_simulation() {
         ".end".to_string(),
     ];
 
-    write_msg(&mut stdin, &MainToWorker::RunSimulation {
-        netlist_lines: netlist,
-        control_commands: vec!["op".to_string()],
-        has_external_sources: false,
-    });
+    write_msg(
+        &mut stdin,
+        &MainToWorker::RunSimulation {
+            netlist_lines: netlist,
+            control_commands: vec!["op".to_string()],
+            has_external_sources: false,
+        },
+    );
 
     // Read result
     let result: WorkerToMain = read_msg(&mut stdout);
     match result {
-        WorkerToMain::SimulationComplete { plots, measurements, log } => {
-            eprintln!("Plots: {}", plots.len());
+        WorkerToMain::SimulationComplete {
+            plots,
+            measurements,
+            log,
+        } => {
+            info!(plots = plots.len(), "worker OP plots");
             for (name, plot) in &plots {
-                eprintln!("  Plot '{}': {} vectors", name, plot.vectors.len());
+                info!(plot = %name, vectors = plot.vectors.len(), "worker OP plot vectors");
                 for (vname, vdata) in &plot.vectors {
                     match vdata {
                         VectorData::Real { data, .. } => {
-                            eprintln!("    {}: {:?}", vname, &data[..data.len().min(5)]);
+                            info!(vector = %vname, sample = ?&data[..data.len().min(5)], "worker OP real vector sample");
                         }
                         VectorData::Complex { data, .. } => {
-                            eprintln!("    {} (complex): {} points", vname, data.len());
+                            info!(vector = %vname, points = data.len(), "worker OP complex vector");
                         }
                     }
                 }
             }
-            eprintln!("Measurements: {:?}", measurements);
-            eprintln!("Log lines: {}", log.len());
+            info!(measurements = ?measurements, "worker OP measurements");
+            info!(log_lines = log.len(), "worker OP log lines");
 
             // Verify we got at least one plot with vectors
             assert!(!plots.is_empty(), "should have at least one plot");
@@ -90,7 +110,7 @@ fn worker_op_simulation() {
                         if let VectorData::Real { data, .. } = vd {
                             if let Some(&v) = data.first() {
                                 let ok = (v - 5.0).abs() < 0.01;
-                                eprintln!("    v(out) = {v}, expected ~5.0, ok={ok}");
+                                info!(v_out = v, ok, "worker OP v(out) check");
                                 return ok;
                             }
                         }
@@ -100,7 +120,7 @@ fn worker_op_simulation() {
             });
             // Don't hard-fail on value check since plot naming varies
             if !has_out {
-                eprintln!("WARNING: could not verify v(out) value");
+                warn!("could not verify v(out) value");
             }
         }
         WorkerToMain::Error { message } => {
@@ -117,6 +137,7 @@ fn worker_op_simulation() {
 
 #[test]
 fn worker_dc_sweep() {
+    init_tracing_for_tests();
     let exe = env!("CARGO_BIN_EXE_piperine");
 
     let mut child = Command::new(exe)
@@ -134,27 +155,28 @@ fn worker_dc_sweep() {
     let _: WorkerToMain = read_msg(&mut stdout);
 
     // DC sweep
-    write_msg(&mut stdin, &MainToWorker::RunSimulation {
-        netlist_lines: vec![
-            "DC Sweep Test".to_string(),
-            "V1 in 0 DC 0".to_string(),
-            "R1 in out 1k".to_string(),
-            "R2 out 0 1k".to_string(),
-            ".end".to_string(),
-        ],
-        control_commands: vec![
-            "dc V1 0 10 1".to_string(),
-        ],
-        has_external_sources: false,
-    });
+    write_msg(
+        &mut stdin,
+        &MainToWorker::RunSimulation {
+            netlist_lines: vec![
+                "DC Sweep Test".to_string(),
+                "V1 in 0 DC 0".to_string(),
+                "R1 in out 1k".to_string(),
+                "R2 out 0 1k".to_string(),
+                ".end".to_string(),
+            ],
+            control_commands: vec!["dc V1 0 10 1".to_string()],
+            has_external_sources: false,
+        },
+    );
 
     let result: WorkerToMain = read_msg(&mut stdout);
     match result {
         WorkerToMain::SimulationComplete { plots, .. } => {
             assert!(!plots.is_empty(), "should have plots from DC sweep");
-            eprintln!("DC sweep plots: {}", plots.len());
+            info!(plots = plots.len(), "worker DC sweep plots");
             for (name, plot) in &plots {
-                eprintln!("  '{}': {} vecs", name, plot.vectors.len());
+                info!(plot = %name, vectors = plot.vectors.len(), "worker DC sweep plot vectors");
             }
         }
         WorkerToMain::Error { message } => panic!("DC sweep error: {message}"),
@@ -164,4 +186,3 @@ fn worker_dc_sweep() {
     write_msg(&mut stdin, &MainToWorker::Shutdown);
     child.wait().unwrap();
 }
-

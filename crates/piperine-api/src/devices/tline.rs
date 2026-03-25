@@ -1,7 +1,7 @@
 use crate::devices::Component;
 use crate::node::Node;
 use crate::num::Dynamic;
-use crate::spice::{SpiceElement, ElementRef, SpiceComponent};
+use crate::spice::{ElementRef, SpiceComponent, SpiceElement};
 use crate::units::{Dimensionless, Hertz, Ohm, Second};
 
 /// Lossless transmission line (`T`).
@@ -43,12 +43,21 @@ impl TransmissionLine {
             port2_plus: port2_plus.into(),
             port2_minus: port2_minus.into(),
             z0: z0.into(),
-            td: None, frequency: None, nl: None,
+            td: None,
+            frequency: None,
+            nl: None,
         }
     }
 
-    pub fn with_td(&mut self, v: impl Into<Dynamic<Second>>) -> &mut Self { self.td = Some(v.into()); self }
-    pub fn with_frequency(&mut self, f: impl Into<Dynamic<Hertz>>, nl: Option<Dimensionless>) -> &mut Self {
+    pub fn with_td(&mut self, v: impl Into<Dynamic<Second>>) -> &mut Self {
+        self.td = Some(v.into());
+        self
+    }
+    pub fn with_frequency(
+        &mut self,
+        f: impl Into<Dynamic<Hertz>>,
+        nl: Option<Dimensionless>,
+    ) -> &mut Self {
         self.frequency = Some(f.into());
         if let Some(n) = nl {
             self.nl = Some(n.into());
@@ -56,8 +65,12 @@ impl TransmissionLine {
         self
     }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn z0(&self) -> &Dynamic<Ohm> { &self.z0 }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn z0(&self) -> &Dynamic<Ohm> {
+        &self.z0
+    }
 }
 
 impl Component for TransmissionLine {}
@@ -76,9 +89,12 @@ impl SpiceComponent for TransmissionLine {
     fn into_spice(&self) -> String {
         let mut s = format!(
             "{}{} {} {} {} {} Z0={}",
-            Self::SYMBOL, self.name(),
-            self.port1_plus, self.port1_minus,
-            self.port2_plus, self.port2_minus,
+            Self::SYMBOL,
+            self.name(),
+            self.port1_plus,
+            self.port1_minus,
+            self.port2_plus,
+            self.port2_minus,
             self.z0
         );
         if let Some(td) = &self.td {

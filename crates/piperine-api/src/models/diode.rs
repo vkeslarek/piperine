@@ -204,29 +204,94 @@ impl DefaultModel {
         }
     }
 
-    pub fn name(&self) -> &String { &self.name }
+    pub fn name(&self) -> &String {
+        &self.name
+    }
 
-    pub fn with_is(&mut self, is: Ampere) -> &mut Self { self.is = is; self }
-    pub fn with_jsw(&mut self, jsw: Ampere) -> &mut Self { self.jsw = jsw; self }
-    pub fn with_n(&mut self, n: Dimensionless) -> &mut Self { self.n = n; self }
-    pub fn with_rs(&mut self, rs: Ohm) -> &mut Self { self.rs = rs; self }
-    pub fn with_bv(&mut self, bv: Volt) -> &mut Self { self.bv = Some(bv); self }
-    pub fn with_ibv(&mut self, ibv: Ampere) -> &mut Self { self.ibv = ibv; self }
-    pub fn with_nbv(&mut self, nbv: Dimensionless) -> &mut Self { self.nbv = nbv; self }
-    pub fn with_ikf(&mut self, ikf: Ampere) -> &mut Self { self.ikf = ikf; self }
-    pub fn with_ikr(&mut self, ikr: Ampere) -> &mut Self { self.ikr = ikr; self }
-    pub fn with_cjo(&mut self, cjo: Farad) -> &mut Self { self.cjo = cjo; self }
-    pub fn with_cjp(&mut self, cjp: Farad) -> &mut Self { self.cjp = cjp; self }
-    pub fn with_fc(&mut self, fc: Dimensionless) -> &mut Self { self.fc = fc; self }
-    pub fn with_m(&mut self, m: Dimensionless) -> &mut Self { self.m = m; self }
-    pub fn with_mjsw(&mut self, mjsw: Dimensionless) -> &mut Self { self.mjsw = mjsw; self }
-    pub fn with_vj(&mut self, vj: Volt) -> &mut Self { self.vj = vj; self }
-    pub fn with_tt(&mut self, tt: Second) -> &mut Self { self.tt = tt; self }
-    pub fn with_eg(&mut self, eg: ElectronVolt) -> &mut Self { self.eg = eg; self }
-    pub fn with_tnom(&mut self, tnom: Celsius) -> &mut Self { self.tnom = tnom; self }
-    pub fn with_xti(&mut self, xti: Dimensionless) -> &mut Self { self.xti = xti; self }
-    pub fn with_tlev(&mut self, tlev: u32) -> &mut Self { self.tlev = tlev; self }
-    pub fn with_tlevc(&mut self, tlevc: u32) -> &mut Self { self.tlevc = tlevc; self }
+    pub fn with_is(&mut self, is: Ampere) -> &mut Self {
+        self.is = is;
+        self
+    }
+    pub fn with_jsw(&mut self, jsw: Ampere) -> &mut Self {
+        self.jsw = jsw;
+        self
+    }
+    pub fn with_n(&mut self, n: Dimensionless) -> &mut Self {
+        self.n = n;
+        self
+    }
+    pub fn with_rs(&mut self, rs: Ohm) -> &mut Self {
+        self.rs = rs;
+        self
+    }
+    pub fn with_bv(&mut self, bv: Volt) -> &mut Self {
+        self.bv = Some(bv);
+        self
+    }
+    pub fn with_ibv(&mut self, ibv: Ampere) -> &mut Self {
+        self.ibv = ibv;
+        self
+    }
+    pub fn with_nbv(&mut self, nbv: Dimensionless) -> &mut Self {
+        self.nbv = nbv;
+        self
+    }
+    pub fn with_ikf(&mut self, ikf: Ampere) -> &mut Self {
+        self.ikf = ikf;
+        self
+    }
+    pub fn with_ikr(&mut self, ikr: Ampere) -> &mut Self {
+        self.ikr = ikr;
+        self
+    }
+    pub fn with_cjo(&mut self, cjo: Farad) -> &mut Self {
+        self.cjo = cjo;
+        self
+    }
+    pub fn with_cjp(&mut self, cjp: Farad) -> &mut Self {
+        self.cjp = cjp;
+        self
+    }
+    pub fn with_fc(&mut self, fc: Dimensionless) -> &mut Self {
+        self.fc = fc;
+        self
+    }
+    pub fn with_m(&mut self, m: Dimensionless) -> &mut Self {
+        self.m = m;
+        self
+    }
+    pub fn with_mjsw(&mut self, mjsw: Dimensionless) -> &mut Self {
+        self.mjsw = mjsw;
+        self
+    }
+    pub fn with_vj(&mut self, vj: Volt) -> &mut Self {
+        self.vj = vj;
+        self
+    }
+    pub fn with_tt(&mut self, tt: Second) -> &mut Self {
+        self.tt = tt;
+        self
+    }
+    pub fn with_eg(&mut self, eg: ElectronVolt) -> &mut Self {
+        self.eg = eg;
+        self
+    }
+    pub fn with_tnom(&mut self, tnom: Celsius) -> &mut Self {
+        self.tnom = tnom;
+        self
+    }
+    pub fn with_xti(&mut self, xti: Dimensionless) -> &mut Self {
+        self.xti = xti;
+        self
+    }
+    pub fn with_tlev(&mut self, tlev: u32) -> &mut Self {
+        self.tlev = tlev;
+        self
+    }
+    pub fn with_tlevc(&mut self, tlevc: u32) -> &mut Self {
+        self.tlevc = tlevc;
+        self
+    }
     pub fn with_noise_parameters(&mut self, kf: Dimensionless, af: Dimensionless) -> &mut Self {
         self.kf = kf;
         self.af = af;

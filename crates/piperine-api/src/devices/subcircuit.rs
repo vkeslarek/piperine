@@ -1,6 +1,6 @@
 use crate::devices::Component;
 use crate::node::Node;
-use crate::spice::{SpiceElement, ElementRef, SpiceComponent};
+use crate::spice::{ElementRef, SpiceComponent, SpiceElement};
 
 /// Subcircuit instance (`X`).
 ///
@@ -37,10 +37,18 @@ impl SubCircuitInstance {
         self
     }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn subcircuit_name(&self) -> &str { &self.subcircuit_name }
-    pub fn nodes(&self) -> &[Node] { &self.nodes }
-    pub fn params(&self) -> &[(String, String)] { &self.params }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn subcircuit_name(&self) -> &str {
+        &self.subcircuit_name
+    }
+    pub fn nodes(&self) -> &[Node] {
+        &self.nodes
+    }
+    pub fn params(&self) -> &[(String, String)] {
+        &self.params
+    }
 }
 
 impl Component for SubCircuitInstance {}
@@ -60,7 +68,8 @@ impl SpiceComponent for SubCircuitInstance {
         let nodes_str: Vec<String> = self.nodes.iter().map(|n| n.to_string()).collect();
         let mut s = format!(
             "{}{} {} {}",
-            Self::SYMBOL, self.name(),
+            Self::SYMBOL,
+            self.name(),
             nodes_str.join(" "),
             self.subcircuit_name()
         );

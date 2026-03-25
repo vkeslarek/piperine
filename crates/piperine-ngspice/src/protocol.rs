@@ -15,10 +15,7 @@ pub enum MainToWorker {
         has_external_sources: bool,
     },
     /// Response to an external source callback request.
-    ExternalSourceValue {
-        request_id: u64,
-        value: f64,
-    },
+    ExternalSourceValue { request_id: u64, value: f64 },
     /// Reset the ngspice instance (destroy all circuits).
     Reset,
     /// Shut down the worker process.
@@ -41,9 +38,7 @@ pub enum WorkerToMain {
         time: f64,
     },
     /// Worker reports an error.
-    Error {
-        message: String,
-    },
+    Error { message: String },
     /// Ack for Reset / other commands.
     Ok,
     /// Worker is ready after initialization.

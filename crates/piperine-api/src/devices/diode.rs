@@ -1,7 +1,7 @@
 use crate::devices::Component;
 use crate::node::Node;
 use crate::num::Dynamic;
-use crate::spice::{SpiceElement, ElementRef, SpiceComponent};
+use crate::spice::{ElementRef, SpiceComponent, SpiceElement};
 use crate::units::{Celsius, Dimensionless, Meter, Volt};
 use std::sync::Arc;
 
@@ -38,8 +38,8 @@ impl Clone for Diode {
     fn clone(&self) -> Self {
         Self {
             name: self.name.clone(),
-            node_plus: self.node_plus.clone(),
-            node_minus: self.node_minus.clone(),
+            node_plus: self.node_plus,
+            node_minus: self.node_minus,
             model: Arc::clone(&self.model),
             area: self.area.clone(),
             pj: self.pj.clone(),
@@ -66,30 +66,78 @@ impl Diode {
             node_plus: node_plus.into(),
             node_minus: node_minus.into(),
             model,
-            area: None, pj: None, off: false, ic: None,
-            temp: None, delta_temp: None, multiplier: None,
+            area: None,
+            pj: None,
+            off: false,
+            ic: None,
+            temp: None,
+            delta_temp: None,
+            multiplier: None,
         }
     }
 
-    pub fn with_area(&mut self, v: impl Into<Dynamic<Dimensionless>>) -> &mut Self { self.area = Some(v.into()); self }
-    pub fn with_pj(&mut self, v: impl Into<Dynamic<Meter>>) -> &mut Self { self.pj = Some(v.into()); self }
-    pub fn with_off(&mut self) -> &mut Self { self.off = true; self }
-    pub fn with_ic(&mut self, v: impl Into<Dynamic<Volt>>) -> &mut Self { self.ic = Some(v.into()); self }
-    pub fn with_temp(&mut self, v: impl Into<Dynamic<Celsius>>) -> &mut Self { self.temp = Some(v.into()); self }
-    pub fn with_delta_temp(&mut self, v: impl Into<Dynamic<Celsius>>) -> &mut Self { self.delta_temp = Some(v.into()); self }
-    pub fn with_multiplier(&mut self, v: impl Into<Dynamic<Dimensionless>>) -> &mut Self { self.multiplier = Some(v.into()); self }
+    pub fn with_area(&mut self, v: impl Into<Dynamic<Dimensionless>>) -> &mut Self {
+        self.area = Some(v.into());
+        self
+    }
+    pub fn with_pj(&mut self, v: impl Into<Dynamic<Meter>>) -> &mut Self {
+        self.pj = Some(v.into());
+        self
+    }
+    pub fn with_off(&mut self) -> &mut Self {
+        self.off = true;
+        self
+    }
+    pub fn with_ic(&mut self, v: impl Into<Dynamic<Volt>>) -> &mut Self {
+        self.ic = Some(v.into());
+        self
+    }
+    pub fn with_temp(&mut self, v: impl Into<Dynamic<Celsius>>) -> &mut Self {
+        self.temp = Some(v.into());
+        self
+    }
+    pub fn with_delta_temp(&mut self, v: impl Into<Dynamic<Celsius>>) -> &mut Self {
+        self.delta_temp = Some(v.into());
+        self
+    }
+    pub fn with_multiplier(&mut self, v: impl Into<Dynamic<Dimensionless>>) -> &mut Self {
+        self.multiplier = Some(v.into());
+        self
+    }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn node_plus(&self) -> &Node { &self.node_plus }
-    pub fn node_minus(&self) -> &Node { &self.node_minus }
-    pub fn model_name(&self) -> &str { self.model.model_name() }
-    pub fn area(&self) -> Option<&Dynamic<Dimensionless>> { self.area.as_ref() }
-    pub fn pj(&self) -> Option<&Dynamic<Meter>> { self.pj.as_ref() }
-    pub fn is_off(&self) -> bool { self.off }
-    pub fn ic(&self) -> Option<&Dynamic<Volt>> { self.ic.as_ref() }
-    pub fn temp(&self) -> Option<&Dynamic<Celsius>> { self.temp.as_ref() }
-    pub fn delta_temp(&self) -> Option<&Dynamic<Celsius>> { self.delta_temp.as_ref() }
-    pub fn multiplier(&self) -> Option<&Dynamic<Dimensionless>> { self.multiplier.as_ref() }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn node_plus(&self) -> &Node {
+        &self.node_plus
+    }
+    pub fn node_minus(&self) -> &Node {
+        &self.node_minus
+    }
+    pub fn model_name(&self) -> &str {
+        self.model.model_name()
+    }
+    pub fn area(&self) -> Option<&Dynamic<Dimensionless>> {
+        self.area.as_ref()
+    }
+    pub fn pj(&self) -> Option<&Dynamic<Meter>> {
+        self.pj.as_ref()
+    }
+    pub fn is_off(&self) -> bool {
+        self.off
+    }
+    pub fn ic(&self) -> Option<&Dynamic<Volt>> {
+        self.ic.as_ref()
+    }
+    pub fn temp(&self) -> Option<&Dynamic<Celsius>> {
+        self.temp.as_ref()
+    }
+    pub fn delta_temp(&self) -> Option<&Dynamic<Celsius>> {
+        self.delta_temp.as_ref()
+    }
+    pub fn multiplier(&self) -> Option<&Dynamic<Dimensionless>> {
+        self.multiplier.as_ref()
+    }
 }
 
 impl Component for Diode {}
@@ -113,15 +161,33 @@ impl SpiceComponent for Diode {
         let model_name = self.model.model_name();
         let mut s = format!(
             "{}{} {} {} {}",
-            Self::SYMBOL, self.name(), self.node_plus(), self.node_minus(), model_name
+            Self::SYMBOL,
+            self.name(),
+            self.node_plus(),
+            self.node_minus(),
+            model_name
         );
-        if let Some(a) = &self.area { s.push_str(&format!(" AREA={}", a)); }
-        if let Some(pj) = &self.pj { s.push_str(&format!(" PJ={}", pj)); }
-        if self.off { s.push_str(" OFF"); }
-        if let Some(ic) = &self.ic { s.push_str(&format!(" IC={}", ic)); }
-        if let Some(t) = &self.temp { s.push_str(&format!(" TEMP={}", t)); }
-        if let Some(dt) = &self.delta_temp { s.push_str(&format!(" DTEMP={}", dt)); }
-        if let Some(m) = &self.multiplier { s.push_str(&format!(" M={}", m)); }
+        if let Some(a) = &self.area {
+            s.push_str(&format!(" AREA={}", a));
+        }
+        if let Some(pj) = &self.pj {
+            s.push_str(&format!(" PJ={}", pj));
+        }
+        if self.off {
+            s.push_str(" OFF");
+        }
+        if let Some(ic) = &self.ic {
+            s.push_str(&format!(" IC={}", ic));
+        }
+        if let Some(t) = &self.temp {
+            s.push_str(&format!(" TEMP={}", t));
+        }
+        if let Some(dt) = &self.delta_temp {
+            s.push_str(&format!(" DTEMP={}", dt));
+        }
+        if let Some(m) = &self.multiplier {
+            s.push_str(&format!(" M={}", m));
+        }
         s
     }
 }

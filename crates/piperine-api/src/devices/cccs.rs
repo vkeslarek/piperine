@@ -1,7 +1,7 @@
 use crate::devices::Component;
 use crate::node::Node;
 use crate::num::Dynamic;
-use crate::spice::{SpiceElement, ElementRef, SpiceComponent};
+use crate::spice::{ElementRef, SpiceComponent, SpiceElement};
 use crate::units::Dimensionless;
 
 /// Current-Controlled Current Source (`F`).
@@ -46,12 +46,24 @@ impl Cccs {
         self
     }
 
-    pub fn name(&self) -> &str { &self.name }
-    pub fn node_plus(&self) -> &Node { &self.node_plus }
-    pub fn node_minus(&self) -> &Node { &self.node_minus }
-    pub fn v_source(&self) -> &str { &self.v_source }
-    pub fn gain(&self) -> &Dynamic<Dimensionless> { &self.gain }
-    pub fn multiplier(&self) -> Option<&Dynamic<Dimensionless>> { self.multiplier.as_ref() }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn node_plus(&self) -> &Node {
+        &self.node_plus
+    }
+    pub fn node_minus(&self) -> &Node {
+        &self.node_minus
+    }
+    pub fn v_source(&self) -> &str {
+        &self.v_source
+    }
+    pub fn gain(&self) -> &Dynamic<Dimensionless> {
+        &self.gain
+    }
+    pub fn multiplier(&self) -> Option<&Dynamic<Dimensionless>> {
+        self.multiplier.as_ref()
+    }
 }
 
 impl Component for Cccs {}
@@ -70,9 +82,12 @@ impl SpiceComponent for Cccs {
     fn into_spice(&self) -> String {
         let mut s = format!(
             "{}{} {} {} {} {}",
-            Self::SYMBOL, self.name(),
-            self.node_plus(), self.node_minus(),
-            self.v_source(), self.gain()
+            Self::SYMBOL,
+            self.name(),
+            self.node_plus(),
+            self.node_minus(),
+            self.v_source(),
+            self.gain()
         );
         if let Some(m) = &self.multiplier {
             s.push_str(&format!(" m={}", m));
