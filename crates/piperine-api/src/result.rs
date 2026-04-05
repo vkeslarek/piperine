@@ -328,6 +328,8 @@ pub enum PlotType {
     Sensitivity,
     TransferFunction,
     SParameter,
+    Distortion,
+    Pss,
     Unknown,
 }
 
