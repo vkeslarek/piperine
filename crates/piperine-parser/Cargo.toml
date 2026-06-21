@@ -1,0 +1,10 @@
+[package]
+name = "piperine-parser"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "cvaf"
+
+[dependencies]
+thiserror = "2.0"

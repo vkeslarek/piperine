@@ -1,0 +1,13 @@
+Version: 5
+
+Source: https://git.code.sf.net/p/ngspice/ngspice.git
+Matching-Pattern: refs/tags/ngspice-(\d{2}(?:|\.\d+|_\d+|-\d))
+Dversionmangle: s/\+ds(\.?\d+)?$//
+Mode: git
+Uversionmangle: s/(\d)[_\.\-\+]?((RC|rc|pre|dev|beta|alpha)\.?\d*)$/$1~$2/; s/\.\.//; s/_/\./;  s/-/\./
+
+Component: doc
+Source: https://git.code.sf.net/p/ngspice/ngspice-manuals.git
+Matching-Pattern: refs/tags/ngspice-(\d{2}(?:|\.\d+|_\d+|-\d))
+Dversionmangle: s/\+ds(\.?\d+)?$//
+Mode: git

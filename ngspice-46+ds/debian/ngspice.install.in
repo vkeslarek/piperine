@@ -1,0 +1,10 @@
+usr/bin
+usr/lib/@DEB_HOST_MULTIARCH@/ngspice/*.cm
+usr/lib/@DEB_HOST_MULTIARCH@/ngspice/ivlng.vpi
+usr/lib/@DEB_HOST_MULTIARCH@/ngspice/ivlng*.so
+usr/share/man
+usr/share/ngspice/scripts/ciderinit
+usr/share/ngspice/scripts/d*
+usr/share/ngspice/scripts/ghnggen
+usr/share/ngspice/scripts/s*
+usr/share/ngspice/scripts/vlnggen

@@ -1,0 +1,139 @@
+Source: ngspice
+Section: electronics
+Maintainer: Debian Electronics Team <pkg-electronics-devel@alioth-lists.debian.net>
+Uploaders:
+ Gudjon I. Gudjonsson <gudjon@gudjon.org>,
+ Andreas Tille <tille@debian.org>,
+ Carsten Schoenert <c.schoenert@t-online.de>,
+Build-Depends:
+ automake,
+ bison,
+ blt-dev,
+ debhelper-compat (= 13),
+ flex,
+ gfortran,
+ libedit-dev,
+ libncurses-dev,
+ libreadline-dev,
+ libtool,
+ libxaw7-dev,
+ tcl8.6,
+ tcl8.6-dev,
+ texinfo,
+ tk8.6,
+ tk8.6-dev,
+Build-Depends-Indep:
+ imagemagick,
+ lyx (>= 2.4),
+ texlive,
+ texlive-lang-greek,
+ texlive-latex-extra,
+ texlive-plain-generic,
+ texlive-science,
+Rules-Requires-Root: binary-targets
+Standards-Version: 4.7.3
+Vcs-Browser: https://salsa.debian.org/electronics-team/ngspice
+Vcs-Git: https://salsa.debian.org/electronics-team/ngspice.git
+Homepage: https://ngspice.sourceforge.io
+
+Package: ngspice
+Architecture: any
+Depends:
+ ${misc:Depends},
+ ${shlibs:Depends},
+Suggests:
+ ngspice-doc (>= ${source:Version}),
+Description: Spice circuit simulator
+ NGSpice is a mixed-level/mixed-signal circuit simulator.  Its code is based on
+ three open source software packages:
+ Spice3f5, Cider1b1 and Xspice. It supports compiled Verilog-A models through
+ the built-in OSDI interface.
+ .
+ NGSpice is part of gEDA project, a full GPL'd suite of Electronic Design
+ Automation tools.
+
+Package: ngspice-dev
+Section: libdevel
+Architecture: any
+Depends:
+ blt-dev,
+ tclspice (= ${binary:Version}),
+ ${misc:Depends},
+Description: Spice circuit simulator - development files for ngspice and tclspice
+ NGSpice is a mixed-level/mixed-signal circuit simulator. Its code is based on
+ three open source software packages:
+ Spice3f5, Cider1b1 and Xspice. It supports compiled Verilog-A models through
+ the built-in OSDI interface.
+ .
+ Use this package in case you need to compile own Xspice models as a dynamic
+ library with a file extension *.cm. Those files need to be placed into
+ /usr/lib/$(multiarch)/ngspice and will be loaded by the ngspice executable.
+ .
+ This package contains the development header files for libspice and own
+ ngspice dynamic library models.
+
+Package: tclspice
+Section: libs
+Architecture: any
+Depends:
+ blt,
+ ngspice (= ${binary:Version}),
+ tcl8.6,
+ tk8.6,
+ ${misc:Depends},
+ ${shlibs:Depends},
+Description: NGSpice library for Tcl
+ This package provides the NGSpice simulation engine for your Tcl-scripts by the
+ library libspice.
+ All spice directives are available as Tcl functions and it features some new
+ commands that are useful for the integration into the Tcl environment. It
+ includes Xspice. It supports also compiled Verilog-A models through the
+ built-in OSDI interface.
+ GUI is handled by Tk using BLT vectors.
+
+Package: ngspice-doc
+Section: doc
+Architecture: all
+Multi-Arch: foreign
+Depends:
+ ${misc:Depends},
+Description: Documentation for the NGspice circuit simulator
+ NGspice is a mixed-level/mixed-signal circuit simulator.
+ Its code is based on three open source software packages:
+ Spice3f5, Cider1b1 and Xspice. It supports compiled Verilog-A models through
+ the built-in OSDI interface.
+ .
+ NGSpice is part of gEDA project, a full GPL'd suite of Electronic Design
+ Automation tools.
+ .
+ This package contains the PDF and HTML documentation.
+
+Package: libngspice0
+Section: libs
+Architecture: any
+Multi-Arch: same
+Depends:
+ ${misc:Depends},
+ ${shlibs:Depends},
+Description: Spice circuit simulator - library
+ NGspice is a mixed-level/mixed-signal circuit simulator. Its code is based on
+ three open source software packages:
+ Spice3f5, Cider1b1 and Xspice. It supports compiled Verilog-A models through
+ the built-in OSDI interface.
+ .
+ This package contains the NGSpice library.
+
+Package: libngspice0-dev
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Depends:
+ libngspice0 (= ${binary:Version}),
+ ${misc:Depends},
+Description: Spice circuit simulator - development files for libngspice
+ NGSpice is a mixed-level/mixed-signal circuit simulator. Its code is based on
+ three open source software packages:
+ Spice3f5, Cider1b1 and Xspice. It supports compiled Verilog-A models through
+ the built-in OSDI interface.
+ .
+ This package contains the development files for NGSpice.

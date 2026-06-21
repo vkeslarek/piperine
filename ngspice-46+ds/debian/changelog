@@ -1,0 +1,828 @@
+ngspice (46+ds-1~bpo13+1) trixie-backports; urgency=medium
+
+  * Rebuild for trixie-backports.
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Wed, 15 Apr 2026 16:55:01 +0200
+
+ngspice (46+ds-1) unstable; urgency=medium
+
+  * [401e55f] d/control: Bump B-D on lyx to 2.4
+  * [89fb3ed] New upstream version 46+ds
+  * [4047ba3] Drop current patch queue
+  * [45ca9f8] d/control: Drop field Priority: optional
+  * [4aa3ade] d/control: Update Standards-Version to 4.7.3
+    No further changes needed.
+  * [13c8780] d/copyright: Update the copyright information
+  * [8b283ef] autopkgtest: Use pkgconf instead of pkg-config
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Mon, 30 Mar 2026 20:29:25 +0200
+
+ngspice (45.2+ds-1~bpo13+1) trixie-backports; urgency=medium
+
+  * Rebuild for trixie-backports.
+  * [4adbfa6] d/gbp.conf: Adjust to debian/trixie
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Fri, 12 Sep 2025 16:16:40 +0200
+ 
+ngspice (45.2+ds-1) unstable; urgency=medium
+
+  * [157fa47] d/watch: Convert to version 5
+  * [31f0511] New upstream version 45.2+ds
+  * [cd5bc04] Rebuild patch queue from patch-queue branch
+    Added patches:
+    fixes/spelling-Fix-misspelled-word-occurred.patch
+  * [f3135fa] d/copyright: Update the copyright information
+  * [3b97d81] d/control: Increase Standards-Version to 4.7.2
+    No further changes needed.
+  * [3351f3a] d/ngspice.install.in: Install also scripts/ghnggen
+  * [1039af9] d/libngspice0.symbols: Add new symbols in 45.2+ds
+  * [0042a74] d/tclspice.lintian-overrides: Add additional override
+  * [5cb2a01] d/libngspice0.lintian-overrides: Additional override
+  * [6acbce8] d/rules: Also remove executable permission on *.cm files
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Fri, 12 Sep 2025 13:58:13 +0200
+
+ngspice (44.2+ds-1) unstable; urgency=medium
+
+  * [edd6342] New upstream version 44.2+ds
+  * [1faaeab] Rebuild patch queue from patch-queue branch
+    Dropped patch (included upstream):
+    fixes/Make-source-buildable-out-of-tree.patch
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sun, 12 Jan 2025 10:19:15 +0200
+
+ngspice (44+ds-1) unstable; urgency=medium
+
+  * [806a117] New upstream version 44+ds
+  * [fe79eb4] Rebuild patch queue from patch-queue branch
+    Added patch:
+    fixes//Make-source-buildable-out-of-tree.patch
+    Dropped patch (included upstream):
+    fixes/examples-Turn-some-file-encoding-into-UTF-8.patch
+    Renamed patch:
+    spelling-Fix-misspelled-word-unkownwq.patch
+    -> spelling-Fix-misspelled-word-unkown.patch
+  * [68e8af9] ngspice.docs: Update files to install
+  * [80d4c1e] d/rules: Also remove *.a files in debian/tmp
+  * [97161f0] d/ngspice.install.in: Install new *.so files
+  * [0eca610] d/control: Increase Standards-Version to 4.7.0
+    No further changes needed.
+  * [3f35be6] d/libngspice0.lintian-overrides: Drop sequencer file
+  * [08f1716] d/tclspice.lintian-overrides: Adjust content
+  * [a8fe0b4] d/libngspice0.symbols: Add new symbols in 44+ds
+  * [4506cc6] d/rules: Remove execution rights on *.so and *.vpi files
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Tue, 07 Jan 2025 18:20:59 +0200
+
+ngspice (43+ds-1) unstable; urgency=medium
+
+  * [27ef54f] New upstream version 43+ds
+  * [a66babc] Rebuild patch queue from patch-queue branch
+    Added patch:
+    fixes/examples-Turn-some-file-encoding-into-UTF-8.patch
+    Removed patches (included upstream):
+    fixes/main.c-Include-.-misc-tilde.h-if-HAVE_BSDEDITLINE-is-set.patch
+    fixes/spelling-Fix-misspelled-word-Unkown.patch
+    fixes/spelling-Fix-misspelled-word-initalization.patch
+    fixes/spelling-Fix-misspelled-word-positve.patch
+  * [915ca1a] d/control: Add B-D on libreadline-dev
+  * [2f34021] d/libngspice0.install.in: Be more lazy on lib versions
+  * [5016dbb] d/libngspice0.symbols: Add new symbol
+  * [0b39323] d/ngspice.lintian-overrides: Add files to ignore
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Tue, 16 Jul 2024 16:54:50 +0200
+
+ngspice (42+ds-3) unstable; urgency=medium
+
+  * [6cc983c] Rebuild patch queue from patch-queue branch
+    Added patch:
+    fixes/main.c-Include-.-misc-tilde.h-if-HAVE_BSDEDITLINE-is-set.patch
+    (Closes: #1066482)
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sun, 17 Mar 2024 06:49:30 +0100
+
+ngspice (42+ds-2) unstable; urgency=medium
+
+  * [24ea4b5] d/rules: Move to override_dh_installexamples-arch
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sun, 31 Dec 2023 08:48:54 +0100
+
+ngspice (42+ds-1) unstable; urgency=medium
+
+  * [cbf8ec8] New upstream version 42+ds
+  * [8952631] Add patch from patch queue branch
+    Added patches:
+    fixes/spelling-Fix-misspelled-word-Onkown.patch
+    fixes/spelling-Fix-misspelled-word-initalization.patch
+    fixes/spelling-Fix-misspelled-word-positve.patch
+  * [97a0aa2] d/rules: Add new configure options
+    Added new configure options, using now --enable-klu and --enable-osdi
+    additional to the existing ones.
+  * [cc2da3e] d/control: Extend package description due OSDI interface
+  * [1ec77cf] d/ngspice.examples: Add sequencer file for ngspice
+  * [a0f6797] d/tclspice.examples: Add sequencer for tclspice
+  * [153ff3f] d/control: Move parts over to override_dh_installexamples
+  * [dd8a8cc] d/libngspice0.symbols: Adjust symbol list for 42+ds
+  * [ae06873] d/rules: Add target override_dh_cleani
+    (Closes: #1046496)
+  * [e6abfce] d/ngspice.install.in: Adding new shipped script
+  * [bc2076b] d/tclspice.lintian-overrides: Add additional override
+  * [33fd1ce] d/libngspice0.lintian-overrides: Add override
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sat, 30 Dec 2023 20:56:35 +0100
+
+ngspice (41+ds-1) unstable; urgency=medium
+
+  * [492e094] New upstream version 41+ds
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Wed, 16 Aug 2023 21:06:03 +0200
+
+ngspice (40+ds-2) unstable; urgency=medium
+
+  * Upload to unstable
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Mon, 12 Jun 2023 18:33:44 +0200
+
+ngspice (40+ds-1) experimental; urgency=medium
+
+  * [d6ed660] New upstream version 40+ds
+  * [80cacf8] d/control: ngspice - Remove dep on install-info
+    (Closes: #1013836)
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sun, 02 Apr 2023 11:55:48 +0200
+
+ngspice (39.3+ds-1) unstable; urgency=medium
+
+  * [a013609] New upstream version 39.3+ds
+  * [0901cae] d/control: Increase Standards-Version to 4.6.2
+    No further changes needed.
+  * [faf59a7] d/copyright: Update year data, remove non existing data
+  * [8fde77f] d/control: Use libncurses-dev within Build-Depends
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sun, 05 Feb 2023 14:44:35 +0100
+
+ngspice (38+ds-1) unstable; urgency=medium
+
+  * [2717ce3] New upstream version 38+ds
+  * [caf5638] d/copyright: Incorporate upstream changes
+  * [e337314] d/control: Update upstream Homepage data
+  * [8cfef52] d/control: Increase Standards-Version to 4.6.1
+    No further changes needed.
+  * [20c0d94] d/libngspice0.symbols: Adjust symbol list for 38+ds
+  * [bfa010d] d/control: Remove obsolete field Autobuild
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sat, 29 Oct 2022 19:50:03 +0200
+
+ngspice (37+ds-1) unstable; urgency=medium
+
+  * [7b8d014] d/gbp.conf: Remove some files from filtering
+    Due information from the upstream author Holger Vogt some files are not
+    needed to get removed. The files previously removed are licensed as
+    Public Domain.
+  * [527ed9b] New upstream version 37+ds
+  * [2229711] Drop patch queue
+    No patching of the source is currently needed.
+    removed patch (fixed upstream):
+    fixes/spelling-Fix-misspelled-word-Instnace.patch
+    fixes/tcl-testbench-x-.sh-Use-bash-within-shebang.patch
+  * [2e83469] d/ngspice.docs: Add upstream notes about lib models
+  * [e86af9e] d/copyright: Update info for model libraries
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sun, 29 May 2022 18:12:42 +0200
+
+ngspice (36+ds-1) unstable; urgency=medium
+
+  * [ef23797] d/gbp.conf: Add more files to exclude list
+    Upstream added some examples files which doesn't seems to be licensed
+    by a DFSG compliant license. So we filter them out.
+  * [38b970a] New upstream version 36+ds
+  * [b22fd7c] Add patch from patch queue branch
+    Added patches:
+    fixes/spelling-Fix-misspelled-word-Instnace.patch
+  * [ff20288] d/control: Increase Standards-Version to 4.6.0
+    No further changes needed.
+  * [ed92eab] d/copyright: Updating section Files-Excluded
+    Document the new added files we have excluded while tarball import.
+  * [f98e83a] d/ngspice.docs: Include file README.optran to install
+  * [a07b218] d/rules: Correct path to spice2poly.cm within examples
+    One of the tclspice examples uses spice2poly.cm, which is installed into
+    the directory /usr/lib/$(DEB_HOST_MULTIARCH)/ngspice, and we need to
+    adjust the folder within the example.
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sat, 01 Jan 2022 19:54:42 +0100
+
+ngspice (35+ds-1) unstable; urgency=medium
+
+  * [53d3331] d/libngspice0.symbols: Mark symbols as optional
+    Some symbols on ppc64el will get optimized out by the used -O3 flag on
+    that architecture. Marking the symbols in question as optional prevents
+    FTBFS for this architecture.
+    (Closes: #984677)
+  * [0d1da9e] d/watch: fix wrong substitution syntax
+  * [92691d9] d/control: Mark ngspice-dev as Multi-Arch: same
+  * [d71d66e] New upstream version 35+ds
+  * [a0c11db] d/libngspice0.install.in: Be more flexible on versions
+    Upstream now does a proper versioning of the libngspice library, thus we
+    can't use a static file name any more for installing libngspice.so*.
+  * [4e64882] Drop the current patch queue
+    No patch queue is currently needed.
+  * [f95af61] Revert "d/control: Mark ngspice-dev as Multi-Arch: same"
+    The depending package tclspice for ngspice-dev isn't multi archified due
+    architecture specific build, thus we can't set 'Multi-Arch: same' on
+    ngspice-dev.
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Mon, 09 Aug 2021 20:06:56 +0200
+
+ngspice (34+ds-1) unstable; urgency=medium
+
+  * [b1e7a76] New upstream version 34+ds
+  * [4806596] rebuild patch queue from patch-queue branch
+    added patch:
+    fixes/spelling-fix-misspelled-word-Interal.patch
+
+    removed patch (fixed upstream):
+    fixes/spelling-fix-misspelled-word-Unusual.patch
+  * [cfa1142] d/rules: Don't include  in default options
+    Using this configure option in the base variable for all configuration
+    would provoke a wrongly included symbol history_file into the shared
+    library now. Some protection from upstream to prevent this is on the way,
+    for now we can prevent this issue by only using --with-editline for the
+    configuration of the ngspice CLI application.
+  * [0764715] ngspice-dev.install.in: adjust sequencer file
+    Upstream isn't installing quite any header for ngspice-dev any more as
+    they are all useless for the intended purpose.
+  * [2228ee6] ngspice.install.in: also adjust this sequencer file
+    The old folder contrib/ is gone and can't get installed, also the only
+    C file we have installed previously.
+  * [40f9f1d] d/rules: remove config.h before dh_install
+    The config.h file shouldn't even get installed, but for sure we don't
+    want to ship this file, remove the file before the install sequence is
+    getting called.
+  * [792a81b] ngspice.lintian-overrides: dropping non needed file
+    This override isn't needed any more, the root for the override isn't
+    included now.
+  * [e2136be] d/copyright: update due upstream changes
+  * [23cf97a] d/libngspice0.symbols: adding newly introduced symbols
+  * [9f01b16] d/control: increase Standards-Version to 4.5.1
+    No further changes needed.
+  * [11efc5b] d/u/metadata: starting with basic metadata
+  * [8e206f1] d/control: increase dh version to 13
+  * [55f0ba6] d/watch: updating watch logic
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sun, 31 Jan 2021 12:43:30 +0100
+
+ngspice (33+ds-1) unstable; urgency=medium
+
+  * [e1f7a31] New upstream version 33+ds
+  * [7c0e82e] rebuild patch queue from patch-queue branch
+    added patch:
+    fixes/spelling-fix-misspelled-word-Unusual.patch
+
+    removed patch (fixed upstream):
+    fixes/spelling-fix-multiple-misspelled-words.patch
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sun, 18 Oct 2020 19:24:59 +0200
+
+ngspice (32.2+ds-1) unstable; urgency=medium
+
+  * [47b30a3] New upstream version 32.2+ds
+  * [c9ed6b7] d/rules: More split of into -arch/-indep targets
+    Doing some more visible separation of the steps for the -indep and -arch
+    related for building and installation.
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Thu, 14 May 2020 11:33:20 +0200
+
+ngspice (32+ds-1) unstable; urgency=medium
+
+  * [e37285e] d/watch: use git mode for catching upstream versions
+  * [b898aa9] New upstream version 32+ds
+  * [4999e39] d/control: increase Standards-Version to 4.5.0
+    No further changes needed.
+  * [871b711] build patch queue from patch-queue branch
+    Adding again a patch queue, currently just one patch to fix misspelled
+    words.
+    added patch:
+    fixes/spelling-fix-multiple-misspelled-words.patch
+  * [290d3a9] d/copyright: update due upstream changes
+  * [e3b352a] d/control: adding Rules-Requires-Root to source section
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Thu, 07 May 2020 10:51:44 +0200
+
+ngspice (31.3-2) unstable; urgency=medium
+
+  * [828a246] autopkgtest: fix gcc argument order
+    This makes autopkgtest working again.
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sun, 27 Oct 2019 10:07:06 +0100
+
+ngspice (31.3-1) unstable; urgency=medium
+
+  [ Steve Langasek ]
+  * [a8eb461] d/control: update B-D to texlive-plain-generic package
+    (Closes: #941542)
+
+  [ Carsten Schoenert ]
+  * [bc16bac] d/control: increase Standards-Version to 4.4.1
+    No further changes needed.
+  * [d586bcb] New upstream version 31.3
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Wed, 09 Oct 2019 18:01:32 +0200
+
+ngspice (31.2-1) unstable; urgency=medium
+
+  * [0d07c7a] New upstream version 31.2
+  * [b3ae898] drop patches from patchqueue branch
+    All Debian specific patches are now applied upstream.
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sun, 29 Sep 2019 10:09:36 +0200
+
+ngspice (31-1) unstable; urgency=medium
+
+  * [4b34b88] d/README.source: update location of the git tree
+    The packaging repository has moved over to Salsa as Alioth is now
+    history.
+  * [3fbb2a4] New upstream version 31
+  * [7c54745] d/control: increase Standards-Version to 4.4.0
+    No further changes needed.
+  * [7eff4c3] dh: move over to debhelper-compat
+  * [1dcf6b8] rebuild patch queue from patch-queue branch
+    added patches:
+    fixes/spelling-fix-multiple-misspelled-words.patch
+    fixes/tclspice-avoid-get_plot-function-type-conflict.patch
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sat, 28 Sep 2019 13:29:08 +0200
+
+ngspice (30.2-1) unstable; urgency=medium
+
+  * [bec4464] New upstream version 30.2
+    (Closes: #917674)
+  * [a4a68e0] rebuild patch queue from patch-queue branch
+    added patch:
+    fixes/spelling-fixing-misspelled-word-Re-encode.patch
+
+    removed patches (applied upstream):
+    fixes/Makefile.am-add-copyright-and-license-information.patch
+    fixes/Makefile.am-add-sanity-checks-called-by-distcheck.patch
+    fixes/Makefile.am-add-targets-for-cleanup-and-uninstallation.patch
+    fixes/Makefile.am-add-variables-GRAPHIC-LYX-_FILES.patch
+    fixes/Makefile.am-adding-a-target-for-manual.html.patch
+    fixes/Makefile.am-adding-some-magic-for-installing.patch
+    fixes/Makefile.am-adjust-target-upload.patch
+    fixes/Makefile.am-adopt-LYX_USER_DIR-into-lyx-call.patch
+    fixes/Makefile.am-remove-non-portable-wildcard-calls.patch
+    fixes/Makefile.am-updating-target-manual.pdf.patch
+    fixes/configure.ac-adding-copyright-and-licensing-information.patch
+    fixes/configure.ac-adding-with-lyxuserdir-option.patch
+    fixes/configure.ac-update-information-how-to-create-configure.patch
+    fixes/configure.ac-update-lyx-binary-check.patch
+  * [e440e70] d/copyright: update due upstream changes
+  * [32ef221] debian/control: increase Standards-Version to 4.3.0
+    No further changes needed.
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Tue, 01 Jan 2019 14:07:33 +0100
+
+ngspice (29-2) unstable; urgency=medium
+
+  [ Carsten Schoenert ]
+  * [acd6326] rebuild patch queue from patch-queue branch
+    added patches:
+    fixes/Makefile.am-add-sanity-checks-called-by-distcheck.patch
+    fixes/Makefile.am-add-targets-for-cleanup-and-uninstallation.patch
+    fixes/Makefile.am-add-variables-GRAPHIC-LYX-_FILES.patch
+    fixes/Makefile.am-adding-a-target-for-manual.html.patch
+    fixes/Makefile.am-adding-some-magic-for-installing.patch
+    fixes/Makefile.am-adjust-target-upload.patch
+    fixes/Makefile.am-adopt-LYX_USER_DIR-into-lyx-call.patch
+    fixes/Makefile.am-remove-non-portable-wildcard-calls.patch
+    fixes/Makefile.am-updating-target-manual.pdf.patch
+    fixes/configure.ac-adding-copyright-and-licensing-information.patch
+    fixes/configure.ac-adding-with-lyxuserdir-option.patch
+    fixes/configure.ac-update-information-how-to-create-configure.patch
+    fixes/configure.ac-update-lyx-binary-check.patch
+    fixes/spelling-fixing-misspelled-word-dependance.patch
+  * [8c1703c] d/rules: rework the installation of ngspice-doc
+    Due the new added patches, which are also forwarded to upstream, the
+    ngspice-doc package can now also be installed like other software. The
+    build was modified so the sequencer files can be used the usual way.
+    This also should make the package reproducible finally.
+    (Closes: #915236)
+  * [88c94d4] d/ngspice-doc.install: change source for installation
+    Updating the installation sequencer for the documentation package.
+  * [e50e956] d/ngspice-doc.doc-base: manual.html is getting installed
+    Small adjustment due renamed HTML file.
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Mon, 10 Dec 2018 13:30:46 +0100
+
+ngspice (29-1) unstable; urgency=medium
+
+  [ Carsten Schoenert ]
+  * [1d92fbd, 31abca1] adding B-D to libngspice0 and tclspice symbols files
+    The symbols files need the information about the depending required -dev
+    packages.
+  * [1cbcc55] d/gbp.conf: update import filter, more files to ignore
+    Upstream has changed the shipped files and folders, we need to filter out
+    now some more folders due unclear license situation. These are all examples
+    we anyway had never shipped within the packaging.
+  * [3c5bab5] New upstream version 29
+  * [ff53ffe] rebuild patch queue from patch-queue branch
+    removed patches (mostly previously cherry-picked):
+    fixes/configure.ac-add-additional-linker-flags-for-bsd.patch
+    fixes/use-strerror-instead-of-sys_errlist.patch
+    reproducible/Allow-one-to-override-build-date.patch
+  * [78ac3a6] d/control: increase B-D on lyx to >= 2.2
+    Be more explicit on the required lyx version, 2.2 is anyway available
+    started with Debian Stretch 9.0. Version 29 is requiring this version now.
+  * [d098e0d] cme: update helper files for cme
+    We use the cme helper to rework the copyright file, adding some updates to
+    the yaml files so cme is detecting more thing automatically.
+  * [9f887eb] d/copyright: update after upstream changes
+  * [66c6cf1] d/rules: modify the build of doc/ folder
+    Using $(CURDIR) here so the build id using absolute path instead of relative
+    calls, should make the build reproducible (hopefully :-) ).
+  * [f3943a4] ngspice: install some more scripts
+    Some more ngspice related script added to the installation (ciderinit,
+    devaxis, devload).
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sun, 28 Oct 2018 11:31:11 +0100
+
+ngspice (28-3) unstable; urgency=medium
+
+  [ Carsten Schoenert ]
+  * [3abcd8e] autopkgtest: use build-essential as dependency
+    ci.d.n is still not happy, should be solved by the changes here.
+  * [2a26aea] d/control: add various Multi-Arch fields
+    The Multi-Arch check in the Tracker has spotted these changes as suggestion.
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Mon, 15 Oct 2018 19:50:42 +0200
+
+ngspice (28-2) unstable; urgency=medium
+
+  [ Carsten Schoenert ]
+  * [6c67992] d/control: fix typo in short description of libngspice0
+    Thanks Jonas for spotting!
+    (Closes: #910965)
+  * [a9e3dab] debian/control: increase Standards-Version to 4.2.1
+    No further changes needed.
+  * [e5af9d4] d/tests/control: add missing tests dependencies
+    The autopkgtest needs of course gcc and pkg-config.
+  * [4c57cdc] rebuild patch queue from patch-queue branch
+    added patches:
+    fixes/configure.ac-add-additional-linker-flags-for-bsd.patch
+    fixes/use-strerror-instead-of-sys_errlist.patch
+  * [2ef45d6] ngspice: revert introduction of readline support
+    We can't link against libreadline without a license change, so we will stay
+    on libedit here.
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sun, 14 Oct 2018 16:08:25 +0200
+
+ngspice (28-1) unstable; urgency=medium
+
+  [ Carsten Schoenert ]
+  * [0cf451f] debian/gbp.conf: adding helper for git-buildpackage
+  * [46a1f0f] d/gbp.conf: add some more files to filter out
+  * [6f82a23] d/gbp.conf: switch pristine-tar usage on
+  * [5daa4f3] d/gbp.conf: add component 'doc'
+  * [44659b5] New upstream version 28
+    The new NGSpice upstream version is DFSG compatible and there is no need to
+    do a packaging of a -dfsg version anymore.
+    (Closes: #888489)
+  * [e9ae83f] debian/control: wrap-and-sort the complete file
+    Run w-a-s over the control file so it's much better readable for human.
+  * [7de1e26] debian/copyright: fix up some white-space issues
+  * [c0a30d9] d/{compat,control}: bump debhelper to version 11
+    The actual debhelper version is 11 and there is no reason to not switch over
+    to this version in unstable.
+  * [ab6a5cd] debian/control: bump Standards-Version to 4.1.4
+    No further action needed for this version bump from 4.1.2.
+  * [aa23ade] d/*.dirs: remove old dh files for dirs
+    The debian/*.dirs files got removed as recent debhelper will create the
+    needed folders automatically. This decreases the amount of files in the
+    debian folder.
+  * [6b9deef] libngspice0: adding new library about ngspice
+    The NGSpice source provides the possibility to create shared library
+    libngspice for some time which can be used to get access to the simulation
+    functions of ngpsice. This library wasn't provided by previous packaging
+    work. (Closes: #834335)
+  * [77ab434] debian/ngspice.install: remove folder /u/l/ngspice
+    Modify the debhelper sequencer as libraries are not installed into the
+    ngspice binary package now and have there own packages.
+  * [ef2b528] debian/rules: migrating to debhelper style
+    Rewrite the whole rules files to migrate it over to debhelper style. This
+    improves the readability in many ways.
+  * [9de06e7] rebuild patch queue from patch-queue branch
+    added patches:
+    fixes/spelling-fixing-some-misspelled-words.patch
+    fixes/spelling-fixing-more-misspelled-words.patch
+    reproducible/Allow-one-to-override-build-date.patch
+
+    removed patch (obsolete / adopted upstream):
+    01_fix_manpages.patch
+    02_fix_tcl_examples.patch
+  * [656c866] debian/control: remove reference to non-free
+    With the DFSG compatible source the source package don't need to get into
+    no-free.
+  * [012b1e4] move maintainership over to Debian Electronics Team
+    After some conversations about the future maintainer-ship of ngspice Gudjon
+    I. Gudjonsson and Andreas Tille agreed on the movement to the Debian
+    Electronics group.
+    Of course I want to thank all people who spend their time on doing any
+    maintaining work in ngspice!
+  * [5e04896] libngspice0-dev.install.in: update header install
+    The libngspice-dev package is only containing one header file and it's gonna
+    installed into the typical folder for public headers.
+  * [8b7ecb6] libngspice0-dev: small change to the description
+    Adding a small suffix to the short description so it's better visible about
+    the use case for this package.
+  * [44b2625] manpages: drop no longer needed local hold manpages
+    The manpages are included in the upstream source since version 27. No need
+    to ship them inside Debian anymore.
+  * [4ce54e5] ngspice: drop --with-editline in favor of --with-readline
+    (Closes: #834247)
+  * [5aa3be1] debian/rules: update helper and targets for build
+    The build of the source requires three stages (as for ngspice, libngspice
+    and tclspice) of configuring and building as some configure options are
+    prohibitive each other.
+    Creating dedicated variables with such configure options which are used
+    later in the dh_auto_configure target.
+  * [fa60633] debian/control: update tclspice package
+    The tclspice package is mainly providing a shared library which is depending
+    on same ngspice package version.
+    Rephrase a bit the package description. And the fields 'Replace" and
+    "Breaks" on the tclspice-dev package isn't needed anymore.
+  * [1683ca1] ngspice-dev: adding new binary package
+    By creating libngspice-dev with it's own required header file and the
+    dropping of the installation of the other header files in the ngspice
+    package we need to create a new -dev package for ngspice.
+    This is fulfilled by this new package ngspice-dev which includes the
+    remaining header files and the dev link of libspice0.so.
+  * [2c72a25] ngspice: adopt needed changes to the install sequence
+    The install sequence for the ngspice package is depending on Multi-Arch
+    related content which need to substitute content while package build. Thus
+    we turn the install file into a install.in file.
+  * [8adb653] d/ngspice.links: linking COPYING to GPL-2 license file
+  * [4de4e42] ngspice-dev.install: adding dh sequence for ngspice-dev
+    The source of the libspice0.so link is related to Multi-Arch folders. Like
+    for ngspice-dev we create the ngspice-dev.install dynamically while running
+    the build.
+  * [f32a16e] tclspice: rework dh helper sequencer
+    Also the tclspice package is containing Multi-Arch related paths and some
+    changed install folders opposite to the previous packaging which requires
+    the usage of a install.in file.
+  * [dfb5011] tclspice.symbols: adding a symbols file for libspice
+  * [d75e230] debian/watch: update watch file
+    Update to version 4.
+  * [c068f36] debian/README.source: adding some notes about the source
+    Adding some historical facts about the evolving of NGSpice and remarks about
+    the way to DFSG compatible source.
+  * [706d04b] debian/README.source: add note about VCS for ngspice
+    The source package of ngspice is using git-buildpackage for package
+    management.
+  * [574b7f8] ngspice: adjust install sequencer
+    Adjust the sequencer as the folder 'helpdir' isn't shipped anymore.
+  * [7c46255] d/rules: adding new target override_dh_install-indep
+    The documentation, which is build from an additional tarball, can be build
+    and should be build architecture independently. This requires the usage of
+    a dedicated target for the documentation and modifications to the existing
+    targets which need to be now architecture specific.
+  * [a37ef8c] ngspice-doc: adjust package after source is now DFSG
+    Now that also the documentation is DSFG compatible the control section about
+    this package needs adjustments like the Section and the containing elements.
+    Also adjusting some related debhelper sequencing files.
+    (Closes: #826873)
+  * [5c1ca0a] d/control: Update Vcs URLs to Salsa
+  * [788ca8d] d/control: drop duplicated Priority fields
+    As the source package is already marked with Priority 'optional' we don't
+    need the same Priority within some binary packages.
+  * [a314f7e] d/rules: don't run the auto_test target for now
+    We will ignore the auto tests for now, they will be enabled later again.
+  * [b382cbf] copyright: adding some cme script helper
+    The cme helper script can help to collect all license information in an
+    effective way, but this needs some additional helper files. Adding those
+    files by this commit.
+  * [57e3819] d/copyright: update the copyright information
+    The debian/copyright file needs a complete rework which is done based an
+    the output of the cme helper script.
+
+  [ Guido Günther ]
+  * [5fd383a] Install pkg-config file
+    The dh sequencer was missing also the installation of the pkg-config file
+    for ngspice.
+  * [70417b8] autopkgtest: make sure we can link against libngspice0
+    Adding a autopkg test so we can check the possibility of linking against
+    libngspice0.
+  * [9b72171] Don't hardcode doc package version
+    Use the package source version for the suggested version of ngspice-doc in
+    ngspice.
+
+  [ Carsten Schoenert ]
+  * [5f71810] Remove file README.Debian
+    Currently we don't need this README file anymore.
+  * [230fbc0] ngspice.lintian-overrides: adding small overrides
+  * [a40eeea] tclspice.lintian-overrides: add override for libspice0
+  * [6989e30] install example scripts for testbenchs again
+
+ -- Carsten Schoenert <c.schoenert@t-online.de>  Sat, 16 Jun 2018 10:25:57 +0200
+
+ngspice (27-1) unstable; urgency=medium
+
+  [ Gudjon I. Gudjonsson ]
+  * Change standards version to 4.1.2, no changes needed
+  * Add hardening +all
+  * Change vcs browser field from http to https
+  * Fix copyright file
+  * Add patch 03_fix_spelling
+  * Change compat level to 9
+
+  [ Andreas Tille ]
+  * Moved packaging from SVN to Git
+  * Priority: extra -> optional
+
+  [ Gudjon I. Gudjonsson ]
+  * Add dependency on texlive-science
+  * Add lintian overrides file
+  * Change lyx output from html to xhtml to avoid using elyxer
+
+ -- Gudjon I. Gudjonsson <gudjon@gudjon.org>  Tue, 26 Dec 2017 07:26:13 +0100
+
+ngspice (26-1.2) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Remove elyxer from Build-Depends-Indep to allow for the removal of elyxer
+    from Debian. The build in HTML export support in LyX improved during the
+    last years and is equally usable or even better regarding new LyX file
+    formats.
+  * Change package priority from extra to optional.
+
+ -- Sven Hoexter <hoexter@debian.org>  Sun, 10 Dec 2017 14:53:20 +0100
+
+ngspice (26-1.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Run lyx with a temporary -userdir to not rely on $HOME, thanks to
+    Johann Klammer.  (Closes: #813119)
+
+ -- Andreas Beckmann <anbe@debian.org>  Mon, 25 Apr 2016 20:50:13 +0200
+
+ngspice (26-1) unstable; urgency=low
+
+  * New upstream release (Closes: #706821)
+  * Bump standards version to 3.9.5
+  * Make VCS field canonical
+  * Change tcl version to 8.6
+  * Remove part of patch, wish8.4 changed back to wish for tclspice examples
+  * Add pdf manual
+  * Remove DM-upload line from control
+  * Add patch 03_fix_compilation.patch
+    (Thanks to Robert Larice)
+  * Remove stripping of codemodel files
+  * Add -BLT and -ltcl8.6 to configure for tclspice.
+    Needed by libtclspice
+  * Remove ps manual
+  * Remove hardening wrapper and exchange for dpkg-buildflags
+  * Add dependency on libfftw3-dev
+
+ -- Gudjon I. Gudjonsson <gudjon@gudjon.org>  Sat, 05 Jul 2014 10:09:39 +0000
+
+ngspice (24-1) unstable; urgency=low
+
+  * New upstream release
+  * Bump standards version to 3.9.3
+  * Move /usr/lib/spice to /usr/lib/ngspice
+    and /usr/lib/tcltk to /usr/lib/tcltk/ngspice
+    reflecting changes in upstream
+  * Move install of tclspice prior to ngspice, both will install spinit but
+    the one from ngspice is the correct.
+  * Add tclspice binary dependency on ngspice
+  * Remove patch 02_fix_spelling.patch. Fixed in upstream
+  * Refreshed patch 01_fix_manpages
+  * Create patch 02_fix_tcl_examples
+  * Exclude .tcl and .cir files in examples from compression
+  * Change configure parameters
+  * Change readline dependency to libedit-dev
+  * Make tcl examples executable
+  * Add src/xspice/examples to ngspice examples
+  * Remove tclspice-dev package and move content to tclspice
+    Add Break and Replaces on tclspice-dev
+  * Started making copyright file machine readable
+  * Make tclspice examples executable
+  * Add manpage for cmpp, ngmakeidx and  ngproc2mod
+  * Remove examples/TransImpedanceAmp and exampless/tclspice\tcl-testbench3
+    because of incompatiple licenses
+  * Add install-indep/arch stansas to rules file
+  * Add dependency on texlive-generic-recommended
+  * Add Build-Depends-Indep to control file
+
+ -- Gudjon I. Gudjonsson <gudjon@gudjon.org>  Mon, 04 Jun 2012 22:34:18 +0000
+
+ngspice (23-1) unstable; urgency=low
+
+  * New upstream release
+  * Change standards version to 3.9.2
+  * Change debhelper dependency to 8
+  * Add a line to rules to remove dependency_libs field from tclspice-dev
+  * Remove override files
+  * Create build-arch and build-indep targets
+  * Add patch 02_fix_spelling
+  * Change texlive dependencies to texlive, texlive-latex-extra,
+     texlive-lang-greek
+
+ -- Gudjon I. Gudjonsson <gudjon@gudjon.org>  Sun, 19 Jun 2011 04:44:19 +0200
+
+ngspice (22-1) unstable; urgency=low
+
+  * New upstream release
+  * Source package renamed to ngspice
+  * Add patches 01_fix_manpages 02_fix_spelling
+  * Change/fix get-orig-source target
+  * Add overrides files
+  * Made the extended description of tclspice a bit longer
+  * Fix watch file, look for ngspice instead of ng-spice-rework
+
+ -- Gudjon I. Gudjonsson <gudjon@gudjon.org>  Mon, 21 Mar 2011 13:58:58 +0100
+
+ng-spice-rework (21-2) UNRELEASED; urgency=low
+
+  * Bump standards version to 3.9.1
+  * Remove unneeded section fields in control file
+  * Fix short description of tclspice-dev
+  * Change (C) to © in copyright file
+
+ -- Gudjon I. Gudjonsson <gudjon@gudjon.org>  Tue, 03 Aug 2010 22:59:00 +0200
+
+ng-spice-rework (21-1) unstable; urgency=low
+
+  * New upstream release
+  * Bump standards version to 3.9.0
+  * Rewrite get-orig-source
+  * Switch to dpkg-source 3.0 (quilt) format
+  * Add build dependency on lyx, elyxer and texlive-full
+  * Fix compilation of doc in rules file
+  * Add build dependency on imagemagick
+  * Remove machine generated file src/frontend/parse-bison.c
+    in clean target
+  * Remove README.source
+  * Remove all patches, fixed in upstream
+
+ -- Gudjon I. Gudjonsson <gudjon@gudjon.org>  Sun, 25 Jul 2010 17:17:32 +0200
+
+ng-spice-rework (20-1) unstable; urgency=low
+
+  [ Gudjon I. Gudjonsson ]
+  * New upstream release
+  * Correct the Vcs fields
+
+  [ Andreas Tille ]
+  * Group maintenance in Debian Science team with permission of
+    maintainer
+
+ -- Andreas Tille <tille@debian.org>  Fri, 20 Nov 2009 11:15:21 +0100
+
+ng-spice-rework (19-2) UNRELEASED; urgency=low
+
+  * Add XS-Autobuild tag
+  * Bump standards version to 3.8.3, no changes needed
+  * Add README.source file
+  * Add misc dependency on tclspice-dev
+  * Add ngspice dependency on dpkg (>= 1.15.4) | install-info
+  * Remove debian/tmp/usr/share/dir file
+
+ -- Gudjon I. Gudjonsson <gudjon@gudjon.org>  Sun, 15 Nov 2009 00:00:02 +0100
+
+ng-spice-rework (19-1) unstable; urgency=low
+
+  * New upstream release
+  * Remove all patches since they are already in upstream
+  * Remove call to autogen and --enable experimental option when building
+  * Fix watch file
+  * Not removing getopt files, since they are BSD now
+  * Change /usr/share/ng-spice-rework to /usr/share/ngspice
+  * Remove quilt dependency
+  * Fix get-orig-source target
+  * Create patch 01_fix_bashism.diff to fix bashism (Closes: #530986)
+  * Add quilt dependency
+
+ -- Gudjon I. Gudjonsson <gudjon@gudjon.org>  Sun, 07 Jun 2009 10:11:42 +0200
+
+ng-spice-rework (18-1) unstable; urgency=low
+
+  * Initial release (Closes: #489768)
+  [ أحمد المحمودي (Ahmed El-Mahmoudy) ]
+  * debian/rules: add -XCOPYING to dh_installdocs for contrib.
+  * debian/rules, debian/control: Use quilt.
+  * Added 01_manpages-hyphen.diff patch which fixes the hyphens in ngnutmeg.1
+    & ngspice.1 manpages.
+  * debian/rules: added get-orig-source target.
+  * Added one target package: ngspice-doc.
+  * debian/docs: Added ANALYSES, BUGS & DEVICES.
+
+  [ Gudjon I. Gudjonsson ]
+  * Add the documentation license to the copyright file
+  * Package moved to non-free
+  * Remove getopt*.{c,h} incompatible licenses, add empty files instead
+  * Add patch 02_fix_getopt.diff to include system getopt.h
+  * Add patch 03_fix_libdir.diff that fixes libdir in configure.in
+    Thanks to Ahmed
+  * Let rules run ./autogen.sh in build/tclspice
+  * Add dependencies on automake
+
+ -- Gudjon I. Gudjonsson <gudjon@gudjon.org>  Mon, 20 Apr 2009 19:51:11 +0200

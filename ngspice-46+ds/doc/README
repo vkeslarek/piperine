@@ -1,0 +1,29 @@
+This Package contains the
+  `Ngspice Users Manual'
+
+DESCRIPTION:
+============
+  The Manual is composed from several LyX and image files.
+  This Package provides rules to:
+    * generate a pdf file from those.
+    * generate a HTML based documentation.
+    * install the pdf somewhere.
+    * build a tar-ball for distribution.
+
+USAGE:
+======
+  eventually run:
+    autoreconf  [--verbose] --install
+
+  To `install' do something like:
+    ./configure [--prefix=DIR] ; make ; make install
+  Please read `INSTALL'
+    for detailed instructions.
+
+REQUIREMENTS:
+=============
+  You need:
+    `LyX 2.4' `TeX' and something like `texlive-lang-greek'
+  You need:
+    `GNU make'
+

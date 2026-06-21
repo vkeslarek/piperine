@@ -1,0 +1,129 @@
+---
+######
+# the root folder
+ANALYSES:
+  copyright: various people
+  license: BSD-3-clause
+AUTHORS:
+  copyright: various people
+  license: BSD-3-clause
+BUGS:
+  copyright: various people
+  license: BSD-3-clause
+DEVICES:
+  copyright: various people
+  license: BSD-3-clause
+FAQ:
+  copyright: various people
+  license: BSD-3-clause
+INSTALL:
+  copyright: various people
+  license: BSD-3-clause
+NEWS:
+  copyright: various people
+  license: BSD-3-clause
+README:
+  copyright: various people
+  license: BSD-3-clause
+README.adms:
+  copyright: various people
+README.shared-xspice:
+  copyright: various people
+  license: BSD-3-clause
+README.vdmos:
+  copyright: various people
+  license: BSD-3-clause
+Stuarts_Poly_Notes:
+  copyright: various people
+  license: BSD-3-clause
+ngspice.pc.in:
+  copyright: various people
+  license: BSD-3-clause
+
+#######
+# the subfolders
+
+# contrib
+contrib/:
+  copyright: various people
+  license: GPL-2+ and public-domain
+contrib/mslib/:
+  copyright: 2000, Michael Widlok <widlok@uci.agh.edu.pl>
+  license: Michael_Widlok
+  comment: No classical FOSS license, notice the files contrib/{mslib,scripts}/COPYING.
+contrib/scripts/:
+  copyright: 2000, Michael Widlok <widlok@uci.agh.edu.pl>
+  license: Michael_Widlok
+  comment: No classical FOSS license, notice the files contrib/{mslib,scripts}/COPYING.
+contrib/spiceprm/:
+  copyright: 1996, Andrew J. Borsa <andy@moose.mv.com>
+  license: GPL-2.0
+contrib/spiceprm/spiceprm:
+  skip: '1'
+contrib/vbic/:
+  copyright: 2000, Colin McAndrew
+  license: BSD-3-clause
+
+# doc
+doc/:
+  copyright: 2018, Holger Vogt, Marcel Hndrix, Paolo Nenzi
+  license: BSD-3-clause and CC-BY-SA-4.0 and public-domain
+  comment: Parts of chapters 12 and 25-27 are in the public domain. Chapter 30 on CIDER is covered by New BSD (BSD-3-clause).
+
+# examples
+examples:
+  copyright: various people
+  license: BSD-3-clause
+examples/tclspice/tcl-testbench3/FB14.cir:
+  copyright: 1996, Symmetry Design Systems
+  license: BSD-3-clause
+examples/tclspice/tcl-testbench4/vspicechart.tcl:
+  copyright: 2008, Stephan Thiel <thiel@mikro.ee.tu-berlin.de>
+  license: BSD-3-clause
+
+# man
+man/:
+  copyright: various people
+  license: BSD-3-clause
+
+# src
+src/:
+  copyright: various people
+  license: BSD-3-clause
+src/frontend/commands.c:
+  license: MIT_POSTGRESQL
+  copyright: 2000, Arno W. Peters 1990, University of California
+src/include/ngspice/spmatrix.h:
+  copyright: 1985-1990, Kenneth S. Kundert and University of California
+  license: BSD-3-clause
+src/frontend/numparam/:
+  copyright: 2002, Georg Post
+  license: LGPL-2
+src/frontend/numparam/mystring.c:
+  skip: '1'
+src/frontend/numparam/spicenum.c:
+  skip: '1'
+src/frontend/numparam/xpressn.c:
+  skip: '1'
+
+src/maths/sparse/:
+  copyright: various people
+  license: Expat
+src/tclspice.c:
+  license: LGPL-2
+src/xspice/icm/GNUmakefile.in:
+  copyright: 2003, Stefan Jones <stefan.jones@multigig.com>
+  license: GPL-2+
+
+# tests
+tests/:
+  copyright: various people
+  license: BSD-3-clause
+tests/vbic/diffamp.cir:
+  skip: '1'
+
+# xgraph
+xgraph/:
+  copyright: various people
+  license: BSD-3-clause
+

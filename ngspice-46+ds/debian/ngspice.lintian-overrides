@@ -1,0 +1,3 @@
+# These files test files for checking UTF-8 compliance.
+ngspice: national-encoding [usr/share/doc/ngspice/examples/utf-8/Ñ?Ñ?ÐµÐºÐ»Ð¾/ext-ascii-1.cir]
+ngspice: national-encoding [usr/share/doc/ngspice/examples/utf-8/Ñ?Ñ?ÐµÐºÐ»Ð¾/ext-ascii-2.cir]

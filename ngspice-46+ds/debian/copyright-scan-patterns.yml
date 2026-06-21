@@ -1,0 +1,64 @@
+---
+check:
+  suffixes:
+  - 11
+  - LIB
+  - cir
+  - deck
+  - decl
+  - def
+  - ifs
+  - l
+  - lib
+  - lsm
+  - lst
+  - lyx
+  - man
+  - map
+  - net
+  - nmos
+  - out
+  - par
+  - pmos
+  - pro
+  - script
+  - sp
+  - spi
+  - standard
+  - sub
+  - table
+  - tcl
+  - xg
+  - xml
+  - y
+ignore:
+  pattern:
+  - .gitattributes
+  - /debian/
+  - notes
+  - Makefile
+  - MANIFEST
+  - /config(.guess|ure|.h.in|.sub)
+  - /Change(log|Log)
+  - /install(-sh)
+  - B3TERMS_OF_USE
+  - B4TERMS_OF_USE
+  - BsimTerms_use
+  - Read-Me
+  suffixes:
+  - ar-lib
+  - generic
+  - rst
+  - jpg
+  - txt
+  - M
+  - m4
+  - png
+  - sh
+  - va
+  - ANNOUNCE
+  - GENERAL
+  - HARDCOPY
+  - INSTALL
+  - NEWFEATURES
+

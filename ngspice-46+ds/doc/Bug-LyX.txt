@@ -1,0 +1,4 @@
+LyX 2.4.4 seems to have a bug: the reply to the -version command line option is an empty string using the MS Windows version
+and calling 'LyX -version' in a CygWin or MINGW bash window.
+This leads to failure when checking for the version during ./configure.
+Therefore the file configure-nocheck.ac may be renamed to configure.ac to skip the version check.

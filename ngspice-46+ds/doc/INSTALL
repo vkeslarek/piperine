@@ -1,0 +1,18 @@
+Installation Instructions
+*************************
+
+Install Lyx 2.4 or newer
+Run the commands:
+
+aclocal
+autoconf
+automake
+./configure
+make
+make install
+
+to generate manual.pdf. 
+
+Alternatively you may load manual.lyx directly into Lyx and export
+a pdf file (e.g. with PDF XeTex).
+

@@ -1,0 +1,4 @@
+usr/lib/@DEB_HOST_MULTIARCH@/libspice.so.0
+usr/lib/@DEB_HOST_MULTIARCH@/libspice.so.0.0.0
+usr/lib/@DEB_HOST_MULTIARCH@/ngspice/pkgIndex.tcl usr/share/ngspice
+usr/share/ngspice/scripts/tclspinit

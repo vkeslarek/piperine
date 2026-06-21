@@ -1,0 +1,4 @@
+libspice.so.0 tclspice #MINVER#
+* Build-Depends-Package: ngspice-dev
+ Spice_Init@TCLSPICE_0.2 28
+ TCLSPICE_0.2@TCLSPICE_0.2 28

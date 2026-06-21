@@ -1,0 +1,8 @@
+#!/bin/sh
+
+set -e
+
+cd debian/tests
+gcc test-link.c $(pkg-config --cflags --libs ngspice)
+./a.out
+rm -f a.out

@@ -1,0 +1,548 @@
+ChangeLog is no longer maintained since switching to the git repository.
+Please see
+http://ngspice.git.sourceforge.net/git/gitweb.cgi?p=ngspice/ngspice-manuals;a=summary
+for the manual code history.
+
+2012-02-20 Holger Vogt
+ * new commands mdump, mrdump, small updates, Lyx 1.6
+
+2012-02-19 Dietmar Warning
+ * temperature model for asrc, expression based resistor, capacitor and inductor
+
+2012-02-17 Holger Vogt
+ * update chapt. 32
+
+2012-02-11 Holger Vogt
+ * update chapt. 16.4
+
+2012-02-03 Holger Vogt
+ * small update chapt. 2.2.4
+ 
+ ============================ ngspice-24 ==================================
+
+2012-01-28 Robert Larice
+  fix incompatibility with lyx 1.6
+  caused by an empty layout section:
+    \begin_layout Standard
+    \end_layout
+
+2012-01-27 Holger Vogt
+ * small updates, prepare release 24
+
+2012-01-15 Holger Vogt
+ * 16.11
+
+2012-01-01 Holger Vogt
+ * 16.11, 31.2.7
+
+2012-01-01 Holger Vogt
+ * 2.10, 16.13
+
+2011-12-26 Holger Vogt
+ * floor, ceil functions
+
+2011-12-25 Holger Vogt
+ * compatibility chapt. 16.13
+
+2011-12-21 Holger Vogt
+ * usage of int_ic in s_xfer chapt. 12.2.16
+ * update chapts. 5.2, 5.3: E- or G-Source with TABLE
+
+2011-12-17 Holger Vogt
+ * error handling chapt. 18.5
+ * chapt. 5.2, 5.3
+
+2011-12-10 Holger Vogt
+ * updates to chapts. 15 and 17
+
+2011-12-07 Holger Vogt
+ * new 12.2.9 multi_input_pwl block
+
+2011-11-27 Holger Vogt
+ * new 17.4.44 Remcirc
+
+2011-11-26 Holger Vogt
+ * new 17.7.8 Output redirection
+
+2011-11-20 Holger Vogt
+ * small update in intro
+
+2011-11-05 Holger Vogt
+ * small update to chapt. 31, 32
+
+2011-11-01 Holger Vogt
+ * small update to chapt. 31
+
+2011-10-30 Holger Vogt
+ * hisim_hv 1.2.2 in chapt. 11.2.14
+
+2011-10-29 Holger Vogt
+ * small updates to chapts. 2 and 6
+
+2011-10-22 Holger Vogt
+ * bug no. 3426444
+ * conversion to lyx16 improved
+
+2011-10-17 Holger Vogt
+ * moved back to lyx16 format for compatibility with debian stable
+ * small addition to 17.4.40
+
+2011-10-03 Holger Vogt
+ * small corrections
+
+2011-10-02 Holger Vogt
+ * chapt. 17.4.4 altermod updated
+ * chapt. 22.5.2 ASCO inv updated
+
+2011-09-18 Holger Vogt
+ * chapt. 17.4.4 altermod updated
+
+2011-09-16 Holger Vogt
+ * chapt. 22 updated
+
+2011-09-15 Holger Vogt
+ * chapt. 17.4.59 60 update on show, showmod
+
+2011-09-14 Holger Vogt
+ * chapt. 17.4.4 update on altermod
+
+2011-09-11 Holger Vogt
+ * chapt. 22 extended by op-amp example
+
+2011-09-09 Holger Vogt
+ * new chapt. 22 on circuit optimization inserted
+ * several typos removed
+
+2011-08-30 Holger Vogt
+ * chapt. 26.4
+
+2011-08-29 Holger Vogt
+ * chapt. 26
+
+2011-08-28 Holger Vogt
+ * chapt. 23, 26
+ * images/XSPICE-Toplevel.gif
+
+2011-08-27 Holger Vogt
+ * chapt. 24.3 on how to create new code models
+ * chapt. 26  on how to create new code models
+
+2011-08-26 Holger Vogt
+ * 29 device parameters from nested subcircuits
+
+2011-08-09 Holger Vogt
+ * 18.6 on Gnuplot added
+
+2011-08-09 Holger Vogt
+ * 15.3 uic to end of line
+
+2011-08-06 Holger Vogt
+ * add fcn cph(vector) to chapt. 17.1
+
+2011-08-04 Paolo Nenzi
+ * Added manual entries for PSS as written by Stefano Perticaroli and added
+ * Stefano to ngspice contributors.
+ * lyx updated to version 2.0 (not backward compatible).
+
+2011-07-17 Holger Vogt
+ * new fcns sinh, cosh, tanh chapt. 17
+
+2011-07-16 Holger Vogt
+ * Update chapt. 18
+
+2011-07-10 Holger Vogt
+ * 17.1 add NGSPICE_INPUT_DIR
+
+2011-07-09 Holger Vogt
+ * Update to chapters 20, 25
+
+2011-07-03 Holger Vogt
+ * 7.3
+
+2011-06-23 Holger Vogt
+ * new code model 'filesource'
+
+2011-06-23 Holger Vogt
+ * BSIM4.7
+
+2011-06-05 Holger Vogt
+ * update command 'destroy'
+
+ ============================ ngspice-23 ==================================
+2011-06-01 Holger Vogt
+ * bug no. 3310132 fixed
+
+2011-05-29 Holger Vogt
+ * prepare for release 23
+
+2011-05-24 Holger Vogt
+ * update to MOS models (HiSIM)
+
+2011-05-07  Dietmar Warning
+ * MOS instance parameter delvto and mulu0
+ * First binning description
+
+2011-05-04  Dietmar Warning
+ * update of MOS table, add HiSIM HV model
+
+2011-04-12  Dietmar Warning
+ * update of MOS table
+
+2011-03-18  Dietmar Warning
+ * bjt nkf introduction
+
+2011-03-16 Holger Vogt
+ * 17.4.33 par('expression') not applicable
+
+2011-03-05 Holger Vogt
+ * 24.2.1.4 supply ramping updated
+
+2011-02-22  Dietmar Warning
+ * diode & bjt temperature model update
+
+2011-02-22  Holger Vogt
+ * Parameter sweep 17.7
+
+2011-02-19  Holger Vogt
+ * .measure 15.4
+
+2011-02-15  Holger Vogt
+ * CIDER manual, chapt. 28
+
+2011-02-12  Holger Vogt
+ * chapt. 21 on statistical analyis, various updates
+ * new images added
+
+2011-01-23  Holger Vogt
+ * add 2 images, chapt. 27
+
+2011-01-21  Holger Vogt
+ * chapt. 22 update
+
+2011-01-19  Holger Vogt
+ * chapt. 25, example 3 update
+
+2011-01-16  Holger Vogt
+ * 4.1.8 TRRANDOM option to voltage source added
+
+2011-01-11  Holger Vogt
+ * 15.4.7 .width
+
+2011-01-09  Holger Vogt
+ * small updates
+
+2011-01-08  Holger Vogt
+ * 17.4.9 command 'cdump'
+
+2011-01-03  Holger Vogt
+ * small updates
+
+2011-01-01  Holger Vogt
+ * small updates
+
+2011-01-01  Holger Vogt
+ * new format (12 pt, Times Roman)
+ * several updates
+
+2010-12-29  Holger Vogt
+ * 2.8.5 new functions for numparam
+
+2010-12-25  Holger Vogt
+ * 16.3.10 update to RTS transient noise
+
+2010-12-18  Holger Vogt
+ * 4.2.6, 16.3.10 RTS transient noise
+
+2010-12-17  Holger Vogt
+ * update 4.2.6
+
+2010-12-13  Holger Vogt
+ * chapt. 4.2.6
+
+2010-12-11  Holger Vogt
+ * chapt. 6.1
+
+2010-11-27  Holger Vogt
+ * 13.2.21 controlled one-shot
+ * 4.2.6, 16.3.10 transient noise
+
+2010-11-13  Holger Vogt
+ * 3.2.14, 3.2.15 switch
+ * 13.2.21 controlled one-shot
+
+2010-11-01  Holger Vogt
+ * 10.2.2 Modified Parker Skellern model
+
+2010-10-31  Dietmar Warning
+ * few corrections in 16.1.3
+
+2010-10-25  Holger Vogt
+ * 'linearize' only in ngspice
+
+2010-10-25  Holger Vogt
+ * scattering parameters in chapt. 18.9.2
+
+2010-10-16  Holger Vogt
+ * scattering parameters in chapt. 18.9
+ * new command wrs2p in chapt. 18.4.75
+
+2010-10-15  Holger Vogt
+ * more on licenses (now chapt. 32)
+
+2010-10-13  Dietmar Warning
+ * trtol setting if xspice enabled and no 'A' devices
+
+2010-10-12  Holger Vogt
+ * on licenses (readline linking)
+
+2010-10-09  Holger Vogt
+ * more on Monte Carlo (18.8)
+
+2010-10-05  Dietmar Warning
+ * small corrections regarding mos9 and adms
+
+2010-10-03  Holger Vogt
+ * decription on .ac and ac
+
+2010-09-23  Holger Vogt
+ * ngspice-22
+
+2010-09-20  Holger Vogt
+ * chapt. 2.8.1
+
+2010-09-19  Holger Vogt
+ * MINGW 64 bit support
+
+2010-09-11  Holger Vogt
+ * more on .measure 16.3.10
+
+2010-09-08  Holger Vogt
+ * start with .measure 16.3.10
+
+2010-09-06  Holger Vogt
+ * still version 21plus
+ * 18.4.35 plot alli allv ally
+
+2010-09-06  Holger Vogt
+ * Version 22
+
+2010-09-05  Holger Vogt
+ * 18.4.50 Setscale
+
+2010-09-02  Holger Vogt
+ * 18.8 Monte-Carlo Simulation
+
+2010-08-28  Holger Vogt
+ * update 18.4, 18.7
+
+2010-08-25  Holger Vogt
+ * update 2.10
+
+2010-08-24  Holger Vogt
+ * tf, pipe, server etc.
+
+2010-08-22  Holger Vogt
+ * JFET, MESFET
+
+2010-08-19  Holger Vogt
+ * 17.2 Where to get ngspice
+
+2010-08-17  Holger Vogt
+ * Add a new chapter 14 on adms
+
+2010-07-17  Holger Vogt
+ * deftype 17.4.13 (already existing in ngspice)
+
+2010-07-11  Holger Vogt
+ * Chapt. 15.1.6 on options, new command 'option' 17.4.33
+
+2010-07-11  Holger Vogt
+ * Chapt. 16.7 update on trtol
+
+2010-07-10  Holger Vogt
+ * Chapt. 15.4.6 par('expression'): Algebraic expressions for output
+
+2010-07-08  Holger Vogt
+ * Chapt. 16.7 on simulation time added
+
+2010-07-02  Holger Vogt
+ * Chapt. 17.7.5 Example script 'spectrum'
+
+2010-07-02  Holger Vogt
+ * Chapt. 2.2.1 .TITLE added
+ * Chapt. 16 BSOI OpenMP added
+ * Chapt. 2.10 on parameters, non-linear sources and control
+   scripts
+
+2010-06-28  Holger Vogt
+ * Chapt. 16.7 on OpenMP BSIM4 added
+
+2010-06-22  Holger Vogt
+ * version 21plus
+
+****************** rework-21 *******************
+
+2010-06-20  Holger Vogt
+ * manual.lyx, COPYING: copyright updates
+ * NEWS small intro
+
+2010-06-20  Robert Larice
+ * Makefile:
+	removed
+ * .cvsignore,
+ * AUTHORS, COPYING, NEWS, README,
+ * INSTALL,
+ * config/install-sh, config/missing,
+ * Makefile.am, configure.ac,
+	new files
+	ng-spice-manual is a package of its own now.
+
+2010-06-20 Holger Vogt
+ * SOI stag model level number added
+
+2010-06-16 Holger Vogt
+ * Some corrections to chap. 16
+
+2010-06-14 Holger Vogt
+ * Final Update version 21, add chapter on environmental
+   variables
+
+2010-06-12  Robert Larice
+* Add  capability to generate the pdf
+* Add  capability to upload the pdf
+
+2010-06-12 Holger Vogt
+ * Remove pdf binary
+
+2010-06-10 Holger Vogt
+ * Version 21
+
+2010-06-05 Holger Vogt
+ * various updates (chapts. 1, 2 e.a.)
+
+2010-06-05 Holger Vogt
+ * update on spinit, .spiceinit and command line options
+
+2010-06-04 Holger Vogt
+ * chapt. 17.4.44 small update on 'save' command
+
+2010-05-27 Holger Vogt
+ * chapt. 6.1 new example
+
+2010-05-26 Holger Vogt
+ * chapt. 27 update on XSPICE api using
+   cm_analog_alloc() and cm_event_alloc()
+
+2010-05-18 Holger Vogt
+ * update on enabling XSPICE
+
+2010-05-13 Holger Vogt
+ * update on vectors, new links added
+
+2010-05-09 Holger Vogt
+ * variable ngbehavior, some updates
+
+2010-05-08 Holger Vogt
+ * non linear sources (E, G) and non-linear elements
+  (R, C, L)
+
+2010-04-06 Holger Vogt
+ * update Chapt. 6 (thanks to R. Larice)
+
+2010-04-04 Holger Vogt
+ * update .lib, .global, resistor
+
+2010-03-29 Holger Vogt
+ * updates in chapt. 17.4
+
+2010-03-27 Holger Vogt
+ * reshuffling of chapter, errors removed
+ * ngspice start options explained
+
+2010-03-20 Holger Vogt
+ * hertz for B source
+
+2010-03-07 Holger Vogt
+ * time and temper for B source
+
+2010-03-06 Holger Vogt
+ * small updates, fixes
+
+2010-03-02 Holger Vogt
+ * option 'param' added to command 'listing'
+ * pdf with hyperlinks inside the text
+
+2010-03-01 Dietmar Warning
+ * update fft window functions
+
+2010-02-28 Holger Vogt
+ * ternary function in B source (chapt. 5.6)
+
+2010-02-27 Holger Vogt
+ * Independent voltage source PWL update, Chapt. 4.2.4
+ * new command wrdata
+
+2010-01-12 Holger Vogt
+ * some updates on the fft and noise commands, section on plots added.
+
+2010-01-27 Dietmar Warning
+ * update kspice transmissionline chapter
+
+2010-01-02 Holger Vogt
+ * compose command added
+   xfont, wfont, wfont_size variables added
+
+2010-01-01 Holger Vogt
+ * gnuplot command added
+
+2009-12-31 Holger Vogt
+ * update on availabilty and description of internal variables
+
+2009-12-30 Holger Vogt
+ * update on variable plotstyle
+
+2009-12-28 Holger Vogt
+ * some formatting, update to manual.pdf
+   chapters 15, 16 reorganized, started to describe scripting
+   spinit, strcmp added
+
+2009-12-22 Dietmar Warning
+ * a bit more precise B pwl description
+
+2009-12-19 Holger Vogt
+ * update on chapt. 14 .measure
+ * update on chapt. 15 save
+ * formatting various sections
+
+2009-12-15 Holger Vogt
+ * chapt. 14 start describing .measure
+
+2009-12-07 Holger Vogt
+ * chapt. 15 command line options updated
+
+2009-12-06 Holger Vogt
+ * chapt. 15.3 alter and altermod modified
+
+2009-12-04 Dietmar Warning
+ * first trx and cpl descriptions - but more as a placeholder
+
+2009-11-21 Holger Vogt
+ * description of .func in chap. 2.9 added.
+ * chapter 26 on installation updated
+
+2009-11-21 Holger Vogt
+ * chapter 16 on GUIs introduced
+
+2009-11-21 Holger Vogt
+ * formatting the output (still much to be done!)
+   chapter 15.1 functions added
+
+2009-11-20 Holger Vogt
+ * chapter 15.5 description postscript variables updated
+
+2009-11-19 Holger Vogt
+ * variable hcopypscolor
+
+2009-11-07 Holger Vogt
+ * replace . by _ in several codemodel descriptions
+   of chapter 12

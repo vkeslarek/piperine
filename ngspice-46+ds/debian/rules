@@ -1,0 +1,173 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+export DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/buildflags.mk
+CFLAGS+=$(CPPFLAGS)
+CXXFLAGS+=$(CPPFLAGS)
+
+# out of tree build folder for ngspice application
+DEB_BUILD_DIR=debian/build
+# default install folder
+INSTDIR=$(CURDIR)/debian/tmp
+
+LDFLAGS:=$(shell dpkg-buildflags --get LDFLAGS)
+
+DEB_DEFAULT_CONFIGURE_OPTS := \
+	--prefix=/usr \
+	--mandir=\$${prefix}/share/man \
+	--enable-cider \
+	--enable-klu \
+	--enable-maintainer-mode \
+	--enable-openmp \
+	--enable-osdi \
+	--enable-pss \
+	--enable-xspice \
+	--disable-adms \
+	--disable-debug \
+	$(NULL)
+
+DEB_NGSPICE_CONFIGURE_OPTS := \
+	$(DEB_DEFAULT_CONFIGURE_OPTS) \
+	--with-editline=yes \
+	--with-x \
+	$(NULL)
+
+DEB_LIBNGSPICE_CONFIGURE_OPTS := \
+	$(DEB_DEFAULT_CONFIGURE_OPTS) \
+	--with-ngshared \
+	$(NULL)
+
+DEB_TCLSPICE_CONFIGURE_OPTS := \
+	$(DEB_DEFAULT_CONFIGURE_OPTS) \
+	--with-x \
+	--with-tcl=/usr/lib/tcl8.6 \
+	$(NULL)
+
+DEB_NGSPICE_DOC_CONFIGURE_OPTS := \
+	--prefix=/usr \
+	--docdir=\$${prefix}/share/doc/ngspice-doc \
+	--htmldir=\$${prefix}/share/doc/ngspice-doc \
+	--with-lyxuserdir=$(CURDIR)/$(DEB_BUILD_DIR)/lyxuserdir \
+	$(NULL)
+
+PREPROCESS_FILES := $(wildcard debian/*.in)
+
+$(PREPROCESS_FILES:.in=): %: %.in
+	sed 's,/@DEB_HOST_MULTIARCH@,$(DEB_HOST_MULTIARCH:%=/%),g' $< > $@
+
+%:
+	dh $@
+
+override_dh_clean:
+	dh_clean
+	rm -f doc/Makefile.in doc/aclocal.m4 doc/configure
+	rm -rf debian/build
+
+override_dh_auto_configure-arch:
+	mkdir -p $(DEB_BUILD_DIR)
+	#
+	####################################
+	# configuring ngspice applications #
+	####################################
+	dh_auto_configure --sourcedirectory=$(CURDIR) --builddirectory=$(DEB_BUILD_DIR)/ngspice -- $(DEB_NGSPICE_CONFIGURE_OPTS)
+	#
+	##################################
+	# configuring libngspice library #
+	##################################
+	dh_auto_configure --sourcedirectory=$(CURDIR) --builddirectory=$(DEB_BUILD_DIR)/libngspice -- $(DEB_LIBNGSPICE_CONFIGURE_OPTS)
+	#
+	##############################
+	# configure tclspice library #
+	##############################
+	dh_auto_configure --sourcedirectory=$(CURDIR) --builddirectory=$(DEB_BUILD_DIR)/tclspice -- $(DEB_TCLSPICE_CONFIGURE_OPTS)
+
+override_dh_auto_configure-indep:
+	#
+	###################################
+	# configure ngspice documentation #
+	###################################
+	cd doc ; autoreconf -vi
+	mkdir -p $(DEB_BUILD_DIR)/lyxuserdir/cache
+	dh_auto_configure --sourcedirectory=$(CURDIR)/doc --builddirectory=$(DEB_BUILD_DIR)/ngspice-doc -- $(DEB_NGSPICE_DOC_CONFIGURE_OPTS)
+
+override_dh_auto_build-arch:
+	#
+	#################################
+	# building ngspice applications #
+	#################################
+	dh_auto_build --sourcedirectory=$(CURDIR) --builddirectory=$(DEB_BUILD_DIR)/ngspice
+	#
+	###############################
+	# building libngspice library #
+	###############################
+	dh_auto_build --sourcedirectory=$(CURDIR) --builddirectory=$(DEB_BUILD_DIR)/libngspice
+	#
+	#############################
+	# building tclspice library #
+	#############################
+	dh_auto_build --sourcedirectory=$(CURDIR) --builddirectory=$(DEB_BUILD_DIR)/tclspice
+
+override_dh_auto_build-indep:
+	#
+	##################################
+	# building ngspice documentation #
+	##################################
+	dh_auto_build --sourcedirectory=$(CURDIR)/doc --builddirectory=$(DEB_BUILD_DIR)/ngspice-doc
+
+override_dh_auto_install-arch: $(PREPROCESS_FILES:.in=)
+	# We need to install the libngspice and tclspice build first
+	# and after that the build of the ngspice applications with
+	# X support at the end.
+	#
+	###############################
+	# installing tclspice library #
+	###############################
+	dh_auto_install --destdir=$(INSTDIR) --sourcedirectory=$(CURDIR) --builddirectory=$(DEB_BUILD_DIR)/tclspice
+	#
+	###################################
+	# installing ngspice applications #
+	###################################
+	dh_auto_install --destdir=$(INSTDIR) --sourcedirectory=$(CURDIR) --builddirectory=$(DEB_BUILD_DIR)/ngspice
+	#
+	#################################
+	# installing libngspice library #
+	#################################
+	dh_auto_install --destdir=$(INSTDIR) --sourcedirectory=$(CURDIR) --builddirectory=$(DEB_BUILD_DIR)/libngspice
+	# remove useless *.a and *.la files
+	find debian/tmp/ -type f \( -name "*.a" -o -name "*.la" \) -exec rm {} \;
+	# remove potential execution rights on *.cm, *.so and *.vpi files
+	find debian/tmp/ -type f \( -name "*.cm" -o -name "*.so" -o -name "*.vpi" \) -exec chmod -x {} \;
+
+override_dh_install-indep:
+	#
+	####################################
+	# installing ngspice documentation #
+	####################################
+	rm -f $(CURDIR)/doc/manual.pdf
+	dh_auto_install --destdir=$(INSTDIR) --sourcedirectory=$(CURDIR)/doc --builddirectory=$(DEB_BUILD_DIR)/ngspice-doc
+	dh_install
+
+override_dh_install-arch:
+	# Ignore the config.h file, it shouldn't be here anyway.
+	rm -f debian/tmp/usr/include/config.h
+	dh_install
+
+override_dh_installexamples-arch:
+	dh_installexamples
+	# The example scripts contains a wrong path to the libspice0 library after
+	# we have installed them into the package.
+	for file in `find debian/tclspice/usr/share/doc/tclspice/examples -type f \( -name "*.sh" -o -name "*.tcl" \)`; do \
+	    sed -i 's/^load .*/load \/usr\/lib\/$(DEB_HOST_MULTIARCH)\/libspice.so.0/g' $$file ;\
+	    sed -i 's/^spice::codemodel ..\/..\/..\/src\/xspice\/icm\/spice2poly\/spice2poly.cm/spice::codemodel \/usr\/lib\/$(DEB_HOST_MULTIARCH)\/ngspice\/spice2poly.cm/g' $$file ;\
+	done
+	mv debian/ngspice/usr/share/doc/ngspice/examples/optran/models/Models-for-Debian.txt debian/ngspice/usr/share/doc/ngspice/
+	find debian/ngspice/usr/share/doc/ngspice/examples -type f -exec chmod -x {} \;
+
+override_dh_auto_test:

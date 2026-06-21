@@ -1,0 +1,23 @@
+# NOTE! Please use 'git ls-files -i --exclude-standard'
+# command after changing this file, to see if there are
+# any tracked files which get ignored after the change.
+#
+# (compile "git ls-files -i --exclude-standard")
+
+Makefile
+Makefile.in
+
+*.orig
+*~
+\#*#
+*.log
+
+/autom4te.cache
+/config.guess
+/config.log
+/config.status
+/config.sub
+/configure
+/aclocal.m4
+
+/manual.pdf
