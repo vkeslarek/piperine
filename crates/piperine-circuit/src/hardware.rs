@@ -18,6 +18,9 @@ pub struct PortDefinition {
 pub struct ParameterDefinition {
     pub name: String,
     pub is_expr: bool,
+    /// When true the value must be an identifier of a sibling instance.
+    /// The elaborator resolves it to that instance's SPICE element name.
+    pub is_ref: bool,
     /// Default value. `None` means the parameter is mandatory.
     pub default: Option<ParameterValue>,
 }
@@ -58,12 +61,30 @@ pub trait HardwareDefinition: fmt::Debug + Send + Sync {
     /// The elaborator applies defaults before calling `instantiate`.
     fn parameters(&self) -> &[ParameterDefinition];
 
+    /// SPICE `.model` card type keyword for model-based devices.
+    ///
+    /// Return `Some("NMOS")`, `Some("NPN")`, `Some("D")`, etc. for devices
+    /// that reference a `.model` card. Return `None` for elements that have
+    /// no model card (R, C, L, V, I, B-source).
+    ///
+    /// Used by the `paramset` elaborator to emit the correct `.model` header.
+    fn spice_model_type(&self) -> Option<&'static str> { None }
+
+    /// SPICE element letter prefix for this device type (e.g. `'L'` for inductors).
+    ///
+    /// Used by the `parameter ref` resolver to compute the SPICE element name
+    /// of a referenced instance. When `None`, the instance name is used as-is.
+    fn spice_instance_prefix(&self) -> Option<char> { None }
+
     /// Create a concrete instance.
     ///
     /// Called by the elaborator after resolving all parameter defaults
     /// and validating connection names. Implementations should assume
     /// `parameters` already has defaults applied — report errors only
     /// for missing mandatory parameters.
+    ///
+    /// The `model` key in `parameters` (if present as `ParameterValue::String`)
+    /// is the SPICE model card name to reference on the instance line.
     fn instantiate(
         &self,
         instance_name: &str,

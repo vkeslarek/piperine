@@ -11,6 +11,13 @@ fn bundled_headers() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("headers")
 }
 
+/// Public accessor for the bundled Verilog-AMS headers directory.
+/// Callers (e.g. piperine-ngspice) add this to `parse_with_includes` dirs
+/// alongside their own header directories.
+pub fn bundled_header_dir() -> PathBuf {
+    bundled_headers()
+}
+
 /// Parse Verilog-A source text. `` `include `` resolves only against bundled standard headers.
 pub fn parse(input: &str) -> Result<Document, String> {
     parse_with_includes(input, &[bundled_headers()])
@@ -62,6 +69,9 @@ pub fn parse_with_includes(input: &str, include_dirs: &[PathBuf]) -> Result<Docu
             }
             ast::Item::ExternClass(decl) => {
                 doc.extern_classes.push(decl);
+            }
+            ast::Item::Paramset(decl) => {
+                doc.paramsets.push(decl);
             }
         }
     }

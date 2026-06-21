@@ -19,7 +19,26 @@ impl ParameterValue {
         }
     }
     pub fn as_str(&self) -> Option<&str> {
-        match self { ParameterValue::String(s) => Some(s), _ => None }
+        match self {
+            ParameterValue::String(s) => {
+                // Strip surrounding quotes added by AST/parser ("foo" → foo).
+                let s = s.strip_prefix('"').and_then(|s| s.strip_suffix('"')).unwrap_or(s);
+                Some(s)
+            }
+            _ => None,
+        }
+    }
+
+    /// Format for use inside a SPICE `.model` card — strings unquoted, reals/ints as-is.
+    pub fn to_spice_string(&self) -> String {
+        match self {
+            ParameterValue::Real(v)    => format!("{v}"),
+            ParameterValue::Integer(i) => format!("{i}"),
+            ParameterValue::String(s)  => {
+                s.strip_prefix('"').and_then(|s| s.strip_suffix('"')).unwrap_or(s).to_string()
+            }
+            ParameterValue::Ast(_) => "<expr>".into(),
+        }
     }
 }
 

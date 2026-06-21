@@ -7,6 +7,17 @@ use crate::registry::HardwareRegistry;
 use crate::types::{ParameterValue, ParameterMap, ConnectionMap, parse_si_real};
 use crate::hardware::NetResolver;
 
+/// Pre-resolved paramset — preset parameters and the model name/type ready for emission.
+struct ParamsetInfo {
+    base_module: String,
+    /// All preset params (including `model`).
+    preset: ParameterMap,
+    /// SPICE model card type keyword (from `base.spice_model_type()`), e.g. "NMOS".
+    model_type: Option<&'static str>,
+}
+
+type ParamsetMap = HashMap<String, ParamsetInfo>;
+
 /// Maps this module's net names → flat SPICE net names.
 /// Top-level: empty (nets resolve to themselves).
 /// Sub-module: ports → parent's SPICE net; internal nets → mangled.
@@ -44,10 +55,13 @@ pub fn elaborate(
 
     let mut spice_lines = vec![format!("* piperine: {}", testbench.name)];
 
+    // Build paramset map from document declarations.
+    let paramsets = build_paramset_map(&document.paramsets, registry)?;
+
     // Top-level net map is empty: nets resolve to themselves.
     let net_map = NetMap::new();
     elaborate_instances(
-        &testbench.instances, document, registry, "", &net_map, &mut spice_lines,
+        &testbench.instances, document, registry, &paramsets, "", &net_map, &mut spice_lines,
     )?;
 
     let initial_statement = testbench
@@ -79,24 +93,49 @@ pub fn elaborate(
     Ok(ElaborationResult { spice_lines, initial_statement, always_handlers })
 }
 
+fn build_paramset_map(
+    paramsets: &[ast::ParamsetDecl],
+    registry: &HardwareRegistry,
+) -> Result<ParamsetMap, ElaborationError> {
+    let mut map = ParamsetMap::new();
+    for ps in paramsets {
+        let base_def = registry.get(&ps.base.0)
+            .ok_or_else(|| ElaborationError::UnknownModule { name: ps.base.0.clone() })?;
+        let mut preset = ParameterMap::new();
+        for entry in &ps.entries {
+            let val = ast_expr_to_parameter_value(&entry.value, &entry.name.0, &ps.name.0)?;
+            preset.insert(entry.name.0.clone(), val);
+        }
+        map.insert(ps.name.0.clone(), ParamsetInfo {
+            base_module: ps.base.0.clone(),
+            preset,
+            model_type: base_def.spice_model_type(),
+        });
+    }
+    Ok(map)
+}
+
 fn elaborate_instances(
     instances: &[piperine_parser::model::Instance],
     document: &Document,
     registry: &HardwareRegistry,
+    paramsets: &ParamsetMap,
     path: &str,
     net_map: &NetMap,
     spice_lines: &mut Vec<String>,
 ) -> Result<(), ElaborationError> {
     for instance in instances {
-        elaborate_instance(instance, document, registry, path, net_map, spice_lines)?;
+        elaborate_instance(instance, instances, document, registry, paramsets, path, net_map, spice_lines)?;
     }
     Ok(())
 }
 
 fn elaborate_instance(
     instance: &piperine_parser::model::Instance,
+    sibling_instances: &[piperine_parser::model::Instance],
     document: &Document,
     registry: &HardwareRegistry,
+    paramsets: &ParamsetMap,
     path: &str,
     net_map: &NetMap,
     spice_lines: &mut Vec<String>,
@@ -106,10 +145,60 @@ fn elaborate_instance(
         &instance.connections, &instance.name, path, net_map,
     )?;
 
-    if let Some(definition) = registry.get(&instance.module) {
+    if let Some(ps_info) = paramsets.get(&instance.module) {
+        // ── Paramset instance: emit .model card + delegate to base hardware ──
+        let base_def = registry.get(&ps_info.base_module)
+            .ok_or_else(|| ElaborationError::UnknownModule { name: ps_info.base_module.clone() })?;
+
+        // Merge: preset params first, then instance overrides (not including "model").
+        let mut merged = ps_info.preset.clone();
+        for conn in &instance.params {
+            if let piperine_parser::model::Connection::Named { port, expr: Some(expr) } = conn {
+                if port != "model" {
+                    let val = ast_expr_to_parameter_value(expr, port, &instance.name)?;
+                    merged.insert(port.clone(), val);
+                }
+            }
+        }
+
+        // Extract model name (required in preset).
+        let model_name = ps_info.preset.get("model")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ElaborationError::MissingParameter {
+                parameter: "model".into(),
+                instance: instance.name.clone(),
+            })?
+            .to_string();
+
+        // Emit .model card before the instance.
+        if let Some(spice_type) = ps_info.model_type {
+            let model_params: String = merged.iter()
+                .filter(|(k, _)| *k != "model")
+                .map(|(k, v)| format!("{}={}", k, v.to_spice_string()))
+                .collect::<Vec<_>>()
+                .join(" ");
+            if model_params.is_empty() {
+                spice_lines.push(format!(".model {} {}", model_name, spice_type));
+            } else {
+                spice_lines.push(format!(".model {} {} ({})", model_name, spice_type, model_params));
+            }
+        }
+
+        // Instantiate via base module with model name in param map.
+        merged.insert("model".into(), ParameterValue::String(format!("\"{}\"", model_name)));
+        let resolver = ConcreteNetResolver { net_map, path };
+        let hw_instance = base_def.instantiate(&instance.name, &merged, &connections, &resolver)?;
+        spice_lines.extend(hw_instance.spice_lines());
+
+    } else if let Some(definition) = registry.get(&instance.module) {
         // ── Leaf hardware (extern module, OSDI device, SPICE primitive) ──────
-        let parameters = resolve_parameters(
+        let mut parameters = resolve_parameters(
             &instance.params, &instance.name, definition.parameters(),
+        )?;
+        // Resolve `parameter ref` — bare instance identifiers → SPICE element names.
+        resolve_ref_params(
+            &instance.params, &instance.name, definition.parameters(),
+            sibling_instances, registry, paramsets, &mut parameters,
         )?;
         let resolver = ConcreteNetResolver { net_map, path };
         let hw_instance = definition.instantiate(&instance.name, &parameters, &connections, &resolver)?;
@@ -119,7 +208,7 @@ fn elaborate_instance(
         let sub_path = build_path(path, &instance.name);
         let sub_net_map = build_sub_net_map(sub_mod, &connections, &sub_path);
         elaborate_instances(
-            &sub_mod.instances, document, registry, &sub_path, &sub_net_map, spice_lines,
+            &sub_mod.instances, document, registry, paramsets, &sub_path, &sub_net_map, spice_lines,
         )?;
     } else {
         return Err(ElaborationError::UnknownModule { name: instance.module.clone() });
@@ -252,7 +341,10 @@ fn resolve_parameters(
         match connection {
             piperine_parser::model::Connection::Named { port, expr } => {
                 if let Some(expr) = expr {
-                    let is_expr = definitions.iter().find(|d| d.name == *port).map(|d| d.is_expr).unwrap_or(false);
+                    let def = definitions.iter().find(|d| d.name == *port);
+                    // Ref params are handled separately by resolve_ref_params.
+                    if def.map(|d| d.is_ref).unwrap_or(false) { continue; }
+                    let is_expr = def.map(|d| d.is_expr).unwrap_or(false);
                     let value = if is_expr {
                         ParameterValue::Ast(expr.clone())
                     } else {
@@ -271,6 +363,8 @@ fn resolve_parameters(
     }
 
     for definition in definitions {
+        // Ref params are validated and inserted by resolve_ref_params.
+        if definition.is_ref { continue; }
         if definition.default.is_none() && !map.contains_key(&definition.name) {
             return Err(ElaborationError::MissingParameter {
                 parameter: definition.name.clone(),
@@ -280,6 +374,63 @@ fn resolve_parameters(
     }
 
     Ok(map)
+}
+
+/// Resolves `parameter ref` entries: bare instance identifiers → SPICE element names.
+fn resolve_ref_params(
+    source_connections: &[piperine_parser::model::Connection],
+    instance_name: &str,
+    definitions: &[crate::hardware::ParameterDefinition],
+    sibling_instances: &[piperine_parser::model::Instance],
+    registry: &HardwareRegistry,
+    paramsets: &ParamsetMap,
+    out: &mut ParameterMap,
+) -> Result<(), ElaborationError> {
+    for def in definitions.iter().filter(|d| d.is_ref) {
+        let expr = source_connections.iter().find_map(|c| {
+            if let piperine_parser::model::Connection::Named { port, expr: Some(e) } = c {
+                if port == &def.name { Some(e) } else { None }
+            } else { None }
+        });
+        let expr = expr.ok_or_else(|| ElaborationError::MissingParameter {
+            parameter: def.name.clone(),
+            instance: instance_name.to_string(),
+        })?;
+        let ident = match expr {
+            Expr::Path(p) => path_to_net_name(p),
+            _ => return Err(ElaborationError::TypeError {
+                parameter: def.name.clone(),
+                detail: format!(
+                    "parameter `{}` on `{}` must be an instance reference (bare identifier), not a literal",
+                    def.name, instance_name
+                ),
+            }),
+        };
+        // Find the referenced sibling instance and compute its SPICE element name.
+        let ref_inst = sibling_instances.iter().find(|i| i.name == ident)
+            .ok_or_else(|| ElaborationError::ConnectionError {
+                instance: instance_name.to_string(),
+                detail: format!("ref `{}` = `{ident}` — no instance named `{ident}` in this module", def.name),
+            })?;
+        let hw_def = if let Some(ps) = paramsets.get(&ref_inst.module) {
+            registry.get(&ps.base_module)
+        } else {
+            registry.get(&ref_inst.module)
+        };
+        let spice_ename = match hw_def.and_then(|d| d.spice_instance_prefix()) {
+            Some(prefix) => {
+                let up = ident.chars().next().map(|c| c.to_ascii_uppercase());
+                if up == Some(prefix.to_ascii_uppercase()) {
+                    ident.clone()
+                } else {
+                    format!("{prefix}{ident}")
+                }
+            }
+            None => ident.clone(),
+        };
+        out.insert(def.name.clone(), ParameterValue::String(format!("\"{spice_ename}\"")));
+    }
+    Ok(())
 }
 
 fn ast_expr_to_parameter_value(

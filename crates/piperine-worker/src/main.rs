@@ -6,52 +6,58 @@ use std::sync::{Arc, Mutex};
 use piperine_common::{Command, CmdReceiver, Handshake, RespSender, Response, EventAction, SimEventKind};
 use piperine_worker::ngspice::{Ngspice, NgspiceHandler};
 
-/// Shared flag: coordinator told us to halt the current run.
 struct WorkerState {
+    /// Set true only during `RunAnalysis` — gates all event IPC.
+    /// Prevents on_initial_step/on_step callbacks from sending events
+    /// during plain `Command::Run` (op, dc, etc.) where the coordinator
+    /// expects a simple `Response::Ok`, not a streaming protocol.
+    streaming_active: AtomicBool,
+    /// Whether to fire per-step events (controlled by `RunAnalysis.fire_step_events`).
+    fire_step_events: AtomicBool,
     halt_requested: AtomicBool,
     run_error_message: Mutex<Option<String>>,
 }
 
 struct WorkerHandler {
     tx: RespSender,
-    rx: Arc<Mutex<CmdReceiver>>,   // mutable recv, lock per callback
+    rx: Arc<Mutex<CmdReceiver>>,
     state: Arc<WorkerState>,
-    fire_step: bool,
 }
 
 impl NgspiceHandler for WorkerHandler {
     fn on_initial_step(&self, time: f64) {
-        self.send_event_and_wait(SimEventKind::InitialStep, time, 0);
+        if self.state.streaming_active.load(Ordering::Relaxed) {
+            self.send_event_and_wait(SimEventKind::InitialStep, time, 0);
+        }
     }
 
     fn on_step(&self, time: f64) {
-        if self.fire_step {
+        if self.state.streaming_active.load(Ordering::Relaxed)
+            && self.state.fire_step_events.load(Ordering::Relaxed)
+        {
             self.send_event_and_wait(SimEventKind::Step, time, 0);
         }
     }
 
-    fn on_final_step(&self, time: f64) {
-        self.send_event_and_wait(SimEventKind::FinalStep, time, 0);
-    }
+    // on_final_step is NOT called here — RunAnalysis sends it manually after
+    // ng.command() returns, so the coordinator can run @(final_step) handlers
+    // with full post-analysis vector data available.
 }
 
 impl WorkerHandler {
     fn send_event_and_wait(&self, kind: SimEventKind, time: f64, crossing_id: u32) {
         if self.state.halt_requested.load(Ordering::Relaxed) { return; }
         let _ = self.tx.send(Response::Event { kind, time, crossing_id });
-        // Block until coordinator responds
         if let Ok(cmd) = self.rx.lock().unwrap().recv() {
             match cmd {
-                Command::EventResponse { action: EventAction::Halt { reason: _ } } => {
+                Command::EventResponse { action: EventAction::Halt { .. } } => {
                     self.state.halt_requested.store(true, Ordering::Relaxed);
-                    // ngSpice_Command("halt") will stop the current analysis
-                    // (called from run_command after the step callback returns)
                 }
                 Command::EventResponse { action: EventAction::RunError { message } } => {
                     *self.state.run_error_message.lock().unwrap() = Some(message);
                     self.state.halt_requested.store(true, Ordering::Relaxed);
                 }
-                _ => {}  // Continue
+                _ => {}
             }
         }
     }
@@ -70,7 +76,9 @@ fn main() {
     eprintln!("worker connected");
 
     let worker_state = Arc::new(WorkerState {
-        halt_requested: AtomicBool::new(false),
+        streaming_active: AtomicBool::new(false),
+        fire_step_events: AtomicBool::new(false),
+        halt_requested:   AtomicBool::new(false),
         run_error_message: Mutex::new(None),
     });
 
@@ -80,7 +88,6 @@ fn main() {
         tx: resp_tx.clone(),
         rx: rx_arc.clone(),
         state: worker_state.clone(),
-        fire_step: true, // we will recreate handler per run in the future, for now true
     });
 
     let ng = Ngspice::init(handler).expect("ngspice init");
@@ -105,35 +112,55 @@ fn run_loop(ng: &Ngspice, rx: Arc<Mutex<CmdReceiver>>, tx: RespSender, state: Ar
 
 fn run_command(ng: &Ngspice, cmd: Command, rx: &Arc<Mutex<CmdReceiver>>, state: &Arc<WorkerState>, tx: &RespSender) -> Response {
     match cmd {
-        Command::RunAnalysis { cmd: c, fire_step_events: _ } => {
+        Command::RunAnalysis { cmd: c, fire_step_events } => {
+            // Reset per-run state
+            state.streaming_active.store(true, Ordering::Relaxed);
+            state.fire_step_events.store(fire_step_events, Ordering::Relaxed);
             state.halt_requested.store(false, Ordering::Relaxed);
             *state.run_error_message.lock().unwrap() = None;
+
             let _ = ng.command(&c);
+
+            // Disable streaming so cleanup commands (cur_plot etc.) don't fire events
+            state.streaming_active.store(false, Ordering::Relaxed);
+
             let plot = ng.cur_plot().unwrap_or_default();
-            let mut had_errors = state.run_error_message.lock().unwrap().is_some();
-            
-            // Firing final_step before AnalysisDone.
+            let had_errors_from_step = state.run_error_message.lock().unwrap().is_some();
+
+            // Send FinalStep — coordinator runs @(final_step) handlers here.
+            // Done after streaming_active=false so the callback path doesn't
+            // interfere; we send it directly.
             let _ = tx.send(Response::Event {
                 kind: SimEventKind::FinalStep,
                 time: 0.0,
                 crossing_id: 0,
             });
-            // Block until coordinator responds
+            let mut had_errors = had_errors_from_step;
             if let Ok(cmd) = rx.lock().unwrap().recv() {
                 match cmd {
                     Command::EventResponse { action: EventAction::RunError { message } } => {
                         *state.run_error_message.lock().unwrap() = Some(message);
                         had_errors = true;
                     }
+                    Command::EventResponse { action: EventAction::Halt { .. } } => {
+                        had_errors = true;
+                    }
                     _ => {}
                 }
             }
+
             Response::AnalysisDone { plot_name: plot, had_run_errors: had_errors }
         }
-        Command::Run { cmd: c } => match ng.command(&c) {
-            Ok(()) => Response::Ok,
-            Err(code) => Response::Error { code, message: format!("command failed: {c}") },
-        },
+
+        Command::Run { cmd: c } => {
+            // Plain command — no streaming, no events. Handler is gated by
+            // streaming_active=false (already the default between commands).
+            match ng.command(&c) {
+                Ok(()) => Response::Ok,
+                Err(code) => Response::Error { code, message: format!("command failed: {c}") },
+            }
+        }
+
         Command::LoadCircuit { lines } => {
             let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
             match ng.load_circuit(&refs) {
@@ -156,7 +183,8 @@ fn run_command(ng: &Ngspice, cmd: Command, rx: &Arc<Mutex<CmdReceiver>>, state: 
         }
         Command::Shutdown => Response::Ok,
         Command::EventResponse { .. } => {
-            Response::Error { code: -1, message: "Unexpected EventResponse".into() }
+            // Spurious EventResponse outside of streaming — ignore.
+            Response::Error { code: -1, message: "unexpected EventResponse outside RunAnalysis".into() }
         }
     }
 }

@@ -32,6 +32,7 @@ pub enum Item {
     TypedefEnum(TypedefEnum),
     TypedefStruct(TypedefStruct),
     ExternClass(ExternClassDecl),
+    Paramset(ParamsetDecl),
 }
 
 #[derive(Debug, Clone)]

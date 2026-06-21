@@ -57,7 +57,10 @@ impl PartialEq for Value {
     }
 }
 
-pub trait ExternClass: std::fmt::Debug + Send + Sync {}
+pub trait ExternClass: std::fmt::Debug + Send + Sync {
+    fn type_name(&self) -> &str;
+    fn call_method(&self, method: &str, args: &[Value]) -> Result<Value, String>;
+}
 
 #[derive(Debug, Clone)]
 pub struct AnalysisResult {
@@ -68,7 +71,7 @@ pub struct AnalysisResult {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum AnalysisKind { Op, Tran, Ac, Dc, Noise, Tf, Pz, Sens }
+pub enum AnalysisKind { Op, Tran, Ac, Dc, Noise, Tf, Pz, Sens, Disto, Pss, Sp }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VectorData {
@@ -85,6 +88,27 @@ pub struct RunError {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RunErrorKind { SoaViolation, UserAssert, SimulatorError }
+
+/// Infer `AnalysisKind` from an ngspice command string.
+/// Matches the first word, case-insensitive. Used by the interpreter
+/// so the backend doesn't need to know about `AnalysisKind`.
+pub fn parse_analysis_kind(cmd: &str) -> AnalysisKind {
+    match cmd.split_whitespace().next().unwrap_or("").to_lowercase().as_str() {
+        "op"    => AnalysisKind::Op,
+        "tran"  => AnalysisKind::Tran,
+        "run"   => AnalysisKind::Tran,
+        "ac"    => AnalysisKind::Ac,
+        "dc"    => AnalysisKind::Dc,
+        "noise" => AnalysisKind::Noise,
+        "tf"    => AnalysisKind::Tf,
+        "pz"    => AnalysisKind::Pz,
+        "sens"  => AnalysisKind::Sens,
+        "disto" => AnalysisKind::Disto,
+        "pss"   => AnalysisKind::Pss,
+        "sp"    => AnalysisKind::Sp,
+        _       => AnalysisKind::Tran,
+    }
+}
 
 impl Value {
     pub fn as_f64(&self) -> Option<f64> {

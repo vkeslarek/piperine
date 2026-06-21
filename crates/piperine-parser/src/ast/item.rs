@@ -271,6 +271,10 @@ pub enum ExternParameterKind {
     /// AST-passthrough parameter: `parameter expr V`
     /// The elaborator passes the raw AST Expr to the plugin — no evaluation.
     Expr,
+    /// Instance-reference parameter: `parameter ref l1`
+    /// Value must be an identifier matching another instance in the same module.
+    /// The elaborator resolves it to the SPICE element name of that instance.
+    Ref,
 }
 
 /// `initial begin BlockItem* end` — testbench procedural block.
@@ -333,4 +337,32 @@ pub struct StructField {
 #[derive(Debug, Clone)]
 pub struct ExternClassDecl {
     pub name: Name,
+}
+
+/// `paramset <name> <base_module>;`
+///   `.param = value;`*
+/// `endparamset`
+///
+/// Defines a named, pre-configured variant of an extern module.
+/// The elaborator emits a `.model` line + instance line when this is instantiated.
+/// The `.model` key sets the SPICE model card name; all other keys become model params.
+///
+/// Example:
+///   paramset d1n4148 spice_d;
+///       .model = "d1n4148";
+///       .is    = 2.52e-9;
+///   endparamset
+#[derive(Debug, Clone)]
+pub struct ParamsetDecl {
+    pub span:    Span,
+    pub name:    Name,
+    pub base:    Name,
+    pub entries: Vec<ParamsetEntry>,
+}
+
+/// One `.key = value;` entry inside a `paramset` block.
+#[derive(Debug, Clone)]
+pub struct ParamsetEntry {
+    pub name:  Name,
+    pub value: Expr,
 }

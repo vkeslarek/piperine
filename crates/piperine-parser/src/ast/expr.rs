@@ -15,7 +15,7 @@ pub enum Expr {
     Binary(Box<Expr>, BinOp, Box<Expr>),
     Paren(Box<Expr>),
     Array(Vec<Expr>),
-    Call(FunctionRef, Vec<Expr>),
+    Call(FunctionRef, Vec<CallArg>),
     /// Ternary: `condition ? then_val : else_val`
     Select(Box<Expr>, Box<Expr>, Box<Expr>),
     /// Array index: `base[idx]`
@@ -85,6 +85,29 @@ pub struct Assign {
     pub lval: Expr,
     pub op: AssignOp,
     pub rval: Expr,
+}
+
+/// An argument in a function/task call.
+///
+/// Positional: `$func(val)`.
+/// Named: `$func(name = val)` — optional/override parameters.
+#[derive(Debug, Clone)]
+pub enum CallArg {
+    Positional(Expr),
+    Named(String, Expr),
+}
+
+impl CallArg {
+    /// The expression value of this argument.
+    pub fn expr(&self) -> &Expr {
+        match self { Self::Positional(e) | Self::Named(_, e) => e }
+    }
+    /// The parameter name, if this is a named arg.
+    pub fn name(&self) -> Option<&str> {
+        match self { Self::Named(n, _) => Some(n.as_str()), Self::Positional(_) => None }
+    }
+    pub fn is_named(&self) -> bool { matches!(self, Self::Named(_, _)) }
+    pub fn is_positional(&self) -> bool { matches!(self, Self::Positional(_)) }
 }
 
 /// ungram: `FunctionRef = Path | SysFun`

@@ -15,23 +15,44 @@ pub trait SystemTask: fmt::Debug + Send + Sync {
     /// Name WITHOUT the `$` prefix (e.g., `"op"`, `"display"`, `"V"`).
     fn name(&self) -> &str;
 
-    /// Execute the task.
+    /// Execute the task with positional arguments only (legacy interface).
     ///
-    /// `arguments`: evaluated argument values, left to right.
+    /// `arguments`: evaluated positional argument values, left to right.
     /// `simulator`: mutable access to the simulator backend.
     fn call(
         &self,
         arguments: Vec<Value>,
         simulator: &mut dyn SimulatorBackend,
     ) -> Result<Option<Value>, InterpreterError>;
+
+    /// Execute the task with both positional and named arguments.
+    ///
+    /// Default implementation ignores named args and delegates to `call`.
+    /// Override to support `$func(mandatory, optional_name = val)` syntax.
+    fn call_named(
+        &self,
+        positional: Vec<Value>,
+        _named: HashMap<String, Value>,
+        simulator: &mut dyn SimulatorBackend,
+    ) -> Result<Option<Value>, InterpreterError> {
+        self.call(positional, simulator)
+    }
 }
 
 /// Registry of all known system tasks and functions.
 ///
-/// Populated at startup by plugins via `Plugin::register_tasks()`.
-#[derive(Default)]
+/// `default()` pre-populates all stdlib tasks (`$display`, `$fatal`, etc.).
+/// Plugins then add backend-specific tasks via `Plugin::register_tasks()`.
 pub struct SystemTaskRegistry {
     tasks: HashMap<String, Box<dyn SystemTask>>,
+}
+
+impl Default for SystemTaskRegistry {
+    fn default() -> Self {
+        let mut reg = Self { tasks: HashMap::new() };
+        crate::stdlib::register_stdlib(&mut reg);
+        reg
+    }
 }
 
 impl SystemTaskRegistry {

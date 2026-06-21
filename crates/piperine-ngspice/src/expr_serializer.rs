@@ -1,4 +1,9 @@
-use piperine_parser::ast::{Expr, FunctionRef, Literal, BinOp, PrefixOp, PathSegment};
+use piperine_parser::ast::{CallArg, Expr, FunctionRef, Literal, BinOp, PrefixOp, PathSegment};
+
+/// Extract positional expressions from call args (for B-source serialization).
+fn pos_args(args: &[CallArg]) -> Vec<&Expr> {
+    args.iter().map(|a| a.expr()).collect()
+}
 use piperine_circuit::NetResolver;
 
 /// Convert a Piperine AST expression to an ngspice B-source expression string.
@@ -34,15 +39,16 @@ pub fn serialize_ngspice_expr(expr: &Expr, r: &dyn NetResolver) -> Result<String
         }
 
         // V(net) or V(net1, net2) — analog voltage access
-        Expr::Call(FunctionRef::Path(p), args) if path_is("V", p) => {
+        Expr::Call(FunctionRef::Path(p), raw_args) if path_is("V", p) => {
+            let args = pos_args(raw_args);
             match args.len() {
                 1 => {
-                    let net = extract_net_path(&args[0])?;
+                    let net = extract_net_path(args[0])?;
                     Ok(format!("v({})", r.resolve(&net)))
                 }
                 2 => {
-                    let n1 = extract_net_path(&args[0])?;
-                    let n2 = extract_net_path(&args[1])?;
+                    let n1 = extract_net_path(args[0])?;
+                    let n2 = extract_net_path(args[1])?;
                     Ok(format!("v({},{})", r.resolve(&n1), r.resolve(&n2)))
                 }
                 _ => Err("V() takes 1 or 2 net arguments".into()),
@@ -50,26 +56,29 @@ pub fn serialize_ngspice_expr(expr: &Expr, r: &dyn NetResolver) -> Result<String
         }
 
         // I(branch) — branch current access
-        Expr::Call(FunctionRef::Path(p), args) if path_is("I", p) => {
-            let branch = extract_net_path(&args[0])?;
+        Expr::Call(FunctionRef::Path(p), raw_args) if path_is("I", p) => {
+            let args = pos_args(raw_args);
+            let branch = extract_net_path(args[0])?;
             Ok(format!("i({})", r.resolve(&branch)))
         }
 
         // ddt(expr) — time derivative
-        Expr::Call(FunctionRef::Path(p), args) if path_is("ddt", p) => {
-            let inner = serialize_ngspice_expr(&args[0], r)?;
+        Expr::Call(FunctionRef::Path(p), raw_args) if path_is("ddt", p) => {
+            let args = pos_args(raw_args);
+            let inner = serialize_ngspice_expr(args[0], r)?;
             Ok(format!("ddt({})", inner))
         }
 
         // idt(expr, ic) — time integral
-        Expr::Call(FunctionRef::Path(p), args) if path_is("idt", p) => {
-            let inner = serialize_ngspice_expr(&args[0], r)?;
-            let ic = if args.len() > 1 { serialize_ngspice_expr(&args[1], r)? } else { "0".into() };
+        Expr::Call(FunctionRef::Path(p), raw_args) if path_is("idt", p) => {
+            let args = pos_args(raw_args);
+            let inner = serialize_ngspice_expr(args[0], r)?;
+            let ic = if args.len() > 1 { serialize_ngspice_expr(args[1], r)? } else { "0".into() };
             Ok(format!("idt({},{})", inner, ic))
         }
 
         // Math functions: abs sqrt exp ln log sin cos tan ...
-        Expr::Call(FunctionRef::Path(p), args) => {
+        Expr::Call(FunctionRef::Path(p), raw_args) => {
             let fname = path_leaf(p);
             let ng_name = match fname.as_str() {
                 "abs"   => "abs",   "sqrt"  => "sqrt",
@@ -82,7 +91,7 @@ pub fn serialize_ngspice_expr(expr: &Expr, r: &dyn NetResolver) -> Result<String
                 "floor" => "floor", "ceil"  => "ceil",
                 other   => return Err(format!("unknown function `{other}` in B-source expression")),
             };
-            let arg_strs: Result<Vec<_>, _> = args.iter().map(|a| serialize_ngspice_expr(a, r)).collect();
+            let arg_strs: Result<Vec<_>, _> = raw_args.iter().map(|a| serialize_ngspice_expr(a.expr(), r)).collect();
             Ok(format!("{}({})", ng_name, arg_strs?.join(",")))
         }
 

@@ -34,9 +34,32 @@ impl<'a> Parser<'a> {
             } else {
                 Err(format!("expected 'enum' or 'struct' after 'typedef', found {:?}", self.peek()))
             }
+        } else if self.at_kw("paramset") {
+            Ok(Item::Paramset(self.paramset(start)?))
         } else {
             Err(format!("expected top-level item, found {:?}", self.peek()))
         }
+    }
+
+    fn paramset(&mut self, start: usize) -> PResult<ParamsetDecl> {
+        self.expect_kw("paramset")?;
+        let name = self.name()?;
+        let base = self.name()?;
+        self.expect(&Tok::Semi)?;
+
+        let mut entries = Vec::new();
+        while !self.at_kw("endparamset") && !self.at_end() {
+            self.expect(&Tok::Dot)?;
+            let entry_name = self.name()?;
+            self.expect(&Tok::Assign)?;
+            let value = self.expr()?;
+            self.expect(&Tok::Semi)?;
+            entries.push(ParamsetEntry { name: entry_name, value });
+        }
+        self.expect_kw("endparamset")?;
+
+        let span = Span { start, end: self.prev_end() };
+        Ok(ParamsetDecl { span, name, base, entries })
     }
 
     fn extern_module(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ExternModuleDecl> {
@@ -117,6 +140,8 @@ impl<'a> Parser<'a> {
         self.expect_kw("parameter")?;
         let kind = if self.eat_kw("expr") {
             ExternParameterKind::Expr
+        } else if self.eat_kw("ref") {
+            ExternParameterKind::Ref
         } else {
             ExternParameterKind::Typed(self.type_()?)
         };
@@ -256,10 +281,10 @@ impl<'a> Parser<'a> {
             return Ok(ModuleItem::ParamDecl(self.param_decl(attrs, start)?));
         }
         if self.at_kw("aliasparam") { return self.alias_param(attrs, start); }
+        if self.looks_like_instance() { return self.instance(attrs, start); }
         if self.is_type_kw() || self.at_kw("genvar") {
             return Ok(ModuleItem::VarDecl(self.var_decl(attrs, start)?));
         }
-        if self.looks_like_instance() { return self.instance(attrs, start); }
         self.net_decl(attrs, start)
     }
 

@@ -158,11 +158,21 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn arg_list(&mut self) -> PResult<Vec<Expr>> {
+    fn arg_list(&mut self) -> PResult<Vec<CallArg>> {
         self.expect(&Tok::LParen)?;
         let mut args = Vec::new();
         while !self.at(&Tok::RParen) {
-            args.push(self.expr()?);
+            // Named arg: `ident = expr` (not `==`)
+            let arg = if matches!(self.peek(), Some(Tok::Ident(_)))
+                && matches!(self.peek_at(1), Some(Tok::Assign))
+            {
+                let name = self.ident()?;
+                self.expect(&Tok::Assign)?;
+                CallArg::Named(name, self.expr()?)
+            } else {
+                CallArg::Positional(self.expr()?)
+            };
+            args.push(arg);
             if !self.eat(&Tok::Comma) {
                 break;
             }

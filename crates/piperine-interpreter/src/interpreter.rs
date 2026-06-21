@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use piperine_parser::ast::*;
-use crate::backend::SimulatorBackend;
+use piperine_common::{EventAction, SimEventKind};
+use crate::backend::{SimulatorBackend, AnalysisEvent, collect_vectors};
 use crate::task::SystemTaskRegistry;
-use crate::value::Value;
+use crate::value::{Value, AnalysisResult, RunError, RunErrorKind};
 use crate::error::InterpreterError;
 use piperine_circuit::parse_si_real;
+use piperine_circuit::elaboration::AlwaysHandlerSet;
 
 /// Variable scope — flat map for Phase 1.
 /// Phase 3 adds nested scopes for function calls.
@@ -22,11 +24,117 @@ pub struct Interpreter<'a> {
     simulator: &'a mut dyn SimulatorBackend,
     tasks:     &'a SystemTaskRegistry,
     pub types: crate::value::TypeRegistry,
+    /// `always @(...)` handlers collected from the testbench module.
+    /// Set via `set_always_handlers()` before calling `exec()`.
+    /// Tasks that run analyses (e.g. `$tran`) use these to wire callbacks.
+    always_handlers: AlwaysHandlerSet,
 }
 
 impl<'a> Interpreter<'a> {
     pub fn new(simulator: &'a mut dyn SimulatorBackend, tasks: &'a SystemTaskRegistry) -> Self {
-        Self { simulator, tasks, types: crate::value::TypeRegistry::default() }
+        Self {
+            simulator,
+            tasks,
+            types: crate::value::TypeRegistry::default(),
+            always_handlers: AlwaysHandlerSet::default(),
+        }
+    }
+
+    /// Wire always-block handlers collected by the elaborator.
+    /// Must be called before `exec()` if the testbench has any `always @(...)` blocks.
+    pub fn set_always_handlers(&mut self, handlers: AlwaysHandlerSet) {
+        self.always_handlers = handlers;
+    }
+
+    /// Run an analysis command with always-handler wiring.
+    ///
+    /// Drives the `start_analysis` / `poll_analysis` / `respond_to_analysis_event`
+    /// protocol internally. Handler dispatch (`always @(step)` etc.) runs here,
+    /// cleanly separated from the backend IPC loop — no callbacks, no unsafe.
+    pub fn run_analysis(&mut self, cmd: &str) -> Result<AnalysisResult, InterpreterError> {
+        // Clone handlers so the borrow checker lets us use both self.simulator
+        // (for poll/respond) and self (for eval_statement) in the same loop.
+        let handlers = self.always_handlers.clone();
+        let fire_step = !handlers.step.is_empty();
+
+        self.simulator.start_analysis(cmd, fire_step)?;
+
+        let mut run_errors: Vec<RunError> = Vec::new();
+        let mut had_run_errors = false;
+        let plot_name;
+
+        loop {
+            // poll_analysis borrows self.simulator; borrow ends when we bind `event`.
+            let event = self.simulator.poll_analysis()?;
+            match event {
+                AnalysisEvent::Event { kind, time, crossing_id } => {
+                    // self.simulator is NOT borrowed here — safe to call eval_statement.
+                    let action = self.fire_event_internal(kind, time, crossing_id, &handlers);
+                    if let EventAction::RunError { ref message } = action {
+                        run_errors.push(RunError {
+                            message: message.clone(),
+                            time: Some(time),
+                            kind: RunErrorKind::UserAssert,
+                        });
+                    }
+                    self.simulator.respond_to_analysis_event(action)?;
+                }
+                AnalysisEvent::Done { plot_name: p, had_run_errors: e } => {
+                    plot_name = p;
+                    had_run_errors = e;
+                    break;
+                }
+            }
+        }
+
+        if had_run_errors && run_errors.is_empty() {
+            run_errors.push(RunError {
+                message: "run failed (SOA or simulator error)".into(),
+                time: None,
+                kind: RunErrorKind::SoaViolation,
+            });
+        }
+
+        let vectors = collect_vectors(self.simulator, &plot_name)?;
+        Ok(AnalysisResult {
+            kind: crate::value::parse_analysis_kind(cmd),
+            plot_name,
+            vectors,
+            run_errors,
+        })
+    }
+
+    fn fire_event_internal(
+        &mut self,
+        kind: SimEventKind,
+        time: f64,
+        crossing_id: u32,
+        handlers: &AlwaysHandlerSet,
+    ) -> EventAction {
+        let mut scope = Scope::default();
+        scope.set("time", Value::Real(time));
+
+        let stmts: &[Stmt] = match kind {
+            SimEventKind::InitialStep => &handlers.initial_step,
+            SimEventKind::Step        => &handlers.step,
+            SimEventKind::FinalStep   => &handlers.final_step,
+            SimEventKind::AboveCrossing => {
+                if let Some((_, id, stmt)) = handlers.above.iter().find(|(_, id, _)| *id == crossing_id) {
+                    let result = self.eval_statement(stmt, &mut scope);
+                    return to_event_action(result);
+                }
+                return EventAction::Continue;
+            }
+        };
+
+        for stmt in stmts {
+            let result = self.eval_statement(stmt, &mut scope);
+            let action = to_event_action(result);
+            if !matches!(action, EventAction::Continue) {
+                return action;
+            }
+        }
+        EventAction::Continue
     }
 
     pub fn exec(&mut self, statement: &Stmt, scope: &mut Scope) -> Result<(), InterpreterError> {
@@ -169,7 +277,19 @@ impl<'a> Interpreter<'a> {
 
             Expr::Path(path) => {
                 let name = path_to_string(path);
-                scope.get(&name).cloned().ok_or_else(|| InterpreterError::UndefinedVariable { name })
+                if let Some(val) = scope.get(&name).cloned() {
+                    Ok(val)
+                } else {
+                    // Try to resolve as an enum variant
+                    for (_, enum_def) in &self.types.enums {
+                        for (variant_name, variant_value) in &enum_def.variants {
+                            if variant_name == &name {
+                                return Ok(Value::Enum { type_id: enum_def.type_id, variant: *variant_value });
+                            }
+                        }
+                    }
+                    Err(InterpreterError::UndefinedVariable { name })
+                }
             }
 
             Expr::Paren(inner) => self.eval_expr(inner, scope),
@@ -191,23 +311,41 @@ impl<'a> Interpreter<'a> {
                 else                      { self.eval_expr(else_expr, scope) }
             }
 
-            Expr::Call(function_ref, arguments) => {
-                let mut evaluated_args = Vec::with_capacity(arguments.len());
-                for arg in arguments {
-                    evaluated_args.push(self.eval_expr(arg, scope)?);
+            Expr::Call(function_ref, call_args) => {
+                // Split positional vs named args
+                let mut positional = Vec::new();
+                let mut named: HashMap<String, Value> = HashMap::new();
+                for arg in call_args {
+                    match arg {
+                        CallArg::Positional(e) => positional.push(self.eval_expr(e, scope)?),
+                        CallArg::Named(name, e) => { named.insert(name.clone(), self.eval_expr(e, scope)?); }
+                    }
                 }
+                // Combined list for backwards-compat method dispatch
+                let all_args: Vec<Value> = positional.iter().cloned()
+                    .chain(named.values().cloned())
+                    .collect();
                 match function_ref {
                     FunctionRef::SysFun(name) => {
                         let task_name = name.trim_start_matches('$');
                         let task = self.tasks.get(task_name).ok_or_else(|| {
                             InterpreterError::UndefinedSystemTask { name: task_name.to_string() }
                         })?;
-                        Ok(task.call(evaluated_args, self.simulator)?.unwrap_or(Value::Void))
+                        Ok(task.call_named(positional, named, self.simulator)?.unwrap_or(Value::Void))
                     }
-                    FunctionRef::Path(path) => Err(InterpreterError::Other(format!(
-                        "user-defined function `{}` calls not supported in Phase 1",
-                        path_to_string(path)
-                    ))),
+                    FunctionRef::Path(path) => {
+                        let path_str = path_to_string(path);
+                        if let Some((obj_name, method)) = path_str.split_once('.') {
+                            if let Some(Value::ExternObject(obj)) = scope.get(obj_name) {
+                                return obj.call_method(method, &all_args)
+                                    .map_err(|e| InterpreterError::Other(e));
+                            }
+                        }
+                        Err(InterpreterError::Other(format!(
+                            "user-defined function `{}` calls not supported in Phase 1",
+                            path_str
+                        )))
+                    }
                 }
             }
 
@@ -221,6 +359,15 @@ impl<'a> Interpreter<'a> {
                 ))
             }
         }
+    }
+}
+
+fn to_event_action(result: Result<(), InterpreterError>) -> EventAction {
+    match result {
+        Ok(()) => EventAction::Continue,
+        Err(InterpreterError::RunFailed { message }) => EventAction::RunError { message },
+        Err(InterpreterError::Fatal { message, .. }) => EventAction::Halt { reason: message },
+        Err(e) => EventAction::Halt { reason: e.to_string() },
     }
 }
 
