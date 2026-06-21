@@ -13,7 +13,7 @@ pub use task::{SystemTask, SystemTaskRegistry};
 pub use interpreter::{Interpreter, Scope};
 
 use piperine_common::{EventAction, SimEventKind};
-use cvaf::ast::{Expr, Stmt};
+use piperine_parser::ast::{Expr, Stmt};
 
 /// Allows the simulator backend to call back into the interpreter to run
 /// always-block statement bodies during an active analysis.

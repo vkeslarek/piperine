@@ -592,8 +592,8 @@ impl HardwareRegistry {
 ### 4.6 `src/elaboration.rs`
 
 ```rust
-use cvaf::ast::{self, Expr, Literal, PathSegment};
-use cvaf::model::{Document, Module};
+use piperine_parser::ast::{self, Expr, Literal, PathSegment};
+use piperine_parser::model::{Document, Module};
 use crate::error::ElaborationError;
 use crate::registry::HardwareRegistry;
 use crate::types::{ParameterValue, ParameterMap, ConnectionMap, parse_si_real};
@@ -645,7 +645,7 @@ fn find_testbench(document: &Document) -> Option<&Module> {
 }
 
 fn resolve_parameters(
-    source_connections: &[cvaf::model::Connection],
+    source_connections: &[piperine_parser::model::Connection],
     instance_name: &str,
     definitions: &[crate::hardware::ParameterDefinition],
 ) -> Result<ParameterMap, ElaborationError> {
@@ -658,13 +658,13 @@ fn resolve_parameters(
     // Override with values from source.
     for connection in source_connections {
         match connection {
-            cvaf::model::Connection::Named { port, expr } => {
+            piperine_parser::model::Connection::Named { port, expr } => {
                 if let Some(expr) = expr {
                     let value = ast_expr_to_parameter_value(expr, port, instance_name)?;
                     map.insert(port.clone(), value);
                 }
             }
-            cvaf::model::Connection::Positional(_) => {
+            piperine_parser::model::Connection::Positional(_) => {
                 return Err(ElaborationError::TypeError {
                     parameter: "<positional>".into(),
                     detail: "positional parameter overrides not supported; use named syntax: #(.r(1k))".into(),
@@ -687,13 +687,13 @@ fn resolve_parameters(
 }
 
 fn resolve_connections(
-    source_connections: &[cvaf::model::Connection],
+    source_connections: &[piperine_parser::model::Connection],
     instance_name: &str,
 ) -> Result<ConnectionMap, ElaborationError> {
     let mut map = ConnectionMap::new();
     for connection in source_connections {
         match connection {
-            cvaf::model::Connection::Named { port, expr } => {
+            piperine_parser::model::Connection::Named { port, expr } => {
                 let net = match expr {
                     Some(Expr::Path(path)) => path_to_net_name(path),
                     None => String::new(), // unconnected port
@@ -706,7 +706,7 @@ fn resolve_connections(
                 let net = if net == "gnd" { "0".to_string() } else { net };
                 map.insert(port.clone(), net);
             }
-            cvaf::model::Connection::Positional(_) => {
+            piperine_parser::model::Connection::Positional(_) => {
                 return Err(ElaborationError::ConnectionError {
                     instance: instance_name.to_string(),
                     detail: "positional port connections not supported; use named: .p(net)".into(),
@@ -1108,7 +1108,7 @@ impl Scope {
 ### 6.2 Interpreter struct
 
 ```rust
-use cvaf::ast::*;
+use piperine_parser::ast::*;
 use crate::backend::SimulatorBackend;
 use crate::task::SystemTaskRegistry;
 use crate::value::Value;
@@ -1307,7 +1307,7 @@ impl<'a> Interpreter<'a> {
 ```rust
 use crate::value::Value;
 use crate::error::InterpreterError;
-use cvaf::ast::*;
+use piperine_parser::ast::*;
 use piperine_circuit::parse_si_real;
 
 fn eval_literal(literal: &Literal) -> Value {
@@ -1946,7 +1946,7 @@ fn main() {
 
 fn run(path: PathBuf) -> Result<(), String> {
     // 1. Parse.
-    let document = cvaf::parse_file(&path).map_err(|e| format!("parse: {e}"))?;
+    let document = piperine_parser::parse_file(&path).map_err(|e| format!("parse: {e}"))?;
 
     // 2. Create registries.
     let mut hardware_registry = HardwareRegistry::new();

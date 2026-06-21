@@ -1,6 +1,6 @@
 //! Verifies the ergonomic model surfaces every parsed feature — no silent drops.
 
-use cvaf::*;
+use piperine_parser::*;
 
 const SRC: &str = r#"
 (* my_module_attr = "x" *)

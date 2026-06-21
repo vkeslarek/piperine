@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use cvaf::ast::{self, Expr, Literal, PathSegment, PrefixOp};
-use cvaf::model::{Document, Module};
+use piperine_parser::ast::{self, Expr, Literal, PathSegment, PrefixOp};
+use piperine_parser::model::{Document, Module};
 use crate::error::ElaborationError;
 use crate::registry::HardwareRegistry;
 use crate::types::{ParameterValue, ParameterMap, ConnectionMap, parse_si_real};
@@ -80,7 +80,7 @@ pub fn elaborate(
 }
 
 fn elaborate_instances(
-    instances: &[cvaf::model::Instance],
+    instances: &[piperine_parser::model::Instance],
     document: &Document,
     registry: &HardwareRegistry,
     path: &str,
@@ -94,7 +94,7 @@ fn elaborate_instances(
 }
 
 fn elaborate_instance(
-    instance: &cvaf::model::Instance,
+    instance: &piperine_parser::model::Instance,
     document: &Document,
     registry: &HardwareRegistry,
     path: &str,
@@ -208,7 +208,7 @@ fn find_testbench(document: &Document) -> Option<&Module> {
 }
 
 fn resolve_connections(
-    source_connections: &[cvaf::model::Connection],
+    source_connections: &[piperine_parser::model::Connection],
     instance_name: &str,
     path: &str,
     net_map: &NetMap,
@@ -216,7 +216,7 @@ fn resolve_connections(
     let mut map = ConnectionMap::new();
     for connection in source_connections {
         match connection {
-            cvaf::model::Connection::Named { port, expr } => {
+            piperine_parser::model::Connection::Named { port, expr } => {
                 let raw = match expr {
                     Some(Expr::Path(p)) => path_to_net_name(p),
                     None => String::new(),
@@ -227,7 +227,7 @@ fn resolve_connections(
                 };
                 map.insert(port.clone(), resolve_net(&raw, net_map, path));
             }
-            cvaf::model::Connection::Positional(_) => {
+            piperine_parser::model::Connection::Positional(_) => {
                 return Err(ElaborationError::ConnectionError {
                     instance: instance_name.to_string(),
                     detail: "positional port connections not supported; use named: .p(net)".into(),
@@ -239,7 +239,7 @@ fn resolve_connections(
 }
 
 fn resolve_parameters(
-    source_connections: &[cvaf::model::Connection],
+    source_connections: &[piperine_parser::model::Connection],
     instance_name: &str,
     definitions: &[crate::hardware::ParameterDefinition],
 ) -> Result<ParameterMap, ElaborationError> {
@@ -250,7 +250,7 @@ fn resolve_parameters(
 
     for connection in source_connections {
         match connection {
-            cvaf::model::Connection::Named { port, expr } => {
+            piperine_parser::model::Connection::Named { port, expr } => {
                 if let Some(expr) = expr {
                     let is_expr = definitions.iter().find(|d| d.name == *port).map(|d| d.is_expr).unwrap_or(false);
                     let value = if is_expr {
@@ -261,7 +261,7 @@ fn resolve_parameters(
                     map.insert(port.clone(), value);
                 }
             }
-            cvaf::model::Connection::Positional(_) => {
+            piperine_parser::model::Connection::Positional(_) => {
                 return Err(ElaborationError::TypeError {
                     parameter: "<positional>".into(),
                     detail: "positional parameter overrides not supported; use named syntax: #(.r(1k))".into(),
@@ -335,7 +335,7 @@ pub struct VaModuleInfo {
     pub module_name: String,
     pub port_names: Vec<String>,
     /// (parameter_name, default_expr)
-    pub parameter_defaults: Vec<(String, cvaf::ast::Expr)>,
+    pub parameter_defaults: Vec<(String, piperine_parser::ast::Expr)>,
 }
 
 /// Find all VA modules (analog block present, no initial block).

@@ -1,7 +1,7 @@
 //! Locks number lexing to match OpenVAF's cursor: scale chars consumed
 //! unconditionally; no scale char after an exponent.
 
-use cvaf::lexer::{tokenize, Tok};
+use piperine_parser::lexer::{tokenize, Tok};
 
 fn toks(s: &str) -> Vec<Tok> {
     tokenize(s).unwrap().into_iter().map(|l| l.tok).collect()

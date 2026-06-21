@@ -170,10 +170,10 @@ fn test_run_analysis_early_halt() {
 
 #[test]
 fn test_parser_and_elaborator_always_blocks() {
-    use cvaf::model::Document;
+    use piperine_parser::model::Document;
     use piperine_circuit::elaboration::elaborate;
     use piperine_circuit::registry::HardwareRegistry;
-    use cvaf::parser::parse;
+    use piperine_parser::parser::parse;
 
     let source = r#"
 module tb;
@@ -226,8 +226,8 @@ endmodule
 
 #[test]
 fn test_parser_and_elaborator_assert_stmts() {
-    use cvaf::parser::parse;
-    use cvaf::ast::{Stmt, BlockItem};
+    use piperine_parser::parser::parse;
+    use piperine_parser::ast::{Stmt, BlockItem};
 
     let source = r#"
 module tb;
@@ -267,8 +267,8 @@ endmodule
 
 #[test]
 fn test_parser_typedef_and_extern() {
-    use cvaf::parser::parse;
-    use cvaf::ast::Item;
+    use piperine_parser::parser::parse;
+    use piperine_parser::ast::Item;
 
     let source = r#"
 typedef enum {

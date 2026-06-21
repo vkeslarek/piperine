@@ -6,7 +6,7 @@ pub enum ParameterValue {
     Real(f64),
     Integer(i64),
     String(std::string::String),
-    Ast(cvaf::ast::Expr),
+    Ast(piperine_parser::ast::Expr),
 }
 
 impl ParameterValue {

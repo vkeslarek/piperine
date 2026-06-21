@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use cvaf::parse_file;
+use piperine_parser::parse_file;
 
 /// A fixture is a *standalone* compilation unit only if it declares a module
 /// (or a top-level discipline/nature). Many `.va` files in these libraries are

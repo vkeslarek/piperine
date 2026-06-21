@@ -1,4 +1,4 @@
-use cvaf::ast::{Expr, FunctionRef, Literal, BinOp, PrefixOp, PathSegment};
+use piperine_parser::ast::{Expr, FunctionRef, Literal, BinOp, PrefixOp, PathSegment};
 use piperine_circuit::NetResolver;
 
 /// Convert a Piperine AST expression to an ngspice B-source expression string.
@@ -129,7 +129,7 @@ fn extract_net_path(expr: &Expr) -> Result<String, String> {
     }
 }
 
-fn flatten_path(p: &cvaf::ast::Path) -> String {
+fn flatten_path(p: &piperine_parser::ast::Path) -> String {
     let seg = match &p.segment { PathSegment::Ident(s) => s.as_str(), PathSegment::Root => "root" };
     match &p.qualifier {
         Some(q) => format!("{}.{}", flatten_path(q), seg),
@@ -137,10 +137,10 @@ fn flatten_path(p: &cvaf::ast::Path) -> String {
     }
 }
 
-fn path_leaf(p: &cvaf::ast::Path) -> String {
+fn path_leaf(p: &piperine_parser::ast::Path) -> String {
     match &p.segment { PathSegment::Ident(s) => s.clone(), PathSegment::Root => "root".into() }
 }
 
-fn path_is(name: &str, p: &cvaf::ast::Path) -> bool {
+fn path_is(name: &str, p: &piperine_parser::ast::Path) -> bool {
     p.qualifier.is_none() && matches!(&p.segment, PathSegment::Ident(s) if s == name)
 }

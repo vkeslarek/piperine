@@ -23,7 +23,7 @@ fn main() {
 
 fn run(path: PathBuf) -> Result<(), String> {
     // ── 1. Parse ─────────────────────────────────────────────────────────────
-    let document = cvaf::parse_file(&path).map_err(|e| format!("parse: {e}"))?;
+    let document = piperine_parser::parse_file(&path).map_err(|e| format!("parse: {e}"))?;
 
     // ── 2. Find VA modules (analog block, no initial block) ───────────────────
     let va_modules = extract_va_modules(&document);

@@ -469,7 +469,7 @@ pub struct VaModuleInfo {
     pub module_name: String,
     pub port_names: Vec<String>,
     /// (parameter_name, default_expr)
-    pub parameter_defaults: Vec<(String, cvaf::ast::Expr)>,
+    pub parameter_defaults: Vec<(String, piperine_parser::ast::Expr)>,
 }
 
 /// Find all VA modules (analog block present, no initial block).
@@ -491,7 +491,7 @@ pub fn extract_va_modules(document: &Document) -> Vec<VaModuleInfo> {
 ### 10.2 `eval_default_expr`
 
 ```rust
-use cvaf::ast::{Expr, Literal, PrefixOp};
+use piperine_parser::ast::{Expr, Literal, PrefixOp};
 
 /// Convert a compile-time-constant AST expression to a ParameterValue.
 pub fn eval_default_expr(expr: &Expr) -> Option<ParameterValue> {
@@ -586,7 +586,7 @@ fn main() {
 
 fn run(path: PathBuf) -> Result<(), String> {
     // ── 1. Parse ─────────────────────────────────────────────────────────────
-    let document = cvaf::parse_file(&path).map_err(|e| format!("parse: {e}"))?;
+    let document = piperine_parser::parse_file(&path).map_err(|e| format!("parse: {e}"))?;
 
     // ── 2. Find VA modules (analog block, no initial block) ───────────────────
     let va_modules = extract_va_modules(&document);

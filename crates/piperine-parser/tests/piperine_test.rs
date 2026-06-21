@@ -1,6 +1,6 @@
 //! Piperine-specific tests.
 
-use cvaf::lexer::{tokenize, Tok};
+use piperine_parser::lexer::{tokenize, Tok};
 
 #[test]
 fn time_literals_lex() {
