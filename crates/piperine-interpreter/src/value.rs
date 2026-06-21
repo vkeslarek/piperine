@@ -13,6 +13,26 @@ pub enum Value {
     Complex(f64, f64),
     AnalysisHandle(Arc<AnalysisResult>),
     ExternObject(Arc<dyn ExternClass>),
+    Enum { type_id: u32, variant: i64 },
+    Struct { type_id: u32, fields: HashMap<String, Value> },
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct TypeRegistry {
+    pub enums: HashMap<String, EnumTypeDef>,
+    pub structs: HashMap<String, StructTypeDef>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumTypeDef {
+    pub type_id: u32,
+    pub variants: Vec<(String, i64)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructTypeDef {
+    pub type_id: u32,
+    pub fields: Vec<(String, String)>,
 }
 
 impl PartialEq for Value {
@@ -25,8 +45,13 @@ impl PartialEq for Value {
             (Value::RealVec(a), Value::RealVec(b)) => a == b,
             (Value::Complex(r1, i1), Value::Complex(r2, i2)) => r1 == r2 && i1 == i2,
             (Value::AnalysisHandle(a), Value::AnalysisHandle(b)) => Arc::ptr_eq(a, b),
-            // For ExternObject we just use pointer equality
             (Value::ExternObject(a), Value::ExternObject(b)) => std::ptr::addr_eq(Arc::as_ptr(a), Arc::as_ptr(b)),
+            (Value::Enum { type_id: a_id, variant: a_v }, Value::Enum { type_id: b_id, variant: b_v }) => {
+                a_id == b_id && a_v == b_v
+            }
+            (Value::Struct { type_id: a_id, fields: a_f }, Value::Struct { type_id: b_id, fields: b_f }) => {
+                a_id == b_id && a_f == b_f
+            }
             _ => false,
         }
     }
@@ -98,6 +123,8 @@ impl Value {
             Value::Complex(_,_) => "complex",
             Value::AnalysisHandle(_) => "analysis_handle",
             Value::ExternObject(_) => "extern_object",
+            Value::Enum { .. } => "enum",
+            Value::Struct { .. } => "struct",
         }
     }
 }
@@ -113,6 +140,8 @@ impl fmt::Display for Value {
             Value::Complex(r, i) => write!(f, "{r}+{i}i"),
             Value::AnalysisHandle(a) => write!(f, "<analysis {}>", a.plot_name),
             Value::ExternObject(_) => write!(f, "<extern_object>"),
+            Value::Enum { type_id, variant } => write!(f, "<enum type={} variant={}>", type_id, variant),
+            Value::Struct { type_id, fields } => write!(f, "<struct type={} fields={}>", type_id, fields.len()),
         }
     }
 }

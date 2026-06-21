@@ -16,6 +16,9 @@ impl<'a> Parser<'a> {
         if self.at_kw("while")             { return self.while_stmt(attrs); }
         if self.at_kw("for")               { return self.for_stmt(attrs); }
         if self.at_any_kw(&["case", "casex", "casez"]) { return self.case_stmt(attrs); }
+        if self.at_kw("assert")            { return self.assert_stmt(attrs, 0); }
+        if self.at_kw("assert_run")        { return self.assert_stmt(attrs, 1); }
+        if self.at_kw("assert_warn")       { return self.assert_stmt(attrs, 2); }
         self.assign_or_expr_stmt(attrs)
     }
 
@@ -137,5 +140,25 @@ impl<'a> Parser<'a> {
         };
         let stmt = Box::new(self.stmt()?);
         Ok(Stmt::Event(EventStmt { attrs, event, stmt }))
+    }
+
+    fn assert_stmt(&mut self, attrs: Vec<Attr>, kind: u8) -> PResult<Stmt> {
+        self.bump();
+        self.expect(&Tok::LParen)?;
+        let condition = self.expr()?;
+        self.expect(&Tok::RParen)?;
+        let message = if self.eat_kw("else") {
+            Some(self.expr()?)
+        } else {
+            None
+        };
+        self.eat(&Tok::Semi);
+        let stmt = AssertStmt { attrs, condition, message };
+        Ok(match kind {
+            0 => Stmt::Assert(stmt),
+            1 => Stmt::AssertRun(stmt),
+            2 => Stmt::AssertWarn(stmt),
+            _ => unreachable!(),
+        })
     }
 }

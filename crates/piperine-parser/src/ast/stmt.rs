@@ -17,6 +17,9 @@ pub enum Stmt {
     Case(CaseStmt),
     Event(EventStmt),
     Block(BlockStmt),
+    Assert(AssertStmt),
+    AssertRun(AssertStmt),
+    AssertWarn(AssertStmt),
 }
 
 #[derive(Debug, Clone)]
@@ -107,4 +110,11 @@ pub enum BlockItem {
     VarDecl(VarDecl),
     ParamDecl(ParamDecl),
     Stmt(Stmt),
+}
+
+#[derive(Debug, Clone)]
+pub struct AssertStmt {
+    pub attrs: Vec<Attr>,
+    pub condition: Expr,
+    pub message: Option<Expr>,
 }

@@ -14,6 +14,9 @@ pub struct Document {
     pub disciplines: Vec<Discipline>,
     pub natures: Vec<Nature>,
     pub extern_modules: Vec<crate::ast::ExternModuleDecl>,
+    pub typedef_enums: Vec<crate::ast::TypedefEnum>,
+    pub typedef_structs: Vec<crate::ast::TypedefStruct>,
+    pub extern_classes: Vec<crate::ast::ExternClassDecl>,
 }
 
 /// A `(* name = value *)` attribute.

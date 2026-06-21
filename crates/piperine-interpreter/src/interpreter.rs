@@ -21,11 +21,12 @@ impl Scope {
 pub struct Interpreter<'a> {
     simulator: &'a mut dyn SimulatorBackend,
     tasks:     &'a SystemTaskRegistry,
+    pub types: crate::value::TypeRegistry,
 }
 
 impl<'a> Interpreter<'a> {
     pub fn new(simulator: &'a mut dyn SimulatorBackend, tasks: &'a SystemTaskRegistry) -> Self {
-        Self { simulator, tasks }
+        Self { simulator, tasks, types: crate::value::TypeRegistry::default() }
     }
 
     pub fn exec(&mut self, statement: &Stmt, scope: &mut Scope) -> Result<(), InterpreterError> {
@@ -98,9 +99,41 @@ impl<'a> Interpreter<'a> {
             }
 
             Stmt::Event(_) => {
-                return Err(InterpreterError::Other(
-                    "event statements (`@(...)`) not supported in Phase 1 — arrives in Phase 4".into()
-                ));
+                // Event statements inside executable contexts (like $tran callbacks)
+                // are not directly evaluated. They are collected by the elaborator.
+            }
+
+            Stmt::Assert(a) => {
+                let cond = self.eval_expr(&a.condition, scope)?;
+                if !cond.is_truthy() {
+                    let msg = a.message.as_ref()
+                        .and_then(|m| self.eval_expr(m, scope).ok())
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "assertion failed".into());
+                    return Err(InterpreterError::Fatal { message: msg, exit_code: 1 });
+                }
+            }
+
+            Stmt::AssertRun(a) => {
+                let cond = self.eval_expr(&a.condition, scope)?;
+                if !cond.is_truthy() {
+                    let msg = a.message.as_ref()
+                        .and_then(|m| self.eval_expr(m, scope).ok())
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "run assertion failed".into());
+                    return Err(InterpreterError::RunFailed { message: msg });
+                }
+            }
+
+            Stmt::AssertWarn(a) => {
+                let cond = self.eval_expr(&a.condition, scope)?;
+                if !cond.is_truthy() {
+                    let msg = a.message.as_ref()
+                        .and_then(|m| self.eval_expr(m, scope).ok())
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "warning".into());
+                    self.simulator.print(&format!("WARNING: {msg}"));
+                }
             }
         }
         Ok(())
@@ -291,9 +324,10 @@ fn eval_binary_integer(a: i64, op: &BinOp, b: i64) -> Result<Value, InterpreterE
 
 fn type_zero_value(ty: &Type) -> Value {
     match ty {
-        Type::Real    => Value::Real(0.0),
         Type::Integer => Value::Integer(0),
+        Type::Real    => Value::Real(0.0),
         Type::String  => Value::String(String::new()),
+        Type::Custom(_) => Value::Void, // For now, custom types start as void
     }
 }
 

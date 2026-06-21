@@ -14,8 +14,11 @@ pub enum InterpreterError {
     #[error("simulator error: {0}")]
     SimulatorError(String),
 
-    #[error("assertion failed: {message}")]
-    AssertionFailed { message: String },
+    #[error("fatal error: {message}")]
+    Fatal { message: String, exit_code: u32 },
+
+    #[error("run failed: {message}")]
+    RunFailed { message: String },
 
     #[error("{0}")]
     Other(String),

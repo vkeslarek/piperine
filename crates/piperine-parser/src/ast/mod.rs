@@ -29,6 +29,9 @@ pub enum Item {
     NatureDecl(NatureDecl),
     ModuleDecl(ModuleDecl),
     ExternModule(ExternModuleDecl),
+    TypedefEnum(TypedefEnum),
+    TypedefStruct(TypedefStruct),
+    ExternClass(ExternClassDecl),
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +57,7 @@ pub enum Type {
     Integer,
     Real,
     String,
+    Custom(Name),
 }
 
 /// A declaration bit/array range `[msb:lsb]` (or `[size]`, where `msb == lsb`).

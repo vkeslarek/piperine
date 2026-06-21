@@ -182,13 +182,20 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_kw(&self) -> bool {
-        self.at_any_kw(&["integer", "real", "string"])
+        if self.at_any_kw(&["integer", "real", "string"]) {
+            true
+        } else if let Some(Tok::Ident(_)) = self.peek() {
+            matches!(self.peek_at(1), Some(Tok::Ident(_)))
+        } else {
+            false
+        }
     }
 
     fn type_(&mut self) -> PResult<Type> {
         if      self.eat_kw("integer") { Ok(Type::Integer) }
         else if self.eat_kw("real")    { Ok(Type::Real)    }
         else if self.eat_kw("string")  { Ok(Type::String)  }
+        else if let Some(Tok::Ident(_)) = self.peek() { Ok(Type::Custom(self.name()?)) }
         else { Err(format!("expected a type, found {:?}", self.peek())) }
     }
 

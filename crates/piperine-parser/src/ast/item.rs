@@ -304,3 +304,33 @@ pub enum AlwaysSensitivity {
     Above(Expr),          // above(threshold_expr)
     Cross(Expr, i8),      // cross(expr, direction): +1, -1, or 0 for both
 }
+
+#[derive(Debug, Clone)]
+pub struct TypedefEnum {
+    pub name: Name,
+    pub base_type: Option<Type>,
+    pub variants: Vec<EnumVariant>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumVariant {
+    pub name: Name,
+    pub value: Option<Expr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedefStruct {
+    pub name: Name,
+    pub fields: Vec<StructField>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructField {
+    pub ty: Type,
+    pub name: Name,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExternClassDecl {
+    pub name: Name,
+}

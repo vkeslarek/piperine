@@ -15,14 +15,31 @@ impl<'a> Parser<'a> {
         } else if self.at_kw("module") || self.at_kw("macromodule") {
             Ok(Item::ModuleDecl(self.module(attrs, start)?))
         } else if self.at_kw("extern") {
-            Ok(Item::ExternModule(self.extern_module(attrs, start)?))
+            // We need to look ahead to see if it is `extern module` or `extern class`
+            // Since we don't have peek_nth, we'll just parse the `extern` token
+            self.bump();
+            if self.at_kw("class") {
+                Ok(Item::ExternClass(self.extern_class()?))
+            } else if self.at_kw("module") {
+                Ok(Item::ExternModule(self.extern_module(attrs, start)?))
+            } else {
+                Err(format!("expected 'module' or 'class' after 'extern', found {:?}", self.peek()))
+            }
+        } else if self.at_kw("typedef") {
+            self.bump();
+            if self.at_kw("enum") {
+                Ok(Item::TypedefEnum(self.typedef_enum()?))
+            } else if self.at_kw("struct") {
+                Ok(Item::TypedefStruct(self.typedef_struct()?))
+            } else {
+                Err(format!("expected 'enum' or 'struct' after 'typedef', found {:?}", self.peek()))
+            }
         } else {
             Err(format!("expected top-level item, found {:?}", self.peek()))
         }
     }
 
     fn extern_module(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ExternModuleDecl> {
-        self.expect_kw("extern")?;
         self.expect_kw("module")?;
         let name = self.name()?;
         self.expect(&Tok::LParen)?;
@@ -52,9 +69,50 @@ impl<'a> Parser<'a> {
 
         self.expect(&Tok::RParen)?;
         self.expect(&Tok::Semi)?;
-        Ok(ExternModuleDecl { attrs, name, ports, parameters, span: Span { start, end: self.prev_end() } })
+
+        let span = Span { start, end: self.prev_end() };
+        Ok(ExternModuleDecl { span, attrs, name, ports, parameters })
     }
 
+    fn extern_class(&mut self) -> PResult<ExternClassDecl> {
+        self.expect_kw("class")?;
+        let name = self.name()?;
+        self.expect(&Tok::Semi)?;
+        Ok(ExternClassDecl { name })
+    }
+
+    fn typedef_enum(&mut self) -> PResult<TypedefEnum> {
+        self.expect_kw("enum")?;
+        let base_type = if self.is_type_kw() { Some(self.type_()?) } else { None };
+        self.expect(&Tok::LBrace)?;
+        let mut variants = Vec::new();
+        while !self.at(&Tok::RBrace) && !self.at_end() {
+            let name = self.name()?;
+            let value = if self.eat(&Tok::Assign) { Some(self.expr()?) } else { None };
+            variants.push(EnumVariant { name, value });
+            if !self.eat(&Tok::Comma) { break; }
+        }
+        self.expect(&Tok::RBrace)?;
+        let name = self.name()?;
+        self.expect(&Tok::Semi)?;
+        Ok(TypedefEnum { name, base_type, variants })
+    }
+
+    fn typedef_struct(&mut self) -> PResult<TypedefStruct> {
+        self.expect_kw("struct")?;
+        self.expect(&Tok::LBrace)?;
+        let mut fields = Vec::new();
+        while !self.at(&Tok::RBrace) && !self.at_end() {
+            let ty = self.type_()?;
+            let name = self.name()?;
+            self.expect(&Tok::Semi)?;
+            fields.push(StructField { ty, name });
+        }
+        self.expect(&Tok::RBrace)?;
+        let name = self.name()?;
+        self.expect(&Tok::Semi)?;
+        Ok(TypedefStruct { name, fields })
+    }
     fn extern_parameter(&mut self) -> PResult<ExternParameter> {
         self.expect_kw("parameter")?;
         let kind = if self.eat_kw("expr") {

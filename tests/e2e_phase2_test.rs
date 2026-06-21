@@ -223,3 +223,95 @@ endmodule
     assert_eq!(*dir, 1);
     assert_eq!(*crossing_id, 1);
 }
+
+#[test]
+fn test_parser_and_elaborator_assert_stmts() {
+    use cvaf::parser::parse;
+    use cvaf::ast::{Stmt, BlockItem};
+
+    let source = r#"
+module tb;
+    initial begin
+        assert (1 == 1) else $fatal(1, "should not fail");
+        assert_run (2 == 2) else $run_error("run error");
+        assert_warn (3 == 3) else $warning("warn");
+    end
+endmodule
+"#;
+
+    let document = parse(source).expect("Failed to parse source");
+    let registry = piperine_circuit::registry::HardwareRegistry::new();
+    let result = piperine_circuit::elaboration::elaborate(&document, &registry).expect("Elaboration failed");
+
+    let mut found_assert = false;
+    let mut found_assert_run = false;
+    let mut found_assert_warn = false;
+
+    if let Stmt::Block(b) = result.initial_statement {
+        for item in &b.items {
+            if let BlockItem::Stmt(stmt) = item {
+                match stmt {
+                    Stmt::Assert(_) => found_assert = true,
+                    Stmt::AssertRun(_) => found_assert_run = true,
+                    Stmt::AssertWarn(_) => found_assert_warn = true,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    assert!(found_assert, "Missing Assert stmt");
+    assert!(found_assert_run, "Missing AssertRun stmt");
+    assert!(found_assert_warn, "Missing AssertWarn stmt");
+}
+
+#[test]
+fn test_parser_typedef_and_extern() {
+    use cvaf::parser::parse;
+    use cvaf::ast::Item;
+
+    let source = r#"
+typedef enum {
+    S_IDLE = 0,
+    S_RUN = 1
+} state_t;
+
+typedef struct {
+    real value;
+    integer valid;
+} data_pkt;
+
+extern class CppHandler;
+
+module tb;
+    state_t c = S_IDLE;
+endmodule
+"#;
+
+    let document = parse(source).expect("Failed to parse source");
+
+    let mut found_enum = false;
+    let mut found_struct = false;
+    let mut found_class = false;
+
+    for e in &document.typedef_enums {
+        assert_eq!(e.name.0, "state_t");
+        assert_eq!(e.variants.len(), 2);
+        found_enum = true;
+    }
+    
+    for s in &document.typedef_structs {
+        assert_eq!(s.name.0, "data_pkt");
+        assert_eq!(s.fields.len(), 2);
+        found_struct = true;
+    }
+    
+    for c in &document.extern_classes {
+        assert_eq!(c.name.0, "CppHandler");
+        found_class = true;
+    }
+
+    assert!(found_enum, "Missing TypedefEnum");
+    assert!(found_struct, "Missing TypedefStruct");
+    assert!(found_class, "Missing ExternClass");
+}

@@ -54,6 +54,15 @@ pub fn parse_with_includes(input: &str, include_dirs: &[PathBuf]) -> Result<Docu
             ast::Item::ExternModule(decl) => {
                 doc.extern_modules.push(decl);
             }
+            ast::Item::TypedefEnum(decl) => {
+                doc.typedef_enums.push(decl);
+            }
+            ast::Item::TypedefStruct(decl) => {
+                doc.typedef_structs.push(decl);
+            }
+            ast::Item::ExternClass(decl) => {
+                doc.extern_classes.push(decl);
+            }
         }
     }
 

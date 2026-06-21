@@ -170,3 +170,82 @@ fn format_display_string(format: &str, arguments: &[Value]) -> String {
     }
     output
 }
+
+// ── $run_error(fmt, args...) ─────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct RunErrorTask;
+
+impl SystemTask for RunErrorTask {
+    fn name(&self) -> &str { "run_error" }
+
+    fn call(
+        &self,
+        arguments: Vec<Value>,
+        _simulator: &mut dyn SimulatorBackend,
+    ) -> Result<Option<Value>, InterpreterError> {
+        let msg = if arguments.is_empty() {
+            "run failed".into()
+        } else {
+            let format_string = arguments[0].as_str().unwrap_or_default();
+            format_display_string(&format_string, &arguments[1..])
+        };
+        Err(InterpreterError::RunFailed { message: msg })
+    }
+}
+
+// ── $fatal([exit_code,] fmt, args...) ────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct FatalTask;
+
+impl SystemTask for FatalTask {
+    fn name(&self) -> &str { "fatal" }
+
+    fn call(
+        &self,
+        arguments: Vec<Value>,
+        _simulator: &mut dyn SimulatorBackend,
+    ) -> Result<Option<Value>, InterpreterError> {
+        let mut exit_code = 1;
+        let mut fmt_idx = 0;
+        
+        if !arguments.is_empty() && matches!(arguments[0], Value::Integer(_)) {
+            exit_code = arguments[0].as_integer().unwrap() as u32;
+            fmt_idx = 1;
+        }
+
+        let msg = if fmt_idx < arguments.len() {
+            let format_string = arguments[fmt_idx].as_str().unwrap_or_default();
+            format_display_string(&format_string, &arguments[(fmt_idx + 1)..])
+        } else {
+            "fatal error".into()
+        };
+
+        Err(InterpreterError::Fatal { message: msg, exit_code })
+    }
+}
+
+// ── $warning(fmt, args...) ───────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct WarningTask;
+
+impl SystemTask for WarningTask {
+    fn name(&self) -> &str { "warning" }
+
+    fn call(
+        &self,
+        arguments: Vec<Value>,
+        simulator: &mut dyn SimulatorBackend,
+    ) -> Result<Option<Value>, InterpreterError> {
+        let msg = if arguments.is_empty() {
+            "warning".into()
+        } else {
+            let format_string = arguments[0].as_str().unwrap_or_default();
+            format_display_string(&format_string, &arguments[1..])
+        };
+        simulator.print(&format!("WARNING: {}", msg));
+        Ok(None)
+    }
+}

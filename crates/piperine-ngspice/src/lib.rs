@@ -43,6 +43,9 @@ impl Plugin for NgspicePlugin {
         registry.register(Box::new(VoltageTask));
         registry.register(Box::new(CurrentTask));
         registry.register(Box::new(DisplayTask));
+        registry.register(Box::new(RunErrorTask));
+        registry.register(Box::new(FatalTask));
+        registry.register(Box::new(WarningTask));
     }
 
     fn simulator_backend(&self) -> Option<Box<dyn SimulatorBackend>> {
