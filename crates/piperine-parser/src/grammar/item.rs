@@ -57,10 +57,14 @@ impl<'a> Parser<'a> {
 
     fn extern_parameter(&mut self) -> PResult<ExternParameter> {
         self.expect_kw("parameter")?;
-        let ty = self.type_()?;
+        let kind = if self.eat_kw("expr") {
+            ExternParameterKind::Expr
+        } else {
+            ExternParameterKind::Typed(self.type_()?)
+        };
         let name = self.name()?;
         let default = if self.eat(&Tok::Assign) { Some(self.expr()?) } else { None };
-        Ok(ExternParameter { name, ty, default })
+        Ok(ExternParameter { name, kind, default })
     }
 
     // ── discipline ───────────────────────────────────────────────────────
@@ -175,6 +179,9 @@ impl<'a> Parser<'a> {
 
         if self.at_kw("initial") {
             return self.initial_block(attrs, start);
+        }
+        if self.at_kw("always") {
+            return self.always_block(attrs, start);
         }
 
         if self.at_dir() {
@@ -429,6 +436,55 @@ impl<'a> Parser<'a> {
         let stmt = Box::new(self.stmt()?);
         Ok(ModuleItem::InitialBlock(InitialBlock {
             attrs, stmt, span: Span { start, end: self.prev_end() },
+        }))
+    }
+
+    fn always_block(&mut self, _attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        self.expect_kw("always")?;
+        self.expect(&Tok::At)?;
+        self.expect(&Tok::LParen)?;
+        let sensitivity = if self.eat_kw("initial_step") {
+            AlwaysSensitivity::InitialStep
+        } else if self.eat_kw("final_step") {
+            AlwaysSensitivity::FinalStep
+        } else if self.eat_kw("step") {
+            AlwaysSensitivity::Step
+        } else if self.eat_kw("above") {
+            self.expect(&Tok::LParen)?;
+            let expr = self.expr()?;
+            self.expect(&Tok::RParen)?;
+            AlwaysSensitivity::Above(expr)
+        } else if self.eat_kw("cross") {
+            self.expect(&Tok::LParen)?;
+            let expr = self.expr()?;
+            self.expect(&Tok::Comma)?;
+            
+            let mut sign = 1;
+            if self.eat(&Tok::Plus) {
+                sign = 1;
+            } else if self.eat(&Tok::Minus) {
+                sign = -1;
+            }
+            
+            let dir = if let Some(Tok::Int(val)) = self.peek() {
+                let val = val.clone();
+                self.pos += 1;
+                let num: i8 = val.parse().map_err(|_| "invalid crossing direction")?;
+                num * sign
+            } else {
+                return Err("expected crossing direction (+1, -1, 0)".into());
+            };
+            self.expect(&Tok::RParen)?;
+            AlwaysSensitivity::Cross(expr, dir)
+        } else {
+            return Err("expected sensitivity inside always @(...)".into());
+        };
+        self.expect(&Tok::RParen)?;
+        let stmt = Box::new(self.stmt()?);
+        Ok(ModuleItem::AlwaysBlock(AlwaysBlock {
+            span: Span { start, end: self.prev_end() },
+            sensitivity,
+            stmt,
         }))
     }
 }

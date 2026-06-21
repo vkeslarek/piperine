@@ -6,6 +6,7 @@ pub enum ParameterValue {
     Real(f64),
     Integer(i64),
     String(std::string::String),
+    Ast(cvaf::ast::Expr),
 }
 
 impl ParameterValue {
@@ -14,6 +15,7 @@ impl ParameterValue {
             ParameterValue::Real(v)    => Some(*v),
             ParameterValue::Integer(i) => Some(*i as f64),
             ParameterValue::String(_)  => None,
+            ParameterValue::Ast(_)     => None,
         }
     }
     pub fn as_str(&self) -> Option<&str> {
@@ -27,6 +29,7 @@ impl std::fmt::Display for ParameterValue {
             ParameterValue::Real(v)    => write!(f, "{v}"),
             ParameterValue::Integer(i) => write!(f, "{i}"),
             ParameterValue::String(s)  => write!(f, "{s}"),
+            ParameterValue::Ast(_)     => write!(f, "<ast_expr>"),
         }
     }
 }

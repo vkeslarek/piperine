@@ -17,6 +17,7 @@ pub struct PortDefinition {
 #[derive(Debug, Clone)]
 pub struct ParameterDefinition {
     pub name: String,
+    pub is_expr: bool,
     /// Default value. `None` means the parameter is mandatory.
     pub default: Option<ParameterValue>,
 }

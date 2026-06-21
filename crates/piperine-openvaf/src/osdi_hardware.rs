@@ -1,6 +1,6 @@
 use piperine_circuit::{
     ConnectionMap, ElaborationError, HardwareDefinition, HardwareInstance,
-    ParameterDefinition, ParameterMap, PortDefinition,
+    NetResolver, ParameterDefinition, ParameterMap, PortDefinition,
 };
 
 #[derive(Debug)]
@@ -23,6 +23,7 @@ impl HardwareDefinition for OsdiHardwareDefinition {
         instance_name: &str,
         parameters: &ParameterMap,
         connections: &ConnectionMap,
+        _resolver: &dyn NetResolver,
     ) -> Result<Box<dyn HardwareInstance>, ElaborationError> {
         let nets: Vec<String> = self.port_names
             .iter()

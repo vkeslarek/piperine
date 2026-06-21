@@ -10,6 +10,6 @@ pub use elaboration::{
     eval_default_expr,
 };
 pub use error::ElaborationError;
-pub use hardware::{HardwareDefinition, HardwareInstance, PortDefinition, PortDirection, ParameterDefinition};
+pub use hardware::{HardwareDefinition, HardwareInstance, PortDefinition, PortDirection, ParameterDefinition, NetResolver};
 pub use registry::HardwareRegistry;
 pub use types::{ParameterValue, ParameterMap, ConnectionMap, parse_si_real};

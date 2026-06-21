@@ -1,6 +1,6 @@
 use piperine_circuit::{
     HardwareDefinition, HardwareInstance,
-    PortDefinition, ParameterDefinition,
+    NetResolver, PortDefinition, ParameterDefinition,
     ParameterMap, ConnectionMap, ElaborationError,
 };
 
@@ -57,6 +57,7 @@ impl HardwareDefinition for SpiceResistor {
         instance_name: &str,
         parameters: &ParameterMap,
         connections: &ConnectionMap,
+        _resolver: &dyn NetResolver,
     ) -> Result<Box<dyn HardwareInstance>, ElaborationError> {
         let p = require_net(connections, "p", instance_name)?.to_string();
         let n = require_net(connections, "n", instance_name)?.to_string();
@@ -92,6 +93,7 @@ impl HardwareDefinition for SpiceVoltageSource {
         instance_name: &str,
         parameters: &ParameterMap,
         connections: &ConnectionMap,
+        _resolver: &dyn NetResolver,
     ) -> Result<Box<dyn HardwareInstance>, ElaborationError> {
         let p   = require_net(connections, "p", instance_name)?.to_string();
         let n   = require_net(connections, "n", instance_name)?.to_string();
@@ -127,6 +129,7 @@ impl HardwareDefinition for SpiceCurrentSource {
         instance_name: &str,
         parameters: &ParameterMap,
         connections: &ConnectionMap,
+        _resolver: &dyn NetResolver,
     ) -> Result<Box<dyn HardwareInstance>, ElaborationError> {
         let p   = require_net(connections, "p", instance_name)?.to_string();
         let n   = require_net(connections, "n", instance_name)?.to_string();
@@ -162,6 +165,7 @@ impl HardwareDefinition for SpiceCapacitor {
         instance_name: &str,
         parameters: &ParameterMap,
         connections: &ConnectionMap,
+        _resolver: &dyn NetResolver,
     ) -> Result<Box<dyn HardwareInstance>, ElaborationError> {
         let p = require_net(connections, "p", instance_name)?.to_string();
         let n = require_net(connections, "n", instance_name)?.to_string();
@@ -177,5 +181,113 @@ impl HardwareInstance for SpiceCapacitorInstance {
     fn instance_name(&self) -> &str { &self.name }
     fn spice_lines(&self) -> Vec<String> {
         vec![format!("{} {} {} {}", spice_name('C', &self.name), self.p, self.n, self.c)]
+    }
+}
+
+// ── SpiceBSourceV ────────────────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct SpiceBSourceV {
+    parameters: Vec<ParameterDefinition>,
+}
+
+impl SpiceBSourceV {
+    pub fn new() -> Self {
+        Self {
+            parameters: vec![ParameterDefinition {
+                name: "V".into(),
+                is_expr: true,
+                default: None,
+            }],
+        }
+    }
+}
+
+impl HardwareDefinition for SpiceBSourceV {
+    fn name(&self) -> &str { "spice_bsource_v" }
+    fn ports(&self) -> &[PortDefinition] { &[] }
+    fn parameters(&self) -> &[ParameterDefinition] { &self.parameters }
+
+    fn instantiate(
+        &self,
+        name: &str,
+        params: &ParameterMap,
+        conns: &ConnectionMap,
+        resolver: &dyn NetResolver,
+    ) -> Result<Box<dyn HardwareInstance>, ElaborationError> {
+        let p = require_net(conns, "p", name)?.to_string();
+        let n = require_net(conns, "n", name)?.to_string();
+        let v_ast = params.get("V")
+            .and_then(|v| if let piperine_circuit::ParameterValue::Ast(e) = v { Some(e) } else { None })
+            .ok_or_else(|| ElaborationError::MissingParameter { parameter: "V".into(), instance: name.into() })?;
+        let v_expr = crate::expr_serializer::serialize_ngspice_expr(v_ast, resolver)
+            .map_err(|e| ElaborationError::TypeError { parameter: "V".into(), detail: e })?;
+        Ok(Box::new(SpiceBSourceVInstance {
+            name: name.to_string(), p, n, v_expr,
+        }))
+    }
+}
+
+#[derive(Debug)]
+struct SpiceBSourceVInstance { name: String, p: String, n: String, v_expr: String }
+
+impl HardwareInstance for SpiceBSourceVInstance {
+    fn instance_name(&self) -> &str { &self.name }
+    fn spice_lines(&self) -> Vec<String> {
+        vec![format!("B{} {} {} V={}", self.name, self.p, self.n, self.v_expr)]
+    }
+}
+
+// ── SpiceBSourceI ────────────────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct SpiceBSourceI {
+    parameters: Vec<ParameterDefinition>,
+}
+
+impl SpiceBSourceI {
+    pub fn new() -> Self {
+        Self {
+            parameters: vec![ParameterDefinition {
+                name: "I".into(),
+                is_expr: true,
+                default: None,
+            }],
+        }
+    }
+}
+
+impl HardwareDefinition for SpiceBSourceI {
+    fn name(&self) -> &str { "spice_bsource_i" }
+    fn ports(&self) -> &[PortDefinition] { &[] }
+    fn parameters(&self) -> &[ParameterDefinition] { &self.parameters }
+
+    fn instantiate(
+        &self,
+        name: &str,
+        params: &ParameterMap,
+        conns: &ConnectionMap,
+        resolver: &dyn NetResolver,
+    ) -> Result<Box<dyn HardwareInstance>, ElaborationError> {
+        let p = require_net(conns, "p", name)?.to_string();
+        let n = require_net(conns, "n", name)?.to_string();
+        let i_ast = params.get("I")
+            .and_then(|v| if let piperine_circuit::ParameterValue::Ast(e) = v { Some(e) } else { None })
+            .ok_or_else(|| ElaborationError::MissingParameter { parameter: "I".into(), instance: name.into() })?;
+        let i_expr = crate::expr_serializer::serialize_ngspice_expr(i_ast, resolver)
+            .map_err(|e| ElaborationError::TypeError { parameter: "I".into(), detail: e })?;
+        Ok(Box::new(SpiceBSourceIInstance {
+            name: name.to_string(), p, n, i_expr,
+        }))
+    }
+}
+
+#[derive(Debug)]
+struct SpiceBSourceIInstance { name: String, p: String, n: String, i_expr: String }
+
+impl HardwareInstance for SpiceBSourceIInstance {
+    fn instance_name(&self) -> &str { &self.name }
+    fn spice_lines(&self) -> Vec<String> {
+        vec![format!("B{} {} {} I={}", self.name, self.p, self.n, self.i_expr)]
     }
 }

@@ -37,6 +37,7 @@ pub struct Module {
     pub functions: Vec<Function>,
     pub analog_blocks: Vec<AnalogBlock>,
     pub initial_blocks: Vec<InitialBlock>,
+    pub always_blocks: Vec<crate::ast::AlwaysBlock>,
     pub span: Span,
 }
 

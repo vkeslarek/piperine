@@ -36,6 +36,7 @@ fn run(path: PathBuf) -> Result<(), String> {
             parameter_definitions: info.parameter_defaults.iter()
                 .map(|(name, expr)| ParameterDefinition {
                     name: name.clone(),
+                    is_expr: false,
                     default: eval_default_expr(expr),
                 })
                 .collect(),

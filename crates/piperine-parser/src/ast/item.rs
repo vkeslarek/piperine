@@ -59,6 +59,7 @@ pub enum ModuleItem {
     AliasParam(AliasParam),
     Instance(InstanceDecl),
     InitialBlock(InitialBlock),
+    AlwaysBlock(AlwaysBlock),
 }
 
 /// Structural instantiation: `ModuleType [#(params)] inst_name (conns);`
@@ -259,8 +260,17 @@ pub struct ExternModuleDecl {
 #[derive(Debug, Clone)]
 pub struct ExternParameter {
     pub name: Name,
-    pub ty: Type,
+    pub kind: ExternParameterKind,
     pub default: Option<Expr>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExternParameterKind {
+    /// Normal typed parameter: `parameter real r = 1e3`
+    Typed(Type),
+    /// AST-passthrough parameter: `parameter expr V`
+    /// The elaborator passes the raw AST Expr to the plugin — no evaluation.
+    Expr,
 }
 
 /// `initial begin BlockItem* end` — testbench procedural block.
@@ -269,4 +279,28 @@ pub struct InitialBlock {
     pub span: Span,
     pub attrs: Vec<Attr>,
     pub stmt: Box<Stmt>,
+}
+
+/// `always @(sensitivity) stmt` — testbench event-driven block.
+///
+/// Sensitivity forms:
+///   @(initial_step)          fires once at start of each analysis
+///   @(final_step)            fires once at end of each analysis
+///   @(step)                  fires at every accepted timepoint (expensive!)
+///   @(above(expr))           fires on positive zero-crossing of expr
+///   @(cross(expr, +1))       SV-AMS style crossing (direction: +1/-1/0=both)
+#[derive(Debug, Clone)]
+pub struct AlwaysBlock {
+    pub span: Span,
+    pub sensitivity: AlwaysSensitivity,
+    pub stmt: Box<Stmt>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AlwaysSensitivity {
+    InitialStep,
+    FinalStep,
+    Step,
+    Above(Expr),          // above(threshold_expr)
+    Cross(Expr, i8),      // cross(expr, direction): +1, -1, or 0 for both
 }

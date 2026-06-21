@@ -5,6 +5,7 @@ use cvaf::model::{Document, Module};
 use crate::error::ElaborationError;
 use crate::registry::HardwareRegistry;
 use crate::types::{ParameterValue, ParameterMap, ConnectionMap, parse_si_real};
+use crate::hardware::NetResolver;
 
 /// Maps this module's net names → flat SPICE net names.
 /// Top-level: empty (nets resolve to themselves).
@@ -17,6 +18,18 @@ pub struct ElaborationResult {
     pub spice_lines: Vec<String>,
     /// The `initial` block body, ready for the interpreter.
     pub initial_statement: ast::Stmt,
+    /// Collected `always` block handlers.
+    pub always_handlers: AlwaysHandlerSet,
+}
+
+/// `AlwaysHandlerSet` — collected from all `always @(...)` blocks in the testbench module.
+#[derive(Default, Clone)]
+pub struct AlwaysHandlerSet {
+    pub initial_step: Vec<ast::Stmt>,
+    pub final_step:   Vec<ast::Stmt>,
+    pub step:         Vec<ast::Stmt>,
+    pub above:        Vec<(ast::Expr, u32, ast::Stmt)>,
+    pub cross:        Vec<(ast::Expr, i8, u32, ast::Stmt)>,
 }
 
 /// Elaborate the first testbench module found in `document`.
@@ -44,7 +57,26 @@ pub fn elaborate(
         .stmt
         .clone();
 
-    Ok(ElaborationResult { spice_lines, initial_statement })
+    let mut always_handlers = AlwaysHandlerSet::default();
+    let mut crossing_id = 0u32;
+
+    for ab in &testbench.always_blocks {
+        match &ab.sensitivity {
+            ast::AlwaysSensitivity::InitialStep => always_handlers.initial_step.push(*ab.stmt.clone()),
+            ast::AlwaysSensitivity::FinalStep   => always_handlers.final_step.push(*ab.stmt.clone()),
+            ast::AlwaysSensitivity::Step        => always_handlers.step.push(*ab.stmt.clone()),
+            ast::AlwaysSensitivity::Above(expr) => {
+                always_handlers.above.push((expr.clone(), crossing_id, *ab.stmt.clone()));
+                crossing_id += 1;
+            }
+            ast::AlwaysSensitivity::Cross(expr, dir) => {
+                always_handlers.cross.push((expr.clone(), *dir, crossing_id, *ab.stmt.clone()));
+                crossing_id += 1;
+            }
+        }
+    }
+
+    Ok(ElaborationResult { spice_lines, initial_statement, always_handlers })
 }
 
 fn elaborate_instances(
@@ -79,7 +111,8 @@ fn elaborate_instance(
         let parameters = resolve_parameters(
             &instance.params, &instance.name, definition.parameters(),
         )?;
-        let hw_instance = definition.instantiate(&instance.name, &parameters, &connections)?;
+        let resolver = ConcreteNetResolver { net_map, path };
+        let hw_instance = definition.instantiate(&instance.name, &parameters, &connections, &resolver)?;
         spice_lines.extend(hw_instance.spice_lines());
     } else if let Some(sub_mod) = find_structural_module(document, &instance.module) {
         // ── Piperine sub-module: flatten inline with path-prefixed net names ──
@@ -119,6 +152,17 @@ fn resolve_net(raw: &str, net_map: &NetMap, path: &str) -> String {
         return "0".to_string();
     }
     net_map.get(raw).cloned().unwrap_or_else(|| mangle_net(path, raw))
+}
+
+struct ConcreteNetResolver<'a> {
+    net_map: &'a NetMap,
+    path: &'a str,
+}
+
+impl<'a> NetResolver for ConcreteNetResolver<'a> {
+    fn resolve(&self, raw: &str) -> String {
+        resolve_net(raw, self.net_map, self.path)
+    }
 }
 
 /// Build the NetMap for a sub-module instance.
@@ -208,7 +252,12 @@ fn resolve_parameters(
         match connection {
             cvaf::model::Connection::Named { port, expr } => {
                 if let Some(expr) = expr {
-                    let value = ast_expr_to_parameter_value(expr, port, instance_name)?;
+                    let is_expr = definitions.iter().find(|d| d.name == *port).map(|d| d.is_expr).unwrap_or(false);
+                    let value = if is_expr {
+                        ParameterValue::Ast(expr.clone())
+                    } else {
+                        ast_expr_to_parameter_value(expr, port, instance_name)?
+                    };
                     map.insert(port.clone(), value);
                 }
             }

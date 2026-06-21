@@ -8,4 +8,5 @@ piperine-interpreter = { path = "../piperine-interpreter" }
 piperine-circuit     = { path = "../piperine-circuit" }
 piperine-coordinator = { path = "../piperine-coordinator" }
 piperine-common      = { path = "../piperine-common" }
+piperine-parser      = { path = "../piperine-parser" }
 thiserror            = { workspace = true }

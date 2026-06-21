@@ -1,6 +1,7 @@
 mod backend;
 mod hardware;
 mod tasks;
+pub mod expr_serializer;
 
 pub use backend::NgspiceBackend;
 
@@ -31,6 +32,8 @@ impl Plugin for NgspicePlugin {
         registry.register(Box::new(SpiceVoltageSource));
         registry.register(Box::new(SpiceCurrentSource));
         registry.register(Box::new(SpiceCapacitor));
+        registry.register(Box::new(SpiceBSourceV::new()));
+        registry.register(Box::new(SpiceBSourceI::new()));
     }
 
     fn register_tasks(&self, registry: &mut SystemTaskRegistry) {

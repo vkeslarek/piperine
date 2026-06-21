@@ -22,6 +22,15 @@ pub trait SimulatorBackend: Send {
 
     /// Print a line to stdout. Default implementation uses `println!`.
     fn print(&self, line: &str) { println!("{line}"); }
+
+    /// Run an analysis and stream events to the interpreter callbacks.
+    fn run_analysis(
+        &mut self,
+        cmd: &str,
+        handlers: &piperine_circuit::elaboration::AlwaysHandlerSet,
+        interp_ctx: &mut dyn crate::InterpreterCallbacks,
+        fire_step: bool,
+    ) -> Result<crate::value::AnalysisResult, InterpreterError>;
 }
 
 /// A backend that compiles Verilog-A modules to loadable simulator objects.

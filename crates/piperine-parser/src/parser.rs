@@ -110,6 +110,7 @@ fn convert_module(decl: ast::ModuleDecl) -> Module {
         functions: Vec::new(),
         analog_blocks: Vec::new(),
         initial_blocks: Vec::new(),
+        always_blocks: Vec::new(),
         span: decl.span,
     };
 
@@ -276,6 +277,9 @@ fn convert_module(decl: ast::ModuleDecl) -> Module {
                     stmt: *b.stmt,
                     span: b.span,
                 });
+            }
+            ast::ModuleItem::AlwaysBlock(ab) => {
+                module.always_blocks.push(ab);
             }
         }
     }

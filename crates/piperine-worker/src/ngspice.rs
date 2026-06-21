@@ -306,13 +306,17 @@ impl From<&vecinfo> for VecMeta {
 
 // ── Handler trait ───────────────────────────────────────────────────
 
-pub trait NgspiceHandler {
-    fn on_output(&mut self, _text: &str) {}
-    fn on_status(&mut self, _status_line: &str) {}
-    fn on_exit(&mut self, _status: i32, _immediate_unload: bool, _on_quit: bool) {}
-    fn on_data(&mut self, _values: &DataValuesView) {}
-    fn on_init_data(&mut self, _info: &PlotInfoView) {}
-    fn on_bg_thread(&mut self, _running: bool) {}
+pub trait NgspiceHandler: Send {
+    fn on_output(&self, _text: &str) {}
+    fn on_status(&self, _status_line: &str) {}
+    fn on_exit(&self, _status: i32, _immediate_unload: bool, _on_quit: bool) {}
+    fn on_data(&self, _values: &DataValuesView) {}
+    fn on_init_data(&self, _info: &PlotInfoView) {}
+    fn on_bg_thread(&self, _running: bool) {}
+
+    fn on_step(&self, _time: f64) {}
+    fn on_initial_step(&self, _time: f64) {}
+    fn on_final_step(&self, _time: f64) {}
 }
 
 // ── Internal state / trampolines ────────────────────────────────────
@@ -593,7 +597,7 @@ mod tests {
     }
 
     impl NgspiceHandler for CountingHandler {
-        fn on_output(&mut self, text: &str) {
+        fn on_output(&self, text: &str) {
             self.output_len.set(self.output_len.get() + text.len());
         }
     }

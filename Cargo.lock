@@ -1132,6 +1132,7 @@ name = "piperine-interpreter"
 version = "0.1.0"
 dependencies = [
  "piperine-circuit",
+ "piperine-common",
  "piperine-parser",
  "thiserror 2.0.18",
 ]
@@ -1144,6 +1145,7 @@ dependencies = [
  "piperine-common",
  "piperine-coordinator",
  "piperine-interpreter",
+ "piperine-parser",
  "thiserror 2.0.18",
 ]
 
