@@ -355,6 +355,7 @@ unsafe extern "C" fn tramp_exit(
 ) -> c_int {
     let state = trampoline_body!(user);
     state.alive.set(false);
+    state.handler.on_final_step(0.0);
     state.handler.on_exit(status, immediate, on_quit);
     0
 }
@@ -367,7 +368,21 @@ unsafe extern "C" fn tramp_data(
 ) -> c_int {
     let state = trampoline_body!(user);
     if let Some(v) = unsafe { values.as_ref() } {
-        state.handler.on_data(&DataValuesView::from(v));
+        let view = DataValuesView::from(v);
+        state.handler.on_data(&view);
+        
+        let mut time = 0.0;
+        for vec in view.iter() {
+            if vec.name() == "time" {
+                time = vec.value().real();
+                break;
+            }
+        }
+        
+        if view.index() == 0 {
+            state.handler.on_initial_step(time);
+        }
+        state.handler.on_step(time);
     }
     0
 }

@@ -115,3 +115,26 @@ fn worker_dc_sweep() {
         "v(out) at V1=10V should be ~5V, got {v_out_max}"
     );
 }
+
+#[test]
+fn worker_tran_simulation() {
+    let (_pool, mut handle) = spawn_single_worker();
+
+    let netlist = vec![
+        "RC Circuit".to_string(),
+        "V1 in 0 PULSE(0 1 0 1p 1p 1n 2n)".to_string(),
+        "R1 in out 1k".to_string(),
+        "C1 out 0 1p".to_string(),
+        ".end".to_string(),
+    ];
+
+    match send(&mut handle, Command::LoadCircuit { lines: netlist }) {
+        Response::Ok => {}
+        other => panic!("LoadCircuit failed: {other:?}"),
+    }
+
+    match send(&mut handle, Command::Run { cmd: "tran 100p 2n".to_string() }) {
+        Response::Ok => {}
+        other => panic!("tran failed: {other:?}"),
+    }
+}

@@ -96,21 +96,38 @@ fn run_loop(ng: &Ngspice, rx: Arc<Mutex<CmdReceiver>>, tx: RespSender, state: Ar
                 Err(_) => break,
             }
         };
-        let resp = run_command(ng, cmd, &state, &tx);
+        let resp = run_command(ng, cmd, &rx, &state, &tx);
         if tx.send(resp).is_err() {
             break;
         }
     }
 }
 
-fn run_command(ng: &Ngspice, cmd: Command, state: &Arc<WorkerState>, tx: &RespSender) -> Response {
+fn run_command(ng: &Ngspice, cmd: Command, rx: &Arc<Mutex<CmdReceiver>>, state: &Arc<WorkerState>, tx: &RespSender) -> Response {
     match cmd {
         Command::RunAnalysis { cmd: c, fire_step_events: _ } => {
             state.halt_requested.store(false, Ordering::Relaxed);
             *state.run_error_message.lock().unwrap() = None;
             let _ = ng.command(&c);
             let plot = ng.cur_plot().unwrap_or_default();
-            let had_errors = state.run_error_message.lock().unwrap().is_some();
+            let mut had_errors = state.run_error_message.lock().unwrap().is_some();
+            
+            // Firing final_step before AnalysisDone.
+            let _ = tx.send(Response::Event {
+                kind: SimEventKind::FinalStep,
+                time: 0.0,
+                crossing_id: 0,
+            });
+            // Block until coordinator responds
+            if let Ok(cmd) = rx.lock().unwrap().recv() {
+                match cmd {
+                    Command::EventResponse { action: EventAction::RunError { message } } => {
+                        *state.run_error_message.lock().unwrap() = Some(message);
+                        had_errors = true;
+                    }
+                    _ => {}
+                }
+            }
             Response::AnalysisDone { plot_name: plot, had_run_errors: had_errors }
         }
         Command::Run { cmd: c } => match ng.command(&c) {
