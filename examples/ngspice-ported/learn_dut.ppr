@@ -8,9 +8,9 @@ module dut;
     vcvs #(.gain(100)) E1(.p(beta), .n(com), .cp(vref), .cn(div));
     res #(.r(10000)) RUPPER1(.p(out), .n(div));
     vcvs #(.gain(10)) E2(.p(g), .n(com), .cp(beta), .cn(com));
-    subckt #(.ports("in gain gain"), .subckt_name("k=0.05")) X2();
+    k_0_05 X2(in, gain, gain);
     res #(.r(1)) RSOL1(.p(sum), .n(out));
-    subckt #(.ports("gain g sum sum k1_1 k2_1"), .subckt_name("a=1")) X3();
+    a_1 X3(gain, g, sum, sum, k1_1, k2_1);
 
     initial begin
         $op();

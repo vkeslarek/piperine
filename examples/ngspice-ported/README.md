@@ -30,6 +30,7 @@ of MIT-licensed originals; see each upstream repo for full license text.
 | `.model NAME D (is=… n=…)` | `paramset m_NAME d; .model = "NAME"; .is = …; endparamset` |
 | `.subckt NAME p… / .ends` | `module NAME(p…); … endmodule` — **a subckt is just a module** |
 | `Xx a b NAME` (in-file subckt) | `NAME Xx(.p1(a), .p2(b));` (named instantiation) |
+| `Xx a b NAME` (external subckt) | `NAME Xx(a, b);` (positional instantiation) |
 | `.tran 2u 100m 80m` / `.op` / `.ac …` | `$tran(2e-6, 0.1, 0.08);` / `$op();` / `$ac(…);` in `initial` |
 | `.control … .endc` | dropped — the `initial` block replaces the control script |
 | `.include "x.lib"` | `` `include "x.lib" `` — see "planned features" |
@@ -58,8 +59,10 @@ emits the **planned** syntax (per `docs/development/ROADMAP.md`):
 
 - **Behavioral B-sources** (`Bx … V={expr}`) and **switches** (`Sx`) are emitted as
   commented placeholders — first-class behavioral expressions are ROADMAP Phase 5.
-- **External subckts** (opamps from included libs) keep a positional `subckt`
-  device reference, since their port names live in the (not-inlined) library.
+- **External subckts** (opamps from included libs) are instantiated as modules
+  with *positional* connections (`TL072 X1(a, b, c);`), since their port names live
+  in the not-yet-inlined library. There is no `subckt` device nomenclature — a
+  subcircuit is always a module.
 - Model parameters that come from `.include`d libraries are not inlined.
 
 These are limits of a generic transpiler, not of Piperine — a hand-port would use

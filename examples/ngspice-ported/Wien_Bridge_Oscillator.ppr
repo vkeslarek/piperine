@@ -16,7 +16,7 @@ module Wien_Bridge_Oscillator;
     res #(.r(10500)) RRs2(.p(N10), .n(gnd));
     vsource #(.dc(0.01])) VV3(.p(N1), .n(gnd));
     res #(.r(8)) RS1(.p(N6), .n(gnd));
-    subckt #(.ports("N2 N6 N7 VCC N9"), .subckt_name("UA741")) XX1();
+    UA741 XX1(N2, N6, N7, VCC, N9);
 
     initial begin
         $tran(2e-06, 0.1, 0.08);

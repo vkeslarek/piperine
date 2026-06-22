@@ -25,7 +25,7 @@ module Marshall_JCM2000_DSL_Preamp;
     cap #(.c(1e-09)) CC10(.p(N3), .n(N44));
     cap #(.c(4.7e-10)) CC11(.p(N3), .n(N18));
     res #(.r(470000)) RR5(.p(gnd), .n(N4));
-    subckt #(.ports("gnd N21 N45"), .subckt_name("NCP4326_Channel_X_Channel1_S5")) XOD1_OD2();
+    NCP4326_Channel_X_Channel1_S5 XOD1_OD2(gnd, N21, N45);
     cap #(.c(1e-06)) CC1(.p(N6), .n(N21));
     res #(.r(47000)) RR13(.p(gnd), .n(N44));
     res #(.r(150000)) RR8(.p(N3), .n(N45));

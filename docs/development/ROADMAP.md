@@ -174,10 +174,13 @@ Consequences:
 - An in-file `.subckt` lowers to a `module`; its `X` instance becomes an ordinary
   *named* module instantiation (SPICE positional ports are mapped to the module's
   declared port names, in order).
-- An **external** subckt (defined only in an included `.lib`) has no Piperine
-  `module` to bind to. Such an `X` keeps a positional reference — handled by the
-  pluggable include handler injecting the subckt and emitting the `X` card. The
-  generic `subckt` device remains only for these opaque external cases.
+- An **external** subckt (defined only in an included `.lib`) is still a module
+  instantiation, with *positional* connections (`TL072 X1(a, b, c);`) since the
+  port names live in the not-yet-included library. The include handler injects the
+  subckt definition so the instance resolves at elaboration.
+- There is **no `subckt` device / `.subckt_name` nomenclature** in the language —
+  a subcircuit is always a module. (The legacy `subckt` extern module is slated for
+  removal once the include handler lands.)
 - Subckt parameters (`params:`) map to module `#(.param(...))` overrides.
 
 ## Phase 9 — Language completeness (Wave 4+)

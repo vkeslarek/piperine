@@ -110,16 +110,18 @@ def emit_device(p, t):
         return f'vcvs #(.gain({num(t[5])})) {name}({P(("p",t[1]),("n",t[2]),("cp",t[3]),("cn",t[4]))});'
     if p == 'g' and len(t) >= 6:  # VCCS
         return f'vccs #(.gm({num(t[5])})) {name}({P(("p",t[1]),("n",t[2]),("cp",t[3]),("cn",t[4]))});'
-    if p == 'x':                  # subckt instance
+    if p == 'x':                  # subckt instance == a module instantiation
         sub = ident(t[-1])
-        if sub in SUBCKTS:        # in-file subckt == a Piperine module -> named instantiation
+        nodes = t[1:-1]
+        if sub in SUBCKTS:        # in-file subckt: bind ports by name (we know them)
             ports = SUBCKTS[sub]
             conns = ', '.join(f'.{ident(pn)}({net(nn)})'
-                              for pn, nn in zip(ports, t[1:-1]))
+                              for pn, nn in zip(ports, nodes))
             return f'{sub} {name}({conns});'
-        # external subckt (defined in an included .lib) — positional reference
-        portstr = ' '.join(net(x) for x in t[1:-1])
-        return f'subckt #(.ports("{portstr}"), .subckt_name("{t[-1]}")) {name}();'
+        # external subckt (from an included lib): module instantiation, positional
+        # connections (its port names live in the not-yet-included library).
+        conns = ', '.join(net(nn) for nn in nodes)
+        return f'{sub} {name}({conns});'
     if p == 'b' and len(t) >= 3:
         expr = ' '.join(t[3:])
         return f'// behavioral source: {expr}\n  // bsource_v #(.v("...")) {name}(...);'

@@ -20,14 +20,14 @@ endparamset
 module Fulltone_OCD_V1_KC8V1;
     res #(.r({P2_POS*1Meg})) RV1(.p(Net__R4_Pad2_), .n(V1_Boost));
     res #(.r(18000)) R4(.p(Net__U1A___), .n(Net__R4_Pad2_));
-    subckt #(.ports("GND V1_Clip V1_Clip"), .subckt_name("2n7000")) XQ1();
-    subckt #(.ports("Net__U2A___ Net__U2A___ VCC VEE V1_Clip_Recovery"), .subckt_name("TL072")) XU2();
+    x_2n7000 XQ1(GND, V1_Clip, V1_Clip);
+    TL072 XU2(Net__U2A___, Net__U2A___, VCC, VEE, V1_Clip_Recovery);
     cap #(.c(6.8e-08)) C2(.p(GND), .n(Net__C2_Pad2_));
     res #(.r(2200)) R3(.p(Net__C2_Pad2_), .n(Net__U1A___));
-    subckt #(.ports("Net__U1A___ Net__U1A___ VCC VEE V1_Boost"), .subckt_name("TL072")) XU1();
+    TL072 XU1(Net__U1A___, Net__U1A___, VCC, VEE, V1_Boost);
     res #(.r(39000)) R8(.p(Net__U2A___), .n(Net__C5_Pad2_));
     cap #(.c(1e-07)) C5(.p(GND), .n(Net__C5_Pad2_));
-    subckt #(.ports("V1_Clip GND GND"), .subckt_name("2n7000")) XQ2();
+    x_2n7000 XQ2(V1_Clip, GND, GND);
     cap #(.c(2.2e-10)) C6(.p(V1_Clip_Recovery), .n(Net__U2A___));
     res #(.r(220000)) R7(.p(Net__U2A___), .n(GND));
     res #(.r(150000)) R9(.p(V1_Clip_Recovery), .n(Net__U2A___));

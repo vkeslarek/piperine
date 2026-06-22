@@ -13,14 +13,14 @@ module Boss_Super_Overdrive_SD_1;
     res #(.r(4700)) RR2(.p(N3), .n(N20));
     res #(.r(33000)) RR3(.p(N3), .n(N18));
     res #(.r(1000000)) RDrive(.p(gnd), .n(N18));
-    subckt #(.ports("gnd N11 N13 N21 N27 N28"), .subckt_name("TL072")) XX4();
+    TL072 XX4(gnd, N11, N13, N21, N27, N28);
     cap #(.c(1e-06)) CC6(.p(N11), .n(N17));
     res #(.r(10000)) RLevelA(.p(gnd), .n(gnd));
     res #(.r(10000)) RLevelB(.p(gnd), .n(N26));
     res #(.r(8)) RS1(.p(gnd), .n(gnd));
     res #(.r(4700)) RR10(.p(N17), .n(N26));
-    subckt #(.ports("N3 gnd N19"), .subckt_name("TL072")) XX1();
-    subckt #(.ports("N3 gnd N29"), .subckt_name("1N916")) XD1();
+    TL072 XX1(N3, gnd, N19);
+    x_1N916 XD1(N3, gnd, N29);
     d #(.model("1N916")) DD2(.a(N3), .c(N29));
     d #(.model("1N916")) DD3(.a(gnd), .c(N29));
 

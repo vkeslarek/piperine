@@ -21,7 +21,7 @@ module Pro_Co_Rat;
     d #(.model("D1N914a")) DD2(.a(N5), .c(gnd));
     cap #(.c(2.2e-08)) CC6(.p(N15), .n(N17));
     res #(.r(1000000)) RR1(.p(gnd), .n(N17));
-    subckt #(.ports("N2 N3 VCC gnd N21"), .subckt_name("LM308")) XX1();
+    LM308 XX1(N2, N3, VCC, gnd, N21);
     res #(.r(1000000)) RR7(.p(gnd), .n(IN));
     cap #(.c(2.2e-08)) CC8(.p(N22), .n(IN));
     res #(.r(1000000)) RR8(.p(N23), .n(VB));

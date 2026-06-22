@@ -21,7 +21,7 @@ module MXR_Distortion__;
     res #(.r(10000)) RLevelA(.p(N15), .n(gnd));
     res #(.r(10000)) RLevelB(.p(gnd), .n(N19));
     res #(.r(8)) RS1(.p(N19), .n(gnd));
-    subckt #(.ports("N8 N9 N11 gnd VCC"), .subckt_name("UA741")) XX1();
+    UA741 XX1(N8, N9, N11, gnd, VCC);
     d #(.model("1N34A")) DD1(.a(N15), .c(N16));
     d #(.model("1N34A")) DD2(.a(N15), .c(gnd));
 
