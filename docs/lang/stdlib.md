@@ -101,7 +101,9 @@ can be skipped if all remaining args are named.
 
 ## Math system functions
 
-Real-valued math, usable anywhere in an expression.
+Real-valued math, usable anywhere in a procedural expression (with the `$` prefix) or in an analog expression (without the `$` prefix).
+
+*Note: The functions listed below have a `$` prefix, meaning they are evaluated immediately by the interpreter in procedural code (e.g. `initial` blocks). To use these functions in a continuous analog expression (like `.v(...)` for a `bsource_v`), remove the `$` prefix (e.g. `sin(x)` instead of `$sin(x)`).*
 
 | Function | Returns | Notes |
 |----------|---------|-------|

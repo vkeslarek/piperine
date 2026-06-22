@@ -49,11 +49,13 @@ Range constraints (`from [lo:hi]`) are supported by Verilog-A and passed through
 
 ## Analog operators
 
+These operators are valid inside `analog begin` blocks and inside behavioral expressions (`parameter expr`):
+
 ```verilog
-analog begin
     // Branch voltage and current
-    V(p, n) <+ expr;        // contribute voltage across p-n
-    I(p, n) <+ expr;        // contribute current from p to n
+    V(p, n)                 // voltage across p-n
+    I(p, n)                 // current from p to n
+    // In analog blocks: V(p, n) <+ expr; I(p, n) <+ expr;
 
     // Node voltages
     real vp = V(p);          // voltage at p relative to ground
@@ -61,11 +63,12 @@ analog begin
 
     // Derivatives
     ddt(x)                   // d/dt operator
+    idt(x[, ic])             // integral operator
     ddx(V(p,n), V(p,n))     // partial derivative (for Jacobian)
 
-    // Time
-    $abstime                 // simulation time
-end
+    // Built-in variables
+    time                     // simulation time (bare, not $time)
+    temp                     // circuit temperature
 ```
 
 ## Built-in functions

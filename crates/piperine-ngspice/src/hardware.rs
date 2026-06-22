@@ -24,7 +24,7 @@
 //! | `waveform`        | ` FUNC(a b c …)`                         | always          |
 
 use piperine_circuit::{
-    HardwareDefinition, HardwareInstance,
+    HardwareDefinition, HardwareInstance, ParameterDefinition,
     NetResolver, ParameterMap, ConnectionMap, ElaborationError,
 };
 
@@ -132,6 +132,49 @@ impl<'a> Element<'a> {
         Ok(())
     }
 
+    /// `KEY={<serialized expr>}` — a behavioral expression parameter.
+    fn key_expr(&mut self, key: &str, param: &str, resolver: &dyn NetResolver)
+        -> Result<(), ElaborationError>
+    {
+        match self.params.get(param) {
+            Some(piperine_circuit::ParameterValue::Ast(expr)) => {
+                let s = crate::expr_serializer::serialize_ngspice_expr(expr, resolver)
+                    .map_err(|detail| ElaborationError::ConnectionError {
+                        instance: self.instance.to_string(), detail })?;
+                // B-source value form is `V=<expr>` (bare — no braces).
+                self.line.push_str(&format!(" {key}={s}"));
+                Ok(())
+            }
+            // tolerate a raw string for back-compat / pre-serialized exprs
+            Some(piperine_circuit::ParameterValue::String(s)) => {
+                self.line.push_str(&format!(" {key}={s}"));
+                Ok(())
+            }
+            _ => Err(ElaborationError::MissingParameter {
+                instance: self.instance.to_string(), parameter: param.to_string() }),
+        }
+    }
+
+    /// Like `key_expr`, but returns `true` if emitted, `false` if the parameter was missing.
+    fn opt_key_expr(&mut self, key: &str, param: &str, resolver: &dyn NetResolver)
+        -> Result<bool, ElaborationError>
+    {
+        match self.params.get(param) {
+            Some(piperine_circuit::ParameterValue::Ast(expr)) => {
+                let s = crate::expr_serializer::serialize_ngspice_expr(expr, resolver)
+                    .map_err(|detail| ElaborationError::ConnectionError {
+                        instance: self.instance.to_string(), detail })?;
+                self.line.push_str(&format!(" {key}={{{s}}}"));
+                Ok(true)
+            }
+            Some(piperine_circuit::ParameterValue::String(s)) => {
+                self.line.push_str(&format!(" {key}={s}"));
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
     /// `KEY=<v>` only when the real value differs from its default.
     fn opt(&mut self, key: &str, param: &str, default: f64) {
         let v = real_or(self.params, param, default);
@@ -198,9 +241,15 @@ pub struct SpiceResistor;
 impl SpiceResistor { pub fn new() -> Self { Self } }
 impl HardwareDefinition for SpiceResistor {
     fn name(&self) -> &str { "res" }
+    fn parameters(&self) -> &[ParameterDefinition] {
+        static PARAMS: std::sync::OnceLock<Vec<ParameterDefinition>> = std::sync::OnceLock::new();
+        PARAMS.get_or_init(|| vec![ParameterDefinition { name: "r_expr".into(), is_expr: true, is_ref: false, default: None }])
+    }
     fn instantiate(&self, name: &str, p: &ParameterMap, c: &ConnectionMap, _r: &dyn NetResolver) -> Built {
         let mut e = Element::start('R', name, p, c, &["p", "n"])?;
-        e.value("r")?;
+        if !e.opt_key_expr("R", "r_expr", _r)? {
+            e.value("r")?;
+        }
         e.opt_str("model");
         e.opt("AC", "ac", 0.0);
         e.opt("TEMP", "temp", 27.0);
@@ -222,9 +271,15 @@ pub struct SpiceCapacitor;
 impl SpiceCapacitor { pub fn new() -> Self { Self } }
 impl HardwareDefinition for SpiceCapacitor {
     fn name(&self) -> &str { "cap" }
+    fn parameters(&self) -> &[ParameterDefinition] {
+        static PARAMS: std::sync::OnceLock<Vec<ParameterDefinition>> = std::sync::OnceLock::new();
+        PARAMS.get_or_init(|| vec![ParameterDefinition { name: "q".into(), is_expr: true, is_ref: false, default: None }])
+    }
     fn instantiate(&self, name: &str, p: &ParameterMap, c: &ConnectionMap, _r: &dyn NetResolver) -> Built {
         let mut e = Element::start('C', name, p, c, &["p", "n"])?;
-        e.value("c")?;
+        if !e.opt_key_expr("Q", "q", _r)? {
+            e.value("c")?;
+        }
         e.opt_str("model");
         e.opt("IC", "ic", 0.0);
         e.opt("TEMP", "temp", 27.0);
@@ -245,9 +300,15 @@ pub struct SpiceInductor;
 impl SpiceInductor { pub fn new() -> Self { Self } }
 impl HardwareDefinition for SpiceInductor {
     fn name(&self) -> &str { "ind" }
+    fn parameters(&self) -> &[ParameterDefinition] {
+        static PARAMS: std::sync::OnceLock<Vec<ParameterDefinition>> = std::sync::OnceLock::new();
+        PARAMS.get_or_init(|| vec![ParameterDefinition { name: "flux".into(), is_expr: true, is_ref: false, default: None }])
+    }
     fn instantiate(&self, name: &str, p: &ParameterMap, c: &ConnectionMap, _r: &dyn NetResolver) -> Built {
         let mut e = Element::start('L', name, p, c, &["p", "n"])?;
-        e.value("l")?;
+        if !e.opt_key_expr("FLUX", "flux", _r)? {
+            e.value("l")?;
+        }
         e.opt_str("model");
         e.opt("IC", "ic", 0.0);
         e.opt("TEMP", "temp", 27.0);
@@ -514,9 +575,13 @@ pub struct SpiceBSourceV;
 impl SpiceBSourceV { pub fn new() -> Self { Self } }
 impl HardwareDefinition for SpiceBSourceV {
     fn name(&self) -> &str { "bsource_v" }
+    fn parameters(&self) -> &[ParameterDefinition] {
+        static PARAMS: std::sync::OnceLock<Vec<ParameterDefinition>> = std::sync::OnceLock::new();
+        PARAMS.get_or_init(|| vec![ParameterDefinition { name: "V".into(), is_expr: true, is_ref: false, default: None }])
+    }
     fn instantiate(&self, name: &str, p: &ParameterMap, c: &ConnectionMap, _r: &dyn NetResolver) -> Built {
         let mut e = Element::start('B', name, p, c, &["p", "n"])?;
-        e.key_str("V", "V")?;
+        e.key_expr("V", "V", _r)?;
         e.opt("TEMP", "temp", 27.0);
         e.opt("DTEMP", "dtemp", 0.0);
         e.opt("TC1", "tc1", 0.0);
@@ -531,9 +596,13 @@ pub struct SpiceBSourceI;
 impl SpiceBSourceI { pub fn new() -> Self { Self } }
 impl HardwareDefinition for SpiceBSourceI {
     fn name(&self) -> &str { "bsource_i" }
+    fn parameters(&self) -> &[ParameterDefinition] {
+        static PARAMS: std::sync::OnceLock<Vec<ParameterDefinition>> = std::sync::OnceLock::new();
+        PARAMS.get_or_init(|| vec![ParameterDefinition { name: "I".into(), is_expr: true, is_ref: false, default: None }])
+    }
     fn instantiate(&self, name: &str, p: &ParameterMap, c: &ConnectionMap, _r: &dyn NetResolver) -> Built {
         let mut e = Element::start('B', name, p, c, &["p", "n"])?;
-        e.key_str("I", "I")?;
+        e.key_expr("I", "I", _r)?;
         e.opt("TEMP", "temp", 27.0);
         e.opt("DTEMP", "dtemp", 0.0);
         e.opt("TC1", "tc1", 0.0);
@@ -550,9 +619,15 @@ pub struct SpiceVcvs;
 impl SpiceVcvs { pub fn new() -> Self { Self } }
 impl HardwareDefinition for SpiceVcvs {
     fn name(&self) -> &str { "vcvs" }
+    fn parameters(&self) -> &[ParameterDefinition] {
+        static PARAMS: std::sync::OnceLock<Vec<ParameterDefinition>> = std::sync::OnceLock::new();
+        PARAMS.get_or_init(|| vec![ParameterDefinition { name: "vol".into(), is_expr: true, is_ref: false, default: None }])
+    }
     fn instantiate(&self, name: &str, p: &ParameterMap, c: &ConnectionMap, _r: &dyn NetResolver) -> Built {
         let mut e = Element::start('E', name, p, c, &["p", "n", "cp", "cn"])?;
-        e.bare_opt("gain", 1.0);
+        if !e.opt_key_expr("VOL", "vol", _r)? {
+            e.bare_opt("gain", 1.0);
+        }
         e.finish()
     }
 }
@@ -562,9 +637,15 @@ pub struct SpiceVccs;
 impl SpiceVccs { pub fn new() -> Self { Self } }
 impl HardwareDefinition for SpiceVccs {
     fn name(&self) -> &str { "vccs" }
+    fn parameters(&self) -> &[ParameterDefinition] {
+        static PARAMS: std::sync::OnceLock<Vec<ParameterDefinition>> = std::sync::OnceLock::new();
+        PARAMS.get_or_init(|| vec![ParameterDefinition { name: "cur".into(), is_expr: true, is_ref: false, default: None }])
+    }
     fn instantiate(&self, name: &str, p: &ParameterMap, c: &ConnectionMap, _r: &dyn NetResolver) -> Built {
         let mut e = Element::start('G', name, p, c, &["p", "n", "cp", "cn"])?;
-        e.bare_opt("gm", 1e-3);
+        if !e.opt_key_expr("CUR", "cur", _r)? {
+            e.bare_opt("gm", 1e-3);
+        }
         e.opt("M", "m", 1.0);
         e.finish()
     }

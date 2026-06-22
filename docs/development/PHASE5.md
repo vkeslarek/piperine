@@ -104,7 +104,7 @@ fn key_expr(&mut self, key: &str, param: &str, resolver: &dyn NetResolver)
             let s = crate::expr_serializer::serialize_ngspice_expr(expr, resolver)
                 .map_err(|detail| ElaborationError::ConnectionError {
                     instance: self.instance.to_string(), detail })?;
-            self.line.push_str(&format!(" {key}={{{s}}}"));   // V={ ... }
+            self.line.push_str(&format!(" {key}={s}"));   // B-source: V=<expr> (NO braces)
             Ok(())
         }
         // tolerate a raw string for back-compat / pre-serialized exprs
@@ -114,6 +114,19 @@ fn key_expr(&mut self, key: &str, param: &str, resolver: &dyn NetResolver)
     }
 }
 ```
+
+B-source emits `V=<expr>` **without braces** (ngspice `NGSPICE_BEHAVIORAL.md §Syntax`:
+`Bxxx N+ N- V=<expr>`; braces there are just grouping parens). The braced
+`KEY={<expr>}` form is for the *optional* expression params on R/C/L and E/G
+(`opt_key_expr`), not the B-source.
+
+> **Optional vs required (important):** an expression param declared in
+> `parameters()` with `default: None` would otherwise be treated as *mandatory* by
+> `resolve_parameters`, breaking every plain `res #(.r(1000))` / linear `vcvs`. So
+> `resolve_parameters` **skips `is_expr` params in its mandatory check** — the
+> *device* decides: `key_expr` errors if the expr is missing (B-source `V` is
+> required), `opt_key_expr` returns `false` and falls back to the numeric/linear
+> form (R/C/L value, E/G gain).
 
 `Element::start` must now also carry the `resolver` (or pass it to `key_expr`),
 since `instantiate` already receives `resolver: &dyn NetResolver`. The B-source

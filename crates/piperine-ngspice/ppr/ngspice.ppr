@@ -4,6 +4,7 @@
 extern module res(
     inout p, inout n;
     parameter real r,
+    parameter expr r_expr,
     parameter string model = "",
     parameter real ac = 0.0,
     parameter real temp = 27.0,
@@ -21,6 +22,7 @@ extern module res(
 extern module cap(
     inout p, inout n;
     parameter real c,
+    parameter expr q,
     parameter string model = "",
     parameter real ic = 0.0,
     parameter real temp = 27.0,
@@ -37,6 +39,7 @@ extern module cap(
 extern module ind(
     inout p, inout n;
     parameter real l,
+    parameter expr flux,
     parameter string model = "",
     parameter real ic = 0.0,
     parameter real temp = 27.0,
@@ -217,12 +220,14 @@ extern module irandom(
 
 extern module vcvs(
     inout p, inout n, inout cp, inout cn;
-    parameter real gain = 1.0
+    parameter real gain = 1.0,
+    parameter expr vol
 );
 
 extern module vccs(
     inout p, inout n, inout cp, inout cn;
     parameter real gm = 1e-3,
+    parameter expr cur,
     parameter real m = 1.0
 );
 
@@ -241,7 +246,7 @@ extern module cccs(
 
 extern module bsource_v(
     inout p, inout n;
-    parameter string V,
+    parameter expr V,
     parameter real temp = 27.0,
     parameter real dtemp = 0.0,
     parameter real tc1 = 0.0,
@@ -251,7 +256,7 @@ extern module bsource_v(
 
 extern module bsource_i(
     inout p, inout n;
-    parameter string I,
+    parameter expr I,
     parameter real temp = 27.0,
     parameter real dtemp = 0.0,
     parameter real tc1 = 0.0,

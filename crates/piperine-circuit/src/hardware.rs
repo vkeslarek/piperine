@@ -38,6 +38,7 @@ pub struct ParameterDefinition {
 ///   "vdd"     → "vdd"       (global power net)
 pub trait NetResolver: Send + Sync {
     fn resolve(&self, hierarchical_net: &str) -> String;
+    fn get_function(&self, _name: &str) -> Option<&piperine_parser::model::Function> { None }
 }
 
 /// A hardware element type — anything that can be instantiated in a circuit.

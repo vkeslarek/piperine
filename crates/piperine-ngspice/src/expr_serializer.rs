@@ -77,6 +77,50 @@ pub fn serialize_ngspice_expr(expr: &Expr, r: &dyn NetResolver) -> Result<String
             Ok(format!("idt({},{})", inner, ic))
         }
 
+        // Inline user functions
+        Expr::Call(FunctionRef::Path(p), raw_args) if r.get_function(&path_leaf(p)).is_some() => {
+            let fname = path_leaf(p);
+            let func = r.get_function(&fname).unwrap();
+            let args = pos_args(raw_args);
+            if args.len() != func.args.len() {
+                return Err(format!("function `{}` expects {} arguments, got {}", fname, func.args.len(), args.len()));
+            }
+            // A simple user function should have `return EXPR;` as the body.
+            // Search for `return EXPR` in the body.
+            let mut ret_expr = None;
+            for stmt in &func.body {
+                if let piperine_parser::ast::Stmt::Return(ret) = stmt {
+                    ret_expr = ret.value.as_ref();
+                    break;
+                }
+                if let piperine_parser::ast::Stmt::Block(b) = stmt {
+                    for item in &b.items {
+                        if let piperine_parser::ast::BlockItem::Stmt(piperine_parser::ast::Stmt::Return(ret)) = item {
+                            ret_expr = ret.value.as_ref();
+                            break;
+                        }
+                    }
+                }
+            }
+            if let Some(expr) = ret_expr {
+                // substitute arguments
+                // This is a bit tricky, we need to map arg names to values and rewrite the AST.
+                // Or we can serialize the function's return expression with a wrapper NetResolver?
+                // Actually, the simplest is to substitute arguments in the serialized string.
+                // Let's create a custom NetResolver that overrides parameter lookups?
+                // Wait, the arguments to a function are local variables.
+                // We can clone the expression and walk it, replacing variables.
+                let mut substituted_expr = expr.clone();
+                for (i, arg_def) in func.args.iter().enumerate() {
+                    let arg_val = args[i].clone();
+                    replace_ident(&mut substituted_expr, &arg_def.name, &arg_val);
+                }
+                serialize_ngspice_expr(&substituted_expr, r)
+            } else {
+                Err(format!("user function `{}` has no return statement", fname))
+            }
+        }
+
         // Math functions: abs sqrt exp ln log sin cos tan ...
         Expr::Call(FunctionRef::Path(p), raw_args) => {
             let fname = path_leaf(p);
@@ -87,6 +131,8 @@ pub fn serialize_ngspice_expr(expr: &Expr, r: &dyn NetResolver) -> Result<String
                 "sin"   => "sin",   "cos"   => "cos",
                 "tan"   => "tan",   "asin"  => "asin",
                 "acos"  => "acos",  "atan"  => "atan",
+                "sinh"  => "sinh",  "cosh"  => "cosh",
+                "tanh"  => "tanh",
                 "atan2" => "atan2", "pow"   => "pow",
                 "floor" => "floor", "ceil"  => "ceil",
                 other   => return Err(format!("unknown function `{other}` in B-source expression")),
@@ -98,6 +144,12 @@ pub fn serialize_ngspice_expr(expr: &Expr, r: &dyn NetResolver) -> Result<String
         // $time, $temper — predefined simulator variables
         Expr::Call(FunctionRef::SysFun(name), _) if name == "time" => Ok("time".into()),
         Expr::Call(FunctionRef::SysFun(name), _) if name == "temper" => Ok("temper".into()),
+
+        // Guard against other $system_tasks
+        Expr::Call(FunctionRef::SysFun(_), _) => {
+            Err("system tasks cannot appear in a behavioral expression; use the bare analog form".into())
+        }
+
 
         // Plain identifier — local variable reference, pass through
         Expr::Path(p) if p.qualifier.is_none() => Ok(path_leaf(p)),
@@ -113,7 +165,9 @@ fn serialize_literal(lit: &Literal) -> Result<String, String> {
             Ok(s.clone())
         }
         Literal::Inf => Ok("1e308".into()),
-        Literal::StrLit(_) => Err("string literal not valid in B-source expression".into()),
+        // A string literal is an escape hatch: its content is treated as a
+        // pre-written ngspice expression (e.g. `.v("v(a)*2")`). Strip the quotes.
+        Literal::StrLit(s) => Ok(s.trim_matches('"').to_string()),
     }
 }
 
@@ -152,4 +206,42 @@ fn path_leaf(p: &piperine_parser::ast::Path) -> String {
 
 fn path_is(name: &str, p: &piperine_parser::ast::Path) -> bool {
     p.qualifier.is_none() && matches!(&p.segment, PathSegment::Ident(s) if s == name)
+}
+
+fn replace_ident(expr: &mut Expr, name: &str, replacement: &Expr) {
+    match expr {
+        Expr::Path(p) if path_is(name, p) => {
+            *expr = replacement.clone();
+        }
+        Expr::Prefix(_, inner) | Expr::Paren(inner) => {
+            replace_ident(inner, name, replacement);
+        }
+        Expr::Binary(lhs, _, rhs) => {
+            replace_ident(lhs, name, replacement);
+            replace_ident(rhs, name, replacement);
+        }
+        Expr::Select(cond, then, els) => {
+            replace_ident(cond, name, replacement);
+            replace_ident(then, name, replacement);
+            replace_ident(els, name, replacement);
+        }
+        Expr::Call(_, args) => {
+            for arg in args {
+                match arg {
+                    CallArg::Positional(e) => replace_ident(e, name, replacement),
+                    CallArg::Named(_, e) => replace_ident(e, name, replacement),
+                }
+            }
+        }
+        Expr::Array(items) => {
+            for item in items {
+                replace_ident(item, name, replacement);
+            }
+        }
+        Expr::Index(base, index) => {
+            replace_ident(base, name, replacement);
+            replace_ident(index, name, replacement);
+        }
+        _ => {}
+    }
 }

@@ -205,7 +205,7 @@ fn elaborate_instance(
 
         // Instantiate via base module with model name in param map.
         merged.insert("model".into(), ParameterValue::String(format!("\"{}\"", model_name)));
-        let resolver = ConcreteNetResolver { net_map, path };
+        let resolver = ConcreteNetResolver { net_map, path, document };
         let hw_instance = base_def.instantiate(&instance.name, &merged, &connections, &resolver)?;
         let lines = hw_instance.spice_lines();
         instances_list.push((instance.name.clone(), spice_element_name(&lines, &instance.name)));
@@ -221,7 +221,7 @@ fn elaborate_instance(
             &instance.params, &instance.name, definition.parameters(),
             sibling_instances, registry, paramsets, &mut parameters,
         )?;
-        let resolver = ConcreteNetResolver { net_map, path };
+        let resolver = ConcreteNetResolver { net_map, path, document };
         let hw_instance = definition.instantiate(&instance.name, &parameters, &connections, &resolver)?;
         let lines = hw_instance.spice_lines();
         instances_list.push((instance.name.clone(), spice_element_name(&lines, &instance.name)));
@@ -269,11 +269,16 @@ fn resolve_net(raw: &str, net_map: &NetMap, path: &str) -> String {
 struct ConcreteNetResolver<'a> {
     net_map: &'a NetMap,
     path: &'a str,
+    document: &'a Document,
 }
 
 impl<'a> NetResolver for ConcreteNetResolver<'a> {
     fn resolve(&self, raw: &str) -> String {
         resolve_net(raw, self.net_map, self.path)
+    }
+
+    fn get_function(&self, name: &str) -> Option<&piperine_parser::model::Function> {
+        self.document.modules.iter().flat_map(|m| &m.functions).find(|f| f.name == name)
     }
 }
 
@@ -388,6 +393,10 @@ fn resolve_parameters(
     for definition in definitions {
         // Ref params are validated and inserted by resolve_ref_params.
         if definition.is_ref { continue; }
+        // Expr params are optional at this layer — the device decides whether the
+        // behavioral expression is required (`key_expr` errors) or an optional
+        // alternative to a numeric form (`opt_key_expr` falls back).
+        if definition.is_expr { continue; }
         if definition.default.is_none() && !map.contains_key(&definition.name) {
             return Err(ElaborationError::MissingParameter {
                 parameter: definition.name.clone(),

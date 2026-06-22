@@ -136,10 +136,29 @@ endmodule
 
 ## Behavioral expressions (`parameter expr`)
 
-For B-sources, the expression string is passed verbatim to ngspice. Any valid ngspice expression is allowed:
+Piperine allows behavioral expressions to be passed as values for parameters declared as `parameter expr` (such as the value of a behavioral source or a nonlinear passive device).
+
+The expression is a true Piperine expression, not a raw string. It is parsed, type-checked, and safely serialized to the underlying simulator.
+
+### Procedural vs Analog evaluation (`$X()` vs `X()`)
+
+Piperine enforces a strict semantic distinction between procedural host evaluation and continuous analog evaluation:
+
+| Form | Meaning | Where | Who evaluates |
+|------|---------|-------|---------------|
+| `$X(...)` | **procedural, eval-now** — returns a value immediately | `initial`/`always`/functions | the **interpreter** |
+| `X(...)` (bare) | **analog expression** — part of a continuous expression | behavioral params (`.v(...)`) | the **simulator**, every timestep |
 
 ```verilog
-bsource_v #(.V("V(a,b)*2.0 + 0.5")) Bv1(.p(out), .n(gnd));
+real f = $sin(1.0);                 // interpreter computes sin(1.0) now → 0.8414…
+bsource_v #(.v( sin(6.28*1e3*time) + V(a)*V(b) )) B1(.p(out), .n(gnd));
+//            └── bare sin / V(): lowered into the ngspice B-source, evaluated by
+//                the simulator at each timestep. NOT computed by the interpreter.
 ```
 
-The expression uses ngspice node voltage `V(node)` and current `I(element)` syntax, not Piperine net names.
+- The `$` prefix marks an operation as "evaluate in the interpreter, right now, give me the number."
+- A **bare** call in a behavioral-expression position is *never* evaluated by the interpreter; the whole expression AST is handed to the serializer and lowered to the simulator syntax. Bare `V()`, `I()`, `ddt()`, `idt()`, and the math names are **analog primitives** — they only have meaning in this context.
+
+System tasks like `$voltage` or `$op` cannot appear inside a behavioral expression. Doing so will result in an elaboration error.
+
+See [Analog (Verilog-A) Modules](analog.md) for more details on analog primitives.
