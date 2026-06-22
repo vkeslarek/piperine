@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use piperine_parser::ast::*;
+use piperine_parser::model::Function;
 use piperine_common::{EventAction, SimEventKind};
 use crate::backend::{SimulatorBackend, AnalysisEvent, collect_vectors};
 use crate::task::SystemTaskRegistry;
@@ -42,6 +44,8 @@ pub struct Interpreter<'a> {
     /// Set via `set_always_handlers()` before calling `exec()`.
     /// Tasks that run analyses (e.g. `$tran`) use these to wire callbacks.
     always_handlers: AlwaysHandlerSet,
+    /// User-defined functions, keyed by name. Set via `set_functions()`.
+    functions: HashMap<String, Arc<Function>>,
 }
 
 impl<'a> Interpreter<'a> {
@@ -51,6 +55,7 @@ impl<'a> Interpreter<'a> {
             tasks,
             types: crate::value::TypeRegistry::default(),
             always_handlers: AlwaysHandlerSet::default(),
+            functions: HashMap::new(),
         }
     }
 
@@ -58,6 +63,50 @@ impl<'a> Interpreter<'a> {
     /// Must be called before `exec()` if the testbench has any `always @(...)` blocks.
     pub fn set_always_handlers(&mut self, handlers: AlwaysHandlerSet) {
         self.always_handlers = handlers;
+    }
+
+    /// Register user-defined functions collected by the elaborator so that
+    /// `f(...)` calls in procedural code resolve to them.
+    pub fn set_functions(&mut self, functions: Vec<Function>) {
+        self.functions = functions.into_iter()
+            .map(|f| (f.name.clone(), Arc::new(f)))
+            .collect();
+    }
+
+    /// Call a user-defined function with already-evaluated arguments.
+    ///
+    /// A fresh scope holds the input args (bound positionally), the function's
+    /// parameters and local variables, and a variable named after the function
+    /// (the Verilog-A return convention). The result is the value carried by an
+    /// explicit `return`, else that named variable.
+    fn call_user_function(&mut self, func: &Function, args: Vec<Value>)
+        -> Result<Value, InterpreterError>
+    {
+        let mut scope = Scope::default();
+        for (arg, value) in func.args.iter().zip(args.into_iter()) {
+            scope.set(&arg.name, value);
+        }
+        for param in &func.parameters {
+            let v = self.eval_expr(&param.default_value, &mut scope)?;
+            scope.set(&param.name, v);
+        }
+        for var in &func.variables {
+            let v = match &var.default_value {
+                Some(expr) => self.eval_expr(expr, &mut scope)?,
+                None       => type_zero_value(&var.ty),
+            };
+            scope.set(&var.name, v);
+        }
+        // Verilog-A return convention: seed a variable named after the function.
+        if let Some(ty) = &func.return_type {
+            scope.set(&func.name, type_zero_value(ty));
+        }
+        for stmt in &func.body {
+            if let Flow::Return(v) = self.eval_statement(stmt, &mut scope)? {
+                return Ok(v);
+            }
+        }
+        Ok(scope.get(&func.name).cloned().unwrap_or(Value::Void))
     }
 
     /// Run an analysis command with always-handler wiring.
@@ -403,15 +452,19 @@ impl<'a> Interpreter<'a> {
                     }
                     FunctionRef::Path(path) => {
                         let path_str = path_to_string(path);
+                        // Method call on an extern object: `obj.method(...)`.
                         if let Some((obj_name, method)) = path_str.split_once('.') {
                             if let Some(Value::ExternObject(obj)) = scope.get(obj_name) {
                                 return obj.call_method(method, &all_args)
                                     .map_err(|e| InterpreterError::Other(e));
                             }
                         }
+                        // User-defined function (positional args bound by order).
+                        if let Some(func) = self.functions.get(&path_str).cloned() {
+                            return self.call_user_function(&func, positional);
+                        }
                         Err(InterpreterError::Other(format!(
-                            "user-defined function `{}` calls not supported in Phase 1",
-                            path_str
+                            "call to unknown function `{path_str}`"
                         )))
                     }
                 }

@@ -146,7 +146,7 @@ impl<'a> Parser<'a> {
     /// True when the cursor is on a keyword that begins a statement (not a
     /// type name). Used by `block_item` to keep `is_type_kw()`'s `Ident Ident`
     /// heuristic from swallowing nested compound statements.
-    fn at_stmt_kw(&self) -> bool {
+    pub(super) fn at_stmt_kw(&self) -> bool {
         self.at_any_kw(&[
             "begin", "if", "while", "for", "case", "casex", "casez",
             "repeat", "forever", "return", "break", "continue",

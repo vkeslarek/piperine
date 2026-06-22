@@ -31,6 +31,8 @@ pub struct ElaborationResult {
     pub initial_statement: ast::Stmt,
     /// Collected `always` block handlers.
     pub always_handlers: AlwaysHandlerSet,
+    /// User-defined `function`s from the testbench, for the interpreter to call.
+    pub functions: Vec<piperine_parser::model::Function>,
 }
 
 /// `AlwaysHandlerSet` — collected from all `always @(...)` blocks in the testbench module.
@@ -90,7 +92,12 @@ pub fn elaborate(
         }
     }
 
-    Ok(ElaborationResult { spice_lines, initial_statement, always_handlers })
+    Ok(ElaborationResult {
+        spice_lines,
+        initial_statement,
+        always_handlers,
+        functions: testbench.functions.clone(),
+    })
 }
 
 fn build_paramset_map(

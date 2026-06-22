@@ -96,6 +96,7 @@ fn run(path: PathBuf) -> Result<(), String> {
 
     // ── 8. Run interpreter ────────────────────────────────────────────────────
     let mut interpreter = Interpreter::new(simulator.as_mut(), &task_registry);
+    interpreter.set_functions(elaboration.functions);
     let mut scope = Scope::default();
     interpreter
         .exec(&elaboration.initial_statement, &mut scope)

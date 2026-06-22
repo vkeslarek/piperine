@@ -276,6 +276,7 @@ impl<'a> Parser<'a> {
             }));
         }
         if self.at_kw("analog") { return self.analog(attrs, start); }
+        if self.at_kw("function") { return self.function(attrs, start); }
         if self.at_kw("branch") { return self.branch(attrs, start); }
         if self.at_kw("parameter") || self.at_kw("localparam") {
             return Ok(ModuleItem::ParamDecl(self.param_decl(attrs, start)?));
@@ -483,8 +484,24 @@ impl<'a> Parser<'a> {
         self.expect_kw("function")?;
         let ty = if self.is_type_kw() { Some(self.type_()?) } else { None };
         let name = self.name()?;
-        self.expect(&Tok::Semi)?;
         let mut items = Vec::new();
+        // Optional SystemVerilog-style parenthesized argument list:
+        // `function real f(input real a, input real b);`
+        // (Verilog-A style `input real a;` inside the body is still accepted below.)
+        if self.eat(&Tok::LParen) {
+            while !self.at(&Tok::RParen) && !self.at_end() {
+                let arg_attrs = self.attrs()?;
+                let dir = if self.at_dir() { self.direction()? } else { Direction::Input };
+                if self.is_type_kw() { let _ = self.type_()?; }
+                let arg_name = self.name()?;
+                items.push(FunctionItem::FunctionArg(FunctionArg {
+                    attrs: arg_attrs, dir, names: vec![arg_name],
+                }));
+                if !self.eat(&Tok::Comma) { break; }
+            }
+            self.expect(&Tok::RParen)?;
+        }
+        self.expect(&Tok::Semi)?;
         while !self.at_kw("endfunction") && !self.at_end() {
             items.push(self.function_item()?);
         }
@@ -508,7 +525,7 @@ impl<'a> Parser<'a> {
         if self.at_kw("parameter") || self.at_kw("localparam") {
             return Ok(FunctionItem::ParamDecl(self.param_decl(attrs, start)?));
         }
-        if self.is_type_kw() || self.at_kw("genvar") {
+        if !self.at_stmt_kw() && (self.is_type_kw() || self.at_kw("genvar")) {
             return Ok(FunctionItem::VarDecl(self.var_decl(attrs, start)?));
         }
         Ok(FunctionItem::Stmt(self.stmt_with_attrs(attrs)?))
