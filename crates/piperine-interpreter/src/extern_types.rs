@@ -208,3 +208,100 @@ impl SignalObj {
         None
     }
 }
+
+// ── ArrayObj: dynamic array / queue with reference (handle) semantics ─────────
+//
+// Created from an array literal (`'{1, 2, 3}`) and mutated through methods
+// (`push_back`, indexed `set`, …). The backing `Vec` lives behind an `Arc<Mutex>`,
+// so assigning an array to another variable shares the same storage — like a
+// SystemVerilog object handle, not a value copy.
+
+use std::sync::Mutex;
+
+#[derive(Debug)]
+pub struct ArrayObj {
+    items: Mutex<Vec<Value>>,
+}
+
+impl ArrayObj {
+    /// Wrap a list of values into an array handle.
+    pub fn new(items: Vec<Value>) -> Value {
+        Value::ExternObject(Arc::new(Self { items: Mutex::new(items) }))
+    }
+}
+
+/// Numeric view of a value for reductions; non-numeric counts as 0.
+fn num(v: &Value) -> f64 {
+    v.as_f64().unwrap_or(0.0)
+}
+
+impl ExternClass for ArrayObj {
+    fn type_name(&self) -> &str { "Array" }
+
+    fn call_method(&self, method: &str, args: &[Value]) -> Result<Value, String> {
+        let mut items = self.items.lock().unwrap();
+        let arg0 = || args.first().cloned().unwrap_or(Value::Void);
+        let idx0 = || args.first().and_then(|v| v.as_integer());
+
+        match method {
+            "size" | "len" => Ok(Value::Integer(items.len() as i64)),
+
+            "push_back" | "push" => { items.push(arg0()); Ok(Value::Void) }
+            "push_front"         => { items.insert(0, arg0()); Ok(Value::Void) }
+
+            "pop_back"  => items.pop().ok_or_else(|| "pop_back on empty array".into()),
+            "pop_front" => {
+                if items.is_empty() { Err("pop_front on empty array".into()) }
+                else { Ok(items.remove(0)) }
+            }
+
+            "get" => {
+                let i = idx0().ok_or("get(i) requires an integer index")?;
+                items.get(i as usize).cloned()
+                    .ok_or_else(|| format!("array index {i} out of bounds (len {})", items.len()))
+            }
+            "set" => {
+                let i = idx0().ok_or("set(i, v) requires an integer index")? as usize;
+                let v = args.get(1).cloned().unwrap_or(Value::Void);
+                if i < items.len() { items[i] = v; Ok(Value::Void) }
+                else { Err(format!("array index {i} out of bounds (len {})", items.len())) }
+            }
+            "insert" => {
+                let i = idx0().ok_or("insert(i, v) requires an integer index")? as usize;
+                let v = args.get(1).cloned().unwrap_or(Value::Void);
+                if i <= items.len() { items.insert(i, v); Ok(Value::Void) }
+                else { Err(format!("insert index {i} out of bounds (len {})", items.len())) }
+            }
+            "delete" => {
+                match idx0() {
+                    Some(i) => {
+                        let i = i as usize;
+                        if i < items.len() { items.remove(i); Ok(Value::Void) }
+                        else { Err(format!("delete index {i} out of bounds (len {})", items.len())) }
+                    }
+                    None => { items.clear(); Ok(Value::Void) } // delete() clears all
+                }
+            }
+            "clear" => { items.clear(); Ok(Value::Void) }
+
+            "first" => items.first().cloned().ok_or_else(|| "first() on empty array".into()),
+            "last"  => items.last().cloned().ok_or_else(|| "last() on empty array".into()),
+            "reverse" => { items.reverse(); Ok(Value::Void) }
+
+            "sum"     => Ok(Value::Real(items.iter().map(num).sum())),
+            "product" => Ok(Value::Real(items.iter().map(num).product())),
+            "mean" => {
+                if items.is_empty() { return Err("mean() on empty array".into()); }
+                Ok(Value::Real(items.iter().map(num).sum::<f64>() / items.len() as f64))
+            }
+            "min" => items.iter().map(num).reduce(f64::min)
+                .map(Value::Real).ok_or_else(|| "min() on empty array".into()),
+            "max" => items.iter().map(num).reduce(f64::max)
+                .map(Value::Real).ok_or_else(|| "max() on empty array".into()),
+
+            "values" => Ok(Value::RealVec(items.iter().map(num).collect())),
+
+            _ => Err(format!("unknown method '{method}' on Array")),
+        }
+    }
+}

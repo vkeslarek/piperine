@@ -47,6 +47,28 @@ for (i = 0; i < n; i++) ...
 for (t = 0.0; t < tstop; t += dt) ...
 ```
 
+## `inside` — set membership
+
+Tests whether a value is in a set of scalars and/or ranges. `[lo:hi]` is an
+inclusive range; `$` is an open bound. Returns 1 or 0.
+
+```verilog
+if (code inside {1, 5, 9})        ...   // any of these
+if (v    inside {[0.0:1.8]})      ...   // within range
+if (f    inside {[1e3:$]})        ...   // 1 kHz and up
+if (n    inside {0, [10:20], 99}) ...   // mixed
+```
+
+## Array literals and indexing
+
+```verilog
+q = '{1.0, 2.0, 3.0};   // array literal ('{} is empty)
+real a = q[0];          // indexed read
+q[1] = 5.0;             // indexed write
+```
+
+See [Array](stdlib.md#array) for the full method set and handle semantics.
+
 ## Comparison operators (in procedural blocks)
 
 ```verilog

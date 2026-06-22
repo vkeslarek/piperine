@@ -1,9 +1,5 @@
 # Piperine
 
-**One language for analog device models *and* the testbenches that exercise them — running on ngspice.**
-
----
-
 ## What it is
 
 Piperine is a hardware-description language and simulator front-end for
@@ -131,13 +127,6 @@ Integration tests in `tests/` exercise parsing, elaboration, the interpreter, an
 end-to-end IPC with a real worker.
 
 ### Where to start
-
-- **Add an ngspice device** → a data entry in `crates/piperine-ngspice/src/hardware.rs`
-  plus a matching `extern module` in `ppr/ngspice.ppr`. See
-  [`docs/development/SPICE_COMPONENTS_IMPL.md`](docs/development/SPICE_COMPONENTS_IMPL.md).
-- **Add an analysis or measurement** → `crates/piperine-ngspice/src/tasks.rs`.
-- **Extend the language** → `crates/piperine-parser/src/grammar/` (hand-written;
-  changes there ripple through everything) and the interpreter.
 
 Conventions and agent guidance live in [`CLAUDE.md`](CLAUDE.md) and
 [`AGENTS.md`](AGENTS.md); deeper design notes in [`docs/development/`](docs/development/).

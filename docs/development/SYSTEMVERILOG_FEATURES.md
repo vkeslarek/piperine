@@ -1356,10 +1356,22 @@ Landed and covered by `tests/e2e_onda1_test.rs`:
 - Math system functions: `$sqrt $pow $exp $ln $log10 $sin $cos $tan $asin $acos
   $atan $atan2 $sinh $cosh $tanh $hypot $floor $ceil` and `$clog2`
 
-Still missing from the lists below (the `[DONE]` markers elsewhere in this file
-predate verification and are aspirational): user-defined `function`/`task`
-execution, arrays/queues, `inside`, `$urandom`/`$dist_*`, associative arrays,
-`package`.
+### Wave 2 — implemented 2026-06
+
+Landed and covered by `tests/e2e_onda2_test.rs`:
+
+- User-defined `function` execution: module-level `function` (SV parenthesized
+  arg list *or* Verilog-A `input` body form), positional args, locals, recursion,
+  return via `return expr;` or the Verilog-A name-of-function convention.
+- Arrays / queues with **handle semantics**: `'{…}` literals, `arr[i]` read/write,
+  `foreach`, and methods (`push_back`, `pop_front`, `size`, `sum`, `min`, `max`,
+  `insert`, `delete`, `reverse`, `values`, …). Built as an `ArrayObj` ExternClass.
+- `inside` operator (`x inside {3, [10:20], [100:$]}`) — desugared in the parser
+  to an OR-chain of comparisons.
+
+Still missing (the `[DONE]` markers elsewhere in this file predate verification and
+are aspirational): `$urandom`/`$dist_*`, associative arrays `[string]`, `package`,
+classes, and the verification features (SVA, covergroup, fork/join).
 
 ### High Value for Analog Testbench (implement soon)
 

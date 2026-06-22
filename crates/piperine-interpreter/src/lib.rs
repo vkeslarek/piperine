@@ -14,5 +14,5 @@ pub use backend::{SimulatorBackend, AnalogCompilerBackend, AnalysisEvent};
 pub use plugin::Plugin;
 pub use task::{SystemTask, SystemTaskRegistry};
 pub use interpreter::{Interpreter, Scope};
-pub use extern_types::{AnalysisHandleObj, SignalObj};
+pub use extern_types::{AnalysisHandleObj, SignalObj, ArrayObj};
 pub use std_types::ComplexValue;

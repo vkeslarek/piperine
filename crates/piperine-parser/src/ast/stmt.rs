@@ -25,6 +25,7 @@ pub enum Stmt {
     Return(ReturnStmt),
     Repeat(RepeatStmt),
     Forever(ForeverStmt),
+    Foreach(ForeachStmt),
 }
 
 #[derive(Debug, Clone)]
@@ -155,5 +156,14 @@ pub struct RepeatStmt {
 #[derive(Debug, Clone)]
 pub struct ForeverStmt {
     pub attrs: Vec<Attr>,
+    pub body: Box<Stmt>,
+}
+
+/// `foreach (array[index]) body` — iterate `index` over `0..array.size()`.
+#[derive(Debug, Clone)]
+pub struct ForeachStmt {
+    pub attrs: Vec<Attr>,
+    pub array: Expr,
+    pub index: Name,
     pub body: Box<Stmt>,
 }

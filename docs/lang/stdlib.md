@@ -123,3 +123,44 @@ real gain_db = 20.0 * $log10(vout / vin);
 real fc      = 1.0 / (2.0 * 3.14159265 * $sqrt(l * c));
 integer addr_bits = $clog2(depth);
 ```
+
+---
+
+## Array
+
+A growable array / queue, created from an array literal and mutated through
+methods. Index with `arr[i]`; iterate with [`foreach`](statements.md#foreach-loop).
+
+```verilog
+q = '{1.0, 2.0, 3.0};   // literal (also '{} for empty)
+q.push_back(4.0);
+real third = q[2];      // indexed read
+q[0] = 10.0;            // indexed write
+```
+
+**Handle semantics:** an array is a shared handle. `r = q;` makes `r` and `q`
+refer to the *same* storage — mutating one is visible through the other. Build a
+copy explicitly if you need independence.
+
+### Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `.size()` / `.len()` | integer | element count |
+| `.push_back(v)` / `.push(v)` | void | append |
+| `.push_front(v)` | void | prepend |
+| `.pop_back()` / `.pop_front()` | value | remove and return an end |
+| `.get(i)` / `.set(i, v)` | value / void | indexed access (same as `arr[i]`) |
+| `.insert(i, v)` | void | insert before index `i` |
+| `.delete(i)` / `.delete()` | void | remove one / clear all |
+| `.first()` / `.last()` | value | ends without removing |
+| `.reverse()` | void | reverse in place |
+| `.sum()` / `.product()` / `.mean()` | real | reductions |
+| `.min()` / `.max()` | real | extrema |
+| `.values()` | real[] | numeric vector copy |
+
+```verilog
+real samples = '{};
+foreach (raw[i]) samples.push_back(raw[i] * gain);
+real worst = samples.max();
+```

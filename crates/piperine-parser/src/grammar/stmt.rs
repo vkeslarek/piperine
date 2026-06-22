@@ -14,6 +14,7 @@ impl<'a> Parser<'a> {
         if self.at_kw("begin") || self.at(&Tok::LBrace) { return self.block_stmt(attrs); }
         if self.at_kw("if")                { return self.if_stmt(attrs); }
         if self.at_kw("while")             { return self.while_stmt(attrs); }
+        if self.at_kw("foreach")           { return self.foreach_stmt(attrs); }
         if self.at_kw("for")               { return self.for_stmt(attrs); }
         if self.at_kw("repeat")            { return self.repeat_stmt(attrs); }
         if self.at_kw("forever")           { return self.forever_stmt(attrs); }
@@ -101,6 +102,19 @@ impl<'a> Parser<'a> {
         Ok(Stmt::Forever(ForeverStmt { attrs, body }))
     }
 
+    /// `foreach (array[index]) body`
+    fn foreach_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
+        self.expect_kw("foreach")?;
+        self.expect(&Tok::LParen)?;
+        let array = Expr::Path(self.path()?);
+        self.expect(&Tok::LBrack)?;
+        let index = self.name()?;
+        self.expect(&Tok::RBrack)?;
+        self.expect(&Tok::RParen)?;
+        let body = Box::new(self.stmt()?);
+        Ok(Stmt::Foreach(ForeachStmt { attrs, array, index, body }))
+    }
+
     fn return_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
         self.expect_kw("return")?;
         let value = if self.at(&Tok::Semi) || self.at(&Tok::RBrace) || self.at_kw("end") {
@@ -148,7 +162,7 @@ impl<'a> Parser<'a> {
     /// heuristic from swallowing nested compound statements.
     pub(super) fn at_stmt_kw(&self) -> bool {
         self.at_any_kw(&[
-            "begin", "if", "while", "for", "case", "casex", "casez",
+            "begin", "if", "while", "for", "foreach", "case", "casex", "casez",
             "repeat", "forever", "return", "break", "continue",
             "assert", "assert_run", "assert_warn",
         ])

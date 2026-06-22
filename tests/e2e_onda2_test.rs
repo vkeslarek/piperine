@@ -161,3 +161,111 @@ endmodule
 "#);
     assert!((real(&s, "y") - 5.0).abs() < 1e-12);
 }
+
+// ── 2b: arrays / queues ───────────────────────────────────────────────────────
+
+fn mod2b(body: &str) -> String {
+    format!("module tb;\n  initial begin\n    real x; integer n; real q;\n{body}\n  end\nendmodule\n")
+}
+
+#[test]
+fn test_array_literal_size_index() {
+    let s = run(&mod2b("q = '{10.0, 20.0, 30.0}; n = q.size(); x = q[1];"));
+    assert_eq!(real(&s, "n"), 3.0);
+    assert_eq!(real(&s, "x"), 20.0);
+}
+
+#[test]
+fn test_array_push_and_reduce() {
+    let s = run(&mod2b(
+        "q = '{}; q.push_back(3.0); q.push_back(4.0); q.push_back(5.0); \
+         x = q.sum(); n = q.size();"));
+    assert_eq!(real(&s, "x"), 12.0);
+    assert_eq!(real(&s, "n"), 3.0);
+}
+
+#[test]
+fn test_array_min_max() {
+    let s = run(&mod2b("q = '{7.0, 2.0, 9.0, 4.0}; x = q.max(); n = q.min();"));
+    assert_eq!(real(&s, "x"), 9.0);
+    assert_eq!(real(&s, "n"), 2.0);
+}
+
+#[test]
+fn test_array_indexed_assignment() {
+    let s = run(&mod2b("q = '{1.0, 2.0, 3.0}; q[1] = 99.0; x = q[1] + q[0];"));
+    assert_eq!(real(&s, "x"), 100.0);
+}
+
+#[test]
+fn test_array_pop_front_back() {
+    let s = run(&mod2b(
+        "q = '{1.0, 2.0, 3.0, 4.0}; x = q.pop_front(); n = q.size();"));
+    assert_eq!(real(&s, "x"), 1.0);
+    assert_eq!(real(&s, "n"), 3.0);
+}
+
+#[test]
+fn test_foreach_sum() {
+    let s = run(&mod2b(
+        "q = '{1.0, 2.0, 3.0, 4.0}; x = 0.0; foreach (q[i]) x += q[i];"));
+    assert_eq!(real(&s, "x"), 10.0);
+}
+
+#[test]
+fn test_foreach_with_break() {
+    let s = run(&mod2b(
+        "q = '{1.0, 2.0, 3.0, 4.0, 5.0}; x = 0.0; \
+         foreach (q[i]) begin if (q[i] > 3.0) break; x += q[i]; end"));
+    assert_eq!(real(&s, "x"), 6.0); // 1+2+3
+}
+
+#[test]
+fn test_array_reference_semantics() {
+    // q and r share storage (handle semantics): mutating r is visible via q.
+    let s = run(&mod2b("q = '{1.0}; r = q; r.push_back(2.0); n = q.size();"));
+    assert_eq!(real(&s, "n"), 2.0);
+}
+
+#[test]
+fn test_array_build_in_loop() {
+    let s = run(&mod2b(
+        "q = '{}; for (n = 0; n < 5; n++) q.push_back(n * n); x = q.sum();"));
+    assert_eq!(real(&s, "x"), 30.0); // 0+1+4+9+16
+}
+
+// ── 2c: inside operator ───────────────────────────────────────────────────────
+
+#[test]
+fn test_inside_scalar_set() {
+    let s = run(&mod2b("n = 5 inside {1, 5, 9};"));
+    assert_eq!(real(&s, "n"), 1.0);
+    let s = run(&mod2b("n = 4 inside {1, 5, 9};"));
+    assert_eq!(real(&s, "n"), 0.0);
+}
+
+#[test]
+fn test_inside_range() {
+    let s = run(&mod2b("n = 15 inside {[10:20]};"));
+    assert_eq!(real(&s, "n"), 1.0);
+    let s = run(&mod2b("n = 25 inside {[10:20]};"));
+    assert_eq!(real(&s, "n"), 0.0);
+}
+
+#[test]
+fn test_inside_mixed_and_open() {
+    // scalar + closed range + open-upper range
+    let s = run(&mod2b("n = 3 inside {3, [10:20], [100:$]};"));
+    assert_eq!(real(&s, "n"), 1.0);
+    let s = run(&mod2b("n = 150 inside {3, [10:20], [100:$]};"));
+    assert_eq!(real(&s, "n"), 1.0);
+    let s = run(&mod2b("n = 50 inside {3, [10:20], [100:$]};"));
+    assert_eq!(real(&s, "n"), 0.0);
+}
+
+#[test]
+fn test_inside_in_if_condition() {
+    let s = run(&mod2b(
+        "x = 0.0; n = 7; if (n inside {[1:10]}) x = 42.0;"));
+    assert_eq!(real(&s, "x"), 42.0);
+}

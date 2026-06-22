@@ -221,6 +221,30 @@ impl<'a> Interpreter<'a> {
             Stmt::Assign(assign) => {
                 let a = &assign.assign;
                 let rhs = self.eval_expr(&a.rval, scope)?;
+
+                // Indexed assignment: `arr[i] = v` mutates the array element.
+                if let Expr::Index(base, index) = &a.lval {
+                    let array = self.eval_expr(base, scope)?;
+                    let idx = self.eval_expr(index, scope)?;
+                    let value = match compound_binop(&a.op) {
+                        Some(binop) => {
+                            let current = self.eval_expr(&a.lval, scope)?;
+                            eval_binary_op(current, &binop, rhs)?
+                        }
+                        None => rhs,
+                    };
+                    match array {
+                        Value::ExternObject(obj) => {
+                            obj.call_method("set", &[idx, value]).map_err(InterpreterError::Other)?;
+                        }
+                        other => return Err(InterpreterError::TypeError {
+                            expected: "array for indexed assignment".into(),
+                            got: other.type_name().into(),
+                        }),
+                    }
+                    return Ok(Flow::Normal);
+                }
+
                 let name = expr_as_variable_name(&a.lval).ok_or_else(|| {
                     InterpreterError::Other("assignment target must be a variable name".into())
                 })?;
@@ -290,6 +314,27 @@ impl<'a> Interpreter<'a> {
             Stmt::Forever(forever_stmt) => {
                 loop {
                     match self.eval_statement(&forever_stmt.body, scope)? {
+                        Flow::Break             => break,
+                        Flow::Return(v)         => return Ok(Flow::Return(v)),
+                        Flow::Continue | Flow::Normal => {}
+                    }
+                }
+            }
+
+            Stmt::Foreach(foreach_stmt) => {
+                let array = self.eval_expr(&foreach_stmt.array, scope)?;
+                let size = match &array {
+                    Value::ExternObject(obj) => obj.call_method("size", &[])
+                        .map_err(InterpreterError::Other)?
+                        .as_integer().unwrap_or(0),
+                    other => return Err(InterpreterError::TypeError {
+                        expected: "array in foreach".into(),
+                        got: other.type_name().into(),
+                    }),
+                };
+                for i in 0..size {
+                    scope.set(&foreach_stmt.index.0, Value::Integer(i));
+                    match self.eval_statement(&foreach_stmt.body, scope)? {
                         Flow::Break             => break,
                         Flow::Return(v)         => return Ok(Flow::Return(v)),
                         Flow::Continue | Flow::Normal => {}
@@ -470,8 +515,29 @@ impl<'a> Interpreter<'a> {
                 }
             }
 
-            Expr::Array(_) | Expr::Index(_, _) | Expr::PartSelect(_, _, _) => {
-                Err(InterpreterError::Other("arrays not supported in Phase 1 — arrives in Phase 3".into()))
+            Expr::Array(items) => {
+                let mut values = Vec::with_capacity(items.len());
+                for item in items {
+                    values.push(self.eval_expr(item, scope)?);
+                }
+                Ok(crate::extern_types::ArrayObj::new(values))
+            }
+
+            Expr::Index(base, index) => {
+                let array = self.eval_expr(base, scope)?;
+                let idx = self.eval_expr(index, scope)?;
+                match array {
+                    Value::ExternObject(obj) => obj.call_method("get", &[idx])
+                        .map_err(InterpreterError::Other),
+                    other => Err(InterpreterError::TypeError {
+                        expected: "array for indexing".into(),
+                        got: other.type_name().into(),
+                    }),
+                }
+            }
+
+            Expr::PartSelect(_, _, _) => {
+                Err(InterpreterError::Other("part-selects (`a[msb:lsb]`) are not supported".into()))
             }
 
             Expr::PortFlow(_) => {

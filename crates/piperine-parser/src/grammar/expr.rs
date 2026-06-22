@@ -19,6 +19,14 @@ impl<'a> Parser<'a> {
                 lhs = Expr::Select(Box::new(lhs), Box::new(then_val), Box::new(else_val));
                 continue;
             }
+            // `x inside { ... }` — set membership, binds at equality precedence.
+            if self.at_kw("inside") {
+                const INSIDE_BP: u8 = 16;
+                if INSIDE_BP < min_bp { break; }
+                self.bump();
+                lhs = self.parse_inside(lhs)?;
+                continue;
+            }
             let Some((op, lbp, rbp)) = self.peek_binop() else { break };
             if lbp < min_bp {
                 break;
@@ -61,6 +69,40 @@ impl<'a> Parser<'a> {
         let lbp = bp * 2;
         let rbp = if right_assoc { lbp - 1 } else { lbp + 1 };
         Some((op, lbp, rbp))
+    }
+
+    /// Desugar `lhs inside { items }` into a boolean OR-chain. Each item is a
+    /// scalar (`lhs == item`) or a range `[lo:hi]` (`lhs >= lo && lhs <= hi`),
+    /// where `$` means the bound is open. An empty set is `0`.
+    fn parse_inside(&mut self, lhs: Expr) -> PResult<Expr> {
+        // The set opens with `{` (or `'{`).
+        if !self.eat(&Tok::LBrace) { self.expect(&Tok::ArrStart)?; }
+        let mut terms: Vec<Expr> = Vec::new();
+        while !self.at(&Tok::RBrace) && !self.at_end() {
+            if self.eat(&Tok::LBrack) {
+                let lo = if self.eat_dollar() { None } else { Some(self.expr()?) };
+                self.expect(&Tok::Colon)?;
+                let hi = if self.eat_dollar() { None } else { Some(self.expr()?) };
+                self.expect(&Tok::RBrack)?;
+                terms.push(range_term(&lhs, lo, hi));
+            } else {
+                let v = self.expr()?;
+                terms.push(Expr::Binary(Box::new(lhs.clone()), BinOp::Eq, Box::new(v)));
+            }
+            if !self.eat(&Tok::Comma) { break; }
+        }
+        self.expect(&Tok::RBrace)?;
+        Ok(or_chain(terms))
+    }
+
+    /// Consume a `$` token (lexed as an empty system-call name) if present.
+    fn eat_dollar(&mut self) -> bool {
+        if matches!(self.peek(), Some(Tok::SysCall(s)) if s.is_empty()) {
+            self.bump();
+            true
+        } else {
+            false
+        }
     }
 
     fn prefix(&mut self) -> PResult<Expr> {
@@ -189,4 +231,33 @@ fn real_literal(s: &str) -> Literal {
         Some(c) if c.is_ascii_alphabetic() => Literal::SiRealNumber(s.to_string()),
         _ => Literal::StdRealNumber(s.to_string()),
     }
+}
+
+// ── `inside` desugaring helpers ───────────────────────────────────────────────
+
+fn int_lit(n: i64) -> Expr {
+    Expr::Literal(Literal::IntNumber(n.to_string()))
+}
+
+/// Build the boolean test for one `[lo:hi]` range term of an `inside` set.
+/// An open bound (`$`) drops that side of the comparison.
+fn range_term(lhs: &Expr, lo: Option<Expr>, hi: Option<Expr>) -> Expr {
+    let ge = lo.map(|lo| Expr::Binary(Box::new(lhs.clone()), BinOp::Ge, Box::new(lo)));
+    let le = hi.map(|hi| Expr::Binary(Box::new(lhs.clone()), BinOp::Le, Box::new(hi)));
+    match (ge, le) {
+        (Some(a), Some(b)) => Expr::Binary(Box::new(a), BinOp::AndAnd, Box::new(b)),
+        (Some(a), None)    => a,
+        (None, Some(b))    => b,
+        (None, None)       => int_lit(1), // `[$:$]` matches anything
+    }
+}
+
+/// OR all membership terms together; an empty set is `0` (matches nothing).
+fn or_chain(mut terms: Vec<Expr>) -> Expr {
+    if terms.is_empty() { return int_lit(0); }
+    let mut acc = terms.remove(0);
+    for t in terms {
+        acc = Expr::Binary(Box::new(acc), BinOp::OrOr, Box::new(t));
+    }
+    acc
 }

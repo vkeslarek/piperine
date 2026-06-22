@@ -56,6 +56,17 @@ while (count < 100) begin
 end
 ```
 
+## `foreach` loop
+
+Iterate an index variable over the elements of an array:
+
+```verilog
+real total = 0.0;
+foreach (samples[i]) total += samples[i];
+```
+
+`break` and `continue` work inside it. See [Array](stdlib.md#array).
+
 ## `repeat` loop
 
 Run a body a fixed number of times:
@@ -89,6 +100,33 @@ for (i = 0; i < n; i++) begin
     if (done)    break;
 end
 ```
+
+## User-defined functions
+
+Declare functions at module level; call them from `initial`/`always` blocks or
+from other functions (recursion is allowed). Arguments are passed by value.
+
+```verilog
+module tb;
+    function real db20(input real ratio);
+        return 20.0 * $log10(ratio);
+    endfunction
+
+    // Verilog-A style also works: assign to a variable named after the function.
+    function integer fact(input integer n);
+        if (n <= 1) fact = 1;
+        else        fact = n * fact(n - 1);
+    endfunction
+
+    initial begin
+        real g = db20(100.0);   // 40 dB
+        integer f = fact(5);    // 120
+    end
+endmodule
+```
+
+A function returns either the value of an explicit `return expr;` or, following
+the Verilog-A convention, the final value of a variable named after the function.
 
 ## System task calls
 
