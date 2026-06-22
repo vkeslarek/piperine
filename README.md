@@ -1,184 +1,137 @@
 # Piperine
 
-> **⚠️ WARNING: PRE-ALPHA SOFTWARE**
-> Piperine is currently in active development. It is **unstable**, features are incomplete, and the API is subject to
-> breaking changes at any moment. Do not use in production.
+> ⚠️ **Work in progress — not production ready, not even close.** Piperine is an
+> active experiment: APIs, syntax, and behavior change without notice, and plenty
+> is half-built or missing. Use it to explore and contribute, not for anything
+> you depend on.
 
-**Piperine** is a modern circuit simulator written in Rust. It is designed to be used primarily as a library—first for
-Rust, and eventually for Python—focusing on circuit simulation, design, and optimization.
+## What it is
 
-Piperine is optimized for **medium-sized networks** (efficiently solving grids of ~40,000 nodes). It targets the
-complexity range typical of analog design blocks, switching power supplies, and educational contexts, rather than
-massive billion-transistor digital verification.
+Piperine is a hardware-description language and simulator front-end for
+analog and mixed-signal circuits. A single `.ppr` file holds two things that are
+normally split across separate tools:
 
----
+- **Device physics** — a superset of Verilog-A, compiled to OSDI device models.
+- **Testbenches** — a SystemVerilog-style procedural layer: variables, loops,
+  functions, math, and system tasks that drive the simulation and read results back.
 
-## 🚫 Piperine is NOT SPICE
+Under the hood it elaborates your circuit to a SPICE netlist and runs it on
+**ngspice**, which executes in an isolated worker process so a simulator crash
+can never take your testbench down with it.
 
-For decades, "SPICE" has evoked a feeling of dread among students and engineers—arcane syntax, cryptic error messages,
-and the feeling of "coding in the dark."
+## What it's for
 
-**Piperine proposes to change that.**
+Analog verification usually means juggling three languages: Verilog-A for the
+model, a SPICE deck for the netlist, and Tcl or Python to sweep parameters and
+post-process. Piperine collapses that into one:
 
-* **Code, don't list:** Instead of writing text-based netlists, you define circuits using code. This means you get **IDE
-  autocompletion**, **compile-time error checking**, and **inline documentation**.
-* **Design as Programming:** We aim to make circuit design and optimization feel like modern programming. Loop through
-  parameters, apply optimization algorithms directly to your circuit structs, and debug with standard tools.
-* **Simple Interface:** Our objective is to make simulation **simple, powerful, and flexible**.
+```verilog
+`include "ngspice.ppr"
 
-By treating circuits as data structures rather than text files, we aim to win over both professionals needing
-optimization loops and students needing clarity.
+module rc_lowpass;
+    // ── circuit ────────────────────────────────────────────────
+    vsource #(.dc(0.0), .acmag(1.0)) Vin(.p(in), .n(gnd));
+    res     #(.r(1e3))               R1 (.p(in), .n(out));
+    cap     #(.c(159e-9))            C1 (.p(out), .n(gnd));
 
----
+    // ── testbench ──────────────────────────────────────────────
+    initial begin
+        AcResult ac   = $ac("dec", 100, 10.0, 1e6);
+        Signal   vout = ac.signal("v(out)");
 
-## 🚀 Basic Usage
+        real f3db = vout.bandwidth_3db();
+        $display("-3 dB bandwidth = %e Hz", f3db);
 
-Piperine allows you to define circuits programmatically using a clean, type-safe builder pattern. Below is a complete example of simulating an RC Low Pass Filter with a step input.
-
-```rust
-use piperine::prelude::*;
-
-fn main() {
-    // 1. Define the Circuit
-    // We use the builder pattern to construct an RC Low Pass Filter.
-    // Instead of parsing strings, we write Rust code with compile-time unit checks.
-    let mut circuit: Circuit = builder("RC Filter", |b| {
-        // Step Input: 0V -> 5V after 0.1ms
-        b.voltage_source(
-            "Vin", "n_in", GND,
-            Step {
-                initial: 0.0.V(),
-                final_value: 5.0.V(),
-                delay: 0.1.ms(),
-                rise_time: 1.0.us(),
-            },
-        );
-
-        // Resistor: 1 kΩ
-        b.resistor("R1", "n_in", "n_out", 1.0.kOhms());
-
-        // Capacitor: 10 nF
-        b.capacitor("C1", "n_out", GND, 10.0.nF());
-    })
-    .into();
-
-    // 2. Configure Analysis
-    // We run a transient analysis for 1ms with a 1µs timestep.
-    let options = TransientAnalysisOptions {
-        stop_time: 1.0.ms(),
-        dt: 1.0.us(), 
-    };
-
-    println!("Starting Transient Analysis...");
-
-    // 3. Solve
-    // The solver handles stamping, matrix factorization, and convergence checks.
-    let trajectory = circuit
-        .transient(options, Context::default())
-        .expect("Invalid configuration")
-        .solve()
-        .expect("Convergence failed");
-
-    // 4. Analyze Results
-    // You can iterate through steps or jump to the end.
-    let final_step = trajectory.last().unwrap();
-    let v_out = final_step.get_node("n_out").unwrap_or(0.0);
-
-    println!("Simulation Complete!");
-    println!("Final Output Voltage: {:.4} V", v_out);
-}
+        assert (f3db > 900.0) else $error("corner too low: %e Hz", f3db);
+    end
+endmodule
 ```
 
----
+Run it:
 
-## 🗺️ Roadmap
+```sh
+piperine rc_lowpass.ppr
+```
 
-Piperine is evolving in phases. Below is the current development plan.
+The `initial` block *is* the test: it launches analyses (`$op`, `$tran`, `$ac`,
+`$noise`, …), gets back typed result objects, and measures signals directly
+(`.max()`, `.rms()`, `.bandwidth_3db()`, …). No external scripting layer.
 
-### Phase 1: Core Device Physics (The "Textbook" Suite)
+## How to use it
 
-*Goal: Validate the solver architecture against standard SPICE primitives.*
+### Install
 
-- [ ] **MOSFET Level 1 (Shichman-Hodges)**
-    - *Why:* The fundamental active device. Tests 4-terminal stamping and basic non-linear convergence.
-- [ ] **Transmission Lines (Lossless T-Line)**
-    - *Why:* Introduces Time Delay. Tests the transient history buffer (looking back at `t - delay`).
-- [ ] **Behavioral Sources (B-Sources / Expressions)**
-    - *Why:* Allows arbitrary math (e.g., `V = sin(time) * V(1)`). Requires implementing a math expression parser.
+```sh
+cargo build --release
+# binary at target/release/piperine
+```
 
-### Phase 2: Solver Hardening (The "Robustness" Suite)
+Requires Rust 1.85+, libngspice, and LLVM (for the OpenVAF-Reloaded model compiler).
 
-*Goal: Make the simulator capable of handling switching circuits and stiff systems.*
+### Run a file
 
-- [ ] **Adaptive Timestepping (LTE Control)**
-    - *Why:* Essential for speed and accuracy. Takes large steps when idle, tiny steps during transients.
-- [ ] **Switches (Voltage/Current Controlled)**
-    - *Why:* Introduces discontinuities. Requires "Breakpoint" handling so the solver hits the exact switching moment
-      without stepping over it.
+```sh
+piperine my_testbench.ppr
+```
 
-### Phase 3: Linear & Frequency Analysis (The "Small Signal" Suite)
+### Write a testbench
 
-*Goal: Implement analyses that require linearizing the circuit around an operating point.*
+1. `` `include "ngspice.ppr" `` to get every built-in ngspice device
+   (`res`, `cap`, `nmos`, `vsource`, `diode`, …).
+2. Instantiate your circuit with `module #(.param(value)) name(.port(net), …);`.
+3. Drive it from an `initial` block using analyses and measurements.
 
-- [ ] **Transfer Function (TF)**
-    - *Why:* Calculates DC small-signal gain, input resistance, and output resistance.
-- [ ] **Pole-Zero Analysis (PZ)**
-    - *Why:* Stability analysis (Control theory). Finds the roots of the network determinant.
-- [ ] **Noise Analysis**
-    - *Why:* Sums thermal, shot, and flicker noise contributions from all devices to find the noise floor.
+The full language and component references live in [`docs/`](docs/):
 
-### Phase 4: Advanced Analysis Loops (The "Expert" Suite)
+| Topic | Where |
+|-------|-------|
+| Language reference (types, statements, functions, stdlib) | [`docs/lang/`](docs/lang/) |
+| ngspice components (every device + parameters) | [`docs/ngspice/`](docs/ngspice/) |
+| Writing Verilog-A / OSDI device models | [`docs/openvaf/`](docs/openvaf/) |
 
-*Goal: Wrappers that run the standard solver multiple times.*
+New to the language? Start with [`docs/lang/overview.md`](docs/lang/overview.md).
 
-- [ ] **Fourier Analysis (FFT)**
-    - *Why:* Measure THD (Total Harmonic Distortion). A post-processing step on transient data.
-- [ ] **Sensitivity & Monte Carlo**
-    - *Why:* Manufacturing tolerances. "How does V(out) change if R1 varies by 1%?"
-- [ ] **Periodic Steady State (PSS)**
-    - *Why:* RF and Switching Power Supplies. Uses the Shooting Method to find the steady state of periodic signals.
+## How it works
 
-### Phase 5: Advanced Device Library (The "Industry" Suite)
+```
+.ppr ──parse──▶ AST ──┬─ VA modules ──▶ OpenVAF ──▶ .osdi ─┐
+                      │                                    ▼
+                      └─ elaborate ──▶ SPICE netlist ──▶ ngspice (worker process)
+                                       initial block ──▶ Interpreter ⇄ ngspice (IPC)
+```
 
-*Goal: Implement the massive, complex models used in real chip design.*
+The interpreter knows nothing about ngspice specifically — simulators plug in
+behind a `SimulatorBackend` trait. For the full picture (crate responsibilities,
+the plugin and IPC boundaries, how an analysis runs) see
+[**ARCHITECTURE.md**](ARCHITECTURE.md).
 
-- [ ] **BSIM Models (BSIM3 / BSIM4)**
-    - *Why:* The industry standard for deep-submicron MOSFET simulation.
-- [ ] **Advanced BJT Models (VBIC / HICUM / Mextram)**
-    - *Why:* Necessary for SiGe and RF BJT design where Gummel-Poon fails.
-- [ ] **Compound Devices**
-    - *URC:* Uniform Distributed RC for on-chip interconnects.
-    - *Coupled Transmission Lines:* For crosstalk modeling.
+## Contributing
 
-### Phase 6: Interface
+Piperine is a Rust workspace. Each crate has one job:
 
-- [ ] **Python Bindings (PyO3)**
-    - *Why:* User scripting and GUI integration. `import piperine`.
+| Crate | Responsibility |
+|-------|----------------|
+| `piperine-parser` | Lexer + recursive-descent parser → AST |
+| `piperine-circuit` | `HardwareDefinition` trait, elaboration, paramsets, net resolution |
+| `piperine-interpreter` | Runs `initial`/`always` blocks; `Value`, `SystemTask`, `SimulatorBackend` traits |
+| `piperine-ngspice` | ngspice device defs, system tasks, IPC backend, bundled `ngspice.ppr` |
+| `piperine-openvaf` | Compiles Verilog-A modules → `.osdi` |
+| `piperine-coordinator` | Spawns and owns worker subprocesses (`ProcessPool`) |
+| `piperine-worker` | The subprocess that wraps libngspice via FFI |
+| `piperine-common` | IPC message types shared by coordinator and worker |
 
----
+### Build and test
 
-## 🤝 Contributing & Future
+```sh
+cargo build                      # everything, including the worker binary
+cargo test                       # full suite
+cargo build -p piperine-worker   # rebuild just the worker after ngspice changes
+```
 
-Piperine is an ambitious project. Its future is not yet certain, but the goal is clear: to modernize the toolchain for
-circuit simulation. If you are interested in Rust, numerical methods, or analog design, feedback and contributions are
-welcome.
+Integration tests in `tests/` exercise parsing, elaboration, the interpreter, and
+end-to-end IPC with a real worker.
 
----
+### Where to start
 
-## 📜 License
-
-Piperine is intentionally released under the **MIT License**.
-
-This is a permissive license that allows you to do almost anything with this code:
-
-* **Use it** for private, educational, or commercial projects.
-* **Modify it** to suit your needs.
-* **Distribute it** in your own applications (even closed-source ones).
-* **Sub-license it** as part of a larger work.
-
-**My Intent:**
-I chose this license because I want to remove barriers to entry. Whether you are a student exploring numerical analysis,
-a researcher testing new algorithms, or a developer building a commercial tool, you should be able to use Piperine
-freely without legal friction. I believe open tools foster better engineering for everyone.
-
-**Author:** Vinicius Blasio Keslarek
+Conventions and agent guidance live in [`CLAUDE.md`](CLAUDE.md) and
+[`AGENTS.md`](AGENTS.md); deeper design notes in [`docs/development/`](docs/development/).

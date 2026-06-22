@@ -1,0 +1,33 @@
+// examples/diode_op.ppr
+`include "disciplines.vams"
+
+// VA module — has analog block → compiled automatically by OpenVAF
+module simple_diode(anode, cathode);
+  inout anode, cathode;
+  electrical anode, cathode;
+
+  parameter real is = 1e-14 from (0:inf);
+
+  analog begin
+    I(anode, cathode) <+ is * (exp(V(anode, cathode) / 0.02585) - 1.0);
+  end
+endmodule
+
+`ifndef __OPENVAF_COMPILER__
+
+// Testbench — purely declarative + analysis calls, zero OSDI plumbing
+extern module spice_vsource(inout p, inout n; parameter real val = 0.0);
+
+module tb;
+  simple_diode #(.is(1e-14)) D1 (.anode(vout), .cathode(gnd));
+  spice_vsource #(.val(0.7))  V1 (.p(vout),  .n(gnd));
+
+  initial begin
+    $op();
+    // Diode current = -I(V1): ngspice convention is current into + terminal of V1,
+    // which is out of the diode anode (negative when diode conducts forward).
+    $display("Id = %g A", -$I("v1"));
+  end
+endmodule
+
+`endif

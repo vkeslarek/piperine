@@ -1,8 +1,13 @@
 [workspace]
 members = [
-    "packages/piperine-api",
-    "packages/piperine-solver",
-    "packages/piperine-spice"
+    "crates/piperine-common",
+    "crates/piperine-worker",
+    "crates/piperine-coordinator",
+    "crates/piperine-parser",
+    "crates/piperine-circuit",
+    "crates/piperine-interpreter",
+    "crates/piperine-ngspice",
+    "crates/piperine-openvaf",
 ]
 
 [workspace.package]
@@ -14,6 +19,25 @@ name = "piperine"
 version.workspace = true
 edition.workspace = true
 
+[dependencies]
+piperine-common = { path = "crates/piperine-common" }
+piperine-worker = { path = "crates/piperine-worker" }
+piperine-coordinator = { path = "crates/piperine-coordinator" }
+piperine-parser = { path = "crates/piperine-parser" }
+piperine-circuit = { path = "crates/piperine-circuit" }
+piperine-interpreter = { path = "crates/piperine-interpreter" }
+piperine-ngspice = { path = "crates/piperine-ngspice" }
+piperine-openvaf = { path = "crates/piperine-openvaf" }
+dirs = "5.0"
+serde = { workspace = true }
+bincode = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
 [build-dependencies]
 bindgen = "0.72.1"
 
@@ -23,8 +47,20 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 
+# Required by piperine-openvaf: OpenVAF-Reloaded uses a custom salsa fork.
+# Without this patch, Cargo resolves salsa from crates-io which lacks salsa::Cycle.
+[patch.crates-io]
+salsa = { git = "https://github.com/pascalkuthe/salsa", rev = "73532d7d4d8b5b27f2c9f189a76e012d1fc4de09" }
+
 [workspace.dependencies]
-num-complex = "0.4.6"
-num-traits = "0.2.19"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.22"
+serde = { version = "1.0", features = ["derive"] }
+bincode = "1.3"
+thiserror = "2.0"
+num-complex = "0.4"
+ipc-channel = "0.22"
+piperine-common = { path = "crates/piperine-common" }
+piperine-worker = { path = "crates/piperine-worker" }
+piperine-coordinator = { path = "crates/piperine-coordinator" }
+piperine-parser = { path = "crates/piperine-parser" }

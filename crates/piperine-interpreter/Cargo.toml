@@ -1,0 +1,10 @@
+[package]
+name = "piperine-interpreter"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+piperine-parser  = { path = "../piperine-parser" }
+piperine-circuit = { path = "../piperine-circuit" }
+piperine-common  = { path = "../piperine-common" }
+thiserror        = { workspace = true }

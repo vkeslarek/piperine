@@ -1,0 +1,503 @@
+`ifndef NGSPICE_PPR
+`define NGSPICE_PPR
+
+extern module res(
+    inout p, inout n;
+    parameter real r,
+    parameter string model = "",
+    parameter real ac = 0.0,
+    parameter real temp = 27.0,
+    parameter real dtemp = 0.0,
+    parameter real l = 0.0,
+    parameter real w = 0.0,
+    parameter real m = 1.0,
+    parameter real tc1 = 0.0,
+    parameter real tc2 = 0.0,
+    parameter real scale = 1.0,
+    parameter integer noisy = 1,
+    parameter real bv_max = 0.0
+);
+
+extern module cap(
+    inout p, inout n;
+    parameter real c,
+    parameter string model = "",
+    parameter real ic = 0.0,
+    parameter real temp = 27.0,
+    parameter real dtemp = 0.0,
+    parameter real w = 0.0,
+    parameter real l = 0.0,
+    parameter real m = 1.0,
+    parameter real tc1 = 0.0,
+    parameter real tc2 = 0.0,
+    parameter real scale = 1.0,
+    parameter real bv_max = 0.0
+);
+
+extern module ind(
+    inout p, inout n;
+    parameter real l,
+    parameter string model = "",
+    parameter real ic = 0.0,
+    parameter real temp = 27.0,
+    parameter real dtemp = 0.0,
+    parameter real m = 1.0,
+    parameter real tc1 = 0.0,
+    parameter real tc2 = 0.0,
+    parameter real scale = 1.0,
+    parameter real nt = 0.0
+);
+
+extern module mutual(
+    ;
+    parameter string inductor1,
+    parameter string inductor2,
+    parameter real k = 1.0
+);
+
+extern module vsource(
+    inout p, inout n;
+    parameter real dc = 0.0,
+    parameter real acmag = 0.0,
+    parameter real acphase = 0.0
+);
+
+extern module isource(
+    inout p, inout n;
+    parameter real dc = 0.0,
+    parameter real acmag = 0.0,
+    parameter real acphase = 0.0
+);
+
+extern module vpulse(
+    inout p, inout n;
+    parameter real v0 = 0.0,
+    parameter real v1 = 1.0,
+    parameter real td = 0.0,
+    parameter real tr = 1e-9,
+    parameter real tf = 1e-9,
+    parameter real pw = 10e-9,
+    parameter real per = 20e-9
+);
+
+extern module ipulse(
+    inout p, inout n;
+    parameter real i0 = 0.0,
+    parameter real i1 = 1.0,
+    parameter real td = 0.0,
+    parameter real tr = 1e-9,
+    parameter real tf = 1e-9,
+    parameter real pw = 10e-9,
+    parameter real per = 20e-9
+);
+
+extern module vsin(
+    inout p, inout n;
+    parameter real vo = 0.0,
+    parameter real va = 1.0,
+    parameter real freq = 1e6,
+    parameter real td = 0.0,
+    parameter real theta = 0.0,
+    parameter real phase = 0.0
+);
+
+extern module isin(
+    inout p, inout n;
+    parameter real io = 0.0,
+    parameter real ia = 1.0,
+    parameter real freq = 1e6,
+    parameter real td = 0.0,
+    parameter real theta = 0.0,
+    parameter real phase = 0.0
+);
+
+extern module vexp(
+    inout p, inout n;
+    parameter real v1 = 0.0,
+    parameter real v2 = 1.0,
+    parameter real td1 = 0.0,
+    parameter real tau1 = 1e-9,
+    parameter real td2 = 50e-9,
+    parameter real tau2 = 1e-9
+);
+
+extern module iexp(
+    inout p, inout n;
+    parameter real i1 = 0.0,
+    parameter real i2 = 1e-3,
+    parameter real td1 = 0.0,
+    parameter real tau1 = 1e-9,
+    parameter real td2 = 50e-9,
+    parameter real tau2 = 1e-9
+);
+
+extern module vpwl(
+    inout p, inout n;
+    parameter string points
+);
+
+extern module ipwl(
+    inout p, inout n;
+    parameter string points
+);
+
+extern module vsffm(
+    inout p, inout n;
+    parameter real vo = 0.0,
+    parameter real va = 1.0,
+    parameter real fc = 1e6,
+    parameter real mdi = 1.0,
+    parameter real fs = 1e4,
+    parameter real phasec = 0.0,
+    parameter real phases = 0.0
+);
+
+extern module isffm(
+    inout p, inout n;
+    parameter real io = 0.0,
+    parameter real ia = 1.0,
+    parameter real fc = 1e6,
+    parameter real mdi = 1.0,
+    parameter real fs = 1e4,
+    parameter real phasec = 0.0,
+    parameter real phases = 0.0
+);
+
+extern module vam(
+    inout p, inout n;
+    parameter real sa = 1.0,
+    parameter real fc = 1e6,
+    parameter real fm = 1e4,
+    parameter real td = 0.0,
+    parameter real phases = 0.0
+);
+
+extern module iam(
+    inout p, inout n;
+    parameter real sa = 1.0,
+    parameter real fc = 1e6,
+    parameter real fm = 1e4,
+    parameter real td = 0.0,
+    parameter real phases = 0.0
+);
+
+extern module vnoise(
+    inout p, inout n;
+    parameter real na = 0.0,
+    parameter real nt = 1e-9,
+    parameter real nalpha = 0.0,
+    parameter real namp = 0.0
+);
+
+extern module inoise(
+    inout p, inout n;
+    parameter real na = 0.0,
+    parameter real nt = 1e-9,
+    parameter real nalpha = 0.0,
+    parameter real namp = 0.0
+);
+
+extern module vrandom(
+    inout p, inout n;
+    parameter integer rtype = 1,
+    parameter real ts = 1e-9,
+    parameter real td = 0.0,
+    parameter real param1 = 0.5,
+    parameter real param2 = 0.0
+);
+
+extern module irandom(
+    inout p, inout n;
+    parameter integer rtype = 1,
+    parameter real ts = 1e-9,
+    parameter real td = 0.0,
+    parameter real param1 = 0.5,
+    parameter real param2 = 0.0
+);
+
+extern module vcvs(
+    inout p, inout n, inout cp, inout cn;
+    parameter real gain = 1.0
+);
+
+extern module vccs(
+    inout p, inout n, inout cp, inout cn;
+    parameter real gm = 1e-3,
+    parameter real m = 1.0
+);
+
+extern module ccvs(
+    inout p, inout n;
+    parameter string vsrc,
+    parameter real transres = 1.0
+);
+
+extern module cccs(
+    inout p, inout n;
+    parameter string vsrc,
+    parameter real gain = 1.0,
+    parameter real m = 1.0
+);
+
+extern module bsource_v(
+    inout p, inout n;
+    parameter string V,
+    parameter real temp = 27.0,
+    parameter real dtemp = 0.0,
+    parameter real tc1 = 0.0,
+    parameter real tc2 = 0.0,
+    parameter integer reciproctc = 0
+);
+
+extern module bsource_i(
+    inout p, inout n;
+    parameter string I,
+    parameter real temp = 27.0,
+    parameter real dtemp = 0.0,
+    parameter real tc1 = 0.0,
+    parameter real tc2 = 0.0,
+    parameter integer reciproctc = 0
+);
+
+extern module vsw(
+    inout p, inout n, inout cp, inout cn;
+    parameter string model,
+    parameter integer on = 0,
+    parameter integer off = 0
+);
+
+extern module isw(
+    inout p, inout n;
+    parameter string vsrc,
+    parameter string model,
+    parameter integer on = 0,
+    parameter integer off = 0
+);
+
+extern module d(
+    inout a, inout c;
+    parameter string model,
+    parameter real area = 1.0,
+    parameter real pj = 0.0,
+    parameter real w = 0.0,
+    parameter real l = 0.0,
+    parameter real m = 1.0,
+    parameter integer off = 0,
+    parameter real ic = 0.0,
+    parameter real temp = 27.0,
+    parameter real dtemp = 0.0
+);
+
+extern module npn(
+    inout c, inout b, inout e;
+    parameter string model,
+    parameter real area = 1.0,
+    parameter real areab = 1.0,
+    parameter real areac = 1.0,
+    parameter real m = 1.0,
+    parameter integer off = 0,
+    parameter real icvbe = 0.0,
+    parameter real icvce = 0.0,
+    parameter real temp = 27.0,
+    parameter real dtemp = 0.0
+);
+
+extern module pnp(
+    inout c, inout b, inout e;
+    parameter string model,
+    parameter real area = 1.0,
+    parameter real areab = 1.0,
+    parameter real areac = 1.0,
+    parameter real m = 1.0,
+    parameter integer off = 0,
+    parameter real icvbe = 0.0,
+    parameter real icvce = 0.0,
+    parameter real temp = 27.0,
+    parameter real dtemp = 0.0
+);
+
+extern module npn4(
+    inout c, inout b, inout e, inout sub;
+    parameter string model,
+    parameter real area = 1.0,
+    parameter real areab = 1.0,
+    parameter real areac = 1.0,
+    parameter real m = 1.0,
+    parameter integer off = 0,
+    parameter real icvbe = 0.0,
+    parameter real icvce = 0.0,
+    parameter real temp = 27.0,
+    parameter real dtemp = 0.0
+);
+
+extern module pnp4(
+    inout c, inout b, inout e, inout sub;
+    parameter string model,
+    parameter real area = 1.0,
+    parameter real areab = 1.0,
+    parameter real areac = 1.0,
+    parameter real m = 1.0,
+    parameter integer off = 0,
+    parameter real icvbe = 0.0,
+    parameter real icvce = 0.0,
+    parameter real temp = 27.0,
+    parameter real dtemp = 0.0
+);
+
+extern module nmos(
+    inout d, inout g, inout s, inout b;
+    parameter string model,
+    parameter real w = 1e-6,
+    parameter real l = 100e-9,
+    parameter real ad = 0.0,
+    parameter real as = 0.0,
+    parameter real pd = 0.0,
+    parameter real ps = 0.0,
+    parameter real nrd = 0.0,
+    parameter real nrs = 0.0,
+    parameter real m = 1.0,
+    parameter integer off = 0,
+    parameter real icvds = 0.0,
+    parameter real icvgs = 0.0,
+    parameter real icvbs = 0.0,
+    parameter real temp = 27.0,
+    parameter real dtemp = 0.0,
+    parameter real nf = 1.0,
+    parameter real sa = 0.0,
+    parameter real sb = 0.0
+);
+
+extern module pmos(
+    inout d, inout g, inout s, inout b;
+    parameter string model,
+    parameter real w = 1e-6,
+    parameter real l = 100e-9,
+    parameter real ad = 0.0,
+    parameter real as = 0.0,
+    parameter real pd = 0.0,
+    parameter real ps = 0.0,
+    parameter real nrd = 0.0,
+    parameter real nrs = 0.0,
+    parameter real m = 1.0,
+    parameter integer off = 0,
+    parameter real icvds = 0.0,
+    parameter real icvgs = 0.0,
+    parameter real icvbs = 0.0,
+    parameter real temp = 27.0,
+    parameter real dtemp = 0.0,
+    parameter real nf = 1.0,
+    parameter real sa = 0.0,
+    parameter real sb = 0.0
+);
+
+extern module jfet_n(
+    inout d, inout g, inout s;
+    parameter string model,
+    parameter real area = 1.0,
+    parameter real m = 1.0,
+    parameter integer off = 0,
+    parameter real ic = 0.0,
+    parameter real temp = 27.0,
+    parameter real dtemp = 0.0
+);
+
+extern module jfet_p(
+    inout d, inout g, inout s;
+    parameter string model,
+    parameter real area = 1.0,
+    parameter real m = 1.0,
+    parameter integer off = 0,
+    parameter real ic = 0.0,
+    parameter real temp = 27.0,
+    parameter real dtemp = 0.0
+);
+
+extern module mesfet_n(
+    inout d, inout g, inout s;
+    parameter string model,
+    parameter real area = 1.0,
+    parameter real m = 1.0,
+    parameter integer off = 0,
+    parameter real icvds = 0.0,
+    parameter real icvgs = 0.0
+);
+
+extern module mesfet_p(
+    inout d, inout g, inout s;
+    parameter string model,
+    parameter real area = 1.0,
+    parameter real m = 1.0,
+    parameter integer off = 0,
+    parameter real icvds = 0.0,
+    parameter real icvgs = 0.0
+);
+
+extern module vdmos(
+    inout d, inout g, inout s;
+    parameter string model,
+    parameter real w = 1e-3,
+    parameter real l = 1e-6,
+    parameter real m = 1.0,
+    parameter integer off = 0,
+    parameter real icvds = 0.0,
+    parameter real icvgs = 0.0,
+    parameter real temp = 27.0,
+    parameter real dtemp = 0.0
+);
+
+extern module tline(
+    inout ap, inout an, inout bp, inout bn;
+    parameter real z0 = 50.0,
+    parameter real td = 1e-9,
+    parameter real f = 0.0,
+    parameter real nl = 0.25,
+    parameter real v1 = 0.0,
+    parameter real v2 = 0.0,
+    parameter real i1 = 0.0,
+    parameter real i2 = 0.0
+);
+
+extern module ltra(
+    inout ap, inout an, inout bp, inout bn;
+    parameter string model,
+    parameter real v1 = 0.0,
+    parameter real v2 = 0.0,
+    parameter real i1 = 0.0,
+    parameter real i2 = 0.0
+);
+
+extern module urc(
+    inout a, inout b, inout ref;
+    parameter string model,
+    parameter real length = 1e-3,
+    parameter integer n = 0
+);
+
+extern module cpl(
+    ;
+    parameter string ports,
+    parameter string model,
+    parameter real length = 1.0,
+    parameter integer dimension = 0
+);
+
+extern module txl(
+    inout y1p, inout y1n;
+    parameter string model,
+    parameter real length = 1.0
+);
+
+extern module port(
+    inout p, inout n;
+    parameter integer num = 1,
+    parameter real z0 = 50.0
+);
+
+extern module subckt(
+    ;
+    parameter string ports,
+    parameter string subckt_name,
+    parameter string params = ""
+);
+
+`endif // NGSPICE_PPR

@@ -1,0 +1,23 @@
+[package]
+name    = "piperine-openvaf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+piperine-circuit     = { path = "../piperine-circuit" }
+piperine-interpreter = { path = "../piperine-interpreter" }
+
+# OpenVAF — linked directly as a Rust library.
+# Requires LLVM 18 + clang at build time (see build.rs).
+# License: GPL-3.0 — this crate and the piperine binary are GPL as a result.
+openvaf = { path = "../../tools/OpenVAF-Reloaded/openvaf/openvaf" }
+
+# camino for Utf8PathBuf (type used by openvaf's Opts)
+camino = "1.1.4"
+# dirs for cache directory resolution
+dirs   = "5"
+
+[build-dependencies]
+# build.rs uses this to verify LLVM is present and emit link flags.
+# Version must match what openvaf expects: LLVM 18.1.x
+llvm-sys = "181.1.1"
