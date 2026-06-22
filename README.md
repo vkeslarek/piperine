@@ -1,5 +1,10 @@
 # Piperine
 
+> ⚠️ **Work in progress — not production ready, not even close.** Piperine is an
+> active experiment: APIs, syntax, and behavior change without notice, and plenty
+> is half-built or missing. Use it to explore and contribute, not for anything
+> you depend on.
+
 ## What it is
 
 Piperine is a hardware-description language and simulator front-end for
