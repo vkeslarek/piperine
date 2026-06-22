@@ -94,7 +94,7 @@ pub trait SimulatorBackend: Send {
                     };
                     return Ok(AnalysisResult {
                         kind: parse_analysis_kind(cmd),
-                        plot_name,
+                        dataset: plot_name,
                         vectors,
                         run_errors,
                     });

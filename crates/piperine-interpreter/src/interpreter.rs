@@ -161,7 +161,7 @@ impl<'a> Interpreter<'a> {
         let vectors = collect_vectors(self.simulator, &plot_name)?;
         Ok(AnalysisResult {
             kind: crate::value::parse_analysis_kind(cmd),
-            plot_name,
+            dataset: plot_name,
             vectors,
             run_errors,
         })

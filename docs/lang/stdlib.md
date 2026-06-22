@@ -72,7 +72,7 @@ All result types share the same interface:
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `.plot_name()` | string | ngspice plot name |
+| `.dataset()` | string | result dataset id |
 | `.ok()` | integer | 1 = clean run, 0 = errors occurred |
 | `.signal(name)` | Signal | Named vector by ngspice vector name |
 | `.scale()` | Signal | Scale vector (time, frequency, …) |

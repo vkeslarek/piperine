@@ -254,7 +254,7 @@ endmodule
     let analysis = interp.run_analysis("tran 1n 10n").expect("run_analysis failed");
 
     assert_eq!(analysis.kind, AnalysisKind::Tran);
-    assert_eq!(analysis.plot_name, "tran1");
+    assert_eq!(analysis.dataset, "tran1");
     assert!(analysis.run_errors.is_empty());
 
     // Handlers should have incremented counts in scope.
@@ -472,7 +472,7 @@ fn test_analysis_result_run_errors_structure() {
 
     let result = AnalysisResult {
         kind: AnalysisKind::Tran,
-        plot_name: "tran1".into(),
+        dataset: "tran1".into(),
         vectors: HashMap::new(),
         run_errors: vec![
             RunError { message: "soa violation at t=1ns".into(), time: Some(1e-9), kind: RunErrorKind::SoaViolation },
@@ -488,7 +488,7 @@ fn test_analysis_result_run_errors_structure() {
     // A clean result has no errors.
     let clean = AnalysisResult {
         kind: AnalysisKind::Op,
-        plot_name: "op1".into(),
+        dataset: "op1".into(),
         vectors: HashMap::new(),
         run_errors: vec![],
     };

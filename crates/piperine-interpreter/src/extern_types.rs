@@ -13,7 +13,7 @@ use std::sync::Arc;
 use crate::value::{AnalysisResult, ExternClass, Value, VectorData};
 
 /// Returned by all `$analysis()` tasks. Wraps `AnalysisResult` and exposes
-/// `.signal()`, `.scale()`, `.ok()`, `.plot_name()` methods.
+/// `.signal()`, `.scale()`, `.ok()`, `.dataset()` methods.
 #[derive(Debug)]
 pub struct AnalysisHandleObj {
     pub result: Arc<AnalysisResult>,
@@ -34,7 +34,7 @@ impl ExternClass for AnalysisHandleObj {
 
     fn call_method(&self, method: &str, args: &[Value]) -> Result<Value, String> {
         match method {
-            "plot_name" => Ok(Value::String(self.result.plot_name.clone())),
+            "dataset" => Ok(Value::String(self.result.dataset.clone())),
 
             "ok" => Ok(Value::Integer(self.result.run_errors.is_empty() as i64)),
 

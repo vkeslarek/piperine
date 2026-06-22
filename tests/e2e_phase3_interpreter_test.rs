@@ -3,7 +3,7 @@
 //! Uses a MockBackend (no real ngspice) to verify the interpreter correctly:
 //! - Parses named arguments in system function calls
 //! - Returns AnalysisHandleObj from analysis tasks
-//! - Dispatches .signal() / .ok() / .plot_name() methods on result handles
+//! - Dispatches .signal() / .ok() / .dataset() methods on result handles
 //! - Dispatches .max() / .min() / .mean() / .rms() / .peak_to_peak() / .at() on Signal
 //! - ComplexValue methods work via ExternObject dispatch
 
@@ -104,7 +104,7 @@ fn test_op_returns_analysis_handle() {
     use piperine_interpreter::value::{AnalysisKind, VectorData};
     let result = AnalysisResult {
         kind: AnalysisKind::Op,
-        plot_name: "op1".into(),
+        dataset: "op1".into(),
         vectors: HashMap::new(),
         run_errors: vec![],
     };
@@ -112,7 +112,7 @@ fn test_op_returns_analysis_handle() {
     match &handle {
         Value::ExternObject(obj) => {
             assert_eq!(obj.type_name(), "OpResult");
-            let pn = obj.call_method("plot_name", &[]).unwrap();
+            let pn = obj.call_method("dataset", &[]).unwrap();
             assert_eq!(pn, Value::String("op1".into()));
             let ok = obj.call_method("ok", &[]).unwrap();
             assert_eq!(ok, Value::Integer(1));
@@ -131,7 +131,7 @@ fn test_signal_method_dispatch() {
 
     let result = AnalysisResult {
         kind: AnalysisKind::Tran,
-        plot_name: "tran1".into(),
+        dataset: "tran1".into(),
         vectors,
         run_errors: vec![],
     };
@@ -179,7 +179,7 @@ fn test_signal_integral() {
 
     let result = AnalysisResult {
         kind: AnalysisKind::Tran,
-        plot_name: "tran1".into(),
+        dataset: "tran1".into(),
         vectors,
         run_errors: vec![],
     };
@@ -205,7 +205,7 @@ fn test_signal_at_interpolates() {
 
     let result = AnalysisResult {
         kind: AnalysisKind::Tran,
-        plot_name: "tran1".into(),
+        dataset: "tran1".into(),
         vectors,
         run_errors: vec![],
     };
@@ -295,7 +295,7 @@ fn test_analysis_handle_scale() {
 
     let result = AnalysisResult {
         kind: AnalysisKind::Tran,
-        plot_name: "tran1".into(),
+        dataset: "tran1".into(),
         vectors,
         run_errors: vec![],
     };
@@ -321,7 +321,7 @@ fn test_analysis_handle_ok_with_errors() {
 
     let result = AnalysisResult {
         kind: AnalysisKind::Op,
-        plot_name: "op1".into(),
+        dataset: "op1".into(),
         vectors: HashMap::new(),
         run_errors: vec![RunError {
             message: "SOA violation".into(),
@@ -346,7 +346,7 @@ fn test_signal_rms() {
 
     let result = AnalysisResult {
         kind: AnalysisKind::Op,
-        plot_name: "op1".into(),
+        dataset: "op1".into(),
         vectors,
         run_errors: vec![],
     };

@@ -63,7 +63,9 @@ pub trait ExternClass: std::fmt::Debug + Send + Sync {
 #[derive(Debug, Clone)]
 pub struct AnalysisResult {
     pub kind: AnalysisKind,
-    pub plot_name: String,
+    /// Neutral name for the result dataset (the simulator's result-set id).
+    /// Not "plot" — that is ngspice/Nutmeg jargon kept only at the IPC boundary.
+    pub dataset: String,
     pub vectors: HashMap<String, VectorData>,
     pub run_errors: Vec<RunError>,
 }
