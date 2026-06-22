@@ -176,3 +176,210 @@ Keeping the dtype-per-column invariant is what makes all three free.
 This slots into the [ROADMAP](ROADMAP.md): the type and #1/#2/#4 belong with the
 data/results work (Phases 4–7); #3 and assoc-arrays are Phase 9 language items.
 DataFrame is the through-line that makes all of them pay off together.
+
+---
+
+# Implementation refinement (build this)
+
+Implementation-ready spec, PHASE-style. Grounded in the current code. Build in the
+order of §7. Each step is independently shippable and testable with a `MockBackend`
+(assert on values, no real simulator).
+
+## 0. What already routes for free
+
+- **String indexing `df["v(out)"]`** needs **no interpreter change**.
+  `Expr::Index(base, idx)` already evaluates `base` and calls
+  `obj.call_method("get", &[idx])` (interpreter.rs `Expr::Index` arm). So `df["col"]`
+  arrives at `DataFrameObj::call_method("get", [String("col")])`. The DataFrame's
+  `get` just branches on the arg: `String → column (Signal)`, `Integer → row`.
+- **Indexed assignment `df["new"] = sig`** already routes to `call_method("set",
+  [idx, value])` (the `Stmt::Assign` Index branch). DataFrame `set` adds/replaces a
+  column when the key is a string.
+- **Method calls / chaining** (`df.filter(...).to_csv(...)`) already work via the
+  ExternObject dispatch.
+
+Two real language changes remain: **operator overloading** (§3) and **slicing** (§4).
+
+## 1. The Rust type
+
+`crates/piperine-interpreter/src/extern_types.rs` (new `DataFrameObj`, alongside
+`SignalObj`/`ArrayObj`). Column-oriented, one dtype per column, handle semantics
+(`Arc<Mutex<…>>`) like `ArrayObj`.
+
+```rust
+#[derive(Debug, Clone)]
+pub enum Column {
+    Real(Vec<f64>),
+    Complex(Vec<(f64, f64)>),
+    Int(Vec<i64>),
+    Str(Vec<String>),
+    Bool(Vec<bool>),     // comparison masks
+}
+
+impl Column {
+    fn len(&self) -> usize { /* match arms */ }
+    fn as_reals(&self) -> Vec<f64> { /* Complex→magnitude or re; Bool→0/1; Str→0 */ }
+}
+
+#[derive(Debug)]
+pub struct DataFrame {
+    names:   Vec<String>,   // column order
+    columns: Vec<Column>,   // parallel to names, equal length
+    index:   Vec<usize>,    // which columns are the index/axes (e.g. [time])
+}
+
+#[derive(Debug)]
+pub struct DataFrameObj { df: std::sync::Mutex<DataFrame> }
+
+impl DataFrameObj {
+    pub fn new(df: DataFrame) -> Value { Value::ExternObject(std::sync::Arc::new(Self { df: Mutex::new(df) })) }
+}
+```
+
+## 2. Producing a frame from an analysis
+
+Add `from_result(&AnalysisResult) -> DataFrame` and expose it as a `.frame()` method
+on `AnalysisHandleObj` (extern_types.rs). The result API is unchanged; DataFrame is
+opt-in.
+
+```verilog
+DataFrame df = $tran(1e-9, 1e-6).frame();
+```
+
+`from_result`: order columns with the scale/index first (`time`/`frequency`/`sweep`
+if present, else first key), convert each `VectorData::Real → Column::Real`,
+`Complex → Column::Complex`; set `index = [0]` (the scale column). Column order from
+`AnalysisResult.vectors` is otherwise insertion/sorted — sort the non-index names for
+determinism.
+
+> Monte-Carlo (later): a `concat(other)` method appends rows and adds a `run`/`corner`
+> index column → one long frame for a batch.
+
+## 3. Operator overloading — the one core language change
+
+`eval_binary_op` (interpreter.rs) currently errors on `ExternObject` operands. Add
+dispatch to an ExternClass hook.
+
+**`crates/piperine-interpreter/src/value.rs`** — extend the trait (default errors, so
+existing ExternClasses are unaffected):
+
+```rust
+pub trait ExternClass: std::fmt::Debug + Send + Sync {
+    fn type_name(&self) -> &str;
+    fn call_method(&self, method: &str, args: &[Value]) -> Result<Value, String>;
+    /// Binary operator with another value. `op` is "+","-","*","/","%","**",
+    /// "<","<=",">",">=","==","!=","&&","||". `self_on_left` is false when the
+    /// object is the right operand (`scalar * signal`). Default: unsupported.
+    fn binary_op(&self, op: &str, _other: &Value, _self_on_left: bool) -> Result<Value, String> {
+        Err(format!("operator `{op}` not supported on {}", self.type_name()))
+    }
+}
+```
+
+**`eval_binary_op`** — before the final `Err` arm:
+
+```rust
+(Value::ExternObject(o), rhs) => o.binary_op(binop_str(op), &rhs, true).map_err(InterpreterError::Other),
+(lhs, Value::ExternObject(o)) => o.binary_op(binop_str(op), &lhs, false).map_err(InterpreterError::Other),
+```
+
+with a `binop_str(&BinOp) -> &'static str` map. (Put these two arms *before* the
+catch-all; keep all existing scalar arms first.)
+
+**`SignalObj::binary_op`** (extern_types.rs) — element-wise, broadcasting a scalar:
+
+- `Signal op Signal` → new `SignalObj` (wrapping a fresh `VectorData::Real`),
+  element-wise; lengths must match.
+- `Signal op scalar` (real/int) → broadcast the scalar over every element.
+- Arithmetic (`+ - * / % **`) → numeric Signal.
+- Comparisons (`< <= > >= == !=`) → a **mask**: emit a Signal whose data is `1.0/0.0`
+  per element (a 0/1 Real Signal works everywhere; a dedicated Bool is optional).
+- Respect `self_on_left` for `-`, `/`, `%`, `**` (non-commutative).
+
+(`SignalObj` already holds a `name`, `data: VectorData`, `result: Arc<AnalysisResult>`.
+The op result is a detached Signal — give it a synthetic name like `"<expr>"` and a
+shared empty/clone scale via the same `result` so `.integral()` still finds time.)
+
+`Column::binary_op` / `DataFrameObj` operator support is optional in v1 — `df["a"]`
+already yields a `Signal`, so `df["a"] * df["b"]` is **Signal × Signal**, covered by
+the above. That is the whole point: operate on columns, not the frame.
+
+## 4. Slicing — `df[lo:hi]`, `s[lo:hi]`
+
+`Expr::PartSelect(base, lo, hi)` is parsed but the interpreter rejects it
+(interpreter.rs). Replace the error with a dispatch:
+
+```rust
+Expr::PartSelect(base, lo, hi) => {
+    let recv = self.eval_expr(base, scope)?;
+    let l = self.eval_expr(lo, scope)?;
+    let h = self.eval_expr(hi, scope)?;
+    match recv {
+        Value::ExternObject(o) => o.call_method("slice", &[l, h]).map_err(InterpreterError::Other),
+        other => Err(/* type error */),
+    }
+}
+```
+
+`SignalObj::slice(lo, hi)` → a new Signal over `data[lo..=hi]`. `DataFrameObj::slice`
+→ a new frame with each column row-sliced. (Inclusive or half-open: pick **half-open
+`[lo, hi)`** to match Rust/`values()`; document it.)
+
+## 5. DataFrameObj methods (`call_method`)
+
+| Method | Returns | Notes |
+|--------|---------|-------|
+| `get(key)` | Signal / row | `String`→column Signal; `Integer`→a 1-row frame (or error v1) |
+| `set(key, sig)` | void | string key adds/replaces a column (length must match) |
+| `cols()` | string[] (RealVec of indices? no) | column names — return `Value::ExternObject(ArrayObj of Str)` or a string list |
+| `nrows()` / `ncols()` | integer | |
+| `shape()` | int[] | `[nrows, ncols]` (until tuples land, §6 design doc) |
+| `index()` / `scale()` | Signal | the (first) index column |
+| `select(names)` | DataFrame | subset; `names` is an array of strings |
+| `with_column(name, sig)` | DataFrame | derived column (alias of string `set`, returns self) |
+| `filter(mask)` | DataFrame | keep rows where mask Signal != 0 |
+| `slice(lo, hi)` | DataFrame | §4 |
+| `head(n)` | DataFrame | first `n` rows |
+| `to_csv(path)` | void | write `names` header + rows (uses backend? no — std fs) |
+| reductions on a column | via `df["c"].max()` etc. | delegate to Signal |
+
+`filter(mask)`: `mask` is a Signal (length = nrows) of 0/1 from a comparison (§3).
+Keep row `i` where `mask[i] != 0`. Apply to every column → new frame.
+
+`to_csv`: plain `std::fs::write`. No simulator involvement — it's host-side I/O.
+
+## 6. Tabular display
+
+Implement `Display` (or a `to_string()` method) printing a head/tail table so
+`$display(df)` is useful. `$display` calls `Value::to_string()` (fmt::Display on
+`Value`) — make `Value::ExternObject` print `obj` via a `display()` ExternClass hook
+or a `to_string` method the formatter calls. Minimal v1: a `df.show()` method that
+returns a formatted `String`.
+
+## 7. Build order
+
+1. **§1 type + §2 `.frame()` + §5 core methods (`get`/`cols`/`nrows`/`ncols`/`index`/
+   `to_csv`) + §0 string-index (free)** — inspectable, dumpable frames.
+   Tests: build a frame from a mock `AnalysisResult`, `df["v(out)"].max()`,
+   `df.nrows()`, `df.to_csv` round-trip.
+2. **§3 operator overloading + `SignalObj::binary_op` + `filter`** — the inflection:
+   `df["p"] = df["v(out)"] * df["i(out)"]`, `df.filter(df["v(out)"] > 0.9)`.
+   Tests: `(a+b)`, `a*2.0`, `a > thr` mask, `filter`.
+3. **§4 slicing**, **§6 display**, `select`/`head`/`with_column`.
+4. Later: Monte-Carlo `concat`/`groupby`; lambdas (`filter(x -> …)`) when closures
+   land (Phase 9); PyO3 export.
+
+## 8. Tests (`tests/e2e_dataframe_test.rs`, MockBackend)
+
+- `$tran(...).frame()` → `df.nrows()`, `df.ncols()`, `df.cols()` correct.
+- `df["v(out)"]` is a Signal; `.max()/.rms()` match.
+- vectorized: `df["v(out)"] * 2.0`, `df["a"] + df["b"]` → Signal with expected values.
+- mask + filter: `df.filter(df["t"] > 1e-6).nrows()`.
+- `with_column` / `select` / `slice` / `head` shapes.
+- `to_csv` writes a parseable file (header + N rows).
+
+## 9. Docs to update
+
+- `docs/lang/stdlib.md` — a `DataFrame` section (methods table, handle semantics,
+  `result.frame()`), and note vectorized Signal operators.
+- Cross-link from `docs/ngspice/analyses.md` (results → frames).
