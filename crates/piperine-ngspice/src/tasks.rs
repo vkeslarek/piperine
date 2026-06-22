@@ -39,6 +39,25 @@ fn require_i64(args: &[Value], idx: usize, label: &str) -> Result<i64, Interpret
         })
 }
 
+/// An optional real: positional slot `idx`, else named `key`, else `default`.
+fn opt_f64(pos: &[Value], named: &HashMap<String, Value>, idx: usize, key: &str, default: f64) -> f64 {
+    pos.get(idx).or_else(|| named.get(key)).and_then(|v| v.as_f64()).unwrap_or(default)
+}
+
+/// An optional integer: positional slot `idx`, else named `key`, else `default`.
+fn opt_i64(pos: &[Value], named: &HashMap<String, Value>, idx: usize, key: &str, default: i64) -> i64 {
+    pos.get(idx).or_else(|| named.get(key)).and_then(|v| v.as_integer()).unwrap_or(default)
+}
+
+/// Run an analysis command and wrap its result in a typed handle (`OpResult`, …).
+/// This is the tail shared by every analysis task.
+fn analysis(simulator: &mut dyn SimulatorBackend, cmd: &str, kind: &'static str)
+    -> Result<Option<Value>, InterpreterError>
+{
+    let result = simulator.run_analysis_simple(cmd)?;
+    Ok(Some(AnalysisHandleObj::new(result, kind)))
+}
+
 // ── $op() ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug)]
@@ -49,8 +68,7 @@ impl SystemTask for OperatingPointTask {
     fn call(&self, _arguments: Vec<Value>, simulator: &mut dyn SimulatorBackend)
         -> Result<Option<Value>, InterpreterError>
     {
-        let result = simulator.run_analysis_simple("op")?;
-        Ok(Some(AnalysisHandleObj::new(result, "OpResult")))
+        analysis(simulator, "op", "OpResult")
     }
 }
 
@@ -71,19 +89,12 @@ impl SystemTask for TransientTask {
     {
         if positional.is_empty() {
             // Legacy mode: run pre-declared .tran
-            let result = simulator.run_analysis_simple("run")?;
-            return Ok(Some(AnalysisHandleObj::new(result, "TranResult")));
+            return analysis(simulator, "run", "TranResult");
         }
         let tstep = require_f64(&positional, 0, "tstep")?;
         let tstop = require_f64(&positional, 1, "tstop")?;
-        let tstart = positional.get(2)
-            .or_else(|| named.get("tstart"))
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0);
-        let tmax = positional.get(3)
-            .or_else(|| named.get("tmax"))
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0);
+        let tstart = opt_f64(&positional, &named, 2, "tstart", 0.0);
+        let tmax   = opt_f64(&positional, &named, 3, "tmax", 0.0);
         let uic = named.get("uic").and_then(|v| v.as_integer()).unwrap_or(0);
 
         let mut cmd = format!("tran {tstep} {tstop}");
@@ -91,8 +102,7 @@ impl SystemTask for TransientTask {
         if tmax != 0.0   { cmd += &format!(" {tmax}"); }
         if uic != 0      { cmd += " uic"; }
 
-        let result = simulator.run_analysis_simple(&cmd)?;
-        Ok(Some(AnalysisHandleObj::new(result, "TranResult")))
+        analysis(simulator, &cmd, "TranResult")
     }
 }
 
@@ -113,8 +123,7 @@ impl SystemTask for AcTask {
     {
         let spacing = positional.get(0).or_else(|| named.get("spacing"))
             .and_then(|v| v.as_str()).unwrap_or("dec").to_string();
-        let points = positional.get(1).or_else(|| named.get("points"))
-            .and_then(|v| v.as_integer()).unwrap_or(20);
+        let points = opt_i64(&positional, &named, 1, "points", 20);
         let fstart = positional.get(2).or_else(|| named.get("fstart"))
             .and_then(|v| v.as_f64())
             .ok_or_else(|| InterpreterError::TypeError { expected: "real fstart".into(), got: "nothing".into() })?;
@@ -122,8 +131,7 @@ impl SystemTask for AcTask {
             .and_then(|v| v.as_f64())
             .ok_or_else(|| InterpreterError::TypeError { expected: "real fstop".into(), got: "nothing".into() })?;
         let cmd = format!("ac {spacing} {points} {fstart} {fstop}");
-        let result = simulator.run_analysis_simple(&cmd)?;
-        Ok(Some(AnalysisHandleObj::new(result, "AcResult")))
+        analysis(simulator, &cmd, "AcResult")
     }
 }
 
@@ -149,8 +157,7 @@ impl SystemTask for DcTask {
             let step2  = require_f64(&arguments, 7, "step2")?;
             cmd += &format!(" {src2} {start2} {stop2} {step2}");
         }
-        let result = simulator.run_analysis_simple(&cmd)?;
-        Ok(Some(AnalysisHandleObj::new(result, "DcResult")))
+        analysis(simulator, &cmd, "DcResult")
     }
 }
 
@@ -175,13 +182,9 @@ impl SystemTask for NoiseTask {
         let points    = require_i64(&positional, 3, "points")?;
         let fstart    = require_f64(&positional, 4, "fstart")?;
         let fstop     = require_f64(&positional, 5, "fstop")?;
-        let ptspersum = positional.get(6)
-            .or_else(|| named.get("ptspersum"))
-            .and_then(|v| v.as_integer())
-            .unwrap_or(1);
+        let ptspersum = opt_i64(&positional, &named, 6, "ptspersum", 1);
         let cmd = format!("noise {output} {input_src} {spacing} {points} {fstart} {fstop} {ptspersum}");
-        let result = simulator.run_analysis_simple(&cmd)?;
-        Ok(Some(AnalysisHandleObj::new(result, "NoiseResult")))
+        analysis(simulator, &cmd, "NoiseResult")
     }
 }
 
@@ -198,8 +201,7 @@ impl SystemTask for TfTask {
         let outvar    = require_str(&arguments, 0, "outvar")?.to_string();
         let input_src = require_str(&arguments, 1, "input_src")?.to_string();
         let cmd = format!("tf {outvar} {input_src}");
-        let result = simulator.run_analysis_simple(&cmd)?;
-        Ok(Some(AnalysisHandleObj::new(result, "TfResult")))
+        analysis(simulator, &cmd, "TfResult")
     }
 }
 
@@ -215,8 +217,7 @@ impl SystemTask for SensTask {
     {
         let outvar = require_str(&arguments, 0, "outvar")?.to_string();
         let cmd = format!("sens {outvar}");
-        let result = simulator.run_analysis_simple(&cmd)?;
-        Ok(Some(AnalysisHandleObj::new(result, "SensResult")))
+        analysis(simulator, &cmd, "SensResult")
     }
 }
 
@@ -236,8 +237,7 @@ impl SystemTask for SensAcTask {
         let fstart  = require_f64(&arguments, 3, "fstart")?;
         let fstop   = require_f64(&arguments, 4, "fstop")?;
         let cmd = format!("sens {outvar} ac {spacing} {points} {fstart} {fstop}");
-        let result = simulator.run_analysis_simple(&cmd)?;
-        Ok(Some(AnalysisHandleObj::new(result, "SensResult")))
+        analysis(simulator, &cmd, "SensResult")
     }
 }
 
@@ -258,8 +258,7 @@ impl SystemTask for PzTask {
         let vol_cur = require_str(&arguments, 4, "vol_or_cur")?.to_string();
         let pz_type = require_str(&arguments, 5, "pol_zer_pz")?.to_string();
         let cmd = format!("pz {in_p} {in_n} {out_p} {out_n} {vol_cur} {pz_type}");
-        let result = simulator.run_analysis_simple(&cmd)?;
-        Ok(Some(AnalysisHandleObj::new(result, "PzResult")))
+        analysis(simulator, &cmd, "PzResult")
     }
 }
 
@@ -282,16 +281,12 @@ impl SystemTask for DistoTask {
         let points  = require_i64(&positional, 1, "points")?;
         let fstart  = require_f64(&positional, 2, "fstart")?;
         let fstop   = require_f64(&positional, 3, "fstop")?;
-        let f2overf1 = positional.get(4)
-            .or_else(|| named.get("f2overf1"))
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.9);
+        let f2overf1 = opt_f64(&positional, &named, 4, "f2overf1", 0.9);
         let mut cmd = format!("disto {spacing} {points} {fstart} {fstop}");
         if (f2overf1 - 0.9).abs() > 1e-12 {
             cmd += &format!(" {f2overf1}");
         }
-        let result = simulator.run_analysis_simple(&cmd)?;
-        Ok(Some(AnalysisHandleObj::new(result, "DistoResult")))
+        analysis(simulator, &cmd, "DistoResult")
     }
 }
 
@@ -310,8 +305,7 @@ impl SystemTask for PssTask {
         let points    = require_i64(&arguments, 2, "points")?;
         let harmonics = require_i64(&arguments, 3, "harmonics")?;
         let cmd = format!("pss {fguess} {stabtime} {points} {harmonics}");
-        let result = simulator.run_analysis_simple(&cmd)?;
-        Ok(Some(AnalysisHandleObj::new(result, "PssResult")))
+        analysis(simulator, &cmd, "PssResult")
     }
 }
 
@@ -330,8 +324,7 @@ impl SystemTask for SpTask {
         let fstart  = require_f64(&arguments, 2, "fstart")?;
         let fstop   = require_f64(&arguments, 3, "fstop")?;
         let cmd = format!("sp {spacing} {points} {fstart} {fstop}");
-        let result = simulator.run_analysis_simple(&cmd)?;
-        Ok(Some(AnalysisHandleObj::new(result, "SpResult")))
+        analysis(simulator, &cmd, "SpResult")
     }
 }
 
