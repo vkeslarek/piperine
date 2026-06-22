@@ -377,6 +377,174 @@ pub fn format_string(format: &str, arguments: &[Value]) -> String {
     out
 }
 
+// ── Randomization ($urandom, $dist_normal, …) ────────────────────────────────
+//
+// One process-wide generator (xorshift64*). Calls advance it; `$srandom(seed)`
+// or a seed argument resets it for reproducible runs. SystemVerilog threads an
+// `inout seed` through `$dist_*`; we can't write back through a by-value arg, so
+// the seed argument (when present and non-zero) reseeds the shared generator and
+// the sequence is otherwise global. Good enough for Monte Carlo sweeps.
+
+// One generator per thread: a real run drives a testbench on a single thread, so
+// `$srandom(seed)` reproducibility holds, and parallel test threads never share state.
+thread_local! {
+    static RNG_STATE: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Next raw 64-bit value, seeding lazily from the clock on first use.
+fn rng_next() -> u64 {
+    RNG_STATE.with(|state| {
+        let mut x = state.get();
+        if x == 0 {
+            x = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0x9E3779B97F4A7C15)
+                | 1;
+        }
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        state.set(x);
+        x.wrapping_mul(0x2545F4914F6CDD1D)
+    })
+}
+
+fn rng_seed(seed: u64) {
+    RNG_STATE.with(|state| state.set(seed | 1));
+}
+
+/// Uniform real in `[0, 1)`.
+fn rng_unit() -> f64 {
+    (rng_next() >> 11) as f64 / (1u64 << 53) as f64
+}
+
+/// Uniform integer in `[lo, hi]` inclusive (order-independent).
+fn rng_range(a: i64, b: i64) -> i64 {
+    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+    let span = (hi - lo) as u64 + 1;
+    lo + (rng_next() % span) as i64
+}
+
+/// `$srandom(seed)` — reseed the shared generator.
+#[derive(Debug)]
+pub struct SRandomTask;
+impl SystemTask for SRandomTask {
+    fn name(&self) -> &str { "srandom" }
+    fn call(&self, args: Vec<Value>, _: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let seed = args.first().and_then(|v| v.as_integer()).unwrap_or(0);
+        rng_seed(seed as u64);
+        Ok(None)
+    }
+}
+
+/// `$urandom([seed])` — unsigned 32-bit random.
+#[derive(Debug)]
+pub struct URandomTask;
+impl SystemTask for URandomTask {
+    fn name(&self) -> &str { "urandom" }
+    fn call(&self, args: Vec<Value>, _: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        if let Some(seed) = args.first().and_then(|v| v.as_integer()) {
+            if seed != 0 { rng_seed(seed as u64); }
+        }
+        Ok(Some(Value::Integer((rng_next() as u32) as i64)))
+    }
+}
+
+/// `$random([seed])` — signed 32-bit random.
+#[derive(Debug)]
+pub struct RandomTask;
+impl SystemTask for RandomTask {
+    fn name(&self) -> &str { "random" }
+    fn call(&self, args: Vec<Value>, _: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        if let Some(seed) = args.first().and_then(|v| v.as_integer()) {
+            if seed != 0 { rng_seed(seed as u64); }
+        }
+        Ok(Some(Value::Integer((rng_next() as u32 as i32) as i64)))
+    }
+}
+
+/// `$urandom_range(maxval [, minval=0])` — uniform integer, bounds inclusive.
+#[derive(Debug)]
+pub struct URandomRangeTask;
+impl SystemTask for URandomRangeTask {
+    fn name(&self) -> &str { "urandom_range" }
+    fn call(&self, args: Vec<Value>, _: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let maxval = args.first().and_then(|v| v.as_integer()).ok_or_else(|| {
+            InterpreterError::TypeError { expected: "integer maxval".into(), got: "nothing".into() }
+        })?;
+        let minval = args.get(1).and_then(|v| v.as_integer()).unwrap_or(0);
+        Ok(Some(Value::Integer(rng_range(minval, maxval))))
+    }
+}
+
+/// `$dist_uniform(seed, start, end)` — uniform integer in `[start, end]`.
+#[derive(Debug)]
+pub struct DistUniformTask;
+impl SystemTask for DistUniformTask {
+    fn name(&self) -> &str { "dist_uniform" }
+    fn call(&self, args: Vec<Value>, _: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        maybe_reseed(&args);
+        let start = arg_real(&args, 1, "dist_uniform")? as i64;
+        let end   = arg_real(&args, 2, "dist_uniform")? as i64;
+        Ok(Some(Value::Integer(rng_range(start, end))))
+    }
+}
+
+/// `$dist_normal(seed, mean, std_deviation)` — Gaussian (returns real).
+///
+/// Note: SystemVerilog returns an integer here; Piperine returns a real, which
+/// is what analog component-tolerance Monte Carlo actually wants.
+#[derive(Debug)]
+pub struct DistNormalTask;
+impl SystemTask for DistNormalTask {
+    fn name(&self) -> &str { "dist_normal" }
+    fn call(&self, args: Vec<Value>, _: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        maybe_reseed(&args);
+        let mean = arg_real(&args, 1, "dist_normal")?;
+        let std  = arg_real(&args, 2, "dist_normal")?;
+        // Box–Muller transform.
+        let u1 = rng_unit().max(f64::MIN_POSITIVE);
+        let u2 = rng_unit();
+        let z = (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos();
+        Ok(Some(Value::Real(mean + std * z)))
+    }
+}
+
+/// `$dist_exponential(seed, mean)` — exponential distribution (returns real).
+#[derive(Debug)]
+pub struct DistExponentialTask;
+impl SystemTask for DistExponentialTask {
+    fn name(&self) -> &str { "dist_exponential" }
+    fn call(&self, args: Vec<Value>, _: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        maybe_reseed(&args);
+        let mean = arg_real(&args, 1, "dist_exponential")?;
+        let u = rng_unit().max(f64::MIN_POSITIVE);
+        Ok(Some(Value::Real(-mean * u.ln())))
+    }
+}
+
+/// `$dist_*` take `seed` as their first argument; a non-zero seed reseeds.
+fn maybe_reseed(args: &[Value]) {
+    if let Some(seed) = args.first().and_then(|v| v.as_integer()) {
+        if seed != 0 { rng_seed(seed as u64); }
+    }
+}
+
 /// All stdlib tasks. Called by `SystemTaskRegistry::default()`.
 pub fn register_stdlib(registry: &mut crate::task::SystemTaskRegistry) {
     registry.register(Box::new(DisplayTask));
@@ -421,4 +589,13 @@ pub fn register_stdlib(registry: &mut crate::task::SystemTaskRegistry) {
     }
 
     registry.register(Box::new(Clog2Task));
+
+    // Randomization
+    registry.register(Box::new(SRandomTask));
+    registry.register(Box::new(RandomTask));
+    registry.register(Box::new(URandomTask));
+    registry.register(Box::new(URandomRangeTask));
+    registry.register(Box::new(DistUniformTask));
+    registry.register(Box::new(DistNormalTask));
+    registry.register(Box::new(DistExponentialTask));
 }

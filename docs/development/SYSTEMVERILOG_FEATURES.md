@@ -1369,9 +1369,16 @@ Landed and covered by `tests/e2e_onda2_test.rs`:
 - `inside` operator (`x inside {3, [10:20], [100:$]}`) — desugared in the parser
   to an OR-chain of comparisons.
 
-Still missing (the `[DONE]` markers elsewhere in this file predate verification and
-are aspirational): `$urandom`/`$dist_*`, associative arrays `[string]`, `package`,
-classes, and the verification features (SVA, covergroup, fork/join).
+### Wave 3 — in progress 2026-06
+
+- Randomization (stdlib): `$srandom`, `$random`, `$urandom`, `$urandom_range`,
+  `$dist_uniform`, `$dist_normal` (returns real), `$dist_exponential`. One
+  thread-local xorshift64* generator; seedable for reproducible Monte Carlo.
+  Covered by `tests/e2e_onda2_test.rs`.
+
+Still missing: enum methods (`.name()`/`.first()`/`.next()`) + struct field access
+at runtime, associative arrays `[string]`, `package`, classes, and the verification
+features (SVA, covergroup, fork/join).
 
 ### High Value for Analog Testbench (implement soon)
 

@@ -164,3 +164,31 @@ real samples = '{};
 foreach (raw[i]) samples.push_back(raw[i] * gain);
 real worst = samples.max();
 ```
+
+---
+
+## Randomization
+
+For Monte Carlo sweeps and randomized stimulus. One generator per run; seed it
+with `$srandom` (or pass a non-zero seed argument) for reproducible results.
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `$srandom(seed)` | void | Seed the generator |
+| `$random([seed])` | integer | Signed 32-bit |
+| `$urandom([seed])` | integer | Unsigned 32-bit |
+| `$urandom_range(max [, min])` | integer | Uniform in `[min, max]`, inclusive (min defaults 0) |
+| `$dist_uniform(seed, start, end)` | integer | Uniform in `[start, end]` |
+| `$dist_normal(seed, mean, std)` | real | Gaussian (returns **real** — useful for tolerances) |
+| `$dist_exponential(seed, mean)` | real | Exponential with the given mean |
+
+The `$dist_*` functions take `seed` as their first argument for SystemVerilog
+familiarity; a non-zero seed reseeds the generator, which otherwise advances
+globally per run. `$dist_normal` returns a real (SV returns an integer) because
+component-tolerance Monte Carlo wants a continuous deviate.
+
+```verilog
+$srandom(42);                              // reproducible run
+real r_actual = $dist_normal(0, 1e3, 10.0); // 1 kΩ ±1% (σ = 10 Ω)
+integer trials = $urandom_range(100, 50);   // 50..100 inclusive
+```

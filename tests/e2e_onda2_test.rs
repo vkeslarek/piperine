@@ -269,3 +269,62 @@ fn test_inside_in_if_condition() {
         "x = 0.0; n = 7; if (n inside {[1:10]}) x = 42.0;"));
     assert_eq!(real(&s, "x"), 42.0);
 }
+
+// ── Wave 3: randomization ($urandom, $dist_*) ─────────────────────────────────
+
+#[test]
+fn test_urandom_range_bounds() {
+    // 200 draws must all land in [10, 20].
+    let s = run(&mod2b(
+        "n = 0; q = '{}; for (n = 0; n < 200; n++) q.push_back($urandom_range(20, 10)); \
+         x = q.min(); n = q.max();"));
+    assert!(real(&s, "x") >= 10.0, "min {}", real(&s, "x"));
+    assert!(real(&s, "n") <= 20.0, "max {}", real(&s, "n"));
+}
+
+#[test]
+fn test_srandom_reproducible() {
+    // Same seed → same sequence.
+    let a = run(&mod2b("$srandom(12345); x = $urandom_range(1000000); n = 0;"));
+    let b = run(&mod2b("$srandom(12345); x = $urandom_range(1000000); n = 0;"));
+    assert_eq!(real(&a, "x"), real(&b, "x"));
+}
+
+#[test]
+fn test_dist_uniform_bounds() {
+    let s = run(&mod2b(
+        "q = '{}; for (n = 0; n < 200; n++) q.push_back($dist_uniform(0, 5, 8)); \
+         x = q.min(); n = q.max();"));
+    assert!(real(&s, "x") >= 5.0);
+    assert!(real(&s, "n") <= 8.0);
+}
+
+#[test]
+fn test_dist_normal_mean() {
+    // Sample mean of a large draw should sit near the requested mean.
+    let s = run(&mod2b(
+        "$srandom(7); q = '{}; for (n = 0; n < 5000; n++) q.push_back($dist_normal(0, 100.0, 5.0)); \
+         x = q.mean();"));
+    let m = real(&s, "x");
+    assert!((m - 100.0).abs() < 1.0, "sample mean {m} not near 100");
+}
+
+#[test]
+fn test_dist_normal_in_function_tolerance() {
+    // Realistic use: a function returning a resistor value with 1% sigma.
+    let s = run(r#"
+module tb;
+    function real with_tol(input real nominal, input real sigma_pct);
+        return $dist_normal(0, nominal, nominal * sigma_pct / 100.0);
+    endfunction
+    initial begin
+        real r;
+        $srandom(42);
+        r = with_tol(1000.0, 1.0);
+    end
+endmodule
+"#);
+    // within ~6 sigma of nominal essentially always
+    let r = real(&s, "r");
+    assert!((r - 1000.0).abs() < 60.0, "r={r}");
+}
