@@ -224,6 +224,79 @@ impl SystemTask for MaxTask {
     }
 }
 
+// ── Math ($sqrt, $sin, $pow, …) ──────────────────────────────────────────────
+//
+// Verilog-AMS real math functions. Unary and binary forms cover the common
+// analog needs (gains, dB, time constants, RMS, geometry).
+
+fn arg_real(args: &[Value], idx: usize, task: &str) -> Result<f64, InterpreterError> {
+    args.get(idx).and_then(|v| v.as_f64()).ok_or_else(|| InterpreterError::TypeError {
+        expected: format!("real argument {idx} for ${task}"),
+        got: args.get(idx).map(|v| v.type_name()).unwrap_or("nothing").into(),
+    })
+}
+
+/// A one-argument real math function: `$sqrt(x)`, `$sin(x)`, …
+pub struct UnaryMathTask {
+    pub task_name: &'static str,
+    pub func: fn(f64) -> f64,
+}
+
+impl std::fmt::Debug for UnaryMathTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "UnaryMathTask({})", self.task_name)
+    }
+}
+
+impl SystemTask for UnaryMathTask {
+    fn name(&self) -> &str { self.task_name }
+    fn call(&self, arguments: Vec<Value>, _simulator: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let x = arg_real(&arguments, 0, self.task_name)?;
+        Ok(Some(Value::Real((self.func)(x))))
+    }
+}
+
+/// A two-argument real math function: `$pow(x, y)`, `$atan2(y, x)`, `$hypot(x, y)`.
+pub struct BinaryMathTask {
+    pub task_name: &'static str,
+    pub func: fn(f64, f64) -> f64,
+}
+
+impl std::fmt::Debug for BinaryMathTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BinaryMathTask({})", self.task_name)
+    }
+}
+
+impl SystemTask for BinaryMathTask {
+    fn name(&self) -> &str { self.task_name }
+    fn call(&self, arguments: Vec<Value>, _simulator: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let a = arg_real(&arguments, 0, self.task_name)?;
+        let b = arg_real(&arguments, 1, self.task_name)?;
+        Ok(Some(Value::Real((self.func)(a, b))))
+    }
+}
+
+/// `$clog2(n)` — ceiling of log2(n): the bit width needed to index `n` values.
+/// `$clog2(1) = 0`, `$clog2(2) = 1`, `$clog2(5) = 3`. Returns an integer.
+#[derive(Debug)]
+pub struct Clog2Task;
+
+impl SystemTask for Clog2Task {
+    fn name(&self) -> &str { "clog2" }
+    fn call(&self, arguments: Vec<Value>, _simulator: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let n = arguments.first().and_then(|v| v.as_integer()).unwrap_or(0);
+        let bits = if n <= 1 { 0 } else { 64 - ((n - 1) as u64).leading_zeros() as i64 };
+        Ok(Some(Value::Integer(bits)))
+    }
+}
+
 // ── Format string engine ─────────────────────────────────────────────────────
 //
 // Shared by $display, $write, $warning, $sformatf, $run_error, $fatal.
@@ -316,4 +389,36 @@ pub fn register_stdlib(registry: &mut crate::task::SystemTaskRegistry) {
     registry.register(Box::new(AbsTask));
     registry.register(Box::new(MinTask));
     registry.register(Box::new(MaxTask));
+
+    // Unary real math
+    for (name, func) in [
+        ("sqrt",  f64::sqrt   as fn(f64) -> f64),
+        ("ln",    f64::ln),
+        ("log10", f64::log10),
+        ("exp",   f64::exp),
+        ("sin",   f64::sin),
+        ("cos",   f64::cos),
+        ("tan",   f64::tan),
+        ("asin",  f64::asin),
+        ("acos",  f64::acos),
+        ("atan",  f64::atan),
+        ("sinh",  f64::sinh),
+        ("cosh",  f64::cosh),
+        ("tanh",  f64::tanh),
+        ("floor", f64::floor),
+        ("ceil",  f64::ceil),
+    ] {
+        registry.register(Box::new(UnaryMathTask { task_name: name, func }));
+    }
+
+    // Binary real math
+    for (name, func) in [
+        ("pow",   f64::powf as fn(f64, f64) -> f64),
+        ("atan2", f64::atan2),
+        ("hypot", f64::hypot),
+    ] {
+        registry.register(Box::new(BinaryMathTask { task_name: name, func }));
+    }
+
+    registry.register(Box::new(Clog2Task));
 }

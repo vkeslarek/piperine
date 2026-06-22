@@ -20,6 +20,20 @@ impl Scope {
     pub fn set(&mut self, name: &str, value: Value)  { self.variables.insert(name.to_string(), value); }
 }
 
+/// How control should continue after a statement runs.
+/// Propagated up through blocks and loops so `break`/`continue`/`return`
+/// are handled where they belong rather than via exceptions.
+enum Flow {
+    /// Fall through to the next statement.
+    Normal,
+    /// Exit the innermost loop (`break`).
+    Break,
+    /// Skip to the next loop iteration (`continue`).
+    Continue,
+    /// Exit the enclosing function/block carrying a value (`return`).
+    Return(Value),
+}
+
 pub struct Interpreter<'a> {
     simulator: &'a mut dyn SimulatorBackend,
     tasks:     &'a SystemTaskRegistry,
@@ -138,24 +152,37 @@ impl<'a> Interpreter<'a> {
     }
 
     pub fn exec(&mut self, statement: &Stmt, scope: &mut Scope) -> Result<(), InterpreterError> {
-        self.eval_statement(statement, scope)
+        self.eval_statement(statement, scope)?;
+        Ok(())
     }
 
-    fn eval_statement(&mut self, statement: &Stmt, scope: &mut Scope) -> Result<(), InterpreterError> {
+    fn eval_statement(&mut self, statement: &Stmt, scope: &mut Scope) -> Result<Flow, InterpreterError> {
         match statement {
             Stmt::Empty(_) => {}
 
             Stmt::Block(block) => {
                 for item in &block.items {
-                    self.eval_block_item(item, scope)?;
+                    match self.eval_block_item(item, scope)? {
+                        Flow::Normal => {}
+                        other        => return Ok(other),  // break/continue/return exits the block
+                    }
                 }
             }
 
             Stmt::Assign(assign) => {
-                let value = self.eval_expr(&assign.assign.rval, scope)?;
-                let name = expr_as_variable_name(&assign.assign.lval).ok_or_else(|| {
+                let a = &assign.assign;
+                let rhs = self.eval_expr(&a.rval, scope)?;
+                let name = expr_as_variable_name(&a.lval).ok_or_else(|| {
                     InterpreterError::Other("assignment target must be a variable name".into())
                 })?;
+                // Compound assignments (`+=`, …) combine with the current value.
+                let value = match compound_binop(&a.op) {
+                    Some(binop) => {
+                        let current = self.eval_expr(&a.lval, scope)?;
+                        eval_binary_op(current, &binop, rhs)?
+                    }
+                    None => rhs,
+                };
                 scope.set(&name, value);
             }
 
@@ -166,9 +193,9 @@ impl<'a> Interpreter<'a> {
             Stmt::If(if_stmt) => {
                 let condition = self.eval_expr(&if_stmt.condition, scope)?;
                 if condition.is_truthy() {
-                    self.eval_statement(&if_stmt.then_branch, scope)?;
+                    return self.eval_statement(&if_stmt.then_branch, scope);
                 } else if let Some(else_branch) = &if_stmt.else_branch {
-                    self.eval_statement(else_branch, scope)?;
+                    return self.eval_statement(else_branch, scope);
                 }
             }
 
@@ -176,7 +203,11 @@ impl<'a> Interpreter<'a> {
                 loop {
                     let condition = self.eval_expr(&while_stmt.condition, scope)?;
                     if !condition.is_truthy() { break; }
-                    self.eval_statement(&while_stmt.body, scope)?;
+                    match self.eval_statement(&while_stmt.body, scope)? {
+                        Flow::Break             => break,
+                        Flow::Return(v)         => return Ok(Flow::Return(v)),
+                        Flow::Continue | Flow::Normal => {}
+                    }
                 }
             }
 
@@ -185,9 +216,47 @@ impl<'a> Interpreter<'a> {
                 loop {
                     let condition = self.eval_expr(&for_stmt.condition, scope)?;
                     if !condition.is_truthy() { break; }
-                    self.eval_statement(&for_stmt.for_body, scope)?;
+                    match self.eval_statement(&for_stmt.for_body, scope)? {
+                        Flow::Break             => break,
+                        Flow::Return(v)         => return Ok(Flow::Return(v)),
+                        // `continue` skips to the increment, like C.
+                        Flow::Continue | Flow::Normal => {}
+                    }
                     self.eval_statement(&for_stmt.incr, scope)?;
                 }
+            }
+
+            Stmt::Repeat(repeat_stmt) => {
+                let count = self.eval_expr(&repeat_stmt.count, scope)?
+                    .as_integer().unwrap_or(0);
+                for _ in 0..count.max(0) {
+                    match self.eval_statement(&repeat_stmt.body, scope)? {
+                        Flow::Break             => break,
+                        Flow::Return(v)         => return Ok(Flow::Return(v)),
+                        Flow::Continue | Flow::Normal => {}
+                    }
+                }
+            }
+
+            Stmt::Forever(forever_stmt) => {
+                loop {
+                    match self.eval_statement(&forever_stmt.body, scope)? {
+                        Flow::Break             => break,
+                        Flow::Return(v)         => return Ok(Flow::Return(v)),
+                        Flow::Continue | Flow::Normal => {}
+                    }
+                }
+            }
+
+            Stmt::Break(_)    => return Ok(Flow::Break),
+            Stmt::Continue(_) => return Ok(Flow::Continue),
+
+            Stmt::Return(ret) => {
+                let value = match &ret.value {
+                    Some(expr) => self.eval_expr(expr, scope)?,
+                    None       => Value::Void,
+                };
+                return Ok(Flow::Return(value));
             }
 
             Stmt::Case(case_stmt) => {
@@ -200,8 +269,7 @@ impl<'a> Interpreter<'a> {
                         }),
                     };
                     if hit {
-                        self.eval_statement(&case.stmt, scope)?;
-                        break;
+                        return self.eval_statement(&case.stmt, scope);
                     }
                 }
             }
@@ -244,10 +312,10 @@ impl<'a> Interpreter<'a> {
                 }
             }
         }
-        Ok(())
+        Ok(Flow::Normal)
     }
 
-    fn eval_block_item(&mut self, item: &BlockItem, scope: &mut Scope) -> Result<(), InterpreterError> {
+    fn eval_block_item(&mut self, item: &BlockItem, scope: &mut Scope) -> Result<Flow, InterpreterError> {
         match item {
             BlockItem::VarDecl(decl) => {
                 for var in &decl.vars {
@@ -265,10 +333,10 @@ impl<'a> Interpreter<'a> {
                 }
             }
             BlockItem::Stmt(stmt) => {
-                self.eval_statement(stmt, scope)?;
+                return self.eval_statement(stmt, scope);
             }
         }
-        Ok(())
+        Ok(Flow::Normal)
     }
 
     pub fn eval_expr(&mut self, expr: &Expr, scope: &mut Scope) -> Result<Value, InterpreterError> {
@@ -362,12 +430,26 @@ impl<'a> Interpreter<'a> {
     }
 }
 
-fn to_event_action(result: Result<(), InterpreterError>) -> EventAction {
+fn to_event_action(result: Result<Flow, InterpreterError>) -> EventAction {
     match result {
-        Ok(()) => EventAction::Continue,
+        // break/continue/return inside a handler all just stop the handler body.
+        Ok(_) => EventAction::Continue,
         Err(InterpreterError::RunFailed { message }) => EventAction::RunError { message },
         Err(InterpreterError::Fatal { message, .. }) => EventAction::Halt { reason: message },
         Err(e) => EventAction::Halt { reason: e.to_string() },
+    }
+}
+
+/// Map a compound-assignment operator to its underlying binary operator.
+/// Returns `None` for plain `=` / `<+`.
+fn compound_binop(op: &AssignOp) -> Option<BinOp> {
+    match op {
+        AssignOp::AddEq => Some(BinOp::Add),
+        AssignOp::SubEq => Some(BinOp::Sub),
+        AssignOp::MulEq => Some(BinOp::Mul),
+        AssignOp::DivEq => Some(BinOp::Div),
+        AssignOp::ModEq => Some(BinOp::Mod),
+        AssignOp::Eq | AssignOp::Contrib => None,
     }
 }
 

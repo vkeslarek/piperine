@@ -78,6 +78,12 @@ pub enum BinOp {
 pub enum AssignOp {
     Contrib,
     Eq,
+    /// Compound assignments: `lval OP= rval` desugars to `lval = lval OP rval`.
+    AddEq,
+    SubEq,
+    MulEq,
+    DivEq,
+    ModEq,
 }
 
 #[derive(Debug, Clone)]

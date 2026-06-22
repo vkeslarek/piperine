@@ -20,6 +20,11 @@ pub enum Stmt {
     Assert(AssertStmt),
     AssertRun(AssertStmt),
     AssertWarn(AssertStmt),
+    Break(BreakStmt),
+    Continue(ContinueStmt),
+    Return(ReturnStmt),
+    Repeat(RepeatStmt),
+    Forever(ForeverStmt),
 }
 
 #[derive(Debug, Clone)]
@@ -117,4 +122,38 @@ pub struct AssertStmt {
     pub attrs: Vec<Attr>,
     pub condition: Expr,
     pub message: Option<Expr>,
+}
+
+/// `break;` — exit the innermost loop.
+#[derive(Debug, Clone)]
+pub struct BreakStmt {
+    pub attrs: Vec<Attr>,
+}
+
+/// `continue;` — skip to the next iteration of the innermost loop.
+#[derive(Debug, Clone)]
+pub struct ContinueStmt {
+    pub attrs: Vec<Attr>,
+}
+
+/// `return;` or `return expr;` — exit the enclosing function/block.
+#[derive(Debug, Clone)]
+pub struct ReturnStmt {
+    pub attrs: Vec<Attr>,
+    pub value: Option<Expr>,
+}
+
+/// `repeat (count) body` — run `body` `count` times.
+#[derive(Debug, Clone)]
+pub struct RepeatStmt {
+    pub attrs: Vec<Attr>,
+    pub count: Expr,
+    pub body: Box<Stmt>,
+}
+
+/// `forever body` — loop until `break`/`return`/`$finish`.
+#[derive(Debug, Clone)]
+pub struct ForeverStmt {
+    pub attrs: Vec<Attr>,
+    pub body: Box<Stmt>,
 }

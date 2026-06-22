@@ -96,3 +96,30 @@ AcResult ac = $ac("dec", fstart = 1e3, fstop = 1e6, points = 100);
 The syntax is `name = value` — NOT `.name(value)` (that's paramset syntax). Named
 args can appear in any order after the positional ones, and earlier positional positions
 can be skipped if all remaining args are named.
+
+---
+
+## Math system functions
+
+Real-valued math, usable anywhere in an expression.
+
+| Function | Returns | Notes |
+|----------|---------|-------|
+| `$sqrt(x)` | real | |
+| `$pow(x, y)` | real | x raised to y |
+| `$exp(x)` `$ln(x)` `$log10(x)` | real | |
+| `$sin(x)` `$cos(x)` `$tan(x)` | real | radians |
+| `$asin(x)` `$acos(x)` `$atan(x)` | real | radians |
+| `$atan2(y, x)` | real | full-quadrant arctangent |
+| `$sinh(x)` `$cosh(x)` `$tanh(x)` | real | |
+| `$hypot(x, y)` | real | `sqrt(x² + y²)` |
+| `$floor(x)` `$ceil(x)` | real | |
+| `$abs(x)` | real/integer | preserves type |
+| `$min(a, b)` `$max(a, b)` | real | |
+| `$clog2(n)` | integer | ceil(log2 n) — bit width to index `n` values |
+
+```verilog
+real gain_db = 20.0 * $log10(vout / vin);
+real fc      = 1.0 / (2.0 * 3.14159265 * $sqrt(l * c));
+integer addr_bits = $clog2(depth);
+```

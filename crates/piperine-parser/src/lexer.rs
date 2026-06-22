@@ -56,6 +56,13 @@ pub enum Tok {
     Slash,
     Percent,
     Pow,     // **
+    PlusPlus,   // ++
+    MinusMinus, // --
+    PlusEq,     // +=
+    MinusEq,    // -=
+    StarEq,     // *=
+    SlashEq,    // /=
+    PercentEq,  // %=
     Amp,     // &
     AmpAmp,  // &&
     Pipe,    // |
@@ -336,6 +343,13 @@ impl<'a> Lexer<'a> {
             (b'*', b'*') => two!(Tok::Pow),
             (b'^', b'~') => two!(Tok::XnorC),
             (b'~', b'^') => two!(Tok::XnorT),
+            (b'+', b'+') => two!(Tok::PlusPlus),
+            (b'-', b'-') => two!(Tok::MinusMinus),
+            (b'+', b'=') => two!(Tok::PlusEq),
+            (b'-', b'=') => two!(Tok::MinusEq),
+            (b'*', b'=') => two!(Tok::StarEq),
+            (b'/', b'=') => two!(Tok::SlashEq),
+            (b'%', b'=') => two!(Tok::PercentEq),
             (b'(', _) => one!(Tok::LParen),
             (b')', _) => one!(Tok::RParen),
             (b'[', _) => one!(Tok::LBrack),

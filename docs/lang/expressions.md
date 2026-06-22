@@ -20,7 +20,31 @@ a + b
 a - b
 a * b
 a / b
+a % b        // modulo
+a ** b       // power
 -a           // unary negation
+```
+
+## Increment and compound assignment
+
+Statement-level shortcuts for updating a variable:
+
+```verilog
+i++;   ++i;       // i = i + 1
+i--;   --i;       // i = i - 1
+
+x += 2.5;         // x = x + 2.5
+x -= 1.0;         // x = x - 1.0
+x *= 3.0;         // x = x * 3.0
+x /= 2.0;         // x = x / 2.0
+n %= 8;           // n = n % 8
+```
+
+`++`/`--` and `+=`/`-=` are also valid in a `for` increment clause:
+
+```verilog
+for (i = 0; i < n; i++) ...
+for (t = 0.0; t < tstop; t += dt) ...
 ```
 
 ## Comparison operators (in procedural blocks)

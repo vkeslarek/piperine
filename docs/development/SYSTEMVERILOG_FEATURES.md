@@ -1345,6 +1345,22 @@ Rule: testbench drives in Reactive, DUT reads in Active → no races. Clocking b
 
 ## Summary: Piperine Gap vs SystemVerilog
 
+### Wave 1 — implemented 2026-06
+
+Landed and covered by `tests/e2e_onda1_test.rs`:
+
+- `++` / `--` (prefix and postfix) and compound assignment `+= -= *= /= %=`
+- Loop control: `break`, `continue`, `return` (interpreter `Flow` signal)
+- `repeat (n)` and `forever` loops
+- Brace blocks `{ … }` interchangeable with `begin`/`end`
+- Math system functions: `$sqrt $pow $exp $ln $log10 $sin $cos $tan $asin $acos
+  $atan $atan2 $sinh $cosh $tanh $hypot $floor $ceil` and `$clog2`
+
+Still missing from the lists below (the `[DONE]` markers elsewhere in this file
+predate verification and are aspirational): user-defined `function`/`task`
+execution, arrays/queues, `inside`, `$urandom`/`$dist_*`, associative arrays,
+`package`.
+
 ### High Value for Analog Testbench (implement soon)
 
 | Feature | Why Needed |
