@@ -305,3 +305,28 @@ impl ExternClass for ArrayObj {
         }
     }
 }
+
+// ── DeviceHandle ─────────────────────────────────────────────────────────────
+
+/// A handle to an elaborated circuit instance. Method/field access reads the
+/// device's operating-point parameter `@<name>[<param>]` from the simulator.
+#[derive(Debug)]
+pub struct DeviceHandle {
+    pub name: String,
+}
+
+impl DeviceHandle {
+    pub fn new(name: String) -> Value {
+        Value::ExternObject(Arc::new(Self { name }))
+    }
+}
+
+impl ExternClass for DeviceHandle {
+    fn type_name(&self) -> &str { "Device" }
+
+    fn call_method(&self, _method: &str, _args: &[Value]) -> Result<Value, String> {
+        // Method access is special-cased in the interpreter to use the backend.
+        Err("internal error: DeviceHandle method dispatch must be handled by interpreter".into())
+    }
+}
+

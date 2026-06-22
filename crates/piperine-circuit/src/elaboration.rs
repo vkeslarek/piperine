@@ -33,6 +33,10 @@ pub struct ElaborationResult {
     pub always_handlers: AlwaysHandlerSet,
     /// User-defined `function`s from the testbench, for the interpreter to call.
     pub functions: Vec<piperine_parser::model::Function>,
+    /// Device instances as `(piperine_name, spice_name)` pairs. The interpreter
+    /// binds a `DeviceHandle` under the *piperine* name (what the user writes,
+    /// e.g. `load`) but queries the simulator with the *spice* name (`Rload`).
+    pub instances: Vec<(String, String)>,
 }
 
 /// `AlwaysHandlerSet` — collected from all `always @(...)` blocks in the testbench module.
@@ -62,8 +66,9 @@ pub fn elaborate(
 
     // Top-level net map is empty: nets resolve to themselves.
     let net_map = NetMap::new();
+    let mut instances_list = Vec::new();
     elaborate_instances(
-        &testbench.instances, document, registry, &paramsets, "", &net_map, &mut spice_lines,
+        &testbench.instances, document, registry, &paramsets, "", &net_map, &mut spice_lines, &mut instances_list,
     )?;
 
     let initial_statement = testbench
@@ -91,12 +96,17 @@ pub fn elaborate(
             }
         }
     }
+    
+    // Auto-save operating-point parameters
+    let saves = collect_op_saves(&initial_statement, &always_handlers, &instances_list);
+    spice_lines.extend(saves);
 
     Ok(ElaborationResult {
         spice_lines,
         initial_statement,
         always_handlers,
         functions: testbench.functions.clone(),
+        instances: instances_list,
     })
 }
 
@@ -130,9 +140,10 @@ fn elaborate_instances(
     path: &str,
     net_map: &NetMap,
     spice_lines: &mut Vec<String>,
+    instances_list: &mut Vec<(String, String)>,
 ) -> Result<(), ElaborationError> {
     for instance in instances {
-        elaborate_instance(instance, instances, document, registry, paramsets, path, net_map, spice_lines)?;
+        elaborate_instance(instance, instances, document, registry, paramsets, path, net_map, spice_lines, instances_list)?;
     }
     Ok(())
 }
@@ -146,6 +157,7 @@ fn elaborate_instance(
     path: &str,
     net_map: &NetMap,
     spice_lines: &mut Vec<String>,
+    instances_list: &mut Vec<(String, String)>,
 ) -> Result<(), ElaborationError> {
     // Resolve port connections to flat SPICE net names using the current net_map.
     let connections = resolve_connections(
@@ -195,7 +207,9 @@ fn elaborate_instance(
         merged.insert("model".into(), ParameterValue::String(format!("\"{}\"", model_name)));
         let resolver = ConcreteNetResolver { net_map, path };
         let hw_instance = base_def.instantiate(&instance.name, &merged, &connections, &resolver)?;
-        spice_lines.extend(hw_instance.spice_lines());
+        let lines = hw_instance.spice_lines();
+        instances_list.push((instance.name.clone(), spice_element_name(&lines, &instance.name)));
+        spice_lines.extend(lines);
 
     } else if let Some(definition) = registry.get(&instance.module) {
         // ── Leaf hardware (extern module, OSDI device, SPICE primitive) ──────
@@ -209,13 +223,15 @@ fn elaborate_instance(
         )?;
         let resolver = ConcreteNetResolver { net_map, path };
         let hw_instance = definition.instantiate(&instance.name, &parameters, &connections, &resolver)?;
-        spice_lines.extend(hw_instance.spice_lines());
+        let lines = hw_instance.spice_lines();
+        instances_list.push((instance.name.clone(), spice_element_name(&lines, &instance.name)));
+        spice_lines.extend(lines);
     } else if let Some(sub_mod) = find_structural_module(document, &instance.module) {
         // ── Piperine sub-module: flatten inline with path-prefixed net names ──
         let sub_path = build_path(path, &instance.name);
         let sub_net_map = build_sub_net_map(sub_mod, &connections, &sub_path);
         elaborate_instances(
-            &sub_mod.instances, document, registry, paramsets, &sub_path, &sub_net_map, spice_lines,
+            &sub_mod.instances, document, registry, paramsets, &sub_path, &sub_net_map, spice_lines, instances_list,
         )?;
     } else {
         return Err(ElaborationError::UnknownModule { name: instance.module.clone() });
@@ -424,20 +440,34 @@ fn resolve_ref_params(
         } else {
             registry.get(&ref_inst.module)
         };
-        let spice_ename = match hw_def.and_then(|d| d.spice_instance_prefix()) {
-            Some(prefix) => {
-                let up = ident.chars().next().map(|c| c.to_ascii_uppercase());
-                if up == Some(prefix.to_ascii_uppercase()) {
-                    ident.clone()
-                } else {
-                    format!("{prefix}{ident}")
-                }
-            }
-            None => ident.clone(),
-        };
+        let spice_ename = get_spice_instance_name(&ident, hw_def.and_then(|d| d.spice_instance_prefix()));
         out.insert(def.name.clone(), ParameterValue::String(format!("\"{spice_ename}\"")));
     }
     Ok(())
+}
+
+/// The SPICE element name an instance actually emits, taken as the first token of
+/// its first netlist line — the ground truth regardless of how a device computes
+/// its prefix. Falls back to the piperine name if no line was produced.
+fn spice_element_name(lines: &[String], fallback: &str) -> String {
+    lines.first()
+        .and_then(|l| l.split_whitespace().next())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn get_spice_instance_name(ident: &str, prefix: Option<char>) -> String {
+    match prefix {
+        Some(prefix) => {
+            let up = ident.chars().next().map(|c| c.to_ascii_uppercase());
+            if up == Some(prefix.to_ascii_uppercase()) {
+                ident.to_string()
+            } else {
+                format!("{prefix}{ident}")
+            }
+        }
+        None => ident.to_string(),
+    }
 }
 
 fn ast_expr_to_parameter_value(
@@ -489,6 +519,23 @@ pub fn path_to_net_name(path: &ast::Path) -> String {
     }
 }
 
+pub fn path_to_string(path: &ast::Path) -> String {
+    let mut parts = Vec::new();
+    let mut current = path;
+    loop {
+        match &current.segment {
+            PathSegment::Ident(s) => parts.push(s.clone()),
+            PathSegment::Root     => parts.push("root".to_string()),
+        }
+        match &current.qualifier {
+            Some(qualifier) => current = qualifier,
+            None            => break,
+        }
+    }
+    parts.reverse();
+    parts.join(".")
+}
+
 pub struct VaModuleInfo {
     pub module_name: String,
     pub port_names: Vec<String>,
@@ -529,4 +576,157 @@ pub fn eval_default_expr(expr: &Expr) -> Option<ParameterValue> {
         },
         _ => None,
     }
+}
+
+// ── Auto-save OP parameters ──────────────────────────────────────────────────
+
+fn collect_op_saves(initial: &ast::Stmt, always: &AlwaysHandlerSet, devices: &[(String, String)]) -> Vec<String> {
+    let mut saves = std::collections::HashSet::new();
+
+    fn walk_stmt(stmt: &ast::Stmt, saves: &mut std::collections::HashSet<String>, devices: &[(String, String)]) {
+        match stmt {
+            ast::Stmt::Block(b) => {
+                for item in &b.items {
+                    match item {
+                        ast::BlockItem::Stmt(s) => walk_stmt(s, saves, devices),
+                        ast::BlockItem::VarDecl(v) => {
+                            for var in &v.vars {
+                                if let Some(e) = &var.default { walk_expr(e, saves, devices); }
+                            }
+                        }
+                        ast::BlockItem::ParamDecl(p) => {
+                            for param in &p.params {
+                                walk_expr(&param.default, saves, devices);
+                            }
+                        }
+                    }
+                }
+            }
+            ast::Stmt::Expr(e) => walk_expr(&e.expr, saves, devices),
+            ast::Stmt::Assign(a) => {
+                walk_expr(&a.assign.rval, saves, devices);
+                walk_expr(&a.assign.lval, saves, devices);
+            }
+            ast::Stmt::If(i) => {
+                walk_expr(&i.condition, saves, devices);
+                walk_stmt(&i.then_branch, saves, devices);
+                if let Some(e) = &i.else_branch {
+                    walk_stmt(e, saves, devices);
+                }
+            }
+            ast::Stmt::While(w) => {
+                walk_expr(&w.condition, saves, devices);
+                walk_stmt(&w.body, saves, devices);
+            }
+            ast::Stmt::For(f) => {
+                walk_stmt(&f.init, saves, devices);
+                walk_expr(&f.condition, saves, devices);
+                walk_stmt(&f.incr, saves, devices);
+                walk_stmt(&f.for_body, saves, devices);
+            }
+            ast::Stmt::Repeat(r) => {
+                walk_expr(&r.count, saves, devices);
+                walk_stmt(&r.body, saves, devices);
+            }
+            ast::Stmt::Forever(f) => walk_stmt(&f.body, saves, devices),
+            ast::Stmt::Foreach(f) => {
+                walk_expr(&f.array, saves, devices);
+                walk_stmt(&f.body, saves, devices);
+            }
+            ast::Stmt::Return(r) => {
+                if let Some(e) = &r.value {
+                    walk_expr(e, saves, devices);
+                }
+            }
+            ast::Stmt::Case(c) => {
+                walk_expr(&c.discriminant, saves, devices);
+                for case in &c.cases {
+                    if let ast::CaseItem::Exprs(exprs) = &case.item {
+                        for e in exprs { walk_expr(e, saves, devices); }
+                    }
+                    walk_stmt(&case.stmt, saves, devices);
+                }
+            }
+            ast::Stmt::Assert(a) => {
+                walk_expr(&a.condition, saves, devices);
+                if let Some(m) = &a.message { walk_expr(m, saves, devices); }
+            }
+            ast::Stmt::AssertRun(a) => {
+                walk_expr(&a.condition, saves, devices);
+                if let Some(m) = &a.message { walk_expr(m, saves, devices); }
+            }
+            ast::Stmt::AssertWarn(a) => {
+                walk_expr(&a.condition, saves, devices);
+                if let Some(m) = &a.message { walk_expr(m, saves, devices); }
+            }
+            _ => {}
+        }
+    }
+
+    fn walk_expr(expr: &ast::Expr, saves: &mut std::collections::HashSet<String>, devices: &[(String, String)]) {
+        match expr {
+            ast::Expr::Path(p) => {
+                let s = path_to_string(p);
+                if let Some((inst, param)) = s.split_once('.') {
+                    if let Some((_, spice)) = devices.iter().find(|(piperine, _)| piperine == inst) {
+                        saves.insert(format!(".save @{}[{}]", spice, param));
+                    }
+                }
+            }
+            ast::Expr::Call(ast::FunctionRef::Path(p), args) => {
+                let s = path_to_string(p);
+                if let Some((inst, param)) = s.split_once('.') {
+                    if args.is_empty() {
+                        if let Some((_, spice)) = devices.iter().find(|(piperine, _)| piperine == inst) {
+                            saves.insert(format!(".save @{}[{}]", spice, param));
+                        }
+                    }
+                }
+                for arg in args {
+                    match arg {
+                        ast::CallArg::Positional(e) => walk_expr(e, saves, devices),
+                        ast::CallArg::Named(_, e) => walk_expr(e, saves, devices),
+                    }
+                }
+            }
+            ast::Expr::Call(_, args) => {
+                for arg in args {
+                    match arg {
+                        ast::CallArg::Positional(e) => walk_expr(e, saves, devices),
+                        ast::CallArg::Named(_, e) => walk_expr(e, saves, devices),
+                    }
+                }
+            }
+            ast::Expr::Paren(e) => walk_expr(e, saves, devices),
+            ast::Expr::Prefix(_, e) => walk_expr(e, saves, devices),
+            ast::Expr::Binary(l, _, r) => {
+                walk_expr(l, saves, devices);
+                walk_expr(r, saves, devices);
+            }
+            ast::Expr::Select(c, t, e) => {
+                walk_expr(c, saves, devices);
+                walk_expr(t, saves, devices);
+                walk_expr(e, saves, devices);
+            }
+            ast::Expr::Array(arr) => {
+                for e in arr { walk_expr(e, saves, devices); }
+            }
+            ast::Expr::Index(b, i) => {
+                walk_expr(b, saves, devices);
+                walk_expr(i, saves, devices);
+            }
+            _ => {}
+        }
+    }
+
+    walk_stmt(initial, &mut saves, devices);
+    for s in &always.initial_step { walk_stmt(s, &mut saves, devices); }
+    for s in &always.step { walk_stmt(s, &mut saves, devices); }
+    for s in &always.final_step { walk_stmt(s, &mut saves, devices); }
+    for (_, _, s) in &always.above { walk_stmt(s, &mut saves, devices); }
+    for (_, _, _, s) in &always.cross { walk_stmt(s, &mut saves, devices); }
+
+    let mut result: Vec<_> = saves.into_iter().collect();
+    result.sort();
+    result
 }

@@ -130,6 +130,13 @@ impl Plugin for NgspicePlugin {
         registry.register(Box::new(MeasMinTask));
         registry.register(Box::new(MeasMaxTask));
         registry.register(Box::new(MeasMaxAtTask));
+        registry.register(Box::new(tasks::SetOptionTask));
+        registry.register(Box::new(tasks::SetTempTask));
+        registry.register(Box::new(tasks::SetTnomTask));
+        registry.register(Box::new(tasks::AlterTask));
+        registry.register(Box::new(tasks::AltermodTask));
+        registry.register(Box::new(tasks::AlterparamTask));
+        registry.register(Box::new(tasks::GetVecTask));
         registry.register(Box::new(MeasIntegralTask));
     }
 

@@ -46,6 +46,9 @@ pub struct Interpreter<'a> {
     always_handlers: AlwaysHandlerSet,
     /// User-defined functions, keyed by name. Set via `set_functions()`.
     functions: HashMap<String, Arc<Function>>,
+    /// Device instances: piperine name (what the user writes) → spice element name
+    /// (used to query `@<spice>[<param>]`). Set via `set_devices()`.
+    devices: HashMap<String, String>,
 }
 
 impl<'a> Interpreter<'a> {
@@ -56,6 +59,7 @@ impl<'a> Interpreter<'a> {
             types: crate::value::TypeRegistry::default(),
             always_handlers: AlwaysHandlerSet::default(),
             functions: HashMap::new(),
+            devices: HashMap::new(),
         }
     }
 
@@ -71,6 +75,12 @@ impl<'a> Interpreter<'a> {
         self.functions = functions.into_iter()
             .map(|f| (f.name.clone(), Arc::new(f)))
             .collect();
+    }
+
+    /// Register device instances as `(piperine_name, spice_name)` pairs so that
+    /// `inst.param` resolves to the operating-point vector `@<spice_name>[param]`.
+    pub fn set_devices(&mut self, names: Vec<(String, String)>) {
+        self.devices = names.into_iter().collect();
     }
 
     /// Call a user-defined function with already-evaluated arguments.
@@ -200,7 +210,39 @@ impl<'a> Interpreter<'a> {
         EventAction::Continue
     }
 
+    /// Read a device operating-point parameter. `recv` is the piperine instance
+    /// name the user wrote; the simulator vector uses the SPICE element name.
+    fn read_op_param(&mut self, recv: &str, param: &str) -> Result<Value, InterpreterError> {
+        let spice = self.devices.get(recv).cloned().unwrap_or_else(|| recv.to_string());
+        let vec = format!("@{spice}[{param}]");
+        let data = self.simulator.get_vector(&vec)?;
+        let last = data.last().copied().ok_or_else(|| {
+            InterpreterError::SimulatorError(format!("operating-point vector {vec} is empty"))
+        })?;
+        Ok(Value::Real(last))
+    }
+
+    fn builtin_constant(name: &str) -> Option<f64> {
+        Some(match name {
+            "M_PI"      => std::f64::consts::PI,
+            "M_TWO_PI"  => std::f64::consts::TAU,
+            "M_E"       => std::f64::consts::E,
+            "BOLTZMANN" | "P_K"  => 1.380649e-23,
+            "ECHARGE"   | "P_Q"  => 1.602176634e-19,
+            "P_CELSIUS0"=> 273.15,
+            "P_EPS0"    => 8.8541878128e-12,
+            "P_U0"      => 1.25663706212e-6,
+            "P_H"       => 6.62607015e-34,
+            "P_C"       => 299792458.0,
+            _ => return None,
+        })
+    }
+
     pub fn exec(&mut self, statement: &Stmt, scope: &mut Scope) -> Result<(), InterpreterError> {
+        // Seed a DeviceHandle under each device's piperine name (what the user writes).
+        for (piperine, spice) in &self.devices.clone() {
+            scope.set(piperine, crate::extern_types::DeviceHandle::new(spice.clone()));
+        }
         self.eval_statement(statement, scope)?;
         Ok(())
     }
@@ -442,6 +484,17 @@ impl<'a> Interpreter<'a> {
                 if let Some(val) = scope.get(&name).cloned() {
                     Ok(val)
                 } else {
+                    if let Some((recv, param)) = name.split_once('.') {
+                        if let Some(Value::ExternObject(obj)) = scope.get(recv) {
+                            if obj.type_name() == "Device" {
+                                return self.read_op_param(recv, param);
+                            }
+                        }
+                    }
+                    if let Some(c) = Self::builtin_constant(&name) {
+                        return Ok(Value::Real(c));
+                    }
+                    
                     // Try to resolve as an enum variant
                     for (_, enum_def) in &self.types.enums {
                         for (variant_name, variant_value) in &enum_def.variants {
@@ -497,6 +550,13 @@ impl<'a> Interpreter<'a> {
                     }
                     FunctionRef::Path(path) => {
                         let path_str = path_to_string(path);
+                        if let Some((recv, param)) = path_str.split_once('.') {
+                            if let Some(Value::ExternObject(obj)) = scope.get(recv) {
+                                if obj.type_name() == "Device" {
+                                    return self.read_op_param(recv, param);
+                                }
+                            }
+                        }
                         // Method call on an extern object: `obj.method(...)`.
                         if let Some((obj_name, method)) = path_str.split_once('.') {
                             if let Some(Value::ExternObject(obj)) = scope.get(obj_name) {

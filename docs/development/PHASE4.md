@@ -108,13 +108,28 @@ pub struct ElaborationResult {
     pub initial_statement: ast::Stmt,
     pub always_handlers: AlwaysHandlerSet,
     pub functions: Vec<piperine_parser::model::Function>,
-    pub instances: Vec<String>,   // NEW: SPICE instance names, e.g. ["M1","RR1",...]
+    // (piperine_name, spice_name) — e.g. ("load","Rload"), ("M1","M1").
+    pub instances: Vec<(String, String)>,
 }
 ```
 
-Populate `instances` during `elaborate_instances` — push the **final SPICE name**
-(the same string `spice_name(prefix, name)` produces, e.g. `R1` → `RR1`, `M1` →
-`M1`). The interpreter binds each as a `DeviceHandle`.
+**Both names matter.** The user writes the *piperine* instance name (`load`,
+`M1`); the simulator vector is `@<spice_name>[param]` (`@Rload[i]`, `@M1[gm]`).
+These differ whenever the instance name doesn't already start with the device's
+SPICE prefix. So `instances` carries the pair, and the **spice name is taken from
+the ground truth — the first token of the device's emitted SPICE line** (not
+recomputed from a prefix, which `spice_instance_prefix()` doesn't reliably report):
+
+```rust
+let lines = hw_instance.spice_lines();
+let spice = lines.first().and_then(|l| l.split_whitespace().next())
+    .unwrap_or(&instance.name).to_string();
+instances_list.push((instance.name.clone(), spice));
+```
+
+The interpreter binds each `DeviceHandle` **under the piperine name** but stores
+the spice name for queries (a `HashMap<piperine, spice>`); `read_op_param` maps
+`recv → spice` before building `@spice[param]`.
 
 `crates/piperine-interpreter/src/interpreter.rs`:
 

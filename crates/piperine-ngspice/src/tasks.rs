@@ -328,7 +328,7 @@ impl SystemTask for SpTask {
     }
 }
 
-// ── $V("node") ───────────────────────────────────────────────────────────────
+// ── $V("node" [, "ref"]) ─────────────────────────────────────────────────────
 
 #[derive(Debug)]
 pub struct VoltageTask;
@@ -338,10 +338,16 @@ impl SystemTask for VoltageTask {
     fn call(&self, arguments: Vec<Value>, simulator: &mut dyn SimulatorBackend)
         -> Result<Option<Value>, InterpreterError>
     {
-        let node = require_str(&arguments, 0, "node")?.to_string();
-        let vector = simulator.get_vector(&format!("v({node})"))?;
+        let node1 = require_str(&arguments, 0, "node")?.to_string();
+        let query = if arguments.len() > 1 {
+            let node2 = require_str(&arguments, 1, "ref")?.to_string();
+            format!("v({node1}, {node2})")
+        } else {
+            format!("v({node1})")
+        };
+        let vector = simulator.get_vector(&query)?;
         let last = vector.last().copied().ok_or_else(|| {
-            InterpreterError::SimulatorError(format!("vector v({node}) is empty"))
+            InterpreterError::SimulatorError(format!("vector {query} is empty"))
         })?;
         Ok(Some(Value::Real(last)))
     }
@@ -570,5 +576,129 @@ impl SystemTask for MeasIntegralTask {
         let name = next_meas_name();
         let cmd = format!("meas {analysis} {name} INTEG {signal} FROM={from} TO={to}");
         run_meas_and_read(&cmd, &name, simulator)
+    }
+}
+
+// ── $alter(dev, param, value) ────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct AlterTask;
+
+impl SystemTask for AlterTask {
+    fn name(&self) -> &str { "alter" }
+    fn call(&self, arguments: Vec<Value>, simulator: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let dev   = require_str(&arguments, 0, "dev")?.to_string();
+        let param = require_str(&arguments, 1, "param")?.to_string();
+        let val   = require_f64(&arguments, 2, "value")?;
+        simulator.run_command(&format!("alter {dev} {param} = {val}"))?;
+        Ok(None)
+    }
+}
+
+// ── $altermod(model, param, value) ───────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct AltermodTask;
+
+impl SystemTask for AltermodTask {
+    fn name(&self) -> &str { "altermod" }
+    fn call(&self, arguments: Vec<Value>, simulator: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let model = require_str(&arguments, 0, "model")?.to_string();
+        let param = require_str(&arguments, 1, "param")?.to_string();
+        let val   = require_f64(&arguments, 2, "value")?;
+        simulator.run_command(&format!("altermod {model} {param} = {val}"))?;
+        Ok(None)
+    }
+}
+
+// ── $alterparam(param, value) ────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct AlterparamTask;
+
+impl SystemTask for AlterparamTask {
+    fn name(&self) -> &str { "alterparam" }
+    fn call(&self, arguments: Vec<Value>, simulator: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let param = require_str(&arguments, 0, "param")?.to_string();
+        let val   = require_f64(&arguments, 1, "value")?;
+        simulator.run_command(&format!("alterparam {param} = {val}"))?;
+        simulator.run_command("reset")?;
+        Ok(None)
+    }
+}
+
+// ── $set_option(opt, val) ────────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct SetOptionTask;
+
+impl SystemTask for SetOptionTask {
+    fn name(&self) -> &str { "set_option" }
+    fn call(&self, arguments: Vec<Value>, simulator: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let opt = require_str(&arguments, 0, "opt")?.to_string();
+        let val = arguments.get(1);
+        match val {
+            Some(Value::Real(v)) => simulator.run_command(&format!("option {opt}={v}"))?,
+            Some(Value::String(s)) => simulator.run_command(&format!("option {opt}={s}"))?,
+            Some(Value::Integer(i)) => simulator.run_command(&format!("option {opt}={i}"))?,
+            _ => simulator.run_command(&format!("option {opt}"))?, // flag
+        }
+        Ok(None)
+    }
+}
+
+// ── $set_temp(t) ─────────────────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct SetTempTask;
+
+impl SystemTask for SetTempTask {
+    fn name(&self) -> &str { "set_temp" }
+    fn call(&self, arguments: Vec<Value>, simulator: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let temp = require_f64(&arguments, 0, "temp")?;
+        simulator.run_command(&format!("set temp = {temp}"))?;
+        Ok(None)
+    }
+}
+
+// ── $set_tnom(t) ─────────────────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct SetTnomTask;
+
+impl SystemTask for SetTnomTask {
+    fn name(&self) -> &str { "set_tnom" }
+    fn call(&self, arguments: Vec<Value>, simulator: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let tnom = require_f64(&arguments, 0, "tnom")?;
+        simulator.run_command(&format!("set tnom = {tnom}"))?;
+        Ok(None)
+    }
+}
+
+// ── $get_vec(name) ───────────────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct GetVecTask;
+
+impl SystemTask for GetVecTask {
+    fn name(&self) -> &str { "get_vec" }
+    fn call(&self, arguments: Vec<Value>, simulator: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let name = require_str(&arguments, 0, "name")?.to_string();
+        let vector = simulator.get_vector(&name)?;
+        Ok(Some(Value::RealVec(vector.clone())))
     }
 }
