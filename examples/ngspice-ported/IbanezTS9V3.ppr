@@ -1,0 +1,91 @@
+`include "ngspice.ppr"
+
+// Ported from ngspice by tools/spice2ppr.py — see examples/ngspice-ported/README.md
+// Source netlist: IbanezTS9V3.cir
+
+paramset m_x_2N5088 npn;
+    .model = "2N5088";
+    .bf = 300;
+    .is = 5e-15;
+    .vaf = 100;
+endparamset
+
+paramset m_D1N914 d;
+    .model = "D1N914";
+    .is = 2.52e-09;
+    .rs = 10;
+    .cjo = 2e-12;
+    .n = 1.7;
+    .bv = 100;
+endparamset
+
+paramset m_LED1 d;
+    .model = "LED1";
+    .is = 9.32e-11;
+    .n = 1.78;
+    .bv = 4;
+    .ibv = 1e-05;
+    .rs = 0.15;
+    .vj = 0.7;
+    .if = 0.04;
+    .trr = 3e-06;
+endparamset
+
+module IDEALOPAMP(n1, n2, n6);
+    vcvs #(.gain(1000000)) EGAIN(.p(n7), .n(gnd), .cp(n1), .cn(n2));
+    res #(.r(10)) Rout(.p(n6), .n(n7));
+    cap #(.c(1e-12)) Cout(.p(n7), .n(gnd));
+endmodule
+
+module IbanezTS9V3;
+    vsin #(.vo(0), .va(0.05), .freq(500)) vin(.p(IN), .n(gnd));
+    vsource #(.dc(9)) VCC(.p(n9V), .n(gnd));
+    res #(.r(10000)) R16(.p(n9V), .n(VB));
+    res #(.r(10000)) R17(.p(VB), .n(gnd));
+    cap #(.c(4.7e-05)) C11(.p(VB), .n(gnd));
+    cap #(.c(1e-07)) C12(.p(VB), .n(gnd));
+    cap #(.c(0.0001)) C10(.p(n9V), .n(gnd));
+    cap #(.c(1e-07)) C13(.p(n9V), .n(gnd));
+    cap #(.c(2.2e-08)) C1(.p(IN), .n(NN1));
+    res #(.r(2200000)) RPD(.p(IN), .n(gnd));
+    res #(.r(1000)) R1(.p(NN1), .n(B1));
+    res #(.r(510000)) R2(.p(B1), .n(VB));
+    m_x_2N5088 Q1(.c(n9V), .b(B1), .e(E1));
+    res #(.r(10000)) R3(.p(E1), .n(gnd));
+    cap #(.c(1e-06)) C2(.p(E1), .n(N1_1));
+    IDEALOPAMP XU1A(.x_1(N1_1), .x_2(N1_2), .x_6(A1_1));
+    res #(.r(10000)) R4(.p(VB), .n(N1_1));
+    cap #(.c(4.7e-11)) C3(.p(A1_1), .n(N1_2));
+    m_D1N914 D2(.a(A1_1), .c(N1_2));
+    m_D1N914 D3(.a(N1_2), .c(A1_1));
+    m_LED1 D8(.a(A1_1), .c(N1_2));
+    m_LED1 D9(.a(N1_2), .c(A1_1));
+    cap #(.c(4.7e-08)) C4(.p(N1_2), .n(NN6));
+    res #(.r(4700)) R5(.p(NN6), .n(VB));
+    res #(.r({P1_POS*500k+50k})) RDRV(.p(A1_1), .n(N1_2));
+    res #(.r(1000)) R7(.p(A1_1), .n(N2_1));
+    res #(.r(10000)) R8(.p(N2_1), .n(VB));
+    cap #(.c(2.2e-07)) C5(.p(N2_1), .n(gnd));
+    cap #(.c(2.2e-07)) C6(.p(NT), .n(NN5));
+    res #(.r(220)) R9(.p(NN5), .n(gnd));
+    res #(.r({(1-P2_POS)*10k})) RT_T(.p(NT), .n(N2_2));
+    res #(.r({P2_POS*10k})) RT_B(.p(N2_1), .n(NT));
+    IDEALOPAMP XU1B(.x_1(N2_1), .x_2(N2_2), .x_6(A2_1));
+    res #(.r(1000)) R10(.p(A2_1), .n(N2_2));
+    cap #(.c(1e-06)) C7(.p(A2_1), .n(NN3));
+    res #(.r(1000)) R11(.p(NN3), .n(VOL_TOP));
+    res #(.r({(1-P3_POS)*10k})) RV_T(.p(VOL_TOP), .n(VOL_W));
+    res #(.r({P3_POS*10k})) RV_B(.p(VOL_W), .n(VB));
+    cap #(.c(1e-07)) C8(.p(VOL_W), .n(B2));
+    res #(.r(510000)) R12(.p(B2), .n(VB));
+    m_x_2N5088 Q2(.c(n9V), .b(B2), .e(E2));
+    res #(.r(10000)) R13(.p(E2), .n(gnd));
+    res #(.r(100)) R14(.p(E2), .n(NN4));
+    cap #(.c(1e-06)) C9(.p(NN4), .n(OUT));
+    res #(.r(10000)) R15(.p(OUT), .n(gnd));
+
+    initial begin
+        $tran(2e-06, 0.1, 0.08);
+        $op();
+    end
+endmodule

@@ -1,0 +1,31 @@
+`include "ngspice.ppr"
+`include "On_Semi.lib"   // PLANNED: SPICE-lib include handler
+`include "tl072.mod"   // PLANNED: SPICE-lib include handler
+
+// Ported from ngspice by tools/spice2ppr.py — see examples/ngspice-ported/README.md
+// Source netlist: Boss_Super_Overdrive_SD-1.cir
+
+module Boss_Super_Overdrive_SD_1;
+    vsource #(.dc(9)) VCC(.p(VCC), .n(gnd));
+    vsin #(.vo(0), .va(0.05), .freq(500)) VIN(.p(IN), .n(gnd));
+    cap #(.c(4.7e-11)) CCc(.p(N3), .n(gnd));
+    cap #(.c(4.7e-08)) CCz(.p(gnd), .n(N20));
+    res #(.r(4700)) RR2(.p(N3), .n(N20));
+    res #(.r(33000)) RR3(.p(N3), .n(N18));
+    res #(.r(1000000)) RDrive(.p(gnd), .n(N18));
+    subckt #(.ports("gnd N11 N13 N21 N27 N28"), .subckt_name("TL072")) XX4();
+    cap #(.c(1e-06)) CC6(.p(N11), .n(N17));
+    res #(.r(10000)) RLevelA(.p(gnd), .n(gnd));
+    res #(.r(10000)) RLevelB(.p(gnd), .n(N26));
+    res #(.r(8)) RS1(.p(gnd), .n(gnd));
+    res #(.r(4700)) RR10(.p(N17), .n(N26));
+    subckt #(.ports("N3 gnd N19"), .subckt_name("TL072")) XX1();
+    subckt #(.ports("N3 gnd N29"), .subckt_name("1N916")) XD1();
+    d #(.model("1N916")) DD2(.a(N3), .c(N29));
+    d #(.model("1N916")) DD3(.a(gnd), .c(N29));
+
+    initial begin
+        $tran(2e-06, 0.1, 0.08);
+        $op();
+    end
+endmodule

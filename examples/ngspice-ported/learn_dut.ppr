@@ -1,0 +1,18 @@
+`include "ngspice.ppr"
+
+// Ported from ngspice by tools/spice2ppr.py — see examples/ngspice-ported/README.md
+// Source netlist: dut.cir
+
+module dut;
+    res #(.r(10000)) RLOWER1(.p(div), .n(com));
+    vcvs #(.gain(100)) E1(.p(beta), .n(com), .cp(vref), .cn(div));
+    res #(.r(10000)) RUPPER1(.p(out), .n(div));
+    vcvs #(.gain(10)) E2(.p(g), .n(com), .cp(beta), .cn(com));
+    subckt #(.ports("in gain gain"), .subckt_name("k=0.05")) X2();
+    res #(.r(1)) RSOL1(.p(sum), .n(out));
+    subckt #(.ports("gain g sum sum k1_1 k2_1"), .subckt_name("a=1")) X3();
+
+    initial begin
+        $op();
+    end
+endmodule

@@ -1,0 +1,42 @@
+`include "ngspice.ppr"
+`include "On_Semi.lib"   // PLANNED: SPICE-lib include handler
+`include "lm308.mod"   // PLANNED: SPICE-lib include handler
+
+// Ported from ngspice by tools/spice2ppr.py — see examples/ngspice-ported/README.md
+// Source netlist: Pro_Co_Rat.cir
+
+module Pro_Co_Rat;
+    vsource #(.dc(9)) VCC(.p(VCC), .n(gnd));
+    vsin #(.vo(0), .va(0.05), .freq(500)) VIN(.p(IN), .n(gnd));
+    cap #(.c(4.7e-05)) CC4(.p(N3), .n(N4));
+    res #(.r(1000)) RR5(.p(N4), .n(N5));
+    cap #(.c(1e-10)) CC1(.p(N2), .n(N3));
+    cap #(.c(4.7e-06)) CC2(.p(N9), .n(gnd));
+    cap #(.c(2.2e-06)) CC3(.p(N8), .n(gnd));
+    res #(.r(560)) RR2(.p(N2), .n(N9));
+    res #(.r(47)) RR3(.p(N7), .n(N8));
+    res #(.r(1500)) RR6(.p(N12), .n(N13));
+    cap #(.c(3.3e-09)) CC5(.p(N13), .n(gnd));
+    d #(.model("D1N914a")) DD1(.a(N5), .c(gnd));
+    d #(.model("D1N914a")) DD2(.a(N5), .c(gnd));
+    cap #(.c(2.2e-08)) CC6(.p(N15), .n(N17));
+    res #(.r(1000000)) RR1(.p(gnd), .n(N17));
+    subckt #(.ports("N2 N3 VCC gnd N21"), .subckt_name("LM308")) XX1();
+    res #(.r(1000000)) RR7(.p(gnd), .n(IN));
+    cap #(.c(2.2e-08)) CC8(.p(N22), .n(IN));
+    res #(.r(1000000)) RR8(.p(N23), .n(VB));
+    res #(.r(1000)) RR9(.p(N21), .n(N22));
+    cap #(.c(1e-09)) CC9(.p(gnd), .n(N21));
+    jfet_n #(.model("2N5458")) JQ1(.d(N17), .g(N27), .s(VCC));
+    cap #(.c(1e-06)) CC7(.p(N30), .n(N31));
+    res #(.r(8)) RS1(.p(N33), .n(gnd));
+    res #(.r(100000)) RDistortion(.p(N3), .n(N7));
+    res #(.r(100000)) RTone(.p(N5), .n(N12));
+    res #(.r(100000)) RVolumeA(.p(N31), .n(gnd));
+    res #(.r(100000)) RVolumeB(.p(gnd), .n(N33));
+
+    initial begin
+        $tran(2e-06, 0.1, 0.08);
+        $op();
+    end
+endmodule

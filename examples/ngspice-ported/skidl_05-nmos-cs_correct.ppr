@@ -1,0 +1,23 @@
+`include "ngspice.ppr"
+
+// Ported from ngspice by tools/spice2ppr.py — see examples/ngspice-ported/README.md
+// Source netlist: correct.cir
+
+paramset m_NMOD nmos;
+    .model = "NMOD";
+    .level = 1;
+    .kp = 0.0002;
+    .vto = 1;
+    .lambda = 0.02;
+endparamset
+
+module correct;
+    vsource #(.dc(5)) VDD(.p(vdd), .n(gnd));
+    res #(.r(1000)) RD(.p(vdd), .n(out));
+    m_NMOD M1(.d(out), .g(g), .s(gnd), .b(gnd));
+    vsource #(.dc(2), .acmag(1)) Vg(.p(g), .n(gnd));
+
+    initial begin
+        $op();
+    end
+endmodule

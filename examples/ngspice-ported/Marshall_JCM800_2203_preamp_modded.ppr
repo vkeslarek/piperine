@@ -1,0 +1,51 @@
+`include "ngspice.ppr"
+`include "zetex.lib"   // PLANNED: SPICE-lib include handler
+
+// Ported from ngspice by tools/spice2ppr.py — see examples/ngspice-ported/README.md
+// Source netlist: Marshall_JCM800_2203_preamp_modded.cir
+
+module Marshall_JCM800_2203_preamp_modded;
+    vsource #(.dc(9)) VCC(.p(VCC), .n(gnd));
+    vsin #(.vo(0), .va(0.05), .freq(500)) VIN(.p(IN), .n(gnd));
+    res #(.r(68000)) RR8(.p(N31), .n(N32));
+    res #(.r(10000)) RR9(.p(N27), .n(N28));
+    cap #(.c(4.7e-10)) CC12(.p(N3), .n(N34));
+    res #(.r(1000000)) RR20(.p(gnd), .n(N6));
+    res #(.r(2700)) RR2(.p(gnd), .n(N9));
+    res #(.r(33000)) RR23(.p(IN), .n(N7));
+    res #(.r(100000)) RR24(.p(N10), .n(N26));
+    res #(.r(2700)) RR25(.p(gnd), .n(N11));
+    cap #(.c(2.2e-09)) CC13(.p(N38), .n(N40));
+    cap #(.c(6.8e-07)) CC14(.p(gnd), .n(N9));
+    res #(.r(100000)) RR26(.p(N13), .n(N27));
+    res #(.r(820)) RR27(.p(gnd), .n(N12));
+    res #(.r(1000000)) RGain_1A(.p(gnd), .n(gnd));
+    res #(.r(1000000)) RGain_1B(.p(gnd), .n(N31));
+    cap #(.c(2.2e-08)) CC3(.p(N8), .n(gnd));
+    cap #(.c(2.2e-09)) CC16(.p(N31), .n(N44));
+    res #(.r(470000)) RR31(.p(gnd), .n(N2));
+    cap #(.c(2.2e-05)) CC19(.p(gnd), .n(N27));
+    cap #(.c(2.2e-05)) CC23(.p(gnd), .n(N26));
+    res #(.r(10000)) RR42(.p(N26), .n(N27));
+    res #(.r(8)) RS3(.p(gnd), .n(N20));
+    res #(.r(25000)) RMiddleA(.p(gnd), .n(N22));
+    res #(.r(25000)) RMiddleB(.p(N22), .n(N23));
+    res #(.r(250000)) RTrebleA(.p(N18), .n(N24));
+    res #(.r(250000)) RTrebleB(.p(N24), .n(N25));
+    cap #(.c(4.7e-10)) CC24(.p(N16), .n(N24));
+    cap #(.c(2.2e-08)) CC25(.p(N18), .n(N21));
+    cap #(.c(2.2e-08)) CC26(.p(N17), .n(N23));
+    res #(.r(100000)) RR44(.p(gnd), .n(N33));
+    res #(.r(1000000)) RVolumeA(.p(gnd), .n(N20));
+    res #(.r(1000000)) RVolumeB(.p(N20), .n(N25));
+    vsource #(.dc(400)) VV8(.p(N28), .n(gnd));
+    cap #(.c(1e-09)) CC4(.p(gnd), .n(N36));
+    res #(.r(68000)) RR3(.p(N31), .n(N37));
+    cap #(.c(2.2e-09)) CC7(.p(N39), .n(N45));
+    cap #(.c(6.8e-07)) CC8(.p(gnd), .n(N12));
+
+    initial begin
+        $tran(2e-06, 0.1, 0.08);
+        $op();
+    end
+endmodule

@@ -1,0 +1,26 @@
+`include "ngspice.ppr"
+`include "GSdevices.lb5"   // PLANNED: SPICE-lib include handler
+
+// Ported from ngspice by tools/spice2ppr.py — see examples/ngspice-ported/README.md
+// Source netlist: Op-Amp_Model.cir
+
+module Op_Amp_Model;
+    vsource #(.dc(9)) VCC(.p(VCC), .n(gnd));
+    vsin #(.vo(0), .va(0.05), .freq(500)) VIN(.p(IN), .n(gnd));
+    res #(.r(100)) RR1(.p(N2), .n(gnd));
+    res #(.r(10000)) RR2(.p(N6), .n(N7));
+    d #(.model("d1n4148ws")) DD1(.a(N1), .c(N10));
+    d #(.model("d1n4148ws")) DD2(.a(N1), .c(N11));
+    res #(.r(8)) RS1(.p(N7), .n(gnd));
+    vsource #(.dc(2)) VV6(.p(N9), .n(N10));
+    vsource #(.dc(2)) VV7(.p(N11), .n(N12));
+    res #(.r(1000)) RRp1(.p(N1), .n(gnd));
+    cap #(.c(0.000159)) CCp1(.p(N1), .n(gnd));
+    res #(.r(100)) RRout(.p(N7), .n(N14));
+    res #(.r(1000000)) RRin(.p(N2), .n(IN));
+
+    initial begin
+        $tran(2e-06, 0.1, 0.08);
+        $op();
+    end
+endmodule

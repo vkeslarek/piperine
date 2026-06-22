@@ -6,20 +6,21 @@ A `paramset` binds a set of default parameter values to a base module, creating 
 
 ```verilog
 paramset <name> <base_module>;
-    .<param1>(<value1>),
-    .<param2>(<value2>);
+    .<param1> = <value1>;
+    .<param2> = <value2>;
 endparamset
 ```
 
-The parameter list ends with a semicolon. Multiple parameters are comma-separated.
+Each entry is `.<param> = <value>;` — one assignment per line, each terminated by
+a semicolon. `paramset` is a top-level declaration (outside any `module`).
 
 ## Basic example
 
 ```verilog
 paramset nmos_svt nmos;
-    .model("NMOS_SVT"),
-    .w(1e-6),
-    .l(180e-9);
+    .model = "NMOS_SVT";
+    .w = 1e-6;
+    .l = 180e-9;
 endparamset
 ```
 

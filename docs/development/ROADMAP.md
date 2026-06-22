@@ -137,10 +137,48 @@ prerequisites, and build order in [DATAFRAME.md](DATAFRAME.md).
 
 | Feature | ngspice form | Piperine target | Ref |
 |---------|--------------|-----------------|-----|
-| External SPICE libs/models | `.include`, `.lib name section` | `$include_spice(path)`, `$lib(path, section)` — inject foreign cards | `NGSPICE_NETLIST.md §.include/.lib` |
+| External SPICE libs/models | `.include`, `.lib name section` | a normal `` `include "x.lib" `` — see *pluggable include handlers* below | `NGSPICE_NETLIST.md §.include/.lib` |
 | Global nets | `.global vdd gnd` | `global wire vdd;` module construct | `NGSPICE_NETLIST.md §.global` |
 | Control-script params | `.csparam` | bridge interpreter values into the deck | `NGSPICE_NETLIST.md §.csparam` |
-| Subckt parameters | `.subckt … params:` | parameterized subckt instances | `NGSPICE_NETLIST.md §.subckt` |
+| Subckt parameters | `.subckt … params:` | parameterized module instances | `NGSPICE_NETLIST.md §.subckt` |
+
+### Pluggable include handlers
+
+`` `include `` should not be limited to `.ppr` source. A plugin must be able to
+**register an include handler keyed by file type**, so that `` `include "x.lib" ``
+or `` `include "models.mod" `` is dispatched to the ngspice plugin, which injects
+the file as raw SPICE cards into the netlist (rather than parsing it as Piperine).
+
+- Preprocessor/elaboration looks up a handler by extension (or content sniff);
+  the default handler parses `.ppr`, the ngspice plugin registers `.lib/.mod/.cir/.sp`
+  → raw-netlist injection (optionally honoring `.lib` *section* selection).
+- This replaces the earlier `$include_spice(...)` task idea: foreign SPICE files
+  ride the same `` `include `` directive the user already knows, with the plugin
+  deciding how to consume them. Keeps one include concept, plugin-extensible.
+
+### `subckt` is a second module
+
+A SPICE `.subckt NAME ports… / .ends` **is, conceptually, a Piperine `module`** —
+there is no separate "subckt" abstraction. The mapping:
+
+```
+.subckt buffer in out vdd vss      module buffer(in, out, vdd, vss);
+  M1 out in vdd vdd pmos      →        pmos M1(.d(out), .g(in), .s(vdd), .b(vdd));
+  …                                    …
+.ends                              endmodule
+
+X1 a b vdd 0 buffer            →   buffer X1(.in(a), .out(b), .vdd(vdd), .vss(0));
+```
+
+Consequences:
+- An in-file `.subckt` lowers to a `module`; its `X` instance becomes an ordinary
+  *named* module instantiation (SPICE positional ports are mapped to the module's
+  declared port names, in order).
+- An **external** subckt (defined only in an included `.lib`) has no Piperine
+  `module` to bind to. Such an `X` keeps a positional reference — handled by the
+  pluggable include handler injecting the subckt and emitting the `X` card. The
+  generic `subckt` device remains only for these opaque external cases.
+- Subckt parameters (`params:`) map to module `#(.param(...))` overrides.
 
 ## Phase 9 — Language completeness (Wave 4+)
 

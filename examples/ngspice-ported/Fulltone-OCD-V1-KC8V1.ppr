@@ -1,0 +1,58 @@
+`include "ngspice.ppr"
+`include "2N7000.REV0.LIB"   // PLANNED: SPICE-lib include handler
+`include "TL072.301"   // PLANNED: SPICE-lib include handler
+
+// Ported from ngspice by tools/spice2ppr.py — see examples/ngspice-ported/README.md
+// Source netlist: Fulltone-OCD-V1-KC8V1.cir
+
+// .model __RV1 potentiometer — base unknown; provide via a SPICE-lib include
+
+paramset m___S1 vsw;
+    .model = "__S1";
+    .vt = 1;
+    .ron = 1;
+endparamset
+
+// .model __RV2 potentiometer — base unknown; provide via a SPICE-lib include
+
+// .model __RV3 potentiometer — base unknown; provide via a SPICE-lib include
+
+module Fulltone_OCD_V1_KC8V1;
+    res #(.r({P2_POS*1Meg})) RV1(.p(Net__R4_Pad2_), .n(V1_Boost));
+    res #(.r(18000)) R4(.p(Net__U1A___), .n(Net__R4_Pad2_));
+    subckt #(.ports("GND V1_Clip V1_Clip"), .subckt_name("2n7000")) XQ1();
+    subckt #(.ports("Net__U2A___ Net__U2A___ VCC VEE V1_Clip_Recovery"), .subckt_name("TL072")) XU2();
+    cap #(.c(6.8e-08)) C2(.p(GND), .n(Net__C2_Pad2_));
+    res #(.r(2200)) R3(.p(Net__C2_Pad2_), .n(Net__U1A___));
+    subckt #(.ports("Net__U1A___ Net__U1A___ VCC VEE V1_Boost"), .subckt_name("TL072")) XU1();
+    res #(.r(39000)) R8(.p(Net__U2A___), .n(Net__C5_Pad2_));
+    cap #(.c(1e-07)) C5(.p(GND), .n(Net__C5_Pad2_));
+    subckt #(.ports("V1_Clip GND GND"), .subckt_name("2n7000")) XQ2();
+    cap #(.c(2.2e-10)) C6(.p(V1_Clip_Recovery), .n(Net__U2A___));
+    res #(.r(220000)) R7(.p(Net__U2A___), .n(GND));
+    res #(.r(150000)) R9(.p(V1_Clip_Recovery), .n(Net__U2A___));
+    // TODO (S): S1 Net-_S1-N+_ Net-_S1-N-_ Bright_CTRL GND __S1 off
+    res #(.r(33000)) R10(.p(Net__S1_N__), .n(Net__S1_N__));
+    res #(.r({(1-P3_POS)*10k})) RV2T(.p(Net__C8_Pad2_), .n(Net__C8_Pad2_));
+    res #(.r({P3_POS*10k})) RV2B(.p(GND), .n(Net__C8_Pad2_));
+    cap #(.c(4.7e-08)) C8(.p(Net__S1_N__), .n(Net__C8_Pad2_));
+    res #(.r({(1-P1_POS)*500k})) RV3T(.p(V1_Out), .n(Net__S1_N__));
+    res #(.r({P1_POS*500k})) RV3B(.p(GND), .n(V1_Out));
+    cap #(.c(1e-08)) C4(.p(GND), .n(V1_Clip));
+    res #(.r(10000)) R1(.p(Net__C1_Pad1_), .n(Signal_Simple));
+    cap #(.c(2.2e-08)) C1(.p(Net__C1_Pad1_), .n(Net__U1A___));
+    res #(.r(10000)) R5(.p(V1_Clip), .n(V1_Boost));
+    vsin #(.vo(0), .va(0.05), .freq(500), .td(0), .theta(0), .phase(0)) V3(.p(Signal_Simple), .n(GND));
+    cap #(.c(2.2e-10)) C3(.p(Net__U1A___), .n(V1_Boost));
+    res #(.r(470000)) R2(.p(Net__U1A___), .n(GND));
+    res #(.r(10000)) R6(.p(Net__U2A___), .n(V1_Clip));
+    cap #(.c(1e-05)) C7(.p(Net__S1_N__), .n(V1_Clip_Recovery));
+    vsource #(.dc(0)) V4(.p(Bright_CTRL), .n(GND));
+    vsource #(.dc(4.5)) V2(.p(GND), .n(VEE));
+    vsource #(.dc(4.5)) V1(.p(VCC), .n(GND));
+
+    initial begin
+        $tran(2e-06, 0.1, 0.08);
+        $op();
+    end
+endmodule

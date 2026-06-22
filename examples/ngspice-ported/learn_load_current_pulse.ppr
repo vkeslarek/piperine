@@ -1,0 +1,12 @@
+`include "ngspice.ppr"
+
+// Ported from ngspice by tools/spice2ppr.py — see examples/ngspice-ported/README.md
+// Source netlist: load_current_pulse.cir
+
+module load_current_pulse;
+    isource #(.dc(0)) iload(.p(out), .n(gnd));
+
+    initial begin
+        $op();
+    end
+endmodule

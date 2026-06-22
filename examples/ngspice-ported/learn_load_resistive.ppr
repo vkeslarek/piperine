@@ -1,0 +1,13 @@
+`include "ngspice.ppr"
+
+// Ported from ngspice by tools/spice2ppr.py — see examples/ngspice-ported/README.md
+// Source netlist: load_resistive.cir
+
+module load_resistive;
+    res #(.r(50)) rload(.p(out), .n(out_meas));
+    vsource #(.dc(0)) vmeas(.p(out_meas), .n(gnd));
+
+    initial begin
+        $op();
+    end
+endmodule

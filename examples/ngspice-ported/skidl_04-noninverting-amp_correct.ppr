@@ -1,0 +1,15 @@
+`include "ngspice.ppr"
+
+// Ported from ngspice by tools/spice2ppr.py — see examples/ngspice-ported/README.md
+// Source netlist: correct.cir
+
+module correct;
+    vsource #(.dc(0), .acmag(1)) V1(.p(inp), .n(gnd));
+    vcvs #(.gain(1000000)) E1(.p(out), .n(gnd), .cp(inp), .cn(inn));
+    res #(.r(10000)) Rf(.p(out), .n(inn));
+    res #(.r(1000)) Rg(.p(inn), .n(gnd));
+
+    initial begin
+        $op();
+    end
+endmodule

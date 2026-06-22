@@ -1,0 +1,13 @@
+`include "ngspice.ppr"
+
+// Ported from ngspice by tools/spice2ppr.py — see examples/ngspice-ported/README.md
+// Source netlist: supplies.cir
+
+module supplies;
+    vsource #(.dc(0)) vcom(.p(com), .n(gnd));
+    vsource #(.dc(2.5)) vref(.p(vref), .n(gnd));
+
+    initial begin
+        $op();
+    end
+endmodule

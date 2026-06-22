@@ -47,7 +47,9 @@ Prepends SPICE element prefix if not already present. `spice_name('R', "res1")` 
 
 ```verilog
 paramset nmos_lvt nmos;
-    .model("NMOS_LVT"), .w(500e-9), .l(180e-9);
+    .model = "NMOS_LVT";
+    .w = 500e-9;
+    .l = 180e-9;
 endparamset
 ```
 
