@@ -112,6 +112,16 @@ analog verification spends its time on.
 | Lot vs device tolerance | dual-stage tolerance | a tolerance helper distinguishing lot/device | `NGSPICE_STATISTICAL.md §4` |
 | Corner sweeps | manual | typed corner/sweep config (struct + loop) | — |
 
+### DataFrame — the data through-line
+
+A typed, analysis-independent result container (`DataFrame`) underpins Phases 6–7
+and the eventual data-analysis / PyO3 export story. Every analysis lowers its
+`AnalysisResult` into a column-oriented, indexed frame; Monte-Carlo loops `concat`
+into one long frame. The *type* is simple Rust; the **ergonomics** need specific
+language features — string indexing `df["x"]`, operator overloading for vectorized
+`Signal` math, slicing, and (later) lambdas / `with` clauses. Full design,
+prerequisites, and build order in [DATAFRAME.md](DATAFRAME.md).
+
 ## Phase 7 — Data, files, frequency domain
 
 | Feature | ngspice form | Piperine target | Ref |
