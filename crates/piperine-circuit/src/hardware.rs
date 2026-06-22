@@ -55,11 +55,13 @@ pub trait HardwareDefinition: fmt::Debug + Send + Sync {
 
     /// Ordered list of port declarations.
     /// The elaborator uses this to validate named port connections.
-    fn ports(&self) -> &[PortDefinition];
+    /// Defaults to none — ngspice devices parse ports at elaboration instead.
+    fn ports(&self) -> &[PortDefinition] { &[] }
 
     /// Ordered list of parameter declarations with optional defaults.
     /// The elaborator applies defaults before calling `instantiate`.
-    fn parameters(&self) -> &[ParameterDefinition];
+    /// Defaults to none — ngspice devices parse parameters at elaboration instead.
+    fn parameters(&self) -> &[ParameterDefinition] { &[] }
 
     /// SPICE `.model` card type keyword for model-based devices.
     ///

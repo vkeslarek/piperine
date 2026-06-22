@@ -447,3 +447,47 @@ module tb;
 endmodule
 "#, "Xinst p n my_subckt param1=1");
 }
+
+// ── Passives + sources: value, keyword opts, DC/AC, nodeless, B-source ─────────
+// These lock the `Element` builder's value/opt/opt_int/spaced/bare_opt/key_str
+// paths to exact SPICE output, complementing the keyword cases above.
+
+#[test]
+fn test_res_with_opts() {
+    test_component(r#"
+module tb;
+    res #(.r(1000.0), .tc1(0.1), .m(2.0), .noisy(0)) inst(.p(p), .n(n));
+    initial begin end
+endmodule
+"#, "Rinst p n 1000 M=2 TC1=0.1 NOISY=0");
+}
+
+#[test]
+fn test_vsource_dc_ac() {
+    test_component(r#"
+module tb;
+    vsource #(.dc(5.0), .acmag(1.0), .acphase(90.0)) inst(.p(p), .n(n));
+    initial begin end
+endmodule
+"#, "Vinst p n DC 5 AC 1 90");
+}
+
+#[test]
+fn test_mutual_nodeless() {
+    test_component(r#"
+module tb;
+    mutual #(.inductor1("L1"), .inductor2("L2"), .k(0.8)) inst();
+    initial begin end
+endmodule
+"#, "Kinst L1 L2 0.8");
+}
+
+#[test]
+fn test_bsource_v_keyed() {
+    test_component(r#"
+module tb;
+    bsource_v #(.V("v(a)*2"), .tc1(0.5)) inst(.p(p), .n(n));
+    initial begin end
+endmodule
+"#, "Binst p n V=v(a)*2 TC1=0.5");
+}
