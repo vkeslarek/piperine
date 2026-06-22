@@ -231,6 +231,18 @@ before anything runs. Two different layers, two different mechanisms.
 - `ground = "<name>"` — override the canonical ground net (default `gnd` → `0`).
 - `default_discipline(<disc>)` — discipline for bare nets.
 
+**Decision — this is the *only* policy mechanism.** Piperine deliberately does **not**
+adopt the Verilog/SystemVerilog approach for options:
+- **No** backtick policy directives (`` `default_nettype ``, `` `default_discipline ``,
+  `` `pragma ``, `` `timescale ``). They are stateful and order-dependent ("valid from
+  here until the next one / `` `resetall ``") — a C-preprocessor model that is easy to
+  get wrong and hard to reason about locally.
+- **No** `(* attr = val *)` attribute instances for policy. (We still parse `(* *)`
+  for inert tool metadata, but options do not ride it.)
+
+One scoped, declarative attribute (`#![...]` file / `#[...]` item) expresses all
+policy. The scope is lexical and obvious; there is no "from this line onward" state.
+
 **Plugin-extensible.** Like include handlers, a plugin registers the option keys it
 understands (the ngspice plugin owns simulator-policy keys), so the attribute set
 grows without touching the core grammar.
