@@ -1,5 +1,3 @@
-pub mod spice;
-
 use ipc_channel::ipc::{IpcReceiver, IpcSender};
 use serde::{Deserialize, Serialize};
 
