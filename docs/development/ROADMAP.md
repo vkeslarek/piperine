@@ -197,6 +197,50 @@ Deliberately **not** planned (verification-framework scope, low analog value):
 classes/OOP, concurrent SVA, covergroups, clocking blocks, fork/join, interfaces,
 DPI — see `SYSTEMVERILOG_FEATURES.md` rationale.
 
+### File/module options — Rust-style attributes (`#![...]`)
+
+**Why.** Some behaviors are *policy*, not code: whether undeclared nets are an
+error, what the ground net is called, which discipline a bare net defaults to,
+how strict the elaborator is. Today these are hardcoded. Verilog expresses such
+policy with backtick directives (`` `default_nettype none ``, `` `timescale ``) —
+stateful, order-dependent, and easy to get wrong. We prefer Rust's model:
+**scoped, declarative attributes** that say *what policy applies here*, with no
+imperative ordering.
+
+**What we're doing.** Add a Rust-style attribute for setting elaboration/language
+options, scoped to a file (inner, `#![...]`) or to the next item (outer, `#[...]`):
+
+```verilog
+#![strict_nets]                 // every net must be declared; undeclared = error
+#![ground = "0"]                // name of the global ground net
+#![default_discipline(electrical)]
+
+#[strict_nets]                  // applies only to the module that follows
+module tb; … endmodule
+```
+
+This is **distinct from `$set_option(...)`** (Phase 4): `$set_option` is a *runtime*
+call that configures the *simulator* (reltol, method, temp) during a testbench;
+`#![...]` is a *compile-time* declaration that configures *Piperine's elaboration*
+before anything runs. Two different layers, two different mechanisms.
+
+**Initial option set** (extensible):
+- `strict_nets` — require net declarations; catches floating-node typos (a
+  misspelled net silently becomes a floating SPICE node — the classic bug). This is
+  the `default_nettype none` equivalent discussed for net declarations.
+- `ground = "<name>"` — override the canonical ground net (default `gnd` → `0`).
+- `default_discipline(<disc>)` — discipline for bare nets.
+
+**Plugin-extensible.** Like include handlers, a plugin registers the option keys it
+understands (the ngspice plugin owns simulator-policy keys), so the attribute set
+grows without touching the core grammar.
+
+**Mechanics.** Lexer learns `#![` / `#[` / `]` (note `#` already lexes as `Hash` for
+`#(...)` param overrides — the attribute forms are a distinct token sequence). The
+parser collects attributes into an options table consumed by the elaborator. Default
+behavior is unchanged when no attribute is present, so existing `.ppr` files keep
+working.
+
 ---
 
 ## ngspice coverage matrix
