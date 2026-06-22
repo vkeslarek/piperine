@@ -1,98 +1,143 @@
 # Piperine
 
-Piperine is a hardware description language and simulator frontend for analog/mixed-signal circuit simulation. It combines a Verilog-A superset (for describing analog device physics) with a SystemVerilog-like procedural layer (for testbenches) and targets ngspice as its simulation engine.
+**One language for analog device models *and* the testbenches that exercise them — running on ngspice.**
+
+---
 
 ## What it is
 
-- **Language**: `.ppr` files contain `module` definitions, `extern module` declarations, `paramset` bindings, and `initial` blocks
-- **Backend**: ngspice via bilateral IPC (worker subprocess wraps libngspice)
-- **Device models**: Verilog-A modules compiled to OSDI shared libraries via OpenVAF-Reloaded
-- **Built-in library**: `ngspice.ppr` — pre-declared extern modules for every ngspice component
+Piperine is a hardware-description language and simulator front-end for
+analog and mixed-signal circuits. A single `.ppr` file holds two things that are
+normally split across separate tools:
 
-## Quick start
+- **Device physics** — a superset of Verilog-A, compiled to OSDI device models.
+- **Testbenches** — a SystemVerilog-style procedural layer: variables, loops,
+  functions, math, and system tasks that drive the simulation and read results back.
 
-```sh
-cargo build --release
-./target/release/piperine examples/rc_filter.ppr
-```
+Under the hood it elaborates your circuit to a SPICE netlist and runs it on
+**ngspice**, which executes in an isolated worker process so a simulator crash
+can never take your testbench down with it.
 
-A `.ppr` file runs its `initial` block, which drives simulation via system tasks like `$op()`, `$tran()`, `$voltage()`, and `$current()`.
+## What it's for
 
-## Example
+Analog verification usually means juggling three languages: Verilog-A for the
+model, a SPICE deck for the netlist, and Tcl or Python to sweep parameters and
+post-process. Piperine collapses that into one:
 
 ```verilog
 `include "ngspice.ppr"
 
-module rc_filter;
-    res #(.r(1e3)) R1(.p(in), .n(mid));
-    cap #(.c(100e-12)) C1(.p(mid), .n(gnd));
-    vsource #(.dc(1.0)) Vsrc(.p(in), .n(gnd));
+module rc_lowpass;
+    // ── circuit ────────────────────────────────────────────────
+    vsource #(.dc(0.0), .acmag(1.0)) Vin(.p(in), .n(gnd));
+    res     #(.r(1e3))               R1 (.p(in), .n(out));
+    cap     #(.c(159e-9))            C1 (.p(out), .n(gnd));
 
+    // ── testbench ──────────────────────────────────────────────
     initial begin
-        $op();
-        $display("Vmid = %f", $voltage(mid));
+        AcResult ac   = $ac("dec", 100, 10.0, 1e6);
+        Signal   vout = ac.signal("v(out)");
+
+        real f3db = vout.bandwidth_3db();
+        $display("-3 dB bandwidth = %e Hz", f3db);
+
+        assert (f3db > 900.0) else $error("corner too low: %e Hz", f3db);
     end
 endmodule
 ```
 
-## Repository layout
-
-```
-src/                        # piperine binary (main entry point)
-crates/
-  piperine-parser/          # .ppr lexer + parser → AST
-  piperine-circuit/         # HardwareDefinition trait, elaboration, paramset
-  piperine-interpreter/     # Procedural interpreter ($op, $tran, $voltage …)
-  piperine-ngspice/         # ngspice plugin: hardware defs + IPC backend
-    ppr/ngspice.ppr         # bundled extern declarations for all ngspice devices
-  piperine-coordinator/     # Worker process pool manager
-  piperine-worker/          # Subprocess wrapping libngspice
-  piperine-openvaf/         # Compiles Verilog-A → OSDI via OpenVAF-Reloaded
-  piperine-common/          # Shared IPC message types
-docs/
-  lang/                     # Piperine language reference
-  ngspice/                  # ngspice component reference
-  openvaf/                  # OpenVAF/OSDI device model guide
-  development/              # Internal design docs and implementation plans
-```
-
-## Documentation
-
-| Topic | Location |
-|-------|----------|
-| Language reference | `docs/lang/` |
-| ngspice components | `docs/ngspice/` |
-| Verilog-A / OSDI models | `docs/openvaf/` |
-| Development internals | `docs/development/` |
-
-## Building
+Run it:
 
 ```sh
-# Build everything (including worker binary)
-cargo build
-
-# Run tests
-cargo test
-
-# Build worker separately (needed if tests use IPC)
-cargo build -p piperine-worker
+piperine rc_lowpass.ppr
 ```
 
-Requires: Rust 1.85+, libngspice, LLVM (for OpenVAF-Reloaded).
+The `initial` block *is* the test: it launches analyses (`$op`, `$tran`, `$ac`,
+`$noise`, …), gets back typed result objects, and measures signals directly
+(`.max()`, `.rms()`, `.bandwidth_3db()`, …). No external scripting layer.
 
-## Architecture overview
+## How to use it
 
-```
-.ppr file → parser → AST
-                        ↓
-              elaboration (circuit)
-                        ↓
-              SPICE netlist lines
-                        ↓
-           NgspiceBackend (IPC) → piperine-worker → libngspice
-                        ↑
-              Interpreter runs initial block
-              (calls $op, $tran, $voltage, etc.)
+### Install
+
+```sh
+cargo build --release
+# binary at target/release/piperine
 ```
 
-See `docs/lang/overview.md` for the full language walkthrough.
+Requires Rust 1.85+, libngspice, and LLVM (for the OpenVAF-Reloaded model compiler).
+
+### Run a file
+
+```sh
+piperine my_testbench.ppr
+```
+
+### Write a testbench
+
+1. `` `include "ngspice.ppr" `` to get every built-in ngspice device
+   (`res`, `cap`, `nmos`, `vsource`, `diode`, …).
+2. Instantiate your circuit with `module #(.param(value)) name(.port(net), …);`.
+3. Drive it from an `initial` block using analyses and measurements.
+
+The full language and component references live in [`docs/`](docs/):
+
+| Topic | Where |
+|-------|-------|
+| Language reference (types, statements, functions, stdlib) | [`docs/lang/`](docs/lang/) |
+| ngspice components (every device + parameters) | [`docs/ngspice/`](docs/ngspice/) |
+| Writing Verilog-A / OSDI device models | [`docs/openvaf/`](docs/openvaf/) |
+
+New to the language? Start with [`docs/lang/overview.md`](docs/lang/overview.md).
+
+## How it works
+
+```
+.ppr ──parse──▶ AST ──┬─ VA modules ──▶ OpenVAF ──▶ .osdi ─┐
+                      │                                    ▼
+                      └─ elaborate ──▶ SPICE netlist ──▶ ngspice (worker process)
+                                       initial block ──▶ Interpreter ⇄ ngspice (IPC)
+```
+
+The interpreter knows nothing about ngspice specifically — simulators plug in
+behind a `SimulatorBackend` trait. For the full picture (crate responsibilities,
+the plugin and IPC boundaries, how an analysis runs) see
+[**ARCHITECTURE.md**](ARCHITECTURE.md).
+
+## Contributing
+
+Piperine is a Rust workspace. Each crate has one job:
+
+| Crate | Responsibility |
+|-------|----------------|
+| `piperine-parser` | Lexer + recursive-descent parser → AST |
+| `piperine-circuit` | `HardwareDefinition` trait, elaboration, paramsets, net resolution |
+| `piperine-interpreter` | Runs `initial`/`always` blocks; `Value`, `SystemTask`, `SimulatorBackend` traits |
+| `piperine-ngspice` | ngspice device defs, system tasks, IPC backend, bundled `ngspice.ppr` |
+| `piperine-openvaf` | Compiles Verilog-A modules → `.osdi` |
+| `piperine-coordinator` | Spawns and owns worker subprocesses (`ProcessPool`) |
+| `piperine-worker` | The subprocess that wraps libngspice via FFI |
+| `piperine-common` | IPC message types shared by coordinator and worker |
+
+### Build and test
+
+```sh
+cargo build                      # everything, including the worker binary
+cargo test                       # full suite
+cargo build -p piperine-worker   # rebuild just the worker after ngspice changes
+```
+
+Integration tests in `tests/` exercise parsing, elaboration, the interpreter, and
+end-to-end IPC with a real worker.
+
+### Where to start
+
+- **Add an ngspice device** → a data entry in `crates/piperine-ngspice/src/hardware.rs`
+  plus a matching `extern module` in `ppr/ngspice.ppr`. See
+  [`docs/development/SPICE_COMPONENTS_IMPL.md`](docs/development/SPICE_COMPONENTS_IMPL.md).
+- **Add an analysis or measurement** → `crates/piperine-ngspice/src/tasks.rs`.
+- **Extend the language** → `crates/piperine-parser/src/grammar/` (hand-written;
+  changes there ripple through everything) and the interpreter.
+
+Conventions and agent guidance live in [`CLAUDE.md`](CLAUDE.md) and
+[`AGENTS.md`](AGENTS.md); deeper design notes in [`docs/development/`](docs/development/).
