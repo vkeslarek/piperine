@@ -181,6 +181,30 @@ impl<'a> Parser<'a> {
         Ok(dir)
     }
 
+    /// A genuine primitive-type keyword (no `Ident Ident` heuristic). The type
+    /// words that `type_()` resolves to integer/real/string.
+    fn at_primitive_type_kw(&self) -> bool {
+        self.at_any_kw(&[
+            "integer", "int", "logic", "bit", "reg", "byte", "shortint", "longint",
+            "real", "realtime", "time", "shortreal", "string",
+        ])
+    }
+
+    /// Scan ahead from the cursor: is there an `=` before the next `;`?
+    /// Distinguishes an initialized custom-typed var (`state_t s = X;`) from a
+    /// discipline net decl (`electrical a, b;`) — both are `Ident Ident`.
+    fn assign_before_semi(&self) -> bool {
+        let mut p = self.pos;
+        while let Some(t) = self.toks.get(p) {
+            match t.tok {
+                Tok::Semi => return false,
+                Tok::Assign => return true,
+                _ => p += 1,
+            }
+        }
+        false
+    }
+
     fn is_type_kw(&self) -> bool {
         if self.at_any_kw(&["integer", "real", "string"]) {
             true

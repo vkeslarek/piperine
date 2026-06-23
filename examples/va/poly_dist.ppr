@@ -1,0 +1,20 @@
+`include "disciplines.vams"
+
+// Polynomial distortion stage — local vars, compound assignment (`+=`), and a
+// brace block. Exercises the compound-op desugaring of the VA lowering.
+module poly_dist(in, out);
+    inout in, out;
+    electrical in, out;
+    parameter real a1 = 1.0;
+    parameter real a2 = 0.1;
+    parameter real a3 = 0.05;
+
+    analog begin
+        real x, y;
+        x = V(in);
+        y = a1 * x;
+        y += a2 * x * x;
+        y += a3 * x * x * x;
+        V(out) <+ y;
+    end
+endmodule

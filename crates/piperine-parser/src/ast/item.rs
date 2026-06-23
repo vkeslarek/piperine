@@ -81,7 +81,7 @@ pub enum Connection {
 }
 
 /// ungram: `Direction = 'inout' | 'input' | 'output'`
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
     Inout,
     Input,

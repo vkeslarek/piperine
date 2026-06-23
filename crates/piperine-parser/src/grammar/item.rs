@@ -283,7 +283,12 @@ impl<'a> Parser<'a> {
         }
         if self.at_kw("aliasparam") { return self.alias_param(attrs, start); }
         if self.looks_like_instance() { return self.instance(attrs, start); }
-        if self.is_type_kw() || self.at_kw("genvar") {
+        // Module-level variables are primitive-typed (`real x;`) or a custom type
+        // *with an initializer* (`state_t s = IDLE;`). A `<discipline> a, b;` form
+        // (e.g. `electrical in, out;`) has no `=` and must NOT be swallowed as a
+        // var decl by `is_type_kw`'s Ident-Ident heuristic — it is a net declaration.
+        let custom_var = self.is_type_kw() && self.assign_before_semi();
+        if self.at_primitive_type_kw() || custom_var || self.at_kw("genvar") {
             return Ok(ModuleItem::VarDecl(self.var_decl(attrs, start)?));
         }
         self.net_decl(attrs, start)

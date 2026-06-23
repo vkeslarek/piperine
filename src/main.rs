@@ -74,9 +74,19 @@ fn run(path: PathBuf) -> Result<(), String> {
         let cache_dir = dirs::cache_dir()
             .unwrap_or_else(std::env::temp_dir)
             .join("piperine/osdi");
+        std::fs::create_dir_all(&cache_dir).ok();
 
-        // One .ppr file → one .osdi (may contain multiple module descriptors).
-        let osdi_path = compile_va(&path, &cache_dir)
+        // Lower the Piperine VA modules to standard Verilog-A (begin/end, no `{}`,
+        // no `++`/compound) so OpenVAF — which parses standard VA — accepts our
+        // extended device syntax. Write the lowered source and compile that.
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("module");
+        let lowered = piperine_circuit::va_emit::emit_veriloga(&document);
+        let lowered_path = cache_dir.join(format!("{stem}.lowered.va"));
+        std::fs::write(&lowered_path, lowered)
+            .map_err(|e| format!("openvaf: cannot write lowered VA: {e}"))?;
+
+        // One lowered file → one .osdi (may contain multiple module descriptors).
+        let osdi_path = compile_va(&lowered_path, &cache_dir)
             .map_err(|e| format!("openvaf: {e}"))?;
 
         // Use pre_load() which issues the correct ngspice command ("osdi <path>").

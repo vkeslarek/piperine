@@ -3,6 +3,7 @@ pub mod hardware;
 pub mod registry;
 pub mod types;
 pub mod elaboration;
+pub mod va_emit;
 
 pub use elaboration::{
     elaborate, ElaborationResult,
