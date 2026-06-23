@@ -669,7 +669,7 @@ Parses but **not** evaluated, or absent entirely:
 - **Associative arrays** `T a[string]`, **dynamic-array `new[]`**, **multi-dim arrays**.
 - **`package`**, **classes/OOP**, **`$cast`**, **`$sformat` (write-to-var)**.
 - **Concurrent SVA**, **covergroups**, **clocking blocks**, **fork/join**,
-  **interfaces**, **DPI**, **generate** — out of scope (see `SYSTEMVERILOG_FEATURES.md`).
+  **interfaces**, **DPI**, **generate** — out of scope (see ROADMAP Phase 9).
 - **`#![...]` file/module options** (strict nets, ground name) — planned (ROADMAP).
 
 **Deliberately removed (not planned)** — pruned for a smaller, non-misleading surface:

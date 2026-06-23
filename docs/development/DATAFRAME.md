@@ -125,8 +125,7 @@ Series, and comparisons return a `Bool` Series usable by `filter`.
 
 Generic `filter`/`map`/`apply`/derived columns need a way to pass an expression
 parameterized by a row/element. Piperine has no closures. Two routes:
-- SystemVerilog `with (item …)` clause on methods (matches the array-locator
-  spec in `SYSTEMVERILOG_FEATURES.md §12.5`), or
+- SystemVerilog `with (item …)` clause on methods (array-locator style), or
 - arrow lambdas `x -> expr`.
 Either needs: parser support, a callable `Value`, and interpreter eval in a child
 scope. High effort, but it's what makes column transforms feel like pandas. Until
