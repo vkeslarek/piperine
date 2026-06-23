@@ -115,6 +115,23 @@ access (`V()`/`I()`) is hardcoded in the serializer, not derived from a discipli
 Adopting them would buy **dimensional analysis / unit checking** — a deliberate
 non-goal today, a real future option (see ROADMAP).
 
+### 0.9 Canonical forms (one obvious way)
+Piperine aims for one idiom per concept. A few redundant forms are still *accepted*
+for Verilog/Verilog-A compatibility but are not the recommended way — write the
+**canonical** form:
+
+| Concept | Canonical | Also accepted | Note |
+|---------|-----------|---------------|------|
+| Block | `{ … }` | `begin … end` | `begin` allows a `: label` |
+| Assignment | `=` | `<+` | `<+` is the analog *contribution* operator; in procedural code it just assigns |
+| Function return | `return expr;` | name-of-function variable | Verilog-A convention is the fallback |
+| Function args | `function f(input real a);` | VA-style `input real a;` body decls | |
+| Device OP read | `M1.gm` | `M1.gm()` | property vs zero-arg method — same thing |
+| Array literal | `'{ … }` | — | bare `{ … }` is a block, not an array (§6.6) |
+
+Constructs that *looked* like Verilog but lied (no-wildcard `casex`/`casez`,
+silent-`void` `time`/`logic`) were removed/aliased rather than kept — see §15.
+
 ---
 
 ## 1. Overview
@@ -154,14 +171,16 @@ discipline enddiscipline  nature endnature  paramset endparamset
 typedef enum struct  function endfunction  analog  branch
 parameter localparam genvar  initial always  aliasparam
 begin end  if else  while for foreach repeat forever
-case casex casez endcase default  break continue return
+case endcase default  break continue return
 assert assert_run assert_warn
 input output inout terminal
-integer real string  inf
+inf
 initial_step final_step step above cross
 ```
-Net-type words (consumed where a net declaration is allowed; **inert** — §0.7):
-`reg wreal wire uwire wand wor ground tri supply0 supply1`.
+Type words — `real string integer` plus aliases to a primitive (§5.3):
+`int logic bit byte shortint longint` (→ integer); `realtime time shortreal`
+(→ real). Net-type words (consumed where a net declaration is allowed; **inert** —
+§0.7): `reg wreal wire uwire wand wor ground tri supply0 supply1`.
 
 ### 2.4 Numbers
 | Literal | Form | Notes |
@@ -277,18 +296,18 @@ declarations (`wire n;`, `electrical a,b;`) are accepted and matter for
 (There is no strict mode yet; see §15.)
 
 ### 5.3 Scalar types
-| Type | Runtime | Zero value |
-|------|---------|-----------|
-| `integer` | 64-bit signed | `0` |
-| `real` | f64 | `0.0` |
-| `string` | UTF-8 string | `""` |
-| *custom name* `T x;` | parses; `T` is a type name | `void` |
+There are **three** primitive scalar types. Common SystemVerilog/Verilog digital and
+time type words are **aliases** to one of them (not silent `void`):
 
-Only `integer`, `real`, `string` have first-class runtime semantics. Other type
-words (`time`, `realtime`, `logic`, `bit`, a `typedef` name, …) parse as a **custom
-type** and zero-initialize to `void` unless assigned. Variables are dynamically typed
-at runtime regardless of declared type — the declaration sets the initial value;
-assignment can change the held kind.
+| Primitive | Runtime | Zero | Aliases |
+|-----------|---------|------|---------|
+| `integer` | 64-bit signed | `0` | `int logic bit reg byte shortint longint` |
+| `real` | f64 | `0.0` | `realtime time shortreal` |
+| `string` | UTF-8 string | `""` | — |
+
+A type word that is none of these (a `typedef` name, an unknown word) is a **custom
+type**: it parses and zero-initializes to `void`. Variables are dynamically typed at
+runtime — the declaration sets the initial value; assignment may change the held kind.
 
 ### 5.4 Runtime value model
 The interpreter's `Value` is exactly:
@@ -380,8 +399,9 @@ positionally-or-by-name.
 - `< net >` — **port-flow** syntax; **[parse-only]** in procedural code (errors).
 
 ### 6.6 Array literal
-`'{e0, e1, …}` or `{e0, e1, …}` builds an `ArrayObj` (§5.5). `'{}` is the empty array.
-(At statement position `{ … }` is a block, not an array — §7.)
+`'{e0, e1, …}` builds an `ArrayObj` (§5.5); `'{}` is the empty array. This is the
+**only** array-literal form — bare `{ … }` is always a block (§7), so there is no
+block/array ambiguity.
 
 ---
 
@@ -400,7 +420,7 @@ For     = 'for' '(' ForAssign ';' Expr ';' ForAssign ')' Stmt
 Foreach = 'foreach' '(' array '[' index ']' ')' Stmt
 Repeat  = 'repeat' '(' Expr ')' Stmt
 Forever = 'forever' Stmt
-Case    = ('case'|'casex'|'casez') '(' Expr ')' CaseItem* 'endcase'
+Case    = 'case' '(' Expr ')' CaseItem* 'endcase'
 CaseItem= (Expr (',' Expr)* | 'default') ':' Stmt
 Assert  = ('assert'|'assert_run'|'assert_warn') '(' Expr ')' ('else' Expr)? ';'
 Event   = '@' '(' Expr ')' Stmt
@@ -414,8 +434,10 @@ Event   = '@' '(' Expr ')' Stmt
   iteration (the increment in a `for`); `return [expr]` exits the enclosing
   function/block. Implemented via a `Flow{Normal,Break,Continue,Return(v)}` signal
   propagated out of blocks and loops (not exceptions).
-- **`case`/`casex`/`casez`** — currently all compare by structural equality (no
-  X/Z wildcard handling); first matching item wins, else `default`.
+- **`case`** — first item that compares equal to the discriminant wins, else
+  `default`. (`casex`/`casez` are intentionally **not** provided — they would imply
+  X/Z wildcard matching Piperine does not do; a plain `case` that silently ignored
+  the wildcard would be a lie. See §15.)
 - **Assertions:** `assert` failure ⇒ fatal halt; `assert_run` ⇒ run-failure
   (stops the current handler, recorded as a run error); `assert_warn` ⇒ prints a
   warning and continues. The `else` expression is the message.
@@ -649,7 +671,11 @@ Parses but **not** evaluated, or absent entirely:
 - **Concurrent SVA**, **covergroups**, **clocking blocks**, **fork/join**,
   **interfaces**, **DPI**, **generate** — out of scope (see `SYSTEMVERILOG_FEATURES.md`).
 - **`#![...]` file/module options** (strict nets, ground name) — planned (ROADMAP).
-- **time/realtime/logic/bit** as distinct types — parse as custom (void) types.
-- **`casex`/`casez` wildcards** — compared as plain equality.
+
+**Deliberately removed (not planned)** — pruned for a smaller, non-misleading surface:
+- **`casex`/`casez`** — would imply X/Z wildcards we don't do; use `case`.
+- **`time`/`logic`/`bit`/…** as *distinct* types — they are **aliases** to
+  `real`/`integer` (§5.3), not separate types.
+- **bare `{ … }` array literal** — `{` is always a block; use `'{ … }`.
 
 Roadmap for the planned items: `docs/development/ROADMAP.md`.

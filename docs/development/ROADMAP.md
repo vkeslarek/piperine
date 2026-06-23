@@ -46,6 +46,13 @@ Done (Phases 1–3 + language Waves 1–3):
    follows that pattern.
 4. **No macro magic.** Data tables + plain helpers (see the `Element` device
    builder). New surface stays readable and reason-about-able.
+5. **One obvious form per concept; no lying syntax.** Piperine is its own coherent
+   language, not a "superset that tolerates everything." Prefer a single idiom
+   (`{}` blocks, `'{}` array literals, `return`, `=`); keep redundant Verilog forms
+   only as accepted aliases, and **remove or alias** constructs that *look* like
+   Verilog but don't behave like it (no-wildcard `casex`/`casez`, silent-`void`
+   `time`/`logic`). The umbrella categories (two domains, scalar-vs-handle, three
+   parameter kinds) are the whole mental model — see `docs/lang/SPEC.md §0`.
 
 ## Explicitly out of scope (and why)
 
