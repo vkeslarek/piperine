@@ -13,6 +13,110 @@ Notation: grammar is EBNF-ish — `X*` zero-or-more, `X?` optional, `X | Y` choi
 
 ---
 
+## 0. Foundations
+
+Everything in this spec derives from a small set of categories. Learn these and the
+per-construct rules stop looking like special cases.
+
+### 0.1 Two domains (the root distinction)
+Piperine spans two evaluation worlds, inherited from its two parent languages:
+
+| Domain | What | When | Evaluated by | Heritage |
+|--------|------|------|--------------|----------|
+| **Procedural** | `initial`/`always`/`function` bodies | discrete steps, eval-now | the **interpreter** (host) | SystemVerilog |
+| **Analog** | `parameter expr` device values | continuous, every timestep | the **simulator** (solver) | Verilog-A/AMS |
+
+This is exactly the Verilog-AMS procedural/analog seam. The `$X()` vs bare `X()`
+distinction (§0.5) is just *which domain a call belongs to*.
+
+### 0.2 Phases: elaboration, then interpretation
+A run has two phases, never interleaved:
+1. **Elaboration** (`piperine-circuit`) — structural. Instances → a flat SPICE
+   netlist; paramsets → `.model` cards; sub-modules flattened; behavioral `expr`
+   params serialized; the testbench's `initial`/`always`/`function` AST collected.
+   No procedural code runs here.
+2. **Interpretation** (`piperine-interpreter`) — the collected procedural code runs,
+   driving analyses on the backend and reading results.
+
+A construct is **structural** (consumed in phase 1) or **procedural** (run in phase 2).
+e.g. `instance`/`paramset`/`parameter expr` are structural; `if`/`$tran`/`function`
+calls are procedural.
+
+### 0.3 Values: scalars vs handles (answers "by value or by reference?")
+Every runtime value is one of two **categories**:
+
+- **Scalar** — `real`, `integer`, `string`, `void`, `enum`, `complex`, `real[]`
+  (a bare numeric vector), `struct`. **Copied by value.** Assignment and function
+  arguments duplicate them.
+- **Handle** — every *object* (`Signal`, `Complex`-object, `Array`/queue, analysis
+  result, `Device`). Backed by a reference-counted pointer; **copied by reference.**
+  `b = a;` and passing an object to a function **share** the same underlying object;
+  mutations through one are visible through the other.
+
+So there is no `ref` argument keyword: **scalars are by-value, objects are handles**
+(the Java / SystemVerilog-class model). Functions are "by value" only in the sense
+that the *value* is copied — and an object value *is* a handle.
+
+> Implementation: a handle is `Value::ExternObject(Arc<dyn ExternClass>)`; cloning the
+> `Value` clones the `Arc`. Arrays/DataFrames use `Arc<Mutex<…>>` so the shared state
+> is mutable.
+
+### 0.4 Type taxonomy
+| Group | Members | Category | First-class semantics? |
+|-------|---------|----------|------------------------|
+| **Primitive** | `real`, `integer`, `string` | scalar | yes |
+| **Aggregate** | `enum`, `struct` (via `typedef`) | scalar | values exist; field access limited (§15) |
+| **Numeric vector** | `real[]`, `complex` | scalar | produced by `$get_vec`, AC samples |
+| **Object** | `Signal`, `Complex`-obj, `Array`/queue, analysis result, `Device` | handle | yes, via methods (§12) |
+| **Void** | `void` | scalar | the "no value" / uninitialized-custom value |
+
+A declared type word that is none of `real`/`integer`/`string` (e.g. `time`,
+`logic`, a `typedef` name) is a **custom type**: it parses, and the variable starts
+as `void`. Variables are **dynamically typed at runtime** — the declaration sets the
+initial value; assignment may change the held kind. "Primitive" = `real`/`integer`/
+`string`; everything else is built from them or is a handle.
+
+### 0.5 The `$` rule (one rule, not many)
+`$name(...)` ⇒ a **built-in** (simulator/host system task), evaluated now in the
+procedural domain. Bare `name(...)` ⇒ a **user function** (procedural) **or**, inside
+a `parameter expr`, an **analog primitive** lowered to the solver. This is the
+Verilog rule (`$display` built-in vs `myfn()` user) extended to the analog domain
+(`V()`, `sin()` are bare in Verilog-A). `$sin` is the SystemVerilog procedural math
+function; bare `sin` is the Verilog-A analog operator — same name, opposite domain.
+
+### 0.6 Parameter kinds (the `typed` / `expr` / `ref` umbrella)
+A device parameter's **kind** is a single idea: *how the elaborator treats the
+argument the user passes*. There are exactly three:
+
+| Kind | Declaration | The argument is… | Used for |
+|------|-------------|------------------|----------|
+| **typed** | `parameter real/integer/string x` | **coerced to a value** of that type | ordinary device params |
+| **expr** | `parameter expr x` | **captured as an unevaluated AST**, serialized to the solver | behavioral sources, nonlinear R/C/L |
+| **ref** | `parameter ref x` | **resolved to a sibling instance's SPICE name** | coupled inductors (`mutual`) |
+
+That is the whole taxonomy — not a grab-bag of special forms. Every device param is
+exactly one of these three.
+
+### 0.7 Nets
+A **net** is an *implicit, untyped SPICE node*. Any identifier in a connection
+position is a net; no declaration is required (top level). `gnd` ⇒ node `0`. Net
+declarations (`wire`, `electrical`, …) exist only to name *sub-module-internal* nets
+for hierarchical mangling (§11.3). The Verilog **digital** net types (`wand`, `wor`,
+`tri`, `supply0/1`, `reg`, …) are **parse-tolerated but inert**: they encode digital
+multiple-driver *resolution functions* (wired-AND, etc.) that have no analog meaning —
+in SPICE, multiple drivers on a node resolve by KCL, physically, in ngspice. They do
+not affect behavior and never reach the netlist.
+
+### 0.8 Why `discipline`/`nature` are inert
+Verilog-AMS `nature`/`discipline` give analog nets a **type system with physical
+units and tolerances** (Potential=V, Flow=A, `abstol`, …) and define access functions.
+Piperine **parses but ignores** them: its nets are untyped SPICE nodes and analog
+access (`V()`/`I()`) is hardcoded in the serializer, not derived from a discipline.
+Adopting them would buy **dimensional analysis / unit checking** — a deliberate
+non-goal today, a real future option (see ROADMAP).
+
+---
+
 ## 1. Overview
 
 Piperine is a Verilog-A/AMS **superset** for device descriptions plus a
@@ -56,7 +160,7 @@ input output inout terminal
 integer real string  inf
 initial_step final_step step above cross
 ```
-Net-type words (consumed where a net declaration is allowed):
+Net-type words (consumed where a net declaration is allowed; **inert** — §0.7):
 `reg wreal wire uwire wand wor ground tri supply0 supply1`.
 
 ### 2.4 Numbers
@@ -98,7 +202,7 @@ Item = DisciplineDecl | NatureDecl | ModuleDecl
 
 `` `include "file" `` textually includes another `.ppr` (resolved against the include
 dirs, e.g. the bundled `ngspice.ppr`). `discipline`/`nature` are accepted
-(Verilog-AMS) but carry no runtime semantics in the testbench path.
+(Verilog-AMS) but **inert** — see §0.8.
 
 ---
 
@@ -112,7 +216,8 @@ ExternParam  = 'parameter' ('real'|'integer'|'string') name ('=' Expr)?   -- Typ
              | 'parameter' 'ref'  name                                     -- Ref (sibling instance name)
 ```
 Declares a device the elaborator can instantiate (every ngspice primitive lives in
-`ngspice.ppr`). Parameter kinds:
+`ngspice.ppr`). Parameter kinds (the umbrella is §0.6 — how the elaborator treats the
+argument):
 - **Typed** — value coerced to real/integer/string; `= Expr` gives a default
   (no default ⇒ mandatory, except see §11.4).
 - **`expr`** — the argument is captured as an **unevaluated AST** (`ParameterValue::Ast`)
@@ -366,6 +471,9 @@ FnItem = FunctionArg('input …;')         -- Verilog-A-style arg decls
 - A call runs the body in a fresh flat scope (args + locals + params). The return
   value is the value of an explicit `return expr;`, else — Verilog-A convention — the
   final value of a variable named after the function.
+- **By value vs handle (§0.3):** scalar arguments are copied; an **object** argument
+  is a handle, so the callee shares it and mutations through methods are visible to
+  the caller. There is no `ref` keyword — objects are already references.
 
 ---
 
