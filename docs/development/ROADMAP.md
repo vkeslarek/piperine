@@ -333,3 +333,40 @@ model nmos_lvt = nmos_svt #(.vth0(0.30));     // inherits nmos_svt, overrides vt
 When taken up: write `docs/development/MODELS.md` (full design), then implement
 behind the elaborator's existing `.model` emission (paramset already proves the
 lowering works — this is mostly a front-end/ergonomics change).
+
+### Typed nets — disciplines / natures, multiple net & signal types
+
+**Backlog:** make nets *typed* instead of untyped SPICE nodes. Today a net is an
+implicit, type-less node and the Verilog-AMS `discipline`/`nature` declarations and
+the digital net-type words (`wand`, `tri`, `supply0/1`, …) are **parse-tolerated but
+inert** (SPEC §0.7–§0.8). Eventually give them meaning.
+
+**What it buys (why it's worth doing):**
+- **Dimensional analysis / unit checking** — a `nature` carries physical units and
+  tolerances (Potential = V, Flow = A, `abstol`, …); a `discipline` (`electrical`,
+  `thermal`, `rotational`, …) types a net to a physical domain. With them, the
+  elaborator/interpreter can *check units* (no adding a voltage to a current) and
+  pick per-domain access functions instead of hardcoding `V()`/`I()`.
+- **Different net types & signals** — distinguish analog continuous nets from digital
+  logic nets (mixed-signal), and electrical from non-electrical domains. The access
+  function and the SPICE/behavioral lowering follow from the net's discipline.
+
+**Sketch:**
+```verilog
+nature Voltage; units = "V"; abstol = 1e-6; endnature
+nature Current; units = "A"; abstol = 1e-12; endnature
+discipline electrical; potential Voltage; flow Current; enddiscipline
+
+electrical a, b;          // typed nets — a discipline, not bare nodes
+// V(a,b), I(branch) are derived from `electrical`, units checked
+```
+
+**Open questions:**
+- How far to take it: just electrical + unit checking, or full multi-domain?
+- Interaction with the (currently implicit, untyped) net model and `gnd → 0`.
+- Whether digital/logic nets become a real (mixed-signal) thing or stay out of scope.
+- Where unit checking runs (elaboration, since analog exprs are serialized there).
+
+This activates the inert `discipline`/`nature`/net-type grammar that already parses;
+a future `docs/development/NETS.md` would design it. Pairs naturally with the `#![...]`
+options work (a strict mode could *require* a discipline per net).
