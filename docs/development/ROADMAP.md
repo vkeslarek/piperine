@@ -290,3 +290,46 @@ Status: ✅ done · 🚧 planned (phase) · ⛔ out of scope (interpreter/own-ne
 
 When every 🚧 row is ✅, Piperine meets the goal: a strict superset of ngspice's
 expressiveness, in one coherent language.
+
+---
+
+## Backlog (under discussion)
+
+### Replace `paramset` with `model` — an instantiation-shaped, inheritable model entity
+
+**Decision (backlog):** remove `paramset` and introduce a `model` entity. Rationale:
+`paramset` is a hidden-golden-rule construct (it secretly does two things — preset
+params *and* emit a SPICE `.model`), and we dislike both keeping it and inventing a
+second odd entity. `model` collapses it into one first-class thing shaped like the
+device instantiation the user already knows.
+
+**Shape — a model is "instantiated" like a device, with param overrides:**
+
+```verilog
+// model NAME = BASE #( overrides );
+//   BASE is a device (sets the .model TYPE) or another model (inheritance).
+model nmos_svt = nmos     #(.vth0(0.40), .tox(2e-9), .u0(450));
+model nmos_lvt = nmos_svt #(.vth0(0.30));     // inherits nmos_svt, overrides vth0 only
+```
+
+- Same `#(.param(value))` override syntax as a device instance — no special
+  `.x = y;` paramset grammar. One override mechanism across the language.
+- **Inheritance:** a model may derive from another model; it starts from the base's
+  params and overrides a few — exactly paramset's ergonomics, but explicit and
+  layered (the "almost-inheritance" the user wants).
+- Maps to ngspice `.model <name> <TYPE> (merged params)`; the TYPE comes from the
+  root device. Instances reference it like a device variant
+  (`nmos_svt #(.w(1u)) M1(...)`) or via `.model(nmos_svt)`.
+
+**Open questions for the design doc:**
+- Is `model` a top-level item or instantiation expression? (top-level, named.)
+- Override resolution order for multi-level inheritance (base → … → leaf, leaf wins).
+- Where the device→model param split lives (which params are `.model` card vs
+  instance params): today the device knows its `spice_model_type`; `model` would
+  carry only model-card params, instances carry instance params.
+- Migration: rewrite the `paramset … endparamset` blocks (and `tools/spice2ppr.py`
+  emission, and the ported examples) to `model NAME = BASE #(…);`.
+
+When taken up: write `docs/development/MODELS.md` (full design), then implement
+behind the elaborator's existing `.model` emission (paramset already proves the
+lowering works — this is mostly a front-end/ergonomics change).
