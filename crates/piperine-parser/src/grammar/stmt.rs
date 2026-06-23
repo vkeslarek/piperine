@@ -18,7 +18,7 @@ impl<'a> Parser<'a> {
         if self.at_kw("for")               { return self.for_stmt(attrs); }
         if self.at_kw("repeat")            { return self.repeat_stmt(attrs); }
         if self.at_kw("forever")           { return self.forever_stmt(attrs); }
-        if self.at_any_kw(&["case", "casex", "casez"]) { return self.case_stmt(attrs); }
+        if self.at_kw("case")              { return self.case_stmt(attrs); }
         if self.at_kw("assert")            { return self.assert_stmt(attrs, 0); }
         if self.at_kw("assert_run")        { return self.assert_stmt(attrs, 1); }
         if self.at_kw("assert_warn")       { return self.assert_stmt(attrs, 2); }
@@ -162,7 +162,7 @@ impl<'a> Parser<'a> {
     /// heuristic from swallowing nested compound statements.
     pub(super) fn at_stmt_kw(&self) -> bool {
         self.at_any_kw(&[
-            "begin", "if", "while", "for", "foreach", "case", "casex", "casez",
+            "begin", "if", "while", "for", "foreach", "case",
             "repeat", "forever", "return", "break", "continue",
             "assert", "assert_run", "assert_warn",
         ])
@@ -207,7 +207,7 @@ impl<'a> Parser<'a> {
     }
 
     fn case_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
-        self.bump(); // case / casex / casez
+        self.expect_kw("case")?;
         self.expect(&Tok::LParen)?;
         let discriminant = self.expr()?;
         self.expect(&Tok::RParen)?;

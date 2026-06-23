@@ -30,10 +30,10 @@ module Pro_Co_Rat;
     jfet_n #(.model("2N5458")) JQ1(.d(N17), .g(N27), .s(VCC));
     cap #(.c(1e-06)) CC7(.p(N30), .n(N31));
     res #(.r(8)) RS1(.p(N33), .n(gnd));
-    res #(.r(100000)) RDistortion(.p(N3), .n(N7));
-    res #(.r(100000)) RTone(.p(N5), .n(N12));
-    res #(.r(100000)) RVolumeA(.p(N31), .n(gnd));
-    res #(.r(100000)) RVolumeB(.p(gnd), .n(N33));
+    res #(.r(100000*P_Distortion)) RDistortion(.p(N3), .n(N7));
+    res #(.r(100000*P_Tone)) RTone(.p(N5), .n(N12));
+    res #(.r(100000*(1-P_Volume))) RVolumeA(.p(N31), .n(gnd));
+    res #(.r(100000*P_Volume)) RVolumeB(.p(gnd), .n(N33));
 
     initial begin
         $tran(2e-06, 0.1, 0.08);

@@ -159,7 +159,9 @@ impl<'a> Parser<'a> {
                 self.expect(&Tok::RParen)?;
                 Ok(Expr::Paren(Box::new(inner)))
             }
-            Some(Tok::ArrStart | Tok::LBrace) => {
+            // Array literal — the canonical `'{ … }` only. Bare `{ … }` is reserved
+            // for blocks (statements), removing the block/array ambiguity.
+            Some(Tok::ArrStart) => {
                 self.bump();
                 let mut items = Vec::new();
                 while !self.at(&Tok::RBrace) {

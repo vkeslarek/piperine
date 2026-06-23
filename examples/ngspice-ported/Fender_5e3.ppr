@@ -28,10 +28,10 @@ module Fender_5e3;
     res #(.r(1500)) RR21(.p(gnd), .n(N38));
     cap #(.c(1e-07)) CC8(.p(N39), .n(N46));
     cap #(.c(2.5e-05)) CC9(.p(gnd), .n(N38));
-    res #(.r(1000000)) RVolumeA(.p(gnd), .n(N41));
-    res #(.r(1000000)) RVolumeB(.p(N41), .n(N46));
-    res #(.r(1000000)) RUnusedA(.p(gnd), .n(N41));
-    res #(.r(1000000)) RUnusedB(.p(N41), .n(N42));
+    res #(.r(1000000*(1-P_Volume))) RVolumeA(.p(gnd), .n(N41));
+    res #(.r(1000000*P_Volume)) RVolumeB(.p(N41), .n(N46));
+    res #(.r(1000000*(1-P_Unused))) RUnusedA(.p(gnd), .n(N41));
+    res #(.r(1000000*P_Unused)) RUnusedB(.p(N41), .n(N42));
     res #(.r(30000)) RR22(.p(gnd), .n(N43));
     cap #(.c(5e-10)) CC12(.p(N45), .n(N46));
 

@@ -192,9 +192,17 @@ impl<'a> Parser<'a> {
     }
 
     fn type_(&mut self) -> PResult<Type> {
-        if      self.eat_kw("integer") { Ok(Type::Integer) }
-        else if self.eat_kw("real")    { Ok(Type::Real)    }
-        else if self.eat_kw("string")  { Ok(Type::String)  }
+        // Integer family (incl. SV/Verilog digital type words — aliased to integer,
+        // not left as a silent `void` custom type).
+        if self.at_any_kw(&["integer", "int", "logic", "bit", "reg",
+                            "byte", "shortint", "longint"]) {
+            self.pos += 1; Ok(Type::Integer)
+        }
+        // Real family (time/realtime are continuous reals in the analog world).
+        else if self.at_any_kw(&["real", "realtime", "time", "shortreal"]) {
+            self.pos += 1; Ok(Type::Real)
+        }
+        else if self.eat_kw("string") { Ok(Type::String) }
         else if let Some(Tok::Ident(_)) = self.peek() { Ok(Type::Custom(self.name()?)) }
         else { Err(format!("expected a type, found {:?}", self.peek())) }
     }

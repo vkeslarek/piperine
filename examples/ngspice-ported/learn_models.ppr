@@ -4,11 +4,11 @@
 // Source netlist: models.cir
 
 module gain(in, out, k_1);
-    vcvs #(.gain({K})) E1(.p(out), .n(gnd), .cp(in), .cn(gnd));
+    vcvs #(.gain(K)) E1(.p(out), .n(gnd), .cp(in), .cn(gnd));
 endmodule
 
 module sum(in1, in2, out, k1_1, k2_1, a_1);
-    // behavioral source: v = {a * ((v(in1) * k1) + (v(in2) * k2))}
+    // behavioral source: v = {a*((v(in1)*k1)+(v(in2)*k2))}
       // bsource_v #(.v("...")) b1(...);
 endmodule
 

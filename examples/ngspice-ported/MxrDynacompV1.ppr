@@ -57,9 +57,9 @@ module LM13700(n1, n2, n3, n4, n5, n6, n7, n8, n11);
 endmodule
 
 module MxrDynacompV1;
-    vsource #(.dc({VCCC})) VCC(.p(V9P0), .n(gnd));
-    vsource #(.dc({VCCC/3})) VBias(.p(V3P0), .n(gnd));
-    vsin #(.vo(0), .va({Vin_pk}), .freq(1000)) VIN(.p(V_in), .n(gnd));
+    vsource #(.dc(VCCC)) VCC(.p(V9P0), .n(gnd));
+    vsource #(.dc(VCCC/3)) VBias(.p(V3P0), .n(gnd));
+    vsin #(.vo(0), .va(Vin_pk), .freq(1000)) VIN(.p(V_in), .n(gnd));
     res #(.r(56000)) R1(.p(V9P0), .n(V3P0));
     res #(.r(27000)) R2(.p(V3P0), .n(gnd));
     cap #(.c(1e-06)) C1(.p(V3P0), .n(gnd));
@@ -76,8 +76,8 @@ module MxrDynacompV1;
     res #(.r(1000000)) R8(.p(V_nInv_OTA), .n(V3P0));
     cap #(.c(1e-08)) C4(.p(V_nInv_OTA), .n(gnd));
     cap #(.c(1e-06)) C5(.p(V9P0), .n(gnd));
-    res #(.r(2000)) R9(.p(V_nInv_OTA), .n(Vtrim));
-    res #(.r({Rtrim)) R10(.p(Vtrim), .n(gnd));
+    res #(.r(2000-Rtrim+1)) R9(.p(V_nInv_OTA), .n(Vtrim));
+    res #(.r(Rtrim+1)) R10(.p(Vtrim), .n(gnd));
     res #(.r(470000)) R11(.p(V_nInv_OTA), .n(gnd));
     res #(.r(15000)) R12(.p(V_nInv_OTA), .n(V_OTA_Out));
     res #(.r(27000)) R23(.p(V_OTA_GainSet), .n(V_OTA_Ifeedback));
@@ -97,12 +97,12 @@ module MxrDynacompV1;
     m_x_2N3904 Q3(.c(C3_Q3), .b(V_env_det_comp), .e(gnd));
     m_x_2N3904 Q4(.c(C4_Q4), .b(V_env_det), .e(gnd));
     cap #(.c(1e-05)) C9(.p(C4_Q4), .n(gnd));
-    res #(.r({Rsensitivity})) R19(.p(V_env_level), .n(gnd));
+    res #(.r(Rsensitivity)) R19(.p(V_env_level), .n(gnd));
     m_x_2N3904 Q5(.c(V9P0), .b(V_env_level), .e(V_OTA_Ifeedback));
     cap #(.c(5e-08)) C10(.p(V_OTA_Out), .n(N_OUT_AC));
     res #(.r(10000)) R20(.p(N_OUT_AC), .n(OUT));
-    res #(.r(50000)) R21(.p(N_OUT_AC), .n(OUT));
-    res #(.r({Routput)) R22(.p(OUT), .n(gnd));
+    res #(.r(50000-Routput+1)) R21(.p(N_OUT_AC), .n(OUT));
+    res #(.r(Routput+1)) R22(.p(OUT), .n(gnd));
 
     initial begin
         $tran(2e-06, 0.1, 0.08);

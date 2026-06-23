@@ -57,8 +57,8 @@ endparamset
 module HarmonicPercolatorV2;
     vsource #(.dc(9)) VRAW(.p(n9VRAW), .n(gnd));
     vsin #(.vo(0), .va(0.05), .freq(500)) vin(.p(IN), .n(gnd));
-    res #(.r(100000)) RHPOT_T(.p(IN), .n(HARM_W));
-    res #(.r(100000)) RHPOT_B(.p(HARM_W), .n(gnd));
+    res #(.r(100000*(1-P1_POS))) RHPOT_T(.p(IN), .n(HARM_W));
+    res #(.r(100000*P1_POS)) RHPOT_B(.p(HARM_W), .n(gnd));
     cap #(.c(4.7e-08)) C2(.p(HARM_W), .n(B_PNP));
     res #(.r(51000)) R1(.p(B_PNP), .n(C_PNP));
     res #(.r(3900000)) R3(.p(C_NPN), .n(B_NPN));
@@ -74,8 +74,8 @@ module HarmonicPercolatorV2;
     m_D_GE D2(.a(D2AN), .c(gnd));
     m_D_GE D3(.a(gnd), .c(BAL_TOP));
     cap #(.c(1e-07)) C6(.p(C_NPN), .n(BAL_TOP));
-    res #(.r(50000)) RBAL_T(.p(BAL_TOP), .n(OUT));
-    res #(.r(50000)) RBAL_B(.p(OUT), .n(gnd));
+    res #(.r(50000*(1-P2_POS))) RBAL_T(.p(BAL_TOP), .n(OUT));
+    res #(.r(50000*P2_POS)) RBAL_B(.p(OUT), .n(gnd));
 
     initial begin
         $tran(2e-06, 0.1, 0.08);

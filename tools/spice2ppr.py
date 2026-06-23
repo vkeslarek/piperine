@@ -12,11 +12,19 @@ SI = {'t':1e12,'g':1e9,'meg':1e6,'k':1e3,'m':1e-3,'mil':25.4e-6,
       'u':1e-6,'n':1e-9,'p':1e-12,'f':1e-15,'a':1e-18}
 
 def num(tok):
-    """Convert a SPICE value token to a plain float string."""
-    t = tok.strip().lower()
-    t = t.strip('(){}')             # drop stray parens/braces (ngspice {expr} values)
-    m = re.match(r'^([+-]?[0-9]*\.?[0-9]+(?:e[+-]?[0-9]+)?)([a-z]*)$', t)
-    if not m: return tok            # expression / model name — pass through
+    """Convert a SPICE value token to a plain float string (or pass an expression
+    through). An ngspice `{expr}` value becomes the bare Piperine expression."""
+    t = tok.strip()
+    if t.startswith('{') and t.endswith('}'):   # ngspice {expr} -> bare expression
+        t = t[1:-1].strip()
+    low = t.lower()
+    m = re.match(r'^([+-]?[0-9]*\.?[0-9]+(?:e[+-]?[0-9]+)?)([a-z]*)$', low)
+    if not m:
+        # An expression — convert any SI-suffixed numbers inside it (ngspice `1meg`,
+        # `50k`, `5ns`), since Piperine's lexer only takes single-char VA suffixes.
+        return re.sub(
+            r'\b\d*\.?\d+(?:e[+-]?\d+)?(?:meg|mil|ns|us|ms|ps|fs|[TGMKkmunpfa])\b',
+            lambda mm: num(mm.group(0)), t)
     val, suf = m.group(1), m.group(2)
     f = float(val)
     if suf:
@@ -61,6 +69,10 @@ def parse_lines(text):
             out[-1] += ' ' + line.lstrip()[1:].strip()
         else:
             out.append(line.strip())
+    # Collapse whitespace inside ngspice `{ expr }` values so a brace expression
+    # stays a single token (`{1k * P1_POS}` -> `{1k*P1_POS}`).
+    out = [re.sub(r'\{([^}]*)\}', lambda m: '{' + re.sub(r'\s+', '', m.group(1)) + '}', l)
+           for l in out]
     return out
 
 def emit_device(p, t):

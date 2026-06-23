@@ -18,7 +18,7 @@ endparamset
 // .model __RV3 potentiometer — base unknown; provide via a SPICE-lib include
 
 module Fulltone_OCD_V1_KC8V1;
-    res #(.r({P2_POS*1Meg})) RV1(.p(Net__R4_Pad2_), .n(V1_Boost));
+    res #(.r(P2_POS*1Meg)) RV1(.p(Net__R4_Pad2_), .n(V1_Boost));
     res #(.r(18000)) R4(.p(Net__U1A___), .n(Net__R4_Pad2_));
     x_2n7000 XQ1(GND, V1_Clip, V1_Clip);
     TL072 XU2(Net__U2A___, Net__U2A___, VCC, VEE, V1_Clip_Recovery);
@@ -33,11 +33,11 @@ module Fulltone_OCD_V1_KC8V1;
     res #(.r(150000)) R9(.p(V1_Clip_Recovery), .n(Net__U2A___));
     // TODO (S): S1 Net-_S1-N+_ Net-_S1-N-_ Bright_CTRL GND __S1 off
     res #(.r(33000)) R10(.p(Net__S1_N__), .n(Net__S1_N__));
-    res #(.r({(1-P3_POS)*10k})) RV2T(.p(Net__C8_Pad2_), .n(Net__C8_Pad2_));
-    res #(.r({P3_POS*10k})) RV2B(.p(GND), .n(Net__C8_Pad2_));
+    res #(.r((1-P3_POS)*10000)) RV2T(.p(Net__C8_Pad2_), .n(Net__C8_Pad2_));
+    res #(.r(P3_POS*10000)) RV2B(.p(GND), .n(Net__C8_Pad2_));
     cap #(.c(4.7e-08)) C8(.p(Net__S1_N__), .n(Net__C8_Pad2_));
-    res #(.r({(1-P1_POS)*500k})) RV3T(.p(V1_Out), .n(Net__S1_N__));
-    res #(.r({P1_POS*500k})) RV3B(.p(GND), .n(V1_Out));
+    res #(.r((1-P1_POS)*500000)) RV3T(.p(V1_Out), .n(Net__S1_N__));
+    res #(.r(P1_POS*500000)) RV3B(.p(GND), .n(V1_Out));
     cap #(.c(1e-08)) C4(.p(GND), .n(V1_Clip));
     res #(.r(10000)) R1(.p(Net__C1_Pad1_), .n(Signal_Simple));
     cap #(.c(2.2e-08)) C1(.p(Net__C1_Pad1_), .n(Net__U1A___));
