@@ -596,8 +596,18 @@ impl<'a> Interpreter<'a> {
                 }
             }
 
-            Expr::PartSelect(_, _, _) => {
-                Err(InterpreterError::Other("part-selects (`a[msb:lsb]`) are not supported".into()))
+            Expr::PartSelect(base, lo, hi) => {
+                let recv = self.eval_expr(base, scope)?;
+                let lo = self.eval_expr(lo, scope)?;
+                let hi = self.eval_expr(hi, scope)?;
+                match recv {
+                    Value::ExternObject(obj) => obj.call_method("slice", &[lo, hi])
+                        .map_err(InterpreterError::Other),
+                    other => Err(InterpreterError::TypeError {
+                        expected: "sliceable object (Signal/DataFrame)".into(),
+                        got: other.type_name().into(),
+                    }),
+                }
             }
 
             Expr::PortFlow(_) => {
@@ -675,6 +685,10 @@ fn eval_binary_op(left: Value, op: &BinOp, right: Value) -> Result<Value, Interp
             BinOp::Neq => Ok(Value::Integer((a != b) as i64)),
             _ => Err(InterpreterError::TypeError { expected: "numeric operands".into(), got: "string".into() }),
         },
+        (Value::ExternObject(o), rhs) =>
+            o.binary_op(binop_str(op), &rhs, true).map_err(InterpreterError::Other),
+        (lhs, Value::ExternObject(o)) =>
+            o.binary_op(binop_str(op), &lhs, false).map_err(InterpreterError::Other),
         (left, right) => Err(InterpreterError::TypeError {
             expected: "matching numeric types".into(),
             got: format!("{} and {}", left.type_name(), right.type_name()),
@@ -761,4 +775,17 @@ fn path_to_string(path: &Path) -> String {
     }
     parts.reverse();
     parts.join(".")
+}
+
+fn binop_str(op: &BinOp) -> &'static str {
+    match op {
+        BinOp::Add => "+",  BinOp::Sub => "-",  BinOp::Mul => "*", BinOp::Div => "/",
+        BinOp::Mod => "%",  BinOp::Pow => "**",
+        BinOp::Lt  => "<",  BinOp::Le  => "<=", BinOp::Gt  => ">", BinOp::Ge  => ">=",
+        BinOp::Eq  => "==", BinOp::Neq => "!=",
+        BinOp::AndAnd => "&&", BinOp::OrOr => "||",
+        BinOp::Shl => "<<", BinOp::Shr => ">>", BinOp::Xor => "^",
+        BinOp::BitAnd => "&", BinOp::BitOr => "|",
+        BinOp::XNor1 => "~^", BinOp::XNor2 => "^~",
+    }
 }

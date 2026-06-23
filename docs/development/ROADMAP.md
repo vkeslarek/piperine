@@ -119,7 +119,7 @@ analog verification spends its time on.
 | Lot vs device tolerance | dual-stage tolerance | a tolerance helper distinguishing lot/device | `NGSPICE_STATISTICAL.md §4` |
 | Corner sweeps | manual | typed corner/sweep config (struct + loop) | — |
 
-### DataFrame — the data through-line
+### DataFrame — the data through-line · **v1 done**
 
 A typed, analysis-independent result container (`DataFrame`) underpins Phases 6–7
 and the eventual data-analysis / PyO3 export story. Every analysis lowers its
@@ -127,7 +127,7 @@ and the eventual data-analysis / PyO3 export story. Every analysis lowers its
 into one long frame. The *type* is simple Rust; the **ergonomics** need specific
 language features — string indexing `df["x"]`, operator overloading for vectorized
 `Signal` math, slicing, and (later) lambdas / `with` clauses. Full design,
-prerequisites, and build order in [DATAFRAME.md](DATAFRAME.md).
+prerequisites, and build order in [DATAFRAME.md](DATAFRAME.md). v1 implementation is done (string indexing, math ops, slicing, base methods).
 
 ## Phase 7 — Data, files, frequency domain
 
@@ -271,7 +271,7 @@ Status: ✅ done · 🚧 planned (phase) · ⛔ out of scope (interpreter/own-ne
 | Components (R/C/L/K/V/I/B/E/G/F/H/D/Q/J/M/Z/VDMOS/switch/tline/subckt) | ✅ |
 | Source waveforms (PULSE/SIN/EXP/PWL/SFFM/AM/TRNOISE/TRRANDOM/port) | ✅ |
 | Analyses (op/dc/ac/tran/noise/tf/sens/disto/pz/pss/sp) | ✅ |
-| Typed results + Signal + Complex | ✅ |
+| Typed results + Signal + Complex + DataFrame | ✅ |
 | `$meas` (core patterns) | ✅ / 🚧 P7 (all 16) |
 | Randomization (`$urandom`, `$dist_*`, seed) | ✅ |
 | `@device[param]` operating-point access (`inst.gm`) | ✅ |

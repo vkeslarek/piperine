@@ -7,6 +7,7 @@ pub mod stdlib;
 pub mod interpreter;
 pub mod extern_types;
 pub mod std_types;
+pub mod dataframe;
 
 pub use value::Value;
 pub use error::InterpreterError;
@@ -16,3 +17,4 @@ pub use task::{SystemTask, SystemTaskRegistry};
 pub use interpreter::{Interpreter, Scope};
 pub use extern_types::{AnalysisHandleObj, SignalObj, ArrayObj};
 pub use std_types::ComplexValue;
+pub use dataframe::{DataFrame, DataFrameObj};

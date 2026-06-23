@@ -58,6 +58,16 @@ impl PartialEq for Value {
 pub trait ExternClass: std::fmt::Debug + Send + Sync {
     fn type_name(&self) -> &str;
     fn call_method(&self, method: &str, args: &[Value]) -> Result<Value, String>;
+
+    /// Binary operator against another value. `op` is one of
+    /// "+","-","*","/","%","**","<","<=",">",">=","==","!=","&&","||".
+    /// `self_on_left` is false when the object is the *right* operand
+    /// (`2.0 * signal`). Default: unsupported.
+    fn binary_op(&self, op: &str, _other: &Value, _self_on_left: bool)
+        -> Result<Value, String>
+    {
+        Err(format!("operator `{op}` not supported on {}", self.type_name()))
+    }
 }
 
 #[derive(Debug, Clone)]

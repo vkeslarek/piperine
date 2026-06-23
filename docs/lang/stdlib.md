@@ -46,6 +46,8 @@ Complex zc = z.conjugate();   // Re - Im*j
 
 A named vector from an analysis result. Obtained via `result.signal("name")`.
 
+Signal objects support **vectorized math operators** (`+`, `-`, `*`, `/`, `%`, `**`) and **comparisons** (`>`, `>=`, `<`, `<=`, `==`, `!=`). Operating on two signals, or a signal and a scalar, returns a new `Signal` computed element-wise. Comparisons return a mask signal of 1.0 (true) and 0.0 (false), useful for DataFrame filtering.
+
 See [analyses.md](../ngspice/analyses.md#signal-methods) for the full method list including
 `.max()`, `.min()`, `.mean()`, `.rms()`, `.peak_to_peak()`, `.integral()`,
 `.bandwidth_3db()`, `.phase_margin()`, `.at(x)`, `.values()`, `.len()`.
@@ -76,6 +78,40 @@ All result types share the same interface:
 | `.ok()` | integer | 1 = clean run, 0 = errors occurred |
 | `.signal(name)` | Signal | Named vector by ngspice vector name |
 | `.scale()` | Signal | Scale vector (time, frequency, …) |
+| `.frame()` | DataFrame | All vectors as a column-oriented DataFrame |
+
+---
+
+## DataFrame
+
+A typed, analysis-independent result container. It holds multiple data columns (Signals) of the same length. Obtain one from an analysis result using `.frame()`.
+
+```verilog
+DataFrame df = $tran(1e-9, 1e-6).frame();
+Signal vout  = df["v(out)"];
+real rows    = df.nrows();
+```
+
+**Handle semantics:** similar to Arrays and Signals, a DataFrame is passed by reference. Operations like `.with_column` return a *new* DataFrame handle, leaving the original intact.
+
+### Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `df[name]` | Signal | Retrieve a column by name (string) |
+| `.cols()` | string[] | Array of column names |
+| `.nrows()` | integer | Number of rows |
+| `.ncols()` | integer | Number of columns |
+| `.shape()` | real[] | Array `[nrows, ncols]` |
+| `.index()` | Signal | The scale/axis column (time, frequency, etc.) |
+| `.scale()` | Signal | Alias for `.index()` |
+| `.select(names)` | DataFrame | New frame with only the given columns (array of strings) |
+| `.filter(mask)` | DataFrame | New frame keeping rows where mask > 0 |
+| `.slice(lo, hi)` | DataFrame | New frame with rows `[lo, hi)` (also `df[lo:hi]`) |
+| `.head(n)` | DataFrame | New frame with the first `n` rows |
+| `.with_column(n, s)` | DataFrame | New frame adding/replacing column `n` with Signal `s` |
+| `.to_csv(path)` | void | Write the frame to a CSV file |
+| `.show()` | string | Formatted tabular string for `$display()` |
 
 ---
 

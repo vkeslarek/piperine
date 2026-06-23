@@ -34,6 +34,10 @@ impl ExternClass for AnalysisHandleObj {
 
     fn call_method(&self, method: &str, args: &[Value]) -> Result<Value, String> {
         match method {
+            "frame" => Ok(crate::dataframe::DataFrameObj::new(
+                crate::dataframe::DataFrame::from_result(&self.result),
+            )),
+
             "dataset" => Ok(Value::String(self.result.dataset.clone())),
 
             "ok" => Ok(Value::Integer(self.result.run_errors.is_empty() as i64)),
@@ -95,13 +99,10 @@ impl ExternClass for SignalObj {
     fn type_name(&self) -> &str { "Signal" }
 
     fn call_method(&self, method: &str, args: &[Value]) -> Result<Value, String> {
-        let reals: Vec<f64> = match &self.data {
-            VectorData::Real(v) => v.clone(),
-            VectorData::Complex(v) => v.iter().map(|(r, _)| *r).collect(),
-        };
+        let reals = self.reals();
 
         match method {
-            "values" => Ok(Value::RealVec(reals)),
+            "values" => Ok(Value::RealVec(reals.clone())),
             "len"    => Ok(Value::Integer(reals.len() as i64)),
 
             "max" => reals.iter().cloned().reduce(f64::max)
@@ -193,12 +194,83 @@ impl ExternClass for SignalObj {
                     x, scale.first().unwrap_or(&0.0), scale.last().unwrap_or(&0.0)))
             }
 
+            "slice" => {
+                let lo = args.first().and_then(|v| v.as_integer()).unwrap_or(0).max(0) as usize;
+                let hi = args.get(1).and_then(|v| v.as_integer())
+                    .map(|h| h as usize).unwrap_or(reals.len()).min(reals.len());
+                Ok(self.derived(reals[lo..hi].to_vec()))
+            }
+
+            "sigma" | "std" | "stddev" => {
+                if reals.len() < 2 { return Err("sigma() requires at least 2 samples".into()); }
+                let mean = reals.iter().sum::<f64>() / reals.len() as f64;
+                let var = reals.iter().map(|x| (x - mean).powi(2)).sum::<f64>()
+                    / (reals.len() - 1) as f64;          // sample std dev (N-1)
+                Ok(Value::Real(var.sqrt()))
+            }
+
+            // yield(threshold, op) — fraction of samples satisfying `sample op threshold`.
+            // `op` is a string: ">", ">=", "<", "<=". Returns real in [0.0, 1.0].
+            "yield_" | "yield" => {
+                let thr = args.first().and_then(|v| v.as_f64())
+                    .ok_or("yield(threshold, op) needs a real threshold")?;
+                let op  = args.get(1).and_then(|v| v.as_str()).unwrap_or(">=");
+                let passing = reals.iter().filter(|&&x| match op {
+                    ">"  => x >  thr,
+                    ">=" => x >= thr,
+                    "<"  => x <  thr,
+                    "<=" => x <= thr,
+                    _    => false,
+                }).count();
+                Ok(Value::Real(passing as f64 / reals.len() as f64))
+            }
+
             _ => Err(format!("unknown method '{}' on Signal", method)),
         }
+    }
+
+    fn binary_op(&self, op: &str, other: &Value, self_on_left: bool)
+        -> Result<Value, String>
+    {
+        let a = self.reals();
+        let b: Vec<f64> = match other {
+            Value::ExternObject(o) if o.type_name() == "Signal" => {
+                match o.call_method("values", &[])? {
+                    Value::RealVec(v) => v,
+                    _ => return Err("Signal.values did not return a vector".into()),
+                }
+            }
+            Value::Real(_) | Value::Integer(_) => vec![other.as_f64().unwrap(); a.len()],
+            _ => return Err(format!(
+                "cannot apply `{op}` between Signal and {}", other.type_name())),
+        };
+        if b.len() != a.len() {
+            return Err(format!("Signal length mismatch: {} vs {}", a.len(), b.len()));
+        }
+        let out: Vec<f64> = (0..a.len()).map(|i| {
+            let (x, y) = if self_on_left { (a[i], b[i]) } else { (b[i], a[i]) };
+            scalar_op(op, x, y)
+        }).collect::<Result<_, _>>()?;
+        Ok(self.derived(out))
     }
 }
 
 impl SignalObj {
+    fn reals(&self) -> Vec<f64> {
+        match &self.data {
+            VectorData::Real(v) => v.clone(),
+            VectorData::Complex(v) => v.iter().map(|(r, _)| *r).collect(),
+        }
+    }
+    
+    fn derived(&self, data: Vec<f64>) -> Value {
+        Value::ExternObject(Arc::new(SignalObj {
+            name: format!("<{}>", self.name),
+            data: VectorData::Real(data),
+            result: Arc::clone(&self.result),
+        }))
+    }
+
     fn find_scale(&self) -> Option<Vec<f64>> {
         for key in ["time", "frequency", "sweep"] {
             if let Some(VectorData::Real(v)) = self.result.vectors.get(key) {
@@ -207,6 +279,17 @@ impl SignalObj {
         }
         None
     }
+}
+
+fn scalar_op(op: &str, x: f64, y: f64) -> Result<f64, String> {
+    Ok(match op {
+        "+" => x + y, "-" => x - y, "*" => x * y, "/" => x / y,
+        "%" => x % y, "**" => x.powf(y),
+        "<" => (x <  y) as i64 as f64, "<=" => (x <= y) as i64 as f64,
+        ">" => (x >  y) as i64 as f64, ">=" => (x >= y) as i64 as f64,
+        "==" => (x == y) as i64 as f64, "!=" => (x != y) as i64 as f64,
+        _ => return Err(format!("operator `{op}` not supported on Signal")),
+    })
 }
 
 // ── ArrayObj: dynamic array / queue with reference (handle) semantics ─────────

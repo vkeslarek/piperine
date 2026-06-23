@@ -97,10 +97,16 @@ real pk = df["v(out)"].max();
 df.to_csv("run.csv");
 ```
 
-Core methods: `cols()`, `nrows()/ncols()/shape()`, `index()`, `col(name)` /
+Core methods (**implemented**): `cols()`, `nrows()/ncols()/shape()`, `index()`,
 `df[name]`, `select(names)`, `filter(mask)`, `with_column(name, series)`,
-`slice(lo,hi)`, `head(n)`, `concat(other)`, `groupby(index)`, `to_csv(path)`,
-column reductions, and a tabular `show()` for `$display(df.show())`.
+`slice(lo,hi)`, `head(n)`, `concat(other)`, `to_csv(path)`, `show()`.
+
+Signal reductions (**implemented**): `max()`, `min()`, `mean()`, `rms()`,
+`peak_to_peak()`, `integral()`, `bandwidth_3db()`, `phase_margin()`, `at(x)`,
+`sigma()`/`std()`, `yield_(threshold, op)`.
+
+Deferred: `groupby(index)` (Phase 6 MC aggregation), lambdas/`with` (Phase 9),
+PyO3 export (separate effort).
 
 ## What the language must support (the ergonomics work)
 
@@ -731,22 +737,13 @@ fn render_table(df: &DataFrame, max_rows: usize) -> String {
 (A real tabular `$display(df)` needs a `Display`/`to_string` hook on `ExternClass`
 — deferred; `show()` is the unambiguous v1.)
 
-## 7. Build order
+## 7. Build order — status
 
-1. **§1 type + §2 `.frame()` + §5 core (`get`/`cols`/`nrows`/`ncols`/`index`/`shape`/
-   `to_csv`/`show`) + §0 string-index (free).** Inspectable, dumpable frames.
-   Tests: build a frame from a mock `AnalysisResult`; `df["v(out)"].max()`;
-   `df.nrows()`; `df.to_csv` round-trip.
-2. **§3 operator overloading + `SignalObj::binary_op` + `filter`.** The inflection:
-   `df["v(out)"] * df["i(out)"]`, `df.filter(df["v(out)"] > 0.9)`.
-   Tests: `a+b`, `a*2.0`, `2.0*a` (rhs), `a > thr` mask, `filter` row count.
-3. **§4 slicing**, `select`/`head`/`with_column`, **§6 `show`** polish.
-4. Later: Monte-Carlo `concat`/`groupby`; lambdas (`filter(x -> …)`) when closures
-   land (Phase 9); PyO3 export.
-
-Step 1 needs **zero** language changes (everything routes via existing
-`get`/`call_method`). Step 2 is the *only* one touching the evaluator + trait. Ship
-1 first; it's independently useful (dump any analysis to CSV).
+1. ✅ **§1 type + §2 `.frame()` + §5 core methods + §0 string-index.** Done.
+2. ✅ **§3 operator overloading + `SignalObj::binary_op` + `filter`.** Done.
+3. ✅ **§4 slicing**, `select`/`head`/`with_column`, `show`, CSV, `concat`. Done.
+   Also added: `Signal.sigma()`/`std()`, `Signal.yield_(thr, op)` for MC aggregation.
+4. **Later:** `groupby(index)` (Phase 6); lambdas/`with` (Phase 9); PyO3 export.
 
 ## 8. Tests — `tests/e2e_dataframe_test.rs` (MockBackend)
 
