@@ -35,6 +35,11 @@ impl Default for PoolConfig {
 impl ProcessPool {
     pub fn spawn(config: PoolConfig) -> std::io::Result<Self> {
         let worker_path = config.worker_binary.unwrap_or_else(|| {
+            // Prefer explicit env var — important when running from a Python extension
+            // where current_exe() resolves to the interpreter (e.g. /usr/bin/python3).
+            if let Ok(v) = std::env::var("PIPERINE_WORKER") {
+                return PathBuf::from(v);
+            }
             let mut p = std::env::current_exe().unwrap();
             p.pop();
             p.push("piperine-worker");

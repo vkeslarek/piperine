@@ -1,0 +1,23 @@
+[package]
+name = "piperine-python"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "piperine"
+crate-type = ["cdylib"]
+
+[dependencies]
+piperine-common      = { path = "../piperine-common" }
+piperine-parser      = { path = "../piperine-parser" }
+piperine-circuit     = { path = "../piperine-circuit" }
+piperine-interpreter = { path = "../piperine-interpreter" }
+piperine-ngspice     = { path = "../piperine-ngspice" }
+piperine-coordinator = { path = "../piperine-coordinator" }
+pyo3                 = { version = "0.22", features = ["extension-module"] }
+numpy                = "0.22"
+
+[workspace]
+# piperine-python is NOT a member of the workspace — it is built with `maturin`
+# and excluded from `cargo build`. This prevents PyO3's cdylib from interfering
+# with the main workspace link step.

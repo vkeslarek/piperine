@@ -5,43 +5,44 @@ For per-crate API detail see `docs/`. For contributor conventions see `CLAUDE.md
 
 ## The pipeline
 
-A `.ppr` file goes through eight stages. `src/main.rs::run()` is the whole
-pipeline in one function — the numbered comments there match the stages below.
+Two entry points exist: the CLI (`src/main.rs`) and the Python extension
+(`crates/piperine-python`). Both share the same elaboration path.
 
 ```
                   .ppr source
                       │
             ┌─────────▼──────────┐
-            │ 1. parse            │  piperine-parser
-            │    → Document (AST) │
+            │  parse              │  piperine-parser
+            │  → Document (AST)   │
             └─────────┬──────────┘
                       │
         ┌─────────────┴──────────────┐
         │                            │
-┌───────▼─────────┐        ┌─────────▼───────────┐
-│ 2-3,5. VA path  │        │ 6. testbench path   │
-│ extract_va_*    │        │ elaborate()         │  piperine-circuit
-│ → compile .osdi │        │ → spice_lines       │
-│   (OpenVAF)     │        │ → initial_statement │
-└───────┬─────────┘        └─────────┬───────────┘
+┌───────▼─────────┐        ┌─────────▼────────────────┐
+│  VA path         │        │  elaborate_circuit()      │  piperine-circuit
+│  extract_va_*   │        │  → Circuit {              │
+│  → compile .osdi│        │      spice_lines,         │
+│    (OpenVAF)    │        │      soa_checks,          │
+└───────┬─────────┘        │    }                      │
+        │                  └─────────┬────────────────-┘
         │                            │
-        │ pre_osdi <path>            │ 7. load_circuit(spice_lines)
+        │                   load_circuit(spice_lines + .end)
         └─────────────┬──────────────┘
                       │
             ┌─────────▼──────────┐
-            │ ngspice (worker)   │  piperine-worker  (subprocess)
+            │  ngspice (worker)  │  piperine-worker (subprocess)
             └─────────▲──────────┘
                       │ IPC: Command / Response
             ┌─────────┴──────────┐
-            │ 8. Interpreter.exec│  piperine-interpreter
-            │    runs initial{}  │
-            │    $tasks ─────────┼──▶ SimulatorBackend ──▶ worker
+            │  NgspiceSession    │  piperine-python (PyO3)
+            │  .op() .ac() …     │
+            │  .tran_async()     │  GIL released; Rust threads
+            │  SimFuture.join()  │
             └────────────────────┘
 ```
 
-Two things leave elaboration: **`spice_lines`** (the netlist, as `Vec<String>`)
-and **`initial_statement`** (the procedural testbench the interpreter runs).
-There is exactly one netlist representation — strings. Devices format their own
+`elaborate_circuit` produces a `Circuit` — a `Vec<String>` SPICE netlist plus
+`Vec<SoaCheck>` compiled from `always @(step)` blocks. Devices format their own
 SPICE line via `HardwareInstance::spice_lines()`; nothing builds a typed netlist.
 
 ## Crate responsibilities
@@ -49,45 +50,62 @@ SPICE line via `HardwareInstance::spice_lines()`; nothing builds a typed netlist
 | Crate | Owns | Does NOT |
 |-------|------|----------|
 | `piperine-parser` | Lexer, preprocessor, recursive-descent parser → AST | No semantics, no SPICE |
-| `piperine-circuit` | `HardwareDefinition` trait, registry, elaboration, net/paramset resolution | No device impls, no IPC |
-| `piperine-ngspice` | ngspice device impls, `$tasks`, backend, `ngspice.ppr` | No FFI (that's the worker) |
-| `piperine-interpreter` | Runs `initial`/`always` blocks, `Value`, `SystemTask`/`SimulatorBackend` traits | No ngspice specifics |
+| `piperine-circuit` | `HardwareDefinition` trait, registry, `elaborate_circuit`, net/paramset/SOA resolution | No device impls, no IPC |
+| `piperine-ngspice` | ngspice device impls, `register_hardware`, `NgspiceBackend`, `ngspice.ppr` | No FFI (that's the worker) |
+| `piperine-python` | PyO3 native extension: `NgspiceSession`, `SimFuture`, `join_all` | No language/elaboration |
+| `piperine-interpreter` | Runs `always @(step)` handlers during analysis; `SimulatorBackend` trait | No testbench logic (that's Python) |
 | `piperine-openvaf` | Compiles VA modules → `.osdi`, caches by source hash | Not a simulator |
 | `piperine-coordinator` | `ProcessPool` — spawns/owns worker subprocesses | No simulation logic |
 | `piperine-worker` | Subprocess wrapping libngspice via FFI; answers IPC | No language knowledge |
-| `piperine-common` | IPC message types (`Command`, `Response`, `EventAction`) shared by coordinator+worker | Nothing else |
+| `piperine-common` | IPC message types (`Command`, `Response`, `EventAction`) | Nothing else |
 
-## Two boundaries worth knowing
+## Key boundaries
 
-**Plugin boundary** (`Plugin` trait, `piperine-interpreter`). The interpreter knows
-nothing about ngspice. `NgspicePlugin` and `OpenVafPlugin` register hardware defs,
-`$tasks`, and a `SimulatorBackend` into registries at startup (`src/main.rs` step 4).
-Swapping simulators = swapping a plugin.
+**IPC boundary** (`piperine-common`). `NgspiceBackend` translates Python session
+calls into `Command`s sent over `ipc-channel` to a separate `piperine-worker`
+process, which alone touches libngspice. A worker crash cannot reach Python.
 
-**IPC boundary** (`piperine-common`). The interpreter calls a `SimulatorBackend`
-(in-process). `NgspiceBackend` translates those calls into `Command`s sent over an
-`ipc-channel` to a separate `piperine-worker` process, which alone touches libngspice.
-The worker is isolated so an ngspice crash cannot take down the interpreter.
+**GIL boundary** (`piperine-python`). Every blocking call (`op`, `ac`, `tran`,
+`tran_async` join) releases the GIL via `py.allow_threads(...)`. Multiple sessions
+run in parallel Rust threads — wall time equals the slowest worker.
 
 ## How an analysis runs
 
-`$tran(...)` / `$ac(...)` etc. are `SystemTask`s. Two run paths exist by design:
+`NgspiceSession` methods use two paths:
 
-- **`SimulatorBackend::run_analysis_simple(cmd)`** — most analyses. Start, poll to
-  completion, harvest vectors. No event callbacks.
-- **`Interpreter::run_analysis(cmd)`** — used only when the testbench has
-  `always @(step)` / `above()` handlers. Same protocol, but dispatches handler bodies
-  on each streamed event before responding to the worker.
+- **`run_analysis_simple(cmd)`** — `op`, `tran`, `dc`. Start analysis, poll `Done`,
+  harvest vectors. No event callbacks.
+- **`run_ac_analysis(cmd)`** — AC sweep. Same start/poll, but fetches complex vectors
+  via `GetVecComplex` (AC plots store all vectors as complex in ngspice).
 
-Both return an `AnalysisResult` (`kind`, `plot_name`, `vectors`, `run_errors`), which
-tasks wrap in an `AnalysisHandleObj` so `.ppr` code can call `.signal(...).max()` etc.
+`always @(step)` SOA blocks in hardware modules are compiled at elaboration to
+`.meas tran` SPICE lines + `SoaCheck` entries. After a transient, Python calls
+`sess.check_soa()` to read those measurement vectors and compare thresholds.
+
+## SOA compilation
+
+```
+always @(step) begin
+    if (V(c) > 30.0) $run_error("Vce_max");
+end
+```
+
+`elaborate_circuit` walks this block, extracts the comparison operator and threshold,
+and emits:
+
+```spice
+.meas tran _soa_0 MAX v(c)
+```
+
+The `SoaCheck { meas_name: "_soa_0", label: "Vce_max", threshold: 30.0, op: Gt }`
+is stored in `Circuit.soa_checks`. `check_soa()` reads the measurement result and
+raises on violation.
 
 ## Where to look first
 
-- Add a regular device → `crates/piperine-ngspice/src/hardware.rs` (data table) +
-  `ngspice.ppr`. See `docs/development/SPICE_COMPONENTS_IMPL.md`.
-- Add an analysis/measurement → `crates/piperine-ngspice/src/tasks.rs`.
-- Change the language → `crates/piperine-parser/src/grammar/` (careful: hand-written).
-- Change net/paramset resolution → `crates/piperine-circuit/src/elaboration.rs`.
-</content>
-</invoke>
+- Add a device → `crates/piperine-ngspice/src/hardware.rs` + `ngspice.ppr`.
+  See `docs/development/SPICE_COMPONENTS_IMPL.md`.
+- Change elaboration → `crates/piperine-circuit/src/elaboration.rs`.
+- Change the language → `crates/piperine-parser/src/grammar/` (hand-written; be careful).
+- Add a Python API method → `crates/piperine-python/src/lib.rs`.
+- Extend IPC → `piperine-common/src/lib.rs` + worker match arm + backend method.

@@ -384,6 +384,45 @@ impl ExternClass for ArrayObj {
 
             "values" => Ok(Value::RealVec(items.iter().map(num).collect())),
 
+            // ── MC aggregation helpers ──────────────────────────────────────
+            "sigma" | "std" | "stddev" => {
+                if items.len() < 2 { return Err("sigma() requires at least 2 elements".into()); }
+                let vals: Vec<f64> = items.iter().map(num).collect();
+                let mean = vals.iter().sum::<f64>() / vals.len() as f64;
+                let var  = vals.iter().map(|x| (x - mean).powi(2)).sum::<f64>()
+                           / (vals.len() - 1) as f64;
+                Ok(Value::Real(var.sqrt()))
+            }
+
+            // yield(threshold, op) — fraction satisfying `elem op threshold`.
+            // op: ">", ">=", "<", "<=" (default ">=").
+            "yield_" | "yield" => {
+                let thr = args.first().and_then(|v| v.as_f64())
+                    .ok_or("yield_(threshold [, op]) needs a real threshold")?;
+                let op  = args.get(1).and_then(|v| v.as_str()).unwrap_or(">=");
+                let passing = items.iter().map(num).filter(|&x| match op {
+                    ">"  => x >  thr,
+                    ">=" => x >= thr,
+                    "<"  => x <  thr,
+                    "<=" => x <= thr,
+                    _    => false,
+                }).count();
+                Ok(Value::Real(passing as f64 / items.len() as f64))
+            }
+
+            // percentile(p) — p-th percentile (0–100) via nearest-rank method.
+            "percentile" => {
+                let p = args.first().and_then(|v| v.as_f64())
+                    .ok_or("percentile(p) needs a real in 0..100")?;
+                if items.is_empty() { return Err("percentile() on empty array".into()); }
+                let mut vals: Vec<f64> = items.iter().map(num).collect();
+                vals.sort_by(f64::total_cmp);
+                let rank = ((p / 100.0) * vals.len() as f64).ceil().max(1.0) as usize;
+                Ok(Value::Real(vals[(rank - 1).min(vals.len() - 1)]))
+            }
+
+            "sort" => { items.sort_by(|a, b| num(a).total_cmp(&num(b))); Ok(Value::Void) }
+
             _ => Err(format!("unknown method '{method}' on Array")),
         }
     }

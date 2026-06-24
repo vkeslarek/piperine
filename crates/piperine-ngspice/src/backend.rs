@@ -92,3 +92,13 @@ impl SimulatorBackend for NgspiceBackend {
             .map_err(|e| InterpreterError::SimulatorError(e.to_string()))
     }
 }
+
+impl NgspiceBackend {
+    pub fn get_complex_vector(&mut self, name: &str) -> Result<Vec<(f64, f64)>, InterpreterError> {
+        match self.send(Command::GetVecComplex { name: name.to_string() })? {
+            Response::VecComplex { pairs } => Ok(pairs),
+            Response::Error { message, .. } => Err(InterpreterError::SimulatorError(message)),
+            other => Err(InterpreterError::SimulatorError(format!("unexpected response: {other:?}"))),
+        }
+    }
+}

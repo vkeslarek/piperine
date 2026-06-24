@@ -1,116 +1,200 @@
-use std::path::PathBuf;
-
-use piperine_circuit::{
-    HardwareRegistry, ParameterDefinition,
-    elaborate, extract_va_modules, eval_default_expr,
-};
-use piperine_interpreter::{Plugin, SystemTaskRegistry, Interpreter, Scope};
-use piperine_ngspice::NgspicePlugin;
-use piperine_interpreter::AnalogCompilerBackend;
-use piperine_openvaf::{LibraryCompiler, OpenVafPlugin, OsdiHardwareDefinition, compile_va};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() < 2 {
-        eprintln!("usage: piperine <file.ppr>");
-        std::process::exit(1);
-    }
-    if let Err(error) = run(PathBuf::from(&args[1])) {
-        eprintln!("error: {error}");
+    let result = match args.get(1).map(|s| s.as_str()) {
+        Some("new")   => cmd_new(args.get(2).map(|s| s.as_str())),
+        Some("setup") => cmd_setup(&project_root()),
+        Some("run")   => match args.get(2) {
+            Some(script) => cmd_run(Path::new(script), &project_root()),
+            None => { eprintln!("usage: piperine run <script.py>"); std::process::exit(1); }
+        },
+        Some("check") => match args.get(2) {
+            Some(file) => cmd_check(Path::new(file)),
+            None => { eprintln!("usage: piperine check <file.ppr>"); std::process::exit(1); }
+        },
+        _ => {
+            eprintln!("usage:");
+            eprintln!("  piperine new <name>       scaffold a new project");
+            eprintln!("  piperine setup            build piperine.so into .venv");
+            eprintln!("  piperine run <script.py>  run a bench script");
+            eprintln!("  piperine check <file.ppr> parse and elaborate a hardware file");
+            std::process::exit(1);
+        }
+    };
+    if let Err(e) = result {
+        eprintln!("error: {e}");
         std::process::exit(1);
     }
 }
 
-fn run(path: PathBuf) -> Result<(), String> {
-    // ── 1. Parse ─────────────────────────────────────────────────────────────
-    let document = piperine_parser::parse_file(&path).map_err(|e| format!("parse: {e}"))?;
+// ── piperine new <name> ───────────────────────────────────────────────────────
 
-    // ── 2. Find VA modules (analog block, no initial block) ───────────────────
-    let va_modules = extract_va_modules(&document);
+fn cmd_new(name: Option<&str>) -> Result<(), String> {
+    let name = name.ok_or("usage: piperine new <name>")?;
+    let root = PathBuf::from(name);
+    if root.exists() {
+        return Err(format!("'{name}' already exists"));
+    }
+    // Design files live together: hello/hello.ppr + hello/hello.py
+    std::fs::create_dir_all(root.join("hello")).map_err(|e| e.to_string())?;
 
-    // ── 3. Build OsdiHardwareDefinitions from parsed metadata ─────────────────
-    let osdi_defs: Vec<OsdiHardwareDefinition> = va_modules.iter()
-        .map(|info| OsdiHardwareDefinition {
-            module_name: info.module_name.clone(),
-            port_names: info.port_names.clone(),
-            parameter_definitions: info.parameter_defaults.iter()
-                .map(|(name, expr)| ParameterDefinition {
-                    name: name.clone(),
-                    is_expr: false,
-                    is_ref: false,
-                    default: eval_default_expr(expr),
-                })
-                .collect(),
-        })
-        .collect();
+    std::fs::write(root.join("piperine.toml"), format!(
+        "[project]\nname = \"{name}\"\nversion = \"0.1.0\"\n\n[backend]\nsimulator = \"ngspice\"\n"
+    )).map_err(|e| e.to_string())?;
 
-    // ── 4. Register OSDI and ngspice hardware/tasks ───────────────────────────
-    let mut hardware_registry = HardwareRegistry::new();
-    for def in osdi_defs {
-        hardware_registry.register(Box::new(def));
+    std::fs::write(root.join("hello").join("hello.ppr"),
+        include_str!("templates/hello.ppr"),
+    ).map_err(|e| e.to_string())?;
+
+    std::fs::write(root.join("hello").join("hello.py"),
+        include_str!("templates/hello.py"),
+    ).map_err(|e| e.to_string())?;
+
+    println!("created project '{name}'");
+    println!("running setup...");
+    cmd_setup(&root)?;
+    println!();
+    println!("ready! try:");
+    println!("  cd {name}");
+    println!("  piperine run hello/hello.py");
+    Ok(())
+}
+
+// ── piperine setup ────────────────────────────────────────────────────────────
+
+fn cmd_setup(root: &Path) -> Result<(), String> {
+    let venv = root.join(".venv");
+
+    // 1. Create venv if absent
+    if !venv.exists() {
+        println!("creating .venv ...");
+        run_cmd(Command::new("python3").args(["-m", "venv", venv.to_str().unwrap()]))?;
     }
 
-    let mut task_registry = SystemTaskRegistry::new();
-    let plugins: Vec<Box<dyn Plugin>> = vec![
-        Box::new(NgspicePlugin::default()),
-        Box::new(OpenVafPlugin::default()),
-    ];
+    let pip = venv.join("bin").join("pip");
 
-    let mut simulator_backend = None;
-    for plugin in &plugins {
-        plugin.register_hardware(&mut hardware_registry);
-        plugin.register_tasks(&mut task_registry);
-        if simulator_backend.is_none() {
-            simulator_backend = plugin.simulator_backend();
-        }
+    // 2. Install Python deps
+    println!("installing Python deps ...");
+    run_cmd(Command::new(&pip).args(["install", "--quiet", "numpy", "matplotlib"]))?;
+
+    // 3. Install maturin into venv
+    run_cmd(Command::new(&pip).args(["install", "--quiet", "maturin"]))?;
+
+    // 4. Build piperine-python and install into venv
+    let piperine_python_dir = piperine_python_crate_dir()?;
+    println!("building piperine extension ...");
+    let maturin = venv.join("bin").join("maturin");
+    run_cmd(
+        Command::new(&maturin)
+            .args(["develop", "--manifest-path",
+                   piperine_python_dir.join("Cargo.toml").to_str().unwrap()])
+            .env("VIRTUAL_ENV", &venv)
+    )?;
+
+    // 5. Copy piperine-worker into .venv/bin/ so ProcessPool finds it from Python.
+    let worker_src = find_worker_binary(&piperine_python_dir)?;
+    let worker_dst = venv.join("bin").join("piperine-worker");
+    std::fs::copy(&worker_src, &worker_dst)
+        .map_err(|e| format!("copy piperine-worker: {e}"))?;
+
+    println!("setup complete — piperine extension ready in .venv");
+    Ok(())
+}
+
+// ── piperine run <script.py> ──────────────────────────────────────────────────
+
+fn cmd_run(script: &Path, root: &Path) -> Result<(), String> {
+    let venv = root.join(".venv");
+    if !venv.exists() {
+        return Err("no .venv found — run `piperine setup` first".into());
     }
-
-    let mut simulator = simulator_backend
-        .ok_or("no simulator backend — is piperine-ngspice registered?")?;
-
-    // ── 5. Compile VA → OSDI, pre_osdi BEFORE load_circuit ───────────────────
-    // ngspice must know OSDI models before parsing the netlist that uses them.
-    if !va_modules.is_empty() {
-        let cache_dir = dirs::cache_dir()
-            .unwrap_or_else(std::env::temp_dir)
-            .join("piperine/osdi");
-        std::fs::create_dir_all(&cache_dir).ok();
-
-        // Lower the Piperine VA modules to standard Verilog-A (begin/end, no `{}`,
-        // no `++`/compound) so OpenVAF — which parses standard VA — accepts our
-        // extended device syntax. Write the lowered source and compile that.
-        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("module");
-        let lowered = piperine_circuit::va_emit::emit_veriloga(&document);
-        let lowered_path = cache_dir.join(format!("{stem}.lowered.va"));
-        std::fs::write(&lowered_path, lowered)
-            .map_err(|e| format!("openvaf: cannot write lowered VA: {e}"))?;
-
-        // One lowered file → one .osdi (may contain multiple module descriptors).
-        let osdi_path = compile_va(&lowered_path, &cache_dir)
-            .map_err(|e| format!("openvaf: {e}"))?;
-
-        // Use pre_load() which issues the correct ngspice command ("osdi <path>").
-        LibraryCompiler.pre_load(&osdi_path, simulator.as_mut())
-            .map_err(|e| format!("osdi load: {e}"))?;
+    let python = venv.join("bin").join("python3");
+    let worker = venv.join("bin").join("piperine-worker");
+    let status = Command::new(&python)
+        .arg(script)
+        .current_dir(root)
+        .env("PIPERINE_WORKER", &worker)
+        .status()
+        .map_err(|e| format!("python3: {e}"))?;
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
     }
+    Ok(())
+}
 
-    // ── 6. Elaborate testbench ────────────────────────────────────────────────
-    let mut elaboration = elaborate(&document, &hardware_registry)
+// ── piperine check <file.ppr> ─────────────────────────────────────────────────
+
+fn cmd_check(path: &Path) -> Result<(), String> {
+    use piperine_circuit::{HardwareRegistry, elaborate_circuit};
+    use piperine_ngspice::register_hardware;
+
+    let doc = piperine_parser::parse_file(path).map_err(|e| format!("parse: {e}"))?;
+    let mut registry = HardwareRegistry::new();
+    register_hardware(&mut registry);
+    let circuit = elaborate_circuit(&doc, &registry, None)
         .map_err(|e| format!("elaboration: {e}"))?;
-    elaboration.spice_lines.push(".end".to_string());
+    println!("ok — {} SPICE lines, {} SOA checks",
+             circuit.spice_lines.len(), circuit.soa_checks.len());
+    Ok(())
+}
 
-    // ── 7. Load netlist (OSDI models already registered in step 5) ────────────
-    simulator
-        .load_circuit(&elaboration.spice_lines)
-        .map_err(|e| format!("circuit load: {e}"))?;
+// ── helpers ───────────────────────────────────────────────────────────────────
 
-    // ── 8. Run interpreter ────────────────────────────────────────────────────
-    let mut interpreter = Interpreter::new(simulator.as_mut(), &task_registry);
-    interpreter.set_functions(elaboration.functions);
-    let mut scope = Scope::default();
-    interpreter
-        .exec(&elaboration.initial_statement, &mut scope)
-        .map_err(|e| format!("runtime: {e}"))?;
+fn project_root() -> PathBuf {
+    // Walk up from cwd looking for piperine.toml
+    let mut dir = std::env::current_dir().unwrap_or_default();
+    loop {
+        if dir.join("piperine.toml").exists() { return dir; }
+        if !dir.pop() { break; }
+    }
+    std::env::current_dir().unwrap_or_default()
+}
 
+fn find_worker_binary(piperine_python_dir: &Path) -> Result<PathBuf, String> {
+    // Walk up from piperine-python crate to workspace root, then look in target/.
+    let workspace = piperine_python_dir.parent().and_then(|p| p.parent())
+        .ok_or("cannot resolve workspace root from piperine-python dir")?;
+    let candidates = [
+        workspace.join("target").join("debug").join("piperine-worker"),
+        workspace.join("target").join("release").join("piperine-worker"),
+    ];
+    for c in &candidates {
+        if c.exists() { return Ok(c.clone()); }
+    }
+    Err(format!("piperine-worker not found in {}; run `cargo build -p piperine-worker` first",
+                workspace.join("target").display()))
+}
+
+fn piperine_python_crate_dir() -> Result<PathBuf, String> {
+    // When running from the built binary, look for piperine-python relative
+    // to the executable (same workspace layout).
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    // target/debug/piperine  →  ../../crates/piperine-python
+    let candidates = [
+        exe.parent().and_then(|p| p.parent()).and_then(|p| p.parent())
+            .map(|p| p.join("crates").join("piperine-python")),
+        // Also try relative to cwd (dev workflow)
+        Some(std::env::current_dir().unwrap_or_default().join("crates").join("piperine-python")),
+    ];
+    for c in candidates.iter().flatten() {
+        if c.join("Cargo.toml").exists() { return Ok(c.clone()); }
+    }
+    Err("cannot find piperine-python crate — run from the workspace root".into())
+}
+
+fn run_cmd(cmd: &mut Command) -> Result<(), String> {
+    let status = cmd
+        .stdin(Stdio::null())
+        .status()
+        .map_err(|e| {
+            let prog = cmd.get_program().to_string_lossy().to_string();
+            format!("{prog}: {e}")
+        })?;
+    if !status.success() {
+        let prog = cmd.get_program().to_string_lossy().to_string();
+        return Err(format!("{prog} exited with code {}", status.code().unwrap_or(-1)));
+    }
     Ok(())
 }

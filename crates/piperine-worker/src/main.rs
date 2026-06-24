@@ -172,6 +172,12 @@ fn run_command(ng: &Ngspice, cmd: Command, rx: &Arc<Mutex<CmdReceiver>>, state: 
             Some(data) => Response::VecData { values: data.to_vec() },
             None => Response::Error { code: -1, message: format!("vector not found: {name}") },
         },
+        Command::GetVecComplex { name } => match ng.vec_complex_data(&name) {
+            Some(data) => Response::VecComplex {
+                pairs: data.iter().map(|c| (c.re, c.im)).collect(),
+            },
+            None => Response::Error { code: -1, message: format!("complex vector not found: {name}") },
+        },
         Command::GetAllVecs { plot } => {
             Response::VecList { names: ng.all_vecs(&plot) }
         }

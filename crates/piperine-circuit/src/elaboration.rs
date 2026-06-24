@@ -180,31 +180,33 @@ fn elaborate_instance(
             }
         }
 
-        // Extract model name (required in preset).
-        let model_name = ps_info.preset.get("model")
+        // Extract model name (optional — passives like res/cap/ind have no model card).
+        let model_name: Option<String> = ps_info.preset.get("model")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| ElaborationError::MissingParameter {
+            .map(|s| s.to_string());
+
+        // Emit .model card only when base module needs one.
+        if let Some(spice_type) = ps_info.model_type {
+            let name = model_name.as_deref().ok_or_else(|| ElaborationError::MissingParameter {
                 parameter: "model".into(),
                 instance: instance.name.clone(),
-            })?
-            .to_string();
-
-        // Emit .model card before the instance.
-        if let Some(spice_type) = ps_info.model_type {
+            })?;
             let model_params: String = merged.iter()
                 .filter(|(k, _)| *k != "model")
                 .map(|(k, v)| format!("{}={}", k, v.to_spice_string()))
                 .collect::<Vec<_>>()
                 .join(" ");
             if model_params.is_empty() {
-                spice_lines.push(format!(".model {} {}", model_name, spice_type));
+                spice_lines.push(format!(".model {} {}", name, spice_type));
             } else {
-                spice_lines.push(format!(".model {} {} ({})", model_name, spice_type, model_params));
+                spice_lines.push(format!(".model {} {} ({})", name, spice_type, model_params));
             }
         }
 
-        // Instantiate via base module with model name in param map.
-        merged.insert("model".into(), ParameterValue::String(format!("\"{}\"", model_name)));
+        // Insert model name into params only when present.
+        if let Some(ref name) = model_name {
+            merged.insert("model".into(), ParameterValue::String(format!("\"{}\"", name)));
+        }
         let resolver = ConcreteNetResolver { net_map, path, document };
         let hw_instance = base_def.instantiate(&instance.name, &merged, &connections, &resolver)?;
         let lines = hw_instance.spice_lines();
@@ -553,6 +555,171 @@ pub struct VaModuleInfo {
 }
 
 /// Find all VA modules (analog block present, no initial block).
+// ── Circuit / SOA types ──────────────────────────────────────────────────────
+
+/// Comparison operator for an SOA check (the condition that triggers a violation).
+#[derive(Debug, Clone, PartialEq)]
+pub enum SoaOp { Gt, Ge, Lt, Le }
+
+/// One SOA (Safe Operating Area) guard compiled from `always @(step)` in a structural module.
+#[derive(Debug, Clone)]
+pub struct SoaCheck {
+    /// `.meas` variable name, e.g. `_soa_0`.
+    pub meas_name: String,
+    /// Human-readable label from `$run_error("label")`.
+    pub label: String,
+    /// Threshold value.
+    pub threshold: f64,
+    /// Comparison that constitutes a violation.
+    pub op: SoaOp,
+}
+
+/// Output of elaborating a structural (hardware) module.
+pub struct Circuit {
+    /// SPICE netlist lines (without `.end`).
+    pub spice_lines: Vec<String>,
+    /// SOA guards compiled from `always @(step)` blocks.
+    pub soa_checks: Vec<SoaCheck>,
+}
+
+/// Elaborate a structural module (no `initial` block, no analog block).
+///
+/// If `module_name` is `Some(name)`, that module is targeted; otherwise the first
+/// structural module in the document is used.  `always @(step)` blocks are compiled
+/// to `.meas tran` lines + `SoaCheck` entries that the Python bridge can evaluate
+/// after each transient run.
+pub fn elaborate_circuit(
+    document: &Document,
+    registry: &HardwareRegistry,
+    module_name: Option<&str>,
+) -> Result<Circuit, ElaborationError> {
+    let module = match module_name {
+        Some(name) => find_structural_module(document, name)
+            .ok_or_else(|| ElaborationError::NoModule { name: name.to_string() })?,
+        None => document.modules.iter()
+            .find(|m| m.initial_blocks.is_empty() && m.analog_blocks.is_empty())
+            .ok_or(ElaborationError::NoTestbench)?,
+    };
+
+    let mut spice_lines = vec![format!("* piperine circuit: {}", module.name)];
+    let paramsets = build_paramset_map(&document.paramsets, registry)?;
+    let net_map = NetMap::new();
+    let mut instances_list = Vec::new();
+    elaborate_instances(
+        &module.instances, document, registry, &paramsets, "", &net_map,
+        &mut spice_lines, &mut instances_list,
+    )?;
+
+    let mut soa_checks = Vec::new();
+    let mut soa_counter = 0u32;
+
+    for ab in &module.always_blocks {
+        if let ast::AlwaysSensitivity::Step = &ab.sensitivity {
+            compile_soa_block(&ab.stmt, &mut soa_checks, &mut soa_counter, &mut spice_lines);
+        }
+    }
+
+    Ok(Circuit { spice_lines, soa_checks })
+}
+
+fn compile_soa_block(
+    stmt: &ast::Stmt,
+    checks: &mut Vec<SoaCheck>,
+    counter: &mut u32,
+    spice_lines: &mut Vec<String>,
+) {
+    match stmt {
+        ast::Stmt::Block(b) => {
+            for item in &b.items {
+                if let ast::BlockItem::Stmt(s) = item {
+                    compile_soa_block(s, checks, counter, spice_lines);
+                }
+            }
+        }
+        ast::Stmt::If(i) if i.else_branch.is_none() => {
+            if let Some((expr_str, op, threshold)) = try_extract_soa_condition(&i.condition) {
+                if let Some(label) = try_extract_run_error(&i.then_branch) {
+                    let meas_name = format!("_soa_{}", counter);
+                    *counter += 1;
+                    let meas_fn = match op { SoaOp::Gt | SoaOp::Ge => "MAX", SoaOp::Lt | SoaOp::Le => "MIN" };
+                    spice_lines.push(format!(".meas tran {} {} {}", meas_name, meas_fn, expr_str));
+                    checks.push(SoaCheck { meas_name, label, threshold, op });
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn try_extract_soa_condition(expr: &ast::Expr) -> Option<(String, SoaOp, f64)> {
+    let ast::Expr::Binary(lhs, binop, rhs) = expr else { return None; };
+    let op = match binop {
+        ast::BinOp::Gt => SoaOp::Gt,
+        ast::BinOp::Ge => SoaOp::Ge,
+        ast::BinOp::Lt => SoaOp::Lt,
+        ast::BinOp::Le => SoaOp::Le,
+        _ => return None,
+    };
+    let probe_expr = soa_probe_to_spice(lhs)?;
+    let threshold = literal_to_f64(rhs)?;
+    Some((probe_expr, op, threshold))
+}
+
+fn soa_probe_to_spice(expr: &ast::Expr) -> Option<String> {
+    let ast::Expr::Call(ast::FunctionRef::Path(p), args) = expr else { return None; };
+    if p.qualifier.is_some() { return None; }
+    let name = match &p.segment { PathSegment::Ident(s) => s.as_str(), _ => return None };
+    match name {
+        "V" | "v" => {
+            let nodes: Option<Vec<String>> = args.iter().map(|a| {
+                if let ast::CallArg::Positional(ast::Expr::Path(p)) = a {
+                    if let PathSegment::Ident(s) = &p.segment { return Some(s.clone()); }
+                }
+                None
+            }).collect();
+            Some(format!("v({})", nodes?.join(",")))
+        }
+        "I" | "i" => {
+            if let [ast::CallArg::Positional(ast::Expr::Path(p))] = args.as_slice() {
+                if let PathSegment::Ident(s) = &p.segment { return Some(format!("i({})", s)); }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn literal_to_f64(expr: &ast::Expr) -> Option<f64> {
+    match expr {
+        Expr::Literal(Literal::StdRealNumber(s)) => s.parse().ok(),
+        Expr::Literal(Literal::SiRealNumber(s)) => parse_si_real(s),
+        Expr::Literal(Literal::IntNumber(s)) => s.parse::<i64>().ok().map(|v| v as f64),
+        Expr::Prefix(PrefixOp::Neg, inner) => literal_to_f64(inner).map(|v| -v),
+        _ => None,
+    }
+}
+
+fn try_extract_run_error(stmt: &ast::Stmt) -> Option<String> {
+    match stmt {
+        ast::Stmt::Expr(e) => extract_run_error_from_expr(&e.expr),
+        ast::Stmt::Block(b) if b.items.len() == 1 => {
+            if let ast::BlockItem::Stmt(s) = &b.items[0] { try_extract_run_error(s) } else { None }
+        }
+        _ => None,
+    }
+}
+
+fn extract_run_error_from_expr(expr: &ast::Expr) -> Option<String> {
+    if let ast::Expr::Call(ast::FunctionRef::SysFun(name), args) = expr {
+        if name == "run_error" || name == "$run_error" {
+            if let Some(ast::CallArg::Positional(ast::Expr::Literal(ast::Literal::StrLit(s)))) = args.first() {
+                return Some(s.trim_matches('"').to_string());
+            }
+        }
+    }
+    None
+}
+
 pub fn extract_va_modules(document: &Document) -> Vec<VaModuleInfo> {
     document.modules.iter()
         .filter(|m| !m.analog_blocks.is_empty() && m.initial_blocks.is_empty())

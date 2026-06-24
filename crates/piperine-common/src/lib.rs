@@ -6,6 +6,8 @@ pub enum Command {
     Run { cmd: String },
     LoadCircuit { lines: Vec<String> },
     GetVecData { name: String },
+    /// Fetch a complex vector (AC analysis). Worker returns VecComplex.
+    GetVecComplex { name: String },
     GetAllVecs { plot: String },
     GetCurPlot,
     GetAllPlots,
@@ -33,6 +35,8 @@ pub enum Response {
     Ok,
     Error { code: i32, message: String },
     VecData { values: Vec<f64> },
+    /// Complex vector data as interleaved (re, im) pairs.
+    VecComplex { pairs: Vec<(f64, f64)> },
     VecList { names: Vec<String> },
     CurPlot { name: String },
 

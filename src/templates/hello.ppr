@@ -1,0 +1,10 @@
+`include "ngspice.ppr"
+
+// Simple voltage divider: two equal resistors split a 10 V supply in half.
+module divider;
+    wire vin, vmid;
+
+    vsource #(.dc(10)) V1(.p(vin), .n(gnd));
+    res    #(.r(1000)) R1(.p(vin), .n(vmid));
+    res    #(.r(1000)) R2(.p(vmid), .n(gnd));
+endmodule

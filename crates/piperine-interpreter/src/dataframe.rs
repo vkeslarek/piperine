@@ -201,6 +201,20 @@ impl ExternClass for DataFrameObj {
 
             "show" => Ok(Value::String(render_table(&df, 10))),
 
+            // with_scalar("run", 3.0) → clone frame, add a constant column
+            // (every row gets the same value). Key for tagging MC runs:
+            //   df = df.with_scalar("r_val", r_sampled);
+            "with_scalar" => {
+                let name = args.first().and_then(|v| v.as_str())
+                    .ok_or("with_scalar(name, value) needs a string name")?.to_string();
+                let val = args.get(1).and_then(|v| v.as_f64())
+                    .ok_or("with_scalar(name, value) needs a real/integer value")?;
+                let col = Column::Real(vec![val; nrows.max(1)]);
+                let mut next = df.clone();
+                upsert(&mut next, name, col);
+                Ok(DataFrameObj::new(next))
+            }
+
             // Append rows from `other` DataFrame. Columns matched by name; order
             // taken from `self`. Missing columns in `other` are filled with 0.0 Real.
             // Preserves `self.index`. Used by Monte-Carlo loops to accumulate runs.

@@ -46,14 +46,14 @@ Done (Phases 1–5 + language Waves 1–3):
 1. **We own the netlist.** Piperine generates the SPICE deck, so ngspice's
    netlist-authoring conveniences (conditionals, includes, parameter math) are
    things we *implement at elaboration time*, not features to forward verbatim.
-2. **The interpreter beats the control shell.** ngspice `.control` scripting
-   (its `if/while/repeat/dowhile`, `let`, `echo`, loops) exists because a SPICE
-   deck is otherwise static. Piperine already has a superior procedural language,
-   so we re-express those capabilities as system tasks/result objects, not as a
-   second scripting layer.
+2. **Python beats the control shell.** ngspice `.control` scripting exists because
+   a SPICE deck is otherwise static. Piperine's testbench layer is Python via PyO3 —
+   a real language with a debugger, libraries (NumPy, SciPy, pytest), and parallel
+   execution. `.control` idioms map to Python methods on `NgspiceSession`, not to a
+   second scripting layer built into `.ppr`.
 3. **Typed results over raw vectors.** ngspice hands back untyped Nutmeg vectors;
-   Piperine wraps them (`Signal`, `Complex`, result objects). New data access
-   follows that pattern.
+   Piperine surfaces them as Python dicts of `np.ndarray` (or `float` for scalars).
+   New data access follows that pattern.
 4. **No macro magic.** Data tables + plain helpers (see the `Element` device
    builder). New surface stays readable and reason-about-able.
 5. **One obvious form per concept; no lying syntax.** Piperine is its own coherent
@@ -68,9 +68,9 @@ Done (Phases 1–5 + language Waves 1–3):
 
 | ngspice feature | Why we skip it |
 |-----------------|----------------|
-| `.control` flow (`if/while/repeat/dowhile`, `goto`) | The interpreter already provides these, better. |
+| `.control` flow (`if/while/repeat/dowhile`, `goto`) | Python testbenches provide these, better. |
 | Interactive debugging (`stop`, `trace`, `iplot`, `step`, `where`) | Piperine drives non-interactively; use `always @(step)` + asserts for runtime checks. |
-| Nutmeg plotting (`plot`, `gnuplot`, `asciiplot`) | Out of band — Piperine emits data; plotting is a downstream concern. |
+| Nutmeg plotting (`plot`, `gnuplot`, `asciiplot`) | Out of band — Piperine emits data; matplotlib/etc. handle plotting. |
 | `ngbehavior` compatibility modes (hspice/ps/…) | We author the deck ourselves; no foreign-dialect parsing needed. |
 | `.spiceinit` / startup RC files | Configuration belongs to the Piperine runtime, not deck dialect. |
 | Netlist `.if/.elseif/.endif` conditionals | Resolved at elaboration by ordinary `if` / parameters. |
@@ -107,27 +107,35 @@ ngspice B-source syntax by the `expr_serializer`. Remaining behavioral forms:
 
 ## Phase 6 — Statistical / Monte Carlo
 
-`$dist_*`/`$urandom` already exist (Wave 3). This phase builds the *workflow*:
-parametric runs, per-run plot management, and result aggregation — the thing real
-analog verification spends its time on.
+Basic parallel MC is already possible via `NgspiceSession.tran_async` +
+`ppr.join_all`. This phase adds first-class distribution helpers and
+aggregation convenience on the Python side.
 
 | Feature | ngspice form | Piperine target | Ref |
 |---------|--------------|-----------------|-----|
-| Tolerance distributions | `agauss/gauss/aunif/unif/limit` in `.param` | helpers returning sampled values (already expressible via `$dist_*`; add the named forms) | `NGSPICE_STATISTICAL.md §1` |
-| Seeded reproducible runs | `set rndseed=…` | `$srandom` (done) — document MC pattern | `NGSPICE_STATISTICAL.md §2` |
-| MC sweep + plot management | `mc_runs`, per-run `tran#N` plots | loop + re-run + collect into `Result[]`; aggregate `.mean()/.sigma()/.yield()` | `NGSPICE_STATISTICAL.md §3` |
+| Tolerance distributions | `agauss/gauss/aunif/unif/limit` in `.param` | Python helpers: `ppr.gauss(mean, sigma)`, `ppr.uniform(lo, hi)` | `NGSPICE_STATISTICAL.md §1` |
+| Seeded reproducible runs | `set rndseed=…` | `sess.set_seed(n)` | `NGSPICE_STATISTICAL.md §2` |
 | Lot vs device tolerance | dual-stage tolerance | a tolerance helper distinguishing lot/device | `NGSPICE_STATISTICAL.md §4` |
-| Corner sweeps | manual | typed corner/sweep config (struct + loop) | — |
+| Corner sweeps | manual | Python list of corner dicts + `ppr.join_all` | — |
 
-### DataFrame — the data through-line · **v1 done**
+Monte Carlo workflow today (no helpers needed — plain Python):
 
-A typed, analysis-independent result container (`DataFrame`) underpins Phases 6–7
-and the eventual data-analysis / PyO3 export story. Every analysis lowers its
-`AnalysisResult` into a column-oriented, indexed frame; Monte-Carlo loops `concat`
-into one long frame. The *type* is simple Rust; the **ergonomics** need specific
-language features — string indexing `df["x"]`, operator overloading for vectorized
-`Signal` math, slicing, and (later) lambdas / `with` clauses. Full design,
-prerequisites, and build order in [DATAFRAME.md](DATAFRAME.md). v1 implementation is done (string indexing, math ops, slicing, base methods).
+```python
+import piperine as ppr, numpy as np
+
+N = 30
+sessions = [ppr.NgspiceSession.from_file("lpf/lpf.ppr", module="lpf_tb")
+            for _ in range(N)]
+
+rs = np.random.normal(1000, 30, N)
+cs = np.random.normal(100e-9, 3e-9, N)
+for sess, r, c in zip(sessions, rs, cs):
+    sess.alter("R1", "resistance", r)
+    sess.alter("C1", "capacitance", c)
+
+futures = [sess.tran_async("1n", "1u") for sess in sessions]
+results = ppr.join_all(futures)   # wall time ≈ slowest worker
+```
 
 ## Phase 7 — Data, files, frequency domain
 
@@ -289,8 +297,8 @@ Status: ✅ done · 🚧 planned (phase) · ⛔ out of scope (interpreter/own-ne
 | `.include` / `.lib` interop | 🚧 P8 |
 | `.global` nets | 🚧 P8 |
 | `.csparam` / subckt params | 🚧 P8 |
-| `.control` flow (if/while/repeat/dowhile) | ⛔ interpreter |
-| Interactive debug (stop/trace/iplot/step/where) | ⛔ interpreter + `always` |
+| `.control` flow (if/while/repeat/dowhile) | ⛔ Python |
+| Interactive debug (stop/trace/iplot/step/where) | ⛔ Python + `always @(step)` |
 | Nutmeg plotting | ⛔ downstream |
 | `ngbehavior` compat modes / `.spiceinit` | ⛔ own netlist |
 | Netlist `.if/.elseif` conditionals | ⛔ elaboration-time `if` |

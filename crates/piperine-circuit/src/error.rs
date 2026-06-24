@@ -16,4 +16,7 @@ pub enum ElaborationError {
 
     #[error("no testbench found — expected a module with an `initial` block")]
     NoTestbench,
+
+    #[error("module `{name}` not found or is not a structural module")]
+    NoModule { name: String },
 }

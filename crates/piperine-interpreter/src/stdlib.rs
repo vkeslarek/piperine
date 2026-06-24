@@ -538,6 +538,111 @@ impl SystemTask for DistExponentialTask {
     }
 }
 
+// ── ngspice-compatible named distribution helpers ─────────────────────────────
+//
+// These mirror ngspice numparam functions `agauss`, `gauss`, `aunif`, `unif`,
+// `limit` — but as procedural system tasks, not netlist `.param` expressions.
+// They use the same shared PRNG as `$dist_normal`/`$dist_uniform`.
+//
+// Argument convention (no leading `seed` arg, unlike `$dist_*`): the names are
+// kept consistent with ngspice so users can translate `.param` tolerances directly.
+
+/// `$agauss(nominal, abs_variation, sigma_level)` — Absolute Gaussian.
+///
+/// Returns `nominal + (abs_variation / sigma_level) * N(0,1)`.
+/// Example: `$agauss(1000.0, 50.0, 3.0)` → 1kΩ ±50Ω at 3σ.
+#[derive(Debug)] pub struct AgaussTask;
+impl SystemTask for AgaussTask {
+    fn name(&self) -> &str { "agauss" }
+    fn call(&self, args: Vec<Value>, _: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let nominal   = arg_real(&args, 0, "agauss")?;
+        let abs_var   = arg_real(&args, 1, "agauss")?;
+        let sigma_lvl = arg_real(&args, 2, "agauss")?;
+        if sigma_lvl == 0.0 { return Err(InterpreterError::Other("agauss: sigma_level must be != 0".into())); }
+        let z = normal_sample();
+        Ok(Some(Value::Real(nominal + (abs_var / sigma_lvl) * z)))
+    }
+}
+
+/// `$gauss(nominal, rel_variation, sigma_level)` — Relative Gaussian.
+///
+/// Returns `nominal + nominal * rel_variation / sigma_level * N(0,1)`.
+/// Example: `$gauss(1000.0, 0.05, 3.0)` → 1kΩ ±5% at 3σ.
+#[derive(Debug)] pub struct GaussTask;
+impl SystemTask for GaussTask {
+    fn name(&self) -> &str { "gauss" }
+    fn call(&self, args: Vec<Value>, _: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let nominal   = arg_real(&args, 0, "gauss")?;
+        let rel_var   = arg_real(&args, 1, "gauss")?;
+        let sigma_lvl = arg_real(&args, 2, "gauss")?;
+        if sigma_lvl == 0.0 { return Err(InterpreterError::Other("gauss: sigma_level must be != 0".into())); }
+        let z = normal_sample();
+        Ok(Some(Value::Real(nominal + nominal * rel_var / sigma_lvl * z)))
+    }
+}
+
+/// `$aunif(nominal, abs_variation)` — Absolute Uniform.
+///
+/// Returns `nominal + abs_variation * U(-1, 1)`.
+/// Example: `$aunif(100e-12, 10e-12)` → 100pF ±10pF.
+#[derive(Debug)] pub struct AunifTask;
+impl SystemTask for AunifTask {
+    fn name(&self) -> &str { "aunif" }
+    fn call(&self, args: Vec<Value>, _: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let nominal = arg_real(&args, 0, "aunif")?;
+        let abs_var = arg_real(&args, 1, "aunif")?;
+        let u = rng_unit() * 2.0 - 1.0;    // U(-1, 1)
+        Ok(Some(Value::Real(nominal + abs_var * u)))
+    }
+}
+
+/// `$unif(nominal, rel_variation)` — Relative Uniform.
+///
+/// Returns `nominal + nominal * rel_variation * U(-1, 1)`.
+/// Example: `$unif(1000.0, 0.05)` → 1kΩ ±5% uniform.
+#[derive(Debug)] pub struct UnifTask;
+impl SystemTask for UnifTask {
+    fn name(&self) -> &str { "unif" }
+    fn call(&self, args: Vec<Value>, _: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let nominal = arg_real(&args, 0, "unif")?;
+        let rel_var = arg_real(&args, 1, "unif")?;
+        let u = rng_unit() * 2.0 - 1.0;
+        Ok(Some(Value::Real(nominal + nominal * rel_var * u)))
+    }
+}
+
+/// `$limit(nominal, abs_variation)` — Binary worst-case.
+///
+/// Returns `nominal + abs_variation` or `nominal - abs_variation` with equal
+/// probability. Models a strictly bimodal (process-corner) distribution.
+#[derive(Debug)] pub struct LimitTask;
+impl SystemTask for LimitTask {
+    fn name(&self) -> &str { "limit" }
+    fn call(&self, args: Vec<Value>, _: &mut dyn SimulatorBackend)
+        -> Result<Option<Value>, InterpreterError>
+    {
+        let nominal = arg_real(&args, 0, "limit")?;
+        let abs_var = arg_real(&args, 1, "limit")?;
+        let sign = if rng_unit() < 0.5 { -1.0 } else { 1.0 };
+        Ok(Some(Value::Real(nominal + sign * abs_var)))
+    }
+}
+
+/// Shared Box-Muller N(0,1) sample (no seed argument — uses shared PRNG).
+fn normal_sample() -> f64 {
+    let u1 = rng_unit().max(f64::MIN_POSITIVE);
+    let u2 = rng_unit();
+    (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos()
+}
+
 /// `$dist_*` take `seed` as their first argument; a non-zero seed reseeds.
 fn maybe_reseed(args: &[Value]) {
     if let Some(seed) = args.first().and_then(|v| v.as_integer()) {
@@ -590,7 +695,7 @@ pub fn register_stdlib(registry: &mut crate::task::SystemTaskRegistry) {
 
     registry.register(Box::new(Clog2Task));
 
-    // Randomization
+    // Randomization — low-level
     registry.register(Box::new(SRandomTask));
     registry.register(Box::new(RandomTask));
     registry.register(Box::new(URandomTask));
@@ -598,4 +703,11 @@ pub fn register_stdlib(registry: &mut crate::task::SystemTaskRegistry) {
     registry.register(Box::new(DistUniformTask));
     registry.register(Box::new(DistNormalTask));
     registry.register(Box::new(DistExponentialTask));
+
+    // Named distribution helpers (ngspice numparam-compatible names)
+    registry.register(Box::new(AgaussTask));
+    registry.register(Box::new(GaussTask));
+    registry.register(Box::new(AunifTask));
+    registry.register(Box::new(UnifTask));
+    registry.register(Box::new(LimitTask));
 }
