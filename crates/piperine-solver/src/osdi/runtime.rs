@@ -139,6 +139,13 @@ fn set_str_params_via_access(
                 if !ptr.is_null() {
                     let str_ptr: *const c_char = cstr.as_ptr();
                     unsafe { (ptr as *mut *const c_char).write_unaligned(str_ptr) };
+                    if is_model_kind {
+                        if let Some(f) = desc.given_flag_model {
+                            unsafe { f(model_data.as_mut_ptr() as *mut c_void, id as u32); }
+                        }
+                    } else if let Some(f) = desc.given_flag_instance {
+                        unsafe { f(inst_data.as_mut_ptr() as *mut c_void, id as u32); }
+                    }
                     found = true;
                 }
             }
@@ -242,6 +249,8 @@ pub struct OsdiRuntime {
     pub(crate) last_bound_step: f64,
     /// History of nodal charges for LTE truncation. Index 0 is most recent.
     pub(crate) charge_history: VecDeque<Vec<f64>>,
+    /// True if the last eval returned EVAL_RET_FLAG_LIM.
+    pub(crate) limiting_active: bool,
 }
 
 impl OsdiRuntime {
@@ -273,13 +282,22 @@ impl OsdiRuntime {
         let node_map_base = desc.node_mapping_offset as usize;
 
         for i in 0..num_nodes {
-            let node_id = if i < num_terminals {
-                terminals[i].clone()
-            } else {
-                alloc_internal_node()
-            };
+            let osdi_node = unsafe { &*desc.nodes.add(i) };
+            let is_flow = osdi_node.is_flow;
 
-            let cref = netlist.connect_node(node_id);
+            let cref = if i < num_terminals {
+                netlist.connect_node(terminals[i].clone())
+            } else if is_flow {
+                let node_name = if osdi_node.name.is_null() {
+                    format!("br_{}", i)
+                } else {
+                    unsafe { std::ffi::CStr::from_ptr(osdi_node.name) }.to_string_lossy().into_owned()
+                };
+                let branch_id = crate::circuit::netlist::BranchIdentifier::new(device_name.clone(), node_name);
+                netlist.connect_branch(branch_id)
+            } else {
+                netlist.connect_node(alloc_internal_node())
+            };
             let mapping_val: u32 = match cref.idx() {
                 Some(k) => (k + 1) as u32,
                 None => 0, // GND
@@ -337,6 +355,9 @@ impl OsdiRuntime {
                     &mut init_info,
                 );
             }
+            if init_info.num_errors > 0 {
+                panic!("[osdi] setup_model failed with {} errors for device '{}'", init_info.num_errors, device_name);
+            }
         }
         // Set MODEL params after setup_model (which initializes defaults).
         let found_model = set_params_via_access(desc, &mut model_data, &mut inst_data, params, true);
@@ -353,6 +374,9 @@ impl OsdiRuntime {
                     &sim_paras,
                     &mut init_info,
                 );
+            }
+            if init_info.num_errors > 0 {
+                panic!("[osdi] setup_instance failed with {} errors for device '{}'", init_info.num_errors, device_name);
             }
         }
         // Set INST params after setup_instance (which initializes instance defaults).
@@ -394,6 +418,7 @@ impl OsdiRuntime {
             str_params_live,
             last_bound_step: f64::INFINITY,
             charge_history: VecDeque::new(),
+            limiting_active: false,
         }
     }
 
@@ -507,7 +532,7 @@ impl OsdiRuntime {
         }
     }
 
-    pub(crate) fn eval_with_flags(&self, flags: u32, prev_solve: &[f64; SCRATCH], context: &Context) -> u32 {
+    pub(crate) fn eval_with_flags(&mut self, flags: u32, prev_solve: &[f64; SCRATCH], context: &Context) -> u32 {
         let sp = OsdiSimParasOwned::new(context, flags & INIT_LIM != 0);
         let paras = sp.as_raw();
         let sim_info = OsdiSimInfo {
@@ -531,11 +556,12 @@ impl OsdiRuntime {
                 unsafe { std::ffi::CStr::from_ptr(self.desc().name).to_string_lossy() },
             );
         }
+        self.limiting_active = (ret & EVAL_RET_FLAG_LIM) != 0;
         ret
     }
 
     pub(crate) fn eval_tran(
-        &self,
+        &mut self,
         abstime: f64,
         prev_solve: &[f64; SCRATCH],
         context: &Context,
@@ -559,11 +585,20 @@ impl OsdiRuntime {
         };
         let inst = self.inst_data.as_ptr() as *mut c_void;
         let model = self.model_data.as_ptr() as *mut c_void;
-        unsafe {
+        let ret = unsafe {
             self.desc().eval
                 .map(|f| f(std::ptr::null_mut(), inst, model, &sim_info))
                 .unwrap_or(0)
+        };
+        self.limiting_active = (ret & EVAL_RET_FLAG_LIM) != 0;
+
+        let bs_off = self.desc().bound_step_offset as usize;
+        if bs_off != 0xFFFFFFFF && bs_off + 8 <= self.inst_data.len() {
+            let slice = &self.inst_data[bs_off..bs_off + 8];
+            self.last_bound_step = f64::from_ne_bytes(slice.try_into().unwrap());
         }
+
+        ret
     }
 
     fn rerun_setup_instance(&mut self, temperature: f64) {
@@ -582,6 +617,9 @@ impl OsdiRuntime {
                     &sim_paras,
                     &mut init_info,
                 );
+            }
+            if init_info.num_errors > 0 {
+                panic!("[osdi] rerun_setup_instance failed with {} errors for device '{}'", init_info.num_errors, self.device_name);
             }
         }
         let _ = set_params_via_access(desc, &mut self.model_data, &mut self.inst_data, &self.params, false);
@@ -664,7 +702,12 @@ impl OsdiRuntime {
                 continue;
             }
 
-            let value = unsafe { (ptr as *const f64).read_unaligned() };
+            let ty = po.flags & PARA_TY_MASK;
+            let value = match ty {
+                PARA_TY_INT => unsafe { (ptr as *const i32).read_unaligned() as f64 },
+                PARA_TY_REAL => unsafe { (ptr as *const f64).read_unaligned() },
+                _ => continue,
+            };
 
             // Get the name from the first alias (index 0).
             let name = if !po.name.is_null() {

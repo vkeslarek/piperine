@@ -440,7 +440,7 @@ fn test_noisy_resistor_has_noise_sources() {
 
     let ac_ctx = AcAnalysisContext { frequency: 1e3 };
     let mut total_noise = 0;
-    for rt in inst.all_runtimes() {
+    for rt in inst.all_runtimes_mut() {
         let noises = rt.noise_current_psd(&dc, &ac_ctx);
         total_noise += noises.len();
         for n in &noises {
@@ -480,7 +480,7 @@ fn test_noise_psd_thermal_value() {
 
     let ac_ctx = AcAnalysisContext { frequency: 1e3 };
     let mut total_psd = 0.0;
-    for rt in inst.all_runtimes() {
+    for rt in inst.all_runtimes_mut() {
         for n in rt.noise_current_psd(&dc, &ac_ctx) {
             total_psd += n.value;
         }
@@ -529,7 +529,7 @@ fn test_noise_psd_scales_with_resistance() {
         let dc = inst.dc(Context::default()).unwrap().solve().unwrap();
 
         let mut total = 0.0;
-        for rt in inst.all_runtimes() {
+        for rt in inst.all_runtimes_mut() {
             for n in rt.noise_current_psd(&dc, &ac_ctx) {
                 total += n.value;
             }
@@ -581,7 +581,7 @@ fn test_noise_zero_for_non_noisy_device() {
 
     let ac_ctx = AcAnalysisContext { frequency: 1e3 };
     let mut total = 0;
-    for rt in inst.all_runtimes() {
+    for rt in inst.all_runtimes_mut() {
         total += rt.noise_current_psd(&dc, &ac_ctx).len();
     }
     // Plain resistor model has no noise sources
@@ -741,7 +741,7 @@ fn test_noise_at_different_temperatures() {
         let dc = inst.dc(ctx).unwrap().solve().unwrap();
 
         let mut total = 0.0;
-        for rt in inst.all_runtimes() {
+        for rt in inst.all_runtimes_mut() {
             for n in rt.noise_current_psd(&dc, &ac_ctx) {
                 total += n.value;
             }

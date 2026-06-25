@@ -36,16 +36,22 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
 
         self.context.time = self.time;
         self.circuit.update_all(state, &self.context);
-        for tran in self.circuit.all_runtimes() {
+        for tran in self.circuit.all_runtimes_mut() {
             all_stamps.extend(tran.load_transient(state, &tran_ctx, &self.context));
         }
         Ok(all_stamps)
     }
 
     fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
+        for runtime in self.circuit.all_runtimes() {
+            if runtime.limiting_active {
+                debug!("Device {} requested limiting reiteration", runtime.device_name);
+                return false;
+            }
+        }
         let netlist = self.circuit.netlist();
         self.context
-            .has_converged(state.latest(), new_guess, netlist)
+            .has_converged(state.view(0), new_guess, netlist)
     }
 
     fn apply_limit(

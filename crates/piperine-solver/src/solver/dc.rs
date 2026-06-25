@@ -34,7 +34,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         let mut all_stamps = Vec::new();
 
         self.circuit.update_all(state, &self.context);
-        for dc in self.circuit.all_runtimes() {
+        for dc in self.circuit.all_runtimes_mut() {
             all_stamps.extend(dc.load_dc(state, &self.context));
         }
 
@@ -46,6 +46,12 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
     /// Compares the current guess against the previous state using tolerance
     /// criteria defined in the solver context.
     fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
+        for runtime in self.circuit.all_runtimes() {
+            if runtime.limiting_active {
+                debug!("Device {} requested limiting reiteration", runtime.device_name);
+                return false;
+            }
+        }
         let netlist = self.circuit.netlist();
         self.context
             .has_converged(state.view(0), new_guess, netlist)
