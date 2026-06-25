@@ -6,3 +6,4 @@ pub mod math;
 pub mod result;
 pub mod solver;
 pub mod util;
+pub mod digital;
