@@ -1,586 +1,583 @@
-# Piperine Mixed-Signal Cosimulation — Development Specification
+# Piperine Mixed-Signal Simulation — Development Specification
 
-> **Purpose:** This document is a complete, unambiguous development specification for implementing
-> mixed-signal (analog + digital) cosimulation in the Piperine simulator. It is written so that an
-> implementer with no prior context can build the system from these instructions alone.
+> **Purpose:** Complete, unambiguous development specification for mixed-signal simulation in
+> Piperine. Written for an implementer with no prior context.
 
 ---
 
-## 1. Background and Terminology
+## 1. Core Principle: One Simulator, Not Two
+
+There is no "cosimulation." There is one simulator that understands two kinds of variables:
+**continuous** (analog) and **discrete** (digital). The transient loop is a single unified loop
+that happens to contain both a matrix solver and an event queue as internal mechanisms.
+
+**Design Decision: No `CosimCoordinator`.**
+
+A separate coordinator implies two independent engines being synchronized externally. That is the
+wrong mental model. Instead, the `TransientSolver` itself is extended to manage both continuous
+integration and discrete events as part of its own state. The analog matrix and the digital event
+queue are peers inside a single `SimulationState`, not foreign systems requiring a mediator.
+
+**Rationale:** In Verilog-AMS, a module's ports are just ports. The discipline (electrical, logic)
+determines behavior, but the port identity is unified. A signal named `clk` is `clk` whether it
+carries voltage or logic. Our architecture must reflect this: one namespace, one time authority,
+one simulation.
+
+---
+
+## 2. Terminology
 
 | Term | Definition |
 |------|-----------|
-| **Analog Solver** | The existing Newton-Raphson + OSDI transient engine (`TransientSolver` in `solver/transient.rs`). It advances time by computing solutions to differential-algebraic equations at discrete timesteps. |
-| **Digital Solver** | A new event-driven simulation engine to be built. It maintains a priority queue of future events and evaluates combinational/sequential logic only when inputs change. |
-| **OSDI** | Open Standard Device Interface. A C ABI for analog device models (`.so` libraries). Already implemented in `piperine-solver/src/osdi/`. |
-| **D-OSDI** | Digital Open Standard Device Interface. A new C ABI proposed in this document for digital device models. Analogous to OSDI but event-driven instead of matrix-driven. |
-| **Connect Module** | A bridge device that converts signals between the analog and digital domains. Two kinds exist: D2A (digital-to-analog) and A2D (analog-to-digital). |
-| **Breakpoint** | A time instant where the analog solver is forced to place a timestep boundary, typically because a digital event occurs there. |
-| **Zero-Crossing** | The exact time at which a continuous analog signal crosses a threshold. Detected by interpolation after the analog solver completes a timestep. |
-| **Delta Cycle** | A digital simulation concept: a round of combinational propagation that occurs at zero elapsed time. Multiple delta cycles may occur at a single time instant. |
+| **Continuous variable** | A variable solved by Newton-Raphson at every timestep. Voltages, currents, charges. Represented by `AnalogVariable` in the existing netlist. |
+| **Discrete variable** | A variable that changes only at specific event times. Logic values (0, 1, X, Z). Stored in a flat state table. |
+| **OSDI** | The existing C ABI for analog device models. Devices contribute to the Jacobian matrix. Already implemented. |
+| **D-OSDI** | A new C ABI for digital device models. Devices respond to input events and schedule output events. Does NOT participate in the matrix. |
+| **Connect module** | A device that has BOTH analog ports and digital ports. It translates between continuous and discrete domains. Implemented as a hybrid that participates in both the matrix (analog side) and the event queue (digital side). |
+| **Breakpoint** | A time instant forced into the stepper's schedule because a digital event or a connect module transition requires it. |
+| **Zero-crossing** | The exact time a continuous signal crosses a threshold. Detected by a connect module's A2D logic after the analog solver converges a timestep. |
+| **Delta cycle** | One round of combinational propagation at zero elapsed time in the digital domain. |
 
 ---
 
-## 2. Architecture Overview
+## 3. The Unified Port Model
 
-The system consists of three major components that communicate through a central coordinator:
+### 3.1 Current State
 
+The existing netlist uses `AnalogVariable` (an enum of `Node`, `Branch`, `Time`, `Frequency`,
+`Iteration`) and `AnalogReference` (an `AnalogVariable` + matrix index). These are purely
+continuous concepts.
+
+### 3.2 Required Extension
+
+We need a unified port identity that the compiler, elaborator, and solver all share. A port is
+just a named connection point on a module. Its *discipline* determines how it participates in
+simulation.
+
+```rust
+/// A port identifier as declared in source code.
+/// This is the compiler-facing identity. It has no matrix index, no event queue slot.
+/// Those bindings are created during elaboration.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct PortId {
+    /// The module instance that owns this port.
+    pub instance: String,
+    /// The port name as declared in source (e.g., "clk", "vdd", "out").
+    pub name: String,
+}
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                    Cosim Coordinator                         │
-│  (owns the global clock, breakpoint queue, connect modules)  │
-│                                                              │
-│  ┌─────────────────┐     ┌──────────────────┐               │
-│  │  Analog Engine   │◄───►│  Digital Engine   │               │
-│  │  (OSDI devices)  │     │  (D-OSDI devices) │               │
-│  │  NR + Transient  │     │  Event Queue       │               │
-│  └────────┬─────────┘     └────────┬──────────┘               │
-│           │                        │                          │
-│           └────────┐  ┌────────────┘                          │
-│                    ▼  ▼                                       │
-│            ┌───────────────┐                                  │
-│            │Connect Modules│                                  │
-│            │  D2A     A2D  │                                  │
-│            └───────────────┘                                  │
-└──────────────────────────────────────────────────────────────┘
+
+During elaboration, each `PortId` is resolved to one of:
+- An `AnalogReference` (if the port's discipline is continuous, e.g., `electrical`).
+- A `DigitalNetId` (if the port's discipline is discrete, e.g., `logic`).
+- **Both** (if the port sits on a connect module boundary — it has a ghost analog node AND a
+  digital net, linked by the connect module's internal logic).
+
+```rust
+/// How a port is bound in the simulation.
+#[derive(Debug, Clone)]
+pub enum PortBinding {
+    /// Pure analog: participates in the matrix.
+    Continuous(AnalogReference),
+    /// Pure digital: participates in the event queue.
+    Discrete(DigitalNetId),
+    /// Mixed boundary: the connect module owns both handles.
+    /// The AnalogReference is the ghost node; the DigitalNetId is the event net.
+    Bridge {
+        analog: AnalogReference,
+        digital: DigitalNetId,
+    },
+}
 ```
 
-### 2.1 Design Decision: Single-Process, Multi-Engine
+**Design Decision: PortId is discipline-agnostic.**
 
-Both engines run in the same process. No IPC. No threads for the initial implementation.
+The `PortId` type does not encode whether a port is analog or digital. That information lives in
+the discipline annotation from the source code and is resolved during elaboration. This means the
+compiler can name ports uniformly, and the elaborator decides how to bind them. No special
+"digital port" vs "analog port" type proliferation.
 
-**Rationale:** IPC introduces latency and complexity (serialization, synchronization). The lockstep
-algorithm requires tight back-and-forth between engines at every timestep. In-process function calls
-are orders of magnitude faster. Threading can be added later as an optimization once correctness is
-proven.
-
-### 2.2 Design Decision: The Coordinator Owns Time
-
-Neither the analog engine nor the digital engine independently decides what time to advance to.
-The `CosimCoordinator` is the single authority that computes `t_next` by considering:
-1. The analog stepper's proposed `dt` (from LTE / `bound_step`).
-2. The digital engine's next pending event time.
-3. Any forced breakpoints from connect modules.
-
-**Rationale:** If each engine independently advanced time, rollbacks would be frequent and expensive.
-A single time authority prevents causal violations entirely.
+**Rationale:** In Verilog-AMS, `module foo(a, b, c)` declares three ports. The disciplines are
+declared separately: `electrical a; logic b; electrical c;`. If we bake the discipline into the
+port identity type, we force the compiler to resolve disciplines before it can even name ports.
+Keeping `PortId` discipline-agnostic mirrors the language semantics and avoids premature coupling.
 
 ---
 
-## 3. The Lockstep Synchronization Algorithm
+## 4. Connect Modules Are Devices, Not Special Structs
 
-This is the core loop of the cosimulation. It runs inside `CosimCoordinator::run_transient()`.
+### 4.1 The Problem with Separate D2A/A2D Structs
 
-### Pseudocode
+The previous version of this spec defined `D2AConnector` and `A2DConnector` as standalone Rust
+structs with no ABI. This creates problems:
+- They become a special case in every part of the system (elaborator, solver loop, result
+  collection).
+- Users cannot define custom connect rules (the Verilog-AMS `connectrules` feature).
+- The D2A and A2D behaviors are artificially separated when in reality they are two facets of
+  the same boundary device.
+
+### 4.2 Connect Modules as Hybrid Devices
+
+A connect module is a device that has **both** analog and digital ports. It is compiled (by our
+compiler) into a `.so` that exposes:
+- An **OSDI descriptor** for its analog side (the ghost node that participates in the matrix).
+- A **D-OSDI descriptor** for its digital side (the event port).
+- A shared `inst_data` blob that both sides read/write.
+
+At the OSDI level, the connect module's `eval()` produces the smooth voltage ramp (D2A direction)
+or writes the monitored analog voltage to a known offset in `inst_data` (A2D direction).
+
+At the D-OSDI level, the connect module's `eval_digital()`:
+- **D2A direction:** Reads the new digital input value and writes a target voltage + transition
+  start time into `inst_data`. The OSDI `eval()` reads these to compute the ramp.
+- **A2D direction:** Reads the monitored voltage from `inst_data`, applies threshold + hysteresis
+  logic, and schedules a digital event if a crossing occurred.
+
+**The simulator treats connect modules exactly like any other device.** The only special thing
+about them is that they appear in BOTH the analog device list and the digital device list,
+sharing the same `inst_data`. The elaborator is responsible for linking the two halves.
+
+### 4.3 Zero-Crossing Ownership
+
+The connect module itself owns the zero-crossing detection logic. The simulator does NOT inspect
+analog node voltages to look for crossings. Instead:
+
+1. After the analog solver converges a timestep, the simulator calls `accept_timestep()` on all
+   OSDI devices (including connect modules).
+2. The connect module's `accept_timestep()` (or a post-convergence hook) compares the current
+   monitored voltage against the previous voltage and the threshold.
+3. If a crossing is detected, the connect module computes `t_cross` internally and schedules
+   a digital event via the D-OSDI event queue interface.
+
+**Rationale:** This keeps crossing logic encapsulated in the device where it belongs. Different
+connect modules can use different thresholds, hysteresis bands, or interpolation methods without
+the simulator core knowing about any of it.
+
+### 4.4 Standard Library Connect Modules
+
+We ship two built-in connect modules:
+
+**`ppr_d2a` (Digital-to-Analog):**
+- Digital port: 1 input.
+- Analog port: 2 terminals (p, n — voltage source).
+- Parameters: `v_low` (default 0.0), `v_high` (default 1.8), `t_rise` (default 100ps),
+  `t_fall` (default 100ps).
+- Behavior: On digital input change, ramps the analog voltage linearly from current value to
+  target over `t_rise` or `t_fall`.
+
+**`ppr_a2d` (Analog-to-Digital):**
+- Analog port: 2 terminals (p, n — voltage monitor).
+- Digital port: 1 output.
+- Parameters: `v_threshold` (default 0.9), `hysteresis` (default 0.1).
+- Behavior: After each converged analog timestep, checks if V(p,n) crossed the threshold band.
+  If so, computes `t_cross` via linear interpolation and schedules a digital event.
+
+**`ppr_bidir` (Bidirectional):**
+- Combines D2A and A2D. Digital input controls the analog source; analog voltage monitors back
+  to digital output. Used for bidirectional buses where both directions are active.
+
+---
+
+## 5. The Unified Simulation Loop
+
+### 5.1 Transient Analysis
+
+The transient loop lives in the existing `TransientSolver`. It is extended, not replaced.
 
 ```
-FUNCTION run_transient(stop_time):
+FUNCTION solve(stop_time):
     t = 0.0
-    dc_solution = analog_engine.solve_dc()
-    digital_engine.initialize(dc_solution)
-    connect_modules.initialize(dc_solution)
+    dc_solution = solve_dc()
+    digital_state.initialize(dc_solution)   // A2D modules read DC voltages, set initial logic
 
     WHILE t < stop_time:
-        // ── PHASE 1: Compute next time target ──
-        dt_analog = analog_engine.propose_timestep()
-        t_next_analog = t + dt_analog
-        t_next_digital = digital_engine.peek_next_event_time()  // may be INFINITY
-
-        t_next = min(t_next_analog, t_next_digital, stop_time)
+        // ── Compute next time ──
+        dt_proposed = stepper.propose_dt()              // LTE, bound_step
+        t_next_event = digital_state.peek_next_event()  // may be INFINITY
+        t_next = min(t + dt_proposed, t_next_event, stop_time)
         dt = t_next - t
 
-        // ── PHASE 2: Process digital events at t_next ──
-        IF digital_engine.has_events_at(t_next):
-            digital_engine.evaluate_until_stable(t_next)
-            // This resolves all delta cycles at t_next.
-            // After stabilization, read output port values.
+        // ── Process pending digital events at t_next ──
+        // This includes events from A2D crossings detected in the previous step,
+        // as well as events generated by D-OSDI devices themselves.
+        digital_state.evaluate_until_stable(t_next)
 
-            FOR EACH d2a_connector IN connect_modules.d2a:
-                new_digital_value = digital_engine.read_port(d2a_connector.digital_port)
-                d2a_connector.start_transition(new_digital_value, t_next)
-                // The D2A connector records the target value and the time at
-                // which the transition begins. It does NOT step-change the
-                // analog source. Instead, it will produce a smooth ramp
-                // over t_rise/t_fall during subsequent analog evaluations.
+        // ── Solve the analog timestep [t, t_next] ──
+        // During NR iterations:
+        //   - OSDI devices (including connect modules' analog halves) are evaluated.
+        //   - Connect module D2A sides compute time-varying ramp values.
+        //   - The matrix is assembled and solved as usual.
+        result = newton_raphson.solve(t_next, dt)
 
-        // ── PHASE 3: Solve the analog timestep [t, t_next] ──
-        analog_result = analog_engine.step(t, t_next, dt)
-        // Inside this step:
-        //   - D2A connectors inject time-varying source values into the matrix.
-        //   - OSDI devices are evaluated via eval().
-        //   - Newton-Raphson iterates until convergence.
-
-        IF analog_result == FAILED_TO_CONVERGE:
+        IF result == FAILED:
             dt = dt / 2
-            CONTINUE  // Retry with smaller timestep. No time advances.
+            digital_state.rollback()
+            CONTINUE
 
-        // ── PHASE 4: Detect analog-to-digital crossings ──
-        FOR EACH a2d_connector IN connect_modules.a2d:
-            v_old = a2d_connector.voltage_at(t)
-            v_new = a2d_connector.voltage_at(t_next)
+        // ── Post-convergence: let connect modules detect crossings ──
+        // Connect modules compare v_prev vs v_now internally.
+        // If a crossing is detected, they schedule events into digital_state.
+        for device in connect_modules:
+            device.post_convergence(t, t_next, &analog_solution, &mut digital_state)
 
-            IF crossed_threshold(v_old, v_new, a2d_connector.threshold):
-                t_cross = interpolate_crossing_time(t, v_old, t_next, v_new, threshold)
-                new_logic_value = (v_new > threshold) ? 1 : 0
-                digital_engine.schedule_event(a2d_connector.digital_port, new_logic_value, t_cross)
-
-        // ── PHASE 5: Commit and advance ──
-        digital_engine.commit_state()
-        analog_engine.accept_timestep()
+        // ── Accept and advance ──
+        digital_state.commit()
+        accept_timestep()
         t = t_next
-
-    RETURN collect_results()
 ```
 
-### 3.1 Design Decision: Phase 2 Before Phase 3
+### 5.2 Design Decision: Digital Events Processed Before Analog Solve
 
-Digital events are processed **before** the analog step, not after.
+Digital events at `t_next` are resolved BEFORE the analog solver runs for `[t, t_next]`.
 
-**Rationale:** If we solved the analog step first and then discovered a digital event at the same
-time, we would need to roll back the analog solution and redo it with the updated D2A sources. By
-processing digital events first, D2A connectors are already in the correct state when the analog
-solver runs. This eliminates rollbacks in the common case.
+**Rationale:** The D2A side of connect modules must know the current digital state to compute
+correct ramp targets. If we solved the analog step first, connect modules would use stale digital
+values, requiring a rollback and re-solve once the digital events are processed. Processing events
+first avoids this.
 
-### 3.2 Design Decision: Linear Interpolation for Zero-Crossing
+### 5.3 AC / Noise / Transfer Function (Analog-Only Analyses)
 
-For the initial implementation, use linear interpolation to find `t_cross`:
+These analyses have no digital component. When the simulation is purely analog:
+- The digital event queue is empty.
+- `peek_next_event()` returns `INFINITY`.
+- Connect modules' digital ports are initialized to a fixed value from the DC operating point
+  and never change.
+- The analysis proceeds exactly as it does today, with zero overhead.
 
-```
-t_cross = t + (threshold - v_old) / (v_new - v_old) * dt
-```
+**Design Decision: No special-casing for pure-analog.**
 
-**Rationale:** Higher-order interpolation (quadratic, cubic) requires storing multiple past solution
-points and is more complex to implement. Linear interpolation is sufficient for most practical
-cases. The error is bounded by `O(dt²)`, which is acceptable because the analog stepper already
-controls `dt` to meet truncation error tolerances.
+The unified loop handles this naturally. There is no `if has_digital { ... } else { ... }` branch.
+The event queue is simply empty, and `min(t + dt_proposed, INFINITY)` equals `t + dt_proposed`.
 
 ---
 
-## 4. Connect Modules
+## 6. The D-OSDI ABI
 
-Connect modules are not OSDI devices. They are lightweight Rust structs managed directly by the
-coordinator. They have no Jacobian, no matrix stamping. They are pure signal translators.
+### 6.1 Scope
 
-### 4.1 D2A Connect Module (Digital → Analog)
-
-```rust
-/// A D2A connector injects a smooth voltage transition into an analog node
-/// whenever the digital side changes value.
-pub struct D2AConnector {
-    /// The analog node this connector drives (an AnalogReference in the netlist).
-    pub analog_node: AnalogReference,
-
-    /// The digital port name this connector reads from.
-    pub digital_port: PortId,
-
-    /// Voltage levels for logic 0 and logic 1.
-    pub v_low: f64,   // e.g., 0.0
-    pub v_high: f64,  // e.g., 1.8
-
-    /// Rise and fall times for the analog transition.
-    pub t_rise: f64,  // e.g., 100e-12 (100 ps)
-    pub t_fall: f64,  // e.g., 100e-12
-
-    // ── Internal state ──
-    /// The time at which the current transition started.
-    transition_start: f64,
-    /// The voltage at transition_start.
-    v_from: f64,
-    /// The target voltage of the current transition.
-    v_to: f64,
-}
-```
-
-**Key method: `voltage_at(t: f64) -> f64`**
-
-This returns the instantaneous voltage at time `t` during a transition. It computes a linear ramp
-between `v_from` and `v_to` over the appropriate rise/fall time. If `t` is past the transition end,
-it returns `v_to`. If no transition is active, it returns the steady-state value.
-
-**How it participates in the analog solve:**
-
-The D2A connector does NOT stamp into the Jacobian matrix. Instead, it acts as a **controlled
-voltage source**. During `TransientSystem::assemble()`, the coordinator reads
-`d2a.voltage_at(current_time)` and injects it as a known-voltage boundary condition on
-`d2a.analog_node`. This is equivalent to setting a fixed voltage on that node (grounding the node
-through a very small resistance to the target voltage, i.e., a Norton equivalent with `G = 1/R_src`
-where `R_src` is very small).
-
-**Design Decision: Linear ramp, not RC or sigmoid.**
-
-A piecewise-linear ramp is trivially differentiable (constant derivative during transition, zero
-outside) and produces clean Jacobian entries. RC curves or sigmoids add unnecessary complexity for
-the initial implementation.
-
-### 4.2 A2D Connect Module (Analog → Digital)
-
-```rust
-/// An A2D connector monitors an analog voltage and generates digital events
-/// when thresholds are crossed.
-pub struct A2DConnector {
-    /// The analog node this connector monitors.
-    pub analog_node: AnalogReference,
-
-    /// The digital port this connector drives.
-    pub digital_port: PortId,
-
-    /// Threshold voltage for logic high.
-    pub v_threshold: f64,  // e.g., 0.9 (VDD/2)
-
-    /// Hysteresis band (optional, prevents oscillation at threshold).
-    pub hysteresis: f64,   // e.g., 0.1
-
-    // ── Internal state ──
-    /// Last known digital value (to detect edges, not levels).
-    last_digital_value: LogicValue,
-    /// Voltage at previous accepted timestep (for interpolation).
-    v_prev: f64,
-}
-```
-
-**Key method: `check_crossing(v_old: f64, v_new: f64) -> Option<(CrossingDirection, f64)>`**
-
-Returns `Some((Rising, t_cross))` or `Some((Falling, t_cross))` if a threshold was crossed, or
-`None` if no crossing occurred. The crossing time is computed via linear interpolation.
-
-**Hysteresis logic:**
-
-- A rising crossing is detected only when `v_old < (v_threshold - hysteresis/2)` and
-  `v_new >= (v_threshold + hysteresis/2)`.
-- A falling crossing is detected only when `v_old > (v_threshold + hysteresis/2)` and
-  `v_new <= (v_threshold - hysteresis/2)`.
-
-This prevents rapid toggling when the analog signal hovers near the threshold.
-
----
-
-## 5. The Digital Engine
-
-### 5.1 Overview
-
-The digital engine is a discrete-event simulator. It maintains:
-1. A **time-ordered event queue** (priority queue / min-heap keyed by time).
-2. A **net state table** mapping each digital net to its current `LogicValue`.
-3. A set of **D-OSDI device instances**, each loaded from a compiled `.so` library.
-
-### 5.2 LogicValue
-
-```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LogicValue {
-    Zero,
-    One,
-    X,     // Unknown / uninitialized
-    Z,     // High-impedance
-}
-```
-
-**Design Decision: 4-value logic (IEEE 1364).**
-
-We use 4-value logic (0, 1, X, Z) rather than 2-value (0, 1). This is necessary to correctly model
-tri-state buses, uninitialized registers, and contention. It matches the Verilog standard.
-
-### 5.3 Event
-
-```rust
-pub struct DigitalEvent {
-    /// The time at which this event occurs.
-    pub time: f64,
-    /// The net whose value changes.
-    pub net: DigitalNetId,
-    /// The new value of the net.
-    pub value: LogicValue,
-    /// The source device that generated this event (for debugging / cancellation).
-    pub source: DeviceInstanceId,
-}
-```
-
-### 5.4 Evaluation Loop (`evaluate_until_stable`)
-
-When the coordinator calls `digital_engine.evaluate_until_stable(t)`, the engine:
-
-1. **Dequeues all events at time `t`** from the event queue.
-2. **Applies** them to the net state table.
-3. **Identifies** which D-OSDI devices have inputs that changed.
-4. **Calls `eval_digital()`** on each affected device.
-5. **Collects** new events generated by the devices.
-6. If any new events have time `t` (zero-delay, i.e., a delta cycle), **go to step 1**.
-7. If all new events have time `> t`, **stop**. The digital state is stable at time `t`.
-
-**Delta cycle limit:** To prevent infinite loops from combinational feedback, enforce a maximum
-delta cycle count (e.g., 1000). If exceeded, flag the offending nets as `X` and emit a warning.
-
-### 5.5 Commit / Rollback
-
-```rust
-impl DigitalEngine {
-    /// Snapshot the current state. Called before the analog solver runs.
-    fn checkpoint(&mut self) { ... }
-
-    /// Discard events added since the last checkpoint.
-    /// Restore net state to the checkpoint.
-    fn rollback(&mut self) { ... }
-
-    /// Make the current state permanent. Called after the analog solver converges.
-    fn commit(&mut self) { ... }
-}
-```
-
-**Design Decision: Checkpoint/Rollback instead of shadow copies per device.**
-
-We snapshot the entire engine state (net table + event queue) rather than requiring each D-OSDI
-device to maintain its own shadow state. This is simpler and less error-prone because:
-- The engine state is small (a HashMap + a BinaryHeap).
-- Device implementations don't need to know about rollback semantics.
-- We can add per-device rollback later if performance requires it.
-
----
-
-## 6. The D-OSDI ABI (Digital Device Interface)
-
-### 6.1 Motivation
-
-The analog OSDI ABI centers on continuous evaluation: the simulator calls `eval()` at every
-Newton-Raphson iteration, passing node voltages and receiving currents/charges/Jacobians. This
-makes no sense for digital logic, which operates on discrete values and only needs evaluation when
-inputs change.
-
-D-OSDI defines a minimal C ABI for event-driven digital devices. Like OSDI, devices are compiled
-to `.so` shared libraries and loaded at runtime via `dlopen`.
+D-OSDI defines a C ABI for discrete event devices. Like OSDI, devices are compiled to `.so`
+shared libraries and loaded at runtime via `dlopen`. Unlike OSDI, D-OSDI devices do not stamp into
+a matrix. They consume and produce events.
 
 ### 6.2 The Descriptor
 
 ```c
 typedef struct {
-    const char* name;              // Device name, e.g., "nand2", "dff"
+    const char* name;                      // e.g., "nand2", "dff", "ppr_a2d"
 
-    uint32_t num_input_ports;      // Number of input ports
-    uint32_t num_output_ports;     // Number of output ports
-    uint32_t num_inout_ports;      // Number of bidirectional ports (e.g., tri-state bus)
-    const DigitalPortDescriptor* ports;  // Array of port descriptors
+    uint32_t num_ports;                    // Total port count
+    const DosdiPort* ports;                // Port descriptors (direction, width)
 
-    uint32_t num_params;           // Number of parameters (e.g., delay values)
-    const DigitalParamDescriptor* params;
+    uint32_t num_params;
+    const DosdiParam* params;              // Parameter descriptors
 
-    uint32_t instance_size;        // Size in bytes of per-instance opaque state
-    uint32_t model_size;           // Size in bytes of per-model opaque state
+    uint32_t instance_size;                // Per-instance opaque state (bytes)
+    uint32_t model_size;                   // Per-model opaque state (bytes)
 
-    // ── Function pointers ──
+    // ── Lifecycle ──
+    void (*setup_model)(void* model_data, const DosdiSimParas* sim);
+    void (*setup_instance)(void* inst_data, void* model_data, const DosdiSimParas* sim);
 
-    /// Initialize model-level data (called once per unique model).
-    void (*setup_model)(void* model_data, const DigitalSimParas* sim);
-
-    /// Initialize instance-level data (called once per instantiation).
-    void (*setup_instance)(void* inst_data, void* model_data, const DigitalSimParas* sim);
-
-    /// Evaluate the device. Called when one or more inputs change.
-    /// Reads input values from `inputs[]`, writes output values to `outputs[]`,
-    /// and appends scheduled events to `event_queue`.
-    /// Returns 0 on success, nonzero on fatal error.
+    // ── Evaluation ──
+    // Called when one or more input ports change value.
+    // The device reads inputs, updates internal state, and schedules output events.
+    // Returns 0 on success, nonzero on fatal error.
     uint32_t (*eval)(
         void* inst_data,
         void* model_data,
-        const LogicValue* inputs,        // [num_input_ports + num_inout_ports]
-        LogicValue* outputs,             // [num_output_ports + num_inout_ports]
-        DigitalEventQueue* event_queue,  // Opaque queue handle; device appends events
+        const uint8_t* inputs,         // LogicValue per input bit (packed by port order)
+        uint8_t* outputs,              // Device writes output values here
+        DosdiEventSink* event_sink,    // Opaque handle to schedule future events
         double current_time
     );
 
-    /// Read a parameter value (for inspection / debugging).
+    // ── Parameter access ──
     void* (*access)(void* inst_data, void* model_data, uint32_t param_id, uint32_t flags);
 
-} DigitalDescriptor;
+} DosdiDescriptor;
 ```
 
 ### 6.3 Port Descriptor
 
 ```c
 typedef struct {
-    const char* name;       // Port name, e.g., "A", "B", "Q", "Qn"
-    uint32_t direction;     // 0 = input, 1 = output, 2 = inout
-    uint32_t width;         // Bit width (1 for scalar, >1 for bus)
-} DigitalPortDescriptor;
+    const char* name;         // Port name, matching the Verilog-AMS source
+    uint32_t direction;       // DOSDI_DIR_INPUT=0, DOSDI_DIR_OUTPUT=1, DOSDI_DIR_INOUT=2
+    uint32_t width;           // Bit width: 1 for scalar, >1 for vector/bus
+} DosdiPort;
 ```
 
-### 6.4 Event Queue Interface
+**Design Decision: Port names match source identifiers exactly.**
 
-The `DigitalEventQueue` is an opaque handle provided by the simulator. The device appends events
-to it via a C callback:
+The `name` field in `DosdiPort` uses the same string as the Verilog-AMS port declaration. This
+allows the elaborator to match OSDI analog ports and D-OSDI digital ports by name, without
+maintaining a separate mapping table. When a connect module has both an OSDI and D-OSDI half, the
+elaborator links them by matching port names.
+
+### 6.4 Event Scheduling
 
 ```c
+// Provided by the simulator, not the device.
 typedef struct {
     void* handle;
-    void (*schedule)(void* handle, uint32_t port_idx, LogicValue value, double delay);
-} DigitalEventQueue;
+    // Schedule a value change on output port `port_idx` after `delay` seconds.
+    void (*schedule)(void* handle, uint32_t port_idx, uint8_t value, double delay);
+    // Cancel all pending events on output port `port_idx` (inertial delay model).
+    void (*cancel)(void* handle, uint32_t port_idx);
+} DosdiEventSink;
 ```
 
-**Design Decision: Delay-relative scheduling.**
+**Design Decision: Relative delays, not absolute times.**
 
-The device specifies output changes as `delay` (relative to `current_time`), not as absolute times.
-This is simpler for device authors and matches Verilog semantics (`#5 Q = 1` means "5 time units
-from now").
+Devices specify delays relative to `current_time`. This matches Verilog semantics (`#5ns Q = 1`).
+The simulator converts to absolute time internally.
 
-### 6.5 Simulation Parameters
+**Design Decision: `cancel` for inertial delay.**
+
+Verilog uses inertial delay by default: if a new event is scheduled on a port before a previous
+pending event fires, the previous event is cancelled. The `cancel` callback supports this. Without
+it, we could not correctly model standard cell behavior.
+
+### 6.5 LogicValue Encoding
+
+```c
+// Single-byte encoding, matching Verilog 4-value logic.
+#define DOSDI_LOGIC_0  0
+#define DOSDI_LOGIC_1  1
+#define DOSDI_LOGIC_X  2
+#define DOSDI_LOGIC_Z  3
+```
+
+### 6.6 Simulation Parameters
 
 ```c
 typedef struct {
-    double timescale;        // Time unit in seconds (e.g., 1e-9 for ns)
-    double temperature;      // Temperature in Kelvin
-} DigitalSimParas;
+    double timescale;         // Time unit in seconds (e.g., 1e-9 for `timescale 1ns)
+    double temperature;       // Kelvin
+    double supply_voltage;    // VDD, used by connect modules for default v_high
+} DosdiSimParas;
 ```
-
-### 6.6 Differences from Analog OSDI
-
-| Aspect | Analog OSDI | Digital D-OSDI |
-|--------|-------------|----------------|
-| Evaluation trigger | Every NR iteration | Only when inputs change |
-| Input/output type | `f64` voltages/currents | `LogicValue` (0, 1, X, Z) |
-| Time model | Continuous (`abstime`) | Discrete events with delays |
-| Matrix participation | Stamps into Jacobian | None — pure behavioral |
-| State management | `prev_state` / `next_state` f64 arrays | Opaque `inst_data` blob |
-| Noise | `load_noise()` PSD | Not applicable |
-| Bound step | `bound_step_offset` | Not applicable (events are explicit) |
 
 ---
 
-## 7. Hybrid Modules (Mixed-Signal Compilation)
+## 7. The Digital State Machine
 
-When our compiler encounters a Verilog-AMS module that mixes analog and digital ports:
+### 7.1 Data Structures
+
+The digital state is NOT a separate "engine." It is a component of `SimulationState`, alongside
+the existing `CircularArrayBuffer2` (analog state history).
+
+```rust
+pub struct DigitalState {
+    /// Current value of every digital net. Indexed by DigitalNetId.
+    pub nets: Vec<LogicValue>,
+
+    /// Time-ordered priority queue of future events.
+    pub event_queue: BinaryHeap<Reverse<DigitalEvent>>,
+
+    /// Checkpoint for rollback (cloned on checkpoint()).
+    checkpoint: Option<DigitalStateSnapshot>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DigitalNetId(pub usize);
+```
+
+### 7.2 Evaluation
+
+```rust
+impl DigitalState {
+    /// Process all events at time `t` and propagate through D-OSDI devices
+    /// until no more zero-delay events remain (delta cycle resolution).
+    pub fn evaluate_until_stable(&mut self, t: f64, devices: &mut [DosdiRuntime]) {
+        let mut delta_count = 0;
+        loop {
+            let events_at_t = self.drain_events_at(t);
+            if events_at_t.is_empty() { break; }
+
+            // Apply events to net state
+            for event in &events_at_t {
+                self.nets[event.net.0] = event.value;
+            }
+
+            // Find devices with changed inputs, evaluate them
+            let changed_nets: HashSet<DigitalNetId> = events_at_t.iter()
+                .map(|e| e.net).collect();
+
+            for device in devices.iter_mut() {
+                if device.has_input_on(&changed_nets) {
+                    device.eval(t, &self.nets, &mut self.event_queue);
+                }
+            }
+
+            delta_count += 1;
+            if delta_count > 1000 {
+                log::warn!("Delta cycle limit exceeded at t={}", t);
+                break;
+            }
+        }
+    }
+
+    pub fn peek_next_event_time(&self) -> f64 {
+        self.event_queue.peek()
+            .map(|Reverse(e)| e.time)
+            .unwrap_or(f64::INFINITY)
+    }
+
+    pub fn checkpoint(&mut self) { ... }
+    pub fn rollback(&mut self) { ... }
+    pub fn commit(&mut self) { self.checkpoint = None; }
+}
+```
+
+### 7.3 Design Decision: `DigitalState` Lives Inside `SimulationState`, Not in a Separate Crate
+
+The digital event queue and net state are fields of the solver's simulation state, not a foreign
+engine accessed through a trait boundary.
+
+**Rationale:** Connect modules need to simultaneously read analog solution vectors AND schedule
+digital events. If the digital engine were a separate crate behind a trait, connect modules would
+need complex borrowing patterns or message passing. Colocating the state makes the borrow checker
+happy and the code straightforward.
+
+When the codebase grows large enough to warrant separation, we extract a crate. Not before.
+
+---
+
+## 8. Hybrid Modules (Compilation Strategy)
+
+When our compiler encounters a module with mixed-discipline ports:
 
 ```verilog
 module ldo_enable(en, vin, vout, gnd);
     input logic en;
     inout electrical vin, vout, gnd;
-    analog begin
-        if (en)
-            V(vout, gnd) <+ transition(V(vin, gnd), 0, 1u, 1u);
-        else
-            V(vout, gnd) <+ transition(0.0, 0, 1u, 1u);
-    end
+    ...
 endmodule
 ```
 
-The compiler must split this into components that the cosimulation framework can manage:
+### 8.1 Ghost Nodes
 
-### 7.1 OSDI Devices That Receive Digital Signals
+The compiler emits the analog body as a standard OSDI `.so`. The digital input `en` becomes an
+extra `OsdiNode` terminal named `__bridge_en`. In the generated `eval()` C code, reads of `en`
+become comparisons against the ghost node voltage:
 
-The digital input `en` cannot appear in an OSDI `eval()` function because OSDI only understands
-analog nodes. The compiler transforms the digital input into an additional analog terminal:
+```c
+int en_val = (prev_solve[node_mapping[bridge_en_idx]] > 0.5) ? 1 : 0;
+```
 
-1. **Emit an extra OsdiNode** in the OSDI descriptor for `en`, named `__d2a_en`.
-2. **In the generated `eval()` C code**, replace reads of `en` with:
-   ```c
-   int en_val = (prev_solve[node_mapping[__d2a_en_idx]] > 0.5) ? 1 : 0;
-   ```
-3. **In the Piperine netlist**, the elaborator automatically instantiates a `D2AConnector`
-   driving the `__d2a_en` analog node.
+### 8.2 Automatic Connect Module Insertion
 
-### 7.2 OSDI Devices That Emit Digital Events
+The elaborator detects that port `en` has discipline `logic` but is connected to an OSDI device
+expecting an analog terminal. It automatically inserts a `ppr_d2a` connect module instance:
+- Digital input: bound to the `en` net in the digital state.
+- Analog output: bound to the `__bridge_en` ghost node.
 
-When a Verilog-AMS module contains `@(cross(...))` statements that assign to digital outputs:
+This happens transparently. The user's source code is unchanged. The elaborator's connect rule
+table determines which connect module to insert based on the source and destination disciplines.
 
-1. **Emit an extra OsdiNode** in the OSDI descriptor for the crossing monitor, named `__a2d_out`.
-2. **In the generated `eval()` C code**, write the monitored analog expression to that node's
-   residual (so the solver sees it as a normal voltage).
-3. **In the Piperine netlist**, the elaborator automatically instantiates an `A2DConnector`
-   monitoring the `__a2d_out` analog node and scheduling events on the corresponding digital net.
+### 8.3 Design Decision: Ghost Nodes, Not ABI Extensions
 
-### 7.3 Design Decision: Ghost Nodes Over ABI Extensions
-
-We do NOT extend the OSDI ABI to support digital signals natively. Instead, we map digital
-signals to analog "ghost nodes" at compile time.
+We do NOT extend the OSDI ABI to handle digital signals. Instead, we map digital signals to
+analog proxy nodes at compile time.
 
 **Rationale:**
-- Preserves full compatibility with the standard OSDI ABI.
-- Any existing OSDI `.so` (compiled by OpenVAF or any future compiler) works unmodified.
-- The D2A/A2D translation overhead is negligible (one extra node per digital pin).
-- The complexity lives in the compiler and elaborator, not in the runtime hot path.
+- Preserves OSDI ABI compatibility. Third-party OSDI models work unmodified.
+- The overhead is one extra matrix node per digital-to-analog boundary. Negligible.
+- All complexity is in the compiler and elaborator, not in the runtime hot path.
+- If we later build our own compilation backend (replacing OpenVAF), we emit OSDI descriptors
+  with ghost nodes as part of our standard compilation pipeline.
 
 ---
 
-## 8. Integration Points with Existing Code
+## 9. Integration with Existing Code
 
-### 8.1 Changes to `TransientSolver`
+### 9.1 Extended `CircuitInstance`
 
-The current `TransientSolver::solve()` loop (in `solver/transient.rs`) uses a fixed timestep and
-has no concept of external time constraints. It must be refactored to:
-
-1. Accept a `CosimCoordinator` reference (or trait object) that can inject breakpoints.
-2. Call `coordinator.compute_next_dt()` instead of using `self.options.dt` directly.
-3. After convergence, call `coordinator.post_convergence_checks()` which runs A2D detection.
-4. Support timestep rejection (already partially there via error return from `execute_timestep`).
-
-### 8.2 Changes to `CircuitInstance`
-
-`CircuitInstance` currently holds only `Vec<OsdiRuntime>`. It must be extended to also hold:
-- `Vec<D2AConnector>` — driven by the coordinator during Phase 2.
-- `Vec<A2DConnector>` — checked by the coordinator during Phase 4.
-
-During `assemble()`, D2A connectors contribute voltage source stamps to the matrix just like any
-other device.
-
-### 8.3 New Crate: `piperine-digital`
-
-The digital engine should live in a new crate `piperine-digital` with the following modules:
-
-```
-crates/piperine-digital/src/
-    lib.rs              // Public API
-    engine.rs           // DigitalEngine: event queue, net state, evaluation loop
-    event.rs            // DigitalEvent, EventQueue types
-    logic.rs            // LogicValue, resolution functions
-    dosdi/
-        ffi.rs          // D-OSDI C ABI struct definitions
-        loader.rs       // dlopen + symbol resolution for D-OSDI .so files
-        runtime.rs      // DigitalRuntime: per-instance state management
+```rust
+pub struct CircuitInstance {
+    pub title: String,
+    pub runtimes: Vec<OsdiRuntime>,          // Analog devices (unchanged)
+    pub digital_runtimes: Vec<DosdiRuntime>,  // Digital devices (new)
+    pub digital_state: DigitalState,          // Net values + event queue (new)
+    pub netlist: Netlist,                     // Analog netlist (unchanged)
+}
 ```
 
-### 8.4 New Module in `piperine-solver`: `cosim`
+Connect modules appear in BOTH `runtimes` (for their analog half) and `digital_runtimes` (for
+their digital half). They share the same `inst_data` memory, linked during elaboration.
+
+### 9.2 Extended `TransientSolver::solve()`
+
+The existing loop in `solver/transient.rs` gains three additions:
+1. Before each NR solve: `self.circuit.digital_state.evaluate_until_stable(t_next, ...)`.
+2. After convergence: call post-convergence hooks on connect modules (crossing detection).
+3. Timestep proposal: `dt = min(dt_proposed, digital_state.peek_next_event_time() - t)`.
+
+The loop structure remains a single `while t < stop_time` loop. No nested loops, no coordinator.
+
+### 9.3 File Layout
 
 ```
 crates/piperine-solver/src/
-    cosim/
-        mod.rs           // CosimCoordinator
-        connector.rs     // D2AConnector, A2DConnector
-        breakpoint.rs    // BreakpointQueue (sorted time instants)
+    digital/
+        mod.rs          // DigitalState, LogicValue, DigitalEvent, DigitalNetId
+        dosdi/
+            ffi.rs      // D-OSDI C ABI struct definitions (DosdiDescriptor, etc.)
+            loader.rs   // dlopen + symbol resolution for D-OSDI .so files
+            runtime.rs  // DosdiRuntime: per-instance state, eval() wrapper
+    solver/
+        transient.rs    // Extended with digital event processing (modified)
+    circuit/
+        instance.rs     // Extended with digital_runtimes, digital_state (modified)
 ```
+
+**Design Decision: `digital/` module inside `piperine-solver`, not a separate crate.**
+
+**Rationale:** The digital state is tightly coupled to the transient solver loop. A separate crate
+would require defining trait abstractions for the coupling points, adding complexity without
+benefit at this stage. We can extract later if needed.
 
 ---
 
-## 9. Implementation Order
+## 10. Implementation Phases
 
 | Phase | Deliverable | Depends On |
 |-------|-------------|------------|
-| **Phase 1** | `D2AConnector` and `A2DConnector` structs with unit tests | Nothing |
-| **Phase 2** | `BreakpointQueue` and `CosimCoordinator` skeleton | Phase 1 |
-| **Phase 3** | Refactor `TransientSolver::solve()` to accept coordinator | Phase 2 |
-| **Phase 4** | `piperine-digital` crate: `LogicValue`, `DigitalEvent`, `EventQueue` | Nothing |
-| **Phase 5** | `DigitalEngine` with `evaluate_until_stable()`, checkpoint/rollback | Phase 4 |
-| **Phase 6** | D-OSDI loader (`dlopen` for digital `.so` files) | Phase 5 |
-| **Phase 7** | End-to-end integration test: inverter driving RC load | All above |
-| **Phase 8** | Compiler support for ghost node emission (hybrid modules) | Phase 7 |
+| **1** | `LogicValue`, `DigitalEvent`, `DigitalNetId`, `DigitalState` (with event queue, evaluate_until_stable, checkpoint/rollback) + unit tests | Nothing |
+| **2** | D-OSDI FFI struct definitions (`DosdiDescriptor`, `DosdiPort`, etc.) | Nothing |
+| **3** | `DosdiRuntime` (loader, instance allocation, eval wrapper) | Phase 2 |
+| **4** | `PortId`, `PortBinding` types in `circuit/netlist.rs` | Nothing |
+| **5** | Extend `CircuitInstance` with `digital_runtimes` and `digital_state` | Phases 1, 3, 4 |
+| **6** | Extend `TransientSolver::solve()` with event processing and breakpoint logic | Phase 5 |
+| **7** | Built-in connect modules (`ppr_d2a`, `ppr_a2d`) as compiled `.so` or Rust-native | Phase 6 |
+| **8** | Integration test: digital clock → D2A → RC filter → A2D → digital counter | Phase 7 |
 
-Phases 1-3 and 4-6 can proceed in parallel.
+Phases 1, 2, and 4 can proceed in parallel.
 
 ---
 
-## 10. Test Strategy
+## 11. Test Strategy
 
-### 10.1 Unit Tests
+### 11.1 Unit Tests (Phase 1)
 
-- `D2AConnector::voltage_at()` returns correct ramp values at boundary times.
-- `A2DConnector::check_crossing()` detects crossings with hysteresis correctly.
-- `BreakpointQueue` returns times in order and deduplicates.
-- `LogicValue` resolution: `One` vs `Zero` = `X`, `Z` vs `One` = `One`, etc.
-- `EventQueue` ordering: events at same time processed in insertion order.
+- `LogicValue` resolution: `Zero` drives against `One` → `X`. `Z` against `One` → `One`.
+- `DigitalState::evaluate_until_stable()` with a chain of 3 inverters: verifies delta cycles.
+- `DigitalState::checkpoint()` + `rollback()` restores prior state exactly.
+- Event queue ordering: events at same time processed FIFO within that time.
 
-### 10.2 Integration Tests
+### 11.2 Integration Tests (Phase 8)
 
-- **Pure digital:** Ring oscillator (chain of inverters). Verify oscillation period matches
-  expected gate delays.
-- **Pure analog with breakpoints:** RC circuit where an external breakpoint forces a timestep at
-  a specific time. Verify solution matches reference.
-- **Mixed-signal:** Digital clock driving an analog RC filter via D2A. Verify the analog output
-  shows the expected exponential charging/discharging waveform.
-- **A2D feedback loop:** Analog ramp crossing a threshold, generating a digital event, which
-  toggles a D2A that changes the analog circuit. Verify the feedback settles.
+- **Pure digital:** Ring oscillator (5 inverters). Period = 10 × gate_delay.
+- **D2A only:** Digital square wave → `ppr_d2a` → RC low-pass filter (OSDI resistor + capacitor).
+  Verify exponential charge/discharge in analog output.
+- **A2D only:** Analog ramp (OSDI voltage source) → `ppr_a2d` → digital net.
+  Verify event time matches expected `t_cross` within linear interpolation error.
+- **Full loop:** Clock → D2A → analog amplifier → A2D → digital flip-flop.
+  Verify the flip-flop captures the correct logic value at each clock edge.
+
+### 11.3 Regression Guard
+
+All existing analog-only tests (`cargo test -p piperine-solver`, currently 27 tests) must continue
+to pass without modification. The digital extensions must not change the behavior of pure-analog
+simulations.
