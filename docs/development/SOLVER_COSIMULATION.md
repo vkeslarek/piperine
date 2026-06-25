@@ -32,7 +32,7 @@ that naturally handles both domains.
 | Term | Definition |
 |------|-----------|
 | **Continuous variable** | A variable solved by Newton-Raphson at every timestep. Voltages, currents, charges. Currently represented by `AnalogVariable` in `netlist.rs`. |
-| **Discrete variable** | A variable that changes only at specific event times. 4-value logic (0, 1, X, Z). Stored in a flat state table indexed by `DigitalNetId`. |
+| **Discrete variable** | A variable that changes only at specific event times. 4-value logic (0, 1, X, Z). Stored in a flat state table indexed by `DigitalNet`. |
 | **OSDI** | Open Standard Device Interface. The existing C ABI for analog device models (`.so` shared libraries). Devices contribute to the Jacobian matrix. Already fully implemented in `piperine-solver/src/osdi/`. |
 | **D-OSDI** | Digital Open Standard Device Interface. A new C ABI proposed in this document for digital device models. Devices respond to input events and schedule output events. Does NOT participate in the Jacobian matrix. |
 | **Connect module** | A device that has BOTH analog and digital ports. It translates between continuous and discrete domains. It is a full Verilog-AMS `analog begin` block compiled to a hybrid `.so` that exposes both OSDI and D-OSDI descriptors sharing the same instance data. |
@@ -45,7 +45,7 @@ that naturally handles both domains.
 
 ## 3. The Unified Port Model
 
-### 3.1 Current State of the Codebase
+### 3.1 Current State of the Codebase and Required Harmonization
 
 The existing netlist in `circuit/netlist.rs` uses these types:
 
@@ -58,6 +58,30 @@ Netlist                 — BiMap<AnalogReference, Arc<AnalogVariable>>
 ```
 
 These are purely analog/continuous concepts. There is no representation for digital nets.
+
+**Heritage problem:** These types carry ngspice-era naming conventions that do not align with
+Verilog-AMS or OSDI semantics. The key mismatch is `BranchIdentifier`:
+
+- In **ngspice**: a branch is a named component ("R1", "L2") with a string name.
+- In **Verilog-AMS / OSDI**: a branch is a **pair of nodes**, written `I(a, b)` or `V(a, b)`.
+  There is no component name attached to a branch — it is purely the (node_p, node_n) tuple.
+  The branch current is a flow variable associated with two terminals.
+
+The current `BranchIdentifier { component, name }` was designed for ngspice's component-oriented
+world, where each SPICE element line ("R1 node1 node2 1k") has an explicit instance name. In our
+pure OSDI solver, branches should be represented as node pairs, not named component strings.
+
+**Required cleanup (future refactor, not blocking for mixed-signal):**
+
+| Current type | Problem | Target |
+|-------------|---------|--------|
+| `BranchIdentifier { component, name }` | ngspice artifact. Branches are not named components. | `Branch(NodeIdentifier, NodeIdentifier)` — a pair of nodes. |
+| `NodeIdentifier::Anonymous(usize)` | "Anonymous" implies it could be named; in OSDI all nodes are index-mapped. | `Node(usize)` — a flat index. GND remains special. |
+| `AnalogVariable::Time`, `::Frequency`, `::Iteration` | These are simulation state, not circuit variables. They don't belong in the same enum as nodes/branches. | Move to `SimulationContext` or similar. |
+
+This harmonization is noted here for completeness but is **not a prerequisite** for implementing
+mixed-signal. The existing types work for the OSDI solver as-is. When we build the compiler,
+we will need to align these types with the Verilog-AMS AST naturally.
 
 ### 3.2 The `Port` Enum
 
@@ -80,10 +104,10 @@ pub enum Port {
     Analog(AnalogReference),
 
     /// A digital (discrete) port. Participates in the event queue.
-    /// The DigitalNetId indexes into the DigitalState.nets[] array.
+    /// The DigitalNet indexes into the DigitalState.nets[] array.
     ///
-    /// Example: `input logic clk;` → Port::Digital(DigitalNetId(42))
-    Digital(DigitalNetId),
+    /// Example: `input logic clk;` → Port::Digital(DigitalNet(42))
+    Digital(DigitalNet),
 }
 ```
 
@@ -105,16 +129,18 @@ discipline information. By making `Port` a resolved enum, we mirror this two-pha
 exactly. The compiler produces names, the elaborator resolves them to `Port` variants, and the
 solver operates on the resolved `Port` values without caring how they were named in source.
 
-### 3.3 `DigitalNetId`
+### 3.3 `DigitalNet`
 
 ```rust
-/// Index into the DigitalState.nets[] flat array.
-/// Analogous to AnalogReference.idx for the continuous domain.
+/// A digital net in the simulation. Indexes into DigitalState.nets[].
+/// This IS the net — not an "identifier of" a net. It directly represents
+/// the net's slot in the simulation state, analogous to how AnalogReference
+/// directly represents a continuous variable's slot in the Jacobian.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DigitalNetId(pub usize);
+pub struct DigitalNet(pub usize);
 ```
 
-The elaborator assigns `DigitalNetId` values sequentially as it encounters digital nets,
+The elaborator assigns `DigitalNet` values sequentially as it encounters digital nets,
 exactly as it assigns `AnalogReference` indices for analog nodes today.
 
 ### 3.4 Compilation Rule: `logic` Inside `analog begin` Becomes `electrical`
@@ -225,48 +251,23 @@ can use different thresholds, hysteresis bands, or interpolation methods without
 core knowing about any of it. The simulator core only knows: "after convergence, call
 `accept_timestep()` on all devices." That's it.
 
-### 4.5 Standard Library Connect Modules
+### 4.5 Test Scaffolding Connect Modules
 
-We ship three built-in connect modules. These are written in Verilog-AMS and compiled by our
-compiler (or initially hand-implemented in Rust as native OSDI+D-OSDI device pairs):
+> **These are throwaway implementations.** They exist solely to validate the mixed-signal
+> infrastructure before we have a compiler. Once the compiler can produce real connect modules
+> from Verilog-AMS source, these hand-written stubs will be deleted. Do not over-engineer them.
 
-**`ppr_d2a` — Digital-to-Analog:**
+Implement two minimal connect modules as native Rust code (no `.so`, no FFI — just Rust structs
+that implement the OSDI and D-OSDI traits directly):
 
-```
-Ports:     input logic d;  inout electrical p, n;
-Parameters: v_low=0.0  v_high=1.8  t_rise=100ps  t_fall=100ps  r_out=1.0
+**`TestD2A`:** Digital input → analog voltage ramp. Linear ramp from 0.0 to 1.8V with
+hardcoded 100ps rise/fall. Enough to verify that a digital event propagates into the analog
+matrix and that the NR solver converges through the transition.
 
-Behavior:
-  DC:    V(p,n) <+ (d == 1) ? v_high : v_low;
-  Tran:  V(p,n) <+ transition(target, 0, t_rise, t_fall);
-  AC:    Small-signal impedance = r_out (resistive source).
-  Noise: Thermal noise 4*k*T/r_out.
-```
-
-**`ppr_a2d` — Analog-to-Digital:**
-
-```
-Ports:     inout electrical p, n;  output logic d;
-Parameters: v_threshold=0.9  hysteresis=0.1  t_delay=0
-
-Behavior:
-  DC:    d = (V(p,n) > v_threshold) ? 1 : 0;
-  Tran:  @(cross(V(p,n) - v_threshold, +1)) d = 1;
-         @(cross(V(p,n) - v_threshold, -1)) d = 0;
-  AC:    High-impedance monitor (no matrix contribution).
-  Noise: None.
-```
-
-**`ppr_bidir` — Bidirectional:**
-
-```
-Ports:     inout logic d;  inout electrical p, n;
-Parameters: (combines D2A and A2D parameters)
-
-Behavior:
-  Contains both D2A and A2D logic. Used for bidirectional buses
-  where both directions are active depending on driver state.
-```
+**`TestA2D`:** Analog voltage monitor → digital output event. Hardcoded threshold at 0.9V,
+no hysteresis. On post-convergence, does linear interpolation for `t_cross` and schedules
+a digital event. Enough to verify that an analog signal crossing a threshold produces a
+correctly-timed digital event.
 
 ---
 
@@ -368,11 +369,14 @@ These analyses have no digital component. When the simulation is purely analog:
 
 **How connect modules behave during these analyses:**
 
-- The OSDI `eval()` of a connect module receives the `ANALYSIS_AC` or `ANALYSIS_NOISE` flag
-  (which it already receives today via the existing OSDI `flags` field in `OsdiSimInfo`).
-- A D2A connect module in AC mode presents a fixed small-signal impedance (e.g., `r_out`).
-- An A2D connect module in AC mode presents infinite input impedance (no matrix contribution).
-- The connect module's `$analysis()` checks compile down to `if (flags & ANALYSIS_AC)` in C.
+The connect module's OSDI `eval()` receives the analysis type flags (`ANALYSIS_AC`,
+`ANALYSIS_NOISE`, etc.) via the existing `OsdiSimInfo.flags` field. The module can do
+**whatever it wants** with this information — it is a full Verilog-AMS `analog begin` block
+with complete freedom. A module author might present a small-signal impedance in AC, contribute
+thermal noise sources, or simply go high-impedance. The simulator imposes no constraints on
+what a connect module does with its analog interface during any analysis. It is entirely the
+module's responsibility to implement correct behavior for each analysis type via
+`$analysis()` checks (which compile to `if (flags & ANALYSIS_*)` in C).
 
 **Design Decision: No special-casing for pure-analog.**
 
@@ -589,7 +593,7 @@ pub struct DigitalEvent {
     /// Absolute simulation time at which this event fires.
     pub time: f64,
     /// The net whose value changes.
-    pub net: DigitalNetId,
+    pub net: DigitalNet,
     /// The new value.
     pub value: LogicValue,
     /// Which device instance generated this event (for cancellation and debugging).
@@ -606,7 +610,7 @@ impl Ord for DigitalEvent {
 
 /// The complete digital simulation state.
 pub struct DigitalState {
-    /// Current value of every digital net. Indexed by DigitalNetId.0.
+    /// Current value of every digital net. Indexed by DigitalNet.0.
     /// Length = total number of digital nets in the circuit.
     pub nets: Vec<LogicValue>,
 
@@ -779,9 +783,9 @@ The elaborator processes the user's netlist. It sees that:
 The elaborator consults its connect rule table. The default rule for `logic` → `electrical` is
 to insert a `ppr_d2a` connect module. It does so:
 
-1. Allocates a `DigitalNetId` for the `en` digital net.
-2. Instantiates `ppr_d2a` with:
-   - Digital input port → `DigitalNetId` of `en`.
+1. Allocates a `DigitalNet` for the `en` digital net.
+2. Instantiates the D2A connect module with:
+   - Digital input port → `DigitalNet` of `en`.
    - Analog output port → connected to the same `NodeIdentifier` as `__bridge_en`.
 3. The `ppr_d2a` instance appears in both `runtimes` (OSDI half) and `digital_runtimes`
    (D-OSDI half).
@@ -895,7 +899,7 @@ pub fn solve(&mut self) -> Result<TransientAnalysisResult> {
 crates/piperine-solver/src/
     digital/
         mod.rs              // pub mod dosdi; pub use types.
-                            // Contains: LogicValue, DigitalNetId, DigitalEvent,
+                            // Contains: LogicValue, DigitalNet, DigitalEvent,
                             //           DigitalState (with evaluate_until_stable,
                             //           checkpoint, rollback, commit).
         dosdi/
@@ -909,7 +913,7 @@ crates/piperine-solver/src/
                             //           model_data, input_net_ids, output_net_ids.
                             //   Methods: eval(), has_input_on(), setup().
     circuit/
-        netlist.rs          // [MODIFIED] Add: DigitalNetId, Port enum.
+        netlist.rs          // [MODIFIED] Add: DigitalNet, Port enum.
         instance.rs         // [MODIFIED] Add: digital_runtimes, digital_state fields.
     solver/
         transient.rs        // [MODIFIED] Add digital event processing to solve().
@@ -921,15 +925,15 @@ crates/piperine-solver/src/
 
 | Phase | What to Build | What to Test | Depends On |
 |-------|---------------|--------------|------------|
-| **1** | `LogicValue` enum, `DigitalNetId` struct, `DigitalEvent` struct, `DigitalState` struct with `evaluate_until_stable()`, `checkpoint()`, `rollback()`, `commit()`, `peek_next_event_time()`. All in `digital/mod.rs`. | Unit test: chain of 3 mock inverters. Insert event on input. Verify output toggles after 3 delta cycles. Test checkpoint+rollback restores prior state. Test event ordering (FIFO at same time). | Nothing |
-| **2** | `Port` enum, `DigitalNetId` in `circuit/netlist.rs`. | Unit test: create `Port::Analog(...)` and `Port::Digital(...)`, verify enum matching. | Nothing |
+| **1** | `LogicValue` enum, `DigitalNet` struct, `DigitalEvent` struct, `DigitalState` struct with `evaluate_until_stable()`, `checkpoint()`, `rollback()`, `commit()`, `peek_next_event_time()`. All in `digital/mod.rs`. | Unit test: chain of 3 mock inverters. Insert event on input. Verify output toggles after 3 delta cycles. Test checkpoint+rollback restores prior state. Test event ordering (FIFO at same time). | Nothing |
+| **2** | `Port` enum, `DigitalNet` in `circuit/netlist.rs`. | Unit test: create `Port::Analog(...)` and `Port::Digital(...)`, verify enum matching. | Nothing |
 | **3** | D-OSDI FFI structs in `digital/dosdi/ffi.rs`: `DosdiDescriptor`, `DosdiPort`, `DosdiParam`, `DosdiEventSink`, `DosdiSimParas`, `DOSDI_LOGIC_*` constants. | Compile check only (these are `#[repr(C)]` struct definitions). | Nothing |
 | **4** | `DosdiRuntime` in `digital/dosdi/runtime.rs`: instance allocation, `eval()` wrapper that builds `inputs[]` from `DigitalState.nets`, calls FFI `eval()`, processes `outputs[]`. | Unit test with a mock inverter `.so`: input 0→1, verify output schedules 1→0 event with correct delay. | Phases 1, 3 |
 | **5** | `DosdiLib` loader in `digital/dosdi/loader.rs`: `dlopen`, locate `__dosdi_descriptors` symbol. | Unit test: load a test `.so`, verify descriptor fields. | Phase 3 |
 | **6** | Extend `CircuitInstance`: add `digital_runtimes: Vec<DosdiRuntime>`, `digital_state: DigitalState`. Extend `instantiate()` to allocate digital nets and runtimes. | Unit test: instantiate a circuit with one digital device, verify state and runtimes are populated. | Phases 1, 4 |
 | **7** | Extend `TransientSolver::solve()`: add digital event processing, checkpoint/rollback, breakpoint clamping (as shown in Section 9.2). | Integration test: pure-digital ring oscillator (5 inverters). Verify oscillation period = 10 × gate_delay. | Phase 6 |
-| **8** | Implement `ppr_d2a` connect module (initially as a native Rust OSDI+D-OSDI device pair, not a compiled `.so`). | Integration test: digital square wave → `ppr_d2a` → OSDI RC low-pass filter. Verify analog output shows exponential charge/discharge. | Phase 7 |
-| **9** | Implement `ppr_a2d` connect module (native Rust). | Integration test: OSDI voltage ramp → `ppr_a2d` → digital net. Verify event time matches expected `t_cross` within interpolation tolerance. | Phase 7 |
+| **8** | Implement `TestD2A` connect module (native Rust, throwaway scaffolding). | Integration test: digital square wave → D2A → OSDI RC low-pass filter. Verify analog output shows exponential charge/discharge. | Phase 7 |
+| **9** | Implement `TestA2D` connect module (native Rust, throwaway scaffolding). | Integration test: OSDI voltage ramp → A2D → digital net. Verify event time matches expected `t_cross` within interpolation tolerance. | Phase 7 |
 | **10** | Full-loop integration test. | Clock → D2A → analog amplifier → A2D → digital flip-flop. Verify flip-flop captures correct values. | Phases 8, 9 |
 
 Phases 1, 2, and 3 can proceed in parallel. Phase 4 depends on 1+3. Phase 5 depends on 3 only.
