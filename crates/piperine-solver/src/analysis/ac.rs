@@ -1,8 +1,7 @@
 use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
 use crate::circuit::netlist::{
-    BranchIdentifier, CircuitReference, CircuitVariable, NodeIdentifier,
+    BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier,
 };
-use crate::devices::soa::SoaViolations;
 use crate::math::linear::Stamp;
 use crate::math::unit::Hertz;
 use crate::solver::Context;
@@ -21,7 +20,7 @@ pub trait AcAnalysis: DcAnalysis {
         dc_analysis_result: &DcAnalysisResult,
         ac_analysis_context: &AcAnalysisContext,
         context: &Context,
-    ) -> Vec<Stamp<CircuitReference, Complex<f64>>>;
+    ) -> Vec<Stamp<AnalogReference, Complex<f64>>>;
 }
 
 pub struct AcFrequencyAnalysisOptions {
@@ -78,14 +77,12 @@ impl AcSweepAnalysisOptions {
 
 pub struct AcAnalysisResult {
     values: Vec<AcAnalysisStep>,
-    soa_violations: SoaViolations,
 }
 
 impl AcAnalysisResult {
-    pub fn new(values: Vec<AcAnalysisStep>, soa_violations: SoaViolations) -> Self {
+    pub fn new(values: Vec<AcAnalysisStep>) -> Self {
         Self {
             values,
-            soa_violations,
         }
     }
 
@@ -105,16 +102,16 @@ impl AcAnalysisResult {
 }
 
 pub struct AcAnalysisStep {
-    frequency: Hertz,
-    values: HashMap<Arc<CircuitVariable>, Complex<f64>>,
+    pub frequency: Hertz,
+    values: HashMap<Arc<AnalogVariable>, Complex<f64>>,
 }
 
 impl AcAnalysisStep {
-    pub fn new(frequency: Hertz, values: HashMap<Arc<CircuitVariable>, Complex<f64>>) -> Self {
+    pub fn new(frequency: Hertz, values: HashMap<Arc<AnalogVariable>, Complex<f64>>) -> Self {
         Self { frequency, values }
     }
 
-    pub fn get(&self, circuit_var: &CircuitVariable) -> Option<&Complex<f64>> {
+    pub fn get(&self, circuit_var: &AnalogVariable) -> Option<&Complex<f64>> {
         self.values.get(circuit_var)
     }
 
@@ -122,11 +119,11 @@ impl AcAnalysisStep {
         &self,
         branch_identifier: impl Into<BranchIdentifier>,
     ) -> Option<&Complex<f64>> {
-        self.get(&CircuitVariable::Branch(branch_identifier.into()))
+        self.get(&AnalogVariable::Branch(branch_identifier.into()))
     }
 
     pub fn get_node(&self, node_identifier: &NodeIdentifier) -> Option<&Complex<f64>> {
-        self.get(&CircuitVariable::Node(node_identifier.clone()))
+        self.get(&AnalogVariable::Node(node_identifier.clone()))
     }
 }
 

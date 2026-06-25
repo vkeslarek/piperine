@@ -1,4 +1,4 @@
-use crate::circuit::netlist::{BranchIdentifier, CircuitVariable, NodeIdentifier};
+use crate::circuit::netlist::{BranchIdentifier, AnalogVariable, NodeIdentifier};
 
 /// Transfer Function analysis options.
 ///
@@ -12,9 +12,9 @@ pub struct TransferFunctionAnalysisOptions {
     /// Output variable to measure.
     ///
     /// Can be:
-    /// - `CircuitVariable::Node(n)` for voltage at node n (referenced to GND)
-    /// - `CircuitVariable::Branch(b)` for current through branch b
-    pub output: CircuitVariable,
+    /// - `AnalogVariable::Node(n)` for voltage at node n (referenced to GND)
+    /// - `AnalogVariable::Branch(b)` for current through branch b
+    pub output: AnalogVariable,
 
     /// Reference node for differential voltage measurement.
     ///

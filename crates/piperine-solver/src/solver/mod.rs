@@ -39,6 +39,8 @@ pub struct Context {
     pub trtol: f64,
     /// Charge tolerance in Coulombs for truncation error (default: 1e-14)
     pub chgtol: f64,
+    pub temperature: f64,
+    pub tnom: f64,
 }
 
 impl Default for Context {
@@ -54,6 +56,8 @@ impl Default for Context {
             dc_damp_tolerance: 0.5,
             trtol: 7.0,
             chgtol: 1e-14,
+            temperature: 300.15,
+            tnom: 300.15,
         }
     }
 }

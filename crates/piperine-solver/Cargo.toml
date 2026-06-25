@@ -15,3 +15,8 @@ ndarray.workspace = true
 bimap.workspace = true
 log = "0.4"
 rayon.workspace = true
+libloading.workspace = true
+
+[dev-dependencies]
+piperine-openvaf = { path = "../piperine-openvaf" }
+tempfile.workspace = true

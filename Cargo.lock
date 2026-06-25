@@ -1794,13 +1794,16 @@ version = "0.1.0"
 dependencies = [
  "bimap",
  "faer",
+ "libloading",
  "log",
  "ndarray",
  "num-complex",
  "num-traits",
  "paste",
+ "piperine-openvaf",
  "rand_distr",
  "rayon",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
 ]

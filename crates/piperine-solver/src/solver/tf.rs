@@ -1,9 +1,10 @@
+use crate::analysis::dc::DcAnalysis;
 use crate::analysis::dc::DcAnalysisResult;
 use crate::analysis::tf::{
     TransferFunctionAnalysisOptions, TransferFunctionAnalysisResult, TransferType,
 };
 use crate::circuit::instance::CircuitInstance;
-use crate::circuit::netlist::{CircuitReference, CircuitVariable};
+use crate::circuit::netlist::{AnalogReference, AnalogVariable};
 use crate::math::faer::FaerSymbolicMatrix;
 use crate::math::linear::{SymbolicLinearSystem, SymbolicMatrix};
 use crate::solver::dc::DcSolver;
@@ -29,9 +30,9 @@ pub struct TransferFunctionSolver<'a> {
     symbolic_matrix: FaerSymbolicMatrix,
 
     // Cached references for efficiency
-    input_branch_ref: CircuitReference,
-    output_ref: CircuitReference,
-    output_ref_node: Option<CircuitReference>,
+    input_branch_ref: AnalogReference,
+    output_ref: AnalogReference,
+    output_ref_node: Option<AnalogReference>,
 }
 
 impl<'a> TransferFunctionSolver<'a> {
@@ -71,7 +72,7 @@ impl<'a> TransferFunctionSolver<'a> {
         );
 
         // Resolve input source branch reference
-        let input_branch_var = CircuitVariable::Branch(options.input_source.clone());
+        let input_branch_var = AnalogVariable::Branch(options.input_source.clone());
         let input_branch_ref = circuit
             .netlist()
             .reference_for(&input_branch_var)
@@ -103,7 +104,7 @@ impl<'a> TransferFunctionSolver<'a> {
 
         // Resolve output reference node (for differential voltage)
         let output_ref_node = if let Some(ref_node) = &options.output_ref {
-            let ref_var = CircuitVariable::Node(ref_node.clone());
+            let ref_var = AnalogVariable::Node(ref_node.clone());
             Some(
                 circuit
                     .netlist()
@@ -173,7 +174,7 @@ impl<'a> TransferFunctionSolver<'a> {
         circuit: &mut CircuitInstance,
         dc_point: &DcAnalysisResult,
         context: &Context,
-    ) -> crate::result::Result<Vec<crate::math::linear::Stamp<CircuitReference, f64>>> {
+    ) -> crate::result::Result<Vec<crate::math::linear::Stamp<AnalogReference, f64>>> {
         // Create state buffer with DC operating point values
         let netlist = circuit.netlist();
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
@@ -199,7 +200,7 @@ impl<'a> TransferFunctionSolver<'a> {
 
         // Collect DC stamps (these are linearized around DC point)
         let mut all_stamps = Vec::new();
-        for dc in circuit.dc_runtimes().iter() {
+        for dc in circuit.all_runtimes() {
             all_stamps.extend(dc.load_dc(&state, context));
         }
 
@@ -416,71 +417,3 @@ impl<'a> TransferFunctionSolver<'a> {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::circuit::Circuit;
-    use crate::circuit::instance::CircuitInstance;
-    use crate::circuit::netlist::{BranchIdentifier, CircuitVariable, GND};
-    use crate::math::unit::UnitExt;
-
-    #[test]
-    fn test_transfer_function_resistive_divider() {
-        let mut v_out = GND;
-
-        let mut circuit: CircuitInstance = Circuit::builder("TF Divider", |b| {
-            let v_in = b.port();
-            v_out = b.port();
-
-            b.voltage_source("V1", v_in.clone(), GND, 1.0.V());
-            b.resistor("R1", v_in, v_out.clone(), 1.0.kOhms());
-            b.resistor("R2", v_out.clone(), GND, 1.0.kOhms());
-        })
-        .into();
-
-        let result = circuit
-            .transfer_function(
-                TransferFunctionAnalysisOptions {
-                    output: CircuitVariable::Node(v_out),
-                    output_ref: None,
-                    input_source: BranchIdentifier::from_component("V1"),
-                },
-                Context::default(),
-            )
-            .unwrap()
-            .solve()
-            .unwrap();
-
-        println!("TF Result:");
-        println!("  Type: {}", result.tf_type);
-        println!("  Gain: {:.6}", result.gain);
-        println!("  R_in: {:.2} Ω", result.input_resistance);
-        println!("  R_out: {:.2} Ω", result.output_resistance);
-
-        // Expected values for voltage divider:
-        // Gain = R2/(R1+R2) = 1k/(1k+1k) = 0.5
-        // R_in = R1 + R2 = 2kΩ
-        // R_out = R1||R2 = 500Ω
-
-        println!("\nExpected:");
-        println!("  Gain: 0.5");
-        println!("  R_in: 2000 Ω");
-        println!("  R_out: 500 Ω");
-
-        assert!(
-            (result.gain - 0.5).abs() < 1e-3,
-            "Gain should be 0.5, got {}",
-            result.gain
-        );
-        assert!(
-            (result.input_resistance - 2000.0).abs() < 10.0,
-            "R_in should be 2kΩ, got {}",
-            result.input_resistance
-        );
-        assert!(
-            (result.output_resistance - 500.0).abs() < 10.0,
-            "R_out should be 500Ω, got {}",
-            result.output_resistance
-        );
-    }
-}

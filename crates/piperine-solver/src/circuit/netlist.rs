@@ -28,8 +28,6 @@ impl fmt::Display for NodeIdentifier {
     }
 }
 
-pub trait IntoNodeIdentifier: Into<NodeIdentifier> {}
-impl<T> IntoNodeIdentifier for T where T: Into<NodeIdentifier> {}
 
 pub const GND: NodeIdentifier = NodeIdentifier::Gnd;
 
@@ -74,7 +72,7 @@ impl Into<BranchIdentifier> for &str {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum CircuitVariable {
+pub enum AnalogVariable {
     Node(NodeIdentifier),
     Branch(BranchIdentifier),
     Time,
@@ -82,51 +80,56 @@ pub enum CircuitVariable {
     Iteration,
 }
 
-impl CircuitVariable {
+impl AnalogVariable {
     pub fn is_ground(&self) -> bool {
         match self {
-            CircuitVariable::Node(identifier) => identifier.is_ground(),
+            AnalogVariable::Node(identifier) => identifier.is_ground(),
             _ => false,
         }
     }
 
     pub fn is_branch(&self) -> bool {
         match self {
-            CircuitVariable::Branch(_) => true,
+            AnalogVariable::Branch(_) => true,
             _ => false,
         }
     }
 
     pub fn is_node(&self) -> bool {
         match self {
-            CircuitVariable::Node(_) => true,
+            AnalogVariable::Node(_) => true,
             _ => false,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CircuitReference {
-    variable: Arc<CircuitVariable>,
+pub struct AnalogReference {
+    variable: Arc<AnalogVariable>,
     idx: Option<usize>,
 }
 
-impl CircuitReference {
-    fn new(variable: Arc<CircuitVariable>, idx: usize) -> Self {
+impl AnalogReference {
+    fn new(variable: Arc<AnalogVariable>, idx: usize) -> Self {
         Self {
             variable,
             idx: Some(idx),
         }
     }
 
-    fn new_unmapped(variable: Arc<CircuitVariable>) -> Self {
+    fn new_unmapped(variable: Arc<AnalogVariable>) -> Self {
         Self {
             variable,
             idx: None,
         }
     }
 
-    pub fn variable(&self) -> &Arc<CircuitVariable> {
+    /// Create a ground reference (idx = None, variable = GND).
+    pub fn ground() -> Self {
+        Self::new_unmapped(Arc::new(AnalogVariable::Node(NodeIdentifier::Gnd)))
+    }
+
+    pub fn variable(&self) -> &Arc<AnalogVariable> {
         &self.variable
     }
 
@@ -143,20 +146,20 @@ impl CircuitReference {
     }
 }
 
-impl Into<Arc<CircuitVariable>> for CircuitReference {
-    fn into(self) -> Arc<CircuitVariable> {
+impl Into<Arc<AnalogVariable>> for AnalogReference {
+    fn into(self) -> Arc<AnalogVariable> {
         self.variable
     }
 }
 
-impl AsIndex for CircuitReference {
+impl AsIndex for AnalogReference {
     fn as_index(&self) -> Option<usize> {
         self.idx
     }
 }
 
 pub struct Netlist {
-    circuit_map: BiMap<CircuitReference, Arc<CircuitVariable>>,
+    circuit_map: BiMap<AnalogReference, Arc<AnalogVariable>>,
     last_seen_idx: AtomicUsize,
 }
 
@@ -168,54 +171,54 @@ impl Netlist {
         }
     }
 
-    pub fn connect_node(&mut self, node: NodeIdentifier) -> CircuitReference {
-        let circuit_reference = CircuitVariable::Node(node);
+    pub fn connect_node(&mut self, node: NodeIdentifier) -> AnalogReference {
+        let circuit_reference = AnalogVariable::Node(node);
         if let Some(existing_ref) = self.circuit_map.get_by_right(&circuit_reference) {
             return existing_ref.clone();
         }
 
         if circuit_reference.is_ground() {
-            let reference = CircuitReference::new_unmapped(Arc::new(circuit_reference));
+            let reference = AnalogReference::new_unmapped(Arc::new(circuit_reference));
             self.circuit_map.insert(
                 reference.clone(),
-                Arc::new(CircuitVariable::Node(NodeIdentifier::Gnd)),
+                Arc::new(AnalogVariable::Node(NodeIdentifier::Gnd)),
             );
             return reference;
         }
 
         let ref_arc = Arc::new(circuit_reference.clone());
         let idx = self.last_seen_idx.fetch_add(1, Ordering::SeqCst);
-        let identifier = CircuitReference::new(ref_arc.clone(), idx);
+        let identifier = AnalogReference::new(ref_arc.clone(), idx);
 
         self.circuit_map.insert(identifier.clone(), ref_arc);
 
         identifier
     }
 
-    pub fn connect_branch(&mut self, branch: BranchIdentifier) -> CircuitReference {
-        let circuit_reference = CircuitVariable::Branch(branch);
+    pub fn connect_branch(&mut self, branch: BranchIdentifier) -> AnalogReference {
+        let circuit_reference = AnalogVariable::Branch(branch);
         if let Some(existing_ref) = self.circuit_map.get_by_right(&circuit_reference) {
             return existing_ref.clone();
         }
 
         let ref_arc = Arc::new(circuit_reference.clone());
         let idx = self.last_seen_idx.fetch_add(1, Ordering::SeqCst);
-        let identifier = CircuitReference::new(ref_arc.clone(), idx);
+        let identifier = AnalogReference::new(ref_arc.clone(), idx);
 
         self.circuit_map.insert(identifier.clone(), ref_arc);
 
         identifier
     }
 
-    pub fn all_references(&self) -> Vec<&CircuitReference> {
+    pub fn all_references(&self) -> Vec<&AnalogReference> {
         self.circuit_map.left_values().collect()
     }
 
-    pub fn reference_for(&self, variable: &CircuitVariable) -> Option<&CircuitReference> {
+    pub fn reference_for(&self, variable: &AnalogVariable) -> Option<&AnalogReference> {
         self.circuit_map.get_by_right(variable)
     }
 
-    pub fn variable_for(&self, identifier: &CircuitReference) -> Option<&Arc<CircuitVariable>> {
+    pub fn variable_for(&self, identifier: &AnalogReference) -> Option<&Arc<AnalogVariable>> {
         self.circuit_map.get_by_left(identifier)
     }
 

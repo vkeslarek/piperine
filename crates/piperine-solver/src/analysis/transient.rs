@@ -1,7 +1,6 @@
 use crate::circuit::netlist::{
-    BranchIdentifier, CircuitReference, CircuitVariable, NodeIdentifier,
+    BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier,
 };
-use crate::devices::soa::SoaViolations;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::InitialValue;
 use crate::math::linear::Stamp;
@@ -79,21 +78,21 @@ pub trait TransientAnalysis {
         circuit_states: &TransientAnalysisState,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
-    ) -> Vec<Stamp<CircuitReference, f64>>;
+    ) -> Vec<Stamp<AnalogReference, f64>>;
 
     fn load_transient_dynamic(
         &self,
         _circuit_states: &TransientAnalysisState,
         _transient_analysis_context: &TransientAnalysisContext,
         _context: &Context,
-    ) -> Vec<Stamp<CircuitReference, f64>> {
+    ) -> Vec<Stamp<AnalogReference, f64>> {
         vec![]
     }
 
     fn initial_transient_values(
         &self,
         _context: &Context,
-    ) -> Vec<InitialValue<CircuitReference, f64>> {
+    ) -> Vec<InitialValue<AnalogReference, f64>> {
         Vec::new()
     }
 }
@@ -101,14 +100,12 @@ pub trait TransientAnalysis {
 #[derive(Debug, Clone)]
 pub struct TransientAnalysisResult {
     values: Vec<TransientStep>,
-    soa_violations: SoaViolations,
 }
 
 impl TransientAnalysisResult {
-    pub fn new(values: Vec<TransientStep>, soa_violations: SoaViolations) -> Self {
+    pub fn new(values: Vec<TransientStep>) -> Self {
         Self {
             values,
-            soa_violations,
         }
     }
 
@@ -138,27 +135,27 @@ impl TransientAnalysisResult {
 #[derive(Debug, Clone)]
 pub struct TransientStep {
     time: f64,
-    values: HashMap<Arc<CircuitVariable>, f64>,
+    values: HashMap<Arc<AnalogVariable>, f64>,
 }
 
 impl TransientStep {
-    pub fn new(time: f64, values: HashMap<Arc<CircuitVariable>, f64>) -> Self {
+    pub fn new(time: f64, values: HashMap<Arc<AnalogVariable>, f64>) -> Self {
         Self { time, values }
     }
 
-    pub fn get(&self, variable: impl Into<Arc<CircuitVariable>>) -> Option<f64> {
+    pub fn get(&self, variable: impl Into<Arc<AnalogVariable>>) -> Option<f64> {
         self.values.get(&variable.into()).cloned()
     }
 
     pub fn get_node(&self, node_identifier: &NodeIdentifier) -> Option<f64> {
-        self.get(CircuitVariable::Node(node_identifier.clone()))
+        self.get(AnalogVariable::Node(node_identifier.clone()))
     }
 
     pub fn get_branch(&self, branch_identifier: impl Into<BranchIdentifier>) -> Option<f64> {
-        self.get(CircuitVariable::Branch(branch_identifier.into()))
+        self.get(AnalogVariable::Branch(branch_identifier.into()))
     }
 
-    pub fn values(&self) -> &HashMap<Arc<CircuitVariable>, f64> {
+    pub fn values(&self) -> &HashMap<Arc<AnalogVariable>, f64> {
         &self.values
     }
 

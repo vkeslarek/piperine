@@ -1,8 +1,10 @@
+use crate::analysis::ac::AcAnalysis;
+use crate::analysis::noise::NoiseSource;
 use crate::analysis::ac::AcAnalysisContext;
 use crate::analysis::dc::DcAnalysisResult;
 use crate::analysis::noise::{NoiseAnalysisOptions, NoiseAnalysisResult};
 use crate::circuit::instance::CircuitInstance;
-use crate::circuit::netlist::{CircuitReference, CircuitVariable};
+use crate::circuit::netlist::{AnalogReference, AnalogVariable};
 use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
 use crate::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
 use crate::math::unit::UnitExt;
@@ -28,8 +30,8 @@ pub struct NoiseSolver<'a> {
     pub dc_point: DcAnalysisResult,
     pub symbolic_matrix: FaerSymbolicMatrix,
     pub options: NoiseAnalysisOptions,
-    pub out_ref: CircuitReference,
-    pub ref_ref: CircuitReference,
+    pub out_ref: AnalogReference,
+    pub ref_ref: AnalogReference,
 }
 
 impl<'a> NoiseSolver<'a> {
@@ -102,7 +104,7 @@ impl<'a> NoiseSolver<'a> {
             let adjoint_sol = self.solve_adjoint_system(stamps)?;
 
             let mut step_density = 0.0;
-            for source in self.circuit.noise_runtimes() {
+            for source in self.circuit.all_runtimes() {
                 let noises = source.noise_current_psd(&self.dc_point, &ac_ctx);
                 for n in noises {
                     let z_p = self
@@ -151,7 +153,7 @@ impl<'a> NoiseSolver<'a> {
     /// Adjoint solution vector (transfer impedances)
     fn solve_adjoint_system(
         &self,
-        stamps: Vec<Stamp<CircuitReference, Complex<f64>>>,
+        stamps: Vec<Stamp<AnalogReference, Complex<f64>>>,
     ) -> crate::result::Result<Array1<Complex<f64>>> {
         let mut system = FaerSparseLinearSystem::new(self.symbolic_matrix.size());
 
@@ -187,12 +189,11 @@ impl<'a> NoiseSolver<'a> {
         dc_point: &DcAnalysisResult,
         f_hz: f64,
         context: &Context,
-    ) -> crate::result::Result<Vec<Stamp<CircuitReference, Complex<f64>>>> {
+    ) -> crate::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
         let ac_ctx = AcAnalysisContext {
             frequency: f_hz.Hz(),
         };
-        Ok(circuit
-            .ac_runtimes()
+        Ok(circuit.all_runtimes()
             .iter()
             .flat_map(|ac| ac.load_ac(dc_point, &ac_ctx, context))
             .collect())
@@ -212,13 +213,13 @@ impl<'a> NoiseSolver<'a> {
     fn resolve_nodes(
         circuit: &CircuitInstance,
         opt: &NoiseAnalysisOptions,
-    ) -> crate::result::Result<(CircuitReference, CircuitReference)> {
+    ) -> crate::result::Result<(AnalogReference, AnalogReference)> {
         let net = circuit.netlist();
         let out = net
-            .reference_for(&CircuitVariable::Node(opt.output_node.clone()))
+            .reference_for(&AnalogVariable::Node(opt.output_node.clone()))
             .ok_or_else(|| crate::error::Error::simple("Noise", "Output node not found"))?;
         let ref_ = net
-            .reference_for(&CircuitVariable::Node(opt.reference_node.clone()))
+            .reference_for(&AnalogVariable::Node(opt.reference_node.clone()))
             .ok_or_else(|| crate::error::Error::simple("Noise", "Reference node not found"))?;
         Ok((out.clone(), ref_.clone()))
     }
@@ -246,65 +247,3 @@ impl<'a> NoiseSolver<'a> {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use crate::analysis::ac::AcSweepAnalysisOptions;
-    use crate::analysis::noise::NoiseAnalysisOptions;
-    use crate::circuit::Circuit;
-    use crate::circuit::instance::CircuitInstance;
-    use crate::circuit::netlist::GND;
-    use crate::math::unit::UnitExt;
-    use crate::solver::Context;
-
-    #[test]
-    fn test_noise_johnson_nyquist() {
-        let mut v_out = GND;
-
-        let mut circuit: CircuitInstance = Circuit::builder("Noise Verification - RC", |b| {
-            v_out = b.port();
-
-            b.resistor("R1", v_out.clone(), GND, 100.0.kOhms())
-                .with_noise(true);
-            b.capacitor("C1", v_out.clone(), GND, 1.0.nF());
-        })
-        .into();
-
-        let result = circuit
-            .noise(
-                NoiseAnalysisOptions {
-                    sweep_options: AcSweepAnalysisOptions {
-                        start_frequency: 1.0,
-                        stop_frequency: 1.0e6,
-                        steps: 500,
-                        logarithmic: true,
-                    },
-                    output_node: v_out,
-                    reference_node: GND,
-                    input_source_name: None,
-                },
-                Context::default(),
-            )
-            .unwrap()
-            .solve()
-            .unwrap();
-
-        let k_b = 1.380649e-23;
-        let temp = 300.15;
-        let cap = 1.0e-9;
-        let expected_rms = f64::sqrt(k_b * temp / cap);
-        let simulated_rms = result.integrated_noise;
-
-        println!(
-            "Theory: {:.4} uV | Sim: {:.4} uV",
-            expected_rms * 1e6,
-            simulated_rms * 1e6
-        );
-
-        let error_pct = (simulated_rms - expected_rms).abs() / expected_rms * 100.0;
-        assert!(
-            error_pct < 2.0,
-            "Noise simulation accuracy error: {:.2}%",
-            error_pct
-        );
-    }
-}

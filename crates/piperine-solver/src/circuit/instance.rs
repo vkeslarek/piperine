@@ -1,12 +1,9 @@
-use crate::analysis::ac::AcAnalysis;
-use crate::analysis::dc::DcAnalysis;
-use crate::analysis::noise::{NoiseAnalysisOptions, NoiseSource};
+use crate::analysis::noise::NoiseAnalysisOptions;
 use crate::analysis::tf::TransferFunctionAnalysisOptions;
-use crate::analysis::transient::{TransientAnalysis, TransientAnalysisOptions};
+use crate::analysis::transient::TransientAnalysisOptions;
 use crate::circuit::Circuit;
 use crate::circuit::netlist::Netlist;
-use crate::devices::AnyRuntime;
-use crate::devices::soa::SoaCheck;
+use crate::osdi::runtime::OsdiRuntime;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::solver::Context;
 use crate::solver::ac::AcSolver;
@@ -16,9 +13,9 @@ use crate::solver::tf::TransferFunctionSolver;
 use crate::solver::transient::TransientSolver;
 
 pub struct CircuitInstance {
-    title: String,
-    runtimes: Vec<Box<dyn AnyRuntime>>,
-    netlist: Netlist,
+    pub title: String,
+    pub runtimes: Vec<OsdiRuntime>,
+    pub netlist: Netlist,
 }
 
 impl CircuitInstance {
@@ -27,7 +24,7 @@ impl CircuitInstance {
         let runtimes = circuit
             .components()
             .values()
-            .map(|component| component.runtime(&mut netlist))
+            .map(|component| OsdiRuntime::allocate_osdi(component.lib.clone(), component.descriptor_idx, component.name.clone(), &component.terminals, &component.params, &component.str_params, &mut netlist))
             .collect();
 
         Ok(Self {
@@ -51,22 +48,8 @@ impl CircuitInstance {
         AcSolver::new(self, context)
     }
 
-    pub fn ac_runtimes(&self) -> Vec<&dyn AcAnalysis> {
-        self.runtimes
-            .iter()
-            .filter_map(|runtime| runtime.as_ac())
-            .collect()
-    }
-
     pub fn dc(&mut self, context: Context) -> crate::result::Result<DcSolver<'_>> {
         DcSolver::new(self, context)
-    }
-
-    pub fn dc_runtimes(&self) -> Vec<&dyn DcAnalysis> {
-        self.runtimes
-            .iter()
-            .filter_map(|runtime| runtime.as_dc())
-            .collect()
     }
 
     pub fn noise(
@@ -75,13 +58,6 @@ impl CircuitInstance {
         context: Context,
     ) -> crate::result::Result<NoiseSolver<'_>> {
         NoiseSolver::new(self, options, context)
-    }
-
-    pub fn noise_runtimes(&self) -> Vec<&dyn NoiseSource> {
-        self.runtimes
-            .iter()
-            .filter_map(|runtime| runtime.as_noise_source())
-            .collect()
     }
 
     pub fn transfer_function(
@@ -100,21 +76,11 @@ impl CircuitInstance {
         TransientSolver::new(self, transient_options, context)
     }
 
-    pub fn transient_runtimes(&self) -> Vec<&dyn TransientAnalysis> {
-        self.runtimes
-            .iter()
-            .filter_map(|runtime| runtime.as_transient())
-            .collect()
-    }
-
-    pub fn soa_runtimes(&self) -> Vec<&dyn SoaCheck> {
-        self.runtimes
-            .iter()
-            .filter_map(|runtime| runtime.as_soa_check())
-            .collect()
-    }
-
-    pub fn all_runtimes(&self) -> &[Box<dyn AnyRuntime>] {
+    pub fn all_runtimes(&self) -> &[OsdiRuntime] {
         &self.runtimes
+    }
+
+    pub fn all_runtimes_mut(&mut self) -> &mut [OsdiRuntime] {
+        &mut self.runtimes
     }
 }
