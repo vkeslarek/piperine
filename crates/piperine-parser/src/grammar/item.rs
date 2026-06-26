@@ -20,6 +20,8 @@ impl<'a> Parser<'a> {
             Ok(Item::Connectrules(self.connectrules_decl(attrs, start)?))
         } else if self.at_kw("config") {
             Ok(Item::Config(self.config_decl(attrs, start)?))
+        } else if self.eat_kw("primitive") {
+            Ok(Item::Primitive(self.primitive_decl(attrs, start)?))
         } else {
             Err(format!("expected top-level item, found {:?}", self.peek()))
         }
@@ -74,6 +76,20 @@ impl<'a> Parser<'a> {
             ModuleKind::Module
         };
         let name = self.name()?;
+
+        // NEW: optional #(parameter_declaration {, parameter_declaration})
+        let mut param_ports = Vec::new();
+        if self.eat(&Tok::Hash) {
+            self.expect(&Tok::LParen)?;
+            while !self.at(&Tok::RParen) && !self.at_end() {
+                let pp_start = self.span_start();
+                let pp_attrs = self.attrs()?;
+                param_ports.push(self.module_param_port(pp_attrs, pp_start)?);
+                if !self.eat(&Tok::Comma) { break; }
+            }
+            self.expect(&Tok::RParen)?;
+        }
+
         let ports = if self.at(&Tok::LParen) {
             Some(self.module_ports()?)
         } else {
@@ -85,7 +101,28 @@ impl<'a> Parser<'a> {
             items.push(self.module_item()?);
         }
         self.expect_kw("endmodule")?;
-        Ok(ModuleDecl { attrs, kind, name, ports, items, span: Span { start, end: self.prev_end() } })
+        Ok(ModuleDecl { attrs, kind, name, param_ports, ports, items, span: Span { start, end: self.prev_end() } })
+    }
+
+    /// Parse one parameter declaration in a `#(...)` module header.
+    /// Like `param_decl()` but does NOT consume a trailing `;`.
+    fn module_param_port(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ParamDecl> {
+        let kind = if self.eat_kw("localparam") { ParamKind::LocalParam }
+                   else { self.expect_kw("parameter")?; ParamKind::Parameter };
+        let ty = if self.is_type_kw() { Some(self.type_()?) } else { None };
+        let name = self.name()?;
+        self.skip_range();
+        self.expect(&Tok::Assign)?;
+        let default = self.expr()?;
+        let mut constraints = Vec::new();
+        while self.at_kw("from") || self.at_kw("exclude") {
+            constraints.push(self.param_constraint()?);
+        }
+        Ok(ParamDecl {
+            attrs, kind, ty,
+            params: vec![Param { name, default, constraints }],
+            span: Span { start, end: self.prev_end() },
+        })
     }
 
     fn module_ports(&mut self) -> PResult<Vec<ModulePort>> {
@@ -96,13 +133,45 @@ impl<'a> Parser<'a> {
             let attrs = self.attrs()?;
             if self.at_dir() {
                 ports.push(ModulePort::PortDecl(self.port_decl(attrs, start)?));
+            } else if self.eat(&Tok::Dot) {
+                // .port_id([port_expression])
+                let port = self.name()?;
+                self.expect(&Tok::LParen)?;
+                let expr = if self.at(&Tok::RParen) { None } else { Some(self.port_expr()?) };
+                self.expect(&Tok::RParen)?;
+                ports.push(ModulePort::NamedExternal { port, expr });
+            } else if self.at(&Tok::Comma) || self.at(&Tok::RParen) {
+                // Empty port (blank entry)
+                ports.push(ModulePort::Name(Name(String::new())));
             } else {
+                // port_reference or port_expression
                 ports.push(ModulePort::Name(self.name()?));
+                // Ignore optional range on bare port names for now — they're informational
+                self.skip_range();
             }
             if !self.eat(&Tok::Comma) { break; }
         }
         self.expect(&Tok::RParen)?;
         Ok(ports)
+    }
+
+    fn port_expr(&mut self) -> PResult<PortExpr> {
+        if self.eat(&Tok::LBrace) {
+            // Concatenation: { port_ref, port_ref, ... }
+            let mut refs = Vec::new();
+            while !self.at(&Tok::RBrace) && !self.at_end() {
+                let name = self.name()?;
+                let range = self.parse_range()?;
+                refs.push((name, range));
+                if !self.eat(&Tok::Comma) { break; }
+            }
+            self.expect(&Tok::RBrace)?;
+            Ok(PortExpr::Concat(refs))
+        } else {
+            let name = self.name()?;
+            let range = self.parse_range()?;
+            Ok(PortExpr::Ref { name, range })
+        }
     }
 
     /// `Direction discipline:NameRef? net_type? [range] names` (no trailing `;`).
@@ -182,8 +251,56 @@ impl<'a> Parser<'a> {
                 let mut mode = None;
                 if self.eat_kw("merged") { mode = Some(ConnectMode::Merged); }
                 else if self.eat_kw("split") { mode = Some(ConnectMode::Split); }
-                while !self.eat(&Tok::Semi) && !self.at_end() { self.bump(); }
-                items.push(ConnectrulesItem::Insertion { module, mode, params: vec![], port_overrides: None });
+                
+                let params = if self.at(&Tok::Hash) {
+                    // parameter_value_assignment #(...)
+                    self.eat(&Tok::Hash);
+                    self.expect(&Tok::LParen)?;
+                    let mut ps = Vec::new();
+                    while !self.at(&Tok::RParen) && !self.at_end() {
+                        if self.eat(&Tok::Dot) {
+                            let param = self.name()?;
+                            self.expect(&Tok::LParen)?;
+                            let expr = self.expr()?;
+                            self.expect(&Tok::RParen)?;
+                            ps.push(ParamAssignment::Named { param, expr });
+                        } else {
+                            ps.push(ParamAssignment::Ordered(self.expr()?));
+                        }
+                        if !self.eat(&Tok::Comma) { break; }
+                    }
+                    self.expect(&Tok::RParen)?;
+                    ps
+                } else {
+                    Vec::new()
+                };
+
+                // optional connect_port_overrides
+                let port_overrides = if !self.at(&Tok::Semi) {
+                    // It can be `disc, disc` or `dir disc, dir disc`
+                    let (dir1, disc1) = if self.at_dir() {
+                        (Some(self.direction()?), self.name()?)
+                    } else {
+                        (None, self.name()?)
+                    };
+                    self.expect(&Tok::Comma)?;
+                    let (dir2, disc2) = if self.at_dir() {
+                        (Some(self.direction()?), self.name()?)
+                    } else {
+                        (None, self.name()?)
+                    };
+                    let (input_disc, output_disc) = match (dir1, dir2) {
+                        (Some(Direction::Input), Some(Direction::Output)) => (Some(disc1), Some(disc2)),
+                        (Some(Direction::Output), Some(Direction::Input)) => (Some(disc2), Some(disc1)),
+                        _ => (Some(disc1), Some(disc2)), // For inout/inout or bare disciplines, just map 1 to 1
+                    };
+                    Some(ConnectPortOverrides { input_disc, output_disc })
+                } else {
+                    None
+                };
+
+                self.expect(&Tok::Semi)?;
+                items.push(ConnectrulesItem::Insertion { module, mode, params, port_overrides });
             } else {
                 let mut disciplines = Vec::new();
                 loop {
@@ -200,13 +317,164 @@ impl<'a> Parser<'a> {
         Ok(ConnectrulesDecl { span: Span { start, end: self.prev_end() }, name, items })
     }
 
+    fn primitive_decl(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<PrimitiveDecl> {
+        let name = self.name()?;
+        self.expect(&Tok::LParen)?;
+        let mut ports = Vec::new();
+        while !self.at(&Tok::RParen) && !self.at_end() {
+            ports.push(self.name()?);
+            if !self.eat(&Tok::Comma) { break; }
+        }
+        self.expect(&Tok::RParen)?;
+        self.expect(&Tok::Semi)?;
+
+        // Port declarations
+        let mut port_decls = Vec::new();
+        while self.at_dir() {
+            let pd_start = self.span_start();
+            let pd_attrs = self.attrs()?;
+            let pd = self.port_decl(pd_attrs, pd_start)?;
+            self.expect(&Tok::Semi)?;
+            port_decls.push(pd);
+        }
+
+        // UDP body: optional `initial output_port = init_val ;` then `table ... endtable`
+        let mut initial_stmt = None;
+        if self.eat_kw("initial") {
+            let out_name = self.name()?;
+            self.expect(&Tok::Assign)?;
+            // init_val: 1'b0 | 1'b1 | 1'bx | ... | 0 | 1
+            // crude: accept any token as string for the initialization value
+            let mut init_val_str = String::new();
+            if let Some(tok) = self.peek() {
+                init_val_str = format!("{:?}", tok);
+                self.bump();
+            }
+            self.expect(&Tok::Semi)?;
+            initial_stmt = Some((out_name, init_val_str));
+        }
+
+        self.expect_kw("table")?;
+        let mut entries = Vec::new();
+        while !self.at_kw("endtable") && !self.at_end() {
+            entries.push(self.udp_entry(initial_stmt.is_some())?);
+        }
+        self.expect_kw("endtable")?;
+
+        let body = if initial_stmt.is_some() || entries.iter().any(|e| e.current_state.is_some()) {
+            UdpBody::Sequential { initial: initial_stmt, entries }
+        } else {
+            UdpBody::Combinational(entries)
+        };
+
+        self.expect_kw("endprimitive")?;
+        Ok(PrimitiveDecl {
+            span: Span { start, end: self.prev_end() },
+            attrs, name, ports, port_decls, body,
+        })
+    }
+
+    fn udp_entry(&mut self, sequential: bool) -> PResult<UdpEntry> {
+        let mut tokens = Vec::new();
+        while !self.at(&Tok::Semi) && !self.at_end() {
+            match self.peek() {
+                Some(Tok::Ident(s)) => { tokens.push(s.clone()); self.bump(); }
+                Some(Tok::Int(s)) => { tokens.push(s.clone()); self.bump(); }
+                Some(Tok::Star) => { tokens.push("*".to_string()); self.bump(); }
+                Some(Tok::Colon) => { tokens.push(":".to_string()); self.bump(); }
+                Some(Tok::Minus) => { tokens.push("-".to_string()); self.bump(); }
+                Some(Tok::LParen) => { tokens.push("(".to_string()); self.bump(); }
+                Some(Tok::RParen) => { tokens.push(")".to_string()); self.bump(); }
+                _ => { self.bump(); }
+            }
+        }
+        self.expect(&Tok::Semi)?;
+        let colon_positions: Vec<usize> = tokens.iter().enumerate()
+            .filter(|(_, t)| t.as_str() == ":")
+            .map(|(i, _)| i)
+            .collect();
+        if sequential && colon_positions.len() >= 2 {
+            let c1 = colon_positions[0];
+            let c2 = colon_positions[1];
+            let inputs = tokens[..c1].to_vec();
+            let current_state = Some(tokens[c1+1..c2].join(""));
+            let next_state = tokens[c2+1..].join("");
+            Ok(UdpEntry { inputs, current_state, next_state })
+        } else if let Some(&c) = colon_positions.last() {
+            let inputs = tokens[..c].to_vec();
+            let next_state = tokens[c+1..].join("");
+            Ok(UdpEntry { inputs, current_state: None, next_state })
+        } else {
+            Err("malformed UDP table entry".to_string())
+        }
+    }
+
     fn config_decl(&mut self, _attrs: Vec<Attr>, start: usize) -> PResult<ConfigDecl> {
         self.expect_kw("config")?;
+        let name = self.name()?;
+        self.expect(&Tok::Semi)?;
+
+        // design_statement
+        self.expect_kw("design")?;
+        let mut design = Vec::new();
+        while !self.at(&Tok::Semi) && !self.at_end() {
+            design.push(self.config_cell_ref()?);
+        }
+        self.expect(&Tok::Semi)?;
+
+        let mut rules = Vec::new();
         while !self.at_kw("endconfig") && !self.at_end() {
-            self.bump();
+            rules.push(self.config_rule()?);
         }
         self.expect_kw("endconfig")?;
-        Ok(ConfigDecl { span: Span { start, end: self.prev_end() } })
+        Ok(ConfigDecl { span: Span { start, end: self.prev_end() }, name, design, rules })
+    }
+
+    fn config_cell_ref(&mut self) -> PResult<ConfigCellRef> {
+        let first = self.name()?;
+        if self.eat(&Tok::Dot) {
+            let cell = self.name()?;
+            Ok(ConfigCellRef { library: Some(first), cell })
+        } else {
+            Ok(ConfigCellRef { library: None, cell: first })
+        }
+    }
+
+    fn config_rule(&mut self) -> PResult<ConfigRule> {
+        if self.eat_kw("default") {
+            let clause = self.liblist_or_use()?;
+            self.expect(&Tok::Semi)?;
+            Ok(ConfigRule::Default(clause))
+        } else if self.eat_kw("instance") {
+            let mut path = vec![self.name()?];
+            while self.eat(&Tok::Dot) { path.push(self.name()?); }
+            let clause = self.liblist_or_use()?;
+            self.expect(&Tok::Semi)?;
+            Ok(ConfigRule::Inst { path, clause })
+        } else {
+            self.expect_kw("cell")?;
+            let cell_ref = self.config_cell_ref()?;
+            let clause = self.liblist_or_use()?;
+            self.expect(&Tok::Semi)?;
+            Ok(ConfigRule::Cell { cell_ref, clause })
+        }
+    }
+
+    fn liblist_or_use(&mut self) -> PResult<LiblistOrUse> {
+        if self.eat_kw("liblist") {
+            let mut libs = Vec::new();
+            while matches!(self.peek(), Some(Tok::Ident(_))) 
+                && !self.at_any_kw(&["default","instance","cell","endconfig"]) 
+            {
+                libs.push(self.name()?);
+            }
+            Ok(LiblistOrUse::Liblist(libs))
+        } else {
+            self.expect_kw("use")?;
+            let cell_ref = self.config_cell_ref()?;
+            let config = self.eat(&Tok::Colon) && self.eat_kw("config");
+            Ok(LiblistOrUse::Use { cell_ref, config })
+        }
     }
 
 
@@ -231,17 +499,24 @@ impl<'a> Parser<'a> {
             return Ok(ModuleItem::ParamDecl(self.param_decl(attrs, start)?));
         }
         if self.at_kw("aliasparam") { return self.alias_param(attrs, start); }
+        if self.eat_kw("specparam") { return self.specparam_decl(attrs, start); }
         if self.eat_kw("ground") { return self.ground_decl(attrs, start); }
         if self.eat_kw("event") { return self.event_decl(attrs, start); }
         if self.eat_kw("initial") { return self.initial_construct(attrs, start); }
         if self.eat_kw("always") { return self.always_construct(attrs, start); }
+        if self.eat_kw("task") { return self.task_decl(attrs, start); }
         if self.eat_kw("defparam") { return self.defparam_decl(attrs, start); }
         if self.eat_kw("assign") { return self.continuous_assign(attrs, start); }
+        if self.eat_kw("specify") { return self.specify_block(attrs, start); }
 
         if self.eat_kw("generate") { return self.generate_region(attrs, start); }
         if self.at_kw("for") { return self.loop_generate(attrs, start); }
         if self.at_kw("if") { return self.if_generate(attrs, start); }
         if self.at_kw("case") { return self.case_generate(attrs, start); }
+
+        if self.at_gate_type() {
+            return self.gate_instantiation(attrs, start);
+        }
 
         if self.is_module_instantiation() {
             return self.module_instantiation(attrs, start);
@@ -258,14 +533,96 @@ impl<'a> Parser<'a> {
 
     fn net_decl(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
         let net_type = self.opt_net_type();
+        // Optional drive_strength or charge_strength (only if LParen follows)
+        let (drive_strength, charge_strength) = self.opt_drive_or_charge_strength(net_type.as_ref())?;
+        // Optional vectored/scalared (consume and discard — no AST field)
+        self.eat_kw("vectored");
+        self.eat_kw("scalared");
+        // Optional signed keyword
+        let _signed = self.eat_kw("signed");
+        // Optional delay3 (only if Hash follows)
+        let delay = self.opt_delay()?;
+
         let discipline = self.opt_discipline();
         let range = self.parse_range()?;
         let names = self.declarator_list()?;
         self.expect(&Tok::Semi)?;
         Ok(ModuleItem::NetDecl(NetDecl {
-            attrs, net_type, drive_strength: None, charge_strength: None, delay: None, discipline, range, names,
+            attrs, net_type, drive_strength, charge_strength, delay, discipline, range, names,
             span: Span { start, end: self.prev_end() },
         }))
+    }
+
+    fn opt_drive_or_charge_strength(&mut self, _nt: Option<&NetType>) -> PResult<(Option<DriveStrength>, Option<ChargeStrength>)> {
+        // Only parse if `(` is next AND the token after `(` looks like a strength keyword.
+        if !self.at(&Tok::LParen) { return Ok((None, None)); }
+        // Peek inside: is next token a strength keyword?
+        let is_strength = matches!(self.peek_at(1), Some(Tok::Ident(s)) if 
+            matches!(s.as_str(), "supply0"|"strong0"|"pull0"|"weak0"|
+                                  "supply1"|"strong1"|"pull1"|"weak1"|
+                                  "highz0"|"highz1"|"small"|"medium"|"large")
+        );
+        if !is_strength { return Ok((None, None)); }
+
+        self.expect(&Tok::LParen)?;
+        let s0_str = self.ident()?;
+
+        // charge_strength: (small), (medium), (large)
+        if matches!(s0_str.as_str(), "small"|"medium"|"large") {
+            self.expect(&Tok::RParen)?;
+            let cs = match s0_str.as_str() {
+                "small" => ChargeStrength::Small,
+                "medium" => ChargeStrength::Medium,
+                _ => ChargeStrength::Large,
+            };
+            return Ok((None, Some(cs)));
+        }
+
+        // drive_strength: (s0, s1)
+        self.expect(&Tok::Comma)?;
+        let s1_str = self.ident()?;
+        self.expect(&Tok::RParen)?;
+        let strength0 = self.parse_strength(&s0_str)?;
+        let strength1 = self.parse_strength(&s1_str)?;
+        Ok((Some(DriveStrength { strength0, strength1 }), None))
+    }
+
+    /// Parse optional `#delay` or `#(expr)` or `#(e,e,e)`.
+    fn opt_delay(&mut self) -> PResult<Option<Delay>> {
+        if !self.eat(&Tok::Hash) { return Ok(None); }
+        if self.eat(&Tok::LParen) {
+            let e1 = self.expr()?;
+            let e1 = self.opt_mintypmax(e1)?;
+            if self.eat(&Tok::Comma) {
+                let e2 = self.expr()?;
+                let e2 = self.opt_mintypmax(e2)?;
+                if self.eat(&Tok::Comma) {
+                    let e3 = self.expr()?;
+                    let e3 = self.opt_mintypmax(e3)?;
+                    self.expect(&Tok::RParen)?;
+                    Ok(Some(Delay::Paren3(e1, e2, e3)))
+                } else {
+                    self.expect(&Tok::RParen)?;
+                    Ok(Some(Delay::Paren2(e1, e2)))
+                }
+            } else {
+                self.expect(&Tok::RParen)?;
+                Ok(Some(Delay::Paren1(e1)))
+            }
+        } else {
+            Ok(Some(Delay::Single(self.expr()?)))
+        }
+    }
+
+    fn parse_strength(&self, s: &str) -> PResult<Strength> {
+        match s {
+            "supply0" => Ok(Strength::Supply0), "strong0" => Ok(Strength::Strong0),
+            "pull0"   => Ok(Strength::Pull0),   "weak0"   => Ok(Strength::Weak0),
+            "supply1" => Ok(Strength::Supply1), "strong1" => Ok(Strength::Strong1),
+            "pull1"   => Ok(Strength::Pull1),   "weak1"   => Ok(Strength::Weak1),
+            "highz0"  => Ok(Strength::Highz0),  "highz1"  => Ok(Strength::Highz1),
+            other => Err(format!("unknown strength: {other}")),
+        }
     }
 
     pub(super) fn var_decl(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<VarDecl> {
@@ -383,6 +740,10 @@ impl<'a> Parser<'a> {
 
     fn continuous_assign(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
         let mut assignments = Vec::new();
+        // Optional drive strength
+        let (drive_strength, _) = self.opt_drive_or_charge_strength(None)?;
+        // Optional delay3
+        let delay = self.opt_delay()?;
         loop {
             let lval = self.expr()?;
             self.expect(&Tok::Assign)?;
@@ -392,7 +753,7 @@ impl<'a> Parser<'a> {
         }
         self.expect(&Tok::Semi)?;
         Ok(ModuleItem::ContinuousAssign(ContinuousAssign { 
-            span: Span { start, end: self.prev_end() }, attrs, drive_strength: None, delay: None, assignments 
+            span: Span { start, end: self.prev_end() }, attrs, drive_strength, delay, assignments 
         }))
     }
 
@@ -626,6 +987,7 @@ impl<'a> Parser<'a> {
 
     fn function(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
         self.expect_kw("function")?;
+        let automatic = self.eat_kw("automatic");
         let ty = if self.is_type_kw() { Some(self.type_()?) } else { None };
         let name = self.name()?;
         let mut items = Vec::new();
@@ -651,7 +1013,7 @@ impl<'a> Parser<'a> {
         }
         self.expect_kw("endfunction")?;
         Ok(ModuleItem::Function(Function {
-            attrs, ty, name, items,
+            attrs, automatic, ty, name, items,
             span: Span { start, end: self.prev_end() },
         }))
     }
@@ -675,4 +1037,188 @@ impl<'a> Parser<'a> {
         Ok(FunctionItem::Stmt(self.stmt_with_attrs(attrs)?))
     }
 
+    fn task_decl(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        let automatic = self.eat_kw("automatic");
+        let name = self.name()?;
+
+        // Detect parenthesized port list: `task foo (input real a, ...);`
+        let ports = if self.eat(&Tok::LParen) {
+            let mut ports = Vec::new();
+            while !self.at(&Tok::RParen) && !self.at_end() {
+                let port_attrs = self.attrs()?;
+                let dir = self.direction()?;
+                ports.push(self.task_port_rest(port_attrs, dir)?);
+                if !self.eat(&Tok::Comma) { break; }
+            }
+            self.expect(&Tok::RParen)?;
+            ports
+        } else {
+            Vec::new()
+        };
+
+        self.expect(&Tok::Semi)?;
+
+        // Body: old-style has declarations + final statement.
+        // Parenthesized form has block_item_declarations + statement.
+        let mut items = Vec::new();
+        while !self.at_kw("endtask") && !self.at_end() {
+            // Try to parse as task item (direction decl or block item).
+            // A direction keyword starts a port decl; otherwise it's a block item.
+            if self.at_dir() && ports.is_empty() {
+                // Old-style port: `input real x;`
+                let item_attrs = self.attrs()?;
+                let dir = self.direction()?;
+                let port = self.task_port_rest(item_attrs, dir)?;
+                self.expect(&Tok::Semi)?;
+                items.push(TaskItem::Port(port));
+            } else if !self.at_stmt_kw() && (self.is_type_kw() || self.at_kw("parameter") || self.at_kw("localparam")) {
+                let item_attrs = self.attrs()?;
+                let item_start = self.span_start();
+                if self.at_kw("parameter") || self.at_kw("localparam") {
+                    items.push(TaskItem::BlockItem(BlockItem::ParamDecl(self.param_decl(item_attrs, item_start)?)));
+                } else {
+                    items.push(TaskItem::BlockItem(BlockItem::VarDecl(self.var_decl(item_attrs, item_start)?)));
+                }
+            } else {
+                // Last item is the body statement.
+                // Peek: is this the final statement before endtask?
+                // We collect all statements as TaskItem::BlockItem(Stmt).
+                let s = self.stmt()?;
+                items.push(TaskItem::BlockItem(BlockItem::Stmt(s)));
+            }
+        }
+        self.expect_kw("endtask")?;
+
+        // Split items: last BlockItem::Stmt is the body; everything before is task items.
+        // If no stmt items found, use Empty stmt as body.
+        let body = {
+            let last_stmt = items.iter().rposition(|i| matches!(i, TaskItem::BlockItem(BlockItem::Stmt(_))));
+            if let Some(idx) = last_stmt {
+                if let TaskItem::BlockItem(BlockItem::Stmt(s)) = items.remove(idx) {
+                    Box::new(s)
+                } else { unreachable!() }
+            } else {
+                Box::new(Stmt::Empty(EmptyStmt { attrs: vec![] }))
+            }
+        };
+
+        Ok(ModuleItem::TaskDecl(TaskDecl {
+            span: Span { start, end: self.prev_end() },
+            attrs, automatic, name, ports, items, body,
+        }))
+    }
+
+    fn task_port_rest(&mut self, attrs: Vec<Attr>, dir: Direction) -> PResult<TaskPort> {
+        // Optional: `task_port_type` (integer|real|realtime|time) OR `reg`
+        let mut port_type = None;
+        let mut reg = false;
+        if self.at_any_kw(&["integer", "real", "realtime", "time"]) {
+            port_type = Some(self.type_()?);
+        } else {
+            reg = self.eat_kw("reg");
+        }
+        let discipline = self.opt_discipline();
+        let signed = self.opt_signed();
+        let range = self.parse_range()?;
+        let names = self.name_list()?;
+        Ok(TaskPort { attrs, dir, port_type, discipline, reg, signed, range, names })
+    }
+
+    fn specparam_decl(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        let range = self.parse_range()?;
+        let mut assignments = Vec::new();
+        loop {
+            let name = self.name()?;
+            self.expect(&Tok::Assign)?;
+            let expr = self.expr()?;
+            // consume optional `:typ:max` mintypmax suffix
+            let expr = self.opt_mintypmax(expr)?;
+            assignments.push((name, expr));
+            if !self.eat(&Tok::Comma) { break; }
+        }
+        self.expect(&Tok::Semi)?;
+        Ok(ModuleItem::Specparam(SpecparamDecl {
+            span: Span { start, end: self.prev_end() },
+            attrs, range, assignments,
+        }))
+    }
+
+    fn specify_block(&mut self, _attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        // Skip contents: track paren depth to correctly skip nested path
+        // expressions like `(posedge clk => (q:data))`.
+        let mut item_count = 0;
+        let mut depth = 0usize;
+        while !self.at_end() {
+            if self.at_kw("endspecify") && depth == 0 { break; }
+            match self.peek() {
+                Some(Tok::LParen) => { depth += 1; self.bump(); }
+                Some(Tok::RParen) => { if depth > 0 { depth -= 1; } self.bump(); }
+                Some(Tok::Semi) => { item_count += 1; self.bump(); }
+                _ => { self.bump(); }
+            }
+        }
+        self.expect_kw("endspecify")?;
+        Ok(ModuleItem::Specify(SpecifyBlock { span: Span { start, end: self.prev_end() }, item_count }))
+    }
+
+    fn gate_instantiation(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        let gate_type = self.name()?;  // consumes the gate keyword (it's an Ident)
+
+        // Optional drive_strength: `(strength0, strength1)` — heuristic: if `(` follows
+        // and next is a strength keyword, skip it.
+        // For now: skip drive_strength (not needed to parse structurally).
+        // TODO: parse DriveStrength here when fields are populated.
+
+        // Optional delay2/delay3: `#delay` or `#(...)` 
+        // For now: skip delay.
+        // TODO: parse Delay here when fields are populated.
+        if self.eat(&Tok::Hash) {
+            if self.eat(&Tok::LParen) {
+                let mut depth = 1;
+                while depth > 0 && !self.at_end() {
+                    match self.peek() {
+                        Some(Tok::LParen) => { depth += 1; self.bump(); }
+                        Some(Tok::RParen) => { depth -= 1; self.bump(); }
+                        _ => { self.bump(); }
+                    }
+                }
+            } else {
+                // #scalar_delay
+                self.expr()?;
+            }
+        }
+
+        let mut instances = Vec::new();
+        loop {
+            // Optional instance name
+            let name = if matches!(self.peek(), Some(Tok::Ident(_)))
+                && !matches!(self.peek_at(1), Some(Tok::LParen))
+            {
+                // Has a name: `g1 (...)` or `g1 [range] (...)`
+                let n = self.name()?;
+                let r = self.parse_range()?;
+                Some((n, r))
+            } else {
+                None
+            };
+            self.expect(&Tok::LParen)?;
+            let mut terminals = Vec::new();
+            while !self.at(&Tok::RParen) && !self.at_end() {
+                if self.at(&Tok::Comma) {
+                    terminals.push(None);  // empty terminal (positional gap)
+                } else {
+                    terminals.push(Some(self.expr()?));
+                }
+                if !self.eat(&Tok::Comma) { break; }
+            }
+            self.expect(&Tok::RParen)?;
+            instances.push(GateInstance { name, terminals });
+            if !self.eat(&Tok::Comma) { break; }
+        }
+        self.expect(&Tok::Semi)?;
+        Ok(ModuleItem::GateInstantiation(GateInstantiation {
+            span: Span { start, end: self.prev_end() },
+            attrs, gate_type, instances,
+        }))
+    }
 }

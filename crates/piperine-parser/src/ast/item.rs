@@ -48,6 +48,7 @@ pub struct ModuleDecl {
     pub attrs: Vec<Attr>,
     pub kind: ModuleKind,
     pub name: Name,
+    pub param_ports: Vec<ParamDecl>,
     pub ports: Option<Vec<ModulePort>>,
     pub items: Vec<ModuleItem>,
 }
@@ -61,6 +62,7 @@ pub enum ModuleItem {
     NetDecl(NetDecl),
     AnalogBehaviour(AnalogBehaviour),
     Function(Function),
+    TaskDecl(TaskDecl),
     BranchDecl(BranchDecl),
     VarDecl(VarDecl),
     ParamDecl(ParamDecl),
@@ -109,6 +111,13 @@ pub struct PortDecl {
 pub enum ModulePort {
     PortDecl(PortDecl),
     Name(Name),
+    NamedExternal { port: Name, expr: Option<PortExpr> },
+}
+
+#[derive(Debug, Clone)]
+pub enum PortExpr {
+    Ref { name: Name, range: Option<BitRange> },
+    Concat(Vec<(Name, Option<BitRange>)>),
 }
 
 /// ungram: `AnalogBehaviour = AttrList* 'analog' 'initial'? Stmt`
@@ -225,6 +234,7 @@ pub struct BodyPortDecl {
 pub struct Function {
     pub span: Span,
     pub attrs: Vec<Attr>,
+    pub automatic: bool,
     pub ty: Option<Type>,
     pub name: Name,
     pub items: Vec<FunctionItem>,
@@ -413,11 +423,35 @@ pub enum ResolveTarget { Discipline(Name), Exclude }
 
 #[derive(Debug, Clone)]
 pub struct ConnectPortOverrides {
+    pub input_disc: Option<Name>,
+    pub output_disc: Option<Name>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ConfigDecl {
     pub span: Span,
+    pub name: Name,
+    pub design: Vec<ConfigCellRef>,
+    pub rules: Vec<ConfigRule>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConfigCellRef {
+    pub library: Option<Name>,
+    pub cell: Name,
+}
+
+#[derive(Debug, Clone)]
+pub enum ConfigRule {
+    Default(LiblistOrUse),
+    Inst { path: Vec<Name>, clause: LiblistOrUse },
+    Cell { cell_ref: ConfigCellRef, clause: LiblistOrUse },
+}
+
+#[derive(Debug, Clone)]
+pub enum LiblistOrUse {
+    Liblist(Vec<Name>),
+    Use { cell_ref: ConfigCellRef, config: bool },
 }
 
 // ==========================================
@@ -473,6 +507,7 @@ pub struct CaseGenerateItem {
 #[derive(Debug, Clone)]
 pub struct SpecifyBlock {
     pub span: Span,
+    pub item_count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -500,5 +535,52 @@ pub struct GateInstance {
 #[derive(Debug, Clone)]
 pub struct PrimitiveDecl {
     pub span: Span,
+    pub attrs: Vec<Attr>,
+    pub name: Name,
+    pub ports: Vec<Name>,
+    pub port_decls: Vec<PortDecl>,
+    pub body: UdpBody,
+}
+
+#[derive(Debug, Clone)]
+pub enum UdpBody {
+    Combinational(Vec<UdpEntry>),
+    Sequential { initial: Option<(Name, String)>, entries: Vec<UdpEntry> },
+}
+
+#[derive(Debug, Clone)]
+pub struct UdpEntry {
+    pub inputs: Vec<String>,
+    pub current_state: Option<String>,
+    pub next_state: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskDecl {
+    pub span: Span,
+    pub attrs: Vec<Attr>,
+    pub automatic: bool,
+    pub name: Name,
+    pub ports: Vec<TaskPort>,  // from parenthesized form; empty for old-style
+    pub items: Vec<TaskItem>,
+    pub body: Box<Stmt>,
+}
+
+#[derive(Debug, Clone)]
+pub enum TaskItem {
+    BlockItem(BlockItem),   // reg/integer/real/event decl or statement
+    Port(TaskPort),         // input/output/inout declaration (old-style body)
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskPort {
+    pub attrs: Vec<Attr>,
+    pub dir: Direction,
+    pub port_type: Option<Type>,   // integer|real|realtime|time
+    pub discipline: Option<NameRef>,
+    pub reg: bool,
+    pub signed: bool,
+    pub range: Option<BitRange>,
+    pub names: Vec<Name>,
 }
 

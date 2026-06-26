@@ -144,6 +144,17 @@ fn convert_module(decl: ast::ModuleDecl) -> Module {
                         span: Span { start: 0, end: 0 },
                     });
                 }
+                ast::ModulePort::NamedExternal { port, .. } => {
+                    // Similar to bare name, treated as an unresolved port reference.
+                    module.ports.push(Port {
+                        name: port.0.clone(),
+                        direction: ast::Direction::Inout,
+                        discipline: None,
+                        range: None,
+                        attributes: Vec::new(),
+                        span: Span { start: 0, end: 0 },
+                    });
+                }
             }
         }
     }
@@ -271,7 +282,8 @@ fn convert_module(decl: ast::ModuleDecl) -> Module {
             ast::ModuleItem::AlwaysConstruct { .. } | ast::ModuleItem::Generate(_) | 
             ast::ModuleItem::LoopGenerate(_) | ast::ModuleItem::IfGenerate(_) | 
             ast::ModuleItem::CaseGenerate(_) | ast::ModuleItem::Specify(_) |
-            ast::ModuleItem::Specparam(_) | ast::ModuleItem::GateInstantiation(_) => {
+            ast::ModuleItem::Specparam(_) | ast::ModuleItem::GateInstantiation(_) |
+            ast::ModuleItem::TaskDecl(_) => {
                 // To be implemented in later phases
             }
         }

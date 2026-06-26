@@ -163,6 +163,16 @@ impl<'a> Parser<'a> {
         self.at_any_kw(DIRECTIONS)
     }
 
+    pub(crate) fn at_gate_type(&self) -> bool {
+        self.at_any_kw(&[
+            "and", "nand", "or", "nor", "xor", "xnor", "buf", "not",
+            "bufif0", "bufif1", "notif0", "notif1",
+            "pulldown", "pullup",
+            "nmos", "rnmos", "pmos", "rpmos", "cmos", "rcmos",
+            "tran", "rtran", "tranif0", "rtranif0", "tranif1", "rtranif1"
+        ])
+    }
+
     fn dir_at(&self, off: usize) -> bool {
         matches!(self.peek_at(off), Some(Tok::Ident(s)) if DIRECTIONS.contains(&s.as_str()))
     }

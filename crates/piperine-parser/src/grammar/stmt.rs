@@ -124,7 +124,8 @@ impl<'a> Parser<'a> {
         self.at_any_kw(&[
             "begin", "if", "while", "for", "case", "casex", "casez",
             "repeat", "forever", "wait", "fork", "disable",
-            "assign", "force", "deassign", "release"
+            "assign", "force", "deassign", "release",
+            "task",
         ]) || self.at(&Tok::Arrow)
     }
 
