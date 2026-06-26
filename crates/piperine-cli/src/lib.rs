@@ -13,25 +13,25 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Parse and validate a Verilog-AMS file
+    /// Parse and validate a Verilog-AMS file or project
     Check {
         /// The file to check
-        file: String,
+        file: Option<String>,
     },
     /// Format Verilog-AMS code
     Fmt {
         /// The file to format
-        file: String,
+        file: Option<String>,
     },
     /// Elaborate and build the design
     Build {
         /// The file to build
-        file: String,
+        file: Option<String>,
     },
     /// Run a simulation
     Run {
         /// The file to run
-        file: String,
+        file: Option<String>,
     },
     /// Run automated testbenches
     Test {

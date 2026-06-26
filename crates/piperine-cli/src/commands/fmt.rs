@@ -1,9 +1,21 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::fs;
 use piperine_parser::{lexer::tokenize_with_comments, fmt::{format_source, FormatOptions}, parser::bundled_header_dir};
 
-pub fn execute(file: String) {
-    let path = Path::new(&file);
-    let input = std::fs::read_to_string(path).unwrap_or_else(|e| {
+pub fn execute(file: Option<String>) {
+    let path = if let Some(f) = file {
+        PathBuf::from(f)
+    } else {
+        if let Some(root) = piperine_project::get_current_project_root() {
+            root.join("src").join("main.vams")
+        } else {
+            eprintln!("Error: No Piperine.toml found in current or parent directories. Please provide a file.");
+            std::process::exit(1);
+        }
+    };
+
+    println!("Formatting file: {}", path.display());
+    let input = fs::read_to_string(&path).unwrap_or_else(|e| {
         eprintln!("Error reading file: {}", e);
         std::process::exit(1);
     });
