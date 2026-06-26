@@ -32,6 +32,9 @@ impl FormatState {
     }
 
     pub fn force_newline(&mut self, output: &mut String) {
+        while output.ends_with(' ') || output.ends_with('\t') {
+            output.pop();
+        }
         output.push_str(&self.options.line_ending);
         self.at_line_start = true;
     }
@@ -325,7 +328,12 @@ impl<'a> TokenFormatter<'a> {
         while i < tokens.len() {
             let t = &tokens[i];
             let prev = if i > 0 { Some(&tokens[i-1]) } else { None };
-            let next = if i + 1 < tokens.len() { Some(&tokens[i+1]) } else { None };
+            
+            let mut next_idx = i + 1;
+            while next_idx < tokens.len() && tokens[next_idx].tok == Tok::Newline {
+                next_idx += 1;
+            }
+            let next = if next_idx < tokens.len() { Some(&tokens[next_idx]) } else { None };
 
             // Phase 1: Consume entirely (e.g. Newline)
             let mut consumed = false;
