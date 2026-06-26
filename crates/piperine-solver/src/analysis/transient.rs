@@ -1,4 +1,4 @@
-use crate::circuit::netlist::{
+use crate::analog::netlist::{
     BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier,
 };
 use crate::math::circular_array::CircularArrayBuffer2;
@@ -74,14 +74,14 @@ pub struct TransientAnalysisContext {
 
 pub trait TransientAnalysis {
     fn load_transient(
-        &self,
+        &mut self,
         circuit_states: &TransientAnalysisState,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>>;
 
     fn load_transient_dynamic(
-        &self,
+        &mut self,
         _circuit_states: &TransientAnalysisState,
         _transient_analysis_context: &TransientAnalysisContext,
         _context: &Context,
@@ -90,7 +90,7 @@ pub trait TransientAnalysis {
     }
 
     fn initial_transient_values(
-        &self,
+        &mut self,
         _context: &Context,
     ) -> Vec<InitialValue<AnalogReference, f64>> {
         Vec::new()

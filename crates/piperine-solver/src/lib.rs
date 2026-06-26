@@ -1,9 +1,10 @@
 pub mod analysis;
+pub mod analog;
 pub mod circuit;
-pub mod osdi;
+pub mod digital;
 pub mod error;
 pub mod math;
+pub mod port;
 pub mod result;
 pub mod solver;
 pub mod util;
-pub mod digital;

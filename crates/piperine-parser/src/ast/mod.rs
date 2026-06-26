@@ -28,11 +28,10 @@ pub enum Item {
     DisciplineDecl(DisciplineDecl),
     NatureDecl(NatureDecl),
     ModuleDecl(ModuleDecl),
-    ExternModule(ExternModuleDecl),
-    TypedefEnum(TypedefEnum),
-    TypedefStruct(TypedefStruct),
-    ExternClass(ExternClassDecl),
     Paramset(ParamsetDecl),
+    Connectrules(ConnectrulesDecl),
+    Config(ConfigDecl),
+    Primitive(PrimitiveDecl),
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +57,9 @@ pub enum Type {
     Integer,
     Real,
     String,
+    Time,
+    Realtime,
+    Reg,
     Custom(Name),
 }
 

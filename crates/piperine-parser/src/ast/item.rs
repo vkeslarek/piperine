@@ -35,10 +35,18 @@ pub struct NatureAttr {
     pub val: Expr,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleKind {
+    Module,
+    Macromodule,
+    Connectmodule,
+}
+
 #[derive(Debug, Clone)]
 pub struct ModuleDecl {
     pub span: Span,
     pub attrs: Vec<Attr>,
+    pub kind: ModuleKind,
     pub name: Name,
     pub ports: Option<Vec<ModulePort>>,
     pub items: Vec<ModuleItem>,
@@ -57,28 +65,22 @@ pub enum ModuleItem {
     VarDecl(VarDecl),
     ParamDecl(ParamDecl),
     AliasParam(AliasParam),
-    Instance(InstanceDecl),
-    InitialBlock(InitialBlock),
-    AlwaysBlock(AlwaysBlock),
+    GroundDecl(GroundDecl),
+    EventDecl(EventDecl),
+    ModuleInstantiation(ModuleInstantiation),
+    Defparam(DefparamDecl),
+    ContinuousAssign(ContinuousAssign),
+    InitialConstruct { span: Span, attrs: Vec<Attr>, stmt: Box<Stmt> },
+    AlwaysConstruct { span: Span, attrs: Vec<Attr>, stmt: Box<Stmt> },
+    Generate(GenerateRegion),
+    LoopGenerate(LoopGenerate),
+    IfGenerate(IfGenerate),
+    CaseGenerate(CaseGenerate),
+    Specify(SpecifyBlock),
+    Specparam(SpecparamDecl),
+    GateInstantiation(GateInstantiation),
 }
 
-/// Structural instantiation: `ModuleType [#(params)] inst_name (conns);`
-#[derive(Debug, Clone)]
-pub struct InstanceDecl {
-    pub span: Span,
-    pub attrs: Vec<Attr>,
-    pub module: Name,
-    pub name: Name,
-    pub range: Option<BitRange>,
-    pub params: Vec<Connection>,
-    pub connections: Vec<Connection>,
-}
-
-#[derive(Debug, Clone)]
-pub enum Connection {
-    Positional(Expr),
-    Named { port: Name, expr: Option<Expr> },
-}
 
 /// ungram: `Direction = 'inout' | 'input' | 'output'`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,6 +96,9 @@ pub struct PortDecl {
     pub span: Span,
     pub attrs: Vec<Attr>,
     pub dir: Direction,
+    pub net_type: Option<NetType>,
+    pub var_type: Option<Type>,
+    pub signed: bool,
     pub discipline: Option<NameRef>,
     pub range: Option<BitRange>,
     pub names: Vec<Declarator>,
@@ -121,6 +126,8 @@ pub struct VarDecl {
     pub span: Span,
     pub attrs: Vec<Attr>,
     pub ty: Type,
+    pub signed: bool,
+    pub discipline: Option<Name>,
     pub vars: Vec<Var>,
 }
 
@@ -197,6 +204,10 @@ pub struct Range {
 pub struct NetDecl {
     pub span: Span,
     pub attrs: Vec<Attr>,
+    pub net_type: Option<NetType>,
+    pub drive_strength: Option<DriveStrength>,
+    pub charge_strength: Option<ChargeStrength>,
+    pub delay: Option<Delay>,
     pub discipline: Option<NameRef>,
     pub range: Option<BitRange>,
     pub names: Vec<Declarator>,
@@ -245,124 +256,249 @@ pub struct BranchDecl {
     pub names: Vec<Name>,
 }
 
-/// Top-level `extern module name(ports; parameters);` declaration.
-/// Ports and parameters separated by `;` (or mixed with `,` — parser accepts both).
+// ==========================================
+// Phase 2 / Phase 6 / Phase 7 Extensions
+// ==========================================
+
 #[derive(Debug, Clone)]
-pub struct ExternModuleDecl {
+pub struct GroundDecl {
     pub span: Span,
     pub attrs: Vec<Attr>,
-    pub name: Name,
-    pub ports: Vec<PortDecl>,
-    pub parameters: Vec<ExternParameter>,
-}
-
-/// One parameter in an `extern module` declaration.
-#[derive(Debug, Clone)]
-pub struct ExternParameter {
-    pub name: Name,
-    pub kind: ExternParameterKind,
-    pub default: Option<Expr>,
+    pub discipline: Option<Name>,
+    pub range: Option<BitRange>,
+    pub names: Vec<Declarator>,
 }
 
 #[derive(Debug, Clone)]
-pub enum ExternParameterKind {
-    /// Normal typed parameter: `parameter real r = 1e3`
-    Typed(Type),
-    /// AST-passthrough parameter: `parameter expr V`
-    /// The elaborator passes the raw AST Expr to the plugin — no evaluation.
-    Expr,
-    /// Instance-reference parameter: `parameter ref l1`
-    /// Value must be an identifier matching another instance in the same module.
-    /// The elaborator resolves it to the SPICE element name of that instance.
-    Ref,
-}
-
-/// `initial begin BlockItem* end` — testbench procedural block.
-#[derive(Debug, Clone)]
-pub struct InitialBlock {
+pub struct EventDecl {
     pub span: Span,
     pub attrs: Vec<Attr>,
-    pub stmt: Box<Stmt>,
+    pub names: Vec<Declarator>,
 }
 
-/// `always @(sensitivity) stmt` — testbench event-driven block.
-///
-/// Sensitivity forms:
-///   @(initial_step)          fires once at start of each analysis
-///   @(final_step)            fires once at end of each analysis
-///   @(step)                  fires at every accepted timepoint (expensive!)
-///   @(above(expr))           fires on positive zero-crossing of expr
-///   @(cross(expr, +1))       SV-AMS style crossing (direction: +1/-1/0=both)
 #[derive(Debug, Clone)]
-pub struct AlwaysBlock {
+pub enum NetType {
+    Wire, Wand, Wor, Tri, Triand, Trior,
+    Supply0, Supply1, Tri0, Tri1, Uwire, Trireg,
+    Wreal,
+}
+
+#[derive(Debug, Clone)]
+pub enum Strength {
+    Supply0, Strong0, Pull0, Weak0,
+    Supply1, Strong1, Pull1, Weak1,
+    Highz0, Highz1,
+}
+
+#[derive(Debug, Clone)]
+pub struct DriveStrength {
+    pub strength0: Strength,
+    pub strength1: Strength,
+}
+
+#[derive(Debug, Clone)]
+pub enum ChargeStrength {
+    Small, Medium, Large,
+}
+
+#[derive(Debug, Clone)]
+pub enum Delay {
+    Single(Expr),                           // #5 or #ident
+    Paren1(Expr),                           // #(expr)      — mintypmax
+    Paren2(Expr, Expr),                     // #(rise, fall)
+    Paren3(Expr, Expr, Expr),               // #(rise, fall, turnoff)
+}
+
+// ==========================================
+// Phase 3 & 4 Extensions
+// ==========================================
+
+#[derive(Debug, Clone)]
+pub struct ModuleInstantiation {
     pub span: Span,
-    pub sensitivity: AlwaysSensitivity,
-    pub stmt: Box<Stmt>,
+    pub attrs: Vec<Attr>,
+    pub module_name: Name,                      // the module/paramset being instantiated
+    pub param_assignments: Vec<ParamAssignment>, // #(...) parameter overrides
+    pub instances: Vec<ModuleInstance>,           // one or more instances
 }
 
 #[derive(Debug, Clone)]
-pub enum AlwaysSensitivity {
-    InitialStep,
-    FinalStep,
-    Step,
-    Above(Expr),          // above(threshold_expr)
-    Cross(Expr, i8),      // cross(expr, direction): +1, -1, or 0 for both
-}
-
-#[derive(Debug, Clone)]
-pub struct TypedefEnum {
+pub struct ModuleInstance {
     pub name: Name,
-    pub base_type: Option<Type>,
-    pub variants: Vec<EnumVariant>,
+    pub range: Option<BitRange>,      // optional array of instances [3:0]
+    pub connections: Vec<PortConnection>,
 }
 
 #[derive(Debug, Clone)]
-pub struct EnumVariant {
-    pub name: Name,
-    pub value: Option<Expr>,
+pub enum PortConnection {
+    Ordered(Option<Expr>),                     // positional: expr or empty
+    Named { port: Name, expr: Option<Expr> },  // .port_name(expr) or .port_name()
+    Wildcard,                                  // .*  — auto-connect by name
 }
 
 #[derive(Debug, Clone)]
-pub struct TypedefStruct {
-    pub name: Name,
-    pub fields: Vec<StructField>,
+pub enum ParamAssignment {
+    Ordered(Expr),
+    Named { param: Name, expr: Expr },
+    SystemNamed { param: String, expr: Expr },  // .$param_name(expr) — system params
 }
 
 #[derive(Debug, Clone)]
-pub struct StructField {
-    pub ty: Type,
-    pub name: Name,
+pub struct DefparamDecl {
+    pub span: Span,
+    pub assignments: Vec<(Path, Expr)>,  // hierarchical_param_id = const_expr
 }
 
 #[derive(Debug, Clone)]
-pub struct ExternClassDecl {
-    pub name: Name,
+pub struct ContinuousAssign {
+    pub span: Span,
+    pub attrs: Vec<Attr>,
+    pub drive_strength: Option<DriveStrength>,  // optional (strong0, pull1) etc.
+    pub delay: Option<Delay>,                   // optional #delay
+    pub assignments: Vec<(Expr, Expr)>,          // (lvalue, rvalue) pairs
 }
 
-/// `paramset <name> <base_module>;`
-///   `.param = value;`*
-/// `endparamset`
-///
-/// Defines a named, pre-configured variant of an extern module.
-/// The elaborator emits a `.model` line + instance line when this is instantiated.
-/// The `.model` key sets the SPICE model card name; all other keys become model params.
-///
-/// Example:
-///   paramset d1n4148 spice_d;
-///       .model = "d1n4148";
-///       .is    = 2.52e-9;
-///   endparamset
 #[derive(Debug, Clone)]
 pub struct ParamsetDecl {
-    pub span:    Span,
-    pub name:    Name,
-    pub base:    Name,
-    pub entries: Vec<ParamsetEntry>,
+    pub span: Span,
+    pub attrs: Vec<Attr>,
+    pub name: Name,
+    pub base: Name,
+    pub item_decls: Vec<ParamsetItemDecl>,
+    pub statements: Vec<ParamsetStmt>,
 }
 
-/// One `.key = value;` entry inside a `paramset` block.
 #[derive(Debug, Clone)]
-pub struct ParamsetEntry {
-    pub name:  Name,
-    pub value: Expr,
+pub enum ParamsetItemDecl {
+    Parameter(ParamDecl),
+    LocalParameter(ParamDecl),
+    AliasParam(AliasParam),
+    IntegerDecl(VarDecl),
+    RealDecl(VarDecl),
 }
+
+#[derive(Debug, Clone)]
+pub enum ParamsetStmt {
+    DotAssign { name: Name, value: Expr },
+    SysDotAssign { name: String, value: Expr },
+    AnalogStmt(Box<Stmt>),
+}
+
+#[derive(Debug, Clone)]
+pub struct ConnectrulesDecl {
+    pub span: Span,
+    pub name: Name,
+    pub items: Vec<ConnectrulesItem>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ConnectrulesItem {
+    Insertion {
+        module: Name,
+        mode: Option<ConnectMode>,
+        params: Vec<ParamAssignment>,
+        port_overrides: Option<ConnectPortOverrides>,
+    },
+    Resolution {
+        disciplines: Vec<Name>,
+        target: ResolveTarget,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum ConnectMode { Merged, Split }
+
+#[derive(Debug, Clone)]
+pub enum ResolveTarget { Discipline(Name), Exclude }
+
+#[derive(Debug, Clone)]
+pub struct ConnectPortOverrides {
+}
+
+#[derive(Debug, Clone)]
+pub struct ConfigDecl {
+    pub span: Span,
+}
+
+// ==========================================
+// Phase 5 Extensions
+// ==========================================
+
+#[derive(Debug, Clone)]
+pub struct GenerateRegion {
+    pub span: Span,
+    pub items: Vec<ModuleItem>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LoopGenerate {
+    pub span: Span,
+    pub init: (Name, Expr),
+    pub condition: Expr,
+    pub iteration: (Name, Expr),
+    pub body: GenerateBlock,
+}
+
+#[derive(Debug, Clone)]
+pub enum GenerateBlock {
+    Single(Box<ModuleItem>),
+    Block { label: Option<Name>, items: Vec<ModuleItem> },
+}
+
+#[derive(Debug, Clone)]
+pub struct IfGenerate {
+    pub span: Span,
+    pub condition: Expr,
+    pub then_block: GenerateBlock,
+    pub else_block: Option<GenerateBlock>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CaseGenerate {
+    pub span: Span,
+    pub condition: Expr,
+    pub items: Vec<CaseGenerateItem>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CaseGenerateItem {
+    pub exprs: Vec<Expr>, // Empty means default
+    pub block: GenerateBlock,
+}
+
+// ==========================================
+// Phase 8 & 9 Extensions
+// ==========================================
+
+#[derive(Debug, Clone)]
+pub struct SpecifyBlock {
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct SpecparamDecl {
+    pub span: Span,
+    pub attrs: Vec<Attr>,
+    pub range: Option<BitRange>,
+    pub assignments: Vec<(Name, Expr)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GateInstantiation {
+    pub span: Span,
+    pub attrs: Vec<Attr>,
+    pub gate_type: Name,
+    pub instances: Vec<GateInstance>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GateInstance {
+    pub name: Option<(Name, Option<BitRange>)>,
+    pub terminals: Vec<Option<Expr>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PrimitiveDecl {
+    pub span: Span,
+}
+

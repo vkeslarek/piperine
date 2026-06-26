@@ -58,20 +58,8 @@ pub fn parse_with_includes(input: &str, include_dirs: &[PathBuf]) -> Result<Docu
             ast::Item::NatureDecl(decl) => {
                 doc.natures.push(convert_nature(decl));
             }
-            ast::Item::ExternModule(decl) => {
-                doc.extern_modules.push(decl);
-            }
-            ast::Item::TypedefEnum(decl) => {
-                doc.typedef_enums.push(decl);
-            }
-            ast::Item::TypedefStruct(decl) => {
-                doc.typedef_structs.push(decl);
-            }
-            ast::Item::ExternClass(decl) => {
-                doc.extern_classes.push(decl);
-            }
-            ast::Item::Paramset(decl) => {
-                doc.paramsets.push(decl);
+            ast::Item::Paramset(_) | ast::Item::Connectrules(_) | ast::Item::Config(_) | ast::Item::Primitive(_) => {
+                // To be implemented in later phases
             }
         }
     }
@@ -125,11 +113,8 @@ fn convert_module(decl: ast::ModuleDecl) -> Module {
         nets: Vec::new(),
         variables: Vec::new(),
         branches: Vec::new(),
-        instances: Vec::new(),
         functions: Vec::new(),
         analog_blocks: Vec::new(),
-        initial_blocks: Vec::new(),
-        always_blocks: Vec::new(),
         span: decl.span,
     };
 
@@ -278,27 +263,16 @@ fn convert_module(decl: ast::ModuleDecl) -> Module {
                     span: a.span,
                 });
             }
-            ast::ModuleItem::Instance(i) => {
-                let connections = i.connections.into_iter().map(convert_connection).collect();
-                let params = i.params.into_iter().map(convert_connection).collect();
-                module.instances.push(Instance {
-                    module: i.module.0.clone(),
-                    name: i.name.0.clone(),
-                    range: i.range.clone(),
-                    params,
-                    connections,
-                    attributes: convert_attrs(&i.attrs),
-                    span: i.span,
-                });
+            ast::ModuleItem::GroundDecl(_) | ast::ModuleItem::EventDecl(_) => {
+                // To be implemented in later phases
             }
-            ast::ModuleItem::InitialBlock(b) => {
-                module.initial_blocks.push(crate::model::InitialBlock {
-                    stmt: *b.stmt,
-                    span: b.span,
-                });
-            }
-            ast::ModuleItem::AlwaysBlock(ab) => {
-                module.always_blocks.push(ab);
+            ast::ModuleItem::ModuleInstantiation(_) | ast::ModuleItem::Defparam(_) | 
+            ast::ModuleItem::ContinuousAssign(_) | ast::ModuleItem::InitialConstruct { .. } | 
+            ast::ModuleItem::AlwaysConstruct { .. } | ast::ModuleItem::Generate(_) | 
+            ast::ModuleItem::LoopGenerate(_) | ast::ModuleItem::IfGenerate(_) | 
+            ast::ModuleItem::CaseGenerate(_) | ast::ModuleItem::Specify(_) |
+            ast::ModuleItem::Specparam(_) | ast::ModuleItem::GateInstantiation(_) => {
+                // To be implemented in later phases
             }
         }
     }
@@ -306,12 +280,7 @@ fn convert_module(decl: ast::ModuleDecl) -> Module {
     module
 }
 
-fn convert_connection(c: ast::Connection) -> Connection {
-    match c {
-        ast::Connection::Positional(e) => Connection::Positional(e),
-        ast::Connection::Named { port, expr } => Connection::Named { port: port.0, expr },
-    }
-}
+
 
 fn convert_discipline(decl: ast::DisciplineDecl) -> Discipline {
     let attributes = decl

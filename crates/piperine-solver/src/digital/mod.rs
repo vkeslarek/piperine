@@ -1,6 +1,8 @@
 pub mod logic;
 pub mod net;
 pub mod state;
+pub mod builtin_a2d;
+pub mod builtin_d2a;
 
 #[cfg(test)]
 mod tests {
@@ -11,7 +13,6 @@ mod tests {
     use std::collections::{HashSet, BinaryHeap};
     use std::cmp::Reverse;
 
-    // Mock inverter for testing
     struct MockInverter {
         id: usize,
         input: DigitalNet,
@@ -36,24 +37,21 @@ mod tests {
                 net: self.output,
                 value: out_val,
                 source: self.id,
-                seq: 0, // Mock sequencer
+                seq: 0,
             }));
         }
     }
 
     #[test]
     fn test_evaluate_until_stable_chain() {
-        // 3 inverters in a chain: net0 -> INV0 -> net1 -> INV1 -> net2 -> INV2 -> net3
         let mut state = DigitalState::new(4);
-        
-        // Initial state: net0 = 1, others X
+
         state.nets[0] = LogicValue::One;
 
         let mut inv0 = MockInverter { id: 0, input: DigitalNet(0), output: DigitalNet(1), delay: 0.0 };
         let mut inv1 = MockInverter { id: 1, input: DigitalNet(1), output: DigitalNet(2), delay: 0.0 };
         let mut inv2 = MockInverter { id: 2, input: DigitalNet(2), output: DigitalNet(3), delay: 0.0 };
 
-        // Schedule an event to trigger the chain: net0 changes 1 -> 0 at t=1.0
         state.schedule(DigitalEvent {
             time: 1.0,
             net: DigitalNet(0),
@@ -62,15 +60,9 @@ mod tests {
             seq: 0,
         });
 
-        // Evaluate at t=1.0
         let mut devices: Vec<&mut dyn DigitalDevice> = vec![&mut inv0, &mut inv1, &mut inv2];
         state.evaluate_until_stable(1.0, &mut devices);
 
-        // After stabilization: 
-        // net0 = 0
-        // net1 = 1
-        // net2 = 0
-        // net3 = 1
         assert_eq!(state.nets[0], LogicValue::Zero);
         assert_eq!(state.nets[1], LogicValue::One);
         assert_eq!(state.nets[2], LogicValue::Zero);
@@ -105,7 +97,7 @@ mod tests {
     #[test]
     fn test_event_ordering() {
         let mut state = DigitalState::new(1);
-        
+
         state.schedule(DigitalEvent { time: 5.0, net: DigitalNet(0), value: LogicValue::One, source: 0, seq: 2 });
         state.schedule(DigitalEvent { time: 3.0, net: DigitalNet(0), value: LogicValue::Zero, source: 0, seq: 0 });
         state.schedule(DigitalEvent { time: 5.0, net: DigitalNet(0), value: LogicValue::Z, source: 0, seq: 1 });

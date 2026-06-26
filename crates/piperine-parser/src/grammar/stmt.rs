@@ -14,44 +14,43 @@ impl<'a> Parser<'a> {
         if self.at_kw("begin") || self.at(&Tok::LBrace) { return self.block_stmt(attrs); }
         if self.at_kw("if")                { return self.if_stmt(attrs); }
         if self.at_kw("while")             { return self.while_stmt(attrs); }
-        if self.at_kw("foreach")           { return self.foreach_stmt(attrs); }
         if self.at_kw("for")               { return self.for_stmt(attrs); }
         if self.at_kw("repeat")            { return self.repeat_stmt(attrs); }
         if self.at_kw("forever")           { return self.forever_stmt(attrs); }
-        if self.at_kw("case")              { return self.case_stmt(attrs); }
-        if self.at_kw("assert")            { return self.assert_stmt(attrs, 0); }
-        if self.at_kw("assert_run")        { return self.assert_stmt(attrs, 1); }
-        if self.at_kw("assert_warn")       { return self.assert_stmt(attrs, 2); }
-        if self.eat_kw("break")            { self.eat(&Tok::Semi); return Ok(Stmt::Break(BreakStmt { attrs })); }
-        if self.eat_kw("continue")         { self.eat(&Tok::Semi); return Ok(Stmt::Continue(ContinueStmt { attrs })); }
-        if self.at_kw("return")            { return self.return_stmt(attrs); }
-        if self.at(&Tok::PlusPlus) || self.at(&Tok::MinusMinus) { return self.prefix_incdec_stmt(attrs); }
+        if self.at_kw("case") || self.at_kw("casex") || self.at_kw("casez") {
+            return self.case_stmt(attrs);
+        }
+        if self.at_kw("wait")              { return self.wait_stmt(attrs); }
+        if self.at_kw("fork")              { return self.fork_stmt(attrs); }
+        if self.at_kw("disable")           { return self.disable_stmt(attrs); }
+        if self.at(&Tok::Arrow)            { return self.event_trigger_stmt(attrs); }
+        if self.at_kw("assign") || self.at_kw("force") { return self.procedural_assign_stmt(attrs); }
+        if self.at_kw("deassign") || self.at_kw("release") { return self.procedural_deassign_stmt(attrs); }
         self.assign_or_expr_stmt(attrs)
     }
 
-    /// Match a `=`, `<+`, or compound (`+=`, `-=`, …) assignment operator.
+    /// Match a `=`, `<+`.
     /// Returns `None` when the next token is not an assignment operator.
     fn assign_op_token(&mut self) -> Option<AssignOp> {
         if self.eat(&Tok::Assign)    { Some(AssignOp::Eq) }
         else if self.eat(&Tok::Contrib)   { Some(AssignOp::Contrib) }
-        else if self.eat(&Tok::PlusEq)    { Some(AssignOp::AddEq) }
-        else if self.eat(&Tok::MinusEq)   { Some(AssignOp::SubEq) }
-        else if self.eat(&Tok::StarEq)    { Some(AssignOp::MulEq) }
-        else if self.eat(&Tok::SlashEq)   { Some(AssignOp::DivEq) }
-        else if self.eat(&Tok::PercentEq) { Some(AssignOp::ModEq) }
         else { None }
     }
 
     fn assign_or_expr_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
         let lval = self.expr()?;
-        // postfix `i++` / `i--`
-        if self.eat(&Tok::PlusPlus) {
-            self.eat(&Tok::Semi);
-            return Ok(Stmt::Assign(AssignStmt { attrs, assign: incdec_assign(lval, true) }));
+        if self.eat(&Tok::Colon) {
+            let indirect_expr = self.expr()?;
+            self.expect(&Tok::EqEq)?;
+            let rvalue = self.expr()?;
+            self.expect(&Tok::Semi)?;
+            return Ok(Stmt::IndirectContrib(IndirectContribution { attrs, lvalue: lval, indirect_expr, rvalue }));
         }
-        if self.eat(&Tok::MinusMinus) {
+        if self.eat(&Tok::Le) {
+            let delay_or_event = self.opt_timing_control()?;
+            let rvalue = self.expr()?;
             self.eat(&Tok::Semi);
-            return Ok(Stmt::Assign(AssignStmt { attrs, assign: incdec_assign(lval, false) }));
+            return Ok(Stmt::NonBlockingAssign(NonBlockingAssignStmt { attrs, lvalue: lval, delay_or_event, rvalue }));
         }
         let stmt = match self.assign_op_token() {
             Some(op) => {
@@ -64,23 +63,8 @@ impl<'a> Parser<'a> {
         Ok(stmt)
     }
 
-    /// `++lval` / `--lval` as a standalone statement.
-    fn prefix_incdec_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
-        let inc = self.eat(&Tok::PlusPlus);
-        if !inc { self.expect(&Tok::MinusMinus)?; }
-        let lval = self.expr()?;
-        self.eat(&Tok::Semi);
-        Ok(Stmt::Assign(AssignStmt { attrs, assign: incdec_assign(lval, inc) }))
-    }
-
     fn for_assign(&mut self) -> PResult<Assign> {
-        // prefix `++i` / `--i`
-        if self.eat(&Tok::PlusPlus)  { return Ok(incdec_assign(self.expr()?, true)); }
-        if self.eat(&Tok::MinusMinus){ return Ok(incdec_assign(self.expr()?, false)); }
         let lval = self.expr()?;
-        // postfix `i++` / `i--`
-        if self.eat(&Tok::PlusPlus)  { return Ok(incdec_assign(lval, true)); }
-        if self.eat(&Tok::MinusMinus){ return Ok(incdec_assign(lval, false)); }
         let op = self.assign_op_token()
             .ok_or_else(|| "expected assignment operator in for-clause".to_string())?;
         let rval = self.expr()?;
@@ -100,30 +84,6 @@ impl<'a> Parser<'a> {
         self.expect_kw("forever")?;
         let body = Box::new(self.stmt()?);
         Ok(Stmt::Forever(ForeverStmt { attrs, body }))
-    }
-
-    /// `foreach (array[index]) body`
-    fn foreach_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
-        self.expect_kw("foreach")?;
-        self.expect(&Tok::LParen)?;
-        let array = Expr::Path(self.path()?);
-        self.expect(&Tok::LBrack)?;
-        let index = self.name()?;
-        self.expect(&Tok::RBrack)?;
-        self.expect(&Tok::RParen)?;
-        let body = Box::new(self.stmt()?);
-        Ok(Stmt::Foreach(ForeachStmt { attrs, array, index, body }))
-    }
-
-    fn return_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
-        self.expect_kw("return")?;
-        let value = if self.at(&Tok::Semi) || self.at(&Tok::RBrace) || self.at_kw("end") {
-            None
-        } else {
-            Some(self.expr()?)
-        };
-        self.eat(&Tok::Semi);
-        Ok(Stmt::Return(ReturnStmt { attrs, value }))
     }
 
     /// A block delimited by `begin`/`end` or by `{`/`}` — both interchangeable.
@@ -162,10 +122,10 @@ impl<'a> Parser<'a> {
     /// heuristic from swallowing nested compound statements.
     pub(super) fn at_stmt_kw(&self) -> bool {
         self.at_any_kw(&[
-            "begin", "if", "while", "for", "foreach", "case",
-            "repeat", "forever", "return", "break", "continue",
-            "assert", "assert_run", "assert_warn",
-        ])
+            "begin", "if", "while", "for", "case", "casex", "casez",
+            "repeat", "forever", "wait", "fork", "disable",
+            "assign", "force", "deassign", "release"
+        ]) || self.at(&Tok::Arrow)
     }
 
     fn if_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
@@ -207,7 +167,14 @@ impl<'a> Parser<'a> {
     }
 
     fn case_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
-        self.expect_kw("case")?;
+        let kind = if self.eat_kw("casex") {
+            CaseKind::Casex
+        } else if self.eat_kw("casez") {
+            CaseKind::Casez
+        } else {
+            self.expect_kw("case")?;
+            CaseKind::Case
+        };
         self.expect(&Tok::LParen)?;
         let discriminant = self.expr()?;
         self.expect(&Tok::RParen)?;
@@ -225,7 +192,7 @@ impl<'a> Parser<'a> {
             cases.push(Case { item, stmt: Box::new(self.stmt()?) });
         }
         self.expect_kw("endcase")?;
-        Ok(Stmt::Case(CaseStmt { attrs, discriminant, cases }))
+        Ok(Stmt::Case(CaseStmt { attrs, kind, discriminant, cases }))
     }
 
     fn event_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
@@ -240,33 +207,106 @@ impl<'a> Parser<'a> {
         let stmt = Box::new(self.stmt()?);
         Ok(Stmt::Event(EventStmt { attrs, event, stmt }))
     }
+    // ==========================================
+    // Phase 4 Extensions
+    // ==========================================
 
-    fn assert_stmt(&mut self, attrs: Vec<Attr>, kind: u8) -> PResult<Stmt> {
-        self.bump();
+    fn wait_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
+        self.expect_kw("wait")?;
         self.expect(&Tok::LParen)?;
         let condition = self.expr()?;
         self.expect(&Tok::RParen)?;
-        let message = if self.eat_kw("else") {
-            Some(self.expr()?)
-        } else {
-            None
-        };
-        self.eat(&Tok::Semi);
-        let stmt = AssertStmt { attrs, condition, message };
-        Ok(match kind {
-            0 => Stmt::Assert(stmt),
-            1 => Stmt::AssertRun(stmt),
-            2 => Stmt::AssertWarn(stmt),
-            _ => unreachable!(),
-        })
+        let stmt = Box::new(self.stmt()?);
+        Ok(Stmt::Wait(WaitStmt { attrs, condition, stmt }))
     }
-}
 
-/// Desugar `lval++`/`++lval` (or `--`) into `lval += 1` / `lval -= 1`.
-fn incdec_assign(lval: Expr, inc: bool) -> Assign {
-    Assign {
-        lval,
-        op: if inc { AssignOp::AddEq } else { AssignOp::SubEq },
-        rval: Expr::Literal(Literal::IntNumber("1".to_string())),
+    fn fork_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
+        self.expect_kw("fork")?;
+        let label = if self.eat(&Tok::Colon) { Some(self.name()?) } else { None };
+        let mut items = Vec::new();
+        while !self.at_kw("join") && !self.at_end() {
+            items.push(self.block_item()?);
+        }
+        self.expect_kw("join")?;
+        Ok(Stmt::Fork(ForkStmt { attrs, label, items }))
+    }
+
+    fn disable_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
+        self.expect_kw("disable")?;
+        let target = self.path()?;
+        self.expect(&Tok::Semi)?;
+        Ok(Stmt::Disable(DisableStmt { attrs, target }))
+    }
+
+    fn event_trigger_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
+        self.expect(&Tok::Arrow)?;
+        let event = self.path()?;
+        self.expect(&Tok::Semi)?;
+        Ok(Stmt::EventTrigger(EventTriggerStmt { attrs, event }))
+    }
+
+    fn procedural_assign_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
+        let is_force = self.eat_kw("force");
+        if !is_force { self.expect_kw("assign")?; }
+        let lvalue = self.expr()?;
+        self.expect(&Tok::Assign)?;
+        let rvalue = self.expr()?;
+        self.expect(&Tok::Semi)?;
+        Ok(Stmt::ProceduralAssign(ProceduralAssignStmt { attrs, is_force, lvalue, rvalue }))
+    }
+
+    fn procedural_deassign_stmt(&mut self, attrs: Vec<Attr>) -> PResult<Stmt> {
+        let is_release = self.eat_kw("release");
+        if !is_release { self.expect_kw("deassign")?; }
+        let lvalue = self.expr()?;
+        self.expect(&Tok::Semi)?;
+        Ok(Stmt::ProceduralDeassign(ProceduralDeassignStmt { attrs, is_release, lvalue }))
+    }
+
+    pub(super) fn opt_timing_control(&mut self) -> PResult<Option<TimingControl>> {
+        if self.eat(&Tok::Hash) {
+            if self.eat(&Tok::LParen) {
+                let expr = self.expr()?;
+                self.expect(&Tok::RParen)?;
+                Ok(Some(TimingControl::DelayParen(expr)))
+            } else {
+                Ok(Some(TimingControl::Delay(self.expr()?)))
+            }
+        } else if self.eat(&Tok::At) {
+            if self.eat(&Tok::Star) {
+                Ok(Some(TimingControl::Event(EventControl::Star)))
+            } else if self.eat(&Tok::LParen) {
+                if self.eat(&Tok::Star) {
+                    self.expect(&Tok::RParen)?;
+                    Ok(Some(TimingControl::Event(EventControl::Star)))
+                } else {
+                    let mut events = Vec::new();
+                    while !self.at(&Tok::RParen) && !self.at_end() {
+                        events.push(self.event_expr()?);
+                        if !self.eat(&Tok::Comma) {
+                            if !self.eat_kw("or") {
+                                break;
+                            }
+                        }
+                    }
+                    self.expect(&Tok::RParen)?;
+                    Ok(Some(TimingControl::Event(EventControl::Expr(events))))
+                }
+            } else {
+                Ok(Some(TimingControl::Event(EventControl::Ident(self.path()?))))
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn event_expr(&mut self) -> PResult<EventExpr> {
+        if self.eat_kw("posedge") {
+            Ok(EventExpr::Posedge(self.expr()?))
+        } else if self.eat_kw("negedge") {
+            Ok(EventExpr::Negedge(self.expr()?))
+        } else {
+            Ok(EventExpr::Expr(self.expr()?))
+        }
     }
 }

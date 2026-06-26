@@ -1,4 +1,4 @@
-use crate::circuit::netlist::Netlist;
+use crate::analog::netlist::Netlist;
 use crate::math::unit::{Ohm, Siemens, UnitExt};
 use faer::{Par, set_global_parallelism};
 use ndarray::ArrayView1;

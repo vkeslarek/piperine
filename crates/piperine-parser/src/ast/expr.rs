@@ -24,6 +24,11 @@ pub enum Expr {
     PartSelect(Box<Expr>, Box<Expr>, Box<Expr>),
     Path(Path),
     PortFlow(Path),
+    Concat(Vec<Expr>),
+    Replicate(Box<Expr>, Vec<Expr>),
+    Mintypmax(Box<Expr>, Box<Expr>, Box<Expr>),
+    PartSelectUp(Box<Expr>, Box<Expr>, Box<Expr>),
+    PartSelectDown(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
 /// ungram: `Literal = 'int_number' | 'str_lit' | 'std_real_number' | 'si_real_number' | 'inf'`
@@ -43,6 +48,13 @@ pub enum PrefixOp {
     Not,
     BitNot,
     Pos,
+    ReduceAnd,
+    ReduceNand,
+    ReduceOr,
+    ReduceNor,
+    ReduceXor,
+    ReduceXnor1,
+    ReduceXnor2,
 }
 
 /// ungram: `BinExpr op: ('||' | '&&' | '==' | '!=' | '<=' | '>=' | '<' | '>'
@@ -71,6 +83,10 @@ pub enum BinOp {
     XNor2,
     BitOr,
     BitAnd,
+    CaseEq,
+    CaseNeq,
+    ArithShl,
+    ArithShr,
 }
 
 /// ungram: `Assign = lval:Expr op:('<+' | '=') rval:Expr`
@@ -78,12 +94,6 @@ pub enum BinOp {
 pub enum AssignOp {
     Contrib,
     Eq,
-    /// Compound assignments: `lval OP= rval` desugars to `lval = lval OP rval`.
-    AddEq,
-    SubEq,
-    MulEq,
-    DivEq,
-    ModEq,
 }
 
 #[derive(Debug, Clone)]

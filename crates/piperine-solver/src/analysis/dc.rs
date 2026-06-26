@@ -1,4 +1,4 @@
-use crate::circuit::netlist::{
+use crate::analog::netlist::{
     BranchIdentifier, AnalogReference, AnalogVariable, Netlist, NodeIdentifier,
 };
 use crate::math::circular_array::CircularArrayBuffer2;
@@ -12,12 +12,12 @@ pub type DcAnalysisState = CircularArrayBuffer2<f64>;
 
 pub trait DcAnalysis {
     fn load_dc(
-        &self,
+        &mut self,
         dc_circuit_state: &DcAnalysisState,
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>>;
 
-    fn initial_dc_values(&self, _context: &Context) -> Vec<InitialValue<AnalogReference, f64>> {
+    fn initial_dc_values(&mut self, _context: &Context) -> Vec<InitialValue<AnalogReference, f64>> {
         Vec::new()
     }
 }

@@ -75,6 +75,21 @@ pub enum Tok {
 
     Backslash, // a line-continuation backslash (followed by newline)
     Newline,
+
+    // Phase 1 Extensions
+    CaseEq,    // ===
+    CaseNeq,   // !==
+    Arrow,     // ->
+    PathFull,  // *>
+    PlusColon, // +:
+    MinusColon,// -:
+    ArithShl,  // <<<
+    ArithShr,  // >>>
+    PartSelectUp,   // +:
+    PartSelectDown, // -:
+    Nand,      // ~&
+    Nor,       // ~|
+    SizedLit(String), // e.g. 4'b1010, 'hFF
 }
 
 #[derive(Debug, Clone)]
@@ -132,9 +147,10 @@ impl<'a> Lexer<'a> {
                 b'`' => self.tick(start)?,
                 b'$' => self.syscall(start),
                 b'\\' => self.backslash_or_escaped_ident(start),
+                b'\'' if self.peek(1) != b'{' => self.unsized_base(start)?,
                 _ if is_ident_start(c) => self.ident(start),
-                _ if c.is_ascii_digit() => self.number(start),
-                b'.' if self.peek(1).is_ascii_digit() => self.number(start),
+                _ if c.is_ascii_digit() => self.number(start)?,
+                b'.' if self.peek(1).is_ascii_digit() => self.number(start)?,
                 _ => self.punct(start)?,
             }
         }
@@ -226,6 +242,9 @@ impl<'a> Lexer<'a> {
             self.pos += 1;
         }
         let name = std::str::from_utf8(&self.src[name_start..self.pos]).unwrap().to_string();
+        if self.pos < self.src.len() && (self.peek(0) == b' ' || self.peek(0) == b'\t') {
+            self.pos += 1; // skip trailing space but not newline
+        }
         self.push(Tok::Ident(name), start);
     }
 
@@ -237,14 +256,52 @@ impl<'a> Lexer<'a> {
         self.push(Tok::Ident(s), start);
     }
 
-    fn number(&mut self, start: usize) {
-        // Mirrors OpenVAF's `Cursor::number` (integer / fraction / exponent),
-        // plus a Piperine extension: a trailing SystemVerilog time unit
-        // (`1ns`, `5ms`). OpenVAF SI scale chars stay unconditional single
-        // chars (`123k` then `Hz`, no scale after an exponent); time units are
-        // only taken at a word boundary, so VA parity is preserved.
-        const SI: &[u8] = b"TGMKkmunpfa";
+    fn unsized_base(&mut self, start: usize) -> Result<(), String> {
+        // e.g. 'b0, 'hFF
+        self.pos += 1; // skip '
+        self.eat_base_and_value()?;
+        let s = std::str::from_utf8(&self.src[start..self.pos]).unwrap().to_string();
+        self.push(Tok::SizedLit(s), start);
+        Ok(())
+    }
+
+    fn eat_base_and_value(&mut self) -> Result<(), String> {
+        if matches!(self.peek(0), b's' | b'S') {
+            self.pos += 1;
+        }
+        if matches!(self.peek(0), b'b' | b'B' | b'o' | b'O' | b'd' | b'D' | b'h' | b'H') {
+            self.pos += 1;
+            // eat whitespace
+            while self.pos < self.src.len() && self.peek(0).is_ascii_whitespace() && self.peek(0) != b'\n' {
+                self.pos += 1;
+            }
+            // eat value digits (hex can include a-f, x, z, ?)
+            while self.pos < self.src.len() {
+                let c = self.peek(0);
+                if c.is_ascii_hexdigit() || matches!(c, b'x' | b'X' | b'z' | b'Z' | b'?' | b'_') {
+                    self.pos += 1;
+                } else {
+                    break;
+                }
+            }
+            Ok(())
+        } else {
+            Err("expected base specifier after ' (b, o, d, h)".to_string())
+        }
+    }
+
+    fn number(&mut self, start: usize) -> Result<(), String> {
         self.eat_decimal_digits();
+        
+        // If it's a sized literal like `4'b1010`
+        if self.peek(0) == b'\'' && self.peek(1) != b'{' {
+            self.pos += 1; // skip '
+            self.eat_base_and_value()?;
+            let s = std::str::from_utf8(&self.src[start..self.pos]).unwrap().to_string();
+            self.push(Tok::SizedLit(s), start);
+            return Ok(());
+        }
+
         let mut is_real = false;
         let mut had_exp = false;
         if self.peek(0) == b'.' {
@@ -263,7 +320,7 @@ impl<'a> Lexer<'a> {
         if !had_exp {
             if self.eat_time_unit() {
                 is_real = true;
-            } else if SI.contains(&self.peek(0)) {
+            } else if b"TGMKkmunpfa".contains(&self.peek(0)) {
                 self.pos += 1;
                 is_real = true;
             }
@@ -274,6 +331,7 @@ impl<'a> Lexer<'a> {
         } else {
             self.push(Tok::Int(s), start);
         }
+        Ok(())
     }
 
     /// Consume a SystemVerilog time unit (`s`, `ms`, `us`, `ns`, `ps`, `fs`) if
@@ -321,13 +379,21 @@ impl<'a> Lexer<'a> {
         macro_rules! three {
             ($t:expr) => {{ self.pos += 3; self.push($t, start); return Ok(()); }};
         }
-        // arithmetic shifts (<<< / >>>) glue before the 2-char shifts
+        // 3-char operators
         match (c, c1, c2) {
-            (b'<', b'<', b'<') => three!(Tok::Shl),
-            (b'>', b'>', b'>') => three!(Tok::Shr),
+            (b'=', b'=', b'=') => three!(Tok::CaseEq),
+            (b'!', b'=', b'=') => three!(Tok::CaseNeq),
+            (b'<', b'<', b'<') => three!(Tok::ArithShl),
+            (b'>', b'>', b'>') => three!(Tok::ArithShr),
             _ => {}
         }
         match (c, c1) {
+            (b'-', b'>') => two!(Tok::Arrow),
+            (b'*', b'>') => two!(Tok::PathFull),
+            (b'+', b':') => two!(Tok::PartSelectUp),
+            (b'-', b':') => two!(Tok::PartSelectDown),
+            (b'~', b'&') => two!(Tok::Nand),
+            (b'~', b'|') => two!(Tok::Nor),
             (b'(', b'*') => two!(Tok::AttrStart),
             (b'*', b')') => two!(Tok::AttrEnd),
             (b'\'', b'{') => two!(Tok::ArrStart),

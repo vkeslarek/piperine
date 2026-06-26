@@ -1,8 +1,0 @@
-[package]
-name = "piperine-coordinator"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-piperine-common = { workspace = true }
-ipc-channel = { workspace = true }

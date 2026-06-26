@@ -52,12 +52,16 @@ impl<'a> Parser<'a> {
             Tok::Amp => (BinOp::BitAnd, 7, false),
             Tok::EqEq => (BinOp::Eq, 8, false),
             Tok::NotEq => (BinOp::Neq, 8, false),
+            Tok::CaseEq => (BinOp::CaseEq, 8, false),
+            Tok::CaseNeq => (BinOp::CaseNeq, 8, false),
             Tok::Ge => (BinOp::Ge, 9, false),
             Tok::Gt => (BinOp::Gt, 9, false),
             Tok::Le => (BinOp::Le, 9, false),
             Tok::Lt => (BinOp::Lt, 9, false),
             Tok::Shl => (BinOp::Shl, 10, false),
             Tok::Shr => (BinOp::Shr, 10, false),
+            Tok::ArithShl => (BinOp::ArithShl, 10, false),
+            Tok::ArithShr => (BinOp::ArithShr, 10, false),
             Tok::Plus => (BinOp::Add, 11, false),
             Tok::Minus => (BinOp::Sub, 11, false),
             Tok::Star => (BinOp::Mul, 12, false),
@@ -111,6 +115,13 @@ impl<'a> Parser<'a> {
             Some(Tok::Not) => PrefixOp::Not,
             Some(Tok::Tilde) => PrefixOp::BitNot,
             Some(Tok::Plus) => PrefixOp::Pos,
+            Some(Tok::Amp) => PrefixOp::ReduceAnd,
+            Some(Tok::Nand) => PrefixOp::ReduceNand,
+            Some(Tok::Pipe) => PrefixOp::ReduceOr,
+            Some(Tok::Nor) => PrefixOp::ReduceNor,
+            Some(Tok::Caret) => PrefixOp::ReduceXor,
+            Some(Tok::XnorT) => PrefixOp::ReduceXnor2,
+            Some(Tok::XnorC) => PrefixOp::ReduceXnor1,
             _ => return self.postfix(),
         };
         self.bump();
@@ -125,6 +136,12 @@ impl<'a> Parser<'a> {
                 e = if self.eat(&Tok::Colon) {
                     let lsb = self.expr()?;
                     Expr::PartSelect(Box::new(e), Box::new(idx), Box::new(lsb))
+                } else if self.eat(&Tok::PartSelectUp) {
+                    let width = self.expr()?;
+                    Expr::PartSelectUp(Box::new(e), Box::new(idx), Box::new(width))
+                } else if self.eat(&Tok::PartSelectDown) {
+                    let width = self.expr()?;
+                    Expr::PartSelectDown(Box::new(e), Box::new(idx), Box::new(width))
                 } else {
                     Expr::Index(Box::new(e), Box::new(idx))
                 };
@@ -158,6 +175,31 @@ impl<'a> Parser<'a> {
                 let inner = self.expr()?;
                 self.expect(&Tok::RParen)?;
                 Ok(Expr::Paren(Box::new(inner)))
+            }
+            Some(Tok::LBrace) => {
+                self.bump();
+                let first = self.expr()?;
+                if self.eat(&Tok::LBrace) {
+                    let mut items = Vec::new();
+                    while !self.at(&Tok::RBrace) && !self.at_end() {
+                        items.push(self.expr()?);
+                        if !self.eat(&Tok::Comma) { break; }
+                    }
+                    self.expect(&Tok::RBrace)?;
+                    self.expect(&Tok::RBrace)?;
+                    Ok(Expr::Replicate(Box::new(first), items))
+                } else if self.eat(&Tok::Comma) {
+                    let mut items = vec![first];
+                    while !self.at(&Tok::RBrace) && !self.at_end() {
+                        items.push(self.expr()?);
+                        if !self.eat(&Tok::Comma) { break; }
+                    }
+                    self.expect(&Tok::RBrace)?;
+                    Ok(Expr::Concat(items))
+                } else {
+                    self.expect(&Tok::RBrace)?;
+                    Ok(Expr::Concat(vec![first]))
+                }
             }
             // Array literal — the canonical `'{ … }` only. Bare `{ … }` is reserved
             // for blocks (statements), removing the block/array ambiguity.
@@ -223,6 +265,17 @@ impl<'a> Parser<'a> {
         }
         self.expect(&Tok::RParen)?;
         Ok(args)
+    }
+
+    pub(super) fn opt_mintypmax(&mut self, min: Expr) -> PResult<Expr> {
+        if self.eat(&Tok::Colon) {
+            let typ = self.expr()?;
+            self.expect(&Tok::Colon)?;
+            let max = self.expr()?;
+            Ok(Expr::Mintypmax(Box::new(min), Box::new(typ), Box::new(max)))
+        } else {
+            Ok(min)
+        }
     }
 }
 

@@ -17,15 +17,16 @@ pub enum Stmt {
     Case(CaseStmt),
     Event(EventStmt),
     Block(BlockStmt),
-    Assert(AssertStmt),
-    AssertRun(AssertStmt),
-    AssertWarn(AssertStmt),
-    Break(BreakStmt),
-    Continue(ContinueStmt),
-    Return(ReturnStmt),
     Repeat(RepeatStmt),
     Forever(ForeverStmt),
-    Foreach(ForeachStmt),
+    NonBlockingAssign(NonBlockingAssignStmt),
+    Wait(WaitStmt),
+    Fork(ForkStmt),
+    Disable(DisableStmt),
+    EventTrigger(EventTriggerStmt),
+    ProceduralAssign(ProceduralAssignStmt),
+    ProceduralDeassign(ProceduralDeassignStmt),
+    IndirectContrib(IndirectContribution),
 }
 
 #[derive(Debug, Clone)]
@@ -72,10 +73,18 @@ pub struct ForStmt {
     pub for_body: Box<Stmt>,
 }
 
-/// ungram: `CaseStmt = AttrList* 'case' '(' discriminant:Expr ')' Case* 'endcase'`
+/// ungram: `CaseStmt = AttrList* ('case'|'casex'|'casez') '(' discriminant:Expr ')' Case* 'endcase'`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaseKind {
+    Case,   // exact match
+    Casex,  // x/z bits are don't-cares
+    Casez,  // z bits are don't-cares
+}
+
 #[derive(Debug, Clone)]
 pub struct CaseStmt {
     pub attrs: Vec<Attr>,
+    pub kind: CaseKind,
     pub discriminant: Expr,
     pub cases: Vec<Case>,
 }
@@ -118,32 +127,6 @@ pub enum BlockItem {
     Stmt(Stmt),
 }
 
-#[derive(Debug, Clone)]
-pub struct AssertStmt {
-    pub attrs: Vec<Attr>,
-    pub condition: Expr,
-    pub message: Option<Expr>,
-}
-
-/// `break;` — exit the innermost loop.
-#[derive(Debug, Clone)]
-pub struct BreakStmt {
-    pub attrs: Vec<Attr>,
-}
-
-/// `continue;` — skip to the next iteration of the innermost loop.
-#[derive(Debug, Clone)]
-pub struct ContinueStmt {
-    pub attrs: Vec<Attr>,
-}
-
-/// `return;` or `return expr;` — exit the enclosing function/block.
-#[derive(Debug, Clone)]
-pub struct ReturnStmt {
-    pub attrs: Vec<Attr>,
-    pub value: Option<Expr>,
-}
-
 /// `repeat (count) body` — run `body` `count` times.
 #[derive(Debug, Clone)]
 pub struct RepeatStmt {
@@ -159,11 +142,88 @@ pub struct ForeverStmt {
     pub body: Box<Stmt>,
 }
 
-/// `foreach (array[index]) body` — iterate `index` over `0..array.size()`.
+// ==========================================
+// Phase 4 Extensions
+// ==========================================
+
 #[derive(Debug, Clone)]
-pub struct ForeachStmt {
+pub struct NonBlockingAssignStmt {
     pub attrs: Vec<Attr>,
-    pub array: Expr,
-    pub index: Name,
-    pub body: Box<Stmt>,
+    pub lvalue: Expr,
+    pub delay_or_event: Option<TimingControl>,
+    pub rvalue: Expr,
+}
+
+#[derive(Debug, Clone)]
+pub enum TimingControl {
+    Delay(Expr),                      // #delay_value
+    DelayParen(Expr),                 // #(mintypmax_expr)
+    Event(EventControl),
+}
+
+#[derive(Debug, Clone)]
+pub enum EventControl {
+    Ident(Path),                      // @ident
+    Expr(Vec<EventExpr>),             // @(event_expression)
+    Star,                             // @* or @(*)
+}
+
+#[derive(Debug, Clone)]
+pub enum EventExpr {
+    Expr(Expr),
+    Posedge(Expr),
+    Negedge(Expr),
+    Ident(Path),                      // hierarchical_event_identifier
+    DriverUpdate(Expr),               // driver_update expression (AMS)
+    AnalogEventFn(Expr),              // cross(...), above(...), timer(...)
+    Or(Box<EventExpr>, Box<EventExpr>),
+}
+
+#[derive(Debug, Clone)]
+pub struct WaitStmt {
+    pub attrs: Vec<Attr>,
+    pub condition: Expr,
+    pub stmt: Box<Stmt>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ForkStmt {
+    pub attrs: Vec<Attr>,
+    pub label: Option<Name>,
+    pub items: Vec<BlockItem>,  // BlockItem = declaration or statement
+}
+
+#[derive(Debug, Clone)]
+pub struct DisableStmt {
+    pub attrs: Vec<Attr>,
+    pub target: Path,
+}
+
+#[derive(Debug, Clone)]
+pub struct EventTriggerStmt {
+    pub attrs: Vec<Attr>,
+    pub event: Path,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProceduralAssignStmt {
+    pub attrs: Vec<Attr>,
+    pub is_force: bool,  // true if `force`, false if `assign`
+    pub lvalue: Expr,
+    pub rvalue: Expr,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProceduralDeassignStmt {
+    pub attrs: Vec<Attr>,
+    pub is_release: bool, // true if `release`, false if `deassign`
+    pub lvalue: Expr,
+}
+
+#[derive(Debug, Clone)]
+pub struct IndirectContribution {
+    pub attrs: Vec<Attr>,
+    pub lvalue: Expr,
+    pub indirect_expr: Expr,
+    pub rvalue: Expr,
 }

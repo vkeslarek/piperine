@@ -1,5 +1,5 @@
 use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
-use crate::circuit::netlist::{
+use crate::analog::netlist::{
     BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier,
 };
 use crate::math::linear::Stamp;
@@ -16,7 +16,7 @@ pub struct AcAnalysisContext {
 
 pub trait AcAnalysis: DcAnalysis {
     fn load_ac(
-        &self,
+        &mut self,
         dc_analysis_result: &DcAnalysisResult,
         ac_analysis_context: &AcAnalysisContext,
         context: &Context,

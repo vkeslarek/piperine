@@ -1,10 +1,9 @@
-use crate::analysis::ac::AcAnalysis;
 use crate::analysis::ac::{
     AcAnalysisContext, AcAnalysisResult, AcAnalysisStep, AcSweepAnalysisOptions,
 };
 use crate::analysis::dc::DcAnalysisResult;
-use crate::circuit::instance::CircuitInstance;
-use crate::circuit::netlist::AnalogReference;
+use crate::circuit::CircuitInstance;
+use crate::analog::netlist::AnalogReference;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp;
@@ -47,7 +46,7 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for AcSystem<'a> {
 
         // AC analysis is linear - no need to update runtimes
         // We use the DC operating point that was already computed
-        for ac in self.circuit.all_runtimes() {
+        for ac in self.circuit.all_runtimes_mut() {
             all_stamps.extend(ac.load_ac(&self.dc_point, &ac_ctx, &self.context));
         }
         Ok(all_stamps)

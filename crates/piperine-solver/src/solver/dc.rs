@@ -1,7 +1,6 @@
-use crate::analysis::dc::DcAnalysis;
 use crate::analysis::dc::DcAnalysisResult;
-use crate::circuit::instance::CircuitInstance;
-use crate::circuit::netlist::AnalogReference;
+use crate::circuit::CircuitInstance;
+use crate::analog::netlist::AnalogReference;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp;
@@ -47,8 +46,8 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
     /// criteria defined in the solver context.
     fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
         for runtime in self.circuit.all_runtimes() {
-            if runtime.limiting_active {
-                debug!("Device {} requested limiting reiteration", runtime.device_name);
+            if runtime.limiting_active() {
+                debug!("Device {} requested limiting reiteration", runtime.device_name());
                 return false;
             }
         }

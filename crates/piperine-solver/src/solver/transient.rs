@@ -1,9 +1,8 @@
 use crate::analysis::transient::{
     TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisResult, TransientStep,
 };
-use crate::circuit::instance::CircuitInstance;
-use crate::circuit::netlist::AnalogReference;
-use crate::analysis::transient::TransientAnalysis;
+use crate::circuit::CircuitInstance;
+use crate::analog::netlist::AnalogReference;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp;
@@ -44,8 +43,8 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
 
     fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
         for runtime in self.circuit.all_runtimes() {
-            if runtime.limiting_active {
-                debug!("Device {} requested limiting reiteration", runtime.device_name);
+            if runtime.limiting_active() {
+                debug!("Device {} requested limiting reiteration", runtime.device_name());
                 return false;
             }
         }
@@ -101,6 +100,9 @@ impl<'a> TransientSolver<'a> {
         context: Context,
     ) -> crate::result::Result<Self> {
         init_solver_configuration();
+
+        // Build DAG topology once before simulation begins
+        circuit.rebuild_digital_topology();
 
         let size = circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
 
@@ -160,23 +162,72 @@ impl<'a> TransientSolver<'a> {
 
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
         let stop_time: f64 = self.options.stop_time.into();
-        let dt: f64 = self.options.dt.into();
+        let mut dt: f64 = self.options.dt.into();
+        let max_step: f64 = dt;
 
         let initial_snapshot = self.compute_initial_conditions()?;
         let mut steps = vec![initial_snapshot];
 
         let mut current_time = 0.0;
+        let min_step = 1e-15;
 
         while current_time < stop_time {
-            current_time += dt;
+            let dt_proposed = dt; // Stepper logic normally here
+            
+            let t_next_event = self.system.circuit.digital_state.peek_next_event_time();
+            // TODO: Breakpoint queue peek_next() would go here
+            let mut t_next = (current_time + dt_proposed).min(stop_time);
+            if t_next_event < t_next {
+                t_next = t_next_event;
+            }
+            
+            let dt_actual = t_next - current_time;
+            
+            // Checkpoint digital state
+            self.system.circuit.digital_state.checkpoint();
 
-            match self.execute_timestep(current_time, dt)? {
-                Some(snapshot) => {
-                    steps.push(snapshot);
+            // Process digital events EXACTLY at t_next BEFORE analog solve.
+            // Split borrow: digital_state/topology and digital_runtimes are separate fields.
+            {
+                let digital_state = &mut self.system.circuit.digital_state;
+                let digital_runtimes = &mut self.system.circuit.digital_runtimes;
+                let digital_topology = &self.system.circuit.digital_topology;
+                let mut devices: Vec<&mut dyn crate::digital::state::DigitalDevice> =
+                    digital_runtimes.iter_mut().map(|d| -> &mut dyn crate::digital::state::DigitalDevice { &mut **d }).collect();
+                match digital_topology {
+                    Some(topo) => digital_state.evaluate_dag_ordered(t_next, &mut devices, topo),
+                    None => digital_state.evaluate_until_stable(t_next, &mut devices),
                 }
-                None => {
-                    // Not possible with fixed timestep
+            }
+
+            // Solve analog timestep [current_time, t_next]
+            let analog_result = self.execute_timestep(t_next, dt_actual);
+
+            if let Ok(Some(snapshot)) = analog_result {
+                // Post-convergence
+                let _state = self.solver.current_guess().unwrap().clone();
+                let _ctx = &self.system.context;
+                let c = &mut self.system.circuit;
+                for _runtime in c.all_runtimes_mut() {
+                    // TODO: call runtime.accept_timestep() once we can access
+                    // the state buffer and context from here.
                 }
+
+                self.system.circuit.digital_state.commit();
+                steps.push(snapshot);
+                current_time = t_next;
+                // Use dt_proposed for growth so an event-clamped step doesn't shrink dt permanently
+                dt = f64::min(f64::max(dt_proposed * 2.0, min_step), max_step);
+            } else {
+                // Rollback and retry with smaller step
+                self.system.circuit.digital_state.rollback();
+                // Scale from dt_proposed as well
+                dt = f64::max(dt_proposed * 0.5, min_step);
+                
+                if dt <= min_step && analog_result.is_err() {
+                    return Err(analog_result.unwrap_err());
+                }
+                continue;
             }
         }
 

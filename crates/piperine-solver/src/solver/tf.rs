@@ -1,10 +1,9 @@
-use crate::analysis::dc::DcAnalysis;
 use crate::analysis::dc::DcAnalysisResult;
 use crate::analysis::tf::{
     TransferFunctionAnalysisOptions, TransferFunctionAnalysisResult, TransferType,
 };
-use crate::circuit::instance::CircuitInstance;
-use crate::circuit::netlist::{AnalogReference, AnalogVariable};
+use crate::circuit::CircuitInstance;
+use crate::analog::netlist::{AnalogReference, AnalogVariable};
 use crate::math::faer::FaerSymbolicMatrix;
 use crate::math::linear::{SymbolicLinearSystem, SymbolicMatrix};
 use crate::solver::dc::DcSolver;
@@ -200,7 +199,7 @@ impl<'a> TransferFunctionSolver<'a> {
 
         // Collect DC stamps (these are linearized around DC point)
         let mut all_stamps = Vec::new();
-        for dc in circuit.all_runtimes() {
+        for dc in circuit.all_runtimes_mut() {
             all_stamps.extend(dc.load_dc(&state, context));
         }
 

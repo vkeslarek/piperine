@@ -13,11 +13,6 @@ pub struct Document {
     pub modules:        Vec<Module>,
     pub disciplines:    Vec<Discipline>,
     pub natures:        Vec<Nature>,
-    pub extern_modules: Vec<crate::ast::ExternModuleDecl>,
-    pub typedef_enums:  Vec<crate::ast::TypedefEnum>,
-    pub typedef_structs:Vec<crate::ast::TypedefStruct>,
-    pub extern_classes: Vec<crate::ast::ExternClassDecl>,
-    pub paramsets:      Vec<crate::ast::ParamsetDecl>,
 }
 
 /// A `(* name = value *)` attribute.
@@ -37,11 +32,8 @@ pub struct Module {
     pub nets: Vec<Net>,
     pub variables: Vec<Variable>,
     pub branches: Vec<Branch>,
-    pub instances: Vec<Instance>,
     pub functions: Vec<Function>,
     pub analog_blocks: Vec<AnalogBlock>,
-    pub initial_blocks: Vec<InitialBlock>,
-    pub always_blocks: Vec<crate::ast::AlwaysBlock>,
     pub span: Span,
 }
 
@@ -113,11 +105,6 @@ pub struct AnalogBlock {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
-pub struct InitialBlock {
-    pub stmt: crate::ast::Stmt,
-    pub span: Span,
-}
 
 #[derive(Debug, Clone)]
 pub struct Function {
@@ -145,23 +132,6 @@ pub struct Branch {
     pub span: Span,
 }
 
-/// Structural instantiation of another module.
-#[derive(Debug, Clone)]
-pub struct Instance {
-    pub module: String,
-    pub name: String,
-    pub range: Option<BitRange>,
-    pub params: Vec<Connection>,
-    pub connections: Vec<Connection>,
-    pub attributes: Vec<Attribute>,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone)]
-pub enum Connection {
-    Positional(ast::Expr),
-    Named { port: String, expr: Option<ast::Expr> },
-}
 
 #[derive(Debug, Clone)]
 pub struct Discipline {

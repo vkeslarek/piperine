@@ -12,143 +12,19 @@ impl<'a> Parser<'a> {
             Ok(Item::DisciplineDecl(self.discipline(attrs, start)?))
         } else if self.at_kw("nature") {
             Ok(Item::NatureDecl(self.nature(attrs, start)?))
-        } else if self.at_kw("module") || self.at_kw("macromodule") {
+        } else if self.at_kw("module") || self.at_kw("macromodule") || self.at_kw("connectmodule") {
             Ok(Item::ModuleDecl(self.module(attrs, start)?))
-        } else if self.at_kw("extern") {
-            // We need to look ahead to see if it is `extern module` or `extern class`
-            // Since we don't have peek_nth, we'll just parse the `extern` token
-            self.bump();
-            if self.at_kw("class") {
-                Ok(Item::ExternClass(self.extern_class()?))
-            } else if self.at_kw("module") {
-                Ok(Item::ExternModule(self.extern_module(attrs, start)?))
-            } else {
-                Err(format!("expected 'module' or 'class' after 'extern', found {:?}", self.peek()))
-            }
-        } else if self.at_kw("typedef") {
-            self.bump();
-            if self.at_kw("enum") {
-                Ok(Item::TypedefEnum(self.typedef_enum()?))
-            } else if self.at_kw("struct") {
-                Ok(Item::TypedefStruct(self.typedef_struct()?))
-            } else {
-                Err(format!("expected 'enum' or 'struct' after 'typedef', found {:?}", self.peek()))
-            }
         } else if self.at_kw("paramset") {
-            Ok(Item::Paramset(self.paramset(start)?))
+            Ok(Item::Paramset(self.paramset_decl(attrs, start)?))
+        } else if self.at_kw("connectrules") {
+            Ok(Item::Connectrules(self.connectrules_decl(attrs, start)?))
+        } else if self.at_kw("config") {
+            Ok(Item::Config(self.config_decl(attrs, start)?))
         } else {
             Err(format!("expected top-level item, found {:?}", self.peek()))
         }
     }
 
-    fn paramset(&mut self, start: usize) -> PResult<ParamsetDecl> {
-        self.expect_kw("paramset")?;
-        let name = self.name()?;
-        let base = self.name()?;
-        self.expect(&Tok::Semi)?;
-
-        let mut entries = Vec::new();
-        while !self.at_kw("endparamset") && !self.at_end() {
-            self.expect(&Tok::Dot)?;
-            let entry_name = self.name()?;
-            self.expect(&Tok::Assign)?;
-            let value = self.expr()?;
-            self.expect(&Tok::Semi)?;
-            entries.push(ParamsetEntry { name: entry_name, value });
-        }
-        self.expect_kw("endparamset")?;
-
-        let span = Span { start, end: self.prev_end() };
-        Ok(ParamsetDecl { span, name, base, entries })
-    }
-
-    fn extern_module(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ExternModuleDecl> {
-        self.expect_kw("module")?;
-        let name = self.name()?;
-        self.expect(&Tok::LParen)?;
-
-        let mut ports = Vec::new();
-        let mut parameters = Vec::new();
-
-        while !self.at(&Tok::RParen) && !self.at(&Tok::Semi) {
-            if self.at_dir() {
-                let port_start = self.span_start();
-                let port_attrs = self.attrs()?;
-                ports.push(self.port_decl(port_attrs, port_start)?);
-            } else if self.at_kw("parameter") {
-                parameters.push(self.extern_parameter()?);
-            } else {
-                return Err(format!("expected port or parameter in extern module, found {:?}", self.peek()));
-            }
-            if !self.eat(&Tok::Comma) { break; }
-        }
-
-        if self.eat(&Tok::Semi) {
-            while !self.at(&Tok::RParen) {
-                parameters.push(self.extern_parameter()?);
-                if !self.eat(&Tok::Comma) { break; }
-            }
-        }
-
-        self.expect(&Tok::RParen)?;
-        self.expect(&Tok::Semi)?;
-
-        let span = Span { start, end: self.prev_end() };
-        Ok(ExternModuleDecl { span, attrs, name, ports, parameters })
-    }
-
-    fn extern_class(&mut self) -> PResult<ExternClassDecl> {
-        self.expect_kw("class")?;
-        let name = self.name()?;
-        self.expect(&Tok::Semi)?;
-        Ok(ExternClassDecl { name })
-    }
-
-    fn typedef_enum(&mut self) -> PResult<TypedefEnum> {
-        self.expect_kw("enum")?;
-        let base_type = if self.is_type_kw() { Some(self.type_()?) } else { None };
-        self.expect(&Tok::LBrace)?;
-        let mut variants = Vec::new();
-        while !self.at(&Tok::RBrace) && !self.at_end() {
-            let name = self.name()?;
-            let value = if self.eat(&Tok::Assign) { Some(self.expr()?) } else { None };
-            variants.push(EnumVariant { name, value });
-            if !self.eat(&Tok::Comma) { break; }
-        }
-        self.expect(&Tok::RBrace)?;
-        let name = self.name()?;
-        self.expect(&Tok::Semi)?;
-        Ok(TypedefEnum { name, base_type, variants })
-    }
-
-    fn typedef_struct(&mut self) -> PResult<TypedefStruct> {
-        self.expect_kw("struct")?;
-        self.expect(&Tok::LBrace)?;
-        let mut fields = Vec::new();
-        while !self.at(&Tok::RBrace) && !self.at_end() {
-            let ty = self.type_()?;
-            let name = self.name()?;
-            self.expect(&Tok::Semi)?;
-            fields.push(StructField { ty, name });
-        }
-        self.expect(&Tok::RBrace)?;
-        let name = self.name()?;
-        self.expect(&Tok::Semi)?;
-        Ok(TypedefStruct { name, fields })
-    }
-    fn extern_parameter(&mut self) -> PResult<ExternParameter> {
-        self.expect_kw("parameter")?;
-        let kind = if self.eat_kw("expr") {
-            ExternParameterKind::Expr
-        } else if self.eat_kw("ref") {
-            ExternParameterKind::Ref
-        } else {
-            ExternParameterKind::Typed(self.type_()?)
-        };
-        let name = self.name()?;
-        let default = if self.eat(&Tok::Assign) { Some(self.expr()?) } else { None };
-        Ok(ExternParameter { name, kind, default })
-    }
 
     // ── discipline ───────────────────────────────────────────────────────
 
@@ -189,16 +65,27 @@ impl<'a> Parser<'a> {
     // ── module ───────────────────────────────────────────────────────────
 
     fn module(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleDecl> {
-        self.bump(); // `module` | `macromodule`
+        let kind = if self.eat_kw("macromodule") {
+            ModuleKind::Macromodule
+        } else if self.eat_kw("connectmodule") {
+            ModuleKind::Connectmodule
+        } else {
+            self.expect_kw("module")?;
+            ModuleKind::Module
+        };
         let name = self.name()?;
-        let ports = if self.at(&Tok::LParen) { Some(self.module_ports()?) } else { None };
+        let ports = if self.at(&Tok::LParen) {
+            Some(self.module_ports()?)
+        } else {
+            None
+        };
         self.expect(&Tok::Semi)?;
         let mut items = Vec::new();
-        while !self.at_kw("endmodule") && !self.at_end() {
+        while !self.at_kw("endmodule") && !self.at_kw("endconnectmodule") && !self.at_end() {
             items.push(self.module_item()?);
         }
         self.expect_kw("endmodule")?;
-        Ok(ModuleDecl { attrs, name, ports, items, span: Span { start, end: self.prev_end() } })
+        Ok(ModuleDecl { attrs, kind, name, ports, items, span: Span { start, end: self.prev_end() } })
     }
 
     fn module_ports(&mut self) -> PResult<Vec<ModulePort>> {
@@ -221,11 +108,15 @@ impl<'a> Parser<'a> {
     /// `Direction discipline:NameRef? net_type? [range] names` (no trailing `;`).
     fn port_decl(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<PortDecl> {
         let dir = self.direction()?;
+        let net_type = self.opt_net_type();
+        let signed1 = self.opt_signed();
+        let var_type = if self.is_type_kw() { Some(self.type_()?) } else { None };
+        let signed2 = self.opt_signed();
+        let signed = signed1 || signed2;
         let discipline = self.opt_discipline();
-        self.skip_net_type();
         let range = self.parse_range()?;
         let names = self.declarator_list()?;
-        Ok(PortDecl { attrs, dir, discipline, range, names, span: Span { start, end: self.prev_end() } })
+        Ok(PortDecl { attrs, dir, net_type, var_type, signed, discipline, range, names, span: Span { start, end: self.prev_end() } })
     }
 
     /// Detect an optional leading `discipline NameRef` before the first net name.
@@ -242,30 +133,88 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Lookahead: `Type #? Name (` — a module instantiation rather than a net decl.
-    fn looks_like_instance(&self) -> bool {
-        match self.peek_at(1) {
-            Some(Tok::Hash) => true,
-            Some(Tok::Ident(_)) => {
-                let after = self.idx_after_range(self.pos + 2);
-                matches!(self.toks.get(after).map(|t| &t.tok), Some(Tok::LParen))
+    fn paramset_decl(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ParamsetDecl> {
+        self.expect_kw("paramset")?;
+        let name = self.name()?;
+        let base = self.name()?;
+        self.expect(&Tok::Semi)?;
+        let mut item_decls = Vec::new();
+        let mut statements = Vec::new();
+        while !self.at_kw("endparamset") && !self.at_end() {
+            if self.at_kw("parameter") || self.at_kw("localparam") {
+                item_decls.push(ParamsetItemDecl::Parameter(self.param_decl(vec![], self.span_start())?));
+            } else if self.at_kw("aliasparam") {
+                if let ModuleItem::AliasParam(ap) = self.alias_param(vec![], self.span_start())? {
+                    item_decls.push(ParamsetItemDecl::AliasParam(ap));
+                }
+            } else if self.eat(&Tok::Dot) {
+                if let Some(Tok::SysCall(s)) = self.peek() {
+                    let s = s.clone();
+                    self.bump();
+                    self.expect(&Tok::Assign)?;
+                    let expr = self.expr()?;
+                    self.expect(&Tok::Semi)?;
+                    statements.push(ParamsetStmt::SysDotAssign { name: s, value: expr });
+                } else {
+                    let p = self.name()?;
+                    self.expect(&Tok::Assign)?;
+                    let expr = self.expr()?;
+                    self.expect(&Tok::Semi)?;
+                    statements.push(ParamsetStmt::DotAssign { name: p, value: expr });
+                }
+            } else {
+                statements.push(ParamsetStmt::AnalogStmt(Box::new(self.stmt()?)));
             }
-            _ => false,
         }
+        self.expect_kw("endparamset")?;
+        Ok(ParamsetDecl { span: Span { start, end: self.prev_end() }, attrs, name, base, item_decls, statements })
     }
+
+    fn connectrules_decl(&mut self, _attrs: Vec<Attr>, start: usize) -> PResult<ConnectrulesDecl> {
+        self.expect_kw("connectrules")?;
+        let name = self.name()?;
+        self.expect(&Tok::Semi)?;
+        let mut items = Vec::new();
+        while !self.at_kw("endconnectrules") && !self.at_end() {
+            self.expect_kw("connect")?;
+            if self.eat_kw("module") {
+                let module = self.name()?;
+                let mut mode = None;
+                if self.eat_kw("merged") { mode = Some(ConnectMode::Merged); }
+                else if self.eat_kw("split") { mode = Some(ConnectMode::Split); }
+                while !self.eat(&Tok::Semi) && !self.at_end() { self.bump(); }
+                items.push(ConnectrulesItem::Insertion { module, mode, params: vec![], port_overrides: None });
+            } else {
+                let mut disciplines = Vec::new();
+                loop {
+                    disciplines.push(self.name()?);
+                    if !self.eat(&Tok::Comma) { break; }
+                }
+                self.expect_kw("resolveto")?;
+                let target = if self.eat_kw("exclude") { ResolveTarget::Exclude } else { ResolveTarget::Discipline(self.name()?) };
+                self.expect(&Tok::Semi)?;
+                items.push(ConnectrulesItem::Resolution { disciplines, target });
+            }
+        }
+        self.expect_kw("endconnectrules")?;
+        Ok(ConnectrulesDecl { span: Span { start, end: self.prev_end() }, name, items })
+    }
+
+    fn config_decl(&mut self, _attrs: Vec<Attr>, start: usize) -> PResult<ConfigDecl> {
+        self.expect_kw("config")?;
+        while !self.at_kw("endconfig") && !self.at_end() {
+            self.bump();
+        }
+        self.expect_kw("endconfig")?;
+        Ok(ConfigDecl { span: Span { start, end: self.prev_end() } })
+    }
+
 
     // ── module items ─────────────────────────────────────────────────────
 
     fn module_item(&mut self) -> PResult<ModuleItem> {
         let start = self.span_start();
         let attrs = self.attrs()?;
-
-        if self.at_kw("initial") {
-            return self.initial_block(attrs, start);
-        }
-        if self.at_kw("always") {
-            return self.always_block(attrs, start);
-        }
 
         if self.at_dir() {
             let port = self.port_decl(attrs, start)?;
@@ -282,11 +231,22 @@ impl<'a> Parser<'a> {
             return Ok(ModuleItem::ParamDecl(self.param_decl(attrs, start)?));
         }
         if self.at_kw("aliasparam") { return self.alias_param(attrs, start); }
-        if self.looks_like_instance() { return self.instance(attrs, start); }
-        // Module-level variables are primitive-typed (`real x;`) or a custom type
-        // *with an initializer* (`state_t s = IDLE;`). A `<discipline> a, b;` form
-        // (e.g. `electrical in, out;`) has no `=` and must NOT be swallowed as a
-        // var decl by `is_type_kw`'s Ident-Ident heuristic — it is a net declaration.
+        if self.eat_kw("ground") { return self.ground_decl(attrs, start); }
+        if self.eat_kw("event") { return self.event_decl(attrs, start); }
+        if self.eat_kw("initial") { return self.initial_construct(attrs, start); }
+        if self.eat_kw("always") { return self.always_construct(attrs, start); }
+        if self.eat_kw("defparam") { return self.defparam_decl(attrs, start); }
+        if self.eat_kw("assign") { return self.continuous_assign(attrs, start); }
+
+        if self.eat_kw("generate") { return self.generate_region(attrs, start); }
+        if self.at_kw("for") { return self.loop_generate(attrs, start); }
+        if self.at_kw("if") { return self.if_generate(attrs, start); }
+        if self.at_kw("case") { return self.case_generate(attrs, start); }
+
+        if self.is_module_instantiation() {
+            return self.module_instantiation(attrs, start);
+        }
+
         let custom_var = self.is_type_kw() && self.assign_before_semi();
         if self.at_primitive_type_kw() || custom_var || self.at_kw("genvar") {
             return Ok(ModuleItem::VarDecl(self.var_decl(attrs, start)?));
@@ -294,55 +254,23 @@ impl<'a> Parser<'a> {
         self.net_decl(attrs, start)
     }
 
-    fn instance(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
-        let module = self.name()?;
-        let params = if self.eat(&Tok::Hash) { self.connection_list()? } else { Vec::new() };
-        let name = self.name()?;
-        let range = self.parse_range()?;
-        let connections = self.connection_list()?;
-        self.expect(&Tok::Semi)?;
-        Ok(ModuleItem::Instance(InstanceDecl {
-            attrs, module, name, range, params, connections,
-            span: Span { start, end: self.prev_end() },
-        }))
-    }
 
-    fn connection_list(&mut self) -> PResult<Vec<Connection>> {
-        self.expect(&Tok::LParen)?;
-        let mut conns = Vec::new();
-        let named = self.at(&Tok::Dot);
-        while !self.at(&Tok::RParen) {
-            if named {
-                self.expect(&Tok::Dot)?;
-                let port = self.name()?;
-                self.expect(&Tok::LParen)?;
-                let expr = if self.at(&Tok::RParen) { None } else { Some(self.expr()?) };
-                self.expect(&Tok::RParen)?;
-                conns.push(Connection::Named { port, expr });
-            } else {
-                conns.push(Connection::Positional(self.expr()?));
-            }
-            if !self.eat(&Tok::Comma) { break; }
-        }
-        self.expect(&Tok::RParen)?;
-        Ok(conns)
-    }
 
     fn net_decl(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
-        self.skip_net_type();
+        let net_type = self.opt_net_type();
         let discipline = self.opt_discipline();
-        self.skip_net_type();
         let range = self.parse_range()?;
         let names = self.declarator_list()?;
         self.expect(&Tok::Semi)?;
         Ok(ModuleItem::NetDecl(NetDecl {
-            attrs, discipline, range, names,
+            attrs, net_type, drive_strength: None, charge_strength: None, delay: None, discipline, range, names,
             span: Span { start, end: self.prev_end() },
         }))
     }
 
     pub(super) fn var_decl(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<VarDecl> {
         let ty = if self.eat_kw("genvar") { Type::Integer } else { self.type_()? };
+        let signed = self.opt_signed();
         let mut vars = Vec::new();
         loop {
             let name = self.name()?;
@@ -352,7 +280,27 @@ impl<'a> Parser<'a> {
             if !self.eat(&Tok::Comma) { break; }
         }
         self.expect(&Tok::Semi)?;
-        Ok(VarDecl { attrs, ty, vars, span: Span { start, end: self.prev_end() } })
+        Ok(VarDecl { attrs, ty, signed, discipline: None, vars, span: Span { start, end: self.prev_end() } })
+    }
+
+    fn ground_decl(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        let discipline = if let Some(Tok::Ident(s)) = self.peek() {
+            if matches!(self.peek_at(1), Some(Tok::Ident(_))) {
+                let name = Name(s.clone());
+                self.pos += 1;
+                Some(name)
+            } else { None }
+        } else { None };
+        let range = self.parse_range()?;
+        let names = self.declarator_list()?;
+        self.expect(&Tok::Semi)?;
+        Ok(ModuleItem::GroundDecl(GroundDecl { attrs, discipline, range, names, span: Span { start, end: self.prev_end() } }))
+    }
+
+    fn event_decl(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        let names = self.declarator_list()?;
+        self.expect(&Tok::Semi)?;
+        Ok(ModuleItem::EventDecl(EventDecl { attrs, names, span: Span { start, end: self.prev_end() } }))
     }
 
     pub(super) fn param_decl(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ParamDecl> {
@@ -367,7 +315,7 @@ impl<'a> Parser<'a> {
             let default = self.expr()?;
             let mut constraints = Vec::new();
             while self.at_kw("from") || self.at_kw("exclude") {
-                constraints.push(self.constraint()?);
+                constraints.push(self.param_constraint()?);
             }
             params.push(Param { name, default, constraints });
             if !self.eat(&Tok::Comma) { break; }
@@ -376,7 +324,7 @@ impl<'a> Parser<'a> {
         Ok(ParamDecl { attrs, kind, ty, params, span: Span { start, end: self.prev_end() } })
     }
 
-    fn constraint(&mut self) -> PResult<Constraint> {
+    fn param_constraint(&mut self) -> PResult<Constraint> {
         if self.eat_kw("from") {
             Ok(Constraint::From(self.constraint_value()?))
         } else {
@@ -386,32 +334,223 @@ impl<'a> Parser<'a> {
     }
 
     fn constraint_value(&mut self) -> PResult<ConstraintValue> {
-        match self.peek() {
-            Some(Tok::LParen) => {
-                self.bump();
-                let start = self.expr()?;
-                if self.eat(&Tok::Colon) {
-                    let end = self.expr()?;
-                    let inclusive_right = self.range_closer()?;
-                    Ok(ConstraintValue::Range(Range { inclusive_left: false, start, end, inclusive_right }))
-                } else {
-                    self.expect(&Tok::RParen)?;
-                    Ok(ConstraintValue::Expr(Expr::Paren(Box::new(start))))
+        if self.at(&Tok::LBrack) || self.at(&Tok::LParen) {
+            let left = if self.eat(&Tok::LBrack) { true } else { self.eat(&Tok::LParen); false };
+            let start = self.expr()?;
+            self.expect(&Tok::Colon)?;
+            let end = self.expr()?;
+            let right = if self.eat(&Tok::RBrack) { true } else { self.expect(&Tok::RParen)?; false };
+            Ok(ConstraintValue::Range(Range { inclusive_left: left, start, end, inclusive_right: right }))
+        } else if self.eat(&Tok::ArrStart) {
+            let mut arr = Vec::new();
+            while !self.at(&Tok::RBrace) && !self.at_end() {
+                arr.push(self.expr()?);
+                if !self.eat(&Tok::Comma) { break; }
+            }
+            self.expect(&Tok::RBrace)?;
+            Ok(ConstraintValue::Array(arr))
+        } else {
+            Ok(ConstraintValue::Expr(self.expr()?))
+        }
+    }
+
+    // ==========================================
+    // Phase 3 & 4 Parser Extensions
+    // ==========================================
+
+    fn initial_construct(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        let stmt = Box::new(self.stmt()?);
+        Ok(ModuleItem::InitialConstruct { span: Span { start, end: self.prev_end() }, attrs, stmt })
+    }
+
+    fn always_construct(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        let stmt = Box::new(self.stmt()?);
+        Ok(ModuleItem::AlwaysConstruct { span: Span { start, end: self.prev_end() }, attrs, stmt })
+    }
+
+    fn defparam_decl(&mut self, _attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        let mut assignments = Vec::new();
+        loop {
+            let path = self.path()?;
+            self.expect(&Tok::Assign)?;
+            let expr = self.expr()?;
+            assignments.push((path, expr));
+            if !self.eat(&Tok::Comma) { break; }
+        }
+        self.expect(&Tok::Semi)?;
+        Ok(ModuleItem::Defparam(DefparamDecl { span: Span { start, end: self.prev_end() }, assignments }))
+    }
+
+    fn continuous_assign(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        let mut assignments = Vec::new();
+        loop {
+            let lval = self.expr()?;
+            self.expect(&Tok::Assign)?;
+            let rval = self.expr()?;
+            assignments.push((lval, rval));
+            if !self.eat(&Tok::Comma) { break; }
+        }
+        self.expect(&Tok::Semi)?;
+        Ok(ModuleItem::ContinuousAssign(ContinuousAssign { 
+            span: Span { start, end: self.prev_end() }, attrs, drive_strength: None, delay: None, assignments 
+        }))
+    }
+
+    fn is_module_instantiation(&self) -> bool {
+        if let Some(Tok::Ident(_)) = self.peek() {
+            if matches!(self.peek_at(1), Some(Tok::Hash)) {
+                return true;
+            }
+            if let Some(Tok::Ident(_)) = self.peek_at(1) {
+                let mut idx = 2;
+                if matches!(self.toks.get(self.pos + idx).map(|t| &t.tok), Some(Tok::LBrack)) {
+                    idx = self.idx_after_range(self.pos + idx) - self.pos;
+                }
+                if matches!(self.toks.get(self.pos + idx).map(|t| &t.tok), Some(Tok::LParen)) {
+                    return true;
                 }
             }
-            Some(Tok::LBrack) => Ok(ConstraintValue::Range(self.range()?)),
-            Some(Tok::LBrace) | Some(Tok::ArrStart) => {
-                self.bump();
-                let mut items = Vec::new();
-                while !self.at(&Tok::RBrace) {
-                    items.push(self.expr()?);
+        }
+        false
+    }
+
+    fn module_instantiation(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        let module_name = self.name()?;
+        let mut param_assignments = Vec::new();
+        if self.eat(&Tok::Hash) {
+            if self.eat(&Tok::LParen) {
+                while !self.at(&Tok::RParen) && !self.at_end() {
+                    if self.eat(&Tok::Dot) {
+                        let param = self.name()?;
+                        self.expect(&Tok::LParen)?;
+                        let expr = self.expr()?;
+                        self.expect(&Tok::RParen)?;
+                        param_assignments.push(ParamAssignment::Named { param, expr });
+                    } else {
+                        param_assignments.push(ParamAssignment::Ordered(self.expr()?));
+                    }
                     if !self.eat(&Tok::Comma) { break; }
                 }
-                self.expect(&Tok::RBrace)?;
-                Ok(ConstraintValue::Array(items))
+                self.expect(&Tok::RParen)?;
+            } else {
+                param_assignments.push(ParamAssignment::Ordered(self.expr()?));
             }
-            _ => Ok(ConstraintValue::Expr(self.expr()?)),
         }
+        let mut instances = Vec::new();
+        loop {
+            let name = self.name()?;
+            let range = self.parse_range()?;
+            self.expect(&Tok::LParen)?;
+            let mut connections = Vec::new();
+            while !self.at(&Tok::RParen) && !self.at_end() {
+                if self.eat(&Tok::Dot) {
+                    if self.eat(&Tok::Star) {
+                        // .* — auto-connect all ports by name
+                        connections.push(PortConnection::Wildcard);
+                    } else {
+                        let port = self.name()?;
+                        self.expect(&Tok::LParen)?;
+                        let expr = if self.at(&Tok::RParen) { None } else { Some(self.expr()?) };
+                        self.expect(&Tok::RParen)?;
+                        connections.push(PortConnection::Named { port, expr });
+                    }
+                } else {
+                    let expr = if self.at(&Tok::Comma) || self.at(&Tok::RParen) { None } else { Some(self.expr()?) };
+                    connections.push(PortConnection::Ordered(expr));
+                }
+                if !self.eat(&Tok::Comma) { break; }
+            }
+            self.expect(&Tok::RParen)?;
+            instances.push(ModuleInstance { name, range, connections });
+            if !self.eat(&Tok::Comma) { break; }
+        }
+        self.expect(&Tok::Semi)?;
+        Ok(ModuleItem::ModuleInstantiation(ModuleInstantiation {
+            span: Span { start, end: self.prev_end() }, attrs, module_name, param_assignments, instances
+        }))
+    }
+
+    // ==========================================
+    // Phase 5 Parser Extensions
+    // ==========================================
+
+    fn generate_region(&mut self, _attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        let mut items = Vec::new();
+        while !self.at_kw("endgenerate") && !self.at_end() {
+            items.push(self.module_item()?);
+        }
+        self.expect_kw("endgenerate")?;
+        Ok(ModuleItem::Generate(GenerateRegion { span: Span { start, end: self.prev_end() }, items }))
+    }
+
+    fn generate_block(&mut self) -> PResult<GenerateBlock> {
+        if self.eat_kw("begin") {
+            let label = if self.eat(&Tok::Colon) { Some(self.name()?) } else { None };
+            let mut items = Vec::new();
+            while !self.at_kw("end") && !self.at_end() {
+                items.push(self.module_item()?);
+            }
+            self.expect_kw("end")?;
+            Ok(GenerateBlock::Block { label, items })
+        } else if self.eat(&Tok::Semi) {
+            Ok(GenerateBlock::Block { label: None, items: vec![] })
+        } else {
+            Ok(GenerateBlock::Single(Box::new(self.module_item()?)))
+        }
+    }
+
+    fn loop_generate(&mut self, _attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        self.expect_kw("for")?;
+        self.expect(&Tok::LParen)?;
+        let init_name = self.name()?;
+        self.expect(&Tok::Assign)?;
+        let init_expr = self.expr()?;
+        self.expect(&Tok::Semi)?;
+        let condition = self.expr()?;
+        self.expect(&Tok::Semi)?;
+        let iter_name = self.name()?;
+        self.expect(&Tok::Assign)?;
+        let iter_expr = self.expr()?;
+        self.expect(&Tok::RParen)?;
+        let body = self.generate_block()?;
+        Ok(ModuleItem::LoopGenerate(LoopGenerate { 
+            span: Span { start, end: self.prev_end() }, 
+            init: (init_name, init_expr), condition, iteration: (iter_name, iter_expr), body 
+        }))
+    }
+
+    fn if_generate(&mut self, _attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        self.expect_kw("if")?;
+        self.expect(&Tok::LParen)?;
+        let condition = self.expr()?;
+        self.expect(&Tok::RParen)?;
+        let then_block = self.generate_block()?;
+        let else_block = if self.eat_kw("else") { Some(self.generate_block()?) } else { None };
+        Ok(ModuleItem::IfGenerate(IfGenerate { span: Span { start, end: self.prev_end() }, condition, then_block, else_block }))
+    }
+
+    fn case_generate(&mut self, _attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
+        self.expect_kw("case")?;
+        self.expect(&Tok::LParen)?;
+        let condition = self.expr()?;
+        self.expect(&Tok::RParen)?;
+        let mut items = Vec::new();
+        while !self.at_kw("endcase") && !self.at_end() {
+            let mut exprs = Vec::new();
+            if !self.eat_kw("default") {
+                loop {
+                    exprs.push(self.expr()?);
+                    if !self.eat(&Tok::Comma) { break; }
+                }
+            } else {
+                self.eat(&Tok::Colon);
+            }
+            if !exprs.is_empty() { self.expect(&Tok::Colon)?; }
+            let block = self.generate_block()?;
+            items.push(CaseGenerateItem { exprs, block });
+        }
+        self.expect_kw("endcase")?;
+        Ok(ModuleItem::CaseGenerate(CaseGenerate { span: Span { start, end: self.prev_end() }, condition, items }))
     }
 
     fn range(&mut self) -> PResult<Range> {
@@ -536,60 +675,4 @@ impl<'a> Parser<'a> {
         Ok(FunctionItem::Stmt(self.stmt_with_attrs(attrs)?))
     }
 
-    fn initial_block(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
-        self.expect_kw("initial")?;
-        let stmt = Box::new(self.stmt()?);
-        Ok(ModuleItem::InitialBlock(InitialBlock {
-            attrs, stmt, span: Span { start, end: self.prev_end() },
-        }))
-    }
-
-    fn always_block(&mut self, _attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
-        self.expect_kw("always")?;
-        self.expect(&Tok::At)?;
-        self.expect(&Tok::LParen)?;
-        let sensitivity = if self.eat_kw("initial_step") {
-            AlwaysSensitivity::InitialStep
-        } else if self.eat_kw("final_step") {
-            AlwaysSensitivity::FinalStep
-        } else if self.eat_kw("step") {
-            AlwaysSensitivity::Step
-        } else if self.eat_kw("above") {
-            self.expect(&Tok::LParen)?;
-            let expr = self.expr()?;
-            self.expect(&Tok::RParen)?;
-            AlwaysSensitivity::Above(expr)
-        } else if self.eat_kw("cross") {
-            self.expect(&Tok::LParen)?;
-            let expr = self.expr()?;
-            self.expect(&Tok::Comma)?;
-            
-            let mut sign = 1;
-            if self.eat(&Tok::Plus) {
-                sign = 1;
-            } else if self.eat(&Tok::Minus) {
-                sign = -1;
-            }
-            
-            let dir = if let Some(Tok::Int(val)) = self.peek() {
-                let val = val.clone();
-                self.pos += 1;
-                let num: i8 = val.parse().map_err(|_| "invalid crossing direction")?;
-                num * sign
-            } else {
-                return Err("expected crossing direction (+1, -1, 0)".into());
-            };
-            self.expect(&Tok::RParen)?;
-            AlwaysSensitivity::Cross(expr, dir)
-        } else {
-            return Err("expected sensitivity inside always @(...)".into());
-        };
-        self.expect(&Tok::RParen)?;
-        let stmt = Box::new(self.stmt()?);
-        Ok(ModuleItem::AlwaysBlock(AlwaysBlock {
-            span: Span { start, end: self.prev_end() },
-            sensitivity,
-            stmt,
-        }))
-    }
 }

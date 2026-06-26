@@ -1,0 +1,17 @@
+`include "constants.vams"
+`include "disciplines.vams"
+
+// Simple ideal capacitor: I = C * dV/dt
+module capacitor_va(A, B);
+    inout A, B;
+    electrical A, B;
+
+    branch (A, B) br;
+
+    (*desc="Capacitance", units="F"*)
+    parameter real C = 1e-9 from (0:inf];
+
+    analog begin
+        I(br) <+ C * ddt(V(br));
+    end
+endmodule

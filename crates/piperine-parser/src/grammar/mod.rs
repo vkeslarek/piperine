@@ -206,7 +206,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_kw(&self) -> bool {
-        if self.at_any_kw(&["integer", "real", "string"]) {
+        if self.at_any_kw(&["integer", "real", "string", "time", "realtime", "reg"]) {
             true
         } else if let Some(Tok::Ident(_)) = self.peek() {
             matches!(self.peek_at(1), Some(Tok::Ident(_)))
@@ -216,23 +216,54 @@ impl<'a> Parser<'a> {
     }
 
     fn type_(&mut self) -> PResult<Type> {
-        // Integer family (incl. SV/Verilog digital type words — aliased to integer,
-        // not left as a silent `void` custom type).
-        if self.at_any_kw(&["integer", "int", "logic", "bit", "reg",
-                            "byte", "shortint", "longint"]) {
+        if self.eat_kw("integer") { Ok(Type::Integer) }
+        else if self.eat_kw("real") { Ok(Type::Real) }
+        else if self.eat_kw("string") { Ok(Type::String) }
+        else if self.eat_kw("time") { Ok(Type::Time) }
+        else if self.eat_kw("realtime") { Ok(Type::Realtime) }
+        else if self.eat_kw("reg") { Ok(Type::Reg) }
+        // aliases for integer/real kept for compatibility:
+        else if self.at_any_kw(&["int", "logic", "bit", "byte", "shortint", "longint"]) {
             self.pos += 1; Ok(Type::Integer)
         }
-        // Real family (time/realtime are continuous reals in the analog world).
-        else if self.at_any_kw(&["real", "realtime", "time", "shortreal"]) {
+        else if self.at_any_kw(&["shortreal"]) {
             self.pos += 1; Ok(Type::Real)
         }
-        else if self.eat_kw("string") { Ok(Type::String) }
         else if let Some(Tok::Ident(_)) = self.peek() { Ok(Type::Custom(self.name()?)) }
         else { Err(format!("expected a type, found {:?}", self.peek())) }
     }
 
-    fn skip_net_type(&mut self) {
-        if self.at_any_kw(NET_TYPES) { self.pos += 1; }
+    pub(super) fn opt_net_type(&mut self) -> Option<NetType> {
+        let kw = match self.peek() {
+            Some(Tok::Ident(s)) => s.clone(),
+            _ => return None,
+        };
+        let t = match kw.as_str() {
+            "wire" => NetType::Wire,
+            "wand" => NetType::Wand,
+            "wor" => NetType::Wor,
+            "tri" => NetType::Tri,
+            "triand" => NetType::Triand,
+            "trior" => NetType::Trior,
+            "supply0" => NetType::Supply0,
+            "supply1" => NetType::Supply1,
+            "tri0" => NetType::Tri0,
+            "tri1" => NetType::Tri1,
+            "uwire" => NetType::Uwire,
+            "trireg" => NetType::Trireg,
+            "wreal" => NetType::Wreal,
+            _ => return None,
+        };
+        self.pos += 1;
+        Some(t)
+    }
+
+    pub(super) fn skip_net_type(&mut self) {
+        self.opt_net_type();
+    }
+
+    pub(super) fn opt_signed(&mut self) -> bool {
+        self.eat_kw("signed")
     }
 
     // ── ranges, declarator lists ────────────────────────────────────────
