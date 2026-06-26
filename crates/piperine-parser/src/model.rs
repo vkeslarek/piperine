@@ -13,6 +13,10 @@ pub struct Document {
     pub modules:        Vec<Module>,
     pub disciplines:    Vec<Discipline>,
     pub natures:        Vec<Nature>,
+    pub paramsets:      Vec<Paramset>,
+    pub connectrules:   Vec<ast::ConnectrulesDecl>,
+    pub configs:        Vec<ast::ConfigDecl>,
+    pub primitives:     Vec<ast::PrimitiveDecl>,
 }
 
 /// A `(* name = value *)` attribute.
@@ -33,7 +37,13 @@ pub struct Module {
     pub variables: Vec<Variable>,
     pub branches: Vec<Branch>,
     pub functions: Vec<Function>,
+    pub tasks: Vec<Task>,
     pub analog_blocks: Vec<AnalogBlock>,
+    pub instances: Vec<Instance>,
+    pub ground_decls: Vec<ast::GroundDecl>,
+    pub events: Vec<ast::EventDecl>,
+    pub defparams: Vec<ast::DefparamDecl>,
+    pub continuous_assigns: Vec<ast::ContinuousAssign>,
     pub span: Span,
 }
 
@@ -159,3 +169,37 @@ pub struct NatureAttr {
     pub name: String,
     pub value: ast::Expr,
 }
+
+#[derive(Debug, Clone)]
+pub struct Task {
+    pub name: String,
+    pub automatic: bool,
+    pub ports: Vec<ast::TaskPort>,
+    pub variables: Vec<Variable>,
+    pub body: ast::Stmt,
+    pub attributes: Vec<Attribute>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct Instance {
+    pub module_name: String,
+    pub instance_name: String,
+    pub range: Option<BitRange>,
+    pub param_assignments: Vec<ast::ParamAssignment>,
+    pub connections: Vec<ast::PortConnection>,
+    pub attributes: Vec<Attribute>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Paramset {
+    pub name: String,
+    pub base: String,
+    pub parameters: Vec<Parameter>,
+    pub aliasparams: Vec<AliasParam>,
+    pub variables: Vec<Variable>,
+    pub statements: Vec<ast::ParamsetStmt>,
+    pub attributes: Vec<Attribute>,
+    pub span: Span,
+}
+

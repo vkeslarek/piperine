@@ -76,6 +76,9 @@ pub enum Tok {
     Backslash, // a line-continuation backslash (followed by newline)
     Newline,
 
+    LineComment,
+    BlockComment,
+    
     // Phase 1 Extensions
     CaseEq,    // ===
     CaseNeq,   // !==
@@ -99,8 +102,13 @@ pub struct Lexed {
     pub end: usize,
 }
 
-pub fn tokenize(src: &str) -> Result<Vec<Lexed>, String> {
+pub fn tokenize_with_comments(src: &str) -> Result<Vec<Lexed>, String> {
     Lexer::new(src).run()
+}
+
+pub fn tokenize(src: &str) -> Result<Vec<Lexed>, String> {
+    let all = tokenize_with_comments(src)?;
+    Ok(all.into_iter().filter(|l| !matches!(l.tok, Tok::LineComment | Tok::BlockComment)).collect())
 }
 
 struct Lexer<'a> {
@@ -158,12 +166,15 @@ impl<'a> Lexer<'a> {
     }
 
     fn skip_line_comment(&mut self) {
+        let start = self.pos;
         while self.pos < self.src.len() && self.peek(0) != b'\n' {
             self.pos += 1;
         }
+        self.push(Tok::LineComment, start);
     }
 
     fn skip_block_comment(&mut self) -> Result<(), String> {
+        let mut start = self.pos;
         self.pos += 2;
         loop {
             if self.pos >= self.src.len() {
@@ -171,14 +182,21 @@ impl<'a> Lexer<'a> {
             }
             if self.peek(0) == b'*' && self.peek(1) == b'/' {
                 self.pos += 2;
+                if start < self.pos {
+                    self.push(Tok::BlockComment, start);
+                }
                 return Ok(());
             }
             // Emit newlines inside block comments so directive line-tracking
             // upstream stays consistent.
             if self.peek(0) == b'\n' {
+                if start < self.pos {
+                    self.push(Tok::BlockComment, start);
+                }
                 let s = self.pos;
                 self.pos += 1;
                 self.push(Tok::Newline, s);
+                start = self.pos;
             } else {
                 self.pos += 1;
             }
@@ -228,14 +246,20 @@ impl<'a> Lexer<'a> {
     }
 
     fn backslash_or_escaped_ident(&mut self, start: usize) {
-        let next = self.peek(1);
-        if next == b'\n' || next == b'\r' || next == 0 {
-            // line continuation
+        // Look ahead to see if it's just whitespace until newline
+        let mut temp_pos = self.pos + 1;
+        while temp_pos < self.src.len() && (self.src[temp_pos] == b' ' || self.src[temp_pos] == b'\t' || self.src[temp_pos] == b'\r') {
+            temp_pos += 1;
+        }
+        
+        if temp_pos >= self.src.len() || self.src[temp_pos] == b'\n' {
+            // It's a line continuation (possibly with trailing spaces)
             self.pos += 1;
             self.push(Tok::Backslash, start);
             return;
         }
-        // escaped identifier: `\` then non-whitespace run, terminated by space
+
+        // escaped identifier: `\` then non-whitespace run, terminated by whitespace
         self.pos += 1;
         let name_start = self.pos;
         while self.pos < self.src.len() && !self.peek(0).is_ascii_whitespace() {

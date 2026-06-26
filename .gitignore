@@ -22,3 +22,4 @@ target
 
 ngspice
 crates/piperine-parser/tests/fixtures/*
+crates/piperine-parser/tests/fixtures_fmt/*

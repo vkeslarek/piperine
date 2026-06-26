@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
 
+pub mod commands;
+
 #[derive(Parser, Debug)]
 #[command(name = "piperine")]
 #[command(version)]
@@ -40,7 +42,7 @@ pub enum Commands {
     /// Create a new piperine project
     New {
         /// Project name
-        name: String,
+        name: Option<String>,
     },
     /// Clean build artifacts
     Clean,
@@ -51,32 +53,25 @@ pub fn execute() {
 
     match cli.command {
         Commands::Check { file } => {
-            println!("Checking file: {}", file);
-            // TODO: call parser
+            commands::check::execute(file);
         }
         Commands::Fmt { file } => {
-            println!("Formatting file: {}", file);
-            // TODO: call formatter
+            commands::fmt::execute(file);
         }
         Commands::Build { file } => {
-            println!("Building file: {}", file);
-            // TODO: call compiler/elaborator
+            commands::build::execute(file);
         }
         Commands::Run { file } => {
-            println!("Running simulation for: {}", file);
-            // TODO: call simulator
+            commands::run::execute(file);
         }
         Commands::Test { dir } => {
-            println!("Running tests in: {}", dir);
-            // TODO: test runner
+            commands::test::execute(dir);
         }
         Commands::New { name } => {
-            println!("Creating new project: {}", name);
-            // TODO: project scaffolding
+            commands::new::execute(name);
         }
         Commands::Clean => {
-            println!("Cleaning target directory...");
-            // TODO: remove artifacts
+            commands::clean::execute();
         }
     }
 }

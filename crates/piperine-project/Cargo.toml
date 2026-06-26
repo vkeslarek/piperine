@@ -1,0 +1,8 @@
+[package]
+name = "piperine-project"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+toml = "1.1.2"

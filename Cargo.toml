@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/piperine-cli",
-    "crates/piperine-parser",
+    "crates/piperine-parser", "crates/piperine-project",
     "crates/piperine-solver",
 ]
 
@@ -21,6 +21,7 @@ bincode = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 piperine-cli = { version = "0.1.0", path = "crates/piperine-cli" }
+piperine-project = { version = "0.1.0", path = "crates/piperine-project" }
 
 [dev-dependencies]
 tracing = { workspace = true }

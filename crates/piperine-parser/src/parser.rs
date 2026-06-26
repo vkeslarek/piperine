@@ -58,8 +58,49 @@ pub fn parse_with_includes(input: &str, include_dirs: &[PathBuf]) -> Result<Docu
             ast::Item::NatureDecl(decl) => {
                 doc.natures.push(convert_nature(decl));
             }
-            ast::Item::Paramset(_) | ast::Item::Connectrules(_) | ast::Item::Config(_) | ast::Item::Primitive(_) => {
-                // To be implemented in later phases
+            ast::Item::Paramset(p) => {
+                let mut paramset = Paramset {
+                    name: p.name.0.clone(),
+                    base: p.base.0.clone(),
+                    parameters: Vec::new(),
+                    aliasparams: Vec::new(),
+                    variables: Vec::new(),
+                    statements: p.statements,
+                    attributes: convert_attrs(&p.attrs),
+                    span: p.span,
+                };
+                for decl in p.item_decls {
+                    match decl {
+                        ast::ParamsetItemDecl::Parameter(param) | ast::ParamsetItemDecl::LocalParameter(param) => {
+                            convert_param_decl(&param, &mut paramset.parameters);
+                        }
+                        ast::ParamsetItemDecl::AliasParam(alias) => {
+                            let source = match alias.src {
+                                ast::ParamRef::Path(path) => ParamSource::Path(path_to_string(&path)),
+                                ast::ParamRef::SysFun(s) => ParamSource::SysFun(s),
+                            };
+                            paramset.aliasparams.push(AliasParam {
+                                name: alias.name.0.clone(),
+                                source,
+                                attributes: convert_attrs(&alias.attrs),
+                                span: alias.span,
+                            });
+                        }
+                        ast::ParamsetItemDecl::IntegerDecl(var) | ast::ParamsetItemDecl::RealDecl(var) => {
+                            convert_var_decl(&var, &mut paramset.variables);
+                        }
+                    }
+                }
+                doc.paramsets.push(paramset);
+            }
+            ast::Item::Connectrules(c) => {
+                doc.connectrules.push(c);
+            }
+            ast::Item::Config(c) => {
+                doc.configs.push(c);
+            }
+            ast::Item::Primitive(p) => {
+                doc.primitives.push(p);
             }
         }
     }
@@ -114,7 +155,13 @@ fn convert_module(decl: ast::ModuleDecl) -> Module {
         variables: Vec::new(),
         branches: Vec::new(),
         functions: Vec::new(),
+        tasks: Vec::new(),
         analog_blocks: Vec::new(),
+        instances: Vec::new(),
+        ground_decls: Vec::new(),
+        events: Vec::new(),
+        defparams: Vec::new(),
+        continuous_assigns: Vec::new(),
         span: decl.span,
     };
 
@@ -274,16 +321,59 @@ fn convert_module(decl: ast::ModuleDecl) -> Module {
                     span: a.span,
                 });
             }
-            ast::ModuleItem::GroundDecl(_) | ast::ModuleItem::EventDecl(_) => {
-                // To be implemented in later phases
+            ast::ModuleItem::GroundDecl(g) => {
+                module.ground_decls.push(g);
             }
-            ast::ModuleItem::ModuleInstantiation(_) | ast::ModuleItem::Defparam(_) | 
-            ast::ModuleItem::ContinuousAssign(_) | ast::ModuleItem::InitialConstruct { .. } | 
+            ast::ModuleItem::EventDecl(e) => {
+                module.events.push(e);
+            }
+            ast::ModuleItem::ModuleInstantiation(m) => {
+                let attributes = convert_attrs(&m.attrs);
+                for inst in m.instances {
+                    module.instances.push(Instance {
+                        module_name: m.module_name.0.clone(),
+                        instance_name: inst.name.0.clone(),
+                        range: inst.range,
+                        param_assignments: m.param_assignments.clone(),
+                        connections: inst.connections,
+                        attributes: attributes.clone(),
+                    });
+                }
+            }
+            ast::ModuleItem::Defparam(d) => {
+                module.defparams.push(d);
+            }
+            ast::ModuleItem::ContinuousAssign(c) => {
+                module.continuous_assigns.push(c);
+            }
+            ast::ModuleItem::TaskDecl(t) => {
+                let mut task = Task {
+                    name: t.name.0.clone(),
+                    automatic: t.automatic,
+                    ports: t.ports,
+                    variables: Vec::new(),
+                    body: *t.body,
+                    attributes: convert_attrs(&t.attrs),
+                    span: t.span,
+                };
+                for t_item in t.items {
+                    match t_item {
+                        ast::TaskItem::BlockItem(ast::BlockItem::VarDecl(v)) => {
+                            convert_var_decl(&v, &mut task.variables);
+                        }
+                        ast::TaskItem::Port(p) => {
+                            task.ports.push(p);
+                        }
+                        _ => {}
+                    }
+                }
+                module.tasks.push(task);
+            }
+            ast::ModuleItem::InitialConstruct { .. } | 
             ast::ModuleItem::AlwaysConstruct { .. } | ast::ModuleItem::Generate(_) | 
             ast::ModuleItem::LoopGenerate(_) | ast::ModuleItem::IfGenerate(_) | 
             ast::ModuleItem::CaseGenerate(_) | ast::ModuleItem::Specify(_) |
-            ast::ModuleItem::Specparam(_) | ast::ModuleItem::GateInstantiation(_) |
-            ast::ModuleItem::TaskDecl(_) => {
+            ast::ModuleItem::Specparam(_) | ast::ModuleItem::GateInstantiation(_) => {
                 // To be implemented in later phases
             }
         }
