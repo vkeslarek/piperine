@@ -76,6 +76,7 @@ pub struct BitRange {
 pub struct Declarator {
     pub name: Name,
     pub range: Option<BitRange>,
+    pub default: Option<Expr>,
 }
 
 #[derive(Debug, Clone)]

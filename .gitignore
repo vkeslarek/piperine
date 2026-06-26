@@ -21,3 +21,4 @@ target
 .idea/
 
 ngspice
+crates/piperine-parser/tests/fixtures/*

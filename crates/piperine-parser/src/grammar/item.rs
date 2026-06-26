@@ -119,7 +119,7 @@ impl<'a> Parser<'a> {
             constraints.push(self.param_constraint()?);
         }
         Ok(ParamDecl {
-            attrs, kind, ty,
+            attrs, kind, ty, signed: false, range: None,
             params: vec![Param { name, default, constraints }],
             span: Span { start, end: self.prev_end() },
         })
@@ -481,8 +481,8 @@ impl<'a> Parser<'a> {
     // ── module items ─────────────────────────────────────────────────────
 
     fn module_item(&mut self) -> PResult<ModuleItem> {
-        let start = self.span_start();
         let attrs = self.attrs()?;
+        let start = self.pos;
 
         if self.at_dir() {
             let port = self.port_decl(attrs, start)?;
@@ -522,6 +522,10 @@ impl<'a> Parser<'a> {
             return self.module_instantiation(attrs, start);
         }
 
+        if self.at_net_type() {
+            return self.net_decl(attrs, start);
+        }
+
         let custom_var = self.is_type_kw() && self.assign_before_semi();
         if self.at_primitive_type_kw() || custom_var || self.at_kw("genvar") {
             return Ok(ModuleItem::VarDecl(self.var_decl(attrs, start)?));
@@ -542,13 +546,14 @@ impl<'a> Parser<'a> {
         let _signed = self.eat_kw("signed");
         // Optional delay3 (only if Hash follows)
         let delay = self.opt_delay()?;
-
+        
+        let ty = if self.is_type_kw() { Some(self.type_()?) } else { None };
         let discipline = self.opt_discipline();
         let range = self.parse_range()?;
         let names = self.declarator_list()?;
         self.expect(&Tok::Semi)?;
         Ok(ModuleItem::NetDecl(NetDecl {
-            attrs, net_type, drive_strength, charge_strength, delay, discipline, range, names,
+            attrs, net_type, drive_strength, charge_strength, delay, ty, discipline, range, names,
             span: Span { start, end: self.prev_end() },
         }))
     }
@@ -628,6 +633,7 @@ impl<'a> Parser<'a> {
     pub(super) fn var_decl(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<VarDecl> {
         let ty = if self.eat_kw("genvar") { Type::Integer } else { self.type_()? };
         let signed = self.opt_signed();
+        let packed_range = self.parse_range()?;
         let mut vars = Vec::new();
         loop {
             let name = self.name()?;
@@ -637,7 +643,7 @@ impl<'a> Parser<'a> {
             if !self.eat(&Tok::Comma) { break; }
         }
         self.expect(&Tok::Semi)?;
-        Ok(VarDecl { attrs, ty, signed, discipline: None, vars, span: Span { start, end: self.prev_end() } })
+        Ok(VarDecl { attrs, ty, signed, packed_range, discipline: None, vars, span: Span { start, end: self.prev_end() } })
     }
 
     fn ground_decl(&mut self, attrs: Vec<Attr>, start: usize) -> PResult<ModuleItem> {
@@ -664,6 +670,8 @@ impl<'a> Parser<'a> {
         let kind = if self.eat_kw("localparam") { ParamKind::LocalParam }
                    else { self.expect_kw("parameter")?; ParamKind::Parameter };
         let ty = if self.is_type_kw() { Some(self.type_()?) } else { None };
+        let signed = self.opt_signed();
+        let range = self.parse_range()?;
         let mut params = Vec::new();
         loop {
             let name = self.name()?;
@@ -678,7 +686,7 @@ impl<'a> Parser<'a> {
             if !self.eat(&Tok::Comma) { break; }
         }
         self.expect(&Tok::Semi)?;
-        Ok(ParamDecl { attrs, kind, ty, params, span: Span { start, end: self.prev_end() } })
+        Ok(ParamDecl { attrs, kind, ty, signed, range, params, span: Span { start, end: self.prev_end() } })
     }
 
     fn param_constraint(&mut self) -> PResult<Constraint> {
@@ -989,6 +997,8 @@ impl<'a> Parser<'a> {
         self.expect_kw("function")?;
         let automatic = self.eat_kw("automatic");
         let ty = if self.is_type_kw() { Some(self.type_()?) } else { None };
+        let signed = self.opt_signed();
+        let range = self.parse_range()?;
         let name = self.name()?;
         let mut items = Vec::new();
         // Optional SystemVerilog-style parenthesized argument list:
@@ -999,6 +1009,8 @@ impl<'a> Parser<'a> {
                 let arg_attrs = self.attrs()?;
                 let dir = if self.at_dir() { self.direction()? } else { Direction::Input };
                 if self.is_type_kw() { let _ = self.type_()?; }
+                let _signed = self.opt_signed();
+                let _range = self.parse_range()?;
                 let arg_name = self.name()?;
                 items.push(FunctionItem::FunctionArg(FunctionArg {
                     attrs: arg_attrs, dir, names: vec![arg_name],
@@ -1013,7 +1025,7 @@ impl<'a> Parser<'a> {
         }
         self.expect_kw("endfunction")?;
         Ok(ModuleItem::Function(Function {
-            attrs, automatic, ty, name, items,
+            attrs, automatic, ty, signed, range, name, items,
             span: Span { start, end: self.prev_end() },
         }))
     }
@@ -1024,6 +1036,8 @@ impl<'a> Parser<'a> {
         if self.at_dir() {
             let dir = self.direction()?;
             if self.is_type_kw() { let _ = self.type_()?; } // tolerate `input real x;`
+            let _signed = self.opt_signed();
+            let _range = self.parse_range()?;
             let names = self.name_list()?;
             self.expect(&Tok::Semi)?;
             return Ok(FunctionItem::FunctionArg(FunctionArg { attrs, dir, names }));
@@ -1191,9 +1205,7 @@ impl<'a> Parser<'a> {
         let mut instances = Vec::new();
         loop {
             // Optional instance name
-            let name = if matches!(self.peek(), Some(Tok::Ident(_)))
-                && !matches!(self.peek_at(1), Some(Tok::LParen))
-            {
+            let name = if matches!(self.peek(), Some(Tok::Ident(_))) {
                 // Has a name: `g1 (...)` or `g1 [range] (...)`
                 let n = self.name()?;
                 let r = self.parse_range()?;

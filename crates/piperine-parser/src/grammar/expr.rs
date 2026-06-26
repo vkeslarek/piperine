@@ -160,6 +160,11 @@ impl<'a> Parser<'a> {
                 self.bump();
                 Ok(Expr::Literal(lit))
             }
+            Some(Tok::SizedLit(s)) => {
+                let lit = Literal::SizedLit(s.clone());
+                self.bump();
+                Ok(Expr::Literal(lit))
+            }
             Some(Tok::Real(s)) => {
                 let lit = real_literal(s);
                 self.bump();

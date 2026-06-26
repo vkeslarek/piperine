@@ -231,7 +231,11 @@ impl<'a> Parser<'a> {
         else if self.eat_kw("string") { Ok(Type::String) }
         else if self.eat_kw("time") { Ok(Type::Time) }
         else if self.eat_kw("realtime") { Ok(Type::Realtime) }
-        else if self.eat_kw("reg") { Ok(Type::Reg) }
+        else if self.eat_kw("reg") {
+            if self.eat_kw("real") { Ok(Type::Real) }
+            else if self.eat_kw("integer") { Ok(Type::Integer) }
+            else { Ok(Type::Reg) }
+        }
         // aliases for integer/real kept for compatibility:
         else if self.at_any_kw(&["int", "logic", "bit", "byte", "shortint", "longint"]) {
             self.pos += 1; Ok(Type::Integer)
@@ -241,6 +245,12 @@ impl<'a> Parser<'a> {
         }
         else if let Some(Tok::Ident(_)) = self.peek() { Ok(Type::Custom(self.name()?)) }
         else { Err(format!("expected a type, found {:?}", self.peek())) }
+    }
+    pub(super) fn at_net_type(&self) -> bool {
+        self.at_any_kw(&[
+            "wire", "wand", "wor", "tri", "triand", "trior",
+            "supply0", "supply1", "tri0", "tri1", "uwire", "trireg", "wreal"
+        ])
     }
 
     pub(super) fn opt_net_type(&mut self) -> Option<NetType> {
@@ -333,6 +343,7 @@ impl<'a> Parser<'a> {
     fn declarator(&mut self) -> PResult<Declarator> {
         let name = self.name()?;
         let range = self.parse_range()?;
-        Ok(Declarator { name, range })
+        let default = if self.eat(&Tok::Assign) { Some(self.expr()?) } else { None };
+        Ok(Declarator { name, range, default })
     }
 }

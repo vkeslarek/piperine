@@ -136,6 +136,7 @@ pub struct VarDecl {
     pub attrs: Vec<Attr>,
     pub ty: Type,
     pub signed: bool,
+    pub packed_range: Option<BitRange>,
     pub discipline: Option<Name>,
     pub vars: Vec<Var>,
 }
@@ -154,6 +155,8 @@ pub struct ParamDecl {
     pub attrs: Vec<Attr>,
     pub kind: ParamKind,
     pub ty: Option<Type>,
+    pub signed: bool,
+    pub range: Option<BitRange>,
     pub params: Vec<Param>,
 }
 
@@ -217,6 +220,7 @@ pub struct NetDecl {
     pub drive_strength: Option<DriveStrength>,
     pub charge_strength: Option<ChargeStrength>,
     pub delay: Option<Delay>,
+    pub ty: Option<Type>,
     pub discipline: Option<NameRef>,
     pub range: Option<BitRange>,
     pub names: Vec<Declarator>,
@@ -236,6 +240,8 @@ pub struct Function {
     pub attrs: Vec<Attr>,
     pub automatic: bool,
     pub ty: Option<Type>,
+    pub signed: bool,
+    pub range: Option<BitRange>,
     pub name: Name,
     pub items: Vec<FunctionItem>,
 }

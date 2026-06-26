@@ -39,6 +39,7 @@ pub enum Literal {
     StdRealNumber(String),
     SiRealNumber(String),
     Inf,
+    SizedLit(String),
 }
 
 /// ungram: `PrefixExpr op: ('-' | '!' | '~' | '+')`

@@ -27,6 +27,7 @@ pub enum Stmt {
     ProceduralAssign(ProceduralAssignStmt),
     ProceduralDeassign(ProceduralDeassignStmt),
     IndirectContrib(IndirectContribution),
+    TimingControl(TimingControlStmt),
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +44,7 @@ pub struct ExprStmt {
 #[derive(Debug, Clone)]
 pub struct AssignStmt {
     pub attrs: Vec<Attr>,
+    pub delay_or_event: Option<TimingControl>,
     pub assign: Assign,
 }
 
@@ -226,4 +228,11 @@ pub struct IndirectContribution {
     pub lvalue: Expr,
     pub indirect_expr: Expr,
     pub rvalue: Expr,
+}
+
+#[derive(Debug, Clone)]
+pub struct TimingControlStmt {
+    pub attrs: Vec<Attr>,
+    pub control: TimingControl,
+    pub stmt: Box<Stmt>,
 }

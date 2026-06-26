@@ -12,6 +12,11 @@ impl<'a> Parser<'a> {
         if self.eat(&Tok::Semi) { return Ok(Stmt::Empty(EmptyStmt { attrs })); }
         if self.at(&Tok::At)               { return self.event_stmt(attrs); }
         if self.at_kw("begin") || self.at(&Tok::LBrace) { return self.block_stmt(attrs); }
+        if self.at(&Tok::Hash) || self.at(&Tok::At) {
+            let tc = self.opt_timing_control()?.unwrap();
+            let stmt = self.stmt_with_attrs(Vec::new())?;
+            return Ok(Stmt::TimingControl(TimingControlStmt { attrs, control: tc, stmt: Box::new(stmt) }));
+        }
         if self.at_kw("if")                { return self.if_stmt(attrs); }
         if self.at_kw("while")             { return self.while_stmt(attrs); }
         if self.at_kw("for")               { return self.for_stmt(attrs); }
@@ -54,8 +59,9 @@ impl<'a> Parser<'a> {
         }
         let stmt = match self.assign_op_token() {
             Some(op) => {
+                let delay_or_event = self.opt_timing_control()?;
                 let rval = self.expr()?;
-                Stmt::Assign(AssignStmt { attrs, assign: Assign { lval, op, rval } })
+                Stmt::Assign(AssignStmt { attrs, delay_or_event, assign: Assign { lval, op, rval } })
             }
             None => Stmt::Expr(ExprStmt { attrs, expr: lval }),
         };
@@ -153,6 +159,7 @@ impl<'a> Parser<'a> {
         self.expect(&Tok::LParen)?;
         let init = Box::new(Stmt::Assign(AssignStmt {
             attrs: Vec::new(),
+            delay_or_event: None,
             assign: self.for_assign()?,
         }));
         self.expect(&Tok::Semi)?;
@@ -160,6 +167,7 @@ impl<'a> Parser<'a> {
         self.expect(&Tok::Semi)?;
         let incr = Box::new(Stmt::Assign(AssignStmt {
             attrs: Vec::new(),
+            delay_or_event: None,
             assign: self.for_assign()?,
         }));
         self.expect(&Tok::RParen)?;
