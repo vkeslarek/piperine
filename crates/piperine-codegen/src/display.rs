@@ -225,6 +225,9 @@ fn write_stmt(f: &mut fmt::Formatter<'_>, stmt: &IrStmt, indent: usize) -> fmt::
                     Some(p) => format!("timer({p})"),
                     None => "timer".to_string(),
                 },
+                IrEventKind::Posedge(e) => format!("posedge({e})"),
+                IrEventKind::Negedge(e) => format!("negedge({e})"),
+                IrEventKind::Change(e)  => format!("change({e})"),
             };
             writeln!(f, "{pad}@ {kind_str} {{")?;
             write_stmts(f, body, indent + 1)?;

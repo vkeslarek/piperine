@@ -105,7 +105,7 @@ pub struct DigitalInterpreter {
 }
 
 impl DigitalInterpreter {
-    fn new(
+    pub fn new(
         body: Vec<ElabBehaviorStmt>,
         input_port_names: Vec<String>,
         output_port_names: Vec<String>,

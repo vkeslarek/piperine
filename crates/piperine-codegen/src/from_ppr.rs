@@ -23,6 +23,10 @@ struct LowerCtx {
     state_vars: Vec<IrStateVar>,
     noise_sources: Vec<IrNoiseSource>,
     counter: u32,
+    /// Set to `true` while lowering a `digital` body.  Lets the Bind-Force
+    /// arm pick the digital-drive form (`IrStmt::Assign`) instead of the
+    /// analog-force form (`IrStmt::Force`).
+    is_digital: bool,
 }
 
 impl LowerCtx {
@@ -32,6 +36,7 @@ impl LowerCtx {
             state_vars: vec![],
             noise_sources: vec![],
             counter: 0,
+            is_digital: false,
         }
     }
 
@@ -56,6 +61,7 @@ pub fn ppr_to_ir(prog: &ElabProgram) -> IrProgram {
     for behavior in &prog.behaviors {
         let Some(module) = modules.get_mut(&behavior.name) else { continue };
         let mut ctx = LowerCtx::new();
+        ctx.is_digital = matches!(behavior.kind, BehaviorKind::Digital);
         let stmts = lower_stmts(&behavior.body, &mut ctx);
         match behavior.kind {
             BehaviorKind::Analog => {
@@ -236,9 +242,22 @@ fn lower_stmt(stmt: &ElabBehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt> {
             vec![IrStmt::Contrib { nature, plus, minus, expr, kind }]
         }
         ElabBehaviorStmt::Bind { dest, op: BindOp::Force, src } => {
-            let (nature, plus, minus) = parse_contrib_dest(dest);
+            // Two semantics for `<-`:
+            //   * inside `analog { ... }`           →  IrStmt::Force (analog)
+            //   * inside `digital { ... }`          →  IrStmt::Assign (digital drive)
+            // We know which one we're in via the `LowerCtx.is_digital`
+            // flag, set in `ppr_to_ir` before calling lower_stmts.
             let expr = lower_expr(src, ctx);
-            vec![IrStmt::Force { nature, plus, minus, expr }]
+            if ctx.is_digital {
+                if let Expr::Ident(name) = dest {
+                    vec![IrStmt::Assign { lval: name.clone(), expr, delay: None, event: None }]
+                } else {
+                    vec![]
+                }
+            } else {
+                let (nature, plus, minus) = parse_contrib_dest(dest);
+                vec![IrStmt::Force { nature, plus, minus, expr }]
+            }
         }
 
         ElabBehaviorStmt::If { cond, then_body, else_body } => {
@@ -411,6 +430,10 @@ fn convert_event_spec(spec: &EventSpec, ctx: &mut LowerCtx) -> Vec<IrEventKind> 
                 "cross" => vec![IrEventKind::Cross { dir: 0, expr: Some(arg_ir) }],
                 "above" => vec![IrEventKind::Above { expr: Some(arg_ir) }],
                 "timer" => vec![IrEventKind::Timer { period: Some(arg_ir) }],
+                // Digital-style events inside PHDL `digital` blocks.
+                "posedge"  => vec![IrEventKind::Posedge(arg_ir)],
+                "negedge"  => vec![IrEventKind::Negedge(arg_ir)],
+                "change"   => vec![IrEventKind::Change(arg_ir)],
                 _ => vec![IrEventKind::InitialStep],
             }
         }

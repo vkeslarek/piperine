@@ -377,6 +377,12 @@ pub enum IrEventKind {
     Above { expr: Option<IrExpr> },
     /// timer(period)
     Timer { period: Option<IrExpr> },
+    /// PHDL/Verilog `posedge(signal)` inside a digital block.
+    Posedge(IrExpr),
+    /// `negedge(signal)`.
+    Negedge(IrExpr),
+    /// `change(signal)`.
+    Change(IrExpr),
 }
 
 // ─── State variables (analog operators) ───────────────────────────────────────

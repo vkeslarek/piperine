@@ -89,8 +89,18 @@ fn ir_analog_compile_capacitor() {
 }
 
 #[test]
-#[ignore = "Phase 1.5 — `compile_digital_module(&IrProgram, ...)` not yet wired"]
-fn ir_digital_compile_dff() {}
+fn ir_digital_compile_dff() {
+    use piperine_codegen::{ir_digital_to_interp, ppr_to_ir};
+    use piperine_lang::parse_and_elaborate;
+    let src = "
+        discipline Bit {}
+        mod DFF (input clk: Bit, input D: Bit, output Q: Bit) {}
+        digital DFF { @ posedge(clk) { Q <- D; } }
+    ";
+    let elab = parse_and_elaborate(src).expect("parse_and_elaborate DFF");
+    let ir = ppr_to_ir(&elab);
+    let _interp = ir_digital_to_interp(&ir, "DFF").expect("DFF interp");
+}
 
 #[test]
 #[ignore = "Phase 1.6 — `from_ir(&IrProgram, top)` not yet wired"]
