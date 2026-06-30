@@ -8,9 +8,9 @@ use piperine_solver::device::Device;
 use piperine_solver::digital::DigitalNet;
 
 use crate::codegen::{compile_analog_module, compile_digital_module};
-use crate::elab::const_eval::ConstVal;
-use crate::elab::ir::{ElabInstance, ElabMod, ElabProgram};
 use crate::phdl_device::PhdlDevice;
+use piperine_lang::elab::const_eval::ConstVal;
+use piperine_lang::elab::ir::{ElabInstance, ElabMod, ElabProgram};
 
 static NODE_CTR:  AtomicUsize = AtomicUsize::new(100_000);
 static DNET_CTR:  AtomicUsize = AtomicUsize::new(0);

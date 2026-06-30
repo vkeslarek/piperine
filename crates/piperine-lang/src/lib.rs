@@ -39,12 +39,12 @@
 //! | [`resolve`] | `use` declaration resolver: built-in + file-based module loading |
 //! | [`elab`] | Elaborator, elaborated-IR types, event registry, const evaluator |
 //! | [`stdlib`] | Embedded `.phdl` sources for the standard library |
+//!
+//! For the IR → Device pipeline (analog and digital blocks → solver
+//! `CircuitInstance`), see the `piperine-codegen` crate.
 
-pub mod circuit;
-pub mod codegen;
 pub mod elab;
 pub mod parse;
-pub mod phdl_device;
 pub mod resolve;
 pub mod stdlib;
 
@@ -56,9 +56,6 @@ pub use parse::{parse_str, Lexed, Lexer, Tok};
 // Re-export the elaboration entry points and key IR types.
 pub use elab::{elaborate, elaborate_with, ElabError, ElabProgram};
 pub use resolve::{ResolveError, Resolver};
-
-// Re-export codegen entry point.
-pub use codegen::{compile_analog_module, CodegenError, JitAnalogDevice};
 
 /// Parse a PHDL source string and run the full elaboration pipeline.
 ///

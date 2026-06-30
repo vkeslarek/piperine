@@ -5,7 +5,7 @@
 //!
 //! The result is a new `Expr` that can be passed back through `emit_phdl_expr`.
 
-use crate::parse::ast::{BinaryOp, Expr, Literal, UnaryOp};
+use piperine_lang::parse::ast::{BinaryOp, Expr, Literal, UnaryOp};
 
 /// Differentiate `expr` with respect to the branch voltage identified by `wrt`.
 ///
@@ -195,7 +195,7 @@ fn call2(name: &str, a: Expr, b: Expr) -> Expr {
 
 // ── Block helpers ─────────────────────────────────────────────────────────────
 
-use crate::parse::ast::{Block, Stmt};
+use piperine_lang::parse::ast::{Block, Stmt};
 
 fn diff_block(block: &Block, wrt: &str) -> Expr {
     // Block value = explicit trailing expr, or last Stmt::Return/Stmt::Expr.

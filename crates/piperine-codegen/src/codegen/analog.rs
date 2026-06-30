@@ -20,8 +20,8 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
-use crate::elab::ir::{ElabBehaviorStmt, ElabProgram};
-use crate::parse::ast::{BindOp, Expr};
+use piperine_lang::elab::ir::{ElabBehaviorStmt, ElabProgram};
+use piperine_lang::parse::ast::{BindOp, Expr};
 
 use super::autodiff::{branch_key, collect_branches, diff};
 use super::expr::{accumulate_f64, emit_phdl_expr, load_f64, ExprCtx};
@@ -132,7 +132,7 @@ pub fn compile_analog_module(
     prog: &ElabProgram,
     module_name: &str,
 ) -> Result<JitAnalogDevice, CodegenError> {
-    use crate::parse::ast::BehaviorKind;
+    use piperine_lang::parse::ast::BehaviorKind;
 
     // ── Locate module and behavior ────────────────────────────────────────────
     let elab_mod = prog.modules.get(module_name).ok_or_else(|| {

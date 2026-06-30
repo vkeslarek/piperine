@@ -7,7 +7,7 @@ use cranelift_codegen::ir::{
 };
 use cranelift_frontend::FunctionBuilder;
 
-use crate::parse::ast::{BinaryOp, Expr, Literal, UnaryOp};
+use piperine_lang::parse::ast::{BinaryOp, Expr, Literal, UnaryOp};
 
 /// Context passed through expression emission.
 pub struct ExprCtx<'b, 'f: 'b> {
@@ -165,8 +165,8 @@ fn emit_call(ctx: &mut ExprCtx, func: &Expr, args: &[Expr]) -> Value {
 }
 
 /// Evaluate the value of a block (trailing expr or last Stmt::Return/Expr).
-fn block_value(ctx: &mut ExprCtx, block: &crate::parse::ast::Block) -> Value {
-    use crate::parse::ast::Stmt;
+fn block_value(ctx: &mut ExprCtx, block: &piperine_lang::parse::ast::Block) -> Value {
+    use piperine_lang::parse::ast::Stmt;
     if let Some(e) = &block.expr {
         return emit_phdl_expr(ctx, e);
     }

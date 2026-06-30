@@ -6,4 +6,13 @@ edition.workspace = true
 [dependencies]
 piperine-lang = { path = "../piperine-lang" }
 piperine-ams  = { path = "../piperine-ams" }
+piperine-solver = { path = "../piperine-solver" }
 thiserror = "2.0"
+cranelift-codegen  = "0.113"
+cranelift-frontend = "0.113"
+cranelift-jit      = "0.113"
+cranelift-module   = "0.113"
+num-complex.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

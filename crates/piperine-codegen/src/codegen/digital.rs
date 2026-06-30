@@ -25,8 +25,8 @@ use std::cmp::Reverse;
 use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
 
 use crate::codegen::CodegenError;
-use crate::elab::ir::{ElabBehavior, ElabBehaviorStmt, ElabProgram};
-use crate::parse::ast::{BehaviorKind, BindOp, BinaryOp, EventSpec, Expr, Literal, UnaryOp};
+use piperine_lang::elab::ir::{ElabBehavior, ElabBehaviorStmt, ElabProgram};
+use piperine_lang::parse::ast::{BehaviorKind, BindOp, BinaryOp, EventSpec, Expr, Literal, UnaryOp};
 
 // ─────────────────────────────── Value type ──────────────────────────────────
 
@@ -157,7 +157,7 @@ impl DigitalInterpreter {
                     self.state.insert(name.clone(), val);
                 }
                 ElabBehaviorStmt::VarDecl { name, default: None, ty } => {
-                    use crate::elab::ir::ElabValueType;
+                    use piperine_lang::elab::ir::ElabValueType;
                     let val = match ty {
                         ElabValueType::Real | ElabValueType::Complex => DigitalVal::Real(0.0),
                         ElabValueType::Boolean => DigitalVal::Bool(false),
@@ -378,8 +378,8 @@ fn spec_is_initial(spec: &EventSpec) -> bool {
     }
 }
 
-fn pattern_matches(pat: &crate::parse::ast::Pattern, _val: &DigitalVal) -> bool {
-    use crate::parse::ast::Pattern;
+fn pattern_matches(pat: &piperine_lang::parse::ast::Pattern, _val: &DigitalVal) -> bool {
+    use piperine_lang::parse::ast::Pattern;
     match pat {
         Pattern::Wildcard => true,
         Pattern::Path(_)  => true, // enum path or binding — treat as match-all for now

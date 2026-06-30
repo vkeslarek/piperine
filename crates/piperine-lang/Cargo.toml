@@ -5,13 +5,9 @@ edition.workspace = true
 
 [dependencies]
 thiserror = "2.0"
-cranelift-codegen  = "0.113"
-cranelift-frontend = "0.113"
-cranelift-jit      = "0.113"
-cranelift-module   = "0.113"
-num-complex.workspace = true
-
 piperine-solver = { path = "../piperine-solver" }
+num-complex.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+piperine-codegen = { path = "../piperine-codegen" }
