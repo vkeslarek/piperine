@@ -48,9 +48,9 @@ fn compile_ir_analog(module: &IrModule, body: &IrAnalogBody) -> Result<JitAnalog
     }
 
     let param_names: Vec<String> = module.params.iter().map(|p| p.name.clone()).collect();
-    let num_terminals = module.ports.len();
+    let port_names: Vec<String> = module.ports.iter().map(|p| p.name.clone()).collect();
 
-    compile_analog_module_ir(&module.name, num_terminals, param_names, phdl_contributions)
+    compile_analog_module_ir(&module.name, port_names, param_names, phdl_contributions)
 }
 
 fn collect_contributions(stmts: &[IrStmt], out: &mut Vec<Contribution>) {

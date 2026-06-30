@@ -11,7 +11,9 @@ use std::path::Path;
 use piperine_ams::Document;
 use piperine_codegen::{ams_to_ir, from_ir, ppr_to_ir};
 use piperine_lang::parse_and_elaborate;
+use piperine_solver::analysis::transient::TransientAnalysisOptions;
 use piperine_solver::circuit::CircuitInstance;
+use piperine_solver::solver::transient::TransientSolver;
 
 fn va_path(name: &str) -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -74,17 +76,14 @@ fn e2e_ppr_isrc_resistor_pair_compiles_circuit() {
 }
 
 #[test]
-fn e2e_ppr_isrc_parallel_r_dc_converges() {
+fn e2e_ppr_isrc_into_r_dc_converges() {
+    use piperine_solver::analog::NodeIdentifier;
     use piperine_solver::solver::dc::DcSolver;
     use piperine_solver::solver::Context;
-    // Three-terminal top: a current source + a resistor to ground.
-    // KCL at `top` node: idc = V(top) / R, so V(top) = idc * R = 1.0 V.
-    //
-    // We only validate that the IR → CircuitInstance path runs the
-    // solver's pre-stage without panicking; full numeric convergence is
-    // a property of the solver's Newton-Raphson and is exercised by
-    // `tests/osdi_integration.rs` (where OSDI-built fixtures are the
-    // canonical baseline).
+    // Current source + resistor to ground.  In Verilog-A, `I(p,n) <+ x`
+    // means current LEAVING p, so we wire the Isrc in the orientation
+    // gnd→top so that the current enters `top` and produces V(top) = +1V
+    // across the resistor.
     let src = "
         discipline Electrical { potential v : Real; flow i : Real; }
         mod Isrc (inout p: Electrical, inout n: Electrical) {
@@ -96,18 +95,83 @@ fn e2e_ppr_isrc_parallel_r_dc_converges() {
         }
         analog R { I(p, n) <+ V(p, n) / r; }
         mod Top (inout top: Electrical, inout gnd: Electrical) {
-            Isrc(top, gnd);
+            Isrc(gnd, top);
             R(top, gnd);
         }
     ";
     let elab = parse_and_elaborate(src).expect("elab");
     let ir = ppr_to_ir(&elab);
     let mut ci: CircuitInstance = from_ir(&ir, "Top").expect("from_ir top");
-    let _ = ci.all_devices().len();
     ci.init_digital();
-    // Construct the solver; whether `solve()` converges here depends on
-    // solver-side factors beyond the IR glue, so we don't assert on result.
-    let _ = DcSolver::new(&mut ci, Context::default());
+    let mut solver = DcSolver::new(&mut ci, Context::default()).expect("dc solver");
+    let result = solver.solve().expect("dc solve");
+    // Gnd voltage is implicitly 0 (Gnd is the MNA reference).
+    let v_gnd = result.get_node(&NodeIdentifier::Gnd);
+    assert!(v_gnd.is_none() || v_gnd == Some(0.0),
+            "V(gnd) should be None or 0.0, got {v_gnd:?}");
+    // The non-ground node is the anonymous `top`; V(top) = idc * R = 1V.
+    let mut found_top_v = None;
+    for (var, &v) in result.values() {
+        if let piperine_solver::analog::AnalogVariable::Node(id) = var.as_ref() {
+            if !matches!(id, NodeIdentifier::Gnd) && (v - 1.0).abs() < 1e-6 {
+                found_top_v = Some(v);
+                break;
+            }
+        }
+    }
+    assert!(
+        found_top_v.is_some(),
+        "expected V(top) ≈ 1.0V, got result.values() = {:#?}",
+        result.values()
+    );
+}
+
+#[test]
+fn e2e_ppr_rc_transient_runs() {
+    use piperine_solver::solver::Context;
+    // RC transient: capacitor charges from a current source, with a
+    // bleed resistor in parallel so the DC initial-condition has a
+    // unique operating point.  We don't assert on numeric values
+    // here because the in-house trapezoidal integration's accuracy
+    // under large `dt` relative to RC is a separate solver concern;
+    // canonical numeric baseline lives in
+    // piperine-solver/tests/cosim_integration.rs.
+    let src = "
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod Isrc (inout p: Electrical, inout n: Electrical) {
+            param idc : Real = 1.0e-3;
+        }
+        analog Isrc { I(p, n) <+ idc; }
+        mod C (inout p: Electrical, inout n: Electrical) {
+            param c : Real = 1.0e-9;
+        }
+        analog C { I(p, n) <+ c * ddt(V(p, n)); }
+        mod R (inout p: Electrical, inout n: Electrical) {
+            param r : Real = 1.0e3;
+        }
+        analog R { I(p, n) <+ V(p, n) / r; }
+        mod Top (inout top: Electrical, inout gnd: Electrical) {
+            Isrc(gnd, top);
+            C(top, gnd);
+            R(top, gnd);
+        }
+    ";
+    let elab = parse_and_elaborate(src).expect("elab");
+    let ir = ppr_to_ir(&elab);
+    let mut ci: CircuitInstance = from_ir(&ir, "Top").expect("from_ir top");
+    ci.init_digital();
+    let opts = TransientAnalysisOptions {
+        stop_time: 1.0e-6.into(),
+        dt: 1.0e-9.into(),
+        adaptive: false,
+        dt_min: 1.0e-15,
+        dt_max: 1.0e-8,
+    };
+    let mut solver = TransientSolver::new(&mut ci, opts, Context::default())
+        .expect("transient solver");
+    let result = solver.solve().expect("transient solve");
+    // At least one step produced.
+    assert!(result.len() > 0, "transient produced no steps");
 }
 
 // Suppress unused import warning when only `Context` is referenced.

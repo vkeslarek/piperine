@@ -4,178 +4,108 @@ This file briefs AI coding agents on the Piperine codebase. Read it before makin
 
 ## What Piperine is
 
-A simulator frontend language: `.ppr` files describe analog circuits using `extern module` instances and drive simulation from `initial` blocks (SystemVerilog procedural). The backend is ngspice, connected via IPC. Verilog-A device models can be compiled to OSDI and loaded at runtime.
+A hardware-description language and simulator for analog and mixed-signal circuits.
+It has two frontends that lower to a single intermediate representation (IR); the IR
+in turn compiles (via Cranelift JIT + a tree-walking digital interpreter) into the
+solver's `Device` trait:
+
+```
+   .va / .vams    ──►  piperine-ams    ──►      ┌──────────────────┐
+   (Verilog-A/AMS)  ◄─►   frontend     ◄─►      │  piperine-codegen │
+                                                │   (IR + lowering)  │
+   .phdl / .ppr    ──►  piperine-lang  ──►      └────────┬─────────┘
+   (PHDL / .ppr)     ◄─►   frontend     ◄─►               │
+                                                            ▼
+                                                  Vec<Box<dyn Device>>
+                                                            │
+                                                  ┌─────────┴─────────┐
+                                                  ▼                   ▼
+                                       ┌──────────────────┐  ┌──────────────────────┐
+                                       │  piperine-solver   │  │  piperine-solver OSDI │
+                                       │  (Newton-Raphson,  │  │  (.osdi shared libs,  │
+                                       │   trapezoidal,     │  │   optional / future)  │
+                                       │   mixed-signal)     │  │                         │
+                                       └──────────────────┘  └──────────────────────┘
+```
+
+The solver does **not** depend on the codegen — the IR is the contract they share.
 
 ## Build and verify
 
 Always build and run tests before declaring work done:
 
 ```sh
-cargo build -p piperine-worker   # rebuild worker first
-cargo build                       # build all
-cargo test                        # must pass: 11 tests
+cargo build                  # build the workspace
+cargo test                   # ~257 tests; must pass.
 ```
 
-If tests fail with "unexpected event" errors, the worker binary is stale — rebuild it.
+The current baseline is captured in `tests-baseline.md`.
 
-## Codebase map
+## Workspace map
 
 ```
-src/main.rs                              Entry point: parse → elaborate → run
-crates/piperine-parser/src/
-  ast/item.rs                            AST types: Module, ExternModule, Paramset, Instance, ExternParameter
-  grammar/item.rs                        Parser: module, extern module, paramset, instance
-  grammar/expr.rs                        Expression parser
-crates/piperine-circuit/src/
-  hardware.rs                            HardwareDefinition + HardwareInstance traits; ParameterDefinition
-  elaboration.rs                         elaborate() → spice_lines; resolve_ref_params()
-  paramset.rs                            Paramset expansion
-crates/piperine-ngspice/src/
-  hardware.rs                            All ~50 ngspice device implementations
-  lib.rs                                 NgspicePlugin: register_hardware(), register_tasks()
-  tasks.rs                               $op, $tran, $voltage, $current system tasks
-  backend.rs                             NgspiceBackend: IPC to worker
-  ppr/ngspice.ppr                        Bundled extern module declarations
-crates/piperine-interpreter/src/
-  interpreter.rs                         Procedural interpreter
-  stdlib.rs                              $display, $fatal, $run_error system tasks
-crates/piperine-coordinator/src/
-  pool.rs                                ProcessPool: spawn/manage worker subprocesses
-crates/piperine-worker/src/main.rs       Worker process: wraps libngspice
-crates/piperine-openvaf/src/lib.rs       OpenVAF compiler wrapper
-crates/piperine-common/src/lib.rs        IPC message types
+crates/
+├── piperine-ams/           Verilog-A/AMS frontend
+│   ├── src/{lexer,parser,preprocessor,grammar,ast,model,fmt}.rs
+│   ├── headers/{constants,disciplines}.vams
+│   └── tests/{fixtures,fixtures_fmt,fixtures_ppr}/   ← test corpus (frozen)
+├── piperine-lang/          PHDL frontend
+│   ├── src/{parse,elab,resolve,stdlib}/
+│   └── tests/examples/      PHDL reference files (→ IR regression)
+├── piperine-codegen/       IR central + lowering to Device
+│   ├── src/ir.rs            IrProgram, IrExpr, IrStmt, IrEventKind, …
+│   ├── src/from_ams.rs      ams_to_ir(...)
+│   ├── src/from_ppr.rs      ppr_to_ir(...)
+│   ├── src/from_ir.rs       from_ir(IrProgram, top) → CircuitInstance
+│   ├── src/ir_analog_to_device.rs   ir_analog_to_device(IrProgram, module) → JitAnalogDevice
+│   ├── src/ir_digital_to_interp.rs   ir_digital_to_interp(IrProgram, module) → DigitalInterpreter
+│   ├── src/codegen/         Cranelift JIT + autodiff + expr emitter (was in piperine-lang)
+│   ├── src/phdl_device.rs   PhdlDevice wraps Device for mixed-signal
+│   └── tests/               IR unit + API pinning + E2E solver tests
+├── piperine-solver/         Newton-Raphson, AC/DC/Tran/Noise/TF, OSDI loader
+│   ├── src/{analog,digital,osdi}/   + solver/, math/, topology.rs
+│   └── tests/{osdi_integration, cosim_integration, mixed_signal_tests, digital_topology_tests}.rs
+│   └── tests/va/            canonical Verilog-A fixtures (resistor, cap, vsource, …)
+├── piperine-cli/            clap-based subcommands (`check`, `build`, `run`, …)
+├── piperine-project/        Piperine.toml reader
+└── tools/OpenVAF-Reloaded/  external submodule (used only for OSDI tests)
 ```
 
-## Core traits
+## Translation pipeline (TDD-anchored)
 
-### `HardwareDefinition` (piperine-circuit)
+| Step | Function | Test file |
+|------|----------|-----------|
+| AMS → IR | `ams_to_ir(doc)` | `tests/ams_ir_test.rs` (54) |
+| PPR → IR | `ppr_to_ir(prog)` | `tests/ppr_ir_test.rs` (23) |
+| IR → analog Device | `ir_analog_to_device(prog, name)` | `tests/ir_analog_to_device_tests.rs` |
+| IR → digital interpreter | `ir_digital_to_interp(prog, name)` | `tests/ir_digital_to_interp_tests.rs` |
+| IR → CircuitInstance | `from_ir(prog, top)` | `tests/from_ir_tests.rs` |
+| AMS E2E | compile fixtures, drive solver | `tests/ams_ir_e2e_tests.rs` |
+| PPR + AMS E2E | IR-built CircuitInstance → DcSolver | `tests/codegen_e2e_tests.rs` |
 
-```rust
-trait HardwareDefinition {
-    fn name(&self) -> &str;                    // module name used in .ppr
-    fn ports(&self) -> &[PortDefinition];      // return &[] for ngspice devices
-    fn parameters(&self) -> &[ParameterDefinition]; // return &[] for ngspice devices
-    fn instantiate(...) -> Result<Box<dyn HardwareInstance>, ElaborationError>;
-    fn spice_model_type(&self) -> Option<&'static str> { None }   // "NMOS", "D", etc.
-    fn spice_instance_prefix(&self) -> Option<char> { None }      // 'L' for inductors
-}
-```
+## Conventions
 
-### `HardwareInstance` (piperine-circuit)
+- **Panics:**  never `unwrap()`/`expect()` on user input paths; return `Result<String, ...>`.
+- **Files in `tests/fixtures/`, `tests/fixtures_fmt/`, `tests/fixtures_ppr/`, `headers/`**:  do not edit; they are frozen test corpora.
+- **Dependency direction:** `piperine-solver` does **not** depend on `piperine-codegen`.  The codegen depends on the solver (`Device`, `CircuitInstance`) because it lowers IR into it.  Breaking the arrow is a regression — `cargo metadata | grep -E '(name|path)'` if in doubt.
+- **Numeric conventions:**  analog values are `f64`; digital is `LogicValue`; mixed-signal nets are anonymous `usize` indices.
+- **Comments:** keep module-level `//!` docblocks updated when adding a new entry point; the test files in `piperine-codegen/tests/` describe the API surface via passing tests.
 
-```rust
-trait HardwareInstance {
-    fn instance_name(&self) -> &str;
-    fn spice_lines(&self) -> Vec<String>;      // SPICE element line(s)
-}
-```
+## Adding a new Verilog-A / PHDL device
 
-## Naming rules (critical — do not deviate)
+1. Write a test in `crates/piperine-codegen/tests/codegen_e2e_tests.rs` that exercises the new device end-to-end through `from_ir` → DcSolver.
+2. Translate the device's spec to IR via the `ams_to_ir` path (or `ppr_to_ir` if writing the PHDL form).  Use `ir_analog_to_device` / `ir_digital_to_interp` to lower.
+3. If the lowering fails (uncommon constructs), extend `ir_expr_to_phdl` / `ir_stmt_to_phdl` in `crates/piperine-codegen/src/ir_analog_to_device.rs` and `ir_digital_to_interp.rs`.
 
-| Thing | Convention | Example |
-|-------|-----------|---------|
-| Module name in `.ppr` | bare lowercase | `res`, `cap`, `nmos`, `jfet_n` |
-| Rust struct | `Spice` + PascalCase | `SpiceResistor`, `SpiceNmos`, `SpiceJfetN` |
-| `.name()` return value | same as module name | `"res"`, `"nmos"` |
+## Testing gotchas
 
-No `spice_` prefix in module names. The prefix was removed — do not re-add it.
-
-## Adding a new ngspice device
-
-Follow this exact pattern:
-
-**Step 1 — `ngspice.ppr`**:
-```verilog
-extern module mydev(
-    inout p, inout n;
-    parameter string model,
-    parameter real value = 1.0
-);
-```
-
-**Step 2 — `hardware.rs`**:
-```rust
-#[derive(Debug)]
-pub struct SpiceMydev;
-impl HardwareDefinition for SpiceMydev {
-    fn name(&self) -> &str { "mydev" }
-    fn ports(&self) -> &[PortDefinition] { &[] }
-    fn parameters(&self) -> &[ParameterDefinition] { &[] }
-    fn instantiate(&self, instance_name: &str, parameters: &ParameterMap,
-                   connections: &ConnectionMap, _resolver: &dyn NetResolver)
-        -> Result<Box<dyn HardwareInstance>, ElaborationError>
-    {
-        let p = require_net(connections, "p", instance_name)?.to_string();
-        let n = require_net(connections, "n", instance_name)?.to_string();
-        let model = require_string_parameter(parameters, "model", instance_name)?;
-        let value = get_parameter_or(parameters, "value", 1.0);
-        Ok(Box::new(SpiceMydevInstance { name: instance_name.to_string(), p, n, model, value }))
-    }
-}
-#[derive(Debug)]
-struct SpiceMydevInstance { name: String, p: String, n: String, model: String, value: f64 }
-impl HardwareInstance for SpiceMydevInstance {
-    fn instance_name(&self) -> &str { &self.name }
-    fn spice_lines(&self) -> Vec<String> {
-        let mut s = format!("{} {} {} {}", spice_name('X', &self.name), self.p, self.n, self.model);
-        if self.value != 1.0 { s.push_str(&format!(" VALUE={}", self.value)); }
-        vec![s]
-    }
-}
-```
-
-**Step 3 — `lib.rs`**:
-```rust
-registry.register(Box::new(SpiceMydev));
-```
-
-## ExternParameterKind variants
-
-```rust
-enum ExternParameterKind {
-    Typed(Type),          // parameter real x, parameter string s, parameter integer n
-    Expr,                 // parameter expr e  — raw AST (B-source behavioral expressions)
-    Ref,                  // parameter ref l1  — resolves to sibling instance SPICE name
-}
-```
-
-`Expr` and `Ref` are advanced features. Most devices use `Typed`.
-
-## `mutual` inductor special case
-
-`mutual` uses `parameter string inductor1, inductor2` — the user passes inductor instance names as strings. It does NOT use `parameter ref`. The SPICE line format is:
-```
-K<name> <inductor1> <inductor2> [coupling_factor]
-```
-
-## Parameter helpers (in `hardware.rs`)
-
-```rust
-require_net(connections, "p", instance_name)?         // required port
-require_string_parameter(parameters, "model", ...)    // required string param
-require_parameter(parameters, "r", ...)               // required real param
-get_parameter_or(parameters, "tc1", 0.0)              // optional with default
-get_string_parameter_or(parameters, "model", "")      // optional string
-```
-
-## Ground node
-
-The elaborator converts net name `gnd` → SPICE node `"0"`. Device code never needs to handle this.
-
-## `paramset` elaboration
-
-```verilog
-paramset nmos_svt nmos;
-    .model("NMOS_SVT"), .w(1e-6), .l(180e-9);
-endparamset
-```
-
-Elaborator emits `.model NMOS_SVT NMOS ...` + uses preset params for all instances of `nmos_svt`. Devices that have a `.model` line need `spice_model_type()` to return the SPICE model keyword.
+- After touching codegen, **always rerun `cargo test -p piperine-codegen`** — many crates import its API and a regression here cascades.
+- If tests fail with `expected `&Path`, found `PathBuf`, add `&` before `Path::new(...)` — the solver's API uses `&Path`.
+- For OSDI tests (`cargo test -p piperine-solver`), `OPENVAF_BIN` must be in the PATH.
 
 ## Documentation locations
 
-- Language syntax: `docs/lang/`
-- ngspice component reference: `docs/ngspice/`
-- OpenVAF device models: `docs/openvaf/`
-- Internal development notes: `docs/development/`
-- Implementation recipe for devices: `docs/development/SPICE_COMPONENTS_IMPL.md`
+- Language spec: `docs/piperine-hdl-spec.md`
+- BNF AMS: `docs/BNF-AMS.md`
+- IR system: `crates/piperine-codegen/IR-SYSTEM.md`
+- Baseline test counts: `tests-baseline.md`

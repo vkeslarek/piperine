@@ -183,12 +183,14 @@ impl CompileInputs {
 
     pub fn from_contributions(
         module_name: &str,
-        num_terminals: usize,
+        port_names: Vec<String>,
         param_names: Vec<String>,
         contributions: Vec<Contribution>,
     ) -> Self {
-        let port_index: HashMap<String, usize> = (0..num_terminals)
-            .map(|i| (format!("port{}", i), i))
+        let num_terminals = port_names.len();
+        let port_index: HashMap<String, usize> = port_names.iter()
+            .enumerate()
+            .map(|(i, n)| (n.clone(), i))
             .collect();
         let param_index: HashMap<String, usize> = param_names.iter()
             .enumerate()
@@ -281,13 +283,13 @@ pub fn compile_analog_module(
 /// `[Contribution; N]` and hands them off here.
 pub fn compile_analog_module_ir(
     module_name: &str,
-    num_terminals: usize,
+    port_names: Vec<String>,
     param_names: Vec<String>,
     contributions: Vec<Contribution>,
 ) -> Result<JitAnalogDevice, CodegenError> {
     let inputs = CompileInputs::from_contributions(
         module_name,
-        num_terminals,
+        port_names,
         param_names,
         contributions,
     );
