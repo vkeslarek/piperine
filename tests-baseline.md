@@ -51,9 +51,17 @@ Phase 0 grand total: **229 passing**.
 
 250 passing.
 
+## After phase 2.5 (AMS E2E boilerplate)
+
+257 passing.
+
 ## After phase 2.7 (numeric DC validation + transient)
 
-**258 passing** (current).
+258 passing.
+
+## After phase 3 (CLI)
+
+**260 passing** (current — added 2 CLI tests for `check` command).
 
 ## Breakdown at current state
 
@@ -67,5 +75,6 @@ Phase 0 grand total: **229 passing**.
 | `tests/from_ir_tests.rs` | 3 | full IR → CircuitInstance glue |
 | `tests/codegen_e2e_tests.rs` | 8 | PPR end-to-end solver runs (DC numeric, transient) |
 | `tests/ams_ir_e2e_tests.rs` | 7 | AMS boilerplate (resistor/capacitor/vsource/isource/vramp/vstep/noisy) |
+| `crates/piperine-cli/tests/cli_check_tests.rs` | 2 | CLI `check` against AMS and PPR |
 
-Any drop below 258 means a regression.
+Any drop below 260 means a regression.

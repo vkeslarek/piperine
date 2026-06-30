@@ -929,3 +929,29 @@ The codegen needs to know which array to index, hence the distinction.
 ### Why inlining?
 
 Inlining local vars produces compact IR and enables the codegen to generate efficient straight-line code without local variable management. The downside is code duplication if a var is used many times, but analog blocks are typically small. The lowering retains `VarDecl` + `Var` when inlining is unsafe (mutation, loops).
+
+## 16. From IR to solver (current state)
+
+The IR → Device path lives in `crates/piperine-codegen/src/`:
+
+| Entry point | Returns |
+|------------|---------|
+| `ams_to_ir(doc)` | `IrProgram` from `piperine_ams::Document` |
+| `ppr_to_ir(prog)` | `IrProgram` from `piperine_lang::elab::ElabProgram` |
+| `ir_analog_to_device(prog, module_name)` | `JitAnalogDevice` (Cranelift) |
+| `ir_digital_to_interp(prog, module_name)` | `DigitalInterpreter` |
+| `from_ir(prog, top)` | `CircuitInstance` ready for the solver |
+
+### Limitations (current)
+
+- The `IrExpr` → PHDL-AST translation inside `ir_analog_to_device.rs` is
+  intentionally narrow — it covers `Real/Int/Bool/Param/Var/Call`,
+  `Binary` (add/sub/mul/div/rem), `Unary`, and `BranchAccess`.  Anything
+  else falls back to `Real(0.0)`, so the test suite targets the
+  boilerplate VA fixtures and simple PHDL devices.
+- `from_ir` assumes positional port connections; named-port support is
+  in place but the layout for AMS has minor edge cases.
+- OSDI-fed resistor fixtures (`piperine-solver/tests/va/*.va`) are
+  the canonical numeric baseline; the in-house IR-built resistors
+  exercise the same Newton-Raphson path but the IR → Device lowering
+  may produce slightly different stamps.
