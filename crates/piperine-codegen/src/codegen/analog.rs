@@ -74,10 +74,10 @@ fn libm_funs() -> Vec<(&'static str, usize, *const u8)> {
 // ── Contribution extracted from behavior body ─────────────────────────────────
 
 /// A single `I(plus, minus) <+ expr` contribution extracted from the behavior.
-struct Contribution {
-    plus:  String,   // port name of the + terminal
-    minus: String,   // port name of the − terminal
-    expr:  Expr,     // current expression
+pub struct Contribution {
+    pub plus:  String,   // port name of the + terminal
+    pub minus: String,   // port name of the − terminal
+    pub expr:  Expr,     // current expression
 }
 
 /// Extract all current contributions from a flat list of behavior statements.
@@ -123,58 +123,102 @@ fn extract_from_stmt(stmt: &ElabBehaviorStmt, out: &mut Vec<Contribution>) {
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
-/// Compile an analog module from an [`ElabProgram`] into a JIT device.
-///
-/// `module_name` must match both:
-/// - A key in `prog.modules` (for port/param declarations)
-/// - A name in `prog.behaviors` with `kind == BehaviorKind::Analog`
-pub fn compile_analog_module(
-    prog: &ElabProgram,
-    module_name: &str,
-) -> Result<JitAnalogDevice, CodegenError> {
-    use piperine_lang::parse::ast::BehaviorKind;
+/// Inputs that the Cranelift core needs.
+pub struct CompileInputs {
+    pub name: String,
+    pub port_index: HashMap<String, usize>,
+    pub num_terminals: usize,
+    pub param_names: Vec<String>,
+    pub param_index: HashMap<String, usize>,
+    pub num_params: usize,
+    pub contributions: Vec<Contribution>,
+    pub branches: Vec<(String, String)>,
+}
 
-    // ── Locate module and behavior ────────────────────────────────────────────
-    let elab_mod = prog.modules.get(module_name).ok_or_else(|| {
-        CodegenError::ModuleNotFound(module_name.to_string())
-    })?;
+impl CompileInputs {
+    pub fn from_elab(prog: &ElabProgram, module_name: &str) -> Result<Self, CodegenError> {
+        use piperine_lang::parse::ast::BehaviorKind;
 
-    let behavior = prog.behaviors.iter()
-        .find(|b| b.name == module_name && b.kind == BehaviorKind::Analog)
-        .ok_or_else(|| CodegenError::BehaviorNotFound(module_name.to_string()))?;
+        let elab_mod = prog.modules.get(module_name).ok_or_else(|| {
+            CodegenError::ModuleNotFound(module_name.to_string())
+        })?;
+        let behavior = prog.behaviors.iter()
+            .find(|b| b.name == module_name && b.kind == BehaviorKind::Analog)
+            .ok_or_else(|| CodegenError::BehaviorNotFound(module_name.to_string()))?;
 
-    // ── Port index map (name → index, 0-based) ────────────────────────────────
-    let port_index: HashMap<String, usize> = elab_mod.ports.iter()
-        .enumerate()
-        .map(|(i, p)| (p.name.clone(), i))
-        .collect();
-    let num_terminals = elab_mod.ports.len();
+        let port_index: HashMap<String, usize> = elab_mod.ports.iter()
+            .enumerate()
+            .map(|(i, p)| (p.name.clone(), i))
+            .collect();
+        let param_names: Vec<String> = elab_mod.params.iter().map(|p| p.name.clone()).collect();
+        let param_index: HashMap<String, usize> = param_names.iter()
+            .enumerate()
+            .map(|(i, n)| (n.clone(), i))
+            .collect();
 
-    // ── Param index map (name → index) ────────────────────────────────────────
-    let param_names: Vec<String> = elab_mod.params.iter().map(|p| p.name.clone()).collect();
-    let param_index: HashMap<String, usize> = param_names.iter()
-        .enumerate()
-        .map(|(i, n)| (n.clone(), i))
-        .collect();
-    let num_params = param_names.len();
+        let contributions = extract_contributions(&behavior.body);
 
-    // ── Extract contributions ─────────────────────────────────────────────────
-    let contributions = extract_contributions(&behavior.body);
+        let mut branches: Vec<(String, String)> = Vec::new();
+        for c in &contributions {
+            collect_branches(&c.expr, &mut branches);
+        }
+        for c in &contributions {
+            let pair = (c.plus.clone(), c.minus.clone());
+            if !branches.contains(&pair) {
+                branches.push(pair);
+            }
+        }
 
-    // ── Collect unique branches (for Jacobian differentiation) ────────────────
-    let mut branches: Vec<(String, String)> = Vec::new();
-    for c in &contributions {
-        collect_branches(&c.expr, &mut branches);
+        Ok(Self {
+            name: module_name.to_string(),
+            num_terminals: elab_mod.ports.len(),
+            port_index,
+            param_names,
+            param_index,
+            num_params: elab_mod.params.len(),
+            contributions,
+            branches,
+        })
     }
-    // Also include the I(p,n) terminal pairs themselves as branches
-    for c in &contributions {
-        let pair = (c.plus.clone(), c.minus.clone());
-        if !branches.contains(&pair) {
-            branches.push(pair);
+
+    pub fn from_contributions(
+        module_name: &str,
+        num_terminals: usize,
+        param_names: Vec<String>,
+        contributions: Vec<Contribution>,
+    ) -> Self {
+        let port_index: HashMap<String, usize> = (0..num_terminals)
+            .map(|i| (format!("port{}", i), i))
+            .collect();
+        let param_index: HashMap<String, usize> = param_names.iter()
+            .enumerate()
+            .map(|(i, n)| (n.clone(), i))
+            .collect();
+        let mut branches: Vec<(String, String)> = Vec::new();
+        for c in &contributions {
+            collect_branches(&c.expr, &mut branches);
+        }
+        for c in &contributions {
+            let pair = (c.plus.clone(), c.minus.clone());
+            if !branches.contains(&pair) {
+                branches.push(pair);
+            }
+        }
+        Self {
+            name: module_name.to_string(),
+            port_index,
+            num_terminals,
+            num_params: param_names.len(),
+            param_names,
+            param_index,
+            contributions,
+            branches,
         }
     }
+}
 
-    // ── Build JIT module ──────────────────────────────────────────────────────
+/// Shared Cranelift core: compiles the inputs into a `JitAnalogDevice`.
+pub fn compile(inputs: &CompileInputs) -> Result<JitAnalogDevice, CodegenError> {
     let mut jit_builder = JITBuilder::new(cranelift_module::default_libcall_names())
         .map_err(|e| CodegenError::Module(e.to_string()))?;
     for (name, _arity, ptr) in libm_funs() {
@@ -186,14 +230,14 @@ pub fn compile_analog_module(
 
     let residual_id = compile_residual(
         &mut module, &libm_ids,
-        &contributions, &port_index, &param_index, &branches,
-        num_terminals, num_params,
+        &inputs.contributions, &inputs.port_index, &inputs.param_index, &inputs.branches,
+        inputs.num_terminals, inputs.num_params,
     )?;
 
     let jacobian_id = compile_jacobian(
         &mut module, &libm_ids,
-        &contributions, &port_index, &param_index, &branches,
-        num_terminals, num_params,
+        &inputs.contributions, &inputs.port_index, &inputs.param_index, &inputs.branches,
+        inputs.num_terminals, inputs.num_params,
     )?;
 
     module.finalize_definitions()
@@ -208,14 +252,46 @@ pub fn compile_analog_module(
         unsafe { std::mem::transmute(jacobian_ptr) };
 
     Ok(JitAnalogDevice {
-        name: module_name.to_string(),
-        param_names,
-        num_terminals,
-        num_params,
+        name: inputs.name.clone(),
+        num_terminals: inputs.num_terminals,
+        num_params: inputs.num_params,
+        param_names: inputs.param_names.clone(),
         residual,
         jacobian,
         _module: module,
     })
+}
+
+/// Compile an analog module from an [`ElabProgram`] into a JIT device.
+///
+/// `module_name` must match both:
+/// - A key in `prog.modules` (for port/param declarations)
+/// - A name in `prog.behaviors` with `kind == BehaviorKind::Analog`
+pub fn compile_analog_module(
+    prog: &ElabProgram,
+    module_name: &str,
+) -> Result<JitAnalogDevice, CodegenError> {
+    let inputs = CompileInputs::from_elab(prog, module_name)?;
+    compile(&inputs)
+}
+
+/// Lower a pre-built list of contributions into a `JitAnalogDevice`.
+///
+/// Used by the IR front door:  `from_ir` translates IR contributions into
+/// `[Contribution; N]` and hands them off here.
+pub fn compile_analog_module_ir(
+    module_name: &str,
+    num_terminals: usize,
+    param_names: Vec<String>,
+    contributions: Vec<Contribution>,
+) -> Result<JitAnalogDevice, CodegenError> {
+    let inputs = CompileInputs::from_contributions(
+        module_name,
+        num_terminals,
+        param_names,
+        contributions,
+    );
+    compile(&inputs)
 }
 
 // ── libm import helpers ───────────────────────────────────────────────────────

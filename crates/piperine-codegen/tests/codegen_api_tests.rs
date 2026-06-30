@@ -74,18 +74,19 @@ fn ppr_ir_produces_module_index() {
     assert!(ir.modules.iter().any(|m| m.name == "R"), "missing R module");
 }
 
-// The next four tests document the **future** API.  They are `#[ignore]` until
-// the matching sub-step is implemented (Phase 1.4 / 1.5 / 1.6).  Keeping them
-// here means `git grep` finds the intent, and they light up once each step
-// closes.
+// Future tests, marked `#[ignore]` until each phase step is implemented.
 
 #[test]
-#[ignore = "Phase 1.4 — `compile_analog_module(&IrProgram, ...)` not yet wired"]
-fn ir_analog_compile_resistor() {}
+fn ir_analog_compile_resistor() {
+    let ir = ams_to_ir(&parse_va("resistor.va"));
+    let _dev = piperine_codegen::ir_analog_to_device(&ir, "resistor_va").expect("resistor");
+}
 
 #[test]
-#[ignore = "Phase 1.4 — `compile_analog_module(&IrProgram, ...)` not yet wired"]
-fn ir_analog_compile_capacitor() {}
+fn ir_analog_compile_capacitor() {
+    let ir = ams_to_ir(&parse_va("capacitor.va"));
+    let _dev = piperine_codegen::ir_analog_to_device(&ir, "capacitor_va").expect("capacitor");
+}
 
 #[test]
 #[ignore = "Phase 1.5 — `compile_digital_module(&IrProgram, ...)` not yet wired"]
