@@ -41,7 +41,7 @@ pub fn check_file(path: &Path) -> Result<CheckSummary, String> {
             let elab = piperine_lang::parse_and_elaborate(&body)
                 .map_err(|e| format!("parse/elab failed: {e}"))?;
             let module_names: Vec<String> =
-                elab.modules.keys().cloned().collect();
+                elab.modules().map(|m| m.name().to_string()).collect();
             println!("  PHDL modules: {}", module_names.len());
             for name in &module_names {
                 println!("    - {name}");

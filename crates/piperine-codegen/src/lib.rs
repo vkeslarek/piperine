@@ -17,7 +17,7 @@ pub use ir::*;
 
 pub use codegen::analog::compile_analog_module;
 pub use codegen::digital::{compile_digital_module, DigitalInterpreter, DigitalVal};
-pub use codegen::CodegenError;
+pub use codegen::{CodegenError, JitAnalogDevice, SimCtx};
 pub use ir_analog_to_device::ir_analog_to_device;
 pub use ir_digital_to_interp::ir_digital_to_interp;
 pub use phdl_device::PhdlDevice;

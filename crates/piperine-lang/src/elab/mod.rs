@@ -38,12 +38,11 @@ pub mod lower;
 pub mod validate;
 
 pub use ir::{
-    ElabBehavior, ElabBehaviorStmt, ElabConn, ElabError, ElabFn, ElabImpl, ElabInstance,
-    ElabMatchArm, ElabMod, ElabNetRef, ElabNetType, ElabParam, ElabPort, ElabProgram, ElabType,
-    ElabValueType, ElabWire,
+    Behavior, BehaviorStmt, Connection, Design, ElabError, Function, ImplBlock,
+    Instance, MatchArm, Module, NetRef, NetType, Param, Port, TypeRef,
+    ValueType, Wire,
 };
 pub use lower::Elaborator;
-
 use crate::parse::ast::SourceFile;
 use crate::resolve::Resolver;
 
@@ -53,7 +52,7 @@ use crate::resolve::Resolver;
 /// runs the full elaboration pipeline.  For project-level resolution (loading
 /// user files via `use foo::bar;`) use [`elaborate_with`] and supply a
 /// [`Resolver::with_root`].
-pub fn elaborate(source: SourceFile) -> Result<ElabProgram, ElabError> {
+pub fn elaborate(source: SourceFile) -> Result<Design, ElabError> {
     elaborate_with(source, &mut Resolver::new())
 }
 
@@ -68,7 +67,7 @@ pub fn elaborate(source: SourceFile) -> Result<ElabProgram, ElabError> {
 pub fn elaborate_with(
     source: SourceFile,
     resolver: &mut Resolver,
-) -> Result<ElabProgram, ElabError> {
+) -> Result<Design, ElabError> {
     // Prelude: always in scope, no explicit `use` required.
     let mut items = resolver.prelude_items();
 

@@ -864,7 +864,14 @@ fn lower_literal(lit: &Literal) -> IrExpr {
         Literal::SiRealNumber(s) => IrExpr::Real(parse_si(s)),
         Literal::StrLit(s) => IrExpr::String(s.trim_matches('"').to_string()),
         Literal::Inf => IrExpr::Real(f64::INFINITY),
-        Literal::SizedLit(s) => IrExpr::Int(parse_sized_lit(s)),
+        Literal::SizedLit(s) => IrExpr::Int(parse_sized_lit(s).unwrap_or_else(|e| {
+            // GAPS §A.11 — fail loud on 4-state digits. Today we'd panic;
+            // a proper Result-based propagate is tracked as a follow-up.
+            // Until then, propagating through `lower_expr` is a wider
+            // refactor; the panic gives users a clear error rather than
+            // the silent zero that used to ship.
+            panic!("ams_to_ir: {e}");
+        })),
     }
 }
 
@@ -1123,24 +1130,46 @@ fn parse_si(s: &str) -> f64 {
     mantissa.trim().parse::<f64>().unwrap_or(0.0) * scale
 }
 
-fn parse_sized_lit(s: &str) -> i64 {
+/// GAPS §A.11 — sized literals with `x`/`X`/`z`/`Z`/`?` digits used to
+/// silently become 0 (because `i64::from_str_radix` rejects those
+/// characters). This helper now returns an error so the caller can
+/// surface a clear "4-state literal" message instead of silently
+/// producing 0.
+fn parse_sized_lit(s: &str) -> Result<i64, String> {
     if let Some(pos) = s.find('\'') {
         let rest = &s[pos+1..];
+        // Detect 4-state digits before passing to from_str_radix.
+        if has_4state_digit(rest) {
+            return Err(format!(
+                "4-state sized literal `{s}` is not yet supported in IR (GAPS §A.11); \
+                 the digits x/X/z/Z/? in a sized literal must be expanded to a \
+                 per-bit `Quad` representation first (see AGENTS.md `IrExpr::Quad`)"
+            ));
+        }
         if let Some(hex) = rest.strip_prefix('h').or_else(|| rest.strip_prefix('H')) {
-            return i64::from_str_radix(hex, 16).unwrap_or(0);
+            return i64::from_str_radix(hex, 16)
+                .map_err(|e| format!("invalid hex literal `{s}`: {e}"));
         }
         if let Some(bin) = rest.strip_prefix('b').or_else(|| rest.strip_prefix('B')) {
-            return i64::from_str_radix(bin, 2).unwrap_or(0);
+            return i64::from_str_radix(bin, 2)
+                .map_err(|e| format!("invalid binary literal `{s}`: {e}"));
         }
         if let Some(oct) = rest.strip_prefix('o').or_else(|| rest.strip_prefix('O')) {
-            return i64::from_str_radix(oct, 8).unwrap_or(0);
+            return i64::from_str_radix(oct, 8)
+                .map_err(|e| format!("invalid octal literal `{s}`: {e}"));
         }
         if let Some(dec) = rest.strip_prefix('d').or_else(|| rest.strip_prefix('D')) {
-            return dec.parse::<i64>().unwrap_or(0);
+            return dec.parse::<i64>()
+                .map_err(|e| format!("invalid decimal literal `{s}`: {e}"));
         }
-        return rest.parse::<i64>().unwrap_or(0);
+        return rest.parse::<i64>()
+            .map_err(|e| format!("invalid literal `{s}`: {e}"));
     }
-    s.parse::<i64>().unwrap_or(0)
+    s.parse::<i64>().map_err(|e| format!("invalid literal `{s}`: {e}"))
+}
+
+fn has_4state_digit(s: &str) -> bool {
+    s.chars().any(|c| matches!(c, 'x' | 'X' | 'z' | 'Z' | '?'))
 }
 
 // ─── Phi-node env merge ───────────────────────────────────────────────────────
@@ -1266,7 +1295,13 @@ fn eval_const_int_expr(expr: &Expr) -> Option<i64> {
         Expr::Literal(Literal::IntNumber(s)) => s.parse::<i64>().ok(),
         Expr::Literal(Literal::SiRealNumber(s)) => Some(parse_si(s) as i64),
         Expr::Literal(Literal::StdRealNumber(s)) => s.parse::<f64>().ok().map(|f| f as i64),
-        Expr::Literal(Literal::SizedLit(s)) => Some(parse_sized_lit(s)),
+        Expr::Literal(Literal::SizedLit(s)) => match parse_sized_lit(s) {
+            Ok(v) => Some(v),
+            // 4-state literals (x/z/?) don't have an integer interpretation;
+            // skip them here. The main `ams_to_ir` lowering already
+            // errors loudly on the first occurrence (GAPS §A.11).
+            Err(_) => None,
+        },
         Expr::Paren(inner) => eval_const_int_expr(inner),
         _ => None,
     }

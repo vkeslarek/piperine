@@ -3,6 +3,13 @@
 // (e.g. Number, Eq, Ord) may receive additional compiler treatment, but the
 // canonical definition lives here so user code can read, extend, and impl them.
 
+// GAPS §C.3 — `Type` and `Net` are the root capabilities. `Type` is satisfied
+// by any value type (Real, Integer, Boolean, …); `Net` by any net type
+// (discipline or net-capable bundle). They are empty marker capabilities;
+// the elaborator treats them specially in the bound-validation pass.
+capability Type { }
+capability Net  { }
+
 capability Add    { fn add(self, o: Self) -> Self; }
 capability Sub    { fn sub(self, o: Self) -> Self; }
 capability Mul    { fn mul(self, o: Self) -> Self; }

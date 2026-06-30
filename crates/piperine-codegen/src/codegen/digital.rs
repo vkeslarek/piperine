@@ -8,7 +8,7 @@
 //! # Usage
 //!
 //! 1. Call [`compile_digital_module`] to build a [`DigitalInterpreter`] from
-//!    an [`ElabProgram`].  The interpreter knows which ports are
+//!    an [`Design`].  The interpreter knows which ports are
 //!    inputs/outputs but not yet which [`DigitalNet`] indices they map to.
 //!
 //! 2. Call [`DigitalInterpreter::set_port_nets`] once the circuit builder has
@@ -25,7 +25,7 @@ use std::cmp::Reverse;
 use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
 
 use crate::codegen::CodegenError;
-use piperine_lang::elab::ir::{ElabBehavior, ElabBehaviorStmt, ElabProgram};
+use piperine_lang::elab::ir::{Behavior, BehaviorStmt, Design};
 use piperine_lang::parse::ast::{BehaviorKind, BindOp, BinaryOp, EventSpec, Expr, Literal, UnaryOp};
 
 // ─────────────────────────────── Value type ──────────────────────────────────
@@ -72,7 +72,7 @@ impl DigitalVal {
 pub struct DigitalInterpreter {
     /// Body of the `digital Foo { ... }` block (top-level stmts only; nested
     /// statements are walked recursively at eval time).
-    body: Vec<ElabBehaviorStmt>,
+    body: Vec<BehaviorStmt>,
 
     /// Port names whose DigitalNet indices are known (set by `set_port_nets`).
     port_net_map: HashMap<String, DigitalNet>,
@@ -106,7 +106,7 @@ pub struct DigitalInterpreter {
 
 impl DigitalInterpreter {
     pub fn new(
-        body: Vec<ElabBehaviorStmt>,
+        body: Vec<BehaviorStmt>,
         input_port_names: Vec<String>,
         output_port_names: Vec<String>,
         device_id: usize,
@@ -152,21 +152,21 @@ impl DigitalInterpreter {
         let body = std::mem::take(&mut self.body);
         for stmt in &body {
             match stmt {
-                ElabBehaviorStmt::VarDecl { name, default: Some(expr), .. } => {
+                BehaviorStmt::VarDecl { name, default: Some(expr), .. } => {
                     let val = self.eval_expr(expr, &[]);
                     self.state.insert(name.clone(), val);
                 }
-                ElabBehaviorStmt::VarDecl { name, default: None, ty } => {
-                    use piperine_lang::elab::ir::ElabValueType;
+                BehaviorStmt::VarDecl { name, default: None, ty } => {
+                    use piperine_lang::elab::ir::ValueType;
                     let val = match ty {
-                        ElabValueType::Real | ElabValueType::Complex => DigitalVal::Real(0.0),
-                        ElabValueType::Boolean => DigitalVal::Bool(false),
-                        ElabValueType::Integer => DigitalVal::Integer(0),
+                        ValueType::Real | ValueType::Complex => DigitalVal::Real(0.0),
+                        ValueType::Boolean => DigitalVal::Bool(false),
+                        ValueType::Integer => DigitalVal::Integer(0),
                         _ => DigitalVal::Natural(0),
                     };
                     self.state.insert(name.clone(), val);
                 }
-                ElabBehaviorStmt::Event { spec, guard, body: event_body } => {
+                BehaviorStmt::Event { spec, guard, body: event_body } => {
                     if spec_is_initial(spec) {
                         if let Some(g) = guard {
                             if !self.eval_expr(g, &[]).as_bool() { continue; }
@@ -193,7 +193,7 @@ impl DigitalInterpreter {
     ) {
         let body = std::mem::take(&mut self.body);
         for stmt in &body {
-            if let ElabBehaviorStmt::Event { spec, guard, body: event_body } = stmt {
+            if let BehaviorStmt::Event { spec, guard, body: event_body } = stmt {
                 if spec_is_initial(spec) { continue; }
                 if self.spec_fires(spec, nets) {
                     if let Some(g) = guard {
@@ -239,7 +239,7 @@ impl DigitalInterpreter {
 
     fn exec_stmts(
         &mut self,
-        stmts: &[ElabBehaviorStmt],
+        stmts: &[BehaviorStmt],
         t: f64,
         nets: &[LogicValue],
         queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
@@ -251,20 +251,20 @@ impl DigitalInterpreter {
 
     fn exec_one(
         &mut self,
-        stmt: &ElabBehaviorStmt,
+        stmt: &BehaviorStmt,
         t: f64,
         nets: &[LogicValue],
         queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
     ) {
         match stmt {
-            ElabBehaviorStmt::VarDecl { name, default, .. } => {
+            BehaviorStmt::VarDecl { name, default, .. } => {
                 if let Some(expr) = default {
                     let val = self.eval_expr(expr, nets);
                     self.state.insert(name.clone(), val);
                 }
             }
 
-            ElabBehaviorStmt::Bind { dest, op: BindOp::Force | BindOp::Assign, src } => {
+            BehaviorStmt::Bind { dest, op: BindOp::Force | BindOp::Assign, src } => {
                 let val = self.eval_expr(src, nets);
                 if let Some(name) = expr_ident_name(dest) {
                     if let Some(&dnet) = self.port_net_map.get(name) {
@@ -286,9 +286,9 @@ impl DigitalInterpreter {
                 }
             }
 
-            ElabBehaviorStmt::Bind { .. } => { /* Contrib/unknown — not valid in digital */ }
+            BehaviorStmt::Bind { .. } => { /* Contrib/unknown — not valid in digital */ }
 
-            ElabBehaviorStmt::If { cond, then_body, else_body } => {
+            BehaviorStmt::If { cond, then_body, else_body } => {
                 let tb = then_body.clone();
                 let eb = else_body.clone();
                 if self.eval_expr(cond, nets).as_bool() {
@@ -298,19 +298,19 @@ impl DigitalInterpreter {
                 }
             }
 
-            ElabBehaviorStmt::Match { expr, arms } => {
+            BehaviorStmt::Match { expr, arms } => {
                 let val = self.eval_expr(expr, nets);
                 let arms = arms.clone();
                 for arm in &arms {
-                    if pattern_matches(&arm.pat, &val) {
-                        let body = arm.body.clone();
+                    if pattern_matches(arm.pattern(), &val) {
+                        let body = arm.body().to_vec();
                         self.exec_stmts(&body, t, nets, queue);
                         break;
                     }
                 }
             }
 
-            ElabBehaviorStmt::Event { spec, guard, body: nested } => {
+            BehaviorStmt::Event { spec, guard, body: nested } => {
                 // Nested event blocks — fire immediately if spec fires now.
                 if !spec_is_initial(spec) && self.spec_fires(spec, nets) {
                     if let Some(g) = guard {
@@ -322,7 +322,11 @@ impl DigitalInterpreter {
                 }
             }
 
-            ElabBehaviorStmt::Diagnostic { .. } | ElabBehaviorStmt::Expr(_) => {}
+            BehaviorStmt::Diagnostic { .. }
+            | BehaviorStmt::Expr(_)
+            // GAPS §D.5 — fn-body returns are stripped before the
+            // interpreter runs (the inliner already inlined them).
+            | BehaviorStmt::Return(_) => {}
         }
     }
 
@@ -463,19 +467,19 @@ fn eval_unop(op: &UnaryOp, v: DigitalVal) -> DigitalVal {
 // ─────────────────────────────── Scan helpers ─────────────────────────────────
 
 /// Collect net names referenced as event spec arguments anywhere in `stmts`.
-fn scan_event_inputs(stmts: &[ElabBehaviorStmt], out: &mut Vec<String>) {
+fn scan_event_inputs(stmts: &[BehaviorStmt], out: &mut Vec<String>) {
     for stmt in stmts {
         match stmt {
-            ElabBehaviorStmt::Event { spec, body, .. } => {
+            BehaviorStmt::Event { spec, body, .. } => {
                 collect_spec_nets(spec, out);
                 scan_event_inputs(body, out);
             }
-            ElabBehaviorStmt::If { then_body, else_body, .. } => {
+            BehaviorStmt::If { then_body, else_body, .. } => {
                 scan_event_inputs(then_body, out);
                 if let Some(eb) = else_body { scan_event_inputs(eb, out); }
             }
-            ElabBehaviorStmt::Match { arms, .. } => {
-                for arm in arms { scan_event_inputs(&arm.body, out); }
+            BehaviorStmt::Match { arms, .. } => {
+                for arm in arms { scan_event_inputs(arm.body(), out); }
             }
             _ => {}
         }
@@ -495,21 +499,21 @@ fn collect_spec_nets(spec: &EventSpec, out: &mut Vec<String>) {
 }
 
 /// Collect net names that appear as assignment destinations anywhere in `stmts`.
-fn scan_output_names(stmts: &[ElabBehaviorStmt], out: &mut Vec<String>) {
+fn scan_output_names(stmts: &[BehaviorStmt], out: &mut Vec<String>) {
     for stmt in stmts {
         match stmt {
-            ElabBehaviorStmt::Bind { dest, op: BindOp::Force | BindOp::Assign, .. } => {
+            BehaviorStmt::Bind { dest, op: BindOp::Force | BindOp::Assign, .. } => {
                 if let Some(n) = expr_ident_name(dest) {
                     if !out.contains(&n.to_string()) { out.push(n.to_string()); }
                 }
             }
-            ElabBehaviorStmt::Event { body, .. } => { scan_output_names(body, out); }
-            ElabBehaviorStmt::If { then_body, else_body, .. } => {
+            BehaviorStmt::Event { body, .. } => { scan_output_names(body, out); }
+            BehaviorStmt::If { then_body, else_body, .. } => {
                 scan_output_names(then_body, out);
                 if let Some(eb) = else_body { scan_output_names(eb, out); }
             }
-            ElabBehaviorStmt::Match { arms, .. } => {
-                for arm in arms { scan_output_names(&arm.body, out); }
+            BehaviorStmt::Match { arms, .. } => {
+                for arm in arms { scan_output_names(arm.body(), out); }
             }
             _ => {}
         }
@@ -518,29 +522,29 @@ fn scan_output_names(stmts: &[ElabBehaviorStmt], out: &mut Vec<String>) {
 
 // ─────────────────────────────── Public entry point ──────────────────────────
 
-/// Build a [`DigitalInterpreter`] for `module_name` from an [`ElabProgram`].
+/// Build a [`DigitalInterpreter`] for `module_name` from an [`Design`].
 ///
 /// Returns [`CodegenError::BehaviorNotFound`] if the program has no `digital`
 /// block named `module_name`.
 pub fn compile_digital_module(
-    prog: &ElabProgram,
+    prog: &Design,
     module_name: &str,
     device_id: usize,
 ) -> Result<DigitalInterpreter, CodegenError> {
-    let behavior: &ElabBehavior = prog.behaviors.iter()
-        .find(|b| b.name == module_name && b.kind == BehaviorKind::Digital)
+    let behavior: &Behavior = prog.module(module_name)
+        .and_then(|m| m.behaviors().iter().find(|b| b.is_digital()))
         .ok_or_else(|| CodegenError::BehaviorNotFound(module_name.to_string()))?;
 
     let mut input_names: Vec<String> = Vec::new();
     let mut output_names: Vec<String> = Vec::new();
 
-    scan_event_inputs(&behavior.body, &mut input_names);
-    scan_output_names(&behavior.body, &mut output_names);
+    scan_event_inputs(behavior.body(), &mut input_names);
+    scan_output_names(behavior.body(), &mut output_names);
 
     // Outputs that also appear as inputs (e.g. bidirectional `inout`) are fine.
 
     Ok(DigitalInterpreter::new(
-        behavior.body.clone(),
+        behavior.body().to_vec(),
         input_names,
         output_names,
         device_id,

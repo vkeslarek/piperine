@@ -1,130 +1,86 @@
-//! # Elaborated IR
+//! # Piperine Object Model (POM) — Elaborated IR
 //!
 //! Types produced by the [`Elaborator`][super::lower::Elaborator] from a
-//! parsed [`SourceFile`][crate::parse::SourceFile].
+//! parsed [`SourceFile`][crate::parse::SourceFile]. After elaboration these
+//! types double as the **Piperine Object Model** — the reflection API
+//! defined in `docs/reflection_api.md`.
 //!
 //! ```text
-//! SourceFile (parse AST)  ──Elaborator──▶  ElabProgram (elaborated IR)
+//! SourceFile (parse AST)  ──Elaborator──▶  Design (POM root + elaborated IR)
 //! ```
 //!
-//! ## Guarantees carried by these types
+//! ## Visibility convention
 //!
-//! Every field in this module is *stronger* than its counterpart in the parse
-//! AST. The Rust type system encodes each guarantee:
+//! Struct fields are `pub(crate)` — internal to `piperine-lang` so the
+//! elaborator and codegen can construct and read them directly. External
+//! consumers (plugins, tests, hosts) use the public accessor methods that
+//! implement the POM reflection interface.
 //!
-//! | Parse AST | Elaborated IR | Guarantee |
-//! |-----------|---------------|-----------|
-//! | `Type { name: String, dimensions: Vec<Expr> }` | `ElabNetType` / `ElabValueType` | type is resolved; dimensions are concrete `u64` |
-//! | `Port { ty: Type }` — may be a bundle | `ElabPort { ty: ElabNetType }` | net type only; bundles expanded to flat fields |
-//! | `ModDecl { const_params, type_params }` | `ElabMod` — no params lists | all generic params substituted |
-//! | `ModStmt::StructuralFor` / `StructuralIf` | absent | unrolled / evaluated away |
-//! | `Instance::ports: Vec<Expr>` — raw exprs | `ElabInstance::ports: Vec<ElabNetRef>` | concrete net name + optional index |
-//! | `Connection { lhs: Expr, rhs: Expr }` | `ElabConn { lhs: ElabNetRef, rhs: ElabNetRef }` | both sides are concrete net references |
-//! | `FnDecl { body: Block }` — raw AST | `ElabFn { body: Vec<ElabBehaviorStmt> }` | body lowered, for loops unrolled |
-//! | `ImplDecl { methods: Vec<FnDecl> }` | `ElabImpl { methods: Vec<ElabFn> }` | methods fully elaborated |
-//! | `EventSpec::Named { name }` — any string | validated against `EventRegistry` | name is a known event kind |
-//! | `BehaviorStmt::For` — may be non-const | `ElabBehaviorStmt` — unrolled | loop bounds were elaboration constants |
-//! | generic module instances | appear in `ElabProgram::modules` | monomorphized on demand |
-//!
-//! Code that holds an `ElabProgram` can rely on all of the above without
-//! additional checking.
+//! Enum variants are `pub` — they ARE the protocol.
 
 use std::collections::HashMap;
+use std::rc::Rc;
+use std::cell::RefCell;
 use thiserror::Error;
 
 use crate::parse::ast::{
     BehaviorKind, BindOp, CapabilityDecl, DisciplineDecl, EnumDecl, EventSpec, Pattern,
 };
 use crate::elab::const_eval::{ConstEvalError, ConstVal};
+use crate::pom::{OverrideMap, Selection, Value};
 
 // ─────────────────────────────── Errors ──────────────────────────────────────
 
-/// An error raised during elaboration.
-///
-/// Each variant names the invariant that was violated. Call sites wrap these
-/// with context (the `context` field in `ConstEval`) so error messages point
-/// to the offending declaration.
 #[derive(Debug, Error)]
 pub enum ElabError {
-    /// A const expression in elaboration position could not be evaluated.
     #[error("const eval error in `{context}`: {source}")]
-    ConstEval {
-        context: String,
-        #[source]
-        source: ConstEvalError,
-    },
-    /// A type name was not found in any symbol table.
+    ConstEval { context: String, #[source] source: ConstEvalError },
     #[error("undefined type: `{0}`")]
     UndefinedType(String),
-    /// A module name was not found during monomorphization.
     #[error("undefined module: `{0}`")]
     UndefinedModule(String),
-    /// A bundle was used as a net type but contains value-type fields.
     #[error("bundle `{0}` is not net-capable (contains non-net fields)")]
     NotNetCapable(String),
-    /// `<+` inside a `digital` block.
     #[error("contribution `<+` is not allowed in a digital block")]
     ContribInDigital,
-    /// `<+` inside a `mod` body.
     #[error("contribution `<+` is not allowed in a mod body")]
     ContribInModBody,
-    /// `<-` inside a `mod` body.
     #[error("force `<-` is not allowed in a mod body")]
     ForceInModBody,
-    /// An event name that has no registration in the `EventRegistry`.
     #[error("unknown event kind: `{0}`")]
     UnknownEvent(String),
-    /// An analog-only event (cross/above) inside a `digital` block.
     #[error("analog-only event `{0}` used inside a digital block")]
     AnalogEventInDigital(String),
-    /// A digital-only event (posedge/negedge/change) inside an `analog` block.
     #[error("digital-only event `{0}` used inside an analog block")]
     DigitalEventInAnalog(String),
-    /// A module was instantiated with the wrong number of const arguments.
     #[error("const param `{param}` not provided for module `{module}`")]
     MissingConstParam { param: String, module: String },
-    /// An expression in a port connection or net connection could not be
-    /// reduced to a concrete net reference.
     #[error("expression cannot be reduced to a net reference: {0}")]
     NotANetRef(String),
-    /// Catch-all for other elaboration errors.
     #[error("{0}")]
     Other(String),
 }
 
 // ─────────────────────────────── Net reference ───────────────────────────────
 
-/// A concrete reference to a net, post-elaboration.
-///
-/// ## Guarantee
-///
-/// Both `net` and `index` (if present) are fully resolved — no free variables,
-/// no unevaluated expressions. The `net` name refers to a port, wire, or
-/// parameter declared in the enclosing module.
-///
-/// ## Naming convention
-///
-/// - Simple net: `ElabNetRef { net: "a", index: None }`
-/// - Array element: `ElabNetRef { net: "node", index: Some(3) }`
-/// - Bundle-expanded field: `ElabNetRef { net: "inp_p", index: None }`
-///   (already flattened at port-expansion time)
 #[derive(Debug, Clone, PartialEq)]
-pub struct ElabNetRef {
+pub struct NetRef {
     pub net: String,
     pub index: Option<u64>,
 }
 
-impl ElabNetRef {
+impl NetRef {
     pub fn simple(net: impl Into<String>) -> Self {
         Self { net: net.into(), index: None }
     }
-
     pub fn indexed(net: impl Into<String>, index: u64) -> Self {
         Self { net: net.into(), index: Some(index) }
     }
+    pub fn net(&self) -> &str { &self.net }
+    pub fn index(&self) -> Option<u64> { self.index }
 }
 
-impl std::fmt::Display for ElabNetRef {
+impl std::fmt::Display for NetRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.index {
             None => write!(f, "{}", self.net),
@@ -135,301 +91,397 @@ impl std::fmt::Display for ElabNetRef {
 
 // ─────────────────────────────── Net types ───────────────────────────────────
 
-/// A resolved, concrete **net** type.
-///
-/// ## Guarantees
-///
-/// - No generic parameters — all type variables have been substituted.
-/// - Array extents are concrete `u64` values — no free expressions.
-/// - The discipline name exists in the program's discipline table.
-/// - `Array` is never zero-length (validated during elaboration).
 #[derive(Debug, Clone, PartialEq)]
-pub enum ElabNetType {
-    /// A named discipline, e.g. `Electrical`, `Bit`, `Logic`.
+pub enum NetType {
     Discipline(String),
-    /// An array of a net type with a concrete element count.
-    Array(Box<ElabNetType>, u64),
+    Array(Box<NetType>, u64),
+}
+
+impl NetType {
+    pub fn discipline_name(&self) -> &str {
+        match self { Self::Discipline(s) => s, Self::Array(inner, _) => inner.discipline_name() }
+    }
+    pub fn width(&self) -> u64 {
+        match self { Self::Discipline(_) => 1, Self::Array(inner, n) => inner.width() * n }
+    }
 }
 
 // ─────────────────────────────── Value types ─────────────────────────────────
 
-/// A resolved, concrete **value** type.
-///
-/// ## Guarantees
-///
-/// - No generic parameters.
-/// - All array extents are concrete `u64` values.
-/// - Enum names exist in the program's enum table.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ElabValueType {
-    Real,
-    Natural,
-    Integer,
-    Complex,
-    Boolean,
-    Quad,
-    Str,
-    /// A named enum, e.g. `SarState`.
+pub enum ValueType {
+    Real, Natural, Integer, Complex, Boolean, Quad, Str,
     Enum(String),
-    /// An array of a value type with a concrete element count.
-    Array(Box<ElabValueType>, u64),
-    /// A function pointer type, e.g. `fn(Real) -> Real`.
-    FnPtr(Vec<ElabType>, Box<ElabType>),
+    Array(Box<ValueType>, u64),
+    FnPtr(Vec<TypeRef>, Box<TypeRef>),
 }
 
-/// A resolved type — either a net type or a value type.
-///
-/// Used in positions that may hold either (function params, generic bounds).
 #[derive(Debug, Clone, PartialEq)]
-pub enum ElabType {
-    Net(ElabNetType),
-    Value(ElabValueType),
+pub enum TypeRef {
+    Net(NetType),
+    Value(ValueType),
 }
 
-impl ElabType {
-    pub fn as_net(&self) -> Option<&ElabNetType> {
-        match self { ElabType::Net(n) => Some(n), _ => None }
+impl TypeRef {
+    pub fn as_net(&self) -> Option<&NetType> {
+        match self { TypeRef::Net(n) => Some(n), _ => None }
     }
-
-    pub fn as_value(&self) -> Option<&ElabValueType> {
-        match self { ElabType::Value(v) => Some(v), _ => None }
+    pub fn as_value(&self) -> Option<&ValueType> {
+        match self { TypeRef::Value(v) => Some(v), _ => None }
     }
 }
 
-// ─────────────────────────────── Module IR ───────────────────────────────────
+// ─────────────────────────────── Port ────────────────────────────────────────
 
-/// An elaborated port — always a concrete net type, never a bundle reference.
-///
-/// ## Guarantee
-///
-/// Bundles in the source port list are expanded to one `ElabPort` per field,
-/// named `{port}_{field}`. The `ty` field is always a pure net type.
 #[derive(Debug, Clone)]
-pub struct ElabPort {
+pub struct Port {
     pub direction: crate::parse::ast::Direction,
-    /// May be `"inp_p"` if expanded from a `DiffPair` port named `inp`.
     pub name: String,
-    pub ty: ElabNetType,
+    pub ty: NetType,
 }
 
-/// An elaborated `param` declaration inside a module.
+impl Port {
+    pub fn name(&self) -> &str { &self.name }
+    pub fn direction(&self) -> &crate::parse::ast::Direction { &self.direction }
+    pub fn net_type(&self) -> &NetType { &self.ty }
+}
+
+// ─────────────────────────────── Param ───────────────────────────────────────
+
 #[derive(Debug, Clone)]
-pub struct ElabParam {
+pub struct Param {
     pub name: String,
-    pub ty: ElabValueType,
-    /// Evaluated default value. `None` means the param is required at instantiation.
+    pub ty: ValueType,
     pub default: Option<ConstVal>,
 }
 
-/// An elaborated `wire` declaration inside a module.
-#[derive(Debug, Clone)]
-pub struct ElabWire {
-    pub name: String,
-    pub ty: ElabNetType,
+impl Param {
+    pub fn name(&self) -> &str { &self.name }
+    pub fn value_type(&self) -> &ValueType { &self.ty }
+    pub fn default(&self) -> Option<&ConstVal> { self.default.as_ref() }
+
+    /// Returns the param's value as a POM `Value`. If the param has a
+    /// default, it is converted; otherwise `None`.
+    pub fn value(&self) -> Option<Value> {
+        self.default.as_ref().map(const_val_to_value)
+    }
 }
 
-/// An elaborated module instance.
-///
-/// ## Guarantees
-///
-/// - `module` is a monomorphized module name (e.g. `Dac__8`). The referenced
-///   module is guaranteed to exist in `ElabProgram::modules`.
-/// - `ports` are concrete `ElabNetRef`s — no raw expressions.
-/// - `params` have values already evaluated to `ConstVal`.
+fn const_val_to_value(cv: &ConstVal) -> Value {
+    match cv {
+        ConstVal::Real(v) => Value::Real(*v),
+        ConstVal::Int(v) => Value::Integer(*v),
+        ConstVal::Nat(v) => Value::Natural(*v),
+        ConstVal::Bool(v) => Value::Boolean(*v),
+        ConstVal::Str(v) => Value::String(v.clone()),
+    }
+}
+
+// ─────────────────────────────── Wire ────────────────────────────────────────
+
 #[derive(Debug, Clone)]
-pub struct ElabInstance {
-    /// `None` for anonymous instances; `Some` for `label : Module(...)`.
+pub struct Wire {
+    pub name: String,
+    pub ty: NetType,
+}
+
+impl Wire {
+    pub fn name(&self) -> &str { &self.name }
+    pub fn net_type(&self) -> &NetType { &self.ty }
+}
+
+// ─────────────────────────────── Instance ────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct Instance {
     pub label: Option<String>,
-    /// Monomorphized module name.
     pub module: String,
-    /// Positional port connections — concrete net references.
-    pub ports: Vec<ElabNetRef>,
-    /// Named parameter overrides, values resolved to `ConstVal`.
+    pub ports: Vec<NetRef>,
     pub params: Vec<(String, ConstVal)>,
 }
 
-/// An elaborated net connection: `lhs = rhs;`.
-///
-/// ## Guarantee
-///
-/// Both sides are concrete net references — no unevaluated expressions.
-#[derive(Debug, Clone)]
-pub struct ElabConn {
-    pub lhs: ElabNetRef,
-    pub rhs: ElabNetRef,
+impl Instance {
+    pub fn name(&self) -> &str {
+        self.label.as_deref().unwrap_or(&self.module)
+    }
+    pub fn module_name(&self) -> &str { &self.module }
+    pub fn ports(&self) -> &[NetRef] { &self.ports }
+    pub fn params(&self) -> &[(String, ConstVal)] { &self.params }
+    pub fn label(&self) -> Option<&str> { self.label.as_deref() }
 }
 
-/// An elaborated module.
-///
-/// ## Guarantees
-///
-/// - No `const_params` or `type_params` — all have been substituted.
-/// - No `StructuralFor` or `StructuralIf` — both have been evaluated away.
-/// - All port types are `ElabNetType` — bundles are expanded to flat fields.
-/// - All array dimensions (in port/wire types) are concrete `u64` values.
-/// - All instance `module` names exist in `ElabProgram::modules`.
-/// - All port connections are `ElabNetRef` — no raw expressions.
+// ─────────────────────────────── Connection ──────────────────────────────────
+
 #[derive(Debug, Clone)]
-pub struct ElabMod {
-    /// Monomorphized name, e.g. `RcChain__4` for `RcChain[4]`.
+pub struct Connection {
+    pub lhs: NetRef,
+    pub rhs: NetRef,
+}
+
+impl Connection {
+    pub fn lhs(&self) -> &NetRef { &self.lhs }
+    pub fn rhs(&self) -> &NetRef { &self.rhs }
+}
+
+// ─────────────────────────────── Module ──────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct Module {
     pub name: String,
-    pub ports: Vec<ElabPort>,
-    pub params: Vec<ElabParam>,
-    pub wires: Vec<ElabWire>,
-    pub instances: Vec<ElabInstance>,
-    pub connections: Vec<ElabConn>,
+    pub ports: Vec<Port>,
+    pub params: Vec<Param>,
+    pub wires: Vec<Wire>,
+    pub instances: Vec<Instance>,
+    pub connections: Vec<Connection>,
+    pub behaviors: Vec<Behavior>,
 }
 
-// ─────────────────────────────── Behavior IR ─────────────────────────────────
-
-/// An elaborated behavior statement.
-///
-/// ## Guarantees
-///
-/// - No `For` variant — all behavioral for loops with elaboration-constant
-///   bounds have been unrolled. What was `for i in 0..4 { ... }` is now four
-///   copies of the body with `i` substituted.
-/// - `If` conditions that were elaboration-constant have been folded — dead
-///   branches dropped.
-/// - `Event { spec }` — the event name in `spec` has been validated against
-///   the `EventRegistry`; the spec is a known event kind.
-/// - `VarDecl { ty }` is a concrete `ElabValueType`.
-#[derive(Debug, Clone)]
-pub enum ElabBehaviorStmt {
-    VarDecl {
+impl Module {
+    /// Construct a new Module (used by the elaborator and codegen).
+    #[doc(hidden)]
+    pub fn new(
         name: String,
-        ty: ElabValueType,
-        default: Option<crate::parse::ast::Expr>,
-    },
-    Bind {
-        dest: crate::parse::ast::Expr,
-        op: BindOp,
-        src: crate::parse::ast::Expr,
-    },
-    If {
-        cond: crate::parse::ast::Expr,
-        then_body: Vec<ElabBehaviorStmt>,
-        else_body: Option<Vec<ElabBehaviorStmt>>,
-    },
-    Match {
-        expr: crate::parse::ast::Expr,
-        arms: Vec<ElabMatchArm>,
-    },
-    /// Event block: `@ spec [when (guard)] { body }`.
-    /// `spec` has been validated against the `EventRegistry`.
-    Event {
-        spec: EventSpec,
-        guard: Option<crate::parse::ast::Expr>,
-        body: Vec<ElabBehaviorStmt>,
-    },
-    Diagnostic {
-        sys: String,
-        args: Vec<crate::parse::ast::Expr>,
-    },
+        ports: Vec<Port>,
+        params: Vec<Param>,
+        wires: Vec<Wire>,
+        instances: Vec<Instance>,
+        connections: Vec<Connection>,
+        behaviors: Vec<Behavior>,
+    ) -> Self {
+        Self { name, ports, params, wires, instances, connections, behaviors }
+    }
+
+    pub fn name(&self) -> &str { &self.name }
+    pub fn is_generic(&self) -> bool { false } // always false post-monomorphization
+
+    pub fn ports(&self) -> &[Port] { &self.ports }
+    pub fn params(&self) -> &[Param] { &self.params }
+    pub fn wires(&self) -> &[Wire] { &self.wires }
+    pub fn instances(&self) -> &[Instance] { &self.instances }
+    pub fn connections(&self) -> &[Connection] { &self.connections }
+    pub fn behaviors(&self) -> &[Behavior] { &self.behaviors }
+
+    pub fn port(&self, name: &str) -> Option<&Port> {
+        self.ports.iter().find(|p| p.name == name)
+    }
+    pub fn param(&self, name: &str) -> Option<&Param> {
+        self.params.iter().find(|p| p.name == name)
+    }
+    pub fn wire(&self, name: &str) -> Option<&Wire> {
+        self.wires.iter().find(|w| w.name == name)
+    }
+    pub fn instance(&self, name: &str) -> Option<&Instance> {
+        self.instances.iter().find(|i| i.label.as_deref() == Some(name))
+    }
+}
+
+// ─────────────────────────────── Behavior ────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub enum BehaviorStmt {
+    VarDecl { name: String, ty: ValueType, default: Option<crate::parse::ast::Expr> },
+    Bind { dest: crate::parse::ast::Expr, op: BindOp, src: crate::parse::ast::Expr },
+    If { cond: crate::parse::ast::Expr, then_body: Vec<BehaviorStmt>, else_body: Option<Vec<BehaviorStmt>> },
+    Match { expr: crate::parse::ast::Expr, arms: Vec<MatchArm> },
+    Event { spec: EventSpec, guard: Option<crate::parse::ast::Expr>, body: Vec<BehaviorStmt> },
+    Return(crate::parse::ast::Expr),
+    Diagnostic { sys: String, args: Vec<crate::parse::ast::Expr> },
     Expr(crate::parse::ast::Expr),
 }
 
 #[derive(Debug, Clone)]
-pub struct ElabMatchArm {
+pub struct MatchArm {
     pub pat: Pattern,
-    pub body: Vec<ElabBehaviorStmt>,
+    pub body: Vec<BehaviorStmt>,
 }
 
-/// An elaborated behavior block (`analog` or `digital`).
-///
-/// ## Guarantee
-///
-/// `body` contains only `ElabBehaviorStmt`s — no unresolved for loops,
-/// no unvalidated event names.
+impl MatchArm {
+    pub fn pattern(&self) -> &Pattern { &self.pat }
+    pub fn body(&self) -> &[BehaviorStmt] { &self.body }
+}
+
 #[derive(Debug, Clone)]
-pub struct ElabBehavior {
+pub struct Behavior {
     pub name: String,
     pub kind: BehaviorKind,
-    pub body: Vec<ElabBehaviorStmt>,
+    pub body: Vec<BehaviorStmt>,
 }
 
-// ─────────────────────────────── Function IR ─────────────────────────────────
+impl Behavior {
+    /// Construct a new Behavior (used by the elaborator and codegen).
+    #[doc(hidden)]
+    pub fn new(name: String, kind: BehaviorKind, body: Vec<BehaviorStmt>) -> Self {
+        Self { name, kind, body }
+    }
 
-/// An elaborated function.
-///
-/// ## Guarantees
-///
-/// - `body` is fully lowered to `ElabBehaviorStmt`s — no raw AST `Block`.
-/// - For loops in the body have been unrolled if bounds were const.
-/// - `params` and `ret` are resolved types (`ElabType`).
-///
-/// ## Note on generics
-///
-/// Generic functions (those with `type_params`) are stored with type-param-
-/// dependent types resolved to best-effort `Real` placeholders. Full generic
-/// monomorphization at call sites is future work.
+    pub fn name(&self) -> &str { &self.name }
+    pub fn kind(&self) -> &BehaviorKind { &self.kind }
+    pub fn body(&self) -> &[BehaviorStmt] { &self.body }
+
+    /// Returns `true` if this is an `analog` behavior block.
+    pub fn is_analog(&self) -> bool { matches!(self.kind, BehaviorKind::Analog) }
+    /// Returns `true` if this is a `digital` behavior block.
+    pub fn is_digital(&self) -> bool { matches!(self.kind, BehaviorKind::Digital) }
+}
+
+// ─────────────────────────────── Function ────────────────────────────────────
+
 #[derive(Debug, Clone)]
-pub struct ElabFn {
+pub struct Function {
     pub name: String,
-    pub params: Vec<(String, ElabType)>,
-    pub ret: ElabType,
-    /// Fully lowered body — no raw `Block`.
-    pub body: Vec<ElabBehaviorStmt>,
+    pub params: Vec<(String, TypeRef)>,
+    pub ret: TypeRef,
+    pub body: Vec<BehaviorStmt>,
 }
 
-// ─────────────────────────────── Impl IR ─────────────────────────────────────
+impl Function {
+    pub fn name(&self) -> &str { &self.name }
+    pub fn params(&self) -> &[(String, TypeRef)] { &self.params }
+    pub fn ret(&self) -> &TypeRef { &self.ret }
+    /// The function body statements.
+    pub fn body(&self) -> &[BehaviorStmt] { &self.body }
+}
 
-/// An elaborated capability implementation.
-///
-/// ## Guarantee
-///
-/// `methods` are fully elaborated `ElabFn`s — bodies lowered, for loops
-/// unrolled. Not raw `FnDecl` AST.
+// ─────────────────────────────── ImplBlock ───────────────────────────────────
+
 #[derive(Debug, Clone)]
-pub struct ElabImpl {
-    /// `Some` for capability impls; `None` for inherent impls.
+pub struct ImplBlock {
     pub capability: Option<String>,
     pub ty: String,
-    /// Evaluated const arguments (e.g. `N=8` in `impl Add for UInt[8]`).
     pub const_args: Vec<ConstVal>,
-    pub methods: Vec<ElabFn>,
+    pub methods: Vec<Function>,
 }
 
-// ─────────────────────────────── Program ─────────────────────────────────────
+impl ImplBlock {
+    pub fn capability(&self) -> Option<&str> { self.capability.as_deref() }
+    pub fn ty(&self) -> &str { &self.ty }
+    pub fn methods(&self) -> &[Function] { &self.methods }
+}
 
-/// The complete output of elaboration.
+// ─────────────────────────────── Design (POM root) ───────────────────────────
+
+/// The complete output of elaboration — the POM root.
 ///
-/// ## Guarantees
-///
-/// - `modules`: all non-generic modules from the source, plus every generic
-///   module that was instantiated (monomorphized on demand). Keys are
-///   monomorphized names. All instance references resolve to a key here.
-/// - `behaviors`: one entry per `analog`/`digital` block; for loops unrolled.
-/// - `disciplines`, `enums`, `capabilities`: registered verbatim.
-/// - `functions`: bodies lowered to `Vec<ElabBehaviorStmt>`.
-/// - `impls`: methods fully elaborated.
+/// Fields are `pub(crate)`; external consumers use the public accessor
+/// methods that implement the POM reflection interface
+/// (`docs/reflection_api.md`).
 #[derive(Debug, Clone)]
-pub struct ElabProgram {
-    pub modules: HashMap<String, ElabMod>,
-    pub behaviors: Vec<ElabBehavior>,
+pub struct Design {
+    pub modules: HashMap<String, Module>,
     pub disciplines: HashMap<String, DisciplineDecl>,
     pub enums: HashMap<String, EnumDecl>,
     pub capabilities: HashMap<String, CapabilityDecl>,
-    pub functions: HashMap<String, ElabFn>,
-    pub impls: Vec<ElabImpl>,
+    pub functions: HashMap<String, Function>,
+    pub impls: Vec<ImplBlock>,
+    /// Staged parameter overrides — the single mutation surface in POM.
+    /// Writing via `set_param()` stages here; re-elaboration consumes.
+    pub overrides: Rc<RefCell<OverrideMap>>,
+    /// The top module name, if set by the user or inferred.
+    pub top_module: Option<String>,
 }
 
-impl ElabProgram {
+impl Design {
     pub fn new() -> Self {
         Self {
             modules: HashMap::new(),
-            behaviors: Vec::new(),
             disciplines: HashMap::new(),
             enums: HashMap::new(),
             capabilities: HashMap::new(),
             functions: HashMap::new(),
             impls: Vec::new(),
+            overrides: Rc::new(RefCell::new(OverrideMap::new())),
+            top_module: None,
         }
+    }
+
+    // ── POM navigation ────────────────────────────────────────────────────
+
+    /// The elaborated top module, if set.
+    pub fn top(&self) -> Option<&Module> {
+        self.top_module.as_ref().and_then(|n| self.modules.get(n))
+    }
+
+    /// Set the top module by name.
+    pub fn set_top(&mut self, name: &str) {
+        self.top_module = Some(name.into());
+    }
+
+    /// Look up a module by name.
+    pub fn module(&self, name: &str) -> Option<&Module> {
+        self.modules.get(name)
+    }
+
+    /// Every elaborated (monomorphized) module.
+    pub fn modules(&self) -> impl Iterator<Item = &Module> {
+        self.modules.values()
+    }
+
+    /// Look up a function by name.
+    pub fn function(&self, name: &str) -> Option<&Function> {
+        self.functions.get(name)
+    }
+
+    /// Every discipline declaration.
+    pub fn disciplines(&self) -> impl Iterator<Item = (&String, &DisciplineDecl)> {
+        self.disciplines.iter()
+    }
+
+    /// Every enum declaration.
+    pub fn enums(&self) -> impl Iterator<Item = (&String, &EnumDecl)> {
+        self.enums.iter()
+    }
+
+    /// Every capability declaration.
+    pub fn capabilities(&self) -> impl Iterator<Item = (&String, &CapabilityDecl)> {
+        self.capabilities.iter()
+    }
+
+    /// Every global function.
+    pub fn functions(&self) -> impl Iterator<Item = &Function> {
+        self.functions.values()
+    }
+
+    /// Every impl block.
+    pub fn impls(&self) -> &[ImplBlock] { &self.impls }
+
+    // ── Staging layer ─────────────────────────────────────────────────────
+
+    /// Stage a parameter override. Does NOT mutate the elaborated design —
+    /// a subsequent re-elaboration consumes the override purely.
+    pub fn set_param(&self, path: &str, param: &str, value: Value) {
+        self.overrides.borrow_mut().set(path, param, value);
+    }
+
+    /// Look up a staged override.
+    pub fn get_override(&self, path: &str, param: &str) -> Option<Value> {
+        self.overrides.borrow().get(path, param).cloned()
+    }
+
+    /// True if any overrides are staged.
+    pub fn has_overrides(&self) -> bool {
+        !self.overrides.borrow().is_empty()
+    }
+
+    /// Clear all staged overrides.
+    pub fn clear_overrides(&self) {
+        self.overrides.borrow_mut().clear();
+    }
+
+    // ── Internal access (pub(crate)) ──────────────────────────────────────
+
+    /// Internal: mutable access to modules map (for the elaborator).
+    pub fn modules_mut(&mut self) -> &mut HashMap<String, Module> {
+        &mut self.modules
+    }
+
+    /// Insert a module by name. Used by the codegen to build synthetic
+    /// modules for digital-only test scenarios.
+    #[doc(hidden)]
+    pub fn insert_module(&mut self, name: String, module: Module) {
+        self.modules.insert(name, module);
     }
 }
 
-impl Default for ElabProgram {
-    fn default() -> Self {
-        Self::new()
-    }
+impl Default for Design {
+    fn default() -> Self { Self::new() }
 }

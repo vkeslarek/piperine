@@ -10,20 +10,14 @@ use piperine_solver::digital::DigitalNet;
 use crate::codegen::{compile_analog_module, compile_digital_module};
 use crate::phdl_device::PhdlDevice;
 use piperine_lang::elab::const_eval::ConstVal;
-use piperine_lang::elab::ir::{ElabInstance, ElabMod, ElabProgram};
+use piperine_lang::elab::ir::{Instance, Module, Design};
 
 static NODE_CTR:  AtomicUsize = AtomicUsize::new(100_000);
 static DNET_CTR:  AtomicUsize = AtomicUsize::new(0);
 static DEVICE_CTR: AtomicUsize = AtomicUsize::new(0);
 
-/// Build a [`CircuitInstance`] from an elaborated PHDL program.
-///
-/// `top_module` names the module whose instances form the netlist.
-/// - Modules with an `analog` block are JIT-compiled via Cranelift.
-/// - Modules with a `digital` block are wrapped in a tree-walking interpreter.
-/// - A module may have both.
-pub fn from_elab(prog: &ElabProgram, top_module: &str) -> Result<CircuitInstance, String> {
-    let top = prog.modules.get(top_module)
+pub fn from_elab(prog: &Design, top_module: &str) -> Result<CircuitInstance, String> {
+    let top = prog.module(top_module)
         .ok_or_else(|| format!("top module '{}' not found", top_module))?;
 
     let mut net_to_node: HashMap<String, NodeIdentifier> = HashMap::new();
@@ -48,40 +42,40 @@ pub fn from_elab(prog: &ElabProgram, top_module: &str) -> Result<CircuitInstance
         })
     };
 
-    for port in &top.ports  { assign_node(&port.name, &mut net_to_node); }
-    for wire in &top.wires  { assign_node(&wire.name, &mut net_to_node); }
+    for port in top.ports() { assign_node(port.name(), &mut net_to_node); }
+    for wire in top.wires() { assign_node(wire.name(), &mut net_to_node); }
 
     let mut netlist = Netlist::new();
     let mut devices: Vec<Box<dyn Device>> = Vec::new();
 
-    for inst in &top.instances {
-        let mod_def = prog.modules.get(&inst.module).ok_or_else(|| {
-            format!("module '{}' not found (instance '{:?}')", inst.module, inst.label)
+    for inst in top.instances() {
+        let mod_def = prog.module(inst.module_name()).ok_or_else(|| {
+            format!("module '{}' not found (instance '{:?}')", inst.module_name(), inst.label())
         })?;
 
-        let terminals: Vec<NodeIdentifier> = inst.ports.iter().map(|net_ref| {
-            net_to_node.get(&net_ref.net)
+        let terminals: Vec<NodeIdentifier> = inst.ports().iter().map(|net_ref| {
+            net_to_node.get(net_ref.net())
                 .cloned()
                 .unwrap_or(NodeIdentifier::Gnd)
         }).collect();
 
         let params = resolve_params(mod_def, inst);
 
-        let instance_name = inst.label.clone()
-            .unwrap_or_else(|| inst.module.clone());
+        let instance_name = inst.label()
+            .unwrap_or_else(|| inst.module_name())
+            .to_string();
 
-        let analog = compile_analog_module(prog, &inst.module).ok().map(Arc::new);
+        let analog = compile_analog_module(prog, inst.module_name()).ok().map(Arc::new);
 
         let device_id = DEVICE_CTR.fetch_add(1, Ordering::Relaxed);
-        let digital = compile_digital_module(prog, &inst.module, device_id).ok()
+        let digital = compile_digital_module(prog, inst.module_name(), device_id).ok()
             .map(|mut interp| {
-                // Map each port name → DigitalNet based on the wire connected to it.
-                let port_net_map: HashMap<String, DigitalNet> = mod_def.ports.iter()
+                let port_net_map: HashMap<String, DigitalNet> = mod_def.ports().iter()
                     .enumerate()
                     .filter_map(|(i, port)| {
-                        let wire_name = inst.ports.get(i).map(|r| r.net.as_str())?;
+                        let wire_name = inst.ports().get(i).map(|r| r.net())?;
                         let dnet = assign_dnet(wire_name, &mut wire_to_dnet);
-                        Some((port.name.clone(), dnet))
+                        Some((port.name().to_string(), dnet))
                     })
                     .collect();
                 interp.set_port_nets(port_net_map);
@@ -114,11 +108,11 @@ fn const_to_f64(cv: &ConstVal) -> f64 {
     }
 }
 
-fn resolve_params(mod_def: &ElabMod, inst: &ElabInstance) -> Vec<f64> {
-    mod_def.params.iter().map(|ep| {
-        if let Some((_, cv)) = inst.params.iter().find(|(n, _)| n == &ep.name) {
+fn resolve_params(mod_def: &Module, inst: &Instance) -> Vec<f64> {
+    mod_def.params().iter().map(|ep| {
+        if let Some((_, cv)) = inst.params().iter().find(|(n, _)| n == ep.name()) {
             return const_to_f64(cv);
         }
-        ep.default.as_ref().map(const_to_f64).unwrap_or(0.0)
+        ep.default().map(const_to_f64).unwrap_or(0.0)
     }).collect()
 }

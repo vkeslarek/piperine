@@ -1,6 +1,6 @@
 //! Integration tests for Cranelift JIT codegen of PHDL analog modules.
 
-use piperine_codegen::compile_analog_module;
+use piperine_codegen::{compile_analog_module, SimCtx};
 use piperine_lang::parse_and_elaborate;
 
 // ── Resistor ──────────────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ fn test_resistor_residual_ohms_law() {
     let params        = [1000.0_f64];
     let mut rhs       = [0.0_f64; 2];
 
-    dev.eval_residual(&node_voltages, &params, &mut rhs);
+    dev.eval_residual(&node_voltages, &params, &SimCtx::default(), &mut rhs);
 
     // KCL: I flows into p (+) and out of n (-)
     assert!((rhs[0] -  0.001).abs() < 1e-12, "rhs[p] = {}", rhs[0]);
@@ -59,7 +59,7 @@ fn test_resistor_jacobian_conductance() {
     let params        = [1000.0_f64];
     let mut jac       = [0.0_f64; 4]; // 2×2
 
-    dev.eval_jacobian(&node_voltages, &params, &mut jac);
+    dev.eval_jacobian(&node_voltages, &params, &SimCtx::default(), &mut jac);
 
     let g = 0.001;
     // jac is row-major: [J[p,p], J[p,n], J[n,p], J[n,n]]
@@ -97,7 +97,7 @@ fn test_vccs_residual() {
     let params        = [0.01_f64];
     let mut rhs       = [0.0_f64; 4];
 
-    dev.eval_residual(&node_voltages, &params, &mut rhs);
+    dev.eval_residual(&node_voltages, &params, &SimCtx::default(), &mut rhs);
 
     assert!((rhs[2] -  0.005).abs() < 1e-12, "rhs[outp] = {}", rhs[2]);
     assert!((rhs[3] - -0.005).abs() < 1e-12, "rhs[outn] = {}", rhs[3]);
@@ -115,7 +115,7 @@ fn test_vccs_jacobian_transconductance() {
     let params        = [0.01_f64];
     let mut jac       = [0.0_f64; 16]; // 4×4
 
-    dev.eval_jacobian(&node_voltages, &params, &mut jac);
+    dev.eval_jacobian(&node_voltages, &params, &SimCtx::default(), &mut jac);
 
     let gm = 0.01_f64;
     let n  = 4usize;
@@ -160,7 +160,7 @@ fn test_diode_residual_forward_bias() {
     let params        = [is_, vt];
     let mut rhs       = [0.0_f64; 2];
 
-    dev.eval_residual(&node_voltages, &params, &mut rhs);
+    dev.eval_residual(&node_voltages, &params, &SimCtx::default(), &mut rhs);
 
     assert!((rhs[0] - expected).abs() / expected.abs() < 1e-10,
         "diode residual mismatch: {} vs {}", rhs[0], expected);
@@ -181,7 +181,7 @@ fn test_diode_jacobian_forward_bias() {
     let params        = [is_, vt];
     let mut jac       = [0.0_f64; 4];
 
-    dev.eval_jacobian(&node_voltages, &params, &mut jac);
+    dev.eval_jacobian(&node_voltages, &params, &SimCtx::default(), &mut jac);
 
     assert!((jac[0] - g_expected).abs() / g_expected.abs() < 1e-10,
         "diode J[p,p] mismatch: {} vs {}", jac[0], g_expected);

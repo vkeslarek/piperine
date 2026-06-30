@@ -1,11 +1,11 @@
-//! Lower `ElabProgram` (PPR/PHDL) → `IrProgram`.
+//! Lower `Design` (PPR/PHDL) → `IrProgram`.
 
 use std::collections::HashMap;
 
 use piperine_lang::{
     elab::ir::{
-        ElabBehaviorStmt, ElabFn, ElabMod, ElabProgram, ElabNetType,
-        ElabValueType,
+        BehaviorStmt, Function, Module, Design, NetType,
+        ValueType,
     },
     parse::ast::{
         ArrayBody, BehaviorKind, BindOp, BinaryOp, Block, EventSpec, Expr, Literal,
@@ -50,29 +50,30 @@ impl LowerCtx {
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
-pub fn ppr_to_ir(prog: &ElabProgram) -> IrProgram {
-    let mut modules: HashMap<String, IrModule> = prog
-        .modules
-        .iter()
-        .map(|(name, m)| (name.clone(), convert_mod(m)))
-        .collect();
+pub fn ppr_to_ir(prog: &Design) -> IrProgram {
+    let mut mod_names = Vec::new();
+    let mut modules: Vec<IrModule> = Vec::new();
+    for m in prog.modules() {
+        mod_names.push(m.name().to_string());
+        modules.push(convert_mod(m));
+    }
 
-    // Attach behaviors to their modules
-    for behavior in &prog.behaviors {
-        let Some(module) = modules.get_mut(&behavior.name) else { continue };
-        let mut ctx = LowerCtx::new();
-        ctx.is_digital = matches!(behavior.kind, BehaviorKind::Digital);
-        let stmts = lower_stmts(&behavior.body, &mut ctx);
-        match behavior.kind {
-            BehaviorKind::Analog => {
+    // Attach behaviors to their modules (behaviors are now stored inside
+    // each Module after the POM refactoring).
+    for m in prog.modules() {
+        let Some(module) = modules.iter_mut().find(|mi| mi.name == m.name()) else { continue };
+        for behavior in m.behaviors() {
+            let mut ctx = LowerCtx::new();
+            ctx.is_digital = behavior.is_digital();
+            let stmts = lower_stmts(behavior.body(), &mut ctx);
+            if behavior.is_analog() {
                 module.analog = Some(IrAnalogBody {
                     state_vars: ctx.state_vars,
                     noise_sources: ctx.noise_sources,
                     vars: vec![],
                     stmts,
                 });
-            }
-            BehaviorKind::Digital => {
+            } else {
                 module.digital = Some(IrDigitalBody {
                     inputs: vec![],
                     outputs: vec![],
@@ -84,67 +85,67 @@ pub fn ppr_to_ir(prog: &ElabProgram) -> IrProgram {
     }
 
     // Convert global functions
-    let functions = prog.functions.values().map(convert_fn).collect();
+    let functions = prog.functions().map(convert_fn).collect();
 
     IrProgram {
         source: "ppr".into(),
-        modules: modules.into_values().collect(),
+        modules,
         functions,
     }
 }
 
 // ─── Module conversion ───────────────────────────────────────────────────────
 
-fn convert_mod(m: &ElabMod) -> IrModule {
+fn convert_mod(m: &Module) -> IrModule {
     use piperine_lang::parse::ast::Direction;
 
-    let ports = m.ports.iter().map(|p| {
+    let ports = m.ports().iter().map(|p| {
         IrPort {
-            name: p.name.clone(),
-            direction: match p.direction {
+            name: p.name().to_string(),
+            direction: match p.direction() {
                 Direction::Input => IrDirection::In,
                 Direction::Output => IrDirection::Out,
                 Direction::Inout => IrDirection::Inout,
             },
-            discipline: discipline_name(&p.ty),
+            discipline: discipline_name(p.net_type()),
         }
     }).collect();
 
-    let params = m.params.iter().map(|p| {
+    let params = m.params().iter().map(|p| {
         IrParam {
-            name: p.name.clone(),
-            ty: elab_value_type_to_ir(&p.ty),
-            default: p.default.as_ref().map(const_val_to_ir),
+            name: p.name().to_string(),
+            ty: elab_value_type_to_ir(p.value_type()),
+            default: p.default().map(const_val_to_ir),
         }
     }).collect();
 
-    let wires = m.wires.iter().map(|w| {
+    let wires = m.wires().iter().map(|w| {
         IrWire {
-            name: w.name.clone(),
-            discipline: discipline_name(&w.ty),
+            name: w.name().to_string(),
+            discipline: discipline_name(w.net_type()),
         }
     }).collect();
 
-    let instances = m.instances.iter().filter_map(|inst| {
+    let instances = m.instances().iter().filter_map(|inst| {
         Some(IrInstance {
-            label: inst.label.clone().unwrap_or_else(|| inst.module.clone()),
-            module: inst.module.clone(),
-            connections: inst.ports.iter().map(|r| IrConnection {
+            label: inst.name().to_string(),
+            module: inst.module_name().to_string(),
+            connections: inst.ports().iter().map(|r| IrConnection {
                 port: None,
                 net: r.to_string(),
             }).collect(),
-            params: inst.params.iter().map(|(k, v)| (k.clone(), const_val_to_ir(v))).collect(),
+            params: inst.params().iter().map(|(k, v)| (k.clone(), const_val_to_ir(v))).collect(),
         })
     }).collect();
 
     // Net connections (aliasing)
-    let connections = m.connections.iter().map(|c| IrConnectionDecl {
-        lhs: c.lhs.to_string(),
-        rhs: c.rhs.to_string(),
+    let connections = m.connections().iter().map(|c| IrConnectionDecl {
+        lhs: c.lhs().to_string(),
+        rhs: c.rhs().to_string(),
     }).collect();
 
     IrModule {
-        name: m.name.clone(),
+        name: m.name().to_string(),
         ports,
         params,
         wires,
@@ -161,24 +162,24 @@ fn convert_mod(m: &ElabMod) -> IrModule {
     }
 }
 
-fn discipline_name(ty: &ElabNetType) -> Option<String> {
+fn discipline_name(ty: &NetType) -> Option<String> {
     match ty {
-        ElabNetType::Discipline(s) => Some(s.clone()),
-        ElabNetType::Array(inner, _) => discipline_name(inner),
+        NetType::Discipline(s) => Some(s.clone()),
+        NetType::Array(inner, _) => discipline_name(inner),
     }
 }
 
-fn elab_value_type_to_ir(ty: &ElabValueType) -> IrType {
+fn elab_value_type_to_ir(ty: &ValueType) -> IrType {
     match ty {
-        ElabValueType::Real | ElabValueType::Natural => IrType::Real,
-        ElabValueType::Integer => IrType::Integer,
-        ElabValueType::Complex => IrType::Complex,
-        ElabValueType::Boolean => IrType::Bool,
-        ElabValueType::Quad => IrType::Quad,
-        ElabValueType::Str => IrType::String,
-        ElabValueType::Enum(_) => IrType::Integer,
-        ElabValueType::Array(inner, _) => elab_value_type_to_ir(inner),
-        ElabValueType::FnPtr(_, _) => IrType::Void,
+        ValueType::Real | ValueType::Natural => IrType::Real,
+        ValueType::Integer => IrType::Integer,
+        ValueType::Complex => IrType::Complex,
+        ValueType::Boolean => IrType::Bool,
+        ValueType::Quad => IrType::Quad,
+        ValueType::Str => IrType::String,
+        ValueType::Enum(_) => IrType::Integer,
+        ValueType::Array(inner, _) => elab_value_type_to_ir(inner),
+        ValueType::FnPtr(_, _) => IrType::Void,
     }
 }
 
@@ -193,16 +194,16 @@ fn const_val_to_ir(v: &piperine_lang::elab::const_eval::ConstVal) -> IrExpr {
     }
 }
 
-fn convert_fn(f: &ElabFn) -> IrFunction {
-    let params: Vec<String> = f.params.iter().map(|(n, _)| n.clone()).collect();
+fn convert_fn(f: &Function) -> IrFunction {
+    let params: Vec<String> = f.params().iter().map(|(n, _)| n.clone()).collect();
     let mut ctx = LowerCtx::new();
-    let body = lower_stmts(&f.body, &mut ctx);
-    IrFunction { name: f.name.clone(), params, body }
+    let body = lower_stmts(f.body(), &mut ctx);
+    IrFunction { name: f.name().to_string(), params, body }
 }
 
 // ─── Statement lowering ───────────────────────────────────────────────────────
 
-fn lower_stmts(stmts: &[ElabBehaviorStmt], ctx: &mut LowerCtx) -> Vec<IrStmt> {
+fn lower_stmts(stmts: &[BehaviorStmt], ctx: &mut LowerCtx) -> Vec<IrStmt> {
     let mut out = vec![];
     for stmt in stmts {
         out.extend(lower_stmt(stmt, ctx));
@@ -210,18 +211,18 @@ fn lower_stmts(stmts: &[ElabBehaviorStmt], ctx: &mut LowerCtx) -> Vec<IrStmt> {
     out
 }
 
-fn lower_stmt(stmt: &ElabBehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt> {
+fn lower_stmt(stmt: &BehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt> {
     match stmt {
-        ElabBehaviorStmt::VarDecl { name, default: Some(expr), .. } => {
+        BehaviorStmt::VarDecl { name, default: Some(expr), .. } => {
             let val = lower_expr(expr, ctx);
             ctx.env.insert(name.clone(), val);
             vec![]
         }
-        ElabBehaviorStmt::VarDecl { name, default: None, .. } => {
+        BehaviorStmt::VarDecl { name, default: None, .. } => {
             ctx.env.insert(name.clone(), IrExpr::Real(0.0));
             vec![]
         }
-        ElabBehaviorStmt::Bind { dest, op: BindOp::Assign, src } => {
+        BehaviorStmt::Bind { dest, op: BindOp::Assign, src } => {
             if let Expr::Ident(name) = dest {
                 let val = lower_expr(src, ctx);
                 ctx.env.insert(name.clone(), val);
@@ -230,7 +231,7 @@ fn lower_stmt(stmt: &ElabBehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt> {
                 vec![]
             }
         }
-        ElabBehaviorStmt::Bind { dest, op: BindOp::Contrib, src } => {
+        BehaviorStmt::Bind { dest, op: BindOp::Contrib, src } => {
             let (nature, plus, minus) = parse_contrib_dest(dest);
             scan_noise(src, &plus, &minus, ctx);
             let expr = lower_expr(src, ctx);
@@ -241,7 +242,7 @@ fn lower_stmt(stmt: &ElabBehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt> {
             };
             vec![IrStmt::Contrib { nature, plus, minus, expr, kind }]
         }
-        ElabBehaviorStmt::Bind { dest, op: BindOp::Force, src } => {
+        BehaviorStmt::Bind { dest, op: BindOp::Force, src } => {
             // Two semantics for `<-`:
             //   * inside `analog { ... }`           →  IrStmt::Force (analog)
             //   * inside `digital { ... }`          →  IrStmt::Assign (digital drive)
@@ -260,7 +261,7 @@ fn lower_stmt(stmt: &ElabBehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt> {
             }
         }
 
-        ElabBehaviorStmt::If { cond, then_body, else_body } => {
+        BehaviorStmt::If { cond, then_body, else_body } => {
             let cond_ir = lower_expr(cond, ctx);
             let pre_env = ctx.env.clone();
             let mut then_ctx = ctx.clone();
@@ -274,11 +275,11 @@ fn lower_stmt(stmt: &ElabBehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt> {
             vec![IrStmt::If { cond: cond_ir, then_, else_, label: None }]
         }
 
-        ElabBehaviorStmt::Match { expr, arms } => {
+        BehaviorStmt::Match { expr, arms } => {
             lower_match(expr, arms, ctx)
         }
 
-        ElabBehaviorStmt::Event { spec, guard, body } => {
+        BehaviorStmt::Event { spec, guard, body } => {
             let kinds = convert_event_spec(spec, ctx);
             let body_ir = lower_stmts(body, &mut ctx.clone());
             // Wrap body in guard if present
@@ -294,7 +295,7 @@ fn lower_stmt(stmt: &ElabBehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt> {
             }).collect()
         }
 
-        ElabBehaviorStmt::Diagnostic { sys, args } => {
+        BehaviorStmt::Diagnostic { sys, args } => {
             let bare = sys.trim_start_matches('$');
             // Special system tasks that are not display-family
             match bare {
@@ -334,7 +335,11 @@ fn lower_stmt(stmt: &ElabBehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt> {
             vec![IrStmt::Diagnostic { severity, format: fmt, args: ir_args }]
         }
 
-        ElabBehaviorStmt::Expr(e) => lower_expr_stmt(e, ctx),
+        BehaviorStmt::Expr(e) => lower_expr_stmt(e, ctx),
+
+        // GAPS §D.5 — preserve the trailing `Return(e)` of a fn body so
+        // the inliner can find the fn's return value.
+        BehaviorStmt::Return(e) => vec![IrStmt::Return(Some(lower_expr(e, ctx)))],
     }
 }
 
@@ -381,19 +386,19 @@ fn lower_expr_stmt(expr: &Expr, ctx: &mut LowerCtx) -> Vec<IrStmt> {
 }
 
 /// Desugar a `match` into an if/else-if chain.
-fn lower_match(expr: &Expr, arms: &[piperine_lang::elab::ir::ElabMatchArm], ctx: &mut LowerCtx) -> Vec<IrStmt> {
+fn lower_match(expr: &Expr, arms: &[piperine_lang::elab::ir::MatchArm], ctx: &mut LowerCtx) -> Vec<IrStmt> {
     let discriminant = lower_expr(expr, ctx);
     let mut default_body = vec![];
     let mut chain: Vec<(IrExpr, Vec<IrStmt>)> = vec![];
 
     for arm in arms {
-        match &arm.pat {
+        match arm.pattern() {
             Pattern::Wildcard => {
-                default_body = lower_stmts(&arm.body, &mut ctx.clone());
+                default_body = lower_stmts(arm.body(), &mut ctx.clone());
             }
             Pattern::Path(p) => {
                 let pat_expr = IrExpr::Param(p.segments.join("::"));
-                let body = lower_stmts(&arm.body, &mut ctx.clone());
+                let body = lower_stmts(arm.body(), &mut ctx.clone());
                 chain.push((pat_expr, body));
             }
         }

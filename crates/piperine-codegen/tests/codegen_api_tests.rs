@@ -4,7 +4,7 @@
 //! is complete:
 //!   - `ams_to_ir(ams_doc)`     ✅ available now
 //!   - `ppr_to_ir(phdl_prog)`   ✅ available now
-//!   - `compile_analog_module(&IrProgram, name)` (NOT YET — expects &ElabProgram)
+//!   - `compile_analog_module(&IrProgram, name)` (NOT YET — expects &Design)
 //!   - `compile_digital_module(&IrProgram, name)` (NOT YET)
 //!   - `from_ir(&IrProgram, top)`                (NOT YET — Phase 1.6)
 //!

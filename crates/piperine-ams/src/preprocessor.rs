@@ -101,6 +101,12 @@ impl Preprocessor {
             "include" => self.dir_include(tokens, i),
             "ifdef" => self.dir_ifdef(tokens, i, false),
             "ifndef" => self.dir_ifdef(tokens, i, true),
+            // GAPS §A.10 — `` `elsif `` is equivalent to `` `else `ifdef X ``:
+            // if no prior branch was taken, evaluate the new condition and
+            // update the active flag; otherwise the new branch is inactive.
+            "elsif" => self.dir_elsif(tokens, i, false),
+            "ifnelse" | "elsifdef" => self.dir_elsif(tokens, i, false),
+            "elsifndef" => self.dir_elsif(tokens, i, true),
             "else" => self.dir_else(tokens, i),
             "endif" => self.dir_endif(tokens, i),
             // ignored no-op directives
@@ -258,6 +264,29 @@ impl Preprocessor {
         let frame = self.conds.last_mut().ok_or("`else without `ifdef")?;
         frame.active = frame.parent_active && !frame.taken;
         frame.taken = true;
+        Ok(Self::skip_to_newline(tokens, i + 1))
+    }
+
+    /// GAPS §A.10 — `` `elsif X `` is equivalent to `` `else `ifdef X ``.
+    /// If a prior branch in this `ifdef` chain was already taken, this
+    /// branch is inactive. Otherwise, evaluate the new condition and
+    /// update the frame's `active`/`taken` flags.
+    fn dir_elsif(&mut self, tokens: &[Lexed], i: usize, negate: bool) -> Result<usize, String> {
+        let (name, _) = Self::expect_ident(tokens, i + 1)?;
+        let frame = self.conds.last_mut().ok_or("`elsif without `ifdef")?;
+        if frame.taken {
+            // Some prior branch in this chain was selected; this one
+            // is inactive regardless of condition.
+            frame.active = false;
+        } else {
+            // Evaluate the new condition in the parent context.
+            let mut cond = self.macros.contains_key(&name);
+            if negate {
+                cond = !cond;
+            }
+            frame.active = frame.parent_active && cond;
+            frame.taken = frame.taken || cond;
+        }
         Ok(Self::skip_to_newline(tokens, i + 1))
     }
 

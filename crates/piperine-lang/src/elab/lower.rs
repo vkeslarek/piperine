@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 
 use crate::parse::ast::{
-    BehaviorDecl, BehaviorKind, BehaviorStmt, DisciplineDecl, EnumDecl, Expr, FnDecl, FnParam,
-    ImplDecl, Item, ModDecl, ModStmt, Port, SourceFile, Type,
+    BehaviorDecl, BehaviorKind, BehaviorStmt as AstBehaviorStmt, DisciplineDecl, EnumDecl,
+    Expr, FnDecl, FnParam, ImplDecl, Item, ModDecl, ModStmt, Port as AstPort, SourceFile, Type,
 };
 use crate::elab::const_eval::{ConstEnv, ConstVal};
 use crate::elab::event::EventRegistry;
 use crate::elab::ir::{
-    ElabBehavior, ElabBehaviorStmt, ElabConn, ElabError, ElabFn, ElabImpl, ElabInstance,
-    ElabMatchArm, ElabMod, ElabNetRef, ElabNetType, ElabParam, ElabPort, ElabProgram, ElabType,
-    ElabValueType, ElabWire,
+    Behavior, BehaviorStmt, Connection, ElabError, Function, ImplBlock, Instance,
+    MatchArm, Module, NetRef, NetType, Param, Port, Design, TypeRef,
+    ValueType, Wire,
 };
 use crate::elab::validate::Validator;
 
@@ -26,7 +26,7 @@ pub struct Elaborator {
     impl_decls: Vec<ImplDecl>,
     events: EventRegistry,
     /// Cache of monomorphized modules (mangled name → elaborated module).
-    mono_cache: HashMap<String, ElabMod>,
+    mono_cache: HashMap<String, Module>,
 }
 
 impl Elaborator {
@@ -45,7 +45,7 @@ impl Elaborator {
         }
     }
 
-    pub fn elaborate(&mut self, source: SourceFile) -> Result<ElabProgram, ElabError> {
+    pub fn elaborate(&mut self, source: SourceFile) -> Result<Design, ElabError> {
         self.register_items(source.items.iter())?;
 
         // Validation pass — borrows self.events immutably. Must complete before
@@ -64,7 +64,7 @@ impl Elaborator {
             }
         }
 
-        let mut prog = ElabProgram::new();
+        let mut prog = Design::new();
 
         prog.disciplines = self.disciplines.clone();
         prog.enums = self.enums.clone();
@@ -93,7 +93,10 @@ impl Elaborator {
         }
 
         for beh in &self.behavior_decls.clone() {
-            prog.behaviors.push(self.elab_behavior(beh)?);
+            let behavior = self.elab_behavior(beh)?;
+            if let Some(module) = prog.modules.get_mut(&behavior.name) {
+                module.behaviors.push(behavior);
+            }
         }
 
         // Merge all on-demand monomorphized modules into the program.
@@ -133,7 +136,7 @@ impl Elaborator {
         ty: &Type,
         env: &ConstEnv,
         type_subst: &HashMap<String, String>,
-    ) -> Result<ElabType, ElabError> {
+    ) -> Result<TypeRef, ElabError> {
         let name = type_subst.get(&ty.name).map(|s| s.as_str()).unwrap_or(&ty.name);
 
         if !ty.dimensions.is_empty() {
@@ -147,38 +150,38 @@ impl Elaborator {
                     source: e,
                 })?;
                 result = match result {
-                    ElabType::Net(nt) => ElabType::Net(ElabNetType::Array(Box::new(nt), n)),
-                    ElabType::Value(vt) => ElabType::Value(ElabValueType::Array(Box::new(vt), n)),
+                    TypeRef::Net(nt) => TypeRef::Net(NetType::Array(Box::new(nt), n)),
+                    TypeRef::Value(vt) => TypeRef::Value(ValueType::Array(Box::new(vt), n)),
                 };
             }
             return Ok(result);
         }
 
         let value_prim = match name {
-            "Real"    => Some(ElabValueType::Real),
-            "Natural" => Some(ElabValueType::Natural),
-            "Integer" => Some(ElabValueType::Integer),
-            "Complex" => Some(ElabValueType::Complex),
-            "Boolean" => Some(ElabValueType::Boolean),
-            "Quad"    => Some(ElabValueType::Quad),
-            "String"  => Some(ElabValueType::Str),
+            "Real"    => Some(ValueType::Real),
+            "Natural" => Some(ValueType::Natural),
+            "Integer" => Some(ValueType::Integer),
+            "Complex" => Some(ValueType::Complex),
+            "Boolean" => Some(ValueType::Boolean),
+            "Quad"    => Some(ValueType::Quad),
+            "String"  => Some(ValueType::Str),
             _ => None,
         };
         if let Some(vt) = value_prim {
-            return Ok(ElabType::Value(vt));
+            return Ok(TypeRef::Value(vt));
         }
 
         if self.disciplines.contains_key(name) {
-            return Ok(ElabType::Net(ElabNetType::Discipline(name.to_owned())));
+            return Ok(TypeRef::Net(NetType::Discipline(name.to_owned())));
         }
 
         if self.enums.contains_key(name) {
-            return Ok(ElabType::Value(ElabValueType::Enum(name.to_owned())));
+            return Ok(TypeRef::Value(ValueType::Enum(name.to_owned())));
         }
 
         if self.bundles.contains_key(name) {
             if self.is_net_capable_bundle(name) {
-                return Ok(ElabType::Net(ElabNetType::Discipline(name.to_owned())));
+                return Ok(TypeRef::Net(NetType::Discipline(name.to_owned())));
             }
             return Err(ElabError::UndefinedType(format!(
                 "`{}` is a value bundle — use field access, not as a bare type",
@@ -197,7 +200,7 @@ impl Elaborator {
                 .ok_or_else(|| {
                     ElabError::UndefinedType("fn type requires a return type".to_owned())
                 })?;
-            return Ok(ElabType::Value(ElabValueType::FnPtr(
+            return Ok(TypeRef::Value(ValueType::FnPtr(
                 params.to_vec(),
                 Box::new(ret.clone()),
             )));
@@ -211,17 +214,17 @@ impl Elaborator {
         ty: &Type,
         env: &ConstEnv,
         type_subst: &HashMap<String, String>,
-    ) -> Result<ElabNetType, ElabError> {
+    ) -> Result<NetType, ElabError> {
         match self.resolve_type(ty, env, type_subst)? {
-            ElabType::Net(nt) => Ok(nt),
+            TypeRef::Net(nt) => Ok(nt),
             _ => Err(ElabError::NotNetCapable(ty.name.clone())),
         }
     }
 
-    fn resolve_value_type(&self, ty: &Type, env: &ConstEnv) -> Result<ElabValueType, ElabError> {
+    fn resolve_value_type(&self, ty: &Type, env: &ConstEnv) -> Result<ValueType, ElabError> {
         match self.resolve_type(ty, env, &HashMap::new())? {
-            ElabType::Value(vt) => Ok(vt),
-            ElabType::Net(nt) => Err(ElabError::Other(format!(
+            TypeRef::Value(vt) => Ok(vt),
+            TypeRef::Net(nt) => Err(ElabError::Other(format!(
                 "expected value type, found net type `{:?}`",
                 nt
             ))),
@@ -240,14 +243,14 @@ impl Elaborator {
     // ─────────────────────────── Net reference ────────────────────────────────
 
     /// Reduce a port-connection or net-connection expression to a concrete
-    /// `ElabNetRef`. Supported forms:
+    /// `NetRef`. Supported forms:
     ///
-    /// - `name` → `ElabNetRef::simple(name)`
-    /// - `name[i]` — `i` evaluated via `env` → `ElabNetRef::indexed(name, i)`
-    /// - `base.field` → `ElabNetRef::simple("{base}_{field}")` (bundle-field naming)
-    fn eval_net_ref(&self, expr: &Expr, env: &ConstEnv) -> Result<ElabNetRef, ElabError> {
+    /// - `name` → `NetRef::simple(name)`
+    /// - `name[i]` — `i` evaluated via `env` → `NetRef::indexed(name, i)`
+    /// - `base.field` → `NetRef::simple("{base}_{field}")` (bundle-field naming)
+    fn eval_net_ref(&self, expr: &Expr, env: &ConstEnv) -> Result<NetRef, ElabError> {
         match expr {
-            Expr::Ident(name) => Ok(ElabNetRef::simple(name)),
+            Expr::Ident(name) => Ok(NetRef::simple(name)),
             Expr::Index(base, idx) => {
                 let base_name = match base.as_ref() {
                     Expr::Ident(n) => n.clone(),
@@ -262,7 +265,7 @@ impl Elaborator {
                     context: format!("net ref index on `{}`", base_name),
                     source: e,
                 })?;
-                Ok(ElabNetRef::indexed(base_name, i))
+                Ok(NetRef::indexed(base_name, i))
             }
             Expr::Field(base, field) => {
                 let base_name = match base.as_ref() {
@@ -274,7 +277,7 @@ impl Elaborator {
                         )))
                     }
                 };
-                Ok(ElabNetRef::simple(format!("{}_{}", base_name, field)))
+                Ok(NetRef::simple(format!("{}_{}", base_name, field)))
             }
             other => Err(ElabError::NotANetRef(format!(
                 "expected net reference (identifier, index, or field), got `{:?}`",
@@ -287,10 +290,10 @@ impl Elaborator {
 
     fn expand_port(
         &self,
-        port: &Port,
+        port: &AstPort,
         env: &ConstEnv,
         type_subst: &HashMap<String, String>,
-    ) -> Result<Vec<ElabPort>, ElabError> {
+    ) -> Result<Vec<Port>, ElabError> {
         let resolved_name =
             type_subst.get(&port.ty.name).map(|s| s.as_str()).unwrap_or(&port.ty.name);
 
@@ -301,7 +304,7 @@ impl Elaborator {
             let mut out = Vec::new();
             for field in &bundle.fields {
                 let field_ty = self.resolve_net_type(&field.ty, env, type_subst)?;
-                out.push(ElabPort {
+                out.push(Port {
                     direction: port.direction.clone(),
                     name: format!("{}_{}", port.name, field.name),
                     ty: field_ty,
@@ -311,7 +314,7 @@ impl Elaborator {
         }
 
         let net_ty = self.resolve_net_type(&port.ty, env, type_subst)?;
-        Ok(vec![ElabPort {
+        Ok(vec![Port {
             direction: port.direction.clone(),
             name: port.name.clone(),
             ty: net_ty,
@@ -325,7 +328,7 @@ impl Elaborator {
         decl: &ModDecl,
         env: &mut ConstEnv,
         type_subst: &HashMap<String, String>,
-    ) -> Result<ElabMod, ElabError> {
+    ) -> Result<Module, ElabError> {
         let mut ports = Vec::new();
         for port in &decl.ports.clone() {
             ports.extend(self.expand_port(port, env, type_subst)?);
@@ -349,7 +352,7 @@ impl Elaborator {
             }
         }
 
-        Ok(ElabMod { name: decl.name.clone(), ports, params, wires, instances, connections })
+        Ok(Module { name: decl.name.clone(), ports, params, wires, instances, connections, behaviors: vec![] })
     }
 
     fn lower_mod_stmts(
@@ -384,7 +387,7 @@ impl Elaborator {
                 } else {
                     None
                 };
-                out.push(ModBodyItem::Param(ElabParam {
+                out.push(ModBodyItem::Param(Param {
                     name: name.clone(),
                     ty: vt,
                     default: def,
@@ -393,7 +396,7 @@ impl Elaborator {
 
             ModStmt::WireDecl { name, ty } => {
                 let nt = self.resolve_net_type(ty, env, type_subst)?;
-                out.push(ModBodyItem::Wire(ElabWire { name: name.clone(), ty: nt }));
+                out.push(ModBodyItem::Wire(Wire { name: name.clone(), ty: nt }));
             }
 
             ModStmt::VarDecl { .. } => {
@@ -498,7 +501,7 @@ impl Elaborator {
                     })
                     .collect::<Result<_, ElabError>>()?;
 
-                out.push(ModBodyItem::Inst(ElabInstance {
+                out.push(ModBodyItem::Inst(Instance {
                     label,
                     module: mono_name,
                     ports: elab_ports,
@@ -509,7 +512,7 @@ impl Elaborator {
             ModStmt::Connection { lhs, rhs } => {
                 let lhs_ref = self.eval_net_ref(lhs, env)?;
                 let rhs_ref = self.eval_net_ref(rhs, env)?;
-                out.push(ModBodyItem::Conn(ElabConn { lhs: lhs_ref, rhs: rhs_ref }));
+                out.push(ModBodyItem::Conn(Connection { lhs: lhs_ref, rhs: rhs_ref }));
             }
         }
         Ok(())
@@ -517,18 +520,18 @@ impl Elaborator {
 
     // ────────────────────────── Behavior elaboration ──────────────────────────
 
-    fn elab_behavior(&self, beh: &BehaviorDecl) -> Result<ElabBehavior, ElabError> {
+    fn elab_behavior(&self, beh: &BehaviorDecl) -> Result<Behavior, ElabError> {
         let mut env = ConstEnv::new();
         let body = self.lower_behavior_stmts(&beh.body, beh.kind.clone(), &mut env)?;
-        Ok(ElabBehavior { name: beh.name.clone(), kind: beh.kind.clone(), body })
+        Ok(Behavior { name: beh.name.clone(), kind: beh.kind.clone(), body })
     }
 
     fn lower_behavior_stmts(
         &self,
-        stmts: &[BehaviorStmt],
+        stmts: &[AstBehaviorStmt],
         kind: BehaviorKind,
         env: &mut ConstEnv,
-    ) -> Result<Vec<ElabBehaviorStmt>, ElabError> {
+    ) -> Result<Vec<BehaviorStmt>, ElabError> {
         let mut out = Vec::new();
         for stmt in stmts {
             self.lower_behavior_stmt(stmt, kind.clone(), env, &mut out)?;
@@ -538,30 +541,30 @@ impl Elaborator {
 
     fn lower_behavior_stmt(
         &self,
-        stmt: &BehaviorStmt,
+        stmt: &AstBehaviorStmt,
         kind: BehaviorKind,
         env: &mut ConstEnv,
-        out: &mut Vec<ElabBehaviorStmt>,
+        out: &mut Vec<BehaviorStmt>,
     ) -> Result<(), ElabError> {
         match stmt {
-            BehaviorStmt::VarDecl { name, ty, default } => {
+            AstBehaviorStmt::VarDecl { name, ty, default } => {
                 let vt = self.resolve_value_type(ty, env)?;
-                out.push(ElabBehaviorStmt::VarDecl {
+                out.push(BehaviorStmt::VarDecl {
                     name: name.clone(),
                     ty: vt,
                     default: default.clone(),
                 });
             }
 
-            BehaviorStmt::Bind { dest, op, src } => {
-                out.push(ElabBehaviorStmt::Bind {
+            AstBehaviorStmt::Bind { dest, op, src } => {
+                out.push(BehaviorStmt::Bind {
                     dest: dest.clone(),
                     op: op.clone(),
                     src: src.clone(),
                 });
             }
 
-            BehaviorStmt::If { cond, then_body, else_body } => {
+            AstBehaviorStmt::If { cond, then_body, else_body } => {
                 let folded = match env.eval(cond) {
                     Ok(ConstVal::Bool(true)) | Ok(ConstVal::Nat(1)) => {
                         self.lower_behavior_stmts(then_body, kind.clone(), env)?
@@ -581,7 +584,7 @@ impl Elaborator {
                         } else {
                             None
                         };
-                        out.push(ElabBehaviorStmt::If {
+                        out.push(BehaviorStmt::If {
                             cond: cond.clone(),
                             then_body: then_elab,
                             else_body: else_elab,
@@ -592,19 +595,19 @@ impl Elaborator {
                 out.extend(folded);
             }
 
-            BehaviorStmt::Match { expr, arms } => {
+            AstBehaviorStmt::Match { expr, arms } => {
                 let elab_arms = arms
                     .iter()
                     .map(|arm| {
                         let body =
                             self.lower_behavior_stmts(&arm.body, kind.clone(), env)?;
-                        Ok(ElabMatchArm { pat: arm.pat.clone(), body })
+                        Ok(MatchArm { pat: arm.pat.clone(), body })
                     })
                     .collect::<Result<Vec<_>, ElabError>>()?;
-                out.push(ElabBehaviorStmt::Match { expr: expr.clone(), arms: elab_arms });
+                out.push(BehaviorStmt::Match { expr: expr.clone(), arms: elab_arms });
             }
 
-            BehaviorStmt::For { var, range, body } => {
+            AstBehaviorStmt::For { var, range, body } => {
                 let start = env.eval_nat(&range.start).map_err(|e| ElabError::ConstEval {
                     context: format!("behavioral for-loop start (var `{}`)", var),
                     source: e,
@@ -623,8 +626,8 @@ impl Elaborator {
                 }
             }
 
-            BehaviorStmt::Event { spec, guard, body } => {
-                let elab_body: Vec<ElabBehaviorStmt> = body
+            AstBehaviorStmt::Event { spec, guard, body } => {
+                let elab_body: Vec<BehaviorStmt> = body
                     .stmts
                     .iter()
                     .map(|s| self.lower_stmt_to_behavior(s, kind.clone(), env))
@@ -632,22 +635,22 @@ impl Elaborator {
                     .into_iter()
                     .flatten()
                     .collect();
-                out.push(ElabBehaviorStmt::Event {
+                out.push(BehaviorStmt::Event {
                     spec: spec.clone(),
                     guard: guard.clone(),
                     body: elab_body,
                 });
             }
 
-            BehaviorStmt::Diagnostic { sys, args } => {
-                out.push(ElabBehaviorStmt::Diagnostic {
+            AstBehaviorStmt::Diagnostic { sys, args } => {
+                out.push(BehaviorStmt::Diagnostic {
                     sys: sys.clone(),
                     args: args.clone(),
                 });
             }
 
-            BehaviorStmt::Expr(e) => {
-                out.push(ElabBehaviorStmt::Expr(e.clone()));
+            AstBehaviorStmt::Expr(e) => {
+                out.push(BehaviorStmt::Expr(e.clone()));
             }
         }
         Ok(())
@@ -660,18 +663,18 @@ impl Elaborator {
         stmt: &crate::parse::ast::Stmt,
         kind: BehaviorKind,
         env: &mut ConstEnv,
-    ) -> Result<Vec<ElabBehaviorStmt>, ElabError> {
+    ) -> Result<Vec<BehaviorStmt>, ElabError> {
         use crate::parse::ast::Stmt;
         match stmt {
             Stmt::VarDecl { name, ty, default } => {
                 let vt = self.resolve_value_type(ty, env)?;
-                Ok(vec![ElabBehaviorStmt::VarDecl {
+                Ok(vec![BehaviorStmt::VarDecl {
                     name: name.clone(),
                     ty: vt,
                     default: default.clone(),
                 }])
             }
-            Stmt::Bind { dest, op, src } => Ok(vec![ElabBehaviorStmt::Bind {
+            Stmt::Bind { dest, op, src } => Ok(vec![BehaviorStmt::Bind {
                 dest: dest.clone(),
                 op: op.clone(),
                 src: src.clone(),
@@ -698,7 +701,7 @@ impl Elaborator {
                 } else {
                     None
                 };
-                Ok(vec![ElabBehaviorStmt::If {
+                Ok(vec![BehaviorStmt::If {
                     cond: cond.clone(),
                     then_body: then_elab,
                     else_body: else_elab,
@@ -717,10 +720,10 @@ impl Elaborator {
                             .into_iter()
                             .flatten()
                             .collect();
-                        Ok(ElabMatchArm { pat: arm.pat.clone(), body })
+                        Ok(MatchArm { pat: arm.pat.clone(), body })
                     })
                     .collect::<Result<Vec<_>, ElabError>>()?;
-                Ok(vec![ElabBehaviorStmt::Match { expr: expr.clone(), arms: elab_arms }])
+                Ok(vec![BehaviorStmt::Match { expr: expr.clone(), arms: elab_arms }])
             }
             Stmt::For { var, range, body } => {
                 let start = env.eval_nat(&range.start).map_err(|e| ElabError::ConstEval {
@@ -743,14 +746,18 @@ impl Elaborator {
                 }
                 Ok(unrolled)
             }
-            Stmt::Return(e) => Ok(vec![ElabBehaviorStmt::Expr(e.clone())]),
-            Stmt::Expr(e) => Ok(vec![ElabBehaviorStmt::Expr(e.clone())]),
+            // GAPS §D.5 — `Return(expr)` is preserved as a distinct
+            // `Return` variant so the codegen can find the trailing
+            // return value of a user `fn` body. The `Expr` arm keeps
+            // bare expression statements (most common in behavior bodies).
+            Stmt::Return(e) => Ok(vec![BehaviorStmt::Return(e.clone())]),
+            Stmt::Expr(e) => Ok(vec![BehaviorStmt::Expr(e.clone())]),
         }
     }
 
     // ─────────────────────────── Function elaboration ─────────────────────────
 
-    fn elab_fn(&self, fn_decl: &FnDecl) -> Result<ElabFn, ElabError> {
+    fn elab_fn(&self, fn_decl: &FnDecl) -> Result<Function, ElabError> {
         let mut env = ConstEnv::new();
 
         let params = fn_decl
@@ -768,11 +775,11 @@ impl Elaborator {
 
         let ret = self
             .resolve_type(&fn_decl.sig.ret, &env, &HashMap::new())
-            .unwrap_or(ElabType::Value(ElabValueType::Real));
+            .unwrap_or(TypeRef::Value(ValueType::Real));
 
-        // Lower the body from raw Stmt AST to ElabBehaviorStmt.
+        // Lower the body from raw Stmt AST to BehaviorStmt.
         // Functions use Analog as a placeholder kind (no behavior-specific ops allowed).
-        let mut body: Vec<ElabBehaviorStmt> = fn_decl
+        let mut body: Vec<BehaviorStmt> = fn_decl
             .body
             .stmts
             .iter()
@@ -784,15 +791,15 @@ impl Elaborator {
 
         // Trailing expression becomes an implicit return.
         if let Some(expr) = &fn_decl.body.expr {
-            body.push(ElabBehaviorStmt::Expr(*expr.clone()));
+            body.push(BehaviorStmt::Expr(*expr.clone()));
         }
 
-        Ok(ElabFn { name: fn_decl.sig.name.clone(), params, ret, body })
+        Ok(Function { name: fn_decl.sig.name.clone(), params, ret, body })
     }
 
     // ─────────────────────────── Impl elaboration ─────────────────────────────
 
-    fn elab_impl(&self, impl_decl: &ImplDecl) -> Result<ElabImpl, ElabError> {
+    fn elab_impl(&self, impl_decl: &ImplDecl) -> Result<ImplBlock, ElabError> {
         let env = ConstEnv::new();
         let const_args = impl_decl
             .const_args
@@ -811,7 +818,7 @@ impl Elaborator {
             .map(|m| self.elab_fn(m))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(ElabImpl {
+        Ok(ImplBlock {
             capability: impl_decl.capability.clone(),
             ty: impl_decl.ty.clone(),
             const_args,
@@ -863,13 +870,14 @@ impl Elaborator {
         mono_decl.name = mono_name.clone();
 
         // Insert a placeholder to break potential recursion.
-        self.mono_cache.insert(mono_name.clone(), ElabMod {
+        self.mono_cache.insert(mono_name.clone(), Module {
             name: mono_name.clone(),
             ports: vec![],
             params: vec![],
             wires: vec![],
             instances: vec![],
             connections: vec![],
+            behaviors: vec![],
         });
 
         let elab_mod = self.elab_mod_inner(&mono_decl, &mut env, &HashMap::new())?;
@@ -887,8 +895,8 @@ impl Default for Elaborator {
 // ─────────────────────────────── Internal ────────────────────────────────────
 
 enum ModBodyItem {
-    Param(ElabParam),
-    Wire(ElabWire),
-    Inst(ElabInstance),
-    Conn(ElabConn),
+    Param(Param),
+    Wire(Wire),
+    Inst(Instance),
+    Conn(Connection),
 }

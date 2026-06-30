@@ -65,10 +65,6 @@ impl<'a> TransferFunctionSolver<'a> {
 
         // Solve DC operating point
         let dc_point = DcSolver::new(circuit, context.clone())?.solve()?;
-        eprintln!(
-            "DEBUG TF::new - DC point solved. Values: {:?}",
-            dc_point.values()
-        );
 
         // Resolve input source branch reference
         let input_branch_var = AnalogVariable::Branch(options.input_source.clone());
@@ -94,12 +90,6 @@ impl<'a> TransferFunctionSolver<'a> {
                 crate::error::Error::simple("TF", "Output variable not found in circuit")
             })?
             .clone();
-
-        eprintln!(
-            "DEBUG: Output ref = {:?}, idx = {:?}",
-            output_ref.variable(),
-            output_ref.idx()
-        );
 
         // Resolve output reference node (for differential voltage)
         let output_ref_node = if let Some(ref_node) = &options.output_ref {
@@ -404,6 +394,53 @@ impl<'a> TransferFunctionSolver<'a> {
                 // R_out = V_test / I_response
                 Ok(1.0 / i_response)
             }
+        }
+    }
+}
+
+// A.13 — `TransferFunctionSolver::new` historically called `eprintln!`
+// twice to dump the DC operating point and output-reference resolution to
+// stderr. That is debug noise in production. The regression test pins the
+// contract: the source must contain zero `eprintln!` calls in non-test code.
+// We assert on the literal source string instead of capturing stderr at
+// runtime because the solver's `new` requires a fully built `CircuitInstance`,
+// which would make a proper runtime test heavyweight.
+//
+// If you legitimately need to re-add a debug print, gate it behind
+// `tracing::debug!` instead so it respects the standard logging machinery.
+#[cfg(test)]
+mod a13_no_debug_eprintln {
+    #[test]
+    fn no_eprintln_in_tf_solver_a13() {
+        // Track when we enter / leave this test module so its own lines
+        // (which mention the macro name in comments and assertions) do
+        // not trip the check.
+        let src = include_str!("tf.rs");
+        let mut in_test_module = false;
+        for (idx, line) in src.lines().enumerate() {
+            if line.contains("mod a13_no_debug_eprintln") {
+                in_test_module = true;
+                continue;
+            }
+            if in_test_module {
+                if line.starts_with("}") {
+                    in_test_module = false;
+                }
+                continue;
+            }
+            let trimmed = line.trim_start();
+            assert!(
+                !trimmed.starts_with("eprintln!"),
+                "A.13: `eprintln!` found at line {}: `{}`",
+                idx + 1,
+                trimmed
+            );
+            assert!(
+                !trimmed.contains(" eprintln!"),
+                "A.13: inline `eprintln!` found at line {}: `{}`",
+                idx + 1,
+                trimmed
+            );
         }
     }
 }

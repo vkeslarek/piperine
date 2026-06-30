@@ -141,17 +141,27 @@ pub fn from_ir(program: &IrProgram, top: &str) -> Result<CircuitInstance, String
             .map(|p| resolved.get(&p.name).copied().unwrap_or(0.0))
             .collect();
 
-        // Compile body (analog & digital).
+        // Compile body (analog & digital). GAPS §A.6: propagate compile
+        // errors with the instance label and module name in the message.
+        // A `.ok()` here would silently drop a child whose body fails to
+        // compile, producing an incomplete netlist with no diagnostic.
         let analog_dev = if child.analog.is_some() {
-            ir_analog_to_device(program, &child.name)
-                .ok()
-                .map(Arc::new)
+            match ir_analog_to_device(program, &child.name) {
+                Ok(d) => Some(Arc::new(d)),
+                Err(CodegenError::NoAnalogBody(_)) => None,
+                Err(e) => {
+                    return Err(format!(
+                        "instance `{}` of module `{}` failed to compile analog body: {e}",
+                        inst.label, inst.module
+                    ));
+                }
+            }
         } else {
             None
         };
 
-        let digital_interp = ir_digital_to_interp(program, &child.name).ok().map(
-            |mut interp| {
+        let digital_interp = match ir_digital_to_interp(program, &child.name) {
+            Ok(mut interp) => {
                 let port_net_map: HashMap<String, DigitalNet> = child
                     .ports
                     .iter()
@@ -168,9 +178,16 @@ pub fn from_ir(program: &IrProgram, top: &str) -> Result<CircuitInstance, String
                     })
                     .collect();
                 interp.set_port_nets(port_net_map);
-                interp
-            },
-        );
+                Some(interp)
+            }
+            Err(CodegenError::NoDigitalBody(_)) => None,
+            Err(e) => {
+                return Err(format!(
+                    "instance `{}` of module `{}` failed to compile digital body: {e}",
+                    inst.label, inst.module
+                ));
+            }
+        };
 
         if analog_dev.is_some() || digital_interp.is_some() {
             let mut dev = PhdlDevice::new(

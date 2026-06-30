@@ -92,6 +92,14 @@ impl Resolver {
             vec!["piperine".into(), "collections".into()],
             include_str!("../stdlib/collections.phdl"),
         );
+        // GAPS §C.1 — `Ground` is the one discipline that must be in
+        // scope without explicit declaration (it's the universal reference
+        // node). Inject it through the prelude path rather than special-
+        // casing it in the elaborator.
+        builtins.insert(
+            vec!["piperine".into(), "prelude".into()],
+            include_str!("../stdlib/prelude.phdl"),
+        );
         Self { root: None, builtins, cache: HashMap::new() }
     }
 
@@ -102,17 +110,24 @@ impl Resolver {
         r
     }
 
-    /// Items always in scope — stdlib capabilities and collection functions.
+    /// Items always in scope — stdlib capabilities, collection functions,
+    /// and the `Ground` discipline (GAPS §C.1).
     ///
     /// These are injected before every elaboration run; no explicit `use` needed.
     pub fn prelude_items(&mut self) -> Vec<ast::Item> {
         let cap_key: Vec<String> = vec!["piperine".into(), "capabilities".into()];
         let col_key: Vec<String> = vec!["piperine".into(), "collections".into()];
+        let pre_key: Vec<String> = vec!["piperine".into(), "prelude".into()];
         let mut items = self.load_source(&cap_key)
             .map(|s| s.items.clone())
             .unwrap_or_default();
         items.extend(
             self.load_source(&col_key)
+                .map(|s| s.items.clone())
+                .unwrap_or_default(),
+        );
+        items.extend(
+            self.load_source(&pre_key)
                 .map(|s| s.items.clone())
                 .unwrap_or_default(),
         );

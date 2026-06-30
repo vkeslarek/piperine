@@ -45,22 +45,25 @@
 
 pub mod elab;
 pub mod parse;
+pub mod pom;
 pub mod resolve;
 pub mod stdlib;
 
-// Re-export the most commonly used parse-AST types at the crate root for
-// backwards compatibility with code that was written against the flat layout.
-pub use parse::ast::*;
+// Re-export POM types (the reflection API surface).
+pub use elab::{
+    elaborate, elaborate_with,
+    Behavior, BehaviorStmt, Connection, Design, ElabError, Function, ImplBlock,
+    Instance, MatchArm, Module, NetRef, NetType, Param, Port, TypeRef,
+    ValueType, Wire,
+};
+pub use pom::{Id, Kind, OverrideMap, ReflectError, Selection, Value};
 pub use parse::{parse_str, Lexed, Lexer, Tok};
-
-// Re-export the elaboration entry points and key IR types.
-pub use elab::{elaborate, elaborate_with, ElabError, ElabProgram};
 pub use resolve::{ResolveError, Resolver};
 
 /// Parse a PHDL source string and run the full elaboration pipeline.
 ///
 /// Equivalent to calling [`parse::parse_str`] and then [`elab::elaborate`].
-pub fn parse_and_elaborate(input: &str) -> Result<ElabProgram, String> {
+pub fn parse_and_elaborate(input: &str) -> Result<Design, String> {
     let source = parse_str(input)?;
     elaborate(source).map_err(|e| e.to_string())
 }

@@ -13,7 +13,7 @@ use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
 use piperine_solver::math::linear::Stamp;
 use piperine_solver::solver::Context;
 
-use crate::codegen::{DigitalInterpreter, JitAnalogDevice};
+use crate::codegen::{DigitalInterpreter, JitAnalogDevice, SimCtx};
 
 pub struct PhdlDevice {
     name: String,
@@ -25,6 +25,10 @@ pub struct PhdlDevice {
     node_refs: Vec<Option<AnalogReference>>,
     /// Evaluated parameter values, indexed by param position.
     params: Vec<f64>,
+    /// Live simulator state read by `$temperature`/`$abstime`/`$vt`.
+    /// Defaults to T = 300 K, t = 0, mfactor = 1, gmin = 1e-12. The solver
+    /// updates this at each `load_dc` / `load_transient` call (GAPS §A.2/§A.3).
+    sim_ctx: SimCtx,
 }
 
 impl PhdlDevice {
@@ -35,7 +39,25 @@ impl PhdlDevice {
         node_refs: Vec<Option<AnalogReference>>,
         params: Vec<f64>,
     ) -> Self {
-        Self { name: name.into(), analog, digital, node_refs, params }
+        Self {
+            name: name.into(),
+            analog,
+            digital,
+            node_refs,
+            params,
+            sim_ctx: SimCtx::default(),
+        }
+    }
+
+    /// Override the simulator state (e.g. simulation temperature). The solver
+    /// is expected to call this at the start of each analysis phase.
+    pub fn set_sim_ctx(&mut self, sim: SimCtx) {
+        self.sim_ctx = sim;
+    }
+
+    /// Read the current simulator state.
+    pub fn sim_ctx(&self) -> &SimCtx {
+        &self.sim_ctx
     }
 
     pub fn allocate_nodes(
@@ -65,8 +87,8 @@ impl PhdlDevice {
         let mut res = vec![0.0; n];
         let mut jac = vec![0.0; n * n];
         if let Some(a) = &self.analog {
-            a.eval_residual(node_voltages, &self.params, &mut res);
-            a.eval_jacobian(node_voltages, &self.params, &mut jac);
+            a.eval_residual(node_voltages, &self.params, &self.sim_ctx, &mut res);
+            a.eval_jacobian(node_voltages, &self.params, &self.sim_ctx, &mut jac);
         }
         (res, jac)
     }
@@ -145,7 +167,7 @@ impl PhdlDevice {
         if analog.has_reactive() {
             let n = self.num_terminals();
             let mut qjac = vec![0.0; n * n];
-            analog.eval_charge_jacobian(&node_voltages, &self.params, &mut qjac);
+            analog.eval_charge_jacobian(&node_voltages, &self.params, &self.sim_ctx, &mut qjac);
             for i in 0..n {
                 for j in 0..n {
                     let v = qjac[i * n + j];
@@ -178,7 +200,7 @@ impl PhdlDevice {
         if analog.has_reactive() {
             let n = self.num_terminals();
             let mut qjac = vec![0.0; n * n];
-            analog.eval_charge_jacobian(&node_voltages, &self.params, &mut qjac);
+            analog.eval_charge_jacobian(&node_voltages, &self.params, &self.sim_ctx, &mut qjac);
             for k in 0..n * n {
                 jac[k] += alpha * qjac[k];
             }

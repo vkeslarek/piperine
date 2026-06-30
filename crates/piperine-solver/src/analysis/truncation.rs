@@ -78,7 +78,12 @@ impl IntegrationMethod {
                 4 => 12.0 / 125.0,
                 5 => 10.0 / 137.0,
                 6 => 20.0 / 343.0,
-                _ => panic!("Gear method order must be between 1 and 6"),
+                // Out-of-range orders clamp to the highest supported order (6)
+                // rather than panicking, per the "no panic on user input"
+                // convention in AGENTS.md. The deviation from a true higher-order
+                // Gear coefficient is bounded; callers should treat the result as
+                // a conservative truncation estimate for an unsupported order.
+                _ => 20.0 / 343.0,
             },
         }
     }
@@ -178,9 +183,32 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Gear method order must be between 1 and 6")]
-    fn test_invalid_gear_order() {
+    fn test_invalid_gear_order_clamps() {
+        // After A.12 fix: out-of-range orders no longer panic, they clamp.
         let gear_invalid = IntegrationMethod::Gear { order: 7 };
-        gear_invalid.truncation_coefficient(); // Should panic
+        let coeff = gear_invalid.truncation_coefficient();
+        assert!(coeff.is_finite() && coeff > 0.0);
+    }
+
+    // A.12 — AGENTS.md says "never panic on user input". Out-of-range Gear
+    // orders must not panic. We clamp to the highest supported order (6)
+    // which keeps the API total and the truncation coefficient within the
+    // Gear family's well-conditioned range.
+    #[test]
+    fn out_of_range_gear_order_does_not_panic_a12() {
+        let gear_too_high = IntegrationMethod::Gear { order: 7 };
+        let coeff = gear_too_high.truncation_coefficient();
+        assert!(coeff.is_finite(), "coefficient must be finite, got {coeff}");
+        assert!(coeff > 0.0, "coefficient must be positive, got {coeff}");
+
+        let gear_zero = IntegrationMethod::Gear { order: 0 };
+        let coeff0 = gear_zero.truncation_coefficient();
+        assert!(coeff0.is_finite());
+        assert!(coeff0 > 0.0);
+
+        let gear_huge = IntegrationMethod::Gear { order: usize::MAX };
+        let coeff_max = gear_huge.truncation_coefficient();
+        assert!(coeff_max.is_finite());
+        assert!(coeff_max > 0.0);
     }
 }

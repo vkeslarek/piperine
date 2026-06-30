@@ -1,176 +1,148 @@
 # Piperine
 
-> ⚠️ **Work in progress — not production ready.** APIs, syntax, and behavior change
-> without notice. Use it to explore and contribute, not for anything you depend on.
+> ⚠️ **Work in progress — not production ready.** APIs, syntax, and behavior
+> change without notice. The implementation covers a meaningful subset of the
+> language design (see [`docs/GAPS.md`](docs/GAPS.md) for what is *not* yet
+> implemented). Use it to explore and contribute, not for anything you
+> depend on.
 
-## What it is
+A hardware-description language and simulator for analog and mixed-signal
+circuits. Both Verilog-A/AMS (`.va`, `.vams`) and a new native HDL called
+**PHDL** (`.phdl`, `.ppr`) lower to a shared IR, which compiles to a
+pure-Rust Newton–Raphson solver. The solver also accepts optional
+`.osdi` device models compiled by OpenVAF-Reloaded for industrial device
+libraries (BSIM, EKV, PSP, …).
 
-Piperine is a hardware-description language and simulator front-end for analog and
-mixed-signal circuits. The model is simple:
-
-- **`.ppr` files** — structural hardware description. Modules, components, paramsets,
-  Verilog-A device models. No testbench code.
-- **Python files** — testbenches. `import piperine` loads a native Rust extension
-  (`piperine.so`) that gives you live ngspice sessions as first-class Python objects.
-
-Hardware and its bench live together by design:
+## Architecture
 
 ```
-my_project/
-  piperine.toml
-  lpf/
-    lpf.ppr       ← circuit description
-    lpf.py        ← testbench (pure Python)
-  amp/
-    amp.ppr
-    amp.py
+   .va / .vams    ──►  piperine-ams    ──►      ┌──────────────────┐
+   (Verilog-A/AMS)  ◄─►   frontend     ◄─►      │  piperine-codegen │
+                                                  │   (IR + lowering)  │
+   .phdl / .ppr    ──►  piperine-lang  ──►      └────────┬─────────┘
+   (PHDL / .ppr)     ◄─►   frontend     ◄─►               │
+                                                            ▼
+                                                  Vec<Box<dyn Device>>
+                                                            │
+                                                  ┌─────────┴─────────┐
+                                                  ▼                   ▼
+                                       ┌──────────────────┐  ┌──────────────────────┐
+                                       │  piperine-solver   │  │  piperine-solver OSDI │
+                                       │  (Newton-Raphson,  │  │  (.osdi shared libs)  │
+                                       │   AC/DC/Tran/      │  │                        │
+                                       │   Noise/TF)         │  └──────────────────────┘
+                                       └──────────────────┘
 ```
+
+The **IR (`crates/piperine-codegen/src/ir.rs`) is the only contract** between
+the frontends and the solver. `piperine-solver` does *not* depend on
+`piperine-codegen`; the codegen depends on the solver's `Device` and
+`CircuitInstance` traits because it lowers IR into them. Verify this
+dependency direction with `cargo metadata` if you change it.
+
+## Crates
+
+| Crate | Role | Key files |
+|-------|------|-----------|
+| `piperine-ams` | Verilog-A/AMS frontend | `src/{lexer,parser,preprocessor,grammar,ast,model,fmt}.rs`, `headers/*.vams` |
+| `piperine-lang` | PHDL frontend (parse + elab) | `src/parse/`, `src/elab/`, `src/resolve/`, `src/stdlib/` |
+| `piperine-codegen` | IR + Cranelift JIT + lowering to `Device` | `src/ir.rs`, `src/from_ams.rs`, `src/from_ppr.rs`, `src/from_ir.rs`, `src/ir_analog_to_device.rs`, `src/ir_digital_to_interp.rs`, `src/phdl_device.rs`, `src/codegen/` |
+| `piperine-solver` | Newton-Raphson, AC/DC/Tran/Noise/TF, OSDI loader | `src/{analog,digital,osdi,solver,math,topology}.rs` |
+| `piperine-cli` | clap subcommands | `src/commands/{check,fmt,build,run,test,new,clean}.rs` |
+| `piperine-project` | `Piperine.toml` reader | `src/lib.rs` |
 
 ## Quick start
 
 ```sh
-cargo build --release
-piperine new my_project
-cd my_project
-piperine run hello/hello.py
-# V(vmid) = 5.000 V
+cargo build                          # build the workspace
+cargo test                           # ~270 tests; must pass (see tests-baseline.md)
+cargo test -p piperine-codegen        # always re-run after touching codegen
 ```
 
-`piperine setup` builds the `piperine.so` extension into a project-local `.venv`.
-`piperine run` activates it and runs your Python bench.
-
-## Testbench examples
-
-### Simple — voltage divider OP
-
-```python
-import piperine as ppr
-
-sess = ppr.NgspiceSession.from_file("divider/divider.ppr", module="divider")
-op = sess.op()
-print(f"V(mid) = {op['vmid']:.3f} V")
-```
-
-### AC sweep — RC low-pass filter
-
-```python
-import piperine as ppr
-import numpy as np
-
-sess = ppr.NgspiceSession.from_file("lpf/lpf.ppr", module="lpf_tb")
-ac = sess.ac("dec", 50, 100.0, 100e3)
-
-freq = ac["frequency"]
-vout = ac["out"]                           # magnitude |V|
-vout_db = 20 * np.log10(vout / vout[0])
-idx = np.argmin(np.abs(vout_db + 3.0))
-print(f"fc (-3 dB) ≈ {freq[idx]:.1f} Hz")
-```
-
-### Parallel Monte Carlo — 30 workers simultaneously
-
-```python
-import piperine as ppr
-import numpy as np
-
-N = 30
-sessions = [ppr.NgspiceSession.from_file("lpf/lpf.ppr", module="lpf_tb")
-            for _ in range(N)]
-
-rs = np.random.normal(1000, 30, N)
-cs = np.random.normal(100e-9, 3e-9, N)
-for sess, r, c in zip(sessions, rs, cs):
-    sess.alter("R1", "resistance", r)
-    sess.alter("C1", "capacitance", c)
-
-futures = [sess.tran_async("1n", "1u") for sess in sessions]
-results = ppr.join_all(futures)           # wall time ≈ slowest worker
-```
-
-All 30 workers run in parallel. GIL released during simulation.
-
-## Hardware description
-
-`.ppr` files are structural hardware only. Paramsets create named device variants:
-
-```verilog
-`include "ngspice.ppr"
-
-paramset lpf_r res; .r = 1000.0; endparamset
-paramset lpf_c cap; .c = 100e-9;  endparamset
-
-module lpf(in, out);
-    inout in, out;
-    lpf_r R1(.p(in), .n(out));
-    lpf_c C1(.p(out), .n(gnd));
-endmodule
-
-// Testbench module — adds an AC source for frequency sweep.
-module lpf_tb;
-    wire in, out;
-    vsource #(.dc(0), .acmag(1)) Vin(.p(in), .n(gnd));
-    lpf DUT(.in(in), .out(out));
-endmodule
-```
-
-SOA guards live in hardware modules as `always @(step)` blocks, compiled to
-`.meas` at elaboration — no runtime interpreter:
-
-```verilog
-module bjt_amp;
-    // ...
-    always @(step) begin
-        if (V(c) > 30.0) $run_error("Vce_max");
-    end
-endmodule
-```
-
-```python
-sess.tran("1n", "1u")
-sess.check_soa()   # raises RuntimeError if any limit was exceeded
-```
-
-## How it works
-
-```
-.ppr ──parse──▶ AST ──┬── VA modules ──▶ OpenVAF ──▶ .osdi ──┐
-                      │                                       ▼
-                      └── elaborate_circuit ──▶ SPICE netlist ──▶ ngspice (worker)
-                                                                       ▲
-import piperine ──▶ NgspiceSession (PyO3) ─────────────────────────────┘
-                    .op() / .ac() / .tran() / .alter() / .tran_async() / …
-```
-
-ngspice runs in an isolated worker subprocess — a crash there cannot reach Python.
-Multiple sessions run in parallel Rust threads; GIL released during simulation.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for more detail.
-For the component reference see [`docs/`](docs/).
-
-## Build and test
+### Verifying a design
 
 ```sh
-cargo build                      # all crates + worker binary
-cargo build -p piperine-worker   # rebuild worker after ngspice changes
-cargo test                       # full suite
+# Parse + elaborate + sanity-check a PHDL or Verilog-A file
+cargo run -p piperine-cli -- check path/to/circuit.phdl
+
+# Format (token-level pretty-printer for Verilog-A)
+cargo run -p piperine-cli -- fmt path/to/circuit.vams
 ```
 
-Tests in `tests/` use IPC and require a built worker binary. If tests fail with
-unexpected events, run `cargo build -p piperine-worker` first.
+The other CLI subcommands (`build`, `run`, `test`, `clean`) are stubs that
+print "TODO: call simulator/compiler". See [`docs/GAPS.md`](docs/GAPS.md)
+for the planned scope.
 
-## Contributing
+### OSDI tests
 
-Conventions and agent guidance: [`CLAUDE.md`](CLAUDE.md), [`AGENTS.md`](AGENTS.md).
-Design notes: [`docs/development/`](docs/development/).
+The OSDI subset of `piperine-solver` tests loads real `.osdi` device models
+produced by OpenVAF-Reloaded. `OPENVAF_BIN` is auto-downloaded by
+`piperine-solver/build.rs` on linux x86_64. On other platforms the build
+script falls back to a system `openvaf`.
 
-| Crate | Role |
-|-------|------|
-| `piperine-parser` | Lexer + recursive-descent parser → AST |
-| `piperine-circuit` | `HardwareDefinition` trait, elaboration, paramsets, net resolution |
-| `piperine-ngspice` | ngspice device impls, IPC backend, bundled `ngspice.ppr` |
-| `piperine-python` | PyO3 native extension — `NgspiceSession`, `SimFuture`, `join_all` |
-| `piperine-coordinator` | `ProcessPool` — spawns/manages worker subprocesses |
-| `piperine-worker` | Subprocess wrapping libngspice via FFI; answers IPC |
-| `piperine-common` | IPC message types shared by coordinator and worker |
-| `piperine-openvaf` | Compiles Verilog-A modules → `.osdi` via OpenVAF-Reloaded |
-| `piperine-interpreter` | Runs `always @(step)` handlers during analyses |
+## Where to read next
+
+| Doc | What it covers |
+|-----|----------------|
+| [`AGENTS.md`](AGENTS.md) | Build/test commands, frozen-file rules, conventions, test baseline |
+| [`docs/piperine-hdl-spec.md`](docs/piperine-hdl-spec.md) | The PHDL language design |
+| [`crates/piperine-codegen/IR-SYSTEM.md`](crates/piperine-codegen/IR-SYSTEM.md) | The IR contract between frontends and solver |
+| [`docs/GAPS.md`](docs/GAPS.md) | Spec-vs-code gap analysis; the authoritative development guide |
+
+## IR in 30 seconds
+
+`IrProgram { source, modules, functions }`. Each `IrModule` has ports,
+params, wires, branches, vars, instances, connections, an optional
+`analog` body, and an optional `digital` body. Analog statements are
+`Contrib` / `Force` / `IndirectContrib`; digital statements mirror
+Verilog-A's `initial`/`always` (`Assign` / `NonBlocking` / `EventControl`).
+`IrExpr` covers literals, params, vars, branch access (`V(a,b)` /
+`I(a,b)`), all arithmetic, `Call` (math), `Sim` queries
+(`$temperature`, `$vt`, `$abstime`, …), and reactive `StateRef`s. See
+`IR-SYSTEM.md` for the full grammar and semantics.
+
+The IR is emitted to Cranelift JIT code that takes `(node_voltages,
+params, sim_ctx, rhs)` (or `jac`/`charge`/`charge_jacobian` for the
+derivative/companion-model variants). The 4th argument, `SimCtx`, is a
+32-byte struct carrying the live simulator state — see A.2/A.3 in GAPS
+for the threading story.
+
+## Conventions
+
+- **Panics:** never `unwrap()`/`expect()` on user-input paths; return
+  `Result<_, E>`. `unwrap()` is acceptable only behind a provable
+  invariant (`peek`-guarded lexer reads, FFI length-checked slices), and
+  should carry a `// SAFETY:` comment.
+- **Fail-loud over silent zero:** the codegen uses
+  `CodegenError::Unsupported(...)` rather than `todo!()`/`unimplemented!()`
+  and rejects IrExpr constructs that would silently compile to a wrong
+  value. See `validate_ir_contrib` in `ir_emit.rs`.
+- **Numeric conventions:** analog = `f64`; digital = `LogicValue` (`Zero`,
+  `One`, `X`, `Z`); mixed-signal nets = anonymous `usize` indices.
+- **No new dependencies** without checking `Cargo.toml` and the
+  workspace `[workspace.dependencies]` table first.
+
+## Status
+
+This is a **work in progress**. The current implementation is roughly:
+
+- **AMS frontend** — full Verilog-A/AMS grammar parses; digital
+  (`initial`/`always`) and generate blocks are not yet lowered to IR
+  (`digital: None` hardcoded).
+- **PHDL frontend** — parses and elaborates most of the spec; generics,
+  capabilities, bundles, enums, and higher-order functions are
+  parse-only or partial.
+- **Codegen** — handles resistive `I(p,n) <+ …` contributions and `ddt`
+  via the companion model. Forces (`V(p,n) <-`), indirect contributions,
+  and most analog operators are rejected with clear errors.
+- **Solver** — DC, AC, Tran (backward Euler only), Noise (adjoint),
+  Transfer Function. Trapezoidal integration and LTE-based timestep control
+  are defined but not wired into the transient loop.
+- **Mixed-signal** — A2D and D2A bridges are not yet implemented; the
+  solver passes empty analog voltages into `eval_discrete` and the digital
+  state is invisible to analog stamping.
+- **OSDI** — fully functional via OpenVAF-Reloaded.
+
+See [`docs/GAPS.md`](docs/GAPS.md) for the full gap analysis with
+file:line citations, proposed solutions, and acceptance criteria for each
+gap.

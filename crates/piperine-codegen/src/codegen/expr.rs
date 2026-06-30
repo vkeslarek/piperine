@@ -18,6 +18,9 @@ pub struct ExprCtx<'b, 'f: 'b> {
     pub param_values: &'b HashMap<String, Value>,
     /// libm function name → FuncRef.
     pub libm: &'b HashMap<&'static str, FuncRef>,
+    /// Pointer to the live `SimCtx` struct (temperature, abstime, …) for
+    /// `$temperature`/`$abstime`/`$vt` reads. See GAPS §A.2, §A.3.
+    pub sim_ctx: cranelift_codegen::ir::Value,
 }
 
 /// Emit a PHDL expression as a Cranelift f64 Value.

@@ -20,7 +20,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
-use piperine_lang::elab::ir::{ElabBehaviorStmt, ElabProgram};
+use piperine_lang::elab::ir::{BehaviorStmt, Design};
 use piperine_lang::parse::ast::{BindOp, Expr};
 
 use super::autodiff::branch_key;
@@ -85,18 +85,31 @@ pub struct Contribution<E> {
     pub expr:  E,        // current expression
 }
 
-/// Extract all current contributions from a flat list of behavior statements.
-fn extract_contributions(stmts: &[ElabBehaviorStmt]) -> Vec<Contribution<Expr>> {
-    let mut out = Vec::new();
-    for stmt in stmts {
-        extract_from_stmt(stmt, &mut out);
-    }
-    out
+/// GAPS §D.1 — a single `V(plus, minus) <- expr` force statement extracted
+/// from the behavior. The compiled force-residual function writes
+/// `V(plus) − V(minus) − expr` to one row of the output (one row per
+/// force statement). The MNA matrix adds one branch-current unknown
+/// per force; see also GAPS §H.4 for the MNA branch-current rows.
+pub struct ForceContribution<E> {
+    pub plus:  String,
+    pub minus: String,
+    pub expr:  E,
 }
 
-fn extract_from_stmt(stmt: &ElabBehaviorStmt, out: &mut Vec<Contribution<Expr>>) {
+/// Extract all current contributions from a flat list of behavior statements.
+///
+/// Returns `Err` on `ddt`/`idt` rejection (GAPS §A.7); see [`check_no_ddt_idt`].
+fn extract_contributions(stmts: &[BehaviorStmt]) -> Result<Vec<Contribution<Expr>>, CodegenError> {
+    let mut out = Vec::new();
+    for stmt in stmts {
+        extract_from_stmt(stmt, &mut out)?;
+    }
+    Ok(out)
+}
+
+fn extract_from_stmt(stmt: &BehaviorStmt, out: &mut Vec<Contribution<Expr>>) -> Result<(), CodegenError> {
     match stmt {
-        ElabBehaviorStmt::Bind { dest, op: BindOp::Contrib, src } => {
+        BehaviorStmt::Bind { dest, op: BindOp::Contrib, src } => {
             // I(plus, minus) <+ expr
             if let Expr::Call(func, args) = dest {
                 if let Expr::Ident(fname) = func.as_ref() {
@@ -104,12 +117,16 @@ fn extract_from_stmt(stmt: &ElabBehaviorStmt, out: &mut Vec<Contribution<Expr>>)
                         if let (Some(Expr::Ident(p)), Some(Expr::Ident(m))) =
                             (args.first(), args.get(1))
                         {
+                            // GAPS §A.7 — reject `ddt`/`idt` in the
+                            // from_elab path (silently stamped as 0).
+                            // The IR path handles them via the companion
+                            // model.
+                            check_no_ddt_idt(src)?;
                             out.push(Contribution {
                                 plus:  p.clone(),
                                 minus: m.clone(),
                                 expr:  src.clone(),
                             });
-                            return;
                         }
                     }
                     // V(p,n) <+ expr  (voltage force) — treat as I contribution
@@ -117,12 +134,41 @@ fn extract_from_stmt(stmt: &ElabBehaviorStmt, out: &mut Vec<Contribution<Expr>>)
                     // they require branch equation handling beyond simple stamping.
                 }
             }
+            Ok(())
         }
-        ElabBehaviorStmt::If { then_body, else_body, .. } => {
-            for s in then_body { extract_from_stmt(s, out); }
-            if let Some(eb) = else_body { for s in eb { extract_from_stmt(s, out); } }
+        BehaviorStmt::If { then_body, else_body, .. } => {
+            for s in then_body { extract_from_stmt(s, out)?; }
+            if let Some(eb) = else_body { for s in eb { extract_from_stmt(s, out)?; } }
+            Ok(())
         }
-        _ => {}
+        _ => Ok(()),
+    }
+}
+
+/// GAPS §A.7 — reject `ddt`/`idt` in the `from_elab` path. The legacy
+/// behaviour silently stamped them as 0 (DC), turning capacitors into
+/// open circuits in transient. The IR path handles `ddt` correctly via the
+/// companion model; routing everything through IR is the long-term fix
+/// (GAPS §K.1). For now, fail loud.
+fn check_no_ddt_idt(e: &Expr) -> Result<(), CodegenError> {
+    match e {
+        Expr::Call(func, args) => {
+            if let Expr::Ident(name) = func.as_ref() {
+                if name == "ddt" || name == "idt" {
+                    return Err(CodegenError::Unsupported(format!(
+                        "`{name}(...)` in from_elab path silently stamps as 0 \
+                         (GAPS §A.7); route through the IR path (ppr_to_ir + \
+                         ir_analog_to_device) which supports reactive operators"
+                    )));
+                }
+            }
+            for a in args { check_no_ddt_idt(a)?; }
+            Ok(())
+        }
+        Expr::Binary(a, _, b) => { check_no_ddt_idt(a)?; check_no_ddt_idt(b)?; Ok(()) }
+        Expr::Unary(_, x) => check_no_ddt_idt(x),
+        Expr::If { cond, .. } => check_no_ddt_idt(cond),
+        _ => Ok(()),
     }
 }
 
@@ -140,31 +186,36 @@ pub struct CompileInputs<E> {
     /// Reactive charge contributions: `Q(V)` whose `ddt` is stamped via the
     /// companion model.  Empty for purely resistive devices.
     pub react_contributions: Vec<Contribution<E>>,
+    /// GAPS §D.1 — ideal voltage-source forces (`V(plus, minus) <- expr`).
+    /// One row per force in the output of `force_residual`. The actual
+    /// MNA stamping (branch-current unknowns, `V+ − V− − expr` rows) lives
+    /// in the solver; see GAPS §H.4.
+    pub force_contributions: Vec<ForceContribution<E>>,
     pub branches: Vec<(String, String)>,
 }
 
 impl CompileInputs<Expr> {
-    pub fn from_elab(prog: &ElabProgram, module_name: &str) -> Result<Self, CodegenError> {
+    pub fn from_elab(prog: &Design, module_name: &str) -> Result<Self, CodegenError> {
         use piperine_lang::parse::ast::BehaviorKind;
 
-        let elab_mod = prog.modules.get(module_name).ok_or_else(|| {
+        let elab_mod = prog.module(module_name).ok_or_else(|| {
             CodegenError::ModuleNotFound(module_name.to_string())
         })?;
-        let behavior = prog.behaviors.iter()
-            .find(|b| b.name == module_name && b.kind == BehaviorKind::Analog)
+        let behavior = elab_mod.behaviors().iter()
+            .find(|b| b.is_analog())
             .ok_or_else(|| CodegenError::BehaviorNotFound(module_name.to_string()))?;
 
-        let port_index: HashMap<String, usize> = elab_mod.ports.iter()
+        let port_index: HashMap<String, usize> = elab_mod.ports().iter()
             .enumerate()
-            .map(|(i, p)| (p.name.clone(), i))
+            .map(|(i, p)| (p.name().to_string(), i))
             .collect();
-        let param_names: Vec<String> = elab_mod.params.iter().map(|p| p.name.clone()).collect();
+        let param_names: Vec<String> = elab_mod.params().iter().map(|p| p.name().to_string()).collect();
         let param_index: HashMap<String, usize> = param_names.iter()
             .enumerate()
             .map(|(i, n)| (n.clone(), i))
             .collect();
 
-        let contributions = extract_contributions(&behavior.body);
+        let contributions = extract_contributions(behavior.body())?;
 
         let mut branches: Vec<(String, String)> = Vec::new();
         for c in &contributions {
@@ -179,15 +230,18 @@ impl CompileInputs<Expr> {
 
         Ok(Self {
             name: module_name.to_string(),
-            num_terminals: elab_mod.ports.len(),
+            num_terminals: elab_mod.ports().len(),
             port_index,
             param_names,
             param_index,
-            num_params: elab_mod.params.len(),
+            num_params: elab_mod.params().len(),
             contributions,
             // The PHDL `from_elab` path does not extract reactive charge
             // contributions yet; `ddt` there stamps as 0 (DC) as before.
             react_contributions: Vec::new(),
+            // The `from_elab` path does not extract force statements —
+            // those only flow through the IR codegen (GAPS §D.1).
+            force_contributions: Vec::new(),
             branches,
         })
     }
@@ -200,6 +254,7 @@ impl<E: AnalogExpr> CompileInputs<E> {
         param_names: Vec<String>,
         contributions: Vec<Contribution<E>>,
         react_contributions: Vec<Contribution<E>>,
+        force_contributions: Vec<ForceContribution<E>>,
     ) -> Self {
         let num_terminals = port_names.len();
         let port_index: HashMap<String, usize> = port_names.iter()
@@ -220,6 +275,13 @@ impl<E: AnalogExpr> CompileInputs<E> {
                 branches.push(pair);
             }
         }
+        // Branches for forces are implicit (V+ − V− is a single branch).
+        for f in &force_contributions {
+            let pair = (f.plus.clone(), f.minus.clone());
+            if !branches.contains(&pair) {
+                branches.push(pair);
+            }
+        }
         Self {
             name: module_name.to_string(),
             port_index,
@@ -229,6 +291,7 @@ impl<E: AnalogExpr> CompileInputs<E> {
             param_index,
             contributions,
             react_contributions,
+            force_contributions,
             branches,
         }
     }
@@ -276,22 +339,36 @@ pub fn compile<E: AnalogExpr>(inputs: &CompileInputs<E>) -> Result<JitAnalogDevi
         (Some(q_id), Some(qj_id))
     };
 
+    // GAPS §D.1 — force-residual function (one row per `V(p,n) <- expr`).
+    let force_id = if inputs.force_contributions.is_empty() {
+        None
+    } else {
+        Some(compile_named_force(
+            &mut module, &libm_ids, "force",
+            &inputs.force_contributions, &inputs.port_index, &inputs.param_index,
+            &inputs.branches,
+        )?)
+    };
+
     module.finalize_definitions()
         .map_err(|e| CodegenError::Module(e.to_string()))?;
 
     let residual_ptr = module.get_finalized_function(residual_id);
     let jacobian_ptr = module.get_finalized_function(jacobian_id);
 
-    let residual: unsafe extern "C" fn(*const f64, *const f64, *mut f64) =
+    let residual: unsafe extern "C" fn(*const f64, *const f64, *const super::SimCtx, *mut f64) =
         unsafe { std::mem::transmute(residual_ptr) };
-    let jacobian: unsafe extern "C" fn(*const f64, *const f64, *mut f64) =
+    let jacobian: unsafe extern "C" fn(*const f64, *const f64, *const super::SimCtx, *mut f64) =
         unsafe { std::mem::transmute(jacobian_ptr) };
 
-    let transmute_fn = |id: FuncId| -> unsafe extern "C" fn(*const f64, *const f64, *mut f64) {
+    let transmute_fn = |id: FuncId|
+        -> unsafe extern "C" fn(*const f64, *const f64, *const super::SimCtx, *mut f64)
+    {
         unsafe { std::mem::transmute(module.get_finalized_function(id)) }
     };
     let charge = charge_id.map(transmute_fn);
     let charge_jacobian = charge_jac_id.map(transmute_fn);
+    let force = force_id.map(|id| (inputs.force_contributions.len(), transmute_fn(id)));
 
     Ok(JitAnalogDevice {
         name: inputs.name.clone(),
@@ -302,17 +379,18 @@ pub fn compile<E: AnalogExpr>(inputs: &CompileInputs<E>) -> Result<JitAnalogDevi
         jacobian,
         charge,
         charge_jacobian,
+        force,
         _module: module,
     })
 }
 
-/// Compile an analog module from an [`ElabProgram`] into a JIT device.
+/// Compile an analog module from an [`Design`] into a JIT device.
 ///
 /// `module_name` must match both:
 /// - A key in `prog.modules` (for port/param declarations)
 /// - A name in `prog.behaviors` with `kind == BehaviorKind::Analog`
 pub fn compile_analog_module(
-    prog: &ElabProgram,
+    prog: &Design,
     module_name: &str,
 ) -> Result<JitAnalogDevice, CodegenError> {
     let inputs = CompileInputs::from_elab(prog, module_name)?;
@@ -329,6 +407,7 @@ pub fn compile_analog_module_ir<E: AnalogExpr>(
     param_names: Vec<String>,
     contributions: Vec<Contribution<E>>,
     react_contributions: Vec<Contribution<E>>,
+    force_contributions: Vec<ForceContribution<E>>,
 ) -> Result<JitAnalogDevice, CodegenError> {
     let inputs = CompileInputs::from_contributions(
         module_name,
@@ -336,6 +415,7 @@ pub fn compile_analog_module_ir<E: AnalogExpr>(
         param_names,
         contributions,
         react_contributions,
+        force_contributions,
     );
     compile(&inputs)
 }
@@ -363,9 +443,10 @@ fn declare_libm_imports(module: &mut JITModule) -> Result<HashMap<&'static str, 
 fn make_body_sig(module: &JITModule) -> Signature {
     let ptr = module.target_config().pointer_type();
     let mut sig = module.make_signature();
-    sig.params.push(AbiParam::new(ptr));
-    sig.params.push(AbiParam::new(ptr));
-    sig.params.push(AbiParam::new(ptr));
+    sig.params.push(AbiParam::new(ptr));   // node_voltages
+    sig.params.push(AbiParam::new(ptr));   // params
+    sig.params.push(AbiParam::new(ptr));   // sim_ctx (see codegen::SimCtx)
+    sig.params.push(AbiParam::new(ptr));   // rhs / jac
     sig
 }
 
@@ -450,13 +531,20 @@ fn compile_named_residual<E: AnalogExpr>(
 
     let node_ptr  = builder.block_params(entry)[0];
     let param_ptr = builder.block_params(entry)[1];
-    let rhs_ptr   = builder.block_params(entry)[2];
+    let sim_ptr   = builder.block_params(entry)[2];
+    let rhs_ptr   = builder.block_params(entry)[3];
 
     let branch_voltages = build_branch_voltages(&mut builder, node_ptr, branches, port_index);
     let param_values    = build_param_values(&mut builder, param_ptr, param_index);
 
     for contrib in contributions {
-        let mut ectx = ExprCtx { builder: &mut builder, branch_voltages: &branch_voltages, param_values: &param_values, libm: &libm };
+        let mut ectx = ExprCtx {
+            builder: &mut builder,
+            branch_voltages: &branch_voltages,
+            param_values: &param_values,
+            libm: &libm,
+            sim_ctx: sim_ptr,
+        };
         let current = contrib.expr.emit(&mut ectx);
 
         if let Some(&p_idx) = port_index.get(contrib.plus.as_str()) {
@@ -506,7 +594,8 @@ fn compile_named_jacobian<E: AnalogExpr>(
 
     let node_ptr  = builder.block_params(entry)[0];
     let param_ptr = builder.block_params(entry)[1];
-    let jac_ptr   = builder.block_params(entry)[2];
+    let sim_ptr   = builder.block_params(entry)[2];
+    let jac_ptr   = builder.block_params(entry)[3];
 
     let branch_voltages = build_branch_voltages(&mut builder, node_ptr, branches, port_index);
     let param_values    = build_param_values(&mut builder, param_ptr, param_index);
@@ -526,6 +615,7 @@ fn compile_named_jacobian<E: AnalogExpr>(
                 branch_voltages: &branch_voltages,
                 param_values: &param_values,
                 libm: &libm,
+                sim_ctx: sim_ptr,
             };
             let g = dexpr.emit(&mut ectx);
 
@@ -557,6 +647,83 @@ fn compile_named_jacobian<E: AnalogExpr>(
                 }
             }
         }
+    }
+
+    builder.ins().return_(&[]);
+    builder.finalize();
+
+    module.define_function(func_id, &mut ctx)
+        .map_err(|e| CodegenError::Module(e.to_string()))?;
+    Ok(func_id)
+}
+
+/// GAPS §D.1 — compile the force-residual function. One row per force:
+/// `out[i] = V(plus_i) − V(minus_i) − expr_i`. The output slot for row `i`
+/// is determined by the solver (see GAPS §H.4: each force adds one
+/// branch-current unknown to the MNA matrix).
+#[allow(clippy::too_many_arguments)]
+fn compile_named_force<E: AnalogExpr>(
+    module: &mut JITModule,
+    libm_ids: &HashMap<&'static str, FuncId>,
+    fn_name: &str,
+    forces: &[ForceContribution<E>],
+    port_index: &HashMap<String, usize>,
+    param_index: &HashMap<String, usize>,
+    _branches: &[(String, String)],
+) -> Result<FuncId, CodegenError> {
+    let sig = make_body_sig(module);
+    let func_id = module
+        .declare_function(fn_name, Linkage::Export, &sig)
+        .map_err(|e| CodegenError::Module(e.to_string()))?;
+
+    let mut ctx = module.make_context();
+    ctx.func.signature = sig;
+    let mut fb_ctx = FunctionBuilderContext::new();
+    let mut builder = FunctionBuilder::new(&mut ctx.func, &mut fb_ctx);
+
+    let libm = import_libm_into_func(module, libm_ids, builder.func);
+    let entry = builder.create_block();
+    builder.append_block_params_for_function_params(entry);
+    builder.switch_to_block(entry);
+    builder.seal_block(entry);
+
+    let node_ptr = builder.block_params(entry)[0];
+    let param_ptr = builder.block_params(entry)[1];
+    let sim_ptr = builder.block_params(entry)[2];
+    let out_ptr = builder.block_params(entry)[3];
+
+    // The force function doesn't need precomputed branch voltages (it
+    // directly loads V+ and V− from node_ptr). Pass a minimal dummy
+    // branches list so `build_branch_voltages` is happy; it produces
+    // an entry that is never read.
+    let branch_voltages = build_branch_voltages(
+        &mut builder, node_ptr,
+        &[("".to_string(), "".to_string())],
+        port_index,
+    );
+    let param_values = build_param_values(&mut builder, param_ptr, param_index);
+
+    for (i, f) in forces.iter().enumerate() {
+        let mut ectx = ExprCtx {
+            builder: &mut builder,
+            branch_voltages: &branch_voltages,
+            param_values: &param_values,
+            libm: &libm,
+            sim_ctx: sim_ptr,
+        };
+        let expr_val = f.expr.emit(&mut ectx);
+        let _ = sim_ptr; // force residual does not currently read SimCtx
+        let vp = match port_index.get(f.plus.as_str()) {
+            Some(&idx) => load_f64(&mut builder, node_ptr, idx),
+            None       => builder.ins().f64const(0.0),
+        };
+        let vm = match port_index.get(f.minus.as_str()) {
+            Some(&idx) => load_f64(&mut builder, node_ptr, idx),
+            None       => builder.ins().f64const(0.0),
+        };
+        let diff = builder.ins().fsub(vp, vm);
+        let row = builder.ins().fsub(diff, expr_val);
+        accumulate_f64(&mut builder, row, out_ptr, i);
     }
 
     builder.ins().return_(&[]);

@@ -1,23 +1,23 @@
 /// Integration tests for the elaboration phase.
 ///
-/// These tests verify that `elaborate()` produces a fully resolved `ElabProgram`:
-/// - types are concrete (`ElabNetType` / `ElabValueType`, no free expressions)
-/// - port connections are `ElabNetRef` (no raw `Expr`)
+/// These tests verify that `elaborate()` produces a fully resolved `Design`:
+/// - types are concrete (`NetType` / `ValueType`, no free expressions)
+/// - port connections are `NetRef` (no raw `Expr`)
 /// - for loops are unrolled
 /// - bundles are expanded to flat ports
 /// - generic modules are monomorphized on demand
 /// - stdlib prelude is always in scope
 /// - `use` declarations are resolved
-/// - function and impl bodies are lowered to `ElabBehaviorStmt`
+/// - function and impl bodies are lowered to `BehaviorStmt`
 use piperine_lang::{
-    elab::{ElabBehaviorStmt, ElabNetType, ElabValueType},
+    elab::{BehaviorStmt, NetType, ValueType},
     elaborate, parse_and_elaborate, parse_str,
     resolve::Resolver,
 };
 
 // ────────────────────────────── helpers ───────────────────────────────────────
 
-fn elab(src: &str) -> piperine_lang::elab::ElabProgram {
+fn elab(src: &str) -> piperine_lang::elab::Design {
     elaborate(parse_str(src).expect("parse failed")).expect("elaborate failed")
 }
 
@@ -64,8 +64,8 @@ fn test_primitive_value_types_resolved() {
     let m = prog.modules.get("M").expect("M not elaborated");
     let p = m.params.iter().find(|x| x.name == "p").expect("param p");
     let n = m.params.iter().find(|x| x.name == "n").expect("param n");
-    assert_eq!(p.ty, ElabValueType::Real);
-    assert_eq!(n.ty, ElabValueType::Natural);
+    assert_eq!(p.ty, ValueType::Real);
+    assert_eq!(n.ty, ValueType::Natural);
 }
 
 #[test]
@@ -76,8 +76,8 @@ fn test_discipline_net_type_resolved() {
     );
     let m = prog.modules.get("Res").expect("Res not elaborated");
     assert_eq!(m.ports.len(), 2);
-    assert_eq!(m.ports[0].ty, ElabNetType::Discipline("Electrical".into()));
-    assert_eq!(m.ports[1].ty, ElabNetType::Discipline("Electrical".into()));
+    assert_eq!(m.ports[0].ty, NetType::Discipline("Electrical".into()));
+    assert_eq!(m.ports[1].ty, NetType::Discipline("Electrical".into()));
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn test_array_net_type_resolved() {
     assert_eq!(m.ports.len(), 1);
     assert_eq!(
         m.ports[0].ty,
-        ElabNetType::Array(Box::new(ElabNetType::Discipline("Bit".into())), 8)
+        NetType::Array(Box::new(NetType::Discipline("Bit".into())), 8)
     );
 }
 
@@ -114,7 +114,7 @@ fn test_bundle_expanded_to_flat_ports() {
     let names: Vec<&str> = m.ports.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(names, vec!["inp_p", "inp_n", "out"]);
     for port in &m.ports {
-        assert_eq!(port.ty, ElabNetType::Discipline("Electrical".into()));
+        assert_eq!(port.ty, NetType::Discipline("Electrical".into()));
     }
 }
 
@@ -236,8 +236,8 @@ fn test_analog_behavior_elaborated() {
          mod Res ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0e3; }
          analog Res { V(p, n) <+ r * I(p, n); }",
     );
-    assert_eq!(prog.behaviors.len(), 1);
-    assert_eq!(prog.behaviors[0].name, "Res");
+    assert_eq!(prog.module("Res").unwrap().behaviors().len(), 1);
+    assert_eq!(prog.module("Res").unwrap().behaviors()[0].name, "Res");
 }
 
 #[test]
@@ -252,9 +252,8 @@ fn test_digital_behavior_elaborated() {
              }
          }",
     );
-    assert_eq!(prog.behaviors.len(), 1);
-    let b = &prog.behaviors[0];
-    // Should have 2 top-level stmts: bind (q <- st) and event block.
+    assert_eq!(prog.module("SrLatch").unwrap().behaviors().len(), 1);
+    let b = &prog.module("SrLatch").unwrap().behaviors()[0];
     assert_eq!(b.body.len(), 2);
 }
 
@@ -267,11 +266,10 @@ fn test_behavioral_for_unrolled() {
              for i in 0..3 { V(a) <+ 1.0; }
          }",
     );
-    let b = &prog.behaviors[0];
-    // 3 unrolled Bind stmts.
+    let b = &prog.module("M").unwrap().behaviors()[0];
     assert_eq!(b.body.len(), 3);
     for stmt in &b.body {
-        assert!(matches!(stmt, ElabBehaviorStmt::Bind { .. }));
+        assert!(matches!(stmt, BehaviorStmt::Bind { .. }));
     }
 }
 
@@ -284,10 +282,9 @@ fn test_const_if_folded_in_behavior() {
              if (1 == 1) { V(a) <+ 1.0; } else { V(a) <+ 0.0; }
          }",
     );
-    let b = &prog.behaviors[0];
-    // Condition is const-true → else branch dropped, only 1 Bind remains.
+    let b = &prog.module("M").unwrap().behaviors()[0];
     assert_eq!(b.body.len(), 1);
-    assert!(matches!(b.body[0], ElabBehaviorStmt::Bind { .. }));
+    assert!(matches!(b.body[0], BehaviorStmt::Bind { .. }));
 }
 
 #[test]
@@ -316,7 +313,7 @@ fn test_function_body_lowered() {
     let f = prog.functions.get("double").expect("double not elaborated");
     // body should have VarDecl + Expr (return value)
     assert!(!f.body.is_empty(), "function body should be non-empty");
-    assert!(matches!(f.body[0], ElabBehaviorStmt::VarDecl { .. }));
+    assert!(matches!(f.body[0], BehaviorStmt::VarDecl { .. }));
 }
 
 #[test]
@@ -324,7 +321,7 @@ fn test_function_param_types_resolved() {
     let prog = elab("fn add(a: Real, b: Real) -> Real { return a + b; }");
     let f = prog.functions.get("add").expect("add not elaborated");
     assert_eq!(f.params.len(), 2);
-    assert_eq!(f.ret, piperine_lang::elab::ElabType::Value(ElabValueType::Real));
+    assert_eq!(f.ret, piperine_lang::elab::TypeRef::Value(ValueType::Real));
 }
 
 // ────────────────────────────── impl elaboration ──────────────────────────────
@@ -416,7 +413,7 @@ fn test_elab_sr_latch_example() {
     );
     let prog = elab(&full);
     assert!(prog.modules.contains_key("SrLatch"));
-    assert_eq!(prog.behaviors.len(), 1);
+    assert_eq!(prog.module("SrLatch").unwrap().behaviors().len(), 1);
     let ports: Vec<&str> = prog.modules["SrLatch"].ports.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(ports, vec!["s", "r", "q"]);
 }

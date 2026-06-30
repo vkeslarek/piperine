@@ -23,7 +23,7 @@
 //! [`validate_ir_contrib`] with a [`CodegenError::Unsupported`], so a model
 //! never silently compiles to the wrong value.
 
-use cranelift_codegen::ir::{condcodes::FloatCC, InstBuilder, Value};
+use cranelift_codegen::ir::{condcodes::FloatCC, types::F64, InstBuilder, MemFlags, Value};
 
 use piperine_lang::parse::ast::Expr;
 
@@ -131,15 +131,49 @@ pub fn emit_ir_expr(ctx: &mut ExprCtx, e: &IrExpr) -> Value {
 }
 
 fn emit_sim(ctx: &mut ExprCtx, sq: &SimQuery) -> Value {
-    // Simulator queries that have no device-side wiring yet emit a constant.
-    // Temperature/Vt/Abstime are deliberately 0.0 (documented limitation), not
-    // an error: they are valid constructs whose dynamic value is simply not
-    // threaded into the JIT device.
+    // Threaded from the live `SimCtx` (`sim_ctx` pointer on the JIT stack).
+    // Layout (see codegen::SimCtx):
+    //   offset 0: temperature (Kelvin)
+    //   offset 8: abstime (seconds)
+    //   offset 16: mfactor
+    //   offset 24: gmin
+    //
+    // GAPS §A.2 + §A.3 — these used to silently emit 0.0 (or a hardcoded
+    // 0.025852 for `Vt`); now they read the live simulator state.
+    //
+    // `FuncInstBuilder` is not `Copy`, so we call `ctx.builder.ins()` for
+    // each emission rather than binding a single builder reference.
     match sq {
-        SimQuery::Vt(_) => {
-            // thermal voltage at 300K ≈ 0.025852 V — a usable constant default.
-            ctx.builder.ins().f64const(0.025852)
+        SimQuery::Temperature => {
+            // (*sim_ctx).temperature — offset 0.
+            ctx.builder.ins().load(F64, MemFlags::trusted(), ctx.sim_ctx, 0)
         }
+        SimQuery::Abstime => {
+            // (*sim_ctx).abstime — offset 8.
+            ctx.builder.ins().load(F64, MemFlags::trusted(), ctx.sim_ctx, 8)
+        }
+        SimQuery::Mfactor => {
+            // (*sim_ctx).mfactor — offset 16.
+            ctx.builder.ins().load(F64, MemFlags::trusted(), ctx.sim_ctx, 16)
+        }
+        SimQuery::Vt(t_opt) => {
+            // vt = kT/q where T = (*sim_ctx).temperature (or the optional
+            // argument if present).
+            let temp = ctx.builder.ins().load(F64, MemFlags::trusted(), ctx.sim_ctx, 0);
+            let temp = match t_opt {
+                Some(arg_expr) => {
+                    // Multiply by optional arg expr (used as a scaling factor).
+                    let arg = emit_ir_expr(ctx, arg_expr);
+                    ctx.builder.ins().fmul(temp, arg)
+                }
+                None => temp,
+            };
+            let kb_over_q = ctx.builder.ins().f64const(super::super::SimCtx::K_B_OVER_Q_EV_PER_K);
+            ctx.builder.ins().fmul(temp, kb_over_q)
+        }
+        // Simparam and the rest are not yet wired — fall through to a
+        // clear error via the validator; emitter's `_ => 0.0` arm is the
+        // safety net for unvalidated code paths.
         _ => ctx.builder.ins().f64const(0.0),
     }
 }
@@ -420,26 +454,99 @@ fn call2(name: &str, a: IrExpr, b: IrExpr) -> IrExpr {
 /// Reject any [`IrExpr`] construct that cannot be faithfully lowered to a
 /// scalar analog quantity, so a model never silently compiles to a wrong
 /// value.  Returns `Ok` for everything the emitter handles correctly.
+///
+/// `known_names` is the set of param/var names that the emitter will
+/// resolve via the param_values map. Any `Param(name)` or `Var(name)` not
+/// in this set is rejected (GAPS §A.8). The single-argument form
+/// `validate_ir_contrib(e)` defaults to accepting every Param/Var name
+/// for callers that have not threaded the known-names set yet (these
+/// callers typically never exercise the path — see GAPS §K.1 for the
+/// plan to deprecate the from_elab path entirely).
 pub fn validate_ir_contrib(e: &IrExpr) -> Result<(), CodegenError> {
-    match e {
-        IrExpr::Real(_) | IrExpr::Int(_) | IrExpr::Bool(_) | IrExpr::Param(_)
-        | IrExpr::Var(_) | IrExpr::StateRef(_) => Ok(()),
+    validate_ir_contrib_with(e, None)
+}
 
-        IrExpr::BranchAccess { access, .. } => {
-            if access == "V" || access == "I" {
-                Ok(())
-            } else {
-                Err(unsupported(format!("branch access `{access}(...)`")))
+/// Like [`validate_ir_contrib`] but with the set of known param/var
+/// names. Names not in the set produce `CodegenError::Unsupported` with a
+/// clear message — never a silent 0.0 (GAPS §A.8).
+///
+/// Also rejects `V(plus, minus)` where `plus` or `minus` is not in the
+/// module's terminal set (GAPS §A.9): unknown terminals used to read as
+/// 0 via `f64const(0.0)`.
+pub fn validate_ir_contrib_with(
+    e: &IrExpr,
+    known_names: Option<&std::collections::HashSet<String>>,
+) -> Result<(), CodegenError> {
+    validate_ir_contrib_with2(e, known_names, None)
+}
+
+/// Same as [`validate_ir_contrib_with`] but with both known param/var
+/// names AND known terminal names. `known_terminals` is the union of the
+/// module's ports, wires, and grounds.
+pub fn validate_ir_contrib_with2(
+    e: &IrExpr,
+    known_names: Option<&std::collections::HashSet<String>>,
+    known_terminals: Option<&std::collections::HashSet<String>>,
+) -> Result<(), CodegenError> {
+    match e {
+        IrExpr::Real(_) | IrExpr::Int(_) | IrExpr::Bool(_) | IrExpr::StateRef(_) => Ok(()),
+
+        IrExpr::Param(name) | IrExpr::Var(name) => {
+            match known_names {
+                Some(set) if !set.contains(name) => Err(unsupported(format!(
+                    "unresolved name `{name}` in analog body (GAPS §A.8)"
+                ))),
+                _ => Ok(()),
             }
         }
 
+        IrExpr::BranchAccess { access, plus, minus } => {
+            // A.1: only `V(...)` reads are supported inside an analog
+            // contribution expression. Flow (`I(...)`) reads require a
+            // voltage-source branch-current unknown in the solver (H.4),
+            // which is not yet wired up. Fail loud so users are not lied
+            // to with a silent zero.
+            //
+            // If you need a controlled source today, use an indirect
+            // contribution: `I(cp, cm) : V(pp, pm) = expr;`.
+            if access != "V" {
+                return Err(unsupported(format!(
+                    "reading branch access `{access}(...)` inside a contribution is not yet \
+                     supported; use an indirect contribution `I(cp,cm) : V(pp,pm) = expr` \
+                     instead (see docs/GAPS.md §A.1)"
+                )));
+            }
+            // A.9: reject unknown terminal names. The literal "0" is the
+            // implicit ground reference used by single-arg `V(a)` —
+            // always allow it. (Analog ref nodes are the implicit
+            // 0V reference in MNA.)
+            if let Some(set) = known_terminals {
+                if plus != "0" && !set.contains(plus) {
+                    return Err(unsupported(format!(
+                        "unknown terminal `{plus}` in V({plus}, {minus}) (GAPS §A.9)"
+                    )));
+                }
+                if minus != "0" && !set.contains(minus) {
+                    return Err(unsupported(format!(
+                        "unknown terminal `{minus}` in V({plus}, {minus}) (GAPS §A.9)"
+                    )));
+                }
+            }
+            Ok(())
+        }
+
         IrExpr::Sim(sq) => match sq {
-            SimQuery::Temperature | SimQuery::Vt(_) | SimQuery::Abstime => Ok(()),
+            SimQuery::Temperature
+            | SimQuery::Vt(_)
+            | SimQuery::Abstime
+            | SimQuery::Mfactor => Ok(()),
             other => Err(unsupported(format!("simulator query {other:?}"))),
         },
 
         IrExpr::Unary(op, x) => match op {
-            IrUnOp::Neg | IrUnOp::Not => validate_ir_contrib(x),
+            IrUnOp::Neg | IrUnOp::Not => {
+                validate_ir_contrib_with2(x, known_names, known_terminals)
+            }
             _ => Err(unsupported(format!("unary operator {op:?}"))),
         },
 
@@ -449,15 +556,15 @@ pub fn validate_ir_contrib(e: &IrExpr) -> Result<(), CodegenError> {
                 Err(unsupported(format!("bitwise/shift operator {op:?}")))
             }
             _ => {
-                validate_ir_contrib(a)?;
-                validate_ir_contrib(b)
+                validate_ir_contrib_with2(a, known_names, known_terminals)?;
+                validate_ir_contrib_with2(b, known_names, known_terminals)
             }
         },
 
         IrExpr::Select(c, t, f) => {
-            validate_ir_contrib(c)?;
-            validate_ir_contrib(t)?;
-            validate_ir_contrib(f)
+            validate_ir_contrib_with2(c, known_names, known_terminals)?;
+            validate_ir_contrib_with2(t, known_names, known_terminals)?;
+            validate_ir_contrib_with2(f, known_names, known_terminals)
         }
 
         IrExpr::Call(name, args) => {
@@ -465,7 +572,7 @@ pub fn validate_ir_contrib(e: &IrExpr) -> Result<(), CodegenError> {
                 return Err(unsupported(format!("call to non-builtin `{name}`")));
             }
             for a in args {
-                validate_ir_contrib(a)?;
+                validate_ir_contrib_with2(a, known_names, known_terminals)?;
             }
             Ok(())
         }

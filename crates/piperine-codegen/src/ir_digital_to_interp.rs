@@ -1,15 +1,15 @@
 //! IR → Device adapter for digital modules.
 //!
 //! Phase 1.5: takes an [`IrProgram`] + module name, converts the
-//! [`crate::ir::IrDigitalBody`] into an `ElabBehaviorStmt` sequence inside a
-//! synthetic [`ElabProgram`] and hands it off to `compile_digital_module`,
+//! [`crate::ir::IrDigitalBody`] into an `BehaviorStmt` sequence inside a
+//! synthetic [`Design`] and hands it off to `compile_digital_module`,
 //! which walks the standard scanner + interpreter.
 
 use crate::codegen::digital::{compile_digital_module, DigitalInterpreter};
+use crate::codegen::inline::inline_user_calls;
 use crate::codegen::CodegenError;
-use crate::ir::IrModule;
-use crate::ir::IrProgram;
-use piperine_lang::elab::ir::{ElabBehavior, ElabBehaviorStmt, ElabProgram};
+use crate::ir::{IrExpr, IrModule, IrProgram, IrStmt};
+use piperine_lang::elab::ir::{Behavior, BehaviorStmt, Design, Module};
 use piperine_lang::parse::ast::{BehaviorKind, EventSpec};
 
 /// Lookup IrModule by name (mirrors analog version).
@@ -27,21 +27,197 @@ pub fn ir_digital_to_interp(
     let body = module
         .digital
         .as_ref()
-        .ok_or_else(|| CodegenError::BehaviorNotFound(module_name.to_string()))?;
+        .ok_or_else(|| CodegenError::NoDigitalBody(module_name.to_string()))?;
 
-    let elab_stmts = lower_stmts(&body.stmts);
+    // GAPS §D.5 — inline user fn calls in the body before validation +
+    // lowering so that user-defined helpers like `fn next_state(...)` are
+    // substituted into the body. The interpreter then sees a body with
+    // no opaque user-call nodes.
+    let mut stmts: Vec<IrStmt> = body.stmts.clone();
+    for stmt in &mut stmts {
+        inline_stmt_user_calls(stmt, program, module).map_err(CodegenError::InlineError)?;
+    }
 
-    let mut elab = ElabProgram::new();
-    elab.behaviors.push(ElabBehavior {
-        kind: BehaviorKind::Digital,
-        name: module_name.to_string(),
-        body: elab_stmts,
-    });
+    // GAPS §A.4 + §A.5 — validate the (now-inlined) body up-front so the
+    // wrong-op fallbacks in `ir_expr_to_phdl` cannot be silently relied
+    // on. The interpreter cannot currently execute shifts / powers /
+    // reductions correctly, so reject them loudly.
+    for stmt in &stmts {
+        validate_ir_digital_stmt(stmt)?;
+    }
+
+    let elab_stmts = lower_stmts(&stmts);
+
+    let mut elab = Design::new();
+    // Build a synthetic Module with the behavior attached, so
+    // `compile_digital_module` can find it.
+    let behavior = Behavior::new(
+        module_name.to_string(),
+        BehaviorKind::Digital,
+        elab_stmts,
+    );
+    let module = Module::new(
+        module_name.to_string(),
+        vec![], vec![], vec![], vec![], vec![],
+        vec![behavior],
+    );
+    elab.insert_module(module_name.to_string(), module);
 
     compile_digital_module(&elab, module_name, 0)
 }
 
-fn lower_stmts(stmts: &[crate::ir::IrStmt]) -> Vec<ElabBehaviorStmt> {
+/// Walk an IrStmt and inline user calls into every expression it
+/// carries. Owned-mutates the stmt in place so the IR's recursive
+/// structure is preserved.
+fn inline_stmt_user_calls(
+    stmt: &mut IrStmt,
+    program: &IrProgram,
+    module: &IrModule,
+) -> Result<(), String> {
+    use crate::ir::IrStmt;
+    match stmt {
+        IrStmt::Assign { expr, .. }
+        | IrStmt::NonBlocking { expr, .. }
+        | IrStmt::Contrib { expr, .. }
+        | IrStmt::Force { expr, .. }
+        | IrStmt::ContinuousAssign { expr, .. }
+        | IrStmt::ProcAssign { expr, .. }
+        | IrStmt::Return(Some(expr)) => {
+            *expr = inline_user_calls(program, module, expr)?;
+        }
+        IrStmt::If { cond, then_, else_, .. } => {
+            *cond = inline_user_calls(program, module, cond)?;
+            for s in then_.iter_mut() { inline_stmt_user_calls(s, program, module)?; }
+            for s in else_.iter_mut() { inline_stmt_user_calls(s, program, module)?; }
+        }
+        IrStmt::Case { discriminant, arms, default, .. } => {
+            *discriminant = inline_user_calls(program, module, discriminant)?;
+            for (e, body) in arms.iter_mut() {
+                *e = inline_user_calls(program, module, e)?;
+                for s in body.iter_mut() { inline_stmt_user_calls(s, program, module)?; }
+            }
+            for s in default.iter_mut() { inline_stmt_user_calls(s, program, module)?; }
+        }
+        IrStmt::For { start, end, step, body, .. } => {
+            *start = inline_user_calls(program, module, start)?;
+            *end = inline_user_calls(program, module, end)?;
+            *step = inline_user_calls(program, module, step)?;
+            for s in body.iter_mut() { inline_stmt_user_calls(s, program, module)?; }
+        }
+        IrStmt::While { cond, body, .. } => {
+            *cond = inline_user_calls(program, module, cond)?;
+            for s in body.iter_mut() { inline_stmt_user_calls(s, program, module)?; }
+        }
+        IrStmt::Repeat { count, body, .. } => {
+            *count = inline_user_calls(program, module, count)?;
+            for s in body.iter_mut() { inline_stmt_user_calls(s, program, module)?; }
+        }
+        IrStmt::AnalogEvent { body, .. } => {
+            for s in body.iter_mut() { inline_stmt_user_calls(s, program, module)?; }
+        }
+        IrStmt::EventControl { body, .. } => {
+            inline_stmt_user_calls(body.as_mut(), program, module)?;
+        }
+        IrStmt::Delay { body, .. } => {
+            inline_stmt_user_calls(body.as_mut(), program, module)?;
+        }
+        IrStmt::Wait { cond, body, .. } => {
+            *cond = inline_user_calls(program, module, cond)?;
+            inline_stmt_user_calls(body.as_mut(), program, module)?;
+        }
+        // No expression payloads to inline in:
+        // VarDecl, BoundStep, Finish, Discontinuity, Diagnostic, Return(None),
+        // Fork, Disable, Trigger, ProcDeassign.
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Reject constructs the digital interpreter cannot currently handle
+/// correctly. The old path silently mapped them to `Add`/`Not`, which gave
+/// wrong values for non-trivial digital logic.
+///
+/// Fail-loud list (GAPS §A.4 + §A.5):
+/// - `Pow`, `Shl`, `Shr`, `AShl`, `AShr` — no PHDL `BinaryOp` mapping.
+/// - `BitNot`, `RedAnd`, `RedNand`, `RedOr`, `RedNor`, `RedXor`, `RedXnor`
+///   — reductions need bitwidth (GAPS Part B/I).
+fn validate_ir_digital_stmt(stmt: &crate::ir::IrStmt) -> Result<(), CodegenError> {
+    use crate::ir::{IrStmt, IrUnOp};
+    match stmt {
+        IrStmt::Assign { expr, .. } | IrStmt::NonBlocking { expr, .. } => {
+            validate_ir_digital_expr(expr)
+        }
+        IrStmt::If { cond, then_, else_, .. } => {
+            validate_ir_digital_expr(cond)?;
+            for s in then_ { validate_ir_digital_stmt(s)?; }
+            for s in else_ { validate_ir_digital_stmt(s)?; }
+            Ok(())
+        }
+        IrStmt::Case { discriminant, arms, default, .. } => {
+            validate_ir_digital_expr(discriminant)?;
+            for (_, body) in arms {
+                for s in body { validate_ir_digital_stmt(s)?; }
+            }
+            for s in default { validate_ir_digital_stmt(s)?; }
+            Ok(())
+        }
+        IrStmt::AnalogEvent { body, .. } => {
+            for s in body { validate_ir_digital_stmt(s)?; }
+            Ok(())
+        }
+        IrStmt::EventControl { body, .. } => validate_ir_digital_stmt(body),
+        _ => Ok(()),
+    }
+}
+
+fn validate_ir_digital_expr(e: &crate::ir::IrExpr) -> Result<(), CodegenError> {
+    use crate::ir::{IrBinOp, IrExpr, IrUnOp};
+    match e {
+        IrExpr::Real(_) | IrExpr::Int(_) | IrExpr::Bool(_) | IrExpr::String(_)
+        | IrExpr::Quad(_) | IrExpr::Param(_) | IrExpr::Var(_) | IrExpr::StateRef(_)
+        | IrExpr::Sim(_) => Ok(()),
+        IrExpr::BranchAccess { .. } => Ok(()),
+        IrExpr::Unary(op, x) => {
+            match op {
+                IrUnOp::Neg | IrUnOp::Not => validate_ir_digital_expr(x),
+                // BitNot and all reduction operators need width / bit-level
+                // semantics; the interpreter cannot lower them correctly
+                // today (GAPS §A.5, §B/I).
+                _ => Err(CodegenError::Unsupported(format!(
+                    "unary operator {op:?} in digital block (GAPS §A.5)"
+                ))),
+            }
+        }
+        IrExpr::Binary(op, a, b) => {
+            match op {
+                IrBinOp::Pow | IrBinOp::Shl | IrBinOp::Shr
+                | IrBinOp::AShl | IrBinOp::AShr => {
+                    Err(CodegenError::Unsupported(format!(
+                        "operator {op:?} in digital block (GAPS §A.4)"
+                    )))
+                }
+                _ => {
+                    validate_ir_digital_expr(a)?;
+                    validate_ir_digital_expr(b)
+                }
+            }
+        }
+        IrExpr::Select(c, t, f) => {
+            validate_ir_digital_expr(c)?;
+            validate_ir_digital_expr(t)?;
+            validate_ir_digital_expr(f)
+        }
+        IrExpr::Call(_, args) => {
+            for a in args { validate_ir_digital_expr(a)?; }
+            Ok(())
+        }
+        _ => Err(CodegenError::Unsupported(format!(
+            "{e:?} in digital block"
+        ))),
+    }
+}
+
+fn lower_stmts(stmts: &[crate::ir::IrStmt]) -> Vec<BehaviorStmt> {
     let mut out = Vec::with_capacity(stmts.len());
     for s in stmts {
         if let Some(es) = lower_stmt(s) {
@@ -51,7 +227,7 @@ fn lower_stmts(stmts: &[crate::ir::IrStmt]) -> Vec<ElabBehaviorStmt> {
     out
 }
 
-fn lower_stmt(s: &crate::ir::IrStmt) -> Option<ElabBehaviorStmt> {
+fn lower_stmt(s: &crate::ir::IrStmt) -> Option<BehaviorStmt> {
     use crate::ir::{IrEventKind, IrStmt};
     use piperine_lang::parse::ast::{BindOp, Expr as PExpr};
 
@@ -59,7 +235,7 @@ fn lower_stmt(s: &crate::ir::IrStmt) -> Option<ElabBehaviorStmt> {
         IrStmt::Assign { lval, expr, .. } | IrStmt::NonBlocking { lval, expr, .. } => {
             let dest = PExpr::Ident(lval.clone());
             let src = ir_expr_to_phdl(expr);
-            Some(ElabBehaviorStmt::Bind { dest, op: BindOp::Force, src })
+            Some(BehaviorStmt::Bind { dest, op: BindOp::Force, src })
         }
         IrStmt::AnalogEvent { kind, body } => {
             let elab_spec = match kind {
@@ -81,7 +257,7 @@ fn lower_stmt(s: &crate::ir::IrStmt) -> Option<ElabBehaviorStmt> {
             if lowered.is_empty() {
                 return None;
             }
-            Some(ElabBehaviorStmt::Event {
+            Some(BehaviorStmt::Event {
                 spec: elab_spec,
                 guard: None,
                 body: lowered,
@@ -104,7 +280,7 @@ fn lower_stmt(s: &crate::ir::IrStmt) -> Option<ElabBehaviorStmt> {
                 _ => return None,
             };
             if let Some(es) = lower_stmt(&body) {
-                Some(ElabBehaviorStmt::Event {
+                Some(BehaviorStmt::Event {
                     spec: elab_spec,
                     guard: None,
                     body: vec![es],
@@ -150,10 +326,14 @@ fn ir_expr_to_phdl(ir: &crate::ir::IrExpr) -> piperine_lang::parse::ast::Expr {
                 IrBinOp::BitAnd | IrBinOp::And => BinaryOp::BitAnd,
                 IrBinOp::BitOr | IrBinOp::Or => BinaryOp::BitOr,
                 IrBinOp::BitXor => BinaryOp::BitXor,
-                // Shifts have no PHDL BinaryOp equivalent; approximate as the
-                // left operand (rare in digital event guards).
-                IrBinOp::Pow | IrBinOp::Shl | IrBinOp::Shr | IrBinOp::AShl
-                | IrBinOp::AShr => BinaryOp::Add,
+                // Pow/Shl/Shr/AShl/AShr are validated-out in
+                // `validate_ir_digital_expr` (GAPS §A.4) — they cannot reach
+                // this match. Keeping a defensive fall-through to `Add`
+                // would silently re-introduce the wrong-code bug.
+                IrBinOp::Pow | IrBinOp::Shl | IrBinOp::Shr
+                | IrBinOp::AShl | IrBinOp::AShr => {
+                    unreachable!("validated out by validate_ir_digital_expr (GAPS §A.4)")
+                }
             };
             PExpr::Binary(
                 Box::new(ir_expr_to_phdl(a)),

@@ -8,7 +8,7 @@
 //! (`+jω*dQ/dV`) stamps consume.
 
 use piperine_ams::Document;
-use piperine_codegen::{ams_to_ir, ir_analog_to_device, IrProgram};
+use piperine_codegen::{ams_to_ir, ir_analog_to_device, IrProgram, SimCtx};
 
 fn ir(src: &str) -> IrProgram {
     ams_to_ir(&Document::parse(src).expect("VA parses"))
@@ -42,21 +42,21 @@ fn capacitor_ddt_lowers_to_charge_function() {
 
     // Q accumulates at the contribution terminals: +C·V at a, −C·V at c.
     let mut q = [0.0; 2];
-    dev.eval_charge(&v, &params, &mut q);
+    dev.eval_charge(&v, &params, &SimCtx::default(), &mut q);
     assert!(close(q[0], cval * 0.8), "Q(a) = {}, want {}", q[0], cval * 0.8);
     assert!(close(q[1], -cval * 0.8), "Q(c) = {}, want {}", q[1], -cval * 0.8);
 
     // dQ/dV = C (the capacitance), stamped as conductance C/dt (transient) and
     // susceptance ωC (AC).
     let mut qjac = [0.0; 4];
-    dev.eval_charge_jacobian(&v, &params, &mut qjac);
+    dev.eval_charge_jacobian(&v, &params, &SimCtx::default(), &mut qjac);
     assert!(close(qjac[0], cval), "dQ(a)/dV(a) = {}, want {cval}", qjac[0]);
     assert!(close(qjac[1], -cval), "dQ(a)/dV(c) = {}, want {}", qjac[1], -cval);
     assert!(close(qjac[3], cval), "dQ(c)/dV(c) = {}, want {cval}", qjac[3]);
 
     // The purely-reactive contribution has zero resistive (DC) part.
     let mut rhs = [0.0; 2];
-    dev.eval_residual(&v, &params, &mut rhs);
+    dev.eval_residual(&v, &params, &SimCtx::default(), &mut rhs);
     assert!(close(rhs[0], 0.0) && close(rhs[1], 0.0), "DC residual must be 0, got {rhs:?}");
 }
 
@@ -81,12 +81,12 @@ fn nonlinear_ddt_charge_uses_chain_rule() {
     let vv = 0.5;
 
     let mut q = [0.0; 2];
-    dev.eval_charge(&[vv, 0.0], &params, &mut q);
+    dev.eval_charge(&[vv, 0.0], &params, &SimCtx::default(), &mut q);
     assert!(close(q[0], cj * vv * vv), "Q = {}, want {}", q[0], cj * vv * vv);
 
     // dQ/dV = 2·Cj·V
     let mut qjac = [0.0; 4];
-    dev.eval_charge_jacobian(&[vv, 0.0], &params, &mut qjac);
+    dev.eval_charge_jacobian(&[vv, 0.0], &params, &SimCtx::default(), &mut qjac);
     assert!(close(qjac[0], 2.0 * cj * vv), "dQ/dV = {}, want {}", qjac[0], 2.0 * cj * vv);
 }
 
@@ -113,19 +113,24 @@ fn mixed_resistor_capacitor_splits_cleanly() {
 
     // Resistive residual = V·g (no charge leakage into DC).
     let mut rhs = [0.0; 2];
-    dev.eval_residual(&v, &params, &mut rhs);
+    dev.eval_residual(&v, &params, &SimCtx::default(), &mut rhs);
     assert!(close(rhs[0], 0.6 * g), "resistive I = {}, want {}", rhs[0], 0.6 * g);
 
     // Charge = only the cap term, Q = C·V; the V·g term must NOT appear.
     let mut q = [0.0; 2];
-    dev.eval_charge(&v, &params, &mut q);
+    dev.eval_charge(&v, &params, &SimCtx::default(), &mut q);
     assert!(close(q[0], cval * 0.6), "Q = {}, want {} (resistive part must cancel)", q[0], cval * 0.6);
 }
 
 // ── idt (and friends) recognised in IR but fail loud at codegen ───────────────
 
 #[test]
-fn idt_operator_is_recognised_but_not_yet_lowered() {
+fn idt_operator_is_recognised_and_lowered_to_companion() {
+    // GAPS §D.2 — `idt` is now lowered to a reactive charge stamp, the
+    // same shape as `ddt`. The reactive contribution is `Q = expr[StateRef→arg]`
+    // (the part of the operator's output that scales linearly with V).
+    // Full integration math (the state_prev/dt residual, the dt-scaled
+    // Jacobian, modular wrap) is a follow-up in `load_transient`.
     let prog = ir(r#"
         module integ(a, c);
             inout a, c;
@@ -136,14 +141,14 @@ fn idt_operator_is_recognised_but_not_yet_lowered() {
             end
         endmodule
     "#);
-    // The IR must still carry the operator (it "enters the IR").
     let m = prog.modules.iter().find(|m| m.name == "integ").unwrap();
     let body = m.analog.as_ref().unwrap();
     assert!(!body.state_vars.is_empty(), "idt must allocate a state var in the IR");
 
-    // But the device lowering rejects it loudly rather than emitting 0.
-    let result = ir_analog_to_device(&prog, "integ");
-    assert!(result.is_err(), "idt should not silently compile");
-    let msg = format!("{}", result.err().unwrap());
-    assert!(msg.contains("idt"), "error should name the operator, got: {msg}");
+    let dev = ir_analog_to_device(&prog, "integ")
+        .expect("D.2: idt must now compile (was rejected pre-D.2)");
+    assert!(
+        dev.has_reactive(),
+        "D.2: idt must produce a reactive (charge) contribution"
+    );
 }
