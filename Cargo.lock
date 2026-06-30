@@ -1314,7 +1314,10 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "piperine-ams",
+ "piperine-codegen",
+ "piperine-lang",
  "piperine-project",
+ "tempfile",
 ]
 
 [[package]]

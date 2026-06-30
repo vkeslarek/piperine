@@ -51,9 +51,9 @@ Phase 0 grand total: **229 passing**.
 
 250 passing.
 
-## After phase 2.5 (AMS E2E boilerplate)
+## After phase 2.7 (numeric DC validation + transient)
 
-**257 passing** (current).
+**258 passing** (current).
 
 ## Breakdown at current state
 
@@ -61,12 +61,11 @@ Phase 0 grand total: **229 passing**.
 |---|---|---|
 | `tests/ams_ir_test.rs` | 31 | AMS → IR structural |
 | `tests/ppr_ir_test.rs` | 23 | PPR → IR structural |
-| `tests/codegen_api_tests.rs` | 4 | API surface pinning (2 ignored — Phase 1.5/1.6 done; remaining tests are Phase 5 work) |
+| `tests/codegen_api_tests.rs` | 4 | API surface pinning (2 ignored — Phase 1.5/1.6 done) |
 | `tests/ir_analog_to_device_tests.rs` | 3 | IR analog lowering |
 | `tests/ir_digital_to_interp_tests.rs` | 3 | IR digital lowering |
 | `tests/from_ir_tests.rs` | 3 | full IR → CircuitInstance glue |
-| `tests/codegen_e2e_tests.rs` | 7 | PPR end-to-end solver runs |
+| `tests/codegen_e2e_tests.rs` | 8 | PPR end-to-end solver runs (DC numeric, transient) |
 | `tests/ams_ir_e2e_tests.rs` | 7 | AMS boilerplate (resistor/capacitor/vsource/isource/vramp/vstep/noisy) |
-| `tests/ams_ir_test.rs`, `tests/ppr_ir_test.rs` | (above) | |
 
-Any drop below 257 means a regression.
+Any drop below 258 means a regression.
