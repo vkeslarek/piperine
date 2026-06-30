@@ -101,7 +101,3 @@ fn ir_digital_compile_dff() {
     let ir = ppr_to_ir(&elab);
     let _interp = ir_digital_to_interp(&ir, "DFF").expect("DFF interp");
 }
-
-#[test]
-#[ignore = "Phase 1.6 — `from_ir(&IrProgram, top)` not yet wired"]
-fn from_ir_top_module() {}
