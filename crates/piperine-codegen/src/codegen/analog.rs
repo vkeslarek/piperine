@@ -23,8 +23,9 @@ use cranelift_module::{FuncId, Linkage, Module};
 use piperine_lang::elab::ir::{ElabBehaviorStmt, ElabProgram};
 use piperine_lang::parse::ast::{BindOp, Expr};
 
-use super::autodiff::{branch_key, collect_branches, diff};
-use super::expr::{accumulate_f64, emit_phdl_expr, load_f64, ExprCtx};
+use super::autodiff::branch_key;
+use super::expr::{accumulate_f64, load_f64, ExprCtx};
+use super::ir_emit::AnalogExpr;
 use super::{CodegenError, JitAnalogDevice};
 
 // ── libm wrappers ─────────────────────────────────────────────────────────────
@@ -74,14 +75,18 @@ fn libm_funs() -> Vec<(&'static str, usize, *const u8)> {
 // ── Contribution extracted from behavior body ─────────────────────────────────
 
 /// A single `I(plus, minus) <+ expr` contribution extracted from the behavior.
-pub struct Contribution {
+///
+/// Generic over the expression representation `E` so the shared Cranelift
+/// skeleton compiles both PHDL `Expr` (the `from_elab` path) and `IrExpr`
+/// (the IR front door) via the [`AnalogExpr`] trait.
+pub struct Contribution<E> {
     pub plus:  String,   // port name of the + terminal
     pub minus: String,   // port name of the − terminal
-    pub expr:  Expr,     // current expression
+    pub expr:  E,        // current expression
 }
 
 /// Extract all current contributions from a flat list of behavior statements.
-fn extract_contributions(stmts: &[ElabBehaviorStmt]) -> Vec<Contribution> {
+fn extract_contributions(stmts: &[ElabBehaviorStmt]) -> Vec<Contribution<Expr>> {
     let mut out = Vec::new();
     for stmt in stmts {
         extract_from_stmt(stmt, &mut out);
@@ -89,7 +94,7 @@ fn extract_contributions(stmts: &[ElabBehaviorStmt]) -> Vec<Contribution> {
     out
 }
 
-fn extract_from_stmt(stmt: &ElabBehaviorStmt, out: &mut Vec<Contribution>) {
+fn extract_from_stmt(stmt: &ElabBehaviorStmt, out: &mut Vec<Contribution<Expr>>) {
     match stmt {
         ElabBehaviorStmt::Bind { dest, op: BindOp::Contrib, src } => {
             // I(plus, minus) <+ expr
@@ -124,18 +129,21 @@ fn extract_from_stmt(stmt: &ElabBehaviorStmt, out: &mut Vec<Contribution>) {
 // ── Public entry point ────────────────────────────────────────────────────────
 
 /// Inputs that the Cranelift core needs.
-pub struct CompileInputs {
+pub struct CompileInputs<E> {
     pub name: String,
     pub port_index: HashMap<String, usize>,
     pub num_terminals: usize,
     pub param_names: Vec<String>,
     pub param_index: HashMap<String, usize>,
     pub num_params: usize,
-    pub contributions: Vec<Contribution>,
+    pub contributions: Vec<Contribution<E>>,
+    /// Reactive charge contributions: `Q(V)` whose `ddt` is stamped via the
+    /// companion model.  Empty for purely resistive devices.
+    pub react_contributions: Vec<Contribution<E>>,
     pub branches: Vec<(String, String)>,
 }
 
-impl CompileInputs {
+impl CompileInputs<Expr> {
     pub fn from_elab(prog: &ElabProgram, module_name: &str) -> Result<Self, CodegenError> {
         use piperine_lang::parse::ast::BehaviorKind;
 
@@ -160,7 +168,7 @@ impl CompileInputs {
 
         let mut branches: Vec<(String, String)> = Vec::new();
         for c in &contributions {
-            collect_branches(&c.expr, &mut branches);
+            c.expr.collect_branches(&mut branches);
         }
         for c in &contributions {
             let pair = (c.plus.clone(), c.minus.clone());
@@ -177,15 +185,21 @@ impl CompileInputs {
             param_index,
             num_params: elab_mod.params.len(),
             contributions,
+            // The PHDL `from_elab` path does not extract reactive charge
+            // contributions yet; `ddt` there stamps as 0 (DC) as before.
+            react_contributions: Vec::new(),
             branches,
         })
     }
+}
 
+impl<E: AnalogExpr> CompileInputs<E> {
     pub fn from_contributions(
         module_name: &str,
         port_names: Vec<String>,
         param_names: Vec<String>,
-        contributions: Vec<Contribution>,
+        contributions: Vec<Contribution<E>>,
+        react_contributions: Vec<Contribution<E>>,
     ) -> Self {
         let num_terminals = port_names.len();
         let port_index: HashMap<String, usize> = port_names.iter()
@@ -197,10 +211,10 @@ impl CompileInputs {
             .map(|(i, n)| (n.clone(), i))
             .collect();
         let mut branches: Vec<(String, String)> = Vec::new();
-        for c in &contributions {
-            collect_branches(&c.expr, &mut branches);
+        for c in contributions.iter().chain(react_contributions.iter()) {
+            c.expr.collect_branches(&mut branches);
         }
-        for c in &contributions {
+        for c in contributions.iter().chain(react_contributions.iter()) {
             let pair = (c.plus.clone(), c.minus.clone());
             if !branches.contains(&pair) {
                 branches.push(pair);
@@ -214,13 +228,14 @@ impl CompileInputs {
             param_names,
             param_index,
             contributions,
+            react_contributions,
             branches,
         }
     }
 }
 
 /// Shared Cranelift core: compiles the inputs into a `JitAnalogDevice`.
-pub fn compile(inputs: &CompileInputs) -> Result<JitAnalogDevice, CodegenError> {
+pub fn compile<E: AnalogExpr>(inputs: &CompileInputs<E>) -> Result<JitAnalogDevice, CodegenError> {
     let mut jit_builder = JITBuilder::new(cranelift_module::default_libcall_names())
         .map_err(|e| CodegenError::Module(e.to_string()))?;
     for (name, _arity, ptr) in libm_funs() {
@@ -230,17 +245,36 @@ pub fn compile(inputs: &CompileInputs) -> Result<JitAnalogDevice, CodegenError> 
     let mut module = JITModule::new(jit_builder);
     let libm_ids = declare_libm_imports(&mut module)?;
 
-    let residual_id = compile_residual(
-        &mut module, &libm_ids,
+    let residual_id = compile_named_residual(
+        &mut module, &libm_ids, "residual",
         &inputs.contributions, &inputs.port_index, &inputs.param_index, &inputs.branches,
-        inputs.num_terminals, inputs.num_params,
     )?;
 
-    let jacobian_id = compile_jacobian(
-        &mut module, &libm_ids,
+    let jacobian_id = compile_named_jacobian(
+        &mut module, &libm_ids, "jacobian",
         &inputs.contributions, &inputs.port_index, &inputs.param_index, &inputs.branches,
-        inputs.num_terminals, inputs.num_params,
+        inputs.num_terminals,
     )?;
+
+    // Reactive charge functions: `Q(V)` (residual shape) and `dQ/dV`
+    // (jacobian shape), compiled from the charge contributions.  Reusing the
+    // resistive emitters is exact — a charge contribution is just another
+    // expression stamped at the same terminals.
+    let (charge_id, charge_jac_id) = if inputs.react_contributions.is_empty() {
+        (None, None)
+    } else {
+        let q_id = compile_named_residual(
+            &mut module, &libm_ids, "charge",
+            &inputs.react_contributions, &inputs.port_index, &inputs.param_index,
+            &inputs.branches,
+        )?;
+        let qj_id = compile_named_jacobian(
+            &mut module, &libm_ids, "charge_jacobian",
+            &inputs.react_contributions, &inputs.port_index, &inputs.param_index,
+            &inputs.branches, inputs.num_terminals,
+        )?;
+        (Some(q_id), Some(qj_id))
+    };
 
     module.finalize_definitions()
         .map_err(|e| CodegenError::Module(e.to_string()))?;
@@ -253,6 +287,12 @@ pub fn compile(inputs: &CompileInputs) -> Result<JitAnalogDevice, CodegenError> 
     let jacobian: unsafe extern "C" fn(*const f64, *const f64, *mut f64) =
         unsafe { std::mem::transmute(jacobian_ptr) };
 
+    let transmute_fn = |id: FuncId| -> unsafe extern "C" fn(*const f64, *const f64, *mut f64) {
+        unsafe { std::mem::transmute(module.get_finalized_function(id)) }
+    };
+    let charge = charge_id.map(transmute_fn);
+    let charge_jacobian = charge_jac_id.map(transmute_fn);
+
     Ok(JitAnalogDevice {
         name: inputs.name.clone(),
         num_terminals: inputs.num_terminals,
@@ -260,6 +300,8 @@ pub fn compile(inputs: &CompileInputs) -> Result<JitAnalogDevice, CodegenError> 
         param_names: inputs.param_names.clone(),
         residual,
         jacobian,
+        charge,
+        charge_jacobian,
         _module: module,
     })
 }
@@ -281,17 +323,19 @@ pub fn compile_analog_module(
 ///
 /// Used by the IR front door:  `from_ir` translates IR contributions into
 /// `[Contribution; N]` and hands them off here.
-pub fn compile_analog_module_ir(
+pub fn compile_analog_module_ir<E: AnalogExpr>(
     module_name: &str,
     port_names: Vec<String>,
     param_names: Vec<String>,
-    contributions: Vec<Contribution>,
+    contributions: Vec<Contribution<E>>,
+    react_contributions: Vec<Contribution<E>>,
 ) -> Result<JitAnalogDevice, CodegenError> {
     let inputs = CompileInputs::from_contributions(
         module_name,
         port_names,
         param_names,
         contributions,
+        react_contributions,
     );
     compile(&inputs)
 }
@@ -380,18 +424,17 @@ fn build_param_values(
 // ── Residual function ─────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
-fn compile_residual(
+fn compile_named_residual<E: AnalogExpr>(
     module: &mut JITModule,
     libm_ids: &HashMap<&'static str, FuncId>,
-    contributions: &[Contribution],
+    fn_name: &str,
+    contributions: &[Contribution<E>],
     port_index: &HashMap<String, usize>,
     param_index: &HashMap<String, usize>,
     branches: &[(String, String)],
-    _num_terminals: usize,
-    _num_params: usize,
 ) -> Result<FuncId, CodegenError> {
     let sig = make_body_sig(module);
-    let func_id = module.declare_function("residual", Linkage::Export, &sig)
+    let func_id = module.declare_function(fn_name, Linkage::Export, &sig)
         .map_err(|e| CodegenError::Module(e.to_string()))?;
 
     let mut ctx = module.make_context();
@@ -414,7 +457,7 @@ fn compile_residual(
 
     for contrib in contributions {
         let mut ectx = ExprCtx { builder: &mut builder, branch_voltages: &branch_voltages, param_values: &param_values, libm: &libm };
-        let current = emit_phdl_expr(&mut ectx, &contrib.expr);
+        let current = contrib.expr.emit(&mut ectx);
 
         if let Some(&p_idx) = port_index.get(contrib.plus.as_str()) {
             accumulate_f64(&mut builder, current, rhs_ptr, p_idx);
@@ -436,18 +479,18 @@ fn compile_residual(
 // ── Jacobian function ─────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
-fn compile_jacobian(
+fn compile_named_jacobian<E: AnalogExpr>(
     module: &mut JITModule,
     libm_ids: &HashMap<&'static str, FuncId>,
-    contributions: &[Contribution],
+    fn_name: &str,
+    contributions: &[Contribution<E>],
     port_index: &HashMap<String, usize>,
     param_index: &HashMap<String, usize>,
     branches: &[(String, String)],
     num_terminals: usize,
-    _num_params: usize,
 ) -> Result<FuncId, CodegenError> {
     let sig = make_body_sig(module);
-    let func_id = module.declare_function("jacobian", Linkage::Export, &sig)
+    let func_id = module.declare_function(fn_name, Linkage::Export, &sig)
         .map_err(|e| CodegenError::Module(e.to_string()))?;
 
     let mut ctx = module.make_context();
@@ -476,7 +519,7 @@ fn compile_jacobian(
 
         for (a, b) in branches {
             let wrt = branch_key(a, b);
-            let dexpr = diff(&contrib.expr, &wrt);
+            let dexpr = contrib.expr.diff(&wrt);
 
             let mut ectx = ExprCtx {
                 builder: &mut builder,
@@ -484,7 +527,7 @@ fn compile_jacobian(
                 param_values: &param_values,
                 libm: &libm,
             };
-            let g = emit_phdl_expr(&mut ectx, &dexpr);
+            let g = dexpr.emit(&mut ectx);
 
             let a_idx = port_index.get(a.as_str()).copied();
             let b_idx = port_index.get(b.as_str()).copied();

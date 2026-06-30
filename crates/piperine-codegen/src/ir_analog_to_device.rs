@@ -1,24 +1,27 @@
 //! IR → Device adapter for `IrAnalogBody`.
 //!
-//! Bridges the IR codegen path:  takes an [`IrProgram`] + module name, looks
-//! up the analog body, and lowers each [`IrStmt::Contrib`] to a residual +
-//! jacobian function via the existing Cranelift codegen.
+//! Takes an [`IrProgram`] + module name, looks up the analog body, collects its
+//! flow contributions, and lowers them to a residual + Jacobian `JitAnalogDevice`
+//! via the **IR-native** Cranelift emitter ([`crate::codegen::ir_emit`]).
 //!
-//! Scope (Phase 1.4 — first bridge):
-//!   - Contributions of the form `I(p, n) <+ expr` / `V(p, n) <+ expr`.
-//!   - The IR expression graph is translated back to the PHDL-AST [`Expr`]
-//!     by [`ir_expr_to_phdl`] which is the inverse of `ppr_to_ir`'s
-//!     [`piperine_lang::parse::ast::Expr`] → [`crate::ir::IrExpr`]
-//!     lowering.  Only the subset that the boilerplate VA fixtures exercise
-//!     is implemented; other constructs will surface as `CodegenError`.
+//! Unlike the old bridge, the `IrExpr` is consumed directly — there is no
+//! lossy round-trip through the PHDL AST.  Any contribution expression that the
+//! emitter cannot faithfully lower is rejected by [`validate_ir_contrib`] with
+//! a [`CodegenError::Unsupported`], so a model never silently compiles to `0.0`.
 //!
-//! Future phases will replace this translation with a direct IR-consuming
-//! Cranelift emitter.
+//! ## Current scope
+//!
+//! - Flow contributions `I(p, n) <+ expr` (including those nested in `if`/`case`
+//!   blocks) are stamped resistively.
+//! - The reactive part of `ddt(...)` contributions (`StateRef`) is a no-op in
+//!   the residual today; companion-model stamping is handled separately.
+//! - Potential (`V(p,n) <+`) forces and indirect contributions are not yet
+//!   supported and surface as a clear error rather than being dropped.
 
 use crate::codegen::analog::{compile_analog_module_ir, Contribution};
+use crate::codegen::ir_emit::validate_ir_contrib;
 use crate::codegen::{CodegenError, JitAnalogDevice};
-use crate::ir::{ContribKind, IrAnalogBody, IrExpr, IrModule, IrNature, IrProgram, IrStmt};
-use piperine_lang::parse::ast as phdl;
+use crate::ir::{IrAnalogBody, IrBinOp, IrExpr, IrModule, IrProgram, IrStateKind, IrStateVar, IrStmt};
 
 /// Lookup `IrModule` by name.
 pub fn find_module<'a>(program: &'a IrProgram, name: &str) -> Option<&'a IrModule> {
@@ -27,7 +30,10 @@ pub fn find_module<'a>(program: &'a IrProgram, name: &str) -> Option<&'a IrModul
 
 /// Lower an [`IrProgram`]'s analog body for `module_name` to a Cranelift
 /// `JitAnalogDevice`.
-pub fn ir_analog_to_device(program: &IrProgram, module_name: &str) -> Result<JitAnalogDevice, CodegenError> {
+pub fn ir_analog_to_device(
+    program: &IrProgram,
+    module_name: &str,
+) -> Result<JitAnalogDevice, CodegenError> {
     let module = find_module(program, module_name)
         .ok_or_else(|| CodegenError::ModuleNotFound(module_name.to_string()))?;
     let body = module
@@ -37,97 +43,203 @@ pub fn ir_analog_to_device(program: &IrProgram, module_name: &str) -> Result<Jit
     compile_ir_analog(module, body)
 }
 
-fn compile_ir_analog(module: &IrModule, body: &IrAnalogBody) -> Result<JitAnalogDevice, CodegenError> {
-    // Translate to the existing Contribution shape so we can reuse the
-    // Cranelift residual/jacobian emitter unchanged.
-    let mut phdl_contributions = Vec::new();
-    collect_contributions(&body.stmts, &mut phdl_contributions);
+fn compile_ir_analog(
+    module: &IrModule,
+    body: &IrAnalogBody,
+) -> Result<JitAnalogDevice, CodegenError> {
+    let mut contributions: Vec<Contribution<IrExpr>> = Vec::new();
+    collect_contributions(&body.stmts, &mut contributions)?;
 
-    if phdl_contributions.is_empty() {
+    if contributions.is_empty() {
         return Err(CodegenError::BehaviorNotFound(module.name.clone()));
+    }
+
+    // Split off the reactive (`ddt`) part of each contribution as a charge
+    // expression `Q(V)`, stamped via the companion model.  The resistive list
+    // keeps every contribution unchanged (its `StateRef`s emit as 0, i.e. the
+    // DC part).  Operators other than `ddt` (`idt`, `ddx`, `transition`, …)
+    // are recognised in the IR but not yet lowered to code → fail loud.
+    let react_contributions = build_reactive_contributions(&contributions, &body.state_vars)?;
+
+    // Fail loud on any construct the emitter cannot faithfully lower.
+    for c in contributions.iter().chain(react_contributions.iter()) {
+        validate_ir_contrib(&c.expr)?;
     }
 
     let param_names: Vec<String> = module.params.iter().map(|p| p.name.clone()).collect();
     let port_names: Vec<String> = module.ports.iter().map(|p| p.name.clone()).collect();
 
-    compile_analog_module_ir(&module.name, port_names, param_names, phdl_contributions)
+    compile_analog_module_ir(
+        &module.name,
+        port_names,
+        param_names,
+        contributions,
+        react_contributions,
+    )
 }
 
-fn collect_contributions(stmts: &[IrStmt], out: &mut Vec<Contribution>) {
+/// For every contribution containing a reactive operator, produce a charge
+/// contribution `Q(V)` such that the reactive current is `ddt(Q)`.
+///
+/// `Q = expr[StateRef → arg] − expr[StateRef → 0]` isolates exactly the
+/// reactive part (the resistive terms cancel).  For `I <+ C*ddt(V)` this gives
+/// `Q = C*V`.  Only `ddt` is lowered; any other analog operator returns a
+/// clear [`CodegenError::Unsupported`] rather than silently contributing 0.
+fn build_reactive_contributions(
+    contributions: &[Contribution<IrExpr>],
+    state_vars: &[IrStateVar],
+) -> Result<Vec<Contribution<IrExpr>>, CodegenError> {
+    let mut react = Vec::new();
+    for c in contributions {
+        let mut ids = Vec::new();
+        collect_state_refs(&c.expr, &mut ids);
+        if ids.is_empty() {
+            continue;
+        }
+        // Every reactive operator in this contribution must be `ddt`.
+        for id in &ids {
+            let sv = state_vars
+                .iter()
+                .find(|s| s.id == *id)
+                .ok_or_else(|| CodegenError::Unsupported(format!("dangling state ref #{id}")))?;
+            if !matches!(sv.kind, IrStateKind::Ddt) {
+                return Err(CodegenError::Unsupported(format!(
+                    "analog operator {} is recognised in the IR but not yet lowered to code",
+                    state_kind_name(&sv.kind)
+                )));
+            }
+        }
+        let with_arg = subst_state_refs(&c.expr, &|id| {
+            state_vars.iter().find(|s| s.id == id).map(|s| s.arg.clone())
+                .unwrap_or(IrExpr::Real(0.0))
+        });
+        let with_zero = subst_state_refs(&c.expr, &|_| IrExpr::Real(0.0));
+        let charge = IrExpr::Binary(IrBinOp::Sub, Box::new(with_arg), Box::new(with_zero));
+        react.push(Contribution {
+            plus: c.plus.clone(),
+            minus: c.minus.clone(),
+            expr: charge,
+        });
+    }
+    Ok(react)
+}
+
+fn state_kind_name(k: &IrStateKind) -> &'static str {
+    match k {
+        IrStateKind::Ddt => "ddt",
+        IrStateKind::Idt { .. } => "idt",
+        IrStateKind::IdtMod { .. } => "idtmod",
+        IrStateKind::Ddx { .. } => "ddx",
+        IrStateKind::Delay { .. } => "delay/absdelay",
+        IrStateKind::Transition { .. } => "transition",
+        IrStateKind::Slew { .. } => "slew",
+        IrStateKind::Laplace { .. } => "laplace",
+        IrStateKind::ZTransform { .. } => "zi (z-transform)",
+        IrStateKind::Cross { .. } => "cross",
+        IrStateKind::Timer { .. } => "timer",
+    }
+}
+
+/// Collect every `StateRef` id appearing in `e`.
+fn collect_state_refs(e: &IrExpr, out: &mut Vec<u32>) {
+    match e {
+        IrExpr::StateRef(id) => {
+            if !out.contains(id) {
+                out.push(*id);
+            }
+        }
+        IrExpr::Unary(_, x) => collect_state_refs(x, out),
+        IrExpr::Binary(_, a, b) => {
+            collect_state_refs(a, out);
+            collect_state_refs(b, out);
+        }
+        IrExpr::Select(c, t, f) => {
+            collect_state_refs(c, out);
+            collect_state_refs(t, out);
+            collect_state_refs(f, out);
+        }
+        IrExpr::Call(_, args) => {
+            for a in args {
+                collect_state_refs(a, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Rewrite each `StateRef(id)` via `f`, cloning the rest of the tree.
+fn subst_state_refs(e: &IrExpr, f: &impl Fn(u32) -> IrExpr) -> IrExpr {
+    match e {
+        IrExpr::StateRef(id) => f(*id),
+        IrExpr::Unary(op, x) => IrExpr::Unary(*op, Box::new(subst_state_refs(x, f))),
+        IrExpr::Binary(op, a, b) => IrExpr::Binary(
+            *op,
+            Box::new(subst_state_refs(a, f)),
+            Box::new(subst_state_refs(b, f)),
+        ),
+        IrExpr::Select(c, t, e2) => IrExpr::Select(
+            Box::new(subst_state_refs(c, f)),
+            Box::new(subst_state_refs(t, f)),
+            Box::new(subst_state_refs(e2, f)),
+        ),
+        IrExpr::Call(name, args) => IrExpr::Call(
+            name.clone(),
+            args.iter().map(|a| subst_state_refs(a, f)).collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+/// Walk the analog statement tree collecting flow (`I`) contributions.
+///
+/// `if`/`case` bodies are flattened (both arms contribute — the Jacobian/residual
+/// emit the branch condition implicitly via `Select` when present in the
+/// expression).  Unsupported contribution shapes return an error rather than
+/// being silently skipped.
+fn collect_contributions(
+    stmts: &[IrStmt],
+    out: &mut Vec<Contribution<IrExpr>>,
+) -> Result<(), CodegenError> {
     for s in stmts {
         match s {
-            IrStmt::Contrib { plus, minus, expr, .. } => {
-                let phdl_expr = ir_expr_to_phdl(expr);
+            IrStmt::Contrib { nature, plus, minus, expr, .. } => {
+                if nature.is_potential() {
+                    return Err(CodegenError::Unsupported(format!(
+                        "potential contribution `{}({plus},{minus}) <+ ...`",
+                        nature.access()
+                    )));
+                }
                 out.push(Contribution {
                     plus: plus.clone(),
                     minus: minus.clone(),
-                    expr: phdl_expr,
+                    expr: expr.clone(),
                 });
             }
             IrStmt::If { then_, else_, .. } => {
-                collect_contributions(then_, out);
-                collect_contributions(else_, out);
+                collect_contributions(then_, out)?;
+                collect_contributions(else_, out)?;
             }
+            IrStmt::Case { arms, default, .. } => {
+                for (_, body) in arms {
+                    collect_contributions(body, out)?;
+                }
+                collect_contributions(default, out)?;
+            }
+            IrStmt::Force { nature, plus, minus, .. } => {
+                return Err(CodegenError::Unsupported(format!(
+                    "force/ideal-source contribution `{}({plus},{minus}) <- ...`",
+                    nature.access()
+                )));
+            }
+            IrStmt::IndirectContrib { .. } => {
+                return Err(CodegenError::Unsupported(
+                    "indirect branch contribution".to_string(),
+                ));
+            }
+            // VarDecl / diagnostics / analog events without contributions do
+            // not affect the residual stamp.
             _ => {}
         }
     }
-}
-
-/// Translate `IrExpr` → `phdl::Expr`.
-///
-/// This is a **partial** inverse of `ppr_to_ir`'s lowering, sufficient for
-/// the boilerplate VA fixtures (`resistor`, `capacitor`, `vsource`,
-/// `isource`, `vramp`, `vstep`, `noisy_resistor`).  Constructs outside this
-/// subset return [`phdl::Expr::Block`] with a `todo!` placeholder so the
-/// codegen still produces a result that fails loudly in tests rather than
-/// silently miscompiling.
-pub fn ir_expr_to_phdl(ir: &IrExpr) -> phdl::Expr {
-    match ir {
-        IrExpr::Real(v)         => phdl::Expr::Literal(phdl::Literal::Real(*v)),
-        IrExpr::Int(v)          => phdl::Expr::Literal(phdl::Literal::Int(*v as u64)),
-        IrExpr::Bool(b)         => phdl::Expr::Literal(phdl::Literal::Bool(*b)),
-        IrExpr::Param(name)     => phdl::Expr::Ident(name.clone()),
-        IrExpr::Var(name)       => phdl::Expr::Ident(name.clone()),
-        IrExpr::BranchAccess { access, plus, minus } => phdl::Expr::Call(
-            Box::new(phdl::Expr::Ident(access.clone())),
-            vec![phdl::Expr::Ident(plus.clone()), phdl::Expr::Ident(minus.clone())],
-        ),
-        IrExpr::Unary(op, e) => phdl::Expr::Unary(
-            match op {
-                crate::ir::IrUnOp::Neg => phdl::UnaryOp::Neg,
-                crate::ir::IrUnOp::Not => phdl::UnaryOp::Not,
-                crate::ir::IrUnOp::BitNot => phdl::UnaryOp::Not,
-                _ => phdl::UnaryOp::Neg,
-            },
-            Box::new(ir_expr_to_phdl(e)),
-        ),
-        IrExpr::Binary(op, a, b) => {
-            let phdl_op = match op {
-                crate::ir::IrBinOp::Add => phdl::BinaryOp::Add,
-                crate::ir::IrBinOp::Sub => phdl::BinaryOp::Sub,
-                crate::ir::IrBinOp::Mul => phdl::BinaryOp::Mul,
-                crate::ir::IrBinOp::Div => phdl::BinaryOp::Div,
-                crate::ir::IrBinOp::Rem => phdl::BinaryOp::Rem,
-                _ => phdl::BinaryOp::Add,
-            };
-            phdl::Expr::Binary(
-                Box::new(ir_expr_to_phdl(a)),
-                phdl_op,
-                Box::new(ir_expr_to_phdl(b)),
-            )
-        }
-        IrExpr::Call(name, args) => phdl::Expr::Call(
-            Box::new(phdl::Expr::Ident(name.clone())),
-            args.iter().map(ir_expr_to_phdl).collect(),
-        ),
-        IrExpr::Sim(sq) => match sq {
-            crate::ir::SimQuery::Abstime => phdl::Expr::Ident("$abstime".into()),
-            crate::ir::SimQuery::Temperature => phdl::Expr::Ident("$temperature".into()),
-            _ => phdl::Expr::Literal(phdl::Literal::Real(0.0)),
-        },
-        // Conservatively: unsupported → Real(0.0) so the codegen still
-        // produces *something*.  Tests targeting unsupported features will
-        // assert on the value and fail loudly.
-        _ => phdl::Expr::Literal(phdl::Literal::Real(0.0)),
-    }
+    Ok(())
 }

@@ -44,11 +44,21 @@ fn ams_capacitor_ir_compiles_to_jit_device() {
 }
 
 #[test]
-fn ams_vsource_ir_compiles_to_jit_device() {
+fn ams_vsource_ir_is_unsupported_potential_contrib() {
+    // vsource.va uses `V(br) <+ vdc` — an ideal voltage source.  The nodal
+    // `JitAnalogDevice` model has no branch-current unknown to enforce
+    // V(p)-V(n)=vdc, so the IR emitter rejects potential contributions
+    // *loudly* rather than silently stamping `vdc` as a current (the old,
+    // wrong behavior).  Proper MNA branch support is tracked for Wave 2.
     let doc = Document::parse_file(&va_path("vsource.va")).expect("vsource parses");
     let ir = ams_to_ir(&doc);
-    let dev = ir_analog_to_device(&ir, "vsource_va").expect("vsource JIT");
-    assert_eq!(dev.num_terminals, 2);
+    let result = ir_analog_to_device(&ir, "vsource_va");
+    assert!(result.is_err(), "ideal voltage source is not yet supported");
+    let err = result.err().unwrap();
+    assert!(
+        format!("{err}").contains("potential contribution"),
+        "expected a potential-contribution error, got: {err}"
+    );
 }
 
 #[test]
@@ -73,15 +83,18 @@ fn ams_noisy_resistor_ir_compiles_with_noise() {
 }
 
 #[test]
-fn ams_vramp_ir_compiles_to_jit_device() {
+fn ams_vramp_ir_is_unsupported_potential_contrib() {
+    // Like vsource, vramp is a `V(...) <+ ...` potential contribution — an
+    // ideal source needing MNA branch support (Wave 2).  Rejected loudly.
     let doc = Document::parse_file(&va_path("vramp.va")).expect("vramp parses");
     let ir = ams_to_ir(&doc);
-    let _ = ir_analog_to_device(&ir, "vramp_va").expect("vramp JIT");
+    assert!(ir_analog_to_device(&ir, "vramp_va").is_err());
 }
 
 #[test]
-fn ams_vstep_ir_compiles_to_jit_device() {
+fn ams_vstep_ir_is_unsupported_potential_contrib() {
+    // Same as vramp/vsource: ideal `V(...) <+ ...` source, Wave 2.
     let doc = Document::parse_file(&va_path("vstep.va")).expect("vstep parses");
     let ir = ams_to_ir(&doc);
-    let _ = ir_analog_to_device(&ir, "vstep_va").expect("vstep JIT");
+    assert!(ir_analog_to_device(&ir, "vstep_va").is_err());
 }

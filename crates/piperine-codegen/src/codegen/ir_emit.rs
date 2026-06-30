@@ -1,0 +1,479 @@
+//! Direct IR → Cranelift analog emitter.
+//!
+//! This is the IR-native replacement for the old `ir_expr_to_phdl` round-trip
+//! (which silently collapsed unsupported [`IrExpr`] variants to `0.0`).  An
+//! [`IrExpr`] is emitted straight to Cranelift, symbolically differentiated in
+//! IR form for the Jacobian, and walked for branch collection.
+//!
+//! The [`AnalogExpr`] trait abstracts the three operations the shared Cranelift
+//! residual/Jacobian skeleton in [`super::analog`] needs — `emit`, `diff`, and
+//! `collect_branches` — so the same skeleton compiles both PHDL `Expr`
+//! contributions (the `from_elab` path) and `IrExpr` contributions (the IR
+//! front door) without duplication.
+//!
+//! ## Scope
+//!
+//! The emitter covers the full *algebraic* IR: literals, params, branch
+//! voltages, all binary/unary operators, ternary `Select`, and built-in math
+//! calls.  `StateRef` (the `ddt`/`idt` reactive operators) emits `0.0` here —
+//! the resistive/DC contribution — and is stamped reactively elsewhere.
+//!
+//! Anything that has no meaning as a scalar analog quantity (concatenations,
+//! arrays, bit-selects, unknown user calls, …) is rejected up-front by
+//! [`validate_ir_contrib`] with a [`CodegenError::Unsupported`], so a model
+//! never silently compiles to the wrong value.
+
+use cranelift_codegen::ir::{condcodes::FloatCC, InstBuilder, Value};
+
+use piperine_lang::parse::ast::Expr;
+
+use super::autodiff::{self, branch_key};
+use super::expr::{emit_math, emit_phdl_expr, is_builtin_math, ExprCtx};
+use super::CodegenError;
+use crate::ir::{IrBinOp, IrExpr, IrUnOp, SimQuery};
+
+/// The three operations the shared Cranelift skeleton needs from a
+/// contribution expression, regardless of whether it is a PHDL `Expr` or an
+/// `IrExpr`.
+pub trait AnalogExpr: Clone {
+    /// Emit this expression as a scalar f64 Cranelift [`Value`].
+    fn emit(&self, ctx: &mut ExprCtx) -> Value;
+    /// Symbolically differentiate w.r.t. the branch voltage keyed by `wrt`
+    /// (a canonical `"V(plus,minus)"` key).
+    fn diff(&self, wrt: &str) -> Self;
+    /// Collect every `V(a,b)` branch appearing in this expression.
+    fn collect_branches(&self, out: &mut Vec<(String, String)>);
+}
+
+// ── PHDL Expr impl (from_elab path) ───────────────────────────────────────────
+
+impl AnalogExpr for Expr {
+    fn emit(&self, ctx: &mut ExprCtx) -> Value {
+        emit_phdl_expr(ctx, self)
+    }
+    fn diff(&self, wrt: &str) -> Self {
+        autodiff::diff(self, wrt)
+    }
+    fn collect_branches(&self, out: &mut Vec<(String, String)>) {
+        autodiff::collect_branches(self, out)
+    }
+}
+
+// ── IrExpr impl (IR front door) ───────────────────────────────────────────────
+
+impl AnalogExpr for IrExpr {
+    fn emit(&self, ctx: &mut ExprCtx) -> Value {
+        emit_ir_expr(ctx, self)
+    }
+    fn diff(&self, wrt: &str) -> Self {
+        diff_ir(self, wrt)
+    }
+    fn collect_branches(&self, out: &mut Vec<(String, String)>) {
+        collect_branches_ir(self, out)
+    }
+}
+
+// ── Emitter ───────────────────────────────────────────────────────────────────
+
+/// Emit an [`IrExpr`] as a scalar f64 Cranelift [`Value`].
+///
+/// Assumes the expression has passed [`validate_ir_contrib`]; constructs that
+/// would otherwise be unreachable fall back to `0.0`.
+pub fn emit_ir_expr(ctx: &mut ExprCtx, e: &IrExpr) -> Value {
+    match e {
+        IrExpr::Real(v) => ctx.builder.ins().f64const(*v),
+        IrExpr::Int(v) => ctx.builder.ins().f64const(*v as f64),
+        IrExpr::Bool(b) => ctx.builder.ins().f64const(if *b { 1.0 } else { 0.0 }),
+
+        // Params and surviving local vars both resolve from the param array;
+        // an unresolved name emits 0.0 (same convention as the PHDL emitter).
+        IrExpr::Param(name) | IrExpr::Var(name) => match ctx.param_values.get(name.as_str()) {
+            Some(&v) => v,
+            None => ctx.builder.ins().f64const(0.0),
+        },
+
+        IrExpr::BranchAccess { access, plus, minus } => {
+            if access == "V" {
+                let key = branch_key(plus, minus);
+                match ctx.branch_voltages.get(&key) {
+                    Some(&v) => v,
+                    None => ctx.builder.ins().f64const(0.0),
+                }
+            } else {
+                // I(a,b) and other flows are not available in the KCL stamp
+                // context; their reactive/source handling lives elsewhere.
+                ctx.builder.ins().f64const(0.0)
+            }
+        }
+
+        // ddt/idt reactive operators: the resistive (DC) part is 0.
+        IrExpr::StateRef(_) => ctx.builder.ins().f64const(0.0),
+
+        IrExpr::Sim(sq) => emit_sim(ctx, sq),
+
+        IrExpr::Unary(op, x) => emit_unary(ctx, *op, x),
+        IrExpr::Binary(op, a, b) => emit_binary(ctx, *op, a, b),
+
+        IrExpr::Select(c, t, f) => {
+            let cv = emit_ir_expr(ctx, c);
+            let zero = ctx.builder.ins().f64const(0.0);
+            let cond = ctx.builder.ins().fcmp(FloatCC::NotEqual, cv, zero);
+            let tv = emit_ir_expr(ctx, t);
+            let fv = emit_ir_expr(ctx, f);
+            ctx.builder.ins().select(cond, tv, fv)
+        }
+
+        IrExpr::Call(name, args) => emit_call(ctx, name, args),
+
+        // Validated-out elsewhere.
+        _ => ctx.builder.ins().f64const(0.0),
+    }
+}
+
+fn emit_sim(ctx: &mut ExprCtx, sq: &SimQuery) -> Value {
+    // Simulator queries that have no device-side wiring yet emit a constant.
+    // Temperature/Vt/Abstime are deliberately 0.0 (documented limitation), not
+    // an error: they are valid constructs whose dynamic value is simply not
+    // threaded into the JIT device.
+    match sq {
+        SimQuery::Vt(_) => {
+            // thermal voltage at 300K ≈ 0.025852 V — a usable constant default.
+            ctx.builder.ins().f64const(0.025852)
+        }
+        _ => ctx.builder.ins().f64const(0.0),
+    }
+}
+
+fn emit_unary(ctx: &mut ExprCtx, op: IrUnOp, x: &IrExpr) -> Value {
+    let v = emit_ir_expr(ctx, x);
+    match op {
+        IrUnOp::Neg => ctx.builder.ins().fneg(v),
+        IrUnOp::Not => {
+            let zero = ctx.builder.ins().f64const(0.0);
+            let is_zero = ctx.builder.ins().fcmp(FloatCC::Equal, v, zero);
+            bool_to_f64(ctx, is_zero)
+        }
+        // Bitwise / reduction unops are validated out.
+        _ => ctx.builder.ins().f64const(0.0),
+    }
+}
+
+fn emit_binary(ctx: &mut ExprCtx, op: IrBinOp, a: &IrExpr, b: &IrExpr) -> Value {
+    // Pow lowers to a libm call rather than an arithmetic instruction.
+    if op == IrBinOp::Pow {
+        let l = emit_ir_expr(ctx, a);
+        let r = emit_ir_expr(ctx, b);
+        return emit_math(ctx, "pow", l, r).expect("pow is a builtin");
+    }
+
+    let l = emit_ir_expr(ctx, a);
+    let r = emit_ir_expr(ctx, b);
+    match op {
+        IrBinOp::Add => ctx.builder.ins().fadd(l, r),
+        IrBinOp::Sub => ctx.builder.ins().fsub(l, r),
+        IrBinOp::Mul => ctx.builder.ins().fmul(l, r),
+        IrBinOp::Div => ctx.builder.ins().fdiv(l, r),
+        IrBinOp::Rem => {
+            // fmod: a - floor(a/b)*b
+            let q = ctx.builder.ins().fdiv(l, r);
+            let fl = emit_math(ctx, "floor", q, q).expect("floor is a builtin");
+            let prod = ctx.builder.ins().fmul(fl, r);
+            ctx.builder.ins().fsub(l, prod)
+        }
+        IrBinOp::Eq => cmp(ctx, FloatCC::Equal, l, r),
+        IrBinOp::Ne => cmp(ctx, FloatCC::NotEqual, l, r),
+        IrBinOp::Lt => cmp(ctx, FloatCC::LessThan, l, r),
+        IrBinOp::Le => cmp(ctx, FloatCC::LessThanOrEqual, l, r),
+        IrBinOp::Gt => cmp(ctx, FloatCC::GreaterThan, l, r),
+        IrBinOp::Ge => cmp(ctx, FloatCC::GreaterThanOrEqual, l, r),
+        IrBinOp::And => logical(ctx, l, r, true),
+        IrBinOp::Or => logical(ctx, l, r, false),
+        // Bitwise / shift ops are validated out.
+        _ => ctx.builder.ins().f64const(0.0),
+    }
+}
+
+fn emit_call(ctx: &mut ExprCtx, name: &str, args: &[IrExpr]) -> Value {
+    let zero = ctx.builder.ins().f64const(0.0);
+    let a0 = args.first().map(|a| emit_ir_expr(ctx, a)).unwrap_or(zero);
+    let a1 = args.get(1).map(|a| emit_ir_expr(ctx, a)).unwrap_or(zero);
+    emit_math(ctx, name, a0, a1).unwrap_or_else(|| ctx.builder.ins().f64const(0.0))
+}
+
+fn cmp(ctx: &mut ExprCtx, cc: FloatCC, a: Value, b: Value) -> Value {
+    let flag = ctx.builder.ins().fcmp(cc, a, b);
+    bool_to_f64(ctx, flag)
+}
+
+fn logical(ctx: &mut ExprCtx, a: Value, b: Value, and: bool) -> Value {
+    let zero = ctx.builder.ins().f64const(0.0);
+    let an = ctx.builder.ins().fcmp(FloatCC::NotEqual, a, zero);
+    let bn = ctx.builder.ins().fcmp(FloatCC::NotEqual, b, zero);
+    let combined = if and {
+        ctx.builder.ins().band(an, bn)
+    } else {
+        ctx.builder.ins().bor(an, bn)
+    };
+    bool_to_f64(ctx, combined)
+}
+
+fn bool_to_f64(ctx: &mut ExprCtx, flag: Value) -> Value {
+    let one = ctx.builder.ins().f64const(1.0);
+    let zero = ctx.builder.ins().f64const(0.0);
+    ctx.builder.ins().select(flag, one, zero)
+}
+
+// ── Branch collection ─────────────────────────────────────────────────────────
+
+/// Collect every `V(a,b)` branch appearing in an [`IrExpr`].
+pub fn collect_branches_ir(e: &IrExpr, out: &mut Vec<(String, String)>) {
+    match e {
+        IrExpr::BranchAccess { access, plus, minus } if access == "V" => {
+            let pair = (plus.clone(), minus.clone());
+            if !out.contains(&pair) {
+                out.push(pair);
+            }
+        }
+        IrExpr::Unary(_, x) => collect_branches_ir(x, out),
+        IrExpr::Binary(_, a, b) => {
+            collect_branches_ir(a, out);
+            collect_branches_ir(b, out);
+        }
+        IrExpr::Select(c, t, f) => {
+            collect_branches_ir(c, out);
+            collect_branches_ir(t, out);
+            collect_branches_ir(f, out);
+        }
+        IrExpr::Call(_, args) => {
+            for a in args {
+                collect_branches_ir(a, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+// ── Symbolic differentiation over IrExpr ──────────────────────────────────────
+
+/// Differentiate `e` w.r.t. the branch voltage keyed by `wrt`.
+///
+/// Mirrors the PHDL [`autodiff::diff`] rules but stays in IR form.  Reactive
+/// operators (`StateRef`) and non-`V` accesses have derivative 0 here.
+pub fn diff_ir(e: &IrExpr, wrt: &str) -> IrExpr {
+    match e {
+        IrExpr::Real(_) | IrExpr::Int(_) | IrExpr::Bool(_) | IrExpr::String(_)
+        | IrExpr::Quad(_) | IrExpr::Param(_) | IrExpr::Var(_) | IrExpr::Sim(_)
+        | IrExpr::StateRef(_) => lit(0.0),
+
+        IrExpr::BranchAccess { access, plus, minus } => {
+            if access == "V" && branch_key(plus, minus) == wrt {
+                lit(1.0)
+            } else {
+                lit(0.0)
+            }
+        }
+
+        IrExpr::Unary(IrUnOp::Neg, x) => neg(diff_ir(x, wrt)),
+        IrExpr::Unary(_, _) => lit(0.0),
+
+        IrExpr::Binary(op, a, b) => diff_binary(*op, a, b, wrt),
+
+        IrExpr::Select(c, t, f) => IrExpr::Select(
+            c.clone(),
+            Box::new(diff_ir(t, wrt)),
+            Box::new(diff_ir(f, wrt)),
+        ),
+
+        IrExpr::Call(name, args) => diff_call(name, args, wrt),
+
+        // No meaningful derivative (validated out of contributions anyway).
+        _ => lit(0.0),
+    }
+}
+
+fn diff_binary(op: IrBinOp, a: &IrExpr, b: &IrExpr, wrt: &str) -> IrExpr {
+    let du = diff_ir(a, wrt);
+    let dv = diff_ir(b, wrt);
+    match op {
+        IrBinOp::Add => add(du, dv),
+        IrBinOp::Sub => sub(du, dv),
+        // (u*v)' = u'v + uv'
+        IrBinOp::Mul => add(mul(du, b.clone()), mul(a.clone(), dv)),
+        // (u/v)' = (u'v − uv') / v²
+        IrBinOp::Div => div(
+            sub(mul(du, b.clone()), mul(a.clone(), dv)),
+            mul(b.clone(), b.clone()),
+        ),
+        // pow(u, v)' ≈ v * pow(u, v-1) * u'  (constant-exponent common case)
+        IrBinOp::Pow => mul(
+            mul(
+                b.clone(),
+                IrExpr::Binary(
+                    IrBinOp::Pow,
+                    Box::new(a.clone()),
+                    Box::new(sub(b.clone(), lit(1.0))),
+                ),
+            ),
+            du,
+        ),
+        // Comparisons / logical / remainder: derivative 0 almost everywhere.
+        _ => lit(0.0),
+    }
+}
+
+fn diff_call(name: &str, args: &[IrExpr], wrt: &str) -> IrExpr {
+    let u = args.first().cloned().unwrap_or_else(|| lit(0.0));
+    let du = args.first().map(|a| diff_ir(a, wrt)).unwrap_or_else(|| lit(0.0));
+    match name {
+        "exp" | "limexp" => mul(call1("exp", u), du),
+        "ln" | "log" => div(du, u),
+        "log10" => div(du, mul(u, lit(std::f64::consts::LN_10))),
+        "sqrt" => div(du, mul(lit(2.0), call1("sqrt", u))),
+        "sin" => mul(call1("cos", u), du),
+        "cos" => mul(neg(call1("sin", u)), du),
+        "tan" => div(du, mul(call1("cos", u.clone()), call1("cos", u))),
+        "asin" => div(du, call1("sqrt", sub(lit(1.0), mul(u.clone(), u)))),
+        "acos" => div(neg(du), call1("sqrt", sub(lit(1.0), mul(u.clone(), u)))),
+        "atan" => div(du, add(lit(1.0), mul(u.clone(), u))),
+        // (|u|)' = sign(u) * u'
+        "abs" => mul(
+            IrExpr::Select(
+                Box::new(IrExpr::Binary(IrBinOp::Ge, Box::new(u), Box::new(lit(0.0)))),
+                Box::new(lit(1.0)),
+                Box::new(lit(-1.0)),
+            ),
+            du,
+        ),
+        "pow" => {
+            let v = args.get(1).cloned().unwrap_or_else(|| lit(1.0));
+            mul(
+                mul(v.clone(), call2("pow", u.clone(), sub(v, lit(1.0)))),
+                du,
+            )
+        }
+        // floor/ceil/min/max and unknown calls: 0 almost everywhere.
+        _ => lit(0.0),
+    }
+}
+
+// ── Smart constructors (constant-folding) for IrExpr ──────────────────────────
+
+fn lit(v: f64) -> IrExpr {
+    IrExpr::Real(v)
+}
+
+fn is_lit(e: &IrExpr, v: f64) -> bool {
+    matches!(e, IrExpr::Real(x) if *x == v)
+}
+
+fn add(a: IrExpr, b: IrExpr) -> IrExpr {
+    if is_lit(&a, 0.0) {
+        return b;
+    }
+    if is_lit(&b, 0.0) {
+        return a;
+    }
+    IrExpr::Binary(IrBinOp::Add, Box::new(a), Box::new(b))
+}
+
+fn sub(a: IrExpr, b: IrExpr) -> IrExpr {
+    if is_lit(&b, 0.0) {
+        return a;
+    }
+    IrExpr::Binary(IrBinOp::Sub, Box::new(a), Box::new(b))
+}
+
+fn mul(a: IrExpr, b: IrExpr) -> IrExpr {
+    if is_lit(&a, 0.0) || is_lit(&b, 0.0) {
+        return lit(0.0);
+    }
+    if is_lit(&a, 1.0) {
+        return b;
+    }
+    if is_lit(&b, 1.0) {
+        return a;
+    }
+    IrExpr::Binary(IrBinOp::Mul, Box::new(a), Box::new(b))
+}
+
+fn div(a: IrExpr, b: IrExpr) -> IrExpr {
+    IrExpr::Binary(IrBinOp::Div, Box::new(a), Box::new(b))
+}
+
+fn neg(a: IrExpr) -> IrExpr {
+    if let IrExpr::Real(v) = &a {
+        return lit(-v);
+    }
+    IrExpr::Unary(IrUnOp::Neg, Box::new(a))
+}
+
+fn call1(name: &str, a: IrExpr) -> IrExpr {
+    IrExpr::Call(name.to_string(), vec![a])
+}
+
+fn call2(name: &str, a: IrExpr, b: IrExpr) -> IrExpr {
+    IrExpr::Call(name.to_string(), vec![a, b])
+}
+
+// ── Validation (fail loud, never silent 0.0) ──────────────────────────────────
+
+/// Reject any [`IrExpr`] construct that cannot be faithfully lowered to a
+/// scalar analog quantity, so a model never silently compiles to a wrong
+/// value.  Returns `Ok` for everything the emitter handles correctly.
+pub fn validate_ir_contrib(e: &IrExpr) -> Result<(), CodegenError> {
+    match e {
+        IrExpr::Real(_) | IrExpr::Int(_) | IrExpr::Bool(_) | IrExpr::Param(_)
+        | IrExpr::Var(_) | IrExpr::StateRef(_) => Ok(()),
+
+        IrExpr::BranchAccess { access, .. } => {
+            if access == "V" || access == "I" {
+                Ok(())
+            } else {
+                Err(unsupported(format!("branch access `{access}(...)`")))
+            }
+        }
+
+        IrExpr::Sim(sq) => match sq {
+            SimQuery::Temperature | SimQuery::Vt(_) | SimQuery::Abstime => Ok(()),
+            other => Err(unsupported(format!("simulator query {other:?}"))),
+        },
+
+        IrExpr::Unary(op, x) => match op {
+            IrUnOp::Neg | IrUnOp::Not => validate_ir_contrib(x),
+            _ => Err(unsupported(format!("unary operator {op:?}"))),
+        },
+
+        IrExpr::Binary(op, a, b) => match op {
+            IrBinOp::BitAnd | IrBinOp::BitOr | IrBinOp::BitXor | IrBinOp::Shl
+            | IrBinOp::Shr | IrBinOp::AShl | IrBinOp::AShr => {
+                Err(unsupported(format!("bitwise/shift operator {op:?}")))
+            }
+            _ => {
+                validate_ir_contrib(a)?;
+                validate_ir_contrib(b)
+            }
+        },
+
+        IrExpr::Select(c, t, f) => {
+            validate_ir_contrib(c)?;
+            validate_ir_contrib(t)?;
+            validate_ir_contrib(f)
+        }
+
+        IrExpr::Call(name, args) => {
+            if !is_builtin_math(name) {
+                return Err(unsupported(format!("call to non-builtin `{name}`")));
+            }
+            for a in args {
+                validate_ir_contrib(a)?;
+            }
+            Ok(())
+        }
+
+        other => Err(unsupported(format!("{other:?}"))),
+    }
+}
+
+fn unsupported(what: impl Into<String>) -> CodegenError {
+    CodegenError::Unsupported(what.into())
+}

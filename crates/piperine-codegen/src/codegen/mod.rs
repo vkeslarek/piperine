@@ -7,6 +7,7 @@ pub mod analog;
 pub mod autodiff;
 pub mod digital;
 pub mod expr;
+pub mod ir_emit;
 
 pub use analog::compile_analog_module;
 pub use digital::{compile_digital_module, DigitalInterpreter, DigitalVal};
@@ -23,6 +24,8 @@ pub enum CodegenError {
     BehaviorNotFound(String),
     #[error("Cranelift module error: {0}")]
     Module(String),
+    #[error("unsupported analog construct: {0}")]
+    Unsupported(String),
 }
 
 /// JIT-compiled analog device.
@@ -37,6 +40,11 @@ pub struct JitAnalogDevice {
     pub num_params: usize,
     pub(crate) residual: unsafe extern "C" fn(*const f64, *const f64, *mut f64),
     pub(crate) jacobian: unsafe extern "C" fn(*const f64, *const f64, *mut f64),
+    /// Charge `Q(V)` accumulator for reactive (`ddt`) contributions; `None`
+    /// when the module has no reactive part.  Stamped via the companion model.
+    pub(crate) charge: Option<unsafe extern "C" fn(*const f64, *const f64, *mut f64)>,
+    /// Charge Jacobian `dQ/dV` accumulator (row-major, `num_terminals²`).
+    pub(crate) charge_jacobian: Option<unsafe extern "C" fn(*const f64, *const f64, *mut f64)>,
     pub(crate) _module: JITModule,
 }
 
@@ -61,6 +69,29 @@ impl JitAnalogDevice {
     pub fn eval_jacobian(&self, node_voltages: &[f64], params: &[f64], jac: &mut [f64]) {
         unsafe {
             (self.jacobian)(node_voltages.as_ptr(), params.as_ptr(), jac.as_mut_ptr());
+        }
+    }
+
+    /// True if this device has reactive (`ddt`) contributions.
+    pub fn has_reactive(&self) -> bool {
+        self.charge.is_some()
+    }
+
+    /// Accumulate the reactive charge `Q(V)` per terminal into `q`.
+    ///
+    /// No-op when the device has no reactive part.  `q` must be pre-zeroed.
+    pub fn eval_charge(&self, node_voltages: &[f64], params: &[f64], q: &mut [f64]) {
+        if let Some(f) = self.charge {
+            unsafe { f(node_voltages.as_ptr(), params.as_ptr(), q.as_mut_ptr()); }
+        }
+    }
+
+    /// Accumulate the charge Jacobian `dQ/dV` (row-major, `num_terminals²`).
+    ///
+    /// No-op when the device has no reactive part.  `qjac` must be pre-zeroed.
+    pub fn eval_charge_jacobian(&self, node_voltages: &[f64], params: &[f64], qjac: &mut [f64]) {
+        if let Some(f) = self.charge_jacobian {
+            unsafe { f(node_voltages.as_ptr(), params.as_ptr(), qjac.as_mut_ptr()); }
         }
     }
 }

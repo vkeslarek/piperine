@@ -132,11 +132,61 @@ impl PhdlDevice {
         stamps
     }
 
-    fn load_analog_ac(&self, get_v: &dyn Fn(usize) -> f64) -> Vec<Stamp<AnalogReference, Complex64>> {
-        if self.analog.is_none() { return Vec::new(); }
+    fn load_analog_ac(&self, get_v: &dyn Fn(usize) -> f64, omega: f64) -> Vec<Stamp<AnalogReference, Complex64>> {
+        let analog = match &self.analog {
+            Some(a) => a,
+            None => return Vec::new(),
+        };
         let node_voltages = self.collect_node_voltages(get_v);
         let (_, jac) = self.eval_rhs_jac(&node_voltages);
-        self.jac_stamps_complex(&jac)
+        // Resistive conductance → real part of the admittance.
+        let mut stamps = self.jac_stamps_complex(&jac);
+        // Reactive `dQ/dV` → imaginary part `jω·dQ/dV` (e.g. a capacitor's jωC).
+        if analog.has_reactive() {
+            let n = self.num_terminals();
+            let mut qjac = vec![0.0; n * n];
+            analog.eval_charge_jacobian(&node_voltages, &self.params, &mut qjac);
+            for i in 0..n {
+                for j in 0..n {
+                    let v = qjac[i * n + j];
+                    if v == 0.0 { continue; }
+                    let row = self.node_refs.get(i).and_then(|r| r.clone());
+                    let col = self.node_refs.get(j).and_then(|r| r.clone());
+                    if let (Some(r), Some(c)) = (row, col) {
+                        stamps.push(Stamp::Matrix(r, c, Complex64::new(0.0, omega * v)));
+                    }
+                }
+            }
+        }
+        stamps
+    }
+
+    /// Transient companion-model load: the resistive residual/Jacobian plus the
+    /// reactive `ddt` term stamped via Backward-Euler (`alpha = 1/dt`).
+    ///
+    /// The reactive contribution adds `alpha·dQ/dV` to the Jacobian; the
+    /// matching history current source falls out of the Norton transform
+    /// (`jac · V_prev`), since the device is linearised at the previously
+    /// accepted solution.
+    fn load_analog_transient(&self, get_v: &dyn Fn(usize) -> f64, alpha: f64) -> Vec<Stamp<AnalogReference, f64>> {
+        let analog = match &self.analog {
+            Some(a) => a,
+            None => return Vec::new(),
+        };
+        let node_voltages = self.collect_node_voltages(get_v);
+        let (res, mut jac) = self.eval_rhs_jac(&node_voltages);
+        if analog.has_reactive() {
+            let n = self.num_terminals();
+            let mut qjac = vec![0.0; n * n];
+            analog.eval_charge_jacobian(&node_voltages, &self.params, &mut qjac);
+            for k in 0..n * n {
+                jac[k] += alpha * qjac[k];
+            }
+        }
+        let rhs = self.norton_rhs(&node_voltages, &res, &jac);
+        let mut stamps = self.rhs_stamps(&rhs);
+        stamps.extend(self.jac_stamps_f64(&jac));
+        stamps
     }
 }
 
@@ -158,27 +208,31 @@ impl Device for PhdlDevice {
     fn load_ac(
         &mut self,
         dc_op: &DcAnalysisResult,
-        _ac_ctx: &AcAnalysisContext,
+        ac_ctx: &AcAnalysisContext,
         _context: &Context,
     ) -> Vec<Stamp<AnalogReference, Complex64>> {
+        let freq: f64 = ac_ctx.frequency.into();
+        let omega = 2.0 * std::f64::consts::PI * freq;
         let refs = self.node_refs.clone();
         self.load_analog_ac(&|k| {
             refs.iter().flatten()
                 .find(|r| r.idx() == Some(k))
                 .and_then(|r| dc_op.get(r.variable().clone()))
                 .unwrap_or(0.0)
-        })
+        }, omega)
     }
 
     fn load_transient(
         &mut self,
         states: &TransientAnalysisState,
-        _tran_ctx: &TransientAnalysisContext,
+        tran_ctx: &TransientAnalysisContext,
         _context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
-        self.load_analog_dc(&|k| {
+        let dt: f64 = tran_ctx.dt.into();
+        let alpha = if dt > 0.0 { 1.0 / dt } else { 0.0 };
+        self.load_analog_transient(&|k| {
             states.latest().and_then(|s| s.get(k).copied()).unwrap_or(0.0)
-        })
+        }, alpha)
     }
 
     fn noise_current_psd(

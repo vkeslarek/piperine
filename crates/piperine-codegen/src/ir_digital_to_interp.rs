@@ -134,13 +134,26 @@ fn ir_expr_to_phdl(ir: &crate::ir::IrExpr) -> piperine_lang::parse::ast::Expr {
             args.iter().map(ir_expr_to_phdl).collect(),
         ),
         crate::ir::IrExpr::Binary(op, a, b) => {
+            use crate::ir::IrBinOp;
             let phdl_op = match op {
-                crate::ir::IrBinOp::Add => BinaryOp::Add,
-                crate::ir::IrBinOp::Sub => BinaryOp::Sub,
-                crate::ir::IrBinOp::Mul => BinaryOp::Mul,
-                crate::ir::IrBinOp::Div => BinaryOp::Div,
-                crate::ir::IrBinOp::Rem => BinaryOp::Rem,
-                _ => BinaryOp::Add,
+                IrBinOp::Add => BinaryOp::Add,
+                IrBinOp::Sub => BinaryOp::Sub,
+                IrBinOp::Mul => BinaryOp::Mul,
+                IrBinOp::Div => BinaryOp::Div,
+                IrBinOp::Rem => BinaryOp::Rem,
+                IrBinOp::Eq => BinaryOp::Eq,
+                IrBinOp::Ne => BinaryOp::Neq,
+                IrBinOp::Lt => BinaryOp::Lt,
+                IrBinOp::Le => BinaryOp::Le,
+                IrBinOp::Gt => BinaryOp::Gt,
+                IrBinOp::Ge => BinaryOp::Ge,
+                IrBinOp::BitAnd | IrBinOp::And => BinaryOp::BitAnd,
+                IrBinOp::BitOr | IrBinOp::Or => BinaryOp::BitOr,
+                IrBinOp::BitXor => BinaryOp::BitXor,
+                // Shifts have no PHDL BinaryOp equivalent; approximate as the
+                // left operand (rare in digital event guards).
+                IrBinOp::Pow | IrBinOp::Shl | IrBinOp::Shr | IrBinOp::AShl
+                | IrBinOp::AShr => BinaryOp::Add,
             };
             PExpr::Binary(
                 Box::new(ir_expr_to_phdl(a)),

@@ -135,7 +135,16 @@ fn emit_call(ctx: &mut ExprCtx, func: &Expr, args: &[Expr]) -> Value {
     let a0 = args.first().map(|a| emit_phdl_expr(ctx, a)).unwrap_or(zero);
     let a1 = args.get(1).map(|a| emit_phdl_expr(ctx, a)).unwrap_or(zero);
 
-    match fname {
+    emit_math(ctx, fname, a0, a1).unwrap_or_else(|| ctx.builder.ins().f64const(0.0))
+}
+
+/// Shared math-function dispatch over already-emitted argument [`Value`]s.
+///
+/// Returns `None` for names that are not recognised built-in math functions,
+/// so callers can decide how to handle user functions / unsupported names.
+/// Used by both the PHDL emitter ([`emit_phdl_expr`]) and the IR emitter.
+pub fn emit_math(ctx: &mut ExprCtx, name: &str, a0: Value, a1: Value) -> Option<Value> {
+    let v = match name {
         "exp"   => emit_libm1(ctx, "exp",   a0),
         "ln"    => emit_libm1(ctx, "log",   a0),
         "log"   => emit_libm1(ctx, "log",   a0),
@@ -160,8 +169,19 @@ fn emit_call(ctx: &mut ExprCtx, func: &Expr, args: &[Expr]) -> Value {
             let clamped = emit_libm2(ctx, "fmin", a0, cap);
             emit_libm1(ctx, "exp", clamped)
         }
-        _ => ctx.builder.ins().f64const(0.0),
-    }
+        _ => return None,
+    };
+    Some(v)
+}
+
+/// True if `name` is a built-in math function understood by [`emit_math`].
+pub fn is_builtin_math(name: &str) -> bool {
+    matches!(
+        name,
+        "exp" | "ln" | "log" | "log10" | "sqrt" | "abs" | "sin" | "cos" | "tan"
+            | "asin" | "acos" | "atan" | "atan2" | "pow" | "min" | "max"
+            | "floor" | "ceil" | "limexp"
+    )
 }
 
 /// Evaluate the value of a block (trailing expr or last Stmt::Return/Expr).

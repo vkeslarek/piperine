@@ -127,6 +127,46 @@ fn e2e_ppr_isrc_into_r_dc_converges() {
 }
 
 #[test]
+fn e2e_ams_expression_valued_param_default_resolves() {
+    use piperine_solver::analog::NodeIdentifier;
+    use piperine_solver::solver::dc::DcSolver;
+    use piperine_solver::solver::Context;
+    // The resistor's resistance comes from an *expression-valued* default
+    // `r = 2000.0 / 2.0`.  The AMS frontend keeps this as an IR expression
+    // (it does not pre-fold like PHDL), so it reaches `from_ir`.  Before the
+    // param fix this resolved to 0.0 (→ R=0, a short, V(top)→0); with
+    // `eval_ir_const` it folds to 1kΩ and the 1mA source gives V(top)=1V.
+    let src = "
+        module idev(p, n);
+            inout p, n; electrical p, n;
+            parameter real idc = 1.0e-3;
+            analog begin I(p, n) <+ idc; end
+        endmodule
+        module rdev(p, n);
+            inout p, n; electrical p, n;
+            parameter real r = 2000.0 / 2.0;
+            analog begin I(p, n) <+ V(p, n) / r; end
+        endmodule
+        module top(t, gnd);
+            inout t, gnd; electrical t, gnd;
+            idev i1(gnd, t);
+            rdev r1(t, gnd);
+        endmodule
+    ";
+    let doc = Document::parse(src).expect("AMS parses");
+    let ir = ams_to_ir(&doc);
+    let mut ci: CircuitInstance = from_ir(&ir, "top").expect("from_ir top");
+    ci.init_digital();
+    let mut solver = DcSolver::new(&mut ci, Context::default()).expect("dc solver");
+    let result = solver.solve().expect("dc solve");
+    let found = result.values().iter().any(|(var, &v)| {
+        matches!(var.as_ref(), piperine_solver::analog::AnalogVariable::Node(id) if !matches!(id, NodeIdentifier::Gnd))
+            && (v - 1.0).abs() < 1e-6
+    });
+    assert!(found, "expected V(t) ≈ 1.0V (R=2000/2=1k), got {:#?}", result.values());
+}
+
+#[test]
 fn e2e_ppr_rc_transient_runs() {
     use piperine_solver::solver::Context;
     // RC transient: capacitor charges from a current source, with a
@@ -231,15 +271,15 @@ fn e2e_ams_all_boilerplate_compiles() {
 }
 
 #[test]
-fn e2e_ams_vsource_va_dc_loads() {
-    // vsource.va: V(br) <+ vdc.  Combine with a resistor and check DC.
+fn e2e_ams_vsource_va_is_unsupported_today() {
+    // vsource.va: `V(br) <+ vdc` is an ideal voltage source.  The nodal
+    // device model can't enforce a branch voltage without an MNA branch
+    // current unknown, so the IR emitter rejects it loudly instead of
+    // silently stamping `vdc` as a current.  MNA branch support is Wave 2.
     let doc = Document::parse_file(&va_path("vsource.va")).expect("vsource parses");
     let ir = ams_to_ir(&doc);
-    for m in &ir.modules {
-        if m.analog.is_some() {
-            // Just verify it compiles; the runtime DC test lives below.
-            let _ = piperine_codegen::ir_analog_to_device(&ir, &m.name)
-                .expect("vsource IR compiles");
-        }
-    }
+    let analog_module = ir.modules.iter().find(|m| m.analog.is_some()).unwrap();
+    let result = piperine_codegen::ir_analog_to_device(&ir, &analog_module.name);
+    assert!(result.is_err(), "ideal voltage source not yet supported");
+    assert!(format!("{}", result.err().unwrap()).contains("potential contribution"));
 }

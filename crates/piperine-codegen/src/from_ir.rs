@@ -20,9 +20,8 @@ use crate::ir_analog_to_device::ir_analog_to_device;
 use crate::ir_digital_to_interp::ir_digital_to_interp;
 use crate::phdl_device::PhdlDevice;
 
-static NODE_CTR:   AtomicUsize = AtomicUsize::new(100_000);
-static DNET_CTR:   AtomicUsize = AtomicUsize::new(0);
-static DEVICE_CTR: AtomicUsize = AtomicUsize::new(0);
+static NODE_CTR: AtomicUsize = AtomicUsize::new(100_000);
+static DNET_CTR: AtomicUsize = AtomicUsize::new(0);
 
 /// Build a [`CircuitInstance`] directly from an [`IrProgram`].
 ///
@@ -117,35 +116,30 @@ pub fn from_ir(program: &IrProgram, top: &str) -> Result<CircuitInstance, String
             })
             .collect();
 
-        // Resolve parameters.
-        let param_defaults: Vec<f64> = child
-            .params
-            .iter()
-            .map(|p| match &p.default {
-                Some(crate::ir::IrExpr::Real(v)) => *v,
-                Some(crate::ir::IrExpr::Int(v)) => *v as f64,
-                Some(crate::ir::IrExpr::Param(name)) => {
-                    // Reference — look up in a parent (caller) scope; for now
-                    // use 0.0 and rely on the explicit instance override.
-                    if name == "inf" { 1.0 } else { 0.0 }
-                }
-                _ => 0.0,
-            })
-            .collect();
-
-        let mut params: Vec<f64> = param_defaults.clone();
+        // Resolve parameters.  Defaults are evaluated in declaration order so
+        // a later default can reference an earlier param (`real b = 2*a;`).
+        // Instance overrides are applied afterwards and may reference any
+        // already-resolved param.  Anything that is not a compile-time
+        // constant falls back to 0.0.
+        let mut resolved: HashMap<String, f64> = HashMap::new();
+        for p in &child.params {
+            let v = p
+                .default
+                .as_ref()
+                .and_then(|d| eval_ir_const(d, &resolved))
+                .unwrap_or(0.0);
+            resolved.insert(p.name.clone(), v);
+        }
         for (pname, pval) in &inst.params {
-            if let Some(idx) = child.params.iter().position(|p| &p.name == pname) {
-                let v = match pval {
-                    crate::ir::IrExpr::Real(x) => *x,
-                    crate::ir::IrExpr::Int(x) => *x as f64,
-                    _ => 0.0,
-                };
-                if idx < params.len() {
-                    params[idx] = v;
-                }
+            if let Some(v) = eval_ir_const(pval, &resolved) {
+                resolved.insert(pname.clone(), v);
             }
         }
+        let params: Vec<f64> = child
+            .params
+            .iter()
+            .map(|p| resolved.get(&p.name).copied().unwrap_or(0.0))
+            .collect();
 
         // Compile body (analog & digital).
         let analog_dev = if child.analog.is_some() {
@@ -156,7 +150,6 @@ pub fn from_ir(program: &IrProgram, top: &str) -> Result<CircuitInstance, String
             None
         };
 
-        let device_id = DEVICE_CTR.fetch_add(1, Ordering::Relaxed);
         let digital_interp = ir_digital_to_interp(program, &child.name).ok().map(
             |mut interp| {
                 let port_net_map: HashMap<String, DigitalNet> = child
@@ -193,6 +186,88 @@ pub fn from_ir(program: &IrProgram, top: &str) -> Result<CircuitInstance, String
     }
 
     Ok(CircuitInstance::from_devices_and_netlist(top, devices, netlist))
+}
+
+/// Best-effort compile-time evaluation of an [`IrExpr`] to an `f64`.
+///
+/// Handles literals, references to already-resolved params (`env`), the usual
+/// arithmetic/comparison/logical operators, ternary `Select`, and built-in
+/// math calls.  Returns `None` for anything that is not a compile-time
+/// constant (branch accesses, simulator queries, unknown calls, …), letting
+/// the caller fall back to a default.
+fn eval_ir_const(e: &crate::ir::IrExpr, env: &HashMap<String, f64>) -> Option<f64> {
+    use crate::ir::{IrBinOp, IrExpr, IrUnOp};
+
+    let b2f = |b: bool| if b { 1.0 } else { 0.0 };
+    match e {
+        IrExpr::Real(v) => Some(*v),
+        IrExpr::Int(v) => Some(*v as f64),
+        IrExpr::Bool(b) => Some(b2f(*b)),
+        IrExpr::Param(name) | IrExpr::Var(name) => {
+            if name == "inf" {
+                Some(f64::INFINITY)
+            } else {
+                env.get(name).copied()
+            }
+        }
+        IrExpr::Unary(op, x) => {
+            let v = eval_ir_const(x, env)?;
+            match op {
+                IrUnOp::Neg => Some(-v),
+                IrUnOp::Not => Some(b2f(v == 0.0)),
+                _ => None,
+            }
+        }
+        IrExpr::Binary(op, a, b) => {
+            let l = eval_ir_const(a, env)?;
+            let r = eval_ir_const(b, env)?;
+            Some(match op {
+                IrBinOp::Add => l + r,
+                IrBinOp::Sub => l - r,
+                IrBinOp::Mul => l * r,
+                IrBinOp::Div => l / r,
+                IrBinOp::Rem => l % r,
+                IrBinOp::Pow => l.powf(r),
+                IrBinOp::Eq => b2f(l == r),
+                IrBinOp::Ne => b2f(l != r),
+                IrBinOp::Lt => b2f(l < r),
+                IrBinOp::Le => b2f(l <= r),
+                IrBinOp::Gt => b2f(l > r),
+                IrBinOp::Ge => b2f(l >= r),
+                IrBinOp::And => b2f(l != 0.0 && r != 0.0),
+                IrBinOp::Or => b2f(l != 0.0 || r != 0.0),
+                _ => return None,
+            })
+        }
+        IrExpr::Select(c, t, f) => {
+            if eval_ir_const(c, env)? != 0.0 {
+                eval_ir_const(t, env)
+            } else {
+                eval_ir_const(f, env)
+            }
+        }
+        IrExpr::Call(name, args) => {
+            let a0 = args.first().and_then(|a| eval_ir_const(a, env));
+            let a1 = args.get(1).and_then(|a| eval_ir_const(a, env));
+            match (name.as_str(), a0, a1) {
+                ("exp", Some(x), _) => Some(x.exp()),
+                ("ln", Some(x), _) | ("log", Some(x), _) => Some(x.ln()),
+                ("log10", Some(x), _) => Some(x.log10()),
+                ("sqrt", Some(x), _) => Some(x.sqrt()),
+                ("abs", Some(x), _) => Some(x.abs()),
+                ("sin", Some(x), _) => Some(x.sin()),
+                ("cos", Some(x), _) => Some(x.cos()),
+                ("tan", Some(x), _) => Some(x.tan()),
+                ("floor", Some(x), _) => Some(x.floor()),
+                ("ceil", Some(x), _) => Some(x.ceil()),
+                ("pow", Some(x), Some(y)) => Some(x.powf(y)),
+                ("min", Some(x), Some(y)) => Some(x.min(y)),
+                ("max", Some(x), Some(y)) => Some(x.max(y)),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 // `CodegenError` is used by the *inner* adapters; we surface their
