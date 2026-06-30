@@ -1,0 +1,84 @@
+// Various Independent Source Models
+//
+// Version 1a, 11 Apr 03
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+
+`include "disciplines.vams"
+
+
+
+// Voltage Source
+//
+// Generates DC and AC stimulus.
+
+module vsrc1(p, n);
+
+output p, n;
+electrical p, n;
+parameter real dc=0;
+parameter real mag=0;
+
+analog begin
+    V(p,n) <+ dc + ac_stim( "ac", mag );
+end
+endmodule
+
+
+
+// Voltage Source with Series Resistance
+//
+// Generates DC and AC stimulus.
+
+module vsrc2(p, n);
+
+inout p, n;
+electrical p, n;
+parameter real dc=0;
+parameter real r=0 from [0:inf);
+parameter real mag=0;
+
+analog begin
+    V(p,n) <+ r*I(p,n) + dc + ac_stim( "ac", mag );
+end
+endmodule
+
+
+
+// Current Source
+//
+// Generates DC and AC stimulus.
+
+module isrc1(p, n);
+
+output p, n;
+electrical p, n;
+parameter real dc=0;
+parameter real mag=0;
+
+analog begin
+    I(p,n) <+ dc + ac_stim( "ac", mag );
+end
+endmodule
+
+
+
+// Current Source with Shunt Conductance
+//
+// Generates DC and AC stimulus.
+
+module isrc2(p, n);
+
+inout p, n;
+electrical p, n;
+parameter real dc=0;
+parameter real g=0 from [0:inf);
+parameter real mag=0;
+
+analog begin
+    I(p,n) <+ g*V(p,n) + dc + ac_stim( "ac", mag );
+end
+endmodule

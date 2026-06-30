@@ -1,0 +1,17 @@
+// PSP macros for MOSVAR surface potential model
+// Version 1.3.0-beta, March 2015
+//
+// Note: This file contains macro definitions for the PSP model used in MOSVAR.
+// It is an include file, not a standalone module.
+// Cannot be directly translated to PHDL as it contains no module.
+
+/*
+This file contains macro definitions for PSP model quantities:
+- Mathematical constants (X1, invSqrt2, P3(u), sqt_exp)
+- Exponential function macros (expl, expl_low, expl_high)
+- sigma function macro for surface potential calculations
+- Various other computational macros
+
+This is an include file, not a standalone module.
+To use these macros, they would need to be converted to PHDL functions/constants.
+*/

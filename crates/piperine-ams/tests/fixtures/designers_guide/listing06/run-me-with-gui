@@ -1,0 +1,13 @@
+#!/bin/sh
+
+rm -rf worklib
+mkdir worklib
+
+ncvlog latch2.v -messages
+ncvlog testbench.v -messages
+
+ncelab testbench -timescale 10ps/1ps -messages
+
+ncsim testbench -messages -gui &
+
+rm *.log

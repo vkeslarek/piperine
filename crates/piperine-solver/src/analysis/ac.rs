@@ -1,5 +1,5 @@
 use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
-use crate::analog::netlist::{
+use crate::analog::{
     BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier,
 };
 use crate::math::linear::Stamp;

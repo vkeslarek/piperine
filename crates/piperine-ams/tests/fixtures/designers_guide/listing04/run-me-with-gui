@@ -1,0 +1,13 @@
+#!/bin/sh
+
+rm -rf worklib
+mkdir worklib
+
+ncvlog clock_gen.v -messages
+ncvlog testbench.v -messages
+
+ncelab testbench -messages
+
+ncsim testbench -messages -gui & 
+
+rm *.log

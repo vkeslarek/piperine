@@ -1,0 +1,21 @@
+// Two input latch
+//
+// Version 1a, 1 June 04
+//
+// Olaf Zinke
+//
+// Downloaded from The Designer's Guide Community (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+// Taken from "The Designer's Guide to Verilog-AMS" by Kundert & Zinke.
+// Chapter 4, Listing 6.
+
+mod latch2(output out : Bit[2], input d1 : Bit, input d2 : Bit, input en : Bit) {
+    var out : Bit[2];
+    // Note: Verilog-AMS always block with wait condition translated to digital behavior
+    // The wait(!en) condition combined with always @(d1 or d2) describes level-sensitive behavior
+    digital latch2 {
+        @ change(d1) { if (!en) { out[0] = d1; } }
+        @ change(d2) { if (!en) { out[1] = d2; } }
+        @ change(en) { if (!en) { out[0] = d1; out[1] = d2; } }
+    }
+}

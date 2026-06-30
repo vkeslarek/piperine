@@ -4,17 +4,19 @@
 //! fan-out, diamond, RS latch, DFF pipeline, ring oscillator, disconnected
 //! subgraphs, D2A device, A2D state, and cosim integration.
 
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 
 use piperine_solver::circuit::{Circuit, CircuitInstance};
-use piperine_solver::digital::builtin_a2d::A2DState;
-use piperine_solver::digital::builtin_d2a::D2ADevice;
-use piperine_solver::digital::logic::LogicValue;
-use piperine_solver::digital::net::{DigitalNet, DigitalEvent};
-use piperine_solver::digital::state::{DigitalDevice, DigitalState, DigitalTopology};
+use piperine_solver::device::Device;
+use piperine_solver::digital::{LogicValue, DigitalNet, DigitalEvent};
+use piperine_solver::topology::{DigitalState, DigitalTopology};
 use piperine_solver::analysis::transient::TransientAnalysisOptions;
 use piperine_solver::solver::Context;
+
+#[path = "helpers/mod.rs"]
+mod helpers;
+use helpers::{A2DState, D2ADevice};
 
 // ===================================================================
 // Pure Rust device implementations
@@ -22,9 +24,11 @@ use piperine_solver::solver::Context;
 
 struct Inverter { input: DigitalNet, output: DigitalNet, delay: f64, id: usize }
 
-impl DigitalDevice for Inverter {
-    fn has_input_on(&self, c: &HashSet<DigitalNet>) -> bool { c.contains(&self.input) }
-    fn eval(&mut self, t: f64, nets: &[LogicValue], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+impl Device for Inverter {
+    fn device_name(&self) -> &str { "inverter" }
+    fn digital_input_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.input) }
+    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
+    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: &[f64], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
         let out = match nets[self.input.0] {
             LogicValue::Zero => LogicValue::One,
             LogicValue::One  => LogicValue::Zero,
@@ -32,32 +36,30 @@ impl DigitalDevice for Inverter {
         };
         q.push(Reverse(DigitalEvent { time: t + self.delay, net: self.output, value: out, source: self.id, seq: 0 }));
     }
-    fn input_nets(&self)  -> &[DigitalNet] { std::slice::from_ref(&self.input) }
-    fn output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
 }
 
 struct NorGate { inputs: [DigitalNet; 2], output: DigitalNet, delay: f64, id: usize }
 
-impl DigitalDevice for NorGate {
-    fn has_input_on(&self, c: &HashSet<DigitalNet>) -> bool { self.inputs.iter().any(|n| c.contains(n)) }
-    fn eval(&mut self, t: f64, nets: &[LogicValue], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+impl Device for NorGate {
+    fn device_name(&self) -> &str { "nor_gate" }
+    fn digital_input_nets(&self) -> &[DigitalNet] { &self.inputs }
+    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
+    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: &[f64], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
         let out = if self.inputs.iter().any(|n| nets[n.0] == LogicValue::One) { LogicValue::Zero } else { LogicValue::One };
         q.push(Reverse(DigitalEvent { time: t + self.delay, net: self.output, value: out, source: self.id, seq: 0 }));
     }
-    fn input_nets(&self)  -> &[DigitalNet] { &self.inputs }
-    fn output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
 }
 
 struct AndGate { inputs: [DigitalNet; 2], output: DigitalNet, delay: f64, id: usize }
 
-impl DigitalDevice for AndGate {
-    fn has_input_on(&self, c: &HashSet<DigitalNet>) -> bool { self.inputs.iter().any(|n| c.contains(n)) }
-    fn eval(&mut self, t: f64, nets: &[LogicValue], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+impl Device for AndGate {
+    fn device_name(&self) -> &str { "and_gate" }
+    fn digital_input_nets(&self) -> &[DigitalNet] { &self.inputs }
+    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
+    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: &[f64], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
         let out = if self.inputs.iter().all(|n| nets[n.0] == LogicValue::One) { LogicValue::One } else { LogicValue::Zero };
         q.push(Reverse(DigitalEvent { time: t + self.delay, net: self.output, value: out, source: self.id, seq: 0 }));
     }
-    fn input_nets(&self)  -> &[DigitalNet] { &self.inputs }
-    fn output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
 }
 
 struct DFF {
@@ -74,11 +76,11 @@ impl DFF {
     }
 }
 
-impl DigitalDevice for DFF {
-    fn has_input_on(&self, c: &HashSet<DigitalNet>) -> bool {
-        self.inputs.iter().any(|n| c.contains(n))
-    }
-    fn eval(&mut self, t: f64, nets: &[LogicValue], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+impl Device for DFF {
+    fn device_name(&self) -> &str { "dff" }
+    fn digital_input_nets(&self) -> &[DigitalNet] { &self.inputs }
+    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.q) }
+    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: &[f64], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
         let clk = nets[self.inputs[0].0];
         let d   = nets[self.inputs[1].0];
         if self.last_clk == LogicValue::Zero && clk == LogicValue::One {
@@ -86,8 +88,6 @@ impl DigitalDevice for DFF {
         }
         self.last_clk = clk;
     }
-    fn input_nets(&self)  -> &[DigitalNet] { &self.inputs }
-    fn output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.q) }
 }
 
 // ===================================================================
@@ -96,7 +96,7 @@ impl DigitalDevice for DFF {
 
 #[test]
 fn test_topology_empty() {
-    let devices: Vec<Box<dyn DigitalDevice>> = vec![];
+    let devices: Vec<Box<dyn Device>> = vec![];
     let topo = DigitalTopology::build(&devices);
     assert!(topo.topo_order.is_empty());
     assert!(topo.back_edges.is_empty());
@@ -104,7 +104,7 @@ fn test_topology_empty() {
 
 #[test]
 fn test_topology_single_device() {
-    let devices: Vec<Box<dyn DigitalDevice>> = vec![
+    let devices: Vec<Box<dyn Device>> = vec![
         Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 1e-9, id: 0 }),
     ];
     let topo = DigitalTopology::build(&devices);
@@ -115,7 +115,7 @@ fn test_topology_single_device() {
 #[test]
 fn test_topology_linear_chain() {
     // INV0→INV1→INV2→INV3
-    let devices: Vec<Box<dyn DigitalDevice>> = (0..4).map(|i| -> Box<dyn DigitalDevice> {
+    let devices: Vec<Box<dyn Device>> = (0..4).map(|i| -> Box<dyn Device> {
         Box::new(Inverter { input: DigitalNet(i), output: DigitalNet(i + 1), delay: 1e-9, id: i })
     }).collect();
     let topo = DigitalTopology::build(&devices);
@@ -131,7 +131,7 @@ fn test_topology_linear_chain() {
 #[test]
 fn test_topology_diamond() {
     // n0→INV0→n1→{INV1→n2, INV2→n3}; AND(n2,n3)→n4
-    let devices: Vec<Box<dyn DigitalDevice>> = vec![
+    let devices: Vec<Box<dyn Device>> = vec![
         Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(3), delay: 0.0, id: 2 }),
@@ -154,7 +154,7 @@ fn test_topology_diamond() {
 #[test]
 fn test_topology_ring_has_back_edge() {
     // 3-inverter ring: INV0→INV1→INV2→INV0
-    let devices: Vec<Box<dyn DigitalDevice>> = (0..3usize).map(|i| -> Box<dyn DigitalDevice> {
+    let devices: Vec<Box<dyn Device>> = (0..3usize).map(|i| -> Box<dyn Device> {
         Box::new(Inverter { input: DigitalNet(i), output: DigitalNet((i + 1) % 3), delay: 1e-9, id: i })
     }).collect();
     let topo = DigitalTopology::build(&devices);
@@ -165,7 +165,7 @@ fn test_topology_ring_has_back_edge() {
 #[test]
 fn test_topology_disconnected_subgraphs() {
     // Chain A: INV0→INV1; Chain B: INV2→INV3 (no shared nets)
-    let devices: Vec<Box<dyn DigitalDevice>> = vec![
+    let devices: Vec<Box<dyn Device>> = vec![
         Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
         Box::new(Inverter { input: DigitalNet(3), output: DigitalNet(4), delay: 0.0, id: 2 }),
@@ -194,13 +194,12 @@ fn test_zero_delay_chain_propagates_in_one_pass() {
     state.nets[0] = LogicValue::One;
     state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 99, seq: 0 });
 
-    let mut devices: Vec<Box<dyn DigitalDevice>> = vec![
+    let mut devices: Vec<Box<dyn Device>> = vec![
         Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
     ];
     let topo = DigitalTopology::build(&devices);
-    let mut refs: Vec<&mut dyn DigitalDevice> = devices.iter_mut().map(|d| -> &mut dyn DigitalDevice { &mut **d }).collect();
-    state.evaluate_dag_ordered(1e-9, &mut refs, &topo);
+    state.evaluate_dag_ordered(1e-9, &mut devices, &topo);
 
     assert_eq!(state.nets[0], LogicValue::Zero);
     assert_eq!(state.nets[1], LogicValue::One);   // INV0: NOT(0)=1
@@ -215,14 +214,13 @@ fn test_fan_out_topology() {
     state.nets[0] = LogicValue::Zero;
     state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0 });
 
-    let mut devices: Vec<Box<dyn DigitalDevice>> = vec![
+    let mut devices: Vec<Box<dyn Device>> = vec![
         Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(3), delay: 0.0, id: 2 }),
     ];
     let topo = DigitalTopology::build(&devices);
-    let mut refs: Vec<&mut dyn DigitalDevice> = devices.iter_mut().map(|d| -> &mut dyn DigitalDevice { &mut **d }).collect();
-    state.evaluate_dag_ordered(1e-9, &mut refs, &topo);
+    state.evaluate_dag_ordered(1e-9, &mut devices, &topo);
 
     assert_eq!(state.nets[0], LogicValue::One);
     assert_eq!(state.nets[1], LogicValue::Zero); // INV0: NOT(1)=0
@@ -238,15 +236,14 @@ fn test_diamond_propagation() {
     state.nets[0] = LogicValue::One;
     state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 99, seq: 0 });
 
-    let mut devices: Vec<Box<dyn DigitalDevice>> = vec![
+    let mut devices: Vec<Box<dyn Device>> = vec![
         Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(3), delay: 0.0, id: 2 }),
         Box::new(AndGate  { inputs: [DigitalNet(2), DigitalNet(3)], output: DigitalNet(4), delay: 0.0, id: 3 }),
     ];
     let topo = DigitalTopology::build(&devices);
-    let mut refs: Vec<&mut dyn DigitalDevice> = devices.iter_mut().map(|d| -> &mut dyn DigitalDevice { &mut **d }).collect();
-    state.evaluate_dag_ordered(1e-9, &mut refs, &topo);
+    state.evaluate_dag_ordered(1e-9, &mut devices, &topo);
 
     assert_eq!(state.nets[0], LogicValue::Zero);
     assert_eq!(state.nets[1], LogicValue::One);
@@ -273,8 +270,8 @@ fn make_rs_latch_instance(title: &str, r_val: LogicValue, s_val: LogicValue, q_v
     let circuit = Circuit::new(title);
     let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
     instance.digital_state = state;
-    instance.digital_runtimes.push(Box::new(NorGate { inputs: [DigitalNet(0), DigitalNet(3)], output: DigitalNet(2), delay: 1e-10, id: 0 }));
-    instance.digital_runtimes.push(Box::new(NorGate { inputs: [DigitalNet(1), DigitalNet(2)], output: DigitalNet(3), delay: 1e-10, id: 1 }));
+    instance.devices.push(Box::new(NorGate { inputs: [DigitalNet(0), DigitalNet(3)], output: DigitalNet(2), delay: 1e-10, id: 0 }));
+    instance.devices.push(Box::new(NorGate { inputs: [DigitalNet(1), DigitalNet(2)], output: DigitalNet(3), delay: 1e-10, id: 1 }));
     instance.rebuild_digital_topology();
     instance
 }
@@ -341,7 +338,7 @@ fn test_dff_rising_edge_capture() {
     let circuit = Circuit::new("DFFCapture");
     let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
     instance.digital_state = state;
-    instance.digital_runtimes.push(Box::new(DFF::new(0, DigitalNet(0), DigitalNet(1), DigitalNet(2), 0.5e-9)));
+    instance.devices.push(Box::new(DFF::new(0, DigitalNet(0), DigitalNet(1), DigitalNet(2), 0.5e-9)));
     instance.rebuild_digital_topology();
 
     let options = TransientAnalysisOptions::new(10e-9.into(), 1e-9.into());
@@ -364,7 +361,7 @@ fn test_dff_does_not_capture_on_falling_edge() {
     let circuit = Circuit::new("DFFNoCapture");
     let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
     instance.digital_state = state;
-    instance.digital_runtimes.push(Box::new(DFF::new(0, DigitalNet(0), DigitalNet(1), DigitalNet(2), 0.5e-9)));
+    instance.devices.push(Box::new(DFF::new(0, DigitalNet(0), DigitalNet(1), DigitalNet(2), 0.5e-9)));
     instance.rebuild_digital_topology();
 
     let options = TransientAnalysisOptions::new(10e-9.into(), 1e-9.into());
@@ -392,9 +389,9 @@ fn test_dff_pipeline_three_stages() {
     let circuit = Circuit::new("DFFPipeline");
     let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
     instance.digital_state = state;
-    instance.digital_runtimes.push(Box::new(DFF::new(0, DigitalNet(0), DigitalNet(1), DigitalNet(2), 0.1e-9)));
-    instance.digital_runtimes.push(Box::new(DFF::new(1, DigitalNet(0), DigitalNet(2), DigitalNet(3), 0.1e-9)));
-    instance.digital_runtimes.push(Box::new(DFF::new(2, DigitalNet(0), DigitalNet(3), DigitalNet(4), 0.1e-9)));
+    instance.devices.push(Box::new(DFF::new(0, DigitalNet(0), DigitalNet(1), DigitalNet(2), 0.1e-9)));
+    instance.devices.push(Box::new(DFF::new(1, DigitalNet(0), DigitalNet(2), DigitalNet(3), 0.1e-9)));
+    instance.devices.push(Box::new(DFF::new(2, DigitalNet(0), DigitalNet(3), DigitalNet(4), 0.1e-9)));
     instance.rebuild_digital_topology();
 
     let options = TransientAnalysisOptions::new(20e-9.into(), 0.5e-9.into());
@@ -419,7 +416,7 @@ fn test_ring_oscillator_five_inv() {
     let circuit = Circuit::new("RingOsc5");
     let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
     for i in 0..5usize {
-        instance.digital_runtimes.push(Box::new(Inverter {
+        instance.devices.push(Box::new(Inverter {
             input: DigitalNet(i), output: DigitalNet((i + 1) % 5), delay: 1e-9, id: i,
         }));
     }
@@ -450,7 +447,7 @@ fn test_ring_oscillator_five_inv() {
 fn test_d2a_voltage_ramp() {
     let mut d = D2ADevice::new(DigitalNet(0));
     let mut q = BinaryHeap::new();
-    d.eval(0.0, &[LogicValue::One], &mut q);
+    d.eval_discrete(0.0, &[LogicValue::One], &[], &mut q);
     assert!((d.voltage_at(0.0)    - 0.0).abs() < 1e-12, "At t=0, output=0 (v_from)");
     assert!((d.voltage_at(50e-12) - 0.9).abs() < 1e-12, "Midpoint of 100ps rise = 0.9V");
     assert!((d.voltage_at(100e-12)- 1.8).abs() < 1e-12, "End of rise = 1.8V");
@@ -461,9 +458,9 @@ fn test_d2a_voltage_ramp() {
 fn test_d2a_no_restart_on_same_value() {
     let mut d = D2ADevice::new(DigitalNet(0));
     let mut q = BinaryHeap::new();
-    d.eval(0.0, &[LogicValue::One], &mut q);
+    d.eval_discrete(0.0, &[LogicValue::One], &[], &mut q);
     let ts = d.transition_start_time;
-    d.eval(5e-9, &[LogicValue::One], &mut q); // same value
+    d.eval_discrete(5e-9, &[LogicValue::One], &[], &mut q); // same value
     assert_eq!(d.transition_start_time, ts, "No transition restart on same value");
 }
 
@@ -471,8 +468,8 @@ fn test_d2a_no_restart_on_same_value() {
 fn test_d2a_x_holds_voltage() {
     let mut d = D2ADevice::new(DigitalNet(0));
     let mut q = BinaryHeap::new();
-    d.eval(0.0, &[LogicValue::One], &mut q);  // start rising
-    d.eval(5e-9, &[LogicValue::X], &mut q);   // X: hold
+    d.eval_discrete(0.0, &[LogicValue::One], &[], &mut q);  // start rising
+    d.eval_discrete(5e-9, &[LogicValue::X], &[], &mut q);   // X: hold
     assert!((d.target_voltage - 1.8).abs() < 1e-12, "X should hold at 1.8V");
 }
 
@@ -480,8 +477,8 @@ fn test_d2a_x_holds_voltage() {
 fn test_d2a_interrupted_ramp() {
     let mut d = D2ADevice::new(DigitalNet(0));
     let mut q = BinaryHeap::new();
-    d.eval(0.0, &[LogicValue::One], &mut q);    // start rising 0→1.8V
-    d.eval(50e-12, &[LogicValue::Zero], &mut q); // interrupt at midpoint
+    d.eval_discrete(0.0, &[LogicValue::One], &[], &mut q);    // start rising 0→1.8V
+    d.eval_discrete(50e-12, &[LogicValue::Zero], &[], &mut q); // interrupt at midpoint
     assert!((d.v_from - 0.9).abs() < 1e-9, "v_from should be midpoint 0.9V");
     assert_eq!(d.target_voltage, 0.0);
 }
@@ -548,7 +545,7 @@ fn test_cosim_d2a_event_at_correct_time() {
 
     let mut d2a = Box::new(D2ADevice::new(DigitalNet(0)));
     let d2a_ptr: *mut D2ADevice = &mut *d2a;
-    instance.digital_runtimes.push(d2a as Box<dyn DigitalDevice>);
+    instance.devices.push(d2a as Box<dyn Device>);
     instance.digital_state = state;
     instance.rebuild_digital_topology();
 
@@ -577,7 +574,7 @@ fn test_cosim_d2a_multiple_events() {
 
     let mut d2a = Box::new(D2ADevice::new(DigitalNet(0)));
     let d2a_ptr: *mut D2ADevice = &mut *d2a;
-    instance.digital_runtimes.push(d2a as Box<dyn DigitalDevice>);
+    instance.devices.push(d2a as Box<dyn Device>);
     instance.digital_state = state;
     instance.rebuild_digital_topology();
 

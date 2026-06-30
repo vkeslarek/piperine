@@ -1,0 +1,110 @@
+// Frequency divider model that works with SpectreRF
+//
+// Version 1a, 11 Apr 03
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+
+// Divide by N counter
+//
+// Contains no hidden state, and so it works with SpectreRF
+//
+// Will fail if N is large, say greater than 1000.  Can tighten tolerances
+// to increase the range of N, or you can break N into integer factors and
+// implement the divide by N with several counters in series.
+
+mod divideByN(pout, nout, pin, nin);
+    wire pout, nout, pin, nin:Electrical;
+    wire vg, chg, hold:Electrical;
+    param:Natural n = 2 from [ 2 : inf);
+    // divide ratio
+    param:Natural nhi = 1 from [ 1 : n - 1 ];
+    // number of hi counts per output pulse
+    param:Natural dir = 1 from [ - 1 : 1 ] exclude 0;
+    // +1 for rising edge triggered
+    // -1 for falling edge triggered
+    param:Real tt = 0.01;
+    // output transition time
+    param:Real vdd = 5, vss = 0;
+    // defines output high and low levels
+    param:Real thresh = (vdd + vss) / 2;
+    // input threshold is at midpoint
+    var vmax;
+    var out, count;
+    var g;
+    var vchg;
+
+    analog divideByN {
+        vmax = max(abs(vdd), abs(vss));
+        g = 5 * ln(n);
+        @(cross(V(pin, nin) - thresh, 0));
+
+        // hold capacitor with capacitance tt
+        I(vg, hold) <+ tt * ddt(V(vg, hold));
+
+        // clamp hold capacitor during dc analysis
+        if (analysis("static")) I(vg, hold) <+ V(vg, hold);
+
+        // ideal op amp
+        V(hold) : V(vg) == 0;
+
+        // titrating capacitor with capacitance tt
+        I(chg) <+ tt * ddt(V(chg));
+
+        // titrating capacitor is precharged when input is high
+        // if V(hold) is in range,
+        //     precharge to vmax/n volts to increment hold cap one level,
+        // else
+        //     precharge with equal but opposite the charge on the hold cap
+        //     in order to reset hold cap to zero
+        if ((V(hold) < vmax * (1.5 / n - 1)) && (dir * V(pin, nin) < dir * thresh)) begin
+            vchg = V(hold);
+        end
+        else begin
+            vchg = vmax / n;
+        end
+
+        // determine the count
+        count = -n * V(hold) / vmax;
+
+        // charge or discharge when input is high through g Siemen switches
+        if (dir * V(pin, nin) > dir * thresh) begin
+            // dump titrating charge onto hold cap
+            I(vg, chg) <+ g * V(vg, chg);
+        end
+        else begin
+            // precharge titrating capacitor
+            I(chg) <+ g * (V(chg) - vchg);
+            // use discrete-level feedback to correct for any errors in hold chg
+            I(vg) <+ -n * V(hold) / vmax - count;
+        end
+
+        // output pulse when V(in) is high and V(hold) below threshold
+        out = count >= (n - nhi);
+        V(pout, nout) <+ transition(vss + out * (vdd - vss), 0.0, tt, tt);
+
+    }
+endmod
+
+// used to check the divider above
+// connect in to input of divider and reset to output of divider
+// set parameter values in the same way as on the divider
+// this module has hidden state and so cannot be used with SpectreRF
+
+mod counter(reset, in);
+    wire reset, in:Electrical;
+    param:Real vdd = 5, vss = 0;
+    param:Real thresh = (vdd + vss) / 2;
+    param:Natural dir = 1 from [ - 1 : 1 ] exclude 0;
+    var n;
+
+    analog counter {
+        @(cross(V(in) - thresh, dir)) n = n + 1;
+        @(cross(V(reset) - thresh, dir)) begin
+            $strobe("count = %d\n", n);
+            n = 0;
+        end
+    }
+endmod

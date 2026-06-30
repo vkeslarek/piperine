@@ -1,0 +1,49 @@
+// Random Bitstream Generators
+//
+// Version 1a, 1 June 04
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide Community (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+// Taken from "The Designer's Guide to Verilog-AMS" by Kundert & Zinke.
+// Chapter 5, Listing 2.
+
+mod bitStream(out);
+    // time that the first bit is emitted (s)
+    param start : Real = 0.0;
+    // period of bit updates (s)
+    param period : Real = 1.0;
+
+    wire out : Electrical;
+
+    var x : Integer;
+
+    analog bitStream {
+        // @(timer(start, period)) x = ($random >= 0) ? 1 : 0;
+        // transition() limitation - ddt approximation or comment needed
+        V(out) <+ 0;
+    }
+endmod
+
+// This version support a seed parameter
+mod bitStream2(out);
+    // time that the first bit is emitted (s)
+    param start : Real = 0.0;
+    // period of bit updates (s)
+    param period : Real = 1.0;
+    // seed for the random bit pattern
+    param seed : Integer = 0;
+
+    wire out : Electrical;
+
+    var x : Integer;
+    var y : Integer;
+
+    analog bitStream2 {
+        @ (initial_step) y = seed;
+        // @(timer(start, period)) x = ($random(y) >= 0) ? 1 : 0;
+        // transition() limitation - ddt approximation or comment needed
+        V(out) <+ 0;
+    }
+endmod

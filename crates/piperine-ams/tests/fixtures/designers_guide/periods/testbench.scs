@@ -1,0 +1,11 @@
+// Test delay meter
+
+simulator lang=spectre
+
+ahdl_include "periods.va"
+
+Vin1 (in 0) vsource type=sine ampl=1 freq=1MHz
+PM   (in) measure_periods
+
+save PM:period PM:freq
+doTran tran stop=20us

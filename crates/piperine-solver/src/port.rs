@@ -4,8 +4,8 @@
 //! of discipline.  The compiler produces port names; the elaborator resolves
 //! them to `Port::Analog` or `Port::Digital`; the solver consumes them.
 
-use crate::analog::netlist::AnalogReference;
-use crate::digital::net::DigitalNet;
+use crate::analog::AnalogReference;
+use crate::digital::DigitalNet;
 
 /// Represents a resolved port in the simulation.
 /// The discipline determines which variant is used.
@@ -31,7 +31,7 @@ pub enum Port {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analog::netlist::{AnalogVariable, NodeIdentifier};
+    use crate::analog::{AnalogVariable, NodeIdentifier};
     use std::sync::Arc;
 
     #[test]

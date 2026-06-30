@@ -1,0 +1,27 @@
+// Ideal Diode
+//
+// Version 1a, 1 June 04
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide Community (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+// Taken from "The Designer's Guide to Verilog-AMS" by Kundert & Zinke.
+// Chapter 3, Listing 21.
+
+`include "disciplines.vams"
+
+module diode (a, c);
+    inout a, c;
+    electrical a, c;
+
+    analog begin
+	@(cross((V(a,c) + I(a,c)), 0))
+	    ;
+	if ((V(a,c) + I(a,c)) > 0)
+	    V(a,c) <+ 0;
+	else
+	    I(a,c) <+ 0;
+    end
+endmodule
+

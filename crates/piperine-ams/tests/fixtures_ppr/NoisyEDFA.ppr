@@ -1,0 +1,36 @@
+// Erbium-doped fiber amplifier with amplified spontaneous emission
+
+mod NoisyEDFA(in, out);
+    inout [ 0 : 3 ] in, out;
+    wire [ 0 : 3 ] in, out : Optical;
+    wire [ 0 : 1 ] transfer, transfer_pol, noise_pol, out_tmp, out_tmp_pol, out_pol : Optical;
+
+    param gain : Real = 3.0;
+    var seed : Integer = 52924;
+    var mean : Integer = 0;
+    var noise_density : Real = 0;
+    var noise_power : Real = 0;
+    param fs : Real = 5e12;
+
+    Polar2Cartesian Polar2Cartesian1(transfer_pol, transfer);
+    CartesianMultiplier CartesianMultiplier1(transfer, in [ 0 : 1 ], out_tmp);
+
+    Cartesian2Polar Cartesian2Polar1(out_tmp, out_tmp_pol);
+    CartesianAdder CartesianAdder1(out_tmp_pol, noise_pol, out_pol);
+    Polar2Cartesian Polar2Cartesian2(out_pol, out [ 0 : 1 ]);
+
+    analog begin
+        @(initial_step) begin
+            noise_density = 3.44e-19 * (pow(10, gain / 10) - 1);
+            noise_power = noise_density * fs;
+        end
+
+        OptE(noise_pol [ 0 ]) <+ $rdist_normal(seed, mean, sqrt(noise_power));
+        OptE(noise_pol [ 1 ]) <+ 0;
+        OptE(transfer_pol [ 0 ]) <+ pow(10, gain / 20);
+        OptE(transfer_pol [ 1 ]) <+ 0;
+
+        OptE(in [ 2 ]) <+ 0;
+        OptE(in [ 3 ]) <+ 0;
+    end
+endmod

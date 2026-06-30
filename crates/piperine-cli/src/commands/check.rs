@@ -25,7 +25,7 @@ pub fn execute(file: Option<String>) {
 
     println!("Checking file: {}", path.display());
     
-    match piperine_parser::parse_file(&path) {
+    match piperine_ams::Document::parse_file(&path) {
         Ok(doc) => {
             println!("Parse successful! Captured models:");
             println!("  Modules: {}", doc.modules.len());

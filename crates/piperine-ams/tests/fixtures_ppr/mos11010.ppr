@@ -1,0 +1,79 @@
+// MOS Model 11 (Level 11010) - Physical scaling MOSFET model
+// Based on report "NL-UR2002/802: MOS Model 11 Level 1101"
+// by R. van Langevelde, A.J. Scholten, and D.B.M. Klaassen
+// Copyright Koninklijke Philips Electronics N.V. 2003/2004
+// Verilog-A implementation by Geoffrey Coram, Analog Devices, Inc.
+// Version 0.9
+//
+// Note: This is a highly complex surface-potential based MOSFET model.
+// Full translation requires extensive manual work.
+
+mod mos11010(inout d : Electrical, inout g : Electrical, inout s : Electrical, inout b : Electrical) {
+    wire d : Electrical, g : Electrical, s : Electrical, b : Electrical;
+
+    // Device type parameter
+    param type : Integer = 1; // constraint: -1 <= type <= 1, type != 0 (NMOS=1, PMOS=-1)
+
+    // Level parameter
+    param level : Natural = 11010; // constraint: 11010 <= level <= 11011
+
+    // Geometry parameters
+    param l : Real = 2.0e-6; // constraint: l > 0
+    param w : Real = 10.0e-6; // constraint: w > 0
+    param lvar : Real = 0.00;
+    param lap : Real = 4.00e-08; // constraint: lap >= 1.0e-10
+    param wvar : Real = 0.00;
+    param wot : Real = 0.00;
+
+    // Temperature parameters
+    param tr : Real = 21.0; // constraint: tr >= -273.15
+    param dta : Real = 0.0; // constraint: dta >= 0
+
+    // Physical model parameters
+    param vfb : Real = -1.05;
+    param stvfb : Real = 0.50e-03;
+    param kor : Real = 0.500;
+    param phibr : Real = 0.950;
+    param stphib : Real = -8.50e-04;
+    param betsq : Real = 370.9e-6; // constraint: betsq > 0
+    param etabetr : Real = 1.30; // constraint: etabetr > 0
+    param thesrr : Real = 0.400; // constraint: thesrr > 0
+    param etasr : Real = 0.65; // constraint: etasr > 0
+    param thephr : Real = 1.29e-02; // constraint: thephr > 0
+    param etaph : Real = 1.35; // constraint: etaph > 0
+    param etamobr : Real = 1.400; // constraint: etamobr > 0
+    param nu : Real = 2.000; // constraint: nu >= 1.000
+    param nuexp : Real = 5.250; // constraint: nuexp > 0
+    param therr : Real = 0.155; // constraint: therr > 1.0e-10
+    param etar : Real = 0.950; // constraint: etar > 0
+
+    // Capacitance parameters
+    param tox : Real = 3.20e-09; // constraint: tox >= 1.0e-12
+    param col : Real = 3.20e-16;
+    param cgd : Real = 0.0; // constraint: cgd >= 0
+    param cgs : Real = 0.0; // constraint: cgs >= 0
+
+    // Gate current parameters
+    param iginvr : Real = 0.0; // constraint: iginvr >= 0
+    param binv : Real = 48.000; // constraint: binv >= 0
+    param igaccr : Real = 0.0; // constraint: igaccr >= 0
+    param bacc : Real = 48.000; // constraint: bacc >= 0
+
+    // GIDL parameters
+    param agidlr : Real = 0.0; // constraint: agidlr >= 0
+    param bgidl : Real = 41.00; // constraint: bgidl >= 0
+    param cgidl : Real = 0.0; // constraint: cgidl >= 0
+
+    // Noise parameters
+    param gatenoise : Natural = 0; // constraint: 0 <= gatenoise <= 1
+    param kf : Real = 0.0; // constraint: kf >= 0
+    param af : Real = 1.0; // constraint: af >= 0.1
+
+    // Multiplicity factor
+    param mult : Real = 1.0; // constraint: mult >= 1
+
+    analog mos11010 {
+        // Behavioral code with analog functions (hypf, psi_s_val, Vinv_val, Vov_val)
+        // and complex surface potential calculations not directly translatable
+    }
+}

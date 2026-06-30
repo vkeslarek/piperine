@@ -1,0 +1,9 @@
+// testbench for inductor model with skin-effect
+simulator lang=spectre
+ 
+ahdl_include "lossy-inductor.va"
+L1 (n 0) lossy_ind l=120nH esr=0.01 rcp=85 k=2.4e-4 cp=74fF
+I1 (n 0) isource mag=1
+
+dcop dc
+acswp ac start=100mHz stop=100GHz dec=20

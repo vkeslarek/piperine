@@ -1,0 +1,5 @@
+`include "disciplines.vams"
+
+connectrules my_connectrules;
+    connect electrical, voltage resolveto electrical;
+endconnectrules

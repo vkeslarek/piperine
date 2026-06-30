@@ -1,0 +1,70 @@
+//
+//  generalMacrosAndDefines.va
+//
+//  Version: 1.0.0, October 30, 2014
+//
+//  This software is distributed as is, completely without warranty, liability,
+//  copyright, or service support. Users may use, modify, copy, and redistribute
+//  the software and documentation, both within the user's organization and externally,
+//  without restriction.
+//
+//  As a courtesy:
+//  1. If you use this software, please make an appropriate acknowledgement.
+//  2. If you correct a bug in the software or add an enhancement, feed the
+//     correction or enhancement back, to help maintain an open-source,
+//     useful, and high quality suite of general macros for everyone who
+//     is writing a model in Verilog-A.
+//
+// This file contains macro and constant definitions for Verilog-A.
+// Preserved here as reference documentation.
+
+// Physical constants
+`define QQ_NIST2004 1.60217653e-19  // (NIST2004) mag. of electronic charge (C)
+`define KB_NIST2004 1.3806505e-23  // (NIST2004) Boltzmann constant (J/K)
+`define EPS_OX 3.45313324863e-11  // `P_EPS0*3.90 (F/m)
+`define EPS_SI 1.035939974589e-10  // `P_EPS0*11.7 (F/m)
+`define oneSixth 0.1666666666666667
+`define oneThird 0.3333333333333333
+`define twoThirds 0.6666666666666667
+
+// Macros preserved as-is
+`define egTsividis(Eg, tK) \
+if ((tK) < 300.0) begin \
+    Eg = 1.17850 - (tK) * (9.025e-05 - (tK) * 3.05e-07); \
+end else begin \
+    Eg = 1.20595 - (tK) * 2.7325e-04; \
+end
+
+`define MAX(x, y) ((x) > (y) ? (x) : (y))
+`define MIN(x, y) ((x) < (y) ? (x) : (y))
+`define CLAMP(val, min, max) `MIN(max, `MAX(val, min))
+`define MAXA(x, y, a) (0.5 * ((x) + (y) + sqrt(((x) - (y)) * ((x) - (y)) + (a))))
+`define MINA(x, y, a) (0.5 * ((x) + (y) - sqrt(((x) - (y)) * ((x) - (y)) + (a))))
+
+// Parameter definition macros (preserved as reference)
+`define ALIAS(alias, paramName) aliasparam alias = paramName;
+`define OPP(nam, uni, des) (* units = uni, desc = des *) real nam;
+`define OPM(nam, uni, des) (* units = uni, multiplicity = "multiply", desc = des *) real nam;
+`define OPD(nam, uni, des) (* units = uni, multiplicity = "divide", desc = des *) real nam;
+
+// Clip macros
+`define CLIPL0p1(XCLIP, X, LOWER) \
+if ((X) < ((LOWER) + 0.1)) begin \
+    XCLIP = (LOWER) + 0.1 * exp(10.0 * ((X) - (LOWER)) - 1.0); \
+end else begin \
+    XCLIP = (X); \
+end
+`define CLIPU0p1(XCLIP, X, UPPER) \
+if ((X) > ((UPPER) - 0.1)) begin \
+    XCLIP = (UPPER) - 0.1 * exp(10.0 * ((UPPER) - (X)) - 1.0); \
+end else begin \
+    XCLIP = (X); \
+end
+`define CLIPB0p1(XCLIP, X, LOWER, UPPER) \
+if ((X) < ((LOWER) + 0.1)) begin \
+    XCLIP = (LOWER) + 0.1 * exp(10.0 * ((X) - (LOWER)) - 1.0); \
+end else if ((X) > ((UPPER) - 0.1)) begin \
+    XCLIP = (UPPER) - 0.1 * exp(10.0 * ((UPPER) - (X)) - 1.0); \
+end else begin \
+    XCLIP = (X); \
+end

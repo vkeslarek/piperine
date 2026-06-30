@@ -3,11 +3,11 @@ use crate::analysis::tf::{
     TransferFunctionAnalysisOptions, TransferFunctionAnalysisResult, TransferType,
 };
 use crate::circuit::CircuitInstance;
-use crate::analog::netlist::{AnalogReference, AnalogVariable};
+use crate::analog::{AnalogReference, AnalogVariable};
 use crate::math::faer::FaerSymbolicMatrix;
 use crate::math::linear::{SymbolicLinearSystem, SymbolicMatrix};
 use crate::solver::dc::DcSolver;
-use crate::solver::{Context, init_solver_configuration};
+use crate::solver::Context;
 use ndarray::Array1;
 
 /// Transfer Function solver.
@@ -61,7 +61,7 @@ impl<'a> TransferFunctionSolver<'a> {
         options: TransferFunctionAnalysisOptions,
         context: Context,
     ) -> crate::result::Result<Self> {
-        init_solver_configuration();
+        Context::init_global();
 
         // Solve DC operating point
         let dc_point = DcSolver::new(circuit, context.clone())?.solve()?;
@@ -199,7 +199,7 @@ impl<'a> TransferFunctionSolver<'a> {
 
         // Collect DC stamps (these are linearized around DC point)
         let mut all_stamps = Vec::new();
-        for dc in circuit.all_runtimes_mut() {
+        for dc in circuit.all_devices_mut() {
             all_stamps.extend(dc.load_dc(&state, context));
         }
 
@@ -219,10 +219,7 @@ impl<'a> TransferFunctionSolver<'a> {
         }
     }
 
-    /// Checks if input source is a voltage source.
-    ///
-    /// Currently simplified - assumes branch naming convention.
-    /// TODO: Implement proper source type detection.
+    /// Checks if input source is a voltage source (by branch naming convention).
     fn is_voltage_source(&self) -> bool {
         // Simplified: check if branch name starts with "V"
         self.options.input_source.component.starts_with('V')
@@ -260,8 +257,6 @@ impl<'a> TransferFunctionSolver<'a> {
             // Voltage source: apply 1V by setting RHS[branch] = 1.0
             system.apply_stamps(vec![Stamp::Rhs(self.input_branch_ref.clone(), 1.0)]);
         } else {
-            // Current source: apply 1A between source nodes
-            // TODO: Get current source nodes and apply +1A / -1A
             return Err(crate::error::Error::simple(
                 "TransferFunction",
                 "Current source input not yet fully implemented",
@@ -330,10 +325,7 @@ impl<'a> TransferFunctionSolver<'a> {
                 Ok(1e20) // No valid index
             }
         } else {
-            // Current source: measure voltage across source
-            // R_in = V_across / 1.0 (1A was applied)
-            // TODO: Get current source nodes
-            Ok(1e20) // Placeholder for current source
+            Ok(1e20) // current source input: placeholder
         }
     }
 

@@ -1,0 +1,28 @@
+// HiSIM_SOTB (HiSIM Silicon-On-Thin-Buried-Oxide)
+// Version 1.20
+// Copyright 2016-2018 Hiroshima University
+//
+// Note: This is a highly complex SOTB MOSFET model with many macros.
+// Full translation requires extensive manual work.
+
+mod hisimsotb_va(inout d : Electrical, inout g : Electrical, inout s : Electrical, inout b : Electrical) {
+    wire d : Electrical, g : Electrical, s : Electrical, b : Electrical;
+
+    // Device type parameter
+    param type : Integer = 1; // constraint: -1 <= type <= 1, type != 0
+
+    // Basic geometry parameters
+    param l : Real = 2.0e-6; // constraint: l > 0
+    param w : Real = 10.0e-6; // constraint: w > 0
+
+    // Temperature parameters
+    param tnom : Real = 27.0; // constraint: tnom >= 0
+    param dta : Real = 0.0;
+
+    // Multiplicity factor
+    param mult : Real = 1.0; // constraint: mult >= 1
+
+    analog hisimsotb_va {
+        // Behavioral code not directly translatable
+    }
+}

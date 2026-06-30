@@ -1,0 +1,41 @@
+//
+//  This file contains standard macros for standard building blocks for compact models
+//  of semiconductor devices, such as PN junction depletion charge and currents.
+//
+
+//
+//  Release:  N.N.N
+//  Date:     DATE
+//  Comments: From split of r3_cmc macrosAndDefines_cmc.va into separate functional include files.
+//
+
+// Built-in potential temperature mapping (smoothly goes to zero as the temperature increases).
+// Note: This is originally from Richard Booth (Agere Systems), and is physically based on the
+// built-in potential being (kT/q)*ln(ppo*nno/ni^2), whereas the standard SPICE model is
+// based on (kT/q)*ln(NA*ND/ni^2) which assumes ppo=NA and nno=ND and does not take into
+// account that at high temperatures material becomes intrinsic and ppo and nno approach ni.
+// The model is based on ni^2(T)=ni^2(Tnom)*exp(-(EA*q/k)*(1/T-1/Tnom))*(T/Tnom)^3
+// where the temperatures T and Tnom are in Kelvins.
+//
+// Outputs:
+//          psibi      built-in potential at temperature T
+// Inputs:
+//          p          built-in potential at reference temperature Tnom
+//          ea         activation energy for intrinsic concentration squared
+//          vtv        thermal voltage at temperature T (=k*T/q)
+//          rt         T/Tnom, ratio of temperatures
+//          blockName  name for the begin/end block (must be unique)
+//
+// Note: psibi macro not supported in PHDL - would need function implementation
+
+// exp(V) that linearizes for V>Vmax
+// Note: expLin macro not supported in PHDL - would need function implementation
+
+// exp(V*a) that linearizes for V>Vmax
+// Note: expLinA macro not supported in PHDL - would need function implementation
+
+// Basic normalized depletion charge models
+// Note: qj macro not supported in PHDL - would need function implementation
+
+// Various depletion charge model variants (qj, qj_z, qjCnst, qjCnst_z, qjPeak, qjPeak_z)
+// are not supported in PHDL as macros

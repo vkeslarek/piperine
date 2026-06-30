@@ -1,0 +1,39 @@
+// Phase modulator
+
+mod PhaseModulator(opt_in, opt_out, ele_in);
+    inout [ 0 : 3 ] opt_in, opt_out;
+    input ele_in;
+    wire [ 0 : 3 ] opt_in, opt_out, transfer_pol, transfer, out_tmp : Optical;
+    wire [ 0 : 1 ] fwd, bwd : Optical;
+    wire ele_in : Electrical;
+
+    param length : Real = 100e-6;
+    param equivalentIndex : Real = 2.31;
+    param groupIndex : Real = 4.34;
+    param loss : Real = 2.0;
+
+    var n0 : Real = equivalentIndex;
+    param n1 : Real = 0.0002;
+    var a0 : Real = 23.0258509299404568 * loss;
+    param a1 : Real = 10;
+
+    var polynomialEquivalentIndex : Real;
+    var polynomialAlpha : Real;
+
+    Polar2Cartesian Polar2Cartesian1(transfer_pol, transfer);
+    CartesianMultiplier CartesianMultiplier1(transfer, opt_in [ 0 : 1 ], fwd);
+    CartesianMultiplier CartesianMultiplier2(transfer, opt_out [ 2 : 3 ], bwd);
+
+    analog begin
+        polynomialEquivalentIndex = n0 + n1 * V(ele_in);
+        polynomialAlpha = a0 + a1 * V(ele_in);
+
+        OptE(transfer_pol [ 0 ]) <+ exp(-polynomialAlpha / 2 * length);
+        OptE(transfer_pol [ 1 ]) <+ (-length * polynomialEquivalentIndex * 2 * `M_PI * `F_REF / `P_C) % (2 * `M_PI);
+
+        OptE(opt_out [ 0 ]) <+ absdelay(OptE(fwd [ 0 ]), length * groupIndex / `P_C);
+        OptE(opt_out [ 1 ]) <+ absdelay(OptE(fwd [ 1 ]), length * groupIndex / `P_C);
+        OptE(opt_in [ 2 ]) <+ absdelay(OptE(bwd [ 0 ]), length * groupIndex / `P_C);
+        OptE(opt_in [ 3 ]) <+ absdelay(OptE(bwd [ 1 ]), length * groupIndex / `P_C);
+    end
+endmod

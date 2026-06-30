@@ -1,0 +1,48 @@
+// Shunt RLC
+//
+// Version 1a, 1 June 04
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide Community (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+// Taken from "The Designer's Guide to Verilog-AMS" by Kundert & Zinke.
+// Chapter 3, Listing 15.
+
+`include "disciplines.vams"
+
+module shunt_rlc1(p, n);
+    parameter real r = 1 exclude 0;
+    // resistance (Ohms)
+    parameter real l = 1n exclude 0;
+    // inductance (H)
+    parameter real c = 0;
+    // capacitance (F)
+    inout p, n;
+    electrical p, n;
+
+    analog begin
+        I(p, n) <+ V(p, n) / r;
+        I(p, n) <+ c * ddt(V(p, n));
+        I(p, n) <+ idt(V(p, n)) / l;
+    end
+endmodule
+
+module shunt_rlc2(p, n);
+    parameter real r = 0;
+    // resistance (Ohms)
+    parameter real l = 0;
+    // inductance (H)
+    parameter real c = 0;
+    // capacitance (F)
+    inout p, n;
+    electrical p, n;
+    branch(p, n) res, cap, ind;
+
+    analog begin
+        V(res) <+ r * I(res);
+        I(cap) <+ c * ddt(V(cap));
+        V(ind) <+ l * ddt(I(ind));
+    end
+endmodule
+

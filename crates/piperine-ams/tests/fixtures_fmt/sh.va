@@ -1,0 +1,67 @@
+// Sample and hold model that works with SpectreRF
+//
+// Version 1c, 24 March 2007
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+
+`include "disciplines.vams"
+`include "constants.vams"
+
+// Periodic Sample & Hold
+//
+// Works with SpectreRF (has no hidden state)
+// Almost ideal ...
+//    Has buffered input and output (infinite input Z, zero out Z)
+//    Exhibits no offset or distortion errors
+//    Only nonideality is finite aperture time and very small amount of droop
+
+module sh(Pout, Nout, Pin, Nin);
+
+    input Pin, Nin;
+    output Pout, Nout;
+    electrical Pin, Nin, Pout, Nout;
+    parameter real period = 1 from(0 : inf);
+    parameter real tdelay = 0 from [ 0 : period);
+    parameter real aperture = period / 100 from(0 : period / 2);
+    parameter real tc = aperture / 10 from(0 : aperture);
+
+    integer n;
+    real tstart, tstop;
+    electrical hold;
+
+    analog begin
+
+        // Determine the point where the aperture begins;
+        n = ($abstime - tdelay + aperture) / period;
+        tstart = n * period + tdelay - aperture;
+        @(timer(tstart));
+
+        // Determine the time where the aperture ends;
+        n = ($abstime - tdelay) / period;
+        tstop = n * period + tdelay;
+        @(timer(tstop));
+
+        // Implement switch with effective series resistence of 1 Ohm
+        if (($abstime > tstop - aperture) && ($abstime <= tstop)) I(hold) <+ V(hold) - V(Pin, Nin);
+        else I(hold) <+ 1.0e-12 * V(hold);
+
+        // Implement capacitor with an effective capacitance of tc
+        I(hold) <+ tc * ddt(V(hold));
+
+        // Buffer output
+        V(Pout, Nout) <+ V(hold);
+
+        // Control time step tightly during aperture and loosely otherwise
+        if (($abstime >= tstop - aperture) && ($abstime < tstop)) begin
+            $bound_step(tc);
+        end
+        else begin
+            $bound_step(period / 5);
+        end
+
+    end
+endmodule
+

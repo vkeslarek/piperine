@@ -1,0 +1,18 @@
+#!/bin/sh
+
+rm -rf worklib
+mkdir worklib
+rm -rf my_connectlib
+mkdir my_connectlib
+
+# compiling the connect rules
+ncvlog -ams -work my_connectlib connectrules.vams
+
+ncvlog -ams adc.vams -messages
+ncvlog -ams testbench.vams -messages
+
+ncelab testbench my_connectrules -timescale 10ps/1ps -messages
+
+ncsim testbench -messages -analogcontrol run.scs -input run.tcl
+
+rm *.log

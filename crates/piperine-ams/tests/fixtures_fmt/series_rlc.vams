@@ -1,0 +1,48 @@
+// Series RLC
+//
+// Version 1a, 1 June 04
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide Community (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+// Taken from "The Designer's Guide to Verilog-AMS" by Kundert & Zinke.
+// Chapter 3, Listing 14.
+
+`include "disciplines.vams"
+
+module series_rlc1(p, n);
+    parameter real r = 0;
+    // resistance (Ohms)
+    parameter real l = 0;
+    // inductance (H)
+    parameter real c = 1p exclude 0;
+    // capacitance (F)
+    inout p, n;
+    electrical p, n;
+
+    analog begin
+        V(p, n) <+ r * I(p, n);
+        V(p, n) <+ l * ddt(I(p, n));
+        V(p, n) <+ idt(I(p, n)) / c;
+    end
+endmodule
+
+module series_rlc2(p, n);
+    parameter real r = 0;
+    // resistance (Ohms)
+    parameter real l = 0;
+    // inductance (H)
+    parameter real c = 0;
+    // capacitance (F)
+    inout p, n;
+    electrical p, n, i;
+    branch(p, i) rl, (i, n) cap;
+
+    analog begin
+        V(rl) <+ r * I(rl);
+        V(rl) <+ l * ddt(I(rl));
+        I(cap) <+ c * ddt(V(cap));
+    end
+endmodule
+

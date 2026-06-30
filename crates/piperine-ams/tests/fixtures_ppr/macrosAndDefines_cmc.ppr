@@ -1,0 +1,19 @@
+// Macro definitions for compact models
+// Version 1.3.0-beta, March 2015
+//
+// Note: This file contains only macro definitions (`define) and no module definition.
+// It is an include file that provides common macros used across compact models.
+// Cannot be directly translated to PHDL as it contains no module.
+
+/*
+This file contains macro definitions:
+- Physical constants (KELVINCONVERSION, KBOL, QELE, HBAR, MELE, EPSSI, EPSOX, etc.)
+- Mathematical constants (oneSixth, oneThird, sqrtTwo, etc.)
+- Clipping macros (CLIPL0p1, CLIPU0p1, CLIPB0p1, etc.)
+- MAX/MIN/CLAMP macros
+- Parameter declaration macros (MPRcc, MPRco, MPIcc, etc.)
+- Operating point macros (OPP, OPM, OPD)
+
+This is an include file, not a standalone module.
+To use these macros, they would need to be converted to PHDL functions/constants.
+*/

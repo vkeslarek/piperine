@@ -1,0 +1,432 @@
+/// Integration tests for the elaboration phase.
+///
+/// These tests verify that `elaborate()` produces a fully resolved `ElabProgram`:
+/// - types are concrete (`ElabNetType` / `ElabValueType`, no free expressions)
+/// - port connections are `ElabNetRef` (no raw `Expr`)
+/// - for loops are unrolled
+/// - bundles are expanded to flat ports
+/// - generic modules are monomorphized on demand
+/// - stdlib prelude is always in scope
+/// - `use` declarations are resolved
+/// - function and impl bodies are lowered to `ElabBehaviorStmt`
+use piperine_lang::{
+    elab::{ElabBehaviorStmt, ElabNetType, ElabValueType},
+    elaborate, parse_and_elaborate, parse_str,
+    resolve::Resolver,
+};
+
+// ────────────────────────────── helpers ───────────────────────────────────────
+
+fn elab(src: &str) -> piperine_lang::elab::ElabProgram {
+    elaborate(parse_str(src).expect("parse failed")).expect("elaborate failed")
+}
+
+fn elab_err(src: &str) -> String {
+    elaborate(parse_str(src).expect("parse failed"))
+        .err()
+        .expect("expected elaboration error")
+        .to_string()
+}
+
+// ─────────────────────────────── stdlib prelude ───────────────────────────────
+
+#[test]
+fn test_stdlib_capabilities_always_in_scope() {
+    // Capabilities from stdlib/capabilities.phdl must be present without any `use`.
+    let prog = elab("discipline Electrical { potential v: Real; flow i: Real; }");
+    assert!(prog.capabilities.contains_key("Add"), "Add not in prelude");
+    assert!(prog.capabilities.contains_key("Sub"), "Sub not in prelude");
+    assert!(prog.capabilities.contains_key("Mul"), "Mul not in prelude");
+    assert!(prog.capabilities.contains_key("Div"), "Div not in prelude");
+    assert!(prog.capabilities.contains_key("Eq"), "Eq not in prelude");
+    assert!(prog.capabilities.contains_key("Ord"), "Ord not in prelude");
+    assert!(prog.capabilities.contains_key("Number"), "Number not in prelude");
+    assert!(prog.capabilities.contains_key("Not"), "Not not in prelude");
+    assert!(prog.capabilities.contains_key("BitAnd"), "BitAnd not in prelude");
+}
+
+#[test]
+fn test_stdlib_map_reduce_always_in_scope() {
+    // map and reduce from stdlib/collections.phdl must be present without any `use`.
+    let prog = elab("discipline Bit { storage Boolean; }");
+    assert!(prog.functions.contains_key("map"), "map not in prelude");
+    assert!(prog.functions.contains_key("reduce"), "reduce not in prelude");
+}
+
+// ─────────────────────────── type resolution ──────────────────────────────────
+
+#[test]
+fn test_primitive_value_types_resolved() {
+    let prog = elab(
+        "discipline Bit { storage Boolean; }
+         mod M ( input a : Bit ) { param p : Real = 1.0; param n : Natural = 4; }",
+    );
+    let m = prog.modules.get("M").expect("M not elaborated");
+    let p = m.params.iter().find(|x| x.name == "p").expect("param p");
+    let n = m.params.iter().find(|x| x.name == "n").expect("param n");
+    assert_eq!(p.ty, ElabValueType::Real);
+    assert_eq!(n.ty, ElabValueType::Natural);
+}
+
+#[test]
+fn test_discipline_net_type_resolved() {
+    let prog = elab(
+        "discipline Electrical { potential v: Real; flow i: Real; }
+         mod Res ( inout p : Electrical, inout n : Electrical );",
+    );
+    let m = prog.modules.get("Res").expect("Res not elaborated");
+    assert_eq!(m.ports.len(), 2);
+    assert_eq!(m.ports[0].ty, ElabNetType::Discipline("Electrical".into()));
+    assert_eq!(m.ports[1].ty, ElabNetType::Discipline("Electrical".into()));
+}
+
+#[test]
+fn test_array_net_type_resolved() {
+    let prog = elab(
+        "discipline Bit { storage Boolean; }
+         mod Bus ( inout data : Bit[8] );",
+    );
+    let m = prog.modules.get("Bus").expect("Bus not elaborated");
+    assert_eq!(m.ports.len(), 1);
+    assert_eq!(
+        m.ports[0].ty,
+        ElabNetType::Array(Box::new(ElabNetType::Discipline("Bit".into())), 8)
+    );
+}
+
+#[test]
+fn test_undefined_type_error() {
+    let err = elab_err("mod M ( inout p : NonExistent );");
+    assert!(err.contains("NonExistent"), "error should name the undefined type");
+}
+
+// ──────────────────────────── bundle expansion ────────────────────────────────
+
+#[test]
+fn test_bundle_expanded_to_flat_ports() {
+    let prog = elab(
+        "discipline Electrical { potential v: Real; flow i: Real; }
+         bundle DiffPair { p : Electrical, n : Electrical }
+         mod Amp ( inout inp : DiffPair, inout out : Electrical );",
+    );
+    let m = prog.modules.get("Amp").expect("Amp not elaborated");
+    // inp expands to inp_p and inp_n; out stays as out
+    let names: Vec<&str> = m.ports.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, vec!["inp_p", "inp_n", "out"]);
+    for port in &m.ports {
+        assert_eq!(port.ty, ElabNetType::Discipline("Electrical".into()));
+    }
+}
+
+#[test]
+fn test_value_bundle_as_net_type_fails() {
+    let err = elab_err(
+        "bundle Spec { cutoff : Real = 1.0e3 }
+         mod M ( inout s : Spec );",
+    );
+    assert!(
+        err.contains("Spec") || err.contains("net"),
+        "error should mention Spec or net capability"
+    );
+}
+
+// ──────────────────────── structural for unrolling ────────────────────────────
+
+#[test]
+fn test_structural_for_unrolled_to_instances() {
+    let prog = elab(
+        "discipline Electrical { potential v: Real; flow i: Real; }
+         mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0e3; }
+         mod Chain ( inout a : Electrical, inout b : Electrical ) {
+             wire node : Electrical[3];
+             node[0] = a;
+             node[3] = b;
+             for i in 0..3 {
+                 Resistor( node[i], node[i] ) { .r = 1.0e3 };
+             }
+         }",
+    );
+    let m = prog.modules.get("Chain").expect("Chain not elaborated");
+    // for 0..3 unrolled → 3 Resistor instances
+    assert_eq!(m.instances.len(), 3, "expected 3 unrolled instances");
+    // Each module name is just "Resistor" (no const args)
+    for inst in &m.instances {
+        assert_eq!(inst.module, "Resistor");
+    }
+}
+
+#[test]
+fn test_structural_for_port_connections_are_net_refs() {
+    let prog = elab(
+        "discipline Electrical { potential v: Real; flow i: Real; }
+         mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0e3; }
+         mod Chain ( inout a : Electrical, inout b : Electrical ) {
+             wire node : Electrical[3];
+             for i in 0..3 {
+                 Resistor( node[i], node[i] );
+             }
+         }",
+    );
+    let m = prog.modules.get("Chain").expect("Chain not elaborated");
+    // First instance: node[0], node[0]
+    let inst0 = &m.instances[0];
+    assert_eq!(inst0.ports[0].net, "node");
+    assert_eq!(inst0.ports[0].index, Some(0));
+}
+
+#[test]
+fn test_net_connection_resolved_to_net_ref() {
+    let prog = elab(
+        "discipline Electrical { potential v: Real; flow i: Real; }
+         mod M ( inout a : Electrical, inout b : Electrical ) {
+             a = b;
+         }",
+    );
+    let m = prog.modules.get("M").expect("M not elaborated");
+    assert_eq!(m.connections.len(), 1);
+    assert_eq!(m.connections[0].lhs.net, "a");
+    assert_eq!(m.connections[0].rhs.net, "b");
+}
+
+// ────────────────────────── generic monomorphization ─────────────────────────
+
+#[test]
+fn test_generic_module_monomorphized_on_demand() {
+    let prog = elab(
+        "discipline Electrical { potential v: Real; flow i: Real; }
+         mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0e3; }
+         mod RcChain[N] ( inout a : Electrical, inout b : Electrical ) {
+             wire node : Electrical[N];
+             for i in 0..N {
+                 Resistor( node[i], node[i] );
+             }
+         }
+         mod Top ( inout a : Electrical, inout b : Electrical ) {
+             RcChain[4]( a, b );
+         }",
+    );
+    // RcChain[4] must have been monomorphized and present in modules.
+    assert!(
+        prog.modules.contains_key("RcChain__4"),
+        "RcChain__4 not in program modules; got: {:?}",
+        prog.modules.keys().collect::<Vec<_>>()
+    );
+    // Top instances reference the mangled name.
+    let top = prog.modules.get("Top").expect("Top not elaborated");
+    assert_eq!(top.instances[0].module, "RcChain__4");
+}
+
+#[test]
+fn test_non_instantiated_generic_not_in_modules() {
+    let prog = elab(
+        "discipline Bit { storage Boolean; }
+         mod Generic[N] ( inout a : Bit );",
+    );
+    // Generic[N] is declared but never instantiated → should NOT appear in modules.
+    let generic_present = prog.modules.keys().any(|k| k.starts_with("Generic"));
+    assert!(!generic_present, "un-instantiated generic should not be in modules");
+}
+
+// ──────────────────────────── behavior elaboration ────────────────────────────
+
+#[test]
+fn test_analog_behavior_elaborated() {
+    let prog = elab(
+        "discipline Electrical { potential v: Real; flow i: Real; }
+         mod Res ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0e3; }
+         analog Res { V(p, n) <+ r * I(p, n); }",
+    );
+    assert_eq!(prog.behaviors.len(), 1);
+    assert_eq!(prog.behaviors[0].name, "Res");
+}
+
+#[test]
+fn test_digital_behavior_elaborated() {
+    let prog = elab(
+        "discipline Bit { storage Boolean; }
+         mod SrLatch ( input s : Bit, input r : Bit, output q : Bit ) { var st : Bit = 0; }
+         digital SrLatch {
+             q <- st;
+             @ (posedge(s) | posedge(r)) {
+                 if (s == 1) { st = 1; } else { st = 0; }
+             }
+         }",
+    );
+    assert_eq!(prog.behaviors.len(), 1);
+    let b = &prog.behaviors[0];
+    // Should have 2 top-level stmts: bind (q <- st) and event block.
+    assert_eq!(b.body.len(), 2);
+}
+
+#[test]
+fn test_behavioral_for_unrolled() {
+    let prog = elab(
+        "discipline Bit { storage Boolean; }
+         mod M ( inout a : Bit ) {}
+         analog M {
+             for i in 0..3 { V(a) <+ 1.0; }
+         }",
+    );
+    let b = &prog.behaviors[0];
+    // 3 unrolled Bind stmts.
+    assert_eq!(b.body.len(), 3);
+    for stmt in &b.body {
+        assert!(matches!(stmt, ElabBehaviorStmt::Bind { .. }));
+    }
+}
+
+#[test]
+fn test_const_if_folded_in_behavior() {
+    let prog = elab(
+        "discipline Bit { storage Boolean; }
+         mod M ( inout a : Bit ) {}
+         analog M {
+             if (1 == 1) { V(a) <+ 1.0; } else { V(a) <+ 0.0; }
+         }",
+    );
+    let b = &prog.behaviors[0];
+    // Condition is const-true → else branch dropped, only 1 Bind remains.
+    assert_eq!(b.body.len(), 1);
+    assert!(matches!(b.body[0], ElabBehaviorStmt::Bind { .. }));
+}
+
+#[test]
+fn test_contrib_in_digital_rejected() {
+    let err = elab_err(
+        "discipline Bit { storage Boolean; }
+         mod M ( inout a : Bit ) {}
+         digital M { V(a) <+ 1.0; }",
+    );
+    assert!(
+        err.contains("contribution") || err.contains("digital"),
+        "error should mention contribution or digital"
+    );
+}
+
+// ─────────────────────────── function elaboration ─────────────────────────────
+
+#[test]
+fn test_function_body_lowered() {
+    let prog = elab(
+        "fn double(x: Real) -> Real {
+             var y : Real = 0.0;
+             return x + x;
+         }",
+    );
+    let f = prog.functions.get("double").expect("double not elaborated");
+    // body should have VarDecl + Expr (return value)
+    assert!(!f.body.is_empty(), "function body should be non-empty");
+    assert!(matches!(f.body[0], ElabBehaviorStmt::VarDecl { .. }));
+}
+
+#[test]
+fn test_function_param_types_resolved() {
+    let prog = elab("fn add(a: Real, b: Real) -> Real { return a + b; }");
+    let f = prog.functions.get("add").expect("add not elaborated");
+    assert_eq!(f.params.len(), 2);
+    assert_eq!(f.ret, piperine_lang::elab::ElabType::Value(ElabValueType::Real));
+}
+
+// ────────────────────────────── impl elaboration ──────────────────────────────
+
+#[test]
+fn test_impl_methods_elaborated() {
+    let prog = elab(
+        "capability Greet { fn hello(self) -> Boolean; }
+         discipline Bit { storage Boolean; }
+         mod Widget ( inout a : Bit );
+         impl Greet for Widget {
+             fn hello(self) -> Boolean { return 1; }
+         }",
+    );
+    assert_eq!(prog.impls.len(), 1);
+    let i = &prog.impls[0];
+    assert_eq!(i.capability, Some("Greet".into()));
+    assert_eq!(i.ty, "Widget");
+    assert_eq!(i.methods.len(), 1);
+    // method body should be lowered
+    assert!(!i.methods[0].body.is_empty());
+}
+
+// ─────────────────────────── use resolution ──────────────────────────────────
+
+#[test]
+fn test_use_resolution_file_based() {
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().unwrap();
+    let lib_path = dir.path().join("mylib.phdl");
+    std::fs::write(
+        &lib_path,
+        "discipline MyNet { potential v: Real; flow i: Real; }",
+    )
+    .unwrap();
+
+    let src = "use mylib;\n mod M ( inout a : MyNet );";
+    let source = parse_str(src).expect("parse failed");
+    let mut resolver = Resolver::with_root(dir.path().to_path_buf());
+    let prog =
+        piperine_lang::elab::elaborate_with(source, &mut resolver).expect("elab failed");
+
+    assert!(
+        prog.disciplines.contains_key("MyNet"),
+        "MyNet discipline should be resolved from mylib.phdl"
+    );
+    assert!(prog.modules.contains_key("M"), "M should be elaborated");
+}
+
+#[test]
+fn test_use_piperine_capabilities_explicit() {
+    // Explicit use of stdlib should work (and not double-inject, just idempotent).
+    let prog = elab("use piperine::capabilities; discipline Bit { storage Boolean; }");
+    assert!(prog.capabilities.contains_key("Add"));
+}
+
+#[test]
+fn test_use_transitive() {
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().unwrap();
+    // a.phdl uses b.phdl
+    std::fs::write(
+        dir.path().join("b.phdl"),
+        "discipline NetB { potential v: Real; flow i: Real; }",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("a.phdl"), "use b;").unwrap();
+
+    let src = "use a;\n mod M ( inout x : NetB );";
+    let source = parse_str(src).expect("parse");
+    let mut resolver = Resolver::with_root(dir.path().to_path_buf());
+    let prog =
+        piperine_lang::elab::elaborate_with(source, &mut resolver).expect("elab");
+
+    assert!(prog.disciplines.contains_key("NetB"), "NetB should be transitively resolved");
+}
+
+// ───────────────────────── example file round-trips ──────────────────────────
+
+#[test]
+fn test_elab_sr_latch_example() {
+    let src = include_str!("examples/sr_latch.phdl");
+    // sr_latch uses Bit discipline — provide it inline since there's no `use`.
+    let full = format!(
+        "discipline Bit {{ storage Boolean; }}\n{}",
+        src
+    );
+    let prog = elab(&full);
+    assert!(prog.modules.contains_key("SrLatch"));
+    assert_eq!(prog.behaviors.len(), 1);
+    let ports: Vec<&str> = prog.modules["SrLatch"].ports.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(ports, vec!["s", "r", "q"]);
+}
+
+#[test]
+fn test_parse_and_elaborate_api() {
+    let result = parse_and_elaborate(
+        "discipline Electrical { potential v: Real; flow i: Real; }
+         mod R ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0e3; }",
+    );
+    let prog = result.expect("parse_and_elaborate failed");
+    assert!(prog.modules.contains_key("R"));
+}

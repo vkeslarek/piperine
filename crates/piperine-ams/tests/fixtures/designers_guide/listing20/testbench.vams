@@ -1,0 +1,117 @@
+`timescale 1ns / 10ps
+`include "disciplines.vams"
+
+module testbench ();
+    asiggen asiggen1 (.q(na));
+    digtop digtop1 (.q(na));
+endmodule
+
+
+module digtop(q);
+    inout q;
+
+    siggen siggen1 (.q(q));
+    digdetect digdetect1 (.a(q));
+    siggen_delayed siggen_delayed1 (.q(q));
+endmodule
+
+
+module digdetect(a);
+    input a;
+    logic a;
+    reg ainternal;
+    logic ainternal;
+
+    initial ainternal=a;
+    always @a ainternal=a;
+endmodule
+
+
+module siggen(q);
+    inout q;
+    logic q;
+    logic qq;
+    reg qq;
+    logic aa;
+    reg aa;
+
+    initial qq=0;
+
+    always begin
+	#200
+	qq=1;
+	#200
+	qq='bz;
+	#200
+	qq=0;
+    end
+
+    assign q = qq;
+
+    always @q aa=q;
+endmodule
+
+
+module siggen_delayed(q);
+    inout q;
+    logic q;
+    logic qq;
+    reg qq, isfirst;
+    logic aa;
+    reg aa;
+
+    initial begin
+	qq=0;
+	isfirst=1;
+    end
+
+    always begin
+	if (isfirst==1) begin
+	    #100
+	    isfirst=0;
+	end
+	#200
+	qq=1;
+	#200
+	qq='bz;
+	#200
+	qq=0;
+    end
+
+    assign q = qq;
+
+    always @q aa=q;
+endmodule
+
+
+module asiggen (q);
+    inout q;
+    electrical q;
+    electrical xx;
+    real v2set,r2set;
+
+    initial begin
+	v2set=2.5;
+	r2set=500k;
+	#10000
+	v2set=5.0;
+	r2set=1k;
+	#10000
+	v2set=0.0;
+	r2set=1k;
+	#10000
+	v2set=2.5;
+	r2set=1k;
+	#10000
+	v2set=5.0;
+	r2set=500k;
+	#10000
+	v2set=0.0;
+	r2set=500k;
+    end
+
+    analog begin
+	V(xx) <+ transition(v2set,0,100n);
+	I(q,xx) <+ V(q,xx) / transition(r2set,0,50n);
+    end
+endmodule

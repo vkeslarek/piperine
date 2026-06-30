@@ -1,0 +1,47 @@
+// Ideal mechanical stop
+//
+// Version 1a, 1 June 04
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide Community (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+// Taken from "The Designer's Guide to Verilog-AMS" by Kundert & Zinke.
+// Chapter 3, Listing 20.
+
+`include "disciplines.vams"
+
+module barrier (p, n);
+    inout p, n;
+    kinematic p, n;
+
+    analog begin
+	@(cross((F(p,n) + Pos(p,n)), 0))
+	    ;
+	if ((Pos(p,n) + F(p,n)) > 0)
+	    Pos(p,n) <+ 0;
+	else
+	    F(p,n) <+ 0;
+    end
+endmodule
+
+
+// Alternative version that scales the signals for increased robustness
+module barrier2 (p, n);
+    inout p, n;
+    kinematic p, n;
+    parameter real ttol = 1p from (0:inf);
+    real sum;
+
+    analog begin
+	sum = Pos(p,n) + F(p,n) *(p.potential.abstol/p.flow.abstol);
+
+	@(cross(sum, 0, ttol, p.potential.abstol))
+	    ;
+
+	if (sum > 0)
+	    Pos(p,n) <+ 0;
+	else
+	    F(p,n) <+ 0;
+    end
+endmodule

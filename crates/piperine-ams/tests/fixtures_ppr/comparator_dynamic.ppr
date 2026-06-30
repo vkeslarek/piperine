@@ -1,0 +1,50 @@
+// VerilogA for VerilogAmsLib, comparator_dynamic, veriloga
+
+mod comparator_dynamic(clk, inp, inm, outp, outm) {
+    input clk : Electrical; // Start conversion when rise, Reset when fall
+    input inp : Electrical, inm : Electrical; // Input
+    output outp : Electrical, outm : Electrical; // Output
+
+    param offset : Real = 0;
+    param vlogic_high : Real = 5;
+    param vlogic_low : Real = 0;
+    param vtrans_clk : Real = 2.5;
+    param tdel : Real = 3u from [0:inf];
+    param trise : Real = 1u from(0:inf);
+    param tfall : Real = 1u from(0:inf);
+
+    var inDiff : Real;
+    var outm_val : Integer, outp_val : Integer;
+    // genvar i; // Not supported in PHDL
+
+    analog comparator_dynamic {
+        @(initial_step) begin
+            outp_val = vlogic_high;
+            outm_val = vlogic_high;
+        end
+
+        inDiff = V(inp) - V(inm) + offset;
+
+        @(cross(V(clk) - vtrans_clk, +1)) begin
+            // Compare
+            if (inDiff < 0) begin
+                outp_val = vlogic_low;
+                outm_val = vlogic_high;
+            end
+            else begin
+                outm_val = vlogic_low;
+                outp_val = vlogic_high;
+            end
+        end
+
+        @(cross(V(clk) - vtrans_clk, -1)) begin
+            // Reset
+            outp_val = vlogic_high;
+            outm_val = vlogic_high;
+        end
+
+        // transition() not fully supported - using ddt approximation
+        V(outm) <+ outm_val; // Simplified
+        V(outp) <+ outp_val; // Simplified
+    }
+}

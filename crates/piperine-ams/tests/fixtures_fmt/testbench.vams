@@ -1,0 +1,29 @@
+`timescale 10ns / 10ps
+`include "disciplines.vams"
+
+module testbench();
+    electrical gnd;
+    ground gnd;
+
+    reg clk;
+    initial clk = 0;
+
+    always begin
+        # 10 clk = 1;
+        # 10 clk = 0;
+        # 10 clk = 1'bx;
+        # 10 clk = 0;
+        # 10 clk = 1'bz;
+    end
+
+    buffer buf0(b, clk);
+    resistor # (.r(100k)) r0(b, gnd);
+endmodule
+
+module buffer(out, in);
+    output out;
+    input in;
+
+    assign out = in;
+endmodule
+

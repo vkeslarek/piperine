@@ -1,0 +1,13 @@
+// Test conductor model
+
+simulator lang=spectre
+
+ahdl_include "conductor.vams"
+
+Vr  (v 0) vsource type=dc dc=1
+Ir  (i 0) isource type=dc dc=1
+R1  (v 0) conductor g=10
+R2  (i 0) conductor g=10
+
+setOptions options currents=all useprobes=yes
+doDC dc print=yes

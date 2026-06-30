@@ -1,0 +1,11 @@
+// Complex subtracter in Cartesian coordinates
+
+mod CartSub(cartin1, cartin2, cartout) {
+    input cartin1[0:1] : Optical, cartin2[0:1] : Optical;
+    output cartout[0:1] : Optical;
+
+    analog CartSub {
+        OptE(cartout[0]) <+ OptE(cartin1[0]) - OptE(cartin2[0]);
+        OptE(cartout[1]) <+ OptE(cartin1[1]) - OptE(cartin2[1]);
+    }
+}

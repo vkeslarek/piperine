@@ -1,0 +1,49 @@
+// L-UTSOI Model Version 102.5.0
+// Ultra Thin Fully Depleted SOI MOSFET Model
+// Verilog-A code
+// Authors: T. Poiroux, O. Rozeau, S. Martinie, M.A. Jaud
+// Copyright 2013-2021 CEA-Leti
+//
+// Note: This file is a macro include file that defines the L-UTSOI model parameters
+// and macros. The actual module is defined in a separate include file.
+// This translation captures the macro definitions as comments.
+
+mod l_utsoi(inout d : Electrical, inout g : Electrical, inout s : Electrical, inout b : Electrical, inout Tnode : Electrical) {
+    wire d : Electrical, g : Electrical, s : Electrical, b : Electrical, Tnode : Electrical;
+    // Internal nodes would be defined in the included module file
+
+    // Channel type
+    param type : Integer = 1; // constraint: -1 <= type <= 1, type != 0 (NMOS=1, PMOS=-1)
+
+    // Basic geometry parameters
+    param l : Real = 1.0e-6; // constraint: l > 0
+    param w : Real = 1.0e-6; // constraint: w > 0
+
+    // Temperature parameters
+    param tnom : Real = 27.0; // constraint: tnom >= 0
+    param dtemp : Real = 0.0;
+
+    // Multiplicity factor
+    param mult : Real = 1.0; // constraint: mult >= 1
+
+    // Note: This model has extensive parameters for:
+    // - Surface potential calculations
+    // - Field-dependent mobility
+    // - Quantum confinement effects
+    // - Velocity saturation
+    // - Channel length modulation
+    // - Series resistance
+    // - Short-channel effects
+    // - Overlap capacitances
+    // - Gate leakage current
+    // - GIDL, GISL
+    // - Self heating effect
+    // - Narrow-width effects
+    // - Stress model
+    // - Noise (1/f, thermal, shot noise)
+    // Full translation requires extensive manual work.
+
+    analog l_utsoi {
+        // Behavioral code not directly translatable
+    }
+}

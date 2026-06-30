@@ -1,0 +1,59 @@
+// Enhanced Electrical to Logic Connect Module
+//
+// Version 1a, 1 June 04
+//
+// Olaf Zinke
+//
+// Downloaded from The Designer's Guide Community (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+// Taken from "The Designer's Guide to Verilog-AMS" by Kundert & Zinke.
+// Chapter 4, Listing 17.
+
+`timescale 1ns / 1ps
+`include "disciplines.vams"
+
+connectmodule a2d(out, in);
+    parameter real vh = 2.7;
+    // minimum voltage of a logic 1 (V)
+    parameter real vl = 0.5;
+    // maximum voltage of a logic 0 (V)
+    parameter real c = 100f;
+    // input capacitance (F)
+    parameter real dt = 1n;
+    // time in x region before x is produced (s)
+    parameter real dv = 0.2;
+    // voltage between threshold and x region (V)
+    input in;
+    output out;
+    electrical in;
+    reg out;
+    logic out;
+    parameter real vlx = vl + dv;
+    parameter real vhx = vh - dv;
+    reg inXregion;
+
+    initial inXregion = 0;
+
+    always @(above(V(in) - vh)) begin
+        out = 1'b1;
+        inXregion = 0;
+    end
+
+    always @(above(vl - V(in))) begin
+        out = 1'b0;
+        inXregion = 0;
+    end
+
+    always @(above(vhx - V(in))) inXregion = 1;
+    always @(above(V(in) - vlx)) inXregion = 1;
+
+    always @(posedge inXregion) begin
+        : XRegionDelay # (dt / 1.0n)  // calculate how many time units are equal to the dt time
+        out = 1'bx;
+        inXregion = 0;
+    end
+    always @(negedge inXregion) disable XRegionDelay;
+
+    analog I(in) <+ c * ddt(V(in));
+endmodule
+

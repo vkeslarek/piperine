@@ -1,0 +1,150 @@
+//********************************************************
+// **** BSIM6.1.1 released by Sourabh Khandelwal on 07/30/2015 ****/
+// ********************************************************
+//
+// ********************************************************
+// * Copyright 2015 Regents of the University of California.
+// * All rights reserved.
+// *
+// * Project Director: Prof. Chenming Hu.
+// * Authors: Yogesh Singh Chauhan, M. A. Karim
+// *          Sriramkumar Venugopalan, Harshit Agarwal, Chetan Gupta, Darsen Lu,
+// *          Sayeef Salahuddin, Chenming Hu
+// ********************************************************
+// ********************************************************
+// *   NONDISCLOSURE STATEMENT
+// Software is distributed as is, completely without warranty or service
+// support. The University of California and its employees are not liable
+// for the condition or performance of the software.
+// The University of California owns the copyright and grants users a perpetual,
+// irrevocable, worldwide, non-exclusive, royalty-free license with
+// respect to the software as set forth below.
+// The University of California hereby disclaims all implied warranties.
+// The University of California grants the users the right to modify, copy,
+// and redistribute the software and documentation, both within the user's
+// organization and externally, subject to the following restrictions
+// 1. The users agree not to charge for the University of California code
+// itself but may charge for additions, extensions, or support.
+// 2. In any product based on the software, the users agree to acknowledge
+// the University of California that developed the software. This
+// acknowledgment shall appear in the product documentation.
+// 3. The users agree to obey all U.S. Government restrictions governing
+// redistribution or export of the software.
+// 4. The users agree to reproduce any copyright notice which appears on
+// the software on any copy or modification of such made available
+// to others
+// Agreed to on __July 25, 2015_________________
+// By: ___University of California, Berkeley____
+//     ___Chenming Hu_____________________
+//     ___Professor in Graduate School _______
+// ********************************************************
+
+// ********************************************************
+// *  BSIM Bulk MOSFET Model Equations (Verilog-A)
+// ********************************************************
+// Note: This is a complex compact model with many parameters and equations.
+// Many `define macros and conditional compilation are used.
+// The full model implementation is not directly translatable to PHDL.
+
+// Physical Constants
+param q : Real = 1.60219e-19;
+param EPS0 : Real = 8.85418e-12;
+param KboQ : Real = 8.617087e-5; // Joule / degree
+
+// Note: The model contains many `define macros for:
+// - PO_psip: Normalized pinch-off voltage
+// - BSIM_q: Normalized charge-voltage relationship
+// - Smooth, Smooth1, Smooth2: Smoothing functions
+// - Min1: Minimum smoothing function
+// - BSIM6NumFingerDiff: Geometry dependent parasitics
+// - BSIM6RdsEndIso: Source/drain resistance calculations
+// - psibi: Built-in potential temperature mapping
+// - expLin, expLinA: Linearized exponential
+// - qj variants: Depletion charge models
+// These macros would need to be implemented as functions in PHDL.
+
+// Module Interface (with optional thermal node)
+
+mod bsim6_va(d, g, s, b, t) {
+    inout d : Electrical, g : Electrical, s : Electrical, b : Electrical, t : Electrical;
+
+    // Note: Alternative module definition without thermal node:
+    // mod bsim6(d, g, s, b)
+
+    // Note: The model has many optional internal nodes based on configuration:
+    // RDSMOD: internal drain/source nodes (di, si)
+    // RGATEMOD: internal gate nodes (gi, gm)
+    // RBODYMOD: internal body nodes (bi, sbulk, dbulk)
+    // TNOISW: noise nodes (N1, N2)
+
+    // Instance Parameters
+    param L : Real = 10u from(0:inf); // Channel length (m)
+    param W : Real = 10u from(0:inf); // Channel width (m)
+    param NF : Natural = 1 from [1:inf]; // Number of fingers
+    param NRS : Real = 1.0 from [0:inf]; // Number of squares in source
+    param NRD : Real = 1.0 from [0:inf]; // Number of squares in drain
+    param VFBSDOFF : Real = 0.0;
+    param MINZ : Natural = 0 from [0:1]; // Minimize either D or S
+    param XGW : Real = 0.0; // Distance from gate contact center to dev edge
+    param NGCON : Natural = 1 from [1:2]; // Number of gate contacts
+    param RGATEMOD : Natural = 0 from [0:3]; // Gate resistance model selector
+    param RBODYMOD : Natural = 0 from [0:2]; // Distributed body R model
+    param GEOMOD : Natural = 0 from [0:10]; // Geo dependent parasitics model
+    param RGEOMOD : Natural = 0 from [0:8]; // Geometry-dependent source/drain resistance
+    param RBPB : Real = 50.0; // Resistance between bNodePrime and bNode
+    param RBPD : Real = 50.0;
+    param RBPS : Real = 50.0;
+    param RBDB : Real = 50.0;
+    param RBSB : Real = 50.0;
+    param SA : Real = 0.0; // Distance between OD edge from Poly
+    param SB : Real = 0.0;
+    param SD : Real = 0.0; // Distance between neighboring fingers
+
+    // Model Parameters
+    param TYPE : Integer = 1 from [-1:1] exclude 0; // ntype=1, ptype=-1
+    param CVMOD : Natural = 0 from [0:1];
+    param COVMOD : Natural = 0 from [0:1]; // Overlap capacitance model
+    param RDSMOD : Natural = 0 from [0:2]; // s/d resistance model
+    param WPEMOD : Natural = 0 from [0:1]; // WPE model flag
+    param ASYMMOD : Natural = 0 from [0:1]; // Asymmetry model
+    param GIDLMOD : Natural = 0 from [0:1]; // GIDL current model
+    param IGCMOD : Natural = 0 from [0:1]; // Igc, Igs, Igd model
+    param IGBMOD : Natural = 0 from [0:1]; // Igb model
+    param TNOIMOD : Natural = 0 from [0:1]; // Thermal noise model
+    param SHMOD : Natural = 0 from [0:1]; // Self heating model
+    param MOBSCALE : Natural = 0 from [0:1]; // Mobility scaling model
+
+    // Device Parameters
+    param LLONG : Real = 10u from(0:inf); // L of extracted Long channel device
+    param LMLT : Real = 1.0; // Length Shrinking Parameter
+    param WMLT : Real = 1.0; // Width Shrinking Parameter
+    param WWIDE : Real = 10u from(0:inf); // W of extracted Wide channel device
+    param TOXE : Real = 3.0e-9 from(0:inf); // Effective gate dielectric thickness (m)
+    param TOXP : Real = TOXE; // Physical gate dielectric thickness (m)
+    param NDEP : Real = 1e24; // Channel Doping Concentration (m^-3)
+
+    // Note: This compact model contains very complex IV, CV, and noise equations
+    // implemented through many `define macros and analog functions.
+    // Full translation requires implementing all model equations in PHDL.
+
+    analog bsim6_va {
+        // The model implements:
+        // - Drain current Id(Vgs, Vds, Vbs)
+        // - Terminal charges Qg, Qd, Qs, Qb
+        // - Capacitances Cgg, Cgd, Cgs, etc.
+        // - Noise models (thermal, flicker, noise)
+        // - Self-heating effects
+        // - Geometry scaling
+        // - Temperature effects
+        // - Body resistance network
+        // - Gate resistance network
+        // - Source/drain resistance
+        // This is a standard industry compact MOSFET model.
+    }
+}
+
+// Note: The actual BSIM6.1.1 model contains approximately 4500 lines of code
+// including macros for: PO_psip, BSIM_q, Smooth functions, psibi,
+// expLin, qj variants, geometry calculations, and the main analog
+// begin...end block with all the device equations. Complete translation
+// would require careful implementation of all model equations as PHDL functions.

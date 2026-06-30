@@ -1,11 +1,11 @@
 use crate::analysis::dc::DcAnalysisResult;
 use crate::circuit::CircuitInstance;
-use crate::analog::netlist::AnalogReference;
+use crate::analog::AnalogReference;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
-use crate::solver::{Context, init_solver_configuration};
+use crate::solver::Context;
 use log::debug;
 use ndarray::{ArrayView1, ArrayViewMut1};
 use std::collections::HashMap;
@@ -33,7 +33,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         let mut all_stamps = Vec::new();
 
         self.circuit.update_all(state, &self.context);
-        for dc in self.circuit.all_runtimes_mut() {
+        for dc in self.circuit.all_devices_mut() {
             all_stamps.extend(dc.load_dc(state, &self.context));
         }
 
@@ -45,9 +45,9 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
     /// Compares the current guess against the previous state using tolerance
     /// criteria defined in the solver context.
     fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
-        for runtime in self.circuit.all_runtimes() {
-            if runtime.limiting_active() {
-                debug!("Device {} requested limiting reiteration", runtime.device_name());
+        for device in self.circuit.all_devices() {
+            if device.limiting_active() {
+                debug!("Device {} requested limiting reiteration", device.device_name());
                 return false;
             }
         }
@@ -109,7 +109,7 @@ pub struct DcSolver<'a> {
 
 impl<'a> DcSolver<'a> {
     pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::result::Result<Self> {
-        init_solver_configuration();
+        Context::init_global();
         let netlist = circuit.netlist();
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
 

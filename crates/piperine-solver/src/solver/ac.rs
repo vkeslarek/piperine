@@ -3,14 +3,14 @@ use crate::analysis::ac::{
 };
 use crate::analysis::dc::DcAnalysisResult;
 use crate::circuit::CircuitInstance;
-use crate::analog::netlist::AnalogReference;
+use crate::analog::AnalogReference;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::math::unit::UnitExt;
 use crate::solver::dc::DcSolver;
-use crate::solver::{Context, init_solver_configuration};
+use crate::solver::Context;
 use num_complex::Complex;
 use num_traits::Zero;
 use std::collections::HashMap;
@@ -46,7 +46,7 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for AcSystem<'a> {
 
         // AC analysis is linear - no need to update runtimes
         // We use the DC operating point that was already computed
-        for ac in self.circuit.all_runtimes_mut() {
+        for ac in self.circuit.all_devices_mut() {
             all_stamps.extend(ac.load_ac(&self.dc_point, &ac_ctx, &self.context));
         }
         Ok(all_stamps)
@@ -80,7 +80,7 @@ impl<'a> AcSolver<'a> {
     /// # Returns
     /// Initialized AC solver ready for frequency sweep
     pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::result::Result<Self> {
-        init_solver_configuration();
+        Context::init_global();
 
         let mut dc_solver = DcSolver::new(circuit, context.clone())?;
         let dc_point = dc_solver.solve()?;

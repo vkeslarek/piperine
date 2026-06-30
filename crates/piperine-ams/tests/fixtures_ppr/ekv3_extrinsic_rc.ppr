@@ -1,0 +1,63 @@
+// EKV3 Extrinsic Resistors and Bias-Independent Overlap Capacitances
+// EXTERNAL: RESISTORS AND BIAS INDEPENDENT OVERLAP CAPACITANCES
+
+begin : EXTERNAL_RESISTORS
+    // Series resistance calculations (rs, rd)
+    // - RLX parameter for symmetric model
+    // - RSX, RDX parameters for asymmetric model
+    // - RSH, RS, RD model parameters
+
+    // Width scaling of series resistances
+    // rs_w, rd_w
+
+    // Gate resistance calculation (rg)
+    // RGSH, GC, NF, Leff parameters
+
+    // Substrate network resistances (RB, RSB, RDB, RDSB)
+    // RINGTYPE for horse-shoe vs symmetric bulk contact
+    // RBN, RBWSH, RSBN, RSBWSH, RDBN, RDBWSH, RDSBSH parameters
+
+    // Substrate source-drain resistance (rdsb)
+    // RDSBSH * Leff / WeffNF
+
+    // Temperature effect on resistors
+    // Mr_t = (1 + TR * dT + TR2 * dT2)
+    // rs_wt, rd_wt, rg_t, rb_t, rsb_t, rdb_t, rdsb_t
+
+    // Trimming to positive minimum value
+end
+
+// Bias-independent overlap capacitances and external resistors placement
+`ifdef DC_S
+    // CGSO, CGDO, CGBO overlap capacitances
+    // Series resistance effect on channel current
+`endif
+
+`ifdef DC
+    // CGSO, CGDO, CGBO overlap capacitances
+    // Series resistors (rs, rd) with thermal noise
+`endif
+
+`ifdef RF_S
+    // CGSO, CGDO, CGBO overlap capacitances
+    // Series resistors with thermal noise
+    // Gate resistance with thermal noise
+    // Substrate resistance network
+`endif
+
+`ifdef RF
+    // CGSO, CGDO, CGBO overlap capacitances
+    // Series resistors with thermal noise
+    // Gate resistance with thermal noise
+    // Substrate resistance network (rb, rsb, rdb)
+    // Source-drain substrate currents with shot noise
+`endif
+
+`ifdef NQS
+    // Similar to RF mode
+`endif
+
+mod ekv3_extrinsic_rc_include;
+    // This is an include file - not a standalone module
+    // Content should be inlined in ekv3.va
+endmod

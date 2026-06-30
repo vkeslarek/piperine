@@ -1,0 +1,29 @@
+//======================================================================================
+//======================================================================================
+// Filename: psp102.va
+//======================================================================================
+//======================================================================================
+//
+//  (c) Copyright notice
+//
+//  Since 2012 until today, PSP has been co-developed by NXP Semiconductors and
+//  Delft University of Technology. For this part of the model, each claim undivided
+//  ownership and copyrights
+//  Until and including 2011, PSP has been co-developed by NXP Semiconductors and
+//  Arizona State University. For this part of the model, NXP Semiconductors claims
+//  undivided ownership and copyrights.
+//
+//
+//  Version: 102.5.0, December 2013
+//
+//======================================================================================
+//======================================================================================
+//
+// Further information can be found in the file releasenotesPSP102.txt
+//
+// Note: This file is a module wrapper with includes. Complex model code not translated.
+mod PSP102VA(D, G, S, B);
+    // Note: connectmodule - PSP 102.5 MOS transistor model
+    inout D, G, S, B;
+    wire D : Electrical, G : Electrical, S : Electrical, B : Electrical;
+endmod

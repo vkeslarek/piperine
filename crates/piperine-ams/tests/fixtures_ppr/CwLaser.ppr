@@ -1,0 +1,24 @@
+// Continuous wave laser source
+
+mod CwLaser(out) {
+    output out[0:3] : Optical;
+    wire pol[0:1] : Optical;
+
+    param wavelength : Real = 1550; // [nm]
+    param power : Real = 10; // [dBm]
+    var laser_freq : Real = P_C / wavelength / 1e-9; // [Hz]
+    var amplitude : Real; // [V/m]
+
+    // Convert polar coordinates to Cartesian coordinates
+    inst Polar2Cartesian1 : Polar2Cartesian(pol, out[0:1]);
+
+    analog CwLaser {
+        @(initial_step) begin
+            // Calculate the electrical amplitude
+            amplitude = sqrt(pow(10, power / 10) / 1000);
+        end
+
+        OptE(pol[0]) <+ amplitude; // Amplitide
+        OptE(pol[1]) <+ 2 * M_PI * (laser_freq - F_REF) * $abstime; // Phase
+    }
+}

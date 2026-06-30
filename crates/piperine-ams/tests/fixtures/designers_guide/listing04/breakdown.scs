@@ -1,0 +1,10 @@
+// Test "Warn on Breakdown" model
+
+simulator lang=spectre
+
+ahdl_include "breakdown2.vams"
+
+Vclk (in 0) vsource type=sine ampl=1.5KV freq=1
+BDW  (in) breakdown
+
+doTran tran stop=2

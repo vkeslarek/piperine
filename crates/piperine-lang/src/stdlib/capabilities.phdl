@@ -1,0 +1,19 @@
+// Standard library capability declarations.
+// Every capability here is resolved at elaboration time; special-cased ones
+// (e.g. Number, Eq, Ord) may receive additional compiler treatment, but the
+// canonical definition lives here so user code can read, extend, and impl them.
+
+capability Add    { fn add(self, o: Self) -> Self; }
+capability Sub    { fn sub(self, o: Self) -> Self; }
+capability Mul    { fn mul(self, o: Self) -> Self; }
+capability Div    { fn div(self, o: Self) -> Self; }
+capability Eq     { fn eq(self, o: Self) -> Boolean; }
+capability Ord : Eq { fn lt(self, o: Self) -> Boolean; }
+capability BitAnd { fn bitand(self, o: Self) -> Self; }
+capability BitOr  { fn bitor(self, o: Self) -> Self; }
+capability BitXor { fn bitxor(self, o: Self) -> Self; }
+capability Not    { fn not(self) -> Self; }
+
+capability Number : Add, Sub, Mul {
+    fn double(self) -> Self { return self.add(self); }
+}

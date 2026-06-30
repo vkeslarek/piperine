@@ -1,0 +1,13 @@
+mod Ladder[N] ( inout bus : Electrical, inout gnd : Ground ) {
+    param r : Real = 1.0e3;  param cpar : Real = 5.0e-15;
+    wire tap : Electrical[N];
+    for i in 0..N {
+        rseg[i] : Resistor ( bus, tap[i] )    { .r = r };
+        rgnd[i] : Resistor ( tap[i], gnd )    { .r = r };
+    }
+}
+analog Ladder {
+    for i in 0..N {
+        I(rseg[i].n, gnd) <+ cpar * ddt(V(rseg[i].n, gnd));   // parasitic at each tap, via the named leg
+    }
+}

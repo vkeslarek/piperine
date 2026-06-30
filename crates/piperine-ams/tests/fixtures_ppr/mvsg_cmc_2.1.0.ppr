@@ -1,0 +1,199 @@
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//Copyright 2020 Ujwal Radhakrishna and Lan Wei
+//Copyright 2020 Massachusetts Institute of Technology
+//Copyright 2019 Ujwal Radhakrishna and Lan Wei
+//Copyright 2019 Massachusetts Institute of Technology
+//Copyright 2018 Ujwal Radhakrishna, Dimitri Antoniadis and Lan Wei
+//Copyright 2018 Massachusetts Institute of Technology
+//Copyright 2017 Massachusetts Institute of Technology
+//
+//The MVSG_CMC standard has been supported by the members of Silicon Integration Initiative's
+//Compact Model Coalition.
+//
+//Version number: 2.1.0
+//
+// Updates from v2.0.0:
+// 1. gmin default set to 0
+// 2. Variables initialized to 0
+// 3. Channel breakdown diode-current de-biased through contact resistances
+// 4. Tempcos added to fringing, channel and FP-capacitances
+// 5. Different of tempcos added to vto of field plates
+// 6. agate parameter unitless
+// 7. Bug on source-side FP flag parameters corrected
+// 8. Formatting done using Vampyre
+// 9. Secondary gate-recombination current model added
+// 10.Flag parameter added for Qc and Qb calculations
+// 11. Corrected the bug in if-else statements of Rcs/Rcd blocks
+
+mod mvsg_cmc(d, g, s, b);
+    inout d, g, s, b;
+    wire d, g, s, b : Electrical;
+    wire di, gi1, gi2, si, fps1, fps2, fps3, fps4, fp1, fp2, fp3, fp4, drc, src, tr, tr1, xt1, xt2 : Electrical;
+    wire dt : Thermal;
+
+    // Instance parameters
+    param w : Real = 180.0e-6;
+    param l : Real = 250.0e-9;
+    param ngf : Integer = 1;
+    param dtemp : Real = 0.0;
+
+    // Model parameters - Transport
+    param version : Real = 2.10;
+    param tnom : Real = 27.0;
+    param type : Integer = 1;
+    param cg : Real = 4.00e-03;
+    param tcg : Real = 0.0;
+    param cofsm : Real = 0.0;
+    param cofdm : Real = 0.0;
+    param cofdsm : Real = 0.0;
+    param cofdsubm : Real = 0.0;
+    param cofssubm : Real = 0.0;
+    param cofgsubm : Real = 0.0;
+    param tcofs : Real = 0.0;
+    param tcofd : Real = 0.0;
+    param tcofds : Real = 0.0;
+    param tcofssub : Real = 0.0;
+    param tcofdsub : Real = 0.0;
+    param tcofgsub : Real = 0.0;
+    param rsh : Real = 150.0;
+    param rcs : Real = 800e-6;
+    param rcd : Real = 800e-6;
+    param vx0 : Real = 3.0e5;
+    param mu0 : Real = 0.135;
+    param beta : Real = 1.50;
+    param vto : Real = -2.72;
+    param ss : Real = 0.120;
+    param delta1 : Real = 16e-3;
+    param delta2 : Real = 0.0;
+    param dibsat : Real = 10.0;
+    param nd : Real = 0.0;
+    param alpha : Real = 3.5;
+    param lambda : Real = 0.0;
+    param vtheta : Real = 0.0;
+    param mtheta : Real = 0.0;
+    param vzeta : Real = 150e3;
+    param vtzeta : Real = -0.4e-3;
+    param epsilon : Real = 2.3;
+    param rct1 : Real = 0.0;
+    param rct2 : Real = 0.0;
+    param flagres : Integer = 0;
+
+    // Source access region parameters
+    param lgs : Real = 3.0e-6;
+    param vtors : Real = -650;
+    param cgrs : Real = 5.0e-3;
+    param vx0rs : Real = 100e3;
+    param mu0rs : Real = 100e-3;
+    param betars : Real = 1.00;
+    param delta1rs : Real = 100e-3;
+    param srs : Real = 0.100;
+    param ndrs : Real = 0.0;
+    param vthetars : Real = 0.0;
+    param mthetars : Real = 0.0;
+    param alphars : Real = 3.5;
+
+    // Drain access region parameters
+    param lgd : Real = 4.85e-6;
+    param vtord : Real = -650;
+    param cgrd : Real = 4.3e-3;
+    param vx0rd : Real = 100e3;
+    param mu0rd : Real = 100e-3;
+    param betard : Real = 1.00;
+    param delta1rd : Real = 0.35;
+    param srd : Real = 0.3;
+    param ndrd : Real = 3.8;
+    param vthetard : Real = 0.0;
+    param mthetard : Real = 0.0;
+    param alphard : Real = 3.5;
+
+    // Field-Plate parameters (4 source-side + 4 drain-side)
+    // Each with: flag, lg, vto, cg, tcg, caps, thresholds, etc.
+    // (Full parameter list continues similarly to v1.1.1 with additional tempco parameters)
+
+    // Gate leakage with secondary recombination
+    param igrecmod : Integer = 0;
+
+    // Channel breakdown with debiasing
+    param cbddbmod : Integer = 0;
+
+    // RF gm-dispersion
+    param gmdisp : Integer = 0;
+    param taugmrf : Real = 1e-3;
+
+    // Layout and DC-to-RF gate-resistance parameters
+    param rgsp : Real = 0.0;
+    param ngcon : Real = 1;
+    param lovg : Real = 0;
+    param agate : Real = 1;
+
+    // Trapping model parameters
+    param trapselect : Integer = 0;
+    param ctrap : Real = 1e-3;
+    param vttrap : Real = 230;
+    param taut : Real = 3e-5;
+    param alphat1 : Real = 1e-4;
+    param alphat2 : Real = 21;
+    param tempt : Real = 1e-4;
+
+    // Noise model parameters
+    param noisemod : Integer = 0;
+    param shs : Real = 3.0;
+    param shd : Real = 3.0;
+    param kf : Real = 1.0e-4;
+    param af : Real = 2.0;
+    param ffe : Real = 1.2;
+
+    // Minimum element parameters
+    param minr : Real = 1.0e-3;
+    param minl : Real = 1.0e-9;
+    param minc : Real = 0.0;
+
+    // Internal functions: absfunc, mmax, explim, calc_iq, calc_ig, calc_capt
+    fn real absfunc(x : Real) -> Real;
+    begin
+        absfunc = sqrt(x * x + 4.0 * 1e-5);
+    endfn
+
+    fn real mmax(x : Real, y : Real) -> Real;
+    begin
+        mmax = 0.5 * (x + y + sqrt((x - y) * (x - y) + 4.0 * 1e-5));
+    endfn
+
+    fn real explim(x : Real) -> Real;
+    begin
+        if (x > `M_MAXEXP) begin
+            explim = exp(`M_MAXEXP) * (1.0 + (x - `M_MAXEXP));
+        end
+        else begin
+            if (x < -`M_MAXEXP) begin
+                explim = exp(-`M_MAXEXP);
+            end
+            else begin
+                explim = exp(x);
+            end
+        end
+    endfn
+
+    fn real calc_capt(capin : Real, tempcoin : Real, tdutin : Real, tnomkin : Real) -> Real;
+        var tcapfac : Real;
+    begin
+        tcapfac = 1.0 + tempcoin * (tdutin - tnomkin);
+        if (tcapfac < 0.01) begin
+            tcapfac = 0.01;
+        end
+        capout = capin * tcapfac;
+        calc_capt = capout;
+    endfn
+
+    analog begin
+        gmin = $simparam("gmin", 0);
+        tnomk = tnom + `P_CELSIUS0;
+        tambk = $temperature;
+        tsh = Temp(dt);
+        tdut = tambk + dtemp + tsh;
+
+        // Temperature-dependent parameter calculations
+        // Capacitance tempco calculations
+        // Internal circuit behavior
+    end
+endmod

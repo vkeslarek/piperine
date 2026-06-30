@@ -1,0 +1,45 @@
+// nature Voltage;
+//     units = "V";
+//     access = V;
+//     idt_nature = Flux;
+//     abstol = 1e-6;
+// endnature
+
+// nature Flux;
+//     units = "Wb";
+//     access = Phi;
+//     ddt_nature = Voltage;
+//     abstol = 1e-9;
+// endnature
+
+// discipline voltage;
+//     potential Voltage;
+// enddiscipline
+
+mod main;
+
+    var value : Real;
+    wire out : Voltage;
+
+    analog main {
+        V(out) <+ abs(value);
+    }
+
+    @ initial {
+        value = 1.0;
+        # 1 if (V(out) != abs(value)) begin
+            $display("FAILED -- value=%g, res=%g", value, V(out));
+            $finish;
+        end
+
+        value = -1.0;
+        # 1 if (V(out) != abs(value)) begin
+            $display("FAILED -- value=%g, res=%f", value, V(out));
+            $finish;
+        end
+
+        $display("PASSED");
+    }
+
+endmod
+// main

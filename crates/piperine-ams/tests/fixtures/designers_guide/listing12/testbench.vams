@@ -1,0 +1,20 @@
+`timescale 10ns / 10ps
+`include "disciplines.vams"
+
+module testbench ();
+    electrical gnd;
+    ground gnd;
+    reg clk;
+    wire [0:7] out;
+    integer ii;
+    reg [0:7] plot_out; 
+
+    initial clk=0;
+
+    always #1 clk=~clk;
+
+    always @(out) for (ii=0; ii<8; ii=ii+1) plot_out[ii] <= out[7-ii];
+
+    adc adc0 (out, in, clk);
+    vsource #(.type("sine"), .ampl(0.5), .dc(0.5), .freq(1M)) v0 (in, gnd);
+endmodule

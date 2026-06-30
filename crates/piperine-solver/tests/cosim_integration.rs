@@ -9,20 +9,22 @@
 //! 6. Combinational chain zero-delay (DAG inline propagation)
 //! 7. Multi-device topo order validation
 
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 use std::path::PathBuf;
 
-use piperine_solver::analog::model::AnalogModel;
-use piperine_solver::analog::netlist::GND;
+use piperine_solver::osdi::model::AnalogModel;
+use piperine_solver::analog::GND;
 use piperine_solver::circuit::{Circuit, CircuitInstance};
-use piperine_solver::analog::osdi::device::OsdiDevice;
+use piperine_solver::osdi::OsdiDevice;
 
-use piperine_solver::digital::builtin_d2a::D2ADevice;
-use piperine_solver::digital::builtin_a2d::A2DState;
-use piperine_solver::digital::state::{DigitalDevice, DigitalState, DigitalTopology};
-use piperine_solver::digital::logic::LogicValue;
-use piperine_solver::digital::net::{DigitalNet, DigitalEvent};
+use piperine_solver::device::Device;
+use piperine_solver::topology::{DigitalState, DigitalTopology};
+
+#[path = "helpers/mod.rs"]
+mod helpers;
+use helpers::{A2DState, D2ADevice};
+use piperine_solver::digital::{LogicValue, DigitalNet, DigitalEvent};
 use piperine_solver::analysis::transient::TransientAnalysisOptions;
 use piperine_solver::solver::Context;
 
@@ -37,9 +39,11 @@ struct Inverter {
     id: usize,
 }
 
-impl DigitalDevice for Inverter {
-    fn has_input_on(&self, c: &HashSet<DigitalNet>) -> bool { c.contains(&self.input) }
-    fn eval(&mut self, t: f64, nets: &[LogicValue], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+impl Device for Inverter {
+    fn device_name(&self) -> &str { "inverter" }
+    fn digital_input_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.input) }
+    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
+    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: &[f64], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
         let out = match nets[self.input.0] {
             LogicValue::Zero => LogicValue::One,
             LogicValue::One  => LogicValue::Zero,
@@ -47,8 +51,6 @@ impl DigitalDevice for Inverter {
         };
         q.push(Reverse(DigitalEvent { time: t + self.delay, net: self.output, value: out, source: self.id, seq: 0 }));
     }
-    fn input_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.input) }
-    fn output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
 }
 
 struct DFF {
@@ -65,11 +67,11 @@ impl DFF {
     }
 }
 
-impl DigitalDevice for DFF {
-    fn has_input_on(&self, c: &HashSet<DigitalNet>) -> bool {
-        self.inputs.iter().any(|n| c.contains(n))
-    }
-    fn eval(&mut self, t: f64, nets: &[LogicValue], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+impl Device for DFF {
+    fn device_name(&self) -> &str { "dff" }
+    fn digital_input_nets(&self) -> &[DigitalNet] { &self.inputs }
+    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.q) }
+    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: &[f64], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
         let clk = nets[self.inputs[0].0];
         let d   = nets[self.inputs[1].0];
         if self.last_clk == LogicValue::Zero && clk == LogicValue::One {
@@ -77,8 +79,6 @@ impl DigitalDevice for DFF {
         }
         self.last_clk = clk;
     }
-    fn input_nets(&self) -> &[DigitalNet] { &self.inputs }
-    fn output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.q) }
 }
 
 // ---------------------------------------------------------------------------
@@ -135,7 +135,7 @@ fn test_pure_digital_ring_oscillator() {
     });
 
     for i in 0..5 {
-        instance.digital_runtimes.push(Box::new(Inverter {
+        instance.devices.push(Box::new(Inverter {
             input: DigitalNet(i),
             output: DigitalNet((i + 1) % 5),
             delay: 1e-9,
@@ -236,7 +236,7 @@ fn test_d2a_event_scheduling_in_solver() {
     let d2a_ptr: *mut D2ADevice = &mut *d2a;
 
     instance.digital_state = digital_state;
-    instance.digital_runtimes.push(d2a as Box<dyn DigitalDevice>);
+    instance.devices.push(d2a as Box<dyn Device>);
 
     let options = TransientAnalysisOptions::new(10e-9.into(), 1e-9.into());
     let result = {
@@ -333,7 +333,7 @@ fn test_cosim_d2a_to_analog_ramp() {
     let d2a_ptr: *mut D2ADevice = &mut *d2a;
 
     instance.digital_state = digital_state;
-    instance.digital_runtimes.push(d2a as Box<dyn DigitalDevice>);
+    instance.devices.push(d2a as Box<dyn Device>);
 
     let options = TransientAnalysisOptions::new(10e-9.into(), 1e-9.into());
     let result = {
@@ -358,9 +358,6 @@ fn test_cosim_d2a_to_analog_ramp() {
 
 #[test]
 fn test_combinational_chain_zero_delay() {
-    // net0 → INV0(delay=0) → net1 → INV1(delay=0) → net2
-    // After net0 changes, both net1 and net2 settle in ONE DAG pass.
-
     let circuit = Circuit::new("CombChain");
     let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
 
@@ -373,8 +370,8 @@ fn test_combinational_chain_zero_delay() {
         time: 1e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 99, seq: 0,
     });
 
-    instance.digital_runtimes.push(Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }));
-    instance.digital_runtimes.push(Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }));
+    instance.devices.push(Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }));
+    instance.devices.push(Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }));
 
     instance.digital_state = digital_state;
     instance.rebuild_digital_topology();
@@ -403,7 +400,6 @@ fn test_combinational_chain_zero_delay() {
 
 #[test]
 fn test_multi_digital_device_topo_order() {
-    // 5 inverters in chain: net0 → INV0 → net1 → … → net5
     let circuit = Circuit::new("MultiInvChain");
     let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
 
@@ -414,7 +410,7 @@ fn test_multi_digital_device_topo_order() {
     });
 
     for i in 0..5usize {
-        instance.digital_runtimes.push(Box::new(Inverter {
+        instance.devices.push(Box::new(Inverter {
             input: DigitalNet(i), output: DigitalNet(i + 1), delay: 1e-9, id: i,
         }));
     }
@@ -432,8 +428,8 @@ fn test_multi_digital_device_topo_order() {
         assert!(pi < pn, "INV{} must precede INV{} in topo order", i, i + 1);
     }
 
-    // Standalone topology build from trait-erased vec
-    let standalone = DigitalTopology::build(&instance.digital_runtimes);
+    // Standalone topology build from unified device vec
+    let standalone = DigitalTopology::build(&instance.devices);
     assert_eq!(standalone.topo_order.len(), 5);
     assert!(standalone.back_edges.is_empty());
 

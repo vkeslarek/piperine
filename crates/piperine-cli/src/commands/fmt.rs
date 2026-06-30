@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::fs;
-use piperine_parser::{lexer::tokenize_with_comments, fmt::{format_source, FormatOptions}, parser::bundled_header_dir};
+use piperine_ams::{lexer::Lexer, fmt::{TokenFormatter, FormatOptions}, Document};
 
 pub fn execute(file: Option<String>) {
     let path = if let Some(f) = file {
@@ -24,13 +24,13 @@ pub fn execute(file: Option<String>) {
     if let Some(dir) = path.parent() {
         dirs.push(dir.to_path_buf());
     }
-    dirs.push(bundled_header_dir());
+    dirs.push(Document::bundled_header_dir());
 
-    let raw_tokens = tokenize_with_comments(&input).unwrap_or_else(|e| {
+    let raw_tokens = Lexer::tokenize_with_comments(&input).unwrap_or_else(|e| {
         eprintln!("Lexer error: {}", e);
         std::process::exit(1);
     });
 
-    let formatted = format_source(&input, &raw_tokens, FormatOptions::default());
+    let formatted = TokenFormatter::format_source(&input, &raw_tokens, FormatOptions::default());
     println!("{}", formatted);
 }

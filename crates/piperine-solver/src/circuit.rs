@@ -1,22 +1,23 @@
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use crate::analysis::noise::NoiseAnalysisOptions;
 use crate::analysis::tf::TransferFunctionAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
-use crate::analog::device::AnalogDevice;
-use crate::analog::netlist::{NodeIdentifier, Netlist};
-use crate::analog::osdi::device::OsdiDevice;
-use crate::digital::state::{DigitalDevice, DigitalState, DigitalTopology};
+use crate::analog::{NodeIdentifier, Netlist};
+use crate::device::Device;
+use crate::topology::{DigitalState, DigitalTopology};
 use crate::math::circular_array::CircularArrayBuffer2;
+use crate::osdi::device::OsdiDevice;
 use crate::solver::Context;
 use crate::solver::ac::AcSolver;
 use crate::solver::dc::DcSolver;
 use crate::solver::noise::NoiseSolver;
 use crate::solver::tf::TransferFunctionSolver;
 use crate::solver::transient::TransientSolver;
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 // ---------------------------------------------------------------------------
-// Circuit — builder for assembling components before instantiation
+// Circuit — builder for assembling OSDI components before instantiation
 // ---------------------------------------------------------------------------
 
 pub struct Circuit {
@@ -38,18 +39,13 @@ impl Circuit {
         NodeIdentifier::Anonymous(self.node_counter.fetch_add(1, Ordering::Relaxed))
     }
 
-    pub fn components(&self) -> &HashMap<String, OsdiDevice> {
-        &self.components
-    }
+    pub fn components(&self) -> &HashMap<String, OsdiDevice> { &self.components }
+    pub fn components_mut(&mut self) -> &mut HashMap<String, OsdiDevice> { &mut self.components }
 
-    pub fn components_mut(&mut self) -> &mut HashMap<String, OsdiDevice> {
-        &mut self.components
-    }
-
-    pub fn builder<F: FnOnce(&mut Circuit)>(title: impl Into<String>, builder_fn: F) -> Circuit {
-        let mut circuit = Circuit::new(title);
-        builder_fn(&mut circuit);
-        circuit
+    pub fn builder<F: FnOnce(&mut Circuit)>(title: impl Into<String>, f: F) -> Circuit {
+        let mut c = Circuit::new(title);
+        f(&mut c);
+        c
     }
 }
 
@@ -65,74 +61,56 @@ impl Into<CircuitInstance> for Circuit {
 
 pub struct CircuitInstance {
     pub title: String,
-    pub runtimes: Vec<Box<dyn crate::analog::runtime::AnalogRuntime>>,
-    pub digital_runtimes: Vec<Box<dyn DigitalDevice>>,
+    /// All devices — both analog and digital. Each device may implement either
+    /// or both sides; the `Device` trait default impls handle the no-op cases.
+    pub devices: Vec<Box<dyn Device>>,
     pub digital_topology: Option<DigitalTopology>,
     pub digital_state: DigitalState,
     pub netlist: Netlist,
 }
 
 impl CircuitInstance {
+    /// Instantiate an OSDI-component circuit.
     pub fn instantiate(circuit: &Circuit) -> crate::result::Result<Self> {
         let mut netlist = Netlist::new();
-        let runtimes = circuit
+        let ctx = Context::default();
+        let devices = circuit
             .components()
             .values()
-            .map(|component| {
-                let paras = crate::analog::device::SimParams {
-                    ini_lim: false,
-                    gmin: 1e-12,
-                    gdev: 1e-12,
-                    tnom: 300.15,
-                    simulator_version: 1.0,
-                    source_scale_factor: 1.0,
-                    epsmin: 1e-12,
-                    reltol: 1e-3,
-                    vntol: 1e-6,
-                    abstol: 1e-12,
-                };
-
-                // Build a fresh OsdiDevice for the runtime (lib is Arc, cheap clone)
-                let device = OsdiDevice {
-                    name: component.name.clone(),
-                    lib: component.lib.clone(),
-                    descriptor_idx: component.descriptor_idx,
-                    terminals: component.terminals.clone(),
-                    params: component.params.clone(),
-                    str_params: component.str_params.clone(),
-                };
-                let node_refs = device.allocate_nodes(&device.name, &device.terminals, &mut netlist);
-
-                Box::new(crate::analog::runtime::DeviceRuntime::new(
-                    device,
-                    component.name.clone(),
-                    node_refs,
-                    &component.params,
-                    &component.str_params,
-                    &paras
-                )) as Box<dyn crate::analog::runtime::AnalogRuntime>
-            })
+            .map(|spec| Box::new(OsdiDevice::from_spec(spec, &mut netlist, &ctx)) as Box<dyn Device>)
             .collect();
-
         Ok(Self {
             title: circuit.title.clone(),
-            runtimes,
-            digital_runtimes: Vec::new(),
+            devices,
             digital_topology: None,
             digital_state: DigitalState::new(0),
             netlist,
         })
     }
 
-    pub fn update_all(&mut self, state: &CircularArrayBuffer2<f64>, context: &Context) {
-        self.runtimes
-            .iter_mut()
-            .for_each(|runtime| runtime.update(state, context));
+    /// Build a `CircuitInstance` from pre-built devices and a netlist.
+    ///
+    /// Used by higher-level crates (e.g. `piperine-lang`) that compile
+    /// PHDL modules into devices before handing them to the solver.
+    pub fn from_devices_and_netlist(
+        title: impl Into<String>,
+        devices: Vec<Box<dyn Device>>,
+        netlist: Netlist,
+    ) -> Self {
+        Self {
+            title: title.into(),
+            devices,
+            digital_topology: None,
+            digital_state: DigitalState::new(0),
+            netlist,
+        }
     }
 
-    pub fn netlist(&self) -> &Netlist {
-        &self.netlist
+    pub fn update_all(&mut self, state: &CircularArrayBuffer2<f64>, context: &Context) {
+        self.devices.iter_mut().for_each(|d| d.update(state, context));
     }
+
+    pub fn netlist(&self) -> &Netlist { &self.netlist }
 
     pub fn ac(&mut self, context: Context) -> crate::result::Result<AcSolver<'_>> {
         AcSolver::new(self, context)
@@ -166,17 +144,37 @@ impl CircuitInstance {
         TransientSolver::new(self, transient_options, context)
     }
 
-    pub fn all_runtimes(&self) -> &[Box<dyn crate::analog::runtime::AnalogRuntime>] {
-        &self.runtimes
-    }
+    pub fn all_devices(&self) -> &[Box<dyn Device>] { &self.devices }
+    pub fn all_devices_mut(&mut self) -> &mut [Box<dyn Device>] { &mut self.devices }
 
-    pub fn all_runtimes_mut(&mut self) -> &mut [Box<dyn crate::analog::runtime::AnalogRuntime>] {
-        &mut self.runtimes
-    }
-
-    /// Build (or rebuild) the DAG topology from the current `digital_runtimes`.
-    /// Call after all digital devices have been added and before starting simulation.
     pub fn rebuild_digital_topology(&mut self) {
-        self.digital_topology = Some(DigitalTopology::build(&self.digital_runtimes));
+        self.digital_topology = Some(DigitalTopology::build(&self.devices));
+    }
+
+    pub fn run_digital_at(&mut self, t: f64) {
+        match &self.digital_topology {
+            Some(topo) => self.digital_state.evaluate_dag_ordered(t, &mut self.devices, topo),
+            None => self.digital_state.evaluate_until_stable(t, &mut self.devices),
+        }
+    }
+
+    /// Initialize all digital devices and seed the `DigitalState` with t=0 events.
+    ///
+    /// Must be called once before the first [`run_digital_at`] call.  Collects
+    /// initial events from every device's `digital_init`, schedules them into
+    /// `digital_state`, then runs propagation at t=0 so all downstream logic
+    /// reflects its power-on state.
+    pub fn init_digital(&mut self) {
+        use std::cmp::Reverse;
+        use crate::digital::DigitalEvent;
+
+        let mut seed_queue = std::collections::BinaryHeap::<Reverse<DigitalEvent>>::new();
+        for device in &mut self.devices {
+            device.digital_init(&mut seed_queue);
+        }
+        for Reverse(event) in seed_queue {
+            self.digital_state.schedule(event);
+        }
+        self.run_digital_at(0.0);
     }
 }

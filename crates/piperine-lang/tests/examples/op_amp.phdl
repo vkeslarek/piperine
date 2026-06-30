@@ -1,0 +1,4 @@
+mod OpAmp ( input inp : Electrical, input inn : Electrical, inout out : Electrical ) {
+    param gain : Real = 1.0e6;
+}
+analog OpAmp { V(out) <- gain * V(inp, inn); }

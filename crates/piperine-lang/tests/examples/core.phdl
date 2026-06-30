@@ -1,0 +1,30 @@
+discipline Electrical {
+    potential v : Real (unit = "V", abstol = 1e-6);
+    flow      i : Real (unit = "A", abstol = 1e-12);
+}
+
+mod Resistor  ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0e3; }
+analog Resistor  { I(p, n) <+ V(p, n) / r; }
+
+mod Capacitor ( inout p : Electrical, inout n : Electrical ) { param c : Real = 1.0e-9; }
+analog Capacitor { I(p, n) <+ c * ddt(V(p, n)); }
+
+mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
+analog VSource { V(p, n) <- dc; }
+
+fn thermal_voltage(t: Real) -> Real { return 8.617e-5 * t; }
+
+mod Diode ( inout a : Electrical, inout c : Electrical ) {
+    param is_sat : Real = 1.0e-14;  
+    param temp : Real = 300.0;
+}
+analog Diode { I(a, c) <+ is_sat * (exp(V(a, c) / thermal_voltage(temp)) - 1.0); }
+
+mod Comparator ( input vp : Electrical, input vn : Electrical, output out : Bit );
+digital Comparator { out <- (V(vp) > V(vn)); }
+
+mod BitToVoltage ( input d : Bit, inout a : Electrical ) {
+    param vlow : Real = 0.0;  
+    param vhigh : Real = 1.8;
+}
+analog BitToVoltage { if (d == 1) { V(a) <- vhigh; } else { V(a) <- vlow; } }

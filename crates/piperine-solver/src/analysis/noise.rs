@@ -1,6 +1,6 @@
 use crate::analysis::ac::{AcAnalysis, AcAnalysisContext, AcSweepAnalysisOptions};
 use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
-use crate::analog::netlist::{AnalogReference, NodeIdentifier};
+use crate::analog::{AnalogReference, NodeIdentifier};
 use crate::math::unit::AmpereSquaredSecond;
 
 pub struct Noise {

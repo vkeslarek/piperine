@@ -1,0 +1,32 @@
+// Test unary operators in constant functions
+
+mod constfunc4 {
+    function [7:0] LAbs(input signed [7:0] x) : [7:0] {
+        LAbs = abs(x);
+    }
+
+    function real RAbs(input real x) : Real {
+        RAbs = abs(x);
+    }
+
+    localparam [7:0] ResultLAb1 = LAbs(8'sh01);
+    localparam [7:0] ResultLAb2 = LAbs(8'shff);
+    localparam Real ResultRAb1 = RAbs(2.0);
+    localparam Real ResultRAb2 = RAbs(-2.0);
+
+    var failed : Bit;
+
+    initial begin
+        failed = 0;
+        $display("%h", ResultLAb1);
+        $display("%h", ResultLAb2);
+        $display("%g", ResultRAb1);
+        $display("%g", ResultRAb2);
+        if (ResultLAb1 !== 8'h01) failed = 1;
+        if (ResultLAb2 !== 8'h01) failed = 1;
+        if (ResultRAb1 != 2.0) failed = 1;
+        if (ResultRAb2 != 2.0) failed = 1;
+        if (failed) $display("FAILED");
+        else $display("PASSED");
+    end
+}

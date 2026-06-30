@@ -1,0 +1,18 @@
+`timescale 10ns / 10ps
+`include "disciplines.vams"
+
+module testbench ();
+    electrical gnd;
+    ground gnd;
+
+    reg control;
+
+    initial control=0;
+
+    always #100 control=~control;
+
+    sw sw0 (p, gnd, control);
+
+    vsource #(.type("sine"), .ampl(1.0), .dc(5), .freq(100M)) v0 (vp, gnd);
+    resistor #(.r(10k)) r0 (vp, p);
+endmodule

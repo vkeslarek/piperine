@@ -1,0 +1,721 @@
+/*
+
+ The MIT License (MIT)
+
+ Copyright (c) 2002-2015 Tiburon design Automation, Inc
+
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
+
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ THE SOFTWARE.
+ Verilog-A definition of Angelov GaNFET
+
+ Rev. 2.10.06813
+
+*/
+
+// `define SCALE_T_LINEAR_REL(x, s) x * (1 + s * delta_T)
+// `define SCALE_T_QUADRATIC_REL(x, s) x * (1 + s * (delta_T * delta_T))
+// NOTE: Macros simplified to direct expressions
+
+mod angelov(d, g, s);
+    // Instance parameters
+    // "Globally disable noise", units = "", type = "instance"
+    param Noise : Integer = 1 from [ 0 : 2 ];
+    // "Flag for self-heating", units = "", type = "instance"
+    param Selft : Integer = 0 from [ 0 : 1 ];
+    // "Difference sim. temp and device temp", units = "C", type = "instance"
+    param Trise : Real = 0.0 from(-inf : inf);
+    // "Device temp - used if Trise is zero", units = "C", type = "instance"
+    param Temp : Real = 25.0 from(-273.15 : inf);
+
+    // "Ids Current Model", units = ""
+    param Idsmod : Integer = 0 from [ 0 : 3 ];
+    // "Select gate diode model [0:1]", units = ""
+    param Igmod : Integer = 0 from [ 0 : 1 ];
+    // "Select cap model [0:2]", units = ""
+    param Capmod : Integer = 2 from [ 0 : 2 ];
+    // "Noise model (0=def, 1=PRC, 2=not supported)", units = ""
+    param Noimod : Integer = 0 from [ 0 : 2 ];
+
+    // "Current for max. transconductance Ipk", units = "A"
+    param Ipk0 : Real = 0.05;
+    // "Gate voltage Vpk for max transconductance", units = "V"
+    param Vpks : Real = -0.2;
+    // "Delta gate voltage at peak gm", units = "V"
+    param Dvpks : Real = 0.2;
+    // "Polynomial coeff P1 for channel current", units = "1/V"
+    param P1 : Real = 0.8;
+    // "Polynomial coeff P2 for channel current", units = "1/V^2"
+    param P2 : Real = 0.0;
+    // "Polynomial coeff P3 for channel current", units = "1/V^3"
+    param P3 : Real = 0.0;
+    // "Saturation parametr alpha_r", units = "1/V"
+    param Alphar : Real = 0.1;
+    // "Saturation parametr alpha", units = "1/V"
+    param Alphas : Real = 1.0;
+    // "Channel length modulation parametr", units = "1/V"
+    param Lambda : Real = 0.001;
+    // "Coeff for channel length modulation parametr", units = ""
+    param Lvg : Real = 0.0;
+    // "Unsaturated coeff B1 for P1", units = ""
+    param B1 : Real = 0.1;
+    // "Saturated coeff B2 for P1", units = "1/V"
+    param B2 : Real = 4.0;
+    // "Soft breakdown model parametr", units = ""
+    param Lsb0 : Real = 0.0;
+    // "Soft breakdown model parametr", units = "V"
+    param Vtr : Real = 20.0;
+    // "Surface breakdown model parametr", units = "V"
+    param Vsb2 : Real = 0.0;
+
+    // "Zero-bias D-S junction capacitance", units = "F"
+    param Cds : Real = 0.0 from [ 0 : inf);
+    // "Gate-source pinch-off capacitance", units = "F"
+    param Cgspi : Real = 0.0;
+    // "Gate-source capacitance parametr", units = "F"
+    param Cgs0 : Real = 0.0;
+    // "Gate-drain pinch-off capacitance", units = "F"
+    param Cgdpi : Real = 0.0;
+    // "External G-D Capacitor", units = "F"
+    param Cgdpe : Real = 0.0 from [ 0 : inf);
+    // "Gate-drain capacitance parametr Cgdo", units = "F"
+    param Cgd0 : Real = 0.0;
+
+    // "Polynomial coeff P10 for capacitance", units = ""
+    param P10 : Real = 0.0 from [ - 2 : 100 ];
+    // "Polynomial coeff P11 for capacitance", units = ""
+    param P11 : Real = 1.0 from(0 : 10 ];
+    // "Polynomial coeff P20 for capacitance", units = ""
+    param P20 : Real = 0.0 from [ - 2 : 5 ];
+    // "Polynomial coeff P21 for capacitance", units = ""
+    param P21 : Real = 0.2 from [ 0.01 : 5 ];
+    // "Polynomial coeff P30 for capacitance", units = ""
+    param P30 : Real = 0.0 from [ - 2 : 5 ];
+    // "Polynomial coeff P31 for capacitance", units = ""
+    param P31 : Real = 0.2 from [ 0.1 : 5 ];
+    // "Polynomial coeff P40 for capacitance", units = ""
+    param P40 : Real = 0.0 from [ - 100 : 100 ];
+    // "Polynomial coeff P41 for capacitance", units = ""
+    param P41 : Real = 1.0 from [ 0.1 : 10 ];
+    // "Polynomial coeff P111 for capacitance", units = ""
+    param P111 : Real = 0.0 from [ 0 : 1 ];
+    // "Gate fwd saturation current", units = "A"
+    param Ij : Real = 0.00005 from [ 0 : inf);
+    // "Gate current parametr", units = ""
+    param Pg : Real = 15.0 from [ 0 : inf);
+    // "Gate p-n emission coeff", units = ""
+    param Ne : Real = 1.0 from(0 : inf);
+    // "Gate current parm", units = "V"
+    param Vjg : Real = 0.7 from(0.0 : inf);
+
+    // "Gate ohmic resistance", units = "Ohm"
+    param Rg : Real = 0.05 from(0 : inf);
+    // "Drain ohmic resistance", units = "Ohm"
+    param Rd : Real = 0.05 from(0 : inf);
+    // "Variable Drain,Source ohmic resistance", units = "Ohm"
+    param Rd2 : Real = 0.0 from [ 0 : inf);
+    // "Input resistance", units = "Ohm"
+    param Ri : Real = 0.05 from(0 : inf);
+    // "Source ohmic resistance", units = "Ohm"
+    param Rs : Real = 0.05 from(0 : inf);
+    // "Gate resistance", units = "Ohm"
+    param Rgd : Real = 0.05 from(0 : inf);
+
+    // "Drain ohmic inductance", units = "H"
+    param Ld : Real = 0.0 from [ 0 : inf);
+    // "Source ohmic inductance", units = "H"
+    param Ls : Real = 0.0 from [ 0 : inf);
+    // "Gate ohmic inductance", units = "H"
+    param Lg : Real = 0.0 from [ 0 : inf);
+
+    // "Device delay", units = "s"
+    param Tau : Real = 0.0 from [ 0 : inf);
+    // "Min value of Rc", units = "Ohm"
+    param Rcmin : Real = 1.0e3 from [ 0 : inf);
+    // "R for freq dep output cond", units = "Ohm"
+    param Rc : Real = 10.0e3 from [ 0 : inf);
+    // "C for freq dep output cond", units = "F"
+    param Crf : Real = 0.0;
+    // "R for freq dep input cond", units = "Ohm"
+    param Rcin : Real = 100.0e3 from [ 0 : inf);
+    // "C for freq dep input cond", units = "F"
+    param Crfin : Real = 0.0 from [ 0 : inf);
+
+    // "Thermal resistance", units = "K/W"
+    param Rth : Real = 0.001 from [ 0.0000001 : inf);
+    // "Thermal capacitance", units = "Ws/K"
+    param Cth : Real = 1e-4 from [ 1e-8 : inf];
+    aliasparam Rtherm = Rth;
+    aliasparam Ctherm = Cth;
+
+    // "Linear temp coef TcIpk for Ipk", units = "1/K"
+    param Tcipk0 : Real = -0.002 from [ - 0.003 : 0 ];
+    // "Linear temp coef for P1", units = "1/K"
+    param Tcp1 : Real = -0.002 from [ - 0.003 : 0 ];
+    // "Linear temp coef for Cgs0", units = "1/K"
+    param Tccgs0 : Real = 0.002 from [ - 0.002 : 0.002 ];
+    // "Linear temp coef for Cgd0", units = "1/K"
+    param Tccgd0 : Real = 0.002 from [ - 0.002 : 0.002 ];
+    // "Linear temp coef for Lsb0", units = "1/K"
+    param Tclsb0 : Real = 0.0 from [ 0 : 0.01 ];
+    // "Linear temp coef for Rc", units = "1/K"
+    param Tcrc : Real = 0.0;
+    // "Linear temp coef for Crf", units = "1/K"
+    param Tccrf : Real = 0.0;
+    // "Linear temp coef for Rs", units = "1/K"
+    param Tcrs : Real = 0.003 from [ 0.0 : 0.1 ];
+    // "Linear temp coef for Rth", units = "1/K"
+    param TcRtherm : Real = 0.001 from [ 0 : 0.01 ];
+    // "Linear temp coef for Vpk", units = "1/K"
+    param TcVpk : Real = 0.001 from [ - 0.1 : 0.1 ];
+    // "Linear temp coef for Vjg", units = "1/K"
+    param TcVjg : Real = -0.001;
+    // "Linear temp coef for Vtr", units = "1/K"
+    param TcVtr : Real = 0.000 from [ 0 : 0.01 ];
+
+    // "Gate noise coeff", units = ""
+    param NoiseR : Real = 0.5 from [ 0 : inf);
+    // "Gate noise coeff", units = ""
+    param NoiseP : Real = 1.0 from [ 0 : inf);
+    // "Gate-drain noise coeff", units = ""
+    param NoiseC : Real = 0.9 from [ 0 : inf);
+    // "Noise corner freq", units = "Hz"
+    param Fnc : Real = 0.0 from [ 0 : inf);
+    // "Flicker noise coeff", units = ""
+    param Kf : Real = 0.0 from [ 0 : inf);
+    // "Flicker noise exponent", units = ""
+    param Af : Real = 1.0 from(0 : inf);
+    // "Flicker noise parametr", units = ""
+    param Ffe : Real = 1.0 from(0 : inf);
+    // "Equiv temp", units = "C"
+    param Td : Real = 25.0 from(-273.15 : inf);
+    // "Equiv temp", units = "C"
+    param Td1 : Real = 0.1 from(-inf : inf);
+    // "noise fitting coeff", units = ""
+    param Tmn : Real = 1.0 from(-inf : inf);
+    // "Flicker noise coeff", units = ""
+    param Klf : Real = 1.0e-14 from(-inf : inf);
+    // "G-R freq corner", units = "Hz"
+    param Fgr : Real = 60.0e3 from(-inf : inf);
+    // "flicker noise freq exp", units = ""
+    param Np : Real = 0.3 from(-inf : inf);
+    // "effective gate noise width", units = "mm"
+    param Lw : Real = 0.1 from(-inf : inf);
+
+    // "param meas T", units = "C"
+    param Tnom : Real = 25.0 from(-273.15 : inf);
+
+    wire d : Electrical;
+    wire g : Electrical;
+    wire s : Electrical;
+    wire di : Electrical;
+    wire gi : Electrical;
+    wire si : Electrical;
+    wire sii : Electrical;
+    wire gdi : Electrical;
+    wire gsi : Electrical;
+    wire bi : Electrical;
+    wire rf : Electrical;
+    wire t : Electrical;
+    wire xt1 : Electrical;
+    wire xt2 : Electrical;
+    wire ia : Electrical;
+    wire ib : Electrical;
+
+    var alpha : Real;
+    var alpha1 : Real;
+    var alpha1_n : Real;
+    var Vgd : Real;
+    var Vgs : Real;
+    var Vds : Real;
+    var Vdg : Real;
+    var Igs : Real;
+    var Igd : Real;
+    var Vth : Real;
+    var T_nom : Real;
+    var T : Real;
+    var delta_T : Real;
+    var psi : Real;
+    var Ids : Real;
+    var pg_param : Real;
+    var tanh_gs : Real;
+    var tanh_gd : Real;
+    var Cgs : Real;
+    var Cgd : Real;
+    var Qgs : Real;
+    var Qgd : Real;
+
+    var psi_1 : Real;
+    var psi_2 : Real;
+    var psi_3 : Real;
+    var psi_4 : Real;
+    var Ipk0_T : Real;
+    var Rc1 : Real;
+    var Rd1 : Real;
+    var Rs1 : Real;
+    var Lsb0_T : Real;
+    var Cgs0_T : Real;
+    var Cgd0_T : Real;
+    var Rc_T : Real;
+    var Crf_T : Real;
+    var Rd1_T : Real;
+    var Rs_T : Real;
+    var Rth_T : Real;
+    var Vtr_T : Real;
+    var Vpks_T : Real;
+    var P10_T : Real;
+    var P40_T : Real;
+    var Vjg_T : Real;
+    var Vpkm_T : Real;
+    var P1m : Real;
+    var P1_T : Real;
+    var Vpkm : Real;
+    var T0 : Real;
+    var T1 : Real;
+    var T2 : Real;
+    var T3 : Real;
+    var lambda_n : Real;
+    var lambda1_n : Real;
+    var lambda_p : Real;
+    var lambda1_p : Real;
+    var psi_n : Real;
+    var alpha_n : Real;
+    var Idsp : Real;
+    var Idsn : Real;
+    var tanh_psi : Real;
+    var tanh_psi1 : Real;
+    var tanh_psi_n : Real;
+    var tanh_psi1_n : Real;
+    var tanh_alpha_vds : Real;
+    var tanh_alpha_n_vds : Real;
+    var tanh_alpha1_vds : Real;
+    var tanh_alpha1_n_vds : Real;
+    var tanh1 : Real;
+    var tanh2 : Real;
+    var tanh3 : Real;
+    var tanh4 : Real;
+    var cosh0 : Real;
+    var cosh1 : Real;
+    var lc1 : Real;
+    var lc10 : Real;
+    var lc4 : Real;
+    var lc40 : Real;
+    var Qgs0 : Real;
+    var Qgd0 : Real;
+    var Vgsc : Real;
+    var Vgdc : Real;
+    var Ids0 : Real;
+
+    analog angelov {
+
+        Vgs = V(gsi, si);
+        Vgd = V(gi, di);
+        Vdg = -Vgd;
+        Vds = V(di, si);
+        Vgsc = Vgs;
+        Vgdc = V(gdi, di);
+
+        Ids = V(xt2);
+
+        // Initialize some variables to prevent memory states:
+        Ids0 = 0.0;
+        Qgd = 0.0;
+        Qgs = 0.0;
+        Cgd = 0.0;
+        Cgs = 0.0;
+
+        // Temperature effects
+        if ($param_given(Temp)) T = Temp + 273.15;
+        else T = $temperature + Trise;
+
+        if ($param_given(Tnom)) T_nom = Tnom + 273.15;
+        else T_nom = 300.15 + 273.15;
+
+        if (Selft) T = T + abs(V(t));
+
+        // $vt -> 8.617e-5 * temp
+        Vth = 8.617e-5 * T;
+        delta_T = abs(T - T_nom);
+
+        // Note that temperature dependence of Rs_T is done after Rs1 is
+        // calculated
+        if (delta_T > 0 || Rth > 0) begin
+            Rth_T = Rth * (1 + TcRtherm * abs(delta_T));
+            Ipk0_T = Ipk0 * (1 + Tcipk0 * abs(delta_T));
+            P1_T = P1 * (1 + Tcp1 * abs(delta_T));
+            Lsb0_T = Lsb0 * (1 + Tclsb0 * abs(delta_T));
+            Cgs0_T = Cgs0 * (1 + Tccgs0 * abs(delta_T));
+            Cgd0_T = Cgd0 * (1 + Tccgd0 * abs(delta_T));
+            Rc_T = Rc * (1 + Tcrc * abs(delta_T));
+            Crf_T = Crf * (1 + Tccrf * abs(delta_T));
+            Vpks_T = Vpks + TcVpk * delta_T;
+            P10_T = P10 + P11 * TcVpk * delta_T;
+            P40_T = P40 + P41 * TcVpk * delta_T;
+            Vjg_T = Vjg + TcVjg * delta_T;
+            Vtr_T = Vtr + TcVtr * delta_T;
+
+        end
+        else begin
+            Ipk0_T = Ipk0;
+            P1_T = P1;
+            Lsb0_T = Lsb0;
+            Cgs0_T = Cgs0;
+            Cgd0_T = Cgd0;
+            Rc_T = Rc;
+            Crf_T = Crf;
+            Vpks_T = Vpks;
+            P10_T = P10;
+            P40_T = P40;
+            Vjg_T = Vjg;
+            Vtr_T = Vtr;
+
+        end
+
+        // If Pg is not given but Ne is given, Pg = 1/(2*Ne*Vt)
+        if (!$param_given(Pg) && $param_given(Ne)) pg_param = 0.5 / Ne / Vth;
+        else pg_param = Pg;
+        // Take the given value (or default)
+
+        T0 = cosh(B2 * Vds);
+
+        P1m = P1_T * (1 + B1 / (T0 * T0));
+        Vpkm = Vpks_T - Dvpks + Dvpks * tanh(Alphas * Vds) - Vsb2 * (Vdg - Vtr) * (Vdg - Vtr_T);
+        /* Vpkm_T  = `SCALE_T_LINEAR_REL(Vpkm, TcVpk);
+               */
+        T1 = Vgs - Vpkm;
+        T2 = T1 * T1;
+        psi = P1m * T1 + P2 * T2 + P3 * T1 * T2;
+        tanh_psi = 1 + tanh(psi);
+        // limexp(x) -> exp(x)
+        tanh_psi1 = 1 + tanh(0.5 * (exp(psi) - exp(-psi)));
+        alpha = Alphar + Alphas * tanh_psi;
+        tanh_alpha_vds = tanh(alpha * Vds);
+
+        case
+            (Idsmod) 0 : begin
+                Ids0 = Ipk0_T * tanh_psi * tanh_alpha_vds * (1 + Lambda * Vds + Lsb0_T * exp(Vdg - Vtr_T));
+            end
+            1 : begin
+                T0 = Vgd - Vpkm;
+                T1 = T0 * T0;
+                T2 = T1 * T0;
+                psi_n = P1m * T0 + P2 * T1 + P3 * T2;
+                tanh_psi_n = 1 + tanh(psi_n);
+                alpha_n = Alphar + Alphas * tanh_psi_n;
+                lambda_p = Lambda + Lvg * tanh_psi;
+                Idsp = Ipk0_T * tanh_psi * (1 + tanh_alpha_vds) * (1 + lambda_p * Vds + Lsb0_T * exp((Vds - Vtr_T)));
+                lambda_n = Lambda + Lvg * tanh_psi_n;
+                tanh_alpha_n_vds = tanh(alpha_n * Vds);
+                Idsn = Ipk0_T * tanh_psi_n * (1 - tanh_alpha_n_vds) * (1 - lambda_n * Vds);
+                Ids0 = 0.5 * (Idsp - Idsn);
+            end
+            2 : begin
+                T0 = Vgs - Vpkm;
+                T1 = T0 * T0;
+                psi = P1m * (T0 + P2 * T1 + P3 * T1 * T0);
+                tanh_psi1 = 1 + tanh(0.5 * (exp(psi) - exp(-psi)));
+                alpha1 = Alphar + Alphas * tanh_psi1;
+                tanh_alpha1_vds = tanh(alpha1 * Vds);
+                lambda_p = Lambda + Lvg * tanh_psi1;
+                Ids0 = Ipk0_T * tanh_psi1 * tanh_alpha1_vds * (1 + lambda_p * Vds + Lsb0_T * exp((Vdg - Vtr_T)));
+            end
+            3 : begin
+                T0 = Vgs - Vpkm;
+                T1 = T0 * T0;
+                psi = P1m * (T0 + P2 * T1 + P3 * T1 * T0);
+
+                T2 = Vgd - Vpkm;
+                T3 = T2 * T2;
+                psi_n = P1m * (T2 + P2 * T3 + P3 * T2 * T3);
+
+                tanh_psi1 = 1 + tanh(0.5 * (exp(psi) - exp(-psi)));
+                tanh_psi1_n = 1 + tanh(0.5 * (exp(psi_n) - exp(-psi_n)));
+                alpha1 = Alphar + Alphas * tanh_psi1;
+                alpha1_n = Alphar + Alphas * tanh_psi1_n;
+                tanh_alpha1_vds = tanh(alpha1 * Vds);
+                tanh_alpha1_n_vds = tanh(alpha1_n * Vds);
+                lambda1_n = Lambda + Lvg * tanh_psi1_n;
+                lambda1_p = Lambda + Lvg * tanh_psi1;
+                Idsp = Ipk0_T * tanh_psi1 * (1 + tanh_alpha1_vds) * (1 + lambda1_p * Vds + Lsb0_T * exp((Vds - Vtr_T)));
+                Idsn = Ipk0_T * tanh_psi1_n * (1 - tanh_alpha1_n_vds) * (1 - lambda1_n * Vds);
+                Ids0 = 0.5 * (Idsp - Idsn);
+            end
+        endcase
+
+        if ((Idsmod == 0) || (Idsmod == 1)) begin
+            Rc1 = Rcmin + Rc_T / (1.0 + tanh_psi);
+            Rd1 = Rd + Rd2 * (tanh_psi);
+            Rs1 = Rs + Rd2 * (tanh_psi);
+        end
+        else begin
+            Rc1 = Rcmin + Rc_T / (1.0 + tanh_psi1);
+            Rd1 = Rd + Rd2 * (tanh_psi1);
+            Rs1 = Rs + Rd2 * (tanh_psi1);
+        end
+
+        // Do Temperature dependence of Rs/Rd
+        if (delta_T || Rth > 0) begin
+            Rs_T = Rs1 * (1 + Tcrs * abs(delta_T));
+            Rd1_T = Rd1 * (1 + Tcrs * abs(delta_T));
+            Rth_T = Rth * (1 + TcRtherm * abs(delta_T));
+        end
+        else begin
+            Rd1_T = Rd1;
+            Rs_T = Rs1;
+            Rth_T = Rth;
+        end
+
+        // Leakage diodes
+        if (Igmod == 0) begin
+            T0 = exp(pg_param * tanh(-1 * Vjg_T));
+            tanh_gs = (1 * (Vgsc - Vjg_T));
+
+            tanh_gd = (1 * (Vgdc - Vjg_T));
+
+        end
+        else begin
+            T0 = exp(-pg_param * Vjg_T);
+
+            if (Igmod == 1) begin
+                tanh_gs = tanh(Vgsc - Vjg_T);
+                tanh_gd = tanh(Vgdc - Vjg_T);
+            end
+            else begin
+                tanh_gs = (Vgsc - Vjg_T);
+                tanh_gd = (Vgdc - Vjg_T);
+            end
+        end
+
+        Igs = Ij * (exp(pg_param * tanh_gs) - T0);
+
+        Igd = Ij * (exp(pg_param * tanh_gd) - T0);
+
+        // Charge model
+
+        psi_1 = P10_T + P11 * Vgsc + P111 * Vds;
+        tanh1 = 1 + tanh(psi_1);
+        psi_2 = P20 + P21 * Vds;
+        tanh2 = 1 + tanh(psi_2);
+        psi_3 = P30 - P31 * Vds;
+        tanh3 = 1 + tanh(psi_3) - P111;
+        psi_4 = P40_T + P41 * Vgdc - P111 * Vds;
+        tanh4 = 1 + tanh(psi_4);
+
+        case
+            (Capmod) 0 : begin
+                // Linear capacitance
+                Cgs = Cgspi;
+                Cgd = Cgdpi;
+            end
+            1 : begin
+                // Bias dependent capacitance
+                Cgs = (Cgspi + Cgs0_T * tanh1 * tanh2);
+                Cgd = (Cgdpi + Cgd0_T * (tanh3 * tanh4 + 2 * P111));
+            end
+            2 : begin
+                // Charge-based (best convergence)
+                tanh2 = tanh2 - P111;
+                cosh0 = cosh(P10_T + P111 * Vds);
+                lc10 = ln(cosh0);
+                cosh1 = cosh(psi_1);
+                lc1 = ln(cosh1);
+                Qgs0 = P10_T + P111 * Vds + lc10;
+                Qgs = Cgs0_T * ((psi_1 + lc1 - Qgs0) * tanh2 / P11 + 2 * P111 * Vgsc) + Cgspi * Vgsc;
+
+                cosh0 = cosh(P40_T - P111 * Vds);
+                lc40 = ln(cosh0);
+                cosh1 = cosh(psi_4);
+                lc4 = ln(cosh1);
+                Qgd0 = P40_T - P111 * Vds + lc40;
+                Qgd = Cgd0_T * ((psi_4 + lc4 - Qgd0) * tanh3 / P41 + 2 * P111 * Vgdc) + Cgdpi * Vgdc;
+                // `ifndef __XYCE__
+                //     Cgs = ddx(Qgs, V(gsi));
+                //     Cgd = ddx(Qgd, V(gdi));
+                // `endif
+            end
+
+        endcase
+
+        I(xt1) <+ -Ids0;
+        I(xt1) <+ ddt(Tau * V(xt1));
+        I(xt2) <+ V(xt2);
+        V(xt1, xt2) <+ ddt((Tau / 3) * I(xt1, xt2));
+
+        I(di, si) <+ Ids;
+        I(gsi, si) <+ Igs;
+        I(gdi, di) <+ Igd;
+
+        if (Capmod == 2) begin
+            I(gdi, di) <+ ddt(Qgd);
+            I(gsi, si) <+ ddt(Qgs);
+        end
+        else begin
+            I(gdi, di) <+ ddt(Cgd * Vgdc);
+            I(gsi, si) <+ ddt(Cgs * Vgsc);
+        end
+
+        I(gi, di) <+ ddt(Cgdpe * V(g, di));
+        I(di, si) <+ ddt(Cds * Vds);
+
+        I(di, rf) <+ ddt(Crf_T * V(di, rf));
+        if (Rc > 0.0) begin
+            I(rf, si) <+ V(rf, si) / Rc1;
+        end
+        else V(rf, si) <+ 0.0;
+
+        I(bi, gsi) <+ ddt(Crfin * V(bi, gsi));
+
+        if (Rcin > 0.0) begin
+            I(bi, si) <+ V(bi, si) / Rcin;
+        end
+        else V(bi, si) <+ 0.0;
+
+        if (Rgd > 0.0) begin
+            I(gi, gdi) <+ V(gi, gdi) / Rgd;
+            if (Noise) I(gi, gdi) <+ white_noise(4.0 * 1.38e-23 * T * Rgd, "Rgd");
+        end
+        else V(gi, gdi) <+ 0.0;
+
+        if (Ri > 0.0) I(gi, gsi) <+ V(gi, gsi) / Ri;
+        else V(gi, gsi) <+ 0.0;
+
+        if (Rg > 0.0) begin
+            V(g, gi) <+ I(g, gi) * Rg;
+            V(g, gi) <+ ddt(Lg * I(g, gi));
+            if (Noise) V(g, gi) <+ white_noise(4.0 * 1.38e-23 * T * Rg, "Rg");
+        end
+        else if (Lg > 0) V(g, gi) <+ ddt(Lg * I(g, gi));
+        else V(g, gi) <+ 0.0;
+
+        if (Rs > 0.0) begin
+            V(si, sii) <+ I(si, sii) * Rs_T;
+            if (Noise) V(si, sii) <+ white_noise(4.0 * 1.38e-23 * T * Rs_T, "Rs");
+        end
+        else V(si, sii) <+ 0.0;
+        V(sii, s) <+ ddt(Ls * I(sii, s));
+
+        if ((Rd > 0.0) || (Rd2 > 0.0)) begin
+            V(di, d) <+ I(di, d) * Rd1_T;
+            V(di, d) <+ ddt(Ld * I(di, d));
+            if (Noise) V(di, d) <+ white_noise(4.0 * 1.38e-23 * T * Rd1, "Rd");
+        end
+        else if (Ld > 0.0) V(di, d) <+ ddt(Ld * I(di, d));
+        else V(di, d) <+ 0.0;
+
+        // Add channel noise
+        case
+            (Noimod) 0 : begin
+                // noise real NoisePwr, Idtn;
+                var NoisePwr : Real;
+                var Idtn : Real;
+                var Td_prime : Real;
+
+                Idtn = abs(Ids) + abs(Igd);
+                Td_prime = (Td + 273.15) * (1 + Tmn * tanh_psi * abs(tanh_alpha_vds) * (1 + Lambda * Vds));
+                NoisePwr = Lw * 4.0 * 1.38e-23 * T * sqrt(abs(Td_prime / T * Idtn + Td1 * Idtn * Idtn));
+                if (Noise) begin
+                    I(di, si) <+ white_noise(NoisePwr, "Ids noise");
+                    I(di, si) <+ flicker_noise(NoisePwr * Klf, Np, "Ids flicker");
+                    //`define HAVE_GRN_NOISE
+                    // `ifdef HAVE_GRN_NOISE
+                    //     if (Fgr > 0.0)
+                    //     `ifdef USE_REALFREQ
+                    //         I(di, si) <+ white_noise(NoisePwr * Klf, "Burst") * sqrt(1 / (1 + pow($realfreq / Fgr, 2)));
+                    //     `else
+                    //         I(di, si) <+ laplace_np(white_noise(Klf * NoisePwr, "Burst"), { 1 }, { 2 * M_PI * Fgr, 0.0, -2 * M_PI * Fgr, 0.0 });
+                    //     `endif
+                    // `endif
+                end
+            end
+
+            1 : begin
+                // PRCnoise real NoisePwrD, NoisePwrG, gm;
+                var NoisePwrD : Real;
+                var NoisePwrG : Real;
+                var gm : Real;
+                if (Noise) begin
+
+                    // Calc derivative with respect to internal gate voltage
+                    gm = ddx(Ids0, V(gi));
+
+                    NoisePwrD = 4.0 * 1.38e-23 * T * gm * NoiseP;
+
+                    if (gm > 0) NoisePwrG = Cgs0_T * Cgs0_T * 4.0 * 1.38e-23 * T * NoiseR / gm;
+                    else NoisePwrG = 0.0;
+
+                    begin
+                        // correlated_noise real cr, ci, cbar, k;
+                        var cr : Real;
+                        var ci : Real;
+                        var cbar : Real;
+                        var k : Real;
+                        k = 4.0 * 1.38e-23 * T * NoiseC * Cgs0_T * sqrt(NoiseP * NoiseR);
+                        cbar = sqrt(1.0 - k * k);
+                        cr = -k * 3.14159265359;
+                        ci = k * 3.14159265359;
+                        I(ia) <+ white_noise(k, "correlated noise");
+                        I(ia) <+ V(ia);
+                        I(ib) <+ white_noise(k, "correlated noise");
+                        I(ib) <+ V(ib);
+                        I(gi, si) <+ V(ia);
+                        I(gi, di) <+ cr * V(ia) + cbar * V(ib);
+                        I(gi, di) <+ ddt(-ci * V(ia));
+                    end
+
+                    // Contribute the noise
+                    I(di, si) <+ white_noise(NoisePwrD, "drain");
+                    begin
+                        // flicker_noise_eval real NoisePwr;
+                        var NoisePwr : Real;
+                        I(gi, si) <+ flicker_noise(NoisePwrG, 2, "gate");
+
+                        NoisePwr = 4.0 * 1.38e-23 * T * gm * NoiseP * Fnc;
+                        I(di, si) <+ flicker_noise(NoisePwr, 1, "flicker");
+                        if (Kf > 0) I(di, si) <+ flicker_noise(Kf * pow(Ids, Af), Ffe, "flicker");
+                    end
+                end
+            end
+
+            2 : begin
+                $strobe("Warning (%m): NoiMod=2 not supported.");
+            end
+        endcase
+
+        // For all values of Noimod:
+        I(ia) <+ V(ia);
+        I(ib) <+ V(ib);
+        if (Noise) begin
+            // Igs, Igd Shot
+            I(gsi, si) <+ white_noise(2 * 1.6e-19 * abs(Igs), "shot");
+            I(gdi, di) <+ white_noise(2 * 1.6e-19 * abs(Igd), "shot");
+            // Igs, Igd  Flicker
+            if (Kf > 0) begin
+                I(gsi, si) <+ flicker_noise(Kf * pow(abs(Igs), Af), Ffe, "flicker");
+                I(gdi, di) <+ flicker_noise(Kf * pow(abs(Igd), Af), Ffe, "flicker");
+            end
+        end
+
+        if (Selft && Rth) begin
+            I(t) <+ ddt(Cth * V(t));
+            I(t) <+ -1 * abs(-Ids * Vds + Igs * Vgsc);
+            I(t) <+ V(t) / Rth;
+        end
+        else I(t) <+ V(t) * 1e-12;
+
+    }
+
+endmod

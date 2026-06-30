@@ -1,0 +1,11 @@
+#!/bin/sh
+
+rm -rf worklib
+mkdir worklib
+
+./compile.sh
+
+ncelab plltop mixedsignal_2 -discipline logic -timescale 10ps/1ps -iereport
+ncsim plltop -analogcontrol run.scs -input run.tcl
+
+rm *.log

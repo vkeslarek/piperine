@@ -1,0 +1,12 @@
+// Test relay model
+
+simulator lang=spectre
+
+ahdl_include "relay.vams"
+
+Vin  (in 0) vsource type=sine ampl=1 freq=1kHz
+RL1  (out 0 in 0) relay
+Rout (out 0) resistor r=1
+Iout (out 0) isource type=sine ampl=1 freq=10kHz
+
+doTran tran stop=2ms

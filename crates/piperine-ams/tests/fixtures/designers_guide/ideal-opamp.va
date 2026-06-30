@@ -1,0 +1,27 @@
+// Ideal Opamp
+//
+// Has infinite gain, bandwidth, input impedance, and output conductance.
+// An ideal opamp is also known as a nullor.
+//
+// Version 1a, 15 Apr 03
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+
+`include "discipline.h"
+`include "constants.h"
+
+
+module ideal_opamp(pout, nout, pin, nin);
+output pout, nout;
+input pin, nin;
+electrical pin, nin, pout, nout;
+branch (pout,nout) out;
+branch (pin,nin) in;
+
+    analog begin
+	V(out): V(in) == 0;
+    end
+endmodule

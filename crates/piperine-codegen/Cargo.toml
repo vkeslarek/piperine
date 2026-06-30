@@ -1,0 +1,9 @@
+[package]
+name = "piperine-codegen"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+piperine-lang = { path = "../piperine-lang" }
+piperine-ams  = { path = "../piperine-ams" }
+thiserror = "2.0"

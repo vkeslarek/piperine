@@ -1,0 +1,10 @@
+// Test current source model
+
+simulator lang=spectre
+
+ahdl_include "isrc.vams"
+
+V1 (v 0) isrc dc=1
+R1 (v 0) resistor r=1
+
+doDC dc print=yes

@@ -1,0 +1,13 @@
+// Test adc model
+
+simulator lang=spectre
+
+ahdl_include "adc2.vams"
+ahdl_include "dac2.vams"
+
+Vin  (in 0) vsource type=sine ampl=0.55 dc=0.5 freq=1 delay=100ms
+Vclk (clk 0) vsource type=pulse val0=0 val1=1 period=1ms
+ADC (b7 b6 b5 b4 b3 b2 b1 b0 in clk) adc vdd=1 td=100us tt=100us
+DAC (out b7 b6 b5 b4 b3 b2 b1 b0 clk) dac vdd=1 td=100us tt=100us
+
+sineResp tran stop=1.1

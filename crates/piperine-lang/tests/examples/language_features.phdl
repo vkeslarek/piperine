@@ -1,0 +1,45 @@
+// language_features.phdl - Other language features mixed together
+
+discipline Bit   { storage Boolean; }     // two-state
+discipline Logic { storage Quad; }        // four-state
+
+enum SwState { Open, Closed }                                  // sequential → Bit[1]
+enum Phase   { Idle = 0b00, P1 = 0b01, P2 = 0b10, P3 = 0b11 }  // explicit values
+enum OpCode : Bit[32] { Mov = 0, Add, Sub, Jmp = 16 }          // explicit width
+
+bundle FilterSpec { cutoff : Real = 1.0e3, order : Natural = 2 }
+bundle DiffPair   { p : Electrical, n : Electrical }          // all nets → net-capable
+bundle Stream     { data : Bit[8], valid : Bit }
+
+bundle Complex { re : Real = 0.0, im : Real = 0.0 }
+
+impl Complex {
+    fn polar(mag: Real, ang: Real) -> Self {
+        return Complex { .re = mag * cos(ang), .im = mag * sin(ang) };
+    }
+}
+
+// Higher order functions
+fn map<T, U>(xs: T[N], f: fn(T) -> U) -> U[N] { return [ f(xs[i]) | i in 0..N ]; }
+
+fn reduce<T>(xs: T[N], op: fn(T, T) -> T) -> T {
+    if (N == 1) { return xs[0]; }
+    return op( reduce(xs[0..N/2], op), reduce(xs[N/2..N], op) );
+}
+
+// Arrays and loops in structure
+mod RcChain[N] ( inout in_ : Electrical, inout out : Electrical, inout gnd : Ground ) {
+    param r : Real = 1.0e3;  param c : Real = 1.0e-9;
+    wire  node : Electrical[N + 1];
+
+    node[0] = in_;  node[N] = out;
+    for i in 0..N {
+        Resistor  ( node[i], node[i + 1] ) { .r = r };
+        Capacitor ( node[i + 1], gnd )     { .c = c };
+    }
+}
+
+// Switch
+analog Switch {
+    if (ctrl == Closed) { V(a, b) <- 0.0; } else { I(a, b) <- 0.0; }
+}

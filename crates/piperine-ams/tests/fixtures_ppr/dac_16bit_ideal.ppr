@@ -1,0 +1,25 @@
+// VerilogA for VerilogAmsLib, dac_16bit_ideal, veriloga
+
+param NUM_DAC_BITS : Natural = 16;
+
+mod dac_16bit_ideal(in, out) {
+    input in[NUM_DAC_BITS-1:0] : Electrical;
+    output out : Electrical;
+
+    param vref : Real = 1 from(0:inf);
+    param vtrans : Real = 2.5;
+    param tdel : Real = 3u from [0:inf];
+    param trise : Real = 1u from(0:inf);
+    param tfall : Real = 1u from(0:inf);
+
+    var out_scaled : Real; // output scaled as fraction of 256
+    var i : Integer;
+
+    analog dac_16bit_ideal {
+        out_scaled = 0;
+        for (i = 0; i < NUM_DAC_BITS; i = i + 1) begin
+            out_scaled = out_scaled + ((V(in[i]) > vtrans) ? (1 << i) : 0);
+        end
+        V(out) <+ vref * out_scaled / (1 << NUM_DAC_BITS); // Simplified transition
+    }
+}

@@ -1,4 +1,4 @@
-use crate::analog::netlist::{
+use crate::analog::{
     BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier,
 };
 use crate::math::circular_array::CircularArrayBuffer2;

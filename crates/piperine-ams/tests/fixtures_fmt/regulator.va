@@ -1,0 +1,24 @@
+// Current limiting voltage regulator
+`include "disciplines.vams"
+
+module regulator(out);
+    output out;
+    electrical out;
+    real v, i;
+    parameter real vmax = 1 from(0 : inf);
+    parameter real imax = 1 from(0 : inf);
+    integer vdrv;
+
+    analog begin
+        v = V(out);
+        i = -I(< out >);
+
+        // for an explanation of this code, read Section 6.2 (pg. 71) of "The Designer's Guide to Verilog-AMS"
+        @(cross((v - vmax) / vmax - (i - imax) / imax, 0));
+        vdrv = ((v - vmax) / vmax > (i - imax) / imax);
+        if (vdrv) V(out) <+ vmax;
+        else I(out) <+ -imax;
+    end
+endmodule
+
+

@@ -1,0 +1,47 @@
+// EKV3 Edge Device Effect Calculations
+// ANALYTICAL CALCULATION OF EDGE-CONDUCTANCE EFFECT
+// Channel current and charges for the edge transistor nodes
+
+// Calculation of edge device's normalization factors
+// - Ispec_dits_edge = Ispec_dits * rWNWedge
+// - Q0_edge = Q0 * rWNWedge
+// - Gspec_dits_edge = Gspec_dits * rWNWedge
+
+// Calculation of normalized and scaled device geometry parameters
+// - dgamma_edge, dphi_edge
+
+// Calculation of differential pinch-off voltage of edge device
+// - dvp_edge
+
+// INVERSION_CHARGES calculation using QV macro
+// - qs_edge, qdp_edge
+
+// Channel current calculation for edge device
+// - ids_edge, IDS_edge
+
+// Pinch-off surface potential of edge device
+// - psi_p_edge, sqrt_psi_p_edge
+
+// Body effect coefficient of edge device
+// - gamma_b_chsh_edge
+
+// Charge slope factor calculation using NQ macro
+// - nq_edge
+
+// Charge calculations using QX and QG macros
+// - qS_edge, qD_edge, qG_edge, qB_edge
+
+// Denormalization of charges
+// - QS_edge, QD_edge, QG_edge, QB_edge
+
+// Current and capacitance contributions for different modes:
+// - DC_S: Series resistance, channel current, capacitances
+// - DC: Channel current, capacitances
+// - RF_S: Channel current, capacitances
+// - RF: Channel current, capacitances
+// - NQS: 5-segment hard-written channel segmentation
+
+mod ekv3_edge_include;
+    // This is an include file - not a standalone module
+    // Content should be inlined in ekv3.va or ekv3_all.va
+endmod

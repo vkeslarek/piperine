@@ -1,0 +1,100 @@
+// BSIM-BULK 107.2.1 released on 02/11/2025
+// BSIM Bulk MOSFET Model Equations (Verilog-A)
+// Copyright 2025 University of California
+// Project directors: Prof. Chenming Hu, Prof. Sayeef Salahuddin
+
+mod bsimbulk(d, g, s, b, t);
+    wire d, g, s, b:Electrical;
+    wire di, di1, si, si1, gi, gm, bi, sbulk, dbulk, ddbulk:Electrical;
+    wire N1, N2:Electrical;
+    wire t:Thermal;
+
+    // Instance parameters
+    param:Real L = 1.0e-5 from(0 : inf);
+    param:Real W = 1.0e-5 from(0 : inf);
+    param:Natural NF = 1 from [ 1 : inf];
+    param:Real NRS = 1.0 from [ 0 : inf];
+    param:Real NRD = 1.0 from [ 0 : inf];
+    param:Real VFBSDOFF = 0.0;
+    param:Natural MINZ = 0 from [ 0 : 1];
+    param:Natural RGATEMOD = 0 from [ 0 : 3];
+    param:Natural RBODYMOD = 0 from [ 0 : 2];
+    param:Natural GEOMOD = 0 from [ 0 : 10];
+    param:Natural RGEOMOD = 0 from [ 0 : 8];
+    param:Real RBPB = 50.0 from [ 0 : inf];
+    param:Real RBPD = 50.0 from [ 0 : inf];
+    param:Real RBPS = 50.0 from [ 0 : inf];
+    param:Real RBDB = 50.0 from [ 0 : inf];
+    param:Real RBSB = 50.0 from [ 0 : inf];
+    param:Real RDB = 50.0 from [ 0 : inf];
+    param:Real SA = 0.0;
+    param:Real SB = 0.0;
+    param:Real SD = 0.0;
+    param:Real SCA = 0.0 from(-inf : inf);
+    param:Real SCB = 0.0 from(-inf : inf);
+    param:Real SCC = 0.0 from(-inf : inf);
+    param:Real SC = 0.0 from(-inf : inf);
+    param:Real AS = 0.0 from [ 0 : inf];
+    param:Real AD = 0.0 from [ 0 : inf];
+    param:Real PS = 0.0 from [ 0 : inf];
+    param:Real PD = 0.0 from [ 0 : inf];
+    param:Real MULT_I = 1.0 from [ 0 : inf];
+    param:Real MULT_Q = 1.0 from [ 0 : inf];
+    param:Real MULT_FN = 1.0 from [ 0 : inf];
+
+    // Model parameters
+    param:Natural TYPE = 1 from [ -1 : 1 ] exclude 0;
+    param:Natural CVMOD = 0 from [ 0 : 1];
+    param:Natural COVMOD = 0 from [ 0 : 1];
+    param:Natural RDSMOD = 0 from [ 0 : 2];
+    param:Natural WPEMOD = 0 from [ 0 : 1];
+    param:Natural ASYMMOD = 0 from [ 0 : 1];
+    param:Natural GIDLMOD = 0 from [ 0 : 1];
+    param:Natural IGCMOD = 0 from [ 0 : 1];
+    param:Natural IGBMOD = 0 from [ 0 : 1];
+    param:Natural TNOIMOD = 0 from [ 0 : 1];
+    param:Natural SHMOD = 0 from [ 0 : 1];
+    param:Natural MOBSCALE = 0 from [ 0 : 1];
+    param:Real LLONG = 1.0e-5 from [ 0 : inf];
+    param:Real LMLT = 1.0 from [ 0 : inf];
+    param:Real WMLT = 1.0 from [ 0 : inf];
+    param:Real XL = 0.0;
+    param:Real WWIDE = 1.0e-5 from [ 0 : inf];
+    param:Real XW = 0.0;
+    param:Real LINT = 0.0;
+    param:Real LL = 0.0;
+    param:Real LW = 0.0;
+    param:Real LWL = 0.0;
+    param:Real LLN = 1.0;
+    param:Real LWN = 1.0;
+    param:Real WINT = 0.0;
+    param:Real WL = 0.0;
+    param:Real WW = 0.0;
+    param:Real WWL = 0.0;
+    param:Real WLN = 1.0;
+    param:Real WWI = 1.0;
+    param:Real DLC = 0.0;
+    param:Real LLC = 0.0;
+    param:Real LWC = 0.0;
+    param:Real LWLC = 0.0;
+    param:Real DWC = 0.0;
+    param:Real WLC = 0.0;
+    param:Real WWC = 0.0;
+    param:Real WWLC = 0.0;
+    param:Real TOXE = 3.0e-9 from [ 0 : inf];
+    param:Real TOXP = 3.0e-9 from [ 0 : inf];
+    param:Real DTOX = 0.0;
+    // ... (many more model parameters follow)
+
+    // Variables
+    var T0, T1, T2, T3, T4, T5, T6, T7, T8;
+    var sqrtPsip, sqrtPhis;
+    var Vth, Vdsat, Vg, Vs, Vd, Vb;
+    // ... (many more variables)
+
+    analog bsimbulk {
+        // Model equations implementation
+        // (Full BSIM-BULK model equations would be expanded here)
+        // See bsimbulk.va lines 1200-5400 for complete implementation
+    }
+endmod

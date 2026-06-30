@@ -1,0 +1,40 @@
+// EKV3 Extrinsic Diode Model
+// EXTERNAL: DIODES
+// Junction diode parameters for source and drain sides
+
+begin : DIODES
+    begin : TEMPERATURE_DIODES
+        // Current parameters with temperature dependence
+        // jss_t, jssws_t, jsswgs_t (source side)
+        // jsd_t, jsswd_t, jsswgd_t (drain side)
+
+        // Capacitance parameters with temperature dependence
+        // cjs_t, cjsws_t, cjswgs_t (source side)
+        // cjd_t, cjswd_t, cjswgd_t (drain side)
+
+        // Capacitance voltage parameters with temperature dependence
+        // pbs_t, pbsws_t, pbswgs_t (source side)
+        // pbd_t, pbswd_t, pbswgd_t (drain side)
+
+        // Trap-assisted current parameters
+        // jtss_t, jtssws_t, jtsswgs_t (source side)
+        // jtsd_t, jtsswd_t, jtsswgd_t (drain side)
+
+        // Slope parameter for trap-assisted current
+        // njtss_t, njtssws_t, njtsswgs_t (source side)
+        // njtsd_t, njtsswd_t, njtsswgd_t (drain side)
+    end
+
+    begin : SCALING_GEOMETRY_JUNCTION_DIODES
+        // Calculations of geometric characteristics of junction diodes
+        // Area and perimeter calculations for source and drain junctions
+        // as, ps (source side)
+        // ad, pd (drain side)
+        // HDIF parameter override logic
+    end
+end
+
+mod ekv3_extrinsic_diodes_include;
+    // This is an include file - not a standalone module
+    // Content should be inlined in ekv3.va
+endmod

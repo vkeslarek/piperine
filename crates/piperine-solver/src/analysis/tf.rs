@@ -1,4 +1,4 @@
-use crate::analog::netlist::{BranchIdentifier, AnalogVariable, NodeIdentifier};
+use crate::analog::{BranchIdentifier, AnalogVariable, NodeIdentifier};
 
 /// Transfer Function analysis options.
 ///

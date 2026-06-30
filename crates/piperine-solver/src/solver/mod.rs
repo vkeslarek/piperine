@@ -1,4 +1,4 @@
-use crate::analog::netlist::Netlist;
+use crate::analog::Netlist;
 use crate::math::unit::{Ohm, Siemens, UnitExt};
 use faer::{Par, set_global_parallelism};
 use ndarray::ArrayView1;
@@ -12,18 +12,6 @@ pub mod tf;
 pub mod transient;
 
 static INIT: Once = Once::new();
-
-pub fn init_solver_configuration() {
-    INIT.call_once(|| {
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
-            .with_thread_ids(true)
-            .with_thread_names(true)
-            .init();
-
-        set_global_parallelism(Par::Rayon(NonZeroUsize::new(1).unwrap()));
-    });
-}
 
 #[derive(Debug, Clone)]
 pub struct Context {
@@ -63,17 +51,25 @@ impl Default for Context {
 }
 
 impl Context {
+    pub fn init_global() {
+        INIT.call_once(|| {
+            tracing_subscriber::fmt()
+                .with_max_level(tracing::Level::INFO)
+                .with_thread_ids(true)
+                .with_thread_names(true)
+                .init();
+
+            set_global_parallelism(Par::Rayon(NonZeroUsize::new(1).unwrap()));
+        });
+    }
+
     pub fn has_converged(
         &self,
         old_values_opt: Option<ArrayView1<f64>>,
         new_values: &ArrayView1<f64>,
         netlist: &Netlist,
     ) -> bool {
-        if old_values_opt.is_none() {
-            return false;
-        }
-
-        let old_values = old_values_opt.unwrap();
+        let Some(old_values) = old_values_opt else { return false; };
 
         netlist
             .all_references()

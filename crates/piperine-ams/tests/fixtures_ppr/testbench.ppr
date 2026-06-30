@@ -1,0 +1,29 @@
+// `timescale 10ns / 10ps
+// `include "disciplines.vams"
+
+mod testbench;
+
+digital testbench {
+    wire gnd : Ground;
+
+    var clk : Bit = 0;
+
+    initial begin
+        // Clock generation
+        clk = 1;
+        # 10 clk = 0;
+        # 10 clk = 1;
+        # 10 clk = 0;
+        # 10 clk = 1;
+    end
+
+    // Note: instances and structural code would go here
+}
+
+mod buffer ( output out : Bit, input in_ : Bit ) {
+    digital buffer {
+        out <- in_;
+    }
+}
+
+endmodule

@@ -2,12 +2,12 @@ use crate::analysis::ac::AcAnalysisContext;
 use crate::analysis::dc::DcAnalysisResult;
 use crate::analysis::noise::{NoiseAnalysisOptions, NoiseAnalysisResult};
 use crate::circuit::CircuitInstance;
-use crate::analog::netlist::{AnalogReference, AnalogVariable};
+use crate::analog::{AnalogReference, AnalogVariable};
 use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
 use crate::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
 use crate::math::unit::UnitExt;
 use crate::solver::dc::DcSolver;
-use crate::solver::{Context, init_solver_configuration};
+use crate::solver::Context;
 use ndarray::Array1;
 use num_complex::Complex;
 
@@ -53,7 +53,7 @@ impl<'a> NoiseSolver<'a> {
         options: NoiseAnalysisOptions,
         context: Context,
     ) -> crate::result::Result<Self> {
-        init_solver_configuration();
+        Context::init_global();
 
         let dc_point = DcSolver::new(circuit, context.clone())?.solve()?;
 
@@ -102,7 +102,7 @@ impl<'a> NoiseSolver<'a> {
             let adjoint_sol = self.solve_adjoint_system(stamps)?;
 
             let mut step_density = 0.0;
-            for source in self.circuit.all_runtimes_mut() {
+            for source in self.circuit.all_devices_mut() {
                 let noises = source.noise_current_psd(&self.dc_point, &ac_ctx);
                 for n in noises {
                     let z_p = self
@@ -191,7 +191,7 @@ impl<'a> NoiseSolver<'a> {
         let ac_ctx = AcAnalysisContext {
             frequency: f_hz.Hz(),
         };
-        Ok(circuit.all_runtimes_mut()
+        Ok(circuit.all_devices_mut()
             .iter_mut()
             .flat_map(|ac| ac.load_ac(dc_point, &ac_ctx, context))
             .collect())

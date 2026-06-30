@@ -1,0 +1,13 @@
+// Test shunt RLC models
+
+simulator lang=spectre
+
+ahdl_include "shunt_rlc.vams"
+
+I1  (n1 0)  isource type=pulse
+X1  (n1 0)  shunt_rlc1 r=1 l=1uH c=1uH
+I2  (n2 0)  isource type=pulse
+X2  (n2 0)  shunt_rlc2 r=1 l=1uH c=1uH
+
+doDC dc print=yes
+doTran tran stop=10us

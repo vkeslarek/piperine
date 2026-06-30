@@ -1,0 +1,60 @@
+`include "discipline.h"
+`include"constants.h"
+ 
+module skin_effect(t1, t2);
+ 
+electrical t1, t2;
+parameter real f0=1 from (0:inf);
+parameter real f1=10 from (f0:inf);
+parameter real r0=1 from (0:inf);
+// parameter integer lumps=10 from (1:40];
+`define lumps 10
+real mult, mult2, wp, wz;
+real zeros[0:2*`lumps-1], poles[0:2*`lumps-1];
+integer i;
+ 
+    analog begin
+        @(initial_step("static")) begin
+            // $strobe("f0 = %f, f1= %f, r0 = %f\n", f0, f1, r0);
+            mult = pow(f1/f0, 1.0/(4*`lumps));
+	    mult2 = mult*mult;
+            wz = 2*`M_PI*mult*f0;
+            wp = mult2*wz;
+            for (i=0; i < `lumps; i=i+1) begin
+                zeros[2*i] = -wz;
+                zeros[2*i+1] = 0;
+                poles[2*i] = -wp;
+                poles[2*i+1] = 0;
+                wz = mult2 * wp;
+                wp = mult2 * wz;
+                // $strobe("zero[%d] = %f, %f   pole[%d] = %f, %f\n",
+                //         i, zeros[2*i]/(2*`M_PI), zeros[2*i+1]/(2*`M_PI),
+                //         i, poles[2*i]/(2*`M_PI), poles[2*i+1]/(2*`M_PI));
+            end
+        end
+        V(t1,t2) <+ r0*laplace_zp( I(t1,t2), zeros, poles );
+    end
+endmodule
+ 
+
+
+
+
+
+module lossy_ind(t1, t2);
+ 
+electrical t1, t2;
+parameter real esr=0.01 from (0:inf);
+parameter real rcp=1.0 from (0:inf);
+parameter real cp=10f from (0:inf);
+parameter real l=1n from (0:inf);
+parameter real k=1e-5 from (0:1);	// k and h specify the same thing
+parameter real h=1/(1.414*k) from (1:inf);	// specify only one
+electrical n1, n2;
+ 
+    resistor #(.r(rcp)) Rp (n2, t2);
+    skin_effect #(.r0(esr), .f0(esr*esr*h*h),
+                             .f1(1/(2*`M_PI*sqrt(l*cp)))) Hr (t1, n1);
+    capacitor #(.c(cp)) Cp (t1, n2);
+    inductor #(.l(l)) L (n1, t2);
+endmodule
