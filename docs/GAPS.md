@@ -60,16 +60,6 @@
 > are **done** — `crates/piperine-lang/src/elab/typecheck.rs`, with
 > passing tests (`width_mismatch_on_named_connection_is_caught`, etc.).
 
-### B.3 Bundle-typed connections don't fan out field-by-field
-
-**Severity:** High · **Affects:** any bundle-typed wire/port connected by
-a bare identifier
-
-Port *expansion* works, but the connection side doesn't: `eval_net_ref`
-only flattens `Ident.field` (`a.x` → `a_x`), not a bare bundle identifier
-on a connection (`bundle1 = bundle2` doesn't fan out per-field). Needs
-`BundleDecl` exposed on `Design` (see I.1) plus a per-field
-discipline/width check in `typecheck.rs`.
 
 ### B.5 No `Boolean`→`Quad` implicit widening or cast enforcement
 
@@ -704,7 +694,7 @@ circuits; negligible for most others.
 
 | ID | Gap | Severity | Affects |
 |----|-----|----------|---------|
-| B.3 | Bundle connections don't fan out field-by-field | High | bundle wires/ports |
+
 | B.5 | No `Boolean`→`Quad` widening / cast enforcement | Medium | typecheck |
 | C.2 | `UInt[N]`/`SInt[N]` not in prelude | High | generic bit-vector examples |
 | D.1 | `V(p,n) <- expr` (ideal voltage source) rejected | Critical | vsrc, ccvs, mut, vcvs |

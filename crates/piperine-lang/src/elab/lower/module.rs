@@ -132,13 +132,23 @@ impl Elaborator {
         type_subst: &HashMap<String, String>,
     ) -> Result<Module, ElabError> {
         let mut ports = Vec::new();
-        for port in &decl.ports.clone() {
+        let mut local_types: HashMap<String, String> = HashMap::new();
+        for port in &decl.ports {
+            let resolved_name = type_subst.get(&port.ty.name).map(|s| s.as_str()).unwrap_or(&port.ty.name);
+            local_types.insert(port.name.clone(), resolved_name.to_string());
             ports.extend(self.expand_port(port, env, type_subst)?);
+        }
+
+        for stmt in &decl.body {
+            if let ModStmt::WireDecl { name, ty } = stmt {
+                let resolved_name = type_subst.get(&ty.name).map(|s| s.as_str()).unwrap_or(&ty.name);
+                local_types.insert(name.clone(), resolved_name.to_string());
+            }
         }
 
         let mut items: Vec<ModBodyItem> = Vec::new();
         let body = decl.body.clone();
-        self.lower_mod_stmts(&body, env, type_subst, &mut items)?;
+        self.lower_mod_stmts(&body, env, type_subst, &local_types, &mut items)?;
 
         let mut params = Vec::new();
         let mut wires = Vec::new();
@@ -167,11 +177,12 @@ impl Elaborator {
         stmts: &[ModStmt],
         env: &mut ConstEnv,
         type_subst: &HashMap<String, String>,
+        local_types: &HashMap<String, String>,
         out: &mut Vec<ModBodyItem>,
     ) -> Result<(), ElabError> {
         for stmt in stmts {
             let stmt = stmt.clone();
-            self.lower_mod_stmt(&stmt, env, type_subst, out)?;
+            self.lower_mod_stmt(&stmt, env, type_subst, local_types, out)?;
         }
         Ok(())
     }
@@ -186,6 +197,7 @@ impl Elaborator {
         stmt: &ModStmt,
         env: &mut ConstEnv,
         type_subst: &HashMap<String, String>,
+        local_types: &HashMap<String, String>,
         out: &mut Vec<ModBodyItem>,
     ) -> Result<(), ElabError> {
         match stmt {
@@ -220,6 +232,19 @@ impl Elaborator {
             }
 
             ModStmt::WireDecl { name, ty } => {
+                let resolved_name = type_subst.get(&ty.name).map(|s| s.as_str()).unwrap_or(&ty.name);
+                if let Some(bundle) = self.bundles.get(resolved_name).cloned() {
+                    if self.is_net_capable_bundle(resolved_name) {
+                        for field in &bundle.fields {
+                            let field_ty = self.resolve_net_type(&field.ty, env, type_subst)?;
+                            out.push(ModBodyItem::Wire(Wire {
+                                name: format!("{}_{}", name, field.name),
+                                ty: field_ty,
+                            }));
+                        }
+                        return Ok(());
+                    }
+                }
                 let nt = self.resolve_net_type(ty, env, type_subst)?;
                 out.push(ModBodyItem::Wire(Wire { name: name.clone(), ty: nt }));
             }
@@ -273,7 +298,7 @@ impl Elaborator {
                     env.push();
                     env.define(var.clone(), ConstVal::Nat(i));
                     let body = body.clone();
-                    self.lower_mod_stmts(&body, env, type_subst, out)?;
+                    self.lower_mod_stmts(&body, env, type_subst, local_types, out)?;
                     env.pop();
                 }
             }
@@ -289,7 +314,7 @@ impl Elaborator {
                     _ => else_body.as_deref().unwrap_or(&[]),
                 };
                 let taken = taken.to_vec();
-                self.lower_mod_stmts(&taken, env, type_subst, out)?;
+                self.lower_mod_stmts(&taken, env, type_subst, local_types, out)?;
             }
 
             ModStmt::Instance {
@@ -340,10 +365,25 @@ impl Elaborator {
                 }
 
                 // Resolve port connections to concrete net references.
-                let elab_ports = ports
-                    .iter()
-                    .map(|p| self.eval_net_ref(p, env))
-                    .collect::<Result<Vec<_>, _>>()?;
+                let mut elab_ports = Vec::new();
+                for p in ports {
+                    let mut expanded = false;
+                    if let crate::parse::ast::Expr::Ident(p_name) = p {
+                        if let Some(ty_name) = local_types.get(p_name) {
+                            if let Some(bundle) = self.bundles.get(ty_name).cloned() {
+                                if self.is_net_capable_bundle(ty_name) {
+                                    expanded = true;
+                                    for field in &bundle.fields {
+                                        elab_ports.push(crate::pom::net_type::NetRef::simple(format!("{}_{}", p_name, field.name)));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !expanded {
+                        elab_ports.push(self.eval_net_ref(p, env)?);
+                    }
+                }
 
                 // Resolve param overrides. A `BundleLit` override (GAPS
                 // §I.14, e.g. `.model = ResModel { .rsh = 50.0 }`) flattens
@@ -378,9 +418,27 @@ impl Elaborator {
             }
 
             ModStmt::Connection { lhs, rhs } => {
-                let lhs_ref = self.eval_net_ref(lhs, env)?;
-                let rhs_ref = self.eval_net_ref(rhs, env)?;
-                out.push(ModBodyItem::Conn(Connection { lhs: lhs_ref, rhs: rhs_ref }));
+                let mut is_bundle_conn = false;
+                if let (crate::parse::ast::Expr::Ident(l_name), crate::parse::ast::Expr::Ident(r_name)) = (lhs, rhs) {
+                    if let Some(l_ty_name) = local_types.get(l_name) {
+                        if let Some(bundle) = self.bundles.get(l_ty_name).cloned() {
+                            if self.is_net_capable_bundle(l_ty_name) {
+                                is_bundle_conn = true;
+                                for field in &bundle.fields {
+                                    let l_ref = crate::pom::net_type::NetRef::simple(format!("{}_{}", l_name, field.name));
+                                    let r_ref = crate::pom::net_type::NetRef::simple(format!("{}_{}", r_name, field.name));
+                                    out.push(ModBodyItem::Conn(Connection { lhs: l_ref, rhs: r_ref }));
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if !is_bundle_conn {
+                    let lhs_ref = self.eval_net_ref(lhs, env)?;
+                    let rhs_ref = self.eval_net_ref(rhs, env)?;
+                    out.push(ModBodyItem::Conn(Connection { lhs: lhs_ref, rhs: rhs_ref }));
+                }
             }
         }
         Ok(())
