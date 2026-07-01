@@ -152,6 +152,9 @@ impl Elaborator {
             prog.modules_map_mut().entry(name).or_insert(elab_mod);
         }
 
+        // GAPS §J.4 — resolve calls to built-in casts and validate diagnostics
+        crate::elab::resolve::resolve_calls(&mut prog)?;
+
         // GAPS §B.1 + §B.2 — the typecheck pass walks every module's
         // connections and rejects width mismatches and discipline
         // crossings. Runs after elaboration (so all port/wire/instance

@@ -18,7 +18,9 @@
 use std::collections::HashMap;
 
 use crate::pom::module::Module;
-use crate::pom::net_type::NetType;
+use crate::pom::net_type::{NetType, ValueType};
+use crate::pom::{Behavior, BehaviorStmt};
+use crate::parse::ast::Expr;
 use crate::pom::{ElabError, Instance, Module as DesignModule};
 
 /// Run the typecheck pass over every module of the elaborated program.
@@ -88,6 +90,11 @@ fn check_module(
                 rhs: r_d,
             });
         }
+    }
+    
+    // Check behaviors (GAPS §B.5)
+    for behavior in &module.behaviors {
+        check_behavior(module, behavior, &locals)?;
     }
 
     // Check every instance port binding.
@@ -439,5 +446,113 @@ mod tests {
         let err = typecheck_program(&prog).unwrap_err().to_string();
         assert!(err.contains("multiple drivers") || err.contains("MultipleDrivers"),
             "expected multiple drivers error, got: {err}");
+    }
+}
+
+fn check_behavior(
+    module: &DesignModule,
+    behavior: &Behavior,
+    nets: &std::collections::HashMap<String, NetType>,
+) -> Result<(), ElabError> {
+    let mut locals: std::collections::HashMap<String, ValueType> = std::collections::HashMap::new();
+    
+    // Populate nets as their underlying value types
+    for (name, net_ty) in nets {
+        // Just use Quad for digital nets, Real for analog nets
+        let vty = match net_ty.discipline_name() {
+            "Electrical" | "Thermal" | "Magnetic" | "Kinematic" | "Optical" => ValueType::Real,
+            _ => ValueType::Quad, // Digital logic
+        };
+        locals.insert(name.clone(), vty);
+    }
+    
+    for stmt in &behavior.body {
+        check_behavior_stmt(stmt, module, behavior, &mut locals)?;
+    }
+    Ok(())
+}
+
+fn check_behavior_stmt(
+    stmt: &BehaviorStmt,
+    module: &DesignModule,
+    behavior: &Behavior,
+    locals: &mut std::collections::HashMap<String, ValueType>,
+) -> Result<(), ElabError> {
+    match stmt {
+        BehaviorStmt::VarDecl { name, ty, .. } => {
+            locals.insert(name.clone(), ty.clone());
+        }
+        BehaviorStmt::Bind { dest, src, .. } => {
+            let dest_ty = type_of_expr(dest, locals);
+            let src_ty = type_of_expr(src, locals);
+            if let (Some(d), Some(s)) = (dest_ty, src_ty) {
+                if d != s {
+                    // Boolean -> Quad is the only allowed implicit widening
+                    if d == ValueType::Quad && s == ValueType::Boolean {
+                        // Allowed
+                    } else {
+                        return Err(ElabError::Other(format!(
+                            "typecheck ({}::{}): implicit cast from {:?} to {:?} not allowed. Use an explicit cast.",
+                            module.name(), behavior.name, s, d
+                        )));
+                    }
+                }
+            }
+        }
+        BehaviorStmt::If { then_body, else_body, .. } => {
+            for s in then_body {
+                check_behavior_stmt(s, module, behavior, locals)?;
+            }
+            if let Some(eb) = else_body {
+                for s in eb {
+                    check_behavior_stmt(s, module, behavior, locals)?;
+                }
+            }
+        }
+        BehaviorStmt::Match { arms, .. } => {
+            for arm in arms {
+                for s in arm.body() {
+                    check_behavior_stmt(s, module, behavior, locals)?;
+                }
+            }
+        }
+        BehaviorStmt::Event { body, .. } => {
+            for s in body {
+                check_behavior_stmt(s, module, behavior, locals)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn type_of_expr(expr: &Expr, locals: &std::collections::HashMap<String, ValueType>) -> Option<ValueType> {
+    match expr {
+        Expr::Literal(crate::parse::ast::Literal::Int(_)) => Some(ValueType::Integer),
+        Expr::Literal(crate::parse::ast::Literal::Real(_)) => Some(ValueType::Real),
+        Expr::Literal(crate::parse::ast::Literal::Bool(_)) => Some(ValueType::Boolean),
+        Expr::Literal(crate::parse::ast::Literal::Quad(_)) => Some(ValueType::Quad),
+        Expr::Literal(crate::parse::ast::Literal::String(_)) => Some(ValueType::Str),
+        Expr::Ident(name) => locals.get(name).cloned(),
+        Expr::Cast(target, _) => {
+            match target.as_str() {
+                "real" => Some(ValueType::Real),
+                "int" => Some(ValueType::Integer),
+                "bit" => Some(ValueType::Quad),
+                "Boolean" => Some(ValueType::Boolean),
+                "Quad" => Some(ValueType::Quad),
+                _ => None,
+            }
+        }
+        Expr::Binary(lhs, op, _rhs) => {
+            use crate::parse::ast::BinaryOp;
+            match op {
+                BinaryOp::Eq | BinaryOp::Neq | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge |
+                BinaryOp::And | BinaryOp::Or => Some(ValueType::Boolean),
+                _ => type_of_expr(lhs, locals),
+            }
+        }
+        Expr::Unary(_, inner) => type_of_expr(inner, locals),
+        _ => None, // Cannot infer or complex
     }
 }

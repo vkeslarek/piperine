@@ -450,6 +450,7 @@ pub enum Expr {
     Unary(UnaryOp, Box<Expr>),
     Binary(Box<Expr>, BinaryOp, Box<Expr>),
     Call(Box<Expr>, Vec<Expr>),
+    Cast(String, Box<Expr>),
     Index(Box<Expr>, Box<Expr>),
     Slice(Box<Expr>, Range),
     Field(Box<Expr>, String),

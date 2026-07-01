@@ -719,7 +719,6 @@ circuits; negligible for most others.
 | J.1 | `$bound_step` etc. share one AST variant (cosmetic) | Low | AST cleanliness only |
 | J.2 | `$finish`/`$stop`/`$fatal` have no runtime effect | Medium | simulation-control tasks |
 | J.3 | `$assert` not a real assertion | Medium | `@initial` setup validation |
-| J.4 | Diagnostic names unvalidated; casts not recognized | Low/Medium | diagnostics; prereq for B.5 |
 | K.1 | `from_elab` path — mostly removed, confirm fully closed | Medium | codegen maintenance |
 | K.2 | `IrFunction` table is dead data | High | IR/codegen contract honesty |
 | K.4 | IR net refs are flat strings | Medium | prereq for F.3 |

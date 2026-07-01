@@ -375,9 +375,8 @@ impl DigitalInterpreter {
                 eval_unop(op, v)
             }
 
-            Expr::Call(_func, _args) => {
-                DigitalVal::Natural(0)
-            }
+            Expr::Call(_func, _args) => DigitalVal::Natural(0),
+            Expr::Cast(_target, inner) => self.eval_expr(inner, nets),
 
             Expr::SysCall(_, _) => DigitalVal::Natural(0),
 

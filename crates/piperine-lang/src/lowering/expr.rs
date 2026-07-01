@@ -216,6 +216,7 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
         Expr::Array(body) => lower_array(body, ctx),
 
         // Unsupported in analog scalar context
+        Expr::Cast(_target, inner) => lower_expr(inner, ctx),
         Expr::BundleLit { .. } | Expr::Lambda { .. } => IrExpr::Real(0.0),
     }
 }
