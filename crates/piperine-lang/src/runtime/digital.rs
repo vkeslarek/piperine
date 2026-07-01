@@ -104,6 +104,9 @@ pub struct DigitalInterpreter {
 
     /// Device identity stamp placed on every emitted `DigitalEvent`.
     device_id: usize,
+
+    /// Deferred updates for internal state variables from digital assignments.
+    deferred_updates: Vec<(String, DigitalVal)>,
 }
 
 impl DigitalInterpreter {
@@ -125,6 +128,7 @@ impl DigitalInterpreter {
             state: HashMap::new(),
             seq: 0,
             device_id,
+            deferred_updates: Vec::new(),
         }
     }
 
@@ -209,6 +213,10 @@ impl DigitalInterpreter {
         }
         self.body = body;
 
+        for (name, val) in self.deferred_updates.drain(..) {
+            self.state.insert(name, val);
+        }
+
         // Snapshot current values of our input nets for next edge detection.
         for &net in &self.input_nets {
             if let Some(&lv) = nets.get(net.0) {
@@ -276,7 +284,7 @@ impl DigitalInterpreter {
                 let val = self.eval_expr(src, nets);
                 if let Some(name) = expr_ident_name(dest) {
                     if let Some(&dnet) = self.port_net_map.get(name) {
-                        // Output to a digital net → schedule event.
+                        // Output to a digital net → schedule event (inherently deferred/non-blocking).
                         let lv = val.as_logic();
                         let seq = self.seq;
                         self.seq += 1;
@@ -288,8 +296,8 @@ impl DigitalInterpreter {
                             seq,
                         }));
                     } else {
-                        // Internal state variable.
-                        self.state.insert(name.to_string(), val);
+                        // Internal state variable (deferred/non-blocking update).
+                        self.deferred_updates.push((name.to_string(), val));
                     }
                 }
             }
@@ -570,4 +578,42 @@ pub fn compile_digital_module(
         output_names,
         device_id,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parse::ast::{BindOp, Expr as PExpr};
+    use piperine_solver::digital::{LogicValue, DigitalEvent};
+    use std::collections::BinaryHeap;
+
+    #[test]
+    fn test_digital_assignment_is_non_blocking() {
+        let mut queue = BinaryHeap::new();
+        let mut map = HashMap::new();
+        map.insert("clk".to_string(), DigitalNet(0));
+
+        // Test that ALL assignments in digital blocks are non-blocking!
+        // a = 1; b = a; -> b should get the old value of a (0), while a gets 1.
+        let mut interp = DigitalInterpreter::new(
+            vec![
+                BehaviorStmt::Event {
+                    spec: EventSpec::Named { name: "change".to_string(), arg: PExpr::Ident("clk".to_string()) },
+                    guard: None,
+                    body: vec![
+                        BehaviorStmt::Bind { dest: PExpr::Ident("a".to_string()), op: BindOp::Assign, src: PExpr::Literal(crate::parse::ast::Literal::Int(1)) },
+                        BehaviorStmt::Bind { dest: PExpr::Ident("b".to_string()), op: BindOp::Assign, src: PExpr::Ident("a".to_string()) },
+                    ]
+                }
+            ],
+            vec!["clk".to_string()], vec![], 0
+        );
+        interp.set_port_nets(map);
+        interp.state.insert("a".to_string(), DigitalVal::Natural(0));
+        interp.state.insert("b".to_string(), DigitalVal::Natural(0));
+        
+        interp.eval(1.0, &[LogicValue::One], &mut queue);
+        assert_eq!(interp.state.get("a").unwrap(), &DigitalVal::Natural(1));
+        assert_eq!(interp.state.get("b").unwrap(), &DigitalVal::Natural(0)); // b gets OLD a
+    }
 }

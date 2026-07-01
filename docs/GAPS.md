@@ -154,16 +154,7 @@ the branch. Needs the missing `IrStmt` variants wired into the IR→
 interpreter lowering; unbounded `while`/`repeat`/`forever` should reject,
 not attempt.
 
-### D.7 `NonBlocking` (`<=`) vs `Assign` (`=`) distinction collapsed
 
-**Severity:** High · **Affects:** any pipeline/shift-register digital
-pattern
-
-Both lower to the same `Bind{op: Force}`, dropping delay/event semantics
-— a 2-stage shift register (`s1 <= s2; s2 <= d;`) collapses instead of
-pipelining correctly. Needs the blocking/non-blocking distinction
-preserved through IR, with the interpreter scheduling non-blocking writes
-at the next delta cycle.
 
 ### D.8 `$limit("pnjlim"|"fetlim", ...)` rejected; `limexp` is stateless
 
@@ -385,15 +376,7 @@ OSDI tests deliberately avoid voltage sources because of it. Needs
 `Netlist` to allocate branch-current indices and the matrix dimension to
 grow accordingly.
 
-### H.5 `init_digital()` never called by the transient solver
 
-**Severity:** Medium (bug) · **Affects:** any digital device relying on
-`initial` events (DFF reset, etc.)
-
-`CircuitInstance::init_digital` exists and works but
-`TransientSolver::new` never calls it — tests currently work around this
-by manually pre-populating digital state. One-line fix: call it after
-topology build.
 
 ### H.6 BJT excess phase (PTF) has no state-recurrence operator
 
@@ -702,7 +685,6 @@ circuits; negligible for most others.
 | D.3 | `ddx`/`delay`/`transition`/`slew`/`laplace_*`/`zi_*` rejected | Medium | filter/waveform models |
 | D.5 | User `fn` inlining missing (analog reject / digital 0) | High | any model with helper fns |
 | D.6 | Digital `if`/`match`/loops unreachable from IR path | High | digital state machines |
-| D.7 | `<=` vs `=` distinction collapsed | High | pipeline/shift-register patterns |
 | D.8 | `$limit`/`pnjlim`/`fetlim` rejected; `limexp` stateless | High | dio, bjt, jfet, mos1 |
 | D.9 | `ac_stim` rejected — AC analysis has no stimulus | Medium | vsrc, isrc |
 | D.10 | `$analysis` rejected — no DC/tran branching | Medium | vsrc, isrc |
@@ -723,7 +705,6 @@ circuits; negligible for most others.
 | H.2 | LTE timestep control dead; `$bound_step` has zero effect | Medium | transient step sizing |
 | H.3 | No gmin/source stepping | Medium | hard-nonlinear DC |
 | H.4 | No MNA branch-current rows | Critical | prerequisite for D.1 |
-| H.5 | `init_digital()` never called | Medium (bug) | digital reset patterns |
 | H.6 | BJT excess phase (PTF) unimplemented | Low | bjt at RF |
 | H.7 | Diode breakdown: first-order approx, not 25-iter fixed point | Low | dio near breakdown |
 | I.1 | `BundleDecl` not exposed on `Design` | High | prereq for B.3, I.3, I.6 |

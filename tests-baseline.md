@@ -61,7 +61,7 @@ Phase 0 grand total: **229 passing**.
 
 ## After phase 3 (CLI)
 
-**261 passing** (current — added 2 CLI tests for `check` command, and 1 for bundle fan-out).
+**262 passing** (current — added 2 CLI tests for `check` command, 1 for bundle fan-out, and 1 for digital interpreter non-blocking behavior).
 
 ## Breakdown at current state
 
@@ -77,5 +77,6 @@ Phase 0 grand total: **229 passing**.
 | `tests/ams_ir_e2e_tests.rs` | 7 | AMS boilerplate (resistor/capacitor/vsource/isource/vramp/vstep/noisy) |
 | `crates/piperine-cli/tests/cli_check_tests.rs` | 2 | CLI `check` against AMS and PPR |
 | `tests/b3_tests.rs` | 1 | Bundle connection fan-out test |
+| `crates/piperine-lang/src/runtime/digital.rs` | 1 | Digital interpreter assignment test |
 
-Any drop below 261 means a regression.
+Any drop below 262 means a regression.
