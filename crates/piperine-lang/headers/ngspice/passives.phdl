@@ -9,6 +9,10 @@
 // All equations are translated line-by-line from the C source.
 // ════════════════════════════════════════════════════════════════════════════
 
+use piperine::constants;
+use piperine::disciplines;
+use piperine::ngspice::constants;
+
 // ════════════════════════════════════════════════════════════════════════════
 //  RESISTOR  (ngspice `R` element, res device)
 //  Source: restemp.c, resload.c
@@ -56,11 +60,11 @@ analog res {
     // Instance r wins; then geometry (rsh); then model.r; else 1 mΩ fallback.
     var r_nom : Real =
         if ($param_given("r")) { r }
-        else { if (l_eff * w_eff * model.rsh > 0.0) {
+        else if (l_eff * w_eff * model.rsh > 0.0) {
             model.rsh * (l_eff - model.short) / (w_eff - model.narrow)
         }
-        else { if (model.r > 0.0) { model.r }
-        else { 1.0e-3 } } };
+        else if (model.r > 0.0) { model.r }
+        else { 1.0e-3 };
 
     // ── Temperature coefficient (restemp.c:79-94) ────────────────────────────
     // Instance tc1/tc2 override model tc1/tc2.
@@ -135,13 +139,13 @@ analog cap {
 
     // ── narrow / short from del (capsetup.c) ─────────────────────────────────
     var nar : Real = if ($param_given("narrow")) { model.narrow }
-                     else { if (model.del > 0.0) { 2.0 * model.del } else { model.narrow } };
+                     else if (model.del > 0.0) { 2.0 * model.del } else { model.narrow };
     var sho : Real = if ($param_given("short")) { model.short }
-                     else { if (model.del > 0.0) { 2.0 * model.del } else { model.short } };
+                     else if (model.del > 0.0) { 2.0 * model.del } else { model.short };
 
     // ── cj derivation from thick/di (capsetup.c:71-81) ───────────────────────
     var cj_eff : Real = model.cj;
-    if (ng_and(cj_eff == 0.0, model.thick > 0.0)) {
+    if (cj_eff == 0.0 && model.thick > 0.0) {
         cj_eff = if (model.di > 0.0) { model.di * NG_EPS0 / model.thick }
                  else { NG_EPS_SIO2 / model.thick };
     }
@@ -149,8 +153,8 @@ analog cap {
     // ── Capacitance derivation (captemp.c:42-52) ─────────────────────────────
     var c_nom : Real =
         if ($param_given("c")) { c }
-        else { if (model.c > 0.0) { model.c }
-        else { cj_eff * (w_eff - nar) * (l - sho) + model.cjsw * 2.0 * ((l - sho) + (w_eff - nar)) } };
+        else if (model.c > 0.0) { model.c }
+        else { cj_eff * (w_eff - nar) * (l - sho) + model.cjsw * 2.0 * ((l - sho) + (w_eff - nar)) };
 
     // ── Temperature coefficient (captemp.c:54-60) ────────────────────────────
     var tc1_eff : Real = if ($param_given("tc1")) { tc1 } else { model.tc1 };
@@ -222,8 +226,8 @@ analog ind {
     // ── Inductance derivation (indtemp.c:38-46) ──────────────────────────────
     var l_nom : Real =
         if ($param_given("l")) { l }
-        else { if ($param_given("nt")) { spec_ind * nt * nt }
-        else { model.nt * model.nt * spec_ind } };
+        else if ($param_given("nt")) { spec_ind * nt * nt }
+        else { model.nt * model.nt * spec_ind };
 
     // ── Temperature coefficient (indtemp.c:48-54) ────────────────────────────
     var tc1_eff : Real = if ($param_given("tc1")) { tc1 } else { model.tc1 };

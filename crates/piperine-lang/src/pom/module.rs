@@ -103,6 +103,29 @@ impl Instance {
 impl Named for Instance { fn name(&self) -> &str { self.name() } }
 impl Kinded for Instance { fn kind(&self) -> Kind { Kind::Instance } }
 
+// ─────────────────────────────── Var ─────────────────────────────────────────
+
+/// A module-level persistent variable (GAPS §I.15), e.g. `var sw_state :
+/// Real = 0.0;` in a switch's `mod` body. Unlike a `var` declared inside an
+/// `analog`/`digital` block (which is inlined at lowering time), a
+/// module-level `var` survives across evaluations — it is the PHDL
+/// equivalent of a C `static` local, used for things like hysteresis state.
+#[derive(Debug, Clone)]
+pub struct Var {
+    pub name: String,
+    pub ty: ValueType,
+    pub init: Option<ConstVal>,
+}
+
+impl Var {
+    pub fn name(&self) -> &str { &self.name }
+    pub fn value_type(&self) -> &ValueType { &self.ty }
+    pub fn init(&self) -> Option<&ConstVal> { self.init.as_ref() }
+}
+
+impl Named for Var { fn name(&self) -> &str { self.name() } }
+impl Kinded for Var { fn kind(&self) -> Kind { Kind::Var } }
+
 // ─────────────────────────────── Connection ──────────────────────────────────
 
 /// A named connection between two net references.
@@ -127,6 +150,10 @@ pub struct Module {
     pub ports: Vec<Port>,
     pub params: Vec<Param>,
     pub wires: Vec<Wire>,
+    /// Module-level persistent variables (GAPS §I.15). Empty unless the
+    /// `mod` body declares `var`s directly (as opposed to `var`s inside an
+    /// `analog`/`digital` block, which are local and inlined at lowering).
+    pub vars: Vec<Var>,
     pub instances: Vec<Instance>,
     pub connections: Vec<Connection>,
     pub behaviors: Vec<Behavior>,
@@ -134,6 +161,8 @@ pub struct Module {
 
 impl Module {
     /// Construct a new Module (used by the elaborator and codegen).
+    /// Module-level `var`s are empty; use struct-literal construction if
+    /// the module declares persistent state.
     #[doc(hidden)]
     pub fn new(
         name: String,
@@ -144,7 +173,7 @@ impl Module {
         connections: Vec<Connection>,
         behaviors: Vec<Behavior>,
     ) -> Self {
-        Self { name, ports, params, wires, instances, connections, behaviors }
+        Self { name, ports, params, wires, vars: Vec::new(), instances, connections, behaviors }
     }
 
     /// The module's name.
@@ -158,6 +187,8 @@ impl Module {
     pub fn params(&self) -> &[Param] { &self.params }
     /// All wires of the module.
     pub fn wires(&self) -> &[Wire] { &self.wires }
+    /// All module-level persistent variables (GAPS §I.15).
+    pub fn vars(&self) -> &[Var] { &self.vars }
     /// All submodule instances of the module.
     pub fn instances(&self) -> &[Instance] { &self.instances }
     /// All named connections of the module.

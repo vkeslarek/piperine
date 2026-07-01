@@ -12,6 +12,10 @@
 // tfinal) are read via $simparam.
 // ════════════════════════════════════════════════════════════════════════════
 
+use piperine::constants;
+use piperine::disciplines;
+use piperine::ngspice::constants;
+
 // ── Waveform helper functions (pure, inline into contributions) ─────────────
 
 // SINE(VO VA FREQ TD THETA PHASE) — vsrcload.c SINE case
@@ -24,10 +28,10 @@ fn ng_sin(t: Real, vo: Real, va: Real, freq: Real, td: Real, theta: Real, phase:
 // PULSE(V1 V2 TD TR TF PW PER) — vsrcload.c PULSE case
 fn ng_pulse(t: Real, v1: Real, v2: Real, td: Real, tr: Real, tf: Real, pw: Real, per: Real) -> Real {
     var tp : Real = t - td;
-    if (ng_and(per > 0.0, tp > per)) {
+    if (per > 0.0 && tp > per) {
         tp = tp - per * floor(tp / per);
     }
-    if (ng_or(tp <= 0.0, tp >= tr + pw + tf)) { return v1; }
+    if (tp <= 0.0 || tp >= tr + pw + tf) { return v1; }
     if (tp < tr) { return v1 + (v2 - v1) * tp / tr; }
     if (tp <= tr + pw) { return v2; }
     return v2 + (v1 - v2) * (tp - tr - pw) / tf;

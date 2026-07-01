@@ -10,8 +10,8 @@ impl<'a> Parser<'a> {
     // ─────────────────────────── §8.2  Expressions ───────────────────────────
     //
     // Operator precedence (lowest to highest):
-    //   BitOr(|)=1  BitAnd(&)=2  Eq/Neq=3  Rel<<=>>==4  BitXor(^)=5
-    //   Add/Sub=6   Mul/Div/%=7
+    //   Or(||)=1  And(&&)=2  BitOr(|)=3  BitAnd(&)=4  Eq/Neq=5  Rel<<=>>==6
+    //   BitXor(^)=7  Add/Sub=8   Mul/Div/%=9
 
     /// Parses a full expression including all binary operators (bit-OR allowed).
     pub(crate) fn parse_expr(&mut self) -> Result<Expr, String> {
@@ -42,25 +42,50 @@ impl<'a> Parser<'a> {
     }
 
     /// Peeks at the next token; if it is a binary operator, returns `(op, precedence)`.
-    /// Precedence levels: BitOr=1, BitAnd=2, Eq/Neq=3, Relational=4, BitXor=5, Add/Sub=6, Mul/Div/Rem=7.
+    /// Precedence levels: Or=1, And=2, BitOr=3, BitAnd=4, Eq/Neq=5, Relational=6,
+    /// BitXor=7, Add/Sub=8, Mul/Div/Rem=9.
     pub(crate) fn peek_binary_op(&self) -> Option<(BinaryOp, u8)> {
         match self.peek() {
-            Some(Tok::BitOr)  => Some((BinaryOp::BitOr, 1)),
-            Some(Tok::BitAnd) => Some((BinaryOp::BitAnd, 2)),
-            Some(Tok::EqEq)   => Some((BinaryOp::Eq, 3)),
-            Some(Tok::NotEq)  => Some((BinaryOp::Neq, 3)),
-            Some(Tok::Lt)     => Some((BinaryOp::Lt, 4)),
-            Some(Tok::Le)     => Some((BinaryOp::Le, 4)),
-            Some(Tok::Gt)     => Some((BinaryOp::Gt, 4)),
-            Some(Tok::Ge)     => Some((BinaryOp::Ge, 4)),
-            Some(Tok::BitXor) => Some((BinaryOp::BitXor, 5)),
-            Some(Tok::Plus)   => Some((BinaryOp::Add, 6)),
-            Some(Tok::Minus)  => Some((BinaryOp::Sub, 6)),
-            Some(Tok::Star)   => Some((BinaryOp::Mul, 7)),
-            Some(Tok::Slash)  => Some((BinaryOp::Div, 7)),
-            Some(Tok::Percent)=> Some((BinaryOp::Rem, 7)),
+            Some(Tok::Or)     => Some((BinaryOp::Or, 1)),
+            Some(Tok::And)    => Some((BinaryOp::And, 2)),
+            Some(Tok::BitOr)  => Some((BinaryOp::BitOr, 3)),
+            Some(Tok::BitAnd) => Some((BinaryOp::BitAnd, 4)),
+            Some(Tok::EqEq)   => Some((BinaryOp::Eq, 5)),
+            Some(Tok::NotEq)  => Some((BinaryOp::Neq, 5)),
+            Some(Tok::Lt)     => Some((BinaryOp::Lt, 6)),
+            Some(Tok::Le)     => Some((BinaryOp::Le, 6)),
+            Some(Tok::Gt)     => Some((BinaryOp::Gt, 6)),
+            Some(Tok::Ge)     => Some((BinaryOp::Ge, 6)),
+            Some(Tok::BitXor) => Some((BinaryOp::BitXor, 7)),
+            Some(Tok::Plus)   => Some((BinaryOp::Add, 8)),
+            Some(Tok::Minus)  => Some((BinaryOp::Sub, 8)),
+            Some(Tok::Star)   => Some((BinaryOp::Mul, 9)),
+            Some(Tok::Slash)  => Some((BinaryOp::Div, 9)),
+            Some(Tok::Percent)=> Some((BinaryOp::Rem, 9)),
             _ => None,
         }
+    }
+
+    /// Parses an `if (cond) { .. } else ..` expression. The `else` arm may be
+    /// another `if` (an `else if` chain) instead of a block; that nested
+    /// `if`-expression is wrapped in a single-expression [`Block`] so
+    /// `Expr::If` only ever needs one shape for `else_body`. Elaboration and
+    /// lowering already recurse through nested `Expr::If`, so no changes are
+    /// needed downstream — this only teaches the parser the `else if` shape.
+    fn parse_if_expr(&mut self) -> Result<Expr, String> {
+        self.expect_ident_str("if")?;
+        self.expect(&Tok::LParen)?;
+        let cond = self.parse_expr()?;
+        self.expect(&Tok::RParen)?;
+        let then_body = self.parse_block()?;
+        self.expect_ident_str("else")?;
+        let else_body = if matches!(self.peek(), Some(Tok::Ident(s)) if s == "if") {
+            let nested = self.parse_if_expr()?;
+            Block { stmts: vec![], expr: Some(Box::new(nested)) }
+        } else {
+            self.parse_block()?
+        };
+        Ok(Expr::If { cond: Box::new(cond), then_body, else_body })
     }
 
     // ─────────────────────────── §8.3  Primaries ─────────────────────────────
@@ -92,14 +117,7 @@ impl<'a> Parser<'a> {
             }
             Some(Tok::Ident(s)) => {
                 if s == "if" {
-                    self.pos += 1;
-                    self.expect(&Tok::LParen)?;
-                    let cond = self.parse_expr()?;
-                    self.expect(&Tok::RParen)?;
-                    let then_body = self.parse_block()?;
-                    self.expect_ident_str("else")?;
-                    let else_body = self.parse_block()?;
-                    Expr::If { cond: Box::new(cond), then_body, else_body }
+                    self.parse_if_expr()?
                 } else {
                     let id = s.clone();
                     self.pos += 1;

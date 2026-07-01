@@ -11,6 +11,10 @@
 // All equations translated line-by-line from the C source.
 // ════════════════════════════════════════════════════════════════════════════
 
+use piperine::constants;
+use piperine::disciplines;
+use piperine::ngspice::constants;
+
 bundle JfetModel {
     // ── Type ──────────────────────────────────────────────────────────────────
     njf     : Boolean = 1,         // 1 = NJF, 0 = PJF
@@ -128,7 +132,7 @@ analog jfet {
 
     // Sydney-University B factor (jfetload.c:265)
     var bfac : Real = 0.0;
-    if (ng_and(model.b != 1.0, model.pb != model.vto)) {
+    if (model.b != 1.0 && model.pb != model.vto) {
         bfac = (1.0 - model.b) / (model.pb - model.vto);
     }
 

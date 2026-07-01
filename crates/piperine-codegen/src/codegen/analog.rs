@@ -48,6 +48,9 @@ mod libm_wrappers {
     pub extern "C" fn fmax(a: f64, b: f64) -> f64 { a.max(b) }
     pub extern "C" fn floor(x: f64) -> f64 { x.floor() }
     pub extern "C" fn ceil(x: f64) -> f64  { x.ceil() }
+    pub extern "C" fn sinh(x: f64) -> f64  { x.sinh() }
+    pub extern "C" fn cosh(x: f64) -> f64  { x.cosh() }
+    pub extern "C" fn tanh(x: f64) -> f64  { x.tanh() }
 }
 
 fn libm_funs() -> Vec<(&'static str, usize, *const u8)> {
@@ -69,6 +72,9 @@ fn libm_funs() -> Vec<(&'static str, usize, *const u8)> {
         ("fmax",  2, libm_wrappers::fmax  as *const u8),
         ("floor", 1, libm_wrappers::floor as *const u8),
         ("ceil",  1, libm_wrappers::ceil  as *const u8),
+        ("sinh",  1, libm_wrappers::sinh  as *const u8),
+        ("cosh",  1, libm_wrappers::cosh  as *const u8),
+        ("tanh",  1, libm_wrappers::tanh  as *const u8),
     ]
 }
 

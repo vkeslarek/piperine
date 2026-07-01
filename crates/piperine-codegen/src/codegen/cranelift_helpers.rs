@@ -39,6 +39,9 @@ pub fn emit_math(ctx: &mut ExprCtx, name: &str, a0: Value, a1: Value) -> Option<
         "max"   => emit_libm2(ctx, "fmax",  a0, a1),
         "floor" => emit_libm1(ctx, "floor", a0),
         "ceil"  => emit_libm1(ctx, "ceil",  a0),
+        "sinh"  => emit_libm1(ctx, "sinh",  a0),
+        "cosh"  => emit_libm1(ctx, "cosh",  a0),
+        "tanh"  => emit_libm1(ctx, "tanh",  a0),
         // limexp: exp(min(u, 80))
         "limexp" => {
             let cap = ctx.builder.ins().f64const(80.0);
@@ -56,7 +59,7 @@ pub fn is_builtin_math(name: &str) -> bool {
         name,
         "exp" | "ln" | "log" | "log10" | "sqrt" | "abs" | "sin" | "cos" | "tan"
             | "asin" | "acos" | "atan" | "atan2" | "pow" | "min" | "max"
-            | "floor" | "ceil" | "limexp"
+            | "floor" | "ceil" | "limexp" | "sinh" | "cosh" | "tanh"
     )
 }
 

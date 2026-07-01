@@ -45,6 +45,46 @@ pub enum ElabError {
     /// An expression could not be reduced to a net reference.
     #[error("expression cannot be reduced to a net reference: {0}")]
     NotANetRef(String),
+    /// GAPS §B.1 — two nets connected in a `Module`'s `connections` list
+    /// have mismatched widths (e.g. `Bit[8]` connected to `Bit[4]`).
+    #[error("width mismatch in `{module}`: {lhs} ({lhs_w}) ↔ {rhs} ({rhs_w})")]
+    WidthMismatch {
+        module: String,
+        lhs: String,
+        rhs: String,
+        lhs_w: u64,
+        rhs_w: u64,
+    },
+    /// GAPS §B.2 — two nets connected in a `Module`'s `connections` list
+    /// have mismatched disciplines (e.g. `Electrical` connected to
+    /// `Thermal`). The §10 no-magic rule requires an explicit converter.
+    #[error("discipline crossing `{lhs}` ↔ `{rhs}` in module `{module}` requires an explicit converter (§10)")]
+    DisciplineCrossing {
+        module: String,
+        lhs: String,
+        rhs: String,
+    },
+    /// GAPS §I.14 — a `param` declared with a bundle type names a bundle
+    /// that was never declared.
+    #[error("unknown bundle `{0}`")]
+    UnknownBundle(String),
+    /// GAPS §I.14 — a bundle literal used as a `param` default (or an
+    /// instance override) names a field the bundle doesn't have.
+    #[error("bundle `{bundle}` has no field `{field}`")]
+    BundleFieldUnknown { bundle: String, field: String },
+    /// GAPS §I.14 — a bundle-typed `param`'s default must be a bundle
+    /// literal of the same bundle type (`Foo {}` or `Foo { .f = e, .. }`).
+    #[error("bundle param `{param}` default must be a `{expected}` literal, found {found}")]
+    BundleParamDefault { param: String, expected: String, found: String },
+    /// GAPS §I.14 — a bundle field has no default and no override was
+    /// given, so the flattened scalar param has no value to fall back to.
+    #[error("bundle field `{bundle}.{field}` has no default and was not overridden in param `{param}`")]
+    BundleFieldNoDefault { param: String, bundle: String, field: String },
+    /// GAPS §I.14 — a module both declares a bundle-typed `param` and an
+    /// explicit scalar `param` whose name collides with the flattened
+    /// `{param}_{field}` naming convention.
+    #[error("param `{0}` collides with a flattened bundle field name")]
+    BundleParamNameCollision(String),
     /// A catch-all for other elaboration errors.
     #[error("{0}")]
     Other(String),

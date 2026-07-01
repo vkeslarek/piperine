@@ -385,6 +385,13 @@ fn diff_call(name: &str, args: &[IrExpr], wrt: &str) -> IrExpr {
         "asin" => div(du, call1("sqrt", sub(lit(1.0), mul(u.clone(), u)))),
         "acos" => div(neg(du), call1("sqrt", sub(lit(1.0), mul(u.clone(), u)))),
         "atan" => div(du, add(lit(1.0), mul(u.clone(), u))),
+        // sinh' = cosh; cosh' = sinh; tanh' = 1 - tanh^2
+        "sinh" => mul(call1("cosh", u), du),
+        "cosh" => mul(call1("sinh", u), du),
+        "tanh" => mul(
+            sub(lit(1.0), mul(call1("tanh", u.clone()), call1("tanh", u))),
+            du,
+        ),
         // (|u|)' = sign(u) * u'
         "abs" => mul(
             IrExpr::Select(

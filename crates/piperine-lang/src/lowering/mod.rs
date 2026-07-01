@@ -1,15 +1,17 @@
 //! Lower `Design` (PPR/PHDL) → `IrProgram`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::pom::Design;
 
 use piperine_codegen::ir::*;
 
+mod analog_ops;
 mod event;
 mod expr;
 mod stmt;
 mod structure;
+mod syscalls;
 
 use structure::{convert_fn, convert_mod};
 use stmt::lower_stmts;
@@ -32,6 +34,13 @@ pub(crate) struct LowerCtx {
     /// arm pick the digital-drive form (`IrStmt::Assign`) instead of the
     /// analog-force form (`IrStmt::Force`).
     is_digital: bool,
+    /// Names of the owning module's persistent `var`s (GAPS §I.15), e.g.
+    /// `sw_state`. Looked up by `Expr::Ident` *after* the local `env` (so a
+    /// behavior-local `var` of the same name still shadows it) to decide
+    /// whether an identifier lowers to `IrExpr::Var` (runtime state) or
+    /// `IrExpr::Param`. Assignments to these names lower to a real
+    /// `IrStmt::Assign` instead of being inlined into `env`.
+    module_vars: HashSet<String>,
 }
 
 impl LowerCtx {
@@ -43,6 +52,7 @@ impl LowerCtx {
             noise_sources: vec![],
             counter: 0,
             is_digital: false,
+            module_vars: HashSet::new(),
         }
     }
 
@@ -74,12 +84,13 @@ pub fn ppr_to_ir(prog: &Design) -> IrProgram {
         for behavior in m.behaviors() {
             let mut ctx = LowerCtx::new();
             ctx.is_digital = behavior.is_digital();
+            ctx.module_vars = m.vars().iter().map(|v| v.name().to_string()).collect();
             let stmts = lower_stmts(behavior.body(), &mut ctx);
             if behavior.is_analog() {
                 module.analog = Some(IrAnalogBody {
                     state_vars: ctx.state_vars,
                     noise_sources: ctx.noise_sources,
-                    vars: vec![],
+                    vars: module.vars.clone(),
                     stmts,
                 });
             } else {

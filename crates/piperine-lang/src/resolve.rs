@@ -60,6 +60,21 @@ impl std::fmt::Display for ResolveError {
     }
 }
 
+/// Aggregator for `use piperine::ngspice;` — pulls in every NGSPICE faithful
+/// device header in one `use`. Individual devices can still be imported on
+/// their own via `use piperine::ngspice::diode;`, etc.
+const NGSPICE_AGGREGATOR: &str = "
+use piperine::ngspice::constants;
+use piperine::ngspice::diode;
+use piperine::ngspice::bjt;
+use piperine::ngspice::jfet;
+use piperine::ngspice::mos;
+use piperine::ngspice::passives;
+use piperine::ngspice::sources;
+use piperine::ngspice::switches;
+use piperine::ngspice::controlled;
+";
+
 // ─────────────────────────────── Resolver ───────────────────────────────────
 
 /// Resolves `use` declarations and provides the standard-library prelude.
@@ -107,6 +122,49 @@ impl Resolver {
         builtins.insert(
             vec!["piperine".into(), "prelude".into()],
             include_str!("../headers/prelude.phdl"),
+        );
+        // GAPS I-series — NGSPICE faithful device headers, wired up as
+        // `piperine::ngspice::<device>` so they can be pulled in via `use`.
+        // `piperine::ngspice` alone is an aggregator that pulls all of them.
+        builtins.insert(
+            vec!["piperine".into(), "ngspice".into()],
+            NGSPICE_AGGREGATOR,
+        );
+        builtins.insert(
+            vec!["piperine".into(), "ngspice".into(), "constants".into()],
+            include_str!("../headers/ngspice/ngspice_constants.phdl"),
+        );
+        builtins.insert(
+            vec!["piperine".into(), "ngspice".into(), "diode".into()],
+            include_str!("../headers/ngspice/diode.phdl"),
+        );
+        builtins.insert(
+            vec!["piperine".into(), "ngspice".into(), "bjt".into()],
+            include_str!("../headers/ngspice/bjt.phdl"),
+        );
+        builtins.insert(
+            vec!["piperine".into(), "ngspice".into(), "jfet".into()],
+            include_str!("../headers/ngspice/jfet.phdl"),
+        );
+        builtins.insert(
+            vec!["piperine".into(), "ngspice".into(), "mos".into()],
+            include_str!("../headers/ngspice/mos.phdl"),
+        );
+        builtins.insert(
+            vec!["piperine".into(), "ngspice".into(), "passives".into()],
+            include_str!("../headers/ngspice/passives.phdl"),
+        );
+        builtins.insert(
+            vec!["piperine".into(), "ngspice".into(), "sources".into()],
+            include_str!("../headers/ngspice/sources.phdl"),
+        );
+        builtins.insert(
+            vec!["piperine".into(), "ngspice".into(), "switches".into()],
+            include_str!("../headers/ngspice/switches.phdl"),
+        );
+        builtins.insert(
+            vec!["piperine".into(), "ngspice".into(), "controlled".into()],
+            include_str!("../headers/ngspice/controlled.phdl"),
         );
         Self { root: None, builtins, cache: HashMap::new() }
     }

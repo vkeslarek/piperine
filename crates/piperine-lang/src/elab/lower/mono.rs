@@ -141,6 +141,7 @@ impl Elaborator {
             ports: vec![],
             params: vec![],
             wires: vec![],
+            vars: vec![],
             instances: vec![],
             connections: vec![],
             behaviors: vec![],

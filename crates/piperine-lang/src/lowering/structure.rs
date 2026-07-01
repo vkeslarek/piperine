@@ -42,6 +42,17 @@ pub(crate) fn convert_mod(m: &Module) -> IrModule {
         }
     }).collect();
 
+    // GAPS §I.15 — module-level persistent `var`s. Mirrored into
+    // `IrAnalogBody.vars` too (see `ppr_to_ir`) so the analog body is
+    // self-describing about which names are runtime state vs. params.
+    let vars = m.vars().iter().map(|v| {
+        IrVarDecl {
+            name: v.name().to_string(),
+            ty: elab_value_type_to_ir(v.value_type()),
+            init: v.init().map(const_val_to_ir),
+        }
+    }).collect();
+
     let instances = m.instances().iter().filter_map(|inst| {
         Some(IrInstance {
             label: inst.name().to_string(),
@@ -67,7 +78,7 @@ pub(crate) fn convert_mod(m: &Module) -> IrModule {
         wires,
         branches: vec![],
         events: vec![],
-        vars: vec![],
+        vars,
         grounds: vec![],
         instances,
         connections,

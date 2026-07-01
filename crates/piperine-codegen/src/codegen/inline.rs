@@ -308,6 +308,6 @@ fn is_builtin_math(name: &str) -> bool {
         name,
         "exp" | "ln" | "log" | "log10" | "sqrt" | "abs" | "sin" | "cos" | "tan"
             | "asin" | "acos" | "atan" | "atan2" | "pow" | "min" | "max"
-            | "floor" | "ceil" | "limexp"
+            | "floor" | "ceil" | "limexp" | "sinh" | "cosh" | "tanh"
     )
 }

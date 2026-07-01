@@ -151,6 +151,12 @@ impl Elaborator {
             prog.modules_map_mut().entry(name).or_insert(elab_mod);
         }
 
+        // GAPS §B.1 + §B.2 — the typecheck pass walks every module's
+        // connections and rejects width mismatches and discipline
+        // crossings. Runs after elaboration (so all port/wire/instance
+        // bindings are typed) and before codegen.
+        crate::elab::typecheck::typecheck_program(&prog.modules)?;
+
         Ok(prog)
     }
 

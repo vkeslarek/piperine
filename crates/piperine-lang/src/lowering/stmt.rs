@@ -39,8 +39,18 @@ pub(crate) fn lower_stmt(stmt: &BehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt>
         BehaviorStmt::Bind { dest, op: BindOp::Assign, src } => {
             if let Expr::Ident(name) = dest {
                 let val = lower_expr(src, ctx);
-                ctx.env.insert(name.clone(), val);
-                vec![]
+                // GAPS §I.15 — a write to a module-level persistent `var`
+                // (and not shadowed by a same-named behavior-local `var`)
+                // is real runtime state: emit an `IrStmt::Assign` instead
+                // of inlining into `env`. `merge_branch_ctx` only looks at
+                // `env`, so this deliberately bypasses phi-merging — the
+                // write is unconditional IR, not a value substitution.
+                if !ctx.env.contains_key(name) && ctx.module_vars.contains(name) {
+                    vec![IrStmt::Assign { lval: name.clone(), expr: val, delay: None, event: None }]
+                } else {
+                    ctx.env.insert(name.clone(), val);
+                    vec![]
+                }
             } else {
                 vec![]
             }

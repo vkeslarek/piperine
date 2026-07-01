@@ -23,8 +23,7 @@
 //    $analysis("kind")      analysis selector: "dc", "ac", "tran", "noise"
 //
 //  Built-in math: exp, limexp, ln, log, log10, sqrt, abs, sin, cos, tan,
-//  asin, acos, atan, atan2, pow, min, max, floor, ceil.
-//  Hyperbolic functions (sinh, cosh, tanh) are defined below as pure fns.
+//  asin, acos, atan, atan2, pow, min, max, floor, ceil, sinh, cosh, tanh.
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── Physical constants (ngspice const.h / defines.h) ────────────────────────
@@ -50,36 +49,10 @@ fn ng_egfet(t: Real) -> Real {
     return 1.16 - (7.02e-4 * t * t) / (t + 1108.0);
 }
 
-// Hyperbolic functions — not built-in, defined as pure real fns.
-// These inline into contributions and are differentiated for the Jacobian.
-fn sinh(x: Real) -> Real {
-    return (exp(x) - exp(0.0 - x)) / 2.0;
-}
-
-fn cosh(x: Real) -> Real {
-    return (exp(x) + exp(0.0 - x)) / 2.0;
-}
-
-fn tanh(x: Real) -> Real {
-    var e2x : Real = exp(2.0 * x);
-    return (e2x - 1.0) / (e2x + 1.0);
-}
-
 // Signum: +1 for x ≥ 0, −1 for x < 0.
 fn ng_sign(x: Real) -> Real {
     if (x < 0.0) { return -1.0; }
     return 1.0;
-}
-
-// Logical AND / OR for Boolean values (ng_and(ng_or(, and, are not in the PHDL grammar))).
-fn ng_and(a: Boolean, b: Boolean) -> Boolean {
-    if (a) { return b; }
-    return 0;
-}
-
-fn ng_or(a: Boolean, b: Boolean) -> Boolean {
-    if (a) { return 1; }
-    return b;
 }
 
 // Clamp x to [lo, hi].

@@ -224,6 +224,10 @@ impl ConstEnv {
             (BitOr, Bool(a), Bool(b)) => Ok(Bool(a | b)),
             (BitXor, Bool(a), Bool(b)) => Ok(Bool(a ^ b)),
 
+            // Logical
+            (And, Bool(a), Bool(b)) => Ok(Bool(a && b)),
+            (Or, Bool(a), Bool(b)) => Ok(Bool(a || b)),
+
             _ => Err(ConstEvalError::TypeMismatch),
         }
     }

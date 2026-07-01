@@ -40,6 +40,18 @@ fn ir_analog_compile_capacitor() {
 }
 
 #[test]
+fn ir_analog_compile_tanh_builtin() {
+    // GAPS I.13 — sinh/cosh/tanh are builtin math (not user fns), so they
+    // must compile through the JIT like any other builtin call.
+    let ir = parse_ppr(r#"
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod T (inout p : Electrical, inout n : Electrical) { param g : Real = 1.0; }
+        analog T { I(p, n) <+ g * tanh(V(p, n)); }
+    "#);
+    let _dev = piperine_codegen::ir_analog_to_device(&ir, "T").expect("tanh compiles");
+}
+
+#[test]
 fn ir_digital_compile_dff() {
     let src = "
         discipline Bit { storage Boolean; }

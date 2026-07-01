@@ -12,6 +12,10 @@
 // Equations translated from swload.c / cswload.c.
 // ════════════════════════════════════════════════════════════════════════════
 
+use piperine::constants;
+use piperine::disciplines;
+use piperine::ngspice::constants;
+
 bundle SwModel {
     vt   : Real = 0.0,          // threshold voltage (V)
     vh   : Real = 0.0,          // hysteresis voltage (V) — may be negative

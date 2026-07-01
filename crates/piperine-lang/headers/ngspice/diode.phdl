@@ -10,6 +10,10 @@
 // All equations are translated line-by-line from the C source.
 // ════════════════════════════════════════════════════════════════════════════
 
+use piperine::constants;
+use piperine::disciplines;
+use piperine::ngspice::constants;
+
 bundle DioModel {
     // ── DC transfer ──────────────────────────────────────────────────────────
     is     : Real = 1.0e-14,    // saturation current (A)
@@ -222,7 +226,7 @@ analog dio {
     var vd : Real = V(pp, n);
 
     // Voltage limiting for convergence (dioload.c:180-191, DEVpnjlim)
-    if (ng_and(model.bv < 1.0e98, vd < min(0.0, 0.0 - tBrkdwnV + 10.0 * vtebrk))) {
+    if (model.bv < 1.0e98 && vd < min(0.0, 0.0 - tBrkdwnV + 10.0 * vtebrk)) {
         vd = 0.0 - ($limit("pnjlim", 0.0 - (vd + tBrkdwnV), 0.0, vtebrk, tVcrit) + tBrkdwnV);
     } else {
         vd = $limit("pnjlim", vd, 0.0, vte, tVcrit);
@@ -242,7 +246,7 @@ analog dio {
         var evd : Real = limexp(vd / vte);
         cdb = csat * (evd - 1.0);
         gdb = csat * evd / vte;
-    } else if (ng_or(model.bv >= 1.0e98, vd >= 0.0 - tBrkdwnV)) {
+    } else if (model.bv >= 1.0e98 || vd >= 0.0 - tBrkdwnV) {
         // Reverse region — cubic extension (dioload.c:241-244)
         var arg : Real = 3.0 * vte / (vd * NG_E);
         arg = arg * arg * arg;
@@ -269,7 +273,7 @@ analog dio {
             var evd : Real = limexp(vd / vtesw);
             cdsw = csatsw * (evd - 1.0);
             gdsw = csatsw * evd / vtesw;
-        } else if (ng_or(model.bv >= 1.0e98, vd >= 0.0 - tBrkdwnV)) {
+        } else if (model.bv >= 1.0e98 || vd >= 0.0 - tBrkdwnV) {
             var argsw : Real = 3.0 * vtesw / (vd * NG_E);
             argsw = argsw * argsw * argsw;
             cdsw = 0.0 - csatsw * (1.0 + argsw);
@@ -306,7 +310,7 @@ analog dio {
 
     if (vd >= 0.0 - 3.0 * vte) {
         // Forward — IKF high-level injection (dioload.c:279-283)
-        if (ng_and(model.ikf > 0.0, cd > 1.0e-18)) {
+        if (model.ikf > 0.0 && cd > 1.0e-18) {
             var sqrt_ikf : Real = sqrt(cd / model.ikf);
             cd = cd / (1.0 + sqrt_ikf) + gmin * vd;
         } else {
@@ -314,7 +318,7 @@ analog dio {
         }
     } else {
         // Reverse — IKR (dioload.c:291-295)
-        if (ng_and(model.ikr > 0.0, cd < 0.0 - 1.0e-18)) {
+        if (model.ikr > 0.0 && cd < 0.0 - 1.0e-18) {
             var sqrt_ikr : Real = sqrt(cd / (0.0 - model.ikr));
             cd = cd / (1.0 + sqrt_ikr) + gmin * vd;
         } else {

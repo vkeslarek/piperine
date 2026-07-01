@@ -34,6 +34,7 @@
 pub mod const_eval;
 pub mod event;
 pub mod lower;
+pub mod typecheck;
 
 use crate::pom::{Design, ElabError};
 pub use lower::Elaborator;

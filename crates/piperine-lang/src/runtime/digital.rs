@@ -465,6 +465,8 @@ fn eval_binop(op: &BinaryOp, l: DigitalVal, r: DigitalVal) -> DigitalVal {
         (BinaryOp::BitAnd, Natural(a), Natural(b)) => Natural(a & b),
         (BinaryOp::BitOr,  Natural(a), Natural(b)) => Natural(a | b),
         (BinaryOp::BitXor, Natural(a), Natural(b)) => Natural(a ^ b),
+        (BinaryOp::And, Bool(a), Bool(b)) => Bool(*a && *b),
+        (BinaryOp::Or,  Bool(a), Bool(b)) => Bool(*a || *b),
 
         _ => Natural(0),
     }

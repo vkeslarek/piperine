@@ -203,12 +203,37 @@ pub fn from_ir(program: &IrProgram, top: &str) -> Result<CircuitInstance, String
                 params,
             );
             dev.allocate_nodes(&terminal_list, &mut netlist);
+            // Register the device's terminal names so the noise-PSD
+            // evaluator's `V(plus, minus)` lookups can resolve (GAPS §D.4).
+            let port_names: Vec<String> = child.ports.iter().map(|p| p.name.clone()).collect();
+            dev.set_terminal_names(port_names);
+            // Thread the IR's noise sources through to the device (GAPS
+            // §D.4). The IR `IrNoiseSource.plus` / `.minus` are terminal
+            // *names*; resolve them against `child.ports` to get the index
+            // into the device's `node_refs` (which was populated in
+            // port order by `allocate_nodes`).
+            if let Some(body) = &child.analog {
+                for noise in &body.noise_sources {
+                    let plus_idx = child.ports.iter().position(|p| p.name == noise.plus);
+                    let minus_idx = child.ports.iter().position(|p| p.name == noise.minus);
+                    if let (Some(p), Some(m)) = (plus_idx, minus_idx) {
+                        dev.add_noise_source_by_index(
+                            p, m,
+                            noise.plus.clone(),
+                            noise.minus.clone(),
+                            noise.kind.clone(),
+                        );
+                    }
+                }
+            }
             devices.push(Box::new(dev));
         }
     }
 
     Ok(CircuitInstance::from_devices_and_netlist(top, devices, netlist))
 }
+
+/// Best-effort compile-time evaluation of an [`IrExpr`] to an `f64`.
 
 /// Best-effort compile-time evaluation of an [`IrExpr`] to an `f64`.
 ///

@@ -493,7 +493,7 @@ pub enum UnaryOp {
 }
 
 /// Binary operators in precedence order (lowest to highest when parsing):
-/// `|` < `&` < `==` `!=` < `<` `<=` `>` `>=` < `^` < `+` `-` < `*` `/` `%`
+/// `||` < `&&` < `|` < `&` < `==` `!=` < `<` `<=` `>` `>=` < `^` < `+` `-` < `*` `/` `%`
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinaryOp {
     Add,
@@ -510,4 +510,8 @@ pub enum BinaryOp {
     BitAnd,
     BitOr,
     BitXor,
+    /// Logical AND (`&&`).
+    And,
+    /// Logical OR (`||`).
+    Or,
 }

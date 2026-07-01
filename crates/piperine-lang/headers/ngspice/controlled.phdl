@@ -17,6 +17,8 @@
 // All formulas translated from the respective *load.c files.
 // ════════════════════════════════════════════════════════════════════════════
 
+use piperine::disciplines;
+
 // ════════════════════════════════════════════════════════════════════════════
 //  VCVS — Voltage-Controlled Voltage Source  (E element, vcvsload.c)
 //  V(p,n) = gain · (V(cp) − V(cn))

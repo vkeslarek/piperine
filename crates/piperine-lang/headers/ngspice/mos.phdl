@@ -11,6 +11,10 @@
 // dependence, thermal/channel/flicker noise.
 // ════════════════════════════════════════════════════════════════════════════
 
+use piperine::constants;
+use piperine::disciplines;
+use piperine::ngspice::constants;
+
 bundle Mos1Model {
     // ── Type ──────────────────────────────────────────────────────────────────
     nmos : Boolean = 1,           // 1 = NMOS, 0 = PMOS
@@ -102,7 +106,7 @@ analog mos1 {
 
     // KP from U0 and Cox (if KP not explicitly given)
     var kp_eff : Real = model.kp;
-    if (ng_and(model.tox > 0.0, cox > 0.0)) {
+    if (model.tox > 0.0 && cox > 0.0) {
         // ngspice: if KP not given, KP = U0 * Cox * 1e-4
         kp_eff = model.u0 * cox * 1.0e-4;
     }
@@ -195,22 +199,22 @@ analog mos1 {
     var gbOverlapCap : Real = model.cgbo * l_eff;
 
     // Drain/source sat current
-    var drainSatCur : Real = if (ng_and(model.js > 0.0, ad > 0.0)) { model.js * m * ad } else { m * tSatCur };
-    var sourceSatCur : Real = if (ng_and(model.js > 0.0, as > 0.0)) { model.js * m * as } else { m * tSatCur };
+    var drainSatCur : Real = if (model.js > 0.0 && ad > 0.0) { model.js * m * ad } else { m * tSatCur };
+    var sourceSatCur : Real = if (model.js > 0.0 && as > 0.0) { model.js * m * as } else { m * tSatCur };
 
     // Bulk junction caps
-    var czbd : Real = if (model.cbd > 0.0) { m * tCbd } else { if (ng_and(model.cj > 0.0, ad > 0.0)) { m * tCj * ad } else { 0.0 } };
-    var czbs : Real = if (model.cbs > 0.0) { m * tCbs } else { if (ng_and(model.cj > 0.0, as > 0.0)) { m * tCj * as } else { 0.0 } };
-    var czbdsw : Real = if (ng_and(model.cjsw > 0.0, pd > 0.0)) { m * tCjsw * pd } else { 0.0 };
-    var czbssw : Real = if (ng_and(model.cjsw > 0.0, ps > 0.0)) { m * tCjsw * ps } else { 0.0 };
+    var czbd : Real = if (model.cbd > 0.0) { m * tCbd } else if (model.cj > 0.0 && ad > 0.0) { m * tCj * ad } else { 0.0 };
+    var czbs : Real = if (model.cbs > 0.0) { m * tCbs } else if (model.cj > 0.0 && as > 0.0) { m * tCj * as } else { 0.0 };
+    var czbdsw : Real = if (model.cjsw > 0.0 && pd > 0.0) { m * tCjsw * pd } else { 0.0 };
+    var czbssw : Real = if (model.cjsw > 0.0 && ps > 0.0) { m * tCjsw * ps } else { 0.0 };
 
     // Series conductances
     var drainCond : Real = if (model.rd > 0.0) { m / model.rd }
-                           else { if (ng_and(model.rsh > 0.0, nrd > 0.0)) { m / (model.rsh * nrd) }
-                           else { 0.0 } };
+                           else if (model.rsh > 0.0 && nrd > 0.0) { m / (model.rsh * nrd) }
+                           else { 0.0 };
     var sourceCond : Real = if (model.rs > 0.0) { m / model.rs }
-                            else { if (ng_and(model.rsh > 0.0, nrs > 0.0)) { m / (model.rsh * nrs) }
-                            else { 0.0 } };
+                            else if (model.rsh > 0.0 && nrs > 0.0) { m / (model.rsh * nrs) }
+                            else { 0.0 };
 
     // ════════════════════════════════════════════════════════════════════════
     //  §4  Voltages  (mos1load.c:298-316)
@@ -429,7 +433,7 @@ analog mos1 {
     var gm_est : Real = beta * vgst;  // saturation gm (approximate for noise)
     I(dp, sp) <+ white_noise(4.0 * NG_K * t * (2.0 / 3.0) * abs(gm_est));
     // Flicker: KF * |Id|^AF / (f * W * L_eff * Cox²)
-    if (ng_and(model.kf > 0.0, cox > 0.0)) {
+    if (model.kf > 0.0 && cox > 0.0) {
         var cox2 : Real = cox * cox;
         I(dp, sp) <+ flicker_noise(
             m * model.kf * pow(abs(cdrain), model.af) / (w * l_eff * cox2),

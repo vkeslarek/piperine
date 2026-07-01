@@ -2,7 +2,7 @@
 
 use piperine_lang::ppr_to_ir;
 use piperine_codegen::{
-    ContribKind, IrEventKind, IrExpr, IrNature, IrStmt, IrStateKind,
+    ContribKind, IrBinOp, IrEventKind, IrExpr, IrNature, IrStmt, IrStateKind,
 };
 use piperine_lang::parse_and_elaborate;
 
@@ -473,4 +473,63 @@ fn transition_state_var() {
     let body = m.analog.as_ref().expect("analog");
     assert_eq!(body.state_vars.len(), 1);
     assert!(matches!(body.state_vars[0].kind, IrStateKind::Transition { .. }));
+}
+
+// ─── `&&` / `||` logical operators ─────────────────────────────────────────────
+
+#[test]
+fn logical_and_or_lower_to_ir_binop() {
+    let prog = parse_and_elaborate(&src(
+        "I(p, n) <+ if (V(p, n) > 0.0 && R < 2000.0) { 1.0 } else { 0.0 };"
+    )).expect("elab");
+    let ir = ppr_to_ir(&prog);
+    let out = format!("{ir}");
+    assert!(out.contains("&&") || out.contains("And"), "output: {out}");
+
+    let prog2 = parse_and_elaborate(&src(
+        "I(p, n) <+ if (V(p, n) > 0.0 || R < 2000.0) { 1.0 } else { 0.0 };"
+    )).expect("elab");
+    let ir2 = ppr_to_ir(&prog2);
+    let m = ir2.modules.iter().find(|m| m.name == "TestMod").expect("module");
+    let body = m.analog.as_ref().expect("analog");
+    // The condition folds into the Select's guard; walk for an Or binop.
+    fn contains_or(e: &IrExpr) -> bool {
+        match e {
+            IrExpr::Binary(op, l, r) => *op == IrBinOp::Or || contains_or(l) || contains_or(r),
+            IrExpr::Select(c, t, e) => contains_or(c) || contains_or(t) || contains_or(e),
+            _ => false,
+        }
+    }
+    let found = body.stmts.iter().any(|s| match s {
+        IrStmt::Contrib { expr, .. } => contains_or(expr),
+        _ => false,
+    });
+    assert!(found, "expected an Or binop reachable from the contribution");
+}
+
+// ─── `else if` in if-expressions ────────────────────────────────────────────────
+
+#[test]
+fn else_if_expression_chain() {
+    let src_ = format!("
+{DISCIPLINE}
+mod ElseIfMod(inout p: Electrical, inout n: Electrical) {{}}
+analog ElseIfMod {{
+    var v : Real = V(p, n);
+    var y : Real = if (v > 2.0) {{ 2.0 }} else if (v > 1.0) {{ 1.0 }} else {{ 0.0 }};
+    I(p, n) <+ y;
+}}
+");
+    let prog = parse_and_elaborate(&src_).expect("elab");
+    let ir = ppr_to_ir(&prog);
+    let m = ir.modules.iter().find(|m| m.name == "ElseIfMod").expect("module");
+    let body = m.analog.as_ref().expect("analog");
+    // Should desugar to nested Select: Select(v>2, 2.0, Select(v>1, 1.0, 0.0))
+    let has_nested_select = body.stmts.iter().any(|s| match s {
+        IrStmt::Contrib { expr: IrExpr::Select(_, _, else_), .. } => {
+            matches!(**else_, IrExpr::Select(..))
+        }
+        _ => false,
+    });
+    assert!(has_nested_select, "expected nested Select from else-if chain");
 }

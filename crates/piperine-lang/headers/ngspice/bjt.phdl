@@ -16,6 +16,10 @@
 // gives exact parity.
 // ════════════════════════════════════════════════════════════════════════════
 
+use piperine::constants;
+use piperine::disciplines;
+use piperine::ngspice::constants;
+
 bundle BjtModel {
     // ── Type ──────────────────────────────────────────────────────────────────
     npn      : Boolean = 1,       // 1 = NPN, 0 = PNP
@@ -340,7 +344,7 @@ analog bjt {
     // ════════════════════════════════════════════════════════════════════════
     var q1 : Real = 1.0 / (1.0 - invVaf * vbc - invVar * vbe);
     var qb : Real;
-    if (ng_and(oik == 0.0, oikr == 0.0)) {
+    if (oik == 0.0 && oikr == 0.0) {
         qb = q1;
     } else {
         var q2 : Real = oik * cbe + oikr * cbc;
@@ -353,7 +357,7 @@ analog bjt {
     // ════════════════════════════════════════════════════════════════════════
     //  §5  TF bias dependence  (bjtload.c:567-587)
     // ════════════════════════════════════════════════════════════════════════
-    if (ng_and(t_tf > 0.0, vbe > 0.0)) {
+    if (t_tf > 0.0 && vbe > 0.0) {
         var argtf : Real = 0.0;
         if (model.xtf > 0.0) {
             argtf = model.xtf;

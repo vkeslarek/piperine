@@ -6,6 +6,8 @@ use crate::parse::ast::{ArrayBody, BindOp, BinaryOp, Block, Expr, Literal, Stmt,
 
 use piperine_codegen::ir::*;
 
+use super::analog_ops::analog_ops;
+use super::syscalls::syscalls;
 use super::LowerCtx;
 
 // ─── Destination parsing ──────────────────────────────────────────────────────
@@ -141,8 +143,12 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
         }
 
         Expr::Ident(name) => {
+            // Env (behavior-local `var`s, inlined) shadows module-level
+            // persistent `var`s (GAPS §I.15), which in turn shadow params.
             if let Some(val) = ctx.env.get(name) {
                 val.clone()
+            } else if ctx.module_vars.contains(name) {
+                IrExpr::Var(name.clone())
             } else {
                 IrExpr::Param(name.clone())
             }
@@ -294,197 +300,57 @@ pub(crate) fn block_value(block: &Block, ctx: &mut LowerCtx) -> IrExpr {
     IrExpr::Real(0.0)
 }
 
-/// Lower a function call: analog accessors (`V`, `I`), system functions
-/// (`ddt`, `idt`, `transition`, …), simulation queries, and generic user calls.
+/// Lower a function call: analog accessors (`V`, `I`), analog operators
+/// (`ddt`, `idt`, `transition`, …, looked up in the [`AnalogOpRegistry`]),
+/// and generic user calls. Note: bare `analysis(...)` (call position, no
+/// `$`) is *not* recognized — only the `$analysis` syscall form is, since
+/// that's the form the NGSPICE-faithful headers use; an unrecognized bare
+/// call falls through to `IrExpr::Call` and is rejected fail-loud at
+/// codegen, same as any other unknown function.
+///
+/// [`AnalogOpRegistry`]: super::analog_ops::AnalogOpRegistry
 pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
     let name = match func {
         Expr::Ident(s) => s.as_str(),
         _ => return IrExpr::Real(0.0),
     };
 
-    match name {
-        "V" | "I" => {
-            if args.len() >= 2 {
-                let plus = ident_from_expr(Some(&args[0])).unwrap_or_else(|| "?".into());
-                let minus = ident_from_expr(Some(&args[1])).unwrap_or_else(|| "?".into());
-                IrExpr::BranchAccess { access: name.to_string(), plus, minus }
-            } else if args.len() == 1 {
-                let node = ident_from_expr(Some(&args[0])).unwrap_or_else(|| "?".into());
-                IrExpr::BranchAccess { access: name.to_string(), plus: node, minus: "0".into() }
-            } else {
-                IrExpr::BranchAccess { access: name.to_string(), plus: "?".into(), minus: "0".into() }
-            }
-        }
-        "ddt" if !args.is_empty() => {
-            let arg = lower_expr(&args[0], ctx);
-            let id = ctx.alloc_state(IrStateKind::Ddt, arg);
-            IrExpr::StateRef(id)
-        }
-        "idt" if !args.is_empty() => {
-            let arg = lower_expr(&args[0], ctx);
-            let ic = args.get(1).map(|a| lower_expr(a, ctx)).unwrap_or(IrExpr::Real(0.0));
-            let id = ctx.alloc_state(IrStateKind::Idt { ic }, arg);
-            IrExpr::StateRef(id)
-        }
-        "idtmod" if !args.is_empty() => {
-            let arg = lower_expr(&args[0], ctx);
-            let ic = args.get(1).map(|a| lower_expr(a, ctx)).unwrap_or(IrExpr::Real(0.0));
-            let modulus = args.get(2).map(|a| lower_expr(a, ctx)).unwrap_or(IrExpr::Real(1.0));
-            let id = ctx.alloc_state(IrStateKind::IdtMod { ic, modulus }, arg);
-            IrExpr::StateRef(id)
-        }
-        "ddx" if args.len() >= 2 => {
-            let arg = lower_expr(&args[0], ctx);
-            let node = ident_from_expr(Some(&args[1])).unwrap_or_else(|| "?".into());
-            let id = ctx.alloc_state(IrStateKind::Ddx { node }, arg);
-            IrExpr::StateRef(id)
-        }
-        "delay" | "absdelay" if !args.is_empty() => {
-            let arg = lower_expr(&args[0], ctx);
-            let delay = args.get(1).map(|a| lower_expr(a, ctx)).unwrap_or(IrExpr::Real(0.0));
-            let id = ctx.alloc_state(IrStateKind::Delay { delay }, arg);
-            IrExpr::StateRef(id)
-        }
-        "transition" if !args.is_empty() => {
-            let arg = lower_expr(&args[0], ctx);
-            let delay = args.get(1).map(|a| lower_expr(a, ctx)).unwrap_or(IrExpr::Real(0.0));
-            let rise = args.get(2).map(|a| lower_expr(a, ctx)).unwrap_or(IrExpr::Real(0.0));
-            let fall = args.get(3).map(|a| lower_expr(a, ctx)).unwrap_or(IrExpr::Real(0.0));
-            let tol = args.get(4).map(|a| lower_expr(a, ctx)).unwrap_or(IrExpr::Real(0.0));
-            let id = ctx.alloc_state(IrStateKind::Transition { delay, rise, fall, tol }, arg);
-            IrExpr::StateRef(id)
-        }
-        "slew" if !args.is_empty() => {
-            let arg = lower_expr(&args[0], ctx);
-            let rise = args.get(1).map(|a| lower_expr(a, ctx)).unwrap_or(IrExpr::Real(0.0));
-            let fall = args.get(2).map(|a| lower_expr(a, ctx)).unwrap_or(IrExpr::Real(0.0));
-            let id = ctx.alloc_state(IrStateKind::Slew { rise, fall }, arg);
-            IrExpr::StateRef(id)
-        }
-        "laplace_np" | "laplace_zp" | "laplace_pm" | "laplace_nm" | "laplace_npm"
-            if args.len() >= 3 =>
-        {
-            let arg = lower_expr(&args[0], ctx);
-            let num = lower_expr(&args[1], ctx);
-            let den = lower_expr(&args[2], ctx);
-            let id = ctx.alloc_state(
-                IrStateKind::Laplace {
-                    variant: name.trim_start_matches("laplace_").to_string(),
-                    num,
-                    den,
-                },
-                arg,
-            );
-            IrExpr::StateRef(id)
-        }
-        "zi_zd" | "zi_zp" | "zi_nd" | "zi_np" if args.len() >= 4 => {
-            let arg = lower_expr(&args[0], ctx);
-            let num = lower_expr(&args[1], ctx);
-            let den = lower_expr(&args[2], ctx);
-            let sample_dt = lower_expr(&args[3], ctx);
-            let id = ctx.alloc_state(
-                IrStateKind::ZTransform {
-                    variant: name.trim_start_matches("zi_").to_string(),
-                    num,
-                    den,
-                    sample_dt,
-                },
-                arg,
-            );
-            IrExpr::StateRef(id)
-        }
-        "ac_stim" => {
-            let mag = args.first().map(|a| lower_expr(a, ctx)).unwrap_or(IrExpr::Real(1.0));
-            let phase = args.get(1).map(|a| lower_expr(a, ctx)).unwrap_or(IrExpr::Real(0.0));
-            IrExpr::AcStim { mag: Box::new(mag), phase: Box::new(phase) }
-        }
-        "white_noise" | "flicker_noise" => {
-            // Noise sources tracked separately via scan_noise; return 0 in expr position.
-            IrExpr::Real(0.0)
-        }
-        "analysis" => {
-            let kind = if let Some(Expr::Literal(Literal::String(s))) = args.first() {
-                s.clone()
-            } else {
-                "dc".into()
-            };
-            IrExpr::Sim(SimQuery::Analysis(kind))
-        }
-        _ => {
-            let ir_args = args.iter().map(|a| lower_expr(a, ctx)).collect();
-            IrExpr::Call(name.to_string(), ir_args)
-        }
+    if name == "V" || name == "I" {
+        return if args.len() >= 2 {
+            let plus = ident_from_expr(Some(&args[0])).unwrap_or_else(|| "?".into());
+            let minus = ident_from_expr(Some(&args[1])).unwrap_or_else(|| "?".into());
+            IrExpr::BranchAccess { access: name.to_string(), plus, minus }
+        } else if args.len() == 1 {
+            let node = ident_from_expr(Some(&args[0])).unwrap_or_else(|| "?".into());
+            IrExpr::BranchAccess { access: name.to_string(), plus: node, minus: "0".into() }
+        } else {
+            IrExpr::BranchAccess { access: name.to_string(), plus: "?".into(), minus: "0".into() }
+        };
     }
+
+    if let Some(op) = analog_ops().lookup(name) {
+        return op.lower(args, ctx);
+    }
+
+    let ir_args = args.iter().map(|a| lower_expr(a, ctx)).collect();
+    IrExpr::Call(name.to_string(), ir_args)
 }
 
 /// Lower a `$system_call` into the corresponding simulator query
-/// (`$temperature`, `$vt`, `$simparam`, …).
+/// (`$temperature`, `$vt`, `$simparam`, …), looked up in the
+/// [`SyscallRegistry`]. A syscall the registry doesn't recognize lowers to
+/// a marker `IrExpr::Call("$name", args)` rather than silently becoming
+/// `0.0` — codegen rejects unknown calls fail-loud, so the error surfaces
+/// at the device boundary instead of vanishing here.
+///
+/// [`SyscallRegistry`]: super::syscalls::SyscallRegistry
 pub(crate) fn lower_syscall(name: &str, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-    match name.trim_start_matches('$').to_lowercase().as_str() {
-        "temperature" => IrExpr::Sim(SimQuery::Temperature),
-        "vt" => {
-            if args.is_empty() {
-                IrExpr::Sim(SimQuery::Vt(None))
-            } else {
-                IrExpr::Sim(SimQuery::Vt(Some(Box::new(lower_expr(&args[0], ctx)))))
-            }
-        }
-        "abstime" => IrExpr::Sim(SimQuery::Abstime),
-        "mfactor" => IrExpr::Sim(SimQuery::Mfactor),
-        "xposition" => IrExpr::Sim(SimQuery::XPosition),
-        "yposition" => IrExpr::Sim(SimQuery::YPosition),
-        "angle" => IrExpr::Sim(SimQuery::Angle),
-        "simparam" => {
-            let key = if let Some(Expr::Literal(Literal::String(s))) = args.first() {
-                s.clone()
-            } else {
-                "?".into()
-            };
-            let default = args.get(1).map(|a| lower_expr(a, ctx)).unwrap_or(IrExpr::Real(0.0));
-            IrExpr::Sim(SimQuery::Simparam { key, default: Box::new(default) })
-        }
-        "param_given" => {
-            let name = if let Some(Expr::Literal(Literal::String(s))) = args.first() {
-                s.clone()
-            } else {
-                "?".into()
-            };
-            IrExpr::Sim(SimQuery::ParamGiven(name))
-        }
-        "port_connected" => {
-            let name = if let Some(Expr::Literal(Literal::String(s))) = args.first() {
-                s.clone()
-            } else {
-                "?".into()
-            };
-            IrExpr::Sim(SimQuery::PortConnected(name))
-        }
-        "limit" => {
-            let kind = if let Some(Expr::Literal(Literal::String(s))) = args.first() {
-                s.clone()
-            } else {
-                "?".into()
-            };
-            let limit_args = args.iter().skip(1).map(|a| lower_expr(a, ctx)).collect();
-            IrExpr::Sim(SimQuery::Limit { kind, args: limit_args })
-        }
-        "random" => {
-            IrExpr::Sim(SimQuery::Random { kind: "random".into(), args: vec![] })
-        }
-        n if n.starts_with("dist_") => {
-            let dist_args = args.iter().map(|a| lower_expr(a, ctx)).collect();
-            IrExpr::Sim(SimQuery::Random { kind: n.to_string(), args: dist_args })
-        }
-        "analysis" => {
-            let kind = if let Some(Expr::Literal(Literal::String(s))) = args.first() {
-                s.clone()
-            } else {
-                "dc".into()
-            };
-            IrExpr::Sim(SimQuery::Analysis(kind))
-        }
-        _ => IrExpr::Real(0.0),
+    let key = name.trim_start_matches('$').to_lowercase();
+    if let Some(f) = syscalls().lookup(&key) {
+        return f.lower(&key, args, ctx);
     }
+    let ir_args = args.iter().map(|a| lower_expr(a, ctx)).collect();
+    IrExpr::Call(format!("${key}"), ir_args)
 }
 
 /// Convert a PHDL binary operator to the corresponding IR [`IrBinOp`].
@@ -504,5 +370,10 @@ pub(crate) fn lower_binop(op: &BinaryOp) -> IrBinOp {
         BinaryOp::BitAnd => IrBinOp::BitAnd,
         BinaryOp::BitOr => IrBinOp::BitOr,
         BinaryOp::BitXor => IrBinOp::BitXor,
+        // `&&`/`||` lower straight to `IrBinOp::And/Or`: the IR is a pure f64
+        // scalar language with no side-effecting operands, so short-circuit
+        // evaluation has no observable difference from eager evaluation here.
+        BinaryOp::And => IrBinOp::And,
+        BinaryOp::Or => IrBinOp::Or,
     }
 }
