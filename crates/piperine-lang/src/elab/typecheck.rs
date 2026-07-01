@@ -27,10 +27,10 @@ use crate::pom::{ElabError, Instance, Module as DesignModule};
 /// not abort the check of the remaining modules — the first error wins
 /// (enumeration order is deterministic: declaration order in the AST).
 pub fn typecheck_program(
-    modules: &HashMap<String, DesignModule>,
+    design: &crate::pom::Design,
 ) -> Result<(), ElabError> {
-    for module in modules.values() {
-        check_module(module, modules)?;
+    for module in design.modules.values() {
+        check_module(module, design)?;
     }
     Ok(())
 }
@@ -38,7 +38,7 @@ pub fn typecheck_program(
 /// Check a single module. Errors are returned on the first violation.
 fn check_module(
     module: &DesignModule,
-    _all_modules: &HashMap<String, DesignModule>,
+    design: &crate::pom::Design,
 ) -> Result<(), ElabError> {
     // Build a name → (NetType, declared-index-width) table from the
     // module's ports and wires. We resolve instance port-of-port names
@@ -94,7 +94,131 @@ fn check_module(
     // TODO (GAPS §B + §I.14): validate each `inst.ports[i]` against
     // the child module's `port(name).ty`. Deferred until I.14
     // (hierarchical ports / bundle-aware expansion) lands.
-    let _ = module.instances(); // silence unused
+
+    // B.4 - Driver counting
+    // Union-find for connected nets
+    let mut parent: HashMap<String, String> = HashMap::new();
+
+    fn find(parent: &HashMap<String, String>, mut x: String) -> String {
+        while let Some(p) = parent.get(&x) {
+            if p == &x { break; }
+            x = p.clone();
+        }
+        x
+    }
+
+    for conn in module.connections() {
+        let root_x = find(&parent, conn.lhs().to_string());
+        let root_y = find(&parent, conn.rhs().to_string());
+        if root_x != root_y {
+            parent.insert(root_x, root_y);
+        }
+    }
+
+    let mut drivers: HashMap<String, u64> = HashMap::new();
+    let mut add_driver = |net: String| {
+        let root = find(&parent, net);
+        *drivers.entry(root).or_insert(0) += 1;
+    };
+
+    // 1. Module input ports drive internal nets
+    for p in module.ports() {
+        if p.direction() == &crate::parse::ast::Direction::Input || p.direction() == &crate::parse::ast::Direction::Inout {
+            add_driver(p.name().to_string());
+        }
+    }
+
+    // 2. Child instance output ports drive connected nets
+    for inst in module.instances() {
+        if let Some(child) = design.modules.get(inst.module_name()) {
+            for (i, p) in child.ports().iter().enumerate() {
+                if p.direction() == &crate::parse::ast::Direction::Output || p.direction() == &crate::parse::ast::Direction::Inout {
+                    if let Some(net_ref) = inst.ports().get(i) {
+                        add_driver(net_ref.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Forces and assigns in behaviors drive nets
+    use crate::pom::behavior::BehaviorStmt;
+    fn visit_behavior(stmts: &[BehaviorStmt], add_driver: &mut dyn FnMut(String)) {
+        for stmt in stmts {
+            match stmt {
+                BehaviorStmt::Bind { dest, op, .. } => {
+                    if op == &crate::parse::ast::BindOp::Force || op == &crate::parse::ast::BindOp::Assign {
+                        // Extract base name from Expr if possible
+                        if let crate::parse::ast::Expr::Ident(name) = dest {
+                            add_driver(name.clone());
+                        } else if let crate::parse::ast::Expr::Index(base, _) = dest {
+                            if let crate::parse::ast::Expr::Ident(name) = &**base {
+                                // We simplify and just use the base name for now, or we could try to format it
+                                add_driver(name.clone());
+                            }
+                        } else if let crate::parse::ast::Expr::Field(base, field) = dest {
+                            if let crate::parse::ast::Expr::Ident(name) = &**base {
+                                add_driver(format!("{}_{}", name, field));
+                            }
+                        }
+                    }
+                }
+                BehaviorStmt::If { then_body, else_body, .. } => {
+                    visit_behavior(then_body, add_driver);
+                    if let Some(eb) = else_body {
+                        visit_behavior(eb, add_driver);
+                    }
+                }
+                BehaviorStmt::Match { arms, .. } => {
+                    for arm in arms {
+                        visit_behavior(arm.body(), add_driver);
+                    }
+                }
+                BehaviorStmt::Event { body, .. } => visit_behavior(body, add_driver),
+                _ => {}
+            }
+        }
+    }
+    for behavior in module.behaviors() {
+        visit_behavior(behavior.body(), &mut add_driver);
+    }
+
+    for (root, count) in drivers {
+        if count > 1 {
+            // It has multiple drivers. Check if discipline resolves.
+            // But we need the discipline of `root`.
+            let mut resolved_type = None;
+            // Let's find any net in the module that belongs to this root to get its type
+            for (name, ty) in &locals {
+                if find(&parent, name.clone()) == root {
+                    resolved_type = Some(ty.clone());
+                    break;
+                }
+            }
+            if let Some(ty) = resolved_type {
+                let d_name = ty.discipline_name();
+                let mut resolves = false;
+                if d_name == "Ground" {
+                    resolves = true;
+                } else if let Some(discipline) = design.disciplines.get(d_name) {
+                    for item in &discipline.items {
+                        match item {
+                            crate::parse::ast::DisciplineItem::Resolve(_) => resolves = true,
+                            crate::parse::ast::DisciplineItem::Nature { kind: crate::parse::ast::NatureKind::Flow, .. } => resolves = true,
+                            _ => {}
+                        }
+                    }
+                }
+                if !resolves {
+                    return Err(ElabError::MultipleDrivers {
+                        module: module.name().to_string(),
+                        net: root,
+                        discipline: d_name.to_string(),
+                    });
+                }
+            }
+        }
+    }
 
     Ok(())
 }
@@ -158,7 +282,7 @@ mod tests {
 
     #[test]
     fn width_mismatch_on_named_connection_is_caught() {
-        let mut prog: HashMap<String, DesignModule> = HashMap::new();
+                let mut prog = crate::pom::Design::new();
         let bad = scalar("Bit");
         // Override port width via a fake module — we keep it scalar here
         // and rely on the width mismatch coming from the second conn
@@ -181,7 +305,7 @@ mod tests {
             }],
             vec![],
         );
-        prog.insert("T".into(), bad_mod);
+        prog.modules.insert("T".into(), bad_mod);
 
         let err = typecheck_program(&prog).unwrap_err().to_string();
         assert!(err.contains("width"), "expected width mismatch message, got: {err}");
@@ -205,8 +329,8 @@ mod tests {
             }],
             vec![],
         );
-        let mut prog = HashMap::new();
-        prog.insert("T".into(), bad_mod);
+                let mut prog = crate::pom::Design::new();
+        prog.modules.insert("T".into(), bad_mod);
         let err = typecheck_program(&prog).unwrap_err().to_string();
         assert!(err.contains("width") && err.contains("8") && err.contains("4"),
             "expected width mismatch naming both widths, got: {err}");
@@ -214,7 +338,7 @@ mod tests {
 
     #[test]
     fn discipline_crossing_is_rejected() {
-        let mut prog: HashMap<String, DesignModule> = HashMap::new();
+                let mut prog = crate::pom::Design::new();
         let bad_mod = Module::new(
             "T".into(),
             vec![
@@ -238,7 +362,7 @@ mod tests {
             }],
             vec![],
         );
-        prog.insert("T".into(), bad_mod);
+        prog.modules.insert("T".into(), bad_mod);
         let err = typecheck_program(&prog).unwrap_err().to_string();
         assert!(err.contains("discipline crossing") || err.contains("DisciplineCrossing"),
             "expected discipline-crossing error, got: {err}");
@@ -246,7 +370,7 @@ mod tests {
 
     #[test]
     fn same_discipline_connection_passes() {
-        let mut prog: HashMap<String, DesignModule> = HashMap::new();
+                let mut prog = crate::pom::Design::new();
         let ok_mod = Module::new(
             "T".into(),
             vec![],
@@ -262,7 +386,58 @@ mod tests {
             }],
             vec![],
         );
-        prog.insert("T".into(), ok_mod);
+        prog.modules.insert("T".into(), ok_mod);
         assert!(typecheck_program(&prog).is_ok(), "same-discipline connect should validate");
+    }
+
+    #[test]
+    fn multiple_drivers_on_digital_net_is_rejected() {
+        let mut prog = crate::pom::Design::new();
+        // A module that drives `out` from two instances.
+        let bad_mod = Module::new(
+            "T".into(),
+            vec![],
+            vec![],
+            vec![
+                crate::pom::module::Wire { name: "w".into(), ty: ty("Bit") },
+            ],
+            vec![
+                Instance {
+                    label: Some("u1".into()),
+                    module: "Driver".into(),
+                    ports: vec![crate::pom::net_type::NetRef::simple("w")],
+                    params: vec![],
+                },
+                Instance {
+                    label: Some("u2".into()),
+                    module: "Driver".into(),
+                    ports: vec![crate::pom::net_type::NetRef::simple("w")],
+                    params: vec![],
+                },
+            ],
+            vec![],
+            vec![],
+        );
+        let driver_mod = Module::new(
+            "Driver".into(),
+            vec![
+                crate::pom::module::Port {
+                    direction: crate::parse::ast::Direction::Output,
+                    name: "o".into(),
+                    ty: ty("Bit"),
+                }
+            ],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        );
+        prog.modules.insert("T".into(), bad_mod);
+        prog.modules.insert("Driver".into(), driver_mod);
+        
+        let err = typecheck_program(&prog).unwrap_err().to_string();
+        assert!(err.contains("multiple drivers") || err.contains("MultipleDrivers"),
+            "expected multiple drivers error, got: {err}");
     }
 }

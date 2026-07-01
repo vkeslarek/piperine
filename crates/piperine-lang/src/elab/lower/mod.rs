@@ -156,7 +156,7 @@ impl Elaborator {
         // connections and rejects width mismatches and discipline
         // crossings. Runs after elaboration (so all port/wire/instance
         // bindings are typed) and before codegen.
-        crate::elab::typecheck::typecheck_program(&prog.modules)?;
+        crate::elab::typecheck::typecheck_program(&prog)?;
 
         Ok(prog)
     }

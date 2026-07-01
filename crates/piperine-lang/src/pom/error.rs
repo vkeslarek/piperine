@@ -85,6 +85,13 @@ pub enum ElabError {
     /// `{param}_{field}` naming convention.
     #[error("param `{0}` collides with a flattened bundle field name")]
     BundleParamNameCollision(String),
+    /// GAPS §B.4 — two or more drivers on a net without a resolve clause.
+    #[error("multiple drivers on net `{net}` in module `{module}` (discipline `{discipline}` does not resolve)")]
+    MultipleDrivers {
+        module: String,
+        net: String,
+        discipline: String,
+    },
     /// A catch-all for other elaboration errors.
     #[error("{0}")]
     Other(String),
@@ -108,6 +115,13 @@ pub enum ReflectError {
     /// An index or value was outside the allowable range.
     #[error("out of range: {0}")]
     OutOfRange(String),
+    /// GAPS §B.4 — two or more drivers on a net without a resolve clause.
+    #[error("multiple drivers on net `{net}` in module `{module}` (discipline `{discipline}` does not resolve)")]
+    MultipleDrivers {
+        module: String,
+        net: String,
+        discipline: String,
+    },
     /// A catch-all for other reflection errors.
     #[error("{0}")]
     Other(String),

@@ -50,64 +50,7 @@
 
 ## Part A — Residual silent-bug / correctness items {#part-a}
 
-> Everything else originally in Part A (A.1–A.10, A.12, A.13 — flow reads,
-> `$temperature`/`$vt`/`$abstime` threading, digital shift/pow/reduction
-> ops, `from_ir` error propagation, `from_elab` deprecation, unresolved
-> name/terminal validation, AMS `` `elsif ``, 4-state literal rejection,
-> `Gear` panic, `tf.rs` `eprintln!`) is **done** — verified directly
-> against current code this session, not just doc status. What's left:
-
-### A.11 4-state sized literals: fail-loud via `panic!`, not `Result`
-
-**Severity:** Low · **Affects:** `piperine-ams` AMS literal lowering
-
-`4'b1x0z` no longer silently becomes 0 (fixed) — but
-`crates/piperine-ams/src/to_ir.rs:867` now `panic!`s on the error instead
-of propagating a `Result`, which the code's own comment flags as a
-follow-up ("today we'd panic; a proper Result-based propagate is tracked
-as a follow-up"). Violates the "no panic on user input" convention that
-A.12 fixed elsewhere. Needs `lower_literal` and its callers threaded to
-return `Result` instead of panicking.
-
-### A.14 `$simparam` — `step`/`tfinal` reserved but not wired
-
-**Severity:** Medium · **Affects:** `vsrc`/`isrc` waveform defaults
-
-`gmin`/`temperature` read real `SimCtx` values
-(`codegen/ir_emit.rs:121-175`); `step`/`tfinal` occupy reserved `SimCtx`
-offsets (32/40) but the solver never writes them, so
-`$simparam("step", 1e-6)` always falls back to its PHDL-side default
-rather than the actual solver step. Needs the transient solver to set
-these two fields once per `load_transient` call.
-
-### A.15 `$param_given("name")` rejected at codegen
-
-**Severity:** High · **Affects:** every NGSPICE semiconductor's
-model/instance parameter resolution (`res`, `cap`, `ind`, `dio`, `bjt`,
-`jfet`, `mos1`)
-
-`SimQuery::ParamGiven` is explicitly rejected at
-`codegen/ir_emit.rs:566-573` with a message citing this gap. Needs
-per-instance "which params were explicitly set" metadata threaded from
-elaboration (a bool bitmask indexed by declaration order) through to a
-`Device`-level slice the JIT can read. Until this lands, every NGSPICE
-model's `if ($param_given("w")) { w } else { model.defWidth }` pattern
-fails to compile.
-
-### A.16 `$vt(T)` treats its argument as a scaling factor, not a substitute temperature
-
-**Severity:** Medium · **Affects:** any model calling `$vt` with an
-explicit temperature argument
-
-`codegen/ir_emit.rs:158-172`: `SimQuery::Vt(Some(t_expr))` multiplies the
-*live* `SimCtx.temperature` by the evaluated argument
-(`ctx.builder.ins().fmul(temp, arg)`), then by `k/q`. But the spec/AMS
-semantics of `$vt(T)` is "thermal voltage **at** `T`" — the argument
-should *replace* the simulation temperature, not scale it. Today
-`$vt(400.0)` at a 300 K simulation returns `k·(300·400)/q`, not
-`k·400/q`. No NGSPICE header currently calls `$vt` with an argument, so
-this hasn't surfaced in the test suite, but it's a real semantic bug
-waiting for the first caller.
+> Everything originally in Part A (A.1–A.16) is **done** (2026-07-01).
 
 ---
 
@@ -127,17 +70,6 @@ only flattens `Ident.field` (`a.x` → `a_x`), not a bare bundle identifier
 on a connection (`bundle1 = bundle2` doesn't fan out per-field). Needs
 `BundleDecl` exposed on `Design` (see I.1) plus a per-field
 discipline/width check in `typecheck.rs`.
-
-### B.4 No single-driver enforcement
-
-**Severity:** High · **Affects:** every `output` port and non-`resolve`
-discipline net
-
-No driver-counting exists anywhere in the elaborator — two `output`s
-wired to the same net elaborates silently. Add driver counting (child
-`output` connections + forces + assigns) to the typecheck pass;
-disciplines with a `resolve` clause are exempt (that's what `resolve`
-means).
 
 ### B.5 No `Boolean`→`Quad` implicit widening or cast enforcement
 
@@ -270,18 +202,6 @@ currently returns the trivial zero response. Needs either the AC RHS
 stamping `IrExpr::AcStim` directly, or solver-level injection keyed off
 instance `ac_mag`/`ac_phase` params. Depends on D.10 to select the
 AC-vs-not branch correctly.
-
-### D.10 `$analysis("kind")` rejected at codegen
-
-**Severity:** Medium · **Affects:** `vsrc`, `isrc` DC-vs-transient
-waveform branching
-
-`SimQuery::Analysis` is rejected; `SimCtx` has no `current_analysis`
-field. `ddt`'s "returns 0 in DC" accidentally handles the charge-storage
-side correctly, but the *source value* side is wrong: a transient
-waveform is unconditionally computed during DC and vice versa without
-this. Needs a `current_analysis` field on `SimCtx`, written once per
-analysis by the solver, plus the `emit_sim` dispatch arm.
 
 ---
 
@@ -511,18 +431,9 @@ Documented as an accepted accuracy gap, not planned near-term.
 
 ## Part I — PHDL language features {#part-i}
 
-> I.9 (mod-body `var` for value types) and I.11–I.15 (`&&`/`||`,
+> I.1 (`BundleDecl`), I.9 (mod-body `var` for value types) and I.11–I.15 (`&&`/`||`,
 > `else if` expressions, `sinh`/`cosh`/`tanh`, bundle-typed `param`
 > flattening, mod-body persistent `var`) are all **done** (2026-07-01).
-
-### I.1 `BundleDecl` not exposed on `Design`
-
-**Severity:** High · **Affects:** prerequisite for B.3, I.3, I.6
-
-The elaborator's internal bundle table is used for port expansion but
-never surfaced on the public `Design`, so codegen/typecheck can't see
-bundle layout for `BundleLit` construction or field-by-field checks.
-One-line fix: add and populate a `pub bundles` field.
 
 ### I.2 Capability dispatch: operators aren't sugar for capability methods
 
@@ -793,12 +704,7 @@ circuits; negligible for most others.
 
 | ID | Gap | Severity | Affects |
 |----|-----|----------|---------|
-| A.11 | 4-state literal lowering panics instead of `Result` | Low | AMS frontend |
-| A.14 | `$simparam("step"/"tfinal")` not wired to solver | Medium | vsrc, isrc |
-| A.15 | `$param_given` rejected at codegen | High | all NGSPICE semiconductors |
-| A.16 | `$vt(T)` scales instead of substituting temperature | Medium | any `$vt(T)` caller |
 | B.3 | Bundle connections don't fan out field-by-field | High | bundle wires/ports |
-| B.4 | No single-driver enforcement | High | all `output` ports |
 | B.5 | No `Boolean`→`Quad` widening / cast enforcement | Medium | typecheck |
 | C.2 | `UInt[N]`/`SInt[N]` not in prelude | High | generic bit-vector examples |
 | D.1 | `V(p,n) <- expr` (ideal voltage source) rejected | Critical | vsrc, ccvs, mut, vcvs |
