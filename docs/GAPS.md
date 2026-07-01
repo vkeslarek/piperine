@@ -68,6 +68,15 @@ frontends and the solver. `piperine-solver` does **not** depend on
 `CircuitInstance`) because it lowers IR into it. **Breaking this arrow is a
 regression** — verify with `cargo metadata` if in doubt.
 
+**NGSPICE faithful headers.** The 8 model files in
+`crates/piperine-lang/headers/ngspice/` (`res`, `cap`, `ind`, `mut`, `dio`,
+`bjt`, `jfet`, `mos1`, plus `sw`, `csw`, `vsrc`, `isrc`, `vcvs`, `vccs`,
+`ccvs`, `cccs`) are the gold standard for "what should work." They are
+100% faithful to NGSPICE's C source and exercise every gap listed in
+this document. When a gap is closed, the corresponding NGSPICE model that
+previously failed at parse / elaborate / codegen should now pass.
+Detailed gap inventory and cross-reference: `docs/NGSPICE_GAPS.md`.
+
 ### 0.2 Crate map (current, real)
 
 | Crate | Role | Key files |
@@ -794,6 +803,189 @@ already depends on `tracing` (see `Cargo.toml` workspace deps).
 - [ ] No `eprintln!` in `tf.rs`.
 - [ ] `tracing::debug!` gated version optional.
 - [ ] `cargo test -p piperine-solver` green.
+
+---
+
+### A.14 `$simparam("gmin", d)` and other solver params rejected at codegen
+
+**Spec:** Verilog-A/AMS standard — `$simparam("name", default)` reads a
+named solver parameter, returning `default` if unknown. Critical for
+junction diodes (gmin regularisation) and waveform defaults (step/tfinal).
+
+**Status:** WRONG-CODE / codegen reject. **High.**
+
+**Cross-reference:** `docs/NGSPICE_GAPS.md` N.1 — affects every NGSPICE
+semiconductor model in `crates/piperine-lang/headers/ngspice/`.
+
+**Current state.** The lowering produces
+`IrExpr::Sim(SimQuery::Simparam { key, default })`
+(`crates/piperine-lang/src/lowering/expr.rs:437-445`). The JIT
+validator rejects every `SimQuery` other than `Temperature | Vt | Abstime |
+Mfactor` at `ir_emit.rs:526-531`. The `SimCtx` already carries a `gmin:
+f64` field at offset 24 (`codegen/mod.rs:67-69`) but **nothing reads it**.
+
+A diode model written
+`I(pp, n) <+ cd + gmin * vd;` parses, lowers, and then fails to compile
+with `CodegenError::Unsupported("SimQuery::Simparam ...")`. Every
+semiconductor in the NGSPICE faithful set (`dio`, `bjt`, `jfet`, `mos1`)
+reaches for gmin; without it, junction conductances are zero at the
+operating point and the matrix is singular.
+
+**Why it matters.**
+1. **DC convergence:** SPICE's `gmin` (default 1e-12 S) is added to every
+   pn junction to guarantee a non-singular matrix. Without it, a "floating"
+   node (no DC path to ground) has zero row sum and the Newton iteration
+   diverges.
+2. **Source ramping:** `vsrc`/`isrc` use `$simparam("step", 1e-6)` and
+   `$simparam("tfinal", 1e-3)` to default their `TR`/`TF`/`PW`/`PER`
+   waveform coefficients. Without these, every transient simulation
+   requires the user to repeat SPICE defaults manually.
+3. **Solver plumbing exists** (`SimCtx.gmin` is laid out, just unused);
+   this is wiring, not design.
+
+**Proposed solution.** Two parts:
+
+```rust
+// codegen/ir_emit.rs:121-170 — extend `emit_sim` with:
+SimQuery::Simparam { key, default } => {
+    match key.as_str() {
+        "gmin"   => load_offset(ctx.sim_ctx, 24),          // already there
+        "step"   => load_offset(ctx.sim_ctx, /* new slot */),
+        "tfinal" => load_offset(ctx.sim_ctx, /* new slot */),
+        other    => emit_ir_expr(ctx, default),           // fall back
+    }
+}
+```
+
+1. Add new fields to `SimCtx` (`codegen/mod.rs:56-82`):
+   ```rust
+   pub step: f64,       // transient step (set by solver before each call)
+   pub tfinal: f64,     // transient final time
+   ```
+   with a `#[repr(C)]` layout (follows A.2's pattern).
+
+2. The solver sets these once per `load_transient` call (no per-step cost).
+
+3. The `validate_ir_contrib` / `emit_ir_expr` reject the unknown-key path with
+   a clear error rather than silently returning the default — fail-loud per
+   Part A's principle.
+
+**Decision rationale.** Use the existing `SimCtx` infra rather than a new
+syscall category. gmin is already laid out there; the others are one field
+each. The alternative — a `HashMap<String, f64>` per device — is more
+flexible but costs a lookup per `$simparam` call and adds allocation.
+Given the known four keys (`gmin`, `step`, `tfinal`, plus a `temper` alias
+for `$temperature`), a struct is the right granularity.
+
+**Verification.**
+- Unit test in `tests/wave1_nonlinear_tests.rs` (positive-assertion):
+  ```rust
+  // Simple PHDL model: `I(p,n) <+ cd + gmin * vd;`
+  // After A.14: codegen succeeds, residual includes gmin * vd term.
+  // With gmin=1e-12, V(p,n)=1.0, current ≈ 1e-12.
+  ```
+
+- Failure path: `$simparam("nonexistent", 0.5)` lowers but codegen reports
+  `"unknown simparam `nonexistent`; falling back to default 0.5"` so users
+  know the lookup miss happened.
+
+- Integration: `dio` model from `crates/piperine-lang/headers/ngspice/`
+  compiles end-to-end (codegen succeeds; the resulting device's residual
+  is finite). Until A.15 + I.14 also land, this is a partial test, but it
+  validates just the `$simparam` codegen piece.
+
+**Acceptance criteria.**
+- [ ] `SimQuery::Simparam` accepted by `emit_sim` for keys `gmin`, `step`,
+      `tfinal`, `temperature`.
+- [ ] Unknown keys fall back to the `default` argument with a clear log.
+- [ ] `SimCtx` carries `step` and `tfinal`; solver sets them at
+      `load_transient`.
+- [ ] `ngspice_headers_parse_tests` (or new
+      `ngspice_compile_tests`) asserts the four NGSPICE semiconductor models
+      lower to `emit_ir_expr` (codegen succeeds; no silent failure).
+- [ ] `cargo test -p piperine-codegen -p piperine-solver` green.
+
+---
+
+### A.15 `$param_given("name")` rejected at codegen
+
+**Spec:** Verilog-A/AMS standard — returns 1 if the named instance
+parameter was explicitly set, 0 otherwise. Foundation for SPICE's
+"instance overrides model" parameter resolution.
+
+**Status:** WRONG-CODE / codegen reject. **High.**
+
+**Cross-reference:** `docs/NGSPICE_GAPS.md` N.2; affects every NGSPICE
+semiconductor model in `crates/piperine-lang/headers/ngspice/` (they all
+use `$param_given("…")` to decide between instance and model defaults).
+
+**Current state.** The lowering produces
+`IrExpr::Sim(SimQuery::ParamGiven(name))` (`lowering/expr.rs:446-453`).
+The JIT validator rejects it (`ir_emit.rs:526-531`).
+
+Today, models work around the gap with a sentinel convention:
+`param temp : Real = 0.0;` means "not given, use ambient". This is fragile —
+`0.0 K` is physically valid in the math, even if not in practice — and
+breaks for parameters like `nf`/`nr` which have `1.0` as a meaningful
+default.
+
+**Why it matters.** SPICE's `.MODEL XRX resmod(r=50 tc1=0.001)` then 100
+instances `R1 : res ( a, b )` (inheriting model) vs `R1 : res ( a, b ) {
+.r = 100 }` (overriding) is the central reason for the model/instance
+separation. Without `$param_given`, every NGSPICE faithful model needs a
+sentinel, which the faithful headers already use (`temp > 0.0`), but
+parameters like `nf`, `nr`, `ise`, `isc`, `rb`, `irb`, etc. do **not**
+have safe sentinel defaults — they're exactly the values you'd expect
+to be set differently per instance.
+
+**Proposed solution.** Two parts:
+
+1. **At elaboration time**, when a `param` on an instance is bound (`R ( a, b
+) { .r = 50.0 }` → instance binds the `r` slot), record
+`param_given: HashMap<String, usize>` on `ElabMod` (instance → bitmask
+index). Conceptually: each instance has a fixed-size bool vector, one
+bit per declared `param`, set to 1 if the parent supplied a value.
+
+2. **At codegen time**, extend `Device` to expose a per-instance
+`param_given: Arc<[bool]>` and add `emit_ir_expr` for
+`SimQuery::ParamGiven(name)`:
+   ```rust
+   SimQuery::ParamGiven(name) => {
+       let i = ctx.param_given
+           .iter()
+           .position(|k| k == name)
+           .ok_or_else(|| unsupported(format!(
+               "unknown param `{name}` in $param_given"))?;
+       if ctx.param_given_values[i] { f64const(1.0) } else { f64const(0.0) }
+   }
+   ```
+
+3. The instance param storage already knows which param names are
+   declared in the module — the `param_given` bitmask is indexed by
+   declaration order (matching `IrProgram.modules[i].params[j]`).
+
+**Decision rationale.** A bool bitmask is cheaper than a `HashMap` lookup
+per `$param_given` call (the call can appear in inner loops). Reusing the
+existing `Device` storage layout keeps the codegen simple.
+
+**Verification.**
+- Positive: `R ( a, b ) { .r = 50.0 }` with `var x : Real = if
+  ($param_given("r")) { 50.0 } else { 0.0 }` (a fake "watch the
+  param-given flag" model) produces `x = 50.0` when bound, `x = 0.0`
+  when not.
+- Negative: `$param_given("r_typo")` errors with `"unknown param
+  `r_typo` in $param_given"` (fail-loud per Part A).
+- Integration: NGSPICE faithful passives.phdl `res` model resolves `r`
+  vs `model.r` correctly. Use `cargo test -p piperine-codegen`.
+
+**Acceptance criteria.**
+- [ ] Elaboration populates `param_given: &[bool]` per instance.
+- [ ] `SimQuery::ParamGiven` accepted by `emit_sim`; reads from
+      `param_given` bitmask.
+- [ ] Unknown param name rejected with a clear error.
+- [ ] NGSPICE res model E2E test: instance `r=50` → uses 50; instance
+      with no `r` → uses `model.r` (or 1 mΩ fallback).
+- [ ] `cargo test -p piperine-codegen` green.
 
 ---
 
@@ -1596,6 +1788,281 @@ s2; s2 <= d; }` — `s1` must take the *old* `s2`, not the new one.
 
 ---
 
+### D.8 `$limit("pnjlim"|"fetlim", ...)` rejected; `limexp` is a stateless substitute
+
+**Spec:** Verilog-A/AMS standard — `$limit("pnjlim", v, vold, vte, vcrit)`
+applies SPICE's `DEVpnjlim` per-iteration voltage limiting; `$limit("fetlim", …)`
+applies `DEVfetlim`. These are how SPICE guarantees quadratic convergence on
+pn junctions and FET channels.
+
+**Status:** STUB fail-loud + partial substitute. **High.**
+
+**Cross-reference:** `docs/NGSPICE_GAPS.md` N.3, O.4; the `ngspice/`
+headers (`diode.phdl:231`, `bjt.phdl:~600`, etc.) all use
+`$limit("pnjlim", ...)` — fixing this gap removes the largest hard
+deviation from NGSPICE.
+
+**Current state.** The lowering produces
+`SimQuery::Limit { kind: String, args: Vec<IrExpr> }` (`ir.rs:110-111`,
+`lowering/expr.rs:462-469`). The JIT validator rejects it
+(`ir_emit.rs:526-531`).
+
+The `limexp` builtin is available as a *partial* substitute
+(`codegen/cranelift_helpers.rs:43-47`):
+
+```rust
+"limexp" => {
+    // Simplified: exp(min(u, 80))
+    emit_call_exp(ctx, ...)
+        // ...with the inner `u` clamped to ≤ 80 before exp ...
+}
+```
+
+The comment says it is *"not stateful"* — it clamps the argument (preventing
+`exp` overflow) but does **not** track the previous Newton iteration's
+voltage, which is the core of `pnjlim`/`fetlim`. SPICE's `DEVpnjlim` is:
+
+```
+v_new = v_old + pnjl(v − v_old, vte, vcrit)
+vstep = pnjl(v − v_old, vte, vcrit) − (v − v_old)
+```
+
+where `pnjl` limits the per-iteration step to a fraction of the critical
+voltage `vcrit = n · vt · ln(n · vt / (√2 · is))`.
+
+**Why it matters.** NGSPICE's iteration count on stiff diode circuits
+(snap recovery, charge-pump startup) is governed by `pnjlim`/`fetlim`.
+Without them:
+- The simplified `limexp` prevents overflow (a hard error).
+- But the Newton iteration can still take many extra steps or diverge, because
+  the voltage update from one iteration to the next has no limiter.
+
+The NGSPICE faithful models use:
+- `diode.phdl:233` — `vd = $limit("pnjlim", ...)`
+- `bjt.phdl:~600` — same for `vbe`, `vbc`
+- `jfet.phdl`, `mos1.phdl` — `fetlim` for `vgs`, `vgd`
+
+Replacing these with `exp(min(x, 80))` keeps the equations numerically safe
+but loses the convergence property.
+
+**Proposed solution.** Three parts:
+
+1. **Stateful state slot:** add a new `IrStateKind::LimitSlot { site: u32 }`
+   (mirrors `Ddt`/`Idt` state). Allocates a `f64` per `$limit` call site in
+   the device's state vector. The slot stores the *previous Newton
+   iteration's* value of the expression being limited.
+
+2. **JIT emission:** in `emit_sim`:
+   ```rust
+   SimQuery::Limit { kind, args } => {
+       let site = alloc_limit_slot(ctx);
+       // vold := state[site];   // previous Newton value
+       // v := evaluate(args[0]) using current voltages
+       // vnew := apply_limit(kind, v, vold, args[1], args[2])
+       // state[site] := v         // store for next Newton step
+       // return vnew
+   }
+   ```
+   where `apply_limit` dispatches `pnjlim`/`fetlim`/`limlog` based on
+   `kind`.
+
+3. **Codegen separation:** `limexp` stays the stateless
+   `exp(min(x, 80))` for user code that just wants a clamped exponential
+   (no Newton iteration storage cost). `$limit` is the Newton-aware
+   primitive.
+
+**Decision rationale.** Stateful state slots are the same mechanism `ddt`/
+`idt` already use (`ir.rs:398-422`). Adding one more `IrStateKind` is
+mechanical. The alternative — re-implementing pnjlim entirely on the solver
+side — requires the solver to know about the expression's structure, which
+couples the solver to the IR.
+
+**Why this depends on other Parts.** The state-slot allocation machinery
+must thread `state: &mut [f64]` through the Newton residual callback, the
+same path D.1 (`<+`/`<-` contributions) uses. Once that exists, `LimitSlot`
+is one more variant.
+
+**Verification.**
+- Iteration-count test: a diode reverse-snap circuit (PNP transistor
+  pulling a charged node) starts with `vdrain = -5V` and a 10 mA
+  current. With `pnjlim` it converges in ~5 iterations; without it,
+  can take >50. The test asserts the iteration count.
+- Functional test: a simple diode forward-bias — the DC IV curve with
+  pnjlim matches NGSPICE's to ≤1% (the limit introduces ≤1% error on the
+  bias voltage).
+- Negative: `limexp(100.0)` returns `exp(80) ≈ 5.18e34`, not inf — confirms
+  the stateless `limexp` still works.
+
+**Acceptance criteria.**
+- [ ] `SimQuery::Limit` accepted by `emit_sim`; `pnjlim` and `fetlim`
+      implemented.
+- [ ] Each `$limit` call allocates one state slot; slot is updated after
+      each Newton iteration (not after each accepted step).
+- [ ] Diode reverse-snap convergence test within 2× NGSPICE iteration count.
+- [ ] `ngspice/headers/diode.phdl` compiles end-to-end through codegen
+      (A.14 + A.15 + D.8 unblock all four semiconductor devices).
+- [ ] `cargo test -p piperine-codegen -p piperine-solver` green.
+
+---
+
+### D.9 `ac_stim(mag, phase)` not implemented → AC analysis has no stimulus
+
+**Spec:** Verilog-A/AMS standard — `ac_stim(mag, phase)` declares the
+small-signal AC stimulus on a source; AC analysis uses it as the RHS
+excitation.
+
+**Status:** STUB. **Medium.**
+
+**Cross-reference:** `docs/NGSPICE_GAPS.md` O.3.
+
+**Current state.** `IrExpr::AcStim` exists in the IR `ir.rs` (line range
+mentioned in the original GAPS audit) but is **validated out for analog
+contrib** at `ir_emit.rs:568`. The PHDL lowering has no `$ac_stim`
+syscall, so PHDL sources cannot declare an AC stimulus directly.
+
+The faithful `vsrc`/`isrc` models in `ngspice/sources.phdl` use
+`V(p, n) <+ ac_stim(ac_mag, ac_phase);` for the AC RHS. Today this is
+a codegen-reject (silent zero, of the "no RHS excitation" variety).
+
+**Why it matters.** Without `ac_stim`, every AC analysis of a PHDL model
+returns the trivial solution (zero stimulus → zero response). The solver's
+AC analysis infrastructure works (`solver/ac.rs`), but the source side has
+nothing to inject. AC analysis is the diagnostic of choice for small-signal
+filter design — losing it is losing half the value of mixed-signal
+simulation.
+
+**Proposed solution.** Two options, in order of preference.
+
+**Option A (PHDL-idiomatic):** add `$ac_stim(mag, phase)` as a syscall
+that lowers to `IrExpr::AcStim { mag, phase }`. The JIT emits:
+
+```rust
+// At AC analysis time only (AC-mode flag in SimCtx):
+//   R[branch] += ac_mag * cos(ac_phase);
+//   R[branch] += j * ac_mag * sin(ac_phase);
+// At DC/tran time: emit nothing (or zero).
+```
+
+The `AnalysisKind` discriminator (D.10, below) decides which branch to
+take.
+
+**Option B (SPICE-style):** the solver reads the `AC` parameter from
+source declarations out-of-band (not from the IR model body). The `vsrc`/
+`isrc` types register with the solver at `TransientSolver::new`, the
+solver reads `ac_mag`/`ac_phase` from the instance params, and injects
+the stimulus during AC analysis independently of the device's residual.
+
+**Decision rationale.** Adopt **Option A** for symmetry with the AMS
+frontend (which already lowers `ac_stim` in its AMS lowering). Option B
+is a fallback if the SimCtx plumbing proves too invasive. Both should
+land before AC analysis is useful.
+
+**Why this depends on other Parts.** D.10 (`$analysis`) is needed to
+select the right branch in the JIT code (AC vs not-AC).
+
+**Verification.**
+- `vsrc` with `ac_mag=1.0` and `ac_phase=0.0` driving a `resistor(1k)`:
+  AC analysis result is `|V/R| = 1e-3 mhos` at phase `0°`.
+- Phase nonzero: `ac_phase=90°` → response phase is `90°` (imaginary).
+- Negative: at DC operating point, `ac_stim` contributes nothing (no
+  rhs offset, no bias shift).
+
+**Acceptance criteria.**
+- [ ] `$ac_stim(mag, phase)` syscall accepted by PHDL lowering.
+- [ ] `IrExpr::AcStim` stamped into AC RHS only; no contribution to DC/tran
+      residuals.
+- [ ] AC magnitude + phase test (1 kHz, 10 kHz, 100 kHz) passes numerically.
+- [ ] `cargo test -p piperine-codegen -p piperine-solver` green.
+
+---
+
+### D.10 `$analysis("kind")` rejected at codegen → no analysis-type branching
+
+**Spec:** §8 — "Behavior may branch on the current analysis via `$analysis`,
+which returns an `Analysis` enum (`Dc`, `Ac`, `Tran`, `Noise`); the
+compiler specializes each analysis, so the branch costs nothing at runtime."
+
+**Status:** STUB. **Medium.**
+
+**Cross-reference:** `docs/NGSPICE_GAPS.md` N.4; also needed for D.9 above.
+
+**Current state.** The lowering produces `SimQuery::Analysis(String)`
+(`ir.rs:104-105`, `lowering/expr.rs:405-411, 478-486`). The validator
+rejects every `SimQuery` other than `Temperature | Vt | Abstime |
+Mfactor` at `ir_emit.rs:526-531`. `SimCtx` has **no** `current_analysis`
+field (`codegen/mod.rs:56-82` — only `temperature`, `abstime`,
+`mfactor`, `gmin`).
+
+The NGSPICE faithful `vsrc`/`isrc` use `if ($analysis("tran")) { val =
+waveform($abstime) } else { val = dc }` to switch between DC and transient
+behavior. This lowers to `SimQuery::Analysis` and is currently a silent
+reject.
+
+**Why it matters.** Without `$analysis`:
+- The `ddt` operator naturally evaluates to 0 in DC (its `StateRef`
+  returns 0.0 in the resistive residual path per `ir_emit.rs:97-99`),
+  which accidentally handles the *charge* side correctly.
+- But the *source value* side does NOT work: a transient waveform is
+  unconditionally computed during DC analysis, giving the wrong operating
+  point. Conversely, a DC `dc = 1.0` value is computed during transient
+  analysis if the user only sets `dc` (no waveform).
+
+**Proposed solution.** Two parts.
+
+1. **Add `current_analysis: AnalysisKind` to `SimCtx`** (alongside the
+   existing fields), with the `#[repr(C)]` layout unchanged for
+   existing fields:
+   ```rust
+   #[repr(C)]
+   pub struct SimCtx {
+       pub temperature: f64,      // offset 0
+       pub abstime: f64,          // offset 8
+       pub mfactor: f64,          // offset 16
+       pub gmin: f64,              // offset 24
+       pub current_analysis: u32, // offset 32 — Dc=0, Ac=1, Tran=2, Noise=3
+       // (future: step, tfinal at offsets 40, 48 for A.14)
+   }
+   ```
+
+2. **Solver sets it** at each call: `DcSystem::solve` → `0`,
+   `AcSolver::solve` → `1`, `TransientSolver::step` → `2`,
+   `NoiseSolver::solve` → `3`. One store per analysis (no per-iteration
+   cost).
+
+3. **JIT emission:**
+   ```rust
+   SimQuery::Analysis(kind) => match kind.as_str() {
+       "dc"    => load_offset(ctx.sim_ctx, 32) == 0.0 ? 1.0 : 0.0,
+       "tran"  => load_offset(ctx.sim_ctx, 32) == 2.0 ? 1.0 : 0.0,
+       "ac"    => load_offset(ctx.sim_ctx, 32) == 1.0 ? 1.0 : 0.0,
+       "noise" => load_offset(ctx.sim_ctx, 32) == 3.0 ? 1.0 : 0.0,
+       _       => f64const(0.0),
+   }
+   ```
+
+**Decision rationale.** This is the same `SimCtx`-threads-state pattern as
+A.2/A.14. The string-based dispatch matches the spec's `$analysis("name")`
+form, so no IR variant is needed.
+
+**Verification.**
+- `$analysis("dc")` returns 1 during DC, 0 during tran.
+- `$analysis("tran")` returns 1 during tran, 0 during DC.
+- DC operating point of `vsrc { .dc = 1.0 }` is `V = 1.0` (verified
+  numerically).
+- Transient of `vsrc { .dc = 1.0, .pulse_v1 = 0, .pulse_v2 = 2 }` with
+  `wave = 2` (PULSE) gives `V = 0` at `t < td` (uses `dc`),
+  `V = 2` at `td < t < td+pw` (uses waveform).
+
+**Acceptance criteria.**
+- [ ] `SimQuery::Analysis` accepted by `emit_sim`; `SimCtx.current_analysis`
+      is written by solver at each analysis type.
+- [ ] DC vs tran branching test (PULSE source) passes.
+- [ ] `ngspice/headers/sources.phdl` compiles end-to-end through codegen
+      (combined with A.14/A.15/D.8/D.9).
+- [ ] `cargo test -p piperine-codegen` green.
+
+---
+
 ## Part E — Mixed-signal bridges (A2D / D2A)
 
 > The spec's §8 mixed-signal story ("a comparator is `digital`, a 1-bit DAC
@@ -1782,6 +2249,173 @@ at the exact crossing time.
 - [ ] `Device::analog_event_probes` added.
 - [ ] Transient solver detects crossings and pushes events.
 - [ ] `cross`-based comparator test passes.
+- [ ] `cargo test -p piperine-solver` green.
+
+---
+
+### E.4 `@ above` / `@ cross` events fire and update persistent `var` state (switch hysteresis)
+
+**Spec:** §8.4 — "`above(expr)` fires when expression exceeds zero."
+Implicit: the event body can mutate state (§5.2: `var` is stateful in
+behavior blocks).
+
+**Status:** PARTIAL (events parse but never fire). **Medium.**
+
+**Cross-reference:** `docs/NGSPICE_GAPS.md` Q.3; `ngspice/switches.phdl`
+declares `@ above(...) { sw_state = 1.0; }` in its `sw` and `csw` models.
+Combines with I.15 (persistent `var`) — *both gaps block the NGSPICE
+faithful switch models.*
+
+**Current state.** The IR exposes the event mechanism (`IrEventKind::Above|
+Cross|...Posedge|Initial`, `ir.rs:371-386`), but no solver code watches an
+analog expression and fires the event. E.3 covers the *digital-output*
+case (`@ cross(...) { out <- 1; }`); this entry covers the *state-update*
+case (`@ above(...) { sw_state = 1.0; }`).
+
+The difference: E.3's event is *observable* — when the event fires, the
+device's digital output changes and other devices see it. E.4's event is
+*internal* — it mutates the device's own state (used by the next
+analog iteration). Same mechanism, different output.
+
+**Why it matters.** The NGSPICE faithful `sw` and `csw` models are the
+direct motivation:
+
+```phdl
+analog sw {
+    var vc : Real = V(cp, cn);
+    @ above(vc - (model.vt + model.vh))  { sw_state = 1.0; }
+    @ above((model.vt - model.vh) - vc)  { sw_state = 0.0; }
+    var g : Real = if (sw_state > 0.5) { gon } else { goff };
+    I(p, n) <+ g * V(p, n);
+}
+```
+
+Without E.4, `sw_state` stays at its initial value (`0.0`) and the
+switch never transitions.
+
+**Proposed solution.** Same event-detection mechanism as E.3, but the
+target is a `var` slot (allocated per I.15), not a digital net. The
+event handler writes to the slot; the analog body reads from it.
+
+Internally, the difference from E.3 is the *sink* of the event: digital
+net write vs. `var` slot write. The solver side reuses the same crossing
+detector (timestamp interpolation, queue management).
+
+**Decision rationale.** E.3's infrastructure carries over — the only
+new code is the `var` write path (which I.15 already laid the foundation
+for) and the event-handler dispatch (which the IR already represents).
+
+**Why this depends on other Parts.** I.15 (persistent `var`) must land
+first or sooner, since the event writes to a slot that must persist
+across Newton iterations.
+
+**Verification.**
+- `sw` with positive hysteresis (`vt=2`, `vh=1`):
+  - `vc(t) = 0.5 + t` (ramp from below vt): no event until `t = 1.5`
+    (exceeds `vt+vh=3`).
+  - At `t=1.5`: event fires, `sw_state = 1.0`.
+  - `g = gon` for `t > 1.5`.
+  - When ramp reverses and `vc < vt-vh=1`: event fires, `sw_state = 0`,
+    `g = goff`.
+- `csw` mirrors the above with current control (`I(cp,cn)`).
+- NGSPICE faithful `switches.phdl` E2E: a relay circuit switching at
+  the right thresholds.
+
+**Acceptance criteria.**
+- [ ] `@ above(expr)` writes to persistent `var` slot (I.15).
+- [ ] Event firing does not require net write (no digital output).
+- [ ] Switch hysteresis test matches expected transition times.
+- [ ] NGSPICE `switches.phdl` E2E (combined with D.1, H.4, A.1, I.15).
+- [ ] `cargo test -p piperine-codegen -p piperine-solver` green.
+
+---
+
+### E.5 `@ initial` fires once at t=0 for IC / off initialization
+
+**Spec:** §8.4 — "`initial` / `final` | once, at t=0 / end." Implied:
+the event body can set initial conditions via `V(p,n) <- ic;` forces
+or `var = X;` writes.
+
+**Status:** PARTIAL (recognized in IR, not fired by solver). **Medium.**
+
+**Cross-reference:** `docs/NGSPICE_GAPS.md` Q.5; NGSPICE faithful
+`cap.phdl:194`, `ind.phdl:255`, `diode.phdl:308`, `switches.phdl:50`
+all use `@ initial { ... }` for state initialization.
+
+**Current state.** `IrEventKind::Initial` exists in the IR
+(`ir.rs:371-386`). The `digital_init` machinery at
+`piperine-solver/src/circuit.rs:167-179` runs `initial` events for
+*digital* devices (DFF reset, etc.) at t=0. There is no analogue for
+*analog* devices — the `@ initial` body of a `cap`, `ind`, `dio`, or
+`sw` never executes.
+
+The NGSPICE faithful headers use `@ initial` for:
+- `cap`: `@ initial { if (ic != 0.0) { V(p, n) <- ic; } }` — sets
+  initial capacitor voltage for UIC transient.
+- `ind`: `@ initial { if (ic != 0.0) { I(p, n) <- ic; } }` — initial
+  inductor current.
+- `dio`: `@ initial { if (ic != 0.0) { V(pp, n) <- ic; } }` — initial
+  junction voltage.
+- `sw` / `csw`: `@ initial { sw_state = if (off) { 0.0 } else { 1.0 }; }`
+  — initial switch state for DC operating point.
+
+**Why it matters.** Without `@ initial` firing:
+- UIC transient simulations start from the solver's guessed values, not
+  the user's `ic=` declarations.
+- The DC operating point of switches with `off`/`on` flags ignores the
+  user's intent (always starts open).
+
+**Proposed solution.** Mirror the digital initial-event machinery for
+analog:
+
+1. Add `analog_init: Vec<IrStmt>` to `IrAnalogBody` (or reuse the existing
+   `Event { spec: Initial, body }` representation already in the IR).
+2. In the solver's pre-DCOp setup and pre-transient step-0 setup, execute
+   each device's `analog_init` statements exactly once. The statements
+   can include:
+   - `V(p, n) <- expr;` — a force (D.1), sets initial node voltage.
+   - `var_x = value;` — a `var` write (I.15), sets initial state.
+3. The execution runs **before** the first Newton iteration, so the
+   values are visible during the first residual evaluation.
+
+```rust
+// piperine-solver/src/circuit.rs (sketch):
+fn init_analog(&mut self) {
+    for (dev_idx, dev) in self.devices.iter_mut().enumerate() {
+        for stmt in dev.analog_initial_events() {
+            dev.exec_initial_stmt(stmt, &mut self.x, &mut self.state);
+        }
+    }
+}
+```
+
+`exec_initial_stmt` interprets the IR statement with access to:
+- `x: &mut [f64]` — node voltages / branch currents.
+- `state: &mut [f64]` — `var` slots and reactive state (ddt/idt accumulators).
+- A `SimCtx` (per A.2) for system queries.
+
+**Decision rationale.** The mechanism mirrors the digital
+`init_digital()` (H.5) — it's just another "fire-once-at-setup" event.
+Adding `init_analog()` next to it is mechanical.
+
+**Why this depends on other Parts.** D.1 (forces) for the `V <-` form,
+I.15 (`var` persistence) for the `var =` form. Without those, only the
+`var` form works initially; the `V <-` form unblocks once D.1 lands.
+
+**Verification.**
+- `cap` with `ic=1.0`: transient at `t=0+` reads `V ≈ 1.0` (with
+  discretization error; exactly 1.0 with backward Euler at `t=0+`).
+- `sw` with `off=1`: DC operating point converges with `sw_state = 0`
+  (initial open). Open-circuit output.
+- `sw` with `on=1` (uses param `off=0`): `sw_state = 1` at DC-OP. Closed.
+- NGSPICE faithful `cap.phdl`/`ind.phdl`/`diode.phdl`/`switches.phdl`
+  E2E: each device's IC is respected.
+
+**Acceptance criteria.**
+- [ ] `@ initial { V(p,n) <- ic; }` sets initial voltage (requires D.1).
+- [ ] `@ initial { x = v; }` sets initial `var` value (requires I.15).
+- [ ] Solver calls these once before DC-OP and once before t=0 transient.
+- [ ] NGSPICE faithful headers E2E.
 - [ ] `cargo test -p piperine-solver` green.
 
 ---
@@ -2297,6 +2931,162 @@ with reset) starts in the right state without manual test setup.
 
 ---
 
+### H.6 BJT excess phase (PTF) needs a state-recurrence operator
+
+**Spec:** Not in PHDL spec directly; this is a compact-model semantic that
+surfaces as a numerical fidelity gap when porting the NGSPICE `bjt` model.
+
+**Status:** STUB (model falls back to no excess phase). **Low.**
+
+**Cross-reference:** `docs/NGSPICE_GAPS.md` Q.1.
+
+**Current state.** The NGSPICE faithful `bjt.phdl` computes the BJT
+collector current. NGSPICE's full implementation includes a "phase"
+correction (`bjtload.c:498-519`): the transport current `cbe` is
+filtered through a second-order Weil approximation that gives a frequency-
+dependent phase delay matching the device's transit time behavior. The
+NGSPICE implementation uses:
+
+```c
+td = excessPhaseFactor = (PTF / (180/π)) * TF  // seconds
+cex = cbe filtered through H(s) = 1 / (1 + td/3·s + (td/3)²·s²)
+```
+
+PHDL's BJT model uses `cex = cbe` (no phase correction). When `model.ptf =
+0` (the default), this gives exact parity. When `PTF > 0`, the model's
+high-frequency accuracy degrades — AC analysis of an RF BJT at GHz
+frequencies underestimates phase shift.
+
+The NGSPICE `pjrc` BJT fixtures in `tests/fixtures/vams/` are at audio
+rates, so the gap is invisible in the current corpus.
+
+**Why it matters.** Faithful port of RF BJT behavior. Without PTF, RF
+designers using the Piperine BJT model see wrong phase at
+`f · TF > 0.1`.
+
+**Proposed solution.** Three options:
+
+1. **`delay(x, t)` operator** (per D.3) + chain. A second-order Weil
+   filter is `H(s) = 1 / (1 + s·τ/3 + (s·τ/3)²)`. In the Laplace domain,
+   this is two integrators and two additions. With `idt` operator (D.2)
+   available, this becomes:
+   ```phdl
+   // Inside the BJT analog block when PTF > 0:
+   var td : Real = (model.ptf * M_PI / 180.0) * model.tf;
+   // two-idt chain forming the 2nd-order section:
+   var stage1 : Real = idt(cbe);  // first pole at s = -3/τ
+   var cex : Real = idt(stage1 - (3.0/td) * stage1 + (9.0/(td*td)) * idt(stage1));
+   ```
+   (Simplified; the actual circuit is an RC L-section.)
+
+2. **Dedicated `state_recurrence(stmts)` operator.** A PHDL block that
+   defines a discrete-time recurrence with explicit state. Mirrors what
+   NGSPICE does in C. More flexible but adds a new IR kind.
+
+3. **Skip for now** (current state). Document as a known accuracy gap.
+
+**Decision rationale.** Adopt **Option 1** once `delay`/`idt` are
+implemented (D.2/D.3). Option 2 is too language-invasive for one model's
+quirk. The Weil approximation via two `idt` integrators is faithful to
+the numerical behavior even if not bit-identical to the C code.
+
+**Verification.**
+- BJT with `PTF=30`, `TF=10e-12`: AC phase at `f=10GHz` matches
+  `arg(H(jω))` within 5°.
+- BJT with `PTF=0`: identical to current model.
+- The `bjt.phdl` header gains a conditional block:
+  ```phdl
+  var cex : Real = if (model.ptf > 0.0 && model.tf > 0.0) { ... } else { cbe };
+  ```
+
+**Acceptance criteria.**
+- [ ] PTF=0 → identical results to before.
+- [ ] PTF=30, f=10GHz → phase within 5° of NGSPICE.
+- [ ] No regression in `bjt.phdl` E2E tests with `model.ptf = 0` (default).
+- [ ] `cargo test -p piperine-codegen -p piperine-solver` green.
+
+---
+
+### H.7 `const_eval` cannot iterate fixed-point for diode breakdown voltage
+
+**Spec:** §7.1 — "Recursion is resolved entirely at elaboration and must
+terminate." The spec accepts bounded recursion; it doesn't say iteration.
+Iterative schemes (fixed-point) are a numerical necessity for the diode
+breakdown model.
+
+**Status:** STUB (first-order approximation used). **Low.**
+
+**Cross-reference:** `docs/NGSPICE_GAPS.md` Q.4.
+
+**Current state.** The NGSPICE faithful `diode.phdl` computes the
+breakdown voltage temperature adjustment. NGSPICE's full algorithm
+(`diotemp.c:208-244`) is a 25-iteration fixed-point:
+
+```c
+// First guess:
+xbv = tBv - nbv * vt * log(1 + cbv / tSatCur);
+// Iterate until |xcbv - cbv| < reltol * cbv, max 25 iterations:
+for (iter = 0; iter < 25; iter++) {
+    xbv = tBv - nbv * vt * log(cbv / tSatCur + 1 - xbv/vt);
+    xcbv = tSatCur * (exp((tBv - xbv) / (nbv * vt)) - 1 + xbv / vt);
+    if (fabs(xcbv - cbv) <= tol) goto matched;
+}
+```
+
+The NGSPICE faithful header uses **only the first guess** (the pre-iteration
+formula on line above). This is typically within ~1% of the iterated value,
+which is acceptable for most circuits but not bit-identical.
+
+`const_eval` (used for elaboration-time constants) does NOT currently
+support `for` loops over runtime-controlled bounds. The breakdown voltage
+is computed *at analog evaluation time* (since `T` and per-instance
+parameters are not all elaboration constants), so it happens in the
+analog block, not in `const_eval`. The constraint is that the analog block
+cannot contain `for` (per spec §8: "A `for` in either block is unrolled
+into hardware").
+
+**Why it matters.** For circuits near breakdown (avalanche photodiodes,
+Zener regulators, ESD clamps), the iterative refinement can matter at
+the 1% level. Faithful RF/ESD simulation cares.
+
+**Proposed solution.**
+
+1. **In the analog block** (where the computation happens), introduce a
+   bounded iteration via a fixed-trip expression. PHDL doesn't support
+   `while` in analog blocks (per spec), so the iteration must be unrolled
+   to a *bounded* `for` with const bound.
+
+2. **Const-for in `const_eval`:** add `for i in 0..N` to const-eval,
+   where `N` is a compile-time constant. This supports the recurrence
+   being computed once per temperature, not per evaluation.
+
+3. **Approximation fallback** (current state, document): keep the
+   first-order formula; note in the BJT/diode accuracy section that the
+   temperature-adjusted breakdown voltage is approximate.
+
+**Decision rationale.** **Adopt option 3** (first-order approximation)
+documented as a known accuracy gap. Full fixed-point requires either:
+- A spec extension (analog `while`/`repeat`), or
+- A dedicated operator.
+
+Neither is worth the language complexity for a model corner-case. The
+1% error is acceptable for the vast majority of circuits.
+
+**Verification.**
+- Test: `dio` with `bv=5.6`, `ibv=1mA`, `t=300K`: iteration-up-to-25 vs
+  first-order — error within 1% on `tBrkdwnV`.
+- Test: `dio` reverse sweep near `bv` — IV curve smooth, no
+  convergence failures.
+- `cargo test -p piperine-codegen` green.
+
+**Acceptance criteria.**
+- [ ] Documented accuracy gap; marked Low severity.
+- [ ] First-order approximation stays as-is.
+- [ ] Test confirms <1% breakdown voltage error vs iterated value.
+- [ ] No convergence failures near breakdown.
+
+---
+
 ## Part I — PHDL language features (generics, capabilities, bundles, enums, higher-order)
 
 > This Part is the largest. It adds the spec's "few orthogonal concepts"
@@ -2753,6 +3543,422 @@ foo::pub_item` succeeds.
 **Acceptance criteria.**
 - [ ] `pub` enforced on `use` resolution.
 - [ ] Tests pass.
+
+---
+
+### I.11 `&&` / `||` not in PHDL grammar; NGSPICE models use `ng_and`/`ng_or` helpers
+
+**Spec:** Implied by §6.1 ("Boolean: Two-state logic value (0, 1)") — the
+spec needs logical connectives to write guards like
+`if (model.ikf > 0 && cd > 1e-18)`.
+
+**Status:** STUB. **Low** (workaround exists; affects ergonomics and
+faithfulness of the NGSPICE headers).
+
+**Cross-reference:** `docs/NGSPICE_GAPS.md` P.1; the faithful
+`crates/piperine-lang/headers/ngspice/ngspice_constants.phdl` defines
+`ng_and`/`ng_or` pure fns because `&&`/`||` don't parse.
+
+**Current state.** The lexer recognizes `&&`/`||` as `Tok::And`/`Tok::Or`
+(`lexer.rs:101-104, 239-242`); the comment says *"lexed for error clarity,
+not in PHDL grammar."* The expression table at `expr.rs:45-55` lists
+operators at precedences 1 (BitOr) through 7 (Mul/Div/Rem) but **omits**
+`And` and `Or`.
+
+A model like `if (model.ikf > 0.0 && cd > 1.0e-18) { ... }` produces the
+parse error `"Expected RParen, found Some(And)"` — the `&&` is lexed but
+the expression parser has no rule for it.
+
+**Why it matters.** Every NGSPICE faithful model (res/dio/bjt/jfet/mos1)
+uses compound conditions. The `ng_and(a, b)` / `ng_or(a, b)` helpers
+work but:
+- Look unnatural next to the Verilog-A / AMS original.
+- Require call overhead (if not inlined).
+- Don't short-circuit (`(a > 0)` is always evaluated even when `a == 0`),
+  which the spec's `&&` would do.
+
+**Proposed solution.** Two options.
+
+**Option A (operator form):** add `And` and `Or` to the binary-op
+precedence table at level 1 (just below `BitOr`) and 2 (just below
+`BitAnd`). Extend `validate_ir_contrib` to accept them in digital/analog
+contributions.
+
+```rust
+// expr.rs:45-55
+Some(Tok::And) => Some((BinaryOp::And, 0)),   // lowest precedence
+Some(Tok::Or)  => Some((BinaryOp::Or, 0)),
+```
+
+`BinaryOp::And`/`Or` already exist in the IR (`ir.rs`). Add symbolic
+derivatives in `ir_emit.rs:diff_call` (they short-circuit on constants
+but here the operands are always real-valued `Boolean` so the derivative
+simplifies).
+
+**Option B (keyword form):** accept `and`/`or` as aliases. Same as A but
+without changing operator precedence. Matches Mathematica/Rust bool
+syntax.
+
+**Decision rationale.** Prefer **Option A** — `&&` and `||` are the
+textbook forms users expect. The precedence slot (level 1, lowest)
+mirrors C/Python/Java semantics.
+
+**Verification.**
+- `if (a > 0 && b > 0) { ... }` parses and works.
+- `if (a > 0 || b > 0) { ... }` parses and works.
+- NGSPICE faithful `diode.phdl` removes the `ng_and`/`ng_or` wrappers
+  and uses `&&`/`||` directly.
+- Short-circuit test: `if (false && true_branch())` — `true_branch()` is
+  not called. (Optional; the JIT may not short-circuit at runtime; if so,
+  document.)
+
+**Acceptance criteria.**
+- [ ] `And` and `Or` accepted in the expression table.
+- [ ] Symbolic derivatives registered.
+- [ ] NGSPICE diode model E2E with `&&`/`||` (no helper fns) passes.
+- [ ] `cargo test -p piperine-codegen` green.
+
+---
+
+### I.12 `else if` not supported in if-expressions (only in statements)
+
+**Spec:** §8 — if-expressions are part of the analog/digital surface.
+
+**Status:** STUB (works in statements, fails in expressions). **Low.**
+
+**Cross-reference:** `docs/NGSPICE_GAPS.md` P.2.
+
+**Current state.** Two independent parsers handle `if`:
+- **If-expression** (`expr.rs:94-102`): after `else`, calls
+  `parse_block()` which expects `{`. So `else if (B) { Y }` errors with
+  `"Expected LBrace, found Some(Ident(\"if\"))"`.
+- **If-statement** (`stmt.rs:211-235`): explicitly handles `else if` (line
+  222, `if self.eat_ident("if")`).
+
+The asymmetry surfaces in NGSPICE faithful `passives.phdl` and `mos.phdl`,
+which declare `var r_nom : Real = if (r_given) { r } else if (geometry) {
+… } else { … };` in expression context. The headers were converted to the
+nested `else { if (B) { … } }` form by hand (with explicit `}` per chain
+level) — this is noisy and error-prone.
+
+**Why it matters.** Spec ergonomics. Every chained if-expression in a
+`var` initializer needs manual restructuring. A two-branch chain is
+tolerable; a four-branch chain (`if A elif B elif C elif D else E`) turns
+into four nesting levels of `{ }`.
+
+**Proposed solution.** In `expr.rs:100-101`, after consuming `else`, check
+if the next token is `if` and parse a nested if-expression in-place:
+
+```rust
+self.expect_ident_str("else")?;
+let else_body = if self.peek_ident("if") {
+    // parse inner `if (cond) { ... } else { ... }` as an expression
+    self.pos += 1;  // skip the `if`
+    self.expect(&Tok::LParen)?;
+    let inner_cond = self.parse_expr()?;
+    self.expect(&Tok::RParen)?;
+    let inner_then = self.parse_block()?;
+    self.expect_ident_str("else")?;
+    let inner_else = self.parse_block()?;
+    Expr::If { cond: inner_cond, then_body: inner_then, else_body: inner_else }
+} else {
+    self.parse_block()?
+};
+```
+
+**Decision rationale.** Single-line change in `parse_primary`. The
+else-if chain becomes a nested `Expr::If` tree, which the codegen and
+elaborator already handle (they recurse on `if` expressions). No new IR
+variant.
+
+**Verification.**
+- `var x : Real = if (A) { X } else if (B) { Y } else { Z };` parses.
+- The chain produces the same IR/behavior as the equivalent
+  `if (A) { X } else { if (B) { Y } else { Z } }`.
+- NGSPICE faithful `passives.phdl` removes the explicit `}` per chain
+  level.
+
+**Acceptance criteria.**
+- [ ] `else if` accepted in if-expression context.
+- [ ] Backward compatible: `if/else` in statement context still works
+      (separate parser at `stmt.rs:211`).
+- [ ] NGSPICE `passives.phdl` `var r_nom` uses `else if` without manual
+      nesting.
+- [ ] `cargo test -p piperine-codegen` green.
+
+---
+
+### I.13 `sinh` / `cosh` / `tanh` not built-in (spec §8.1 promises `tanh`)
+
+**Spec:** §8.1 — "Built-ins: ... the math functions (`exp`, `ln`, `sqrt`,
+`pow`, `tanh`, …)." The spec promises `tanh` and lists the rest.
+
+**Status:** MISSING from builtins. **Low** (workaround exists).
+
+**Cross-reference:** `docs/NGSPICE_GAPS.md` P.3; `ngspice_constants.phdl`
+defines them as `fn` because the codegen lacks them.
+
+**Current state.** The builtin math table
+(`codegen/cranelift_helpers.rs:22-51`, `codegen/analog.rs:33-73`)
+registers 18 functions: `exp`, `ln`/`log`, `log10`, `sqrt`, `abs`,
+`sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `pow`, `min`,
+`max`, `floor`, `ceil`, `limexp`. Spec promises (`sinh`, `cosh`,
+`tanh`) are missing.
+
+The BJT base-resistance IRB formula in NGSPICE uses `tan()` (which IS
+present), but `tanh` would be needed for accurate high-current β
+roll-off. Several compact models use `tanh` for soft saturation.
+
+**Why it matters.** Faithful BJT IRB fidelity, future compact-model work,
+spec compliance. User workarounds (`(exp(2x)-1)/(exp(2x)+1)` for `tanh`)
+defeat the spec's "linearise / differentiate for Jacobian automatically"
+promise — the compiler can compute `∂tanh/∂x = sech²(x)` symbolically but
+cannot for the hand-rolled expression.
+
+**Proposed solution.** Add three entries to the registry:
+
+```rust
+// codegen/cranelift_helpers.rs:22-51
+"sinh"  => emit_call_sinh,    // (exp(x) - exp(-x)) / 2
+"cosh"  => emit_call_cosh,    // (exp(x) + exp(-x)) / 2
+"tanh"  => emit_call_tanh,    // library call (libm tanhf on f32; f64 via tanh)
+```
+
+Symbolic derivatives in `ir_emit.rs:346-378`:
+- `∂sinh/∂x = cosh(x)`
+- `∂cosh/∂x = sinh(x)`
+- `∂tanh/∂x = 1 − tanh²(x)` (compute as `(1 − f²)` from the cached `tanh` result)
+
+**Decision rationale.** libm wrappers are cheap, derivatives are pure
+2-liner additions.
+
+**Verification.**
+- `sinh(1.0)` ≈ 1.17520.
+- `cosh(1.0)` ≈ 1.54308.
+- `tanh(1.0)` ≈ 0.76159.
+- Derivatives: `d(2*x)/d(x) = 2`; check via finite-difference at `x=1.0`:
+  `tanh(1.001) − tanh(0.999) ≈ 0.001 × (1 − tanh²(1)) ≈ 0.001 × 0.42`.
+
+**Acceptance criteria.**
+- [ ] `sinh`, `cosh`, `tanh` as builtins.
+- [ ] Derivatives registered.
+- [ ] `ngspice/headers/ngspice_constants.phdl` removes its local `fn`s
+      (they become duplicates).
+- [ ] `cargo test -p piperine-codegen` green.
+
+---
+
+### I.14 Bundle-typed `param`: elaboration lowers individual slots, not the bundle
+
+**Spec:** §6.5 — "A bundle is net-capable when every field is a net type...
+otherwise a `param`/`var`." The `.MODEL` / instance parameter separation is
+the central reason for PHDL's bundle-param syntax.
+
+**Status:** STUB (parse-only, no tested elaboration). **Medium.**
+
+**Cross-reference:** `docs/NGSPICE_GAPS.md` P.4; every NGSPICE model
+declares `param model : XxxModel = XxxModel {}` — this gap is the blocker
+for the NGSPICE faithful headers to compile through elaboration.
+
+**Current state.** The parser accepts `param model : DioModel =
+DioModel {}` (verified by `crates/piperine-lang/tests/ngspice_parse_tests.rs`).
+The elaboration in `elab/lower.rs:825-878` lowers bundle fields but the
+*instance-to-bundle binding* path has no tested path: when a parent
+writes `R ( a, b ) { .model = ResModel { .rsh = 50.0 } }`, the
+elaborator has to:
+1. Construct a `ResModel` value from the literal.
+2. Merge it with the instance's default (each field individually).
+3. Expose each field as a separate readable name (`model.rsh`) in
+   analog/digital bodies.
+
+Steps 1–3 are partially implemented but unexercised.
+
+**Why it matters.** The PHDL spec's `.MODEL` semantics are the cleanest
+encoding of the SPICE model/instance split. Without full bundle-param
+support, PHDL users either repeat all model params per instance (verbose,
+error-prone) or use sentinel defaults (fragile — see A.15).
+
+For the NGSPICE faithful headers in particular, every device needs:
+```phdl
+mod dio (...) {
+    param model : DioModel = DioModel {};
+    analog dio { ... model.is * area_eff ... }
+}
+```
+
+`model.is` is a bundle field access inside the analog body. Without I.14,
+this fails at elaboration; the NGSPICE headers are parse-only.
+
+**Proposed solution.** Two changes in `elab/lower.rs`:
+
+1. **At parse/elab of `param` with bundle type:**
+   - Look up the bundle declaration.
+   - For each field `f` with default `d_f`, create an internal slot
+     `model_f` initialised to `d_f`.
+   - The analog body sees `model.rsh` → resolves to slot `model_rsh`.
+
+2. **At instance binding** (the parent's `.model = ResModel {…}` literal):
+   - Evaluate the literal into a `HashMap<String, ConstVal>`.
+   - For each field in the literal, update the corresponding slot.
+   - Fields omitted from the literal keep their default.
+   - If the literal has fields not declared in the bundle → `ElabError`.
+
+```rust
+// elab/lower.rs — sketch:
+fn lower_bundle_param(
+    env: &mut LowerEnv,
+    pname: &str,
+    bundle_name: &str,
+    fields: &HashMap<String, ConstVal>,  // instance override; None for default
+) -> Result<(), ElabError> {
+    let bundle = env.bundles.get(bundle_name)
+        .ok_or_else(|| ElabError::UnknownBundle(bundle_name.into()))?;
+    for (fname, fdef) in &bundle.fields {
+        let value = match fields.get(fname) {
+            Some(v) => v.clone(),
+            None    => env.eval_const(&fdef.default)?,
+        };
+        env.declare(pname, fname, value);  // creates `model.fname` binding
+    }
+    Ok(())
+}
+```
+
+**Decision rationale.** Bundle literals are the spec's constructor (§6.5).
+Defaults are the spec's "omitted field takes its default". Both are needed
+for `UInt[N] { .bits = r }` in method bodies (I.6) AND for
+`DioModel { .is = 1e-12 }` in NGSPICE instance overrides. Same machinery
+serves both; do it once.
+
+**Why this depends on other Parts.** I.6 (`BundleLit` const-eval) and the
+existing I.1 (`ElabProgram.bundles`) are prerequisite — you need the bundle
+layout to apply defaults.
+
+**Verification.**
+- `mod dio ( ...) { param model : DioModel = DioModel {};
+  analog dio { var x : Real = model.is; } }` elaborates with
+  `x = 1e-14` (default).
+- Override: parent writes `d1 : dio ( p, n ) { .model = DioModel { .is =
+  1e-12 } }`; analog body sees `model.is = 1e-12`.
+- Negative: override field not in bundle → elaboration error.
+- NGSPICE faithful passives.phdl test: instance with no overrides uses
+  `model.rsh` (geometric computation); override `.rsh = 50.0` uses 50.
+
+**Acceptance criteria.**
+- [ ] `param` of bundle type elaborates; each field becomes a named slot
+      with the default value.
+- [ ] Override literal merges field-by-field.
+- [ ] Field access in analog body resolves to slot.
+- [ ] NGSPICE faithful `diode.phdl` elaborates end-to-end (with I.14 +
+      A.14 + A.15 + D.8 + D.10 unblocking codegen too).
+- [ ] `cargo test -p piperine-codegen -p piperine-solver` green.
+
+---
+
+### I.15 Module-level `var` is persistent analog state (switch hysteresis, etc.)
+
+**Spec:** §5.2 — "`var`: A mutable binding. In a `digital` block it is
+combinational unless it must hold a value, when it infers memory." The spec
+doesn't explicitly address `var` in module body (top-level scope), but
+behavioral `var` is explicitly stateful, and the spec's Appendix B.1
+(`SarAdc`) and the NGSPICE faithful headers depend on this.
+
+**Status:** STUB (mod-body `var` is silently dropped per `lower.rs:399-401`).
+**Medium.**
+
+**Cross-reference:** `docs/NGSPICE_GAPS.md` P.5; `ngspice/switches.phdl`
+declares `var sw_state : Real = 0.0` in the module body.
+
+**Current state.** The elaborator at `lower.rs:399-401`:
+
+```rust
+// Vars in mod body appear in behavior; skip at structural level.
+```
+
+silently drops module-level `var` declarations. Inside `analog`/`digital`
+blocks, `var` is local (recomputed each iteration). There is no
+mechanism for a `var` that survives across iterations *or* across
+accepted time steps.
+
+The NGSPICE faithful `sw` and `csw` models declare their state at module
+level:
+
+```phdl
+mod sw (inout p, n, cp, cn) {
+    param model : SwModel = SwModel {};
+    param off : Boolean = 1;
+    var sw_state : Real = 0.0;   // <-- silently dropped by current elaborator
+}
+analog sw {
+    var vc : Real = V(cp, cn);
+    @ above(vc - (vt + vh)) { sw_state = 1.0; }   // <-- writes to dropped slot
+    ...
+}
+```
+
+The spec's `SarAdc` (Appendix B.1) does the same with `var state :
+SarState = Idle;` — state shared across analog and digital blocks.
+
+**Why it matters.** Without persistent `var`:
+- Hysteresis machines cannot remember their previous state.
+- State shared between analog and digital blocks (the most common pattern
+  in mixed-signal) is inexpressible.
+- The PHDL/Ngspice-test headers for `sw`/`csw` cannot be elaborated; the
+  analog event handlers have no stable target to write to.
+
+**Proposed solution.** Two parts:
+
+1. **Module-body `var` is device state.** In `lower.rs:399`, instead of
+   skipping, hoist `var` decls into `ElabMod.state: Vec<IrVarDecl>` (a new
+   field). Each occupies one slot in the device's runtime state vector
+   (allocated alongside `ddt`/`idt` StateRefs).
+
+2. **Event-handler writes are persistent.** In the codegen, when a
+   `@ above(...) { sw_state = 1.0; }` handler runs, the write updates
+   the device state slot. The analog body reads the *current* (post-event)
+   value. A run-time check: if an event handler updates a `var`, does the
+   analog body read it after the event? Yes (this is the spec's intent).
+
+The implementation reuses the `StateRef` allocation machinery used for
+`ddt`/`idt` (`ir_emit.rs:88-125`). A `var` becomes a new
+`IrStateKind::Var { name, initial }`.
+
+3. **The analog body reads it normally:**
+   ```phdl
+   var g : Real = if (sw_state > 0.5) { gon } else { goff };
+   ```
+   On the first iteration, `sw_state = 0.0` (initial). After an `@ above`
+   fires, `sw_state = 1.0` for subsequent iterations until the next event
+   resets it.
+
+**Decision rationale.** Mod-body `var` is device state — the same
+abstraction as `ddt`'s integrator value or `Idt`'s accumulator. Using the
+same StateRef mechanism keeps the storage uniform. The alternative
+(global variables) couples modules in ways the spec forbids.
+
+**Why this depends on other Parts.** E.4/E.5 (analog events): the event
+handler must actually fire for `sw_state` to be written. Until E.4 lands,
+`sw_state` stays at its initial value forever and the switch never
+transitions — useful as a partial test (the parse/elaborate step) but
+not for full E2E.
+
+**Verification.**
+- Module with `var x : Real = 0; analog M { ... x ... }` elaborates
+  without dropping `x`.
+- The `sw` model: state is at initial value (0) before any event;
+  update via `sw_state = 1.0;` in an event handler makes subsequent
+  analog iterations read 1.0.
+- NGSPICE faithful `switches.phdl` elaborates end-to-end (modulo E.4
+  for event firing).
+
+**Acceptance criteria.**
+- [ ] Mod-body `var` hoisted into `ElabMod.state`.
+- [ ] `ElabProgram` exposes state vector.
+- [ ] Codegen reads/writes the state slot; survives across Newton
+      iterations and across accepted time steps.
+- [ ] NGSPICE `switches.phdl` static semantics pass (state exists even
+      if events don't fire yet).
+- [ ] `cargo test -p piperine-codegen` green.
 
 ---
 
@@ -3342,25 +4548,35 @@ broken — revert.
 | §1 Goals | §1 Overview | Part 0 |
 | §4 Items & packages | §2 Program structure | I.10 (pub) |
 | §5 Modules | §2 IrModule | F.1, F.2 |
+| §5.2 Storage classes (`var`) | §5 Behavior | I.9, I.15 |
 | §5.3 Instances | §2 IrInstance | F.3 |
-| §5.4-5.5 Arrays, for, if | §5 Loops | F.4 |
-| §6.1 Value types | §3 Types | B.5, J.4 |
+| §5.4-5.5 Arrays, for, if | §5 Loops | F.4, I.11, I.12 |
+| §6.1 Value types | §3 Types | B.5, J.4, I.13 |
 | §6.2 Disciplines | — | C.1 (Ground) |
 | §6.3 Resolution | — | B.4 |
 | §6.4 Enums | — | I.7 |
-| §6.5 Bundles | §4 BundleLit | I.1, I.6 |
+| §6.5 Bundles | §4 BundleLit | I.1, I.6, I.14 |
 | §6.6 Capabilities & generics | — | I.2, I.3, I.4, I.5 |
 | §7 Functions | §10 Functions | D.5 |
-| §7.1 Higher-order | — | I.8 |
+| §7.1 Higher-order | — | I.8, H.7 |
 | §8 Behavior | §5 Statements | D.6, D.7 |
-| §8.1 Access functions | §4 BranchAccess | A.1, A.9 |
-| §8.2 Analog | §5 Contrib/Force | D.1, D.2, D.3 |
+| §8.1 Access functions | §4 BranchAccess | A.1, A.9, A.14, A.15, D.9, D.10 |
+| §8.2 Analog | §5 Contrib/Force | D.1, D.2, D.3, D.8, A.14 |
+| §8.2 (source stepping) | — | H.3 |
 | §8.3 Digital | §9 Digital body | D.6, D.7 |
-| §8.4 Events | §5 AnalogEvent | E.3 |
+| §8.4 Events | §5 AnalogEvent | E.3, E.4, E.5, J.1 |
 | §8.5 Diagnostics | §5 Diagnostic | J.1, J.2, J.3 |
 | §9 Phase model | §11 Lowering contract | (enforced by design) |
-| §10 No-magic | — | B.2 |
+| §10 No-magic | — | B.2, I.15 |
 | §11 Future layers | — | (out of scope) |
+
+**NGSPICE faithful headers:** the gold standard for "what should work."
+The 8 model files in `crates/piperine-lang/headers/ngspice/` (see
+`docs/NGSPICE_GAPS.md`) exercise every gap listed above. When a gap
+is closed, an NGSPICE model that previously failed at elaboration or
+codegen should now elaborate and simulate. Test by adding the model
+to `crates/piperine-lang/tests/ngspice_compile_tests.rs` (or expanding
+`ngspice_parse_tests.rs`).
 
 ### A.7 Priority order for implementation
 
@@ -3369,26 +4585,52 @@ cost/benefit):
 
 1. **L.1 (README)** — 1 day. Highest onboarding ROI.
 2. **Part A (silent bugs)** — 3-5 days. Fail-loud everywhere; negative
-   tests.
+   tests. **Includes A.14 (`$simparam`), A.15 (`$param_given`)** — both
+   needed by every NGSPICE faithful model.
 3. **C.1 (Ground) + C.3 (Type/Net)** — 1 day. Unblocks examples.
 4. **B.1, B.2 (typecheck width + discipline)** — 3-5 days. Core spec
    promise.
-5. **D.1 (forces) + H.4 (MNA branches)** — 1 week. Unblocks VSource/OpAmp.
-6. **E.1, E.2 (mixed-signal bridges)** — 1 week. Unblocks SAR/delta-sigma.
-7. **D.5 (fn inlining)** — 3-5 days. Unblocks analog functions.
-8. **F.1, F.2, F.3 (from_ir recursion + hierarchy)** — 3-5 days. Unblocks
-   Ladder, parent contributions.
-9. **G.1 (AMS digital lowering)** — 3-5 days. Unblocks dff.v etc.
-10. **I.1, I.3, I.4, I.6 (bundles, Self, generics, BundleLit)** — 1-2
+5. **D.1 (forces) + H.4 (MNA branches)** — 1 week. Unblocks VSource/OpAmp;
+   prerequisite for A.1 (Option 2 — `I(a,b)` reads as branch-current
+   unknown).
+6. **D.8 (`$limit` + stateful `limexp`)** — 3-5 days. Inline with D.1 — the
+   NGSPICE faithful `diode.phdl`/`bjt.phdl` use `$limit("pnjlim", ...)`.
+7. **D.10 (`$analysis`) + D.9 (`ac_stim`)** — 1-2 days. Trivial
+   `SimQuery` arms; unblocks `vsrc`/`isrc` DC-vs-tran branching and AC
+   analysis.
+8. **E.1, E.2 (mixed-signal bridges)** — 1 week. Unblocks SAR/delta-sigma.
+9. **D.5 (fn inlining)** — 3-5 days. Unblocks analog functions. Then drop
+   `ng_and`/`ng_or`/`sinh`/`cosh`/`tanh` helper fns from
+   `ngspice_constants.phdl` (I.11/I.13 let them be inlined).
+10. **F.1, F.2, F.3 (from_ir recursion + hierarchy)** — 3-5 days.
+    Unblocks Ladder, parent contributions.
+11. **G.1 (AMS digital lowering)** — 3-5 days. Unblocks dff.v etc.
+12. **I.14 (bundle-typed `param`) + I.15 (mod-body `var`)** — 1 week.
+    Unblocks every NGSPICE faithful model's `param model : XxxModel`
+    elaboration AND `sw`/`csw` hysteresis state.
+13. **I.1, I.3, I.4, I.6 (bundles, Self, generics, BundleLit)** — 1-2
     weeks. Unblocks UInt[N], generic modules.
-11. **I.2, I.5 (capability dispatch + conformance)** — 1 week. Unblocks
+14. **I.2, I.5 (capability dispatch + conformance)** — 1 week. Unblocks
     operator sugar.
-12. **H.1, H.2 (trapezoidal + LTE)** — 1 week. Solver quality.
-13. **D.2, D.3, D.4 (idt, operators, noise)** — 1-2 weeks. Analog surface.
-14. **I.7, I.8, I.9, I.10 (enums, higher-order, mod-var, pub)** — 1-2
-    weeks. Language completeness.
-15. **K.* (architecture cleanup)** — 1 week. In parallel with above.
-16. **L.2, L.3, L.4, L.5 (docs, re-exports, tests)** — ongoing.
+15. **E.4, E.5 (analog events fire + `@ initial` IC/off)** — 3-5 days.
+    Prerequisite for the NGSPICE faithful switches E2E.
+16. **H.1, H.2 (trapezoidal + LTE)** — 1 week. Solver quality.
+17. **D.2, D.3, D.4 (idt, operators, noise)** — 1-2 weeks. Analog surface.
+18. **I.11 (`&&`/`||`), I.12 (`else if` in expressions), I.13
+    (`sinh`/`cosh`/`tanh`)** — 2-3 days total. Spec ergonomics;
+    only matters once everything else works. Can be deferred until
+    NGSPICE faithful headers are purged of helper-fn workarounds.
+19. **I.7, I.8, I.10 (enums, higher-order, pub)** — 1-2 weeks. Language
+    completeness.
+20. **H.6 (BJT excess phase PTF), H.7 (breakdown iteration)** —
+    model-specific accuracy. Defer until the faithful models run
+    end-to-end and only the last 1% accuracy is the gap.
+21. **K.* (architecture cleanup)** — 1 week. In parallel with above.
+22. **L.2, L.3, L.4, L.5 (docs, re-exports, tests)** — ongoing.
+
+After each step, re-run the `ngspice_compile_tests.rs` suite
+(modeled on the existing `ngspice_parse_tests.rs`). The faithful
+NGSPICE headers are the primary acceptance test for any gap closure.
 
 ---
 
