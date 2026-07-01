@@ -36,7 +36,7 @@ Always build and run tests before declaring work done:
 
 ```sh
 cargo build                  # build the workspace
-cargo test                   # ~257 tests; must pass.
+cargo test                   # must pass, check tests-baseline.md for count
 ```
 
 The current baseline is captured in `tests-baseline.md`.

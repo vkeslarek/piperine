@@ -590,12 +590,6 @@ broader spec/architecture doc set (`piperine-hdl-spec.md`,
 source of truth and likely contains stale/superseded designs — still
 open.
 
-### K.7 Stale test-count references between `AGENTS.md` and `tests-baseline.md`
-
-**Severity:** Low · **Affects:** onboarding accuracy
-
-Numbers disagree; pick one source of truth and point to it.
-
 ---
 
 ## Part L — Documentation {#part-l}
@@ -714,7 +708,6 @@ circuits; negligible for most others.
 | K.4 | IR net refs are flat strings | Medium | prereq for F.3 |
 | K.5 | `Port` doc references nonexistent file | Low | solver docblock |
 | K.6 | Doc sprawl (spec/architecture docs) | Medium | onboarding |
-| K.7 | Stale test-count refs (AGENTS.md vs tests-baseline.md) | Low | onboarding accuracy |
 | L.1 | README describes nonexistent architecture | Critical | onboarding |
 | L.2 | Most crates lack module-level docblocks | Low | cargo doc / IDE hover |
 | L.3 | `piperine-solver` has no re-export surface | Low | external ergonomics |
