@@ -45,6 +45,11 @@ impl ConstEnv {
         Self { bindings: vec![HashMap::new()] }
     }
 
+    /// Creates a new `ConstEnv` pre-populated with global constants.
+    pub fn with_globals(globals: HashMap<String, ConstVal>) -> Self {
+        Self { bindings: vec![globals] }
+    }
+
     /// Pushes a new empty scope onto the bindings stack (e.g. before
     /// entering a loop body).
     pub fn push(&mut self) {

@@ -132,6 +132,8 @@ impl<'a> Parser<'a> {
                     items.push(Item::ImplDecl(self.parse_impl(is_pub)?));
                 } else if self.eat_ident("fn") {
                     items.push(Item::FnDecl(self.parse_fn_decl(is_pub)?));
+                } else if self.eat_ident("const") {
+                    items.push(Item::ConstDecl(self.parse_const_decl(is_pub)?));
                 } else {
                     return Err(format!("Unknown top-level item at {:?}", self.peek()));
                 }

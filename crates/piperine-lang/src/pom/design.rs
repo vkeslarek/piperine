@@ -20,6 +20,7 @@ pub struct Design {
     pub(crate) capabilities: HashMap<String, CapabilityDecl>,
     pub(crate) functions: HashMap<String, Function>,
     pub(crate) impls: Vec<ImplBlock>,
+    pub(crate) consts: HashMap<String, Value>,
     /// Staged parameter overrides — the single mutation surface in POM.
     /// Writing via `set_param()` stages here; re-elaboration consumes.
     pub(crate) overrides: Rc<RefCell<OverrideMap>>,
@@ -36,6 +37,7 @@ impl Design {
             capabilities: HashMap::new(),
             functions: HashMap::new(),
             impls: Vec::new(),
+            consts: HashMap::new(),
             overrides: Rc::new(RefCell::new(OverrideMap::new())),
             top_module: None,
         }
@@ -46,6 +48,22 @@ impl Design {
     /// The elaborated top module, if set.
     pub fn top(&self) -> Option<&Module> {
         self.top_module.as_ref().and_then(|n| self.modules.get(n))
+    }
+
+    /// Evaluate a selector path against this design.
+    pub fn select<'a>(&'a self, path: &str) -> Result<crate::pom::selection::NodeSelection<'a>, String> {
+        let sel = path.parse::<crate::pom::selector::Selector>()?;
+        let initial_context = if sel.absolute {
+            crate::pom::selection::NodeSelection::new()
+        } else {
+            // If relative, start from top module
+            if let Some(top) = self.top() {
+                crate::pom::selection::NodeSelection::from_vec(vec![crate::pom::node::Node::Module(top)])
+            } else {
+                crate::pom::selection::NodeSelection::new()
+            }
+        };
+        crate::pom::selector::Evaluator::new(self).evaluate(&sel, initial_context)
     }
 
     /// Set the top module by name.
@@ -108,6 +126,16 @@ impl Design {
         self.functions.values()
     }
 
+    /// Look up a global constant by name.
+    pub fn const_(&self, name: &str) -> Option<&Value> {
+        self.consts.get(name)
+    }
+
+    /// Every global constant.
+    pub fn consts(&self) -> impl Iterator<Item = (&String, &Value)> {
+        self.consts.iter()
+    }
+
     /// Every impl block.
     pub fn impls(&self) -> &[ImplBlock] { &self.impls }
 
@@ -159,6 +187,10 @@ impl Design {
     /// Mutable access to the impl blocks vec. For internal elaboration use.
     pub(crate) fn impls_vec_mut(&mut self) -> &mut Vec<ImplBlock> {
         &mut self.impls
+    }
+    /// Mutable access to the consts map. For internal elaboration use.
+    pub(crate) fn consts_map_mut(&mut self) -> &mut HashMap<String, Value> {
+        &mut self.consts
     }
 
     /// Insert a module by name. Used internally by the elaborator and by

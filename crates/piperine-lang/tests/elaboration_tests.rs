@@ -427,3 +427,13 @@ fn test_parse_and_elaborate_api() {
     let prog = result.expect("parse_and_elaborate failed");
     assert!(prog.module("R").is_some());
 }
+
+#[test]
+fn test_global_const_evaluated() {
+    let result = parse_and_elaborate(
+        "const MY_CONST : Natural = 42; const ANOTHER : Natural = MY_CONST + 1;"
+    );
+    let prog = result.expect("parse_and_elaborate failed");
+    assert_eq!(prog.const_("MY_CONST").unwrap().as_natural().unwrap(), 42);
+    assert_eq!(prog.const_("ANOTHER").unwrap().as_natural().unwrap(), 43);
+}

@@ -12,6 +12,16 @@ pub struct Selection<T> {
     items: Vec<T>,
 }
 
+pub type NodeSelection<'a> = Selection<crate::pom::node::Node<'a>>;
+
+impl<'a> NodeSelection<'a> {
+    /// Sub-select via the selector grammar.
+    pub fn where_path(&self, design: &'a crate::pom::design::Design, path: &str) -> Result<NodeSelection<'a>, String> {
+        let sel = path.parse::<crate::pom::selector::Selector>()?;
+        crate::pom::selector::Evaluator::new(design).evaluate(&sel, self.clone())
+    }
+}
+
 impl<T> Selection<T> {
     /// Create an empty selection.
     pub fn new() -> Self {

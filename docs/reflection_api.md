@@ -113,6 +113,8 @@ Design
   fn module(self, name: String) -> Option<Module>
   fn modules(self) -> Selection<Module>        // every elaborated module (monomorphized)
   fn select(self, path: String) -> Selection<Node>   // run a selector from the root
+  fn const_(self, name: String) -> Option<Value>       // evaluate a global constant by name
+  fn consts(self) -> Map<String, Value>                // all elaborated global constants
 
   // definition reflection (first-class)
   fn bundles(self) -> Selection<Bundle>

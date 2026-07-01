@@ -9,6 +9,7 @@ pub mod module;
 pub mod net_type;
 pub mod node;
 pub mod selection;
+pub mod selector;
 pub mod staging;
 pub mod traits;
 pub mod value;

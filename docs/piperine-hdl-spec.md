@@ -65,6 +65,7 @@ behavioral, evaluated during the **solve** (§9).
 | `mod` | Module shape (§5). |
 | `analog` / `digital` | A module's hardware behavior (§8). |
 | `impl` | A bundle's methods, or a capability implementation (§6.5, §6.6). |
+| `const` | A global compile-time constant. |
 
 **Packages** are file- and directory-based: a file or directory is a package, with no
 namespace declaration, no index file, and no re-export. An item is private unless marked
@@ -326,6 +327,15 @@ impl Add for UInt[N] {
         return UInt[N] { .bits = r };
     }
 }
+```
+
+### 6.7 Global constants
+
+A `const` declares a global compile-time constant that is evaluated during elaboration. It can be used anywhere a parameter or literal is valid, and is visible to any module in scope.
+
+```phdl
+const PI : Real = 3.141592653589793;
+const THRESHOLD : Natural = 10;
 ```
 
 ---

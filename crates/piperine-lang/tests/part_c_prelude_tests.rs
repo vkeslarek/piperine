@@ -90,3 +90,34 @@ fn c3_net_capability_is_predefined() {
         "C.3: `Net` capability should appear in `prog.capabilities`"
     );
 }
+
+#[test]
+fn c4_constants_are_resolvable() {
+    let src = r#"
+        use piperine::constants;
+        mod Top () {
+            param pi : Real = M_PI;
+        }
+    "#;
+    let prog = elab(src).expect("`M_PI` should be resolvable and elaborate successfully");
+    assert!(
+        prog.const_("M_PI").is_some(),
+        "C.4: `M_PI` should appear in `prog.consts`"
+    );
+}
+
+#[test]
+fn c5_disciplines_are_resolvable() {
+    let src = r#"
+        use piperine::disciplines;
+        mod Top () {
+            wire n1 : Electrical;
+            wire n2 : Kinematic;
+            wire n3 : Thermal;
+        }
+    "#;
+    let prog = elab(src).expect("`Electrical`, `Kinematic`, `Thermal` should be resolvable and elaborate successfully");
+    assert!(prog.discipline("Electrical").is_some());
+    assert!(prog.discipline("Kinematic").is_some());
+    assert!(prog.discipline("Thermal").is_some());
+}

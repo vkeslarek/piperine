@@ -13,6 +13,7 @@ struct Document {
     pub capabilities: Vec<CapabilityDecl>,
     pub impls: Vec<ImplDecl>,
     pub functions: Vec<FnDecl>,
+    pub consts: Vec<ConstDecl>,
 }
 
 impl Document {
@@ -20,7 +21,7 @@ impl Document {
         let mut doc = Document {
             uses: vec![], modules: vec![], behaviors: vec![], disciplines: vec![],
             bundles: vec![], enums: vec![], capabilities: vec![],
-            impls: vec![], functions: vec![],
+            impls: vec![], functions: vec![], consts: vec![],
         };
         for item in source.items {
             match item {
@@ -33,6 +34,7 @@ impl Document {
                 Item::ImplDecl(i)       => doc.impls.push(i),
                 Item::FnDecl(f)         => doc.functions.push(f),
                 Item::UseDecl(u)        => doc.uses.push(u),
+                Item::ConstDecl(c)      => doc.consts.push(c),
             }
         }
         doc

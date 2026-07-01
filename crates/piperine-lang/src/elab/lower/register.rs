@@ -30,6 +30,7 @@ impl Elaborator {
                 Item::FnDecl(f)         => { self.fn_decls.insert(f.sig.name.clone(), f.clone()); }
                 Item::CapabilityDecl(c) => { self.capability_decls.insert(c.name.clone(), c.clone()); }
                 Item::ImplDecl(i)       => { self.impl_decls.push(i.clone()); }
+                Item::ConstDecl(c)      => { self.const_decls.insert(c.name.clone(), c.clone()); }
                 Item::UseDecl(_)        => {} // already expanded by Resolver
             }
         }

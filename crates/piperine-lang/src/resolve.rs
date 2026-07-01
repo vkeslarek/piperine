@@ -86,19 +86,27 @@ impl Resolver {
         let mut builtins: HashMap<Vec<String>, &'static str> = HashMap::new();
         builtins.insert(
             vec!["piperine".into(), "capabilities".into()],
-            include_str!("stdlib_phdl/capabilities.phdl"),
+            include_str!("../headers/capabilities.phdl"),
         );
         builtins.insert(
             vec!["piperine".into(), "collections".into()],
-            include_str!("stdlib_phdl/collections.phdl"),
+            include_str!("../headers/collections.phdl"),
+        );
+        builtins.insert(
+            vec!["piperine".into(), "constants".into()],
+            include_str!("../headers/constants.phdl"),
+        );
+        builtins.insert(
+            vec!["piperine".into(), "disciplines".into()],
+            include_str!("../headers/disciplines.phdl"),
         );
         // GAPS §C.1 — `Ground` is the one discipline that must be in
         // scope without explicit declaration (it's the universal reference
-        // node). Inject it through the prelude path rather than special-
+        // potential). `prelude.phdl` provides it so we don't have to hard-
         // casing it in the elaborator.
         builtins.insert(
             vec!["piperine".into(), "prelude".into()],
-            include_str!("stdlib_phdl/prelude.phdl"),
+            include_str!("../headers/prelude.phdl"),
         );
         Self { root: None, builtins, cache: HashMap::new() }
     }

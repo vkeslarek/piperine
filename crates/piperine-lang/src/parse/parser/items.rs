@@ -453,4 +453,15 @@ impl<'a> Parser<'a> {
         }
         Ok(Block { stmts, expr: None })
     }
+
+    /// Parses a global const declaration: `const Name : Type = Expr;`.
+    pub(crate) fn parse_const_decl(&mut self, is_pub: bool) -> Result<ConstDecl, String> {
+        let name = self.parse_ident()?;
+        self.expect(&Tok::Colon)?;
+        let ty = self.parse_type()?;
+        self.expect(&Tok::Assign)?;
+        let value = self.parse_expr()?;
+        self.expect(&Tok::Semi)?;
+        Ok(ConstDecl { is_pub, name, ty, value })
+    }
 }

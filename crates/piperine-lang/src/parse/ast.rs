@@ -46,12 +46,22 @@ pub enum Item {
     CapabilityDecl(CapabilityDecl),
     ImplDecl(ImplDecl),
     FnDecl(FnDecl),
+    ConstDecl(ConstDecl),
 }
 
 /// A `::`-separated module path, e.g. `devices::passives::Resistor`.
 #[derive(Debug, Clone)]
 pub struct Path {
     pub segments: Vec<String>,
+}
+
+/// A global constant declaration `const Name : Type = Expr;`
+#[derive(Debug, Clone)]
+pub struct ConstDecl {
+    pub is_pub: bool,
+    pub name: String,
+    pub ty: Type,
+    pub value: Expr,
 }
 
 // ─────────────────────────────── Modules ─────────────────────────────────────

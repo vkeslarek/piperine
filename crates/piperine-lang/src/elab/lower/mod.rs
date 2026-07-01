@@ -38,6 +38,7 @@ pub struct Elaborator {
     fn_decls: HashMap<String, FnDecl>,
     capability_decls: HashMap<String, crate::parse::ast::CapabilityDecl>,
     impl_decls: Vec<ImplDecl>,
+    const_decls: HashMap<String, crate::parse::ast::ConstDecl>,
     events: EventRegistry,
     /// Cache of monomorphized modules (mangled name → elaborated module).
     mono_cache: HashMap<String, Module>,
@@ -56,6 +57,7 @@ impl Elaborator {
             fn_decls: HashMap::new(),
             capability_decls: HashMap::new(),
             impl_decls: Vec::new(),
+            const_decls: HashMap::new(),
             events: EventRegistry::with_builtins(),
             mono_cache: HashMap::new(),
         }
@@ -89,6 +91,31 @@ impl Elaborator {
         *prog.enums_map_mut() = self.enums.clone();
         *prog.capabilities_map_mut() = self.capability_decls.clone();
 
+        // Evaluate all global consts
+        let mut evaluated_globals = HashMap::new();
+        let mut pending_consts: HashMap<String, crate::parse::ast::ConstDecl> = self.const_decls.clone();
+        let mut last_len = pending_consts.len() + 1;
+        while pending_consts.len() < last_len {
+            last_len = pending_consts.len();
+            let mut resolved = Vec::new();
+            for (name, decl) in &pending_consts {
+                let env = ConstEnv::with_globals(evaluated_globals.clone());
+                if let Ok(val) = env.eval(&decl.value) {
+                    evaluated_globals.insert(name.clone(), val.clone());
+                    prog.consts_map_mut().insert(name.clone(), (&val).into());
+                    resolved.push(name.clone());
+                }
+            }
+            for name in resolved {
+                pending_consts.remove(&name);
+            }
+        }
+        if !pending_consts.is_empty() {
+            return Err(ElabError::Other(
+                "could not resolve one or more global constants".into(),
+            ));
+        }
+
         for impl_decl in &self.impl_decls.clone() {
             let block = self.elab_impl(impl_decl)?;
             prog.impls_vec_mut().push(block);
@@ -106,7 +133,7 @@ impl Elaborator {
         for name in &mod_names {
             let decl = self.module_decls[name].clone();
             if decl.const_params.is_empty() && decl.type_params.is_empty() {
-                let mut env = ConstEnv::new();
+                let mut env = ConstEnv::with_globals(evaluated_globals.clone());
                 let elab_mod = self.elab_mod_inner(&decl, &mut env, &HashMap::new())?;
                 prog.modules_map_mut().insert(name.clone(), elab_mod);
             }
