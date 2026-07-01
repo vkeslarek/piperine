@@ -6,8 +6,8 @@ edition.workspace = true
 [dependencies]
 thiserror = "2.0"
 piperine-solver = { path = "../piperine-solver" }
+piperine-codegen = { path = "../piperine-codegen" }
 num-complex.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
-piperine-codegen = { path = "../piperine-codegen" }

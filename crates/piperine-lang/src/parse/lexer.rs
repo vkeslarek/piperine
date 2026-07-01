@@ -22,51 +22,93 @@ use std::str::FromStr;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Tok {
     // ── Literals ─────────────────────────────────────────────────────────────
+    /// An identifier or keyword (lexer does not distinguish).
     Ident(String),
-    SysCall(String), // $ident
+    /// A system call: `$ident`.
+    SysCall(String),
+    /// A floating-point literal.
     Real(f64),
+    /// An unsigned integer literal.
     Int(u64),
-    Quad(String), // 0q{0,1,X,Z}
+    /// A quad (4-valued logic) literal: `0q{0,1,X,Z}`.
+    Quad(String),
+    /// A double-quoted string literal.
     Str(String),
 
     // ── Punctuation ──────────────────────────────────────────────────────────
+    /// `(`
     LParen,
+    /// `)`
     RParen,
+    /// `[`
     LBrack,
+    /// `]`
     RBrack,
+    /// `{`
     LBrace,
+    /// `}`
     RBrace,
+    /// `,`
     Comma,
+    /// `;`
     Semi,
+    /// `:`
     Colon,
+    /// `::`
     DoubleColon,
+    /// `.`
     Dot,
-    Assign,   // =
-    FatArrow, // =>
-    Arrow,    // ->
-    DotDot,   // ..
-    DotDotEq, // ..=
+    /// `=`
+    Assign,
+    /// `=>`
+    FatArrow,
+    /// `->`
+    Arrow,
+    /// `..`
+    DotDot,
+    /// `..=`
+    DotDotEq,
 
     // ── Operators ────────────────────────────────────────────────────────────
-    Contrib, // <+
-    Force,   // <-
+    /// `<+` — contribution operator (analog).
+    Contrib,
+    /// `<-` — force operator (digital).
+    Force,
+    /// `+`
     Plus,
+    /// `-`
     Minus,
+    /// `*`
     Star,
+    /// `/`
     Slash,
+    /// `%`
     Percent,
+    /// `==`
     EqEq,
+    /// `!=`
     NotEq,
+    /// `<`
     Lt,
+    /// `<=`
     Le,
+    /// `>`
     Gt,
+    /// `>=`
     Ge,
+    /// `!`
     Not,
-    And, // &&  (not in PHDL grammar, lexed for error clarity)
-    Or,  // ||  (not in PHDL grammar, lexed for error clarity)
+    /// `&&` — logical AND (lexed for error clarity, not in PHDL grammar).
+    And,
+    /// `||` — logical OR (lexed for error clarity, not in PHDL grammar).
+    Or,
+    /// `&`
     BitAnd,
+    /// `|`
     BitOr,
+    /// `^`
     BitXor,
+    /// `@`
     At,
 }
 
@@ -87,6 +129,7 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
+    /// Creates a new lexer for the given source string.
     pub fn new(input: &'a str) -> Self {
         Self { input, pos: 0 }
     }
@@ -110,6 +153,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Advances past whitespace, `//` line comments, and `/* */` block comments.
     fn skip_whitespace_and_comments(&mut self) {
         loop {
             let start = self.pos;
@@ -138,6 +182,8 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Tokenizes the entire source into a flat sequence of `Lexed` tokens.
+    /// Returns an error string on the first unrecognized character.
     pub fn tokenize(&mut self) -> Result<Vec<Lexed>, String> {
         let mut tokens = Vec::new();
         self.skip_whitespace_and_comments();
@@ -231,6 +277,8 @@ impl<'a> Lexer<'a> {
         Ok(tokens)
     }
 
+    /// Lexes a numeric literal starting with `first` at byte position `start`.
+    /// Supports decimal, hex (`0x`), octal (`0o`), binary (`0b`), quad (`0q`), real (with `.`/`e`), and underscores.
     fn lex_number(&mut self, first: char, start: usize) -> Result<Tok, String> {
         let mut num = String::new();
         num.push(first);

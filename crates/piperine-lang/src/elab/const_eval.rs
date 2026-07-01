@@ -2,6 +2,9 @@ use crate::parse::ast::{BinaryOp, Block, Expr, Literal, Stmt, UnaryOp};
 use std::collections::HashMap;
 use thiserror::Error;
 
+/// A compile-time constant value. Used to evaluate const expressions,
+/// array sizes, for-loop bounds, and structural `if` conditions during
+/// elaboration.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConstVal {
     Int(i64),
@@ -11,43 +14,64 @@ pub enum ConstVal {
     Str(String),
 }
 
+/// Errors that can occur during constant evaluation.
 #[derive(Debug, Error)]
 pub enum ConstEvalError {
+    /// The expression cannot be reduced to a compile-time constant.
     #[error("expression is not a compile-time constant: {0}")]
     NotConst(String),
+    /// Division or remainder by zero was attempted.
     #[error("division by zero")]
     DivByZero,
+    /// A name used in the expression is not bound in the const environment.
     #[error("undefined name: {0}")]
     Undefined(String),
+    /// The operands of a const expression have incompatible types.
     #[error("type mismatch in constant expression")]
     TypeMismatch,
 }
 
+/// A lexical-scope environment for compile-time constant evaluation.
+/// Maintains a stack of scopes; `push`/`pop` manage nesting (e.g. for
+/// loop bodies), `define` adds a binding to the innermost scope, and
+/// `lookup` searches scopes from innermost outward.
 pub struct ConstEnv {
     bindings: Vec<HashMap<String, ConstVal>>,
 }
 
 impl ConstEnv {
+    /// Creates a new `ConstEnv` with a single empty scope.
     pub fn new() -> Self {
         Self { bindings: vec![HashMap::new()] }
     }
 
+    /// Pushes a new empty scope onto the bindings stack (e.g. before
+    /// entering a loop body).
     pub fn push(&mut self) {
         self.bindings.push(HashMap::new());
     }
 
+    /// Pops the innermost scope from the bindings stack (e.g. after
+    /// leaving a loop body).
     pub fn pop(&mut self) {
         self.bindings.pop();
     }
 
+    /// Defines a name in the current innermost scope, binding it to `val`.
     pub fn define(&mut self, name: String, val: ConstVal) {
         self.bindings.last_mut().unwrap().insert(name, val);
     }
 
+    /// Looks up `name` in the scope stack, from innermost outward.
+    /// Returns `None` if the name is unbound.
     pub fn lookup(&self, name: &str) -> Option<&ConstVal> {
         self.bindings.iter().rev().find_map(|scope| scope.get(name))
     }
 
+    /// Evaluates a compile-time expression to a `ConstVal`. Supports
+    /// literals, identifiers (looked up in the scope stack), unary
+    /// (`-`, `!`), binary (arithmetic/comparison/bitwise on `Nat`/`Int`/
+    /// `Real`/`Bool`), const-if, and block expressions.
     pub fn eval(&self, expr: &Expr) -> Result<ConstVal, ConstEvalError> {
         match expr {
             Expr::Literal(lit) => Ok(match lit {
@@ -100,6 +124,9 @@ impl ConstEnv {
         }
     }
 
+    /// Evaluates a block to a const value. For a block with no statements,
+    /// the trailing expression is evaluated. `Return` statements are also
+    /// handled.
     fn eval_block(&self, block: &Block) -> Result<ConstVal, ConstEvalError> {
         // Only evaluate blocks that consist solely of a trailing expression.
         // Var decls in const blocks are not supported in V1.
@@ -118,6 +145,10 @@ impl ConstEnv {
         }
     }
 
+    /// Evaluates a binary operation on two `ConstVal`s. Handles arithmetic
+    /// (`+`, `-`, `*`, `/`, `%`) on `Nat`/`Int`/`Real`, comparisons on
+    /// `Nat`/`Int`/`Bool`, and bitwise operations on `Nat`/`Bool`. Returns
+    /// `TypeMismatch` for unsupported operand type combinations.
     fn eval_binary(
         &self,
         op: &BinaryOp,
@@ -192,6 +223,8 @@ impl ConstEnv {
         }
     }
 
+    /// Evaluates `expr` and returns the result as a `u64`. Accepts `Nat`
+    /// values directly and non-negative `Int` values.
     pub fn eval_nat(&self, expr: &Expr) -> Result<u64, ConstEvalError> {
         match self.eval(expr)? {
             ConstVal::Nat(n) => Ok(n),
@@ -200,6 +233,8 @@ impl ConstEnv {
         }
     }
 
+    /// Evaluates `expr` and returns the result as an `i64`. Accepts `Int`
+    /// values directly and `Nat` values widened to `i64`.
     pub fn eval_int(&self, expr: &Expr) -> Result<i64, ConstEvalError> {
         match self.eval(expr)? {
             ConstVal::Int(n) => Ok(n),

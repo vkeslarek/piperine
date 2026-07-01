@@ -96,8 +96,11 @@ pub struct Port {
 /// Port direction.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Direction {
+    /// Signal that flows into the module.
     Input,
+    /// Signal that flows out of the module.
     Output,
+    /// Bidirectional signal.
     Inout,
 }
 
@@ -105,7 +108,7 @@ pub enum Direction {
 ///
 /// Structural `For` and `If` are eliminated by the elaborator; they must have
 /// elaboration-constant bounds/conditions. The remaining variants survive into
-/// the [`ElabMod`][crate::elab::ir::ElabMod].
+/// the [`Module`][crate::pom::Module].
 #[derive(Debug, Clone)]
 pub enum ModStmt {
     ParamDecl { name: String, ty: Type, default: Option<Expr> },
@@ -154,8 +157,8 @@ pub struct Range {
 /// array extents — each must evaluate to a `Natural` at elaboration. `args`
 /// are generic type arguments (for `<T>`-style generics).
 ///
-/// The elaborator replaces this with either [`ElabNetType`][crate::elab::ir::ElabNetType]
-/// or [`ElabValueType`][crate::elab::ir::ElabValueType].
+/// The elaborator replaces this with either [`NetType`][crate::pom::NetType]
+/// or [`ValueType`][crate::pom::ValueType].
 #[derive(Debug, Clone)]
 pub struct Type {
     pub name: String,
@@ -348,9 +351,12 @@ pub struct BehaviorDecl {
     pub body: Vec<BehaviorStmt>,
 }
 
+/// The kind of a behavior block: analog (continuous-time) or digital (event-driven).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BehaviorKind {
+    /// Continuous-time analog behavior.
     Analog,
+    /// Event-driven digital behavior.
     Digital,
 }
 
@@ -358,7 +364,7 @@ pub enum BehaviorKind {
 ///
 /// `For` loops in behavior blocks are unrolled at elaboration — their bounds
 /// must be elaboration constants. The unrolled form appears in
-/// [`ElabBehaviorStmt`][crate::elab::ir::ElabBehaviorStmt].
+/// [`BehaviorStmt`][crate::pom::BehaviorStmt].
 #[derive(Debug, Clone)]
 pub enum BehaviorStmt {
     VarDecl { name: String, ty: Type, default: Option<Expr> },
@@ -375,8 +381,11 @@ pub enum BehaviorStmt {
 /// The bind operator: contribution `<+`, force `<-`, or assignment `=`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BindOp {
+    /// Analog contribution: `dest <+ src`.
     Contrib,
+    /// Digital force: `dest <- src`.
     Force,
+    /// Value assignment: `dest = src`.
     Assign,
 }
 
@@ -441,6 +450,7 @@ pub enum Expr {
     Lambda { params: Vec<String>, body: Box<Expr> },
 }
 
+/// The body of an array expression `[ ... ]`.
 #[derive(Debug, Clone)]
 pub enum ArrayBody {
     /// `[value; N]` — repeat expression.
@@ -451,12 +461,18 @@ pub enum ArrayBody {
     List(Vec<Expr>),
 }
 
+/// A literal value appearing in an expression.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
+    /// Floating-point literal (f64).
     Real(f64),
+    /// Unsigned integer literal.
     Int(u64),
+    /// Boolean literal (`true` / `false`).
     Bool(bool),
+    /// Four-valued logic literal (`0q...`).
     Quad(String),
+    /// Double-quoted string literal.
     String(String),
 }
 

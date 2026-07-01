@@ -1,0 +1,55 @@
+//! Phase 1.6 — full IR → CircuitInstance glue, TDD style.
+//!
+//! Loads an [`IrProgram`] whose top module names the root of the netlist.
+//! Walks the IR instances, dispatches each to either `ir_analog_to_device`
+//! or `ir_digital_to_interp`, attaches wires to the `Netlist`, and
+//! produces a [`CircuitInstance`] ready for the solver.
+
+use piperine_lang::{from_ir, parse_and_elaborate, ppr_to_ir};
+use piperine_codegen::IrProgram;
+use piperine_solver::circuit::CircuitInstance;
+
+#[test]
+fn from_ir_resistor_va_yields_circuit() {
+    // Leaf device: PHDL resistor with no child instances
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }
+        analog R { I(p, n) <+ V(p, n) / r; }
+    ";
+    let elab = parse_and_elaborate(src).expect("PHDL parses + elaborates");
+    let ir = ppr_to_ir(&elab);
+    // Sanity: the module is present in the IR.
+    assert!(ir.modules.iter().any(|m| m.name == "R"));
+    // `from_ir` on the leaf accepts but produces an empty netlist.
+    let ci: CircuitInstance = from_ir(&ir, "R").expect("from_ir on leaf");
+    // No leaf instance expected — children come from `top_module.instances`.
+    assert!(ci.all_devices().is_empty(),
+        "leaf module has no instances; expected empty device list");
+}
+
+#[test]
+fn from_ir_ppr_resistor_yields_circuit() {
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }
+        analog R { I(p, n) <+ V(p, n) / r; }
+        mod Top ( inout a: Electrical, inout b: Electrical ) { R(a, b); }
+    ";
+    let elab = parse_and_elaborate(src).expect("PHDL parse_and_elaborate");
+    let ir = ppr_to_ir(&elab);
+    let ci: CircuitInstance = from_ir(&ir, "Top").expect("from_ir compiles top");
+    assert!(ci.all_devices().len() >= 1);
+}
+
+#[test]
+fn from_ir_unknown_top_returns_err() {
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }
+        analog R { I(p, n) <+ V(p, n) / r; }
+    ";
+    let elab = parse_and_elaborate(src).expect("PHDL parses");
+    let ir = ppr_to_ir(&elab);
+    assert!(from_ir(&ir, "no-such-module").is_err());
+}

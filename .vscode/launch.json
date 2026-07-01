@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "extensionHost",
+            "name": "Launch Piperine LSP Extension",
+            "request": "launch",
+            "runtimeExecutable": "${execPath}",
+            "args": [
+                "--extensionDevelopmentPath=${workspaceFolder}/.vscode/extension",
+                "${workspaceFolder}/.vscode/test-fixtures"
+            ],
+            "outFiles": [],
+            "preLaunchTask": "build-lang-server"
+        }
+    ]
+}

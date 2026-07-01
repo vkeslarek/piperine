@@ -1,0 +1,52 @@
+//! API surface pinning tests for the IR-centric codegen (in piperine-lang).
+
+use piperine_lang::{parse_and_elaborate, ppr_to_ir, ir_digital_to_interp};
+use piperine_codegen::IrProgram;
+
+fn parse_ppr(body: &str) -> IrProgram {
+    let elab = parse_and_elaborate(body).expect("PHDL parse/elab");
+    ppr_to_ir(&elab)
+}
+
+#[test]
+fn ppr_ir_produces_module_index() {
+    let body = r#"
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod R (inout p : Electrical, inout n : Electrical) { param r : Real = 1.0e3; }
+        analog R { I(p, n) <+ V(p, n) / r; }
+    "#;
+    let ir = parse_ppr(body);
+    assert!(ir.modules.iter().any(|m| m.name == "R"), "missing R module");
+}
+
+#[test]
+fn ir_analog_compile_resistor() {
+    let ir = parse_ppr(r#"
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod R (inout p : Electrical, inout n : Electrical) { param r : Real = 1.0e3; }
+        analog R { I(p, n) <+ V(p, n) / r; }
+    "#);
+    let _dev = piperine_codegen::ir_analog_to_device(&ir, "R").expect("resistor");
+}
+
+#[test]
+fn ir_analog_compile_capacitor() {
+    let ir = parse_ppr(r#"
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod Cap (inout p : Electrical, inout n : Electrical) { param c : Real = 1.0e-9; }
+        analog Cap { I(p, n) <+ c * ddt(V(p, n)); }
+    "#);
+    let _dev = piperine_codegen::ir_analog_to_device(&ir, "Cap").expect("capacitor");
+}
+
+#[test]
+fn ir_digital_compile_dff() {
+    let src = "
+        discipline Bit { storage Boolean; }
+        mod DFF (input clk: Bit, input D: Bit, output Q: Bit) {}
+        digital DFF { @ posedge(clk) { Q <- D; } }
+    ";
+    let elab = parse_and_elaborate(src).expect("parse_and_elaborate DFF");
+    let ir = ppr_to_ir(&elab);
+    let _interp = ir_digital_to_interp(&ir, "DFF").expect("DFF interp");
+}

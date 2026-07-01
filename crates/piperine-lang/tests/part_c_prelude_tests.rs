@@ -5,7 +5,7 @@
 
 use piperine_lang::parse_and_elaborate;
 
-fn elab(src: &str) -> Result<piperine_lang::elab::Design, String> {
+fn elab(src: &str) -> Result<piperine_lang::pom::Design, String> {
     parse_and_elaborate(src)
 }
 
@@ -28,9 +28,8 @@ fn c1_ground_discipline_is_predefined() {
     "#;
     let prog = elab(src).expect("`Ground` should be predefined; elaboration must succeed");
     let has_ground = prog
-        .disciplines
-        .keys()
-        .any(|k| k == "Ground" || k == "ground");
+        .disciplines()
+        .any(|(k, _)| k == "Ground" || k == "ground");
     assert!(has_ground, "C.1: `Ground` should appear in `prog.disciplines`");
 }
 
@@ -74,7 +73,7 @@ fn c3_type_and_net_capabilities_are_predefined() {
     "#;
     let prog = elab(src).expect("`Type` should be predefined; <T: Type> must elaborate");
     assert!(
-        prog.capabilities.contains_key("Type"),
+        prog.capability("Type").is_some(),
         "C.3: `Type` capability should appear in `prog.capabilities`"
     );
 }
@@ -87,7 +86,7 @@ fn c3_net_capability_is_predefined() {
     "#;
     let prog = elab(src).expect("`Net` should be predefined; <X: Net> must elaborate");
     assert!(
-        prog.capabilities.contains_key("Net"),
+        prog.capability("Net").is_some(),
         "C.3: `Net` capability should appear in `prog.capabilities`"
     );
 }

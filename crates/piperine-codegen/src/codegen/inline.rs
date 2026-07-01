@@ -75,7 +75,7 @@ fn inline_with_depth(
                 .iter()
                 .map(|a| inline_with_depth(prog, module, a, depth, visiting))
                 .collect::<Result<_, _>>()?;
-            if crate::codegen::expr::is_builtin_math(name) {
+            if is_builtin_math(name) {
                 return Ok(IrExpr::Call(name.clone(), inlined_args));
             }
 
@@ -298,4 +298,16 @@ mod tests {
         // Should pass through unchanged.
         assert!(matches!(inlined, IrExpr::Call(ref n, _) if n == "exp"));
     }
+}
+
+/// True if `name` is a built-in math function understood by the
+/// Cranelift emitter. Mirrors [crate::codegen::expr::is_builtin_math]
+/// so inline.rs does not need to import from expr.rs.
+fn is_builtin_math(name: &str) -> bool {
+    matches!(
+        name,
+        "exp" | "ln" | "log" | "log10" | "sqrt" | "abs" | "sin" | "cos" | "tan"
+            | "asin" | "acos" | "atan" | "atan2" | "pow" | "min" | "max"
+            | "floor" | "ceil" | "limexp"
+    )
 }

@@ -13,30 +13,37 @@ pub struct Selection<T> {
 }
 
 impl<T> Selection<T> {
+    /// Create an empty selection.
     pub fn new() -> Self {
         Self { items: Vec::new() }
     }
 
+    /// Create a selection from a pre-existing vector.
     pub fn from_vec(items: Vec<T>) -> Self {
         Self { items }
     }
 
+    /// Number of elements in the selection.
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    /// Returns `true` if the selection contains no elements.
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
+    /// Returns the first element, or `None` if empty.
     pub fn first(&self) -> Option<&T> {
         self.items.first()
     }
 
+    /// Returns the element at `i`, or `None` if out of bounds.
     pub fn get(&self, i: usize) -> Option<&T> {
         self.items.get(i)
     }
 
+    /// Iterate over references to the elements.
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.items.iter()
     }

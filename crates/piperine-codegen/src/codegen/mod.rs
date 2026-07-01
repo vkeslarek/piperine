@@ -4,14 +4,16 @@
 //! - Digital (`digital Foo { @ posedge clk { ... } }`): tree-walking interpreter.
 
 pub mod analog;
-pub mod autodiff;
-pub mod digital;
-pub mod expr;
+pub mod cranelift_helpers;
 pub mod inline;
 pub mod ir_emit;
+// pub mod autodiff;   // moved to piperine-lang
+// pub mod digital;    // moved to piperine-lang
+// pub mod expr;       // moved to piperine-lang
 
-pub use analog::compile_analog_module;
-pub use digital::{compile_digital_module, DigitalInterpreter, DigitalVal};
+pub use analog::compile_analog_module_ir;
+// pub use analog::compile_analog_module;          // moved to piperine-lang
+// pub use digital::{compile_digital_module, DigitalInterpreter, DigitalVal}; // moved to piperine-lang
 
 use cranelift_jit::JITModule;
 use thiserror::Error;

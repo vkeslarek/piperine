@@ -23,6 +23,7 @@ pub struct OverrideMap {
 }
 
 impl OverrideMap {
+    /// Create an empty override map.
     pub fn new() -> Self {
         Self::default()
     }
@@ -38,14 +39,17 @@ impl OverrideMap {
         self.overrides.get(&(path.into(), param.into()))
     }
 
+    /// Returns `true` if no overrides are staged.
     pub fn is_empty(&self) -> bool {
         self.overrides.is_empty()
     }
 
+    /// Number of staged overrides.
     pub fn len(&self) -> usize {
         self.overrides.len()
     }
 
+    /// Remove all staged overrides.
     pub fn clear(&mut self) {
         self.overrides.clear();
     }

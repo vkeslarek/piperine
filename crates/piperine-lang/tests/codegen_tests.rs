@@ -1,7 +1,8 @@
 //! Integration tests for Cranelift JIT codegen of PHDL analog modules.
 
-use piperine_codegen::{compile_analog_module, SimCtx};
-use piperine_lang::parse_and_elaborate;
+use piperine_lang::compile_analog_module;
+use piperine_codegen::SimCtx;
+use piperine_lang::{from_ir, parse_and_elaborate, ppr_to_ir};
 
 // ── Resistor ──────────────────────────────────────────────────────────────────
 
@@ -208,7 +209,8 @@ mod Top ( inout vdd : Electrical, inout gnd : Electrical ) {
 #[test]
 fn test_jit_from_elab_compiles() {
     let prog = parse_and_elaborate(RESISTOR_IN_TOP_SRC).expect("elab");
-    let _ci = piperine_codegen::from_elab(&prog, "Top").expect("from_elab");
+    let ir = ppr_to_ir(&prog);
+    let _ci = from_ir(&ir, "Top").expect("from_ir");
 }
 
 #[test]
@@ -229,12 +231,13 @@ mod Top ( inout vdd : Electrical, inout mid : Electrical, inout gnd : Electrical
 }
 ";
     let prog = parse_and_elaborate(src).expect("elab");
-    let _ci = piperine_codegen::from_elab(&prog, "Top").expect("from_elab");
+    let ir = ppr_to_ir(&prog);
+    let _ci = from_ir(&ir, "Top").expect("from_ir");
 }
 
 // ── Digital behavior tests ─────────────────────────────────────────────────────
 
-use piperine_codegen::compile_digital_module;
+use piperine_lang::compile_digital_module;
 use piperine_solver::digital::{DigitalNet, LogicValue};
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};

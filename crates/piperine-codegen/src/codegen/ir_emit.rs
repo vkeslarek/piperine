@@ -25,12 +25,14 @@
 
 use cranelift_codegen::ir::{condcodes::FloatCC, types::F64, InstBuilder, MemFlags, Value};
 
-use piperine_lang::parse::ast::Expr;
 
-use super::autodiff::{self, branch_key};
-use super::expr::{emit_math, emit_phdl_expr, is_builtin_math, ExprCtx};
+use super::cranelift_helpers::{emit_math, is_builtin_math, ExprCtx};
 use super::CodegenError;
 use crate::ir::{IrBinOp, IrExpr, IrUnOp, SimQuery};
+
+fn branch_key(plus: &str, minus: &str) -> String {
+    format!("V({plus},{minus})")
+}
 
 /// The three operations the shared Cranelift skeleton needs from a
 /// contribution expression, regardless of whether it is a PHDL `Expr` or an
@@ -43,20 +45,6 @@ pub trait AnalogExpr: Clone {
     fn diff(&self, wrt: &str) -> Self;
     /// Collect every `V(a,b)` branch appearing in this expression.
     fn collect_branches(&self, out: &mut Vec<(String, String)>);
-}
-
-// ── PHDL Expr impl (from_elab path) ───────────────────────────────────────────
-
-impl AnalogExpr for Expr {
-    fn emit(&self, ctx: &mut ExprCtx) -> Value {
-        emit_phdl_expr(ctx, self)
-    }
-    fn diff(&self, wrt: &str) -> Self {
-        autodiff::diff(self, wrt)
-    }
-    fn collect_branches(&self, out: &mut Vec<(String, String)>) {
-        autodiff::collect_branches(self, out)
-    }
 }
 
 // ── IrExpr impl (IR front door) ───────────────────────────────────────────────

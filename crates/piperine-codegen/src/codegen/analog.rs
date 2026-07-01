@@ -20,13 +20,13 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
-use piperine_lang::elab::ir::{BehaviorStmt, Design};
-use piperine_lang::parse::ast::{BindOp, Expr};
-
-use super::autodiff::branch_key;
-use super::expr::{accumulate_f64, load_f64, ExprCtx};
+use super::cranelift_helpers::{accumulate_f64, load_f64, ExprCtx};
 use super::ir_emit::AnalogExpr;
 use super::{CodegenError, JitAnalogDevice};
+
+fn branch_key(plus: &str, minus: &str) -> String {
+    format!("V({plus},{minus})")
+}
 
 // ── libm wrappers ─────────────────────────────────────────────────────────────
 
@@ -96,82 +96,6 @@ pub struct ForceContribution<E> {
     pub expr:  E,
 }
 
-/// Extract all current contributions from a flat list of behavior statements.
-///
-/// Returns `Err` on `ddt`/`idt` rejection (GAPS §A.7); see [`check_no_ddt_idt`].
-fn extract_contributions(stmts: &[BehaviorStmt]) -> Result<Vec<Contribution<Expr>>, CodegenError> {
-    let mut out = Vec::new();
-    for stmt in stmts {
-        extract_from_stmt(stmt, &mut out)?;
-    }
-    Ok(out)
-}
-
-fn extract_from_stmt(stmt: &BehaviorStmt, out: &mut Vec<Contribution<Expr>>) -> Result<(), CodegenError> {
-    match stmt {
-        BehaviorStmt::Bind { dest, op: BindOp::Contrib, src } => {
-            // I(plus, minus) <+ expr
-            if let Expr::Call(func, args) = dest {
-                if let Expr::Ident(fname) = func.as_ref() {
-                    if fname == "I" {
-                        if let (Some(Expr::Ident(p)), Some(Expr::Ident(m))) =
-                            (args.first(), args.get(1))
-                        {
-                            // GAPS §A.7 — reject `ddt`/`idt` in the
-                            // from_elab path (silently stamped as 0).
-                            // The IR path handles them via the companion
-                            // model.
-                            check_no_ddt_idt(src)?;
-                            out.push(Contribution {
-                                plus:  p.clone(),
-                                minus: m.clone(),
-                                expr:  src.clone(),
-                            });
-                        }
-                    }
-                    // V(p,n) <+ expr  (voltage force) — treat as I contribution
-                    // from the KCL perspective we skip voltage forces here;
-                    // they require branch equation handling beyond simple stamping.
-                }
-            }
-            Ok(())
-        }
-        BehaviorStmt::If { then_body, else_body, .. } => {
-            for s in then_body { extract_from_stmt(s, out)?; }
-            if let Some(eb) = else_body { for s in eb { extract_from_stmt(s, out)?; } }
-            Ok(())
-        }
-        _ => Ok(()),
-    }
-}
-
-/// GAPS §A.7 — reject `ddt`/`idt` in the `from_elab` path. The legacy
-/// behaviour silently stamped them as 0 (DC), turning capacitors into
-/// open circuits in transient. The IR path handles `ddt` correctly via the
-/// companion model; routing everything through IR is the long-term fix
-/// (GAPS §K.1). For now, fail loud.
-fn check_no_ddt_idt(e: &Expr) -> Result<(), CodegenError> {
-    match e {
-        Expr::Call(func, args) => {
-            if let Expr::Ident(name) = func.as_ref() {
-                if name == "ddt" || name == "idt" {
-                    return Err(CodegenError::Unsupported(format!(
-                        "`{name}(...)` in from_elab path silently stamps as 0 \
-                         (GAPS §A.7); route through the IR path (ppr_to_ir + \
-                         ir_analog_to_device) which supports reactive operators"
-                    )));
-                }
-            }
-            for a in args { check_no_ddt_idt(a)?; }
-            Ok(())
-        }
-        Expr::Binary(a, _, b) => { check_no_ddt_idt(a)?; check_no_ddt_idt(b)?; Ok(()) }
-        Expr::Unary(_, x) => check_no_ddt_idt(x),
-        Expr::If { cond, .. } => check_no_ddt_idt(cond),
-        _ => Ok(()),
-    }
-}
-
 // ── Public entry point ────────────────────────────────────────────────────────
 
 /// Inputs that the Cranelift core needs.
@@ -192,59 +116,6 @@ pub struct CompileInputs<E> {
     /// in the solver; see GAPS §H.4.
     pub force_contributions: Vec<ForceContribution<E>>,
     pub branches: Vec<(String, String)>,
-}
-
-impl CompileInputs<Expr> {
-    pub fn from_elab(prog: &Design, module_name: &str) -> Result<Self, CodegenError> {
-        use piperine_lang::parse::ast::BehaviorKind;
-
-        let elab_mod = prog.module(module_name).ok_or_else(|| {
-            CodegenError::ModuleNotFound(module_name.to_string())
-        })?;
-        let behavior = elab_mod.behaviors().iter()
-            .find(|b| b.is_analog())
-            .ok_or_else(|| CodegenError::BehaviorNotFound(module_name.to_string()))?;
-
-        let port_index: HashMap<String, usize> = elab_mod.ports().iter()
-            .enumerate()
-            .map(|(i, p)| (p.name().to_string(), i))
-            .collect();
-        let param_names: Vec<String> = elab_mod.params().iter().map(|p| p.name().to_string()).collect();
-        let param_index: HashMap<String, usize> = param_names.iter()
-            .enumerate()
-            .map(|(i, n)| (n.clone(), i))
-            .collect();
-
-        let contributions = extract_contributions(behavior.body())?;
-
-        let mut branches: Vec<(String, String)> = Vec::new();
-        for c in &contributions {
-            c.expr.collect_branches(&mut branches);
-        }
-        for c in &contributions {
-            let pair = (c.plus.clone(), c.minus.clone());
-            if !branches.contains(&pair) {
-                branches.push(pair);
-            }
-        }
-
-        Ok(Self {
-            name: module_name.to_string(),
-            num_terminals: elab_mod.ports().len(),
-            port_index,
-            param_names,
-            param_index,
-            num_params: elab_mod.params().len(),
-            contributions,
-            // The PHDL `from_elab` path does not extract reactive charge
-            // contributions yet; `ddt` there stamps as 0 (DC) as before.
-            react_contributions: Vec::new(),
-            // The `from_elab` path does not extract force statements —
-            // those only flow through the IR codegen (GAPS §D.1).
-            force_contributions: Vec::new(),
-            branches,
-        })
-    }
 }
 
 impl<E: AnalogExpr> CompileInputs<E> {
@@ -386,17 +257,6 @@ pub fn compile<E: AnalogExpr>(inputs: &CompileInputs<E>) -> Result<JitAnalogDevi
 
 /// Compile an analog module from an [`Design`] into a JIT device.
 ///
-/// `module_name` must match both:
-/// - A key in `prog.modules` (for port/param declarations)
-/// - A name in `prog.behaviors` with `kind == BehaviorKind::Analog`
-pub fn compile_analog_module(
-    prog: &Design,
-    module_name: &str,
-) -> Result<JitAnalogDevice, CodegenError> {
-    let inputs = CompileInputs::from_elab(prog, module_name)?;
-    compile(&inputs)
-}
-
 /// Lower a pre-built list of contributions into a `JitAnalogDevice`.
 ///
 /// Used by the IR front door:  `from_ir` translates IR contributions into

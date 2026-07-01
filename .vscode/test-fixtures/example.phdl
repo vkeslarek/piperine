@@ -1,0 +1,81 @@
+// === Discipline declarations ===
+
+discipline Electrical {
+    potential v: Real;
+    flow i: Real;
+}
+
+discipline Thermal {
+    potential T: Real;
+    flow Q: Real;
+}
+
+// === Simple two-terminal resistor ===
+mod Resistor (inout p: Electrical, inout n: Electrical) {
+    param r: Real = 1.0e3;
+}
+
+analog Resistor {
+    V(p, n) <+ r * I(p, n);
+}
+
+// === Capacitor ===
+mod Capacitor (inout p: Electrical, inout n: Electrical) {
+    param c: Real = 1.0e-12;
+}
+
+analog Capacitor {
+    I(p, n) <+ c * ddt(V(p, n));
+}
+
+// === Voltage source ===
+mod Vsource (inout p: Electrical, inout n: Electrical) {
+    param dc: Real = 0.0;
+    param ac_mag: Real = 0.0;
+    param ac_phase: Real = 0.0;
+}
+
+analog Vsource {
+    V(p, n) <+ dc + ac_mag * $temperature;
+}
+
+// === Digital D flip-flop ===
+mod DFF (input d: Electrical, input clk: Electrical, output q: Electrical, output qn: Electrical) {
+    wire d_logic: Electrical;
+    wire clk_logic: Electrical;
+}
+
+digital DFF {
+    @ posedge(clk_logic) {
+        q <- d_logic;
+        qn <- !d_logic;
+    }
+}
+
+// === Electrothermal resistor (mixed discipline) ===
+mod ElectrothermalR (inout p: Electrical, inout n: Electrical, inout tp: Thermal, inout tn: Thermal) {
+    param r0: Real = 1.0e3;
+    param tc1: Real = 0.0;
+    param tc2: Real = 0.0;
+    param rth: Real = 100.0;
+    param cth: Real = 1.0e-6;
+}
+
+analog ElectrothermalR {
+    var r: Real;
+    var power: Real;
+    r = r0 * (1.0 + tc1 * (V(tp, tn) - 300.15) + tc2 * (V(tp, tn) - 300.15) * (V(tp, tn) - 300.15));
+    V(p, n) <+ r * I(p, n);
+    power = I(p, n) * V(p, n);
+    I(tp, tn) <+ power + cth * ddt(V(tp, tn)) + V(tp, tn) / rth;
+}
+
+// === Top-level RC filter ===
+mod RCFilter (inout in: Electrical, inout out: Electrical, inout gnd: Electrical) {
+    wire mid: Electrical;
+    r1: Resistor(in, mid) { .r = 10.0e3 };
+    c1: Capacitor(mid, gnd) { .c = 100.0e-12 };
+    r2: Resistor(mid, out) { .r = 10.0e3 };
+    c2: Capacitor(out, gnd) { .c = 100.0e-12 };
+}
+

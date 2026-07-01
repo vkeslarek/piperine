@@ -4,8 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-piperine-lang = { path = "../piperine-lang" }
-piperine-ams  = { path = "../piperine-ams" }
 piperine-solver = { path = "../piperine-solver" }
 thiserror = "2.0"
 cranelift-codegen  = "0.113"

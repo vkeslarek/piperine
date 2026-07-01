@@ -5,3 +5,6 @@ edition.workspace = true
 
 [dependencies]
 thiserror = "2.0"
+piperine-codegen = { path = "../piperine-codegen" }
+piperine-solver = { path = "../piperine-solver" }
+piperine-lang = { path = "../piperine-lang" }

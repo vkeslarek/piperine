@@ -1,6 +1,6 @@
 //! # piperine-lang
 //!
-//! Parser and elaborator for the Piperine Hardware Definition Language (PHDL).
+//! Parser, elaborator, and IR lowering for PHDL.
 //!
 //! ## Pipeline
 //!
@@ -8,23 +8,25 @@
 //! &str
 //!  │
 //!  ▼  parse::Lexer
-//! Vec<Lexed>          (token sequence with byte-range spans)
+//! Vec<Lexed>              (token sequence with byte-range spans)
 //!  │
 //!  ▼  parse::Parser
-//! parse::SourceFile   (unresolved AST — types are strings, generics are present)
+//! parse::SourceFile       (unresolved AST — types are strings)
 //!  │
-//!  ▼  elab::Elaborator
-//! elab::ElabProgram   (resolved IR — no generics, bundles expanded, for/if eliminated)
+//!  ▼  SourceFile::elaborate
+//! Design                  (elaborated design + POM root)
+//!  │
+//!  ▼  lowering::ppr_to_ir
+//! IrProgram               (the central IR for piperine-codegen)
+//!  │
+//!  ▼  runtime::from_ir
+//! CircuitInstance         (ready for piperine-solver)
 //! ```
 //!
 //! ## Quick start
 //!
 //! ```rust
-//! // Just parse:
-//! let ast = piperine_lang::parse::parse_str("mod R (inout p: Electrical);")?;
-//!
-//! // Parse + elaborate:
-//! let program = piperine_lang::parse_and_elaborate(
+//! let design = piperine_lang::parse_and_elaborate(
 //!     "discipline Electrical { potential v: Real; flow i: Real; }\
 //!      mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }"
 //! )?;
@@ -36,34 +38,39 @@
 //! | Module | Purpose |
 //! |--------|---------|
 //! | [`parse`] | Lexer, parser, and parse-AST types |
-//! | [`resolve`] | `use` declaration resolver: built-in + file-based module loading |
-//! | [`elab`] | Elaborator, elaborated-IR types, event registry, const evaluator |
-//! | [`stdlib`] | Embedded `.phdl` sources for the standard library |
-//!
-//! For the IR → Device pipeline (analog and digital blocks → solver
-//! `CircuitInstance`), see the `piperine-codegen` crate.
+//! | [`elab`] | Elaborator, event registry, const evaluator |
+//! | [`pom`] | Piperine Object Model — Design, Module, Port, Value, OverrideMap, ... |
+//! | [`lowering`] | Design → IrProgram (`ppr_to_ir`) |
+//! | [`runtime`] | IrProgram → Device/CircuitInstance (`from_ir`, `PhdlDevice`, `DigitalInterpreter`) |
+//! | [`resolve`] | `use` declaration resolver |
 
 pub mod elab;
+pub mod lowering;
 pub mod parse;
 pub mod pom;
 pub mod resolve;
-pub mod stdlib;
+pub mod runtime;
 
-// Re-export POM types (the reflection API surface).
-pub use elab::{
-    elaborate, elaborate_with,
-    Behavior, BehaviorStmt, Connection, Design, ElabError, Function, ImplBlock,
+// ── POM types ────────────────────────────────────────────────────────────
+pub use pom::{
+    ElabError,
+    Behavior, BehaviorStmt, Connection, Design, Function, ImplBlock,
     Instance, MatchArm, Module, NetRef, NetType, Param, Port, TypeRef,
     ValueType, Wire,
+    Id, Kind, Kinded, Named, NetTyped, OverrideMap, ReflectError, Selection, Value,
 };
-pub use pom::{Id, Kind, OverrideMap, ReflectError, Selection, Value};
 pub use parse::{parse_str, Lexed, Lexer, Tok};
 pub use resolve::{ResolveError, Resolver};
 
+// ── IR lowering + runtime ─────────────────────────────────────────────────
+pub use lowering::{ppr_to_ir, compile_analog_module};
+pub use runtime::from_ir;
+pub use runtime::device::PhdlDevice;
+pub use runtime::digital_lower::ir_digital_to_interp;
+pub use runtime::digital::{compile_digital_module, DigitalInterpreter, DigitalVal};
+
 /// Parse a PHDL source string and run the full elaboration pipeline.
-///
-/// Equivalent to calling [`parse::parse_str`] and then [`elab::elaborate`].
 pub fn parse_and_elaborate(input: &str) -> Result<Design, String> {
     let source = parse_str(input)?;
-    elaborate(source).map_err(|e| e.to_string())
+    source.elaborate().map_err(|e| e.to_string())
 }
