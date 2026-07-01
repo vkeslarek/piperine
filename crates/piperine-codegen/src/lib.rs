@@ -12,6 +12,7 @@ pub mod ir_analog_to_device;
 pub use ir::*;
 
 pub use codegen::analog::compile_analog_module_ir;
+pub use codegen::ir_emit::validate_ir_contrib;
 pub use codegen::{CodegenError, JitAnalogDevice, SimCtx};
 pub use ir_analog_to_device::ir_analog_to_device;
 // pub use from_ir::from_ir;          // moved to piperine-lang

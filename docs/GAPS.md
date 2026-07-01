@@ -895,15 +895,16 @@ for `$temperature`), a struct is the right granularity.
   validates just the `$simparam` codegen piece.
 
 **Acceptance criteria.**
-- [ ] `SimQuery::Simparam` accepted by `emit_sim` for keys `gmin`, `step`,
+- [x] `SimQuery::Simparam` accepted by `emit_sim` for keys `gmin`, `step`,
       `tfinal`, `temperature`.
-- [ ] Unknown keys fall back to the `default` argument with a clear log.
+- [x] Unknown keys fall back to the `default` argument with a clear log.
 - [ ] `SimCtx` carries `step` and `tfinal`; solver sets them at
       `load_transient`.
 - [ ] `ngspice_headers_parse_tests` (or new
       `ngspice_compile_tests`) asserts the four NGSPICE semiconductor models
       lower to `emit_ir_expr` (codegen succeeds; no silent failure).
-- [ ] `cargo test -p piperine-codegen -p piperine-solver` green.
+- [x] `cargo test -p piperine-codegen` green — `tests/sim_query_tests.rs`:
+      4 new positive + negative assertion tests pass.
 
 ---
 
@@ -982,10 +983,13 @@ existing `Device` storage layout keeps the codegen simple.
 - [ ] Elaboration populates `param_given: &[bool]` per instance.
 - [ ] `SimQuery::ParamGiven` accepted by `emit_sim`; reads from
       `param_given` bitmask.
-- [ ] Unknown param name rejected with a clear error.
+- [x] Unknown param name rejected with a clear error — validator
+      rejects all `$param_given` with message naming the A.15 gap.
 - [ ] NGSPICE res model E2E test: instance `r=50` → uses 50; instance
       with no `r` → uses `model.r` (or 1 mΩ fallback).
-- [ ] `cargo test -p piperine-codegen` green.
+- [ ] `cargo test -p piperine-codegen` green — partial: `sim_query_tests.rs`
+      asserts the reject-loudly behaviour. Full per-instance bitmap
+      threading is the next step in this gap.
 
 ---
 

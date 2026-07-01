@@ -125,9 +125,20 @@ fn emit_sim(ctx: &mut ExprCtx, sq: &SimQuery) -> Value {
     //   offset 8: abstime (seconds)
     //   offset 16: mfactor
     //   offset 24: gmin
+    //   offset 32: step        (NEW — reserved for A.14 stage 2)
+    //   offset 40: tfinal      (NEW — reserved for A.14 stage 2)
     //
     // GAPS §A.2 + §A.3 — these used to silently emit 0.0 (or a hardcoded
     // 0.025852 for `Vt`); now they read the live simulator state.
+    //
+    // GAPS §A.14 — `$simparam("gmin", d)` reads from SimCtx for known keys
+    // (`gmin`, `temperature`); unknown keys fall back to the default
+    // expression provided as the second argument to `$simparam`.
+    //
+    // GAPS §A.15 — `$param_given(...)` still requires per-instance
+    // metadata threading (not wired yet, GAPS §A.15). The validator
+    // currently rejects it; the emitter's `_ => 0.0` arm is the
+    // unreachable-safeguard.
     //
     // `FuncInstBuilder` is not `Copy`, so we call `ctx.builder.ins()` for
     // each emission rather than binding a single builder reference.
@@ -158,6 +169,23 @@ fn emit_sim(ctx: &mut ExprCtx, sq: &SimQuery) -> Value {
             };
             let kb_over_q = ctx.builder.ins().f64const(super::super::SimCtx::K_B_OVER_Q_EV_PER_K);
             ctx.builder.ins().fmul(temp, kb_over_q)
+        }
+        SimQuery::Simparam { key, default } => {
+            // $simparam reads known solver-side state from SimCtx; unknown
+            // keys fall back to the default expr. The validator at the
+            // bottom of this file accepts all keys (the fall-back is the
+            // canonical behaviour). GAPS §A.14.
+            match key.as_str() {
+                "gmin" | "temperature" => {
+                    // offset 24 (gmin); for "temperature" alias, use offset 0.
+                    let off = if key == "temperature" { 0 } else { 24 };
+                    ctx.builder.ins().load(F64, MemFlags::trusted(), ctx.sim_ctx, off)
+                }
+                // "step"/"tfinal" are reserved at offsets 32/40 — solver
+                // does not yet write them (GAPS §A.14 stage 2). Fall back
+                // to default.
+                "step" | "tfinal" | _ => emit_ir_expr(ctx, default),
+            }
         }
         // Simparam and the rest are not yet wired — fall through to a
         // clear error via the validator; emitter's `_ => 0.0` arm is the
@@ -527,7 +555,18 @@ pub fn validate_ir_contrib_with2(
             SimQuery::Temperature
             | SimQuery::Vt(_)
             | SimQuery::Abstime
-            | SimQuery::Mfactor => Ok(()),
+            | SimQuery::Mfactor
+            | SimQuery::Simparam { .. } => Ok(()),
+            SimQuery::ParamGiven(_) => {
+                // GAPS §A.15 — `$param_given` reads per-instance metadata
+                // that must be threaded through elaboration. The per-instance
+                // bitmask (`Device::param_given`) is not yet wired into the
+                // JIT path. Fail loud so users are not lied to.
+                Err(unsupported(
+                    "$param_given requires per-instance param-given metadata \
+                     threading — GAPS §A.15 (not yet implemented)",
+                ))
+            }
             other => Err(unsupported(format!("simulator query {other:?}"))),
         },
 
