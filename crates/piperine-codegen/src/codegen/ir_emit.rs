@@ -135,10 +135,9 @@ fn emit_sim(ctx: &mut ExprCtx, sq: &SimQuery) -> Value {
     // (`gmin`, `temperature`); unknown keys fall back to the default
     // expression provided as the second argument to `$simparam`.
     //
-    // GAPS §A.15 — `$param_given(...)` still requires per-instance
-    // metadata threading (not wired yet, GAPS §A.15). The validator
-    // currently rejects it; the emitter's `_ => 0.0` arm is the
-    // unreachable-safeguard.
+    // GAPS §A.15 — `$param_given(...)` reads a 64-bit mask from `SimCtx`
+    // (offset 48) and extracts the bit corresponding to the parameter's
+    // index.
     //
     // `FuncInstBuilder` is not `Copy`, so we call `ctx.builder.ins()` for
     // each emission rather than binding a single builder reference.
@@ -158,14 +157,13 @@ fn emit_sim(ctx: &mut ExprCtx, sq: &SimQuery) -> Value {
         SimQuery::Vt(t_opt) => {
             // vt = kT/q where T = (*sim_ctx).temperature (or the optional
             // argument if present).
-            let temp = ctx.builder.ins().load(F64, MemFlags::trusted(), ctx.sim_ctx, 0);
             let temp = match t_opt {
                 Some(arg_expr) => {
-                    // Multiply by optional arg expr (used as a scaling factor).
-                    let arg = emit_ir_expr(ctx, arg_expr);
-                    ctx.builder.ins().fmul(temp, arg)
+                    emit_ir_expr(ctx, arg_expr)
                 }
-                None => temp,
+                None => {
+                    ctx.builder.ins().load(F64, MemFlags::trusted(), ctx.sim_ctx, 0)
+                }
             };
             let kb_over_q = ctx.builder.ins().f64const(super::super::SimCtx::K_B_OVER_Q_EV_PER_K);
             ctx.builder.ins().fmul(temp, kb_over_q)
@@ -181,13 +179,39 @@ fn emit_sim(ctx: &mut ExprCtx, sq: &SimQuery) -> Value {
                     let off = if key == "temperature" { 0 } else { 24 };
                     ctx.builder.ins().load(F64, MemFlags::trusted(), ctx.sim_ctx, off)
                 }
-                // "step"/"tfinal" are reserved at offsets 32/40 — solver
-                // does not yet write them (GAPS §A.14 stage 2). Fall back
-                // to default.
-                "step" | "tfinal" | _ => emit_ir_expr(ctx, default),
+                "step" | "tfinal" => {
+                    let off = if key == "step" { 32 } else { 40 };
+                    ctx.builder.ins().load(F64, MemFlags::trusted(), ctx.sim_ctx, off)
+                }
+                _ => emit_ir_expr(ctx, default),
             }
         }
-        // Simparam and the rest are not yet wired — fall through to a
+        SimQuery::ParamGiven(name) => {
+            if let Some(&idx) = ctx.param_index.get(name) {
+                // offset 48: param_given_mask (u64)
+                let mask = ctx.builder.ins().load(cranelift_codegen::ir::types::I64, MemFlags::trusted(), ctx.sim_ctx, 48);
+                let shifted = ctx.builder.ins().ushr_imm(mask, idx as i64);
+                let bit = ctx.builder.ins().band_imm(shifted, 1);
+                let zero = ctx.builder.ins().iconst(cranelift_codegen::ir::types::I64, 0);
+                let is_set = ctx.builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::NotEqual, bit, zero);
+                bool_to_f64(ctx, is_set)
+            } else {
+                ctx.builder.ins().f64const(0.0)
+            }
+        }
+        SimQuery::Analysis(kind) => {
+            let target_val = match kind.as_str() {
+                "dc" => 0,
+                "tran" => 1,
+                "ac" => 2,
+                _ => return ctx.builder.ins().f64const(0.0),
+            };
+            let val = ctx.builder.ins().load(cranelift_codegen::ir::types::I64, MemFlags::trusted(), ctx.sim_ctx, 56);
+            let target = ctx.builder.ins().iconst(cranelift_codegen::ir::types::I64, target_val as i64);
+            let is_match = ctx.builder.ins().icmp(cranelift_codegen::ir::condcodes::IntCC::Equal, val, target);
+            bool_to_f64(ctx, is_match)
+        }
+        // The rest are not yet wired — fall through to a
         // clear error via the validator; emitter's `_ => 0.0` arm is the
         // safety net for unvalidated code paths.
         _ => ctx.builder.ins().f64const(0.0),
@@ -563,17 +587,9 @@ pub fn validate_ir_contrib_with2(
             | SimQuery::Vt(_)
             | SimQuery::Abstime
             | SimQuery::Mfactor
+            | SimQuery::Analysis(_)
+            | SimQuery::ParamGiven(_)
             | SimQuery::Simparam { .. } => Ok(()),
-            SimQuery::ParamGiven(_) => {
-                // GAPS §A.15 — `$param_given` reads per-instance metadata
-                // that must be threaded through elaboration. The per-instance
-                // bitmask (`Device::param_given`) is not yet wired into the
-                // JIT path. Fail loud so users are not lied to.
-                Err(unsupported(
-                    "$param_given requires per-instance param-given metadata \
-                     threading — GAPS §A.15 (not yet implemented)",
-                ))
-            }
             other => Err(unsupported(format!("simulator query {other:?}"))),
         },
 

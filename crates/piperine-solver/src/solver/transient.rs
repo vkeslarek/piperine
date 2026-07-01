@@ -18,6 +18,7 @@ pub struct TransientSystem<'a> {
     pub context: Context,
     pub time: f64,
     pub dt: f64,
+    pub tfinal: f64,
 }
 
 impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
@@ -29,6 +30,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         let tran_ctx = TransientAnalysisContext {
             time: self.time.into(),
             dt: self.dt.into(),
+            tfinal: self.tfinal.into(),
         };
 
         let mut all_stamps = Vec::new();
@@ -103,6 +105,7 @@ impl<'a> TransientSolver<'a> {
 
         // Build DAG topology once before simulation begins
         circuit.rebuild_digital_topology();
+        circuit.init_digital();
 
         let size = circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
 
@@ -110,7 +113,8 @@ impl<'a> TransientSolver<'a> {
             circuit,
             context,
             time: 0.0,
-            dt: options.dt,
+            dt: options.dt.into(),
+            tfinal: options.stop_time.into(),
         };
 
         let solver = NewtonRaphsonSolver::new(&mut system, size, 4)?;

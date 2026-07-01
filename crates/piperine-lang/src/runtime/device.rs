@@ -73,8 +73,11 @@ impl PhdlDevice {
         digital: Option<DigitalInterpreter>,
         node_refs: Vec<Option<AnalogReference>>,
         params: Vec<f64>,
+        param_given_mask: u64,
     ) -> Self {
         let n = node_refs.len();
+        let mut sim_ctx = SimCtx::default();
+        sim_ctx.param_given_mask = param_given_mask;
         Self {
             name: name.into(),
             analog,
@@ -83,7 +86,7 @@ impl PhdlDevice {
             terminal_names: vec![String::new(); n],
             params,
             param_names: Vec::new(),
-            sim_ctx: SimCtx::default(),
+            sim_ctx,
             noise_sources: Vec::new(),
         }
     }
@@ -349,8 +352,11 @@ impl Device for PhdlDevice {
     fn load_dc(
         &mut self,
         state: &DcAnalysisState,
-        _context: &Context,
+        context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
+        self.sim_ctx.temperature = context.temperature;
+        self.sim_ctx.gmin = context.gmin.into();
+        self.sim_ctx.current_analysis = 0; // DC
         self.load_analog_dc(&|k| {
             state.latest().and_then(|s| s.get(k).copied()).unwrap_or(0.0)
         })
@@ -360,8 +366,11 @@ impl Device for PhdlDevice {
         &mut self,
         dc_op: &DcAnalysisResult,
         ac_ctx: &AcAnalysisContext,
-        _context: &Context,
+        context: &Context,
     ) -> Vec<Stamp<AnalogReference, Complex64>> {
+        self.sim_ctx.temperature = context.temperature;
+        self.sim_ctx.gmin = context.gmin.into();
+        self.sim_ctx.current_analysis = 2; // AC
         let freq: f64 = ac_ctx.frequency.into();
         let omega = 2.0 * std::f64::consts::PI * freq;
         let refs = self.node_refs.clone();
@@ -377,10 +386,16 @@ impl Device for PhdlDevice {
         &mut self,
         states: &TransientAnalysisState,
         tran_ctx: &TransientAnalysisContext,
-        _context: &Context,
+        context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
         let dt: f64 = tran_ctx.dt.into();
         let alpha = if dt > 0.0 { 1.0 / dt } else { 0.0 };
+        self.sim_ctx.abstime = tran_ctx.time.into();
+        self.sim_ctx.step = dt;
+        self.sim_ctx.tfinal = tran_ctx.tfinal.into();
+        self.sim_ctx.temperature = context.temperature;
+        self.sim_ctx.gmin = context.gmin.into();
+        self.sim_ctx.current_analysis = 1; // TRAN
         self.load_analog_transient(&|k| {
             states.latest().and_then(|s| s.get(k).copied()).unwrap_or(0.0)
         }, alpha)

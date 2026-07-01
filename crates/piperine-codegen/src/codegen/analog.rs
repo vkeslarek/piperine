@@ -408,6 +408,7 @@ fn compile_named_residual<E: AnalogExpr>(
             builder: &mut builder,
             branch_voltages: &branch_voltages,
             param_values: &param_values,
+            param_index,
             libm: &libm,
             sim_ctx: sim_ptr,
         };
@@ -480,6 +481,7 @@ fn compile_named_jacobian<E: AnalogExpr>(
                 builder: &mut builder,
                 branch_voltages: &branch_voltages,
                 param_values: &param_values,
+                param_index,
                 libm: &libm,
                 sim_ctx: sim_ptr,
             };
@@ -574,6 +576,7 @@ fn compile_named_force<E: AnalogExpr>(
             builder: &mut builder,
             branch_voltages: &branch_voltages,
             param_values: &param_values,
+            param_index,
             libm: &libm,
             sim_ctx: sim_ptr,
         };

@@ -67,6 +67,15 @@ pub struct SimCtx {
     /// `gmin`). Currently informational; the in-tree solver does not stamp
     /// gmin itself (see GAPS §H.3).
     pub gmin: f64,
+    /// Current solver time step.
+    pub step: f64,
+    /// Solver stop time.
+    pub tfinal: f64,
+    /// Bitmask of which parameters were explicitly provided by the user (GAPS §A.15).
+    /// Limited to 64 params for now.
+    pub param_given_mask: u64,
+    /// 0 for DC, 1 for Transient, 2 for AC (GAPS §D.10).
+    pub current_analysis: u64,
 }
 
 impl Default for SimCtx {
@@ -77,6 +86,10 @@ impl Default for SimCtx {
             abstime: 0.0,
             mfactor: 1.0,
             gmin: 1.0e-12,
+            step: 0.0,
+            tfinal: 0.0,
+            param_given_mask: 0,
+            current_analysis: 0,
         }
     }
 }

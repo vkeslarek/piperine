@@ -70,6 +70,7 @@ impl TransientAnalysisOptions {
 pub struct TransientAnalysisContext {
     pub time: Second,
     pub dt: Second,
+    pub tfinal: Second,
 }
 
 pub trait TransientAnalysis {

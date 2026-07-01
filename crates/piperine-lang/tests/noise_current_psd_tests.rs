@@ -36,7 +36,7 @@ fn empty_dc_point() -> DcAnalysisResult {
 
 #[test]
 fn noise_current_psd_returns_empty_for_device_without_noise() {
-    let mut dev = PhdlDevice::new("R", None, None, vec![None, None], vec![]);
+    let mut dev = PhdlDevice::new("R", None, None, vec![None, None], vec![], 0);
     let psds = dev.noise_current_psd(&empty_dc_point(), &empty_ac_ctx());
     assert!(psds.is_empty(), "device without noise must produce empty Vec<Noise>");
 }
@@ -45,7 +45,7 @@ fn noise_current_psd_returns_empty_for_device_without_noise() {
 fn noise_current_psd_with_constant_psd_returns_noise() {
     // `I(p, n) <+ white_noise(1.0e-12);` — a 1 pA²/Hz current source
     // between p (idx 0) and n (idx 1).
-    let mut dev = PhdlDevice::new("R", None, None, vec![None, None], vec![]);
+    let mut dev = PhdlDevice::new("R", None, None, vec![None, None], vec![], 0);
     let p_ref = AnalogReference::new(Arc::new(AnalogVariable::Node(NodeIdentifier::Anonymous(0))), 0);
     let n_ref = AnalogReference::new(Arc::new(AnalogVariable::Node(NodeIdentifier::Anonymous(1))), 1);
     dev.add_noise_source(
@@ -67,7 +67,7 @@ fn noise_current_psd_with_constant_psd_returns_noise() {
 fn noise_current_psd_with_negative_psd_is_dropped() {
     // Per SPICE convention, a zero or negative PSD is dropped (the noise
     // source contributes no measurable noise).
-    let mut dev = PhdlDevice::new("R", None, None, vec![None, None], vec![]);
+    let mut dev = PhdlDevice::new("R", None, None, vec![None, None], vec![], 0);
     let p_ref = AnalogReference::new(Arc::new(AnalogVariable::Node(NodeIdentifier::Anonymous(0))), 0);
     let n_ref = AnalogReference::new(Arc::new(AnalogVariable::Node(NodeIdentifier::Anonymous(1))), 1);
     dev.add_noise_source(
@@ -83,7 +83,7 @@ fn noise_current_psd_with_negative_psd_is_dropped() {
 #[test]
 fn noise_current_psd_with_flicker_constant_is_dropped_when_zero() {
     // Flicker with constant 0 PSD → drop.
-    let mut dev = PhdlDevice::new("R", None, None, vec![None, None], vec![]);
+    let mut dev = PhdlDevice::new("R", None, None, vec![None, None], vec![], 0);
     let p_ref = AnalogReference::new(Arc::new(AnalogVariable::Node(NodeIdentifier::Anonymous(0))), 0);
     let n_ref = AnalogReference::new(Arc::new(AnalogVariable::Node(NodeIdentifier::Anonymous(1))), 1);
     dev.add_noise_source(
@@ -105,6 +105,7 @@ fn noise_current_psd_evaluates_param_resolution() {
     let mut dev = PhdlDevice::new(
         "R", None, None, vec![None, None],
         vec![0.02585, 1.0e-3],
+        0,
     );
     dev.set_param_names(vec!["kT".into(), "g".into()]);
     let p_ref = AnalogReference::new(Arc::new(AnalogVariable::Node(NodeIdentifier::Anonymous(0))), 0);
@@ -142,7 +143,7 @@ fn noise_current_psd_evaluates_branch_voltage() {
     let p_ref = AnalogReference::new(p_var.clone(), 0);
     let n_ref = AnalogReference::new(n_var.clone(), 1);
 
-    let mut dev = PhdlDevice::new("R", None, None, vec![None, None], vec![]);
+    let mut dev = PhdlDevice::new("R", None, None, vec![None, None], vec![], 0);
     dev.set_terminal_names(vec!["p".into(), "n".into()]);
     let psd = IrExpr::Binary(
         piperine_codegen::ir::IrBinOp::Sub,

@@ -42,21 +42,11 @@ fn simparam_is_accepted_by_validator() {
     assert!(validate_ir_contrib(&expr).is_ok());
 }
 
-/// `$param_given` is rejected because per-instance metadata threading is
-/// not wired yet (GAPS §A.15). The error message must be loud so the user
-/// knows it's an unimplemented feature, not a silent 0.0.
+/// `$param_given` is accepted by the validator. GAPS §A.15.
 #[test]
-fn param_given_is_rejected_loudly() {
+fn param_given_is_accepted_by_validator() {
     let expr = IrExpr::Sim(SimQuery::ParamGiven("r".into()));
-    let err = validate_ir_contrib(&expr).unwrap_err().to_string();
-    assert!(
-        err.contains("param_given"),
-        "expected rejection message to mention param_given, got: {err}"
-    );
-    assert!(
-        err.contains("A.15") || err.to_lowercase().contains("not yet"),
-        "expected message to point at the gap A.15 / 'not yet', got: {err}"
-    );
+    assert!(validate_ir_contrib(&expr).is_ok());
 }
 
 /// `SimCtx` carries the runtime fields used by the `Sim` emitter with

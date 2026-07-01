@@ -146,6 +146,15 @@ pub fn from_ir(program: &IrProgram, top: &str) -> Result<CircuitInstance, String
             .map(|p| resolved.get(&p.name).copied().unwrap_or(0.0))
             .collect();
 
+        let mut param_given_mask: u64 = 0;
+        for (idx, p) in child.params.iter().enumerate() {
+            if inst.params.iter().any(|(name, _)| name == &p.name) {
+                if idx < 64 {
+                    param_given_mask |= 1 << idx;
+                }
+            }
+        }
+
         // Compile body (analog & digital). GAPS §A.6: propagate compile
         // errors with the instance label and module name in the message.
         // A `.ok()` here would silently drop a child whose body fails to
@@ -201,6 +210,7 @@ pub fn from_ir(program: &IrProgram, top: &str) -> Result<CircuitInstance, String
                 digital_interp,
                 Vec::new(),
                 params,
+                param_given_mask,
             );
             dev.allocate_nodes(&terminal_list, &mut netlist);
             // Register the device's terminal names so the noise-PSD

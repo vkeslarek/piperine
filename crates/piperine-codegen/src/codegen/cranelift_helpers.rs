@@ -14,6 +14,7 @@ pub struct ExprCtx<'b, 'f: 'b> {
     pub builder: &'b mut FunctionBuilder<'f>,
     pub branch_voltages: &'b HashMap<String, Value>,
     pub param_values: &'b HashMap<String, Value>,
+    pub param_index: &'b HashMap<String, usize>,
     pub libm: &'b HashMap<&'static str, FuncRef>,
     pub sim_ctx: cranelift_codegen::ir::Value,
 }

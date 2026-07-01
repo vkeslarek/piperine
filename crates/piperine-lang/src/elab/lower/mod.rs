@@ -88,6 +88,7 @@ impl Elaborator {
         let mut prog = Design::new();
 
         *prog.disciplines_map_mut() = self.disciplines.clone();
+        *prog.bundles_map_mut() = self.bundles.clone();
         *prog.enums_map_mut() = self.enums.clone();
         *prog.capabilities_map_mut() = self.capability_decls.clone();
 

@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::parse::ast::{CapabilityDecl, DisciplineDecl, EnumDecl};
+use crate::parse::ast::{BundleDecl, CapabilityDecl, DisciplineDecl, EnumDecl};
 use crate::pom::{Function, ImplBlock, Module, OverrideMap, Value};
 
 /// The complete output of elaboration — the POM root.
@@ -16,6 +16,7 @@ use crate::pom::{Function, ImplBlock, Module, OverrideMap, Value};
 pub struct Design {
     pub(crate) modules: HashMap<String, Module>,
     pub(crate) disciplines: HashMap<String, DisciplineDecl>,
+    pub(crate) bundles: HashMap<String, BundleDecl>,
     pub(crate) enums: HashMap<String, EnumDecl>,
     pub(crate) capabilities: HashMap<String, CapabilityDecl>,
     pub(crate) functions: HashMap<String, Function>,
@@ -33,6 +34,7 @@ impl Design {
         Self {
             modules: HashMap::new(),
             disciplines: HashMap::new(),
+            bundles: HashMap::new(),
             enums: HashMap::new(),
             capabilities: HashMap::new(),
             functions: HashMap::new(),
@@ -99,6 +101,16 @@ impl Design {
     /// Look up a discipline declaration by name.
     pub fn discipline(&self, name: &str) -> Option<&DisciplineDecl> {
         self.disciplines.get(name)
+    }
+
+    /// Every bundle declaration.
+    pub fn bundles(&self) -> impl Iterator<Item = (&String, &BundleDecl)> {
+        self.bundles.iter()
+    }
+
+    /// Look up a bundle declaration by name.
+    pub fn bundle(&self, name: &str) -> Option<&BundleDecl> {
+        self.bundles.get(name)
     }
 
     /// Every enum declaration.
@@ -171,6 +183,10 @@ impl Design {
     /// Mutable access to the disciplines map. For internal elaboration use.
     pub(crate) fn disciplines_map_mut(&mut self) -> &mut HashMap<String, DisciplineDecl> {
         &mut self.disciplines
+    }
+    /// Mutable access to the bundles map. For internal elaboration use.
+    pub(crate) fn bundles_map_mut(&mut self) -> &mut HashMap<String, BundleDecl> {
+        &mut self.bundles
     }
     /// Mutable access to the enums map. For internal elaboration use.
     pub(crate) fn enums_map_mut(&mut self) -> &mut HashMap<String, EnumDecl> {
