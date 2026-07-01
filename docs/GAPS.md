@@ -61,14 +61,6 @@
 > passing tests (`width_mismatch_on_named_connection_is_caught`, etc.).
 
 
-### B.5 No `Boolean`→`Quad` implicit widening or cast enforcement
-
-**Severity:** Medium · **Affects:** typecheck; ties to J.4
-
-No widening/cast logic exists. `Boolean` should implicitly widen to
-`Quad` (`0→0q0`, `1→0q1`); everything else needs an explicit cast
-(`real(x)`/`int(x)`/`bit(x)`), which first needs those recognized as
-casts rather than ordinary calls (J.4).
 
 ---
 
@@ -528,7 +520,6 @@ Just another generic `Diagnostic` — no distinct AST handling, no
 elaboration-time const-cond evaluation for the `@ initial`
 "validates setup" semantic the spec describes.
 
-### J.4 `$error`/`$warn`/`$info` names unvalidated, untested; casts not recognized
 
 **Severity:** Low/Medium · **Affects:** diagnostic severity mapping;
 typecheck (prerequisite for B.5)
@@ -678,7 +669,6 @@ circuits; negligible for most others.
 | ID | Gap | Severity | Affects |
 |----|-----|----------|---------|
 
-| B.5 | No `Boolean`→`Quad` widening / cast enforcement | Medium | typecheck |
 | C.2 | `UInt[N]`/`SInt[N]` not in prelude | High | generic bit-vector examples |
 | D.1 | `V(p,n) <- expr` (ideal voltage source) rejected | Critical | vsrc, ccvs, mut, vcvs |
 | D.2 | `idt`/`idtmod` not device-compiled faithfully | High | integrators, phase accumulators |
