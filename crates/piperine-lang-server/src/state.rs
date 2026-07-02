@@ -46,9 +46,7 @@ impl ServerState {
     /// Store or update a document's source text, parse it, and collect errors.
     pub fn upsert_document(&mut self, uri: Uri, source: String, version: i32) {
         let (design, errors) = parse_and_collect_errors(&source);
-        if let Some(ref e) = errors.first() {
-            eprintln!("parse error in {uri:?}: {}", e.message);
-        }
+        // Mute eprintln to prevent log spam during typing
         self.documents.insert(
             uri,
             DocumentState { source, version, design, errors },
@@ -59,57 +57,28 @@ impl ServerState {
 /// Run the full lexer+parser+elaborator pipeline and collect all errors
 /// with their byte positions extracted from error messages.
 fn parse_and_collect_errors(source: &str) -> (Option<Design>, Vec<ParseError>) {
-    // Phase 1: Lexer — gives byte positions for lexer errors.
-    let mut lexer = piperine_lang::Lexer::new(source);
-    let tokens = match lexer.tokenize() {
-        Ok(t) => t,
-        Err(e) => {
-            let offset = extract_byte_offset(&e);
-            return (None, vec![ParseError { message: e, byte_offset: offset }]);
-        }
-    };
-
-    // Phase 2: Parser — errors have the form "Expected X, found Y".
-    let source_file = match piperine_lang::parse_str(source) {
-        Ok(sf) => sf,
-        Err(e) => {
-            // Try to find the position from the error message or token position.
-            let msg_offset = extract_byte_offset(&e);
-            let tok_offset = if msg_offset.is_none() {
-                if let Some(found) = e.rsplit("found ").next() {
-                    let token_text = found
-                        .trim()
-                        .strip_prefix("Some(")
-                        .and_then(|s| s.strip_suffix(')'))
-                        .or_else(|| found.trim().strip_prefix('`').and_then(|s| s.strip_suffix('`')));
-                    token_text.and_then(|tt| {
-                        tokens
-                            .iter()
-                            .find(|tok| {
-                                format!("{:?}", tok.tok).contains(tt)
-                                    || format!("{:?}", tok.tok).to_lowercase() == tt.to_lowercase()
-                            })
-                            .map(|tok| tok.start)
-                    })
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-            let offset = msg_offset.or(tok_offset).or_else(|| tokens.last().map(|t| t.end));
-            return (None, vec![ParseError { message: e, byte_offset: offset }]);
-        }
-    };
-
-    // Phase 3: Elaboration.
-    match source_file.elaborate() {
-        Ok(design) => (Some(design), vec![]),
-        Err(elab_err) => {
-            let msg = elab_err.to_string();
-            (None, vec![ParseError { message: msg, byte_offset: None }])
-        }
+    let mut all_errors = Vec::new();
+    let (source_file, parse_errors) = piperine_lang::parse::parse_str_tolerant(source);
+    
+    for e in parse_errors {
+        all_errors.push(ParseError {
+            message: e.to_string(),
+            byte_offset: e.byte_offset(),
+        });
     }
+
+    let design = match source_file.elaborate() {
+        Ok(d) => Some(d),
+        Err(e) => {
+            all_errors.push(ParseError {
+                message: e.to_string(),
+                byte_offset: None,
+            });
+            None
+        }
+    };
+
+    (design, all_errors)
 }
 
 /// Extract a byte offset from a lexer error message ("... at byte N").

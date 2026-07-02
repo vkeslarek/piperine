@@ -20,7 +20,7 @@ pub enum Axis {
     Net,
     Port,
     Param,
-    Aspect,
+    Attr,
     Behavior,
     Driver,
     Load,

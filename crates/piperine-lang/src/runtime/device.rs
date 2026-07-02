@@ -14,7 +14,7 @@ use piperine_solver::math::linear::Stamp;
 use piperine_solver::solver::Context;
 
 use crate::runtime::digital::DigitalInterpreter;
-use piperine_codegen::{ir::IrExpr, IrNoise, IrNoiseSource, JitAnalogDevice, SimCtx};
+use piperine_codegen::{ir::IrExpr, IrNoise, JitAnalogDevice, SimCtx};
 
 /// A noise source declaration carried by [`PhdlDevice`]. The PSD is
 /// stored as an [`IrExpr`] and evaluated at noise-analysis time against

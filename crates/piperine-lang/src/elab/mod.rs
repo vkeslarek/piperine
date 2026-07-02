@@ -36,6 +36,7 @@ pub mod event;
 pub mod lower;
 pub mod typecheck;
 pub mod resolve;
+pub mod registry;
 
 use crate::pom::{Design, ElabError};
 pub use lower::Elaborator;

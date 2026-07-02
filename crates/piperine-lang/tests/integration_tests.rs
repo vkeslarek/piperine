@@ -219,7 +219,7 @@ mod Test ( inout a : Electrical, inout b : Electrical ) {
     let module = &doc.modules[0];
 
     let connections: Vec<_> = module.body.iter().filter_map(|s| {
-        if let ModStmt::Connection { lhs, rhs } = s {
+        if let ModStmt::Connection { lhs, rhs, .. } = s {
             Some((lhs, rhs))
         } else { None }
     }).collect();

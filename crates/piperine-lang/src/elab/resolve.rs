@@ -1,5 +1,5 @@
 use crate::parse::ast::Expr;
-use crate::pom::{Behavior, BehaviorStmt, ElabError};
+use crate::pom::{BehaviorStmt, ElabError};
 
 /// Walk a program and resolve built-in diagnostic calls and type casts.
 /// This fulfills GAPS §J.4.

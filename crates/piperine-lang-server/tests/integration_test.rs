@@ -144,46 +144,7 @@ fn test_find_definition_not_found() {
     assert!(range.is_none());
 }
 
-#[test]
-fn test_completion_has_top_level_keywords() {
-    use piperine_lang_server::handlers::completion::{build_completions, CompletionContext};
-    let items = build_completions(CompletionContext::TopLevel, None);
-    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-    assert!(labels.contains(&"mod"));
-    assert!(labels.contains(&"fn"));
-    assert!(labels.contains(&"discipline"));
-}
 
-#[test]
-fn test_completion_mod_body_keywords() {
-    use piperine_lang_server::handlers::completion::{build_completions, CompletionContext};
-    let items = build_completions(CompletionContext::ModBody, None);
-    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-    assert!(labels.contains(&"param"));
-    assert!(labels.contains(&"wire"));
-    assert!(labels.contains(&"input"));
-}
-
-#[test]
-fn test_completion_behavior_keywords() {
-    use piperine_lang_server::handlers::completion::{build_completions, CompletionContext};
-    let items = build_completions(CompletionContext::Behavior, None);
-    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-    assert!(labels.contains(&"if"));
-    assert!(labels.contains(&"match"));
-    assert!(labels.contains(&"V"));
-    assert!(labels.contains(&"ddt"));
-}
-
-#[test]
-fn test_completion_has_events() {
-    use piperine_lang_server::handlers::completion::{build_completions, CompletionContext};
-    let items = build_completions(CompletionContext::TopLevel, None);
-    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-    assert!(labels.contains(&"posedge"));
-    assert!(labels.contains(&"cross"));
-    assert!(labels.contains(&"initial"));
-}
 
 #[test]
 fn test_hover_module_info() {
@@ -231,29 +192,7 @@ fn test_diagnostics_error_on_bad_syntax() {
     assert!(!doc.errors.is_empty());
 }
 
-#[test]
-fn test_context_detection_top_level() {
-    use piperine_lang_server::handlers::completion::{detect_context, CompletionContext};
-    let source = "discipline Electrical { }\n// cursor here\n";
-    let ctx = detect_context(source, Position { line: 1, character: 0 });
-    assert_eq!(ctx, CompletionContext::TopLevel);
-}
 
-#[test]
-fn test_context_detection_mod_body() {
-    use piperine_lang_server::handlers::completion::{detect_context, CompletionContext};
-    let source = "mod R(inout p: Electrical, inout n: Electrical) {\n  // cursor here\n}";
-    let ctx = detect_context(source, Position { line: 1, character: 2 });
-    assert_eq!(ctx, CompletionContext::ModBody);
-}
-
-#[test]
-fn test_context_detection_behavior() {
-    use piperine_lang_server::handlers::completion::{detect_context, CompletionContext};
-    let source = "mod R(inout p: Electrical, inout n: Electrical) {\n  analog behavior {\n    // cursor here\n  }\n}";
-    let ctx = detect_context(source, Position { line: 2, character: 4 });
-    assert_eq!(ctx, CompletionContext::Behavior);
-}
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

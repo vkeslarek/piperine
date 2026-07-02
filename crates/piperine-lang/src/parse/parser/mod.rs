@@ -24,34 +24,76 @@
 
 use super::ast::*;
 use super::lexer::{Lexed, Tok};
+pub use attributes::ParseAttributesExt;
 
+#[derive(Clone)]
 pub struct Parser<'a> {
     toks: &'a [Lexed],
     pos: usize,
+    pub cursor_offset: Option<usize>,
+    pub expectations: Vec<crate::parse::predict::ExpectedSyntax>,
+    pub completion_triggered: bool,
+}
+
+pub trait Parse: Sized {
+    fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError>;
 }
 
 impl<'a> Parser<'a> {
     /// Creates a new parser over the given token slice.
     pub fn new(toks: &'a [Lexed]) -> Self {
-        Self { toks, pos: 0 }
+        Self { toks, pos: 0, cursor_offset: None, expectations: Vec::new(), completion_triggered: false }
+    }
+
+    pub fn with_cursor(toks: &'a [Lexed], cursor_offset: usize) -> Self {
+        Self { toks, pos: 0, cursor_offset: Some(cursor_offset), expectations: Vec::new(), completion_triggered: false }
+    }
+
+    /// Registers that the parser expected a certain syntax at the current position.
+    pub fn expected(&mut self, syntax: crate::parse::predict::ExpectedSyntax) {
+        if self.cursor_offset.is_some() {
+            if !self.expectations.contains(&syntax) {
+                self.expectations.push(syntax);
+            }
+        }
+    }
+
+    fn check_cursor(&mut self) -> bool {
+        if let Some(cursor) = self.cursor_offset {
+            if let Some(t) = self.toks.get(self.pos) {
+                if t.start >= cursor || (t.start <= cursor && cursor <= t.end) {
+                    self.completion_triggered = true;
+                    return true;
+                }
+            } else {
+                // EOF and cursor is active
+                self.completion_triggered = true;
+                return true;
+            }
+        }
+        false
     }
 
     /// Returns the next token without consuming it, or `None` at end of input.
-    pub(crate) fn peek(&self) -> Option<&Tok> {
+    pub(crate) fn peek(&mut self) -> Option<&Tok> {
+        if self.check_cursor() { return None; }
         self.toks.get(self.pos).map(|l| &l.tok)
     }
 
     /// Returns the token at `offset` positions ahead without consuming it.
-    pub(crate) fn peek_at(&self, offset: usize) -> Option<&Tok> {
+    pub(crate) fn peek_at(&mut self, offset: usize) -> Option<&Tok> {
+        // Simple peekahead doesn't trigger cursor logic to avoid false positives
         self.toks.get(self.pos + offset).map(|l| &l.tok)
     }
 
     /// Consumes and returns `true` if the next token equals `tok`, else `false`.
     pub(crate) fn eat(&mut self, tok: &Tok) -> bool {
         if self.peek() == Some(tok) {
+            self.expectations.clear(); // Progress made
             self.pos += 1;
             true
         } else {
+            self.expected(crate::parse::predict::ExpectedSyntax::Punctuation(tok.clone()));
             false
         }
     }
@@ -60,40 +102,59 @@ impl<'a> Parser<'a> {
     pub(crate) fn eat_ident(&mut self, expected: &str) -> bool {
         match self.peek() {
             Some(Tok::Ident(s)) if s == expected => {
+                self.expectations.clear(); // Progress made
                 self.pos += 1;
                 true
             }
-            _ => false,
+            _ => {
+                self.expected(crate::parse::predict::ExpectedSyntax::Keyword(expected.to_string()));
+                false
+            }
         }
     }
 
     /// Consumes the next token if it matches `tok`, or returns an error describing the mismatch.
-    pub(crate) fn expect(&mut self, tok: &Tok) -> Result<(), String> {
+    pub(crate) fn expect(&mut self, tok: &Tok) -> Result<(), crate::parse::error::ParseError> {
         if self.eat(tok) {
             Ok(())
         } else {
-            Err(format!("Expected {:?}, found {:?}", tok, self.peek()))
+            Err(format!("Expected {:?}, found {:?}", tok, self.peek()).into())
         }
     }
 
     /// Consumes the next token if it is an `Ident` with the given spelling, or returns an error.
-    pub(crate) fn expect_ident_str(&mut self, expected: &str) -> Result<(), String> {
+    pub(crate) fn expect_ident_str(&mut self, expected: &str) -> Result<(), crate::parse::error::ParseError> {
         if self.eat_ident(expected) {
             Ok(())
         } else {
-            Err(format!("Expected `{}`, found {:?}", expected, self.peek()))
+            Err(format!("Expected `{}`, found {:?}", expected, self.peek()).into())
         }
     }
 
     /// Parses and consumes a single `Ident` token, returning its string value.
-    pub(crate) fn parse_ident(&mut self) -> Result<String, String> {
+    pub(crate) fn parse_ident(&mut self) -> Result<String, crate::parse::error::ParseError> {
+        self.expected(crate::parse::predict::ExpectedSyntax::Ident(crate::parse::predict::IdentRole::VariableName)); // default role
         match self.peek() {
             Some(Tok::Ident(s)) => {
                 let res = s.clone();
+                self.expectations.clear();
                 self.pos += 1;
                 Ok(res)
             }
-            _ => Err(format!("Expected identifier, found {:?}", self.peek())),
+            _ => Err(format!("Expected identifier, found {:?}", self.peek()).into()),
+        }
+    }
+
+    pub(crate) fn parse_ident_as(&mut self, role: crate::parse::predict::IdentRole) -> Result<String, crate::parse::error::ParseError> {
+        self.expected(crate::parse::predict::ExpectedSyntax::Ident(role));
+        match self.peek() {
+            Some(Tok::Ident(s)) => {
+                let res = s.clone();
+                self.expectations.clear();
+                self.pos += 1;
+                Ok(res)
+            }
+            _ => Err(format!("Expected identifier, found {:?}", self.peek()).into()),
         }
     }
 
@@ -101,49 +162,48 @@ impl<'a> Parser<'a> {
 
     /// Parses the entire token stream into a `SourceFile` AST.
     /// Dispatches to sub-parsers based on leading keywords (`mod`, `fn`, `use`, etc.).
-    pub fn parse_file(&mut self) -> Result<SourceFile, String> {
+
+    pub(crate) fn sync_until(&mut self, predicate: impl Fn(&Tok) -> bool) {
+        while let Some(t) = self.peek() {
+            if predicate(t) {
+                break;
+            }
+            self.pos += 1;
+        }
+    }
+
+    pub fn parse_file(&mut self) -> (SourceFile, Vec<crate::parse::error::ParseError>) {
         let mut items = Vec::new();
-        while self.pos < self.toks.len() {
-            if self.eat_ident("use") {
-                let path = self.parse_path()?;
-                self.expect(&Tok::Semi)?;
-                items.push(Item::UseDecl(path));
-            } else {
-                let is_pub = self.eat_ident("pub");
-                if self.eat_ident("mod") {
-                    items.push(Item::ModDecl(self.parse_mod_decl(is_pub)?));
-                } else if self.eat_ident("analog") {
-                    items.push(Item::BehaviorDecl(
-                        self.parse_behavior(is_pub, BehaviorKind::Analog)?,
-                    ));
-                } else if self.eat_ident("digital") {
-                    items.push(Item::BehaviorDecl(
-                        self.parse_behavior(is_pub, BehaviorKind::Digital)?,
-                    ));
-                } else if self.eat_ident("discipline") {
-                    items.push(Item::DisciplineDecl(self.parse_discipline(is_pub)?));
-                } else if self.eat_ident("bundle") {
-                    items.push(Item::BundleDecl(self.parse_bundle(is_pub)?));
-                } else if self.eat_ident("enum") {
-                    items.push(Item::EnumDecl(self.parse_enum(is_pub)?));
-                } else if self.eat_ident("capability") {
-                    items.push(Item::CapabilityDecl(self.parse_capability(is_pub)?));
-                } else if self.eat_ident("impl") {
-                    items.push(Item::ImplDecl(self.parse_impl(is_pub)?));
-                } else if self.eat_ident("fn") {
-                    items.push(Item::FnDecl(self.parse_fn_decl(is_pub)?));
-                } else if self.eat_ident("const") {
-                    items.push(Item::ConstDecl(self.parse_const_decl(is_pub)?));
-                } else {
-                    return Err(format!("Unknown top-level item at {:?}", self.peek()));
+        let mut errors = Vec::new();
+        while self.pos < self.toks.len() && !self.completion_triggered {
+            match Item::parse(self) {
+                Ok(item) => items.push(item),
+                Err(e) => {
+                    errors.push(e);
+                    self.sync_until(|t| {
+                        if let Tok::Ident(s) = t {
+                            matches!(s.as_str(), "mod" | "fn" | "discipline" | "bundle" | "enum" | "capability" | "impl" | "use" | "pub")
+                        } else {
+                            false
+                        }
+                    });
+                    if !self.completion_triggered && self.pos < self.toks.len() {
+                        // Prevent infinite loops if we hit a sync token but parsing still fails immediately
+                        if let Some(t) = self.peek() {
+                            if !matches!(t, Tok::Ident(s) if matches!(s.as_str(), "mod" | "fn" | "discipline" | "bundle" | "enum" | "capability" | "impl" | "use" | "pub")) {
+                                self.pos += 1;
+                            }
+                        }
+                    }
                 }
             }
         }
-        Ok(SourceFile { items })
+        (SourceFile { items }, errors)
     }
 
+
     /// Parses a `::`-separated path of identifiers, e.g. `std::foo::Bar`.
-    pub(crate) fn parse_path(&mut self) -> Result<Path, String> {
+    pub(crate) fn parse_path(&mut self) -> Result<Path, crate::parse::error::ParseError> {
         let mut segments = vec![self.parse_ident()?];
         while self.eat(&Tok::DoubleColon) {
             segments.push(self.parse_ident()?);
@@ -154,5 +214,17 @@ impl<'a> Parser<'a> {
 }
 
 mod expr;
-mod items;
 mod stmt;
+pub mod attributes;
+
+mod mod_decl;
+mod types;
+mod discipline_decl;
+mod bundle_decl;
+mod enum_decl;
+mod capability_decl;
+mod impl_decl;
+mod fn_decl;
+mod block;
+mod const_decl;
+mod item;

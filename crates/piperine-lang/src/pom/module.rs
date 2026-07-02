@@ -7,17 +7,36 @@ use crate::pom::node::Kind;
 use crate::pom::traits::{Kinded, Named, NetTyped};
 use crate::pom::{Behavior, Value, ValueType};
 
+
+// ─────────────────────────────── Attribute ───────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct Attribute {
+    pub schema: String,
+    pub data: std::collections::HashMap<String, Value>,
+}
+
+impl Attribute {
+    pub fn schema(&self) -> &str { &self.schema }
+    pub fn data(&self) -> &std::collections::HashMap<String, Value> { &self.data }
+    pub fn field(&self, name: &str) -> Option<&Value> { self.data.get(name) }
+}
+
+impl Kinded for Attribute { fn kind(&self) -> Kind { Kind::Attribute } }
+
 // ─────────────────────────────── Port ────────────────────────────────────────
 
 /// A module port — direction, name, and net type.
 #[derive(Debug, Clone)]
 pub struct Port {
+    pub attributes: Vec<Attribute>,
     pub direction: crate::parse::ast::Direction,
     pub name: String,
     pub ty: NetType,
 }
 
 impl Port {
+    pub fn attributes(&self) -> &[Attribute] { &self.attributes }
     /// The port's declared name.
     pub fn name(&self) -> &str { &self.name }
     /// The port's I/O direction.
@@ -34,12 +53,14 @@ impl Kinded for Port { fn kind(&self) -> Kind { Kind::Port } }
 
 #[derive(Debug, Clone)]
 pub struct Param {
+    pub attributes: Vec<Attribute>,
     pub name: String,
     pub ty: ValueType,
     pub default: Option<ConstVal>,
 }
 
 impl Param {
+    pub fn attributes(&self) -> &[Attribute] { &self.attributes }
     pub fn name(&self) -> &str { &self.name }
     pub fn value_type(&self) -> &ValueType { &self.ty }
     pub fn default(&self) -> Option<&ConstVal> { self.default.as_ref() }
@@ -59,11 +80,13 @@ impl Kinded for Param { fn kind(&self) -> Kind { Kind::Param } }
 /// A named wire with a net type.
 #[derive(Debug, Clone)]
 pub struct Wire {
+    pub attributes: Vec<Attribute>,
     pub name: String,
     pub ty: NetType,
 }
 
 impl Wire {
+    pub fn attributes(&self) -> &[Attribute] { &self.attributes }
     /// The wire's declared name.
     pub fn name(&self) -> &str { &self.name }
     /// The wire's net type (discipline or bus).
@@ -79,6 +102,7 @@ impl Kinded for Wire { fn kind(&self) -> Kind { Kind::Wire } }
 /// A submodule instance — label, module name, port bindings, and params.
 #[derive(Debug, Clone)]
 pub struct Instance {
+    pub attributes: Vec<Attribute>,
     pub label: Option<String>,
     pub module: String,
     pub ports: Vec<NetRef>,
@@ -86,6 +110,7 @@ pub struct Instance {
 }
 
 impl Instance {
+    pub fn attributes(&self) -> &[Attribute] { &self.attributes }
     /// The instance's label if set, otherwise the module name.
     pub fn name(&self) -> &str {
         self.label.as_deref().unwrap_or(&self.module)
@@ -112,12 +137,14 @@ impl Kinded for Instance { fn kind(&self) -> Kind { Kind::Instance } }
 /// equivalent of a C `static` local, used for things like hysteresis state.
 #[derive(Debug, Clone)]
 pub struct Var {
+    pub attributes: Vec<Attribute>,
     pub name: String,
     pub ty: ValueType,
     pub init: Option<ConstVal>,
 }
 
 impl Var {
+    pub fn attributes(&self) -> &[Attribute] { &self.attributes }
     pub fn name(&self) -> &str { &self.name }
     pub fn value_type(&self) -> &ValueType { &self.ty }
     pub fn init(&self) -> Option<&ConstVal> { self.init.as_ref() }
@@ -146,6 +173,7 @@ impl Connection {
 
 #[derive(Debug, Clone)]
 pub struct Module {
+    pub attributes: Vec<Attribute>,
     pub name: String,
     pub ports: Vec<Port>,
     pub params: Vec<Param>,
@@ -160,6 +188,7 @@ pub struct Module {
 }
 
 impl Module {
+    pub fn attributes(&self) -> &[Attribute] { &self.attributes }
     /// Construct a new Module (used by the elaborator and codegen).
     /// Module-level `var`s are empty; use struct-literal construction if
     /// the module declares persistent state.
@@ -173,7 +202,7 @@ impl Module {
         connections: Vec<Connection>,
         behaviors: Vec<Behavior>,
     ) -> Self {
-        Self { name, ports, params, wires, vars: Vec::new(), instances, connections, behaviors }
+        Self { attributes: Vec::new(), name, ports, params, wires, vars: Vec::new(), instances, connections, behaviors }
     }
 
     /// The module's name.

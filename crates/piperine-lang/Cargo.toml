@@ -8,6 +8,7 @@ thiserror = "2.0"
 piperine-solver = { path = "../piperine-solver" }
 piperine-codegen = { path = "../piperine-codegen" }
 num-complex.workspace = true
+miette = { version = "7.6.0", features = ["fancy"] }
 
 [dev-dependencies]
 tempfile.workspace = true

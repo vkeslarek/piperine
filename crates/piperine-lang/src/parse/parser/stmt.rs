@@ -2,9 +2,10 @@
 //! statements, function-body statements, events, ranges, and patterns.
 
 use crate::parse::ast::*;
+use super::attributes::ParseAttributesExt;
 use crate::parse::lexer::Tok;
 
-use super::Parser;
+use super::{Parse, Parser};
 
 impl<'a> Parser<'a> {
 
@@ -18,21 +19,22 @@ impl<'a> Parser<'a> {
     //              | "=" Expr ";"                              -- connection
 
     /// Parses a single statement inside a `mod` body: `param`, `wire`, `var`, `for`, `if`, instance, or connection.
-    pub(crate) fn parse_mod_stmt(&mut self) -> Result<ModStmt, String> {
+    pub(crate) fn parse_mod_stmt(&mut self) -> Result<ModStmt, crate::parse::error::ParseError> {
+        let attrs = self.parse_attributes()?;
         if self.eat_ident("param") {
             let name = self.parse_ident()?;
             self.expect(&Tok::Colon)?;
             let ty = self.parse_type()?;
             let default = if self.eat(&Tok::Assign) { Some(self.parse_expr()?) } else { None };
             self.expect(&Tok::Semi)?;
-            return Ok(ModStmt::ParamDecl { name, ty, default });
+            return Ok(ModStmt::ParamDecl { attrs, name, ty, default });
         }
         if self.eat_ident("wire") {
             let name = self.parse_ident()?;
             self.expect(&Tok::Colon)?;
             let ty = self.parse_type()?;
             self.expect(&Tok::Semi)?;
-            return Ok(ModStmt::WireDecl { name, ty });
+            return Ok(ModStmt::WireDecl { attrs, name, ty });
         }
         if self.eat_ident("var") {
             let name = self.parse_ident()?;
@@ -40,7 +42,7 @@ impl<'a> Parser<'a> {
             let ty = self.parse_type()?;
             let default = if self.eat(&Tok::Assign) { Some(self.parse_expr()?) } else { None };
             self.expect(&Tok::Semi)?;
-            return Ok(ModStmt::VarDecl { name, ty, default });
+            return Ok(ModStmt::VarDecl { attrs, name, ty, default });
         }
         if self.eat_ident("for") {
             let var = self.parse_ident()?;
@@ -51,7 +53,7 @@ impl<'a> Parser<'a> {
             while !self.eat(&Tok::RBrace) {
                 body.push(self.parse_mod_stmt()?);
             }
-            return Ok(ModStmt::StructuralFor { var, range, body });
+            return Ok(ModStmt::StructuralFor { attrs, var, range, body });
         }
         if self.eat_ident("if") {
             self.expect(&Tok::LParen)?;
@@ -77,7 +79,7 @@ impl<'a> Parser<'a> {
             } else {
                 None
             };
-            return Ok(ModStmt::StructuralIf { cond, then_body, else_body });
+            return Ok(ModStmt::StructuralIf { attrs, cond, then_body, else_body });
         }
 
         // InstanceOrConnect — leading Ident, then branch on next token.
@@ -98,7 +100,7 @@ impl<'a> Parser<'a> {
             }
             let rhs = self.parse_expr()?;
             self.expect(&Tok::Semi)?;
-            return Ok(ModStmt::Connection { lhs, rhs });
+            return Ok(ModStmt::Connection { attrs, lhs, rhs });
         }
 
         if self.eat(&Tok::Colon) {
@@ -175,6 +177,7 @@ impl<'a> Parser<'a> {
 
         self.expect(&Tok::Semi)?;
         Ok(ModStmt::Instance {
+            attrs,
             name: if is_named_instance { Some(name) } else { None },
             array_index,
             module: module_name,
@@ -188,18 +191,18 @@ impl<'a> Parser<'a> {
     // ─────────────────────────── §7  Behavior ────────────────────────────────
 
     /// Parses an `analog Name { ... }` or `digital Name { ... }` behavior block.
-    pub(crate) fn parse_behavior(&mut self, is_pub: bool, kind: BehaviorKind) -> Result<BehaviorDecl, String> {
+    pub(crate) fn parse_behavior(&mut self, attrs: Vec<Attribute>, is_pub: bool, kind: BehaviorKind) -> Result<BehaviorDecl, crate::parse::error::ParseError> {
         let name = self.parse_ident()?;
         self.expect(&Tok::LBrace)?;
         let mut body = Vec::new();
         while !self.eat(&Tok::RBrace) {
             body.push(self.parse_behavior_stmt()?);
         }
-        Ok(BehaviorDecl { is_pub, kind, name, body })
+        Ok(BehaviorDecl { attrs, is_pub, kind, name, body })
     }
 
     /// Parses a single statement inside an `analog`/`digital` behavior block.
-    pub(crate) fn parse_behavior_stmt(&mut self) -> Result<BehaviorStmt, String> {
+    pub(crate) fn parse_behavior_stmt(&mut self) -> Result<BehaviorStmt, crate::parse::error::ParseError> {
         if self.eat_ident("var") {
             let name = self.parse_ident()?;
             self.expect(&Tok::Colon)?;
@@ -322,7 +325,7 @@ impl<'a> Parser<'a> {
     // The elaborator resolves it against the EventRegistry.
 
     /// Parses an event specification: a bare event term, or a parenthesized `|`-separated list of event terms.
-    pub(crate) fn parse_event_spec(&mut self) -> Result<EventSpec, String> {
+    pub(crate) fn parse_event_spec(&mut self) -> Result<EventSpec, crate::parse::error::ParseError> {
         if self.eat(&Tok::LParen) {
             let spec = self.parse_event_term()?;
             let mut specs = vec![spec];
@@ -337,7 +340,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a single event term: `initial`, `final`, or `name(arg)`.
-    pub(crate) fn parse_event_term(&mut self) -> Result<EventSpec, String> {
+    pub(crate) fn parse_event_term(&mut self) -> Result<EventSpec, crate::parse::error::ParseError> {
         if self.eat_ident("initial") {
             return Ok(EventSpec::Initial);
         }
@@ -354,7 +357,7 @@ impl<'a> Parser<'a> {
     // ─────────────────────────── §8.1  Statements ────────────────────────────
 
     /// Parses a general-purpose statement inside a function body: `var`, `if`, `match`, `for`, `return`, bind, or expression.
-    pub(crate) fn parse_stmt(&mut self) -> Result<Stmt, String> {
+    pub(crate) fn parse_stmt(&mut self) -> Result<Stmt, crate::parse::error::ParseError> {
         if self.eat_ident("var") {
             let name = self.parse_ident()?;
             self.expect(&Tok::Colon)?;
@@ -427,7 +430,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a range: `start .. end` or `start ..= end`.
-    pub(crate) fn parse_range(&mut self) -> Result<Range, String> {
+    pub(crate) fn parse_range(&mut self) -> Result<Range, crate::parse::error::ParseError> {
         let start = self.parse_expr()?;
         let inclusive = if self.eat(&Tok::DotDotEq) {
             true
@@ -441,7 +444,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a match pattern: `_` (wildcard) or a path.
-    pub(crate) fn parse_pattern(&mut self) -> Result<Pattern, String> {
+    pub(crate) fn parse_pattern(&mut self) -> Result<Pattern, crate::parse::error::ParseError> {
         if self.eat_ident("_") {
             Ok(Pattern::Wildcard)
         } else {
@@ -449,4 +452,19 @@ impl<'a> Parser<'a> {
         }
     }
 
+}
+
+impl Parse for ModStmt {
+    fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
+        parser.parse_mod_stmt()
+    }
+}
+
+impl Parse for BehaviorDecl {
+    fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
+        let attrs = parser.parse_attributes()?;
+        let is_pub = parser.eat_ident("pub");
+        let kind = if parser.eat_ident("analog") { BehaviorKind::Analog } else if parser.eat_ident("digital") { BehaviorKind::Digital } else { return Err("Expected analog or digital".into()); };
+        parser.parse_behavior(attrs, is_pub, kind)
+    }
 }

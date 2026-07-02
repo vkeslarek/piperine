@@ -83,8 +83,7 @@ fn libm_funs() -> Vec<(&'static str, usize, *const u8)> {
 /// A single `I(plus, minus) <+ expr` contribution extracted from the behavior.
 ///
 /// Generic over the expression representation `E` so the shared Cranelift
-/// skeleton compiles both PHDL `Expr` (the `from_elab` path) and `IrExpr`
-/// (the IR front door) via the [`AnalogExpr`] trait.
+/// skeleton compiles `IrExpr` via the [`AnalogExpr`] trait.
 pub struct Contribution<E> {
     pub plus:  String,   // port name of the + terminal
     pub minus: String,   // port name of the − terminal

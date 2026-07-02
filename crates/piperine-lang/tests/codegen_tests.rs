@@ -207,7 +207,7 @@ mod Top ( inout vdd : Electrical, inout gnd : Electrical ) {
 ";
 
 #[test]
-fn test_jit_from_elab_compiles() {
+fn test_jit_compiles() {
     let prog = parse_and_elaborate(RESISTOR_IN_TOP_SRC).expect("elab");
     let ir = ppr_to_ir(&prog);
     let _ci = from_ir(&ir, "Top").expect("from_ir");

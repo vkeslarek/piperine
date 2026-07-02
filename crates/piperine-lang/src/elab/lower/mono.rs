@@ -137,6 +137,7 @@ impl Elaborator {
 
         // Insert a placeholder to break potential recursion.
         self.mono_cache.insert(mono_name.clone(), Module {
+            attributes: Vec::new(),
             name: mono_name.clone(),
             ports: vec![],
             params: vec![],

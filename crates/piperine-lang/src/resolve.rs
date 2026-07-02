@@ -240,7 +240,7 @@ impl Resolver {
         }
 
         let source = if let Some(src) = self.builtins.get(path) {
-            parse_str(src).map_err(ResolveError::ParseError)?
+            parse_str(src).map_err(|e| ResolveError::ParseError(e.to_string()))?
         } else if let Some(root) = &self.root.clone() {
             let mut file_path = root.clone();
             for seg in path {
@@ -249,7 +249,7 @@ impl Resolver {
             file_path.set_extension("phdl");
             let src = std::fs::read_to_string(&file_path)
                 .map_err(|e| ResolveError::IoError(e.to_string()))?;
-            parse_str(&src).map_err(ResolveError::ParseError)?
+            parse_str(&src).map_err(|e| ResolveError::ParseError(e.to_string()))?
         } else {
             return Err(ResolveError::NotFound(path.to_vec()));
         };

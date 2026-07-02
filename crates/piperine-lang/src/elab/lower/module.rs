@@ -88,7 +88,7 @@ impl Elaborator {
                 source: e,
             })?;
             let vt = self.resolve_value_type(&field.ty, env)?;
-            out.push(ModBodyItem::Param(Param {
+            out.push(ModBodyItem::Param(Param { attributes: Vec::new(),
                 name: format!("{pname}_{}", field.name),
                 ty: vt,
                 default: Some(val),
@@ -140,7 +140,7 @@ impl Elaborator {
         }
 
         for stmt in &decl.body {
-            if let ModStmt::WireDecl { name, ty } = stmt {
+            if let ModStmt::WireDecl { name, ty, attrs: _ } = stmt {
                 let resolved_name = type_subst.get(&ty.name).map(|s| s.as_str()).unwrap_or(&ty.name);
                 local_types.insert(name.clone(), resolved_name.to_string());
             }
@@ -166,7 +166,7 @@ impl Elaborator {
             }
         }
 
-        Ok(Module { name: decl.name.clone(), ports, params, wires, vars, instances, connections, behaviors: vec![] })
+        Ok(Module { attributes: Vec::new(), name: decl.name.clone(), ports, params, wires, vars, instances, connections, behaviors: vec![] })
     }
 
     /// Lowers a slice of `ModStmt`s, appending the resulting
@@ -201,7 +201,7 @@ impl Elaborator {
         out: &mut Vec<ModBodyItem>,
     ) -> Result<(), ElabError> {
         match stmt {
-            ModStmt::ParamDecl { name, ty, default } => {
+            ModStmt::ParamDecl { name, ty, default, attrs: _ } => {
                 // GAPS §I.14 — a bundle-typed param (`param model : DioModel
                 // = DioModel {};`) is flattened here into one scalar param
                 // per bundle field, named `{name}_{field}`. This matches
@@ -224,20 +224,20 @@ impl Elaborator {
                 } else {
                     None
                 };
-                out.push(ModBodyItem::Param(Param {
+                out.push(ModBodyItem::Param(Param { attributes: Vec::new(),
                     name: name.clone(),
                     ty: vt,
                     default: def,
                 }));
             }
 
-            ModStmt::WireDecl { name, ty } => {
+            ModStmt::WireDecl { name, ty, attrs: _ } => {
                 let resolved_name = type_subst.get(&ty.name).map(|s| s.as_str()).unwrap_or(&ty.name);
                 if let Some(bundle) = self.bundles.get(resolved_name).cloned() {
                     if self.is_net_capable_bundle(resolved_name) {
                         for field in &bundle.fields {
                             let field_ty = self.resolve_net_type(&field.ty, env, type_subst)?;
-                            out.push(ModBodyItem::Wire(Wire {
+                            out.push(ModBodyItem::Wire(Wire { attributes: Vec::new(),
                                 name: format!("{}_{}", name, field.name),
                                 ty: field_ty,
                             }));
@@ -246,10 +246,10 @@ impl Elaborator {
                     }
                 }
                 let nt = self.resolve_net_type(ty, env, type_subst)?;
-                out.push(ModBodyItem::Wire(Wire { name: name.clone(), ty: nt }));
+                out.push(ModBodyItem::Wire(Wire { attributes: Vec::new(), name: name.clone(), ty: nt }));
             }
 
-            ModStmt::VarDecl { name, ty, default } => {
+            ModStmt::VarDecl { name, ty, default, attrs: _ } => {
                 // GAPS §I.15 — a `var` declared directly in a `mod` body
                 // (as opposed to inside `analog`/`digital`) is persistent
                 // module-level state, e.g. `var sw_state : Real = 0.0;` in
@@ -276,7 +276,7 @@ impl Elaborator {
                                 })
                             })
                             .transpose()?;
-                        out.push(ModBodyItem::ModVar(Var { name: name.clone(), ty: vt, init }));
+                        out.push(ModBodyItem::ModVar(Var { attributes: Vec::new(), name: name.clone(), ty: vt, init }));
                     }
                     crate::pom::TypeRef::Net(_) => {
                         // Digital storage var — not yet lowered as persistent state.
@@ -284,7 +284,7 @@ impl Elaborator {
                 }
             }
 
-            ModStmt::StructuralFor { var, range, body } => {
+            ModStmt::StructuralFor { var, range, body, attrs: _ } => {
                 let start = env.eval_nat(&range.start).map_err(|e| ElabError::ConstEval {
                     context: "for-loop start in module body".to_owned(),
                     source: e,
@@ -303,7 +303,7 @@ impl Elaborator {
                 }
             }
 
-            ModStmt::StructuralIf { cond, then_body, else_body } => {
+            ModStmt::StructuralIf { cond, then_body, else_body, attrs: _ } => {
                 let val = env.eval(cond).map_err(|e| ElabError::ConstEval {
                     context: "structural if condition".to_owned(),
                     source: e,
@@ -325,7 +325,7 @@ impl Elaborator {
                 type_args: _,
                 ports,
                 params,
-            } => {
+             attrs: _ } => {
                 let label = if let Some(n) = name {
                     if let Some(idx_expr) = array_index {
                         let idx = env.eval_nat(idx_expr).map_err(|e| ElabError::ConstEval {
@@ -409,7 +409,7 @@ impl Elaborator {
                     }
                 }
 
-                out.push(ModBodyItem::Inst(Instance {
+                out.push(ModBodyItem::Inst(Instance { attributes: Vec::new(),
                     label,
                     module: mono_name,
                     ports: elab_ports,
@@ -417,7 +417,7 @@ impl Elaborator {
                 }));
             }
 
-            ModStmt::Connection { lhs, rhs } => {
+            ModStmt::Connection { lhs, rhs, attrs: _ } => {
                 let mut is_bundle_conn = false;
                 if let (crate::parse::ast::Expr::Ident(l_name), crate::parse::ast::Expr::Ident(r_name)) = (lhs, rhs) {
                     if let Some(l_ty_name) = local_types.get(l_name) {

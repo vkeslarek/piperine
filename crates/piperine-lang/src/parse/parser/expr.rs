@@ -4,7 +4,7 @@
 use crate::parse::ast::*;
 use crate::parse::lexer::Tok;
 
-use super::Parser;
+use super::{Parse, Parser};
 
 impl<'a> Parser<'a> {
     // ─────────────────────────── §8.2  Expressions ───────────────────────────
@@ -14,18 +14,18 @@ impl<'a> Parser<'a> {
     //   BitXor(^)=7  Add/Sub=8   Mul/Div/%=9
 
     /// Parses a full expression including all binary operators (bit-OR allowed).
-    pub(crate) fn parse_expr(&mut self) -> Result<Expr, String> {
+    pub(crate) fn parse_expr(&mut self) -> Result<Expr, crate::parse::error::ParseError> {
         self.parse_binary_expr(0, false)
     }
 
     /// Parses an expression but stops before a `|` operator (used inside array comprehensions).
-    pub(crate) fn parse_expr_no_bitor(&mut self) -> Result<Expr, String> {
+    pub(crate) fn parse_expr_no_bitor(&mut self) -> Result<Expr, crate::parse::error::ParseError> {
         self.parse_binary_expr(0, true)
     }
 
     /// Pratt-style binary expression parser. `precedence` is the minimum binding power
     /// to continue; `stop_at_bitor` prevents absorbing `|` when scanning comprehension guards.
-    pub(crate) fn parse_binary_expr(&mut self, precedence: u8, stop_at_bitor: bool) -> Result<Expr, String> {
+    pub(crate) fn parse_binary_expr(&mut self, precedence: u8, stop_at_bitor: bool) -> Result<Expr, crate::parse::error::ParseError> {
         let mut lhs = self.parse_primary()?;
         while let Some((op, prec)) = self.peek_binary_op() {
             if prec < precedence {
@@ -44,7 +44,7 @@ impl<'a> Parser<'a> {
     /// Peeks at the next token; if it is a binary operator, returns `(op, precedence)`.
     /// Precedence levels: Or=1, And=2, BitOr=3, BitAnd=4, Eq/Neq=5, Relational=6,
     /// BitXor=7, Add/Sub=8, Mul/Div/Rem=9.
-    pub(crate) fn peek_binary_op(&self) -> Option<(BinaryOp, u8)> {
+    pub(crate) fn peek_binary_op(&mut self) -> Option<(BinaryOp, u8)> {
         match self.peek() {
             Some(Tok::Or)     => Some((BinaryOp::Or, 1)),
             Some(Tok::And)    => Some((BinaryOp::And, 2)),
@@ -72,7 +72,7 @@ impl<'a> Parser<'a> {
     /// `Expr::If` only ever needs one shape for `else_body`. Elaboration and
     /// lowering already recurse through nested `Expr::If`, so no changes are
     /// needed downstream — this only teaches the parser the `else if` shape.
-    fn parse_if_expr(&mut self) -> Result<Expr, String> {
+    fn parse_if_expr(&mut self) -> Result<Expr, crate::parse::error::ParseError> {
         self.expect_ident_str("if")?;
         self.expect(&Tok::LParen)?;
         let cond = self.parse_expr()?;
@@ -93,7 +93,7 @@ impl<'a> Parser<'a> {
     /// Parses a primary expression: literals, identifiers, paths, blocks, `if`-expressions,
     /// lambdas, unary operators, array literals, and parenthesized expressions.
     /// Also handles postfix call/index/field/`::` operators and `BundleLit` sugar.
-    pub(crate) fn parse_primary(&mut self) -> Result<Expr, String> {
+    pub(crate) fn parse_primary(&mut self) -> Result<Expr, crate::parse::error::ParseError> {
         let mut expr = match self.peek() {
             Some(Tok::Int(i)) => {
                 let e = Expr::Literal(Literal::Int(*i));
@@ -173,7 +173,7 @@ impl<'a> Parser<'a> {
                 let body = self.parse_expr()?;
                 Expr::Lambda { params, body: Box::new(body) }
             }
-            _ => return Err(format!("Expected expression, found {:?}", self.peek())),
+            _ => return Err(format!("Expected expression, found {:?}", self.peek()).into()),
         };
 
         // Postfix: Call, Index/Slice, Field, PathSeg
@@ -259,7 +259,7 @@ impl<'a> Parser<'a> {
                 let mut dims = Vec::new();
                 let mut current = &expr;
                 while let Expr::Index(inner, dim) = current {
-                    dims.push((**dim).clone());
+                    dims.push((dim.as_ref()).clone());
                     current = inner;
                 }
                 dims.reverse();
@@ -277,7 +277,7 @@ impl<'a> Parser<'a> {
 
     /// Parses the `[...]` body of an array expression after the leading `[` has been consumed.
     /// Detects whether it is a repeat (`[v; N]`), comprehension (`[expr | i in range]`), or element list.
-    pub(crate) fn parse_array_expr(&mut self) -> Result<Expr, String> {
+    pub(crate) fn parse_array_expr(&mut self) -> Result<Expr, crate::parse::error::ParseError> {
         // Lookahead: detect comprehension `[ expr | var in range ]`.
         let mut is_comp = false;
         let mut brace_depth: i32 = 0;
@@ -333,5 +333,17 @@ impl<'a> Parser<'a> {
             self.expect(&Tok::RBrack)?;
             Ok(Expr::Array(ArrayBody::List(list)))
         }
+    }
+}
+
+impl Parse for crate::parse::ast::Expr {
+    fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
+        parser.parse_expr()
+    }
+}
+
+impl Parse for crate::parse::ast::Type {
+    fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
+        parser.parse_type()
     }
 }

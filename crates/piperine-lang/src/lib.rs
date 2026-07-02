@@ -27,8 +27,8 @@
 //!
 //! ```rust
 //! let design = piperine_lang::parse_and_elaborate(
-//!     "discipline Electrical { potential v: Real; flow i: Real; }\
-//!      mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }"
+//!     "discipline Electrical { potential v: Real; flow i: Real; }
+//!      mod Resistor (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }"
 //! )?;
 //! # Ok::<(), String>(())
 //! ```
@@ -71,6 +71,6 @@ pub use runtime::digital::{compile_digital_module, DigitalInterpreter, DigitalVa
 
 /// Parse a PHDL source string and run the full elaboration pipeline.
 pub fn parse_and_elaborate(input: &str) -> Result<Design, String> {
-    let source = parse_str(input)?;
+    let source = parse_str(input).map_err(|e| e.to_string())?;
     source.elaborate().map_err(|e| e.to_string())
 }

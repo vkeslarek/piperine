@@ -39,7 +39,7 @@ pub struct Elaborator {
     capability_decls: HashMap<String, crate::parse::ast::CapabilityDecl>,
     impl_decls: Vec<ImplDecl>,
     const_decls: HashMap<String, crate::parse::ast::ConstDecl>,
-    events: EventRegistry,
+    ctx: crate::elab::registry::ElabContext,
     /// Cache of monomorphized modules (mangled name → elaborated module).
     mono_cache: HashMap<String, Module>,
 }
@@ -58,7 +58,7 @@ impl Elaborator {
             capability_decls: HashMap::new(),
             impl_decls: Vec::new(),
             const_decls: HashMap::new(),
-            events: EventRegistry::with_builtins(),
+            ctx: crate::elab::registry::ElabContext::new(),
             mono_cache: HashMap::new(),
         }
     }
@@ -76,12 +76,12 @@ impl Elaborator {
             let mod_decls: Vec<_> = self.module_decls.values().cloned().collect();
             for decl in &mod_decls {
                 if decl.const_params.is_empty() && decl.type_params.is_empty() {
-                    self.events.validate_mod_body(&decl.body)?;
+                    self.ctx.events.validate_mod_body(&decl.body)?;
                 }
             }
             let beh_decls: Vec<_> = self.behavior_decls.clone();
             for beh in &beh_decls {
-                self.events.validate_behavior(beh.kind.clone(), &beh.body)?;
+                self.ctx.events.validate_behavior(beh.kind.clone(), &beh.body)?;
             }
         }
 
@@ -153,7 +153,7 @@ impl Elaborator {
         }
 
         // GAPS §J.4 — resolve calls to built-in casts and validate diagnostics
-        crate::elab::resolve::resolve_calls(&mut prog)?;
+        self.ctx.callables.resolve_calls(&mut prog)?;
 
         // GAPS §B.1 + §B.2 — the typecheck pass walks every module's
         // connections and rejects width mismatches and discipline
@@ -164,6 +164,21 @@ impl Elaborator {
         Ok(prog)
     }
 
+}
+
+impl crate::elab::registry::components::Instantiator for Elaborator {
+    fn ctx(&self) -> &crate::elab::registry::ElabContext {
+        &self.ctx
+    }
+    
+    fn elaborate_mod_decl(
+        &mut self,
+        decl: &ModDecl,
+        env: &mut ConstEnv,
+        type_subst: &std::collections::HashMap<String, String>,
+    ) -> Result<Module, ElabError> {
+        self.elab_mod_inner(decl, env, type_subst)
+    }
 }
 
 /// Constructs an `Elaborator` via [`Elaborator::new`].

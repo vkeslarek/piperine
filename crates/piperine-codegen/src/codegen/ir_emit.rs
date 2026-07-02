@@ -7,8 +7,7 @@
 //!
 //! The [`AnalogExpr`] trait abstracts the three operations the shared Cranelift
 //! residual/Jacobian skeleton in [`super::analog`] needs — `emit`, `diff`, and
-//! `collect_branches` — so the same skeleton compiles both PHDL `Expr`
-//! contributions (the `from_elab` path) and `IrExpr` contributions (the IR
+//! `collect_branches` — so the same skeleton compiles `IrExpr` contributions (the IR
 //! front door) without duplication.
 //!
 //! ## Scope
@@ -506,9 +505,7 @@ fn call2(name: &str, a: IrExpr, b: IrExpr) -> IrExpr {
 /// resolve via the param_values map. Any `Param(name)` or `Var(name)` not
 /// in this set is rejected (GAPS §A.8). The single-argument form
 /// `validate_ir_contrib(e)` defaults to accepting every Param/Var name
-/// for callers that have not threaded the known-names set yet (these
-/// callers typically never exercise the path — see GAPS §K.1 for the
-/// plan to deprecate the from_elab path entirely).
+/// for callers that have not threaded the known-names set yet.
 pub fn validate_ir_contrib(e: &IrExpr) -> Result<(), CodegenError> {
     validate_ir_contrib_with(e, None)
 }

@@ -1,7 +1,4 @@
-//! Completion handler: provides keyword and context-aware completions.
-//!
-//! Returns PHDL keywords, built-in types, and context-sensitive completions
-//! (discipline names, module names for instances, port/param/wire names).
+//! Completion handler: provides keyword and context-aware completions using piperine-lang predictive parsing.
 
 use lsp_server::{Connection, Request, Response};
 use lsp_types::{
@@ -11,6 +8,7 @@ use lsp_types::{
 use serde_json::from_value;
 
 use crate::state::ServerState;
+use piperine_lang::parse::predict::{ExpectedSyntax, IdentRole};
 
 pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
     let (id, params) = (req.id, req.params);
@@ -29,8 +27,9 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
         .documents
         .get(&uri)
         .map(|doc| {
-            let ctx = detect_context(&doc.source, pos);
-            build_completions(ctx, doc.design.as_ref())
+            let offset = position_to_offset(&doc.source, pos);
+            let expected = piperine_lang::parse::predict_at_cursor(&doc.source, offset);
+            build_completions_predictive(&expected, doc.design.as_ref())
         })
         .unwrap_or_default();
 
@@ -47,51 +46,12 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
         .unwrap();
 }
 
-/// What kind of syntactic context the cursor is in.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum CompletionContext {
-    /// Top-level: module, discipline, bundle, enum, capability, fn, impl, use, pub.
-    TopLevel,
-    /// Inside a `mod Name { ... }` body: param, wire, var, for, if, instance.
-    ModBody,
-    /// Inside an `analog { ... }` or `digital { ... }` or `fn { ... }` block.
-    Behavior,
-}
-
-/// Heuristic: scan backwards from position to detect what scope we're in.
-pub fn detect_context(source: &str, position: Position) -> CompletionContext {
-    let prefix = position_to_prefix(source, position);
-
-    // Look at the last 500 chars for keyword context.
-    let recent = if prefix.len() > 500 { &prefix[prefix.len() - 500..] } else { prefix };
-    if recent.contains("analog ") || recent.contains("digital ") {
-        return CompletionContext::Behavior;
-    }
-    if recent.contains("mod ") {
-        // Check if we're inside braces of a mod (not just passed a mod keyword).
-        let open_braces = recent.matches('{').count();
-        let close_braces = recent.matches('}').count();
-        if open_braces > close_braces {
-            return CompletionContext::ModBody;
-        }
-    }
-    // Check if we're inside a function body.
-    if recent.contains("fn ") {
-        let open_braces = recent.matches('{').count();
-        let close_braces = recent.matches('}').count();
-        if open_braces > close_braces {
-            return CompletionContext::Behavior;
-        }
-    }
-    CompletionContext::TopLevel
-}
-
-fn position_to_prefix(source: &str, position: Position) -> &str {
+fn position_to_offset(source: &str, position: Position) -> usize {
     let mut line = 0u32;
     let mut col = 0u32;
     for (i, c) in source.char_indices() {
         if line == position.line && col == position.character {
-            return &source[..i];
+            return i;
         }
         if c == '\n' {
             line += 1;
@@ -100,28 +60,61 @@ fn position_to_prefix(source: &str, position: Position) -> &str {
             col += 1;
         }
     }
-    source
+    source.len()
 }
 
-pub fn build_completions(ctx: CompletionContext, design: Option<&piperine_lang::Design>) -> Vec<CompletionItem> {
+pub fn build_completions_predictive(expected: &[ExpectedSyntax], design: Option<&piperine_lang::Design>) -> Vec<CompletionItem> {
     let mut items = Vec::new();
 
-    match ctx {
-        CompletionContext::TopLevel => add_top_level_completions(&mut items),
-        CompletionContext::ModBody => add_mod_body_completions(&mut items),
-        CompletionContext::Behavior => add_behavior_completions(&mut items),
+    for req in expected {
+        match req {
+            ExpectedSyntax::Keyword(kw) => {
+                items.push(kw_item(kw, "Keyword", CompletionItemKind::KEYWORD));
+            }
+            ExpectedSyntax::Ident(role) => match role {
+                IdentRole::TypeName => {
+                    add_value_types(&mut items);
+                    if let Some(design) = design {
+                        for (name, _) in design.disciplines() {
+                            items.push(kw_item(name, "Discipline", CompletionItemKind::INTERFACE));
+                        }
+                    }
+                }
+                IdentRole::ModName => {
+                    if let Some(design) = design {
+                        for m in design.modules() {
+                            items.push(kw_item(m.name(), "Module", CompletionItemKind::CLASS));
+                        }
+                    }
+                }
+                IdentRole::CapabilityName => {
+                    if let Some(design) = design {
+                        for (name, _) in design.capabilities() {
+                            items.push(kw_item(name, "Capability", CompletionItemKind::INTERFACE));
+                        }
+                    }
+                }
+                _ => {}
+            },
+            ExpectedSyntax::Expression => {
+                add_behavior_completions(&mut items);
+                add_sysfuncs(&mut items);
+                add_events(&mut items);
+            }
+            ExpectedSyntax::Punctuation(_) => {}
+        }
     }
-
-    // Always add value types and system functions.
-    add_value_types(&mut items);
-    add_events(&mut items);
-    add_sysfuncs(&mut items);
-
-    // Context-aware: discipline, module, function, capability names from design.
-    if let Some(design) = design {
-        add_design_names(&mut items, design, ctx);
+    
+    // Fallback: If the parser returned absolutely nothing (which is rare but possible during early typing),
+    // we can provide some top-level defaults if the document is empty.
+    if expected.is_empty() {
+        add_top_level_completions(&mut items);
     }
-
+    
+    // Deduplicate items based on label
+    items.sort_by(|a, b| a.label.cmp(&b.label));
+    items.dedup_by(|a, b| a.label == b.label);
+    
     items
 }
 
@@ -144,22 +137,6 @@ fn add_top_level_completions(items: &mut Vec<CompletionItem>) {
     }
 }
 
-fn add_mod_body_completions(items: &mut Vec<CompletionItem>) {
-    let keywords = [
-        ("param", "Parameter declaration", CompletionItemKind::KEYWORD),
-        ("wire", "Wire (net) declaration", CompletionItemKind::KEYWORD),
-        ("var", "Variable declaration", CompletionItemKind::KEYWORD),
-        ("for", "Structural for loop", CompletionItemKind::KEYWORD),
-        ("if", "Structural if", CompletionItemKind::KEYWORD),
-        ("input", "Input direction", CompletionItemKind::KEYWORD),
-        ("output", "Output direction", CompletionItemKind::KEYWORD),
-        ("inout", "Bidirectional direction", CompletionItemKind::KEYWORD),
-    ];
-    for (kw, desc, kind) in &keywords {
-        items.push(kw_item(kw, desc, *kind));
-    }
-}
-
 fn add_behavior_completions(items: &mut Vec<CompletionItem>) {
     let keywords = [
         ("var", "Variable declaration", CompletionItemKind::KEYWORD),
@@ -173,23 +150,14 @@ fn add_behavior_completions(items: &mut Vec<CompletionItem>) {
         items.push(kw_item(kw, desc, *kind));
     }
 
-    // Analog operators.
     let operators = [
         ("V", "Branch potential access"),
         ("I", "Branch flow access"),
         ("ddt", "Time derivative"),
         ("idt", "Time integral"),
-        ("idtmod", "Modulo time integral"),
-        ("ddx", "Spatial derivative"),
         ("delay", "Delay"),
-        ("absdelay", "Absolute delay"),
         ("transition", "Transition filter"),
         ("slew", "Slew-rate filter"),
-        ("laplace_np", "Laplace transform"),
-        ("laplace_zp", "Laplace transform (zero-pole)"),
-        ("white_noise", "White noise source"),
-        ("flicker_noise", "Flicker noise source"),
-        ("ac_stim", "AC stimulus"),
     ];
     for (op, desc) in &operators {
         items.push(CompletionItem {
@@ -229,9 +197,7 @@ fn add_events(items: &mut Vec<CompletionItem>) {
         ("negedge", "Falling edge trigger"),
         ("change", "Value change trigger"),
         ("cross", "Analog crossing trigger"),
-        ("above", "Analog threshold trigger"),
         ("initial", "Initial step trigger"),
-        ("final", "Final step trigger"),
     ];
     for (ev, desc) in &events {
         items.push(kw_item(ev, desc, CompletionItemKind::EVENT));
@@ -241,17 +207,9 @@ fn add_events(items: &mut Vec<CompletionItem>) {
 fn add_sysfuncs(items: &mut Vec<CompletionItem>) {
     let sys_funcs = [
         ("$temperature", "Simulation temperature"),
-        ("$vt", "Thermal voltage"),
         ("$abstime", "Absolute simulation time"),
-        ("$mfactor", "Multiplicity factor"),
-        ("$bound_step", "Limit time step"),
-        ("$discontinuity", "Signal discontinuity"),
         ("$finish", "End simulation"),
         ("$display", "Print message"),
-        ("$strobe", "Print at end of timestep"),
-        ("$limit", "Limit function"),
-        ("$random", "Random number"),
-        ("$simparam", "Simulation parameter"),
     ];
     for (sf, desc) in &sys_funcs {
         items.push(CompletionItem {
@@ -260,45 +218,6 @@ fn add_sysfuncs(items: &mut Vec<CompletionItem>) {
             detail: Some(desc.to_string()),
             insert_text: Some(format!("{sf}($1)")),
             insert_text_format: Some(InsertTextFormat::SNIPPET),
-            ..Default::default()
-        });
-    }
-}
-
-fn add_design_names(
-    items: &mut Vec<CompletionItem>,
-    design: &piperine_lang::Design,
-    _ctx: CompletionContext,
-) {
-    for (name, _) in design.disciplines() {
-        items.push(CompletionItem {
-            label: name.clone(),
-            kind: Some(CompletionItemKind::CLASS),
-            detail: Some("discipline".into()),
-            ..Default::default()
-        });
-    }
-    for m in design.modules() {
-        items.push(CompletionItem {
-            label: m.name().to_string(),
-            kind: Some(CompletionItemKind::CLASS),
-            detail: Some(format!("module ({} ports)", m.ports().len())),
-            ..Default::default()
-        });
-    }
-    for f in design.functions() {
-        items.push(CompletionItem {
-            label: f.name().to_string(),
-            kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some("function".into()),
-            ..Default::default()
-        });
-    }
-    for (name, _) in design.capabilities() {
-        items.push(CompletionItem {
-            label: name.clone(),
-            kind: Some(CompletionItemKind::INTERFACE),
-            detail: Some("capability".into()),
             ..Default::default()
         });
     }

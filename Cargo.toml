@@ -4,7 +4,7 @@ members = [
     "crates/piperine-cli",
     "crates/piperine-codegen",
     "crates/piperine-lang",
-    "crates/piperine-lang2",
+    "crates/piperine-lang",
     "crates/piperine-project",
     "crates/piperine-lang-server",
     "crates/piperine-solver",

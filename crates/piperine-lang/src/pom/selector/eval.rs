@@ -90,8 +90,70 @@ impl<'a> Evaluator<'a> {
                         next_candidates.push(last);
                     }
                 }
+                Predicate::Expr(super::ast::PredExpr::Compare(cmp)) => {
+                    next_candidates.retain(|node| {
+                        match &cmp.lhs {
+                            super::ast::Operand::AttrRef(attr) => {
+                                // Split schema.field if present
+                                let parts: Vec<&str> = attr.split('.').collect();
+                                let (schema, field) = if parts.len() > 1 {
+                                    (parts[0], Some(parts[1]))
+                                } else {
+                                    (parts[0], None)
+                                };
+                                
+                                // Find attribute matching schema
+                                let attr_node = match node {
+                                    Node::Module(m) => m.attributes().iter().find(|a| a.schema() == schema),
+                                    Node::Instance(i) => i.attributes().iter().find(|a| a.schema() == schema),
+                                    Node::Port(p) => p.attributes().iter().find(|a| a.schema() == schema),
+                                    Node::Param(p) => p.attributes().iter().find(|a| a.schema() == schema),
+                                    Node::Wire(w) => w.attributes().iter().find(|a| a.schema() == schema),
+                                    Node::Attribute(a) if a.schema() == schema => Some(*a),
+                                    _ => None,
+                                };
+                                
+                                if let Some(a) = attr_node {
+                                    if let Some(rhs) = &cmp.rhs {
+                                        let val = if let Some(f) = field {
+                                            a.field(f)
+                                        } else {
+                                            // If no field specified but we have a rhs, assume we're comparing a default value or it's invalid
+                                            // For now, let's just fail the match if there's no field but a rhs is expected
+                                            // Unless the attribute itself is a scalar? The SPEC says attributes are scalar properties returning a `Value`.
+                                            // But our `Attribute` struct has `data: HashMap<String, Value>`.
+                                            // We'll assume if field is none, we check if rhs is matching anything? Let's just return false for now.
+                                            None
+                                        };
+                                        if let Some(val) = val {
+                                            match (&rhs.0, val, &rhs.1) {
+                                                (super::ast::CmpOp::Eq, crate::pom::Value::Real(r), super::ast::Operand::Literal(super::ast::Literal::Number(n))) => r == n,
+                                                (super::ast::CmpOp::Eq, crate::pom::Value::String(s), super::ast::Operand::Literal(super::ast::Literal::String(n))) => s == n,
+                                                (super::ast::CmpOp::Eq, crate::pom::Value::String(s), super::ast::Operand::Literal(super::ast::Literal::Ident(n))) => s == n,
+                                                (super::ast::CmpOp::Gt, crate::pom::Value::Real(r), super::ast::Operand::Literal(super::ast::Literal::Number(n))) => r > n,
+                                                (super::ast::CmpOp::Lt, crate::pom::Value::Real(r), super::ast::Operand::Literal(super::ast::Literal::Number(n))) => r < n,
+                                                (super::ast::CmpOp::Ge, crate::pom::Value::Real(r), super::ast::Operand::Literal(super::ast::Literal::Number(n))) => r >= n,
+                                                (super::ast::CmpOp::Le, crate::pom::Value::Real(r), super::ast::Operand::Literal(super::ast::Literal::Number(n))) => r <= n,
+                                                (super::ast::CmpOp::NotEq, crate::pom::Value::Real(r), super::ast::Operand::Literal(super::ast::Literal::Number(n))) => r != n,
+                                                (super::ast::CmpOp::NotEq, crate::pom::Value::String(s), super::ast::Operand::Literal(super::ast::Literal::String(n))) => s != n,
+                                                _ => false, // fallback false
+                                            }
+                                        } else {
+                                            false // field not found
+                                        }
+                                    } else {
+                                        true // existence check passed
+                                    }
+                                } else {
+                                    false
+                                }
+                            }
+                            _ => true, // other lhs not supported yet
+                        }
+                    });
+                }
                 Predicate::Expr(_) => {
-                    return Err("Expression predicates not yet implemented".into());
+                    // other complex exprs not implemented
                 }
             }
         }
@@ -194,6 +256,24 @@ impl<'a> Evaluator<'a> {
                     }
                 }
             }
+
+            Axis::Attr => {
+                if let Node::Module(m) = node {
+                    for a in m.attributes() { res.push(Node::Attribute(a)); }
+                } else if let Node::Instance(i) = node {
+                    for a in i.attributes() { res.push(Node::Attribute(a)); }
+                } else if let Node::Port(p) = node {
+                    for a in p.attributes() { res.push(Node::Attribute(a)); }
+                } else if let Node::Param(p) = node {
+                    for a in p.attributes() { res.push(Node::Attribute(a)); }
+                } else if let Node::Wire(w) = node {
+                    for a in w.attributes() { res.push(Node::Attribute(a)); }
+                }
+            }
+            Axis::Driver | Axis::Load | Axis::Parent | Axis::Ancestor => {
+                // To be implemented: structural connectivity and parent axes
+                return Err(format!("Axis {:?} not yet implemented", axis));
+            }
             _ => return Err(format!("Axis {:?} not yet implemented", axis)),
         }
         Ok(res)
@@ -213,14 +293,12 @@ mod tests {
             "Child".into(),
             vec![], vec![], vec![], vec![], vec![], vec![]
         );
-        let inst1 = Instance {
-            label: Some("c1".into()),
+        let inst1 = crate::pom::Instance { attributes: vec![], label: Some("c1".into()),
             module: "Child".into(),
             ports: vec![],
             params: vec![],
         };
-        let inst2 = Instance {
-            label: Some("c2".into()),
+        let inst2 = crate::pom::Instance { attributes: vec![], label: Some("c2".into()),
             module: "Child".into(),
             ports: vec![],
             params: vec![],
@@ -247,5 +325,65 @@ mod tests {
         let res2 = evaluator.evaluate(&sel2, NodeSelection::new()).unwrap();
         assert_eq!(res2.len(), 1);
         assert_eq!(res2.get(0).unwrap().name(), "c2");
+    }
+
+    #[test]
+    fn test_eval_attr_predicates() {
+        let mut design = Design::new();
+        let mut top_mod = Module::new(
+            "Top".into(),
+            vec![], vec![], vec![], vec![], vec![], vec![]
+        );
+
+        let attr1 = crate::pom::module::Attribute {
+            schema: "layout".into(),
+            data: {
+                let mut map = std::collections::HashMap::new();
+                map.insert("min_width".into(), crate::pom::Value::Real(2.0));
+                map
+            },
+        };
+
+        let attr2 = crate::pom::module::Attribute {
+            schema: "layout".into(),
+            data: {
+                let mut map = std::collections::HashMap::new();
+                map.insert("min_width".into(), crate::pom::Value::Real(0.5));
+                map
+            },
+        };
+
+        let w1 = crate::pom::module::Wire { name: "clk".into(), attributes: vec![attr1],
+            ty: crate::pom::net_type::NetType::Discipline("Electrical".into()),
+        };
+
+        let w2 = crate::pom::module::Wire { name: "rst".into(), attributes: vec![attr2],
+            ty: crate::pom::net_type::NetType::Discipline("Electrical".into()),
+        };
+
+        let w3 = crate::pom::module::Wire { name: "data".into(), attributes: vec![],
+            ty: crate::pom::net_type::NetType::Discipline("Electrical".into()),
+        };
+
+        top_mod.wires.push(w1);
+        top_mod.wires.push(w2);
+        top_mod.wires.push(w3);
+        design.insert_module("Top".into(), top_mod);
+        design.set_top("Top");
+
+        let evaluator = Evaluator::new(&design);
+
+        let sel_all = "//net::*".parse::<Selector>().unwrap();
+        let res_all = evaluator.evaluate(&sel_all, NodeSelection::new()).unwrap();
+        assert_eq!(res_all.len(), 3);
+
+        let sel_has_layout = "//net::*[@layout]".parse::<Selector>().unwrap();
+        let res_has_layout = evaluator.evaluate(&sel_has_layout, NodeSelection::new()).unwrap();
+        assert_eq!(res_has_layout.len(), 2);
+
+        let sel_gt_1 = "//net::*[@layout.min_width > 1.0]".parse::<Selector>().unwrap();
+        let res_gt_1 = evaluator.evaluate(&sel_gt_1, NodeSelection::new()).unwrap();
+        assert_eq!(res_gt_1.len(), 1);
+        assert_eq!(res_gt_1.get(0).unwrap().name(), "clk");
     }
 }

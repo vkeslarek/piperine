@@ -58,6 +58,7 @@ pub struct Path {
 /// A global constant declaration `const Name : Type = Expr;`
 #[derive(Debug, Clone)]
 pub struct ConstDecl {
+    pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
     pub ty: Type,
@@ -73,6 +74,7 @@ pub struct ConstDecl {
 /// Both are unresolved here — the elaborator substitutes them at instantiation.
 #[derive(Debug, Clone)]
 pub struct ModDecl {
+    pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
     /// Compile-time Natural const parameters, e.g. `N` in `mod Foo[N]`.
@@ -97,6 +99,7 @@ pub struct TypeParam {
 /// The elaborator validates net-capability and expands bundles to flat fields.
 #[derive(Debug, Clone)]
 pub struct Port {
+    pub attrs: Vec<Attribute>,
     pub direction: Direction,
     pub name: String,
     /// Unresolved type — may be a bundle name, discipline name, or parameterized type.
@@ -121,27 +124,22 @@ pub enum Direction {
 /// the [`Module`][crate::pom::Module].
 #[derive(Debug, Clone)]
 pub enum ModStmt {
-    ParamDecl { name: String, ty: Type, default: Option<Expr> },
-    WireDecl { name: String, ty: Type },
-    VarDecl { name: String, ty: Type, default: Option<Expr> },
-    /// Unrolled at elaboration. `range` must evaluate to concrete Naturals.
-    StructuralFor { var: String, range: Range, body: Vec<ModStmt> },
-    /// Evaluated at elaboration. `cond` must be an elaboration constant.
-    StructuralIf { cond: Expr, then_body: Vec<ModStmt>, else_body: Option<Vec<ModStmt>> },
+    ParamDecl { attrs: Vec<Attribute>, name: String, ty: Type, default: Option<Expr> },
+    WireDecl { attrs: Vec<Attribute>, name: String, ty: Type },
+    VarDecl { attrs: Vec<Attribute>, name: String, ty: Type, default: Option<Expr> },
+    StructuralFor { attrs: Vec<Attribute>, var: String, range: Range, body: Vec<ModStmt> },
+    StructuralIf { attrs: Vec<Attribute>, cond: Expr, then_body: Vec<ModStmt>, else_body: Option<Vec<ModStmt>> },
     Instance {
-        /// `None` for anonymous instances. Present iff a `name :` prefix was parsed.
+        attrs: Vec<Attribute>,
         name: Option<String>,
-        /// Array index on the label, e.g. `r[i]`.
         array_index: Option<Expr>,
         module: String,
-        /// Const arguments, e.g. `[N]` in `Dac[N](...)`.
         const_args: Vec<Expr>,
         type_args: Vec<Type>,
         ports: Vec<Expr>,
         params: Vec<ParamArg>,
     },
-    /// Net connection `lhs = rhs;`.
-    Connection { lhs: Expr, rhs: Expr },
+    Connection { attrs: Vec<Attribute>, lhs: Expr, rhs: Expr },
 }
 
 /// A named parameter override: `.name = expr`.
@@ -183,6 +181,7 @@ pub struct Type {
 /// `discipline Name { ... }`
 #[derive(Debug, Clone)]
 pub struct DisciplineDecl {
+    pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
     pub items: Vec<DisciplineItem>,
@@ -190,7 +189,7 @@ pub struct DisciplineDecl {
 
 #[derive(Debug, Clone)]
 pub enum DisciplineItem {
-    Nature { kind: NatureKind, name: String, ty: Type, attrs: Vec<Attr> },
+    Nature { kind: NatureKind, name: String, ty: Type, attrs: Vec<AttrArg> },
     Storage(Type),
     Resolve(ResolveKind),
 }
@@ -210,7 +209,13 @@ pub enum ResolveKind {
 
 /// A named attribute in a nature declaration, e.g. `unit = "V"`.
 #[derive(Debug, Clone)]
-pub struct Attr {
+pub struct Attribute {
+    pub name: String,
+    pub args: Vec<AttrArg>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AttrArg {
     pub name: String,
     pub expr: Expr,
 }
@@ -224,6 +229,7 @@ pub struct Attr {
 /// Net-capable bundles used as ports are expanded to flat fields.
 #[derive(Debug, Clone)]
 pub struct BundleDecl {
+    pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
     pub const_params: Vec<String>,
@@ -234,6 +240,7 @@ pub struct BundleDecl {
 /// A single field inside a bundle.
 #[derive(Debug, Clone)]
 pub struct FieldDecl {
+    pub attrs: Vec<Attribute>,
     pub name: String,
     pub ty: Type,
     /// Optional default value (for value-type bundles).
@@ -245,6 +252,7 @@ pub struct FieldDecl {
 /// `enum Name [: ReprType] { Variant [= Expr], ... }`
 #[derive(Debug, Clone)]
 pub struct EnumDecl {
+    pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
     /// Optional explicit underlying type, e.g. `Bit[2]`.
@@ -264,6 +272,7 @@ pub struct EnumVariant {
 /// `capability Name [: Super, ...] { fn sig; | fn decl { } }`
 #[derive(Debug, Clone)]
 pub struct CapabilityDecl {
+    pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
     /// Names of required super-capabilities.
@@ -281,6 +290,7 @@ pub enum CapItem {
 /// `impl [Capability for] TypeRef { fn ... }`
 #[derive(Debug, Clone)]
 pub struct ImplDecl {
+    pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     /// `Some` for capability impls; `None` for inherent method impls.
     pub capability: Option<String>,
@@ -307,6 +317,7 @@ pub struct FnSig {
 /// retains the body as-is and monomorphizes at call sites.
 #[derive(Debug, Clone)]
 pub struct FnDecl {
+    pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub sig: FnSig,
     pub body: Block,
@@ -355,6 +366,7 @@ pub struct StmtMatchArm {
 /// module. Validation rules differ by `kind` (§9 of elaboration spec).
 #[derive(Debug, Clone)]
 pub struct BehaviorDecl {
+    pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub kind: BehaviorKind,
     pub name: String,

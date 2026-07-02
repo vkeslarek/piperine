@@ -6,7 +6,6 @@ pub mod ir_analog_to_device;
 // pub mod ir_digital_to_interp;  // moved to piperine-lang
 // pub mod phdl_device;           // moved to piperine-lang
 // pub mod from_ams;              // moved to piperine-ams
-// pub mod from_elab;             // moved to piperine-lang
 // pub mod from_ppr;              // moved to piperine-lang
 
 pub use ir::*;
@@ -20,4 +19,3 @@ pub use ir_analog_to_device::ir_analog_to_device;
 // pub use phdl_device::PhdlDevice;  // moved to piperine-lang
 // pub use from_ams::ams_to_ir;      // moved to piperine-ams
 // pub use from_ppr::ppr_to_ir;      // moved to piperine-lang
-// pub use from_elab::from_elab;     // moved to piperine-lang

@@ -44,36 +44,18 @@ impl Elaborator {
             return Ok(result);
         }
 
-        let value_prim = match name {
-            "Real"    => Some(ValueType::Real),
-            "Natural" => Some(ValueType::Natural),
-            "Integer" => Some(ValueType::Integer),
-            "Complex" => Some(ValueType::Complex),
-            "Boolean" => Some(ValueType::Boolean),
-            "Quad"    => Some(ValueType::Quad),
-            "String"  => Some(ValueType::Str),
-            _ => None,
-        };
-        if let Some(vt) = value_prim {
-            return Ok(TypeRef::Value(vt));
-        }
-
-        if self.disciplines.contains_key(name) {
-            return Ok(TypeRef::Net(NetType::Discipline(name.to_owned())));
-        }
-
-        if self.enums.contains_key(name) {
-            return Ok(TypeRef::Value(ValueType::Enum(name.to_owned())));
-        }
-
-        if self.bundles.contains_key(name) {
-            if self.is_net_capable_bundle(name) {
-                return Ok(TypeRef::Net(NetType::Discipline(name.to_owned())));
+        if let Some(def) = self.ctx.types.lookup(name) {
+            if def.as_bundle().is_some() {
+                if self.is_net_capable_bundle(name) {
+                    return Ok(TypeRef::Net(NetType::Discipline(name.to_owned())));
+                } else {
+                    return Err(ElabError::UndefinedType(format!(
+                        "`{}` is a value bundle — use field access, not as a bare type",
+                        name
+                    )));
+                }
             }
-            return Err(ElabError::UndefinedType(format!(
-                "`{}` is a value bundle — use field access, not as a bare type",
-                name
-            )));
+            return def.resolve(ty, env, type_subst);
         }
 
         if name == "fn" {
@@ -205,6 +187,7 @@ impl Elaborator {
             for field in &bundle.fields {
                 let field_ty = self.resolve_net_type(&field.ty, env, type_subst)?;
                 out.push(Port {
+                    attributes: Vec::new(),
                     direction: port.direction.clone(),
                     name: format!("{}_{}", port.name, field.name),
                     ty: field_ty,
@@ -215,6 +198,7 @@ impl Elaborator {
 
         let net_ty = self.resolve_net_type(&port.ty, env, type_subst)?;
         Ok(vec![Port {
+            attributes: Vec::new(),
             direction: port.direction.clone(),
             name: port.name.clone(),
             ty: net_ty,

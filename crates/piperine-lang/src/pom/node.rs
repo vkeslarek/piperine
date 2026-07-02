@@ -37,6 +37,7 @@ pub enum Kind {
     Enum,
     Bundle,
     Capability,
+    Attribute,
 }
 
 impl fmt::Display for Kind {
@@ -53,6 +54,7 @@ impl fmt::Display for Kind {
             Self::Enum => write!(f, "enum"),
             Self::Bundle => write!(f, "bundle"),
             Self::Capability => write!(f, "capability"),
+            Self::Attribute => write!(f, "attribute"),
         }
     }
 }
@@ -75,6 +77,7 @@ pub enum Node<'a> {
     Param(&'a crate::pom::Param),
     Wire(&'a crate::pom::Wire),
     Behavior(&'a crate::pom::Behavior),
+    Attribute(&'a crate::pom::module::Attribute),
 }
 
 impl<'a> PartialEq for Node<'a> {
@@ -86,6 +89,7 @@ impl<'a> PartialEq for Node<'a> {
             (Node::Param(a), Node::Param(b)) => std::ptr::eq(*a, *b),
             (Node::Wire(a), Node::Wire(b)) => std::ptr::eq(*a, *b),
             (Node::Behavior(a), Node::Behavior(b)) => std::ptr::eq(*a, *b),
+            (Node::Attribute(a), Node::Attribute(b)) => std::ptr::eq(*a, *b),
             _ => false,
         }
     }
@@ -100,6 +104,7 @@ impl<'a> Kinded for Node<'a> {
             Node::Param(_) => Kind::Param,
             Node::Wire(_) => Kind::Wire,
             Node::Behavior(_) => Kind::Behavior,
+            Node::Attribute(_) => Kind::Attribute,
         }
     }
 }
@@ -224,6 +229,18 @@ impl<'a> Named for Node<'a> {
             Node::Param(p) => p.name(),
             Node::Wire(w) => w.name(),
             Node::Behavior(_) => "", // Behaviors do not have a name
+            Node::Attribute(_) => "", // Attributes do not have a name
         }
+    }
+}
+
+impl<'a> From<&'a crate::pom::module::Attribute> for Node<'a> {
+    fn from(a: &'a crate::pom::module::Attribute) -> Self { Node::Attribute(a) }
+}
+
+impl<'a> TryFrom<Node<'a>> for &'a crate::pom::module::Attribute {
+    type Error = &'static str;
+    fn try_from(node: Node<'a>) -> Result<Self, Self::Error> {
+        if let Node::Attribute(a) = node { Ok(a) } else { Err("Node is not an Attribute") }
     }
 }

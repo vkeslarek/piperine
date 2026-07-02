@@ -110,6 +110,12 @@ pub enum Tok {
     BitXor,
     /// `@`
     At,
+    /// \n
+    Newline,
+    /// // ...
+    LineComment,
+    /// /* ... */
+    BlockComment,
 }
 
 /// A token together with its source byte range.
@@ -129,6 +135,12 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
+    /// Tokenizes the entire source into a flat sequence of `Lexed` tokens, filtering out whitespace/comments.
+    pub fn tokenize(&mut self) -> Result<Vec<Lexed>, String> {
+        let all = self.tokenize_all()?;
+        Ok(all.into_iter().filter(|l| !matches!(l.tok, Tok::Newline | Tok::LineComment | Tok::BlockComment)).collect())
+    }
+
     /// Creates a new lexer for the given source string.
     pub fn new(input: &'a str) -> Self {
         Self { input, pos: 0 }
@@ -154,19 +166,33 @@ impl<'a> Lexer<'a> {
     }
 
     /// Advances past whitespace, `//` line comments, and `/* */` block comments.
-    fn skip_whitespace_and_comments(&mut self) {
-        loop {
+    /// Tokenizes the entire source, preserving newlines and comments.
+    pub fn tokenize_all(&mut self) -> Result<Vec<Lexed>, String> {
+        let mut tokens = Vec::new();
+        while self.pos < self.input.len() {
             let start = self.pos;
-            while self.peek_char().map_or(false, |c| c.is_whitespace()) {
-                self.advance();
+            
+            // Handle whitespace (skip spaces, emit newlines)
+            if let Some(c) = self.peek_char() {
+                if c.is_whitespace() {
+                    self.advance();
+                    if c == '\n' {
+                        tokens.push(Lexed { tok: Tok::Newline, start, end: self.pos });
+                    }
+                    continue;
+                }
             }
+            
+            // Handle comments
             if self.input[self.pos..].starts_with("//") {
                 while let Some(c) = self.peek_char() {
-                    self.advance();
                     if c == '\n' {
                         break;
                     }
+                    self.advance();
                 }
+                tokens.push(Lexed { tok: Tok::LineComment, start, end: self.pos });
+                continue;
             } else if self.input[self.pos..].starts_with("/*") {
                 self.advance();
                 self.advance();
@@ -175,20 +201,10 @@ impl<'a> Lexer<'a> {
                         break;
                     }
                 }
+                tokens.push(Lexed { tok: Tok::BlockComment, start, end: self.pos });
+                continue;
             }
-            if self.pos == start {
-                break;
-            }
-        }
-    }
 
-    /// Tokenizes the entire source into a flat sequence of `Lexed` tokens.
-    /// Returns an error string on the first unrecognized character.
-    pub fn tokenize(&mut self) -> Result<Vec<Lexed>, String> {
-        let mut tokens = Vec::new();
-        self.skip_whitespace_and_comments();
-        while self.pos < self.input.len() {
-            let start = self.pos;
             let c = self.advance().unwrap();
 
             let tok = match c {
@@ -272,7 +288,6 @@ impl<'a> Lexer<'a> {
             };
 
             tokens.push(Lexed { tok, start, end: self.pos });
-            self.skip_whitespace_and_comments();
         }
         Ok(tokens)
     }

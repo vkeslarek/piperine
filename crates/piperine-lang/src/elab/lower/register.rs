@@ -22,16 +22,39 @@ impl Elaborator {
     ) -> Result<(), ElabError> {
         for item in items {
             match item {
-                Item::DisciplineDecl(d) => { self.disciplines.insert(d.name.clone(), d.clone()); }
-                Item::BundleDecl(b)     => { self.bundles.insert(b.name.clone(), b.clone()); }
-                Item::EnumDecl(e)       => { self.enums.insert(e.name.clone(), e.clone()); }
-                Item::ModDecl(m)        => { self.module_decls.insert(m.name.clone(), m.clone()); }
-                Item::BehaviorDecl(b)   => { self.behavior_decls.push(b.clone()); }
-                Item::FnDecl(f)         => { self.fn_decls.insert(f.sig.name.clone(), f.clone()); }
-                Item::CapabilityDecl(c) => { self.capability_decls.insert(c.name.clone(), c.clone()); }
-                Item::ImplDecl(i)       => { self.impl_decls.push(i.clone()); }
-                Item::ConstDecl(c)      => { self.const_decls.insert(c.name.clone(), c.clone()); }
-                Item::UseDecl(_)        => {} // already expanded by Resolver
+                Item::DisciplineDecl(d) => {
+                    self.disciplines.insert(d.name.clone(), d.clone());
+                    self.ctx.types.register(d.clone());
+                }
+                Item::BundleDecl(b) => {
+                    self.bundles.insert(b.name.clone(), b.clone());
+                    self.ctx.types.register(b.clone());
+                }
+                Item::EnumDecl(e) => {
+                    self.enums.insert(e.name.clone(), e.clone());
+                    self.ctx.types.register(e.clone());
+                }
+                Item::ModDecl(m) => {
+                    self.module_decls.insert(m.name.clone(), m.clone());
+                    self.ctx.components.register(m.clone());
+                }
+                Item::BehaviorDecl(b) => {
+                    self.behavior_decls.push(b.clone());
+                }
+                Item::FnDecl(f) => {
+                    self.fn_decls.insert(f.sig.name.clone(), f.clone());
+                    self.ctx.callables.register(f.clone());
+                }
+                Item::CapabilityDecl(c) => {
+                    self.capability_decls.insert(c.name.clone(), c.clone());
+                }
+                Item::ImplDecl(i) => {
+                    self.impl_decls.push(i.clone());
+                }
+                Item::ConstDecl(c) => {
+                    self.const_decls.insert(c.name.clone(), c.clone());
+                }
+                Item::UseDecl(_) => {} // already expanded by Resolver
             }
         }
         Ok(())
