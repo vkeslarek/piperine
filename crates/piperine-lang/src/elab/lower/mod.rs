@@ -40,8 +40,6 @@ pub struct Elaborator {
     impl_decls: Vec<ImplDecl>,
     const_decls: HashMap<String, crate::parse::ast::ConstDecl>,
     ctx: crate::elab::registry::ElabContext,
-    /// Cache of monomorphized modules (mangled name → elaborated module).
-    mono_cache: HashMap<String, Module>,
 }
 
 impl Elaborator {
@@ -59,7 +57,6 @@ impl Elaborator {
             impl_decls: Vec::new(),
             const_decls: HashMap::new(),
             ctx: crate::elab::registry::ElabContext::new(),
-            mono_cache: HashMap::new(),
         }
     }
 
@@ -148,7 +145,8 @@ impl Elaborator {
         }
 
         // Merge all on-demand monomorphized modules into the program.
-        for (name, elab_mod) in self.mono_cache.drain() {
+        for elab_mod in self.ctx.components.drain_mono_cache() {
+            let name = elab_mod.name.clone();
             prog.modules_map_mut().entry(name).or_insert(elab_mod);
         }
 

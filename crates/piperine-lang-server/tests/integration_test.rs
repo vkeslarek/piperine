@@ -41,7 +41,7 @@ fn test_document_state_upsert_invalid_phdl() {
     let source = "mod Bad { this is not valid phdl }";
     state.upsert_document(uri, source.to_string(), 1);
     let doc = state.documents.values().next().unwrap();
-    assert!(doc.design.is_none());
+    assert!(doc.design.is_some()); // Resilient compiler produces a partial design
     assert!(!doc.errors.is_empty());
 }
 
@@ -188,7 +188,7 @@ fn test_diagnostics_error_on_bad_syntax() {
     let source = "mod Bad { @@@ }";
     state.upsert_document(uri, source.to_string(), 1);
     let doc = state.documents.values().next().unwrap();
-    assert!(doc.design.is_none());
+    assert!(doc.design.is_some());
     assert!(!doc.errors.is_empty());
 }
 

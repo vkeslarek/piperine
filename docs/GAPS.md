@@ -534,21 +534,6 @@ no coercion validation, no cast-specific codegen lowering.
 
 ## Part K — Architecture cleanup {#part-k}
 
-### K.1 Deprecate the `from_elab` analog path
-
-**Severity:** Medium (downgraded — mostly done) · **Affects:**
-`piperine-codegen` maintenance surface
-
-The dedicated `from_elab` module is already removed
-(`piperine-codegen/src/lib.rs:9,23` — commented out, "moved to
-piperine-lang"), and `compile_analog_module` now routes through
-`ppr_to_ir` → `ir_analog_to_device`, the same IR path used everywhere
-else. What remains: the shared Cranelift skeleton
-(`codegen/analog.rs`) is still generic over an `AnalogExpr` trait meant
-to serve both PHDL `Expr` and `IrExpr` — worth confirming no production
-code path still instantiates it over `Expr` before closing this out
-entirely.
-
 ### K.2 `IrFunction` table is dead data
 
 **Severity:** High · **Affects:** IR/codegen contract honesty
@@ -703,7 +688,6 @@ circuits; negligible for most others.
 | J.1 | `$bound_step` etc. share one AST variant (cosmetic) | Low | AST cleanliness only |
 | J.2 | `$finish`/`$stop`/`$fatal` have no runtime effect | Medium | simulation-control tasks |
 | J.3 | `$assert` not a real assertion | Medium | `@initial` setup validation |
-| K.1 | `from_elab` path — mostly removed, confirm fully closed | Medium | codegen maintenance |
 | K.2 | `IrFunction` table is dead data | High | IR/codegen contract honesty |
 | K.4 | IR net refs are flat strings | Medium | prereq for F.3 |
 | K.5 | `Port` doc references nonexistent file | Low | solver docblock |

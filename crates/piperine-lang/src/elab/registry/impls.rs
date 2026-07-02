@@ -47,8 +47,20 @@ impl TypeDef for BundleDecl {
 impl ComponentDef for ModDecl {
     fn name(&self) -> &str { &self.name }
     fn is_generic(&self) -> bool { !self.const_params.is_empty() || !self.type_params.is_empty() }
-    fn instantiate(&self, instantiator: &mut dyn crate::elab::registry::components::Instantiator, env: &mut ConstEnv, type_subst: &HashMap<String, String>) -> Result<crate::pom::Module, ElabError> {
-        instantiator.elaborate_mod_decl(self, env, type_subst)
+    fn instantiate(&self, instantiator: &mut dyn crate::elab::registry::components::Instantiator, const_args: &[u64], env: &mut ConstEnv, type_subst: &HashMap<String, String>) -> Result<crate::pom::Module, ElabError> {
+        if self.const_params.len() != const_args.len() {
+            return Err(ElabError::Other(format!(
+                "module `{}` expects {} const params, got {}",
+                self.name,
+                self.const_params.len(),
+                const_args.len()
+            )));
+        }
+        let mut new_env = crate::elab::const_eval::ConstEnv::new();
+        for (param_name, val) in self.const_params.iter().zip(const_args.iter()) {
+            new_env.define(param_name.clone(), crate::elab::const_eval::ConstVal::Nat(*val));
+        }
+        instantiator.elaborate_mod_decl(self, &mut new_env, type_subst)
     }
     fn clone_box(&self) -> Box<dyn crate::elab::registry::components::ComponentDef> {
         Box::new(self.clone())

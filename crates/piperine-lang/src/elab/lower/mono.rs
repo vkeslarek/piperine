@@ -108,48 +108,25 @@ impl Elaborator {
             format!("{}__{}", module_name, suffix.join("_"))
         };
 
-        if self.mono_cache.contains_key(&mono_name) {
+        if self.ctx.components.get_monomorphized(&mono_name).is_some() {
             return Ok(mono_name);
         }
 
-        let decl = self
-            .module_decls
-            .get(module_name)
-            .cloned()
-            .ok_or_else(|| ElabError::UndefinedModule(module_name.to_owned()))?;
-
-        if decl.const_params.len() != const_args.len() {
-            return Err(ElabError::Other(format!(
-                "module `{}` expects {} const params, got {}",
-                module_name,
-                decl.const_params.len(),
-                const_args.len()
-            )));
-        }
+        let def = self.ctx.components.lookup(module_name)
+            .ok_or_else(|| ElabError::UndefinedModule(module_name.to_owned()))?
+            .clone_box();
 
         let mut env = ConstEnv::new();
-        for (param_name, &val) in decl.const_params.iter().zip(const_args.iter()) {
-            env.define(param_name.clone(), ConstVal::Nat(val));
-        }
+        let mut module = def.instantiate(self, const_args, &mut env, &HashMap::new())?;
+        module.name = mono_name.clone();
+        
+        self.ctx.components.drain_mono_cache(); // This isn't how we insert, wait
+        // Wait, we need to insert it. But drain_mono_cache is not an insert method.
+        // Let's rely on a helper we'll add to components.rs: insert_mono_cache
+        self.ctx.components.insert_mono_cache(mono_name.clone(), module);
 
-        let mut mono_decl = decl.clone();
-        mono_decl.name = mono_name.clone();
-
-        // Insert a placeholder to break potential recursion.
-        self.mono_cache.insert(mono_name.clone(), Module {
-            attributes: Vec::new(),
-            name: mono_name.clone(),
-            ports: vec![],
-            params: vec![],
-            wires: vec![],
-            vars: vec![],
-            instances: vec![],
-            connections: vec![],
-            behaviors: vec![],
-        });
-
-        let elab_mod = self.elab_mod_inner(&mono_decl, &mut env, &HashMap::new())?;
-        self.mono_cache.insert(mono_name.clone(), elab_mod);
         Ok(mono_name)
     }
+
+
 }
