@@ -28,5 +28,8 @@ pub fn execute(file: Option<String>) {
     });
 
     let formatted = TokenFormatter::format_source(&input, &raw_tokens, FormatOptions::default());
-    println!("{}", formatted);
+    fs::write(&path, formatted).unwrap_or_else(|e| {
+        eprintln!("Error writing file: {}", e);
+        std::process::exit(1);
+    });
 }

@@ -41,7 +41,7 @@ const ISRC_TOP_SRC: &str = "
 
 #[test]
 fn e2e_ppr_isrc_through_r_in_dc() {
-    let elab = parse_and_elaborate(ISRC_TOP_SRC).expect("elab");
+    let elab = parse_and_elaborate(ISRC_TOP_SRC, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&elab);
     let ci: CircuitInstance = from_ir(&ir, "Top").expect("from_ir top");
     // Just verifies the glue builds a CircuitInstance for a 3-port top.
@@ -68,7 +68,7 @@ fn e2e_ppr_isrc_resistor_pair_compiles_circuit() {
             R(b, a);
         }
     ";
-    let elab = parse_and_elaborate(src).expect("elab");
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&elab);
     let ci: CircuitInstance = from_ir(&ir, "Top").expect("from_ir top");
     assert!(ci.all_devices().len() >= 2, "expected 2 devices");
@@ -98,7 +98,7 @@ fn e2e_ppr_isrc_into_r_dc_converges() {
             R(top, gnd);
         }
     ";
-    let elab = parse_and_elaborate(src).expect("elab");
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&elab);
     let mut ci: CircuitInstance = from_ir(&ir, "Top").expect("from_ir top");
     ci.init_digital();
@@ -195,7 +195,7 @@ fn e2e_ppr_rc_transient_runs() {
             R(top, gnd);
         }
     ";
-    let elab = parse_and_elaborate(src).expect("elab");
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&elab);
     let mut ci: CircuitInstance = from_ir(&ir, "Top").expect("from_ir top");
     ci.init_digital();

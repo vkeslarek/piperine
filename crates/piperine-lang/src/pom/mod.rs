@@ -16,7 +16,7 @@ pub mod value;
 
 pub use behavior::{Behavior, BehaviorStmt, Function, ImplBlock, MatchArm};
 pub use design::Design;
-pub use error::{ElabError, ReflectError};
+pub use error::{ElabError, ElabErrorKind, ReflectError};
 pub use module::{Connection, Instance, Module, Param, Port, Var, Wire};
 pub use net_type::{NetRef, NetType, TypeRef, ValueType};
 pub use node::{Id, Kind};

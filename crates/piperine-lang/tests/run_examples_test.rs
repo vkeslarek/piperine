@@ -31,7 +31,7 @@ fn test_all_examples_compile() {
     for file in phdl_files {
         println!("Testing {:?}", file);
         let body = fs::read_to_string(&file).unwrap();
-        match piperine_lang::parse_and_elaborate(&body) {
+        match piperine_lang::parse_and_elaborate(&body, &piperine_lang::SourceMap::dummy()) {
             Ok(elab) => {
                 // Lower to IR
                 let ir = piperine_lang::ppr_to_ir(&elab);

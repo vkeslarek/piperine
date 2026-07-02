@@ -38,35 +38,28 @@ pub mod typecheck;
 pub mod resolve;
 pub mod registry;
 
-use crate::pom::{Design, ElabError};
+use crate::pom::{Design, ElabError, ElabErrorKind};
 pub use lower::Elaborator;
 use crate::parse::ast::SourceFile;
 use crate::resolve::Resolver;
 
+use crate::source_map::SourceMap;
+
 impl SourceFile {
-    /// Elaborate this source file using a default [`Resolver`].
+    /// Elaborate this source file using the supplied [`SourceMap`].
     ///
-    /// Injects the standard-library prelude, expands all `use` declarations, then
-    /// runs the full elaboration pipeline.  For project-level resolution (loading
-    /// user files via `use foo::bar;`) use [`elaborate_with`] and supply a
-    /// [`Resolver::with_root`].
-    pub fn elaborate(self) -> Result<Design, ElabError> {
-        self.elaborate_with(&mut Resolver::new())
+    /// The source map controls where `use` declarations are looked up.
+    pub fn elaborate(self, source_map: &SourceMap) -> Result<Design, ElabError> {
+        let mut resolver = Resolver::new(source_map);
+        self.elaborate_with(&mut resolver)
     }
 
     /// Elaborate this source file using the supplied [`Resolver`].
-    ///
-    /// The resolver controls where `use` declarations are looked up:
-    /// - Built-in `piperine::*` paths always resolve from embedded sources.
-    /// - Other paths resolve relative to the root supplied to [`Resolver::with_root`].
-    ///
-    /// The standard-library prelude is always injected regardless of resolver
-    /// configuration.
     pub fn elaborate_with(self, resolver: &mut Resolver) -> Result<Design, ElabError> {
         let mut items = resolver.prelude_items();
         let expanded = resolver
             .expand(self)
-            .map_err(|e| ElabError::Other(e.to_string()))?;
+            .map_err(|e| ElabError::from(ElabErrorKind::Other(e.to_string())))?;
         items.extend(expanded);
         let augmented = SourceFile { items };
         Elaborator::new().elaborate(augmented)

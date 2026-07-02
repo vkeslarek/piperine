@@ -1,8 +1,12 @@
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
 
-discipline Electrical { potential v : Real; flow i : Real; }
-mod Inverter ( input a : Electrical, inout y : Electrical, inout gnd : Electrical ) {
+mod Inverter(input a : Electrical, inout y : Electrical, inout gnd : Electrical) {
     param gain : Real = 10.0;
 }
+
 analog Inverter {
     var target : Real = -gain * V(a, gnd);
     I(y, gnd) <+ 1e-15 * ddt(V(y, gnd)) + (V(y, gnd) - target) / 1000.0;

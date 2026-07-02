@@ -74,6 +74,7 @@ pub struct ConstDecl {
 /// Both are unresolved here — the elaborator substitutes them at instantiation.
 #[derive(Debug, Clone)]
 pub struct ModuleDeclaration {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
@@ -122,14 +123,30 @@ pub enum Direction {
 /// Structural `For` and `If` are eliminated by the elaborator; they must have
 /// elaboration-constant bounds/conditions. The remaining variants survive into
 /// the [`Module`][crate::pom::Module].
+impl ModuleStatement {
+    pub fn span(&self) -> Option<miette::SourceSpan> {
+        match self {
+            Self::ParamDecl { span, .. } => *span,
+            Self::WireDecl { span, .. } => *span,
+            Self::VarDecl { span, .. } => *span,
+            Self::StructuralFor { span, .. } => *span,
+            Self::StructuralIf { span, .. } => *span,
+            Self::Instance { span, .. } => *span,
+            Self::Connection { span, .. } => *span,
+            Self::Assert { span, .. } => *span,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ModuleStatement {
-    ParamDecl { attrs: Vec<Attribute>, name: String, ty: Type, default: Option<Expr> },
-    WireDecl { attrs: Vec<Attribute>, name: String, ty: Type },
-    VarDecl { attrs: Vec<Attribute>, name: String, ty: Type, default: Option<Expr> },
-    StructuralFor { attrs: Vec<Attribute>, var: String, range: Range, body: Vec<ModuleStatement> },
-    StructuralIf { attrs: Vec<Attribute>, cond: Expr, then_body: Vec<ModuleStatement>, else_body: Option<Vec<ModuleStatement>> },
+    ParamDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, name: String, ty: Type, default: Option<Expr> },
+    WireDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, name: String, ty: Type },
+    VarDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, name: String, ty: Type, default: Option<Expr> },
+    StructuralFor { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, var: String, range: Range, body: Vec<ModuleStatement> },
+    StructuralIf { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, cond: Expr, then_body: Vec<ModuleStatement>, else_body: Option<Vec<ModuleStatement>> },
     Instance {
+        span: Option<miette::SourceSpan>,
         attrs: Vec<Attribute>,
         name: Option<String>,
         array_index: Option<Expr>,
@@ -139,9 +156,9 @@ pub enum ModuleStatement {
         ports: Vec<PortConnection>,
         params: Vec<ParamArg>,
     },
-    Connection { attrs: Vec<Attribute>, lhs: Expr, rhs: Expr },
+    Connection { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, lhs: Expr, rhs: Expr },
     /// `$assert(cond, msg);` — an elaboration-time check (SPEC §7.4).
-    Assert { attrs: Vec<Attribute>, cond: Expr, msg: Expr },
+    Assert { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, cond: Expr, msg: Expr },
 }
 
 /// One instance port connection: positional (`a`) or named (`.p = a`).

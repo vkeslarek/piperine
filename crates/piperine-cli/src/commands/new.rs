@@ -38,4 +38,9 @@ pub fn execute(name: Option<String>) {
     fs::write(path.join("src/main.phdl"), main_phdl).unwrap();
 
     println!("Created piperine project `{}`", project_name);
+
+    std::env::set_current_dir(path).unwrap();
+    crate::commands::build::execute(None);
 }
+
+

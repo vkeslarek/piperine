@@ -1,9 +1,16 @@
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
 
-discipline Electrical { potential v : Real; flow i : Real; }
-discipline Bit { storage Boolean; }
-mod Adc ( input vin : Electrical, output d_out : Bit ) {
+discipline Bit {
+    storage Boolean;
+}
+
+mod Adc(input vin : Electrical, output d_out : Bit) {
     param vref : Real = 0.9;
 }
+
 digital Adc {
     d_out <- (V(vin) > vref);
 }

@@ -32,13 +32,14 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::parse::{ast, parse_str, SourceFile};
+use crate::source_map::SourceMap;
 
 // ─────────────────────────────── Error ──────────────────────────────────────
 
 /// Errors produced during `use` resolution.
 #[derive(Debug, Clone)]
 pub enum ResolveError {
-    /// No built-in or file could be found for the given path.
+    /// No file could be found for the given path.
     #[allow(dead_code)]
     NotFound(Vec<String>),
     /// The resolved file contained a parse error.
@@ -60,143 +61,53 @@ impl std::fmt::Display for ResolveError {
     }
 }
 
-/// Aggregator for `use piperine::ngspice;` — pulls in every NGSPICE faithful
-/// device header in one `use`. Individual devices can still be imported on
-/// their own via `use piperine::ngspice::diode;`, etc.
-const NGSPICE_AGGREGATOR: &str = "
-use piperine::ngspice::constants;
-use piperine::ngspice::diode;
-use piperine::ngspice::bjt;
-use piperine::ngspice::jfet;
-use piperine::ngspice::mos;
-use piperine::ngspice::passives;
-use piperine::ngspice::sources;
-use piperine::ngspice::switches;
-use piperine::ngspice::controlled;
-";
-
 // ─────────────────────────────── Resolver ───────────────────────────────────
 
 /// Resolves `use` declarations and provides the standard-library prelude.
-///
-/// Create with [`Resolver::new`] for a binary-only resolver (no file I/O), or
-/// with [`Resolver::with_root`] to also allow project-local file resolution.
-pub struct Resolver {
-    root: Option<PathBuf>,
-    /// Embedded built-in sources, keyed by path segments.
-    builtins: HashMap<Vec<String>, &'static str>,
+pub struct Resolver<'a> {
+    source_map: &'a SourceMap,
     /// Parsed and cached source files, keyed by path segments.
     cache: HashMap<Vec<String>, SourceFile>,
 }
 
-impl Default for Resolver {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Resolver {
-    /// Create a resolver with only built-in (embedded) modules.
-    pub fn new() -> Self {
-        let mut builtins: HashMap<Vec<String>, &'static str> = HashMap::new();
-        builtins.insert(
-            vec!["piperine".into(), "capabilities".into()],
-            include_str!("../headers/capabilities.phdl"),
-        );
-        builtins.insert(
-            vec!["piperine".into(), "collections".into()],
-            include_str!("../headers/collections.phdl"),
-        );
-        builtins.insert(
-            vec!["piperine".into(), "constants".into()],
-            include_str!("../headers/constants.phdl"),
-        );
-        builtins.insert(
-            vec!["piperine".into(), "disciplines".into()],
-            include_str!("../headers/disciplines.phdl"),
-        );
-        // GAPS §C.1 — `Ground` is the one discipline that must be in
-        // scope without explicit declaration (it's the universal reference
-        // potential). `prelude.phdl` provides it so we don't have to hard-
-        // casing it in the elaborator.
-        builtins.insert(
-            vec!["piperine".into(), "prelude".into()],
-            include_str!("../headers/prelude.phdl"),
-        );
-        // GAPS I-series — NGSPICE faithful device headers, wired up as
-        // `piperine::ngspice::<device>` so they can be pulled in via `use`.
-        // `piperine::ngspice` alone is an aggregator that pulls all of them.
-        builtins.insert(
-            vec!["piperine".into(), "ngspice".into()],
-            NGSPICE_AGGREGATOR,
-        );
-        builtins.insert(
-            vec!["piperine".into(), "ngspice".into(), "constants".into()],
-            include_str!("../headers/ngspice/ngspice_constants.phdl"),
-        );
-        builtins.insert(
-            vec!["piperine".into(), "ngspice".into(), "diode".into()],
-            include_str!("../headers/ngspice/diode.phdl"),
-        );
-        builtins.insert(
-            vec!["piperine".into(), "ngspice".into(), "bjt".into()],
-            include_str!("../headers/ngspice/bjt.phdl"),
-        );
-        builtins.insert(
-            vec!["piperine".into(), "ngspice".into(), "jfet".into()],
-            include_str!("../headers/ngspice/jfet.phdl"),
-        );
-        builtins.insert(
-            vec!["piperine".into(), "ngspice".into(), "mos".into()],
-            include_str!("../headers/ngspice/mos.phdl"),
-        );
-        builtins.insert(
-            vec!["piperine".into(), "ngspice".into(), "passives".into()],
-            include_str!("../headers/ngspice/passives.phdl"),
-        );
-        builtins.insert(
-            vec!["piperine".into(), "ngspice".into(), "sources".into()],
-            include_str!("../headers/ngspice/sources.phdl"),
-        );
-        builtins.insert(
-            vec!["piperine".into(), "ngspice".into(), "switches".into()],
-            include_str!("../headers/ngspice/switches.phdl"),
-        );
-        builtins.insert(
-            vec!["piperine".into(), "ngspice".into(), "controlled".into()],
-            include_str!("../headers/ngspice/controlled.phdl"),
-        );
-        Self { root: None, builtins, cache: HashMap::new() }
+impl<'a> Resolver<'a> {
+    /// Create a resolver with the given SourceMap.
+    pub fn new(source_map: &'a SourceMap) -> Self {
+        Self {
+            source_map,
+            cache: HashMap::new(),
+        }
     }
 
-    /// Create a resolver that also searches `root` for file-based modules.
-    pub fn with_root(root: PathBuf) -> Self {
-        let mut r = Self::new();
-        r.root = Some(root);
-        r
-    }
-
-    /// Items always in scope — stdlib capabilities, collection functions,
-    /// and the `Ground` discipline (GAPS §C.1).
-    ///
-    /// These are injected before every elaboration run; no explicit `use` needed.
+    /// Items always in scope, loaded from prelude_path if provided.
     pub fn prelude_items(&mut self) -> Vec<ast::Item> {
-        let cap_key: Vec<String> = vec!["piperine".into(), "capabilities".into()];
-        let col_key: Vec<String> = vec!["piperine".into(), "collections".into()];
-        let pre_key: Vec<String> = vec!["piperine".into(), "prelude".into()];
-        let mut items = self.load_source(&cap_key)
-            .map(|s| s.items.clone())
-            .unwrap_or_default();
-        items.extend(
-            self.load_source(&col_key)
-                .map(|s| s.items.clone())
-                .unwrap_or_default(),
-        );
-        items.extend(
-            self.load_source(&pre_key)
-                .map(|s| s.items.clone())
-                .unwrap_or_default(),
-        );
+        let mut items = Vec::new();
+        
+        // Load the standard library built-ins dynamically if they resolve.
+        // We ignore errors so that a bare-bones SourceMap doesn't panic.
+        let cap_key = vec!["piperine".to_string(), "capabilities".to_string()];
+        if let Ok(src) = self.load_source(&cap_key) {
+            items.extend(src.items.clone());
+        }
+        
+        let col_key = vec!["piperine".to_string(), "collections".to_string()];
+        if let Ok(src) = self.load_source(&col_key) {
+            items.extend(src.items.clone());
+        }
+
+        let pre_key = vec!["piperine".to_string(), "prelude".to_string()];
+        if let Ok(src) = self.load_source(&pre_key) {
+            items.extend(src.items.clone());
+        }
+
+        if let Some(prelude_path) = &self.source_map.prelude_path {
+            // Load custom prelude dynamically
+            if let Ok(src) = std::fs::read_to_string(prelude_path) {
+                if let Ok(source) = parse_str(&src) {
+                    items.extend(source.items);
+                }
+            }
+        }
         items
     }
 
@@ -239,20 +150,29 @@ impl Resolver {
             return Ok(self.cache.get(path).unwrap());
         }
 
-        let source = if let Some(src) = self.builtins.get(path) {
-            parse_str(src).map_err(|e| ResolveError::ParseError(e.to_string()))?
-        } else if let Some(root) = &self.root.clone() {
-            let mut file_path = root.clone();
-            for seg in path {
-                file_path.push(seg);
-            }
-            file_path.set_extension("phdl");
-            let src = std::fs::read_to_string(&file_path)
-                .map_err(|e| ResolveError::IoError(e.to_string()))?;
-            parse_str(&src).map_err(|e| ResolveError::ParseError(e.to_string()))?
-        } else {
+        if path.is_empty() {
             return Err(ResolveError::NotFound(path.to_vec()));
+        }
+
+        let first_seg = &path[0];
+        let mut file_path = if let Some(base) = self.source_map.namespaces.get(first_seg) {
+            let mut p = base.clone();
+            for seg in &path[1..] {
+                p.push(seg);
+            }
+            p
+        } else {
+            let mut p = self.source_map.root_path.clone();
+            for seg in path {
+                p.push(seg);
+            }
+            p
         };
+
+        file_path.set_extension("phdl");
+        let src = std::fs::read_to_string(&file_path)
+            .map_err(|e| ResolveError::IoError(format!("{}: {}", file_path.display(), e)))?;
+        let source = parse_str(&src).map_err(|e| ResolveError::ParseError(e.to_string()))?;
 
         self.cache.insert(path.to_vec(), source);
         Ok(self.cache.get(path).unwrap())

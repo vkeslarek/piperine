@@ -67,7 +67,7 @@ fn parse_and_collect_errors(source: &str) -> (Option<Design>, Vec<ParseError>) {
         });
     }
 
-    let design = match source_file.elaborate() {
+    let design = match source_file.elaborate(&piperine_lang::SourceMap::dummy()) {
         Ok(d) => Some(d),
         Err(e) => {
             all_errors.push(ParseError {

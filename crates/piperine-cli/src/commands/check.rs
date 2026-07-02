@@ -13,7 +13,7 @@ fn detect_format(path: &Path) -> FileFormat {
 
 enum FileFormat { Ams, Ppr }
 
-pub fn check_file(path: &Path) -> Result<CheckSummary, String> {
+pub fn check_file(path: &Path, source_map: &piperine_lang::SourceMap) -> Result<CheckSummary, String> {
     println!("Checking file: {}", path.display());
     match detect_format(path) {
         FileFormat::Ams => {
@@ -22,8 +22,8 @@ pub fn check_file(path: &Path) -> Result<CheckSummary, String> {
         FileFormat::Ppr => {
             let body = std::fs::read_to_string(path)
                 .map_err(|e| format!("read failed: {e}"))?;
-            let elab = piperine_lang::parse_and_elaborate(&body)
-                .map_err(|e| format!("parse/elab failed: {e}"))?;
+            let elab = piperine_lang::parse_and_elaborate(&body, source_map)
+                .map_err(|e| format!("{:?}", e))?;
             let module_names: Vec<String> =
                 elab.modules().map(|m| m.name().to_string()).collect();
             println!("  PHDL modules: {}", module_names.len());
@@ -41,6 +41,17 @@ pub enum CheckSummary {
 }
 
 pub fn execute(file: Option<String>) {
+    let project_root = piperine_project::get_current_project_root()
+        .unwrap_or_else(|| std::env::current_dir().unwrap());
+    
+    let mut source_map = piperine_lang::SourceMap::new(project_root.clone());
+    let headers_dir = project_root.join("headers");
+    if headers_dir.exists() {
+        source_map = source_map.with_prelude(headers_dir.join("prelude.phdl"));
+        source_map.add_namespace("piperine", headers_dir.clone());
+        source_map.add_namespace("spice", headers_dir.join("ngspice"));
+    }
+
     let target_paths = if let Some(f) = file {
         vec![PathBuf::from(f)]
     } else {
@@ -85,7 +96,7 @@ pub fn execute(file: Option<String>) {
 
     let mut had_error = false;
     for path in target_paths {
-        if let Err(e) = check_file(&path) {
+        if let Err(e) = check_file(&path, &source_map) {
             eprintln!("Error in file {}: {}", path.display(), e);
             had_error = true;
         }

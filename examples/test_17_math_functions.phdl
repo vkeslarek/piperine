@@ -1,6 +1,10 @@
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
 
-discipline Electrical { potential v : Real; flow i : Real; }
-mod MathTest ( inout p : Electrical ) {}
+mod MathTest(inout p : Electrical) { }
+
 analog MathTest {
     var x : Real = exp(1.0);
     var y : Real = ln(x);

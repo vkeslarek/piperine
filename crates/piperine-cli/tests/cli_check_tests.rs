@@ -29,7 +29,7 @@ fn check_ppr_resistor_extracts_module() {
         analog R { I(p, n) <+ V(p, n) / r; }
         ",
     );
-    let summary = check_file(&p).expect("check_file ok");
+    let summary = check_file(&p, &piperine_lang::SourceMap::dummy()).expect("check_file ok");
     let modules = match summary {
         piperine_cli::commands::check::CheckSummary::Ppr { module_names } => module_names,
         other => panic!("expected PPR summary, got {other:?}"),

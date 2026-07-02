@@ -1,0 +1,23 @@
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+bundle Differential {
+    p : Electrical, n : Electrical,
+}
+
+mod DiffAmp(input in : Differential, output out : Differential) {
+    param gain : Real = 10.0;
+}
+
+analog DiffAmp {
+    V(out.p, out.n) <+ gain * V(in.p, in.n);
+}
+
+mod Top() {
+    wire sig_in : Differential;
+    wire sig_out : Differential;
+
+    amp : DiffAmp(.in = sig_in,.out = sig_out);
+}

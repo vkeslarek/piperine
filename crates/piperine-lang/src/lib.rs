@@ -49,6 +49,7 @@ pub mod lowering;
 pub mod parse;
 pub mod pom;
 pub mod resolve;
+pub mod source_map;
 
 // ── POM types ────────────────────────────────────────────────────────────
 pub use pom::{
@@ -60,12 +61,13 @@ pub use pom::{
 };
 pub use parse::{parse_str, Lexed, Lexer, Tok};
 pub use resolve::{ResolveError, Resolver};
+pub use source_map::SourceMap;
 
 // ── IR lowering + runtime ─────────────────────────────────────────────────
 pub use lowering::ppr_to_ir;
 
 /// Parse a PHDL source string and run the full elaboration pipeline.
-pub fn parse_and_elaborate(input: &str) -> Result<Design, String> {
-    let source = parse_str(input).map_err(|e| e.to_string())?;
-    source.elaborate().map_err(|e| e.to_string())
+pub fn parse_and_elaborate(input: &str, source_map: &SourceMap) -> Result<Design, miette::Report> {
+    let source = parse_str(input).map_err(|e| miette::miette!("{}", e).with_source_code(input.to_string()))?;
+    source.elaborate(source_map).map_err(|e| miette::Report::from(e).with_source_code(input.to_string()))
 }

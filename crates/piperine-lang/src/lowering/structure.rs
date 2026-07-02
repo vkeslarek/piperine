@@ -184,6 +184,14 @@ pub(crate) fn const_val_to_ir(v: &crate::elab::const_eval::ConstVal, symbols: &m
         ConstVal::Int(i) => IrExpr::Int(*i),
         ConstVal::Bool(b) => IrExpr::Bool(*b),
         ConstVal::Str(_) => IrExpr::Real(0.0), // No strings in IrExpr
+        ConstVal::EnumVariant(enum_name, variant) => {
+            // Stable tag: hash the qualified name to a deterministic i64.
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut h = DefaultHasher::new();
+            format!("{}::{}", enum_name, variant).hash(&mut h);
+            IrExpr::Int(h.finish() as i64)
+        }
     }
 }
 

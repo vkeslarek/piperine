@@ -44,9 +44,9 @@ impl FormatState {
 
 pub trait FormatRule {
     fn consume_token(&mut self, _t: &Lexed, _prev: Option<&Lexed>, _state: &mut FormatState, _output: &mut String) -> bool { false }
-    fn before_token(&mut self, _t: &Lexed, _state: &mut FormatState, _output: &mut String) {}
+    fn before_token(&mut self, _t: &Lexed, _next: Option<&Lexed>, _state: &mut FormatState, _output: &mut String) {}
     fn space_after(&self, _prev: Option<&Lexed>, _t: &Lexed, _next: Option<&Lexed>, _state: &FormatState) -> Option<bool> { None }
-    fn after_token(&mut self, _t: &Lexed, _state: &mut FormatState, _output: &mut String) {}
+    fn after_token(&mut self, _t: &Lexed, _next: Option<&Lexed>, _state: &mut FormatState, _output: &mut String) {}
 }
 
 pub struct TokenFormatter<'a> {
@@ -113,7 +113,7 @@ impl<'a> TokenFormatter<'a> {
             }
 
             for rule in &mut self.rules {
-                rule.before_token(t, &mut self.state, &mut self.output);
+                rule.before_token(t, next, &mut self.state, &mut self.output);
             }
 
             self.push_indent();
@@ -133,7 +133,7 @@ impl<'a> TokenFormatter<'a> {
             }
 
             for rule in &mut self.rules {
-                rule.after_token(t, &mut self.state, &mut self.output);
+                rule.after_token(t, next, &mut self.state, &mut self.output);
             }
 
             i += 1;

@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use crate::parse::ast::{Expr, ModuleDeclaration};
 use crate::parse::ast::ModuleStatement;
 use crate::elab::const_eval::{ConstEnv, ConstVal};
-use crate::pom::{Connection, ElabError, Instance, Module, Param, Var, Wire};
+use crate::pom::{Connection, ElabError, ElabErrorKind, Instance, Module, Param, Var, Wire};
 
 use super::Elaborator;
 
@@ -44,7 +44,7 @@ impl Elaborator {
             .bundles
             .get(bundle_name)
             .cloned()
-            .ok_or_else(|| ElabError::UnknownBundle(bundle_name.to_owned()))?;
+            .ok_or_else(|| ElabError::from(ElabErrorKind::UnknownBundle(bundle_name.to_owned())))?;
 
         let overrides: HashMap<String, Expr> = match default {
             None => HashMap::new(),
@@ -56,21 +56,21 @@ impl Elaborator {
                     Expr::BundleLit { ty, .. } => ty.name.clone(),
                     _ => "a non-bundle-literal expression".to_owned(),
                 };
-                return Err(ElabError::BundleParamDefault {
+                return Err(ElabError::from(ElabErrorKind::BundleParamDefault {
                     param: pname.to_owned(),
                     expected: bundle_name.to_owned(),
                     found,
-                });
+                }));
             }
         };
 
         // Every literal field must name a field the bundle actually has.
         for fname in overrides.keys() {
             if !bundle.fields.iter().any(|f| &f.name == fname) {
-                return Err(ElabError::BundleFieldUnknown {
+                return Err(ElabError::from(ElabErrorKind::BundleFieldUnknown {
                     bundle: bundle_name.to_owned(),
                     field: fname.clone(),
-                });
+                }));
             }
         }
 
@@ -78,15 +78,15 @@ impl Elaborator {
             let value_expr = overrides
                 .get(&field.name)
                 .or(field.default.as_ref())
-                .ok_or_else(|| ElabError::BundleFieldNoDefault {
+                .ok_or_else(|| ElabError::from(ElabErrorKind::BundleFieldNoDefault {
                     param: pname.to_owned(),
                     bundle: bundle_name.to_owned(),
                     field: field.name.clone(),
-                })?;
-            let val = env.eval(value_expr).map_err(|e| ElabError::ConstEval {
+                }))?;
+            let val = env.eval(value_expr).map_err(|e| ElabError::from(ElabErrorKind::ConstEval {
                 context: format!("bundle param `{pname}.{}` default", field.name),
                 source: e,
-            })?;
+            }))?;
             let vt = self.resolve_value_type(&field.ty, env)?;
             out.push(ModBodyItem::Param(Param { attributes: Vec::new(),
                 name: format!("{pname}_{}", field.name),
@@ -110,7 +110,7 @@ impl Elaborator {
         fields
             .iter()
             .map(|(fname, fexpr)| {
-                let val = env.eval(fexpr).map_err(|e| ElabError::ConstEval {
+                let val = env.eval(fexpr).map_err(|e| ElabErrorKind::ConstEval {
                     context: format!("bundle param override `{pname}.{fname}`"),
                     source: e,
                 })?;
@@ -140,7 +140,7 @@ impl Elaborator {
         }
 
         for stmt in &decl.body {
-            if let ModuleStatement::WireDecl { name, ty, attrs: _ } = stmt {
+            if let ModuleStatement::WireDecl { name, ty, attrs: _, span: _ } = stmt {
                 let resolved_name = type_subst.get(&ty.name).map(|s| s.as_str()).unwrap_or(&ty.name);
                 local_types.insert(name.clone(), resolved_name.to_string());
             }
@@ -182,7 +182,8 @@ impl Elaborator {
     ) -> Result<(), ElabError> {
         for stmt in stmts {
             let stmt = stmt.clone();
-            self.lower_mod_stmt(&stmt, env, type_subst, local_types, out)?;
+            self.lower_mod_stmt(&stmt, env, type_subst, local_types, out)
+                .map_err(|e| e.with_span(stmt.span()))?;
         }
         Ok(())
     }
@@ -201,7 +202,7 @@ impl Elaborator {
         out: &mut Vec<ModBodyItem>,
     ) -> Result<(), ElabError> {
         match stmt {
-            ModuleStatement::ParamDecl { name, ty, default, attrs: _ } => {
+            ModuleStatement::ParamDecl { name, ty, default, attrs: _, span: _ } => {
                 // GAPS §I.14 — a bundle-typed param (`param model : DioModel
                 // = DioModel {};`) is flattened here into one scalar param
                 // per bundle field, named `{name}_{field}`. This matches
@@ -217,7 +218,7 @@ impl Elaborator {
 
                 let vt = self.resolve_value_type(ty, env)?;
                 let def = if let Some(e) = default {
-                    Some(env.eval(e).map_err(|e| ElabError::ConstEval {
+                    Some(env.eval(e).map_err(|e| ElabErrorKind::ConstEval {
                         context: format!("param `{}` default", name),
                         source: e,
                     })?)
@@ -231,7 +232,7 @@ impl Elaborator {
                 }));
             }
 
-            ModuleStatement::WireDecl { name, ty, attrs: _ } => {
+            ModuleStatement::WireDecl { name, ty, attrs: _, span: _ } => {
                 let resolved_name = type_subst.get(&ty.name).map(|s| s.as_str()).unwrap_or(&ty.name);
                 if let Some(bundle) = self.bundles.get(resolved_name).cloned() {
                     if self.is_net_capable_bundle(resolved_name) {
@@ -249,7 +250,7 @@ impl Elaborator {
                 out.push(ModBodyItem::Wire(Wire { attributes: Vec::new(), name: name.clone(), ty: nt }));
             }
 
-            ModuleStatement::VarDecl { name, ty, default, attrs: _ } => {
+            ModuleStatement::VarDecl { name, ty, default, attrs: _, span: _ } => {
                 // §7.2 + §I.15 — a `var` declared directly in a `mod` body
                 // (as opposed to inside `analog`/`digital`) is persistent
                 // module-level state, e.g. `var sw_state : Real = 0.0;` in
@@ -270,25 +271,25 @@ impl Elaborator {
                     crate::pom::TypeRef::Value(vt) => vt,
                     crate::pom::TypeRef::Net(crate::pom::NetType::Discipline(dname)) => {
                         self.storage_value_type(&dname)?
-                            .ok_or_else(|| ElabError::Other(format!(
+                            .ok_or_else(|| ElabError::from(ElabErrorKind::Other(format!(
                                 "module var `{}` has conservative discipline `{}` — a `var` needs a storage discipline or a value type",
                                 name, dname
-                            )))?
+                            ))))?
                     }
                     crate::pom::TypeRef::Net(other) => {
-                        return Err(ElabError::Other(format!(
+                        return Err(ElabError::from(ElabErrorKind::Other(format!(
                             "module var `{}` has unsupported net type `{:?}`",
                             name, other
-                        )));
+                        ))));
                     }
                 };
                 let init = default
                     .as_ref()
                     .map(|e| {
-                        env.eval(e).map_err(|e| ElabError::ConstEval {
+                        env.eval(e).map_err(|e| ElabError::from(ElabErrorKind::ConstEval {
                             context: format!("module var `{}` initializer", name),
                             source: e,
-                        })
+                        }))
                     })
                     .transpose()?;
                 out.push(ModBodyItem::ModVar(Var {
@@ -299,12 +300,12 @@ impl Elaborator {
                 }));
             }
 
-            ModuleStatement::StructuralFor { var, range, body, attrs: _ } => {
-                let start = env.eval_nat(&range.start).map_err(|e| ElabError::ConstEval {
+            ModuleStatement::StructuralFor { var, range, body, attrs: _, span: _ } => {
+                let start = env.eval_nat(&range.start).map_err(|e| ElabErrorKind::ConstEval {
                     context: "for-loop start in module body".to_owned(),
                     source: e,
                 })?;
-                let end_val = env.eval_nat(&range.end).map_err(|e| ElabError::ConstEval {
+                let end_val = env.eval_nat(&range.end).map_err(|e| ElabErrorKind::ConstEval {
                     context: "for-loop end in module body".to_owned(),
                     source: e,
                 })?;
@@ -318,8 +319,8 @@ impl Elaborator {
                 }
             }
 
-            ModuleStatement::StructuralIf { cond, then_body, else_body, attrs: _ } => {
-                let val = env.eval(cond).map_err(|e| ElabError::ConstEval {
+            ModuleStatement::StructuralIf { cond, then_body, else_body, attrs: _, span: _ } => {
+                let val = env.eval(cond).map_err(|e| ElabErrorKind::ConstEval {
                     context: "structural if condition".to_owned(),
                     source: e,
                 })?;
@@ -340,10 +341,10 @@ impl Elaborator {
                 type_args: _,
                 ports,
                 params,
-             attrs: _ } => {
+             attrs: _, span: _ } => {
                 let label = if let Some(n) = name {
                     if let Some(idx_expr) = array_index {
-                        let idx = env.eval_nat(idx_expr).map_err(|e| ElabError::ConstEval {
+                        let idx = env.eval_nat(idx_expr).map_err(|e| ElabErrorKind::ConstEval {
                             context: format!("instance array index for `{}`", n),
                             source: e,
                         })?;
@@ -358,7 +359,7 @@ impl Elaborator {
                 // Resolve const args to concrete values.
                 let mut resolved_const_args: Vec<u64> = Vec::new();
                 for ce in const_args {
-                    let v = env.eval_nat(ce).map_err(|e| ElabError::ConstEval {
+                    let v = env.eval_nat(ce).map_err(|e| ElabErrorKind::ConstEval {
                         context: format!("const arg for module `{}`", module),
                         source: e,
                     })?;
@@ -420,7 +421,7 @@ impl Elaborator {
                             )?);
                         }
                         other => {
-                            let v = env.eval(other).map_err(|e| ElabError::ConstEval {
+                            let v = env.eval(other).map_err(|e| ElabErrorKind::ConstEval {
                                 context: format!("param `{}` of instance `{}`", pa.name, module),
                                 source: e,
                             })?;
@@ -437,7 +438,7 @@ impl Elaborator {
                 }));
             }
 
-            ModuleStatement::Connection { lhs, rhs, attrs: _ } => {
+            ModuleStatement::Connection { lhs, rhs, attrs: _, span: _ } => {
                 let mut is_bundle_conn = false;
                 if let (crate::parse::ast::Expr::Ident(l_name), crate::parse::ast::Expr::Ident(r_name)) = (lhs, rhs) {
                     if let Some(l_ty_name) = local_types.get(l_name) {
@@ -463,8 +464,8 @@ impl Elaborator {
 
             // SPEC §7.4: `$assert(cond, msg)` in a `mod` body is an
             // elaboration-time check — evaluated here, once, per instance.
-            ModuleStatement::Assert { cond, msg, attrs: _ } => {
-                let value = env.eval(cond).map_err(|e| ElabError::ConstEval {
+            ModuleStatement::Assert { cond, msg, attrs: _, span: _ } => {
+                let value = env.eval(cond).map_err(|e| ElabErrorKind::ConstEval {
                     context: "`$assert` condition".into(),
                     source: e,
                 })?;
@@ -472,15 +473,16 @@ impl Elaborator {
                     ConstVal::Bool(b) => b,
                     ConstVal::Int(v) => v != 0,
                     ConstVal::Nat(v) => v != 0,
-                    ConstVal::Real(v) => v != 0.0,
+                    ConstVal::Real(r) => r != 0.0,
                     ConstVal::Str(_) => true,
+                    ConstVal::EnumVariant(_, _) => true,
                 };
                 if !holds {
                     let text = match env.eval(msg) {
                         Ok(ConstVal::Str(s)) => s,
                         _ => "assertion failed".into(),
                     };
-                    return Err(ElabError::Other(format!("$assert failed: {text}")));
+                    return Err(ElabError::from(ElabErrorKind::Other(format!("$assert failed: {text}"))));
                 }
             }
         }
@@ -509,16 +511,16 @@ impl Elaborator {
         let decl = self
             .module_decls
             .get(module)
-            .ok_or_else(|| ElabError::UndefinedModule(module.to_string()))?;
+            .ok_or_else(|| ElabError::from(ElabErrorKind::UndefinedModule(module.to_string())))?;
         let mut named: HashMap<&str, &Expr> = HashMap::new();
         let mut positional = Vec::new();
         for conn in conns {
             match conn {
                 PortConnection::Named { port, expr } => {
                     if named.insert(port.as_str(), expr).is_some() {
-                        return Err(ElabError::Other(format!(
+                        return Err(ElabError::from(ElabErrorKind::Other(format!(
                             "port `{port}` of `{module}` connected twice"
-                        )));
+                        ))));
                     }
                 }
                 PortConnection::Positional(e) => positional.push(e),
@@ -532,19 +534,19 @@ impl Elaborator {
                 None => match positional.next() {
                     Some(e) => e.clone(),
                     None => {
-                        return Err(ElabError::Other(format!(
+                        return Err(ElabError::from(ElabErrorKind::Other(format!(
                             "instance of `{module}` leaves port `{}` unconnected",
                             port.name
-                        )))
+                        ))))
                     }
                 },
             };
             ordered.push(expr);
         }
         if let Some((port, _)) = named.into_iter().next() {
-            return Err(ElabError::Other(format!(
+            return Err(ElabError::from(ElabErrorKind::Other(format!(
                 "`{module}` has no port named `{port}`"
-            )));
+            ))));
         }
         Ok(ordered)
     }

@@ -11,7 +11,7 @@ fn test_b5_implicit_widening_allowed() {
         b = a;
     }
     ";
-    let prog = parse_and_elaborate(src).unwrap();
+    let prog = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).unwrap();
     // This should pass without error
 }
 
@@ -25,10 +25,10 @@ fn test_b5_implicit_cast_rejected() {
         b = a;
     }
     ";
-    let res = parse_and_elaborate(src);
+    let res = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy());
     assert!(res.is_err(), "Expected error for implicit cast from Integer to Real");
     if let Err(msg) = res {
-        assert!(msg.contains("implicit cast from Integer to Real not allowed"));
+        assert!(msg.to_string().contains("implicit cast from Integer to Real not allowed"));
     } else {
         panic!("Expected error string");
     }
@@ -44,5 +44,5 @@ fn test_b5_explicit_cast_allowed() {
         b = real(a);
     }
     ";
-    let prog = parse_and_elaborate(src).unwrap();
+    let prog = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).unwrap();
 }

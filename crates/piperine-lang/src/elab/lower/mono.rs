@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use crate::parse::ast::{BehaviorKind, FnDecl, FnParam, ImplDecl};
 use crate::elab::const_eval::{ConstEnv, ConstVal};
 use crate::pom::{
-    BehaviorStmt, ElabError, Function, ImplBlock, Module, TypeRef, ValueType,
+    BehaviorStmt, ElabError, ElabErrorKind, Function, ImplBlock, Module, TypeRef, ValueType,
 };
 
 use super::Elaborator;
@@ -73,10 +73,10 @@ impl Elaborator {
             .const_args
             .iter()
             .map(|e| {
-                env.eval(e).map_err(|src| ElabError::ConstEval {
+                env.eval(e).map_err(|src| ElabError::from(ElabErrorKind::ConstEval {
                     context: format!("impl const arg for `{}`", impl_decl.ty),
                     source: src,
-                })
+                }))
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -115,7 +115,7 @@ impl Elaborator {
         }
 
         let def = self.ctx.components.lookup(module_name)
-            .ok_or_else(|| ElabError::UndefinedModule(module_name.to_owned()))?
+            .ok_or_else(|| ElabError::from(ElabErrorKind::UndefinedModule(module_name.to_owned())))?
             .clone_box();
 
         let mut env = ConstEnv::new();

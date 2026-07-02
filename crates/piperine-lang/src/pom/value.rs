@@ -125,6 +125,7 @@ impl From<&ConstVal> for Value {
             ConstVal::Nat(v) => Value::Natural(*v),
             ConstVal::Bool(v) => Value::Boolean(*v),
             ConstVal::Str(v) => Value::String(v.clone()),
+            ConstVal::EnumVariant(enum_name, variant) => Value::String(format!("{}::{}", enum_name, variant)),
         }
     }
 }

@@ -5,8 +5,8 @@
 
 use piperine_lang::parse_and_elaborate;
 
-fn elab(src: &str) -> Result<piperine_lang::pom::Design, String> {
-    parse_and_elaborate(src)
+fn elab(src: &str) -> Result<piperine_lang::pom::Design, miette::Report> {
+    parse_and_elaborate(src, &piperine_lang::SourceMap::dummy())
 }
 
 // ── C.1 — `Ground` discipline is predefined ──────────────────────────────────

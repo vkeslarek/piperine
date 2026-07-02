@@ -18,11 +18,11 @@ use piperine_lang::{
 // ────────────────────────────── helpers ───────────────────────────────────────
 
 fn elab(src: &str) -> piperine_lang::pom::Design {
-    parse_str(src).expect("parse failed").elaborate().expect("elaborate failed")
+    parse_str(src).expect("parse failed").elaborate(&piperine_lang::SourceMap::dummy()).expect("elaborate failed")
 }
 
 fn elab_err(src: &str) -> String {
-    parse_str(src).expect("parse failed").elaborate()
+    parse_str(src).expect("parse failed").elaborate(&piperine_lang::SourceMap::dummy())
         .err()
         .expect("expected elaboration error")
         .to_string()
@@ -361,7 +361,8 @@ fn test_use_resolution_file_based() {
 
     let src = "use mylib;\n mod M ( inout a : MyNet );";
     let source = parse_str(src).expect("parse failed");
-    let mut resolver = Resolver::with_root(dir.path().to_path_buf());
+    let source_map = piperine_lang::SourceMap::new(dir.path().to_path_buf());
+    let mut resolver = Resolver::new(&source_map);
     let prog =
         source.elaborate_with(&mut resolver).expect("elab failed");
 
@@ -394,7 +395,8 @@ fn test_use_transitive() {
 
     let src = "use a;\n mod M ( inout x : NetB );";
     let source = parse_str(src).expect("parse");
-    let mut resolver = Resolver::with_root(dir.path().to_path_buf());
+    let source_map = piperine_lang::SourceMap::new(dir.path().to_path_buf());
+    let mut resolver = Resolver::new(&source_map);
     let prog =
         source.elaborate_with(&mut resolver).expect("elab");
 
@@ -423,7 +425,7 @@ fn test_parse_and_elaborate_api() {
     let result = parse_and_elaborate(
         "discipline Electrical { potential v: Real; flow i: Real; }
          mod R ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0e3; }",
-    );
+        &piperine_lang::SourceMap::dummy());
     let prog = result.expect("parse_and_elaborate failed");
     assert!(prog.module("R").is_some());
 }
@@ -431,8 +433,8 @@ fn test_parse_and_elaborate_api() {
 #[test]
 fn test_global_const_evaluated() {
     let result = parse_and_elaborate(
-        "const MY_CONST : Natural = 42; const ANOTHER : Natural = MY_CONST + 1;"
-    );
+        "const MY_CONST : Natural = 42; const ANOTHER : Natural = MY_CONST + 1;",
+        &piperine_lang::SourceMap::dummy());
     let prog = result.expect("parse_and_elaborate failed");
     assert_eq!(prog.const_("MY_CONST").unwrap().as_natural().unwrap(), 42);
     assert_eq!(prog.const_("ANOTHER").unwrap().as_natural().unwrap(), 43);

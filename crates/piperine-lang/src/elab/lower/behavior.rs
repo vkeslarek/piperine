@@ -4,7 +4,7 @@
 
 use crate::parse::ast::{BehaviorDecl, BehaviorKind, BehaviorStmt as AstBehaviorStmt};
 use crate::elab::const_eval::{ConstEnv, ConstVal};
-use crate::pom::{Behavior, BehaviorStmt, ElabError, MatchArm};
+use crate::pom::{Behavior, BehaviorStmt, ElabError, ElabErrorKind, MatchArm};
 
 use super::Elaborator;
 
@@ -111,11 +111,11 @@ impl Elaborator {
             }
 
             AstBehaviorStmt::For { var, range, body } => {
-                let start = env.eval_nat(&range.start).map_err(|e| ElabError::ConstEval {
+                let start = env.eval_nat(&range.start).map_err(|e| ElabErrorKind::ConstEval {
                     context: format!("behavioral for-loop start (var `{}`)", var),
                     source: e,
                 })?;
-                let end_val = env.eval_nat(&range.end).map_err(|e| ElabError::ConstEval {
+                let end_val = env.eval_nat(&range.end).map_err(|e| ElabErrorKind::ConstEval {
                     context: format!("behavioral for-loop end (var `{}`)", var),
                     source: e,
                 })?;
@@ -248,11 +248,11 @@ impl Elaborator {
                 Ok(vec![BehaviorStmt::Match { expr: expr.clone(), arms: elab_arms }])
             }
             Stmt::For { var, range, body } => {
-                let start = env.eval_nat(&range.start).map_err(|e| ElabError::ConstEval {
+                let start = env.eval_nat(&range.start).map_err(|e| ElabErrorKind::ConstEval {
                     context: format!("for-loop in event block (var `{}`)", var),
                     source: e,
                 })?;
-                let end_val = env.eval_nat(&range.end).map_err(|e| ElabError::ConstEval {
+                let end_val = env.eval_nat(&range.end).map_err(|e| ElabErrorKind::ConstEval {
                     context: format!("for-loop end in event block (var `{}`)", var),
                     source: e,
                 })?;

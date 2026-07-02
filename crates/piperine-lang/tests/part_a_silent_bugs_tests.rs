@@ -162,7 +162,7 @@ fn a7_capacitor_compiles_through_ir_path() {
         mod Cap ( inout p : Electrical, inout n : Electrical ) { param c : Real = 1.0e-9; }
         analog Cap { I(p, n) <+ c * ddt(V(p, n)); }
     "#;
-    let elab = parse_and_elaborate(src).expect("PHDL parses + elaborates");
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
     let ir = ppr_to_ir(&elab);
     let dev = ir_analog_to_device(&ir, "Cap").expect("capacitor compiles through IR path");
     assert!(dev.has_reactive(), "capacitor must have reactive contributions");
@@ -178,7 +178,7 @@ fn d5_user_fn_inlined_at_call_site_in_contribution() {
         mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0e3; }
         analog Resistor { I(p, n) <+ scale_v(V(p, n)) / r; }
     "#;
-    let elab = parse_and_elaborate(src).expect("PHDL parses + elaborates");
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
     let ir = ppr_to_ir(&elab);
     let dev = ir_analog_to_device(&ir, "Resistor").expect("D.5: user-fn inlining must compile");
     let params = [1.0e3_f64];
@@ -197,7 +197,7 @@ fn d5_user_fn_call_to_nonbuiltin_is_inlined_not_silently_zero() {
         mod Gain ( inout p : Electrical, inout n : Electrical ) { param g : Real = 2.0; }
         analog Gain { I(p, n) <+ amp(V(p, n), g); }
     "#;
-    let elab = parse_and_elaborate(src).expect("PHDL parses");
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses");
     let ir = ppr_to_ir(&elab);
     let dev = ir_analog_to_device(&ir, "Gain").expect("D.5: user fn must compile");
     let params = [2.0_f64];
@@ -214,7 +214,7 @@ fn d5_user_fn_missing_still_errors() {
         mod Bad ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0e3; }
         analog Bad { I(p, n) <+ no_such_fn(V(p, n)); }
     "#;
-    let elab = parse_and_elaborate(src).expect("PHDL parses");
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses");
     let ir = ppr_to_ir(&elab);
     let result = ir_analog_to_device(&ir, "Bad");
     let err = result.err().expect("D.5: missing fn must fail loudly");
@@ -232,7 +232,7 @@ fn d5_spec_diode_with_user_fn_compiles() {
         }
         analog Diode { I(a, c) <+ is_sat * (exp(V(a, c) / thermal_voltage(temp)) - 1.0); }
     "#;
-    let elab = parse_and_elaborate(src).expect("Diode model parses");
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("Diode model parses");
     let ir = ppr_to_ir(&elab);
     let dev = ir_analog_to_device(&ir, "Diode").expect("Diode compiles");
     let params = [1.0e-14_f64, 300.0_f64];
@@ -253,7 +253,7 @@ fn d2_idt_in_contribution_lowers_to_integrator() {
         mod Inductor ( inout p : Electrical, inout n : Electrical ) { param L : Real = 1.0e-6; }
         analog Inductor { I(p, n) <+ idt(V(p, n)) / L; }
     "#;
-    let elab = parse_and_elaborate(src).expect("PHDL parses");
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses");
     let ir = ppr_to_ir(&elab);
     let dev = ir_analog_to_device(&ir, "Inductor").expect("D.2: idt must compile");
     // idt is a runtime-serviced integrator (state + dt·x), not a charge.
@@ -288,7 +288,7 @@ fn d1_voltage_force_compiles_with_force_residual() {
         mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 1.5; }
         analog VSource { V(p, n) <- dc; }
     "#;
-    let elab = parse_and_elaborate(src).expect("VSource parses");
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("VSource parses");
     let ir = ppr_to_ir(&elab);
     let dev = ir_analog_to_device(&ir, "VSource").expect("D.1: VSource compiles");
     assert!(dev.num_forces() > 0, "D.1: must have force function");
@@ -308,7 +308,7 @@ fn d1_op_amp_with_force_compiles() {
         }
         analog OpAmp { V(out) <- gain * V(inp, inn); }
     "#;
-    let elab = parse_and_elaborate(src).expect("OpAmp parses");
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("OpAmp parses");
     let ir = ppr_to_ir(&elab);
     let dev = ir_analog_to_device(&ir, "OpAmp").expect("D.1: OpAmp compiles");
     assert!(dev.num_forces() > 0, "D.1: OpAmp must have force function");

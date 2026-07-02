@@ -22,7 +22,7 @@ fn from_ir_resistor_va_yields_circuit() {
         mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }
         analog R { I(p, n) <+ V(p, n) / r; }
     ";
-    let elab = parse_and_elaborate(src).expect("PHDL parses + elaborates");
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
     let ir = ppr_to_ir(&elab);
     // Sanity: the module is present in the IR.
     assert!(ir.modules.iter().any(|m| m.name == "R"));
@@ -41,7 +41,7 @@ fn from_ir_ppr_resistor_yields_circuit() {
         analog R { I(p, n) <+ V(p, n) / r; }
         mod Top ( inout a: Electrical, inout b: Electrical ) { R(a, b); }
     ";
-    let elab = parse_and_elaborate(src).expect("PHDL parse_and_elaborate");
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parse_and_elaborate");
     let ir = ppr_to_ir(&elab);
     let ci: CircuitInstance = from_ir(&ir, "Top").expect("from_ir compiles top");
     assert!(ci.all_devices().len() >= 1);
@@ -54,7 +54,7 @@ fn from_ir_unknown_top_returns_err() {
         mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }
         analog R { I(p, n) <+ V(p, n) / r; }
     ";
-    let elab = parse_and_elaborate(src).expect("PHDL parses");
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses");
     let ir = ppr_to_ir(&elab);
     assert!(from_ir(&ir, "no-such-module").is_err());
 }

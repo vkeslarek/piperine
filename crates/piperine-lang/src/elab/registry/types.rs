@@ -1,5 +1,5 @@
 use crate::parse::ast::{DisciplineDecl, EnumDecl, BundleDecl, Type as AstType};
-use crate::pom::{TypeRef, ValueType, NetType, ElabError};
+use crate::pom::{TypeRef, ValueType, NetType, ElabError, ElabErrorKind};
 use crate::elab::const_eval::ConstEnv;
 use std::collections::HashMap;
 

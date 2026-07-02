@@ -12,6 +12,7 @@ pub enum ConstVal {
     Real(f64),
     Bool(bool),
     Str(String),
+    EnumVariant(String, String),
 }
 
 /// Errors that can occur during constant evaluation.
@@ -93,6 +94,14 @@ impl ConstEnv {
                 .lookup(name)
                 .cloned()
                 .ok_or_else(|| ConstEvalError::Undefined(name.clone())),
+
+            Expr::Path(path) => {
+                if path.segments.len() == 2 {
+                    Ok(ConstVal::EnumVariant(path.segments[0].clone(), path.segments[1].clone()))
+                } else {
+                    Err(ConstEvalError::NotConst(format!("{:?}", path)))
+                }
+            }
 
             Expr::Unary(op, inner) => {
                 let val = self.eval(inner)?;
@@ -215,6 +224,10 @@ impl ConstEnv {
             // Comparisons — Bool
             (Eq, Bool(a), Bool(b)) => Ok(Bool(a == b)),
             (Neq, Bool(a), Bool(b)) => Ok(Bool(a != b)),
+
+            // Comparisons — EnumVariant
+            (Eq, EnumVariant(e1, v1), EnumVariant(e2, v2)) => Ok(Bool(e1 == e2 && v1 == v2)),
+            (Neq, EnumVariant(e1, v1), EnumVariant(e2, v2)) => Ok(Bool(e1 != e2 || v1 != v2)),
 
             // Bitwise
             (BitAnd, Nat(a), Nat(b)) => Ok(Nat(a & b)),

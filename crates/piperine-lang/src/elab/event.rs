@@ -1,5 +1,5 @@
 use crate::parse::ast::{BehaviorKind, BehaviorStmt, BindOp, EventSpec, Expr, ModuleStatement, Stmt};
-use crate::pom::ElabError;
+use crate::pom::{ElabError, ElabErrorKind};
 use std::collections::HashMap;
 
 /// A named event-kind specifier used in event control blocks. Implementors
@@ -140,7 +140,7 @@ impl EventRegistry {
         match stmt {
             BehaviorStmt::Bind { op: BindOp::Contrib, .. } => {
                 if kind == BehaviorKind::Digital {
-                    return Err(ElabError::ContribInDigital);
+                    return Err(ElabError::from(ElabErrorKind::ContribInDigital));
                 }
             }
             BehaviorStmt::Bind { .. } => {}
@@ -178,12 +178,12 @@ impl EventRegistry {
     fn validate_event_spec(&self, kind: BehaviorKind, spec: &EventSpec) -> Result<(), ElabError> {
         match spec {
             EventSpec::Named { name, .. } => {
-                let ev = self.lookup(name).ok_or_else(|| ElabError::UnknownEvent(name.clone()))?;
+                let ev = self.lookup(name).ok_or_else(|| ElabError::from(ElabErrorKind::UnknownEvent(name.clone())))?;
                 if kind == BehaviorKind::Digital && ev.is_analog_crossing() {
-                    return Err(ElabError::AnalogEventInDigital(name.clone()));
+                    return Err(ElabError::from(ElabErrorKind::AnalogEventInDigital(name.clone())));
                 }
                 if kind == BehaviorKind::Analog && ev.is_digital_edge() {
-                    return Err(ElabError::DigitalEventInAnalog(name.clone()));
+                    return Err(ElabError::from(ElabErrorKind::DigitalEventInAnalog(name.clone())));
                 }
             }
             EventSpec::Or(specs) => {
@@ -203,7 +203,7 @@ impl EventRegistry {
         match stmt {
             Stmt::Bind { op: BindOp::Contrib, .. } => {
                 if kind == BehaviorKind::Digital {
-                    return Err(ElabError::ContribInDigital);
+                    return Err(ElabError::from(ElabErrorKind::ContribInDigital));
                 }
             }
             Stmt::If { then_body, else_body, .. } => {

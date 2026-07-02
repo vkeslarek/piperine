@@ -17,7 +17,7 @@ fn bundle_connections_fan_out() {
         }
     "#;
     
-    let elab = parse_and_elaborate(src).unwrap_or_else(|e| panic!("Elaboration failed: {}", e));
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).unwrap_or_else(|e| panic!("Elaboration failed: {}", e));
     let top = elab.module("top").unwrap();
     
     println!("Wires: {:?}", top.wires());

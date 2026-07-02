@@ -31,7 +31,7 @@ fn test_all_examples_compile() {
     let mut failures = Vec::new();
     for file in phdl_files {
         println!("Testing {:?}", file);
-        if let Err(e) = check_file(&file) {
+        if let Err(e) = check_file(&file, &piperine_lang::SourceMap::dummy()) {
             eprintln!("Failed to check {:?}: {}", file, e);
             failures.push((file, e));
         }

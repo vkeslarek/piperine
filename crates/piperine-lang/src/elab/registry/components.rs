@@ -1,5 +1,5 @@
 use crate::parse::ast::ModuleDeclaration;
-use crate::pom::{Module, ElabError};
+use crate::pom::{Module, ElabError, ElabErrorKind};
 use crate::elab::const_eval::ConstEnv;
 use std::collections::HashMap;
 

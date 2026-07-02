@@ -6,6 +6,7 @@ use super::{Parse, Parser};
 impl Parse for ModuleDeclaration {
     /// Parses a `mod Name[CONST]<TYPE>(PORTS) { body }` or `mod Name[CONST]<TYPE>(PORTS);` declaration.
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
+        let start = parser.current_span_start();
         let attrs = parser.parse_attributes()?;
         let is_pub = parser.eat_ident("pub");
         parser.expect_ident_str("mod")?;
@@ -52,7 +53,9 @@ impl Parse for ModuleDeclaration {
             parser.expect(&Tok::Semi)?;
         }
 
-        Ok(ModuleDeclaration { attrs, is_pub, name, const_params, type_params, ports, body })
+        let end = parser.previous_span_end();
+        let span = Some((start, end - start).into());
+        Ok(ModuleDeclaration { span, attrs, is_pub, name, const_params, type_params, ports, body })
     }
 }
 
@@ -74,6 +77,7 @@ impl Parse for TypeParam {
 impl Parse for Port {
     /// Parses a module port: `direction name : type`.
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
+        let start = parser.current_span_start();
         let attrs = parser.parse_attributes()?;
         let direction = if parser.eat_ident("input") {
             Direction::Input

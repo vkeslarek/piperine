@@ -1,9 +1,11 @@
-
-discipline Bit { storage Boolean; }
-mod AssertTest ( input a : Bit ) {
+discipline Bit {
+    storage Boolean;
 }
+
+mod AssertTest(input a : Bit) { }
+
 digital AssertTest {
     if (a == 1) {
-        $info("a is 1");
+        $info ("a is 1");
     }
 }

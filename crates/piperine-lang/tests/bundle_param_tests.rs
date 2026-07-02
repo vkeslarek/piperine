@@ -35,7 +35,7 @@ fn bundle_param_default_flattens_to_scalar_params() {
         "param model : ResModel = ResModel {};",
         "I(p, n) <+ V(p, n) / model.rsh;",
     );
-    let prog = parse_and_elaborate(&s).expect("elab");
+    let prog = parse_and_elaborate(&s, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "R").expect("module");
     let rsh = m.symbols.params().map(|(_, p)| p).find(|p| p.name == "model_rsh").expect("model_rsh param");
@@ -50,7 +50,7 @@ fn bundle_param_partial_literal_overrides_one_field() {
         "param model : ResModel = ResModel { .rsh = 5.0 };",
         "I(p, n) <+ V(p, n) / model.rsh;",
     );
-    let prog = parse_and_elaborate(&s).expect("elab");
+    let prog = parse_and_elaborate(&s, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "R").expect("module");
     let rsh = m.symbols.params().map(|(_, p)| p).find(|p| p.name == "model_rsh").expect("model_rsh param");
@@ -67,7 +67,7 @@ fn bundle_field_access_lowers_to_flattened_param() {
         "param model : ResModel = ResModel {};",
         "I(p, n) <+ V(p, n) / model.rsh;",
     );
-    let prog = parse_and_elaborate(&s).expect("elab");
+    let prog = parse_and_elaborate(&s, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let out = format!("{ir:?}");
     assert!(out.contains("model_rsh"), "output: {out}");
@@ -87,7 +87,7 @@ mod Top(inout p: Electrical, inout n: Electrical) {{
 }}
 "
     );
-    let prog = parse_and_elaborate(&s).expect("elab");
+    let prog = parse_and_elaborate(&s, &piperine_lang::SourceMap::dummy()).expect("elab");
     let top = prog.modules().find(|m| m.name == "Top").expect("Top module");
     let inst = &top.instances[0];
     assert!(
@@ -103,7 +103,7 @@ fn bundle_param_unknown_field_in_literal_fails_loud() {
         "param model : ResModel = ResModel { .nonexistent = 1.0 };",
         "I(p, n) <+ V(p, n) / model.rsh;",
     );
-    let err = parse_str(&s).expect("parse").elaborate().unwrap_err();
+    let err = parse_str(&s).expect("parse").elaborate(&piperine_lang::SourceMap::dummy()).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("nonexistent"), "error: {msg}");
 }
@@ -115,7 +115,7 @@ fn bundle_param_field_without_default_fails_loud() {
         "param model : ResModel = ResModel {};",
         "I(p, n) <+ V(p, n) / model.rsh;",
     );
-    let err = parse_str(&s).expect("parse").elaborate().unwrap_err();
+    let err = parse_str(&s).expect("parse").elaborate(&piperine_lang::SourceMap::dummy()).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("rsh"), "error: {msg}");
 }

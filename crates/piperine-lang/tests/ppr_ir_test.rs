@@ -32,7 +32,7 @@ analog TestMod {{
 
 #[test]
 fn resistor_resistive_contrib() {
-    let prog = parse_and_elaborate(&src("I(p, n) <+ V(p, n) / R;")).expect("elab");
+    let prog = parse_and_elaborate(&src("I(p, n) <+ V(p, n) / R;"), &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
 
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
@@ -50,7 +50,7 @@ fn resistor_resistive_contrib() {
 
 #[test]
 fn resistor_printer_smoke() {
-    let prog = parse_and_elaborate(&src("I(p, n) <+ V(p, n) / R;")).expect("elab");
+    let prog = parse_and_elaborate(&src("I(p, n) <+ V(p, n) / R;"), &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let out = format!("{ir:?}");
     assert!(out.contains("Contrib"), "output: {out}");
@@ -61,7 +61,7 @@ fn resistor_printer_smoke() {
 
 #[test]
 fn capacitor_reactive_contrib_with_state_var() {
-    let prog = parse_and_elaborate(&src("I(p, n) <+ C * ddt(V(p, n));")).expect("elab");
+    let prog = parse_and_elaborate(&src("I(p, n) <+ C * ddt(V(p, n));"), &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
 
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
@@ -78,7 +78,7 @@ fn capacitor_reactive_contrib_with_state_var() {
 
 #[test]
 fn capacitor_printer_reactive() {
-    let prog = parse_and_elaborate(&src("I(p, n) <+ C * ddt(V(p, n));")).expect("elab");
+    let prog = parse_and_elaborate(&src("I(p, n) <+ C * ddt(V(p, n));"), &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let out = format!("{ir:?}");
     assert!(out.contains("Reactive("), "output: {out}");
@@ -99,7 +99,7 @@ analog TestMod {{
     I(p, n) <+ Is * exp(vd);
 }}
 ");
-    let prog = parse_and_elaborate(&src).expect("elab");
+    let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
 
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
@@ -123,7 +123,7 @@ analog Diode {{
     I(p, n) <+ Is * (exp(V(p, n)) - 1.0);
 }}
 ");
-    let prog = parse_and_elaborate(&src).expect("elab");
+    let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let out = format!("{ir:?}");
     assert!(out.contains("\"exp\""), "output: {out}");
@@ -145,7 +145,7 @@ analog IfMod {{
     }}
 }}
 ");
-    let prog = parse_and_elaborate(&src).expect("elab");
+    let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
 
     let m = ir.modules.iter().find(|m| m.name == "IfMod").expect("module");
@@ -183,7 +183,7 @@ analog NestedIf {{
     }}
 }}
 ");
-    let prog = parse_and_elaborate(&src).expect("elab");
+    let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
 
     let m = ir.modules.iter().find(|m| m.name == "NestedIf").expect("module");
@@ -202,7 +202,7 @@ analog NestedIf {{
 
 #[test]
 fn module_ports_and_params_present() {
-    let prog = parse_and_elaborate(&src("I(p, n) <+ V(p, n) / R;")).expect("elab");
+    let prog = parse_and_elaborate(&src("I(p, n) <+ V(p, n) / R;"), &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
 
@@ -221,7 +221,7 @@ fn module_ports_and_params_present() {
 fn noise_source_registered() {
     let prog = parse_and_elaborate(&src(
         "I(p, n) <+ white_noise(1e-24, \"rn1\");"
-    )).expect("elab");
+    ), &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
@@ -237,7 +237,7 @@ fn noise_source_registered() {
 fn flicker_noise_source_registered() {
     let prog = parse_and_elaborate(&src(
         "I(p, n) <+ flicker_noise(1e-25, 2.0, \"fn1\");"
-    )).expect("elab");
+    ), &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
@@ -251,7 +251,7 @@ fn flicker_noise_source_registered() {
 fn idtmod_state_var() {
     let prog = parse_and_elaborate(&src(
         "I(p, n) <+ idtmod(V(p, n), 0.0, 1.0);"
-    )).expect("elab");
+    ), &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
@@ -265,7 +265,7 @@ fn idtmod_state_var() {
 fn single_arg_current_access() {
     let prog = parse_and_elaborate(&src(
         "var ii: Real = I(p); I(p, n) <+ ii;"
-    )).expect("elab");
+    ), &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let out = format!("{ir:?}");
     // I(p) should become I(p, 0)
@@ -278,7 +278,7 @@ fn single_arg_current_access() {
 fn force_contribution() {
     let prog = parse_and_elaborate(&src(
         "V(p, n) <- 1.0;"
-    )).expect("elab");
+    ), &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
@@ -302,7 +302,7 @@ analog MatchMod {{
     }}
 }}
     ");
-    let prog = parse_and_elaborate(&src).expect("elab");
+    let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "MatchMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
@@ -323,7 +323,7 @@ analog GuardMod {{
     }}
 }}
     ");
-    let prog = parse_and_elaborate(&src).expect("elab");
+    let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "GuardMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
@@ -351,7 +351,7 @@ analog AboveMod {{
     }}
 }}
     ");
-    let prog = parse_and_elaborate(&src).expect("elab");
+    let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "AboveMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
@@ -374,7 +374,7 @@ analog SpMod {{
     I(p, n) <+ t;
 }}
     ");
-    let prog = parse_and_elaborate(&src).expect("elab");
+    let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let out = format!("{ir:?}");
     assert!(out.contains("Simparam"), "output: {out}");
@@ -391,7 +391,7 @@ analog BsMod {{
     $bound_step(1e-6);
 }}
     ");
-    let prog = parse_and_elaborate(&src).expect("elab");
+    let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "BsMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
@@ -411,7 +411,7 @@ digital DigMod {{
     }}
 }}
     ");
-    let prog = parse_and_elaborate(&src).expect("elab");
+    let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "DigMod").expect("module");
     assert!(m.digital.is_some(), "expected digital body");
@@ -431,7 +431,7 @@ analog FnMod {{
     I(p, n) <+ helper(V(p, n));
 }}
     ");
-    let prog = parse_and_elaborate(&src).expect("elab");
+    let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     assert!(ir.modules[0].symbols.fn_by_name("helper").is_some(), "expected helper function");
     let out = format!("{ir:?}");
@@ -451,7 +451,7 @@ analog StrMod {{
     I(p, n) <+ V(p, n) / 1000.0;
 }}
     ");
-    let prog = parse_and_elaborate(&src).expect("elab");
+    let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "StrMod").expect("module");
     let p = m.symbols.params().map(|(_, p)| p).find(|p| p.name == "name").expect("name param");
@@ -467,7 +467,7 @@ analog StrMod {{
 fn transition_state_var() {
     let prog = parse_and_elaborate(&src(
         "I(p, n) <+ transition(V(p, n), 0.0, 1e-6, 1e-6);"
-    )).expect("elab");
+    ), &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
@@ -481,14 +481,14 @@ fn transition_state_var() {
 fn logical_and_or_lower_to_ir_binop() {
     let prog = parse_and_elaborate(&src(
         "I(p, n) <+ if (V(p, n) > 0.0 && R < 2000.0) { 1.0 } else { 0.0 };"
-    )).expect("elab");
+    ), &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let out = format!("{ir:?}");
     assert!(out.contains("&&") || out.contains("And"), "output: {out}");
 
     let prog2 = parse_and_elaborate(&src(
         "I(p, n) <+ if (V(p, n) > 0.0 || R < 2000.0) { 1.0 } else { 0.0 };"
-    )).expect("elab");
+    ), &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir2 = ppr_to_ir(&prog2);
     let m = ir2.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
@@ -520,7 +520,7 @@ analog ElseIfMod {{
     I(p, n) <+ y;
 }}
 ");
-    let prog = parse_and_elaborate(&src_).expect("elab");
+    let prog = parse_and_elaborate(&src_, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "ElseIfMod").expect("module");
     let body = m.analog.as_ref().expect("analog");

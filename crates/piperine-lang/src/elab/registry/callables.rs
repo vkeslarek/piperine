@@ -1,4 +1,4 @@
-use crate::pom::{Function, Behavior, ElabError};
+use crate::pom::{Function, Behavior, ElabError, ElabErrorKind};
 use crate::parse::ast::Expr;
 use std::collections::HashMap;
 

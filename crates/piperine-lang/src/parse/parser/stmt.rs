@@ -20,6 +20,7 @@ impl<'a> Parser<'a> {
 
     /// Parses a single statement inside a `mod` body: `param`, `wire`, `var`, `for`, `if`, instance, or connection.
     pub(crate) fn parse_mod_stmt(&mut self) -> Result<ModuleStatement, crate::parse::error::ParseError> {
+        let start = self.current_span_start();
         let attrs = self.parse_attributes()?;
         if matches!(self.peek(), Some(Tok::SysCall(name)) if name == "assert") {
             self.pos += 1;
@@ -29,7 +30,8 @@ impl<'a> Parser<'a> {
             let msg = self.parse_expr()?;
             self.expect(&Tok::RParen)?;
             self.expect(&Tok::Semi)?;
-            return Ok(ModuleStatement::Assert { attrs, cond, msg });
+            let end = self.previous_span_end();
+            return Ok(ModuleStatement::Assert { span: Some((start, end - start).into()), attrs, cond, msg });
         }
         if self.eat_ident("param") {
             let name = self.parse_ident()?;
@@ -37,14 +39,16 @@ impl<'a> Parser<'a> {
             let ty = self.parse_type()?;
             let default = if self.eat(&Tok::Assign) { Some(self.parse_expr()?) } else { None };
             self.expect(&Tok::Semi)?;
-            return Ok(ModuleStatement::ParamDecl { attrs, name, ty, default });
+            let end = self.previous_span_end();
+            return Ok(ModuleStatement::ParamDecl { span: Some((start, end - start).into()), attrs, name, ty, default });
         }
         if self.eat_ident("wire") {
             let name = self.parse_ident()?;
             self.expect(&Tok::Colon)?;
             let ty = self.parse_type()?;
             self.expect(&Tok::Semi)?;
-            return Ok(ModuleStatement::WireDecl { attrs, name, ty });
+            let end = self.previous_span_end();
+            return Ok(ModuleStatement::WireDecl { span: Some((start, end - start).into()), attrs, name, ty });
         }
         if self.eat_ident("var") {
             let name = self.parse_ident()?;
@@ -52,7 +56,8 @@ impl<'a> Parser<'a> {
             let ty = self.parse_type()?;
             let default = if self.eat(&Tok::Assign) { Some(self.parse_expr()?) } else { None };
             self.expect(&Tok::Semi)?;
-            return Ok(ModuleStatement::VarDecl { attrs, name, ty, default });
+            let end = self.previous_span_end();
+            return Ok(ModuleStatement::VarDecl { span: Some((start, end - start).into()), attrs, name, ty, default });
         }
         if self.eat_ident("for") {
             let var = self.parse_ident()?;
@@ -63,7 +68,8 @@ impl<'a> Parser<'a> {
             while !self.eat(&Tok::RBrace) {
                 body.push(self.parse_mod_stmt()?);
             }
-            return Ok(ModuleStatement::StructuralFor { attrs, var, range, body });
+            let end = self.previous_span_end();
+            return Ok(ModuleStatement::StructuralFor { span: Some((start, end - start).into()), attrs, var, range, body });
         }
         if self.eat_ident("if") {
             self.expect(&Tok::LParen)?;
@@ -89,7 +95,8 @@ impl<'a> Parser<'a> {
             } else {
                 None
             };
-            return Ok(ModuleStatement::StructuralIf { attrs, cond, then_body, else_body });
+            let end = self.previous_span_end();
+            return Ok(ModuleStatement::StructuralIf { span: Some((start, end - start).into()), attrs, cond, then_body, else_body });
         }
 
         // InstanceOrConnect — leading Ident, then branch on next token.
@@ -110,7 +117,8 @@ impl<'a> Parser<'a> {
             }
             let rhs = self.parse_expr()?;
             self.expect(&Tok::Semi)?;
-            return Ok(ModuleStatement::Connection { attrs, lhs, rhs });
+            let end = self.previous_span_end();
+            return Ok(ModuleStatement::Connection { span: Some((start, end - start).into()), attrs, lhs, rhs });
         }
 
         if self.eat(&Tok::Colon) {
@@ -186,7 +194,9 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(&Tok::Semi)?;
+        let end = self.previous_span_end();
         Ok(ModuleStatement::Instance {
+            span: Some((start, end - start).into()),
             attrs,
             name: if is_named_instance { Some(name) } else { None },
             array_index,
@@ -492,6 +502,7 @@ impl Parse for ModuleStatement {
 
 impl Parse for BehaviorDecl {
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
+        let start = parser.current_span_start();
         let attrs = parser.parse_attributes()?;
         let is_pub = parser.eat_ident("pub");
         let kind = if parser.eat_ident("analog") { BehaviorKind::Analog } else if parser.eat_ident("digital") { BehaviorKind::Digital } else { return Err("Expected analog or digital".into()); };

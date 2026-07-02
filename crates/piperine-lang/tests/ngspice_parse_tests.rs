@@ -6,7 +6,7 @@ use piperine_lang::parse::parse_str;
 
 #[test]
 fn ngspice_constants_parse() {
-    let src = include_str!("../headers/ngspice/ngspice_constants.phdl");
+    let src = include_str!("../headers/ngspice/constants.phdl");
     parse_str(src).expect("ngspice_constants.phdl should parse");
 }
 

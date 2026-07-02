@@ -1,5 +1,5 @@
 use crate::parse::ast::Expr;
-use crate::pom::{BehaviorStmt, ElabError};
+use crate::pom::{BehaviorStmt, ElabError, ElabErrorKind};
 
 /// Walk a program and resolve built-in diagnostic calls and type casts.
 /// This fulfills GAPS §J.4.
@@ -66,10 +66,10 @@ fn resolve_calls_in_stmt(
                 "bound_step", "finish", "stop", "discontinuity"
             ];
             if !valid_diagnostics.contains(&sys.as_str()) {
-                return Err(ElabError::Other(format!(
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
                     "Unrecognized diagnostic call `{}` in module `{}`",
                     sys, module_name
-                )));
+                ))));
             }
             for arg in args {
                 resolve_calls_in_expr(arg)?;
@@ -88,10 +88,10 @@ fn resolve_calls_in_expr(expr: &mut Expr) -> Result<(), ElabError> {
             if let Expr::Ident(name) = &**callee {
                 if matches!(name.as_str(), "real" | "int" | "bit" | "Boolean" | "Quad") {
                     if args.len() != 1 {
-                        return Err(ElabError::Other(format!(
+                        return Err(ElabError::from(ElabErrorKind::Other(format!(
                             "Cast to `{}` expects exactly 1 argument, got {}",
                             name, args.len()
-                        )));
+                        ))));
                     }
                     let mut arg = args.remove(0);
                     resolve_calls_in_expr(&mut arg)?;

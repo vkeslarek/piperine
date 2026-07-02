@@ -23,7 +23,7 @@ use std::collections::BinaryHeap;
 /// Compile a PHDL source string and return the IR program. Panics on any
 /// elaboration or lowering error with the full diagnostic.
 fn compile(src: &str) -> IrProgram {
-    let elab = parse_and_elaborate(src).expect("PHDL parses + elaborates");
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
     ppr_to_ir(&elab)
 }
 

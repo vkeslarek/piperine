@@ -1,13 +1,18 @@
+discipline Bit {
+    storage Boolean;
+}
 
-discipline Bit { storage Boolean; }
-mod MatchTest ( input clk : Bit ) {
+mod MatchTest(input clk : Bit) {
     var m : Boolean = 0;
     var x : Bit = 0;
 }
+
 digital MatchTest {
-    @ posedge(clk) {
+    @posedge(clk) {
         match m {
-            _ => { x = 1; }
+            _ => {
+                x = 1;
+            }
         }
     }
 }

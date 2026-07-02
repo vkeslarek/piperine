@@ -1,16 +1,24 @@
-
-discipline Bit { storage Boolean; }
-mod StateMachine ( input clk : Bit, output out : Bit ) {
-    param S0 : Natural = 0;
-    param S1 : Natural = 1;
-    param S2 : Natural = 2;
-    var st : Natural = 0;
+discipline Bit {
+    storage Boolean;
 }
+
+enum State {
+    S0, S1, S2,
+}
+
+mod StateMachine(input clk : Bit, output out : Bit) {
+    var st : State = State::S0;
+}
+
 digital StateMachine {
-    out <- (st == S2);
-    @ posedge(clk) {
-        if (st == S0) { st = S1; }
-        else if (st == S1) { st = S2; }
-        else { st = S0; }
+    out <- (st == State::S2);
+    @posedge(clk) {
+        if (st == State::S0) {
+            st = State::S1;
+        } else if (st == State::S1) {
+            st = State::S2;
+        } else {
+            st = State::S0;
+        }
     }
 }

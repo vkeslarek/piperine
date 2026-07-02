@@ -4,7 +4,7 @@ use super::{FormatRule, FormatState};
 pub struct CommentRule;
 
 impl FormatRule for CommentRule {
-    fn before_token(&mut self, t: &Lexed, state: &mut FormatState, output: &mut String) {
+    fn before_token(&mut self, t: &Lexed, _next: Option<&Lexed>, state: &mut FormatState, output: &mut String) {
         if let Tok::LineComment = &t.tok {
             if !state.at_line_start {
                 output.push(' ');

@@ -1,7 +1,14 @@
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
 
-discipline Electrical { potential v : Real; flow i : Real; }
-discipline Bit { storage Boolean; }
-mod Switch ( input ctrl : Bit, inout a : Electrical, inout b : Electrical ) {}
+discipline Bit {
+    storage Boolean;
+}
+
+mod Switch(input ctrl : Bit, inout a : Electrical, inout b : Electrical) { }
+
 analog Switch {
     if (ctrl == 1) {
         V(a, b) <- 0.0;

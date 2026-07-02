@@ -12,7 +12,7 @@ use piperine_lang::{parse_str, ppr_to_ir};
 
 fn elaborate_ir(src: &str) -> piperine_codegen::ir::IrProgram {
     let file = parse_str(src).unwrap_or_else(|e| panic!("parse error: {e}"));
-    let design = file.elaborate().unwrap_or_else(|e| panic!("elaborate error: {e}"));
+    let design = file.elaborate(&piperine_lang::SourceMap::dummy()).unwrap_or_else(|e| panic!("elaborate error: {e}"));
     ppr_to_ir(&design)
 }
 

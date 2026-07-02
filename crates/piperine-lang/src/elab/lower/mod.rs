@@ -21,7 +21,7 @@ use crate::parse::ast::{
 };
 use crate::elab::const_eval::{ConstEnv, ConstVal};
 use crate::elab::event::EventRegistry;
-use crate::pom::{ElabError, Design, Module};
+use crate::pom::{ElabError, ElabErrorKind, Design, Module};
 
 mod behavior;
 mod module;
@@ -71,7 +71,7 @@ impl Elaborator {
                 let value = match &variant.value {
                     Some(expr) => {
                         let val = ConstEnv::new().eval(expr).map_err(|e| {
-                            ElabError::ConstEval {
+                            ElabErrorKind::ConstEval {
                                 context: format!("enum `{enum_name}` variant `{}`", variant.name),
                                 source: e,
                             }
@@ -80,10 +80,10 @@ impl Elaborator {
                             ConstVal::Int(v) => v,
                             ConstVal::Nat(v) => v as i64,
                             other => {
-                                return Err(ElabError::Other(format!(
+                                return Err(ElabError::from(ElabErrorKind::Other(format!(
                                     "enum `{enum_name}` variant `{}` has non-integer discriminant {other:?}",
                                     variant.name
-                                )))
+                                ))));
                             }
                         }
                     }
@@ -148,9 +148,9 @@ impl Elaborator {
             }
         }
         if !pending_consts.is_empty() {
-            return Err(ElabError::Other(
+            return Err(ElabError::from(ElabErrorKind::Other(
                 "could not resolve one or more global constants".into(),
-            ));
+            )));
         }
 
         for impl_decl in &self.impl_decls.clone() {

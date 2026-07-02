@@ -12,7 +12,7 @@
 //! and `Instance.ports` are all `NetRef` + typed) and **before**
 //! codegen, so the solver never sees silently-wrong widths or
 //! disciplines. The pass is fail-loud — any violation returns
-//! `ElabError::WidthMismatch` / `DisciplineCrossing` and the
+//! `ElabErrorKind::WidthMismatch` / `DisciplineCrossing` and the
 //! elaboration chain reports it to the caller.
 
 use std::collections::HashMap;
@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use crate::pom::net_type::{NetType, ValueType};
 use crate::pom::{Behavior, BehaviorStmt};
 use crate::parse::ast::Expr;
-use crate::pom::{ElabError, Module as DesignModule};
+use crate::pom::{ElabError, ElabErrorKind, Module as DesignModule};
 
 /// Run the typecheck pass over every module of the elaborated program.
 ///
@@ -56,12 +56,12 @@ fn check_module(
     // Check every connection.
     for conn in module.connections() {
         let l_ty = resolve_connection_end(conn.lhs(), module, &locals)
-            .ok_or_else(|| ElabError::Other(format!(
+            .ok_or_else(|| ElabErrorKind::Other(format!(
                 "typecheck ({}): cannot resolve lhs net `{}`",
                 module.name(), conn.lhs()
             )))?;
         let r_ty = resolve_connection_end(conn.rhs(), module, &locals)
-            .ok_or_else(|| ElabError::Other(format!(
+            .ok_or_else(|| ElabErrorKind::Other(format!(
                 "typecheck ({}): cannot resolve rhs net `{}`",
                 module.name(), conn.rhs()
             )))?;
@@ -69,13 +69,13 @@ fn check_module(
         let l_w = l_ty.width();
         let r_w = r_ty.width();
         if l_w != r_w {
-            return Err(ElabError::WidthMismatch {
+            return Err(ElabError::from(ElabErrorKind::WidthMismatch {
                 module: module.name().to_string(),
                 lhs: conn.lhs().to_string(),
                 rhs: conn.rhs().to_string(),
                 lhs_w: l_w,
                 rhs_w: r_w,
-            });
+            }));
         }
 
         // B.2 — discipline compatibility. `Ground` ↔ any conservative
@@ -83,11 +83,11 @@ fn check_module(
         let l_d = l_ty.discipline_name().to_string();
         let r_d = r_ty.discipline_name().to_string();
         if l_d != r_d && l_d != "Ground" && r_d != "Ground" {
-            return Err(ElabError::DisciplineCrossing {
+            return Err(ElabError::from(ElabErrorKind::DisciplineCrossing {
                 module: module.name().to_string(),
                 lhs: l_d,
                 rhs: r_d,
-            });
+            } ));
         }
     }
     
@@ -216,11 +216,11 @@ fn check_module(
                     }
                 }
                 if !resolves {
-                    return Err(ElabError::MultipleDrivers {
+                    return Err(ElabError::from(ElabErrorKind::MultipleDrivers {
                         module: module.name().to_string(),
                         net: root,
                         discipline: d_name.to_string(),
-                    });
+                    } ));
                 }
             }
         }
@@ -520,10 +520,10 @@ fn check_behavior_stmt(
                     if widening_ok {
                         // Allowed
                     } else {
-                        return Err(ElabError::Other(format!(
+                        return Err(ElabError::from(ElabErrorKind::Other(format!(
                             "typecheck ({}::{}): implicit cast from {:?} to {:?} not allowed. Use an explicit cast.",
                             module.name(), behavior.name, s, d
-                        )));
+                        ))));
                     }
                 }
             }

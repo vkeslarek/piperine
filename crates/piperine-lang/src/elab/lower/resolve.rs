@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use crate::parse::ast::{Expr, Port as AstPort, Type};
 use crate::elab::const_eval::ConstEnv;
-use crate::pom::{ElabError, NetRef, NetType, Port, TypeRef, ValueType};
+use crate::pom::{ElabError, ElabErrorKind, NetRef, NetType, Port, TypeRef, ValueType};
 
 use super::Elaborator;
 
@@ -32,10 +32,10 @@ impl Elaborator {
             let inner = self.resolve_type(&inner_ty, env, type_subst)?;
             let mut result = inner;
             for dim_expr in &ty.dimensions {
-                let n = env.eval_nat(dim_expr).map_err(|e| ElabError::ConstEval {
+                let n = env.eval_nat(dim_expr).map_err(|e| ElabError::from(ElabErrorKind::ConstEval {
                     context: format!("array dimension of type `{}`", ty.name),
                     source: e,
-                })?;
+                }))?;
                 result = match result {
                     TypeRef::Net(nt) => TypeRef::Net(NetType::Array(Box::new(nt), n)),
                     TypeRef::Value(vt) => TypeRef::Value(ValueType::Array(Box::new(vt), n)),
@@ -49,10 +49,10 @@ impl Elaborator {
                 if self.is_net_capable_bundle(name) {
                     return Ok(TypeRef::Net(NetType::Discipline(name.to_owned())));
                 } else {
-                    return Err(ElabError::UndefinedType(format!(
+                    return Err(ElabError::from(ElabErrorKind::UndefinedType(format!(
                         "`{}` is a value bundle — use field access, not as a bare type",
                         name
-                    )));
+                    ))));
                 }
             }
             return def.resolve(ty, env, type_subst);
@@ -67,7 +67,7 @@ impl Elaborator {
             let (ret, params) = params_and_ret
                 .split_last()
                 .ok_or_else(|| {
-                    ElabError::UndefinedType("fn type requires a return type".to_owned())
+                    ElabError::from(ElabErrorKind::UndefinedType("fn type requires a return type".to_owned()))
                 })?;
             return Ok(TypeRef::Value(ValueType::FnPtr(
                 params.to_vec(),
@@ -75,7 +75,7 @@ impl Elaborator {
             )));
         }
 
-        Err(ElabError::UndefinedType(name.to_owned()))
+        Err(ElabError::from(ElabErrorKind::UndefinedType(name.to_owned())))
     }
 
     /// Resolves a type and returns a `NetType`, failing with
@@ -88,7 +88,7 @@ impl Elaborator {
     ) -> Result<NetType, ElabError> {
         match self.resolve_type(ty, env, type_subst)? {
             TypeRef::Net(nt) => Ok(nt),
-            _ => Err(ElabError::NotNetCapable(ty.name.clone())),
+            _ => Err(ElabError::from(ElabErrorKind::NotNetCapable(ty.name.clone()))),
         }
     }
 
@@ -100,7 +100,7 @@ impl Elaborator {
             // A storage discipline names the value it carries: `var st :
             // Bit` is a `Boolean` var (SPEC §7.2 / B.1). Arrays likewise.
             TypeRef::Net(nt) => self.net_storage_value_type(&nt)?.ok_or_else(|| {
-                ElabError::Other(format!("expected value type, found net type `{nt:?}`"))
+                ElabError::from(ElabErrorKind::Other(format!("expected value type, found net type `{nt:?}`")))
             }),
         }
     }
@@ -166,34 +166,34 @@ impl Elaborator {
                 let base_name = match base.as_ref() {
                     Expr::Ident(n) => n.clone(),
                     other => {
-                        return Err(ElabError::NotANetRef(format!(
+                        return Err(ElabError::from(ElabErrorKind::NotANetRef(format!(
                             "indexed net ref base must be an identifier, got `{:?}`",
                             other
-                        )))
+                        ))))
                     }
                 };
-                let i = env.eval_nat(idx).map_err(|e| ElabError::ConstEval {
+                let i = env.eval_nat(idx).map_err(|e| ElabError::from(ElabErrorKind::ConstEval {
                     context: format!("net ref index on `{}`", base_name),
                     source: e,
-                })?;
+                }))?;
                 Ok(NetRef::indexed(base_name, i))
             }
             Expr::Field(base, field) => {
                 let base_name = match base.as_ref() {
                     Expr::Ident(n) => n.clone(),
                     other => {
-                        return Err(ElabError::NotANetRef(format!(
+                        return Err(ElabError::from(ElabErrorKind::NotANetRef(format!(
                             "field net ref base must be an identifier, got `{:?}`",
                             other
-                        )))
+                        ))))
                     }
                 };
                 Ok(NetRef::simple(format!("{}_{}", base_name, field)))
             }
-            other => Err(ElabError::NotANetRef(format!(
+            other => Err(ElabError::from(ElabErrorKind::NotANetRef(format!(
                 "expected net reference (identifier, index, or field), got `{:?}`",
                 other
-            ))),
+            )))),
         }
     }
 
@@ -214,7 +214,7 @@ impl Elaborator {
 
         if let Some(bundle) = self.bundles.get(resolved_name).cloned() {
             if !self.is_net_capable_bundle(resolved_name) {
-                return Err(ElabError::NotNetCapable(resolved_name.to_owned()));
+                return Err(ElabError::from(ElabErrorKind::NotNetCapable(resolved_name.to_owned())));
             }
             let mut out = Vec::new();
             for field in &bundle.fields {

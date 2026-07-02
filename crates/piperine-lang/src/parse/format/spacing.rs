@@ -6,6 +6,9 @@ pub struct SpacingRule;
 impl FormatRule for SpacingRule {
     fn space_after(&self, prev: Option<&Lexed>, t: &Lexed, next: Option<&Lexed>, _state: &FormatState) -> Option<bool> {
         if let Some(nxt) = next {
+            if matches!(t.tok, Tok::LBrace) && matches!(nxt.tok, Tok::RBrace) {
+                return Some(true);
+            }
             match nxt.tok {
                 Tok::Semi | Tok::Comma | Tok::RParen | Tok::Dot | Tok::Newline => return Some(false),
                 Tok::LParen => {
@@ -42,17 +45,17 @@ impl FormatRule for SpacingRule {
                         return Some(false);
                     }
                 }
-                Tok::Colon | Tok::DoubleColon => return Some(false),
+                Tok::DoubleColon => return Some(false),
                 _ => {}
             }
-            if matches!(nxt.tok, Tok::Colon | Tok::DoubleColon) {
+            if matches!(nxt.tok, Tok::DoubleColon) {
                 return Some(false);
             }
         }
         None
     }
 
-    fn after_token(&mut self, t: &Lexed, state: &mut FormatState, output: &mut String) {
+    fn after_token(&mut self, t: &Lexed, _next: Option<&Lexed>, state: &mut FormatState, output: &mut String) {
         if let Tok::Semi = &t.tok {
             if state.paren_depth == 0 {
                 state.push_newline(output);

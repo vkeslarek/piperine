@@ -7,8 +7,38 @@ use crate::elab::const_eval::ConstEvalError;
 
 /// An error raised while elaborating a [`SourceFile`][crate::parse::SourceFile]
 /// into a [`Design`][super::Design].
-#[derive(Debug, Error)]
-pub enum ElabError {
+#[derive(Debug, Error, miette::Diagnostic)]
+#[error("{kind}")]
+pub struct ElabError {
+    #[source]
+    #[diagnostic_source]
+    pub kind: ElabErrorKind,
+    #[label("here")]
+    pub span: Option<miette::SourceSpan>,
+}
+
+impl ElabError {
+    pub fn new(kind: ElabErrorKind) -> Self {
+        Self { kind, span: None }
+    }
+    pub fn with_span(mut self, span: Option<miette::SourceSpan>) -> Self {
+        if self.span.is_none() {
+            self.span = span;
+        }
+        self
+    }
+}
+
+impl From<ElabErrorKind> for ElabError {
+    fn from(kind: ElabErrorKind) -> Self {
+        Self::new(kind)
+    }
+}
+
+/// An error raised while elaborating a [`SourceFile`][crate::parse::SourceFile]
+/// into a [`Design`][super::Design].
+#[derive(Debug, Error, miette::Diagnostic)]
+pub enum ElabErrorKind {
     /// Constant evaluation failed in a given context.
     #[error("const eval error in `{context}`: {source}")]
     ConstEval { context: String, #[source] source: ConstEvalError },

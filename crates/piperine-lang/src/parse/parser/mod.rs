@@ -50,6 +50,18 @@ impl<'a> Parser<'a> {
     }
 
     /// Registers that the parser expected a certain syntax at the current position.
+    pub fn current_span_start(&self) -> usize {
+        self.toks.get(self.pos).map(|l| l.start).unwrap_or(0)
+    }
+
+    pub fn previous_span_end(&self) -> usize {
+        if self.pos > 0 {
+            self.toks.get(self.pos - 1).map(|l| l.end).unwrap_or(0)
+        } else {
+            0
+        }
+    }
+
     pub fn expected(&mut self, syntax: crate::parse::predict::ExpectedSyntax) {
         if self.cursor_offset.is_some() {
             if !self.expectations.contains(&syntax) {
@@ -113,12 +125,20 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub(crate) fn make_error(&self, msg: String) -> crate::parse::error::ParseError {
+        crate::parse::error::ParseError::Generic {
+            message: msg,
+            span: miette::SourceSpan::new(self.current_span_start().into(), 1usize.into()),
+        }
+    }
+
     /// Consumes the next token if it matches `tok`, or returns an error describing the mismatch.
     pub(crate) fn expect(&mut self, tok: &Tok) -> Result<(), crate::parse::error::ParseError> {
         if self.eat(tok) {
             Ok(())
         } else {
-            Err(format!("Expected {:?}, found {:?}", tok, self.peek()).into())
+            let peeked = self.peek().cloned();
+            Err(self.make_error(format!("Expected {:?}, found {:?}", tok, peeked)))
         }
     }
 
@@ -127,7 +147,8 @@ impl<'a> Parser<'a> {
         if self.eat_ident(expected) {
             Ok(())
         } else {
-            Err(format!("Expected `{}`, found {:?}", expected, self.peek()).into())
+            let peeked = self.peek().cloned();
+            Err(self.make_error(format!("Expected `{}`, found {:?}", expected, peeked)))
         }
     }
 

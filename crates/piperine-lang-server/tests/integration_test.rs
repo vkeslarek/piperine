@@ -151,7 +151,7 @@ fn test_hover_module_info() {
     let design = piperine_lang::parse_and_elaborate(
         "discipline Electrical { potential v: Real; flow i: Real; } \
          mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }",
-    )
+        &piperine_lang::SourceMap::dummy())
     .expect("parse failed");
     let info = piperine_lang_server::handlers::hover::lookup_hover_info(&design, "R");
     assert!(info.is_some());
@@ -161,7 +161,7 @@ fn test_hover_module_info() {
 #[test]
 fn test_hover_discipline_info() {
     let design =
-        piperine_lang::parse_and_elaborate("discipline Electrical { potential v: Real; flow i: Real; }")
+        piperine_lang::parse_and_elaborate("discipline Electrical { potential v: Real; flow i: Real; }", &piperine_lang::SourceMap::dummy())
             .expect("parse failed");
     let info = piperine_lang_server::handlers::hover::lookup_hover_info(&design, "Electrical");
     assert!(info.is_some());
