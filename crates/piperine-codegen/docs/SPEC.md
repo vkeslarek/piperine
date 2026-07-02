@@ -110,12 +110,14 @@ IrExpr =
   | Param(ParamId)
   | Var(VarId)
   | Branch { nature: NatureId, plus: NodeId, minus: NodeId }   // V(p,n), I(p,n), Pwr(p,n)…
+  | Net(NodeId)                                                 // digital net read (quad)
   | State(StateId)                                              // an analog-operator result
   // queries and stimulus
   | Sim(SimQuery)
   | AcStim { mag: Box<IrExpr>, phase: Box<IrExpr> }             // .ac only
   // computation
-  | Call(FnId, Vec<IrExpr>)                                     // user fn or built-in math
+  | MathCall(String, Vec<IrExpr>)                               // built-in math (libm intrinsic)
+  | Call(FnId, Vec<IrExpr>)                                     // user function
   | Binary(IrBinOp, Box<IrExpr>, Box<IrExpr>)
   | Unary(IrUnOp, Box<IrExpr>)
   | Select(Box<IrExpr>, Box<IrExpr>, Box<IrExpr>)              // cond ? a : b
@@ -125,9 +127,10 @@ IrExpr =
   | Slice(Box<IrExpr>, Box<IrExpr>, Box<IrExpr>, bool)         // a[lo..hi], inclusive flag
 ```
 
-`Call` is uniform for built-in math (`exp ln sqrt pow tanh …`, resolved by name to a libm/JIT
-intrinsic) and user functions (resolved to `FnId`); analog operators never appear as `Call` —
-they are `State` (§7). Node references are always resolved `NodeId`s.
+Built-in math (`exp ln sqrt pow tanh …`) is `MathCall`, resolved by name to a libm/JIT
+intrinsic; user functions are `Call(FnId, …)`. Analog operators never appear as calls —
+they are `State` (§7). `Net` is the digital-side dual of `Branch`: a 4-state net read,
+valid only in digital bodies. Node references are always resolved `NodeId`s.
 
 ```
 IrBinOp  = Add Sub Mul Div Rem Pow
@@ -230,14 +233,18 @@ IrStateKind =
   | Transition { delay: IrExpr, rise: IrExpr, fall: IrExpr, tol: IrExpr }
   | Slew   { rise: IrExpr, fall: IrExpr }
   | Table  { data: TableRef, mode: InterpMode }         // measured-data lookup (new)
-  | Laplace    { variant: LaplaceKind, num: IrExpr, den: IrExpr }
-  | ZTransform { variant: ZKind, num: IrExpr, den: IrExpr, sample_dt: IrExpr }
+  | Laplace    { variant: LaplaceKind, num: Vec<IrExpr>, den: Vec<IrExpr> }
+  | ZTransform { variant: ZKind, num: Vec<IrExpr>, den: Vec<IrExpr>, sample_dt: IrExpr }
 ```
 
 `arg` is the operator input; the codegen evaluates it each Newton iteration and applies the
 operator. Reactivity (for `ContribKind`) is a property of the kind: `Ddt`/`Idt`/`IdtMod`/
 `Laplace`/`ZTransform` are reactive; `Delay`/`Transition`/`Slew`/`Table`/`Ddx` are resistive.
 `Table` is added for measured-data devices; `variant` fields are resolved enums, not strings.
+Current lowering status: `Ddt`/`Idt` (companion model), `Ddx` (symbolic), `Delay`/`Slew`
+(runtime-serviced state) are implemented; `IdtMod`/`Transition`/`Table`/`Laplace`/
+`ZTransform` are recognised and fail loud at codegen (named errors), as do analog events
+(§6.1) — each is its own follow-up.
 `Cross`/`Timer` are **not** state kinds here — they are event sources (§6.1); detector state, if
 any, is the codegen's concern.
 
@@ -252,7 +259,7 @@ IrStmt =
   // analog only
   | Contrib { … } | Force { … }                 // §6
   | AnalogEvent(IrAnalogEvent)                   // §6.1
-  // digital only
+  // digital, or analog-sequential (see below)
   | Assign { lval: Lval, expr: IrExpr }          // combinational or register (context, §9)
   | ClockedBlock { event: DigitalEvent, body: Vec<IrStmt> }   // §9
   // shared control
@@ -268,6 +275,11 @@ Lval    = Var(VarId) | Net(NodeId) | Index(Box<Lval>, IrExpr) | Slice(Box<Lval>,
 Pattern = Value(IrExpr) | BitPattern(Vec<Trit>) | Wildcard   // Trit: 0 | 1 | DontCare
 Severity = Info | Warn | Error | Fatal
 ```
+
+In an **analog** body, `Assign { lval: Var(v), … }` is a *sequential variable binding*
+(`x = …; I(p,n) <+ x;`), the idiom every Verilog-A compact model uses. The codegen resolves
+these symbolically: assignments substitute forward in source order, and an assignment under
+`if`/`match` merges as `Select(guard, new, old)`. Net assignment stays digital-only.
 
 `Match` replaces the prior `Case`/`CaseX`/`CaseZ` trio; don't-care is a `BitPattern` trit
 (`?`), distinct from the `Quad` value X. There is no `For`/`While`/`Repeat`/`Forever` in the IR:
@@ -314,19 +326,19 @@ block), matching the language. `initial`/`final` on the digital side are `Clocke
 IrModule {
     name: String,
     symbols: SymbolTable,          // §3: nodes, params, vars, states, natures, fns
-    ports: Vec<IrPort>,            // (NodeId, direction, discipline)
+    ports: Vec<IrPort>,            // (NodeId, direction)
     instances: Vec<IrInstance>,    // resolved children
     analog:  Option<IrAnalogBody>,
     digital: Option<IrDigitalBody>,
-    functions: Vec<IrFunction>,
 }
 
-IrPort     { node: NodeId, direction: In | Out | Inout, discipline: DisciplineId }
+IrPort     { node: NodeId, direction: In | Out | Inout }   // domain lives on NodeInfo
 IrInstance { label: String, module: String,
-             connections: Vec<(PortId, NodeId)>, params: Vec<(ParamId, IrExpr)> }
+             connections: Vec<NodeId>,   // parent node per child port, positional
+             params: Vec<(ParamId, IrExpr)> }              // child ParamId, parent-scope expr
 IrFunction { name: String, params: Vec<VarId>, returns: Option<IrType>, body: Vec<IrStmt> }
 
-IrProgram  { source: Source /* Ams | Ppr */, modules: Vec<IrModule>, functions: Vec<IrFunction> }
+IrProgram  { source: Source /* Ams | Ppr */, modules: Vec<IrModule> }
 ```
 
 Removed module fields (§13): `branches` (resolved to node pairs at emit — `V(br)` becomes
@@ -361,14 +373,28 @@ string-walking `first_state_ref`, it walks resolved `State(id)` nodes.
 
 ## 12. Codegen contract
 
+The codegen owns the full IR → solver bridge: it compiles kernels (`jit`), wraps them in
+`Device` implementations (`device::PiperineDevice`), and builds circuits from a structural
+top module (`device::CircuitCompiler`). Frontends emit IR and stop.
+
 Per module:
 
-- **Analog** (`ir_analog_to_device`): build residual and Jacobian over node voltages, params,
-  sim context, and state; stamp resistive contributions into the DC Jacobian and reactive with
-  the integration coefficient; emit noise PSD per source; manage the state vector across
-  timesteps. Every `IrExpr`/`IrStmt` analog variant is handled — no `Real(0.0)` fallback.
-- **Digital** (`ir_digital_to_interp`): evaluate combinational logic to a fixed point; update
-  registers on clocked events from pre-edge values; drive outputs.
+- **Analog** (`AnalogKernel`): flatten the body (sequential vars substitute forward, path
+  conditions fold into `Select`, user calls inline, `ddx` expands symbolically), then JIT
+  residual, Jacobian (symbolic differentiation), charge `Q(V)` + charge Jacobian (companion
+  model for `ddt`/`idt`), force rows + force Jacobian (ideal potential sources get MNA
+  branch-current unknowns), noise PSDs, runtime-state inputs (`delay`/`slew`, serviced by the
+  device each accepted step), and `$bound_step`. Everything either lowers faithfully or is a
+  named `CodegenError::Unsupported` — no `Real(0.0)` fallback. `Diagnostic` statements are
+  collected as kernel metadata for tooling, not executed.
+- **Digital** (`DigitalKernel`): compiled, not interpreted. Each digital body JITs to three
+  native functions — `comb` (combinational, source order, latches hold through the variable
+  banks), `seq` (register updates for fired clocked blocks, reading pre-edge bank copies),
+  and `watch` (event-term values; the device derives edges by comparing against the previous
+  values). Kernels are per *module* and shared across instances; per-instance state
+  (register banks, previous watch values) lives in the device. The circuit-level boundary
+  stays the solver's event queue — devices exchange events, each device's evaluation is
+  native code.
 - **Mixed-signal**: a boundary device with both bodies bridges explicitly — A2D thresholds an
   analog potential to a digital value in the digital evaluator; D2A stamps a source from digital
   state in the analog loader. No implicit crossing (No-Magic).
@@ -420,6 +446,11 @@ redundant. This is the diff from `ir.rs`/`IR-SYSTEM.md`.
 
 **Stringly-typed → interned (§3):** every `plus`/`minus`/`access`/`Param(String)`/`Var(String)`/
 node name in an expression is now a resolved id, with a per-module symbol table for display.
+
+Functions live only in `SymbolTable.fns` (no separate module/program lists); the emitter
+copies any file-level function into each module that calls it, so `FnId` is always
+module-local. A port's domain (analog vs digital) lives on its node's `NodeInfo`, not on
+the port.
 
 ---
 
