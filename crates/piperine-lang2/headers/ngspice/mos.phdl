@@ -1,0 +1,443 @@
+// NGSPICE faithful model — MOS Level 1 (Shichman-Hodges).
+//
+// Source: ngspice/src/spicelib/devices/mos1/
+//   mos1defs.h  mos1temp.c  mos1load.c  mos1noi.c  mos1par.c  mos1mpar.c
+//   devsup.c (DEVqmeyer)
+//
+// Includes: NMOS/PMOS, series resistances (RD/RS with internal nodes), body
+// effect, channel-length modulation (λ), bulk junction diodes (BD/BS with
+// bottom + sidewall), Meyer gate capacitances (Cgs/Cgd/Cgb), overlap caps,
+// process derivation (TOX/NSUB/UO/TPG → Cox/KP/PHI/GAMMA/VTO), temperature
+// dependence, thermal/channel/flicker noise.
+// ════════════════════════════════════════════════════════════════════════════
+
+use piperine::constants;
+use piperine::disciplines;
+use piperine::ngspice::constants;
+
+bundle Mos1Model {
+    // ── Type ──────────────────────────────────────────────────────────────────
+    nmos : Boolean = 1,           // 1 = NMOS, 0 = PMOS
+
+    // ── DC (Shichman-Hodges) ──────────────────────────────────────────────────
+    vto    : Real = 0.0,          // threshold voltage (V) at Vbs=0
+    kp     : Real = 2.0e-5,       // transconductance (A/V²)
+    gamma  : Real = 0.0,          // body-effect coefficient (V^½)
+    phi    : Real = 0.6,          // surface potential 2φf (V)
+    lambda : Real = 0.0,          // channel-length modulation (1/V)
+
+    // ── Series resistances ────────────────────────────────────────────────────
+    rd     : Real = 0.0,          // drain resistance (Ω)
+    rs     : Real = 0.0,          // source resistance (Ω)
+    rsh    : Real = 0.0,          // sheet resistance (Ω/□) — used with NRD/NRS
+
+    // ── Bulk junction ─────────────────────────────────────────────────────────
+    cbd    : Real = 0.0,          // zero-bias B-D cap (F)
+    cbs    : Real = 0.0,          // zero-bias B-S cap (F)
+    is     : Real = 1.0e-14,      // bulk-junction sat current (A)
+    js     : Real = 0.0,          // bulk-junction sat current density (A/m²)
+    pb     : Real = 0.8,           // bulk junction potential (V)
+    cj     : Real = 0.0,           // bottom cap per area (F/m²)
+    mj     : Real = 0.5,           // bottom grading coefficient
+    cjsw   : Real = 0.0,           // sidewall cap per perimeter (F/m)
+    mjsw   : Real = 0.5,           // sidewall grading coefficient
+    fc     : Real = 0.5,           // forward-bias depletion cap coeff
+
+    // ── Overlap capacitance ───────────────────────────────────────────────────
+    cgso   : Real = 0.0,          // G-S overlap cap per width (F/m)
+    cgdo   : Real = 0.0,          // G-D overlap cap per width (F/m)
+    cgbo   : Real = 0.0,          // G-B overlap cap per length (F/m)
+
+    // ── Process ───────────────────────────────────────────────────────────────
+    tox    : Real = 0.0,          // oxide thickness (m) → Cox
+    ld     : Real = 0.0,          // lateral diffusion (m)
+    u0     : Real = 600.0,        // surface mobility (cm²/V·s)
+    nsub   : Real = 0.0,          // substrate doping (cm⁻³)
+    tpg    : Real = 1.0,          // gate material type: 1=opp of sub, -1=same, 0=Al
+    nss    : Real = 0.0,          // surface state density (cm⁻²)
+
+    // ── Temperature ───────────────────────────────────────────────────────────
+    tnom   : Real = 300.15,
+
+    // ── Noise ─────────────────────────────────────────────────────────────────
+    kf     : Real = 0.0,
+    af     : Real = 1.0,
+}
+
+mod mos1 (
+    inout d : Electrical,         // drain
+    inout g : Electrical,         // gate
+    inout s : Electrical,         // source
+    inout b : Electrical,         // bulk (substrate)
+) {
+    param model : Mos1Model = Mos1Model {};
+    param w     : Real = 100.0e-6;  // channel width (m)
+    param l     : Real = 100.0e-6;  // channel length (m)
+    param ad    : Real = 0.0;       // drain area (m²)
+    param as    : Real = 0.0;       // source area (m²)
+    param pd    : Real = 0.0;       // drain perimeter (m)
+    param ps    : Real = 0.0;       // source perimeter (m)
+    param nrd   : Real = 1.0;       // drain squares (for RSH)
+    param nrs   : Real = 1.0;       // source squares
+    param m     : Real = 1.0;       // parallel multiplier
+    param temp  : Real = 0.0;
+    param dtemp : Real = 0.0;
+    param off   : Boolean = 0;
+
+    wire dp : Electrical;          // drain'  (if RD > 0)
+    wire sp : Electrical;          // source' (if RS > 0)
+}
+
+analog mos1 {
+    // ════════════════════════════════════════════════════════════════════════
+    //  §0  Type and geometry
+    // ════════════════════════════════════════════════════════════════════════
+    var type : Real = if (model.nmos) { 1.0 } else { -1.0 };
+    var l_eff : Real = l - 2.0 * model.ld;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §1  Derived model parameters  (mos1temp.c:61-113)
+    // ════════════════════════════════════════════════════════════════════════
+    // Cox from TOX
+    var cox : Real = 0.0;
+    if (model.tox > 0.0) {
+        cox = NG_EPS_SIO2 / model.tox;
+    }
+
+    // KP from U0 and Cox (if KP not explicitly given)
+    var kp_eff : Real = model.kp;
+    if (model.tox > 0.0 && cox > 0.0) {
+        // ngspice: if KP not given, KP = U0 * Cox * 1e-4
+        kp_eff = model.u0 * cox * 1.0e-4;
+    }
+
+    // PHI, GAMMA, VTO from NSUB (mos1temp.c:74-113)
+    var phi_eff : Real = model.phi;
+    var gamma_eff : Real = model.gamma;
+    var vto_eff : Real = model.vto;
+    if (model.nsub > NG_NI_SI) {
+        var vtnom : Real = $vt(model.tnom);
+        phi_eff = 2.0 * vtnom * ln(model.nsub / NG_NI_SI);
+        if (phi_eff < 0.1) { phi_eff = 0.1; }
+
+        if (cox > 0.0) {
+            var nsub_m3 : Real = model.nsub * 1.0e6;  // cm⁻³ → m⁻³
+            gamma_eff = sqrt(2.0 * NG_EPS_SI * NG_Q * nsub_m3) / cox;
+
+            // VTO from flat-band (mos1temp.c:96-113)
+            var fermis : Real = type * 0.5 * phi_eff;
+            var eg_tnom : Real = ng_egfet(model.tnom);
+            var fermig : Real = if (model.tpg != 0.0) { type * model.tpg * 0.5 * eg_tnom } else { 0.0 };
+            var wkfng : Real = if (model.tpg != 0.0) { 3.25 + 0.5 * eg_tnom - fermig } else { 3.25 };
+            var wkfngs : Real = wkfng - (3.25 + 0.5 * eg_tnom + fermis);
+            var vfb : Real = wkfngs - model.nss * 1.0e4 * NG_Q / cox;
+            vto_eff = vfb + type * (gamma_eff * sqrt(phi_eff) + phi_eff);
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §2  Temperature preprocessing  (mos1temp.c:115-330)
+    // ════════════════════════════════════════════════════════════════════════
+    var t : Real = if (temp > 0.0) { temp } else { $temperature() + dtemp };
+    var dt : Real = t - model.tnom;
+    var vt : Real = $vt(t);
+    var vtnom : Real = $vt(model.tnom);
+    var ratio4 : Real = pow(t / model.tnom, 1.5);  // (T/Tnom)^1.5
+
+    // Mobility temperature (mos1temp.c:120-121)
+    var tTransconductance : Real = kp_eff / ratio4;
+
+    // PHI temperature (mos1temp.c:123-128)
+    var fact1 : Real = model.tnom / NG_REFTEMP;
+    var fact2 : Real = t / NG_REFTEMP;
+    var egfet1 : Real = ng_egfet(model.tnom);
+    var arg1 : Real = 0.0 - egfet1 / (2.0 * NG_K * model.tnom) + 1.1150877 / (2.0 * NG_K * NG_REFTEMP);
+    var pbfact1 : Real = 0.0 - 2.0 * vtnom * (1.5 * ln(fact1) + NG_Q * arg1);
+    var egfet : Real = ng_egfet(t);
+    var arg : Real = 0.0 - egfet / (2.0 * NG_K * t) + 1.1150877 / (2.0 * NG_K * NG_REFTEMP);
+    var pbfact : Real = 0.0 - 2.0 * vt * (1.5 * ln(fact2) + NG_Q * arg);
+
+    var phio : Real = (phi_eff - pbfact1) / fact1;
+    var tPhi : Real = fact2 * phio + pbfact;
+
+    // Vbi / Vto temperature (mos1temp.c:130-135)
+    var tVbi : Real = vto_eff - type * gamma_eff * sqrt(phi_eff)
+                      + 0.5 * (egfet1 - egfet)
+                      + type * 0.5 * (tPhi - phi_eff);
+    var tVto : Real = tVbi + type * gamma_eff * sqrt(tPhi);
+
+    // IS temperature (mos1temp.c:137-140)
+    var tSatCur : Real = model.is * exp(0.0 - ng_egfet(t) / vt + ng_egfet(model.tnom) / vtnom);
+
+    // Bulk junction potential/cap temperature (mos1temp.c:142-170)
+    var pbo : Real = (model.pb - pbfact1) / fact1;
+    var gmaold : Real = (model.pb - pbo) / pbo;
+    var tBulkPot : Real = pbfact + fact2 * pbo;
+    var gmanew : Real = (tBulkPot - pbo) / pbo;
+    var tDepCap : Real = model.fc * tBulkPot;
+
+    var tCbd : Real = model.cbd / (1.0 + model.mj * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCbd = tCbd * (1.0 + model.mj * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+
+    var tCbs : Real = model.cbs / (1.0 + model.mj * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCbs = tCbs * (1.0 + model.mj * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+
+    var tCj : Real = model.cj / (1.0 + model.mj * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCj = tCj * (1.0 + model.mj * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+
+    var tCjsw : Real = model.cjsw / (1.0 + model.mjsw * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCjsw = tCjsw * (1.0 + model.mjsw * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §3  Per-instance derived quantities  (mos1load.c:126-148)
+    // ════════════════════════════════════════════════════════════════════════
+    var beta : Real = tTransconductance * m * w / l_eff;
+    var oxideCap : Real = cox * l_eff * m * w;
+
+    var gsOverlapCap : Real = model.cgso * m * w;
+    var gdOverlapCap : Real = model.cgdo * m * w;
+    var gbOverlapCap : Real = model.cgbo * l_eff;
+
+    // Drain/source sat current
+    var drainSatCur : Real = if (model.js > 0.0 && ad > 0.0) { model.js * m * ad } else { m * tSatCur };
+    var sourceSatCur : Real = if (model.js > 0.0 && as > 0.0) { model.js * m * as } else { m * tSatCur };
+
+    // Bulk junction caps
+    var czbd : Real = if (model.cbd > 0.0) { m * tCbd } else if (model.cj > 0.0 && ad > 0.0) { m * tCj * ad } else { 0.0 };
+    var czbs : Real = if (model.cbs > 0.0) { m * tCbs } else if (model.cj > 0.0 && as > 0.0) { m * tCj * as } else { 0.0 };
+    var czbdsw : Real = if (model.cjsw > 0.0 && pd > 0.0) { m * tCjsw * pd } else { 0.0 };
+    var czbssw : Real = if (model.cjsw > 0.0 && ps > 0.0) { m * tCjsw * ps } else { 0.0 };
+
+    // Series conductances
+    var drainCond : Real = if (model.rd > 0.0) { m / model.rd }
+                           else if (model.rsh > 0.0 && nrd > 0.0) { m / (model.rsh * nrd) }
+                           else { 0.0 };
+    var sourceCond : Real = if (model.rs > 0.0) { m / model.rs }
+                            else if (model.rsh > 0.0 && nrs > 0.0) { m / (model.rsh * nrs) }
+                            else { 0.0 };
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §4  Voltages  (mos1load.c:298-316)
+    // ════════════════════════════════════════════════════════════════════════
+    var vgs : Real = type * V(g, sp);
+    var vgd : Real = type * V(g, dp);
+    var vds : Real = vgs - vgd;
+    var vbs : Real = type * V(b, sp);
+    var vbd : Real = type * V(b, dp);
+    var vgb : Real = type * V(g, b);
+
+    var mode : Real = if (vds >= 0.0) { 1.0 } else { -1.0 };
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §5  Threshold voltage  (mos1load.c:463-480)
+    // ════════════════════════════════════════════════════════════════════════
+    var vbx : Real = if (mode == 1.0) { vbs } else { vbd };
+    var sarg : Real = if (vbx <= 0.0) { sqrt(tPhi - vbx) } else { sqrt(tPhi) - vbx / (2.0 * sqrt(tPhi)) };
+    if (sarg < 0.0) { sarg = 0.0; }
+    var von : Real = tVbi * type + gamma_eff * sarg;  // = Vth
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §6  Drain current — Shichman-Hodges  (mos1load.c:481-530)
+    // ════════════════════════════════════════════════════════════════════════
+    var sgx : Real = if (mode == 1.0) { vgs } else { vgd };
+    var vgst : Real = sgx - von;
+    var vds_eff : Real = vds * mode;  // always ≥ 0
+    var vdsat : Real = if (vgst > 0.0) { vgst } else { 0.0 };
+
+    var cdrain : Real = 0.0;
+    if (vgst > 0.0) {
+        var betap : Real = beta * (1.0 + model.lambda * vds_eff);
+        if (vgst < vds_eff) {
+            // Saturation
+            cdrain = betap * vgst * vgst * 0.5;
+        } else {
+            // Linear
+            cdrain = betap * vds_eff * (vgst - vds_eff * 0.5);
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §7  Bulk junction diodes  (mos1load.c:433-448)
+    // ════════════════════════════════════════════════════════════════════════
+    var gmin : Real = $simparam("gmin", 1.0e-12);
+
+    var cbd : Real = if (vbd >= 0.0 - 3.0 * vt) {
+        drainSatCur * (limexp(vbd / vt) - 1.0)
+    } else {
+        var a : Real = 3.0 * vt / (vbd * NG_E);
+        0.0 - drainSatCur * (1.0 + a * a * a)
+    };
+    cbd = cbd + gmin * vbd;
+
+    var cbs : Real = if (vbs >= 0.0 - 3.0 * vt) {
+        sourceSatCur * (limexp(vbs / vt) - 1.0)
+    } else {
+        var a : Real = 3.0 * vt / (vbs * NG_E);
+        0.0 - sourceSatCur * (1.0 + a * a * a)
+    };
+    cbs = cbs + gmin * vbs;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §8  Bulk junction charges  (mos1load.c:567-674)
+    //  Combined bottom + sidewall depletion charge.
+    // ════════════════════════════════════════════════════════════════════════
+    // Precomputed coefficients for BD junction
+    var arg0 : Real = 1.0 - model.fc;
+    var sarg0_bd : Real = exp(0.0 - model.mj * ln(arg0));
+    var sargsw0_bd : Real = exp(0.0 - model.mjsw * ln(arg0));
+
+    var f2_bd : Real = czbd * (1.0 - model.fc * (1.0 + model.mj)) * sarg0_bd / arg0
+                     + czbdsw * (1.0 - model.fc * (1.0 + model.mjsw)) * sargsw0_bd / arg0;
+    var f3_bd : Real = (czbd * model.mj * sarg0_bd / arg0 + czbdsw * model.mjsw * sargsw0_bd / arg0) / tBulkPot;
+    var f4_bd : Real = czbd * tBulkPot * (1.0 - arg0 * sarg0_bd) / (1.0 - model.mj)
+                     + czbdsw * tBulkPot * (1.0 - arg0 * sargsw0_bd) / (1.0 - model.mjsw)
+                     - (f3_bd * 0.5) * tDepCap * tDepCap - tDepCap * f2_bd;
+
+    var qbd : Real;
+    if (vbd < tDepCap) {
+        var a : Real = 1.0 - vbd / tBulkPot;
+        var s : Real = exp(0.0 - model.mj * ln(a));
+        var ssw : Real = exp(0.0 - model.mjsw * ln(a));
+        qbd = tBulkPot * (czbd * (1.0 - a * s) / (1.0 - model.mj) + czbdsw * (1.0 - a * ssw) / (1.0 - model.mjsw));
+    } else {
+        qbd = f4_bd + vbd * (f2_bd + vbd * f3_bd * 0.5);
+    }
+
+    // BS junction (same formulas)
+    var sarg0_bs : Real = sarg0_bd;
+    var sargsw0_bs : Real = sargsw0_bd;
+    var f2_bs : Real = czbs * (1.0 - model.fc * (1.0 + model.mj)) * sarg0_bs / arg0
+                     + czbssw * (1.0 - model.fc * (1.0 + model.mjsw)) * sargsw0_bs / arg0;
+    var f3_bs : Real = (czbs * model.mj * sarg0_bs / arg0 + czbssw * model.mjsw * sargsw0_bs / arg0) / tBulkPot;
+    var f4_bs : Real = czbs * tBulkPot * (1.0 - arg0 * sarg0_bs) / (1.0 - model.mj)
+                     + czbssw * tBulkPot * (1.0 - arg0 * sargsw0_bs) / (1.0 - model.mjsw)
+                     - (f3_bs * 0.5) * tDepCap * tDepCap - tDepCap * f2_bs;
+
+    var qbs : Real;
+    if (vbs < tDepCap) {
+        var a : Real = 1.0 - vbs / tBulkPot;
+        var s : Real = exp(0.0 - model.mj * ln(a));
+        var ssw : Real = exp(0.0 - model.mjsw * ln(a));
+        qbs = tBulkPot * (czbs * (1.0 - a * s) / (1.0 - model.mj) + czbssw * (1.0 - a * ssw) / (1.0 - model.mjsw));
+    } else {
+        qbs = f4_bs + vbs * (f2_bs + vbs * f3_bs * 0.5);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §9  Meyer gate capacitances  (DEVqmeyer in devsup.c:624-689)
+    //  Returns the "non-constant half" of Cgs, Cgd, Cgb.
+    //  Total cap = 2 × return + overlap.
+    // ════════════════════════════════════════════════════════════════════════
+    var vgst_m : Real = vgs - von;
+    var vds_m : Real = vds;
+    var vdsat_m : Real = if (vdsat > 0.025) { vdsat } else { 0.025 };
+
+    var cgs_meyer : Real = 0.0;
+    var cgd_meyer : Real = 0.0;
+    var cgb_meyer : Real = 0.0;
+
+    if (vgst_m <= 0.0 - tPhi) {
+        // Deep cutoff
+        cgb_meyer = oxideCap * 0.5;
+    } else if (vgst_m <= 0.0 - tPhi * 0.5) {
+        // Depletion
+        cgb_meyer = 0.0 - vgst_m * oxideCap / (2.0 * tPhi);
+    } else if (vgst_m <= 0.0) {
+        // Sub-threshold
+        cgb_meyer = 0.0 - vgst_m * oxideCap / (2.0 * tPhi);
+        cgs_meyer = vgst_m * oxideCap / (1.5 * tPhi) + oxideCap / 3.0;
+        // Split for linear
+        if (vds_m < vdsat_m) {
+            var vddif : Real = 2.0 * vdsat_m - vds_m;
+            var vddif1 : Real = vdsat_m - vds_m;
+            var vddif2 : Real = vddif * vddif;
+            if (vddif2 > 0.0) {
+                cgd_meyer = cgs_meyer * (1.0 - vdsat_m * vdsat_m / vddif2);
+                cgs_meyer = cgs_meyer * (1.0 - vddif1 * vddif1 / vddif2);
+            }
+        }
+    } else {
+        // Strong inversion (vgst_m > 0)
+        cgb_meyer = 0.0;
+        if (vds_m >= vdsat_m) {
+            // Saturation
+            cgs_meyer = oxideCap / 3.0;
+            cgd_meyer = 0.0;
+        } else {
+            // Linear
+            var vddif : Real = 2.0 * vdsat_m - vds_m;
+            var vddif1 : Real = vdsat_m - vds_m;
+            var vddif2 : Real = vddif * vddif;
+            if (vddif2 > 0.0) {
+                cgs_meyer = (oxideCap / 3.0) * (1.0 - vddif1 * vddif1 / vddif2);
+                cgd_meyer = (oxideCap / 3.0) * (1.0 - vdsat_m * vdsat_m / vddif2);
+            } else {
+                cgs_meyer = oxideCap / 3.0;
+            }
+        }
+    }
+
+    // Total Meyer capacitances (×2 for the averaging in transient)
+    var cgs_total : Real = 2.0 * cgs_meyer;
+    var cgd_total : Real = 2.0 * cgd_meyer;
+    var cgb_total : Real = 2.0 * cgb_meyer;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §10  DC contributions  (mos1load.c:882-936)
+    // ════════════════════════════════════════════════════════════════════════
+    // Drain current (drain' → source')
+    I(dp, sp) <+ m * type * mode * cdrain;
+
+    // Bulk junction diodes
+    I(b, dp) <+ m * type * cbd;
+    I(b, sp) <+ m * type * cbs;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §11  Capacitive contributions  (mos1load.c:766-818)
+    //  Meyer (intrinsic) + overlap.  Mode swaps Cgs/Cgd assignment.
+    // ════════════════════════════════════════════════════════════════════════
+    if (mode == 1.0) {
+        I(g, sp) <+ m * (cgs_total * ddt(V(g, sp)) + gsOverlapCap * ddt(V(g, sp)));
+        I(g, dp) <+ m * (cgd_total * ddt(V(g, dp)) + gdOverlapCap * ddt(V(g, dp)));
+    } else {
+        I(g, dp) <+ m * (cgs_total * ddt(V(g, dp)) + gdOverlapCap * ddt(V(g, dp)));
+        I(g, sp) <+ m * (cgd_total * ddt(V(g, sp)) + gsOverlapCap * ddt(V(g, sp)));
+    }
+    I(g, b)  <+ m * (cgb_total * ddt(V(g, b)) + gbOverlapCap * ddt(V(g, b)));
+
+    // Bulk junction charges
+    I(b, dp) <+ m * type * ddt(qbd);
+    I(b, sp) <+ m * type * ddt(qbs);
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §12  Series resistances
+    // ════════════════════════════════════════════════════════════════════════
+    if (drainCond > 0.0) {
+        I(d, dp) <+ drainCond * V(d, dp);
+    } else {
+        V(d, dp) <- 0.0;
+    }
+    if (sourceCond > 0.0) {
+        I(s, sp) <+ sourceCond * V(s, sp);
+    } else {
+        V(s, sp) <- 0.0;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §13  Noise  (mos1noi.c — 4 sources)
+    // ════════════════════════════════════════════════════════════════════════
+    // Thermal: RD, RS
+    if (drainCond > 0.0) { I(d, dp) <+ white_noise(4.0 * NG_K * t * drainCond); }
+    if (sourceCond > 0.0) { I(s, sp) <+ white_noise(4.0 * NG_K * t * sourceCond); }
+    // Channel: 4kT * (2/3) * |gm|
+    var gm_est : Real = beta * vgst;  // saturation gm (approximate for noise)
+    I(dp, sp) <+ white_noise(4.0 * NG_K * t * (2.0 / 3.0) * abs(gm_est));
+    // Flicker: KF * |Id|^AF / (f * W * L_eff * Cox²)
+    if (model.kf > 0.0 && cox > 0.0) {
+        var cox2 : Real = cox * cox;
+        I(dp, sp) <+ flicker_noise(
+            m * model.kf * pow(abs(cdrain), model.af) / (w * l_eff * cox2),
+            1.0
+        );
+    }
+}

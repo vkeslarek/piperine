@@ -1,0 +1,529 @@
+// NGSPICE faithful model — BJT (Gummel-Poon).
+//
+// Source: ngspice/src/spicelib/devices/bjt/
+//   bjtdefs.h  bjttemp.c  bjtload.c  bjtnoise.c  bjtgetic.c  bjtparam.c  bjtmpar.c
+//
+// Includes: NPN/PNP, VERTICAL/LATERAL substrate, series resistances (RC/RB/RE
+// with internal nodes), full Gummel-Poon transport + base currents, high-level
+// injection (IKF/IKR/NKF), Early effect (VAF/VAR), nonideal base currents
+// (ISE/ISC/NE/NC), substrate diode (ISS/NS), TF bias-dependence (XTF/VTF/ITF),
+// 5 charge-storage elements (BE/BC/BX/Sub depletion + diffusion), temperature
+// dependence (tlev/tlevc, XTB, XTI, EG), thermal/shot/flicker noise.
+//
+// NOTE: Excess phase (PTF) uses a state recurrence in ngspice.  When PTF > 0
+// the ideal Piperine would use a delay or z-domain operator; here we compute
+// cex = cbe (no excess phase) and flag the gap.  Setting PTF = 0 (the default)
+// gives exact parity.
+// ════════════════════════════════════════════════════════════════════════════
+
+use piperine::constants;
+use piperine::disciplines;
+use piperine::ngspice::constants;
+
+bundle BjtModel {
+    // ── Type ──────────────────────────────────────────────────────────────────
+    npn      : Boolean = 1,       // 1 = NPN, 0 = PNP
+    vertical : Boolean = 1,       // 1 = vertical (sub→c'), 0 = lateral (sub→b')
+
+    // ── DC transfer ───────────────────────────────────────────────────────────
+    is   : Real = 1.0e-16,        // transport saturation current (A)
+    bf   : Real = 100.0,          // ideal forward beta
+    nf   : Real = 1.0,            // forward emission coefficient
+    vaf  : Real = 0.0,            // forward Early voltage (V) — 0 = off
+    ikf  : Real = 0.0,            // forward high-current roll-off (A) — 0 = off
+    ise  : Real = 0.0,            // B-E leakage sat current (A)
+    ne   : Real = 1.5,            // B-E leakage emission coefficient
+    br   : Real = 1.0,            // ideal reverse beta
+    nr   : Real = 1.0,            // reverse emission coefficient
+    var  : Real = 0.0,            // reverse Early voltage (V) — 0 = off
+    ikr  : Real = 0.0,            // reverse high-current roll-off (A) — 0 = off
+    isc  : Real = 0.0,            // B-C leakage sat current (A)
+    nc   : Real = 2.0,            // B-C leakage emission coefficient
+    iss  : Real = 0.0,            // substrate junction sat current (A)
+    ns   : Real = 1.0,            // substrate emission coefficient
+    nkf  : Real = 0.5,            // high-current roll-off exponent
+
+    // ── Series resistances ────────────────────────────────────────────────────
+    rb   : Real = 0.0,            // zero-bias base resistance (Ω)
+    irb  : Real = 0.0,            // current at which Rb = (rb+rbm)/2 (A) — 0 = off
+    rbm  : Real = 0.0,            // minimum base resistance (Ω) — 0 = use rb
+    re   : Real = 0.0,            // emitter resistance (Ω)
+    rc   : Real = 0.0,            // collector resistance (Ω)
+
+    // ── BE capacitance / transit time ─────────────────────────────────────────
+    cje  : Real = 0.0,            // zero-bias B-E depletion cap (F)
+    vje  : Real = 0.75,           // B-E built-in potential (V)
+    mje  : Real = 0.33,           // B-E grading coefficient
+    tf   : Real = 0.0,            // ideal forward transit time (s)
+    xtf  : Real = 0.0,            // TF bias-dependence coefficient
+    vtf  : Real = 0.0,            // VBC giving TF dependence (V) — 0 = off
+    itf  : Real = 0.0,            // high-current TF dependence (A)
+    ptf  : Real = 0.0,            // excess phase at 1/(2π·TF) Hz (degrees)
+
+    // ── BC capacitance / transit time ─────────────────────────────────────────
+    cjc  : Real = 0.0,            // zero-bias B-C depletion cap (F)
+    vjc  : Real = 0.75,           // B-C built-in potential (V)
+    mjc  : Real = 0.33,           // B-C grading coefficient
+    xcjc : Real = 1.0,            // fraction of B-C cap to internal base
+    tr   : Real = 0.0,            // ideal reverse transit time (s)
+
+    // ── Substrate capacitance ─────────────────────────────────────────────────
+    cjs  : Real = 0.0,            // zero-bias substrate cap (F)
+    vjs  : Real = 0.75,           // substrate built-in potential (V)
+    mjs  : Real = 0.0,            // substrate grading coefficient
+
+    // ── Depletion cap coefficient ─────────────────────────────────────────────
+    fc   : Real = 0.5,            // forward-bias junction fit
+
+    // ── Temperature ───────────────────────────────────────────────────────────
+    xtb  : Real = 0.0,            // BF/BR temp exponent
+    eg   : Real = 1.11,           // bandgap (eV)
+    xti  : Real = 3.0,            // IS temp exponent
+    tnom : Real = 300.15,         // nominal temperature (K)
+    tlev  : Real = 0.0,           // temp-equation selector (0,1,3)
+    tlevc : Real = 0.0,           // cap/potential temp selector (0,1)
+
+    // ── Noise ─────────────────────────────────────────────────────────────────
+    kf   : Real = 0.0,            // flicker noise coefficient
+    af   : Real = 1.0,            // flicker noise exponent
+}
+
+mod bjt (
+    inout c   : Electrical,       // collector
+    inout b   : Electrical,       // base
+    inout e   : Electrical,       // emitter
+    inout sub : Electrical,       // substrate
+) {
+    param model : BjtModel = BjtModel {};
+    param area  : Real = 1.0;     // emitter area factor
+    param areab : Real = 0.0;     // base area factor — 0 = use area
+    param areac : Real = 0.0;     // collector area factor — 0 = use area
+    param m     : Real = 1.0;     // parallel multiplier
+    param temp  : Real = 0.0;
+    param dtemp : Real = 0.0;
+    param off   : Boolean = 0;
+
+    // Internal nodes for series resistances (bjtdefs.h: colPrime/basePrime/emitPrime)
+    wire cp : Electrical;         // collector' (if RC > 0)
+    wire bp : Electrical;         // base'     (if RB > 0)
+    wire ep : Electrical;         // emitter'  (if RE > 0)
+}
+
+analog bjt {
+    // ════════════════════════════════════════════════════════════════════════
+    //  §0  Type and area
+    // ════════════════════════════════════════════════════════════════════════
+    var type : Real = if (model.npn) { 1.0 } else { -1.0 };
+    var subs : Real = if (model.vertical) { 1.0 } else { -1.0 };
+    var area_eff  : Real = area * m;
+    var areab_eff : Real = if (areab > 0.0) { areab * m } else { area * m };
+    var areac_eff : Real = if (areac > 0.0) { areac * m } else { area * m };
+    var rbm_eff : Real = if (model.rbm > 0.0) { model.rbm } else { model.rb };
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §1  Temperature preprocessing  (bjttemp.c)
+    // ════════════════════════════════════════════════════════════════════════
+    var t : Real = if (temp > 0.0) { temp } else { $temperature() + dtemp };
+    var dt : Real = t - model.tnom;
+    var vt : Real = $vt(t);
+    var vtnom : Real = $vt(model.tnom);
+
+    // Bandgap / pbfact (bjttemp.c:107-118 — same scheme as diode)
+    var fact1  : Real = model.tnom / NG_REFTEMP;
+    var fact2  : Real = t / NG_REFTEMP;
+    var egfet  : Real = ng_egfet(t);
+    var egfet1 : Real = ng_egfet(model.tnom);
+    var arg    : Real = 0.0 - egfet / (2.0 * NG_K * t) + 1.1150877 / (2.0 * NG_K * NG_REFTEMP);
+    var pbfact : Real = 0.0 - 2.0 * vt * (1.5 * ln(fact2) + NG_Q * arg);
+    var arg1   : Real = 0.0 - egfet1 / (2.0 * NG_K * model.tnom) + 1.1150877 / (2.0 * NG_K * NG_REFTEMP);
+    var pbfact1: Real = 0.0 - 2.0 * vtnom * (1.5 * ln(fact1) + NG_Q * arg1);
+
+    // IS temperature (bjttemp.c:120-126)
+    var ratlog : Real = ln(t / model.tnom);
+    var ratio1 : Real = t / model.tnom - 1.0;
+    var factlog : Real = ratio1 * model.eg / vt + model.xti * ratlog;
+    var t_is : Real = model.is * exp(factlog);
+    var t_iss : Real = model.iss * exp(factlog);
+
+    // BF/BR temperature (bjttemp.c:128-135)
+    var bfactor : Real = exp(ratlog * model.xtb);
+    var t_bf : Real = model.bf * bfactor;
+    var t_br : Real = model.br * bfactor;
+
+    // ISE/ISC temperature (bjttemp.c:137-145)
+    var t_ise : Real = model.ise * exp(factlog / model.ne) / bfactor;
+    var t_isc : Real = model.isc * exp(factlog / model.nc) / bfactor;
+
+    // Early voltages, IKF, IKR (bjttemp.c:147-160)
+    var invVaf : Real = if (model.vaf > 0.0) { 1.0 / (model.vaf * (1.0 + 0.0 * dt)) } else { 0.0 };
+    var invVar : Real = if (model.var > 0.0) { 1.0 / (model.var * (1.0 + 0.0 * dt)) } else { 0.0 };
+    var oik    : Real = if (model.ikf > 0.0) { 1.0 / (model.ikf * area_eff) } else { 0.0 };
+    var oikr   : Real = if (model.ikr > 0.0) { 1.0 / (model.ikr * area_eff) } else { 0.0 };
+
+    // Series conductances (bjttemp.c:162-170)
+    var gcpr : Real = if (model.rc > 0.0) { area_eff / model.rc } else { 0.0 };
+    var gepr : Real = if (model.re > 0.0) { area_eff / model.re } else { 0.0 };
+
+    // Base resistance params (bjttemp.c:172-176)
+    var rbpr : Real = rbm_eff / area_eff;
+    var rbpi : Real = model.rb / area_eff - rbpr;
+    var xjrb : Real = model.irb * area_eff;
+
+    // Emission coefficients (pass-through for tlev=0)
+    var t_nf : Real = model.nf;
+    var t_nr : Real = model.nr;
+    var t_ne : Real = model.ne;
+    var t_nc : Real = model.nc;
+    var t_ns : Real = model.ns;
+
+    // Transit times (bjttemp.c:185-186)
+    var t_tf  : Real = model.tf;
+    var t_tr  : Real = model.tr;
+    var t_itf : Real = model.itf * area_eff;
+
+    // Junction cap precomputation (bjttemp.c:42-98)
+    var xfc : Real = ln(1.0 - model.fc);
+    var fc_clamped : Real = if (model.fc > 0.9999) { 0.9999 } else { model.fc };
+
+    // f2/f3 for BE junction
+    var f2_be : Real = exp((1.0 + model.mje) * xfc);
+    var f3_be : Real = 1.0 - model.fc * (1.0 + model.mje);
+
+    // f6/f7 for BC junction (= f2/f3 with mjc)
+    var f2_bc : Real = exp((1.0 + model.mjc) * xfc);
+    var f3_bc : Real = 1.0 - model.fc * (1.0 + model.mjc);
+
+    // TF VBC factor (bjttemp.c:62-65)
+    var ovtf : Real = if (model.vtf > 0.0) { 1.0 / (model.vtf * 1.44) } else { 0.0 };
+
+    // Junction potentials/caps temperature adjust (bjttemp.c:178-260, tlevc=0)
+    // BE junction
+    var tVje : Real;
+    var tCje : Real;
+    if (model.tlevc == 0.0) {
+        var pbo : Real = (model.vje - pbfact1) / fact1;
+        var gmaold : Real = (model.vje - pbo) / pbo;
+        tCje = model.cje / (1.0 + model.mje * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+        tVje = pbfact + fact2 * pbo;
+        var gmanew : Real = (tVje - pbo) / pbo;
+        tCje = tCje * (1.0 + model.mje * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+    } else {
+        tVje = model.vje;
+        tCje = model.cje;
+    }
+    var tDepCap_be : Real = model.fc * tVje;
+    var tf1_be : Real = tVje * (1.0 - exp((1.0 - model.mje) * xfc)) / (1.0 - model.mje);
+
+    // BC junction
+    var tVjc : Real;
+    var tCjc : Real;
+    if (model.tlevc == 0.0) {
+        var pbo : Real = (model.vjc - pbfact1) / fact1;
+        var gmaold : Real = (model.vjc - pbo) / pbo;
+        tCjc = model.cjc / (1.0 + model.mjc * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+        tVjc = pbfact + fact2 * pbo;
+        var gmanew : Real = (tVjc - pbo) / pbo;
+        tCjc = tCjc * (1.0 + model.mjc * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+    } else {
+        tVjc = model.vjc;
+        tCjc = model.cjc;
+    }
+    var tDepCap_bc : Real = model.fc * tVjc;
+    var tf1_bc : Real = tVjc * (1.0 - exp((1.0 - model.mjc) * xfc)) / (1.0 - model.mjc);
+
+    // Substrate junction
+    var tVjs : Real;
+    var tCjs : Real;
+    if (model.tlevc == 0.0) {
+        var pbo : Real = (model.vjs - pbfact1) / fact1;
+        var gmaold : Real = (model.vjs - pbo) / pbo;
+        tCjs = model.cjs / (1.0 + model.mjs * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+        tVjs = pbfact + fact2 * pbo;
+        var gmanew : Real = (tVjs - pbo) / pbo;
+        tCjs = tCjs * (1.0 + model.mjs * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+    } else {
+        tVjs = model.vjs;
+        tCjs = model.cjs;
+    }
+
+    // Critical voltages (bjttemp.c:262-265)
+    var tVcrit : Real = vt * ln(vt / (NG_SQRT2 * t_is * area_eff));
+
+    // Per-instance scaled caps (bjtload.c:543-566)
+    var czbe : Real = tCje * area_eff;
+    var czbc : Real = tCjc * areab_eff * model.xcjc;
+    var czbx : Real = tCjc * areab_eff * (1.0 - model.xcjc);
+    var czsub : Real = tCjs * areac_eff;
+
+    var csat : Real = t_is * area_eff;
+    var csubsat : Real = t_iss * area_eff;
+    var c2 : Real = t_ise * area_eff;
+    var c4 : Real = t_isc * areab_eff;
+
+    var gmin : Real = $simparam("gmin", 1.0e-12);
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §2  Voltages  (bjtload.c:308-324)
+    // ════════════════════════════════════════════════════════════════════════
+    var vbe : Real = type * V(bp, ep);
+    var vbc : Real = type * V(bp, cp);
+    var vbx : Real = type * V(b, cp);
+    var vsub : Real = if (model.vertical) { type * V(sub, cp) } else { type * V(bp, sub) };
+
+    // Voltage limiting (bjtload.c:384-391, DEVpnjlim)
+    vbe = $limit("pnjlim", vbe, 0.0, t_nf * vt, tVcrit);
+    vbc = $limit("pnjlim", vbc, 0.0, t_nr * vt, tVcrit);
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §3  Diode currents  (bjtload.c:396-467)
+    //  Cubic extension for v < -3*vte, limexp for forward region.
+    //  Solver differentiates automatically for Jacobian — no explicit gd.
+    // ════════════════════════════════════════════════════════════════════════
+    var vte_be : Real = t_nf * vt;
+    var vte_bc : Real = t_nr * vt;
+    var vte_ben : Real = t_ne * vt;
+    var vte_bcn : Real = t_nc * vt;
+    var vte_sub : Real = t_ns * vt;
+
+    // BE diode (transport)
+    var cbe : Real = if (vbe >= 0.0 - 3.0 * vte_be) {
+        csat * (limexp(vbe / vte_be) - 1.0)
+    } else {
+        var a : Real = 3.0 * vte_be / (vbe * NG_E);
+        0.0 - csat * (1.0 + a * a * a)
+    };
+
+    // BC diode (transport)
+    var cbc : Real = if (vbc >= 0.0 - 3.0 * vte_bc) {
+        csat * (limexp(vbc / vte_bc) - 1.0)
+    } else {
+        var a : Real = 3.0 * vte_bc / (vbc * NG_E);
+        0.0 - csat * (1.0 + a * a * a)
+    };
+
+    // BE leakage (nonideal base current)
+    var cben : Real = 0.0;
+    if (c2 > 0.0) {
+        cben = if (vbe >= 0.0 - 3.0 * vte_ben) {
+            c2 * (limexp(vbe / vte_ben) - 1.0)
+        } else {
+            var a : Real = 3.0 * vte_ben / (vbe * NG_E);
+            0.0 - c2 * (1.0 + a * a * a)
+        };
+        cben = cben + gmin * vbe;
+    }
+
+    // BC leakage
+    var cbcn : Real = 0.0;
+    if (c4 > 0.0) {
+        cbcn = if (vbc >= 0.0 - 3.0 * vte_bcn) {
+            c4 * (limexp(vbc / vte_bcn) - 1.0)
+        } else {
+            var a : Real = 3.0 * vte_bcn / (vbc * NG_E);
+            0.0 - c4 * (1.0 + a * a * a)
+        };
+        cbcn = cbcn + gmin * vbc;
+    }
+
+    // Substrate diode (bjtload.c:456-467)
+    var cdsub : Real = 0.0;
+    if (csubsat > 0.0) {
+        if (vsub <= 0.0 - 3.0 * vte_sub) {
+            var a : Real = 3.0 * vte_sub / (vsub * NG_E);
+            cdsub = 0.0 - csubsat * (1.0 + a * a * a);
+        } else {
+            var evsub : Real = limexp(vsub / vte_sub);
+            cdsub = csubsat * (evsub - 1.0);
+        }
+        cdsub = cdsub + gmin * vsub;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §4  Base charge qb  (bjtload.c:471-493)
+    //  Early effect + high-level injection (Gummel-Poon)
+    // ════════════════════════════════════════════════════════════════════════
+    var q1 : Real = 1.0 / (1.0 - invVaf * vbc - invVar * vbe);
+    var qb : Real;
+    if (oik == 0.0 && oikr == 0.0) {
+        qb = q1;
+    } else {
+        var q2 : Real = oik * cbe + oikr * cbc;
+        var arg_q : Real = 1.0 + 4.0 * q2;
+        if (arg_q < 0.0) { arg_q = 0.0; }
+        var sqarg : Real = pow(arg_q, model.nkf);
+        qb = q1 * (1.0 + sqarg) / 2.0;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §5  TF bias dependence  (bjtload.c:567-587)
+    // ════════════════════════════════════════════════════════════════════════
+    if (t_tf > 0.0 && vbe > 0.0) {
+        var argtf : Real = 0.0;
+        if (model.xtf > 0.0) {
+            argtf = model.xtf;
+            if (ovtf > 0.0) { argtf = argtf * limexp(vbc * ovtf); }
+            if (t_itf > 0.0) {
+                var temp : Real = cbe / (cbe + t_itf);
+                argtf = argtf * temp * temp;
+            }
+        }
+        // Modulate cbe (bjtload.c:583-585)
+        cbe = cbe * (1.0 + argtf) / qb;
+    }
+
+    // Excess phase: cex = cbe (PTF = 0 — see file header note)
+    var cex : Real = cbe;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §6  Terminal currents  (bjtload.c:523-524)
+    // ════════════════════════════════════════════════════════════════════════
+    var cc : Real = (cex - cbc) / qb - cbc / model.br - cbcn;
+    var cb : Real = cbe / model.bf + cben + cbc / model.br + cbcn;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §7  DC contributions  (bjtload.c:774-818)
+    //
+    //  Current decomposition:
+    //    I(c'→e') = transport current = (cex - cbc) / qb
+    //    I(b'→e') = forward base current = cbe/BF + cben
+    //    I(b'→c') = reverse base-collector = cbc/BR + cbcn
+    //    I(sub→substCon) = substrate diode
+    // ════════════════════════════════════════════════════════════════════════
+    // Transport current (collector' → emitter')
+    I(cp, ep) <+ m * type * (cex - cbc) / qb;
+
+    // Forward base-emitter current (base' → emitter')
+    I(bp, ep) <+ m * type * (cbe / model.bf + cben);
+
+    // Reverse base-collector current (base' → collector')
+    I(bp, cp) <+ m * type * (cbc / model.br + cbcn);
+
+    // Substrate diode
+    if (model.vertical) {
+        I(sub, cp) <+ m * type * cdsub;
+    } else {
+        I(sub, bp) <+ m * (0.0 - type) * cdsub;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §8  Series resistances  (bjtload.c:525-532, 818)
+    // ════════════════════════════════════════════════════════════════════════
+    // Collector resistance
+    if (model.rc > 0.0) {
+        I(c, cp) <+ m * gcpr * V(c, cp);
+    } else {
+        V(c, cp) <- 0.0;
+    }
+
+    // Emitter resistance
+    if (model.re > 0.0) {
+        I(e, ep) <+ m * gepr * V(e, ep);
+    } else {
+        V(e, ep) <- 0.0;
+    }
+
+    // Base resistance — current-dependent (bjtload.c:525-532)
+    if (model.rb > 0.0) {
+        var gx : Real;
+        if (xjrb > 0.0) {
+            // IRB model (bjtload.c:528-531)
+            var arg1 : Real = abs(cb) / xjrb;
+            if (arg1 < 1.0e-9) { arg1 = 1.0e-9; }
+            var arg2 : Real = (0.0 - 1.0 + sqrt(1.0 + 14.59025 * arg1)) / (2.4317 * sqrt(arg1));
+            var arg1t : Real = tan(arg2);
+            if (abs(arg1t) < 1.0e-9) { arg1t = 1.0e-9; }
+            gx = rbpr + 3.0 * rbpi * (arg1t - arg2) / (arg2 * arg1t * arg1t);
+        } else {
+            gx = rbpr + rbpi / qb;
+        }
+        if (gx > 0.0) {
+            I(b, bp) <+ m * V(b, bp) / gx;
+        } else {
+            V(b, bp) <- 0.0;
+        }
+    } else {
+        V(b, bp) <- 0.0;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §9  Charge storage  (bjtload.c:537-645)
+    // ════════════════════════════════════════════════════════════════════════
+    // BE charge: depletion + diffusion (TF * cbe)
+    var qbe : Real;
+    if (vbe < tDepCap_be) {
+        var a : Real = 1.0 - vbe / tVje;
+        var s : Real = exp(0.0 - model.mje * ln(a));
+        qbe = t_tf * cbe + tVje * czbe * (1.0 - a * s) / (1.0 - model.mje);
+    } else {
+        var czof2 : Real = czbe / f2_be;
+        qbe = t_tf * cbe + czbe * tf1_be + czof2 * (
+            f3_be * (vbe - tDepCap_be) +
+            (model.mje / (tVje + tVje)) * (vbe * vbe - tDepCap_be * tDepCap_be)
+        );
+    }
+
+    // BC charge (internal): depletion + diffusion (TR * cbc)
+    var qbc : Real;
+    if (vbc < tDepCap_bc) {
+        var a : Real = 1.0 - vbc / tVjc;
+        var s : Real = exp(0.0 - model.mjc * ln(a));
+        qbc = t_tr * cbc + tVjc * czbc * (1.0 - a * s) / (1.0 - model.mjc);
+    } else {
+        var czof2 : Real = czbc / f2_bc;
+        qbc = t_tr * cbc + czbc * tf1_bc + czof2 * (
+            f3_bc * (vbc - tDepCap_bc) +
+            (model.mjc / (tVjc + tVjc)) * (vbc * vbc - tDepCap_bc * tDepCap_bc)
+        );
+    }
+
+    // BX charge (external base → collector'): depletion only
+    var qbx : Real;
+    if (vbx < tDepCap_bc) {
+        var a : Real = 1.0 - vbx / tVjc;
+        var s : Real = exp(0.0 - model.mjc * ln(a));
+        qbx = tVjc * czbx * (1.0 - a * s) / (1.0 - model.mjc);
+    } else {
+        var czof2 : Real = czbx / f2_bc;
+        qbx = czbx * tf1_bc + czof2 * (
+            f3_bc * (vbx - tDepCap_bc) +
+            (model.mjc / (tVjc + tVjc)) * (vbx * vbx - tDepCap_bc * tDepCap_bc)
+        );
+    }
+
+    // Substrate charge — quadratic forward extension (bjtload.c:631-641)
+    var qsub : Real;
+    if (vsub < 0.0) {
+        var a : Real = 1.0 - vsub / tVjs;
+        var s : Real = exp(0.0 - model.mjs * ln(a));
+        qsub = tVjs * czsub * (1.0 - a * s) / (1.0 - model.mjs);
+    } else {
+        qsub = vsub * czsub * (1.0 + model.mjs * vsub / (2.0 * tVjs));
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §10  Capacitive contributions  (bjtload.c:701-745)
+    // ════════════════════════════════════════════════════════════════════════
+    I(bp, ep) <+ m * type * ddt(qbe);
+    I(bp, cp) <+ m * type * ddt(qbc);
+    I(b, cp)  <+ m * type * ddt(qbx);
+    if (model.vertical) {
+        I(sub, cp) <+ m * type * ddt(qsub);
+    } else {
+        I(sub, bp) <+ m * (0.0 - type) * ddt(qsub);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §11  Noise  (bjtnoise.c — 6 sources)
+    // ════════════════════════════════════════════════════════════════════════
+    // Thermal: RC, RB, RE
+    if (model.rc > 0.0) { I(c, cp)  <+ white_noise(4.0 * NG_K * t * m * gcpr); }
+    if (model.rb > 0.0) { I(b, bp)  <+ white_noise(4.0 * NG_K * t * m / (rbpr + rbpi / qb)); }
+    if (model.re > 0.0) { I(e, ep)  <+ white_noise(4.0 * NG_K * t * m * gepr); }
+    // Shot: Ic, Ib
+    I(cp, ep) <+ white_noise(2.0 * NG_Q * m * abs(cc));
+    I(bp, ep) <+ white_noise(2.0 * NG_Q * m * abs(cb));
+    // Flicker
+    if (model.kf > 0.0) {
+        I(bp, ep) <+ flicker_noise(m * model.kf * pow(abs(cb), model.af), 1.0);
+    }
+}

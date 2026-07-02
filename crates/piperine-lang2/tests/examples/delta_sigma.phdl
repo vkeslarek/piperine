@@ -1,0 +1,14 @@
+mod DeltaSigma ( input vin : Electrical, inout gnd : Ground, input clk : Bit, output dout : Bit ) {
+    param c : Real = 1.0e-12;  param r : Real = 1.0e3;  param vref : Real = 1.0;
+    wire intg : Electrical;            // integrator output
+    var  q : Bit = 0;                  // quantizer register (held across clocks)
+}
+analog DeltaSigma {
+    var vfb : Real = if (q == 1) { vref } else { -vref };   // digital state read in analog
+    I(intg, gnd) <+ c * ddt(V(intg, gnd));                  // integrating capacitor
+    I(intg, gnd) <+ (vfb - V(vin)) / r;                     // (feedback − input) drives the node
+}
+digital DeltaSigma {
+    dout <- q;
+    @ posedge(clk) { q = (V(intg) > 0.0); }                 // clocked 1-bit quantizer
+}

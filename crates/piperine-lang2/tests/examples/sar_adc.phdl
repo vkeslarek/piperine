@@ -1,0 +1,44 @@
+enum SarState : Bit[2] { Idle, Convert, Done }
+
+mod Dac[N] ( input code : Bit[N], inout out : Electrical, inout gnd : Electrical ) {
+    param vref : Real = 1.8;
+}
+analog Dac {
+    var acc : Real = 0.0;
+    for i in 0..N {
+        if (code[i] == 1) { acc = acc + vref * pow(2.0, real(i)) / pow(2.0, real(N)); }
+    }
+    V(out, gnd) <- acc;
+}
+
+mod SarAdc[N] (
+    input clk : Bit, input start : Bit, input vin : Electrical, inout gnd : Electrical,
+    output result : Bit[N], output done : Bit
+) {
+    wire dout : Electrical;  
+    wire cmp : Bit;
+    var  state : SarState = Idle;  
+    var code : Bit[N] = 0;  
+    var idx : Natural = 0;
+    param cload : Real = 50.0e-15;
+
+    dac  : Dac[N]     ( code, dout, gnd );
+    comp : Comparator ( vin, dout, cmp );
+}
+analog SarAdc {
+    I(dac.out, gnd) <+ cload * ddt(V(dac.out, gnd));
+}
+digital SarAdc {
+    result <- code;
+    done   <- (state == Done);
+    @ posedge(clk) {
+        match state {
+            Idle    => { if (start == 1) { state = Convert; idx = N - 1; code = 0; code[N-1] = 1; } }
+            Convert => {
+                if (cmp == 0) { code[idx] = 0; }
+                if (idx == 0) { state = Done; } else { idx = idx - 1; code[idx-1] = 1; }
+            }
+            Done    => { if (start == 0) { state = Idle; } }
+        }
+    }
+}
