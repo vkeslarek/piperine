@@ -49,7 +49,9 @@ pub(crate) fn convert_event_spec(spec: &EventSpec, ctx: &mut LowerCtx) -> Vec<Lo
                 "posedge"  => vec![LoweredEvent::Digital(DigitalEvent::Posedge(arg_ir))],
                 "negedge"  => vec![LoweredEvent::Digital(DigitalEvent::Negedge(arg_ir))],
                 "change"   => vec![LoweredEvent::Digital(DigitalEvent::Change(arg_ir))],
-                _ => vec![LoweredEvent::Analog(EventSource::InitialStep)],
+                // Elaboration rejects unregistered event names (UnknownEvent)
+                // before lowering runs.
+                other => unreachable!("event `{other}` passed validation but has no IR lowering"),
             }
         }
         EventSpec::Or(specs) => {

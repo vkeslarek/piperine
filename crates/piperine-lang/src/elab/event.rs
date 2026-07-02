@@ -59,14 +59,24 @@ impl EventKind for AnalogAbove {
     fn is_analog_crossing(&self) -> bool { true }
 }
 
+/// Periodic analog event: `@ timer(period)`. Analog-only — the digital
+/// kernel has no time-driven events, so a digital `timer` is rejected like
+/// any analog event in a digital block.
+pub struct AnalogTimer;
+
+impl EventKind for AnalogTimer {
+    fn name(&self) -> &str { "timer" }
+    fn is_analog_crossing(&self) -> bool { true }
+}
+
 pub struct EventRegistry {
     events: HashMap<String, Box<dyn EventKind>>,
 }
 
 impl EventRegistry {
-    /// Creates a new `EventRegistry` pre-registered with the five
-    /// built-in event kinds: `RisingEdge`, `FallingEdge`, `AnyChange`,
-    /// `AnalogCross`, and `AnalogAbove`.
+    /// Creates a new `EventRegistry` pre-registered with the built-in event
+    /// kinds: `RisingEdge`, `FallingEdge`, `AnyChange`, `AnalogCross`,
+    /// `AnalogAbove`, and `AnalogTimer`.
     pub fn with_builtins() -> Self {
         let mut r = Self { events: HashMap::new() };
         r.register(RisingEdge);
@@ -74,6 +84,7 @@ impl EventRegistry {
         r.register(AnyChange);
         r.register(AnalogCross);
         r.register(AnalogAbove);
+        r.register(AnalogTimer);
         r
     }
 
@@ -105,7 +116,8 @@ impl EventRegistry {
                 | ModStmt::WireDecl { .. }
                 | ModStmt::VarDecl { .. }
                 | ModStmt::Instance { .. }
-                | ModStmt::Connection { .. } => {}
+                | ModStmt::Connection { .. }
+                | ModStmt::Assert { .. } => {}
             }
         }
         Ok(())

@@ -16,8 +16,8 @@ use piperine_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_solver::math::linear::Stamp;
 use piperine_solver::solver::Context;
 
-use crate::ir::Analysis;
-use crate::jit::analog::{AnalogKernel, RuntimeState};
+use crate::ir::{Analysis, CrossDir};
+use crate::jit::analog::{AnalogKernel, CompiledTrigger, RuntimeState};
 use crate::jit::{CodegenError, SimCtx};
 
 /// A runtime-serviced analog operator: updated once per accepted timestep,
@@ -27,6 +27,10 @@ enum Operator {
     Delay { slot: usize, delay: f64, history: VecDeque<(f64, f64)> },
     /// `slew(x, rise, fall)` — rate-limited follower.
     Slew { slot: usize, rise: f64, fall: f64, output: f64, time: f64 },
+    /// `idt`/`idtmod` — implicit-Euler accumulator (`value += dt·x`, wrapped
+    /// into `[0, modulus)` when given). The kernel adds the in-step `dt·x`
+    /// term itself; `value` is the integral up to the last accepted step.
+    Integrate { slot: usize, modulus: Option<f64>, value: f64, time: f64 },
 }
 
 impl Operator {
@@ -65,13 +69,71 @@ impl Operator {
                 *last_time = time;
                 *output
             }
+            Operator::Integrate { modulus, value, time: last_time, .. } => {
+                let dt = (time - *last_time).max(0.0);
+                *value += dt * input;
+                if let Some(m) = *modulus {
+                    if m > 0.0 {
+                        *value -= m * (*value / m).floor();
+                    }
+                }
+                *last_time = time;
+                *value
+            }
         }
     }
 
     fn slot(&self) -> usize {
         match self {
-            Operator::Delay { slot, .. } | Operator::Slew { slot, .. } => *slot,
+            Operator::Delay { slot, .. }
+            | Operator::Slew { slot, .. }
+            | Operator::Integrate { slot, .. } => *slot,
         }
+    }
+}
+
+/// Per-event transition detector: remembers the previous accepted trigger
+/// value (crossings) or the next fire time (timers).
+struct EventDetector {
+    /// A trigger value has been observed (crossing detection is armed).
+    seeded: bool,
+    prev: f64,
+    next_fire: f64,
+}
+
+impl EventDetector {
+    /// Whether the event fires given the trigger value at the accepted
+    /// solution, updating the detector state.
+    fn fired(&mut self, trigger: &CompiledTrigger, value: f64, time: f64, period: f64) -> bool {
+        let fired = match trigger {
+            // Fired once at instance creation, never here.
+            CompiledTrigger::Initial => false,
+            CompiledTrigger::Above => {
+                let rose = if self.seeded { self.prev <= 0.0 } else { true };
+                rose && value > 0.0
+            }
+            CompiledTrigger::Cross(dir) => {
+                let rising = self.seeded && self.prev <= 0.0 && value > 0.0;
+                let falling = self.seeded && self.prev >= 0.0 && value < 0.0;
+                match dir {
+                    CrossDir::Rising => rising,
+                    CrossDir::Falling => falling,
+                    CrossDir::Either => rising || falling,
+                }
+            }
+            CompiledTrigger::Timer { .. } => {
+                let fires = period > 0.0 && time >= self.next_fire;
+                if fires {
+                    while self.next_fire <= time {
+                        self.next_fire += period;
+                    }
+                }
+                fires
+            }
+        };
+        self.prev = value;
+        self.seeded = true;
+        fired
     }
 }
 
@@ -90,6 +152,10 @@ pub struct AnalogInstance {
     /// Runtime-state values read by the kernel (`state[StateId]`).
     state: Vec<f64>,
     operators: Vec<Operator>,
+    /// One detector per runtime event, in kernel event order. `periods[i]`
+    /// is the (parameter-constant) timer period, 0 for non-timers.
+    event_detectors: Vec<EventDetector>,
+    event_periods: Vec<f64>,
     /// Module-level persistent variable values read by the kernel through
     /// the D2A bridge (`vars[VarId]`). Synced from the digital side after
     /// each `eval_discrete` call.
@@ -173,16 +239,49 @@ impl AnalogInstance {
                         output: 0.0,
                         time: 0.0,
                     },
+                    RuntimeState::Integrator { ic, modulus } => Operator::Integrate {
+                        slot: spec.id.0 as usize,
+                        modulus: modulus.as_ref().map(&value).transpose()?,
+                        value: value(ic)?,
+                        time: 0.0,
+                    },
                 })
             })
             .collect::<Result<Vec<_>, CodegenError>>()?;
+
+        // Integrators start at their initial condition; every other state
+        // slot starts at 0.
+        let mut state = vec![0.0; kernel.num_state_slots()];
+        for op in &operators {
+            if let Operator::Integrate { slot, value, .. } = op {
+                state[*slot] = *value;
+            }
+        }
+
+        // Timer periods are parameter-constant, evaluated once.
+        let event_periods = kernel
+            .events()
+            .iter()
+            .map(|e| match &e.trigger {
+                CompiledTrigger::Timer { period } => period
+                    .eval_const(&|id| params.get(id.0 as usize).copied())
+                    .map_err(CodegenError::ConstEval),
+                _ => Ok(0.0),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let event_detectors = kernel
+            .events()
+            .iter()
+            .zip(&event_periods)
+            .map(|(_, &period)| EventDetector { seeded: false, prev: 0.0, next_fire: period })
+            .collect();
 
         let mut sim = SimCtx::default();
         sim.param_given_mask = param_given_mask;
         let n = kernel.num_terminals();
         let num_vars = kernel.num_vars();
-        Ok(Self {
-            state: vec![0.0; kernel.num_state_slots()],
+        let mut instance = Self {
+            state,
             kernel,
             node_refs,
             force_refs,
@@ -190,9 +289,45 @@ impl AnalogInstance {
             params,
             sim,
             operators,
+            event_detectors,
+            event_periods,
             vars: vec![0.0; num_vars],
             last_volts: vec![0.0; n],
-        })
+        };
+        instance.fire_initial_events();
+        Ok(instance)
+    }
+
+    /// Execute `@ initial` event actions once, at zero volts (before any
+    /// solve, only parameters and power-on variable values are visible).
+    fn fire_initial_events(&mut self) {
+        let fired: Vec<bool> = self
+            .kernel
+            .events()
+            .iter()
+            .map(|e| matches!(e.trigger, CompiledTrigger::Initial))
+            .collect();
+        if fired.iter().any(|&f| f) {
+            let volts = vec![0.0; self.num_terminals()];
+            self.apply_event_actions(&fired, &volts);
+        }
+    }
+
+    /// Evaluate all action rows at `volts` and write the fired events'
+    /// actions into the vars bank, in body order.
+    fn apply_event_actions(&mut self, fired: &[bool], volts: &[f64]) {
+        let mut values = vec![0.0; self.kernel.num_event_actions()];
+        self.kernel
+            .eval_event_actions(volts, &self.params, &self.state, &self.vars, &self.sim, &mut values);
+        let mut row = 0;
+        for (event, &event_fired) in self.kernel.events().iter().zip(fired) {
+            for var in &event.action_vars {
+                if event_fired {
+                    self.vars[var.0 as usize] = values[row];
+                }
+                row += 1;
+            }
+        }
     }
 
     /// Update the module-level variable bank from the digital side (the D2A
@@ -498,7 +633,28 @@ impl AnalogInstance {
                 self.state[slot] = op.accept(ctx.time, inputs[slot]);
             }
         }
+        self.detect_events(&volts, ctx.time);
         self.last_volts = volts;
+    }
+
+    /// Runtime events: evaluate the trigger values at the accepted solution,
+    /// detect transitions, and execute fired events' variable updates.
+    fn detect_events(&mut self, volts: &[f64], time: f64) {
+        let num_events = self.kernel.events().len();
+        if num_events == 0 {
+            return;
+        }
+        let mut triggers = vec![0.0; num_events];
+        self.kernel
+            .eval_event_triggers(volts, &self.params, &self.state, &self.vars, &self.sim, &mut triggers);
+        let mut fired = vec![false; num_events];
+        for (i, detector) in self.event_detectors.iter_mut().enumerate() {
+            let trigger = &self.kernel.events()[i].trigger;
+            fired[i] = detector.fired(trigger, triggers[i], time, self.event_periods[i]);
+        }
+        if fired.iter().any(|&f| f) {
+            self.apply_event_actions(&fired, volts);
+        }
     }
 
     pub fn bound_step_hint(&self) -> f64 {
@@ -524,6 +680,11 @@ impl AnalogInstance {
         self.sim.temperature = context.temperature;
         self.sim.gmin = context.gmin.into();
         self.sim.current_analysis = super::analysis_code(analysis);
+        // Outside transient there is no integration step; companion terms
+        // that scale with `sim.step` (the `idt` in-step coupling) vanish.
+        if analysis != Analysis::Tran {
+            self.sim.step = 0.0;
+        }
     }
 }
 

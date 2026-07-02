@@ -205,6 +205,14 @@ PHDL event (`@ cross(...) when (g) { ... }`) lowers to an event whose body is a 
 This is the **one** event representation; the prior IR's separate `IrEventSpec` (digital),
 `IrEventKind` (analog), and `IrStateKind::Cross/Timer` are unified here and in §9.
 
+Runtime semantics (codegen): an event body is a list of persistent-variable updates
+(`if`/`match` fold into `Select` on each value; diagnostics are collected; anything else fails
+loud). `initial` actions run once at instance creation (zero volts, parameters visible);
+`cross`/`above`/`timer` trigger expressions are evaluated at each *accepted* solution and the
+device detects the transition — a fired event writes its actions into the vars bank, visible
+from the next step (the ngspice `sw` hysteresis idiom). `final` admits diagnostics only (there
+is no end-of-run device hook yet).
+
 ### 6.2 Noise
 
 ```
@@ -241,10 +249,12 @@ IrStateKind =
 operator. Reactivity (for `ContribKind`) is a property of the kind: `Ddt`/`Idt`/`IdtMod`/
 `Laplace`/`ZTransform` are reactive; `Delay`/`Transition`/`Slew`/`Table`/`Ddx` are resistive.
 `Table` is added for measured-data devices; `variant` fields are resolved enums, not strings.
-Current lowering status: `Ddt`/`Idt` (companion model), `Ddx` (symbolic), `Delay`/`Slew`
-(runtime-serviced state) are implemented; `IdtMod`/`Transition`/`Table`/`Laplace`/
-`ZTransform` are recognised and fail loud at codegen (named errors), as do analog events
-(§6.1) — each is its own follow-up.
+Current lowering status: `Ddt` (charge/companion model), `Idt`/`IdtMod` (implicit-Euler
+runtime integrator: the kernel reads `state + dt·x`, the device accumulates — and wraps, for
+`idtmod` — each accepted step; at DC the value is the initial condition; the AC small-signal
+`1/jω` admittance is not yet stamped), `Ddx` (symbolic), and `Delay`/`Slew` (runtime-serviced
+state) are implemented. `Transition`/`Table`/`Laplace`/`ZTransform` are recognised and fail
+loud at codegen (named errors) — each is its own follow-up.
 `Cross`/`Timer` are **not** state kinds here — they are event sources (§6.1); detector state, if
 any, is the codegen's concern.
 
@@ -364,7 +374,10 @@ fallback; a construct the codegen cannot lower must be rejected at emit with a d
   `SymbolTable`.
 - `ContribKind` matches the presence of a reactive `State` in the expression (checked, not
   assumed).
-- Inferred digital latches emit a warning (deny-able); registers are silent.
+- `$bound_step`/`$discontinuity` are analog-only; `Finish` fails loud at codegen in both
+  bodies (no runtime hook yet).
+- Inferred digital latches emit a warning (a combinational variable read on a path where it
+  was not definitely assigned); registers are silent.
 
 `first_reactive_state(expr) -> Option<StateId>` classifies contributions; unlike the prior
 string-walking `first_state_ref`, it walks resolved `State(id)` nodes.
@@ -382,9 +395,10 @@ Per module:
 - **Analog** (`AnalogKernel`): flatten the body (sequential vars substitute forward, path
   conditions fold into `Select`, user calls inline, `ddx` expands symbolically), then JIT
   residual, Jacobian (symbolic differentiation), charge `Q(V)` + charge Jacobian (companion
-  model for `ddt`/`idt`), force rows + force Jacobian (ideal potential sources get MNA
-  branch-current unknowns), noise PSDs, runtime-state inputs (`delay`/`slew`, serviced by the
-  device each accepted step), and `$bound_step`. Everything either lowers faithfully or is a
+  model for `ddt`), force rows + force Jacobian (ideal potential sources get MNA
+  branch-current unknowns), noise PSDs, runtime-state inputs (`delay`/`slew`/`idt`/`idtmod`,
+  serviced by the device each accepted step), event trigger/action rows (§6.1), and
+  `$bound_step`. Everything either lowers faithfully or is a
   named `CodegenError::Unsupported` — no `Real(0.0)` fallback. `Diagnostic` statements are
   collected as kernel metadata for tooling, not executed.
 - **Digital** (`DigitalKernel`): compiled, not interpreted. Each digital body JITs to three

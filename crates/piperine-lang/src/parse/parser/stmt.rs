@@ -21,6 +21,16 @@ impl<'a> Parser<'a> {
     /// Parses a single statement inside a `mod` body: `param`, `wire`, `var`, `for`, `if`, instance, or connection.
     pub(crate) fn parse_mod_stmt(&mut self) -> Result<ModStmt, crate::parse::error::ParseError> {
         let attrs = self.parse_attributes()?;
+        if matches!(self.peek(), Some(Tok::SysCall(name)) if name == "assert") {
+            self.pos += 1;
+            self.expect(&Tok::LParen)?;
+            let cond = self.parse_expr()?;
+            self.expect(&Tok::Comma)?;
+            let msg = self.parse_expr()?;
+            self.expect(&Tok::RParen)?;
+            self.expect(&Tok::Semi)?;
+            return Ok(ModStmt::Assert { attrs, cond, msg });
+        }
         if self.eat_ident("param") {
             let name = self.parse_ident()?;
             self.expect(&Tok::Colon)?;
@@ -142,12 +152,12 @@ impl<'a> Parser<'a> {
         let mut ports = Vec::new();
         if self.eat(&Tok::LParen) {
             if !self.eat(&Tok::RParen) {
-                ports.push(self.parse_expr()?);
+                ports.push(self.parse_port_conn()?);
                 while self.eat(&Tok::Comma) {
                     if self.peek() == Some(&Tok::RParen) {
                         break;
                     }
-                    ports.push(self.parse_expr()?);
+                    ports.push(self.parse_port_conn()?);
                 }
                 self.expect(&Tok::RParen)?;
             }
@@ -444,11 +454,31 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a match pattern: `_` (wildcard) or a path.
+    /// One instance port argument: positional `expr` or named `.port = expr`.
+    fn parse_port_conn(&mut self) -> Result<PortConn, crate::parse::error::ParseError> {
+        if self.eat(&Tok::Dot) {
+            let port = self.parse_ident()?;
+            self.expect(&Tok::Assign)?;
+            let expr = self.parse_expr()?;
+            return Ok(PortConn::Named { port, expr });
+        }
+        Ok(self.parse_expr().map(PortConn::Positional)?)
+    }
+
     pub(crate) fn parse_pattern(&mut self) -> Result<Pattern, crate::parse::error::ParseError> {
         if self.eat_ident("_") {
-            Ok(Pattern::Wildcard)
-        } else {
-            Ok(Pattern::Path(self.parse_path()?))
+            return Ok(Pattern::Wildcard);
+        }
+        match self.peek().cloned() {
+            Some(Tok::BitPattern(bits)) => {
+                self.pos += 1;
+                Ok(Pattern::BitPattern(bits))
+            }
+            Some(Tok::Int(v)) => {
+                self.pos += 1;
+                Ok(Pattern::Literal(v))
+            }
+            _ => Ok(Pattern::Path(self.parse_path()?)),
         }
     }
 

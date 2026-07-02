@@ -203,8 +203,14 @@ impl DigitalState {
         const MAX_ITERS: usize = 1000;
         let mut restart_from: usize = 0;
 
+        // Reused across devices — allocating these per device per delta
+        // cycle dominated chain propagation.
+        let mut output_changed_at = vec![false; n];
+        let mut prev_outs: Vec<LogicValue> = Vec::new();
+        let mut local_q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
+
         'outer: for iter in 0..MAX_ITERS {
-            let mut output_changed_at = vec![false; n];
+            output_changed_at.iter_mut().for_each(|c| *c = false);
 
             for (offset, &dev_idx) in topology.topo_order[restart_from..].iter().enumerate() {
                 let topo_pos = restart_from + offset;
@@ -214,12 +220,10 @@ impl DigitalState {
                     continue;
                 }
 
-                let prev_outs: Vec<LogicValue> = device.digital_output_nets()
-                    .iter()
-                    .map(|n| self.nets[n.0])
-                    .collect();
+                prev_outs.clear();
+                prev_outs.extend(device.digital_output_nets().iter().map(|n| self.nets[n.0]));
 
-                let mut local_q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
+                local_q.clear();
                 device.eval_discrete(t, &self.nets, &[], &mut local_q);
 
                 while let Some(Reverse(ev)) = local_q.pop() {

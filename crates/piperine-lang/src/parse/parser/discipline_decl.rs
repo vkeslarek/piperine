@@ -45,8 +45,16 @@ impl Parse for DisciplineDecl {
                     ResolveKind::Or
                 } else if parser.eat_ident("and") {
                     ResolveKind::And
+                } else if parser.eat_ident("sum") {
+                    ResolveKind::Sum
+                } else if parser.eat_ident("avg") {
+                    ResolveKind::Avg
+                } else if parser.eat_ident("max") {
+                    ResolveKind::Max
+                } else if parser.eat_ident("min") {
+                    ResolveKind::Min
                 } else {
-                    return Err("Unknown resolve kind (expected tri/or/and)".into());
+                    return Err("Unknown resolve kind (expected tri/or/and/sum/avg/max/min)".into());
                 };
                 parser.expect(&Tok::Semi)?;
                 items.push(DisciplineItem::Resolve(r));

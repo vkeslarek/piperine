@@ -409,6 +409,8 @@ fn pattern_matches(pat: &crate::parse::ast::Pattern, _val: &DigitalVal) -> bool 
     match pat {
         Pattern::Wildcard => true,
         Pattern::Path(_)  => true, // enum path or binding — treat as match-all for now
+        Pattern::Literal(v) => matches!(_val, DigitalVal::Natural(n) if n == v),
+        Pattern::BitPattern(_) => true, // bus values are not runtime-modeled here
     }
 }
 

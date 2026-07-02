@@ -22,10 +22,13 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
-use crate::ir::{IrExpr, IrModule, IrStateKind, NodeId, StateId};
+use crate::ir::{CrossDir, IrExpr, IrModule, IrStateKind, NodeId, StateId, VarId};
 
 use super::emit::AnalogEmitter;
-use super::flatten::{AnalogFlattener, FlatAnalog, FlatContrib, FlatDiagnostic, FlatForce};
+use super::flatten::{
+    AnalogFlattener, FlatAnalog, FlatContrib, FlatDiagnostic, FlatEvent, FlatEventTrigger,
+    FlatForce,
+};
 use super::{math, CodegenError, SimCtx};
 
 /// The uniform analog JIT function type.
@@ -40,14 +43,19 @@ use super::{math, CodegenError, SimCtx};
 /// this bank). Unused when the module has no module-level vars.
 type AnalogFn = unsafe extern "C" fn(*const f64, *const f64, *const f64, *const f64, *const SimCtx, *mut f64);
 
-/// A runtime-serviced operator state (`delay` / `slew`). The device evaluates
-/// the config expressions once per instance (they must be parameter-constant)
-/// and updates `state[id]` from the compiled state-input function each
-/// accepted timestep.
+/// A runtime-serviced operator state (`delay` / `slew` / `idt` / `idtmod`).
+/// The device evaluates the config expressions once per instance (they must
+/// be parameter-constant) and updates `state[id]` from the compiled
+/// state-input function each accepted timestep.
 #[derive(Debug, Clone)]
 pub enum RuntimeState {
     Delay { delay: IrExpr },
     Slew { rise: IrExpr, fall: IrExpr },
+    /// `idt`/`idtmod` accumulator: `state[id]` holds the integral up to the
+    /// last accepted step (starting at `ic`); the kernel reads it as
+    /// `state + dt·x` (implicit Euler). `modulus` wraps the accumulator
+    /// (`idtmod`).
+    Integrator { ic: IrExpr, modulus: Option<IrExpr> },
 }
 
 /// One runtime state slot: which `StateId` it services and how.
@@ -55,6 +63,27 @@ pub enum RuntimeState {
 pub struct RuntimeStateSpec {
     pub id: StateId,
     pub kind: RuntimeState,
+}
+
+/// How a compiled runtime event fires. Trigger *values* come from
+/// [`AnalogKernel::eval_event_triggers`]; the device detects the transition
+/// against the previous accepted value.
+#[derive(Debug, Clone)]
+pub enum CompiledTrigger {
+    Initial,
+    Cross(CrossDir),
+    Above,
+    /// Fires every `period` seconds (parameter-constant).
+    Timer { period: IrExpr },
+}
+
+/// A compiled runtime analog event: its trigger plus the vars-bank slots its
+/// actions write, in body order. Action values are rows of
+/// [`AnalogKernel::eval_event_actions`], concatenated across events.
+#[derive(Debug, Clone)]
+pub struct CompiledEvent {
+    pub trigger: CompiledTrigger,
+    pub action_vars: Vec<VarId>,
 }
 
 /// A compiled analog device kernel.
@@ -75,6 +104,8 @@ pub struct AnalogKernel {
     /// Per-noise-source terminals `(plus, minus)`.
     noise_terminals: Vec<(NodeId, NodeId)>,
     runtime_states: Vec<RuntimeStateSpec>,
+    events: Vec<CompiledEvent>,
+    num_event_actions: usize,
     diagnostics: Vec<FlatDiagnostic>,
     residual: AnalogFn,
     jacobian: AnalogFn,
@@ -90,6 +121,10 @@ pub struct AnalogKernel {
     /// Runtime-state input values (one per state slot); `None` without
     /// runtime states.
     state_inputs: Option<AnalogFn>,
+    /// Event trigger values (one per event) and action values (one per
+    /// action); `None` without runtime events.
+    event_triggers: Option<AnalogFn>,
+    event_actions: Option<AnalogFn>,
     /// Minimum `$bound_step` expression; `None` without bound steps.
     bound_step: Option<AnalogFn>,
     _jit: JITModule,
@@ -160,6 +195,16 @@ impl AnalogKernel {
 
     pub fn runtime_states(&self) -> &[RuntimeStateSpec] {
         &self.runtime_states
+    }
+
+    /// Runtime analog events, in body order.
+    pub fn events(&self) -> &[CompiledEvent] {
+        &self.events
+    }
+
+    /// Total number of event action rows (across all events).
+    pub fn num_event_actions(&self) -> usize {
+        self.num_event_actions
     }
 
     /// Diagnostics collected (not executed) from the analog body.
@@ -236,6 +281,20 @@ impl AnalogKernel {
     /// Write each runtime state's input value to `out[0..num_state_slots]`.
     pub fn eval_state_inputs(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.state_inputs {
+            Self::call(f, volts, params, state, vars, sim, out);
+        }
+    }
+
+    /// Write each event's trigger value to `out[0..events.len()]`.
+    pub fn eval_event_triggers(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.event_triggers {
+            Self::call(f, volts, params, state, vars, sim, out);
+        }
+    }
+
+    /// Write each event action's value to `out[0..num_event_actions]`.
+    pub fn eval_event_actions(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.event_actions {
             Self::call(f, volts, params, state, vars, sim, out);
         }
     }
@@ -386,6 +445,48 @@ impl<'m> AnalogCompiler<'m> {
             Some(self.compile_rows("state_inputs", &rows)?)
         };
 
+        let events = std::mem::take(&mut self.flat.events);
+        let (event_triggers_id, event_actions_id) = if events.is_empty() {
+            (None, None)
+        } else {
+            // Trigger rows: the watched expression (0 for initial/timer —
+            // those fire on lifecycle/clock, not on a value transition).
+            let trigger_rows: Vec<IrExpr> = events
+                .iter()
+                .map(|e| match &e.trigger {
+                    FlatEventTrigger::Cross { expr, .. } | FlatEventTrigger::Above { expr } => {
+                        expr.clone()
+                    }
+                    FlatEventTrigger::Initial | FlatEventTrigger::Timer { .. } => IrExpr::Real(0.0),
+                })
+                .collect();
+            let action_rows: Vec<IrExpr> = events
+                .iter()
+                .flat_map(|e| e.actions.iter().map(|a| a.value.clone()))
+                .collect();
+            let actions_id = if action_rows.is_empty() {
+                None
+            } else {
+                Some(self.compile_rows("event_actions", &action_rows)?)
+            };
+            (Some(self.compile_rows("event_triggers", &trigger_rows)?), actions_id)
+        };
+        let num_event_actions = events.iter().map(|e| e.actions.len()).sum();
+        let compiled_events: Vec<CompiledEvent> = events
+            .iter()
+            .map(|e| CompiledEvent {
+                trigger: match &e.trigger {
+                    FlatEventTrigger::Initial => CompiledTrigger::Initial,
+                    FlatEventTrigger::Cross { dir, .. } => CompiledTrigger::Cross(*dir),
+                    FlatEventTrigger::Above { .. } => CompiledTrigger::Above,
+                    FlatEventTrigger::Timer { period } => {
+                        CompiledTrigger::Timer { period: period.clone() }
+                    }
+                },
+                action_vars: e.actions.iter().map(|a| a.var).collect(),
+            })
+            .collect();
+
         let bound_step_id = if bound_steps.is_empty() {
             None
         } else {
@@ -414,6 +515,13 @@ impl<'m> AnalogCompiler<'m> {
                     IrStateKind::Slew { rise, fall } => {
                         RuntimeState::Slew { rise: rise.clone(), fall: fall.clone() }
                     }
+                    IrStateKind::Idt { ic } => {
+                        RuntimeState::Integrator { ic: ic.clone(), modulus: None }
+                    }
+                    IrStateKind::IdtMod { ic, modulus } => RuntimeState::Integrator {
+                        ic: ic.clone(),
+                        modulus: Some(modulus.clone()),
+                    },
                     other => {
                         return Err(CodegenError::Invalid(format!(
                             "`{}` is not a runtime-serviced state",
@@ -436,6 +544,8 @@ impl<'m> AnalogCompiler<'m> {
             force_terminals: forces.iter().map(|f| (f.plus, f.minus)).collect(),
             noise_terminals: noise.iter().map(|&(p, m, _)| (p, m)).collect(),
             runtime_states,
+            events: compiled_events,
+            num_event_actions,
             diagnostics: std::mem::take(&mut self.flat.diagnostics),
             residual: get(&self.jit, residual_id),
             jacobian: get(&self.jit, jacobian_id),
@@ -445,6 +555,8 @@ impl<'m> AnalogCompiler<'m> {
             force_jacobian: force_jac_id.map(|id| get(&self.jit, id)),
             noise: noise_id.map(|id| get(&self.jit, id)),
             state_inputs: state_inputs_id.map(|id| get(&self.jit, id)),
+            event_triggers: event_triggers_id.map(|id| get(&self.jit, id)),
+            event_actions: event_actions_id.map(|id| get(&self.jit, id)),
             bound_step: bound_step_id.map(|id| get(&self.jit, id)),
             terminals: std::mem::take(&mut self.terminals),
             _jit: self.jit,
@@ -645,5 +757,6 @@ impl FlatAnalog {
             .chain(self.bound_steps.iter())
             .chain(self.noise.iter().map(|(_, _, psd)| psd))
             .chain(self.runtime_states.iter().map(|(_, input)| input))
+            .chain(self.events.iter().flat_map(FlatEvent::exprs))
     }
 }

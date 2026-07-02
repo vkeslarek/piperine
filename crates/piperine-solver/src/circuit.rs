@@ -176,6 +176,22 @@ impl CircuitInstance {
         }
 
         let before = self.digital_state.nets.clone();
+
+        // A2D bridge: a device whose digital body samples analog quantities
+        // gets no digital input event when only a voltage moved — evaluate
+        // it explicitly so it sees the fresh analog solution, then let the
+        // resulting events propagate through the ordinary digital run.
+        use std::cmp::Reverse;
+        let mut seed_queue = std::collections::BinaryHeap::new();
+        for device in &mut self.devices {
+            if device.samples_analog() {
+                device.eval_discrete(t, &self.digital_state.nets, &[], &mut seed_queue);
+            }
+        }
+        for Reverse(event) in seed_queue {
+            self.digital_state.schedule(event);
+        }
+
         self.run_digital_at(t);
         let after = &self.digital_state.nets;
         before != *after

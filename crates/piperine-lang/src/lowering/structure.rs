@@ -198,6 +198,7 @@ pub(crate) fn convert_fn(f: &Function, prog: &Design, symbols: &mut SymbolTable)
     }
     
     let mut ctx = LowerCtx::new(symbols, false, module_vars);
+    ctx.enum_values = prog.enum_value_map();
     let body = lower_stmts(f.body(), &mut ctx);
     
     let returns = Some(IrType::Real); // Best effort fallback

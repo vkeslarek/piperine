@@ -805,3 +805,58 @@ fn spec_parent_contribution_with_behavioral_for_and_indexed_ports() {
     // parts.
     assert!(kernel.has_reactive(), "parasitic capacitors produce reactive contributions");
 }
+
+// ═════════════ Section §10.4 — Runtime analog events (@above / @initial) ═════
+
+/// SPEC §10.4 / VI.5 — `@ above(expr)` fires when `expr` becomes positive
+/// and its body updates persistent module state (the ngspice `sw` idiom).
+/// A ramping control voltage crosses the threshold mid-run; the switch's
+/// conductance flips and the divider output collapses.
+#[test]
+fn sim_tran_above_event_toggles_switch_state() {
+    use piperine_solver::analysis::transient::TransientAnalysisOptions;
+
+    let prog = compile("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
+        analog VSource { V(p, n) <- dc; }
+        mod Ramp ( inout p : Electrical, inout n : Electrical ) { param slope : Real = 1.0; }
+        analog Ramp { V(p, n) <- slope * $abstime; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Switch ( inout p : Electrical, inout n : Electrical,
+                     inout cp : Electrical, inout cn : Electrical ) {
+            param vt : Real = 1.0;
+            var st : Real = 0.0;
+        }
+        analog Switch {
+            @ initial { st = 0.0; }
+            @ above(V(cp, cn) - vt) { st = 1.0; }
+            var g : Real = if (st > 0.5) { 1.0 } else { 1.0e-9 };
+            I(p, n) <+ g * V(p, n);
+        }
+        mod Top ( inout vin : Electrical, inout mid : Electrical, inout ctl : Electrical ) {
+            v1 : VSource ( vin, gnd ) { .dc = 5.0 };
+            r1 : Resistor ( vin, mid );
+            s1 : Switch ( mid, gnd, ctl, gnd );
+            vc : Ramp ( ctl, gnd ) { .slope = 1.0e4 };
+        }
+    ");
+    let mut compiler = CircuitCompiler::new(&prog);
+    let mut circuit = compiler.build_circuit("Top").expect("build circuit");
+    circuit.init_digital();
+    circuit.rebuild_digital_topology();
+
+    // Control ramps 0→10V over 1ms, crossing vt=1V at t=0.1ms.
+    let options = TransientAnalysisOptions::new(1e-3.into(), 1e-6.into());
+    let result = circuit.transient(options, Context::default())
+        .unwrap().solve().unwrap();
+
+    let v_mid = |step: &piperine_solver::analysis::transient::TransientStep| {
+        step.get_node(&NodeIdentifier::Anonymous(2)).expect("V(mid)")
+    };
+    let early = result.iter().find(|s| s.time() >= 2e-5).expect("early step");
+    let late = result.last().expect("final step");
+    assert!(v_mid(early) > 4.5, "switch open before crossing: V(mid) = {}", v_mid(early));
+    assert!(v_mid(late) < 0.1, "switch closed after crossing: V(mid) = {}", v_mid(late));
+}

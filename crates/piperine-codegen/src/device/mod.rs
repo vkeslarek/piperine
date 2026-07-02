@@ -216,6 +216,12 @@ impl Device for PiperineDevice {
 
     // ── Digital ──
 
+    fn samples_analog(&self) -> bool {
+        self.digital
+            .as_ref()
+            .is_some_and(|d| d.kernel().layout().num_analog() > 0)
+    }
+
     fn digital_input_nets(&self) -> &[DigitalNet] {
         self.digital
             .as_ref()

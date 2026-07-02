@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use crate::parse::ast::{
     BehaviorDecl, DisciplineDecl, EnumDecl, FnDecl, ImplDecl, ModDecl, SourceFile,
 };
-use crate::elab::const_eval::ConstEnv;
+use crate::elab::const_eval::{ConstEnv, ConstVal};
 use crate::elab::event::EventRegistry;
 use crate::pom::{ElabError, Design, Module};
 
@@ -60,6 +60,43 @@ impl Elaborator {
         }
     }
 
+    /// Every enum variant's discriminant as a global const: bare (`Idle`)
+    /// and qualified (`SarState::Idle`). Values default sequential from
+    /// zero, continuing after an explicit discriminant (SPEC §6.4).
+    fn enum_variant_globals(&self) -> Result<HashMap<String, ConstVal>, ElabError> {
+        let mut globals = HashMap::new();
+        for (enum_name, decl) in &self.enums {
+            let mut next: i64 = 0;
+            for variant in &decl.variants {
+                let value = match &variant.value {
+                    Some(expr) => {
+                        let val = ConstEnv::new().eval(expr).map_err(|e| {
+                            ElabError::ConstEval {
+                                context: format!("enum `{enum_name}` variant `{}`", variant.name),
+                                source: e,
+                            }
+                        })?;
+                        match val {
+                            ConstVal::Int(v) => v,
+                            ConstVal::Nat(v) => v as i64,
+                            other => {
+                                return Err(ElabError::Other(format!(
+                                    "enum `{enum_name}` variant `{}` has non-integer discriminant {other:?}",
+                                    variant.name
+                                )))
+                            }
+                        }
+                    }
+                    None => next,
+                };
+                globals.insert(variant.name.clone(), ConstVal::Int(value));
+                globals.insert(format!("{enum_name}::{}", variant.name), ConstVal::Int(value));
+                next = value + 1;
+            }
+        }
+        Ok(globals)
+    }
+
     /// Registers all top-level symbols from `source`, validates events,
     /// then elaborates functions, impl blocks, non-generic modules, and
     /// behaviors into a complete `Design`. Generic modules are monomorphized
@@ -89,8 +126,10 @@ impl Elaborator {
         *prog.enums_map_mut() = self.enums.clone();
         *prog.capabilities_map_mut() = self.capability_decls.clone();
 
-        // Evaluate all global consts
-        let mut evaluated_globals = HashMap::new();
+        // Evaluate all global consts. Enum variants seed the global const
+        // environment first (SPEC §6.4 / B.1): a variant is usable bare
+        // (`Idle`) or qualified (`SarState::Idle`) wherever a constant is.
+        let mut evaluated_globals = self.enum_variant_globals()?;
         let mut pending_consts: HashMap<String, crate::parse::ast::ConstDecl> = self.const_decls.clone();
         let mut last_len = pending_consts.len() + 1;
         while pending_consts.len() < last_len {

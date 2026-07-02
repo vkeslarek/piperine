@@ -93,7 +93,7 @@ fn check_module(
     
     // Check behaviors (GAPS §B.5)
     for behavior in &module.behaviors {
-        check_behavior(module, behavior, &locals)?;
+        check_behavior(module, behavior, &locals, design)?;
     }
 
     // Check every instance port binding.
@@ -446,21 +446,41 @@ mod tests {
     }
 }
 
+/// The value type a discipline carries: its `storage` type for storage
+/// disciplines, `Real` (the potential) for conservative ones.
+fn discipline_value_type(discipline: &str, design: &crate::pom::Design) -> ValueType {
+    use crate::parse::ast::DisciplineItem;
+    let Some(decl) = design.discipline(discipline) else {
+        // Ground and unknown disciplines read as a potential.
+        return ValueType::Real;
+    };
+    for item in &decl.items {
+        if let DisciplineItem::Storage(ty) = item {
+            return match ty.name.as_str() {
+                "Real" => ValueType::Real,
+                "Boolean" => ValueType::Boolean,
+                "Natural" => ValueType::Natural,
+                "Integer" => ValueType::Integer,
+                _ => ValueType::Quad,
+            };
+        }
+    }
+    ValueType::Real
+}
+
 fn check_behavior(
     module: &DesignModule,
     behavior: &Behavior,
     nets: &std::collections::HashMap<String, NetType>,
+    design: &crate::pom::Design,
 ) -> Result<(), ElabError> {
     let mut locals: std::collections::HashMap<String, ValueType> = std::collections::HashMap::new();
     
-    // Populate nets as their underlying value types
+    // A net reads/drives as the value its discipline carries: a
+    // conservative discipline as `Real` (its potential), a storage
+    // discipline as its declared storage type (SPEC §6.2).
     for (name, net_ty) in nets {
-        // Just use Quad for digital nets, Real for analog nets
-        let vty = match net_ty.discipline_name() {
-            "Electrical" | "Thermal" | "Magnetic" | "Kinematic" | "Optical" => ValueType::Real,
-            _ => ValueType::Quad, // Digital logic
-        };
-        locals.insert(name.clone(), vty);
+        locals.insert(name.clone(), discipline_value_type(net_ty.discipline_name(), design));
     }
     
     for stmt in &behavior.body {
@@ -484,8 +504,20 @@ fn check_behavior_stmt(
             let src_ty = type_of_expr(src, locals);
             if let (Some(d), Some(s)) = (dest_ty, src_ty) {
                 if d != s {
-                    // Boolean -> Quad is the only allowed implicit widening
-                    if d == ValueType::Quad && s == ValueType::Boolean {
+                    // Implicit widenings (SPEC §4/§6.1): `Boolean` widens to
+                    // `Quad`; the integer literals `0`/`1` are also Boolean/
+                    // Quad/Natural literals, so integer-typed sources may
+                    // drive those destinations.
+                    let widening_ok = matches!(
+                        (&d, &s),
+                        (ValueType::Quad, ValueType::Boolean)
+                            | (ValueType::Boolean, ValueType::Integer)
+                            | (ValueType::Quad, ValueType::Integer)
+                            | (ValueType::Natural, ValueType::Integer)
+                            | (ValueType::Boolean, ValueType::Natural)
+                            | (ValueType::Quad, ValueType::Natural)
+                    );
+                    if widening_ok {
                         // Allowed
                     } else {
                         return Err(ElabError::Other(format!(

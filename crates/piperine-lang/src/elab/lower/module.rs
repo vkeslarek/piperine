@@ -379,9 +379,14 @@ impl Elaborator {
                     self.monomorphize(module, &resolved_const_args)?;
                 }
 
+                // Named port connections (`.p = a`) reorder to the child
+                // module's declared port order; positional arguments fill
+                // the remaining ports in declaration order (SPEC §7.3).
+                let ports = self.order_port_conns(module, ports)?;
+
                 // Resolve port connections to concrete net references.
                 let mut elab_ports = Vec::new();
-                for p in ports {
+                for p in &ports {
                     let mut expanded = false;
                     if let crate::parse::ast::Expr::Ident(p_name) = p {
                         if let Some(ty_name) = local_types.get(p_name) {
@@ -455,8 +460,93 @@ impl Elaborator {
                     out.push(ModBodyItem::Conn(Connection { lhs: lhs_ref, rhs: rhs_ref }));
                 }
             }
+
+            // SPEC §7.4: `$assert(cond, msg)` in a `mod` body is an
+            // elaboration-time check — evaluated here, once, per instance.
+            ModStmt::Assert { cond, msg, attrs: _ } => {
+                let value = env.eval(cond).map_err(|e| ElabError::ConstEval {
+                    context: "`$assert` condition".into(),
+                    source: e,
+                })?;
+                let holds = match value {
+                    ConstVal::Bool(b) => b,
+                    ConstVal::Int(v) => v != 0,
+                    ConstVal::Nat(v) => v != 0,
+                    ConstVal::Real(v) => v != 0.0,
+                    ConstVal::Str(_) => true,
+                };
+                if !holds {
+                    let text = match env.eval(msg) {
+                        Ok(ConstVal::Str(s)) => s,
+                        _ => "assertion failed".into(),
+                    };
+                    return Err(ElabError::Other(format!("$assert failed: {text}")));
+                }
+            }
         }
         Ok(())
+    }
+
+    /// Resolve an instance's port-connection list to positional order
+    /// (SPEC §7.3): named arguments (`.p = a`) bind to the child module's
+    /// declared port of that name; positional arguments fill the remaining
+    /// ports in declaration order.
+    fn order_port_conns(
+        &self,
+        module: &str,
+        conns: &[crate::parse::ast::PortConn],
+    ) -> Result<Vec<Expr>, ElabError> {
+        use crate::parse::ast::PortConn;
+        if conns.iter().all(|c| matches!(c, PortConn::Positional(_))) {
+            return Ok(conns
+                .iter()
+                .map(|c| match c {
+                    PortConn::Positional(e) => e.clone(),
+                    PortConn::Named { expr, .. } => expr.clone(),
+                })
+                .collect());
+        }
+        let decl = self
+            .module_decls
+            .get(module)
+            .ok_or_else(|| ElabError::UndefinedModule(module.to_string()))?;
+        let mut named: HashMap<&str, &Expr> = HashMap::new();
+        let mut positional = Vec::new();
+        for conn in conns {
+            match conn {
+                PortConn::Named { port, expr } => {
+                    if named.insert(port.as_str(), expr).is_some() {
+                        return Err(ElabError::Other(format!(
+                            "port `{port}` of `{module}` connected twice"
+                        )));
+                    }
+                }
+                PortConn::Positional(e) => positional.push(e),
+            }
+        }
+        let mut positional = positional.into_iter();
+        let mut ordered = Vec::new();
+        for port in &decl.ports {
+            let expr = match named.remove(port.name.as_str()) {
+                Some(e) => e.clone(),
+                None => match positional.next() {
+                    Some(e) => e.clone(),
+                    None => {
+                        return Err(ElabError::Other(format!(
+                            "instance of `{module}` leaves port `{}` unconnected",
+                            port.name
+                        )))
+                    }
+                },
+            };
+            ordered.push(expr);
+        }
+        if let Some((port, _)) = named.into_iter().next() {
+            return Err(ElabError::Other(format!(
+                "`{module}` has no port named `{port}`"
+            )));
+        }
+        Ok(ordered)
     }
 
 }

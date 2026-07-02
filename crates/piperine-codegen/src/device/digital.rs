@@ -32,6 +32,22 @@ impl Quad {
     }
 }
 
+/// Reusable per-evaluation buffers. The event loop calls
+/// [`DigitalInstance::eval`] once per device per delta cycle — allocating
+/// these fresh each call dominated the digital simulation path.
+#[derive(Default)]
+struct Scratch {
+    inputs: Vec<i64>,
+    outputs: Vec<i64>,
+    prev_outputs: Vec<i64>,
+    watch: Vec<i64>,
+    fired: Vec<i64>,
+    /// Pre-edge bank copies, filled only when a clocked block fired
+    /// (only `seq` reads them).
+    vars_int_old: Vec<i64>,
+    vars_real_old: Vec<f64>,
+}
+
 /// The digital half of a device instance.
 pub struct DigitalInstance {
     kernel: Arc<DigitalKernel>,
@@ -46,6 +62,7 @@ pub struct DigitalInstance {
     vars_real: Vec<f64>,
     /// Watch-term values from the previous evaluation (for edge detection).
     prev_watch: Vec<i64>,
+    scratch: Scratch,
     /// Monotonic tiebreaker for emitted events.
     seq: u64,
 }
@@ -69,6 +86,7 @@ impl DigitalInstance {
             vars_int: vec![Quad::X; layout.num_int_slots()],
             vars_real: vec![0.0; layout.num_real_slots()],
             prev_watch: vec![Quad::X; kernel.num_watch_terms()],
+            scratch: Scratch::default(),
             kernel,
             device_id,
             in_nets,
@@ -117,28 +135,29 @@ impl DigitalInstance {
             self.write_var(var, value);
         }
 
-        let inputs = vec![Quad::X; self.in_nets.len()];
-        let mut outputs = vec![Quad::X; self.out_nets.len()];
+        let mut s = std::mem::take(&mut self.scratch);
+        s.inputs.clear();
+        s.inputs.resize(self.in_nets.len(), Quad::X);
+        s.outputs.clear();
+        s.outputs.resize(self.out_nets.len(), Quad::X);
         // Fire `@ initial` clocked blocks during init (SPEC §10.4): their
         // register updates run once at simulation start, reading the
         // pre-edge (power-on) bank values.
-        let fired: Vec<i64> = self
-            .kernel
-            .clocked_blocks()
-            .iter()
-            .map(|b| i64::from(b.is_initial))
-            .collect();
+        s.fired.clear();
+        s.fired
+            .extend(self.kernel.clocked_blocks().iter().map(|b| i64::from(b.is_initial)));
         let analog_voltages: Vec<f64> = vec![0.0; self.kernel.layout().num_analog()];
-        self.run(&inputs, &mut outputs, &fired, &analog_voltages);
+        self.run(&mut s, &analog_voltages);
 
         // Seed edge detection from the initial input state.
-        self.prev_watch = self.watch_values(&inputs, &outputs, &analog_voltages);
+        self.watch_values(&mut s, &analog_voltages);
+        self.prev_watch.copy_from_slice(&s.watch);
 
-        let initial: Vec<(DigitalNet, i64)> =
-            self.out_nets.iter().copied().zip(outputs.iter().copied()).collect();
-        for (net, value) in initial {
+        for i in 0..self.out_nets.len() {
+            let (net, value) = (self.out_nets[i], s.outputs[i]);
             self.push_event(event_queue, 0.0, net, value);
         }
+        self.scratch = s;
     }
 
     /// Event-driven evaluation at time `t` with the current net values.
@@ -150,98 +169,99 @@ impl DigitalInstance {
         event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
     ) {
         self.sim.abstime = t;
-        let inputs: Vec<i64> = self
-            .in_nets
-            .iter()
-            .map(|n| Quad::from_logic(nets[n.0]))
-            .collect();
-        let previous_outputs: Vec<i64> = self
-            .out_nets
-            .iter()
-            .map(|n| Quad::from_logic(nets[n.0]))
-            .collect();
-        let mut outputs = previous_outputs.clone();
+        // Detach the scratch buffers so the kernel calls can borrow `self`.
+        let mut s = std::mem::take(&mut self.scratch);
+
+        s.inputs.clear();
+        s.inputs
+            .extend(self.in_nets.iter().map(|n| Quad::from_logic(nets[n.0])));
+        s.prev_outputs.clear();
+        s.prev_outputs
+            .extend(self.out_nets.iter().map(|n| Quad::from_logic(nets[n.0])));
+        s.outputs.clear();
+        s.outputs.extend_from_slice(&s.prev_outputs);
 
         // Edge detection against the previous watch values.
-        let watch = self.watch_values(&inputs, &outputs, analog_voltages);
-        let fired: Vec<i64> = self
-            .kernel
-            .clocked_blocks()
-            .iter()
-            .map(|block| {
-                let fired = block.terms.iter().any(|&(term, edge)| {
-                    let (prev, cur) = (self.prev_watch[term], watch[term]);
-                    match edge {
-                        EdgeKind::Rising => prev != 1 && cur == 1,
-                        EdgeKind::Falling => prev != 0 && cur == 0,
-                        EdgeKind::Any => prev != cur,
-                    }
-                });
-                i64::from(fired)
-            })
-            .collect();
-        self.prev_watch = watch;
+        self.watch_values(&mut s, analog_voltages);
+        s.fired.clear();
+        s.fired.extend(self.kernel.clocked_blocks().iter().map(|block| {
+            let fired = block.terms.iter().any(|&(term, edge)| {
+                let (prev, cur) = (self.prev_watch[term], s.watch[term]);
+                match edge {
+                    EdgeKind::Rising => prev != 1 && cur == 1,
+                    EdgeKind::Falling => prev != 0 && cur == 0,
+                    EdgeKind::Any => prev != cur,
+                }
+            });
+            i64::from(fired)
+        }));
+        self.prev_watch.copy_from_slice(&s.watch);
 
-        self.run(&inputs, &mut outputs, &fired, analog_voltages);
+        self.run(&mut s, analog_voltages);
 
-        let changed: Vec<(DigitalNet, i64)> = self
-            .out_nets
-            .iter()
-            .copied()
-            .zip(outputs.iter().copied())
-            .zip(previous_outputs.iter().copied())
-            .filter(|&((_, new), old)| new != old)
-            .map(|((net, new), _)| (net, new))
-            .collect();
-        for (net, new) in changed {
-            self.push_event(event_queue, t, net, new);
+        for i in 0..self.out_nets.len() {
+            let (net, new) = (self.out_nets[i], s.outputs[i]);
+            if new != s.prev_outputs[i] {
+                self.push_event(event_queue, t, net, new);
+            }
         }
+        self.scratch = s;
     }
 
-    /// Run `seq` (with pre-edge bank copies) then `comb`.
-    fn run(&mut self, inputs: &[i64], outputs: &mut [i64], fired: &[i64], analog_voltages: &[f64]) {
-        let vars_int_old = self.vars_int.clone();
-        let vars_real_old = self.vars_real.clone();
+    /// Run `seq` (with pre-edge bank copies) then `comb`. The pre-edge
+    /// copies are made only when a clocked block fired — only `seq` reads
+    /// them.
+    fn run(&mut self, s: &mut Scratch, analog_voltages: &[f64]) {
+        let any_fired = s.fired.iter().any(|&f| f != 0);
+        if any_fired {
+            s.vars_int_old.clear();
+            s.vars_int_old.extend_from_slice(&self.vars_int);
+            s.vars_real_old.clear();
+            s.vars_real_old.extend_from_slice(&self.vars_real);
+        }
         let abi = DigitalAbi {
-            inputs: inputs.as_ptr(),
-            outputs: outputs.as_mut_ptr(),
-            vars_int_old: vars_int_old.as_ptr(),
-            vars_real_old: vars_real_old.as_ptr(),
+            inputs: s.inputs.as_ptr(),
+            outputs: s.outputs.as_mut_ptr(),
+            vars_int_old: if any_fired { s.vars_int_old.as_ptr() } else { self.vars_int.as_ptr() },
+            vars_real_old: if any_fired { s.vars_real_old.as_ptr() } else { self.vars_real.as_ptr() },
             vars_int: self.vars_int.as_mut_ptr(),
             vars_real: self.vars_real.as_mut_ptr(),
             params: self.params.as_ptr(),
-            fired: fired.as_ptr(),
+            fired: s.fired.as_ptr(),
             sim: &self.sim as *const SimCtx,
             analog_voltages: analog_voltages.as_ptr(),
         };
-        if fired.iter().any(|&f| f != 0) {
+        if any_fired {
             self.kernel.eval_seq(&abi);
         }
         self.kernel.eval_comb(&abi);
     }
 
-    /// Evaluate the watch terms with the given signal state.
-    fn watch_values(&mut self, inputs: &[i64], outputs: &[i64], analog_voltages: &[f64]) -> Vec<i64> {
-        let mut out = vec![Quad::X; self.kernel.num_watch_terms()];
-        if out.is_empty() {
-            return out;
+    /// Evaluate the watch terms into `s.watch` with the current signal
+    /// state. `watch` only reads (no output/var writes), so it runs against
+    /// the live buffers with an all-zero `fired` mask.
+    fn watch_values(&mut self, s: &mut Scratch, analog_voltages: &[f64]) {
+        let n = self.kernel.num_watch_terms();
+        s.watch.clear();
+        s.watch.resize(n, Quad::X);
+        if n == 0 {
+            return;
         }
-        let fired = vec![0i64; self.kernel.clocked_blocks().len()];
-        let mut outputs_copy = outputs.to_vec();
+        s.fired.clear();
+        s.fired.resize(self.kernel.clocked_blocks().len(), 0);
         let abi = DigitalAbi {
-            inputs: inputs.as_ptr(),
-            outputs: outputs_copy.as_mut_ptr(),
+            inputs: s.inputs.as_ptr(),
+            outputs: s.outputs.as_mut_ptr(),
             vars_int_old: self.vars_int.as_ptr(),
             vars_real_old: self.vars_real.as_ptr(),
             vars_int: self.vars_int.as_mut_ptr(),
             vars_real: self.vars_real.as_mut_ptr(),
             params: self.params.as_ptr(),
-            fired: fired.as_ptr(),
+            fired: s.fired.as_ptr(),
             sim: &self.sim as *const SimCtx,
             analog_voltages: analog_voltages.as_ptr(),
         };
-        self.kernel.eval_watch(&abi, &mut out);
-        out
+        self.kernel.eval_watch(&abi, &mut s.watch);
     }
 
     fn write_var(&mut self, var: crate::ir::VarId, value: f64) {

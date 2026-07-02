@@ -123,6 +123,32 @@ impl Design {
         self.enums.get(name)
     }
 
+    /// Every enum variant's discriminant, keyed bare (`Idle`) and qualified
+    /// (`SarState::Idle`). Values default sequential from zero, continuing
+    /// after an explicit discriminant (SPEC §6.4). Non-constant explicit
+    /// discriminants were rejected during elaboration.
+    pub fn enum_value_map(&self) -> HashMap<String, i64> {
+        let mut map = HashMap::new();
+        for (enum_name, decl) in &self.enums {
+            let mut next: i64 = 0;
+            for variant in &decl.variants {
+                let value = variant
+                    .value
+                    .as_ref()
+                    .and_then(|expr| crate::elab::const_eval::ConstEnv::new().eval(expr).ok())
+                    .map_or(next, |val| match val {
+                        crate::elab::const_eval::ConstVal::Int(v) => v,
+                        crate::elab::const_eval::ConstVal::Nat(v) => v as i64,
+                        _ => next,
+                    });
+                map.insert(variant.name.clone(), value);
+                map.insert(format!("{enum_name}::{}", variant.name), value);
+                next = value + 1;
+            }
+        }
+        map
+    }
+
     /// Every capability declaration.
     pub fn capabilities(&self) -> impl Iterator<Item = (&String, &CapabilityDecl)> {
         self.capabilities.iter()

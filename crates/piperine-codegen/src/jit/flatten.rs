@@ -18,8 +18,8 @@
 use std::collections::HashMap;
 
 use crate::ir::{
-    ContribKind, EventSource, IrExpr, IrModule, IrStateKind, IrStmt, Lval, NatureId, NatureKind,
-    NodeId, Pattern, Severity, StateId, Trit, VarId,
+    ContribKind, CrossDir, EventSource, IrAnalogEvent, IrExpr, IrModule, IrStateKind, IrStmt,
+    Lval, NatureId, NatureKind, NodeId, Pattern, Severity, StateId, Trit, VarId,
 };
 
 use super::CodegenError;
@@ -49,6 +49,55 @@ pub struct FlatDiagnostic {
     pub format: String,
 }
 
+/// When a runtime analog event fires (SPEC §6.1). Trigger expressions are
+/// evaluated at each accepted solution; the device detects the transition.
+#[derive(Debug, Clone)]
+pub enum FlatEventTrigger {
+    /// Fires once when the instance is created (`@ initial`).
+    Initial,
+    /// Fires when `expr` crosses zero in the given direction.
+    Cross { expr: IrExpr, dir: CrossDir },
+    /// Fires when `expr` becomes positive (one-shot level crossing).
+    Above { expr: IrExpr },
+    /// Fires every `period` seconds.
+    Timer { period: IrExpr },
+}
+
+/// One event action: write `value` (evaluated at the accepted solution) into
+/// the vars-bank slot of `var`. A body guard is folded into `value` as
+/// `Select(guard, new, Var(var))`.
+#[derive(Debug, Clone)]
+pub struct FlatEventAction {
+    pub var: VarId,
+    pub value: IrExpr,
+}
+
+/// A runtime-executed analog event: persistent-variable updates on a
+/// trigger (`@ initial` / `cross` / `above` / `timer`).
+#[derive(Debug, Clone)]
+pub struct FlatEvent {
+    pub trigger: FlatEventTrigger,
+    pub actions: Vec<FlatEventAction>,
+}
+
+impl FlatEvent {
+    /// The trigger expression, if the trigger watches one.
+    pub fn trigger_expr(&self) -> Option<&IrExpr> {
+        match &self.trigger {
+            FlatEventTrigger::Initial => None,
+            FlatEventTrigger::Cross { expr, .. } | FlatEventTrigger::Above { expr } => Some(expr),
+            FlatEventTrigger::Timer { period } => Some(period),
+        }
+    }
+
+    /// Every expression this event evaluates (trigger + action values).
+    pub fn exprs(&self) -> impl Iterator<Item = &IrExpr> {
+        self.trigger_expr()
+            .into_iter()
+            .chain(self.actions.iter().map(|a| &a.value))
+    }
+}
+
 /// The flattened analog behavior, ready for the Cranelift skeleton.
 #[derive(Debug, Default)]
 pub struct FlatAnalog {
@@ -65,9 +114,12 @@ pub struct FlatAnalog {
     pub noise: Vec<(NodeId, NodeId, IrExpr)>,
     /// Diagnostics collected (not executed) from the analog body.
     pub diagnostics: Vec<FlatDiagnostic>,
-    /// Runtime-state slots (`delay`/`slew`) the device must service, with
-    /// their resolved input expressions.
+    /// Runtime-state slots (`delay`/`slew`/`idt`) the device must service,
+    /// with their resolved input expressions.
     pub runtime_states: Vec<(StateId, IrExpr)>,
+    /// Runtime analog events (`@ initial`/`cross`/`above`/`timer`), executed
+    /// by the device at accepted solutions.
+    pub events: Vec<FlatEvent>,
 }
 
 /// Inlines user function calls by symbolic substitution. Function bodies may
@@ -451,44 +503,109 @@ impl<'m> AnalogFlattener<'m> {
                         .push(FlatDiagnostic { severity: *severity, format: format.clone() });
                 }
                 IrStmt::Discontinuity(_) => {}
-                IrStmt::AnalogEvent(event) => {
-                    match &event.source {
-                        EventSource::InitialStep => {
-                            // `@ initial` — the body sets initial conditions
-                            // (forces, contributions) that apply at t=0.
-                            // Walk the body as regular statements so the
-                            // forces/contributions are collected.
-                            self.walk(&event.body, None)?;
-                        }
-                        EventSource::FinalStep => {
-                            // `@ final` — the body runs at simulation end.
-                            // Nothing to compile into the continuous kernel
-                            // (no effect on the residual/Jacobian).
-                        }
-                        EventSource::Cross { .. } | EventSource::Above { .. } | EventSource::Timer { .. } => {
-                            // Cross/above/timer events are runtime-triggered:
-                            // the device detects the crossing/threshold and
-                            // executes the body. An empty body is a no-op
-                            // (common in tests that just declare the event).
-                            // A non-empty body needs runtime event support
-                            // (not yet implemented); for now we skip it so
-                            // the module compiles, and the event's effect is
-                            // absent at runtime.
-                            if !event.body.is_empty() {
-                                self.out.diagnostics.push(FlatDiagnostic {
-                                    severity: Severity::Warn,
-                                    format: "analog cross/above/timer event body is not yet executed at runtime".into(),
-                                });
-                            }
-                        }
-                    }
-                }
+                IrStmt::AnalogEvent(event) => self.add_event(event, guard)?,
                 IrStmt::Finish => {
                     return Err(CodegenError::unsupported("$finish in an analog body"));
                 }
                 IrStmt::ClockedBlock { .. } | IrStmt::Return(_) => {
                     return Err(CodegenError::Invalid(format!(
                         "statement {stmt:?} is not allowed in an analog body"
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Lower an analog event into a runtime [`FlatEvent`]. Bodies are
+    /// persistent-variable updates (plus `if`/`match`/diagnostics); anything
+    /// else has no runtime-event lowering and is a named error. `@ final`
+    /// admits diagnostics only (there is no end-of-run device hook).
+    fn add_event(&mut self, event: &IrAnalogEvent, guard: Option<&IrExpr>) -> Result<(), CodegenError> {
+        let resolve = |s: &mut Self, e: &IrExpr| {
+            resolve_expr(e, &s.scope, &mut s.inliner).and_then(|e| s.finish_expr(e))
+        };
+        let trigger = match &event.source {
+            EventSource::InitialStep => FlatEventTrigger::Initial,
+            EventSource::FinalStep => {
+                for stmt in &event.body {
+                    let IrStmt::Diagnostic { severity, format, .. } = stmt else {
+                        return Err(CodegenError::unsupported(format!(
+                            "statement {stmt:?} in an `@ final` analog event"
+                        )));
+                    };
+                    self.out
+                        .diagnostics
+                        .push(FlatDiagnostic { severity: *severity, format: format.clone() });
+                }
+                return Ok(());
+            }
+            EventSource::Cross { expr, dir } => {
+                FlatEventTrigger::Cross { expr: resolve(self, expr)?, dir: *dir }
+            }
+            EventSource::Above { expr } => FlatEventTrigger::Above { expr: resolve(self, expr)? },
+            EventSource::Timer { period } => {
+                FlatEventTrigger::Timer { period: resolve(self, period)? }
+            }
+        };
+        let mut actions = Vec::new();
+        self.collect_event_actions(&event.body, guard, &mut actions)?;
+        self.out.events.push(FlatEvent { trigger, actions });
+        Ok(())
+    }
+
+    /// Collect an event body's variable updates, folding `if`/`match` path
+    /// conditions into each action value.
+    fn collect_event_actions(
+        &mut self,
+        stmts: &[IrStmt],
+        guard: Option<&IrExpr>,
+        actions: &mut Vec<FlatEventAction>,
+    ) -> Result<(), CodegenError> {
+        for stmt in stmts {
+            match stmt {
+                IrStmt::Assign { lval: Lval::Var(var), expr } => {
+                    let value = resolve_expr(expr, &self.scope, &mut self.inliner)?;
+                    let value = self.finish_expr(value)?;
+                    let value = match guard {
+                        None => value,
+                        Some(g) => IrExpr::select(g.clone(), value, IrExpr::Var(*var)),
+                    };
+                    actions.push(FlatEventAction { var: *var, value });
+                }
+                IrStmt::If { cond, then_, else_ } => {
+                    let cond = resolve_expr(cond, &self.scope, &mut self.inliner)?;
+                    let then_guard = and_guards(guard, &cond);
+                    self.collect_event_actions(then_, Some(&then_guard), actions)?;
+                    let else_guard = and_guards(guard, &not(&cond));
+                    self.collect_event_actions(else_, Some(&else_guard), actions)?;
+                }
+                IrStmt::Match { scrutinee, arms, default } => {
+                    let scrutinee = resolve_expr(scrutinee, &self.scope, &mut self.inliner)?;
+                    let mut no_prior = None::<IrExpr>;
+                    for (pattern, body) in arms {
+                        let cond = pattern_condition(&scrutinee, pattern)?;
+                        let arm_guard = chain_guards(guard, &no_prior, &cond);
+                        self.collect_event_actions(body, Some(&arm_guard), actions)?;
+                        no_prior = Some(match no_prior {
+                            None => not(&cond),
+                            Some(prev) => IrExpr::binary(crate::ir::IrBinOp::And, prev, not(&cond)),
+                        });
+                    }
+                    let default_guard = match &no_prior {
+                        None => guard.cloned(),
+                        Some(none_matched) => Some(and_guards(guard, none_matched)),
+                    };
+                    self.collect_event_actions(default, default_guard.as_ref(), actions)?;
+                }
+                IrStmt::Diagnostic { severity, format, .. } => {
+                    self.out
+                        .diagnostics
+                        .push(FlatDiagnostic { severity: *severity, format: format.clone() });
+                }
+                other => {
+                    return Err(CodegenError::unsupported(format!(
+                        "statement {other:?} in an analog event body"
                     )));
                 }
             }
@@ -591,35 +708,35 @@ impl<'m> AnalogFlattener<'m> {
         minus: NodeId,
         _declared: ContribKind,
     ) -> Result<(), CodegenError> {
-        let has_reactive = expr
-            .find_state(&|id| self.module.symbols.state(id).kind.is_reactive())
+        let has_ddt = expr
+            .find_state(&|id| matches!(self.module.symbols.state(id).kind, IrStateKind::Ddt))
             .is_some();
 
-        if has_reactive {
-            // Q = expr[reactive → arg] − expr[reactive → 0] isolates the
-            // reactive part; the resistive terms cancel. Exact for `ddt`;
-            // for `idt` the companion coefficient is the solver's concern.
-            let with_arg = self.substitute_reactive(&expr, true)?;
-            let with_zero = self.substitute_reactive(&expr, false)?;
+        if has_ddt {
+            // Q = expr[ddt → arg] − expr[ddt → 0] isolates the charge whose
+            // time derivative is the reactive current; the resistive terms
+            // cancel.
+            let with_arg = self.substitute_ddt(&expr, true)?;
+            let with_zero = self.substitute_ddt(&expr, false)?;
             let charge = IrExpr::binary(crate::ir::IrBinOp::Sub, with_arg, with_zero);
             let charge = self.finish_expr(charge)?;
             self.out.charge.push(FlatContrib { plus, minus, expr: charge });
         }
 
-        let resistive = self.substitute_reactive(&expr, false)?;
+        let resistive = self.substitute_ddt(&expr, false)?;
         let resistive = self.finish_expr(resistive)?;
         self.out.resistive.push(FlatContrib { plus, minus, expr: resistive });
         Ok(())
     }
 
-    /// Replace reactive `State(id)` reads with the operator's input (`arg`)
-    /// or with 0.
-    fn substitute_reactive(&mut self, expr: &IrExpr, with_arg: bool) -> Result<IrExpr, CodegenError> {
+    /// Replace `ddt` `State(id)` reads with the operator's input (`arg`) or
+    /// with 0. Other state kinds pass through to [`Self::finish_expr`].
+    fn substitute_ddt(&mut self, expr: &IrExpr, with_arg: bool) -> Result<IrExpr, CodegenError> {
         let mut error = None;
         let out = expr.rewrite(&mut |e| {
             if let IrExpr::State(id) = &e {
                 let state = self.module.symbols.state(*id);
-                if state.kind.is_reactive() {
+                if matches!(state.kind, IrStateKind::Ddt) {
                     if !with_arg {
                         return IrExpr::Real(0.0);
                     }
@@ -640,8 +757,9 @@ impl<'m> AnalogFlattener<'m> {
         }
     }
 
-    /// Final expression pass: expand `ddx`, register runtime states, and
-    /// reject operators without a lowering.
+    /// Final expression pass: expand `ddx`, lower `idt`/`idtmod` to the
+    /// implicit-Euler companion, register runtime states, and reject
+    /// operators without a lowering.
     fn finish_expr(&mut self, expr: IrExpr) -> Result<IrExpr, CodegenError> {
         let mut error: Option<CodegenError> = None;
         let out = expr.rewrite(&mut |e| {
@@ -649,12 +767,11 @@ impl<'m> AnalogFlattener<'m> {
             let id = *id;
             let state = self.module.symbols.state(id);
             match &state.kind {
-                // Reactive states were substituted away before this pass.
-                kind if kind.is_reactive() => {
-                    error.get_or_insert(CodegenError::Invalid(format!(
-                        "reactive `{}` state survived the reactive split",
-                        kind.name()
-                    )));
+                // `ddt` was substituted away by the charge split.
+                IrStateKind::Ddt => {
+                    error.get_or_insert(CodegenError::Invalid(
+                        "`ddt` state survived the reactive split".into(),
+                    ));
                     e
                 }
                 IrStateKind::Ddx { node } => {
@@ -662,6 +779,33 @@ impl<'m> AnalogFlattener<'m> {
                         .map(|arg| arg.d_dnode(*node))
                     {
                         Ok(derivative) => derivative,
+                        Err(err) => {
+                            error.get_or_insert(err);
+                            e
+                        }
+                    }
+                }
+                // Implicit-Euler integrator: within a Newton step the value
+                // is `y_prev + dt·x` (`y_prev` serviced by the device each
+                // accepted step, `dt` = sim.step, 0 at DC so the value is
+                // the accumulated integral / initial condition). The `dt·x`
+                // term gives the in-step Jacobian coupling `dt·∂x/∂V`.
+                IrStateKind::Idt { .. } | IrStateKind::IdtMod { .. } => {
+                    match resolve_expr(&state.arg.clone(), &self.scope, &mut self.inliner) {
+                        Ok(arg) => {
+                            if !self.out.runtime_states.iter().any(|(s, _)| *s == id) {
+                                self.out.runtime_states.push((id, arg.clone()));
+                            }
+                            let step = IrExpr::Sim(crate::ir::SimQuery::Simparam {
+                                key: "step".into(),
+                                default: Box::new(IrExpr::Real(0.0)),
+                            });
+                            IrExpr::binary(
+                                crate::ir::IrBinOp::Add,
+                                e,
+                                IrExpr::binary(crate::ir::IrBinOp::Mul, step, arg),
+                            )
+                        }
                         Err(err) => {
                             error.get_or_insert(err);
                             e
@@ -682,14 +826,16 @@ impl<'m> AnalogFlattener<'m> {
                         }
                     }
                 }
-                kind @ (IrStateKind::Transition { .. } | IrStateKind::Table { .. }) => {
+                kind @ (IrStateKind::Transition { .. }
+                | IrStateKind::Table { .. }
+                | IrStateKind::Laplace { .. }
+                | IrStateKind::ZTransform { .. }) => {
                     error.get_or_insert(CodegenError::unsupported(format!(
                         "analog operator `{}` lowering is not implemented yet",
                         kind.name()
                     )));
                     e
                 }
-                _ => e,
             }
         });
         match error {

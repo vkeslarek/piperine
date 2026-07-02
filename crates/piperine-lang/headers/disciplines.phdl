@@ -9,9 +9,9 @@ discipline Electrical {
     flow      i : Real (unit = "A", abstol = 1e-12);
 }
 
-// Signal flow disciplines
-discipline Voltage { potential v : Real (unit = "V", abstol = 1e-6); }
-discipline Current { potential i : Real (unit = "A", abstol = 1e-12); }
+// Storage-Real value nets (former signal-flow: read/driven by name — SPEC §6.2)
+discipline Voltage { storage Real; }
+discipline Current { storage Real; }
 
 // Magnetic
 discipline Magnetic {

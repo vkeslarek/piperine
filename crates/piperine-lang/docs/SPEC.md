@@ -379,7 +379,9 @@ retains its previous value → **latch inference** (as Verilog/VHDL). A `var` up
 chain of register writes is a pipeline). Overlapping writes: last in source order wins.
 
 Inferred latches raise a **warning by default** (deny-able per project/attribute); register
-inference is silent. Control flow is `if`/`else` and `match`; `match` over an enum is
+inference is silent. *Fidelity note:* scalar digital state is fully device-compiled; `Bit[N]`
+bus variables and indexed/sliced assignment (`code[idx] = 1`) parse and elaborate but are not
+yet lowered by the digital JIT — they fail loud at device-compile. Control flow is `if`/`else` and `match`; `match` over an enum is
 exhaustiveness-checked. Patterns: enum variants, `_`, and bit-pattern wildcards (`0b1??0`; `?` is
 pattern-only, distinct from the `Quad` value `X`).
 
@@ -1262,9 +1264,11 @@ compiler.
 | `white_noise(psd, "label")` | | flat noise source; extracted from a `<+` RHS pre-lowering. |
 | `flicker_noise(psd, exp=1, "label")` | | 1/fᵉˣᵖ noise source. |
 
-Device-fidelity today: `ddt`/`idt`/`idtmod` fully; `ddx`/`delay`/`transition`/`slew`/`table`/
-`laplace_*`/`zi_*` recognized in IR but rejected fail-loud at device-compile pending companion
-models.
+Device-fidelity today: `ddt` (charge/companion model), `idt`/`idtmod` (implicit-Euler runtime
+integrator; DC value = initial condition; AC small-signal admittance not yet stamped), `ddx`
+(symbolic), `delay`/`slew` (runtime-serviced) are device-compiled. `transition`/`table`/
+`laplace_*`/`zi_*` are recognized in IR but rejected fail-loud at device-compile pending
+companion models.
 
 ### 3. `$`-syscalls (expression)
 
@@ -1306,8 +1310,13 @@ is a compile error** (no silent fallback).
 | `cross(expr)` | analog | zero crossing (direction arg parsed; currently either-direction) |
 | `above(expr)` | analog | one-shot level crossing |
 | `initial`/`final` | both | once at start / end |
-| `timer(period)` | both | periodic |
+| `timer(period)` | analog | periodic (digital `timer` is rejected — the digital kernel has no time-driven events yet) |
 | `A | B` | | composite OR (recurses validation) |
+
+Analog event bodies execute at runtime as persistent-variable updates, detected at each
+accepted solution (`initial` fires once at instance creation; `final` admits diagnostics
+only). `@ above`/`@ cross` updating module state is the ngspice switch idiom and is
+device-compiled.
 
 ### 6. Prelude / stdlib (`headers/*.phdl`)
 

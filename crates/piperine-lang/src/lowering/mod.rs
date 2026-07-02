@@ -40,6 +40,9 @@ pub(crate) struct LowerCtx<'a> {
     /// contributes to the child's port node, which is the parent-scope
     /// node the port is connected to.
     pub instance_ports: HashMap<String, NodeId>,
+    /// Enum variant discriminants, keyed bare (`Idle`) and qualified
+    /// (`SarState::Idle`). SPEC §6.4: a variant is an integer constant.
+    pub enum_values: HashMap<String, i64>,
 }
 
 impl<'a> LowerCtx<'a> {
@@ -53,7 +56,13 @@ impl<'a> LowerCtx<'a> {
             is_digital,
             module_vars,
             instance_ports: HashMap::new(),
+            enum_values: HashMap::new(),
         }
+    }
+
+    /// Lookup an enum variant's discriminant by bare or qualified name.
+    pub fn lookup_enum_value(&self, name: &str) -> Option<i64> {
+        self.enum_values.get(name).copied()
     }
 
     /// Lookup a named instance port (e.g. `load.p`) → NodeId.
@@ -149,6 +158,7 @@ pub fn ppr_to_ir(prog: &Design) -> IrProgram {
             let module_vars: HashSet<String> = m.vars().iter().map(|v| v.name().to_string()).collect();
             let mut ctx = LowerCtx::new(&mut modules[i].symbols, is_digital, module_vars);
             ctx.instance_ports = instance_ports.clone();
+            ctx.enum_values = prog.enum_value_map();
 
             let stmts = lower_stmts(behavior.body(), &mut ctx);
 

@@ -80,6 +80,12 @@ pub trait Device: Send + Sync {
         self.digital_input_nets().iter().any(|n| changed.contains(n))
     }
 
+    /// Whether this device's digital body samples analog quantities (A2D).
+    /// Such devices receive no digital input event when only an analog
+    /// voltage moved, so the mixed-signal loop must re-evaluate them
+    /// explicitly after every accepted analog solution.
+    fn samples_analog(&self) -> bool { false }
+
     /// Digital evaluation — called during the event-driven phase.
     ///
     /// `nets` — current logic state for all digital nets.

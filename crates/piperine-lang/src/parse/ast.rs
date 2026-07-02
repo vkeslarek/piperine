@@ -136,10 +136,19 @@ pub enum ModStmt {
         module: String,
         const_args: Vec<Expr>,
         type_args: Vec<Type>,
-        ports: Vec<Expr>,
+        ports: Vec<PortConn>,
         params: Vec<ParamArg>,
     },
     Connection { attrs: Vec<Attribute>, lhs: Expr, rhs: Expr },
+    /// `$assert(cond, msg);` — an elaboration-time check (SPEC §7.4).
+    Assert { attrs: Vec<Attribute>, cond: Expr, msg: Expr },
+}
+
+/// One instance port connection: positional (`a`) or named (`.p = a`).
+#[derive(Debug, Clone)]
+pub enum PortConn {
+    Positional(Expr),
+    Named { port: String, expr: Expr },
 }
 
 /// A named parameter override: `.name = expr`.
@@ -205,6 +214,10 @@ pub enum ResolveKind {
     Tri,
     Or,
     And,
+    Sum,
+    Avg,
+    Max,
+    Min,
 }
 
 /// A named attribute in a nature declaration, e.g. `unit = "V"`.
@@ -499,6 +512,11 @@ pub struct MatchArm {
 pub enum Pattern {
     Path(Path),
     Wildcard,
+    /// A numeric literal pattern (e.g. `0b1100`, `3`).
+    Literal(u64),
+    /// A bit pattern with don't-cares (`0b1??0`); one char per bit,
+    /// MSB first, each `0`, `1`, or `?`.
+    BitPattern(String),
 }
 
 // ─────────────────────────────── Events ──────────────────────────────────────

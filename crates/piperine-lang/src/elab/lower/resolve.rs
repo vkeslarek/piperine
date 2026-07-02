@@ -97,10 +97,22 @@ impl Elaborator {
     pub(crate) fn resolve_value_type(&self, ty: &Type, env: &ConstEnv) -> Result<ValueType, ElabError> {
         match self.resolve_type(ty, env, &HashMap::new())? {
             TypeRef::Value(vt) => Ok(vt),
-            TypeRef::Net(nt) => Err(ElabError::Other(format!(
-                "expected value type, found net type `{:?}`",
-                nt
-            ))),
+            // A storage discipline names the value it carries: `var st :
+            // Bit` is a `Boolean` var (SPEC §7.2 / B.1). Arrays likewise.
+            TypeRef::Net(nt) => self.net_storage_value_type(&nt)?.ok_or_else(|| {
+                ElabError::Other(format!("expected value type, found net type `{nt:?}`"))
+            }),
+        }
+    }
+
+    /// The value type a net type carries, if it is a storage discipline
+    /// (or an array of one). Conservative disciplines carry no single value.
+    fn net_storage_value_type(&self, nt: &NetType) -> Result<Option<ValueType>, ElabError> {
+        match nt {
+            NetType::Discipline(name) => self.storage_value_type(name),
+            NetType::Array(inner, n) => Ok(self
+                .net_storage_value_type(inner)?
+                .map(|vt| ValueType::Array(Box::new(vt), *n))),
         }
     }
 

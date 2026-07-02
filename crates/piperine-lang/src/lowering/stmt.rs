@@ -210,19 +210,20 @@ pub(crate) fn lower_match(expr: &Expr, arms: &[crate::pom::MatchArm], ctx: &mut 
             Pattern::Wildcard => {
                 let mut bctx = LowerCtx::new(ctx.symbols, ctx.is_digital, ctx.module_vars.clone());
                 bctx.env = ctx.env.clone();
+                bctx.enum_values = ctx.enum_values.clone();
                 default_body = lower_stmts(arm.body(), &mut bctx);
                 
                 // Inherit state variables from wildcard arm
                 for s in bctx.states { if !ctx.states.contains(&s) { ctx.states.push(s); } }
                 ctx.noise_sources.extend(bctx.noise_sources.iter().cloned());
             }
-            Pattern::Path(p) => {
-                let pid = ctx.lookup_param(&p.segments.join("::")).unwrap_or(ParamId(0));
-                let pat_expr = IrExpr::Param(pid);
+            pattern @ (Pattern::Path(_) | Pattern::Literal(_) | Pattern::BitPattern(_)) => {
+                let cond = pattern_match_cond(pattern, &discriminant, ctx);
                 let mut bctx = LowerCtx::new(ctx.symbols, ctx.is_digital, ctx.module_vars.clone());
                 bctx.env = ctx.env.clone();
+                bctx.enum_values = ctx.enum_values.clone();
                 let body = lower_stmts(arm.body(), &mut bctx);
-                chain.push((pat_expr, body));
+                chain.push((cond, body));
                 
                 // Inherit state variables from this arm
                 for s in bctx.states { if !ctx.states.contains(&s) { ctx.states.push(s); } }
@@ -236,8 +237,7 @@ pub(crate) fn lower_match(expr: &Expr, arms: &[crate::pom::MatchArm], ctx: &mut 
     }
 
     let mut result = default_body;
-    for (pat, body) in chain.into_iter().rev() {
-        let cond = IrExpr::Binary(IrBinOp::Eq, Box::new(discriminant.clone()), Box::new(pat));
+    for (cond, body) in chain.into_iter().rev() {
         result = vec![IrStmt::If {
             cond,
             then_: body,
@@ -245,6 +245,50 @@ pub(crate) fn lower_match(expr: &Expr, arms: &[crate::pom::MatchArm], ctx: &mut 
         }];
     }
     result
+}
+
+/// The boolean condition under which a match pattern accepts the
+/// discriminant. Enum paths compare against the variant discriminant,
+/// literals against their value, and a bit pattern (`0b1??0`)
+/// mask-compares: `(d & mask) == value` with `?` bits masked out.
+fn pattern_match_cond(pattern: &Pattern, discriminant: &IrExpr, ctx: &LowerCtx) -> IrExpr {
+    match pattern {
+        Pattern::Wildcard => IrExpr::Bool(true),
+        Pattern::Path(p) => {
+            let joined = p.segments.join("::");
+            // An enum variant is an integer constant (SPEC §6.4); any
+            // other path is a parameter reference.
+            let target = match ctx.lookup_enum_value(&joined) {
+                Some(value) => IrExpr::Int(value),
+                None => IrExpr::Param(ctx.lookup_param(&joined).unwrap_or(ParamId(0))),
+            };
+            IrExpr::binary(IrBinOp::Eq, discriminant.clone(), target)
+        }
+        Pattern::Literal(v) => {
+            IrExpr::binary(IrBinOp::Eq, discriminant.clone(), IrExpr::Int(*v as i64))
+        }
+        Pattern::BitPattern(bits) => {
+            let mut mask = 0i64;
+            let mut value = 0i64;
+            for c in bits.chars() {
+                mask <<= 1;
+                value <<= 1;
+                match c {
+                    '0' => mask |= 1,
+                    '1' => {
+                        mask |= 1;
+                        value |= 1;
+                    }
+                    _ => {} // '?' — don't care
+                }
+            }
+            IrExpr::binary(
+                IrBinOp::Eq,
+                IrExpr::binary(IrBinOp::BitAnd, discriminant.clone(), IrExpr::Int(mask)),
+                IrExpr::Int(value),
+            )
+        }
+    }
 }
 
 pub(crate) fn merge_branch_env(

@@ -243,7 +243,7 @@ fn d5_spec_diode_with_user_fn_compiles() {
 // ── D.2 — idt integration operator ─────────────────────────────────────────
 
 #[test]
-fn d2_idt_in_contribution_compiles_with_reactive_support() {
+fn d2_idt_in_contribution_lowers_to_integrator() {
     let src = r#"
         discipline Electrical { potential v : Real; flow i : Real; }
         mod Inductor ( inout p : Electrical, inout n : Electrical ) { param L : Real = 1.0e-6; }
@@ -252,16 +252,27 @@ fn d2_idt_in_contribution_compiles_with_reactive_support() {
     let elab = parse_and_elaborate(src).expect("PHDL parses");
     let ir = ppr_to_ir(&elab);
     let dev = ir_analog_to_device(&ir, "Inductor").expect("D.2: idt must compile");
-    assert!(dev.has_reactive(), "D.2: idt must produce reactive contributions");
+    // idt is a runtime-serviced integrator (state + dt·x), not a charge.
+    assert_eq!(dev.runtime_states().len(), 1, "D.2: idt allocates one integrator state");
+    assert!(!dev.has_reactive(), "D.2: idt is not a charge contribution");
     let params = [1.0e-6_f64];
     let v = [0.5_f64, 0.0_f64];
+    // DC (step = 0, state = 0): I = state/L = 0.
     let mut rhs = [0.0_f64; 2];
     dev.eval_residual(&v, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut rhs);
     assert!(rhs[0].abs() < 1e-12_f64, "D.2: DC residual near 0, got {}", rhs[0]);
-    let mut q = [0.0_f64; 2];
-    dev.eval_charge(&v, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut q);
-    let expected = 0.5 / 1.0e-6;
-    assert!((q[0] - expected).abs() < 1e-3_f64 * expected, "D.2: charge Q = V/L");
+    // In-step (dt = 1e-3, accumulated y = 2e-6): I = (y + dt·V)/L.
+    let mut sim = SimCtx::default();
+    sim.step = 1.0e-3;
+    let state = vec![2.0e-6_f64; dev.num_state_slots()];
+    let mut rhs = [0.0_f64; 2];
+    dev.eval_residual(&v, &params, &state, &[], &sim, &mut rhs);
+    let expected = (2.0e-6 + 1.0e-3 * 0.5) / 1.0e-6;
+    assert!(
+        (rhs[0] - expected).abs() < 1e-9_f64 * expected,
+        "D.2: I = (y + dt·V)/L, got {}",
+        rhs[0]
+    );
 }
 
 // ── D.1 — voltage force V(p,n) <- expr ─────────────────────────────────────

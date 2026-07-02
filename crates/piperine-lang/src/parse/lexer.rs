@@ -32,6 +32,8 @@ pub enum Tok {
     Int(u64),
     /// A quad (4-valued logic) literal: `0q{0,1,X,Z}`.
     Quad(String),
+    /// A match bit pattern with don't-cares: `0b{0,1,?}` containing `?`.
+    BitPattern(String),
     /// A double-quoted string literal.
     Str(String),
 
@@ -322,6 +324,7 @@ impl<'a> Lexer<'a> {
                 }
                 Some(c) if radix != 10 => {
                     if c.is_ascii_hexdigit() { num.push(self.advance().unwrap()); }
+                    else if c == '?' && radix == 2 { num.push(self.advance().unwrap()); }
                     else if c == '_' { self.advance(); }
                     else { break; }
                 }
@@ -415,6 +418,11 @@ impl<'a> Lexer<'a> {
                     match radix { 2 => "binary", 8 => "octal", 16 => "hex", _ => "?" },
                     start
                 ));
+            }
+            if radix == 2 && digits.contains('?') {
+                // SPEC §10.3: a `?` makes this a match bit pattern, not a
+                // number (pattern-only, distinct from the Quad value X).
+                return Ok(Tok::BitPattern(digits.to_string()));
             }
             Ok(Tok::Int(
                 u64::from_str_radix(digits, radix)

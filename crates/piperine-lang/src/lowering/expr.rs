@@ -151,6 +151,8 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
                 IrExpr::Var(id)
             } else if let Some(id) = ctx.lookup_node(name) {
                 if ctx.is_digital { IrExpr::Net(id) } else { IrExpr::Real(0.0) } // Just a fallback for non-digital context
+            } else if let Some(value) = ctx.lookup_enum_value(name) {
+                IrExpr::Int(value)
             } else {
                 let id = ctx.lookup_param(name).unwrap_or(ParamId(0));
                 IrExpr::Param(id)
@@ -161,6 +163,8 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
             let name = p.segments.join("::");
             if let Some(val) = ctx.env.get(&name) {
                 val.clone()
+            } else if let Some(value) = ctx.lookup_enum_value(&name) {
+                IrExpr::Int(value)
             } else {
                 let id = ctx.lookup_param(&name).unwrap_or(ParamId(0));
                 IrExpr::Param(id)
@@ -262,6 +266,7 @@ pub(crate) fn lower_array(body: &ArrayBody, ctx: &mut LowerCtx) -> IrExpr {
                 for i in start..(end + inclusive) {
                     let mut iter_ctx = LowerCtx::new(ctx.symbols, ctx.is_digital, ctx.module_vars.clone());
                     iter_ctx.env = ctx.env.clone();
+                    iter_ctx.enum_values = ctx.enum_values.clone();
                     iter_ctx.env.insert(var.clone(), IrExpr::Int(i));
                     elems.push(lower_expr(expr, &mut iter_ctx));
                 }
