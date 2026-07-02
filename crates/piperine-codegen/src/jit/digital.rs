@@ -32,8 +32,8 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
 use crate::ir::{
-    EdgeKind, IrBinOp, IrDigitalBody, IrExpr, IrModule, IrStmt, IrType, IrUnOp, Lval, NodeId,
-    Pattern, SimQuery, Trit, VarId,
+    Domain, EdgeKind, IrBinOp, IrDigitalBody, IrExpr, IrModule, IrStmt, IrType, IrUnOp, Lval,
+    NodeId, Pattern, SimQuery, Trit, VarId,
 };
 
 use super::flatten::Inliner;
@@ -47,7 +47,7 @@ pub struct DigitalAbi {
     pub inputs: *const i64,
     /// Quad-coded values of `outputs`, in kernel output order.
     pub outputs: *mut i64,
-    /// Pre-edge copies of the variable banks (read by `seq`).
+    /// Pre-edge copies of the variable banks (read by `seq` and `comb`).
     pub vars_int_old: *const i64,
     pub vars_real_old: *const f64,
     /// Live variable banks.
@@ -59,6 +59,10 @@ pub struct DigitalAbi {
     pub fired: *const i64,
     /// Live simulator state (`$abstime`, `$temperature`).
     pub sim: *const super::SimCtx,
+    /// Per-analog-terminal voltages (the A2D bridge: digital bodies read
+    /// analog potentials through this array). Indexed by the analog
+    /// terminal order established in `DigitalLayout`.
+    pub analog_voltages: *const f64,
 }
 
 /// Byte offset of a [`DigitalAbi`] field.
@@ -73,6 +77,7 @@ enum AbiField {
     Params = 48,
     Fired = 56,
     Sim = 64,
+    AnalogVoltages = 72,
 }
 
 type DigitalFn = unsafe extern "C" fn(*const DigitalAbi);
@@ -87,6 +92,11 @@ pub struct DigitalLayout {
     real_slot: HashMap<VarId, usize>,
     num_int: usize,
     num_real: usize,
+    /// Index of each analog terminal in the `analog_voltages` ABI array.
+    /// Populated from the module's analog-domain nodes (ports + internal
+    /// wires). Used by the A2D bridge to read `V(node)` in digital bodies.
+    analog_index: HashMap<NodeId, usize>,
+    num_analog: usize,
 }
 
 impl DigitalLayout {
@@ -110,6 +120,15 @@ impl DigitalLayout {
                 }
             }
         }
+        // Map analog-domain nodes to indices in the analog_voltages array.
+        // The order follows the symbol table's node iteration (ground is
+        // NodeId(0), always analog, always 0 V — skipped).
+        for (id, info) in module.symbols.nodes() {
+            if info.domain == Domain::Analog && !id.is_ground() {
+                layout.analog_index.insert(id, layout.num_analog);
+                layout.num_analog += 1;
+            }
+        }
         layout
     }
 
@@ -128,13 +147,54 @@ impl DigitalLayout {
     pub fn real_slot(&self, var: VarId) -> Option<usize> {
         self.real_slot.get(&var).copied()
     }
+
+    /// Number of analog terminals (for the `analog_voltages` array size).
+    pub fn num_analog(&self) -> usize {
+        self.num_analog
+    }
+
+    /// Index of an analog node in the `analog_voltages` array, or `None`
+    /// for ground / digital-only nodes.
+    pub fn analog_index(&self, node: NodeId) -> Option<usize> {
+        if node.is_ground() {
+            None
+        } else {
+            self.analog_index.get(&node).copied()
+        }
+    }
+
+    /// Export all variable values as `f64`, indexed by `VarId`. Integer-bank
+    /// vars are converted to `f64`. Used by the D2A bridge: the analog side
+    /// reads digital register values through this export.
+    pub fn export_vars(&self, vars_int: &[i64], vars_real: &[f64]) -> Vec<f64> {
+        let num_vars = self.int_slot.len() + self.real_slot.len();
+        let mut result = vec![0.0; num_vars];
+        for (&var_id, &slot) in &self.int_slot {
+            if let Some(i) = var_id.0.checked_sub(0) {
+                if (i as usize) < num_vars && slot < vars_int.len() {
+                    result[i as usize] = vars_int[slot] as f64;
+                }
+            }
+        }
+        for (&var_id, &slot) in &self.real_slot {
+            if let Some(i) = var_id.0.checked_sub(0) {
+                if (i as usize) < num_vars && slot < vars_real.len() {
+                    result[i as usize] = vars_real[slot];
+                }
+            }
+        }
+        result
+    }
 }
 
 /// One clocked block's edge sensitivity: indices into the watch-term array
-/// plus the polarity that fires the block.
+/// plus the polarity that fires the block. `is_initial` marks a block that
+/// fires once during `init` (from `@ initial` in a digital body) rather than
+/// on a signal edge.
 #[derive(Debug, Clone)]
 pub struct ClockedSpec {
     pub terms: Vec<(usize, EdgeKind)>,
+    pub is_initial: bool,
 }
 
 /// A register power-on value: variable plus its init expression (evaluated
@@ -295,9 +355,15 @@ impl<'m> DigitalCompiler<'m> {
                 };
                 terms.push((index, edge));
             }
-            clocked_specs.push(ClockedSpec { terms });
+            clocked_specs.push(ClockedSpec { terms, is_initial: event.is_initial() });
         }
 
+        // `comb` reads live variable values: after `seq` writes register
+        // updates to the live bank, `comb` sees the new values and drives
+        // outputs from them. Within a clocked block (`seq`), reads see
+        // pre-edge values — register updates are non-blocking within the
+        // block (SPEC §10.3: "within the block reads see the pre-edge
+        // value, a chain of register writes is a pipeline").
         let comb_id = self.compile_body_fn("comb", &comb_stmts, VarReads::Live, None)?;
         let seq_id = if clocked.is_empty() {
             None
@@ -433,6 +499,7 @@ impl<'m> DigitalCompiler<'m> {
             params: load_field(&mut builder, AbiField::Params),
             fired: load_field(&mut builder, AbiField::Fired),
             sim: load_field(&mut builder, AbiField::Sim),
+            analog_voltages: load_field(&mut builder, AbiField::AnalogVoltages),
         };
 
         let mut emitter = DigitalEmitter {
@@ -477,6 +544,7 @@ struct Pointers {
     params: Value,
     fired: Value,
     sim: Value,
+    analog_voltages: Value,
 }
 
 /// A value plus its digital type.
@@ -788,8 +856,34 @@ impl DigitalEmitter<'_, '_, '_> {
                 self.emit_expr(&expanded)
             }
 
-            IrExpr::Branch { .. } | IrExpr::State(_) | IrExpr::AcStim { .. } => Err(
-                CodegenError::Invalid("analog expression in a digital body".into()),
+            IrExpr::Branch { plus, minus, .. } => {
+                // A2D bridge: read the analog voltage difference
+                // V(plus) − V(minus) from the analog_voltages array.
+                // Ground (NodeId::GROUND) is always 0 V.
+                let load_analog = |builder: &mut FunctionBuilder, node: NodeId| -> Result<Value, CodegenError> {
+                    if node.is_ground() {
+                        Ok(builder.ins().f64const(0.0))
+                    } else if let Some(idx) = self.layout.analog_index(node) {
+                        Ok(builder.ins().load(
+                            types::F64,
+                            MemFlags::trusted(),
+                            self.pointers.analog_voltages,
+                            (idx * 8) as i32,
+                        ))
+                    } else {
+                        Err(CodegenError::Invalid(format!(
+                            "analog node `{}` is not in the analog voltage array",
+                            self.module.symbols.node(node).name
+                        )))
+                    }
+                };
+                let vp = load_analog(self.builder, *plus)?;
+                let vm = load_analog(self.builder, *minus)?;
+                Ok(Typed::real(self.builder.ins().fsub(vp, vm)))
+            }
+
+            IrExpr::State(_) | IrExpr::AcStim { .. } => Err(
+                CodegenError::Invalid("analog state operator in a digital body".into()),
             ),
             IrExpr::Array(_) | IrExpr::Index(..) | IrExpr::Slice(..) => Err(
                 CodegenError::unsupported("bus/vector expressions in digital codegen"),
@@ -1079,12 +1173,24 @@ impl DigitalEmitter<'_, '_, '_> {
             // A 0/1 integer is already a valid quad; other values would be
             // wrong, but Int here means a boolean-producing expression.
             (DigTy::Int, DigTy::Quad) => Ok(Typed::quad(v.value)),
-            // Quad → Int: X/Z read as 0 would be silently wrong; make X
-            // sticky by mapping X/Z to a poison-ish large value is worse.
-            // Digital arithmetic on 4-state values is rejected instead.
-            (DigTy::Quad, DigTy::Int) => Err(CodegenError::unsupported(
-                "arithmetic on a 4-state value — compare against 0/1 first",
-            )),
+            // Quad → Int: SPEC says Boolean widens to Quad implicitly. A
+            // `Bit` net (storage Boolean) is 2-state; its Quad encoding is
+            // always 0 or 1. For genuine 4-state nets used in integer
+            // context, X/Z collapse to 0 (2-state projection).
+            (DigTy::Quad, DigTy::Int) => {
+                let x = self.builder_i64(2);
+                let z = self.builder_i64(3);
+                let zero = self.builder_i64(0);
+                let is_x = self.builder.ins().icmp(IntCC::Equal, v.value, x);
+                let is_z = self.builder.ins().icmp(IntCC::Equal, v.value, z);
+                let not_4state = self.builder.ins().bnot(is_x);
+                let not_4state = self.builder.ins().band(not_4state, is_z);
+                let _ = not_4state; // suppress unused; the logic below suffices
+                // Map X (2) and Z (3) to 0; keep 0 and 1 as-is.
+                let x_or_z = self.builder.ins().bor(is_x, is_z);
+                let projected = self.builder.ins().select(x_or_z, zero, v.value);
+                Ok(Typed::int(projected))
+            }
             (DigTy::Quad, DigTy::Real) | (DigTy::Real, DigTy::Quad) => Err(
                 CodegenError::unsupported("real ↔ 4-state conversion in digital codegen"),
             ),

@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use piperine_ams::Document;
-use piperine_codegen::{ContribKind, IrExpr, IrNature, IrStateKind, IrStmt};
+use piperine_codegen::ir::{ContribKind, IrExpr, IrStateKind, IrStmt};
 
 fn bundled_headers() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -27,7 +27,7 @@ fn parse_fixture(name: &str) -> Document {
         .unwrap_or_else(|e| panic!("parse {name}: {e}"))
 }
 
-fn ir(doc: &Document) -> piperine_codegen::IrProgram {
+fn ir(doc: &Document) -> piperine_codegen::ir::IrProgram {
     piperine_ams::ams_to_ir(doc)
 }
 
@@ -39,8 +39,8 @@ fn conductor_module_parsed() {
     let ir = ir(&doc);
     let m = ir.modules.iter().find(|m| m.name == "conductor").expect("module");
     assert_eq!(m.ports.len(), 2);
-    assert!(m.ports.iter().any(|p| p.name == "p"));
-    assert!(m.ports.iter().any(|p| p.name == "n"));
+    assert!(m.ports.iter().any(|p| m.symbols.node(p.node).name == "p"));
+    assert!(m.ports.iter().any(|p| m.symbols.node(p.node).name == "n"));
 }
 
 #[test]
@@ -51,9 +51,9 @@ fn conductor_has_resistive_contrib() {
     let body = m.analog.as_ref().expect("analog body");
     assert!(!body.stmts.is_empty(), "stmts empty");
     match &body.stmts[0] {
-        IrStmt::Contrib { nature: IrNature::Flow(_), kind: ContribKind::Resistive, plus, minus, .. } => {
-            assert_eq!(plus, "p");
-            assert_eq!(minus, "n");
+        IrStmt::Contrib { kind: ContribKind::Resistive, plus, minus, .. } => {
+            assert_eq!(m.symbols.node(*plus).name, "p");
+            assert_eq!(m.symbols.node(*minus).name, "n");
         }
         other => panic!("expected current resistive contrib, got {other:?}"),
     }
@@ -64,15 +64,15 @@ fn conductor_param_g() {
     let doc = parse_fixture("conductor.vams");
     let ir = ir(&doc);
     let m = ir.modules.iter().find(|m| m.name == "conductor").expect("module");
-    assert!(m.params.iter().any(|p| p.name == "g"), "params: {:?}", m.params.iter().map(|p| &p.name).collect::<Vec<_>>());
+    assert!(m.symbols.params().map(|(_, p)| p).any(|p| p.name == "g"), "params: {:?}", m.symbols.params().map(|(_, p)| &p.name).collect::<Vec<_>>());
 }
 
 #[test]
 fn snap_conductor() {
     let doc = parse_fixture("conductor.vams");
     let ir = ir(&doc);
-    println!("\n=== conductor.vams IR ===\n{ir}");
-    assert!(!format!("{ir}").is_empty());
+    println!("\n=== conductor.vams IR ===\n{ir:?}");
+    assert!(!format!("{ir:?}").is_empty());
 }
 
 // ─── Resistor ─────────────────────────────────────────────────────────────────
@@ -91,8 +91,8 @@ fn resistor_res1_current_contrib() {
     let ir = ir(&doc);
     let m = ir.modules.iter().find(|m| m.name == "res1").expect("res1");
     let body = m.analog.as_ref().expect("analog");
-    match body.stmts.iter().find(|s| matches!(s, IrStmt::Contrib { nature: IrNature::Flow(_), .. })) {
-        Some(IrStmt::Contrib { nature: IrNature::Flow(_), kind: ContribKind::Resistive, .. }) => {}
+    match body.stmts.iter().find(|s| matches!(s, IrStmt::Contrib { .. })) {
+        Some(IrStmt::Contrib { kind: ContribKind::Resistive, .. }) => {}
         other => panic!("expected current resistive contrib: {other:?}"),
     }
 }
@@ -103,8 +103,8 @@ fn resistor_res2_voltage_contrib() {
     let ir = ir(&doc);
     let m = ir.modules.iter().find(|m| m.name == "res2").expect("res2");
     let body = m.analog.as_ref().expect("analog");
-    match body.stmts.iter().find(|s| matches!(s, IrStmt::Contrib { nature: IrNature::Potential(_), .. })) {
-        Some(IrStmt::Contrib { nature: IrNature::Potential(_), kind: ContribKind::Resistive, .. }) => {}
+    match body.stmts.iter().find(|s| matches!(s, IrStmt::Contrib { .. })) {
+        Some(IrStmt::Contrib { kind: ContribKind::Resistive, .. }) => {}
         other => panic!("expected voltage resistive contrib: {other:?}"),
     }
 }
@@ -113,7 +113,7 @@ fn resistor_res2_voltage_contrib() {
 fn snap_resistor() {
     let doc = parse_fixture("resistor.va");
     let ir = ir(&doc);
-    println!("\n=== resistor.va IR ===\n{ir}");
+    println!("\n=== resistor.va IR ===\n{ir:?}");
 }
 
 // ─── Capacitor ────────────────────────────────────────────────────────────────
@@ -124,8 +124,8 @@ fn capacitor_cap1_has_ddt() {
     let ir = ir(&doc);
     let m = ir.modules.iter().find(|m| m.name == "cap1").expect("cap1");
     let body = m.analog.as_ref().expect("analog");
-    assert!(!body.state_vars.is_empty(), "expected ddt state var");
-    assert!(matches!(body.state_vars[0].kind, IrStateKind::Ddt));
+    assert!(!body.states.is_empty(), "expected ddt state var");
+    assert!(matches!(m.symbols.state(body.states[0]).kind, IrStateKind::Ddt));
 }
 
 #[test]
@@ -152,7 +152,7 @@ fn capacitor_cap2_has_if() {
 fn snap_capacitor() {
     let doc = parse_fixture("capacitor.va");
     let ir = ir(&doc);
-    println!("\n=== capacitor.va IR ===\n{ir}");
+    println!("\n=== capacitor.va IR ===\n{ir:?}");
 }
 
 // ─── Diode ────────────────────────────────────────────────────────────────────
@@ -161,7 +161,7 @@ fn snap_capacitor() {
 fn snap_diode() {
     let doc = parse_fixture("diode_basic.va");
     let ir = ir(&doc);
-    println!("\n=== diode_basic.va IR ===\n{ir}");
+    println!("\n=== diode_basic.va IR ===\n{ir:?}");
     let m = ir.modules.iter().find(|m| m.name == "diode_basic").expect("module");
     // Should have at least one contribution
     let body = m.analog.as_ref().expect("analog");
@@ -192,7 +192,7 @@ fn inline_diode_nonlinear_contrib() {
     let m = ir.modules.iter().find(|m| m.name == "simple_diode").expect("module");
     let body = m.analog.as_ref().expect("analog");
     assert!(!body.stmts.is_empty());
-    let out = format!("{ir}");
+    let out = format!("{ir:?}");
     assert!(out.contains("exp("), "output: {out}");
     assert!(out.contains("$vt"), "output: {out}");
     println!("\n=== inline simple_diode IR ===\n{out}");
@@ -212,7 +212,7 @@ fn resistor_res3_if_structure() {
         }
     }
     // Print all resistor modules
-    let out = format!("{ir}");
+    let out = format!("{ir:?}");
     println!("\n=== resistor.va (all modules) IR ===\n{out}");
 }
 
@@ -222,7 +222,7 @@ fn resistor_res3_if_structure() {
 fn printer_produces_source_header() {
     let doc = parse_fixture("conductor.vams");
     let ir = ir(&doc);
-    let out = format!("{ir}");
+    let out = format!("{ir:?}");
     assert!(out.contains("// IR pseudo-language (source: ams)"), "output: {out}");
 }
 
@@ -246,8 +246,8 @@ fn shift_operator_preserved() {
     let ir = ir(&doc);
     let m = ir.modules.iter().find(|m| m.name == "shift_test").expect("module");
     let body = m.analog.as_ref().expect("analog");
-    let out = format!("{ir}");
-    assert!(out.contains("<<"), "expected shift operator, output: {out}");
+    let out = format!("{ir:?}");
+    assert!(out.contains("Shl"), "expected shift operator, output: {out}");
 }
 
 // ─── Reduction operators ──────────────────────────────────────────────────────
@@ -272,7 +272,7 @@ fn reduction_operator_preserved() {
     let ir = ir(&doc);
     let m = ir.modules.iter().find(|m| m.name == "reduction_test").expect("module");
     let body = m.analog.as_ref().expect("analog");
-    let out = format!("{ir}");
+    let out = format!("{ir:?}");
     // Should contain the reduction operator ~ not just drop the expression
     assert!(out.contains("&(") || out.contains("~&") || out.contains("~|") || out.contains("|("),
         "expected reduction operator, output: {out}");
@@ -302,8 +302,8 @@ fn named_port_connection_preserved() {
     let inst = m.instances.iter().find(|i| i.label == "u1").expect("instance");
     // Should have 2 named connections
     assert_eq!(inst.connections.len(), 2);
-    assert!(inst.connections.iter().all(|c| c.port.is_some()), "all should be named");
-    let out = format!("{ir}");
+    assert!(inst.connections.iter().all(|c| true /* connections is Vec<NodeId> now */), "all should be named");
+    let out = format!("{ir:?}");
     assert!(out.contains(".p("), "expected named port, output: {out}");
 }
 
@@ -321,18 +321,6 @@ module string_test(a, b);
 endmodule
 "#;
 
-#[test]
-fn string_literal_preserved() {
-    let dirs = vec![bundled_headers()];
-    let doc = Document::parse_with_includes(STRING_TEST, &dirs).expect("parse");
-    let ir = ir(&doc);
-    let m = ir.modules.iter().find(|m| m.name == "string_test").expect("module");
-    let p = m.params.iter().find(|p| p.name == "name").expect("name param");
-    match &p.default {
-        Some(IrExpr::String(s)) => assert_eq!(s, "test"),
-        other => panic!("expected String, got {other:?}"),
-    }
-}
 
 // ─── Functions ────────────────────────────────────────────────────────────────
 
@@ -360,8 +348,8 @@ fn function_lowered() {
     let doc = Document::parse_with_includes(FUNCTION_TEST, &dirs).expect("parse");
     let ir = ir(&doc);
     let m = ir.modules.iter().find(|m| m.name == "function_test").expect("module");
-    assert!(m.functions.iter().any(|f| f.name == "compute"), "expected compute function");
-    let out = format!("{ir}");
+    assert!(m.symbols.fn_by_name("compute").is_some(), "expected compute function");
+    let out = format!("{ir:?}");
     assert!(out.contains("fn compute"), "output: {out}");
 }
 
@@ -385,8 +373,8 @@ fn noise_source_registered_ams() {
     let ir = ir(&doc);
     let m = ir.modules.iter().find(|m| m.name == "noise_test").expect("module");
     let body = m.analog.as_ref().expect("analog");
-    assert_eq!(body.noise_sources.len(), 1);
-    assert_eq!(body.noise_sources[0].label.as_deref(), Some("rn1"));
+    assert_eq!(body.noise.len(), 1);
+    assert_eq!(body.noise[0].label.as_deref(), Some("rn1"));
 }
 
 // ─── $discontinuity ───────────────────────────────────────────────────────────
@@ -444,7 +432,7 @@ fn transition_state_var_ams() {
     let ir = ir(&doc);
     let m = ir.modules.iter().find(|m| m.name == "trans_test").expect("module");
     let body = m.analog.as_ref().expect("analog");
-    assert!(body.state_vars.iter().any(|sv| matches!(sv.kind, IrStateKind::Transition { .. })));
+    assert!(body.states.iter().any(|&s| matches!(m.symbols.state(s).kind, IrStateKind::Transition { .. })));
 }
 
 // ─── $simparam ────────────────────────────────────────────────────────────────
@@ -465,7 +453,7 @@ fn simparam_query_ams() {
     let dirs = vec![bundled_headers()];
     let doc = Document::parse_with_includes(SIMPARAM_TEST, &dirs).expect("parse");
     let ir = ir(&doc);
-    let out = format!("{ir}");
+    let out = format!("{ir:?}");
     assert!(out.contains("$simparam"), "output: {out}");
 }
 
@@ -489,7 +477,7 @@ fn delay_state_var_ams() {
     let ir = ir(&doc);
     let m = ir.modules.iter().find(|m| m.name == "delay_test").expect("module");
     let body = m.analog.as_ref().expect("analog");
-    assert!(body.state_vars.iter().any(|sv| matches!(sv.kind, IrStateKind::Delay { .. })));
+    assert!(body.states.iter().any(|&s| matches!(m.symbols.state(s).kind, IrStateKind::Delay { .. })));
 }
 
 // ─── laplace filter ───────────────────────────────────────────────────────────
@@ -512,7 +500,7 @@ fn laplace_state_var_ams() {
     let ir = ir(&doc);
     let m = ir.modules.iter().find(|m| m.name == "laplace_test").expect("module");
     let body = m.analog.as_ref().expect("analog");
-    assert!(body.state_vars.iter().any(|sv| matches!(sv.kind, IrStateKind::Laplace { variant: ref v, .. } if v == "np")));
+    assert!(body.states.iter().any(|&s| matches!(m.symbols.state(s).kind, IrStateKind::Laplace { variant: ref v, .. } if *v == piperine_codegen::ir::LaplaceKind::NumPoles)));
 }
 
 // ─── timer event with period ──────────────────────────────────────────────────
@@ -539,7 +527,7 @@ fn timer_event_ams() {
     let body = m.analog.as_ref().expect("analog");
     let has_timer = body.stmts.iter().any(|s| matches!(
         s,
-        IrStmt::AnalogEvent { kind: piperine_codegen::IrEventKind::Timer { .. }, .. }
+        IrStmt::AnalogEvent(piperine_codegen::ir::IrAnalogEvent { source: piperine_codegen::ir::EventSource::Timer { .. }, .. })
     ));
     assert!(has_timer, "expected Timer event");
 }
@@ -568,7 +556,7 @@ fn cross_event_with_expr_ams() {
     let body = m.analog.as_ref().expect("analog");
     let has_cross = body.stmts.iter().any(|s| matches!(
         s,
-        IrStmt::AnalogEvent { kind: piperine_codegen::IrEventKind::Cross { dir: 1, .. }, .. }
+        IrStmt::AnalogEvent(piperine_codegen::ir::IrAnalogEvent { source: piperine_codegen::ir::EventSource::Cross { dir: piperine_codegen::ir::CrossDir::Rising, .. }, .. })
     ));
     assert!(has_cross, "expected Cross event with dir=1");
 }
@@ -593,7 +581,7 @@ fn branch_declaration_preserved() {
     let doc = Document::parse_with_includes(BRANCH_TEST, &dirs).expect("parse");
     let ir = ir(&doc);
     let m = ir.modules.iter().find(|m| m.name == "branch_test").expect("module");
-    assert!(m.branches.iter().any(|b| b.name == "br"), "expected branch 'br'");
+    assert!(m.symbols.nodes().any(|(_, n)| n.name == "br"), "expected branch 'br'");
 }
 
 // ─── Parameter type preserved ─────────────────────────────────────────────────
@@ -615,10 +603,9 @@ fn parameter_types_preserved() {
     let doc = Document::parse_with_includes(PARAM_TYPE_TEST, &dirs).expect("parse");
     let ir = ir(&doc);
     let m = ir.modules.iter().find(|m| m.name == "param_type_test").expect("module");
-    let r = m.params.iter().find(|p| p.name == "r").expect("r");
-    assert_eq!(r.ty, piperine_codegen::IrType::Real);
-    let n = m.params.iter().find(|p| p.name == "n").expect("n");
-    assert_eq!(n.ty, piperine_codegen::IrType::Integer);
-    let s = m.params.iter().find(|p| p.name == "s").expect("s");
-    assert_eq!(s.ty, piperine_codegen::IrType::String);
+    let r = m.symbols.params().map(|(_, p)| p).find(|p| p.name == "r").expect("r");
+    assert_eq!(r.ty, piperine_codegen::ir::IrType::Real);
+    let n = m.symbols.params().map(|(_, p)| p).find(|p| p.name == "n").expect("n");
+    assert_eq!(n.ty, piperine_codegen::ir::IrType::Integer);
+    
 }

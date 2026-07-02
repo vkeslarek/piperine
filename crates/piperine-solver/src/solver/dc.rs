@@ -125,7 +125,33 @@ impl<'a> DcSolver<'a> {
 
     pub fn solve(&mut self) -> crate::result::Result<DcAnalysisResult> {
         let max_iter = self.system.context.max_iter;
-        let raw_solution = self.solver.solve(&mut self.system, 0.0, max_iter)?;
+
+        // Mixed-signal convergence loop: alternate between analog
+        // Newton-Raphson and digital evaluation until both settle. The
+        // A2D bridge (digital reads analog voltages) and D2A bridge
+        // (digital vars change analog stamps) require this outer loop.
+        const MAX_MS_ITER: usize = 20;
+        let raw_solution = {
+            let mut prev_digital = self.system.circuit.digital_state.nets.clone();
+            let mut sol = self.solver.solve(&mut self.system, 0.0, max_iter)?;
+            for _ in 0..MAX_MS_ITER {
+                let solution_slice = sol.as_slice().ok_or_else(|| {
+                    crate::error::Error::simple("DC", "solution not contiguous")
+                })?;
+                let changed = self.system.circuit.accept_and_run_digital(
+                    solution_slice,
+                    &self.system.context,
+                    0.0,
+                );
+                if !changed {
+                    break;
+                }
+                // Digital changed — re-solve analog with updated D2A state.
+                sol = self.solver.solve(&mut self.system, 0.0, max_iter)?;
+                let _ = &mut prev_digital;
+            }
+            sol
+        };
 
         let mut values = HashMap::new();
         let netlist = self.system.circuit.netlist();

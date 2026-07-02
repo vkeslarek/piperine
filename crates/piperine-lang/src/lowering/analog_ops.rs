@@ -33,7 +33,7 @@ impl AnalogOp for Ddt {
         let Some(a0) = args.first() else { return IrExpr::Real(0.0) };
         let x = lower_expr(a0, ctx);
         let id = ctx.alloc_state(IrStateKind::Ddt, x);
-        IrExpr::StateRef(id)
+        IrExpr::State(id)
     }
 }
 
@@ -44,7 +44,7 @@ impl AnalogOp for Idt {
         let x = lower_expr(a0, ctx);
         let ic = arg(args, 1, ctx, 0.0);
         let id = ctx.alloc_state(IrStateKind::Idt { ic }, x);
-        IrExpr::StateRef(id)
+        IrExpr::State(id)
     }
 }
 
@@ -56,7 +56,7 @@ impl AnalogOp for IdtMod {
         let ic = arg(args, 1, ctx, 0.0);
         let modulus = arg(args, 2, ctx, 1.0);
         let id = ctx.alloc_state(IrStateKind::IdtMod { ic, modulus }, x);
-        IrExpr::StateRef(id)
+        IrExpr::State(id)
     }
 }
 
@@ -67,9 +67,10 @@ impl AnalogOp for Ddx {
             return IrExpr::Real(0.0);
         }
         let x = lower_expr(&args[0], ctx);
-        let node = super::expr::ident_from_expr(Some(&args[1])).unwrap_or_else(|| "?".into());
+        let node_name = super::expr::ident_from_expr(Some(&args[1])).unwrap_or_else(|| "?".into());
+        let node = ctx.lookup_node(&node_name).unwrap_or(piperine_codegen::ir::NodeId::GROUND);
         let id = ctx.alloc_state(IrStateKind::Ddx { node }, x);
-        IrExpr::StateRef(id)
+        IrExpr::State(id)
     }
 }
 
@@ -80,7 +81,7 @@ impl AnalogOp for Delay {
         let x = lower_expr(a0, ctx);
         let delay = arg(args, 1, ctx, 0.0);
         let id = ctx.alloc_state(IrStateKind::Delay { delay }, x);
-        IrExpr::StateRef(id)
+        IrExpr::State(id)
     }
 }
 
@@ -94,7 +95,7 @@ impl AnalogOp for Transition {
         let fall = arg(args, 3, ctx, 0.0);
         let tol = arg(args, 4, ctx, 0.0);
         let id = ctx.alloc_state(IrStateKind::Transition { delay, rise, fall, tol }, x);
-        IrExpr::StateRef(id)
+        IrExpr::State(id)
     }
 }
 
@@ -106,7 +107,7 @@ impl AnalogOp for Slew {
         let rise = arg(args, 1, ctx, 0.0);
         let fall = arg(args, 2, ctx, 0.0);
         let id = ctx.alloc_state(IrStateKind::Slew { rise, fall }, x);
-        IrExpr::StateRef(id)
+        IrExpr::State(id)
     }
 }
 
@@ -121,13 +122,28 @@ impl AnalogOp for Laplace {
             return IrExpr::Real(0.0);
         }
         let x = lower_expr(&args[0], ctx);
-        let num = lower_expr(&args[1], ctx);
-        let den = lower_expr(&args[2], ctx);
+        
+        let to_vec = |e: &Expr, ctx: &mut LowerCtx| -> Vec<IrExpr> {
+            if let Expr::Array(crate::parse::ast::ArrayBody::List(list)) = e {
+                list.iter().map(|item| lower_expr(item, ctx)).collect()
+            } else {
+                vec![lower_expr(e, ctx)]
+            }
+        };
+        let num = to_vec(&args[1], ctx);
+        let den = to_vec(&args[2], ctx);
+        
+        let variant = match self.variant {
+            "zp" => piperine_codegen::ir::LaplaceKind::ZerosPoles,
+            "np" => piperine_codegen::ir::LaplaceKind::NumPoles,
+            "zd" => piperine_codegen::ir::LaplaceKind::ZerosDen,
+            _ => piperine_codegen::ir::LaplaceKind::NumDen,
+        };
         let id = ctx.alloc_state(
-            IrStateKind::Laplace { variant: self.variant.to_string(), num, den },
+            IrStateKind::Laplace { variant, num, den },
             x,
         );
-        IrExpr::StateRef(id)
+        IrExpr::State(id)
     }
 }
 
@@ -141,14 +157,30 @@ impl AnalogOp for ZTransform {
             return IrExpr::Real(0.0);
         }
         let x = lower_expr(&args[0], ctx);
-        let num = lower_expr(&args[1], ctx);
-        let den = lower_expr(&args[2], ctx);
+        
+        let to_vec = |e: &Expr, ctx: &mut LowerCtx| -> Vec<IrExpr> {
+            if let Expr::Array(crate::parse::ast::ArrayBody::List(list)) = e {
+                list.iter().map(|item| lower_expr(item, ctx)).collect()
+            } else {
+                vec![lower_expr(e, ctx)]
+            }
+        };
+        let num = to_vec(&args[1], ctx);
+        let den = to_vec(&args[2], ctx);
         let sample_dt = lower_expr(&args[3], ctx);
+        
+        let variant = match self.variant {
+            "zp" => piperine_codegen::ir::ZKind::ZerosPoles,
+            "np" => piperine_codegen::ir::ZKind::NumPoles,
+            "zd" => piperine_codegen::ir::ZKind::ZerosDen,
+            _ => piperine_codegen::ir::ZKind::NumDen,
+        };
+        
         let id = ctx.alloc_state(
-            IrStateKind::ZTransform { variant: self.variant.to_string(), num, den, sample_dt },
+            IrStateKind::ZTransform { variant, num, den, sample_dt },
             x,
         );
-        IrExpr::StateRef(id)
+        IrExpr::State(id)
     }
 }
 

@@ -118,6 +118,27 @@ impl Elaborator {
         self.disciplines.contains_key(name) || self.is_net_capable_bundle(name)
     }
 
+    /// Returns the storage value type of a named storage discipline, or
+    /// `None` if the discipline is conservative (has potential/flow but no
+    /// `storage` clause). Used to recover the value type of a `var` whose
+    /// source type is a storage discipline (e.g. `var st : Bit = 0;` →
+    /// `Bit` is `storage Boolean`, so the var's value type is `Boolean`).
+    pub(crate) fn storage_value_type(
+        &self,
+        discipline_name: &str,
+    ) -> Result<Option<ValueType>, ElabError> {
+        let Some(decl) = self.disciplines.get(discipline_name) else {
+            return Ok(None);
+        };
+        for item in &decl.items {
+            if let crate::parse::ast::DisciplineItem::Storage(ty) = item {
+                let vt = self.resolve_value_type(ty, &ConstEnv::new())?;
+                return Ok(Some(vt));
+            }
+        }
+        Ok(None)
+    }
+
     // ─────────────────────────── Net reference ────────────────────────────────
 
     /// Reduce a port-connection or net-connection expression to a concrete

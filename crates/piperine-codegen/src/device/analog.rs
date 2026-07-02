@@ -90,6 +90,10 @@ pub struct AnalogInstance {
     /// Runtime-state values read by the kernel (`state[StateId]`).
     state: Vec<f64>,
     operators: Vec<Operator>,
+    /// Module-level persistent variable values read by the kernel through
+    /// the D2A bridge (`vars[VarId]`). Synced from the digital side after
+    /// each `eval_discrete` call.
+    vars: Vec<f64>,
     /// Last accepted node voltages (for `bound_step_hint`).
     last_volts: Vec<f64>,
 }
@@ -176,6 +180,7 @@ impl AnalogInstance {
         let mut sim = SimCtx::default();
         sim.param_given_mask = param_given_mask;
         let n = kernel.num_terminals();
+        let num_vars = kernel.num_vars();
         Ok(Self {
             state: vec![0.0; kernel.num_state_slots()],
             kernel,
@@ -185,8 +190,21 @@ impl AnalogInstance {
             params,
             sim,
             operators,
+            vars: vec![0.0; num_vars],
             last_volts: vec![0.0; n],
         })
+    }
+
+    /// Update the module-level variable bank from the digital side (the D2A
+    /// bridge). Called after each `eval_discrete` so the analog body sees
+    /// the latest register values. `values[VarId.0]` is the variable's
+    /// current value as an `f64`.
+    pub fn sync_vars(&mut self, values: &[f64]) {
+        for (i, v) in values.iter().enumerate() {
+            if i < self.vars.len() {
+                self.vars[i] = *v;
+            }
+        }
     }
 
     fn num_terminals(&self) -> usize {
@@ -212,9 +230,9 @@ impl AnalogInstance {
         let mut res = vec![0.0; n];
         let mut jac = vec![0.0; n * n];
         self.kernel
-            .eval_residual(volts, &self.params, &self.state, &self.sim, &mut res);
+            .eval_residual(volts, &self.params, &self.state, &self.vars, &self.sim, &mut res);
         self.kernel
-            .eval_jacobian(volts, &self.params, &self.state, &self.sim, &mut jac);
+            .eval_jacobian(volts, &self.params, &self.state, &self.vars, &self.sim, &mut jac);
         (res, jac)
     }
 
@@ -265,9 +283,9 @@ impl AnalogInstance {
         let mut e = vec![0.0; nf];
         let mut de = vec![0.0; nf * n];
         self.kernel
-            .eval_force(volts, &self.params, &self.state, &self.sim, &mut e);
+            .eval_force(volts, &self.params, &self.state, &self.vars, &self.sim, &mut e);
         self.kernel
-            .eval_force_jacobian(volts, &self.params, &self.state, &self.sim, &mut de);
+            .eval_force_jacobian(volts, &self.params, &self.state, &self.vars, &self.sim, &mut de);
 
         let mut stamps = Vec::new();
         for (i, (branch, &(plus, minus))) in self
@@ -355,7 +373,7 @@ impl AnalogInstance {
             let n = self.num_terminals();
             let mut qjac = vec![0.0; n * n];
             self.kernel
-                .eval_charge_jacobian(&volts, &self.params, &self.state, &self.sim, &mut qjac);
+                .eval_charge_jacobian(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut qjac);
             for (j, q) in jac.iter_mut().zip(&qjac) {
                 *j += alpha * q;
             }
@@ -410,7 +428,7 @@ impl AnalogInstance {
         if self.kernel.has_reactive() {
             let mut qjac = vec![0.0; n * n];
             self.kernel
-                .eval_charge_jacobian(&volts, &self.params, &self.state, &self.sim, &mut qjac);
+                .eval_charge_jacobian(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut qjac);
             for i in 0..n {
                 for j in 0..n {
                     let c = qjac[i * n + j];
@@ -451,7 +469,7 @@ impl AnalogInstance {
         });
         let mut psd = vec![0.0; count];
         self.kernel
-            .eval_noise(&volts, &self.params, &self.state, &self.sim, &mut psd);
+            .eval_noise(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut psd);
 
         self.noise_refs
             .iter()
@@ -474,7 +492,7 @@ impl AnalogInstance {
         if !self.operators.is_empty() {
             let mut inputs = vec![0.0; self.state.len()];
             self.kernel
-                .eval_state_inputs(&volts, &self.params, &self.state, &self.sim, &mut inputs);
+                .eval_state_inputs(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut inputs);
             for op in &mut self.operators {
                 let slot = op.slot();
                 self.state[slot] = op.accept(ctx.time, inputs[slot]);
@@ -488,7 +506,18 @@ impl AnalogInstance {
             return f64::INFINITY;
         }
         self.kernel
-            .eval_bound_step(&self.last_volts, &self.params, &self.state, &self.sim)
+            .eval_bound_step(&self.last_volts, &self.params, &self.state, &self.vars, &self.sim)
+    }
+
+    /// The last accepted terminal voltages (kernel terminal order).
+    /// Used by the A2D bridge to pass analog voltages to the digital side.
+    pub fn last_volts(&self) -> &[f64] {
+        &self.last_volts
+    }
+
+    /// The analog kernel's terminal NodeIds (terminal order).
+    pub fn terminal_node_ids(&self) -> &[crate::ir::NodeId] {
+        self.kernel.terminals()
     }
 
     fn sync_sim(&mut self, context: &Context, analysis: Analysis) {

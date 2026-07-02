@@ -18,17 +18,36 @@ pub enum DigitalEvent {
     Posedge(IrExpr),
     Negedge(IrExpr),
     Change(IrExpr),
+    /// Fires once at simulation start (SPEC §10.4: `initial` works in both
+    /// analog and digital; on the digital side it is a clocked block that
+    /// fires during `init`, never during edge-driven `eval`).
+    Initial,
+    /// Fires once at simulation end.
+    Final,
     Or(Vec<DigitalEvent>),
 }
 
 impl DigitalEvent {
     /// The atomic `(signal, edge)` terms of this event, flattening `Or`.
+    /// `Initial`/`Final` have no edge terms — they fire on lifecycle, not
+    /// on a signal transition.
     pub fn terms(&self) -> Vec<(&IrExpr, EdgeKind)> {
         match self {
             DigitalEvent::Posedge(e) => vec![(e, EdgeKind::Rising)],
             DigitalEvent::Negedge(e) => vec![(e, EdgeKind::Falling)],
             DigitalEvent::Change(e) => vec![(e, EdgeKind::Any)],
+            DigitalEvent::Initial | DigitalEvent::Final => Vec::new(),
             DigitalEvent::Or(events) => events.iter().flat_map(DigitalEvent::terms).collect(),
+        }
+    }
+
+    /// Returns `true` if this event (or any sub-event in an `Or`) is
+    /// `Initial` — used by the device to fire the block during `init`.
+    pub fn is_initial(&self) -> bool {
+        match self {
+            DigitalEvent::Initial => true,
+            DigitalEvent::Or(events) => events.iter().any(DigitalEvent::is_initial),
+            _ => false,
         }
     }
 }

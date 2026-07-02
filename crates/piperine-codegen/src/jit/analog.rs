@@ -29,7 +29,16 @@ use super::flatten::{AnalogFlattener, FlatAnalog, FlatContrib, FlatDiagnostic, F
 use super::{math, CodegenError, SimCtx};
 
 /// The uniform analog JIT function type.
-type AnalogFn = unsafe extern "C" fn(*const f64, *const f64, *const f64, *const SimCtx, *mut f64);
+///
+/// ```c
+/// void fn(const f64 *volts, const f64 *params, const f64 *state,
+///         const f64 *vars, const SimCtx *sim, f64 *out);
+/// ```
+///
+/// `vars[i]` is the current value of module-level persistent variable `i`
+/// (the D2A bridge: analog bodies read digital register values through
+/// this bank). Unused when the module has no module-level vars.
+type AnalogFn = unsafe extern "C" fn(*const f64, *const f64, *const f64, *const f64, *const SimCtx, *mut f64);
 
 /// A runtime-serviced operator state (`delay` / `slew`). The device evaluates
 /// the config expressions once per instance (they must be parameter-constant)
@@ -57,6 +66,8 @@ pub struct AnalogKernel {
     num_ports: usize,
     num_params: usize,
     num_state_slots: usize,
+    /// Number of module-level persistent variable slots (the vars bank).
+    num_vars: usize,
     num_forces: usize,
     num_noise: usize,
     /// Per-force branch terminals `(plus, minus)`.
@@ -141,6 +152,12 @@ impl AnalogKernel {
         self.num_state_slots
     }
 
+    /// Number of module-level persistent variable slots (the vars bank).
+    /// Instances must provide a slice of at least this many `f64` values.
+    pub fn num_vars(&self) -> usize {
+        self.num_vars
+    }
+
     pub fn runtime_states(&self) -> &[RuntimeStateSpec] {
         &self.runtime_states
     }
@@ -158,12 +175,13 @@ impl AnalogKernel {
         self.bound_step.is_some()
     }
 
-    fn call(f: AnalogFn, volts: &[f64], params: &[f64], state: &[f64], sim: &SimCtx, out: &mut [f64]) {
+    fn call(f: AnalogFn, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         unsafe {
             f(
                 volts.as_ptr(),
                 params.as_ptr(),
                 state.as_ptr(),
+                vars.as_ptr(),
                 sim as *const SimCtx,
                 out.as_mut_ptr(),
             )
@@ -171,63 +189,63 @@ impl AnalogKernel {
     }
 
     /// Accumulate branch currents into `out[0..n]`. `out` must be pre-zeroed.
-    pub fn eval_residual(&self, volts: &[f64], params: &[f64], state: &[f64], sim: &SimCtx, out: &mut [f64]) {
-        Self::call(self.residual, volts, params, state, sim, out);
+    pub fn eval_residual(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        Self::call(self.residual, volts, params, state, vars, sim, out);
     }
 
     /// Accumulate conductances into `out[0..n²]` (row-major). Pre-zeroed.
-    pub fn eval_jacobian(&self, volts: &[f64], params: &[f64], state: &[f64], sim: &SimCtx, out: &mut [f64]) {
-        Self::call(self.jacobian, volts, params, state, sim, out);
+    pub fn eval_jacobian(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        Self::call(self.jacobian, volts, params, state, vars, sim, out);
     }
 
     /// Accumulate terminal charges into `out[0..n]`. No-op without reactive parts.
-    pub fn eval_charge(&self, volts: &[f64], params: &[f64], state: &[f64], sim: &SimCtx, out: &mut [f64]) {
+    pub fn eval_charge(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.charge {
-            Self::call(f, volts, params, state, sim, out);
+            Self::call(f, volts, params, state, vars, sim, out);
         }
     }
 
     /// Accumulate `dQ/dV` into `out[0..n²]`. No-op without reactive parts.
-    pub fn eval_charge_jacobian(&self, volts: &[f64], params: &[f64], state: &[f64], sim: &SimCtx, out: &mut [f64]) {
+    pub fn eval_charge_jacobian(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.charge_jacobian {
-            Self::call(f, volts, params, state, sim, out);
+            Self::call(f, volts, params, state, vars, sim, out);
         }
     }
 
     /// Write each force's source value `E_i(V)` to `out[0..num_forces]`.
-    pub fn eval_force(&self, volts: &[f64], params: &[f64], state: &[f64], sim: &SimCtx, out: &mut [f64]) {
+    pub fn eval_force(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.force {
-            Self::call(f, volts, params, state, sim, out);
+            Self::call(f, volts, params, state, vars, sim, out);
         }
     }
 
     /// Write `dE_i/dV_j` to `out[0..num_forces·n]` (row-major).
-    pub fn eval_force_jacobian(&self, volts: &[f64], params: &[f64], state: &[f64], sim: &SimCtx, out: &mut [f64]) {
+    pub fn eval_force_jacobian(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.force_jacobian {
-            Self::call(f, volts, params, state, sim, out);
+            Self::call(f, volts, params, state, vars, sim, out);
         }
     }
 
     /// Write each noise source's PSD to `out[0..num_noise]`.
-    pub fn eval_noise(&self, volts: &[f64], params: &[f64], state: &[f64], sim: &SimCtx, out: &mut [f64]) {
+    pub fn eval_noise(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.noise {
-            Self::call(f, volts, params, state, sim, out);
+            Self::call(f, volts, params, state, vars, sim, out);
         }
     }
 
     /// Write each runtime state's input value to `out[0..num_state_slots]`.
-    pub fn eval_state_inputs(&self, volts: &[f64], params: &[f64], state: &[f64], sim: &SimCtx, out: &mut [f64]) {
+    pub fn eval_state_inputs(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.state_inputs {
-            Self::call(f, volts, params, state, sim, out);
+            Self::call(f, volts, params, state, vars, sim, out);
         }
     }
 
     /// The device's `$bound_step` hint, or infinity.
-    pub fn eval_bound_step(&self, volts: &[f64], params: &[f64], state: &[f64], sim: &SimCtx) -> f64 {
+    pub fn eval_bound_step(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx) -> f64 {
         match self.bound_step {
             Some(f) => {
                 let mut out = [f64::INFINITY];
-                Self::call(f, volts, params, state, sim, &mut out);
+                Self::call(f, volts, params, state, vars, sim, &mut out);
                 out[0]
             }
             None => f64::INFINITY,
@@ -412,6 +430,7 @@ impl<'m> AnalogCompiler<'m> {
             num_ports: self.num_ports,
             num_params: self.module.symbols.num_params(),
             num_state_slots: self.module.symbols.num_states(),
+            num_vars: self.module.symbols.vars().count(),
             num_forces: forces.len(),
             num_noise: noise.len(),
             force_terminals: forces.iter().map(|f| (f.plus, f.minus)).collect(),
@@ -532,7 +551,7 @@ impl<'m> AnalogCompiler<'m> {
     ) -> Result<FuncId, CodegenError> {
         let ptr_ty = self.jit.target_config().pointer_type();
         let mut sig = Signature::new(self.jit.isa().default_call_conv());
-        for _ in 0..5 {
+        for _ in 0..6 {
             sig.params.push(AbiParam::new(ptr_ty));
         }
 
@@ -559,8 +578,9 @@ impl<'m> AnalogCompiler<'m> {
         let volts_ptr = builder.block_params(entry)[0];
         let params_ptr = builder.block_params(entry)[1];
         let state_ptr = builder.block_params(entry)[2];
-        let sim_ptr = builder.block_params(entry)[3];
-        let out_ptr = builder.block_params(entry)[4];
+        let vars_ptr = builder.block_params(entry)[3];
+        let sim_ptr = builder.block_params(entry)[4];
+        let out_ptr = builder.block_params(entry)[5];
 
         // Parameter values, indexed by ParamId.
         let params: Vec<Value> = (0..self.module.symbols.num_params())
@@ -598,6 +618,7 @@ impl<'m> AnalogCompiler<'m> {
             branch_voltages: &branch_voltages,
             params: &params,
             state_ptr,
+            vars_ptr,
             sim_ptr,
             math: &math,
         };

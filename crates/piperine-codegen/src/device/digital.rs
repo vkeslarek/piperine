@@ -87,6 +87,18 @@ impl DigitalInstance {
         &self.out_nets
     }
 
+    /// The compiled digital kernel (shared across instances).
+    pub fn kernel(&self) -> &Arc<DigitalKernel> {
+        &self.kernel
+    }
+
+    /// Export all register/variable values as `f64`, indexed by `VarId`.
+    /// Used by the D2A bridge to sync digital state into the analog vars
+    /// bank after each evaluation.
+    pub fn export_vars(&self) -> Vec<f64> {
+        self.kernel.layout().export_vars(&self.vars_int, &self.vars_real)
+    }
+
     /// Apply register power-on values, evaluate once with unknown inputs,
     /// and schedule the resulting output values at t = 0.
     pub fn init(&mut self, event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>) {
@@ -107,10 +119,20 @@ impl DigitalInstance {
 
         let inputs = vec![Quad::X; self.in_nets.len()];
         let mut outputs = vec![Quad::X; self.out_nets.len()];
-        self.run(&inputs, &mut outputs, &vec![0; self.kernel.clocked_blocks().len()]);
+        // Fire `@ initial` clocked blocks during init (SPEC §10.4): their
+        // register updates run once at simulation start, reading the
+        // pre-edge (power-on) bank values.
+        let fired: Vec<i64> = self
+            .kernel
+            .clocked_blocks()
+            .iter()
+            .map(|b| i64::from(b.is_initial))
+            .collect();
+        let analog_voltages: Vec<f64> = vec![0.0; self.kernel.layout().num_analog()];
+        self.run(&inputs, &mut outputs, &fired, &analog_voltages);
 
         // Seed edge detection from the initial input state.
-        self.prev_watch = self.watch_values(&inputs, &outputs);
+        self.prev_watch = self.watch_values(&inputs, &outputs, &analog_voltages);
 
         let initial: Vec<(DigitalNet, i64)> =
             self.out_nets.iter().copied().zip(outputs.iter().copied()).collect();
@@ -124,6 +146,7 @@ impl DigitalInstance {
         &mut self,
         t: f64,
         nets: &[LogicValue],
+        analog_voltages: &[f64],
         event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
     ) {
         self.sim.abstime = t;
@@ -140,7 +163,7 @@ impl DigitalInstance {
         let mut outputs = previous_outputs.clone();
 
         // Edge detection against the previous watch values.
-        let watch = self.watch_values(&inputs, &outputs);
+        let watch = self.watch_values(&inputs, &outputs, analog_voltages);
         let fired: Vec<i64> = self
             .kernel
             .clocked_blocks()
@@ -159,7 +182,7 @@ impl DigitalInstance {
             .collect();
         self.prev_watch = watch;
 
-        self.run(&inputs, &mut outputs, &fired);
+        self.run(&inputs, &mut outputs, &fired, analog_voltages);
 
         let changed: Vec<(DigitalNet, i64)> = self
             .out_nets
@@ -176,7 +199,7 @@ impl DigitalInstance {
     }
 
     /// Run `seq` (with pre-edge bank copies) then `comb`.
-    fn run(&mut self, inputs: &[i64], outputs: &mut [i64], fired: &[i64]) {
+    fn run(&mut self, inputs: &[i64], outputs: &mut [i64], fired: &[i64], analog_voltages: &[f64]) {
         let vars_int_old = self.vars_int.clone();
         let vars_real_old = self.vars_real.clone();
         let abi = DigitalAbi {
@@ -189,6 +212,7 @@ impl DigitalInstance {
             params: self.params.as_ptr(),
             fired: fired.as_ptr(),
             sim: &self.sim as *const SimCtx,
+            analog_voltages: analog_voltages.as_ptr(),
         };
         if fired.iter().any(|&f| f != 0) {
             self.kernel.eval_seq(&abi);
@@ -197,7 +221,7 @@ impl DigitalInstance {
     }
 
     /// Evaluate the watch terms with the given signal state.
-    fn watch_values(&mut self, inputs: &[i64], outputs: &[i64]) -> Vec<i64> {
+    fn watch_values(&mut self, inputs: &[i64], outputs: &[i64], analog_voltages: &[f64]) -> Vec<i64> {
         let mut out = vec![Quad::X; self.kernel.num_watch_terms()];
         if out.is_empty() {
             return out;
@@ -214,6 +238,7 @@ impl DigitalInstance {
             params: self.params.as_ptr(),
             fired: fired.as_ptr(),
             sim: &self.sim as *const SimCtx,
+            analog_voltages: analog_voltages.as_ptr(),
         };
         self.kernel.eval_watch(&abi, &mut out);
         out

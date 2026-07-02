@@ -241,13 +241,19 @@ Ports positionally in `()` or by name `.p = net`; params by name in `{}`. An ins
 named `name : Module`. A named instance exposes ports as nets `name.port`, which the parent may
 connect, probe, or contribute to from its own `analog` block (KCL accumulation — parasitic load,
 coupling, trim, with no extra component). Anonymous instances cannot be addressed afterward. A
-`for` instance is an array `name[i]`; `name[i].port` reaches each replica.
+`for` instance is an array `name[i]`; `name[i].port` reaches each replica. After behavioral `for`
+unrolling (§10), `name[i].port` becomes `name_0.port`, `name_1.port`, etc. — the loop variable
+is substituted by its concrete value, same as `if` const-folding.
 
 ```phdl
 r1 : Resistor ( .p = a, .n = b ) { .r = 50 };
 load : Capacitor ( out, gnd ) { .c = 1p };
 analog Tile { I(load.p, gnd) <+ cpar * ddt(V(load.p, gnd)); }
 ```
+
+`name.port` resolves to the parent-scope node that the instance's port is connected to. It is
+not a separate terminal — it IS the parent node. Contributing `I(load.p, gnd) <+ expr` adds
+current to that node (KCL accumulation); probing `V(load.p, gnd)` reads its voltage.
 
 #### 7.4 Structural control
 
@@ -334,8 +340,11 @@ statement grammar:
 
 A leaf device has one block; a boundary device takes the block of the domain it *drives*
 (Comparator: `digital`, samples `V`, drives `Bit`; 1-bit DAC: `analog`, reads `Bit`, forces `V`).
-A `for` is unrolled (bound must be an elaboration constant; unbounded is an error). Behavior may
-branch on `$analysis` (§11), specialized per analysis at compile time.
+A `for` is unrolled (bound must be an elaboration constant; unbounded is an error). The loop
+variable is substituted by its concrete value in every iteration — `for` is syntactic sugar,
+fully resolved at elaboration, same as `if` const-folding. After unrolling, `rseg[i].n` becomes
+`rseg_0.n`, `rseg_1.n`, etc. Behavior may branch on `$analysis` (§11), specialized per analysis
+at compile time.
 
 #### 10.1 Access functions
 

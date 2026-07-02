@@ -1,0 +1,15 @@
+
+discipline Electrical { potential v : Real; flow i : Real; }
+mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 100.0; }
+mod Ladder ( inout bus : Electrical, inout gnd : Electrical ) {
+    param cpar : Real = 1e-15;
+    wire tap : Electrical[5];
+    for i in 0..5 {
+        rseg[i] : Resistor ( bus, tap[i] );
+    }
+}
+analog Ladder {
+    for i in 0..5 {
+        I(rseg[i].n, gnd) <+ cpar * ddt(V(rseg[i].n, gnd));
+    }
+}

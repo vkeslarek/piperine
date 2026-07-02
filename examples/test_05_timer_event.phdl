@@ -1,0 +1,11 @@
+
+discipline Bit { storage Boolean; }
+mod ClockGen ( output clk : Bit ) {
+    var state : Bit = 0;
+}
+digital ClockGen {
+    clk <- state;
+    @ initial {
+        state = !state;
+    }
+}

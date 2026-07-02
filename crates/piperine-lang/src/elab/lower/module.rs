@@ -250,38 +250,53 @@ impl Elaborator {
             }
 
             ModStmt::VarDecl { name, ty, default, attrs: _ } => {
-                // GAPS §I.15 — a `var` declared directly in a `mod` body
+                // §7.2 + §I.15 — a `var` declared directly in a `mod` body
                 // (as opposed to inside `analog`/`digital`) is persistent
                 // module-level state, e.g. `var sw_state : Real = 0.0;` in
-                // a switch. Unlike behavior-local `var`s (inlined at
-                // lowering), this must survive as real state — so it is
-                // elaborated here rather than silently dropped.
+                // a switch, or `var st : Bit = 0;` in a digital register.
+                // Unlike behavior-local `var`s (inlined at lowering), this
+                // must survive as real state — so it is elaborated here.
                 //
-                // Digital designs also write `var st : Bit = 0;`, where
-                // `Bit` is a storage *discipline*, not a value type — that
-                // resolves to `TypeRef::Net`. Digital persistent-var
-                // lowering is a separate, still-open gap (tracked apart
-                // from I.15, which is scoped to the analog/Real case), so
-                // for a net-typed mod-body var we preserve the previous
-                // behavior (skip at the structural level) rather than
-                // half-implement digital state here.
-                match self.resolve_type(ty, env, type_subst)? {
-                    crate::pom::TypeRef::Value(vt) => {
-                        let init = default
-                            .as_ref()
-                            .map(|e| {
-                                env.eval(e).map_err(|e| ElabError::ConstEval {
-                                    context: format!("module var `{}` initializer", name),
-                                    source: e,
-                                })
-                            })
-                            .transpose()?;
-                        out.push(ModBodyItem::ModVar(Var { attributes: Vec::new(), name: name.clone(), ty: vt, init }));
+                // A `var` is a value-typed binding. When the source writes
+                // `var st : Bit = 0;`, `Bit` is a storage discipline — the
+                // var's value type is the discipline's storage value type
+                // (here `Boolean`). We resolve through the discipline to
+                // recover that value type, so the var survives as
+                // persistent digital state. A conservative discipline
+                // (potential+flow) has no storage value type and is an
+                // error — a `var` cannot be a conservative terminal.
+                let resolved = self.resolve_type(ty, env, type_subst)?;
+                let vt = match resolved {
+                    crate::pom::TypeRef::Value(vt) => vt,
+                    crate::pom::TypeRef::Net(crate::pom::NetType::Discipline(dname)) => {
+                        self.storage_value_type(&dname)?
+                            .ok_or_else(|| ElabError::Other(format!(
+                                "module var `{}` has conservative discipline `{}` — a `var` needs a storage discipline or a value type",
+                                name, dname
+                            )))?
                     }
-                    crate::pom::TypeRef::Net(_) => {
-                        // Digital storage var — not yet lowered as persistent state.
+                    crate::pom::TypeRef::Net(other) => {
+                        return Err(ElabError::Other(format!(
+                            "module var `{}` has unsupported net type `{:?}`",
+                            name, other
+                        )));
                     }
-                }
+                };
+                let init = default
+                    .as_ref()
+                    .map(|e| {
+                        env.eval(e).map_err(|e| ElabError::ConstEval {
+                            context: format!("module var `{}` initializer", name),
+                            source: e,
+                        })
+                    })
+                    .transpose()?;
+                out.push(ModBodyItem::ModVar(Var {
+                    attributes: Vec::new(),
+                    name: name.clone(),
+                    ty: vt,
+                    init,
+                }));
             }
 
             ModStmt::StructuralFor { var, range, body, attrs: _ } => {

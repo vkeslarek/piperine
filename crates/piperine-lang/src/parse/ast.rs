@@ -352,6 +352,42 @@ pub enum Stmt {
     Expr(Expr),
 }
 
+impl Stmt {
+    /// Substitute `var → value` in all expressions of this statement.
+    pub fn subst_const(&mut self, var: &str, value: u64) {
+        match self {
+            Stmt::VarDecl { default: Some(e), .. } => e.subst_const(var, value),
+            Stmt::Return(e) => e.subst_const(var, value),
+            Stmt::If { cond, then_body, else_body } => {
+                cond.subst_const(var, value);
+                then_body.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
+                if let Some(e) = &mut then_body.expr { e.subst_const(var, value); }
+                if let Some(b) = else_body {
+                    b.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
+                    if let Some(e) = &mut b.expr { e.subst_const(var, value); }
+                }
+            }
+            Stmt::Match { expr, arms } => {
+                expr.subst_const(var, value);
+                arms.iter_mut().for_each(|a| {
+                    a.body.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
+                    if let Some(e) = &mut a.body.expr { e.subst_const(var, value); }
+                });
+            }
+            Stmt::For { body, .. } => {
+                body.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
+                if let Some(e) = &mut body.expr { e.subst_const(var, value); }
+            }
+            Stmt::Bind { dest, src, .. } => {
+                dest.subst_const(var, value);
+                src.subst_const(var, value);
+            }
+            Stmt::Expr(e) => e.subst_const(var, value),
+            _ => {}
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct StmtMatchArm {
     pub pat: Pattern,
@@ -398,6 +434,48 @@ pub enum BehaviorStmt {
     Event { spec: EventSpec, guard: Option<Expr>, body: Block },
     Diagnostic { sys: String, args: Vec<Expr> },
     Expr(Expr),
+}
+
+impl BehaviorStmt {
+    /// Substitute `var → value` in all expressions of this statement.
+    /// Used during behavioral `for` unrolling (the `for` is syntactic
+    /// sugar, fully resolved at elaboration — same as `if` const-folding).
+    pub fn subst_const(&mut self, var: &str, value: u64) {
+        match self {
+            BehaviorStmt::VarDecl { default: Some(e), .. } => e.subst_const(var, value),
+            BehaviorStmt::Bind { dest, src, .. } => {
+                dest.subst_const(var, value);
+                src.subst_const(var, value);
+            }
+            BehaviorStmt::If { cond, then_body, else_body } => {
+                cond.subst_const(var, value);
+                then_body.iter_mut().for_each(|s| s.subst_const(var, value));
+                if let Some(b) = else_body {
+                    b.iter_mut().for_each(|s| s.subst_const(var, value));
+                }
+            }
+            BehaviorStmt::Match { expr, arms } => {
+                expr.subst_const(var, value);
+                arms.iter_mut().for_each(|a| {
+                    a.body.iter_mut().for_each(|s| s.subst_const(var, value));
+                });
+            }
+            BehaviorStmt::For { body, .. } => {
+                body.iter_mut().for_each(|s| s.subst_const(var, value));
+            }
+            BehaviorStmt::Event { spec, guard, body } => {
+                if let EventSpec::Named { arg, .. } = spec { arg.subst_const(var, value); }
+                if let Some(g) = guard { g.subst_const(var, value); }
+                body.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
+                if let Some(e) = &mut body.expr { e.subst_const(var, value); }
+            }
+            BehaviorStmt::Diagnostic { args, .. } => {
+                args.iter_mut().for_each(|a| a.subst_const(var, value));
+            }
+            BehaviorStmt::Expr(e) => e.subst_const(var, value),
+            _ => {}
+        }
+    }
 }
 
 /// The bind operator: contribution `<+`, force `<-`, or assignment `=`.
@@ -471,6 +549,71 @@ pub enum Expr {
     Array(ArrayBody),
     BundleLit { ty: Type, fields: Vec<(String, Expr)> },
     Lambda { params: Vec<String>, body: Box<Expr> },
+}
+
+impl Expr {
+    /// Substitute every `Ident(name)` matching `var` with `Literal::Int(value)`.
+    /// Used during behavioral `for` unrolling to replace the loop variable
+    /// with its concrete iteration value (the `for` is syntactic sugar —
+    /// same as `if` const-folding, the bound must be an elaboration constant).
+    pub fn subst_const(&mut self, var: &str, value: u64) {
+        match self {
+            Expr::Ident(name) if name == var => {
+                *self = Expr::Literal(Literal::Int(value));
+            }
+            Expr::Unary(_, inner) => inner.subst_const(var, value),
+            Expr::Binary(l, _, r) => {
+                l.subst_const(var, value);
+                r.subst_const(var, value);
+            }
+            Expr::Call(func, args) => {
+                func.subst_const(var, value);
+                args.iter_mut().for_each(|a| a.subst_const(var, value));
+            }
+            Expr::Cast(_, inner) => inner.subst_const(var, value),
+            Expr::Index(base, idx) => {
+                base.subst_const(var, value);
+                idx.subst_const(var, value);
+            }
+            Expr::Slice(base, range) => {
+                base.subst_const(var, value);
+                range.start.subst_const(var, value);
+                range.end.subst_const(var, value);
+            }
+            Expr::Field(base, _) => base.subst_const(var, value),
+            Expr::If { cond, then_body, else_body } => {
+                cond.subst_const(var, value);
+                then_body.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
+                if let Some(e) = &mut then_body.expr { e.subst_const(var, value); }
+                else_body.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
+                if let Some(e) = &mut else_body.expr { e.subst_const(var, value); }
+            }
+            Expr::Array(ArrayBody::List(elems)) => {
+                elems.iter_mut().for_each(|e| e.subst_const(var, value));
+            }
+            Expr::Array(ArrayBody::Repeat(v, n)) => {
+                v.subst_const(var, value);
+                n.subst_const(var, value);
+            }
+            Expr::Array(ArrayBody::Comprehension(e, _, range)) => {
+                e.subst_const(var, value);
+                range.start.subst_const(var, value);
+                range.end.subst_const(var, value);
+            }
+            Expr::SysCall(_, args) => {
+                args.iter_mut().for_each(|a| a.subst_const(var, value));
+            }
+            Expr::Block(b) => {
+                b.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
+                if let Some(e) = &mut b.expr { e.subst_const(var, value); }
+            }
+            Expr::BundleLit { fields, .. } => {
+                fields.iter_mut().for_each(|(_, e)| e.subst_const(var, value));
+            }
+            Expr::Lambda { .. } => { /* don't substitute into lambda bodies */ }
+            Expr::Literal(_) | Expr::Ident(_) | Expr::Path(_) => {}
+        }
+    }
 }
 
 /// The body of an array expression `[ ... ]`.

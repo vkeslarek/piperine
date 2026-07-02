@@ -115,9 +115,9 @@ fn noise_current_psd_evaluates_param_resolution() {
         Box::new(IrExpr::Binary(
             piperine_codegen::ir::IrBinOp::Mul,
             Box::new(IrExpr::Real(4.0)),
-            Box::new(IrExpr::Param("kT".into())),
+            Box::new(IrExpr::Param(piperine_codegen::ir::ParamId(0))),
         )),
-        Box::new(IrExpr::Param("g".into())),
+        Box::new(IrExpr::Param(piperine_codegen::ir::ParamId(1))),
     );
     dev.add_noise_source(
         "p".to_string(), p_ref,
@@ -147,10 +147,10 @@ fn noise_current_psd_evaluates_branch_voltage() {
     dev.set_terminal_names(vec!["p".into(), "n".into()]);
     let psd = IrExpr::Binary(
         piperine_codegen::ir::IrBinOp::Sub,
-        Box::new(IrExpr::BranchAccess {
-            access: "V".into(),
-            plus: "p".into(),
-            minus: "n".into(),
+        Box::new(IrExpr::Branch {
+            nature: piperine_codegen::ir::NatureId(0),
+            plus: piperine_codegen::ir::NodeId(0),
+            minus: piperine_codegen::ir::NodeId(1),
         }),
         Box::new(IrExpr::Real(0.0)),
     );
@@ -183,53 +183,40 @@ fn noise_current_psd_evaluates_branch_voltage() {
 
 fn make_ir_with_noise_source(psd_const: f64) -> IrProgram {
     use piperine_codegen::ir::{
-        IrAnalogBody, IrDirection, IrParam, IrPort, IrStateVar, IrStmt, IrType,
+        IrAnalogBody, IrDirection, IrPort, IrStmt, IrType,
+        Source, Domain, NatureKind
     };
 
-    let mut prog = IrProgram {
-        source: "R".into(),
-        modules: Vec::new(),
-        functions: Vec::new(),
-    };
-    prog.modules.push(piperine_codegen::ir::IrModule {
-        name: "R".into(),
-        ports: vec![
-            IrPort { name: "p".into(), direction: IrDirection::Inout, discipline: None },
-            IrPort { name: "n".into(), direction: IrDirection::Inout, discipline: None },
-        ],
-        params: vec![IrParam {
-            name: "g".into(),
-            ty: IrType::Real,
-            default: Some(IrExpr::Real(1.0_f64)),
+    let mut prog = IrProgram::new(Source::Ppr);
+    let mut module = piperine_codegen::ir::IrModule::new("R");
+    
+    let node_p = module.symbols.add_node("p", Domain::Analog);
+    let node_n = module.symbols.add_node("n", Domain::Analog);
+    module.ports = vec![
+        IrPort { node: node_p, direction: IrDirection::Inout },
+        IrPort { node: node_n, direction: IrDirection::Inout },
+    ];
+    module.symbols.add_param("g", IrType::Real, Some(IrExpr::Real(1.0_f64)));
+    
+    let nature_i = module.symbols.add_nature("I", NatureKind::Flow);
+
+    module.analog = Some(IrAnalogBody {
+        states: Vec::new(),
+        noise: vec![piperine_codegen::ir::IrNoiseSource {
+            plus: node_p,
+            minus: node_n,
+            kind: IrNoise::White { psd: IrExpr::Real(psd_const) },
+            label: Some("thermal".into()),
         }],
-        wires: Vec::new(),
-        branches: Vec::new(),
-        events: Vec::new(),
-        vars: Vec::new(),
-        grounds: Vec::new(),
-        instances: Vec::new(),
-        connections: Vec::new(),
-        continuous_assigns: Vec::new(),
-        analog: Some(IrAnalogBody {
-            state_vars: Vec::<IrStateVar>::new(),
-            noise_sources: vec![piperine_codegen::ir::IrNoiseSource {
-                plus: "p".into(),
-                minus: "n".into(),
-                kind: IrNoise::White { psd: IrExpr::Real(psd_const) },
-                label: Some("thermal".into()),
-            }],
-            vars: Vec::new(),
-            stmts: vec![IrStmt::Contrib {
-                nature: piperine_codegen::ir::IrNature::Flow("I".into()),
-                plus: "p".into(),
-                minus: "n".into(),
-                expr: IrExpr::Real(0.0),
-                kind: piperine_codegen::ir::ContribKind::Resistive,
-            }],
-        }),
-        digital: None,
-        functions: Vec::new(),
+        stmts: vec![IrStmt::Contrib {
+            nature: nature_i,
+            plus: node_p,
+            minus: node_n,
+            expr: IrExpr::Real(0.0),
+            kind: piperine_codegen::ir::ContribKind::Resistive,
+        }],
     });
+    prog.modules.push(module);
     prog
 }
 

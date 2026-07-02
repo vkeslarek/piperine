@@ -1,0 +1,8 @@
+
+discipline Logic { storage Quad; resolve tri; }
+mod BusTest ( inout bus : Logic ) {
+    var val : Boolean = 0;
+}
+digital BusTest {
+    bus <- val;
+}

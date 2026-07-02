@@ -196,9 +196,16 @@ impl<'a> TransientSolver<'a> {
             let analog_result = self.execute_timestep(t_next, dt_actual);
 
             if let Ok(Some(snapshot)) = analog_result {
-                // Post-convergence
-                let _state = self.solver.current_guess().unwrap().clone();
-                let _ctx = &self.system.context;
+                // Post-convergence: run digital with the updated analog
+                // voltages (A2D bridge). If digital outputs changed, the
+                // D2A bridge may require re-solving, but for now we accept
+                // the digital state as-is (one evaluation per timestep).
+                let solution = self.solver.current_guess().unwrap().to_owned();
+                let _changed = self.system.circuit.accept_and_run_digital(
+                    solution.as_slice().unwrap(),
+                    &self.system.context,
+                    t_next,
+                );
                 self.system.circuit.digital_state.commit();
                 steps.push(snapshot);
                 current_time = t_next;

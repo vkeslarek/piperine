@@ -37,6 +37,10 @@ pub struct AnalogEmitter<'a, 'f> {
     pub params: &'a [Value],
     /// `*const f64` runtime-state values, indexed by `StateId`.
     pub state_ptr: Value,
+    /// `*const f64` module-level persistent variable values, indexed by
+    /// `VarId`. The D2A bridge: the analog body reads digital register
+    /// values through this bank.
+    pub vars_ptr: Value,
     /// `*const SimCtx`.
     pub sim_ptr: Value,
     /// Imported libm functions, keyed by canonical name.
@@ -102,10 +106,12 @@ impl AnalogEmitter<'_, '_> {
             IrExpr::Array(_) | IrExpr::Index(..) | IrExpr::Slice(..) => Err(
                 CodegenError::unsupported("vector expression in an analog contribution"),
             ),
-            IrExpr::Var(id) => Err(CodegenError::Invalid(format!(
-                "variable #{} survived flattening",
-                id.0
-            ))),
+            IrExpr::Var(id) => Ok(self.builder.ins().load(
+                types::F64,
+                MemFlags::trusted(),
+                self.vars_ptr,
+                (id.0 * 8) as i32,
+            )),
         }
     }
 

@@ -1439,7 +1439,6 @@ dependencies = [
  "bincode",
  "bindgen",
  "dirs",
- "piperine-ams",
  "piperine-cli",
  "piperine-project",
  "serde",
@@ -1448,21 +1447,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "piperine-ams"
-version = "0.1.0"
-dependencies = [
- "piperine-codegen",
- "piperine-lang",
- "piperine-solver",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "piperine-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "piperine-ams",
  "piperine-codegen",
  "piperine-lang",
  "piperine-project",

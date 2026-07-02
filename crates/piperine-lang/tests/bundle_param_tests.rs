@@ -38,9 +38,9 @@ fn bundle_param_default_flattens_to_scalar_params() {
     let prog = parse_and_elaborate(&s).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "R").expect("module");
-    let rsh = m.params.iter().find(|p| p.name == "model_rsh").expect("model_rsh param");
+    let rsh = m.symbols.params().map(|(_, p)| p).find(|p| p.name == "model_rsh").expect("model_rsh param");
     assert_eq!(rsh.default, Some(IrExpr::Real(100.0)));
-    assert!(m.params.iter().any(|p| p.name == "model_kf"));
+    assert!(m.symbols.params().map(|(_, p)| p).any(|p| p.name == "model_kf"));
 }
 
 #[test]
@@ -53,10 +53,10 @@ fn bundle_param_partial_literal_overrides_one_field() {
     let prog = parse_and_elaborate(&s).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "R").expect("module");
-    let rsh = m.params.iter().find(|p| p.name == "model_rsh").expect("model_rsh param");
+    let rsh = m.symbols.params().map(|(_, p)| p).find(|p| p.name == "model_rsh").expect("model_rsh param");
     assert_eq!(rsh.default, Some(IrExpr::Real(5.0)));
     // Untouched field keeps the bundle's own default.
-    let kf = m.params.iter().find(|p| p.name == "model_kf").expect("model_kf param");
+    let kf = m.symbols.params().map(|(_, p)| p).find(|p| p.name == "model_kf").expect("model_kf param");
     assert_eq!(kf.default, Some(IrExpr::Real(0.0)));
 }
 
@@ -69,7 +69,7 @@ fn bundle_field_access_lowers_to_flattened_param() {
     );
     let prog = parse_and_elaborate(&s).expect("elab");
     let ir = ppr_to_ir(&prog);
-    let out = format!("{ir}");
+    let out = format!("{ir:?}");
     assert!(out.contains("model_rsh"), "output: {out}");
 }
 

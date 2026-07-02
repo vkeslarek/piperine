@@ -150,6 +150,29 @@ impl Elaborator {
             prog.modules_map_mut().entry(name).or_insert(elab_mod);
         }
 
+        // Attach behaviors to monomorphized modules. A behavior declared as
+        // `analog Capacitor { ... }` (name "Capacitor") must also attach to
+        // `Capacitor__8` (monomorphized from `Capacitor[8]`). The base name
+        // is the part before the `__` suffix.
+        for beh in &self.behavior_decls.clone() {
+            let behavior = self.elab_behavior(beh)?;
+            let base = &behavior.name;
+            for (name, module) in prog.modules_map_mut().iter_mut() {
+                if name == base {
+                    continue; // already attached above
+                }
+                // Monomorphized name: "BaseName__arg1_arg2_..."
+                if let Some(rest) = name.strip_prefix(&format!("{base}__")) {
+                    if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit() || c == '_') {
+                        // Avoid duplicate attachment if already present.
+                        if !module.behaviors.iter().any(|b| b.name == behavior.name && b.kind == behavior.kind) {
+                            module.behaviors.push(behavior.clone());
+                        }
+                    }
+                }
+            }
+        }
+
         // GAPS §J.4 — resolve calls to built-in casts and validate diagnostics
         self.ctx.callables.resolve_calls(&mut prog)?;
 

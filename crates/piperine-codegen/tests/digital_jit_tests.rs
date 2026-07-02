@@ -81,7 +81,7 @@ impl Bench {
 
     /// Evaluate the instance at `t` and apply every event it emitted.
     fn step(&mut self, t: f64, instance: &mut DigitalInstance) {
-        instance.eval(t, &self.nets, &mut self.queue);
+        instance.eval(t, &self.nets, &[], &mut self.queue);
         while let Some(Reverse(event)) = self.queue.pop() {
             self.nets[event.net.0] = event.value;
         }

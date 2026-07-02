@@ -34,8 +34,8 @@ pub fn execute(name: Option<String>) {
     fs::write(path.join("Piperine.toml"), toml.to_string_pretty().unwrap()).unwrap();
 
     // Write template
-    let main_vams = include_bytes!("../../templates/main.vams");
-    fs::write(path.join("src/main.vams"), main_vams).unwrap();
+    let main_phdl = include_bytes!("../../templates/main.phdl");
+    fs::write(path.join("src/main.phdl"), main_phdl).unwrap();
 
     println!("Created piperine project `{}`", project_name);
 }

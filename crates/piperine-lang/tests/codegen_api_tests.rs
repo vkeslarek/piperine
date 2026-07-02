@@ -1,7 +1,7 @@
 //! API surface pinning tests for the IR-centric codegen (in piperine-lang).
 
 use piperine_lang::{parse_and_elaborate, ppr_to_ir, ir_digital_to_interp};
-use piperine_codegen::IrProgram;
+use piperine_codegen::ir::IrProgram;
 
 fn parse_ppr(body: &str) -> IrProgram {
     let elab = parse_and_elaborate(body).expect("PHDL parse/elab");
@@ -26,7 +26,7 @@ fn ir_analog_compile_resistor() {
         mod R (inout p : Electrical, inout n : Electrical) { param r : Real = 1.0e3; }
         analog R { I(p, n) <+ V(p, n) / r; }
     "#);
-    let _dev = piperine_codegen::ir_analog_to_device(&ir, "R").expect("resistor");
+    let _dev = ir_analog_to_device(&ir, "R").expect("resistor");
 }
 
 #[test]
@@ -36,7 +36,7 @@ fn ir_analog_compile_capacitor() {
         mod Cap (inout p : Electrical, inout n : Electrical) { param c : Real = 1.0e-9; }
         analog Cap { I(p, n) <+ c * ddt(V(p, n)); }
     "#);
-    let _dev = piperine_codegen::ir_analog_to_device(&ir, "Cap").expect("capacitor");
+    let _dev = ir_analog_to_device(&ir, "Cap").expect("capacitor");
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn ir_analog_compile_tanh_builtin() {
         mod T (inout p : Electrical, inout n : Electrical) { param g : Real = 1.0; }
         analog T { I(p, n) <+ g * tanh(V(p, n)); }
     "#);
-    let _dev = piperine_codegen::ir_analog_to_device(&ir, "T").expect("tanh compiles");
+    let _dev = ir_analog_to_device(&ir, "T").expect("tanh compiles");
 }
 
 #[test]
@@ -61,4 +61,13 @@ fn ir_digital_compile_dff() {
     let elab = parse_and_elaborate(src).expect("parse_and_elaborate DFF");
     let ir = ppr_to_ir(&elab);
     let _interp = ir_digital_to_interp(&ir, "DFF").expect("DFF interp");
+}
+
+fn ir_analog_to_device(
+    prog: &piperine_codegen::ir::IrProgram,
+    name: &str,
+) -> Result<std::sync::Arc<piperine_codegen::AnalogKernel>, piperine_codegen::CodegenError> {
+    let module = prog.module(name).ok_or_else(|| piperine_codegen::CodegenError::ModuleNotFound(name.into()))?;
+    let compiled = piperine_codegen::CompiledModule::compile(module)?;
+    compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).map(|a| a.clone())
 }

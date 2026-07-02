@@ -58,7 +58,9 @@ impl Elaborator {
             body.push(BehaviorStmt::Expr(*expr.clone()));
         }
 
-        Ok(Function { name: fn_decl.sig.name.clone(), params, ret, body })
+        let is_generic = !fn_decl.sig.type_params.is_empty();
+
+        Ok(Function { name: fn_decl.sig.name.clone(), params, ret, body, is_generic })
     }
 
     // ─────────────────────────── Impl elaboration ─────────────────────────────

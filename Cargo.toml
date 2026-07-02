@@ -1,13 +1,14 @@
 [workspace]
 members = [
-    "crates/piperine-ams",
     "crates/piperine-cli",
     "crates/piperine-codegen",
-    "crates/piperine-lang",
     "crates/piperine-lang",
     "crates/piperine-project",
     "crates/piperine-lang-server",
     "crates/piperine-solver",
+]
+exclude = [
+    "crates/piperine-ams",
 ]
 
 [workspace.package]
@@ -20,7 +21,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-piperine-ams = { path = "crates/piperine-ams" }
 dirs = "5.0"
 serde = { workspace = true }
 bincode = { workspace = true }
@@ -63,4 +63,3 @@ paste = "1.0.15"
 libloading = "0.8"
 tempfile = "3"
 ipc-channel = "0.22"
-piperine-ams = { path = "crates/piperine-ams" }

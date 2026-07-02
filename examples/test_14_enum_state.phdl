@@ -1,0 +1,16 @@
+
+discipline Bit { storage Boolean; }
+mod StateMachine ( input clk : Bit, output out : Bit ) {
+    param S0 : Natural = 0;
+    param S1 : Natural = 1;
+    param S2 : Natural = 2;
+    var st : Natural = 0;
+}
+digital StateMachine {
+    out <- (st == S2);
+    @ posedge(clk) {
+        if (st == S0) { st = S1; }
+        else if (st == S1) { st = S2; }
+        else { st = S0; }
+    }
+}

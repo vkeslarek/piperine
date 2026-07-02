@@ -18,31 +18,6 @@ fn tmp_ams(name: &str, body: &str) -> PathBuf {
 }
 
 #[test]
-fn check_ams_resistor_extracts_module() {
-    let p = tmp_ams(
-        "resistor.va",
-        "\
-        `include \"constants.vams\"
-        `include \"disciplines.vams\"
-        module res_va(A, B);
-            inout A, B;
-            electrical A, B;
-            parameter real R = 1.0k;
-            analog begin
-                V(A, B) <+ R * I(A, B);
-            end
-        endmodule
-        ",
-    );
-    let summary = check_file(&p).expect("check_file ok");
-    let modules = match summary {
-        piperine_cli::commands::check::CheckSummary::Ams { module_names } => module_names,
-        other => panic!("expected AMS summary, got {other:?}"),
-    };
-    assert_eq!(modules, vec!["res_va".to_string()]);
-}
-
-#[test]
 fn check_ppr_resistor_extracts_module() {
     let p = tmp_ams(
         "resistor.phdl",

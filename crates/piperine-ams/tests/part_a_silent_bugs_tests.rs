@@ -10,9 +10,9 @@
 //! `CodegenError` shape returned by `ir_analog_to_device`.
 
 use piperine_ams::Document;
-use piperine_codegen::{ir_analog_to_device, SimCtx};
+use piperine_codegen::{SimCtx};
 
-fn ir(src: &str) -> piperine_codegen::IrProgram {
+fn ir(src: &str) -> piperine_codegen::ir::IrProgram {
     let doc = Document::parse(src).expect("VA parses");
     piperine_ams::ams_to_ir(&doc)
 }
@@ -116,10 +116,10 @@ fn a8_known_param_in_contribution_still_works() {
     let params = [1.0e3_f64];
     let v = [0.5, 0.0];
     let mut rhs = [0.0; 2];
-    dev.eval_residual(&v, &params, &SimCtx::default(), &mut rhs);
+    dev.eval_residual(&v, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut rhs);
     let expected = 0.5 / 1.0e3;
     assert!(
-        (rhs[0] - expected).abs() < 1e-9,
+        (rhs[0] - expected as f64).abs() < 1e-9,
         "A.8: residual should be V/r = {expected}, got {}",
         rhs[0]
     );
@@ -179,7 +179,7 @@ fn a9_known_terminal_in_voltage_read_still_works() {
 
 #[test]
 fn a11_4state_sized_literal_is_rejected_not_silently_zero() {
-    use piperine_codegen::ir_analog_to_device;
+    
 
     // The legacy bug: `from_ams.rs::parse_sized_lit` used
     // `i64::from_str_radix`, which rejects 4-state digits `x/X/z/Z/?`.
@@ -237,4 +237,14 @@ fn a11_4state_sized_literal_is_rejected_not_silently_zero() {
             );
         }
     }
+}
+
+
+fn ir_analog_to_device(
+    prog: &piperine_codegen::ir::IrProgram,
+    name: &str,
+) -> Result<std::sync::Arc<piperine_codegen::AnalogKernel>, piperine_codegen::CodegenError> {
+    let module = prog.module(name).ok_or_else(|| piperine_codegen::CodegenError::ModuleNotFound(name.into()))?;
+    let compiled = piperine_codegen::CompiledModule::compile(module)?;
+    compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).map(|a| a.clone())
 }

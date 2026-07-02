@@ -45,22 +45,30 @@ impl<'p> CircuitCompiler<'p> {
         Ok(compiled)
     }
 
-    /// Build the circuit rooted at the structural module `top`.
+    /// Build the circuit rooted at module `top`. The top may have both
+    /// child instances and its own behavior bodies (SPEC §7.3, B.1, B.10):
+    /// the parent's `analog`/`digital` blocks contribute to the children's
+    /// port nodes (KCL accumulation — parasitic load, coupling, trim).
     pub fn build_circuit(&mut self, top: &str) -> Result<CircuitInstance, CodegenError> {
         let top_module = self
             .program
             .module(top)
             .ok_or_else(|| CodegenError::ModuleNotFound(top.to_string()))?;
-        if top_module.analog.is_some() || top_module.digital.is_some() {
-            return Err(CodegenError::unsupported(
-                "a top module with behavior bodies — the top must be a structural netlist",
-            ));
-        }
 
         let top_params = Self::param_values(top_module, &[])?;
         let mut builder = InstanceBuilder::new(self, top_module, top_params);
         for (index, instance) in top_module.instances.iter().enumerate() {
             builder.add_instance(index, instance)?;
+        }
+        // SPEC §7.3, B.1, B.10: if the top has its own behavior bodies AND
+        // child instances, compile the top's behavior into a device that
+        // stamps contributions (parasitic loads, coupling) at the child
+        // instance nodes. A leaf top (behavior but no instances) produces
+        // an empty circuit.
+        if !top_module.instances.is_empty()
+            && (top_module.analog.is_some() || top_module.digital.is_some())
+        {
+            builder.add_top_behavior_device()?;
         }
         Ok(builder.finish(top))
     }
@@ -140,7 +148,12 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                 child.ports.len()
             )));
         }
-        let compiled = self.compiler.compiled(&instance.module)?;
+        let compiled = self.compiler.compiled(&instance.module).map_err(|e| {
+            CodegenError::Invalid(format!(
+                "instance `{}` (module `{}`): {e}",
+                instance.label, instance.module
+            ))
+        })?;
 
         // Parameters: instance overrides evaluated in the parent scope.
         let overrides = instance
@@ -221,11 +234,112 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
             })
             .transpose()?;
 
-        self.devices.push(Box::new(PiperineDevice::new(
+        let mut device = PiperineDevice::new(
             instance.label.clone(),
             analog,
             digital,
-        )));
+        );
+
+        // For digital-only devices with analog input ports (e.g. a
+        // Comparator: `input vp : Electrical, input vn : Electrical,
+        // output out : Bit`): wire the analog port terminals into the
+        // netlist so the A2D bridge can read their voltages.
+        if device.analog.is_none() {
+            if let Some(digital) = device.digital() {
+                if digital.kernel().layout().num_analog() > 0 {
+                    let mut refs = Vec::new();
+                    let mut node_ids = Vec::new();
+                    for (port_idx, port) in child.ports.iter().enumerate() {
+                        let parent = instance.connections.get(port_idx)
+                            .copied()
+                            .unwrap_or(NodeId::GROUND);
+                        let node_id = self.node_identifier(parent);
+                        let reference = self.netlist.connect_node(node_id);
+                        refs.push(reference.idx().map(|_| reference));
+                        node_ids.push(port.node);
+                    }
+                    device.set_analog_terminals(refs, node_ids);
+                }
+            }
+        }
+
+        self.devices.push(Box::new(device));
+        Ok(())
+    }
+
+    /// Compile the top module's own behavior bodies into a device (SPEC
+    /// §7.3, B.1, B.10). The top's analog/digital blocks contribute to
+    /// the child instance nodes — parasitic loads, coupling, trim. The
+    /// top's NodeIds map directly to netlist nodes.
+    fn add_top_behavior_device(&mut self) -> Result<(), CodegenError> {
+        let compiled = self.compiler.compiled(&self.top.name)?;
+        let device_id = self.devices.len();
+        let params = self.top_params.clone();
+        let param_given_mask = 0u64; // all defaults, no overrides
+
+        let analog = compiled
+            .analog()
+            .map(|kernel| {
+                // Top terminals map directly: NodeId → NodeIdentifier.
+                let terminals: Vec<NodeIdentifier> = kernel
+                    .terminals()
+                    .iter()
+                    .map(|&node| self.node_identifier(node))
+                    .collect();
+                AnalogInstance::new(
+                    &format!("{}__top", self.top.name),
+                    kernel.clone(),
+                    &terminals,
+                    params.clone(),
+                    param_given_mask,
+                    &mut self.netlist,
+                )
+            })
+            .transpose()?;
+
+        let digital = compiled
+            .digital()
+            .map(|kernel| {
+                let map_nets = |nodes: &[NodeId], nets: &mut HashMap<NodeId, DigitalNet>|
+                 -> Result<Vec<DigitalNet>, CodegenError> {
+                    nodes
+                        .iter()
+                        .map(|node| {
+                            let next = nets.len();
+                            Ok(*nets.entry(*node).or_insert(DigitalNet(next)))
+                        })
+                        .collect()
+                };
+                let in_nets = map_nets(kernel.inputs(), &mut self.digital_nets)?;
+                let out_nets = map_nets(kernel.outputs(), &mut self.digital_nets)?;
+                DigitalInstance::new(kernel.clone(), device_id, in_nets, out_nets, params.clone())
+            })
+            .transpose()?;
+
+        let mut device = PiperineDevice::new(
+            format!("{}__top", self.top.name),
+            analog,
+            digital,
+        );
+
+        // A2D bridge for digital-only top behavior with analog port reads.
+        if device.analog.is_none() {
+            if let Some(digital) = device.digital() {
+                if digital.kernel().layout().num_analog() > 0 {
+                    let mut refs = Vec::new();
+                    let mut node_ids = Vec::new();
+                    for port in self.top.ports.iter() {
+                        let node_id = self.node_identifier(port.node);
+                        let reference = self.netlist.connect_node(node_id);
+                        refs.push(reference.idx().map(|_| reference));
+                        node_ids.push(port.node);
+                    }
+                    device.set_analog_terminals(refs, node_ids);
+                }
+            }
+        }
+
+        self.devices.push(Box::new(device));
         Ok(())
     }
 

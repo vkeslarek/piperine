@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use crate::{
     Document,
     ast::{
-        AssignOp, BinOp, BlockItem, CallArg, CaseItem, EventControl, EventExpr, Expr,
-        ForStmt, FunctionRef, IndirectContribution, Literal, ParamAssignment, Path,
-        PathSegment, PortConnection, PrefixOp, Stmt, TimingControl, TimingControlStmt,
+        AssignOp, BinOp, BlockItem, CallArg, CaseItem, Expr,
+        ForStmt, FunctionRef, Literal, ParamAssignment, Path,
+        PathSegment, PortConnection, PrefixOp, Stmt,
         Type as AmsType,
     },
 };
@@ -16,116 +16,163 @@ use piperine_codegen::ir::*;
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 
+struct ModuleCtx<'a> {
+    syms: &'a mut SymbolTable,
+    nodes: HashMap<String, NodeId>,
+    params: HashMap<String, ParamId>,
+    vars: HashMap<String, VarId>,
+    branches: HashMap<String, (NodeId, NodeId)>,
+    fns: HashMap<String, FnId>,
+    natures: HashMap<String, NatureId>,
+}
+
+impl<'a> ModuleCtx<'a> {
+    fn new(syms: &'a mut SymbolTable) -> Self {
+        let mut ctx = Self {
+            syms,
+            nodes: HashMap::new(),
+            params: HashMap::new(),
+            vars: HashMap::new(),
+            branches: HashMap::new(),
+            fns: HashMap::new(),
+            natures: HashMap::new(),
+        };
+        ctx.nodes.insert("0".into(), NodeId::GROUND);
+        ctx.nodes.insert("gnd".into(), NodeId::GROUND);
+        ctx
+    }
+
+    fn get_node(&mut self, name: &str) -> NodeId {
+        if let Some(&id) = self.nodes.get(name) {
+            id
+        } else {
+            let id = self.syms.add_node(name, Domain::Analog);
+            self.nodes.insert(name.into(), id);
+            id
+        }
+    }
+
+    fn get_nature(&mut self, name: &str, kind: NatureKind) -> NatureId {
+        if let Some(&id) = self.natures.get(name) {
+            id
+        } else {
+            let id = self.syms.add_nature(name, kind);
+            self.natures.insert(name.into(), id);
+            id
+        }
+    }
+}
+
 #[derive(Clone)]
 struct LowerCtx {
     env: HashMap<String, IrExpr>,
-    state_vars: Vec<IrStateVar>,
     noise_sources: Vec<IrNoiseSource>,
-    counter: u32,
+    states: Vec<StateId>,
 }
 
 impl LowerCtx {
     fn new() -> Self {
         Self {
             env: HashMap::new(),
-            state_vars: vec![],
             noise_sources: vec![],
-            counter: 0,
+            states: vec![],
         }
-    }
-
-    fn alloc_state(&mut self, kind: IrStateKind, arg: IrExpr) -> u32 {
-        let id = self.counter;
-        self.counter += 1;
-        self.state_vars.push(IrStateVar { id, kind, arg });
-        id
     }
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 pub fn ams_to_ir(doc: &Document) -> IrProgram {
-    let modules = doc.modules.iter().map(convert_module).collect();
+    let mut param_maps: HashMap<String, HashMap<String, ParamId>> = HashMap::new();
+    
+    for m in &doc.modules {
+        let mut pm = HashMap::new();
+        for (i, p) in m.parameters.iter().enumerate() {
+            pm.insert(p.name.clone(), ParamId(i as u32));
+        }
+        param_maps.insert(m.name.clone(), pm);
+    }
+    
+    let modules = doc.modules.iter().map(|m| convert_module(m, &param_maps)).collect();
     IrProgram {
-        source: "ams".into(),
+        source: Source::Ams,
         modules,
-        functions: vec![],
     }
 }
 
 // ─── Module conversion ───────────────────────────────────────────────────────
 
-fn convert_module(m: &crate::Module) -> IrModule {
-    use crate::ast::Direction;
+fn convert_module(m: &crate::Module, param_maps: &HashMap<String, HashMap<String, ParamId>>) -> IrModule {
+    let mut symbols = SymbolTable::new();
+    let mut module_ctx = ModuleCtx::new(&mut symbols);
+
+    for p in &m.parameters {
+        let mut ctx = LowerCtx::new();
+        let default = lower_expr(&p.default_value, &mut ctx, &mut module_ctx);
+        let id = module_ctx.syms.add_param(&p.name, type_to_ir(p.ty.as_ref()), Some(default));
+        module_ctx.params.insert(p.name.clone(), id);
+    }
 
     let ports = m.ports.iter().map(|p| IrPort {
-        name: p.name.clone(),
+        node: module_ctx.get_node(&p.name),
         direction: match p.direction {
-            Direction::Input => IrDirection::In,
-            Direction::Output => IrDirection::Out,
-            Direction::Inout => IrDirection::Inout,
+            crate::ast::Direction::Input => IrDirection::In,
+            crate::ast::Direction::Output => IrDirection::Out,
+            crate::ast::Direction::Inout => IrDirection::Inout,
         },
-        discipline: p.discipline.clone(),
     }).collect();
 
-    let params = m.parameters.iter().map(|p| {
-        let mut ctx = LowerCtx::new();
-        IrParam {
-            name: p.name.clone(),
-            ty: type_to_ir(p.ty.as_ref()),
-            default: Some(lower_expr(&p.default_value, &mut ctx)),
+    for net in &m.nets {
+        for member in &net.members {
+            module_ctx.get_node(&member.name);
         }
-    }).collect();
+    }
 
-    let wires = m.nets.iter().flat_map(|net| {
-        net.members.iter().map(|member| IrWire {
-            name: member.name.clone(),
-            discipline: net.discipline.clone(),
-        })
-    }).collect();
+    for g in &m.ground_decls {
+        for name in &g.names {
+            module_ctx.nodes.insert(name.name.0.clone(), NodeId::GROUND);
+        }
+    }
 
-    let branches = m.branches.iter().flat_map(|br| {
-        let (plus, minus) = extract_branch_ports(&br.ports);
-        br.names.iter().map(move |name| IrBranch {
-            name: name.clone(),
-            plus: plus.clone(),
-            minus: minus.clone(),
-        })
-    }).collect();
+    for v in &m.variables {
+        let id = module_ctx.syms.add_var(&v.name, type_to_ir(Some(&v.ty)));
+        module_ctx.vars.insert(v.name.clone(), id);
+    }
 
-    let events = m.events.iter().flat_map(|ev| {
-        ev.names.iter().map(|decl| IrEventDecl { name: decl.name.0.clone() })
-    }).collect();
+    for br in &m.branches {
+        let (plus, minus) = extract_branch_ports(&br.ports, &mut module_ctx);
+        for name in &br.names {
+            module_ctx.branches.insert(name.clone(), (plus, minus));
+        }
+    }
 
     let instances = m.instances.iter().map(|inst| {
-        let connections: Vec<IrConnection> = inst.connections.iter().filter_map(|c| match c {
-            PortConnection::Ordered(Some(e)) => {
-                Some(IrConnection { port: None, net: path_leaf_ident(e).unwrap_or_else(|| "?".into()) })
-            }
-            PortConnection::Named { port, expr: Some(e) } => {
-                Some(IrConnection { port: Some(port.0.clone()), net: path_leaf_ident(e).unwrap_or_else(|| "?".into()) })
-            }
-            PortConnection::Named { port, expr: None } => {
-                Some(IrConnection { port: Some(port.0.clone()), net: "?".into() })
+        let connections: Vec<NodeId> = inst.connections.iter().filter_map(|c| match c {
+            PortConnection::Ordered(Some(e)) | PortConnection::Named { expr: Some(e), .. } => {
+                let name = path_leaf_ident(e).unwrap_or_else(|| "?".into());
+                Some(module_ctx.get_node(&name))
             }
             _ => None,
         }).collect();
-        let params: Vec<(String, IrExpr)> = inst.param_assignments.iter().filter_map(|pa| {
+        
+        let child_params = param_maps.get(&inst.module_name);
+        let params: Vec<(ParamId, IrExpr)> = inst.param_assignments.iter().filter_map(|pa| {
+            let mut ctx = LowerCtx::new();
             match pa {
                 ParamAssignment::Named { param, expr } => {
-                    let mut ctx = LowerCtx::new();
-                    Some((param.0.clone(), lower_expr(expr, &mut ctx)))
+                    let pid = child_params.and_then(|m| m.get(&param.0).copied()).unwrap_or(ParamId(0));
+                    Some((pid, lower_expr(expr, &mut ctx, &mut module_ctx)))
                 }
                 ParamAssignment::SystemNamed { param, expr } => {
-                    let mut ctx = LowerCtx::new();
-                    Some((param.clone(), lower_expr(expr, &mut ctx)))
+                    let pid = child_params.and_then(|m| m.get(param).copied()).unwrap_or(ParamId(0));
+                    Some((pid, lower_expr(expr, &mut ctx, &mut module_ctx)))
                 }
                 ParamAssignment::Ordered(expr) => {
-                    let mut ctx = LowerCtx::new();
-                    Some(("_".into(), lower_expr(expr, &mut ctx)))
+                    Some((ParamId(0), lower_expr(expr, &mut ctx, &mut module_ctx)))
                 }
             }
         }).collect();
+
         IrInstance {
             label: inst.instance_name.clone(),
             module: inst.module_name.clone(),
@@ -134,139 +181,113 @@ fn convert_module(m: &crate::Module) -> IrModule {
         }
     }).collect();
 
-    // Combine all analog blocks into one body
+    for f in &m.functions {
+        let func = convert_function(f, &mut module_ctx);
+        let id = module_ctx.syms.add_fn(func);
+        module_ctx.fns.insert(f.name.clone(), id);
+    }
+
+    for t in &m.tasks {
+        let func = convert_task(t, &mut module_ctx);
+        let id = module_ctx.syms.add_fn(func);
+        module_ctx.fns.insert(t.name.clone(), id);
+    }
+
     let mut ctx = LowerCtx::new();
     let mut all_stmts = vec![];
     for block in &m.analog_blocks {
         if block.is_initial {
-            let inner = lower_stmt(&block.stmt, &mut ctx);
-            all_stmts.push(IrStmt::AnalogEvent {
-                kind: IrEventKind::InitialStep,
+            let inner = lower_stmt(&block.stmt, &mut ctx, &mut module_ctx);
+            all_stmts.push(IrStmt::AnalogEvent(IrAnalogEvent {
+                source: EventSource::InitialStep,
                 body: inner,
-            });
+            }));
         } else {
-            all_stmts.extend(lower_stmt(&block.stmt, &mut ctx));
+            all_stmts.extend(lower_stmt(&block.stmt, &mut ctx, &mut module_ctx));
         }
     }
 
-    let analog = if all_stmts.is_empty() && ctx.state_vars.is_empty() && ctx.noise_sources.is_empty() {
+    let analog = if all_stmts.is_empty() && ctx.states.is_empty() && ctx.noise_sources.is_empty() {
         None
     } else {
         Some(IrAnalogBody {
-            state_vars: ctx.state_vars,
-            noise_sources: ctx.noise_sources,
-            vars: vec![],
+            states: ctx.states,
+            noise: ctx.noise_sources,
             stmts: all_stmts,
         })
     };
 
-    // Functions and tasks
-    let functions = m.functions.iter()
-        .map(convert_function)
-        .chain(m.tasks.iter().map(convert_task))
-        .collect();
-
-    // Module-level variables
-    let vars = m.variables.iter().map(|v| IrVarDecl {
-        name: v.name.clone(),
-        ty: type_to_ir(Some(&v.ty)),
-        init: v.default_value.as_ref().map(|e| {
-            let mut c = LowerCtx::new();
-            lower_expr(e, &mut c)
-        }),
-    }).collect();
-
-    // Ground declarations
-    let grounds = m.ground_decls.iter().flat_map(|g| {
-        g.names.iter().map(|decl| IrGroundDecl {
-            name: decl.name.0.clone(),
-            discipline: g.discipline.as_ref().map(|d| d.0.clone()),
-        })
-    }).collect();
-
-    // Continuous assigns
-    let continuous_assigns = m.continuous_assigns.iter().flat_map(|ca| {
-        ca.assignments.iter().map(|(lval, rval)| {
-            let mut c = LowerCtx::new();
-            let l = path_leaf_ident(lval).unwrap_or_else(|| "_".into());
-            let r = lower_expr(rval, &mut c);
-            IrStmt::ContinuousAssign { lval: l, expr: r, delay: None }
-        })
-    }).collect();
-
     IrModule {
         name: m.name.clone(),
+        symbols,
         ports,
-        params,
-        wires,
-        branches,
-        events,
-        vars,
-        grounds,
         instances,
-        connections: vec![],
-        continuous_assigns,
         analog,
         digital: None,
-        functions,
     }
 }
 
-fn extract_branch_ports(ports: &[Expr]) -> (String, String) {
-    let plus = ports.first().and_then(path_leaf_ident).unwrap_or_else(|| "?".into());
-    let minus = ports.get(1).and_then(path_leaf_ident).unwrap_or_else(|| "0".into());
+fn extract_branch_ports(ports: &[Expr], module_ctx: &mut ModuleCtx) -> (NodeId, NodeId) {
+    let plus_name = ports.first().and_then(path_leaf_ident).unwrap_or_else(|| "?".into());
+    let minus_name = ports.get(1).and_then(path_leaf_ident).unwrap_or_else(|| "0".into());
+    let plus = module_ctx.get_node(&plus_name);
+    let minus = module_ctx.get_node(&minus_name);
     (plus, minus)
 }
 
-fn convert_function(f: &crate::Function) -> IrFunction {
-    let params: Vec<String> = f.args.iter().map(|a| a.name.clone()).collect();
+fn convert_function(f: &crate::Function, module_ctx: &mut ModuleCtx) -> IrFunction {
     let mut ctx = LowerCtx::new();
-    // Seed the env with parameter defaults
+    let mut params = vec![];
+    for a in &f.args {
+        let vid = module_ctx.syms.add_var(&a.name, IrType::Real);
+        module_ctx.vars.insert(a.name.clone(), vid);
+        params.push(vid);
+    }
     for p in &f.parameters {
-        let val = lower_expr(&p.default_value, &mut ctx);
+        let val = lower_expr(&p.default_value, &mut ctx, module_ctx);
         ctx.env.insert(p.name.clone(), val);
     }
-    // Seed variables
     for v in &f.variables {
         let val = v.default_value.as_ref()
-            .map(|d| lower_expr(d, &mut ctx))
+            .map(|d| lower_expr(d, &mut ctx, module_ctx))
             .unwrap_or(IrExpr::Real(0.0));
         ctx.env.insert(v.name.clone(), val);
     }
     let mut body = vec![];
     for s in &f.body {
-        body.extend(lower_stmt(s, &mut ctx));
-    }
-    // Implicit return of the function name variable
-    if !ctx.env.contains_key(&f.name) {
-        // If the function name was assigned, it's in env; add a return
+        body.extend(lower_stmt(s, &mut ctx, module_ctx));
     }
     if let Some(val) = ctx.env.get(&f.name) {
         body.push(IrStmt::Return(Some(val.clone())));
     }
-    IrFunction { name: f.name.clone(), params, body }
+    IrFunction { name: f.name.clone(), params, returns: Some(IrType::Real), body }
 }
 
-fn convert_task(t: &crate::Task) -> IrFunction {
-    let params: Vec<String> = t.ports.iter()
-        .flat_map(|p| p.names.iter().map(|n| n.0.clone()))
-        .collect();
+fn convert_task(t: &crate::Task, module_ctx: &mut ModuleCtx) -> IrFunction {
     let mut ctx = LowerCtx::new();
+    let mut params = vec![];
+    for p in &t.ports {
+        for n in &p.names {
+            let vid = module_ctx.syms.add_var(&n.0, IrType::Real);
+            module_ctx.vars.insert(n.0.clone(), vid);
+            params.push(vid);
+        }
+    }
     for v in &t.variables {
         let val = v.default_value.as_ref()
-            .map(|d| lower_expr(d, &mut ctx))
+            .map(|d| lower_expr(d, &mut ctx, module_ctx))
             .unwrap_or(IrExpr::Real(0.0));
         ctx.env.insert(v.name.clone(), val);
     }
-    let body = lower_stmt(&t.body, &mut ctx);
-    IrFunction { name: t.name.clone(), params, body }
+    let body = lower_stmt(&t.body, &mut ctx, module_ctx);
+    IrFunction { name: t.name.clone(), params, returns: None, body }
 }
 
 fn type_to_ir(ty: Option<&AmsType>) -> IrType {
     match ty {
         Some(AmsType::Integer) => IrType::Integer,
         Some(AmsType::Real) => IrType::Real,
-        Some(AmsType::String) => IrType::String,
+        Some(AmsType::String) => IrType::Integer, // Not supported
         Some(AmsType::Time) | Some(AmsType::Realtime) => IrType::Real,
         Some(AmsType::Reg) => IrType::Quad,
         Some(AmsType::Custom(_)) => IrType::Real,
@@ -276,16 +297,16 @@ fn type_to_ir(ty: Option<&AmsType>) -> IrType {
 
 // ─── Statement lowering ───────────────────────────────────────────────────────
 
-fn lower_stmt(stmt: &Stmt, ctx: &mut LowerCtx) -> Vec<IrStmt> {
+fn lower_stmt(stmt: &Stmt, ctx: &mut LowerCtx, module_ctx: &mut ModuleCtx) -> Vec<IrStmt> {
     match stmt {
         Stmt::Empty(_) => vec![],
 
         Stmt::Assign(a) => {
             match a.assign.op {
                 AssignOp::Contrib => {
-                    let (nature, plus, minus) = parse_lval_contrib(&a.assign.lval);
-                    scan_noise(&a.assign.rval, &plus, &minus, ctx);
-                    let expr = lower_expr(&a.assign.rval, ctx);
+                    let (nature, plus, minus) = parse_lval_contrib(&a.assign.lval, module_ctx);
+                    scan_noise(&a.assign.rval, plus, minus, ctx, module_ctx);
+                    let expr = lower_expr(&a.assign.rval, ctx, module_ctx);
                     let kind = if let Some(id) = first_state_ref(&expr) {
                         ContribKind::Reactive(id)
                     } else {
@@ -295,7 +316,7 @@ fn lower_stmt(stmt: &Stmt, ctx: &mut LowerCtx) -> Vec<IrStmt> {
                 }
                 AssignOp::Eq => {
                     let name = path_leaf_ident(&a.assign.lval).unwrap_or_else(|| "_".into());
-                    let val = lower_expr(&a.assign.rval, ctx);
+                    let val = lower_expr(&a.assign.rval, ctx, module_ctx);
                     ctx.env.insert(name, val);
                     vec![]
                 }
@@ -303,16 +324,16 @@ fn lower_stmt(stmt: &Stmt, ctx: &mut LowerCtx) -> Vec<IrStmt> {
         }
 
         Stmt::If(s) => {
-            let cond = lower_expr(&s.condition, ctx);
+            let cond = lower_expr(&s.condition, ctx, module_ctx);
             let pre_env = ctx.env.clone();
             let mut then_ctx = ctx.clone();
-            let then_ = lower_stmt(&s.then_branch, &mut then_ctx);
+            let then_ = lower_stmt(&s.then_branch, &mut then_ctx, module_ctx);
             let mut else_ctx = ctx.clone();
             let else_ = s.else_branch.as_ref()
-                .map(|b| lower_stmt(b, &mut else_ctx))
+                .map(|b| lower_stmt(b, &mut else_ctx, module_ctx))
                 .unwrap_or_default();
             merge_branch_ctx(&pre_env, &then_ctx, &else_ctx, &cond, ctx);
-            vec![IrStmt::If { cond, then_, else_, label: None }]
+            vec![IrStmt::If { cond, then_, else_ }]
         }
 
         Stmt::Block(b) => {
@@ -322,19 +343,19 @@ fn lower_stmt(stmt: &Stmt, ctx: &mut LowerCtx) -> Vec<IrStmt> {
                     BlockItem::VarDecl(vd) => {
                         for var in &vd.vars {
                             let val = var.default.as_ref()
-                                .map(|d| lower_expr(d, ctx))
+                                .map(|d| lower_expr(d, ctx, module_ctx))
                                 .unwrap_or(IrExpr::Real(0.0));
                             ctx.env.insert(var.name.0.clone(), val);
                         }
                     }
                     BlockItem::ParamDecl(pd) => {
                         for p in &pd.params {
-                            let val = lower_expr(&p.default, ctx);
+                            let val = lower_expr(&p.default, ctx, module_ctx);
                             ctx.env.insert(p.name.0.clone(), val);
                         }
                     }
                     BlockItem::Stmt(s) => {
-                        out.extend(lower_stmt(s, ctx));
+                        out.extend(lower_stmt(s, ctx, module_ctx));
                     }
                 }
             }
@@ -342,245 +363,66 @@ fn lower_stmt(stmt: &Stmt, ctx: &mut LowerCtx) -> Vec<IrStmt> {
         }
 
         Stmt::Case(c) => {
-            use crate::ast::CaseKind as AmsCaseKind;
-            let kind = match c.kind {
-                AmsCaseKind::Case => CaseKind::Case,
-                AmsCaseKind::Casex => CaseKind::CaseX,
-                AmsCaseKind::Casez => CaseKind::CaseZ,
-            };
-            let discriminant = lower_expr(&c.discriminant, ctx);
+            let scrutinee = lower_expr(&c.discriminant, ctx, module_ctx);
             let mut arms = vec![];
             let mut default = vec![];
             for case in &c.cases {
                 match &case.item {
                     CaseItem::Exprs(exprs) => {
-                        let body = lower_stmt(&case.stmt, &mut ctx.clone());
+                        let body = lower_stmt(&case.stmt, &mut ctx.clone(), module_ctx);
                         for e in exprs {
-                            arms.push((lower_expr(e, ctx), body.clone()));
+                            arms.push((Pattern::Value(lower_expr(e, ctx, module_ctx)), body.clone()));
                         }
                     }
                     CaseItem::Default => {
-                        default = lower_stmt(&case.stmt, &mut ctx.clone());
+                        default = lower_stmt(&case.stmt, &mut ctx.clone(), module_ctx);
                     }
                 }
             }
-            vec![IrStmt::Case { discriminant, arms, default, kind, label: None }]
+            vec![IrStmt::Match { scrutinee, arms, default }]
         }
 
         Stmt::Event(e) => {
-            let kind = infer_event_kind(&e.event);
-            let body = lower_stmt(&e.stmt, &mut ctx.clone());
-            vec![IrStmt::AnalogEvent { kind, body }]
+            let source = infer_event_kind(&e.event, ctx, module_ctx);
+            let body = lower_stmt(&e.stmt, &mut ctx.clone(), module_ctx);
+            vec![IrStmt::AnalogEvent(IrAnalogEvent { source, body })]
         }
 
-        Stmt::Expr(e) => lower_expr_stmt(&e.expr, ctx),
+        Stmt::Expr(e) => lower_expr_stmt(&e.expr, ctx, module_ctx),
 
         Stmt::For(f) => {
-            try_unroll_for(f, ctx).unwrap_or_else(|| {
-                // Can't unroll — emit a runtime for-loop if bounds are known,
-                // otherwise lower body once as fallback.
-                if let (Some((_, start)), Some((_, end, _))) =
-                    (extract_int_assign(&f.init), extract_int_cmp(&f.condition))
-                {
-                    let step = extract_int_incr(&f.incr, "").map(|(_, s)| s).unwrap_or(1);
-                    vec![IrStmt::For {
-                        var: extract_int_assign(&f.init).map(|(n, _)| n).unwrap_or_default(),
-                        start: IrExpr::Int(start),
-                        end: IrExpr::Int(end),
-                        step: IrExpr::Int(step),
-                        body: lower_stmt(&f.for_body, &mut ctx.clone()),
-                    }]
-                } else {
-                    lower_stmt(&f.for_body, &mut ctx.clone())
-                }
-            })
+            try_unroll_for(f, ctx, module_ctx).unwrap_or_else(|| unsupported_stmt("Runtime for-loops"))
         }
 
-        Stmt::While(w) => {
-            let cond = lower_expr(&w.condition, ctx);
-            let body = lower_stmt(&w.body, &mut ctx.clone());
-            vec![IrStmt::While { cond, body }]
-        }
-
-        Stmt::Repeat(r) => {
-            if let Some(n) = eval_const_int_expr(&r.count) {
-                let mut out = vec![];
-                for _ in 0..n.min(256) {
-                    out.extend(lower_stmt(&r.body, ctx));
-                }
-                out
-            } else {
-                let count = lower_expr(&r.count, ctx);
-                let body = lower_stmt(&r.body, &mut ctx.clone());
-                vec![IrStmt::Repeat { count, body }]
-            }
-        }
-
-        Stmt::Forever(f) => {
-            let body = lower_stmt(&f.body, &mut ctx.clone());
-            vec![IrStmt::Forever { body }]
-        }
-
-        Stmt::IndirectContrib(ic) => lower_indirect_contrib(ic, ctx),
-
-        Stmt::NonBlockingAssign(nba) => {
-            let lval = path_leaf_ident(&nba.lvalue).unwrap_or_else(|| "_".into());
-            let expr = lower_expr(&nba.rvalue, ctx);
-            let (delay, event) = lower_delay_event(&nba.delay_or_event);
-            vec![IrStmt::NonBlocking { lval, expr, delay, event }]
-        }
-
-        Stmt::TimingControl(tc) => lower_timing_control(tc, ctx),
-
-        Stmt::Wait(w) => {
-            let cond = lower_expr(&w.condition, ctx);
-            let body = Box::new(lower_stmt(&w.stmt, &mut ctx.clone()).into_iter().next().unwrap_or(IrStmt::Finish));
-            vec![IrStmt::Wait { cond, body }]
-        }
-
-        Stmt::Fork(f) => {
-            let branches: Vec<Vec<IrStmt>> = f.items.iter().map(|item| {
-                match item {
-                    BlockItem::Stmt(s) => lower_stmt(s, &mut ctx.clone()),
-                    BlockItem::VarDecl(vd) => {
-                        let mut tmp = vec![];
-                        for var in &vd.vars {
-                            let val = var.default.as_ref()
-                                .map(|d| lower_expr(d, &mut LowerCtx::new()))
-                                .unwrap_or(IrExpr::Real(0.0));
-                            tmp.push(IrStmt::Assign {
-                                lval: var.name.0.clone(),
-                                expr: val,
-                                delay: None,
-                                event: None,
-                            });
-                        }
-                        tmp
-                    }
-                    BlockItem::ParamDecl(_) => vec![],
-                }
-            }).collect();
-            vec![IrStmt::Fork {
-                label: f.label.as_ref().map(|n| n.0.clone()),
-                branches,
-                join: JoinKind::All,
-            }]
-        }
-
-        Stmt::Disable(d) => {
-            vec![IrStmt::Disable(path_to_string(&d.target))]
-        }
-
-        Stmt::EventTrigger(et) => {
-            vec![IrStmt::Trigger(path_to_string(&et.event))]
-        }
-
-        Stmt::ProceduralAssign(pa) => {
-            let lval = path_leaf_ident(&pa.lvalue).unwrap_or_else(|| "_".into());
-            let expr = lower_expr(&pa.rvalue, ctx);
-            vec![IrStmt::ProcAssign { lval, expr, is_force: pa.is_force }]
-        }
-
-        Stmt::ProceduralDeassign(pd) => {
-            let lval = path_leaf_ident(&pd.lvalue).unwrap_or_else(|| "_".into());
-            vec![IrStmt::ProcDeassign { lval, is_release: pd.is_release }]
-        }
+        Stmt::While(_) => unsupported_stmt("while loops"),
+        Stmt::Repeat(_) => unsupported_stmt("repeat loops"),
+        Stmt::Forever(_) => unsupported_stmt("forever loops"),
+        Stmt::IndirectContrib(_) => unsupported_stmt("indirect contributions"),
+        Stmt::NonBlockingAssign(_) => unsupported_stmt("non-blocking assignments"),
+        Stmt::TimingControl(_) => unsupported_stmt("timing control"),
+        Stmt::Wait(_) => unsupported_stmt("wait statements"),
+        Stmt::Fork(_) => unsupported_stmt("fork blocks"),
+        Stmt::Disable(_) => unsupported_stmt("disable statements"),
+        Stmt::EventTrigger(_) => unsupported_stmt("event triggers"),
+        Stmt::ProceduralAssign(_) => unsupported_stmt("procedural assign"),
+        Stmt::ProceduralDeassign(_) => unsupported_stmt("procedural deassign"),
     }
 }
 
-/// Lower an optional timing control (delay or event) from an assignment.
-fn lower_delay_event(tc: &Option<TimingControl>) -> (Option<IrExpr>, Option<IrEventSpec>) {
-    match tc {
-        Some(TimingControl::Delay(e)) | Some(TimingControl::DelayParen(e)) => {
-            let mut ctx = LowerCtx::new();
-            (Some(lower_expr(e, &mut ctx)), None)
-        }
-        Some(TimingControl::Event(ec)) => {
-            let spec = convert_event_control(ec);
-            (None, Some(spec))
-        }
-        None => (None, None),
-    }
+fn unsupported_stmt(name: &str) -> Vec<IrStmt> {
+    vec![IrStmt::Diagnostic {
+        severity: Severity::Fatal,
+        format: format!("{} are not supported in IR", name),
+        args: vec![],
+    }]
 }
 
-fn lower_timing_control(tc: &TimingControlStmt, ctx: &mut LowerCtx) -> Vec<IrStmt> {
-    let inner = lower_stmt(&tc.stmt, ctx);
-    match &tc.control {
-        TimingControl::Delay(e) | TimingControl::DelayParen(e) => {
-            let delay = lower_expr(e, ctx);
-            inner.into_iter().map(|s| IrStmt::Delay {
-                delay: delay.clone(),
-                body: Box::new(s),
-            }).collect()
-        }
-        TimingControl::Event(ec) => {
-            let spec = convert_event_control(ec);
-            inner.into_iter().map(|s| IrStmt::EventControl {
-                spec: spec.clone(),
-                body: Box::new(s),
-            }).collect()
-        }
-    }
-}
-
-fn convert_event_control(ec: &EventControl) -> IrEventSpec {
-    match ec {
-        EventControl::Ident(p) => IrEventSpec::Named(path_to_string(p)),
-        EventControl::Star => IrEventSpec::Named("*".into()),
-        EventControl::Expr(exprs) => {
-            let specs: Vec<IrEventSpec> = exprs.iter().map(convert_event_expr).collect();
-            if specs.len() == 1 {
-                specs.into_iter().next().unwrap()
-            } else {
-                IrEventSpec::Or(specs)
-            }
-        }
-    }
-}
-
-fn convert_event_expr(ee: &EventExpr) -> IrEventSpec {
-    match ee {
-        EventExpr::Posedge(e) => IrEventSpec::Posedge(lower_expr(e, &mut LowerCtx::new())),
-        EventExpr::Negedge(e) => IrEventSpec::Negedge(lower_expr(e, &mut LowerCtx::new())),
-        EventExpr::Expr(e) => IrEventSpec::Change(lower_expr(e, &mut LowerCtx::new())),
-        EventExpr::Ident(p) => IrEventSpec::Named(path_to_string(p)),
-        EventExpr::AnalogEventFn(e) => {
-            // cross(...), above(...), timer(...) — extract from the call
-            if let Expr::Call(FunctionRef::Path(p), args) = e {
-                let name = path_leaf_str(p).unwrap_or_default();
-                let arg0 = args.first().map(|a| lower_expr(a.expr(), &mut LowerCtx::new())).unwrap_or(IrExpr::Real(0.0));
-                match name.as_str() {
-                    "cross" => {
-                        let dir = args.get(1)
-                            .and_then(|a| eval_const_int_expr(a.expr()))
-                            .unwrap_or(0) as i8;
-                        IrEventSpec::Cross(arg0, dir)
-                    }
-                    "above" => IrEventSpec::Above(arg0),
-                    "timer" => IrEventSpec::Timer(arg0),
-                    _ => IrEventSpec::Named(name),
-                }
-            } else {
-                IrEventSpec::Named("?".into())
-            }
-        }
-        EventExpr::DriverUpdate(e) => {
-            IrEventSpec::Named(format!("driver_update({})", lower_expr(e, &mut LowerCtx::new())))
-        }
-        EventExpr::Or(a, b) => {
-            let sa = convert_event_expr(a);
-            let sb = convert_event_expr(b);
-            IrEventSpec::Or(vec![sa, sb])
-        }
-    }
-}
-
-fn lower_expr_stmt(expr: &Expr, ctx: &mut LowerCtx) -> Vec<IrStmt> {
+fn lower_expr_stmt(expr: &Expr, ctx: &mut LowerCtx, module_ctx: &mut ModuleCtx) -> Vec<IrStmt> {
     if let Expr::Call(FunctionRef::SysFun(name), args) = expr {
         match name.as_ref() {
             "$bound_step" => {
                 let e = args.first()
-                    .map(|a: &CallArg| lower_expr(a.expr(), ctx))
+                    .map(|a: &CallArg| lower_expr(a.expr(), ctx, module_ctx))
                     .unwrap_or(IrExpr::Real(0.0));
                 return vec![IrStmt::BoundStep(e)];
             }
@@ -588,18 +430,18 @@ fn lower_expr_stmt(expr: &Expr, ctx: &mut LowerCtx) -> Vec<IrStmt> {
             "$discontinuity" => {
                 let n = args.first()
                     .and_then(|a: &CallArg| eval_const_int_expr(a.expr()))
-                    .unwrap_or(0) as i32;
+                    .unwrap_or(0) as u8;
                 return vec![IrStmt::Discontinuity(n)];
             }
             n if is_display_task(n) => {
                 let severity = match n {
-                    "$warning" => Severity::Warning,
+                    "$warning" => Severity::Warn,
                     "$error" => Severity::Error,
                     "$fatal" => Severity::Fatal,
                     _ => Severity::Info,
                 };
                 let ir_args: Vec<IrExpr> = args.iter().skip(1)
-                    .map(|a: &CallArg| lower_expr(a.expr(), ctx))
+                    .map(|a: &CallArg| lower_expr(a.expr(), ctx, module_ctx))
                     .collect();
                 let fmt = args.first()
                     .and_then(|a: &CallArg| str_lit(a.expr()))
@@ -625,63 +467,66 @@ fn str_lit(expr: &Expr) -> Option<String> {
 
 // ─── Event kind inference ──────────────────────────────────────────────────────
 
-fn infer_event_kind(event: &Expr) -> IrEventKind {
+fn infer_event_kind(event: &Expr, ctx: &mut LowerCtx, module_ctx: &mut ModuleCtx) -> EventSource {
     match event {
         Expr::Path(p) => {
             match path_leaf_str(p).as_deref() {
-                Some("initial_step") => IrEventKind::InitialStep,
-                Some("final_step") => IrEventKind::FinalStep,
-                _ => IrEventKind::InitialStep,
+                Some("initial_step") => EventSource::InitialStep,
+                Some("final_step") => EventSource::FinalStep,
+                _ => EventSource::InitialStep,
             }
         }
         Expr::Call(FunctionRef::Path(p), args) => {
             let name = path_leaf_str(p).unwrap_or_default();
-            let arg0 = args.first().map(|a| lower_expr(a.expr(), &mut LowerCtx::new()));
+            let arg0 = args.first().map(|a| lower_expr(a.expr(), ctx, module_ctx)).unwrap_or(IrExpr::Real(0.0));
             match name.as_str() {
-                "initial_step" => IrEventKind::InitialStep,
-                "final_step" => IrEventKind::FinalStep,
+                "initial_step" => EventSource::InitialStep,
+                "final_step" => EventSource::FinalStep,
                 "cross" => {
-                    let dir = args.get(1)
+                    let dir_val = args.get(1)
                         .and_then(|a| eval_const_int_expr(a.expr()))
-                        .unwrap_or(0) as i8;
-                    IrEventKind::Cross { dir, expr: arg0 }
+                        .unwrap_or(0);
+                    let dir = match dir_val {
+                        1 => CrossDir::Rising,
+                        -1 => CrossDir::Falling,
+                        _ => CrossDir::Either,
+                    };
+                    EventSource::Cross { dir, expr: arg0 }
                 }
-                "above" => IrEventKind::Above { expr: arg0 },
+                "above" => EventSource::Above { expr: arg0 },
                 "timer" => {
-                    let period = args.first()
-                        .map(|a| lower_expr(a.expr(), &mut LowerCtx::new()));
-                    IrEventKind::Timer { period }
+                    EventSource::Timer { period: arg0 }
                 }
-                _ => IrEventKind::InitialStep,
+                _ => EventSource::InitialStep,
             }
         }
-        _ => IrEventKind::InitialStep,
+        _ => EventSource::InitialStep,
     }
 }
 
 // ─── Contribution dest parsing ───────────────────────────────────────────────
 
-fn parse_lval_contrib(lval: &Expr) -> (IrNature, String, String) {
+fn parse_lval_contrib(lval: &Expr, module_ctx: &mut ModuleCtx) -> (NatureId, NodeId, NodeId) {
     if let Expr::Call(FunctionRef::Path(p), args) = lval {
         let name = path_leaf_str(p).unwrap_or_default();
-        let nature = access_to_nature(&name);
-        let plus = positional_path_leaf(args.first()).unwrap_or_else(|| "?".into());
-        let minus = positional_path_leaf(args.get(1)).unwrap_or_else(|| "0".into());
+        let kind = if name == "V" { NatureKind::Potential } else { NatureKind::Flow };
+        let nature = module_ctx.get_nature(&name, kind);
+        
+        let plus_name = positional_path_leaf(args.first()).unwrap_or_else(|| "?".into());
+        let (plus, minus) = if let Some(&(p, m)) = module_ctx.branches.get(&plus_name) {
+            (p, m)
+        } else {
+            let p = module_ctx.get_node(&plus_name);
+            let minus_name = positional_path_leaf(args.get(1)).unwrap_or_else(|| "0".into());
+            let m = module_ctx.get_node(&minus_name);
+            (p, m)
+        };
         return (nature, plus, minus);
     }
-    (IrNature::Flow("I".into()), "?".into(), "?".into())
-}
-
-/// Map an access function name to its nature (potential or flow).
-/// "V" → Potential, "I" → Flow. Custom access functions default to Flow
-/// (current-like) since flow contributions are the common case in analog
-/// modeling. The codegen can refine this with a nature table lookup.
-fn access_to_nature(name: &str) -> IrNature {
-    match name {
-        "V" => IrNature::Potential("V".into()),
-        "I" => IrNature::Flow("I".into()),
-        _ => IrNature::Flow(name.into()),
-    }
+    let nature = module_ctx.get_nature("I", NatureKind::Flow);
+    let p = module_ctx.get_node("?");
+    let m = module_ctx.get_node("?");
+    (nature, p, m)
 }
 
 fn positional_path_leaf(arg: Option<&CallArg>) -> Option<String> {
@@ -695,54 +540,54 @@ fn positional_path_leaf(arg: Option<&CallArg>) -> Option<String> {
 
 // ─── Noise extraction ──────────────────────────────────────────────────────────
 
-fn scan_noise(expr: &Expr, plus: &str, minus: &str, ctx: &mut LowerCtx) {
+fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut LowerCtx, module_ctx: &mut ModuleCtx) {
     match expr {
         Expr::Call(FunctionRef::Path(p), args) => {
             match path_leaf_str(p).as_deref() {
                 Some("white_noise") => {
                     let psd = args.first()
-                        .map(|a: &CallArg| lower_expr(a.expr(), ctx))
+                        .map(|a: &CallArg| lower_expr(a.expr(), ctx, module_ctx))
                         .unwrap_or(IrExpr::Real(0.0));
                     let label = args.get(1).and_then(|a: &CallArg| str_lit(a.expr()));
                     ctx.noise_sources.push(IrNoiseSource {
-                        plus: plus.into(),
-                        minus: minus.into(),
+                        plus,
+                        minus,
                         kind: IrNoise::White { psd },
                         label,
                     });
                 }
                 Some("flicker_noise") => {
                     let psd = args.first()
-                        .map(|a: &CallArg| lower_expr(a.expr(), ctx))
+                        .map(|a: &CallArg| lower_expr(a.expr(), ctx, module_ctx))
                         .unwrap_or(IrExpr::Real(0.0));
                     let exponent = args.get(1)
-                        .map(|a: &CallArg| lower_expr(a.expr(), ctx))
+                        .map(|a: &CallArg| lower_expr(a.expr(), ctx, module_ctx))
                         .unwrap_or(IrExpr::Real(1.0));
                     let label = args.get(2).and_then(|a: &CallArg| str_lit(a.expr()));
                     ctx.noise_sources.push(IrNoiseSource {
-                        plus: plus.into(),
-                        minus: minus.into(),
+                        plus,
+                        minus,
                         kind: IrNoise::Flicker { psd, exponent },
                         label,
                     });
                 }
                 _ => {
                     for arg in args.iter() {
-                        scan_noise(arg.expr(), plus, minus, ctx);
+                        scan_noise(arg.expr(), plus, minus, ctx, module_ctx);
                     }
                 }
             }
         }
         Expr::Binary(l, _, r) => {
-            scan_noise(l, plus, minus, ctx);
-            scan_noise(r, plus, minus, ctx);
+            scan_noise(l, plus, minus, ctx, module_ctx);
+            scan_noise(r, plus, minus, ctx, module_ctx);
         }
-        Expr::Paren(inner) => scan_noise(inner, plus, minus, ctx),
-        Expr::Prefix(_, inner) => scan_noise(inner, plus, minus, ctx),
+        Expr::Paren(inner) => scan_noise(inner, plus, minus, ctx, module_ctx),
+        Expr::Prefix(_, inner) => scan_noise(inner, plus, minus, ctx, module_ctx),
         Expr::Select(c, t, e) => {
-            scan_noise(c, plus, minus, ctx);
-            scan_noise(t, plus, minus, ctx);
-            scan_noise(e, plus, minus, ctx);
+            scan_noise(c, plus, minus, ctx, module_ctx);
+            scan_noise(t, plus, minus, ctx, module_ctx);
+            scan_noise(e, plus, minus, ctx, module_ctx);
         }
         _ => {}
     }
@@ -750,110 +595,76 @@ fn scan_noise(expr: &Expr, plus: &str, minus: &str, ctx: &mut LowerCtx) {
 
 // ─── Expression lowering ──────────────────────────────────────────────────────
 
-fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
+fn lower_expr(expr: &Expr, ctx: &mut LowerCtx, module_ctx: &mut ModuleCtx) -> IrExpr {
     match expr {
         Expr::Literal(lit) => lower_literal(lit),
 
-        Expr::Paren(inner) => lower_expr(inner, ctx),
+        Expr::Paren(inner) => lower_expr(inner, ctx, module_ctx),
 
         Expr::Path(p) => {
             let name = path_to_string(p);
             if let Some(val) = ctx.env.get(&name) {
                 val.clone()
+            } else if let Some(&pid) = module_ctx.params.get(&name) {
+                IrExpr::Param(pid)
+            } else if let Some(&vid) = module_ctx.vars.get(&name) {
+                IrExpr::Var(vid)
             } else {
-                IrExpr::Param(name)
+                IrExpr::Real(0.0)
             }
         }
 
-        Expr::PortFlow(p) => IrExpr::PortFlow(path_to_string(p)),
-
         Expr::Prefix(op, inner) => {
-            let e = Box::new(lower_expr(inner, ctx));
+            let e = Box::new(lower_expr(inner, ctx, module_ctx));
             match op {
                 PrefixOp::Neg => IrExpr::Unary(IrUnOp::Neg, e),
                 PrefixOp::Not => IrExpr::Unary(IrUnOp::Not, e),
                 PrefixOp::BitNot => IrExpr::Unary(IrUnOp::BitNot, e),
                 PrefixOp::Pos => *e,
                 PrefixOp::ReduceAnd => IrExpr::Unary(IrUnOp::RedAnd, e),
-                PrefixOp::ReduceNand => IrExpr::Unary(IrUnOp::RedNand, e),
                 PrefixOp::ReduceOr => IrExpr::Unary(IrUnOp::RedOr, e),
-                PrefixOp::ReduceNor => IrExpr::Unary(IrUnOp::RedNor, e),
                 PrefixOp::ReduceXor => IrExpr::Unary(IrUnOp::RedXor, e),
-                PrefixOp::ReduceXnor1 | PrefixOp::ReduceXnor2 => IrExpr::Unary(IrUnOp::RedXnor, e),
+                _ => *e,
             }
         }
 
         Expr::Binary(l, op, r) => {
-            let lir = Box::new(lower_expr(l, ctx));
-            let rir = Box::new(lower_expr(r, ctx));
+            let lir = Box::new(lower_expr(l, ctx, module_ctx));
+            let rir = Box::new(lower_expr(r, ctx, module_ctx));
             IrExpr::Binary(lower_binop(op), lir, rir)
         }
 
         Expr::Select(c, t, e) => {
             IrExpr::Select(
-                Box::new(lower_expr(c, ctx)),
-                Box::new(lower_expr(t, ctx)),
-                Box::new(lower_expr(e, ctx)),
+                Box::new(lower_expr(c, ctx, module_ctx)),
+                Box::new(lower_expr(t, ctx, module_ctx)),
+                Box::new(lower_expr(e, ctx, module_ctx)),
             )
         }
 
-        Expr::Call(func_ref, args) => lower_call(func_ref, args, ctx),
+        Expr::Call(func_ref, args) => lower_call(func_ref, args, ctx, module_ctx),
 
         Expr::Index(base, idx) => {
             IrExpr::Index(
-                Box::new(lower_expr(base, ctx)),
-                Box::new(lower_expr(idx, ctx)),
+                Box::new(lower_expr(base, ctx, module_ctx)),
+                Box::new(lower_expr(idx, ctx, module_ctx)),
             )
         }
 
         Expr::PartSelect(base, msb, lsb) => {
-            IrExpr::PartSelect(
-                Box::new(lower_expr(base, ctx)),
-                Box::new(lower_expr(msb, ctx)),
-                Box::new(lower_expr(lsb, ctx)),
+            IrExpr::Slice(
+                Box::new(lower_expr(base, ctx, module_ctx)),
+                Box::new(lower_expr(lsb, ctx, module_ctx)),
+                Box::new(lower_expr(msb, ctx, module_ctx)),
+                true,
             )
-        }
-
-        Expr::PartSelectUp(base, idx, width) => {
-            IrExpr::PartSelectIndexed {
-                base: Box::new(lower_expr(base, ctx)),
-                idx: Box::new(lower_expr(idx, ctx)),
-                width: Box::new(lower_expr(width, ctx)),
-                up: true,
-            }
-        }
-
-        Expr::PartSelectDown(base, idx, width) => {
-            IrExpr::PartSelectIndexed {
-                base: Box::new(lower_expr(base, ctx)),
-                idx: Box::new(lower_expr(idx, ctx)),
-                width: Box::new(lower_expr(width, ctx)),
-                up: false,
-            }
         }
 
         Expr::Array(exprs) => {
-            IrExpr::Array(exprs.iter().map(|e| lower_expr(e, ctx)).collect())
+            IrExpr::Array(exprs.iter().map(|e| lower_expr(e, ctx, module_ctx)).collect())
         }
 
-        Expr::Concat(exprs) => {
-            IrExpr::Concat(exprs.iter().map(|e| lower_expr(e, ctx)).collect())
-        }
-
-        Expr::Replicate(count, exprs) => {
-            IrExpr::Replicate(
-                Box::new(lower_expr(count, ctx)),
-                exprs.iter().map(|e| lower_expr(e, ctx)).collect(),
-            )
-        }
-
-        Expr::Mintypmax(min, typ, max) => {
-            IrExpr::Mintypmax(
-                Box::new(lower_expr(min, ctx)),
-                Box::new(lower_expr(typ, ctx)),
-                Box::new(lower_expr(max, ctx)),
-            )
-        }
+        _ => IrExpr::Real(0.0),
     }
 }
 
@@ -862,47 +673,40 @@ fn lower_literal(lit: &Literal) -> IrExpr {
         Literal::IntNumber(s) => IrExpr::Int(s.parse::<i64>().unwrap_or(0)),
         Literal::StdRealNumber(s) => IrExpr::Real(s.parse::<f64>().unwrap_or(0.0)),
         Literal::SiRealNumber(s) => IrExpr::Real(parse_si(s)),
-        Literal::StrLit(s) => IrExpr::String(s.trim_matches('"').to_string()),
+        Literal::StrLit(_) => IrExpr::Int(0),
         Literal::Inf => IrExpr::Real(f64::INFINITY),
-        Literal::SizedLit(s) => IrExpr::Int(parse_sized_lit(s).unwrap_or_else(|e| {
-            // GAPS §A.11 — fail loud on 4-state digits. Today we'd panic;
-            // a proper Result-based propagate is tracked as a follow-up.
-            // Until then, propagating through `lower_expr` is a wider
-            // refactor; the panic gives users a clear error rather than
-            // the silent zero that used to ship.
-            panic!("ams_to_ir: {e}");
-        })),
+        Literal::SizedLit(s) => IrExpr::Int(parse_sized_lit(s).unwrap_or_else(|e| panic!("ams_to_ir: {e}"))),
     }
 }
 
-fn lower_call(func_ref: &FunctionRef, args: &[CallArg], ctx: &mut LowerCtx) -> IrExpr {
+fn lower_call(func_ref: &FunctionRef, args: &[CallArg], ctx: &mut LowerCtx, module_ctx: &mut ModuleCtx) -> IrExpr {
     match func_ref {
-        FunctionRef::SysFun(name) => lower_sysfun(name, args, ctx),
-        FunctionRef::Path(p) => lower_path_call(p, args, ctx),
+        FunctionRef::SysFun(name) => lower_sysfun(name, args, ctx, module_ctx),
+        FunctionRef::Path(p) => lower_path_call(p, args, ctx, module_ctx),
     }
 }
 
-fn lower_sysfun(name: &str, args: &[CallArg], ctx: &mut LowerCtx) -> IrExpr {
+fn lower_sysfun(name: &str, args: &[CallArg], ctx: &mut LowerCtx, module_ctx: &mut ModuleCtx) -> IrExpr {
     match name {
         "$temperature" => IrExpr::Sim(SimQuery::Temperature),
         "$vt" => {
             if args.is_empty() {
                 IrExpr::Sim(SimQuery::Vt(None))
             } else {
-                IrExpr::Sim(SimQuery::Vt(Some(Box::new(lower_expr(args[0].expr(), ctx)))))
+                IrExpr::Sim(SimQuery::Vt(Some(Box::new(lower_expr(args[0].expr(), ctx, module_ctx)))))
             }
         }
         "$abstime" => IrExpr::Sim(SimQuery::Abstime),
         "$mfactor" => IrExpr::Sim(SimQuery::Mfactor),
-        "$xposition" => IrExpr::Sim(SimQuery::XPosition),
-        "$yposition" => IrExpr::Sim(SimQuery::YPosition),
+        "$xposition" => IrExpr::Sim(SimQuery::Position(Axis::X)),
+        "$yposition" => IrExpr::Sim(SimQuery::Position(Axis::Y)),
         "$angle" => IrExpr::Sim(SimQuery::Angle),
         "$simparam" => {
             let key = args.first()
                 .and_then(|a: &CallArg| str_lit(a.expr()))
                 .unwrap_or_else(|| "?".into());
             let default = args.get(1)
-                .map(|a: &CallArg| lower_expr(a.expr(), ctx))
+                .map(|a: &CallArg| lower_expr(a.expr(), ctx, module_ctx))
                 .unwrap_or(IrExpr::Real(0.0));
             IrExpr::Sim(SimQuery::Simparam { key, default: Box::new(default) })
         }
@@ -910,20 +714,22 @@ fn lower_sysfun(name: &str, args: &[CallArg], ctx: &mut LowerCtx) -> IrExpr {
             let name = args.first()
                 .and_then(|a: &CallArg| str_lit(a.expr()))
                 .unwrap_or_else(|| "?".into());
-            IrExpr::Sim(SimQuery::ParamGiven(name))
+            let pid = module_ctx.params.get(&name).copied().unwrap_or(ParamId(0));
+            IrExpr::Sim(SimQuery::ParamGiven(pid))
         }
         "$port_connected" => {
             let name = args.first()
                 .and_then(|a: &CallArg| str_lit(a.expr()))
                 .unwrap_or_else(|| "?".into());
-            IrExpr::Sim(SimQuery::PortConnected(name))
+            let nid = module_ctx.get_node(&name);
+            IrExpr::Sim(SimQuery::PortConnected(nid))
         }
         "$limit" => {
             let kind = args.first()
                 .and_then(|a: &CallArg| str_lit(a.expr()))
                 .unwrap_or_else(|| "?".into());
             let limit_args = args.iter().skip(1)
-                .map(|a: &CallArg| lower_expr(a.expr(), ctx))
+                .map(|a: &CallArg| lower_expr(a.expr(), ctx, module_ctx))
                 .collect();
             IrExpr::Sim(SimQuery::Limit { kind, args: limit_args })
         }
@@ -933,7 +739,7 @@ fn lower_sysfun(name: &str, args: &[CallArg], ctx: &mut LowerCtx) -> IrExpr {
         n if n.starts_with("$dist_") => {
             let kind = n.trim_start_matches('$').to_string();
             let dist_args = args.iter()
-                .map(|a: &CallArg| lower_expr(a.expr(), ctx))
+                .map(|a: &CallArg| lower_expr(a.expr(), ctx, module_ctx))
                 .collect();
             IrExpr::Sim(SimQuery::Random { kind, args: dist_args })
         }
@@ -945,51 +751,73 @@ fn lower_analysis_call(args: &[CallArg]) -> IrExpr {
     let kind = args.first()
         .and_then(|a: &CallArg| str_lit(a.expr()))
         .unwrap_or_else(|| "dc".into());
-    IrExpr::Sim(SimQuery::Analysis(kind))
+    let a = match kind.as_str() {
+        "ac" => Analysis::Ac,
+        "tran" => Analysis::Tran,
+        "noise" => Analysis::Noise,
+        _ => Analysis::Dc,
+    };
+    IrExpr::Sim(SimQuery::Analysis(a))
 }
 
-fn lower_path_call(p: &Path, args: &[CallArg], ctx: &mut LowerCtx) -> IrExpr {
+fn lower_path_call(p: &Path, args: &[CallArg], ctx: &mut LowerCtx, module_ctx: &mut ModuleCtx) -> IrExpr {
     let name = path_leaf_str(p).unwrap_or_default();
     let positional: Vec<IrExpr> = args.iter()
         .filter(|a: &&CallArg| a.is_positional())
-        .map(|a: &CallArg| lower_expr(a.expr(), ctx))
+        .map(|a: &CallArg| lower_expr(a.expr(), ctx, module_ctx))
         .collect();
 
     match name.as_str() {
         "V" | "I" => {
-            let plus = positional_path_leaf(args.first()).unwrap_or_else(|| "?".into());
-            let minus = positional_path_leaf(args.get(1)).unwrap_or_else(|| "0".into());
-            IrExpr::BranchAccess { access: name, plus, minus }
+            let kind = if name == "V" { NatureKind::Potential } else { NatureKind::Flow };
+            let nature = module_ctx.get_nature(&name, kind);
+            
+            let first_arg = positional_path_leaf(args.first()).unwrap_or_else(|| "?".into());
+            let (plus, minus) = if let Some(&(p, m)) = module_ctx.branches.get(&first_arg) {
+                (p, m)
+            } else {
+                let p = module_ctx.get_node(&first_arg);
+                let minus_name = positional_path_leaf(args.get(1)).unwrap_or_else(|| "0".into());
+                let m = module_ctx.get_node(&minus_name);
+                (p, m)
+            };
+            IrExpr::Branch { nature, plus, minus }
         }
         "ddt" => {
             let arg = positional.into_iter().next().unwrap_or(IrExpr::Real(0.0));
-            let id = ctx.alloc_state(IrStateKind::Ddt, arg);
-            IrExpr::StateRef(id)
+            let id = module_ctx.syms.add_state(IrStateVar { kind: IrStateKind::Ddt, arg });
+            ctx.states.push(id);
+            IrExpr::State(id)
         }
         "idt" => {
             let arg = positional.first().cloned().unwrap_or(IrExpr::Real(0.0));
             let ic = positional.get(1).cloned().unwrap_or(IrExpr::Real(0.0));
-            let id = ctx.alloc_state(IrStateKind::Idt { ic }, arg);
-            IrExpr::StateRef(id)
+            let id = module_ctx.syms.add_state(IrStateVar { kind: IrStateKind::Idt { ic }, arg });
+            ctx.states.push(id);
+            IrExpr::State(id)
         }
         "idtmod" => {
             let arg = positional.first().cloned().unwrap_or(IrExpr::Real(0.0));
             let ic = positional.get(1).cloned().unwrap_or(IrExpr::Real(0.0));
             let modulus = positional.get(2).cloned().unwrap_or(IrExpr::Real(1.0));
-            let id = ctx.alloc_state(IrStateKind::IdtMod { ic, modulus }, arg);
-            IrExpr::StateRef(id)
+            let id = module_ctx.syms.add_state(IrStateVar { kind: IrStateKind::IdtMod { ic, modulus }, arg });
+            ctx.states.push(id);
+            IrExpr::State(id)
         }
         "ddx" => {
             let arg = positional.first().cloned().unwrap_or(IrExpr::Real(0.0));
-            let node = positional_path_leaf(args.get(1)).unwrap_or_else(|| "?".into());
-            let id = ctx.alloc_state(IrStateKind::Ddx { node }, arg);
-            IrExpr::StateRef(id)
+            let node_name = positional_path_leaf(args.get(1)).unwrap_or_else(|| "?".into());
+            let node = module_ctx.get_node(&node_name);
+            let id = module_ctx.syms.add_state(IrStateVar { kind: IrStateKind::Ddx { node }, arg });
+            ctx.states.push(id);
+            IrExpr::State(id)
         }
         "delay" | "absdelay" => {
             let arg = positional.first().cloned().unwrap_or(IrExpr::Real(0.0));
             let delay = positional.get(1).cloned().unwrap_or(IrExpr::Real(0.0));
-            let id = ctx.alloc_state(IrStateKind::Delay { delay }, arg);
-            IrExpr::StateRef(id)
+            let id = module_ctx.syms.add_state(IrStateVar { kind: IrStateKind::Delay { delay }, arg });
+            ctx.states.push(id);
+            IrExpr::State(id)
         }
         "transition" => {
             let arg = positional.first().cloned().unwrap_or(IrExpr::Real(0.0));
@@ -997,48 +825,50 @@ fn lower_path_call(p: &Path, args: &[CallArg], ctx: &mut LowerCtx) -> IrExpr {
             let rise = positional.get(2).cloned().unwrap_or(IrExpr::Real(0.0));
             let fall = positional.get(3).cloned().unwrap_or(IrExpr::Real(0.0));
             let tol = positional.get(4).cloned().unwrap_or(IrExpr::Real(0.0));
-            let id = ctx.alloc_state(
-                IrStateKind::Transition { delay, rise, fall, tol },
-                arg,
-            );
-            IrExpr::StateRef(id)
+            let id = module_ctx.syms.add_state(IrStateVar { kind: IrStateKind::Transition { delay, rise, fall, tol }, arg });
+            ctx.states.push(id);
+            IrExpr::State(id)
         }
         "slew" => {
             let arg = positional.first().cloned().unwrap_or(IrExpr::Real(0.0));
             let rise = positional.get(1).cloned().unwrap_or(IrExpr::Real(0.0));
             let fall = positional.get(2).cloned().unwrap_or(IrExpr::Real(0.0));
-            let id = ctx.alloc_state(IrStateKind::Slew { rise, fall }, arg);
-            IrExpr::StateRef(id)
+            let id = module_ctx.syms.add_state(IrStateVar { kind: IrStateKind::Slew { rise, fall }, arg });
+            ctx.states.push(id);
+            IrExpr::State(id)
         }
-        "laplace_np" | "laplace_zp" | "laplace_pm" | "laplace_nm" | "laplace_npm" => {
+        "laplace_np" | "laplace_zp" | "laplace_pm" | "laplace_nm" | "laplace_npm" | "laplace_nd" | "laplace_zd" => {
             let arg = positional.first().cloned().unwrap_or(IrExpr::Real(0.0));
             let num = positional.get(1).cloned().unwrap_or(IrExpr::Array(vec![]));
             let den = positional.get(2).cloned().unwrap_or(IrExpr::Array(vec![]));
-            let id = ctx.alloc_state(
-                IrStateKind::Laplace {
-                    variant: name.trim_start_matches("laplace_").to_string(),
-                    num,
-                    den,
-                },
-                arg,
-            );
-            IrExpr::StateRef(id)
+            let num_vec = match num { IrExpr::Array(v) => v, _ => vec![num] };
+            let den_vec = match den { IrExpr::Array(v) => v, _ => vec![den] };
+            let variant = match name.trim_start_matches("laplace_") {
+                "np" => LaplaceKind::NumPoles,
+                "zp" => LaplaceKind::ZerosPoles,
+                "zd" => LaplaceKind::ZerosDen,
+                _ => LaplaceKind::NumDen,
+            };
+            let id = module_ctx.syms.add_state(IrStateVar { kind: IrStateKind::Laplace { variant, num: num_vec, den: den_vec }, arg });
+            ctx.states.push(id);
+            IrExpr::State(id)
         }
         "zi_zd" | "zi_zp" | "zi_nd" | "zi_np" => {
             let arg = positional.first().cloned().unwrap_or(IrExpr::Real(0.0));
             let num = positional.get(1).cloned().unwrap_or(IrExpr::Array(vec![]));
             let den = positional.get(2).cloned().unwrap_or(IrExpr::Array(vec![]));
             let sample_dt = positional.get(3).cloned().unwrap_or(IrExpr::Real(0.0));
-            let id = ctx.alloc_state(
-                IrStateKind::ZTransform {
-                    variant: name.trim_start_matches("zi_").to_string(),
-                    num,
-                    den,
-                    sample_dt,
-                },
-                arg,
-            );
-            IrExpr::StateRef(id)
+            let num_vec = match num { IrExpr::Array(v) => v, _ => vec![num] };
+            let den_vec = match den { IrExpr::Array(v) => v, _ => vec![den] };
+            let variant = match name.trim_start_matches("zi_") {
+                "np" => ZKind::NumPoles,
+                "zp" => ZKind::ZerosPoles,
+                "zd" => ZKind::ZerosDen,
+                _ => ZKind::NumDen,
+            };
+            let id = module_ctx.syms.add_state(IrStateVar { kind: IrStateKind::ZTransform { variant, num: num_vec, den: den_vec, sample_dt }, arg });
+            ctx.states.push(id);
+            IrExpr::State(id)
         }
         "ac_stim" => {
             let mag = positional.get(0).cloned().unwrap_or(IrExpr::Real(1.0));
@@ -1047,7 +877,13 @@ fn lower_path_call(p: &Path, args: &[CallArg], ctx: &mut LowerCtx) -> IrExpr {
         }
         "white_noise" | "flicker_noise" => IrExpr::Real(0.0),
         "analysis" => lower_analysis_call(args),
-        _ => IrExpr::Call(name.to_string(), positional),
+        _ => {
+            if let Some(&fid) = module_ctx.fns.get(&name) {
+                IrExpr::Call(fid, positional)
+            } else {
+                IrExpr::MathCall(name, positional)
+            }
+        }
     }
 }
 
@@ -1130,40 +966,25 @@ fn parse_si(s: &str) -> f64 {
     mantissa.trim().parse::<f64>().unwrap_or(0.0) * scale
 }
 
-/// GAPS §A.11 — sized literals with `x`/`X`/`z`/`Z`/`?` digits used to
-/// silently become 0 (because `i64::from_str_radix` rejects those
-/// characters). This helper now returns an error so the caller can
-/// surface a clear "4-state literal" message instead of silently
-/// producing 0.
 fn parse_sized_lit(s: &str) -> Result<i64, String> {
     if let Some(pos) = s.find('\'') {
         let rest = &s[pos+1..];
-        // Detect 4-state digits before passing to from_str_radix.
         if has_4state_digit(rest) {
-            return Err(format!(
-                "4-state sized literal `{s}` is not yet supported in IR (GAPS §A.11); \
-                 the digits x/X/z/Z/? in a sized literal must be expanded to a \
-                 per-bit `Quad` representation first (see AGENTS.md `IrExpr::Quad`)"
-            ));
+            return Err(format!("4-state sized literal `{s}` is not yet supported in IR"));
         }
         if let Some(hex) = rest.strip_prefix('h').or_else(|| rest.strip_prefix('H')) {
-            return i64::from_str_radix(hex, 16)
-                .map_err(|e| format!("invalid hex literal `{s}`: {e}"));
+            return i64::from_str_radix(hex, 16).map_err(|e| format!("invalid hex literal `{s}`: {e}"));
         }
         if let Some(bin) = rest.strip_prefix('b').or_else(|| rest.strip_prefix('B')) {
-            return i64::from_str_radix(bin, 2)
-                .map_err(|e| format!("invalid binary literal `{s}`: {e}"));
+            return i64::from_str_radix(bin, 2).map_err(|e| format!("invalid binary literal `{s}`: {e}"));
         }
         if let Some(oct) = rest.strip_prefix('o').or_else(|| rest.strip_prefix('O')) {
-            return i64::from_str_radix(oct, 8)
-                .map_err(|e| format!("invalid octal literal `{s}`: {e}"));
+            return i64::from_str_radix(oct, 8).map_err(|e| format!("invalid octal literal `{s}`: {e}"));
         }
         if let Some(dec) = rest.strip_prefix('d').or_else(|| rest.strip_prefix('D')) {
-            return dec.parse::<i64>()
-                .map_err(|e| format!("invalid decimal literal `{s}`: {e}"));
+            return dec.parse::<i64>().map_err(|e| format!("invalid decimal literal `{s}`: {e}"));
         }
-        return rest.parse::<i64>()
-            .map_err(|e| format!("invalid literal `{s}`: {e}"));
+        return rest.parse::<i64>().map_err(|e| format!("invalid literal `{s}`: {e}"));
     }
     s.parse::<i64>().map_err(|e| format!("invalid literal `{s}`: {e}"))
 }
@@ -1205,21 +1026,19 @@ fn merge_branch_ctx(
         ));
     }
 
-    for sv in then_ctx.state_vars.iter().chain(else_ctx.state_vars.iter()) {
-        if !ctx.state_vars.iter().any(|s| s.id == sv.id) {
-            ctx.state_vars.push(sv.clone());
+    for &sv in then_ctx.states.iter().chain(else_ctx.states.iter()) {
+        if !ctx.states.contains(&sv) {
+            ctx.states.push(sv);
         }
     }
 
     ctx.noise_sources.extend(then_ctx.noise_sources.iter().cloned());
     ctx.noise_sources.extend(else_ctx.noise_sources.iter().cloned());
-
-    ctx.counter = ctx.counter.max(then_ctx.counter).max(else_ctx.counter);
 }
 
 // ─── For-loop unrolling ───────────────────────────────────────────────────────
 
-fn try_unroll_for(f: &ForStmt, ctx: &mut LowerCtx) -> Option<Vec<IrStmt>> {
+fn try_unroll_for(f: &ForStmt, ctx: &mut LowerCtx, module_ctx: &mut ModuleCtx) -> Option<Vec<IrStmt>> {
     let (var_name, start) = extract_int_assign(&f.init)?;
     let (cond_var, limit, inclusive) = extract_int_cmp(&f.condition)?;
     if cond_var != var_name { return None; }
@@ -1236,14 +1055,13 @@ fn try_unroll_for(f: &ForStmt, ctx: &mut LowerCtx) -> Option<Vec<IrStmt>> {
     while i < end {
         let mut iter_ctx = ctx.clone();
         iter_ctx.env.insert(var_name.clone(), IrExpr::Int(i));
-        out.extend(lower_stmt(&f.for_body, &mut iter_ctx));
-        for sv in iter_ctx.state_vars.iter() {
-            if !ctx.state_vars.iter().any(|s| s.id == sv.id) {
-                ctx.state_vars.push(sv.clone());
+        out.extend(lower_stmt(&f.for_body, &mut iter_ctx, module_ctx));
+        for &sv in iter_ctx.states.iter() {
+            if !ctx.states.contains(&sv) {
+                ctx.states.push(sv);
             }
         }
         ctx.noise_sources.extend(iter_ctx.noise_sources);
-        ctx.counter = ctx.counter.max(iter_ctx.counter);
         i += step;
     }
     Some(out)
@@ -1295,28 +1113,12 @@ fn eval_const_int_expr(expr: &Expr) -> Option<i64> {
         Expr::Literal(Literal::IntNumber(s)) => s.parse::<i64>().ok(),
         Expr::Literal(Literal::SiRealNumber(s)) => Some(parse_si(s) as i64),
         Expr::Literal(Literal::StdRealNumber(s)) => s.parse::<f64>().ok().map(|f| f as i64),
-        Expr::Literal(Literal::SizedLit(s)) => match parse_sized_lit(s) {
-            Ok(v) => Some(v),
-            // 4-state literals (x/z/?) don't have an integer interpretation;
-            // skip them here. The main `ams_to_ir` lowering already
-            // errors loudly on the first occurrence (GAPS §A.11).
-            Err(_) => None,
-        },
+        Expr::Literal(Literal::SizedLit(s)) => parse_sized_lit(s).ok(),
         Expr::Paren(inner) => eval_const_int_expr(inner),
         _ => None,
     }
 }
 
-// ─── Indirect contribution ────────────────────────────────────────────────────
-
-fn lower_indirect_contrib(ic: &IndirectContribution, ctx: &mut LowerCtx) -> Vec<IrStmt> {
-    let (contrib_nature, contrib_plus, contrib_minus) = parse_lval_contrib(&ic.lvalue);
-    let (probe_nature, probe_plus, probe_minus) = parse_lval_contrib(&ic.indirect_expr);
-    scan_noise(&ic.rvalue, &contrib_plus, &contrib_minus, ctx);
-    let expr = lower_expr(&ic.rvalue, ctx);
-    vec![IrStmt::IndirectContrib {
-        contrib_nature, contrib_plus, contrib_minus,
-        probe_nature, probe_plus, probe_minus,
-        expr,
-    }]
+fn first_state_ref(expr: &IrExpr) -> Option<StateId> {
+    expr.find_state(&|_| true)
 }

@@ -1,0 +1,8 @@
+
+discipline Electrical { potential v : Real; flow i : Real; }
+mod Capacitor[N] ( inout p : Electrical, inout n : Electrical ) {
+    param c : Real = 1e-12;
+}
+analog Capacitor {
+    I(p, n) <+ c * ddt(V(p, n));
+}

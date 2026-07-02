@@ -1,12 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use piperine_ams::Document;
 
 /// Detect the file format by extension.
 ///
-/// `.va`/`.vams` → Verilog-A/AMS, parsed with `piperine_ams::Document::parse_file`.
 /// `.phdl`/`.ppr` → PHDL, parsed with `piperine_lang::parse_and_elaborate`.
-/// All other extensions fall back to Verilog-A.
 fn detect_format(path: &Path) -> FileFormat {
     match path.extension().and_then(|s| s.to_str()) {
         Some("phdl") | Some("ppr") => FileFormat::Ppr,
@@ -16,24 +13,11 @@ fn detect_format(path: &Path) -> FileFormat {
 
 enum FileFormat { Ams, Ppr }
 
-/// Returns the list of model names captured by `path`, or exits with a
-/// message on parse failure.  Used by both the CLI and the test suite.
 pub fn check_file(path: &Path) -> Result<CheckSummary, String> {
     println!("Checking file: {}", path.display());
     match detect_format(path) {
         FileFormat::Ams => {
-            let doc = Document::parse_file(path)
-                .map_err(|e| format!("parse failed: {e}"))?;
-            let module_names: Vec<String> = doc.modules.iter().map(|m| m.name.clone()).collect();
-            println!("  AMS modules: {}", doc.modules.len());
-            for m in &doc.modules {
-                println!(
-                    "    - {} (ports: {}, parameters: {}, analog_blocks: {}, instances: {})",
-                    m.name, m.ports.len(), m.parameters.len(),
-                    m.analog_blocks.len(), m.instances.len()
-                );
-            }
-            Ok(CheckSummary::Ams { module_names })
+            Err("AMS format is no longer supported directly. Please use PHDL.".to_string())
         }
         FileFormat::Ppr => {
             let body = std::fs::read_to_string(path)
@@ -53,22 +37,40 @@ pub fn check_file(path: &Path) -> Result<CheckSummary, String> {
 
 #[derive(Debug)]
 pub enum CheckSummary {
-    Ams  { module_names: Vec<String> },
     Ppr  { module_names: Vec<String> },
 }
 
 pub fn execute(file: Option<String>) {
-    let path = if let Some(f) = file {
-        PathBuf::from(f)
+    let target_paths = if let Some(f) = file {
+        vec![PathBuf::from(f)]
     } else {
         if let Some(root) = piperine_project::get_current_project_root() {
             let toml_path = root.join("Piperine.toml");
             match piperine_project::PiperineToml::load(&toml_path) {
                 Ok(toml) => {
                     println!("Loaded project: {} v{}", toml.project.name, toml.project.version);
-                    // Default to src/main.vams (legacy) or src/main.phdl.
-                    let ppr = root.join("src").join("main.phdl");
-                    if ppr.exists() { ppr } else { root.join("src").join("main.vams") }
+                    let mut paths = Vec::new();
+                    let src_dir = root.join("src");
+                    if src_dir.exists() {
+                        let mut stack = vec![src_dir];
+                        while let Some(dir) = stack.pop() {
+                            if let Ok(entries) = std::fs::read_dir(dir) {
+                                for entry in entries.filter_map(|e| e.ok()) {
+                                    let p = entry.path();
+                                    if p.is_dir() {
+                                        stack.push(p);
+                                    } else if p.is_file() && p.extension().and_then(|s| s.to_str()) == Some("phdl") {
+                                        paths.push(p);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if paths.is_empty() {
+                        eprintln!("Error: No .phdl files found in src/ directory.");
+                        std::process::exit(1);
+                    }
+                    paths
                 }
                 Err(e) => {
                     eprintln!("Error loading Piperine.toml: {}", e);
@@ -81,8 +83,15 @@ pub fn execute(file: Option<String>) {
         }
     };
 
-    if let Err(e) = check_file(&path) {
-        eprintln!("{e}");
+    let mut had_error = false;
+    for path in target_paths {
+        if let Err(e) = check_file(&path) {
+            eprintln!("Error in file {}: {}", path.display(), e);
+            had_error = true;
+        }
+    }
+
+    if had_error {
         std::process::exit(1);
     }
 }

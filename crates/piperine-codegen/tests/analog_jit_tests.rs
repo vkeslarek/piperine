@@ -174,13 +174,13 @@ fn resistor_residual_and_jacobian_match_ohms_law() {
     let params = [1000.0];
     let sim = SimCtx::default();
     let mut res = [0.0; 2];
-    kernel.eval_residual(&volts, &params, &[], &sim, &mut res);
+    kernel.eval_residual(&volts, &params, &[], &[], &sim, &mut res);
     let i = (2.0 - 0.5) / 1000.0;
     assert!((res[0] - i).abs() < 1e-15, "res[0] = {}", res[0]);
     assert!((res[1] + i).abs() < 1e-15, "res[1] = {}", res[1]);
 
     let mut jac = [0.0; 4];
-    kernel.eval_jacobian(&volts, &params, &[], &sim, &mut jac);
+    kernel.eval_jacobian(&volts, &params, &[], &[], &sim, &mut jac);
     let g = 1.0 / 1000.0;
     assert!((jac[0] - g).abs() < 1e-15);
     assert!((jac[1] + g).abs() < 1e-15);
@@ -199,7 +199,7 @@ fn diode_uses_thermal_voltage_from_sim_ctx() {
     let vt = 300.0 * SimCtx::K_B_OVER_Q;
 
     let mut res = [0.0; 2];
-    kernel.eval_residual(&volts, &params, &[], &sim, &mut res);
+    kernel.eval_residual(&volts, &params, &[], &[], &sim, &mut res);
     let expected = 1e-14 * ((0.6 / vt).exp() - 1.0);
     assert!(
         (res[0] - expected).abs() < expected.abs() * 1e-12,
@@ -210,7 +210,7 @@ fn diode_uses_thermal_voltage_from_sim_ctx() {
 
     // dI/dV = is/vt * exp(V/vt)
     let mut jac = [0.0; 4];
-    kernel.eval_jacobian(&volts, &params, &[], &sim, &mut jac);
+    kernel.eval_jacobian(&volts, &params, &[], &[], &sim, &mut jac);
     let g = 1e-14 / vt * (0.6 / vt).exp();
     assert!((jac[0] - g).abs() < g * 1e-12, "g = {} vs {}", jac[0], g);
 }
@@ -227,17 +227,17 @@ fn capacitor_charge_and_charge_jacobian() {
 
     // Q = C·V, resistive residual must be zero.
     let mut res = [0.0; 2];
-    kernel.eval_residual(&volts, &params, &[], &sim, &mut res);
+    kernel.eval_residual(&volts, &params, &[], &[], &sim, &mut res);
     assert_eq!(res, [0.0; 2]);
 
     let mut q = [0.0; 2];
-    kernel.eval_charge(&volts, &params, &[], &sim, &mut q);
+    kernel.eval_charge(&volts, &params, &[], &[], &sim, &mut q);
     let expected = 1e-6 * 2.0;
     assert!((q[0] - expected).abs() < 1e-18);
     assert!((q[1] + expected).abs() < 1e-18);
 
     let mut qjac = [0.0; 4];
-    kernel.eval_charge_jacobian(&volts, &params, &[], &sim, &mut qjac);
+    kernel.eval_charge_jacobian(&volts, &params, &[], &[], &sim, &mut qjac);
     assert!((qjac[0] - 1e-6).abs() < 1e-18);
     assert!((qjac[3] - 1e-6).abs() < 1e-18);
 }
@@ -265,11 +265,11 @@ fn guarded_contribution_folds_into_select() {
     let params = [100.0];
     let sim = SimCtx::default();
     let mut res = [0.0; 2];
-    kernel.eval_residual(&[2.0, 0.0], &params, &[], &sim, &mut res);
+    kernel.eval_residual(&[2.0, 0.0], &params, &[], &[], &sim, &mut res);
     assert!((res[0] - 0.02).abs() < 1e-15, "above threshold conducts");
 
     res = [0.0; 2];
-    kernel.eval_residual(&[0.5, 0.0], &params, &[], &sim, &mut res);
+    kernel.eval_residual(&[0.5, 0.0], &params, &[], &[], &sim, &mut res);
     assert_eq!(res, [0.0; 2], "below threshold is off");
 }
 
@@ -289,7 +289,7 @@ fn user_function_is_inlined() {
     let kernel = AnalogKernel::compile(&module).expect("compile doubler");
 
     let mut res = [0.0; 2];
-    kernel.eval_residual(&[1.5, 0.0], &[], &[], &SimCtx::default(), &mut res);
+    kernel.eval_residual(&[1.5, 0.0], &[], &[], &[], &SimCtx::default(), &mut res);
     assert!((res[0] - 3.0).abs() < 1e-15);
 }
 

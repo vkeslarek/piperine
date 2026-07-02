@@ -1,50 +1,33 @@
 //! Regression tests for Part A + D of `docs/GAPS.md`.
 //! PHDL-specific tests (parse_and_elaborate, ppr_to_ir, from_ir).
 
-use piperine_codegen::{ir_analog_to_device, IrProgram, SimCtx};
+use piperine_codegen::{ir::IrProgram, SimCtx};
 use piperine_lang::{from_ir, ir_digital_to_interp, parse_and_elaborate, ppr_to_ir};
 
 // ── A.4 — Digital Pow/Shl/Shr silently become Add ─────────────────────────
 
 #[test]
 fn a4_shift_in_digital_guard_is_rejected_not_silently_add() {
-    use piperine_codegen::ir::{IrBinOp, IrExpr, IrStmt, IrDigitalBody, IrModule, IrPort};
+    use piperine_codegen::ir::{IrBinOp, IrExpr, IrStmt, IrDigitalBody, IrModule, Source, Domain};
 
-    let mut prog = IrProgram {
-        source: "test".into(),
-        modules: Vec::new(),
-        functions: Vec::new(),
-    };
-    prog.modules.push(IrModule {
-        name: "shift_fsm".into(),
-        ports: Vec::new(),
-        params: Vec::new(),
-        wires: Vec::new(),
-        branches: Vec::new(),
-        events: Vec::new(),
-        vars: Vec::new(),
-        grounds: Vec::new(),
-        instances: Vec::new(),
-        connections: Vec::new(),
-        continuous_assigns: Vec::new(),
-        analog: None,
-        digital: Some(IrDigitalBody {
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-            state_vars: Vec::new(),
-            stmts: vec![IrStmt::If {
-                cond: IrExpr::Binary(
-                    IrBinOp::Shl,
-                    Box::new(IrExpr::Param("x".into())),
-                    Box::new(IrExpr::Int(4)),
-                ),
-                then_: vec![],
-                else_: vec![],
-                label: None,
-            }],
-        }),
-        functions: Vec::new(),
+    let mut prog = IrProgram::new(Source::Ams);
+    let mut module = IrModule::new("shift_fsm");
+    let param_x = module.symbols.add_param("x", piperine_codegen::ir::IrType::Real, None);
+    module.digital = Some(IrDigitalBody {
+        inputs: Vec::new(),
+        outputs: Vec::new(),
+        regs: Vec::new(),
+        stmts: vec![IrStmt::If {
+            cond: IrExpr::Binary(
+                IrBinOp::Shl,
+                Box::new(IrExpr::Param(param_x)),
+                Box::new(IrExpr::Int(4)),
+            ),
+            then_: vec![],
+            else_: vec![],
+        }],
     });
+    prog.modules.push(module);
     let err = ir_digital_to_interp(&prog, "shift_fsm")
         .err()
         .expect("shift in digital guard must fail");
@@ -61,38 +44,21 @@ fn make_digital_ir_with_unary_op(
     module_name: &str,
     op: piperine_codegen::ir::IrUnOp,
 ) -> IrProgram {
-    use piperine_codegen::ir::{IrExpr, IrModule, IrPort, IrStmt, IrDigitalBody};
-    let mut prog = IrProgram {
-        source: "test".into(),
-        modules: Vec::new(),
-        functions: Vec::new(),
-    };
-    prog.modules.push(IrModule {
-        name: module_name.into(),
-        ports: Vec::new(),
-        params: Vec::new(),
-        wires: Vec::new(),
-        branches: Vec::new(),
-        events: Vec::new(),
-        vars: Vec::new(),
-        grounds: Vec::new(),
-        instances: Vec::new(),
-        connections: Vec::new(),
-        continuous_assigns: Vec::new(),
-        analog: None,
-        digital: Some(IrDigitalBody {
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-            state_vars: Vec::new(),
-            stmts: vec![IrStmt::Assign {
-                lval: "out".into(),
-                expr: IrExpr::Unary(op, Box::new(IrExpr::Param("x".into()))),
-                delay: None,
-                event: None,
-            }],
-        }),
-        functions: Vec::new(),
+    use piperine_codegen::ir::{IrExpr, IrModule, IrStmt, IrDigitalBody, Source, Domain, Lval};
+    let mut prog = IrProgram::new(Source::Ams);
+    let mut module = IrModule::new(module_name);
+    let param_x = module.symbols.add_param("x", piperine_codegen::ir::IrType::Real, None);
+    let node_out = module.symbols.add_node("out", Domain::Digital);
+    module.digital = Some(IrDigitalBody {
+        inputs: Vec::new(),
+        outputs: Vec::new(),
+        regs: Vec::new(),
+        stmts: vec![IrStmt::Assign {
+            lval: Lval::Net(node_out),
+            expr: IrExpr::Unary(op, Box::new(IrExpr::Param(param_x))),
+        }],
     });
+    prog.modules.push(module);
     prog
 }
 
@@ -136,76 +102,48 @@ fn a5_neg_in_digital_still_works() {
 #[test]
 fn a6_from_ir_propagates_child_compile_error_not_silent_skip() {
     use piperine_codegen::ir::{
-        ContribKind, IrAnalogBody, IrConnection, IrDirection, IrExpr, IrInstance,
-        IrModule, IrNature, IrPort, IrStmt,
+        ContribKind, IrAnalogBody, IrDirection, IrExpr, IrInstance,
+        IrModule, IrPort, IrStmt, Source, Domain, NatureKind, StateId
     };
 
-    let mut prog = IrProgram {
-        source: "test".into(),
-        modules: Vec::new(),
-        functions: Vec::new(),
-    };
-    prog.modules.push(IrModule {
-        name: "vsource".into(),
-        ports: vec![
-            IrPort { name: "p".into(), direction: IrDirection::Inout, discipline: Some("Electrical".into()) },
-            IrPort { name: "n".into(), direction: IrDirection::Inout, discipline: Some("Electrical".into()) },
-        ],
-        params: Vec::new(),
-        wires: Vec::new(),
-        branches: Vec::new(),
-        events: Vec::new(),
-        vars: Vec::new(),
-        grounds: Vec::new(),
-        instances: Vec::new(),
-        connections: Vec::new(),
-        continuous_assigns: Vec::new(),
-        analog: Some(IrAnalogBody {
-            state_vars: Vec::new(),
-            noise_sources: Vec::new(),
-            vars: Vec::new(),
-            stmts: vec![IrStmt::Contrib {
-                nature: IrNature::Flow("I".into()),
-                plus: "p".into(),
-                minus: "n".into(),
-                expr: IrExpr::BranchAccess {
-                    access: "I".into(),
-                    plus: "p".into(),
-                    minus: "n".into(),
-                },
-                kind: ContribKind::Resistive,
-            }],
-        }),
-        digital: None,
-        functions: Vec::new(),
-    });
-    prog.modules.push(IrModule {
-        name: "top".into(),
-        ports: vec![
-            IrPort { name: "a".into(), direction: IrDirection::Inout, discipline: Some("Electrical".into()) },
-            IrPort { name: "b".into(), direction: IrDirection::Inout, discipline: Some("Electrical".into()) },
-        ],
-        params: Vec::new(),
-        wires: Vec::new(),
-        branches: Vec::new(),
-        events: Vec::new(),
-        vars: Vec::new(),
-        grounds: Vec::new(),
-        instances: vec![IrInstance {
-            label: "u1".into(),
-            module: "vsource".into(),
-            connections: vec![
-                IrConnection { port: Some("p".into()), net: "a".into() },
-                IrConnection { port: Some("n".into()), net: "b".into() },
-            ],
-            params: Vec::new(),
+    let mut prog = IrProgram::new(Source::Ams);
+    let mut module_vsource = IrModule::new("vsource");
+    let node_p = module_vsource.symbols.add_node("p", Domain::Analog);
+    let node_n = module_vsource.symbols.add_node("n", Domain::Analog);
+    module_vsource.ports = vec![
+        IrPort { node: node_p, direction: IrDirection::Inout },
+        IrPort { node: node_n, direction: IrDirection::Inout },
+    ];
+    let nature_i = module_vsource.symbols.add_nature("I", NatureKind::Flow);
+    // Deliberately invalid: references StateId(99) which doesn't exist.
+    // This must produce a validation error that propagates through from_ir.
+    module_vsource.analog = Some(IrAnalogBody {
+        states: Vec::new(),
+        noise: Vec::new(),
+        stmts: vec![IrStmt::Contrib {
+            nature: nature_i,
+            plus: node_p,
+            minus: node_n,
+            expr: IrExpr::Real(1.0),
+            kind: ContribKind::Reactive(StateId(99)),
         }],
-        connections: Vec::new(),
-        continuous_assigns: Vec::new(),
-        analog: None,
-        digital: None,
-        functions: Vec::new(),
     });
+    prog.modules.push(module_vsource);
+
+    let mut module_top = IrModule::new("top");
+    let node_a = module_top.symbols.add_node("a", Domain::Analog);
+    let node_b = module_top.symbols.add_node("b", Domain::Analog);
+    module_top.ports = vec![
+        IrPort { node: node_a, direction: IrDirection::Inout },
+        IrPort { node: node_b, direction: IrDirection::Inout },
+    ];
+    module_top.instances = vec![IrInstance {
+        label: "u1".into(),
+        module: "vsource".into(),
+        connections: vec![node_a, node_b],
+        params: Vec::new(),
+    }];
+    prog.modules.push(module_top);
     let err = from_ir(&prog, "top").err().expect("top with bad child must fail");
     assert!(err.contains("u1"), "A.6: error should name instance u1, got: {err}");
     assert!(err.contains("vsource"), "A.6: error should name module vsource, got: {err}");
@@ -240,11 +178,11 @@ fn d5_user_fn_inlined_at_call_site_in_contribution() {
     let ir = ppr_to_ir(&elab);
     let dev = ir_analog_to_device(&ir, "Resistor").expect("D.5: user-fn inlining must compile");
     let params = [1.0e3_f64];
-    let v = [0.5, 0.0];
-    let mut rhs = [0.0; 2];
-    dev.eval_residual(&v, &params, &SimCtx::default(), &mut rhs);
+    let v = [0.5_f64, 0.0_f64];
+    let mut rhs = [0.0_f64; 2];
+    dev.eval_residual(&v, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut rhs);
     let expected = 2.0 * 0.5 / 1.0e3;
-    assert!((rhs[0] - expected).abs() < 1e-9);
+    assert!((rhs[0] - expected).abs() < 1e-9_f64);
 }
 
 #[test]
@@ -259,10 +197,10 @@ fn d5_user_fn_call_to_nonbuiltin_is_inlined_not_silently_zero() {
     let ir = ppr_to_ir(&elab);
     let dev = ir_analog_to_device(&ir, "Gain").expect("D.5: user fn must compile");
     let params = [2.0_f64];
-    let v = [0.5, 0.0];
-    let mut rhs = [0.0; 2];
-    dev.eval_residual(&v, &params, &SimCtx::default(), &mut rhs);
-    assert!((rhs[0] - 1.0).abs() < 1e-9);
+    let v = [0.5_f64, 0.0_f64];
+    let mut rhs = [0.0_f64; 2];
+    dev.eval_residual(&v, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut rhs);
+    assert!((rhs[0] - 1.0_f64).abs() < 1e-9_f64);
 }
 
 #[test]
@@ -294,9 +232,9 @@ fn d5_spec_diode_with_user_fn_compiles() {
     let ir = ppr_to_ir(&elab);
     let dev = ir_analog_to_device(&ir, "Diode").expect("Diode compiles");
     let params = [1.0e-14_f64, 300.0_f64];
-    let v = [0.5, 0.0];
-    let mut rhs = [0.0; 2];
-    dev.eval_residual(&v, &params, &SimCtx::default(), &mut rhs);
+    let v = [0.5_f64, 0.0_f64];
+    let mut rhs = [0.0_f64; 2];
+    dev.eval_residual(&v, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut rhs);
     let vt: f64 = 8.617e-5 * 300.0;
     let expected: f64 = 1.0e-14_f64 * ((0.5_f64 / vt).exp() - 1.0);
     assert!((rhs[0] - expected).abs() < 1e-9);
@@ -316,14 +254,14 @@ fn d2_idt_in_contribution_compiles_with_reactive_support() {
     let dev = ir_analog_to_device(&ir, "Inductor").expect("D.2: idt must compile");
     assert!(dev.has_reactive(), "D.2: idt must produce reactive contributions");
     let params = [1.0e-6_f64];
-    let v = [0.5, 0.0];
-    let mut rhs = [0.0; 2];
-    dev.eval_residual(&v, &params, &SimCtx::default(), &mut rhs);
-    assert!(rhs[0].abs() < 1e-12, "D.2: DC residual near 0, got {}", rhs[0]);
-    let mut q = [0.0; 2];
-    dev.eval_charge(&v, &params, &SimCtx::default(), &mut q);
+    let v = [0.5_f64, 0.0_f64];
+    let mut rhs = [0.0_f64; 2];
+    dev.eval_residual(&v, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut rhs);
+    assert!(rhs[0].abs() < 1e-12_f64, "D.2: DC residual near 0, got {}", rhs[0]);
+    let mut q = [0.0_f64; 2];
+    dev.eval_charge(&v, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut q);
     let expected = 0.5 / 1.0e-6;
-    assert!((q[0] - expected).abs() < 1e-3 * expected, "D.2: charge Q = V/L");
+    assert!((q[0] - expected).abs() < 1e-3_f64 * expected, "D.2: charge Q = V/L");
 }
 
 // ── D.1 — voltage force V(p,n) <- expr ─────────────────────────────────────
@@ -338,12 +276,12 @@ fn d1_voltage_force_compiles_with_force_residual() {
     let elab = parse_and_elaborate(src).expect("VSource parses");
     let ir = ppr_to_ir(&elab);
     let dev = ir_analog_to_device(&ir, "VSource").expect("D.1: VSource compiles");
-    assert!(dev.has_force(), "D.1: must have force function");
+    assert!(dev.num_forces() > 0, "D.1: must have force function");
     let params = [1.5_f64];
-    let v = [1.2, 0.4];
-    let mut rhs = [0.0; 1];
-    dev.eval_force(&v, &params, &SimCtx::default(), &mut rhs);
-    assert!((rhs[0] - (-0.7)).abs() < 1e-12, "D.1: force residual = {}", rhs[0]);
+    let v = [1.2_f64, 0.4_f64];
+    let mut rhs = [0.0_f64; 1];
+    dev.eval_force(&v, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut rhs);
+    assert!((rhs[0] - 1.5_f64).abs() < 1e-12_f64, "D.1: force E = dc = {}", rhs[0]);
 }
 
 #[test]
@@ -358,5 +296,14 @@ fn d1_op_amp_with_force_compiles() {
     let elab = parse_and_elaborate(src).expect("OpAmp parses");
     let ir = ppr_to_ir(&elab);
     let dev = ir_analog_to_device(&ir, "OpAmp").expect("D.1: OpAmp compiles");
-    assert!(dev.has_force(), "D.1: OpAmp must have force function");
+    assert!(dev.num_forces() > 0, "D.1: OpAmp must have force function");
+}
+
+fn ir_analog_to_device(
+    prog: &piperine_codegen::ir::IrProgram,
+    name: &str,
+) -> Result<std::sync::Arc<piperine_codegen::AnalogKernel>, piperine_codegen::CodegenError> {
+    let module = prog.module(name).ok_or_else(|| piperine_codegen::CodegenError::ModuleNotFound(name.into()))?;
+    let compiled = piperine_codegen::CompiledModule::compile(module)?;
+    compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).map(|a| a.clone())
 }

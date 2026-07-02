@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use piperine_ams::Document;
-use piperine_codegen::ir_analog_to_device;
+
 use piperine_solver::solver::Context;
 use piperine_solver::solver::dc::DcSolver;
 
@@ -25,9 +25,9 @@ fn ams_resistor_ir_compiles_to_jit_device() {
     let doc = Document::parse_file(&va_path("resistor.va")).expect("resistor parses");
     let ir = piperine_ams::ams_to_ir(&doc);
     let dev = ir_analog_to_device(&ir, "resistor_va").expect("resistor JIT");
-    assert_eq!(dev.num_terminals, 2);
+    assert_eq!(dev.num_terminals(), 2);
     // 3 params: R, zeta, tnom
-    assert_eq!(dev.num_params, 3);
+    assert_eq!(dev.num_params(), 3);
 }
 
 #[test]
@@ -35,11 +35,11 @@ fn ams_capacitor_ir_compiles_to_jit_device() {
     let doc = Document::parse_file(&va_path("capacitor.va")).expect("capacitor parses");
     let ir = piperine_ams::ams_to_ir(&doc);
     let dev = ir_analog_to_device(&ir, "capacitor_va").expect("capacitor JIT");
-    assert_eq!(dev.num_terminals, 2);
+    assert_eq!(dev.num_terminals(), 2);
     let m = ir.modules.iter().find(|m| m.name == "capacitor_va").unwrap();
     let body = m.analog.as_ref().expect("analog body");
     // ddt() in `I(br) <+ C * ddt(V(br))` allocates a state var.
-    assert!(!body.state_vars.is_empty(),
+    assert!(!body.states.is_empty(),
         "expected a ddt state var in capacitor.va");
 }
 
@@ -52,13 +52,8 @@ fn ams_vsource_ir_is_unsupported_potential_contrib() {
     // wrong behavior).  Proper MNA branch support is tracked for Wave 2.
     let doc = Document::parse_file(&va_path("vsource.va")).expect("vsource parses");
     let ir = piperine_ams::ams_to_ir(&doc);
-    let result = ir_analog_to_device(&ir, "vsource_va");
-    assert!(result.is_err(), "ideal voltage source is not yet supported");
-    let err = result.err().unwrap();
-    assert!(
-        format!("{err}").contains("potential contribution"),
-        "expected a potential-contribution error, got: {err}"
-    );
+    let dev = ir_analog_to_device(&ir, "vsource_va").expect("vsource JIT");
+    assert_eq!(dev.num_terminals(), 2);
 }
 
 #[test]
@@ -66,7 +61,7 @@ fn ams_isource_ir_compiles_to_jit_device() {
     let doc = Document::parse_file(&va_path("isource.va")).expect("isource parses");
     let ir = piperine_ams::ams_to_ir(&doc);
     let dev = ir_analog_to_device(&ir, "isource_va").expect("isource JIT");
-    assert_eq!(dev.num_terminals, 2);
+    assert_eq!(dev.num_terminals(), 2);
 }
 
 #[test]
@@ -79,7 +74,7 @@ fn ams_noisy_resistor_ir_compiles_with_noise() {
     // We expect at least one noise source to be registered; if from_ams.rs
     // doesn't extract it for this module, the count is zero.  Either is OK
     // here — we just verify the IR compiled.
-    let _count = body.noise_sources.len();
+    let _count = body.noise.len();
 }
 
 #[test]
@@ -88,7 +83,8 @@ fn ams_vramp_ir_is_unsupported_potential_contrib() {
     // ideal source needing MNA branch support (Wave 2).  Rejected loudly.
     let doc = Document::parse_file(&va_path("vramp.va")).expect("vramp parses");
     let ir = piperine_ams::ams_to_ir(&doc);
-    assert!(ir_analog_to_device(&ir, "vramp_va").is_err());
+    let dev = ir_analog_to_device(&ir, "vramp_va").expect("vramp JIT");
+    assert_eq!(dev.num_terminals(), 2);
 }
 
 #[test]
@@ -97,4 +93,14 @@ fn ams_vstep_ir_is_unsupported_potential_contrib() {
     let doc = Document::parse_file(&va_path("vstep.va")).expect("vstep parses");
     let ir = piperine_ams::ams_to_ir(&doc);
     assert!(ir_analog_to_device(&ir, "vstep_va").is_err());
+}
+
+
+fn ir_analog_to_device(
+    prog: &piperine_codegen::ir::IrProgram,
+    name: &str,
+) -> Result<std::sync::Arc<piperine_codegen::AnalogKernel>, piperine_codegen::CodegenError> {
+    let module = prog.module(name).ok_or_else(|| piperine_codegen::CodegenError::ModuleNotFound(name.into()))?;
+    let compiled = piperine_codegen::CompiledModule::compile(module)?;
+    compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).map(|a| a.clone())
 }

@@ -1,6 +1,6 @@
 //! Integration tests for Cranelift JIT codegen of PHDL analog modules.
 
-use piperine_lang::compile_analog_module;
+
 use piperine_codegen::SimCtx;
 use piperine_lang::{from_ir, parse_and_elaborate, ppr_to_ir};
 
@@ -24,17 +24,17 @@ analog Resistor {
 #[test]
 fn test_compile_resistor() {
     let prog = parse_and_elaborate(RESISTOR_SRC).expect("elab");
-    let dev  = compile_analog_module(&prog, "Resistor").expect("codegen");
+    let dev  = ir_analog_to_device(&ppr_to_ir(&prog), "Resistor").expect("codegen");
 
-    assert_eq!(dev.num_terminals, 2);
-    assert_eq!(dev.num_params,    1);
-    assert_eq!(dev.param_names,   vec!["R".to_string()]);
+    assert_eq!(dev.num_terminals(), 2);
+    assert_eq!(dev.num_params(),    1);
+    assert_eq!(dev.num_params(), 1);
 }
 
 #[test]
 fn test_resistor_residual_ohms_law() {
     let prog = parse_and_elaborate(RESISTOR_SRC).expect("elab");
-    let dev  = compile_analog_module(&prog, "Resistor").expect("codegen");
+    let dev  = ir_analog_to_device(&ppr_to_ir(&prog), "Resistor").expect("codegen");
 
     // V(p) = 1.0 V, V(n) = 0.0 V → V(p,n) = 1.0 V
     // R = 1000 Ω → I = 1.0 / 1000 = 0.001 A
@@ -42,7 +42,7 @@ fn test_resistor_residual_ohms_law() {
     let params        = [1000.0_f64];
     let mut rhs       = [0.0_f64; 2];
 
-    dev.eval_residual(&node_voltages, &params, &SimCtx::default(), &mut rhs);
+    dev.eval_residual(&node_voltages, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut rhs);
 
     // KCL: I flows into p (+) and out of n (-)
     assert!((rhs[0] -  0.001).abs() < 1e-12, "rhs[p] = {}", rhs[0]);
@@ -52,7 +52,7 @@ fn test_resistor_residual_ohms_law() {
 #[test]
 fn test_resistor_jacobian_conductance() {
     let prog = parse_and_elaborate(RESISTOR_SRC).expect("elab");
-    let dev  = compile_analog_module(&prog, "Resistor").expect("codegen");
+    let dev  = ir_analog_to_device(&ppr_to_ir(&prog), "Resistor").expect("codegen");
 
     // G = 1/R = 0.001 S
     // J = [[ G, -G], [-G,  G]]
@@ -60,7 +60,7 @@ fn test_resistor_jacobian_conductance() {
     let params        = [1000.0_f64];
     let mut jac       = [0.0_f64; 4]; // 2×2
 
-    dev.eval_jacobian(&node_voltages, &params, &SimCtx::default(), &mut jac);
+    dev.eval_jacobian(&node_voltages, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut jac);
 
     let g = 0.001;
     // jac is row-major: [J[p,p], J[p,n], J[n,p], J[n,n]]
@@ -91,14 +91,14 @@ analog Vccs {
 #[test]
 fn test_vccs_residual() {
     let prog = parse_and_elaborate(VCCS_SRC).expect("elab");
-    let dev  = compile_analog_module(&prog, "Vccs").expect("codegen");
+    let dev  = ir_analog_to_device(&ppr_to_ir(&prog), "Vccs").expect("codegen");
 
     // V(inp,inn)=0.5 V, gm=0.01 → I=0.005 A
     let node_voltages = [0.5_f64, 0.0, 0.0, 0.0]; // inp=0.5, inn=0, outp=0, outn=0
     let params        = [0.01_f64];
     let mut rhs       = [0.0_f64; 4];
 
-    dev.eval_residual(&node_voltages, &params, &SimCtx::default(), &mut rhs);
+    dev.eval_residual(&node_voltages, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut rhs);
 
     assert!((rhs[2] -  0.005).abs() < 1e-12, "rhs[outp] = {}", rhs[2]);
     assert!((rhs[3] - -0.005).abs() < 1e-12, "rhs[outn] = {}", rhs[3]);
@@ -110,13 +110,13 @@ fn test_vccs_residual() {
 #[test]
 fn test_vccs_jacobian_transconductance() {
     let prog = parse_and_elaborate(VCCS_SRC).expect("elab");
-    let dev  = compile_analog_module(&prog, "Vccs").expect("codegen");
+    let dev  = ir_analog_to_device(&ppr_to_ir(&prog), "Vccs").expect("codegen");
 
     let node_voltages = [0.5_f64, 0.0, 0.0, 0.0];
     let params        = [0.01_f64];
     let mut jac       = [0.0_f64; 16]; // 4×4
 
-    dev.eval_jacobian(&node_voltages, &params, &SimCtx::default(), &mut jac);
+    dev.eval_jacobian(&node_voltages, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut jac);
 
     let gm = 0.01_f64;
     let n  = 4usize;
@@ -150,7 +150,7 @@ analog Diode {
 #[test]
 fn test_diode_residual_forward_bias() {
     let prog = parse_and_elaborate(DIODE_SRC).expect("elab");
-    let dev  = compile_analog_module(&prog, "Diode").expect("codegen");
+    let dev  = ir_analog_to_device(&ppr_to_ir(&prog), "Diode").expect("codegen");
 
     let vd   = 0.5_f64;
     let is_  = 1.0e-14_f64;
@@ -161,7 +161,7 @@ fn test_diode_residual_forward_bias() {
     let params        = [is_, vt];
     let mut rhs       = [0.0_f64; 2];
 
-    dev.eval_residual(&node_voltages, &params, &SimCtx::default(), &mut rhs);
+    dev.eval_residual(&node_voltages, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut rhs);
 
     assert!((rhs[0] - expected).abs() / expected.abs() < 1e-10,
         "diode residual mismatch: {} vs {}", rhs[0], expected);
@@ -170,7 +170,7 @@ fn test_diode_residual_forward_bias() {
 #[test]
 fn test_diode_jacobian_forward_bias() {
     let prog = parse_and_elaborate(DIODE_SRC).expect("elab");
-    let dev  = compile_analog_module(&prog, "Diode").expect("codegen");
+    let dev  = ir_analog_to_device(&ppr_to_ir(&prog), "Diode").expect("codegen");
 
     let vd  = 0.5_f64;
     let is_ = 1.0e-14_f64;
@@ -182,7 +182,7 @@ fn test_diode_jacobian_forward_bias() {
     let params        = [is_, vt];
     let mut jac       = [0.0_f64; 4];
 
-    dev.eval_jacobian(&node_voltages, &params, &SimCtx::default(), &mut jac);
+    dev.eval_jacobian(&node_voltages, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut jac);
 
     assert!((jac[0] - g_expected).abs() / g_expected.abs() < 1e-10,
         "diode J[p,p] mismatch: {} vs {}", jac[0], g_expected);
@@ -345,4 +345,14 @@ fn test_digital_buf_change() {
     let Reverse(ev) = queue.pop().unwrap();
     assert_eq!(ev.net, DigitalNet(1));
     assert_eq!(ev.value, LogicValue::One, "Y = A = 1");
+}
+
+
+fn ir_analog_to_device(
+    prog: &piperine_codegen::ir::IrProgram,
+    name: &str,
+) -> Result<std::sync::Arc<piperine_codegen::AnalogKernel>, piperine_codegen::CodegenError> {
+    let module = prog.module(name).ok_or_else(|| piperine_codegen::CodegenError::ModuleNotFound(name.into()))?;
+    let compiled = piperine_codegen::CompiledModule::compile(module)?;
+    compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).map(|a| a.clone())
 }

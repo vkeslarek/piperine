@@ -158,6 +158,29 @@ impl CircuitInstance {
         }
     }
 
+    /// Update all devices' cached analog voltages from a solution vector,
+    /// then run digital evaluation. Used by the DC solver's mixed-signal
+    /// convergence loop: after the analog solve converges, the digital
+    /// devices need to see the analog voltages (A2D bridge) and their
+    /// register updates need to propagate back (D2A bridge).
+    ///
+    /// Returns `true` if any digital output net changed value.
+    pub fn accept_and_run_digital(&mut self, solution: &[f64], ctx: &Context, t: f64) -> bool {
+        // Build a 1-row state buffer so `accept_timestep` can read voltages.
+        use ndarray::Array1;
+        let mut state = CircularArrayBuffer2::new(1, solution.len());
+        let row = Array1::from_vec(solution.to_vec());
+        state.push(&row.view());
+        for device in &mut self.devices {
+            device.accept_timestep(&state, ctx);
+        }
+
+        let before = self.digital_state.nets.clone();
+        self.run_digital_at(t);
+        let after = &self.digital_state.nets;
+        before != *after
+    }
+
     /// Initialize all digital devices and seed the `DigitalState` with t=0 events.
     ///
     /// Must be called once before the first [`run_digital_at`] call.  Collects

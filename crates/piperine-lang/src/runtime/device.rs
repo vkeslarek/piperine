@@ -14,7 +14,7 @@ use piperine_solver::math::linear::Stamp;
 use piperine_solver::solver::Context;
 
 use crate::runtime::digital::DigitalInterpreter;
-use piperine_codegen::{ir::IrExpr, IrNoise, JitAnalogDevice, SimCtx};
+use piperine_codegen::{ir::{IrExpr, IrNoise}, AnalogKernel, SimCtx};
 
 /// A noise source declaration carried by [`PhdlDevice`]. The PSD is
 /// stored as an [`IrExpr`] and evaluated at noise-analysis time against
@@ -39,7 +39,7 @@ struct StoredNoiseSource {
 pub struct PhdlDevice {
     name: String,
     /// JIT-compiled analog behavior; `None` if the module has no analog block.
-    analog: Option<Arc<JitAnalogDevice>>,
+    analog: Option<Arc<AnalogKernel>>,
     /// Interpreted digital behavior; `None` if the module has no digital block.
     digital: Option<DigitalInterpreter>,
     /// Per-terminal netlist references (None for GND terminals).
@@ -69,7 +69,7 @@ impl PhdlDevice {
     /// and optional digital interpreter.
     pub fn new(
         name: impl Into<String>,
-        analog: Option<Arc<JitAnalogDevice>>,
+        analog: Option<Arc<AnalogKernel>>,
         digital: Option<DigitalInterpreter>,
         node_refs: Vec<Option<AnalogReference>>,
         params: Vec<f64>,
@@ -211,8 +211,8 @@ impl PhdlDevice {
         let mut res = vec![0.0; n];
         let mut jac = vec![0.0; n * n];
         if let Some(a) = &self.analog {
-            a.eval_residual(node_voltages, &self.params, &self.sim_ctx, &mut res);
-            a.eval_jacobian(node_voltages, &self.params, &self.sim_ctx, &mut jac);
+            a.eval_residual(node_voltages, &self.params, &[], &[], &self.sim_ctx, &mut res);
+            a.eval_jacobian(node_voltages, &self.params, &[], &[], &self.sim_ctx, &mut jac);
         }
         (res, jac)
     }
@@ -287,7 +287,7 @@ impl PhdlDevice {
     /// Load complex stamps for AC analysis: conductive Jacobian (real) plus
     /// reactive charge Jacobian times `jω` (imaginary).
     fn load_analog_ac(&self, get_v: &dyn Fn(usize) -> f64, omega: f64) -> Vec<Stamp<AnalogReference, Complex64>> {
-        let analog = match &self.analog {
+        let analog: &Arc<AnalogKernel> = match &self.analog {
             Some(a) => a,
             None => return Vec::new(),
         };
@@ -299,7 +299,7 @@ impl PhdlDevice {
         if analog.has_reactive() {
             let n = self.num_terminals();
             let mut qjac = vec![0.0; n * n];
-            analog.eval_charge_jacobian(&node_voltages, &self.params, &self.sim_ctx, &mut qjac);
+            analog.eval_charge_jacobian(&node_voltages, &self.params, &[], &[], &self.sim_ctx, &mut qjac);
             for i in 0..n {
                 for j in 0..n {
                     let v = qjac[i * n + j];
@@ -323,7 +323,7 @@ impl PhdlDevice {
     /// (`jac · V_prev`), since the device is linearised at the previously
     /// accepted solution.
     fn load_analog_transient(&self, get_v: &dyn Fn(usize) -> f64, alpha: f64) -> Vec<Stamp<AnalogReference, f64>> {
-        let analog = match &self.analog {
+        let analog: &Arc<AnalogKernel> = match &self.analog {
             Some(a) => a,
             None => return Vec::new(),
         };
@@ -332,7 +332,7 @@ impl PhdlDevice {
         if analog.has_reactive() {
             let n = self.num_terminals();
             let mut qjac = vec![0.0; n * n];
-            analog.eval_charge_jacobian(&node_voltages, &self.params, &self.sim_ctx, &mut qjac);
+            analog.eval_charge_jacobian(&node_voltages, &self.params, &[], &[], &self.sim_ctx, &mut qjac);
             for k in 0..n * n {
                 jac[k] += alpha * qjac[k];
             }
@@ -515,15 +515,14 @@ fn eval_psd(
         IrExpr::Real(v) => *v,
         IrExpr::Int(v) => *v as f64,
         IrExpr::Bool(b) => if *b { 1.0 } else { 0.0 },
-        IrExpr::Param(name) => dev.param_names
-            .iter()
-            .position(|n| n == name)
-            .and_then(|i| dev.params.get(i).copied())
+        IrExpr::Param(id) => dev.params
+            .get(id.0 as usize)
+            .copied()
             .unwrap_or(0.0),
         IrExpr::Var(_) => 0.0, // TODO: thread var slot through `PhdlDevice`
         IrExpr::Sim(sq) => match sq {
             SimQuery::Temperature => dev.sim_ctx.temperature,
-            SimQuery::Vt(_) => dev.sim_ctx.temperature * SimCtx::K_B_OVER_Q_EV_PER_K,
+            SimQuery::Vt(_) => dev.sim_ctx.temperature * SimCtx::K_B_OVER_Q,
             SimQuery::Abstime => dev.sim_ctx.abstime,
             SimQuery::Mfactor => dev.sim_ctx.mfactor,
             SimQuery::Simparam { key, default } => match key.as_str() {
@@ -533,19 +532,10 @@ fn eval_psd(
             },
             _ => 0.0,
         },
-        IrExpr::BranchAccess { access, plus, minus } => {
-            // The `plus`/`minus` strings here name the source's own
-            // terminals. We can't resolve them by name without the
-            // `terminal_names` table being consistent — instead, the
-            // caller has already resolved them to `v_plus`/`v_minus`. Use
-            // those values regardless of the IR's `plus`/`minus` strings
-            // (a slight overspecification that matches the "this PSD
-            // reads the source's own branch" intent).
-            if access != "V" { return 0.0; }
-            let _ = (plus, minus);
+        IrExpr::Branch { .. } => {
             v_plus - v_minus
         }
-        IrExpr::StateRef(_) => 0.0,
+        IrExpr::State(_) => 0.0,
         IrExpr::Unary(op, x) => {
             let xv = eval_psd(x, dev, dc_point, v_plus, v_minus);
             match op {
@@ -574,7 +564,7 @@ fn eval_psd(
                 eval_psd(f, dev, dc_point, v_plus, v_minus)
             }
         }
-        IrExpr::Call(name, args) => {
+        IrExpr::MathCall(name, args) => {
             let vs: Vec<f64> = args.iter()
                 .map(|a| eval_psd(a, dev, dc_point, v_plus, v_minus))
                 .collect();
@@ -591,6 +581,7 @@ fn eval_psd(
                 _ => 0.0,
             }
         }
+        IrExpr::Call(_, _) => 0.0,
         _ => 0.0,
     }
 }

@@ -18,8 +18,8 @@
 use std::collections::HashMap;
 
 use crate::ir::{
-    ContribKind, IrExpr, IrModule, IrStateKind, IrStmt, Lval, NatureId, NatureKind, NodeId,
-    Pattern, Severity, StateId, Trit, VarId,
+    ContribKind, EventSource, IrExpr, IrModule, IrStateKind, IrStmt, Lval, NatureId, NatureKind,
+    NodeId, Pattern, Severity, StateId, Trit, VarId,
 };
 
 use super::CodegenError;
@@ -342,10 +342,21 @@ pub struct AnalogFlattener<'m> {
 
 impl<'m> AnalogFlattener<'m> {
     pub fn new(module: &'m IrModule) -> Self {
+        let mut scope = Scope::new();
+        // Pre-populate the scope with module-level persistent vars (SPEC
+        // §I.15, §9): these survive across evaluations. In a mixed-signal
+        // module the analog body reads digital register values through
+        // this path (the D2A bridge). Each var maps to `IrExpr::Var(id)`
+        // — an external read the JIT services from the vars bank. If the
+        // analog body assigns the var (sequential binding), that
+        // assignment overwrites this entry.
+        for (id, _) in module.symbols.vars() {
+            scope.declare(id, Some(IrExpr::Var(id)));
+        }
         Self {
             module,
             inliner: Inliner::new(module),
-            scope: Scope::new(),
+            scope,
             out: FlatAnalog::default(),
             potential_acc: Vec::new(),
         }
@@ -441,10 +452,36 @@ impl<'m> AnalogFlattener<'m> {
                 }
                 IrStmt::Discontinuity(_) => {}
                 IrStmt::AnalogEvent(event) => {
-                    return Err(CodegenError::unsupported(format!(
-                        "analog event `{:?}` lowering is not implemented yet",
-                        event.source
-                    )));
+                    match &event.source {
+                        EventSource::InitialStep => {
+                            // `@ initial` — the body sets initial conditions
+                            // (forces, contributions) that apply at t=0.
+                            // Walk the body as regular statements so the
+                            // forces/contributions are collected.
+                            self.walk(&event.body, None)?;
+                        }
+                        EventSource::FinalStep => {
+                            // `@ final` — the body runs at simulation end.
+                            // Nothing to compile into the continuous kernel
+                            // (no effect on the residual/Jacobian).
+                        }
+                        EventSource::Cross { .. } | EventSource::Above { .. } | EventSource::Timer { .. } => {
+                            // Cross/above/timer events are runtime-triggered:
+                            // the device detects the crossing/threshold and
+                            // executes the body. An empty body is a no-op
+                            // (common in tests that just declare the event).
+                            // A non-empty body needs runtime event support
+                            // (not yet implemented); for now we skip it so
+                            // the module compiles, and the event's effect is
+                            // absent at runtime.
+                            if !event.body.is_empty() {
+                                self.out.diagnostics.push(FlatDiagnostic {
+                                    severity: Severity::Warn,
+                                    format: "analog cross/above/timer event body is not yet executed at runtime".into(),
+                                });
+                            }
+                        }
+                    }
                 }
                 IrStmt::Finish => {
                     return Err(CodegenError::unsupported("$finish in an analog body"));
@@ -504,21 +541,44 @@ impl<'m> AnalogFlattener<'m> {
         expr: &IrExpr,
         guard: Option<&IrExpr>,
     ) -> Result<(), CodegenError> {
-        if guard.is_some() {
-            return Err(CodegenError::unsupported(
-                "conditional force (`<-` under if/match) — the branch topology cannot change per-path",
-            ));
-        }
         let resolved = resolve_expr(expr, &self.scope, &mut self.inliner)?;
         match self.module.symbols.nature(nature).kind {
             NatureKind::Potential => {
+                if let Some(g) = guard {
+                    // Conditional potential force — a switch branch (SPEC
+                    // §10.2). The ideal `V(a,b) <- expr` under guard `g`
+                    // cannot conditionally add/remove an MNA branch.
+                    // Use the finite-parameter approximation: model the
+                    // switch as a variable conductance (Thevenin equiv).
+                    //
+                    //   I(a,b) <+ Select(g, G_LARGE, G_MIN) * (V(a,b) − expr)
+                    //
+                    // g=true:  I = G_LARGE * (V − expr) ≈ V = expr (closed)
+                    // g=false: I = G_MIN * (V − expr)   ≈ I = 0    (open)
+                    const GMIN: f64 = 1e-12;
+                    const G_LARGE: f64 = 1.0 / GMIN;
+                    let branch = IrExpr::Branch { nature, plus, minus };
+                    let v_minus_expr = IrExpr::binary(crate::ir::IrBinOp::Sub, branch, resolved);
+                    let conductance = IrExpr::Select(
+                        Box::new(g.clone()),
+                        Box::new(IrExpr::Real(G_LARGE)),
+                        Box::new(IrExpr::Real(GMIN)),
+                    );
+                    let switch_expr =
+                        IrExpr::binary(crate::ir::IrBinOp::Mul, conductance, v_minus_expr);
+                    return self.add_flow(switch_expr, plus, minus, ContribKind::Resistive);
+                }
                 let expr = self.finish_expr(resolved)?;
                 self.out.forces.push(FlatForce { plus, minus, expr });
                 Ok(())
             }
-            // A flow force is a single-driver current source: same stamp as a
-            // flow contribution.
-            NatureKind::Flow => self.add_flow(resolved, plus, minus, ContribKind::Resistive),
+            NatureKind::Flow => {
+                if let Some(g) = guard {
+                    let guarded = IrExpr::select(g.clone(), resolved, IrExpr::Real(0.0));
+                    return self.add_flow(guarded, plus, minus, ContribKind::Resistive);
+                }
+                self.add_flow(resolved, plus, minus, ContribKind::Resistive)
+            }
         }
     }
 

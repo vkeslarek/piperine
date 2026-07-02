@@ -1,0 +1,14 @@
+
+discipline Electrical { potential v : Real; flow i : Real; }
+discipline Bit { storage Boolean; }
+mod Dac ( input clk : Bit, input d_in : Bit, inout out : Electrical ) {
+    param vhigh : Real = 1.8;
+    param vlow : Real = 0.0;
+}
+analog Dac {
+    var vout : Real = vlow;
+    if (d_in == 1) {
+        vout = vhigh;
+    }
+    V(out) <- vout;
+}

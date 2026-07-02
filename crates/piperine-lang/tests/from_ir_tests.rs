@@ -6,7 +6,7 @@
 //! produces a [`CircuitInstance`] ready for the solver.
 
 use piperine_lang::{from_ir, parse_and_elaborate, ppr_to_ir};
-use piperine_codegen::IrProgram;
+use piperine_codegen::ir::IrProgram;
 use piperine_solver::circuit::CircuitInstance;
 
 #[test]
@@ -52,4 +52,14 @@ fn from_ir_unknown_top_returns_err() {
     let elab = parse_and_elaborate(src).expect("PHDL parses");
     let ir = ppr_to_ir(&elab);
     assert!(from_ir(&ir, "no-such-module").is_err());
+}
+
+
+fn ir_analog_to_device(
+    prog: &piperine_codegen::ir::IrProgram,
+    name: &str,
+) -> Result<std::sync::Arc<piperine_codegen::AnalogKernel>, piperine_codegen::CodegenError> {
+    let module = prog.module(name).ok_or_else(|| piperine_codegen::CodegenError::ModuleNotFound(name.into()))?;
+    let compiled = piperine_codegen::CompiledModule::compile(module)?;
+    compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).map(|a| a.clone())
 }

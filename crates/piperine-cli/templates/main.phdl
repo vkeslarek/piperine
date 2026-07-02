@@ -1,0 +1,32 @@
+// Piperine PHDL Mixed-Signal Hello World!
+//
+// This example showcases a module that bridges the continuous (analog)
+// and discrete (digital) domains in both directions.
+
+mod MixedSignalHelloWorld (
+    inout analog_p : Electrical,
+    inout analog_n : Electrical,
+    input digital_in : Bit,
+    output digital_out : Bit
+) {
+    // Parameters for our mixed-signal thresholds
+    param threshold : Real = 1.65;
+    param vhigh : Real = 3.3;
+    param vlow : Real = 0.0;
+}
+
+// 1. Digital to Analog (DAC) behavior
+analog MixedSignalHelloWorld {
+    // Drive the differential analog voltage based on the digital_in bit
+    var vout : Real = vlow;
+    if (digital_in == 1) {
+        vout = vhigh;
+    }
+    V(analog_p, analog_n) <- vout;
+}
+
+// 2. Analog to Digital (ADC / Comparator) behavior
+digital MixedSignalHelloWorld {
+    // Continuously read the analog voltage and output a bit if it exceeds the threshold
+    digital_out <- (V(analog_p, analog_n) > threshold);
+}

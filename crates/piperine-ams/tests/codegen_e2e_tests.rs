@@ -259,7 +259,7 @@ fn e2e_ams_all_boilerplate_compiles() {
             // For each module, try compiling an analog device.
             for m in &ir.modules {
                 if m.analog.is_some() {
-                    let dev = piperine_codegen::ir_analog_to_device(&ir, &m.name);
+                    let dev = ir_analog_to_device(&ir, &m.name);
                     if dev.is_err() {
                         eprintln!("compile {name}/{}: skipped (incomplete lowering): {:?}", m.name, dev.err());
                     }
@@ -278,7 +278,17 @@ fn e2e_ams_vsource_va_is_unsupported_today() {
     let doc = Document::parse_file(&va_path("vsource.va")).expect("vsource parses");
     let ir = ams_to_ir(&doc);
     let analog_module = ir.modules.iter().find(|m| m.analog.is_some()).unwrap();
-    let result = piperine_codegen::ir_analog_to_device(&ir, &analog_module.name);
+    let result = ir_analog_to_device(&ir, &analog_module.name);
     assert!(result.is_err(), "ideal voltage source not yet supported");
     assert!(format!("{}", result.err().unwrap()).contains("potential contribution"));
+}
+
+
+fn ir_analog_to_device(
+    prog: &piperine_codegen::ir::IrProgram,
+    name: &str,
+) -> Result<std::sync::Arc<piperine_codegen::AnalogKernel>, piperine_codegen::CodegenError> {
+    let module = prog.module(name).ok_or_else(|| piperine_codegen::CodegenError::ModuleNotFound(name.into()))?;
+    let compiled = piperine_codegen::CompiledModule::compile(module)?;
+    compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).map(|a| a.clone())
 }

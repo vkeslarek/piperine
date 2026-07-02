@@ -8,7 +8,7 @@
 //! Jacobian conductance against the closed-form expectation.
 
 use piperine_ams::Document;
-use piperine_codegen::{ir_analog_to_device, IrProgram, SimCtx};
+use piperine_codegen::{ir::IrProgram, SimCtx};
 
 /// Parse a Verilog-A snippet and lower it to IR.
 fn ir(src: &str) -> IrProgram {
@@ -44,7 +44,7 @@ fn diode_exponential_iv_residual_and_jacobian() {
     let v = [0.5, 0.0]; // V(a,c) = 0.5
 
     let mut rhs = [0.0; 2];
-    dev.eval_residual(&v, &params, &SimCtx::default(), &mut rhs);
+    dev.eval_residual(&v, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut rhs);
     let i_expected = is_sat * ((0.5 / vt).exp() - 1.0);
     assert!(close(rhs[0], i_expected), "I(a) = {}, want {i_expected}", rhs[0]);
     assert!(close(rhs[1], -i_expected), "I(c) = {}, want {}", rhs[1], -i_expected);
@@ -52,7 +52,7 @@ fn diode_exponential_iv_residual_and_jacobian() {
 
     // dI/dV = is_sat/vt * exp(V/vt)
     let mut jac = [0.0; 4];
-    dev.eval_jacobian(&v, &params, &SimCtx::default(), &mut jac);
+    dev.eval_jacobian(&v, &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut jac);
     let g = is_sat / vt * (0.5 / vt).exp();
     assert!(close(jac[0], g), "dI(a)/dV(a) = {}, want {g}", jac[0]);
     assert!(close(jac[1], -g), "dI(a)/dV(c) = {}, want {}", jac[1], -g);
@@ -80,12 +80,12 @@ fn ternary_piecewise_resistor_selects_correct_branch() {
 
     // Forward bias: V >= 0 → on-conductance branch.
     let mut rhs = [0.0; 2];
-    dev.eval_residual(&[0.4, 0.0], &params, &SimCtx::default(), &mut rhs);
+    dev.eval_residual(&[0.4, 0.0], &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut rhs);
     assert!(close(rhs[0], 0.4 * gon), "forward I = {}, want {}", rhs[0], 0.4 * gon);
 
     // Reverse bias: V < 0 → off-conductance branch.
     let mut rhs2 = [0.0; 2];
-    dev.eval_residual(&[-0.4, 0.0], &params, &SimCtx::default(), &mut rhs2);
+    dev.eval_residual(&[-0.4, 0.0], &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut rhs2);
     assert!(close(rhs2[0], -0.4 * goff), "reverse I = {}, want {}", rhs2[0], -0.4 * goff);
 
     // Crucially, neither branch is the old silent 0.0.
@@ -93,7 +93,7 @@ fn ternary_piecewise_resistor_selects_correct_branch() {
 
     // Jacobian picks up the selected branch's conductance.
     let mut jac = [0.0; 4];
-    dev.eval_jacobian(&[0.4, 0.0], &params, &SimCtx::default(), &mut jac);
+    dev.eval_jacobian(&[0.4, 0.0], &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut jac);
     assert!(close(jac[0], gon), "forward dI/dV = {}, want {gon}", jac[0]);
 }
 
@@ -117,7 +117,7 @@ fn power_law_contribution_uses_pow_not_add() {
     let vv = 0.7;
 
     let mut rhs = [0.0; 2];
-    dev.eval_residual(&[vv, 0.0], &params, &SimCtx::default(), &mut rhs);
+    dev.eval_residual(&[vv, 0.0], &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut rhs);
     let i_expected = k * vv.powi(2);
     assert!(close(rhs[0], i_expected), "I = {}, want {i_expected}", rhs[0]);
     // Old code: k * (V + 2) = 3e-3 * 2.7 = 8.1e-3, very different from 1.47e-3.
@@ -125,6 +125,16 @@ fn power_law_contribution_uses_pow_not_add() {
 
     // dI/dV = 2*k*V
     let mut jac = [0.0; 4];
-    dev.eval_jacobian(&[vv, 0.0], &params, &SimCtx::default(), &mut jac);
+    dev.eval_jacobian(&[vv, 0.0], &params, &vec![0.0; dev.num_state_slots()], &[], &SimCtx::default(), &mut jac);
     assert!(close(jac[0], 2.0 * k * vv), "dI/dV = {}, want {}", jac[0], 2.0 * k * vv);
+}
+
+
+fn ir_analog_to_device(
+    prog: &piperine_codegen::ir::IrProgram,
+    name: &str,
+) -> Result<std::sync::Arc<piperine_codegen::AnalogKernel>, piperine_codegen::CodegenError> {
+    let module = prog.module(name).ok_or_else(|| piperine_codegen::CodegenError::ModuleNotFound(name.into()))?;
+    let compiled = piperine_codegen::CompiledModule::compile(module)?;
+    compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).map(|a| a.clone())
 }

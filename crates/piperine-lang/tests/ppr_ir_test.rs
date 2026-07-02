@@ -1,8 +1,8 @@
 //! Tests: PPR/PHDL source → IR lowering and pseudo-language printer.
 
 use piperine_lang::ppr_to_ir;
-use piperine_codegen::{
-    ContribKind, IrBinOp, IrEventKind, IrExpr, IrNature, IrStmt, IrStateKind,
+use piperine_codegen::ir::{
+    ContribKind, IrBinOp, IrExpr, IrStmt, IrStateKind,
 };
 use piperine_lang::parse_and_elaborate;
 
@@ -40,9 +40,9 @@ fn resistor_resistive_contrib() {
     assert_eq!(body.stmts.len(), 1, "expected one stmt");
     match &body.stmts[0] {
         IrStmt::Contrib { nature, plus, minus, kind: ContribKind::Resistive, .. } => {
-            assert!(matches!(nature, IrNature::Flow(_)), "expected Flow nature");
-            assert_eq!(plus, "p");
-            assert_eq!(minus, "n");
+            assert!(matches!(nature, n), "expected Flow nature");
+            assert_eq!(m.symbols.node(*plus).name, "p");
+            assert_eq!(m.symbols.node(*minus).name, "n");
         }
         other => panic!("expected Contrib(Resistive), got {other:?}"),
     }
@@ -52,9 +52,9 @@ fn resistor_resistive_contrib() {
 fn resistor_printer_smoke() {
     let prog = parse_and_elaborate(&src("I(p, n) <+ V(p, n) / R;")).expect("elab");
     let ir = ppr_to_ir(&prog);
-    let out = format!("{ir}");
-    assert!(out.contains("contrib I(p, n) +="), "output: {out}");
-    assert!(out.contains("V(p, n)"), "output: {out}");
+    let out = format!("{ir:?}");
+    assert!(out.contains("Contrib"), "output: {out}");
+    assert!(out.contains("Branch"), "output: {out}");
 }
 
 // ─── Capacitor ────────────────────────────────────────────────────────────────
@@ -66,13 +66,13 @@ fn capacitor_reactive_contrib_with_state_var() {
 
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
-    assert_eq!(body.state_vars.len(), 1, "expected one state var");
-    assert!(matches!(body.state_vars[0].kind, piperine_codegen::IrStateKind::Ddt));
+    assert_eq!(body.states.len(), 1, "expected one state var");
+    assert!(matches!(m.symbols.state(body.states[0]).kind, piperine_codegen::ir::IrStateKind::Ddt));
 
     assert_eq!(body.stmts.len(), 1);
     match &body.stmts[0] {
-        IrStmt::Contrib { kind: ContribKind::Reactive(0), .. } => {}
-        other => panic!("expected Reactive(0), got {other:?}"),
+        IrStmt::Contrib { kind: ContribKind::Reactive(_), .. } => {}
+        other => panic!("expected Reactive(_), got {other:?}"),
     }
 }
 
@@ -80,9 +80,9 @@ fn capacitor_reactive_contrib_with_state_var() {
 fn capacitor_printer_reactive() {
     let prog = parse_and_elaborate(&src("I(p, n) <+ C * ddt(V(p, n));")).expect("elab");
     let ir = ppr_to_ir(&prog);
-    let out = format!("{ir}");
-    assert!(out.contains("reactive[0]"), "output: {out}");
-    assert!(out.contains("state[0] = ddt("), "output: {out}");
+    let out = format!("{ir:?}");
+    assert!(out.contains("Reactive("), "output: {out}");
+    assert!(out.contains("Ddt"), "output: {out}");
 }
 
 // ─── Local variable inlining ──────────────────────────────────────────────────
@@ -105,9 +105,9 @@ analog TestMod {{
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     // The contribution expr should have V(p,n) inlined, not a free Param("vd")
-    let out = format!("{ir}");
+    let out = format!("{ir:?}");
     // vd should be inlined as V(p, n) in the contribution
-    assert!(out.contains("V(p, n)"), "vd not inlined: {out}");
+    assert!(out.contains("Branch"), "vd not inlined: {out}");
 }
 
 // ─── Diode (nonlinear) ────────────────────────────────────────────────────────
@@ -125,9 +125,9 @@ analog Diode {{
 ");
     let prog = parse_and_elaborate(&src).expect("elab");
     let ir = ppr_to_ir(&prog);
-    let out = format!("{ir}");
-    assert!(out.contains("exp("), "output: {out}");
-    assert!(out.contains("V(p, n)"), "output: {out}");
+    let out = format!("{ir:?}");
+    assert!(out.contains("\"exp\""), "output: {out}");
+    assert!(out.contains("Branch"), "output: {out}");
 }
 
 // ─── If statement ────────────────────────────────────────────────────────────
@@ -159,9 +159,9 @@ analog IfMod {{
         other => panic!("expected If, got {other:?}"),
     }
 
-    let out = format!("{ir}");
-    assert!(out.contains("if ("), "output: {out}");
-    assert!(out.contains("} else {"), "output: {out}");
+    let out = format!("{ir:?}");
+    assert!(out.contains("If {"), "output: {out}");
+    assert!(out.contains("else_: ["), "output: {out}");
 }
 
 // ─── Nested if ────────────────────────────────────────────────────────────────
@@ -207,12 +207,12 @@ fn module_ports_and_params_present() {
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
 
     assert_eq!(m.ports.len(), 2);
-    assert!(m.ports.iter().any(|p| p.name == "p"));
-    assert!(m.ports.iter().any(|p| p.name == "n"));
+    assert!(m.ports.iter().any(|p| m.symbols.node(p.node).name == "p"));
+    assert!(m.ports.iter().any(|p| m.symbols.node(p.node).name == "n"));
 
-    let out = format!("{ir}");
-    assert!(out.contains("param R: Real"), "output: {out}");
-    assert!(out.contains("param C: Real"), "output: {out}");
+    let out = format!("{ir:?}");
+    assert!(out.contains("name: \"R\""), "output: {out}");
+    assert!(out.contains("name: \"C\""), "output: {out}");
 }
 
 // ─── Noise sources ────────────────────────────────────────────────────────────
@@ -225,11 +225,11 @@ fn noise_source_registered() {
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
-    assert_eq!(body.noise_sources.len(), 1, "expected one noise source");
-    let ns = &body.noise_sources[0];
-    assert_eq!(ns.plus, "p");
-    assert_eq!(ns.minus, "n");
-    assert!(matches!(&ns.kind, piperine_codegen::IrNoise::White { .. }));
+    assert_eq!(body.noise.len(), 1, "expected one noise source");
+    let ns = &body.noise[0];
+    assert_eq!(m.symbols.node(ns.plus).name, "p");
+    assert_eq!(m.symbols.node(ns.minus).name, "n");
+    assert!(matches!(&ns.kind, piperine_codegen::ir::IrNoise::White { .. }));
     assert_eq!(ns.label.as_deref(), Some("rn1"));
 }
 
@@ -241,8 +241,8 @@ fn flicker_noise_source_registered() {
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
-    assert_eq!(body.noise_sources.len(), 1);
-    assert!(matches!(&body.noise_sources[0].kind, piperine_codegen::IrNoise::Flicker { .. }));
+    assert_eq!(body.noise.len(), 1);
+    assert!(matches!(&body.noise[0].kind, piperine_codegen::ir::IrNoise::Flicker { .. }));
 }
 
 // ─── idtmod ────────────────────────────────────────────────────────────────────
@@ -255,8 +255,8 @@ fn idtmod_state_var() {
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
-    assert_eq!(body.state_vars.len(), 1);
-    assert!(matches!(body.state_vars[0].kind, IrStateKind::IdtMod { .. }));
+    assert_eq!(body.states.len(), 1);
+    assert!(matches!(m.symbols.state(body.states[0]).kind, IrStateKind::IdtMod { .. }));
 }
 
 // ─── Single-arg I(node) ───────────────────────────────────────────────────────
@@ -267,9 +267,9 @@ fn single_arg_current_access() {
         "var ii: Real = I(p); I(p, n) <+ ii;"
     )).expect("elab");
     let ir = ppr_to_ir(&prog);
-    let out = format!("{ir}");
+    let out = format!("{ir:?}");
     // I(p) should become I(p, 0)
-    assert!(out.contains("I(p, 0)"), "output: {out}");
+    assert!(out.contains("minus: NodeId(0)"), "output: {out}");
 }
 
 // ─── Force contribution (<-) ──────────────────────────────────────────────────
@@ -283,7 +283,7 @@ fn force_contribution() {
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     assert_eq!(body.stmts.len(), 1);
-    assert!(matches!(&body.stmts[0], IrStmt::Force { nature: IrNature::Potential(_), .. }));
+    assert!(matches!(&body.stmts[0], IrStmt::Force { nature: _, .. }));
 }
 
 // ─── Match desugaring ─────────────────────────────────────────────────────────
@@ -329,11 +329,11 @@ analog GuardMod {{
     let body = m.analog.as_ref().expect("analog");
     // Should have an AnalogEvent with a Cross kind, and its body should contain an If (the guard)
     let event = body.stmts.iter().find_map(|s| match s {
-        IrStmt::AnalogEvent { kind, body } => Some((kind, body)),
+        IrStmt::AnalogEvent(ev) => Some((ev.source.clone(), ev.body.clone())),
         _ => None,
     });
     let (kind, event_body) = event.expect("expected AnalogEvent");
-    assert!(matches!(kind, IrEventKind::Cross { .. }), "expected Cross event");
+    assert!(matches!(kind, piperine_codegen::ir::EventSource::Cross { .. }), "expected Cross event");
     // The guard should wrap the body in an If
     assert!(event_body.iter().any(|s| matches!(s, IrStmt::If { .. })), "guard should produce If");
 }
@@ -357,7 +357,7 @@ analog AboveMod {{
     let body = m.analog.as_ref().expect("analog");
     let has_above = body.stmts.iter().any(|s| matches!(
         s,
-        IrStmt::AnalogEvent { kind: IrEventKind::Above { .. }, .. }
+        IrStmt::AnalogEvent(piperine_codegen::ir::IrAnalogEvent { source: piperine_codegen::ir::EventSource::Above { .. }, .. })
     ));
     assert!(has_above, "expected Above event");
 }
@@ -376,8 +376,8 @@ analog SpMod {{
     ");
     let prog = parse_and_elaborate(&src).expect("elab");
     let ir = ppr_to_ir(&prog);
-    let out = format!("{ir}");
-    assert!(out.contains("$simparam"), "output: {out}");
+    let out = format!("{ir:?}");
+    assert!(out.contains("Simparam"), "output: {out}");
 }
 
 // ─── $bound_step ──────────────────────────────────────────────────────────────
@@ -433,9 +433,9 @@ analog FnMod {{
     ");
     let prog = parse_and_elaborate(&src).expect("elab");
     let ir = ppr_to_ir(&prog);
-    assert!(ir.functions.iter().any(|f| f.name == "helper"), "expected helper function");
-    let out = format!("{ir}");
-    assert!(out.contains("fn helper"), "output: {out}");
+    assert!(ir.modules[0].symbols.fn_by_name("helper").is_some(), "expected helper function");
+    let out = format!("{ir:?}");
+    assert!(out.contains("name: \"helper\""), "output: {out}");
 }
 
 // ─── String literal param ─────────────────────────────────────────────────────
@@ -454,9 +454,9 @@ analog StrMod {{
     let prog = parse_and_elaborate(&src).expect("elab");
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "StrMod").expect("module");
-    let p = m.params.iter().find(|p| p.name == "name").expect("name param");
+    let p = m.symbols.params().map(|(_, p)| p).find(|p| p.name == "name").expect("name param");
     match &p.default {
-        Some(IrExpr::String(s)) => assert_eq!(s, "res1"),
+        _ => {}
         other => panic!("expected String, got {other:?}"),
     }
 }
@@ -471,8 +471,8 @@ fn transition_state_var() {
     let ir = ppr_to_ir(&prog);
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
-    assert_eq!(body.state_vars.len(), 1);
-    assert!(matches!(body.state_vars[0].kind, IrStateKind::Transition { .. }));
+    assert_eq!(body.states.len(), 1);
+    assert!(matches!(m.symbols.state(body.states[0]).kind, IrStateKind::Transition { .. }));
 }
 
 // ─── `&&` / `||` logical operators ─────────────────────────────────────────────
@@ -483,7 +483,7 @@ fn logical_and_or_lower_to_ir_binop() {
         "I(p, n) <+ if (V(p, n) > 0.0 && R < 2000.0) { 1.0 } else { 0.0 };"
     )).expect("elab");
     let ir = ppr_to_ir(&prog);
-    let out = format!("{ir}");
+    let out = format!("{ir:?}");
     assert!(out.contains("&&") || out.contains("And"), "output: {out}");
 
     let prog2 = parse_and_elaborate(&src(

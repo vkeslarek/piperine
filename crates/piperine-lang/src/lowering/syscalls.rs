@@ -62,14 +62,14 @@ impl SystemFunction for Mfactor {
 struct XPosition;
 impl SystemFunction for XPosition {
     fn lower(&self, _: &str, _args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::XPosition)
+        IrExpr::Sim(SimQuery::Position(piperine_codegen::ir::Axis::X))
     }
 }
 
 struct YPosition;
 impl SystemFunction for YPosition {
     fn lower(&self, _: &str, _args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::YPosition)
+        IrExpr::Sim(SimQuery::Position(piperine_codegen::ir::Axis::Y))
     }
 }
 
@@ -91,15 +91,15 @@ impl SystemFunction for Simparam {
 
 struct ParamGiven;
 impl SystemFunction for ParamGiven {
-    fn lower(&self, _: &str, args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::ParamGiven(string_arg(args, 0)))
+    fn lower(&self, _: &str, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
+        IrExpr::Sim(SimQuery::ParamGiven(ctx.lookup_param(&string_arg(args, 0)).unwrap_or(piperine_codegen::ir::ParamId(0))))
     }
 }
 
 struct PortConnected;
 impl SystemFunction for PortConnected {
-    fn lower(&self, _: &str, args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::PortConnected(string_arg(args, 0)))
+    fn lower(&self, _: &str, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
+        IrExpr::Sim(SimQuery::PortConnected(ctx.lookup_node(&string_arg(args, 0)).unwrap_or(piperine_codegen::ir::NodeId::GROUND)))
     }
 }
 
@@ -118,6 +118,13 @@ impl SystemFunction for Analysis {
         let kind = match args.first() {
             Some(Expr::Literal(Literal::String(s))) => s.clone(),
             _ => "dc".into(),
+        };
+        let kind = match string_arg(args, 0).as_str() {
+            "ac" => piperine_codegen::ir::Analysis::Ac,
+            "dc" => piperine_codegen::ir::Analysis::Dc,
+            "tran" => piperine_codegen::ir::Analysis::Tran,
+            "noise" => piperine_codegen::ir::Analysis::Noise,
+            _ => piperine_codegen::ir::Analysis::Dc,
         };
         IrExpr::Sim(SimQuery::Analysis(kind))
     }

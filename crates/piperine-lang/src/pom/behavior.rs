@@ -77,6 +77,10 @@ pub struct Function {
     pub ret: TypeRef,
     /// Function body statements.
     pub body: Vec<BehaviorStmt>,
+    /// Whether this function is generic (has type or const parameters).
+    /// Generic functions are retained for reflection but not lowered into
+    /// the IR until monomorphized at a call site.
+    pub is_generic: bool,
 }
 
 impl Function {
@@ -88,6 +92,8 @@ impl Function {
     pub fn ret(&self) -> &TypeRef { &self.ret }
     /// The function body statements.
     pub fn body(&self) -> &[BehaviorStmt] { &self.body }
+    /// Whether this function is generic (not lowerable until monomorphized).
+    pub fn is_generic(&self) -> bool { self.is_generic }
 }
 
 impl Named for Function { fn name(&self) -> &str { self.name() } }

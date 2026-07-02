@@ -346,6 +346,51 @@ impl<'a> Lexer<'a> {
             }
         }
 
+        // SPEC §4: SI suffixes on numeric literals (case-sensitive).
+        // `T G M k` (1e12…1e3), `m u n p f a` (1e-3…1e-18).
+        // `2u` = 2e-6, `M` = mega, `m` = milli.
+        // Only consume the suffix if the following character is NOT
+        // alphanumeric/underscore — this prevents `1mod` from becoming
+        // `1m` (1 milli) + `od`, while `1k;` becomes `1000.0` + `;`.
+        // Only applies to base-10 integers/reals (not hex/binary/quad).
+        if radix == 10 {
+            let si = match self.peek_char() {
+                Some('T') => Some(1e12_f64),
+                Some('G') => Some(1e9),
+                Some('M') => Some(1e6),
+                Some('k') => Some(1e3),
+                Some('m') => Some(1e-3),
+                Some('u') => Some(1e-6),
+                Some('n') => Some(1e-9),
+                Some('p') => Some(1e-12),
+                Some('f') => Some(1e-15),
+                Some('a') => Some(1e-18),
+                _ => None,
+            };
+            if let Some(factor) = si {
+                // Peek the character after the SI suffix — if it's
+                // alphanumeric or '_', this is the start of an identifier
+                // (e.g. `1mod`), not an SI suffix.
+                let after_pos = self.pos + 1;
+                let after_is_alpha = self.input[after_pos..]
+                    .chars()
+                    .next()
+                    .map_or(false, |c| c.is_ascii_alphanumeric() || c == '_');
+                if !after_is_alpha {
+                    self.advance(); // consume the SI suffix character
+                    let base: f64 = if is_real {
+                        f64::from_str(&num)
+                            .map_err(|e| format!("Invalid real literal '{}': {}", num, e))?
+                    } else {
+                        u64::from_str(&num)
+                            .map_err(|e| format!("Invalid integer literal '{}': {}", num, e))?
+                            as f64
+                    };
+                    return Ok(Tok::Real(base * factor));
+                }
+            }
+        }
+
         if is_real {
             Ok(Tok::Real(
                 f64::from_str(&num)

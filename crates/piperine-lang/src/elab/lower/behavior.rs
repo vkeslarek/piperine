@@ -123,8 +123,27 @@ impl Elaborator {
                 for i in start..end {
                     env.push();
                     env.define(var.clone(), ConstVal::Nat(i));
-                    let unrolled = self.lower_behavior_stmts(body, kind.clone(), env)?;
-                    out.extend(unrolled);
+                    // The `for` is syntactic sugar (SPEC §10): unroll with
+                    // the loop variable substituted by its concrete value.
+                    // Each iteration produces a fully-resolved copy of the
+                    // body — `rseg[i]` becomes `rseg[0]`, `rseg[1]`, etc.
+                    let mut unrolled_body: Vec<AstBehaviorStmt> = body
+                        .iter()
+                        .map(|s| {
+                            let mut s = s.clone();
+                            s.subst_const(var, i);
+                            s
+                        })
+                        .collect();
+                    // Also substitute in event block bodies (which use Block, not Vec<BehaviorStmt>).
+                    for stmt in &mut unrolled_body {
+                        if let AstBehaviorStmt::Event { body, .. } = stmt {
+                            body.stmts.iter_mut().for_each(|s| s.subst_const(var, i));
+                            if let Some(e) = &mut body.expr { e.subst_const(var, i); }
+                        }
+                    }
+                    let lowered = self.lower_behavior_stmts(&unrolled_body, kind.clone(), env)?;
+                    out.extend(lowered);
                     env.pop();
                 }
             }

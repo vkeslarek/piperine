@@ -63,7 +63,7 @@ pub use parse::{parse_str, Lexed, Lexer, Tok};
 pub use resolve::{ResolveError, Resolver};
 
 // ── IR lowering + runtime ─────────────────────────────────────────────────
-pub use lowering::{ppr_to_ir, compile_analog_module};
+pub use lowering::ppr_to_ir;
 pub use runtime::from_ir;
 pub use runtime::device::PhdlDevice;
 pub use runtime::digital_lower::ir_digital_to_interp;

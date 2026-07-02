@@ -559,9 +559,12 @@ pub fn compile_digital_module(
     module_name: &str,
     device_id: usize,
 ) -> Result<DigitalInterpreter, CodegenError> {
-    let behavior: &Behavior = prog.module(module_name)
-        .and_then(|m| m.behaviors().iter().find(|b| b.is_digital()))
-        .ok_or_else(|| CodegenError::BehaviorNotFound(module_name.to_string()))?;
+    let behavior = prog.module(module_name)
+        .ok_or_else(|| CodegenError::ModuleNotFound(module_name.to_string()))?
+        .behaviors()
+        .iter()
+        .find(|b| *b.kind() == crate::parse::BehaviorKind::Digital)
+        .ok_or_else(|| CodegenError::Unsupported(module_name.to_string()))?;
 
     let mut input_names: Vec<String> = Vec::new();
     let mut output_names: Vec<String> = Vec::new();

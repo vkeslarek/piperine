@@ -27,14 +27,14 @@ mod Top(inout p: Electrical, inout n: Electrical) {
     let ir = elaborate_ir(src);
     let m = ir.modules.iter().find(|m| m.name == "dio").expect("dio module");
     let body = m.analog.as_ref().expect("dio should have an analog body");
-    assert!(!body.noise_sources.is_empty(), "dio should carry white/flicker noise sources");
+    assert!(!body.noise.is_empty(), "dio should carry white/flicker noise sources");
     assert!(
-        m.params.iter().any(|p| p.name == "model_is"),
+        m.symbols.params().map(|(_, p)| p).any(|p| p.name == "model_is"),
         "dio should have a flattened model_is param, got {:?}",
-        m.params.iter().map(|p| &p.name).collect::<Vec<_>>()
+        m.symbols.params().map(|(_, p)| &p.name).collect::<Vec<_>>()
     );
     assert!(
-        body.state_vars.iter().any(|sv| matches!(sv.kind, piperine_codegen::IrStateKind::Ddt)),
+        body.states.iter().any(|&s| matches!(m.symbols.state(s).kind, piperine_codegen::ir::IrStateKind::Ddt)),
         "dio should have a ddt state var (charge storage)"
     );
 }
@@ -53,14 +53,14 @@ mod Top(inout p: Electrical, inout n: Electrical) {
     let res = ir.modules.iter().find(|m| m.name == "res").expect("res module");
     let cap = ir.modules.iter().find(|m| m.name == "cap").expect("cap module");
     let ind = ir.modules.iter().find(|m| m.name == "ind").expect("ind module");
-    assert!(res.params.iter().any(|p| p.name == "model_rsh"), "res model_rsh param");
+    assert!(res.symbols.params().map(|(_, p)| p).any(|p| p.name == "model_rsh"), "res model_rsh param");
     assert!(
-        !res.analog.as_ref().unwrap().noise_sources.is_empty(),
+        !res.analog.as_ref().unwrap().noise.is_empty(),
         "res should carry thermal noise"
     );
     assert!(
-        cap.analog.as_ref().unwrap().state_vars.iter()
-            .any(|sv| matches!(sv.kind, piperine_codegen::IrStateKind::Ddt)),
+        cap.analog.as_ref().unwrap().states.iter()
+            .any(|sv| matches!(cap.symbols.state(*sv).kind, piperine_codegen::ir::IrStateKind::Ddt)),
         "cap should have a ddt state var"
     );
     assert!(ind.analog.is_some());
@@ -76,12 +76,12 @@ mod Top(inout p: Electrical, inout n: Electrical, inout cp: Electrical, inout cn
 ";
     let ir = elaborate_ir(src);
     let m = ir.modules.iter().find(|m| m.name == "sw").expect("sw module");
-    assert!(m.vars.iter().any(|v| v.name == "sw_state"), "sw should have a persistent sw_state var");
+    assert!(m.symbols.vars().map(|(_, v)| v).any(|v| v.name == "sw_state"), "sw should have a persistent sw_state var");
     let body = m.analog.as_ref().expect("sw analog body");
-    fn contains_above(stmts: &[piperine_codegen::IrStmt]) -> bool {
+    fn contains_above(stmts: &[piperine_codegen::ir::IrStmt]) -> bool {
         stmts.iter().any(|s| match s {
-            piperine_codegen::IrStmt::AnalogEvent { kind: piperine_codegen::IrEventKind::Above { .. }, .. } => true,
-            piperine_codegen::IrStmt::If { then_, else_, .. } => contains_above(then_) || contains_above(else_),
+            piperine_codegen::ir::IrStmt::AnalogEvent(piperine_codegen::ir::IrAnalogEvent { source: piperine_codegen::ir::EventSource::Above { .. }, .. }) => true,
+            piperine_codegen::ir::IrStmt::If { then_, else_, .. } => contains_above(then_) || contains_above(else_),
             _ => false,
         })
     }
@@ -103,15 +103,15 @@ mod Top(inout p: Electrical, inout n: Electrical) {
     // vsrc forces V(p,n) inside `if ($analysis("tran")) {...} else {...}`,
     // then adds an ac_stim contribution — both must reach the IR.
     let has_conditional_force = body.stmts.iter().any(|s| match s {
-        piperine_codegen::IrStmt::If { then_, else_, .. } => {
-            then_.iter().chain(else_.iter()).any(|s| matches!(s, piperine_codegen::IrStmt::Force { .. }))
+        piperine_codegen::ir::IrStmt::If { then_, else_, .. } => {
+            then_.iter().chain(else_.iter()).any(|s| matches!(s, piperine_codegen::ir::IrStmt::Force { .. }))
         }
         _ => false,
     });
     assert!(has_conditional_force, "vsrc should force V(p,n) under the tran/dc branch");
     let has_ac_stim = body.stmts.iter().any(|s| matches!(
         s,
-        piperine_codegen::IrStmt::Contrib { expr: piperine_codegen::ir::IrExpr::AcStim { .. }, .. }
+        piperine_codegen::ir::IrStmt::Contrib { expr: piperine_codegen::ir::IrExpr::AcStim { .. }, .. }
     ));
     assert!(has_ac_stim, "vsrc should contribute an ac_stim term");
     assert!(ir.modules.iter().any(|m| m.name == "isrc"));
@@ -135,15 +135,15 @@ mod Top(inout p: Electrical, inout n: Electrical, inout cp: Electrical, inout cn
     let vcvs = ir.modules.iter().find(|m| m.name == "vcvs").unwrap();
     assert!(
         vcvs.analog.as_ref().unwrap().stmts.iter()
-            .any(|s| matches!(s, piperine_codegen::IrStmt::Force { .. })),
+            .any(|s| matches!(s, piperine_codegen::ir::IrStmt::Force { .. })),
         "vcvs should force V(p,n) = gain * V(cp,cn)"
     );
     let ccvs = ir.modules.iter().find(|m| m.name == "ccvs").unwrap();
     let ccvs_body = ccvs.analog.as_ref().unwrap();
     let reads_branch_current = ccvs_body.stmts.iter().any(|s| match s {
-        piperine_codegen::IrStmt::Force { expr, .. } => {
+        piperine_codegen::ir::IrStmt::Force { expr, .. } => {
             matches!(expr, piperine_codegen::ir::IrExpr::Binary(_, _, r)
-                if matches!(**r, piperine_codegen::ir::IrExpr::BranchAccess { ref access, .. } if access == "I"))
+                if matches!(**r, piperine_codegen::ir::IrExpr::Branch { .. }))
         }
         _ => false,
     });
@@ -160,9 +160,9 @@ mod Top(inout c: Electrical, inout b: Electrical, inout e: Electrical, inout sub
 ";
     let ir = elaborate_ir(src);
     let m = ir.modules.iter().find(|m| m.name == "bjt").expect("bjt module");
-    assert!(m.params.iter().any(|p| p.name == "model_is"), "bjt model_is param");
+    assert!(m.symbols.params().map(|(_, p)| p).any(|p| p.name == "model_is"), "bjt model_is param");
     assert!(
-        !m.analog.as_ref().unwrap().noise_sources.is_empty(),
+        !m.analog.as_ref().unwrap().noise.is_empty(),
         "bjt should carry shot noise"
     );
 }
@@ -189,10 +189,10 @@ mod Top(inout d: Electrical, inout g: Electrical, inout s: Electrical, inout b: 
 ";
     let ir = elaborate_ir(src);
     let m = ir.modules.iter().find(|m| m.name == "mos1").expect("mos1 module");
-    assert!(m.params.iter().any(|p| p.name == "model_kp"), "mos1 model_kp param");
+    assert!(m.symbols.params().map(|(_, p)| p).any(|p| p.name == "model_kp"), "mos1 model_kp param");
     let body = m.analog.as_ref().unwrap();
     assert!(
-        body.state_vars.iter().any(|sv| matches!(sv.kind, piperine_codegen::IrStateKind::Ddt)),
+        body.states.iter().any(|&s| matches!(m.symbols.state(s).kind, piperine_codegen::ir::IrStateKind::Ddt)),
         "mos1 should have ddt state vars (gate/junction caps)"
     );
 }
