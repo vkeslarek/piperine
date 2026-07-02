@@ -3,7 +3,7 @@ use super::attributes::ParseAttributesExt;
 use crate::parse::lexer::Tok;
 use super::{Parse, Parser};
 
-impl Parse for ModDecl {
+impl Parse for ModuleDeclaration {
     /// Parses a `mod Name[CONST]<TYPE>(PORTS) { body }` or `mod Name[CONST]<TYPE>(PORTS);` declaration.
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
         let attrs = parser.parse_attributes()?;
@@ -46,13 +46,13 @@ impl Parse for ModDecl {
         let mut body = Vec::new();
         if parser.eat(&Tok::LBrace) {
             while !parser.eat(&Tok::RBrace) {
-                body.push(ModStmt::parse(parser)?);
+                body.push(ModuleStatement::parse(parser)?);
             }
         } else {
             parser.expect(&Tok::Semi)?;
         }
 
-        Ok(ModDecl { attrs, is_pub, name, const_params, type_params, ports, body })
+        Ok(ModuleDeclaration { attrs, is_pub, name, const_params, type_params, ports, body })
     }
 }
 

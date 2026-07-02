@@ -5,7 +5,7 @@ use piperine_lang::parse::ast::SourceFile;
 /// Flatten a SourceFile into categorized lists (replaces the old model::Document).
 struct Document {
     pub uses: Vec<Path>,
-    pub modules: Vec<ModDecl>,
+    pub modules: Vec<ModuleDeclaration>,
     pub behaviors: Vec<BehaviorDecl>,
     pub disciplines: Vec<DisciplineDecl>,
     pub bundles: Vec<BundleDecl>,
@@ -25,7 +25,7 @@ impl Document {
         };
         for item in source.items {
             match item {
-                Item::ModDecl(m)        => doc.modules.push(m),
+                Item::ModuleDeclaration(m)        => doc.modules.push(m),
                 Item::BehaviorDecl(b)   => doc.behaviors.push(b),
                 Item::DisciplineDecl(d) => doc.disciplines.push(d),
                 Item::BundleDecl(b)     => doc.bundles.push(b),
@@ -219,7 +219,7 @@ mod Test ( inout a : Electrical, inout b : Electrical ) {
     let module = &doc.modules[0];
 
     let connections: Vec<_> = module.body.iter().filter_map(|s| {
-        if let ModStmt::Connection { lhs, rhs, .. } = s {
+        if let ModuleStatement::Connection { lhs, rhs, .. } = s {
             Some((lhs, rhs))
         } else { None }
     }).collect();
@@ -254,10 +254,10 @@ mod Test ( inout a : Electrical, inout gnd : Ground ) {
     let module = &doc.modules[0];
 
     // Find the for loop
-    let for_stmt = module.body.iter().find(|s| matches!(s, ModStmt::StructuralFor { .. })).unwrap();
-    if let ModStmt::StructuralFor { body, .. } = for_stmt {
+    let for_stmt = module.body.iter().find(|s| matches!(s, ModuleStatement::StructuralFor { .. })).unwrap();
+    if let ModuleStatement::StructuralFor { body, .. } = for_stmt {
         assert_eq!(body.len(), 1);
-        if let ModStmt::Instance { name, array_index, module: mod_name, .. } = &body[0] {
+        if let ModuleStatement::Instance { name, array_index, module: mod_name, .. } = &body[0] {
             assert_eq!(name.as_deref(), Some("rseg"));
             assert!(array_index.is_some(), "array_index should be Some");
             assert_eq!(mod_name, "Resistor");

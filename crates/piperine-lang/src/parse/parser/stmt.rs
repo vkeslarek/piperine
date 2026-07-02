@@ -19,7 +19,7 @@ impl<'a> Parser<'a> {
     //              | "=" Expr ";"                              -- connection
 
     /// Parses a single statement inside a `mod` body: `param`, `wire`, `var`, `for`, `if`, instance, or connection.
-    pub(crate) fn parse_mod_stmt(&mut self) -> Result<ModStmt, crate::parse::error::ParseError> {
+    pub(crate) fn parse_mod_stmt(&mut self) -> Result<ModuleStatement, crate::parse::error::ParseError> {
         let attrs = self.parse_attributes()?;
         if matches!(self.peek(), Some(Tok::SysCall(name)) if name == "assert") {
             self.pos += 1;
@@ -29,7 +29,7 @@ impl<'a> Parser<'a> {
             let msg = self.parse_expr()?;
             self.expect(&Tok::RParen)?;
             self.expect(&Tok::Semi)?;
-            return Ok(ModStmt::Assert { attrs, cond, msg });
+            return Ok(ModuleStatement::Assert { attrs, cond, msg });
         }
         if self.eat_ident("param") {
             let name = self.parse_ident()?;
@@ -37,14 +37,14 @@ impl<'a> Parser<'a> {
             let ty = self.parse_type()?;
             let default = if self.eat(&Tok::Assign) { Some(self.parse_expr()?) } else { None };
             self.expect(&Tok::Semi)?;
-            return Ok(ModStmt::ParamDecl { attrs, name, ty, default });
+            return Ok(ModuleStatement::ParamDecl { attrs, name, ty, default });
         }
         if self.eat_ident("wire") {
             let name = self.parse_ident()?;
             self.expect(&Tok::Colon)?;
             let ty = self.parse_type()?;
             self.expect(&Tok::Semi)?;
-            return Ok(ModStmt::WireDecl { attrs, name, ty });
+            return Ok(ModuleStatement::WireDecl { attrs, name, ty });
         }
         if self.eat_ident("var") {
             let name = self.parse_ident()?;
@@ -52,7 +52,7 @@ impl<'a> Parser<'a> {
             let ty = self.parse_type()?;
             let default = if self.eat(&Tok::Assign) { Some(self.parse_expr()?) } else { None };
             self.expect(&Tok::Semi)?;
-            return Ok(ModStmt::VarDecl { attrs, name, ty, default });
+            return Ok(ModuleStatement::VarDecl { attrs, name, ty, default });
         }
         if self.eat_ident("for") {
             let var = self.parse_ident()?;
@@ -63,7 +63,7 @@ impl<'a> Parser<'a> {
             while !self.eat(&Tok::RBrace) {
                 body.push(self.parse_mod_stmt()?);
             }
-            return Ok(ModStmt::StructuralFor { attrs, var, range, body });
+            return Ok(ModuleStatement::StructuralFor { attrs, var, range, body });
         }
         if self.eat_ident("if") {
             self.expect(&Tok::LParen)?;
@@ -89,7 +89,7 @@ impl<'a> Parser<'a> {
             } else {
                 None
             };
-            return Ok(ModStmt::StructuralIf { attrs, cond, then_body, else_body });
+            return Ok(ModuleStatement::StructuralIf { attrs, cond, then_body, else_body });
         }
 
         // InstanceOrConnect — leading Ident, then branch on next token.
@@ -110,7 +110,7 @@ impl<'a> Parser<'a> {
             }
             let rhs = self.parse_expr()?;
             self.expect(&Tok::Semi)?;
-            return Ok(ModStmt::Connection { attrs, lhs, rhs });
+            return Ok(ModuleStatement::Connection { attrs, lhs, rhs });
         }
 
         if self.eat(&Tok::Colon) {
@@ -186,7 +186,7 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(&Tok::Semi)?;
-        Ok(ModStmt::Instance {
+        Ok(ModuleStatement::Instance {
             attrs,
             name: if is_named_instance { Some(name) } else { None },
             array_index,
@@ -455,14 +455,14 @@ impl<'a> Parser<'a> {
 
     /// Parses a match pattern: `_` (wildcard) or a path.
     /// One instance port argument: positional `expr` or named `.port = expr`.
-    fn parse_port_conn(&mut self) -> Result<PortConn, crate::parse::error::ParseError> {
+    fn parse_port_conn(&mut self) -> Result<PortConnection, crate::parse::error::ParseError> {
         if self.eat(&Tok::Dot) {
             let port = self.parse_ident()?;
             self.expect(&Tok::Assign)?;
             let expr = self.parse_expr()?;
-            return Ok(PortConn::Named { port, expr });
+            return Ok(PortConnection::Named { port, expr });
         }
-        Ok(self.parse_expr().map(PortConn::Positional)?)
+        Ok(self.parse_expr().map(PortConnection::Positional)?)
     }
 
     pub(crate) fn parse_pattern(&mut self) -> Result<Pattern, crate::parse::error::ParseError> {
@@ -484,7 +484,7 @@ impl<'a> Parser<'a> {
 
 }
 
-impl Parse for ModStmt {
+impl Parse for ModuleStatement {
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
         parser.parse_mod_stmt()
     }

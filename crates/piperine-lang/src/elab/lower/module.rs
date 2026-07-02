@@ -1,11 +1,11 @@
-//! `mod` body elaboration: a `ModDecl` (parse AST) → `Module` (POM) —
-//! expanding ports, and lowering each `ModStmt` (param/wire/instance/
+//! `mod` body elaboration: a `ModuleDeclaration` (parse AST) → `Module` (POM) —
+//! expanding ports, and lowering each `ModuleStatement` (param/wire/instance/
 //! connection/`for`/`if`) into the structural pieces a `Module` owns.
 
 use std::collections::HashMap;
 
-use crate::parse::ast::{Expr, ModDecl};
-use crate::parse::ast::ModStmt;
+use crate::parse::ast::{Expr, ModuleDeclaration};
+use crate::parse::ast::ModuleStatement;
 use crate::elab::const_eval::{ConstEnv, ConstVal};
 use crate::pom::{Connection, ElabError, Instance, Module, Param, Var, Wire};
 
@@ -121,13 +121,13 @@ impl Elaborator {
 
     // ─────────────────────────── Module elaboration ───────────────────────────
 
-    /// Elaborates a `ModDecl` into a `Module`. Expands ports through
+    /// Elaborates a `ModuleDeclaration` into a `Module`. Expands ports through
     /// [`expand_port`](Elaborator::expand_port), lowers the body statements
     /// into `ModBodyItem`s, then partitions them into `params`, `wires`,
     /// `instances`, and `connections`.
     pub(crate) fn elab_mod_inner(
         &mut self,
-        decl: &ModDecl,
+        decl: &ModuleDeclaration,
         env: &mut ConstEnv,
         type_subst: &HashMap<String, String>,
     ) -> Result<Module, ElabError> {
@@ -140,7 +140,7 @@ impl Elaborator {
         }
 
         for stmt in &decl.body {
-            if let ModStmt::WireDecl { name, ty, attrs: _ } = stmt {
+            if let ModuleStatement::WireDecl { name, ty, attrs: _ } = stmt {
                 let resolved_name = type_subst.get(&ty.name).map(|s| s.as_str()).unwrap_or(&ty.name);
                 local_types.insert(name.clone(), resolved_name.to_string());
             }
@@ -169,12 +169,12 @@ impl Elaborator {
         Ok(Module { attributes: Vec::new(), name: decl.name.clone(), ports, params, wires, vars, instances, connections, behaviors: vec![] })
     }
 
-    /// Lowers a slice of `ModStmt`s, appending the resulting
+    /// Lowers a slice of `ModuleStatement`s, appending the resulting
     /// `ModBodyItem`s to `out`. Delegates each statement to
     /// [`lower_mod_stmt`](Elaborator::lower_mod_stmt).
     pub(crate) fn lower_mod_stmts(
         &mut self,
-        stmts: &[ModStmt],
+        stmts: &[ModuleStatement],
         env: &mut ConstEnv,
         type_subst: &HashMap<String, String>,
         local_types: &HashMap<String, String>,
@@ -187,21 +187,21 @@ impl Elaborator {
         Ok(())
     }
 
-    /// Lowers a single `ModStmt` into zero or more `ModBodyItem`s appended
+    /// Lowers a single `ModuleStatement` into zero or more `ModBodyItem`s appended
     /// to `out`. Handles: `ParamDecl`, `WireDecl`, `StructuralFor` (unrolled
     /// with const-evaluated range), `StructuralIf` (const-folded),
     /// `Instance` (triggering on-demand monomorphization for generic
     /// modules), and `Connection`.
     pub(crate) fn lower_mod_stmt(
         &mut self,
-        stmt: &ModStmt,
+        stmt: &ModuleStatement,
         env: &mut ConstEnv,
         type_subst: &HashMap<String, String>,
         local_types: &HashMap<String, String>,
         out: &mut Vec<ModBodyItem>,
     ) -> Result<(), ElabError> {
         match stmt {
-            ModStmt::ParamDecl { name, ty, default, attrs: _ } => {
+            ModuleStatement::ParamDecl { name, ty, default, attrs: _ } => {
                 // GAPS §I.14 — a bundle-typed param (`param model : DioModel
                 // = DioModel {};`) is flattened here into one scalar param
                 // per bundle field, named `{name}_{field}`. This matches
@@ -231,7 +231,7 @@ impl Elaborator {
                 }));
             }
 
-            ModStmt::WireDecl { name, ty, attrs: _ } => {
+            ModuleStatement::WireDecl { name, ty, attrs: _ } => {
                 let resolved_name = type_subst.get(&ty.name).map(|s| s.as_str()).unwrap_or(&ty.name);
                 if let Some(bundle) = self.bundles.get(resolved_name).cloned() {
                     if self.is_net_capable_bundle(resolved_name) {
@@ -249,7 +249,7 @@ impl Elaborator {
                 out.push(ModBodyItem::Wire(Wire { attributes: Vec::new(), name: name.clone(), ty: nt }));
             }
 
-            ModStmt::VarDecl { name, ty, default, attrs: _ } => {
+            ModuleStatement::VarDecl { name, ty, default, attrs: _ } => {
                 // §7.2 + §I.15 — a `var` declared directly in a `mod` body
                 // (as opposed to inside `analog`/`digital`) is persistent
                 // module-level state, e.g. `var sw_state : Real = 0.0;` in
@@ -299,7 +299,7 @@ impl Elaborator {
                 }));
             }
 
-            ModStmt::StructuralFor { var, range, body, attrs: _ } => {
+            ModuleStatement::StructuralFor { var, range, body, attrs: _ } => {
                 let start = env.eval_nat(&range.start).map_err(|e| ElabError::ConstEval {
                     context: "for-loop start in module body".to_owned(),
                     source: e,
@@ -318,7 +318,7 @@ impl Elaborator {
                 }
             }
 
-            ModStmt::StructuralIf { cond, then_body, else_body, attrs: _ } => {
+            ModuleStatement::StructuralIf { cond, then_body, else_body, attrs: _ } => {
                 let val = env.eval(cond).map_err(|e| ElabError::ConstEval {
                     context: "structural if condition".to_owned(),
                     source: e,
@@ -332,7 +332,7 @@ impl Elaborator {
                 self.lower_mod_stmts(&taken, env, type_subst, local_types, out)?;
             }
 
-            ModStmt::Instance {
+            ModuleStatement::Instance {
                 name,
                 array_index,
                 module,
@@ -437,7 +437,7 @@ impl Elaborator {
                 }));
             }
 
-            ModStmt::Connection { lhs, rhs, attrs: _ } => {
+            ModuleStatement::Connection { lhs, rhs, attrs: _ } => {
                 let mut is_bundle_conn = false;
                 if let (crate::parse::ast::Expr::Ident(l_name), crate::parse::ast::Expr::Ident(r_name)) = (lhs, rhs) {
                     if let Some(l_ty_name) = local_types.get(l_name) {
@@ -463,7 +463,7 @@ impl Elaborator {
 
             // SPEC §7.4: `$assert(cond, msg)` in a `mod` body is an
             // elaboration-time check — evaluated here, once, per instance.
-            ModStmt::Assert { cond, msg, attrs: _ } => {
+            ModuleStatement::Assert { cond, msg, attrs: _ } => {
                 let value = env.eval(cond).map_err(|e| ElabError::ConstEval {
                     context: "`$assert` condition".into(),
                     source: e,
@@ -494,15 +494,15 @@ impl Elaborator {
     fn order_port_conns(
         &self,
         module: &str,
-        conns: &[crate::parse::ast::PortConn],
+        conns: &[crate::parse::ast::PortConnection],
     ) -> Result<Vec<Expr>, ElabError> {
-        use crate::parse::ast::PortConn;
-        if conns.iter().all(|c| matches!(c, PortConn::Positional(_))) {
+        use crate::parse::ast::PortConnection;
+        if conns.iter().all(|c| matches!(c, PortConnection::Positional(_))) {
             return Ok(conns
                 .iter()
                 .map(|c| match c {
-                    PortConn::Positional(e) => e.clone(),
-                    PortConn::Named { expr, .. } => expr.clone(),
+                    PortConnection::Positional(e) => e.clone(),
+                    PortConnection::Named { expr, .. } => expr.clone(),
                 })
                 .collect());
         }
@@ -514,14 +514,14 @@ impl Elaborator {
         let mut positional = Vec::new();
         for conn in conns {
             match conn {
-                PortConn::Named { port, expr } => {
+                PortConnection::Named { port, expr } => {
                     if named.insert(port.as_str(), expr).is_some() {
                         return Err(ElabError::Other(format!(
                             "port `{port}` of `{module}` connected twice"
                         )));
                     }
                 }
-                PortConn::Positional(e) => positional.push(e),
+                PortConnection::Positional(e) => positional.push(e),
             }
         }
         let mut positional = positional.into_iter();

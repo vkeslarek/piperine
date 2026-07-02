@@ -1,4 +1,4 @@
-use crate::parse::ast::{BehaviorKind, BehaviorStmt, BindOp, EventSpec, Expr, ModStmt, Stmt};
+use crate::parse::ast::{BehaviorKind, BehaviorStmt, BindOp, EventSpec, Expr, ModuleStatement, Stmt};
 use crate::pom::ElabError;
 use std::collections::HashMap;
 
@@ -102,22 +102,22 @@ impl EventRegistry {
     /// Recursively validates a module body's statements to ensure no
     /// event constructs appear at the structural level. `StructuralFor`
     /// and `StructuralIf` bodies are recursively descended.
-    pub fn validate_mod_body(&self, stmts: &[ModStmt]) -> Result<(), ElabError> {
+    pub fn validate_mod_body(&self, stmts: &[ModuleStatement]) -> Result<(), ElabError> {
         for stmt in stmts {
             match stmt {
-                ModStmt::StructuralFor { body, .. } => self.validate_mod_body(body)?,
-                ModStmt::StructuralIf { then_body, else_body, .. } => {
+                ModuleStatement::StructuralFor { body, .. } => self.validate_mod_body(body)?,
+                ModuleStatement::StructuralIf { then_body, else_body, .. } => {
                     self.validate_mod_body(then_body)?;
                     if let Some(eb) = else_body {
                         self.validate_mod_body(eb)?;
                     }
                 }
-                ModStmt::ParamDecl { .. }
-                | ModStmt::WireDecl { .. }
-                | ModStmt::VarDecl { .. }
-                | ModStmt::Instance { .. }
-                | ModStmt::Connection { .. }
-                | ModStmt::Assert { .. } => {}
+                ModuleStatement::ParamDecl { .. }
+                | ModuleStatement::WireDecl { .. }
+                | ModuleStatement::VarDecl { .. }
+                | ModuleStatement::Instance { .. }
+                | ModuleStatement::Connection { .. }
+                | ModuleStatement::Assert { .. } => {}
             }
         }
         Ok(())

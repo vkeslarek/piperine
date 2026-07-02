@@ -17,7 +17,7 @@
 use std::collections::HashMap;
 
 use crate::parse::ast::{
-    BehaviorDecl, DisciplineDecl, EnumDecl, FnDecl, ImplDecl, ModDecl, SourceFile,
+    BehaviorDecl, DisciplineDecl, EnumDecl, FnDecl, ImplDecl, ModuleDeclaration, SourceFile,
 };
 use crate::elab::const_eval::{ConstEnv, ConstVal};
 use crate::elab::event::EventRegistry;
@@ -33,7 +33,7 @@ pub struct Elaborator {
     disciplines: HashMap<String, DisciplineDecl>,
     bundles: HashMap<String, crate::parse::ast::BundleDecl>,
     enums: HashMap<String, EnumDecl>,
-    module_decls: HashMap<String, ModDecl>,
+    module_decls: HashMap<String, ModuleDeclaration>,
     behavior_decls: Vec<BehaviorDecl>,
     fn_decls: HashMap<String, FnDecl>,
     capability_decls: HashMap<String, crate::parse::ast::CapabilityDecl>,
@@ -233,7 +233,7 @@ impl crate::elab::registry::components::Instantiator for Elaborator {
     
     fn elaborate_mod_decl(
         &mut self,
-        decl: &ModDecl,
+        decl: &ModuleDeclaration,
         env: &mut ConstEnv,
         type_subst: &std::collections::HashMap<String, String>,
     ) -> Result<Module, ElabError> {

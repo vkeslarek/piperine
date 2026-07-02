@@ -1,16 +1,16 @@
-use crate::parse::ast::ModDecl;
+use crate::parse::ast::ModuleDeclaration;
 use crate::pom::{Module, ElabError};
 use crate::elab::const_eval::ConstEnv;
 use std::collections::HashMap;
 
 pub trait Instantiator {
     fn ctx(&self) -> &crate::elab::registry::ElabContext;
-    fn elaborate_mod_decl(&mut self, decl: &ModDecl, env: &mut ConstEnv, type_subst: &HashMap<String, String>) -> Result<Module, ElabError>;
+    fn elaborate_mod_decl(&mut self, decl: &ModuleDeclaration, env: &mut ConstEnv, type_subst: &HashMap<String, String>) -> Result<Module, ElabError>;
 }
 
 pub trait ComponentDef: Send + Sync {
     fn name(&self) -> &str;
-    fn as_module(&self) -> Option<&ModDecl> { None }
+    fn as_module(&self) -> Option<&ModuleDeclaration> { None }
     fn is_generic(&self) -> bool { false }
     fn instantiate(&self, instantiator: &mut dyn Instantiator, const_args: &[u64], env: &mut ConstEnv, type_subst: &HashMap<String, String>) -> Result<Module, ElabError>;
     fn clone_box(&self) -> Box<dyn ComponentDef>;

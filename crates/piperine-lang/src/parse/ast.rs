@@ -38,7 +38,7 @@ pub struct SourceFile {
 #[derive(Debug, Clone)]
 pub enum Item {
     UseDecl(Path),
-    ModDecl(ModDecl),
+    ModuleDeclaration(ModuleDeclaration),
     BehaviorDecl(BehaviorDecl),
     DisciplineDecl(DisciplineDecl),
     BundleDecl(BundleDecl),
@@ -73,7 +73,7 @@ pub struct ConstDecl {
 /// `type_params` are generic type parameters (e.g. `<T: Add>`).
 /// Both are unresolved here — the elaborator substitutes them at instantiation.
 #[derive(Debug, Clone)]
-pub struct ModDecl {
+pub struct ModuleDeclaration {
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
@@ -82,7 +82,7 @@ pub struct ModDecl {
     /// Generic type parameters, e.g. `T: Add + Net`.
     pub type_params: Vec<TypeParam>,
     pub ports: Vec<Port>,
-    pub body: Vec<ModStmt>,
+    pub body: Vec<ModuleStatement>,
 }
 
 /// A generic type parameter with optional capability bounds.
@@ -123,12 +123,12 @@ pub enum Direction {
 /// elaboration-constant bounds/conditions. The remaining variants survive into
 /// the [`Module`][crate::pom::Module].
 #[derive(Debug, Clone)]
-pub enum ModStmt {
+pub enum ModuleStatement {
     ParamDecl { attrs: Vec<Attribute>, name: String, ty: Type, default: Option<Expr> },
     WireDecl { attrs: Vec<Attribute>, name: String, ty: Type },
     VarDecl { attrs: Vec<Attribute>, name: String, ty: Type, default: Option<Expr> },
-    StructuralFor { attrs: Vec<Attribute>, var: String, range: Range, body: Vec<ModStmt> },
-    StructuralIf { attrs: Vec<Attribute>, cond: Expr, then_body: Vec<ModStmt>, else_body: Option<Vec<ModStmt>> },
+    StructuralFor { attrs: Vec<Attribute>, var: String, range: Range, body: Vec<ModuleStatement> },
+    StructuralIf { attrs: Vec<Attribute>, cond: Expr, then_body: Vec<ModuleStatement>, else_body: Option<Vec<ModuleStatement>> },
     Instance {
         attrs: Vec<Attribute>,
         name: Option<String>,
@@ -136,7 +136,7 @@ pub enum ModStmt {
         module: String,
         const_args: Vec<Expr>,
         type_args: Vec<Type>,
-        ports: Vec<PortConn>,
+        ports: Vec<PortConnection>,
         params: Vec<ParamArg>,
     },
     Connection { attrs: Vec<Attribute>, lhs: Expr, rhs: Expr },
@@ -146,7 +146,7 @@ pub enum ModStmt {
 
 /// One instance port connection: positional (`a`) or named (`.p = a`).
 #[derive(Debug, Clone)]
-pub enum PortConn {
+pub enum PortConnection {
     Positional(Expr),
     Named { port: String, expr: Expr },
 }

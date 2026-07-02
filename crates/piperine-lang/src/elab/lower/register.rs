@@ -34,7 +34,7 @@ impl Elaborator {
                     self.enums.insert(e.name.clone(), e.clone());
                     self.ctx.types.register(e.clone());
                 }
-                Item::ModDecl(m) => {
+                Item::ModuleDeclaration(m) => {
                     self.module_decls.insert(m.name.clone(), m.clone());
                     self.ctx.components.register(m.clone());
                 }

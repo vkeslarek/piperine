@@ -1,4 +1,4 @@
-use crate::parse::ast::{DisciplineDecl, EnumDecl, BundleDecl, ModDecl, FnDecl, Type as AstType};
+use crate::parse::ast::{DisciplineDecl, EnumDecl, BundleDecl, ModuleDeclaration, FnDecl, Type as AstType};
 use crate::pom::{TypeRef, NetType, ValueType, ElabError, Module};
 use crate::elab::const_eval::ConstEnv;
 use super::types::TypeDef;
@@ -44,7 +44,7 @@ impl TypeDef for BundleDecl {
 }
 
 // Module Def
-impl ComponentDef for ModDecl {
+impl ComponentDef for ModuleDeclaration {
     fn name(&self) -> &str { &self.name }
     fn is_generic(&self) -> bool { !self.const_params.is_empty() || !self.type_params.is_empty() }
     fn instantiate(&self, instantiator: &mut dyn crate::elab::registry::components::Instantiator, const_args: &[u64], env: &mut ConstEnv, type_subst: &HashMap<String, String>) -> Result<crate::pom::Module, ElabError> {
