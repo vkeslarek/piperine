@@ -5,9 +5,14 @@
 //! or `ir_digital_to_interp`, attaches wires to the `Netlist`, and
 //! produces a [`CircuitInstance`] ready for the solver.
 
-use piperine_lang::{from_ir, parse_and_elaborate, ppr_to_ir};
-use piperine_codegen::ir::IrProgram;
+use piperine_lang::{parse_and_elaborate, ppr_to_ir};
 use piperine_solver::circuit::CircuitInstance;
+use piperine_codegen::CircuitCompiler;
+fn from_ir(prog: &piperine_codegen::ir::IrProgram, top: &str) -> Result<CircuitInstance, String> {
+    let mut c = CircuitCompiler::new(prog);
+    c.build_circuit(top).map_err(|e| e.to_string())
+}
+
 
 #[test]
 fn from_ir_resistor_va_yields_circuit() {

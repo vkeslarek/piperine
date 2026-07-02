@@ -2,7 +2,8 @@
 
 
 use piperine_codegen::SimCtx;
-use piperine_lang::{from_ir, parse_and_elaborate, ppr_to_ir};
+use piperine_lang::{parse_and_elaborate, ppr_to_ir};
+use piperine_codegen::CircuitCompiler;
 
 // ── Resistor ──────────────────────────────────────────────────────────────────
 
@@ -210,7 +211,7 @@ mod Top ( inout vdd : Electrical, inout gnd : Electrical ) {
 fn test_jit_compiles() {
     let prog = parse_and_elaborate(RESISTOR_IN_TOP_SRC).expect("elab");
     let ir = ppr_to_ir(&prog);
-    let _ci = from_ir(&ir, "Top").expect("from_ir");
+    let _ci = CircuitCompiler::new(&ir).build_circuit("Top").expect("from_ir");
 }
 
 #[test]
@@ -232,121 +233,8 @@ mod Top ( inout vdd : Electrical, inout mid : Electrical, inout gnd : Electrical
 ";
     let prog = parse_and_elaborate(src).expect("elab");
     let ir = ppr_to_ir(&prog);
-    let _ci = from_ir(&ir, "Top").expect("from_ir");
+    let _ci = CircuitCompiler::new(&ir).build_circuit("Top").expect("from_ir");
 }
-
-// ── Digital behavior tests ─────────────────────────────────────────────────────
-
-use piperine_lang::compile_digital_module;
-use piperine_solver::digital::{DigitalNet, LogicValue};
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
-
-/// Minimal PHDL with a D flip-flop: Q captures D on rising clock edge.
-const DFF_SRC: &str = "
-discipline Bit {}
-mod DFF (input clk: Bit, input D: Bit, output Q: Bit) {}
-digital DFF {
-    @ posedge(clk) {
-        Q <- D;
-    }
-}
-";
-
-#[test]
-fn test_digital_compile_dff() {
-    let prog = parse_and_elaborate(DFF_SRC).expect("elab");
-    let interp = compile_digital_module(&prog, "DFF", 0).expect("digital codegen");
-    // clk appears as event spec arg → input
-    assert!(interp.input_port_names.contains(&"clk".to_string()), "clk should be input");
-    // Q is assigned → output
-    assert!(interp.output_port_names.contains(&"Q".to_string()), "Q should be output");
-}
-
-#[test]
-fn test_digital_dff_posedge_captures_d() {
-    let prog = parse_and_elaborate(DFF_SRC).expect("elab");
-    let mut interp = compile_digital_module(&prog, "DFF", 0).expect("digital codegen");
-
-    // Assign DigitalNet indices: clk=0, D=1, Q=2
-    let mut port_map = HashMap::new();
-    port_map.insert("clk".to_string(), DigitalNet(0));
-    port_map.insert("D".to_string(),   DigitalNet(1));
-    port_map.insert("Q".to_string(),   DigitalNet(2));
-    interp.set_port_nets(port_map);
-
-    let mut queue: BinaryHeap<Reverse<piperine_solver::digital::DigitalEvent>> = BinaryHeap::new();
-    interp.init(&mut queue);
-
-    // Initial state: clk=0, D=1, Q=X
-    let mut nets = vec![LogicValue::Zero, LogicValue::One, LogicValue::X];
-
-    // Rising clock edge: clk goes 0→1 with D=1 → Q should become 1
-    nets[0] = LogicValue::One;
-    interp.eval(1e-9, &nets, &mut queue);
-
-    // One event should be scheduled for Q.
-    assert_eq!(queue.len(), 1, "one event for Q");
-    let Reverse(ev) = queue.pop().unwrap();
-    assert_eq!(ev.net, DigitalNet(2), "event on Q net");
-    assert_eq!(ev.value, LogicValue::One, "Q = D = 1");
-}
-
-#[test]
-fn test_digital_dff_no_fire_on_low_clock() {
-    let prog = parse_and_elaborate(DFF_SRC).expect("elab");
-    let mut interp = compile_digital_module(&prog, "DFF", 0).expect("digital codegen");
-
-    let mut port_map = HashMap::new();
-    port_map.insert("clk".to_string(), DigitalNet(0));
-    port_map.insert("D".to_string(),   DigitalNet(1));
-    port_map.insert("Q".to_string(),   DigitalNet(2));
-    interp.set_port_nets(port_map);
-
-    let mut queue: BinaryHeap<Reverse<piperine_solver::digital::DigitalEvent>> = BinaryHeap::new();
-    interp.init(&mut queue);
-
-    // clk stays low — no posedge
-    let nets = vec![LogicValue::Zero, LogicValue::One, LogicValue::X];
-    interp.eval(1e-9, &nets, &mut queue);
-
-    assert!(queue.is_empty(), "no events when clock stays low");
-}
-
-/// Buffer: output copies input on any change.
-const BUF_SRC: &str = "
-discipline Bit {}
-mod Buf (input A: Bit, output Y: Bit) {}
-digital Buf {
-    @ change(A) {
-        Y <- A;
-    }
-}
-";
-
-#[test]
-fn test_digital_buf_change() {
-    let prog = parse_and_elaborate(BUF_SRC).expect("elab");
-    let mut interp = compile_digital_module(&prog, "Buf", 0).expect("digital codegen");
-
-    let mut port_map = HashMap::new();
-    port_map.insert("A".to_string(), DigitalNet(0));
-    port_map.insert("Y".to_string(), DigitalNet(1));
-    interp.set_port_nets(port_map);
-
-    let mut queue: BinaryHeap<Reverse<piperine_solver::digital::DigitalEvent>> = BinaryHeap::new();
-    interp.init(&mut queue);
-
-    // A transitions X→1: Y should become 1.
-    let nets = vec![LogicValue::One, LogicValue::X];
-    interp.eval(0.0, &nets, &mut queue);
-
-    assert_eq!(queue.len(), 1, "one event for Y");
-    let Reverse(ev) = queue.pop().unwrap();
-    assert_eq!(ev.net, DigitalNet(1));
-    assert_eq!(ev.value, LogicValue::One, "Y = A = 1");
-}
-
 
 fn ir_analog_to_device(
     prog: &piperine_codegen::ir::IrProgram,

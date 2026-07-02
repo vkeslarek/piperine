@@ -2,13 +2,16 @@
 //! PHDL-specific tests (parse_and_elaborate, ppr_to_ir, from_ir).
 
 use piperine_codegen::{ir::IrProgram, SimCtx};
-use piperine_lang::{from_ir, ir_digital_to_interp, parse_and_elaborate, ppr_to_ir};
+use piperine_lang::{parse_and_elaborate, ppr_to_ir};
+use piperine_codegen::{CircuitCompiler, DigitalKernel};
 
 // ── A.4 — Digital Pow/Shl/Shr silently become Add ─────────────────────────
 
 #[test]
 fn a4_shift_in_digital_guard_is_rejected_not_silently_add() {
-    use piperine_codegen::ir::{IrBinOp, IrExpr, IrStmt, IrDigitalBody, IrModule, Source, Domain};
+    use piperine_codegen::ir::{
+        IrBinOp, IrDigitalBody, IrExpr, IrModule, IrStmt, Source,
+    };
 
     let mut prog = IrProgram::new(Source::Ams);
     let mut module = IrModule::new("shift_fsm");
@@ -28,7 +31,7 @@ fn a4_shift_in_digital_guard_is_rejected_not_silently_add() {
         }],
     });
     prog.modules.push(module);
-    let err = ir_digital_to_interp(&prog, "shift_fsm")
+    let err = DigitalKernel::compile(prog.module("shift_fsm").unwrap())
         .err()
         .expect("shift in digital guard must fail");
     let msg = format!("{err:?}").to_lowercase();
@@ -51,7 +54,7 @@ fn make_digital_ir_with_unary_op(
     let node_out = module.symbols.add_node("out", Domain::Digital);
     module.digital = Some(IrDigitalBody {
         inputs: Vec::new(),
-        outputs: Vec::new(),
+        outputs: vec![node_out],
         regs: Vec::new(),
         stmts: vec![IrStmt::Assign {
             lval: Lval::Net(node_out),
@@ -66,7 +69,7 @@ fn make_digital_ir_with_unary_op(
 fn a5_bitnot_in_digital_is_rejected_not_silently_not() {
     use piperine_codegen::ir::IrUnOp;
     let prog = make_digital_ir_with_unary_op("bitnot_fsm", IrUnOp::BitNot);
-    let err = ir_digital_to_interp(&prog, "bitnot_fsm")
+    let err = DigitalKernel::compile(prog.module("bitnot_fsm").unwrap())
         .err()
         .expect("BitNot in digital must fail");
     let msg = format!("{err:?}").to_lowercase();
@@ -80,7 +83,7 @@ fn a5_bitnot_in_digital_is_rejected_not_silently_not() {
 fn a5_reduction_op_in_digital_is_rejected_not_silently_not() {
     use piperine_codegen::ir::IrUnOp;
     let prog = make_digital_ir_with_unary_op("redand_fsm", IrUnOp::RedAnd);
-    let err = ir_digital_to_interp(&prog, "redand_fsm")
+    let err = DigitalKernel::compile(prog.module("redand_fsm").unwrap())
         .err()
         .expect("RedAnd in digital must fail");
     let msg = format!("{err:?}").to_lowercase();
@@ -94,7 +97,7 @@ fn a5_reduction_op_in_digital_is_rejected_not_silently_not() {
 fn a5_neg_in_digital_still_works() {
     use piperine_codegen::ir::IrUnOp;
     let prog = make_digital_ir_with_unary_op("neg_fsm", IrUnOp::Neg);
-    ir_digital_to_interp(&prog, "neg_fsm").expect("Neg in digital must still work");
+    DigitalKernel::compile(prog.module("neg_fsm").unwrap()).expect("Neg in digital must still work");
 }
 
 // ── A.6 — from_ir propagates child compile errors ──────────────────────────
@@ -144,9 +147,10 @@ fn a6_from_ir_propagates_child_compile_error_not_silent_skip() {
         params: Vec::new(),
     }];
     prog.modules.push(module_top);
-    let err = from_ir(&prog, "top").err().expect("top with bad child must fail");
-    assert!(err.contains("u1"), "A.6: error should name instance u1, got: {err}");
-    assert!(err.contains("vsource"), "A.6: error should name module vsource, got: {err}");
+    let err = CircuitCompiler::new(&prog).build_circuit("top").err().expect("top with bad child must bubble error");
+    let msg = err.to_string();
+    assert!(msg.contains("u1"), "A.6: error should name instance u1, got: {msg}");
+    assert!(msg.contains("vsource"), "A.6: error should name module vsource, got: {msg}");
 }
 
 // ── A.7 — from_elab ddt rejection (now tests IR path handles ddt) ──────────

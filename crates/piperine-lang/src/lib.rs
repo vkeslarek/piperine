@@ -49,7 +49,6 @@ pub mod lowering;
 pub mod parse;
 pub mod pom;
 pub mod resolve;
-pub mod runtime;
 
 // ── POM types ────────────────────────────────────────────────────────────
 pub use pom::{
@@ -64,10 +63,6 @@ pub use resolve::{ResolveError, Resolver};
 
 // ── IR lowering + runtime ─────────────────────────────────────────────────
 pub use lowering::ppr_to_ir;
-pub use runtime::from_ir;
-pub use runtime::device::PhdlDevice;
-pub use runtime::digital_lower::ir_digital_to_interp;
-pub use runtime::digital::{compile_digital_module, DigitalInterpreter, DigitalVal};
 
 /// Parse a PHDL source string and run the full elaboration pipeline.
 pub fn parse_and_elaborate(input: &str) -> Result<Design, String> {

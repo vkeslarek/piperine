@@ -1,6 +1,7 @@
 //! API surface pinning tests for the IR-centric codegen (in piperine-lang).
 
-use piperine_lang::{parse_and_elaborate, ppr_to_ir, ir_digital_to_interp};
+use piperine_lang::{parse_and_elaborate, ppr_to_ir};
+use piperine_codegen::DigitalKernel;
 use piperine_codegen::ir::IrProgram;
 
 fn parse_ppr(body: &str) -> IrProgram {
@@ -60,7 +61,7 @@ fn ir_digital_compile_dff() {
     ";
     let elab = parse_and_elaborate(src).expect("parse_and_elaborate DFF");
     let ir = ppr_to_ir(&elab);
-    let _interp = ir_digital_to_interp(&ir, "DFF").expect("DFF interp");
+    let _interp = DigitalKernel::compile(ir.module("DFF").unwrap()).expect("DFF interp");
 }
 
 fn ir_analog_to_device(
