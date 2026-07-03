@@ -158,6 +158,11 @@ fn resolve_calls_in_expr(expr: &mut Expr) -> Result<(), ElabError> {
             resolve_calls_in_expr(body)?;
         }
         Expr::Cast(_, inner) => resolve_calls_in_expr(inner)?,
+        Expr::Tuple(items) => {
+            for e in items {
+                resolve_calls_in_expr(e)?;
+            }
+        }
         Expr::Literal(_) | Expr::Ident(_) | Expr::Path(_) => {}
     }
     Ok(())
@@ -188,9 +193,14 @@ fn resolve_calls_in_ast_stmt(stmt: &mut crate::parse::ast::Stmt) -> Result<(), E
                 if let Some(e) = &mut arm.body.expr { resolve_calls_in_expr(e)?; }
             }
         }
-        crate::parse::ast::Stmt::For { range, body, .. } => {
-            resolve_calls_in_expr(&mut range.start)?;
-            resolve_calls_in_expr(&mut range.end)?;
+        crate::parse::ast::Stmt::For { iter, body, .. } => {
+            match iter {
+                crate::parse::ast::ForIter::Range(range) => {
+                    resolve_calls_in_expr(&mut range.start)?;
+                    resolve_calls_in_expr(&mut range.end)?;
+                }
+                crate::parse::ast::ForIter::Expr(e) => resolve_calls_in_expr(e)?,
+            }
             for s in &mut body.stmts { resolve_calls_in_ast_stmt(s)?; }
             if let Some(e) = &mut body.expr { resolve_calls_in_expr(e)?; }
         }

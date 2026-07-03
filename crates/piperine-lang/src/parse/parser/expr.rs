@@ -144,9 +144,25 @@ impl<'a> Parser<'a> {
             }
             Some(Tok::LParen) => {
                 self.pos += 1;
-                let e = self.parse_expr()?;
-                self.expect(&Tok::RParen)?;
-                e
+                if self.eat(&Tok::RParen) {
+                    Expr::Tuple(vec![])
+                } else {
+                    let first = self.parse_expr()?;
+                    if self.eat(&Tok::Comma) {
+                        let mut items = vec![first];
+                        while !self.eat(&Tok::RParen) {
+                            items.push(self.parse_expr()?);
+                            if !self.eat(&Tok::Comma) {
+                                self.expect(&Tok::RParen)?;
+                                break;
+                            }
+                        }
+                        Expr::Tuple(items)
+                    } else {
+                        self.expect(&Tok::RParen)?;
+                        first
+                    }
+                }
             }
             Some(Tok::LBrace) => Expr::Block(self.parse_block()?),
             Some(Tok::Not) => {

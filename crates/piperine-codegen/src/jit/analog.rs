@@ -22,7 +22,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
-use crate::ir::{CrossDir, IrExpr, IrModule, IrStateKind, NodeId, StateId, VarId};
+use crate::ir::{CrossDir, Domain, IrExpr, IrModule, IrStateKind, NodeId, StateId, VarId};
 
 use super::emit::AnalogEmitter;
 use super::flatten::{
@@ -92,6 +92,19 @@ pub struct AnalogKernel {
     /// Terminal order: module ports first, then internal analog nodes
     /// referenced by the body. `terminals[i]` is the node driving `volts[i]`.
     terminals: Vec<NodeId>,
+    /// `digital_terminals[i]` is `true` when `terminals[i]` is a
+    /// digital-domain node (a `Bit`/`Logic` port read by bare name inside
+    /// this analog body, not through `V`/`I`). Such a terminal is never an
+    /// MNA unknown — nothing in a `V`/`I` contribution stamps a row for
+    /// it — so the device must not connect it to the netlist (it would be
+    /// a structurally empty, singular row); its `volts[i]` is bridged in
+    /// externally instead (`AnalogInstance::sync_vars`-adjacent).
+    digital_terminals: Vec<bool>,
+    /// Exclusive upper bounds of the `params`/`state`/`vars` bank slots
+    /// the compiled code actually loads ([`FlatAnalog::read_bounds`]) —
+    /// the eval-time bounds contract, distinct from the symbol-table
+    /// counts used for bank *allocation*.
+    read_bounds: (usize, usize, usize),
     num_ports: usize,
     num_params: usize,
     num_state_slots: usize,
@@ -149,6 +162,12 @@ impl AnalogKernel {
     /// All terminals: ports first, then internal nodes.
     pub fn terminals(&self) -> &[NodeId] {
         &self.terminals
+    }
+
+    /// `true` when terminal `i` is digital-domain (never an MNA unknown —
+    /// see [`AnalogKernel::digital_terminals`]).
+    pub fn is_digital_terminal(&self, i: usize) -> bool {
+        self.digital_terminals.get(i).copied().unwrap_or(false)
     }
 
     /// How many leading terminals are module ports.
@@ -220,6 +239,36 @@ impl AnalogKernel {
         self.bound_step.is_some()
     }
 
+    /// Bounds contract for every `eval_*` entry point: the JIT'd code
+    /// loads `volts[0..num_terminals]`, `params[0..num_params]`,
+    /// `state[0..num_state_slots]`, and `vars[0..num_vars]` unchecked —
+    /// an undersized slice is out-of-bounds native reads (a segfault at
+    /// best). Check here, once, so a bad caller panics with a message
+    /// instead (fail loud, GAPS).
+    fn check_input_lens(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64]) {
+        let (params_read, state_read, vars_read) = self.read_bounds;
+        assert!(
+            volts.len() >= self.terminals.len(),
+            "kernel `{}`: {} volt(s) for {} terminal(s)",
+            self.name, volts.len(), self.terminals.len()
+        );
+        assert!(
+            params.len() >= params_read,
+            "kernel `{}`: {} param(s), reads up to {}",
+            self.name, params.len(), params_read
+        );
+        assert!(
+            state.len() >= state_read,
+            "kernel `{}`: {} state slot(s), reads up to {}",
+            self.name, state.len(), state_read
+        );
+        assert!(
+            vars.len() >= vars_read,
+            "kernel `{}`: {} var(s), reads up to {} (module-level vars incl. any digital-read shadows)",
+            self.name, vars.len(), vars_read
+        );
+    }
+
     fn call(f: AnalogFn, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         unsafe {
             f(
@@ -235,17 +284,20 @@ impl AnalogKernel {
 
     /// Accumulate branch currents into `out[0..n]`. `out` must be pre-zeroed.
     pub fn eval_residual(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        self.check_input_lens(volts, params, state, vars);
         Self::call(self.residual, volts, params, state, vars, sim, out);
     }
 
     /// Accumulate conductances into `out[0..n²]` (row-major). Pre-zeroed.
     pub fn eval_jacobian(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        self.check_input_lens(volts, params, state, vars);
         Self::call(self.jacobian, volts, params, state, vars, sim, out);
     }
 
     /// Accumulate terminal charges into `out[0..n]`. No-op without reactive parts.
     pub fn eval_charge(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.charge {
+            self.check_input_lens(volts, params, state, vars);
             Self::call(f, volts, params, state, vars, sim, out);
         }
     }
@@ -253,6 +305,7 @@ impl AnalogKernel {
     /// Accumulate `dQ/dV` into `out[0..n²]`. No-op without reactive parts.
     pub fn eval_charge_jacobian(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.charge_jacobian {
+            self.check_input_lens(volts, params, state, vars);
             Self::call(f, volts, params, state, vars, sim, out);
         }
     }
@@ -260,6 +313,7 @@ impl AnalogKernel {
     /// Write each force's source value `E_i(V)` to `out[0..num_forces]`.
     pub fn eval_force(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.force {
+            self.check_input_lens(volts, params, state, vars);
             Self::call(f, volts, params, state, vars, sim, out);
         }
     }
@@ -267,6 +321,7 @@ impl AnalogKernel {
     /// Write `dE_i/dV_j` to `out[0..num_forces·n]` (row-major).
     pub fn eval_force_jacobian(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.force_jacobian {
+            self.check_input_lens(volts, params, state, vars);
             Self::call(f, volts, params, state, vars, sim, out);
         }
     }
@@ -274,6 +329,7 @@ impl AnalogKernel {
     /// Write each noise source's PSD to `out[0..num_noise]`.
     pub fn eval_noise(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.noise {
+            self.check_input_lens(volts, params, state, vars);
             Self::call(f, volts, params, state, vars, sim, out);
         }
     }
@@ -281,6 +337,7 @@ impl AnalogKernel {
     /// Write each runtime state's input value to `out[0..num_state_slots]`.
     pub fn eval_state_inputs(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.state_inputs {
+            self.check_input_lens(volts, params, state, vars);
             Self::call(f, volts, params, state, vars, sim, out);
         }
     }
@@ -288,6 +345,7 @@ impl AnalogKernel {
     /// Write each event's trigger value to `out[0..events.len()]`.
     pub fn eval_event_triggers(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.event_triggers {
+            self.check_input_lens(volts, params, state, vars);
             Self::call(f, volts, params, state, vars, sim, out);
         }
     }
@@ -295,6 +353,7 @@ impl AnalogKernel {
     /// Write each event action's value to `out[0..num_event_actions]`.
     pub fn eval_event_actions(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.event_actions {
+            self.check_input_lens(volts, params, state, vars);
             Self::call(f, volts, params, state, vars, sim, out);
         }
     }
@@ -303,6 +362,7 @@ impl AnalogKernel {
     pub fn eval_bound_step(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx) -> f64 {
         match self.bound_step {
             Some(f) => {
+                self.check_input_lens(volts, params, state, vars);
                 let mut out = [f64::INFINITY];
                 Self::call(f, volts, params, state, vars, sim, &mut out);
                 out[0]
@@ -399,6 +459,7 @@ impl<'m> AnalogCompiler<'m> {
     }
 
     fn compile(mut self) -> Result<AnalogKernel, CodegenError> {
+        let read_bounds = self.flat.read_bounds();
         let resistive = std::mem::take(&mut self.flat.resistive);
         let charge = std::mem::take(&mut self.flat.charge);
         let forces = std::mem::take(&mut self.flat.forces);
@@ -558,6 +619,12 @@ impl<'m> AnalogCompiler<'m> {
             event_triggers: event_triggers_id.map(|id| get(&self.jit, id)),
             event_actions: event_actions_id.map(|id| get(&self.jit, id)),
             bound_step: bound_step_id.map(|id| get(&self.jit, id)),
+            digital_terminals: self
+                .terminals
+                .iter()
+                .map(|&id| self.module.symbols.node(id).domain == Domain::Digital)
+                .collect(),
+            read_bounds,
             terminals: std::mem::take(&mut self.terminals),
             _jit: self.jit,
         })
@@ -758,5 +825,24 @@ impl FlatAnalog {
             .chain(self.noise.iter().map(|(_, _, psd)| psd))
             .chain(self.runtime_states.iter().map(|(_, input)| input))
             .chain(self.events.iter().flat_map(FlatEvent::exprs))
+    }
+
+    /// How far into the `params`/`state`/`vars` banks the compiled code
+    /// actually reads: `(params, state, vars)` as exclusive upper bounds
+    /// (max referenced id + 1). The symbol-table counts overcount — a
+    /// behavior-local `var` is inlined away and a `ddt` state is
+    /// substituted out of the residual — so the eval-time bounds contract
+    /// ([`AnalogKernel::check_input_lens`]) uses these instead.
+    fn read_bounds(&self) -> (usize, usize, usize) {
+        let (mut params, mut state, mut vars) = (0usize, 0usize, 0usize);
+        for expr in self.exprs() {
+            expr.visit(&mut |e| match e {
+                IrExpr::Param(id) => params = params.max(id.0 as usize + 1),
+                IrExpr::State(id) => state = state.max(id.0 as usize + 1),
+                IrExpr::Var(id) => vars = vars.max(id.0 as usize + 1),
+                _ => {}
+            });
+        }
+        (params, state, vars)
     }
 }

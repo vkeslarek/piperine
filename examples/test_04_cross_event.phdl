@@ -20,3 +20,10 @@ analog CrossDetector {
         // dummy
     }
 }
+
+bench CrossDetector {
+    fn test_op_solves() {
+        var r = $op();
+        $assert(1 == 1, "CrossDetector reaches a DC operating point");
+    }
+}

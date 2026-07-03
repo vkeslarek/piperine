@@ -246,6 +246,7 @@ mod enum_decl;
 mod capability_decl;
 mod impl_decl;
 mod fn_decl;
+mod bench_decl;
 mod block;
 mod const_decl;
 mod item;

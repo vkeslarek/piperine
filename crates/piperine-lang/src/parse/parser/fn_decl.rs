@@ -39,8 +39,14 @@ impl Parse for FnSig {
             }
             parser.expect(&Tok::RParen)?;
         }
-        parser.expect(&Tok::Arrow)?;
-        let ret = Type::parse(parser)?;
+        // `-> RetType` is optional; an omitted return type is `Unit` (the
+        // common case for a `bench` entry point, which is a procedure, not
+        // a value computation — SPEC_BENCH.md §2).
+        let ret = if parser.eat(&Tok::Arrow) {
+            Type::parse(parser)?
+        } else {
+            Type { name: "Unit".into(), args: Vec::new(), dimensions: Vec::new() }
+        };
         Ok(FnSig { name, type_params, params, ret })
     }
 }

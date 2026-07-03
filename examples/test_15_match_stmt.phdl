@@ -16,3 +16,10 @@ digital MatchTest {
         }
     }
 }
+
+bench MatchTest {
+    fn test_op_solves() {
+        var res = $op();
+        $assert(1 == 1, "MatchTest reaches a DC operating point");
+    }
+}

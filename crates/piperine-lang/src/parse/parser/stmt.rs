@@ -380,8 +380,7 @@ impl<'a> Parser<'a> {
     pub(crate) fn parse_stmt(&mut self) -> Result<Stmt, crate::parse::error::ParseError> {
         if self.eat_ident("var") {
             let name = self.parse_ident()?;
-            self.expect(&Tok::Colon)?;
-            let ty = self.parse_type()?;
+            let ty = if self.eat(&Tok::Colon) { Some(self.parse_type()?) } else { None };
             let default = if self.eat(&Tok::Assign) { Some(self.parse_expr()?) } else { None };
             self.expect(&Tok::Semi)?;
             return Ok(Stmt::VarDecl { name, ty, default });
@@ -420,9 +419,9 @@ impl<'a> Parser<'a> {
         if self.eat_ident("for") {
             let var = self.parse_ident()?;
             self.expect_ident_str("in")?;
-            let range = self.parse_range()?;
+            let iter = self.parse_for_iter()?;
             let body = self.parse_block()?;
-            return Ok(Stmt::For { var, range, body });
+            return Ok(Stmt::For { var, iter, body });
         }
         if self.eat_ident("return") {
             let expr = self.parse_expr()?;
@@ -461,6 +460,22 @@ impl<'a> Parser<'a> {
         };
         let end = self.parse_expr()?;
         Ok(Range { start: Box::new(start), end: Box::new(end), inclusive })
+    }
+
+    /// Parses a fn-body `for`'s iterable: `start..end`/`start..=end` (a
+    /// [`Range`]), or any other expression (a runtime list value —
+    /// SPEC Part I §9).
+    pub(crate) fn parse_for_iter(&mut self) -> Result<ForIter, crate::parse::error::ParseError> {
+        let start = self.parse_expr()?;
+        let inclusive = if self.eat(&Tok::DotDotEq) {
+            true
+        } else if self.eat(&Tok::DotDot) {
+            false
+        } else {
+            return Ok(ForIter::Expr(start));
+        };
+        let end = self.parse_expr()?;
+        Ok(ForIter::Range(Range { start: Box::new(start), end: Box::new(end), inclusive }))
     }
 
     /// Parses a match pattern: `_` (wildcard) or a path.

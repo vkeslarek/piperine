@@ -45,16 +45,18 @@
 //! | [`resolve`] | `use` declaration resolver |
 
 pub mod elab;
+pub mod eval;
 pub mod lowering;
 pub mod parse;
 pub mod pom;
 pub mod resolve;
+pub mod value;
 pub mod source_map;
 
 // ── POM types ────────────────────────────────────────────────────────────
 pub use pom::{
     ElabError,
-    Behavior, BehaviorStmt, Connection, Design, Function, ImplBlock,
+    Behavior, BehaviorStmt, BenchBlock, Connection, Design, Function, ImplBlock,
     Instance, MatchArm, Module, NetRef, NetType, Param, Port, TypeRef,
     ValueType, Wire,
     Id, Kind, Kinded, Named, NetTyped, OverrideMap, ReflectError, Selection, Value,

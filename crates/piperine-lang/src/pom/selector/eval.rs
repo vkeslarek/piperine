@@ -128,14 +128,14 @@ impl<'a> Evaluator<'a> {
                                         if let Some(val) = val {
                                             match (&rhs.0, val, &rhs.1) {
                                                 (super::ast::CmpOp::Eq, crate::pom::Value::Real(r), super::ast::Operand::Literal(super::ast::Literal::Number(n))) => r == n,
-                                                (super::ast::CmpOp::Eq, crate::pom::Value::String(s), super::ast::Operand::Literal(super::ast::Literal::String(n))) => s == n,
-                                                (super::ast::CmpOp::Eq, crate::pom::Value::String(s), super::ast::Operand::Literal(super::ast::Literal::Ident(n))) => s == n,
+                                                (super::ast::CmpOp::Eq, crate::pom::Value::Str(s), super::ast::Operand::Literal(super::ast::Literal::String(n))) => s == n,
+                                                (super::ast::CmpOp::Eq, crate::pom::Value::Str(s), super::ast::Operand::Literal(super::ast::Literal::Ident(n))) => s == n,
                                                 (super::ast::CmpOp::Gt, crate::pom::Value::Real(r), super::ast::Operand::Literal(super::ast::Literal::Number(n))) => r > n,
                                                 (super::ast::CmpOp::Lt, crate::pom::Value::Real(r), super::ast::Operand::Literal(super::ast::Literal::Number(n))) => r < n,
                                                 (super::ast::CmpOp::Ge, crate::pom::Value::Real(r), super::ast::Operand::Literal(super::ast::Literal::Number(n))) => r >= n,
                                                 (super::ast::CmpOp::Le, crate::pom::Value::Real(r), super::ast::Operand::Literal(super::ast::Literal::Number(n))) => r <= n,
                                                 (super::ast::CmpOp::NotEq, crate::pom::Value::Real(r), super::ast::Operand::Literal(super::ast::Literal::Number(n))) => r != n,
-                                                (super::ast::CmpOp::NotEq, crate::pom::Value::String(s), super::ast::Operand::Literal(super::ast::Literal::String(n))) => s != n,
+                                                (super::ast::CmpOp::NotEq, crate::pom::Value::Str(s), super::ast::Operand::Literal(super::ast::Literal::String(n))) => s != n,
                                                 _ => false, // fallback false
                                             }
                                         } else {

@@ -6,7 +6,7 @@
 //! iteration (reactive parts are handled by the charge Jacobian), so their
 //! derivative is zero.
 
-use crate::ir::{IrBinOp, IrExpr, IrUnOp, NodeId};
+use crate::{IrBinOp, IrExpr, IrUnOp, NodeId};
 
 impl IrExpr {
     /// `∂self / ∂V(plus, minus)` as a new expression.

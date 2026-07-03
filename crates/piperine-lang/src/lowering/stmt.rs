@@ -5,7 +5,7 @@
 use crate::pom::BehaviorStmt;
 use crate::parse::ast::{BindOp, Expr, Literal, Pattern};
 
-use piperine_codegen::ir::*;
+use piperine_ir::*;
 
 use super::event::convert_event_spec;
 use super::expr::{lower_expr, parse_contrib_dest, scan_noise};

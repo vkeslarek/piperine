@@ -11,3 +11,10 @@ analog Inverter {
     var target : Real = -gain * V(a, gnd);
     I(y, gnd) <+ 1e-15 * ddt(V(y, gnd)) + (V(y, gnd) - target) / 1000.0;
 }
+
+bench Inverter {
+    fn test_inverter_rests_near_ground() {
+        var res = $op();
+        $assert(res.v(y, gnd) < 1e-6, "floating input: output should rest near 0V at DC");
+    }
+}

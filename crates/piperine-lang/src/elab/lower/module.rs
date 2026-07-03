@@ -6,7 +6,8 @@ use std::collections::HashMap;
 
 use crate::parse::ast::{Expr, ModuleDeclaration};
 use crate::parse::ast::ModuleStatement;
-use crate::elab::const_eval::{ConstEnv, ConstVal};
+use crate::elab::const_eval::ConstEnv;
+use crate::value::Value;
 use crate::pom::{Connection, ElabError, ElabErrorKind, Instance, Module, Param, Var, Wire};
 
 use super::Elaborator;
@@ -106,7 +107,7 @@ impl Elaborator {
         pname: &str,
         fields: &[(String, Expr)],
         env: &ConstEnv,
-    ) -> Result<Vec<(String, ConstVal)>, ElabError> {
+    ) -> Result<Vec<(String, Value)>, ElabError> {
         fields
             .iter()
             .map(|(fname, fexpr)| {
@@ -312,7 +313,7 @@ impl Elaborator {
                 let end = if range.inclusive { end_val + 1 } else { end_val };
                 for i in start..end {
                     env.push();
-                    env.define(var.clone(), ConstVal::Nat(i));
+                    env.define(var.clone(), Value::Nat(i));
                     let body = body.clone();
                     self.lower_mod_stmts(&body, env, type_subst, local_types, out)?;
                     env.pop();
@@ -325,8 +326,8 @@ impl Elaborator {
                     source: e,
                 })?;
                 let taken = match val {
-                    ConstVal::Bool(true) | ConstVal::Nat(1) => then_body.as_slice(),
-                    ConstVal::Nat(n) if n != 0 => then_body.as_slice(),
+                    Value::Bool(true) | Value::Nat(1) => then_body.as_slice(),
+                    Value::Nat(n) if n != 0 => then_body.as_slice(),
                     _ => else_body.as_deref().unwrap_or(&[]),
                 };
                 let taken = taken.to_vec();
@@ -412,7 +413,7 @@ impl Elaborator {
                 // matching the bundle-param flattening done for `param`
                 // declarations above — fields the literal omits are left
                 // to the child module's own flattened defaults.
-                let mut resolved_params: Vec<(String, ConstVal)> = Vec::new();
+                let mut resolved_params: Vec<(String, Value)> = Vec::new();
                 for pa in params {
                     match &pa.expr {
                         Expr::BundleLit { fields, .. } => {
@@ -470,16 +471,18 @@ impl Elaborator {
                     source: e,
                 })?;
                 let holds = match value {
-                    ConstVal::Bool(b) => b,
-                    ConstVal::Int(v) => v != 0,
-                    ConstVal::Nat(v) => v != 0,
-                    ConstVal::Real(r) => r != 0.0,
-                    ConstVal::Str(_) => true,
-                    ConstVal::EnumVariant(_, _) => true,
+                    Value::Bool(b) => b,
+                    Value::Int(v) => v != 0,
+                    Value::Nat(v) => v != 0,
+                    Value::Real(r) => r != 0.0,
+                    // Any other constant (string, enum variant, complex, …)
+                    // is "present" and treated as a passing condition —
+                    // pre-unification behavior, unchanged.
+                    _ => true,
                 };
                 if !holds {
                     let text = match env.eval(msg) {
-                        Ok(ConstVal::Str(s)) => s,
+                        Ok(Value::Str(s)) => s,
                         _ => "assertion failed".into(),
                     };
                     return Err(ElabError::from(ElabErrorKind::Other(format!("$assert failed: {text}"))));

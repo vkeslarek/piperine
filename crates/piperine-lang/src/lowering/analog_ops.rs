@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 
 use crate::parse::ast::Expr;
-use piperine_codegen::ir::*;
+use piperine_ir::*;
 
 use super::expr::lower_expr;
 use super::LowerCtx;
@@ -68,7 +68,7 @@ impl AnalogOp for Ddx {
         }
         let x = lower_expr(&args[0], ctx);
         let node_name = super::expr::ident_from_expr(Some(&args[1])).unwrap_or_else(|| "?".into());
-        let node = ctx.lookup_node(&node_name).unwrap_or(piperine_codegen::ir::NodeId::GROUND);
+        let node = ctx.lookup_node(&node_name).unwrap_or(piperine_ir::NodeId::GROUND);
         let id = ctx.alloc_state(IrStateKind::Ddx { node }, x);
         IrExpr::State(id)
     }
@@ -134,10 +134,10 @@ impl AnalogOp for Laplace {
         let den = to_vec(&args[2], ctx);
         
         let variant = match self.variant {
-            "zp" => piperine_codegen::ir::LaplaceKind::ZerosPoles,
-            "np" => piperine_codegen::ir::LaplaceKind::NumPoles,
-            "zd" => piperine_codegen::ir::LaplaceKind::ZerosDen,
-            _ => piperine_codegen::ir::LaplaceKind::NumDen,
+            "zp" => piperine_ir::LaplaceKind::ZerosPoles,
+            "np" => piperine_ir::LaplaceKind::NumPoles,
+            "zd" => piperine_ir::LaplaceKind::ZerosDen,
+            _ => piperine_ir::LaplaceKind::NumDen,
         };
         let id = ctx.alloc_state(
             IrStateKind::Laplace { variant, num, den },
@@ -170,10 +170,10 @@ impl AnalogOp for ZTransform {
         let sample_dt = lower_expr(&args[3], ctx);
         
         let variant = match self.variant {
-            "zp" => piperine_codegen::ir::ZKind::ZerosPoles,
-            "np" => piperine_codegen::ir::ZKind::NumPoles,
-            "zd" => piperine_codegen::ir::ZKind::ZerosDen,
-            _ => piperine_codegen::ir::ZKind::NumDen,
+            "zp" => piperine_ir::ZKind::ZerosPoles,
+            "np" => piperine_ir::ZKind::NumPoles,
+            "zd" => piperine_ir::ZKind::ZerosDen,
+            _ => piperine_ir::ZKind::NumDen,
         };
         
         let id = ctx.alloc_state(

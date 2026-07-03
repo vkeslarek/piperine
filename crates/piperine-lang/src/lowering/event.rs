@@ -2,7 +2,7 @@
 
 use crate::parse::ast::EventSpec;
 
-use piperine_codegen::ir::*;
+use piperine_ir::*;
 
 use super::expr::lower_expr;
 use super::LowerCtx;

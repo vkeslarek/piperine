@@ -1,5 +1,7 @@
 [workspace]
 members = [
+    "crates/piperine-bench",
+    "crates/piperine-ir",
     "crates/piperine-cli",
     "crates/piperine-codegen",
     "crates/piperine-lang",

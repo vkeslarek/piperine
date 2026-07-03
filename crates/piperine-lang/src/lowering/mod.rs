@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::pom::Design;
 
-use piperine_codegen::ir::*;
+use piperine_ir::*;
 
 pub mod analog_ops;
 pub mod event;
@@ -13,7 +13,7 @@ pub mod stmt;
 pub mod structure;
 pub mod syscalls;
 
-use structure::{convert_fn, convert_mod, const_val_to_ir};
+use structure::{convert_fn, convert_mod, value_to_ir};
 use stmt::lower_stmts;
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -43,6 +43,15 @@ pub(crate) struct LowerCtx<'a> {
     /// Enum variant discriminants, keyed bare (`Idle`) and qualified
     /// (`SarState::Idle`). SPEC §6.4: a variant is an integer constant.
     pub enum_values: HashMap<String, i64>,
+    /// Digital-domain nodes read from *this* analog body (a port or wire
+    /// whose value comes from the digital side, referenced by bare name —
+    /// not through `V`/`I`), bridged through a synthetic module-level
+    /// shadow `var`: the same D2A path (`AnalogInstance::sync_vars`) a
+    /// real `var` read already uses, so this never falls back to a silent
+    /// `Real(0.0)`. The caller (`ppr_to_ir`) merges these into the
+    /// module's digital body (creating one if the module has none) after
+    /// every behavior is lowered.
+    pub digital_shadows: Vec<(NodeId, VarId)>,
 }
 
 impl<'a> LowerCtx<'a> {
@@ -57,7 +66,20 @@ impl<'a> LowerCtx<'a> {
             module_vars,
             instance_ports: HashMap::new(),
             enum_values: HashMap::new(),
+            digital_shadows: Vec::new(),
         }
+    }
+
+    /// The shadow `var` bridging digital-domain node `id` (named `name`,
+    /// for a readable IR symbol) into this analog body. Reuses the same
+    /// shadow if `id` was already read earlier in this behavior.
+    pub fn shadow_var_for(&mut self, id: NodeId, name: &str) -> VarId {
+        if let Some((_, var)) = self.digital_shadows.iter().find(|(node, _)| *node == id) {
+            return *var;
+        }
+        let var = self.symbols.add_var(format!("__shadow_{name}"), IrType::Bool);
+        self.digital_shadows.push((id, var));
+        var
     }
 
     /// Lookup an enum variant's discriminant by bare or qualified name.
@@ -153,6 +175,13 @@ pub fn ppr_to_ir(prog: &Design) -> IrProgram {
             }
         }
 
+        // Digital-domain nodes read from an analog body (§ shadow-var
+        // bridge, `LowerCtx::shadow_var_for`), collected across every
+        // analog behavior and merged into the module's digital body below
+        // — creating one if the module declares no `digital` block at all
+        // (a module can be purely analog but still read a digital port).
+        let mut digital_shadows: Vec<(NodeId, VarId)> = Vec::new();
+
         for behavior in m.behaviors() {
             let is_digital = behavior.is_digital();
             let module_vars: HashSet<String> = m.vars().iter().map(|v| v.name().to_string()).collect();
@@ -161,6 +190,7 @@ pub fn ppr_to_ir(prog: &Design) -> IrProgram {
             ctx.enum_values = prog.enum_value_map();
 
             let stmts = lower_stmts(behavior.body(), &mut ctx);
+            digital_shadows.extend(ctx.digital_shadows.drain(..));
 
             if is_digital {
                 // Populate digital inputs/outputs from the module's ports:
@@ -190,7 +220,7 @@ pub fn ppr_to_ir(prog: &Design) -> IrProgram {
                 // is an edge-triggered register). Collect their VarIds and
                 // emit `VarDecl` statements with their initializers so the
                 // digital compiler can extract `reg_inits`.
-                let var_inits: Vec<(String, Option<&crate::elab::const_eval::ConstVal>)> = m
+                let var_inits: Vec<(String, Option<&crate::value::Value>)> = m
                     .vars()
                     .iter()
                     .map(|v| (v.name().to_string(), v.init()))
@@ -204,7 +234,7 @@ pub fn ppr_to_ir(prog: &Design) -> IrProgram {
                     };
                     regs.push(vid);
                     if let Some(init) = vinit {
-                        let init_expr = const_val_to_ir(init, &mut modules[i].symbols);
+                        let init_expr = value_to_ir(init, &mut modules[i].symbols);
                         reg_decls.push(IrStmt::VarDecl { var: vid, init: Some(init_expr) });
                     }
                 }
@@ -224,6 +254,26 @@ pub fn ppr_to_ir(prog: &Design) -> IrProgram {
                     noise: ctx.noise_sources,
                     stmts,
                 });
+            }
+        }
+
+        if !digital_shadows.is_empty() {
+            let assigns: Vec<IrStmt> = digital_shadows
+                .iter()
+                .map(|(node, var)| IrStmt::Assign { lval: Lval::Var(*var), expr: IrExpr::Net(*node) })
+                .collect();
+            match &mut modules[i].digital {
+                Some(body) => body.stmts.extend(assigns),
+                None => {
+                    // No `digital` block at all: synthesize a body whose
+                    // only job is exporting these nodes' values into the
+                    // shadow vars every step (SPEC §9 combinational
+                    // semantics — a bare top-level `Assign`, re-evaluated
+                    // each digital eval, never a one-shot).
+                    let inputs = digital_shadows.iter().map(|(node, _)| *node).collect();
+                    modules[i].digital =
+                        Some(IrDigitalBody { inputs, outputs: Vec::new(), regs: Vec::new(), stmts: assigns });
+                }
             }
         }
     }

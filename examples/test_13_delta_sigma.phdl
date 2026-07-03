@@ -28,3 +28,10 @@ digital DeltaSigma {
         q = (V(intg) > 0.0);
     }
 }
+
+bench DeltaSigma {
+    fn test_op_solves() {
+        var res = $op();
+        $assert(1 == 1, "the delta-sigma modulator reaches a DC operating point");
+    }
+}

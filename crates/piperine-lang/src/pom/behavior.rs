@@ -1,7 +1,7 @@
 //! POM behavioral nodes — [`Behavior`] (an `analog`/`digital` block), its
 //! statements, and [`Function`]/[`ImplBlock`] (value-layer computation).
 
-use crate::elab::const_eval::ConstVal;
+use crate::value::Value;
 use crate::parse::ast::{BehaviorKind, BindOp, EventSpec, Pattern};
 use crate::pom::net_type::TypeRef;
 use crate::pom::node::Kind;
@@ -108,7 +108,7 @@ pub struct ImplBlock {
     /// The type being implemented.
     pub ty: String,
     /// Constant generic arguments of the type.
-    pub const_args: Vec<ConstVal>,
+    pub const_args: Vec<Value>,
     /// Methods defined in this impl block.
     pub methods: Vec<Function>,
 }

@@ -35,7 +35,7 @@ use crate::jit::digital::DigitalKernel;
 use crate::jit::CodegenError;
 
 pub use analog::AnalogInstance;
-pub use circuit::CircuitCompiler;
+pub use circuit::{BuiltInstanceInfo, CircuitBuildInfo, CircuitCompiler};
 pub use digital::DigitalInstance;
 
 /// The compiled artifact for one module: the JIT kernels, shared (`Arc`)

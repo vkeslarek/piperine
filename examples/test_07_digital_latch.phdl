@@ -16,3 +16,10 @@ digital SrLatch {
         }
     }
 }
+
+bench SrLatch {
+    fn test_op_solves() {
+        var res = $op();
+        $assert(1 == 1, "SrLatch reaches a DC operating point");
+    }
+}

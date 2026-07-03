@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::parse::ast::{BundleDecl, CapabilityDecl, DisciplineDecl, EnumDecl};
-use crate::pom::{Function, ImplBlock, Module, OverrideMap, Value};
+use crate::pom::{BenchBlock, ElabError, ElabErrorKind, Function, ImplBlock, Module, OverrideMap, Value};
 
 /// The complete output of elaboration — the POM root.
 ///
@@ -22,6 +22,7 @@ pub struct Design {
     pub(crate) functions: HashMap<String, Function>,
     pub(crate) impls: Vec<ImplBlock>,
     pub(crate) consts: HashMap<String, Value>,
+    pub(crate) benches: Vec<BenchBlock>,
     /// Staged parameter overrides — the single mutation surface in POM.
     /// Writing via `set_param()` stages here; re-elaboration consumes.
     pub(crate) overrides: Rc<RefCell<OverrideMap>>,
@@ -40,6 +41,7 @@ impl Design {
             functions: HashMap::new(),
             impls: Vec::new(),
             consts: HashMap::new(),
+            benches: Vec::new(),
             overrides: Rc::new(RefCell::new(OverrideMap::new())),
             top_module: None,
         }
@@ -137,8 +139,8 @@ impl Design {
                     .as_ref()
                     .and_then(|expr| crate::elab::const_eval::ConstEnv::new().eval(expr).ok())
                     .map_or(next, |val| match val {
-                        crate::elab::const_eval::ConstVal::Int(v) => v,
-                        crate::elab::const_eval::ConstVal::Nat(v) => v as i64,
+                        crate::value::Value::Int(v) => v,
+                        crate::value::Value::Nat(v) => v as i64,
                         _ => next,
                     });
                 map.insert(variant.name.clone(), value);
@@ -177,6 +179,16 @@ impl Design {
     /// Every impl block.
     pub fn impls(&self) -> &[ImplBlock] { &self.impls }
 
+    /// Every `bench` block.
+    pub fn benches(&self) -> impl Iterator<Item = &BenchBlock> {
+        self.benches.iter()
+    }
+
+    /// The `bench` rooted at `module`, if one exists.
+    pub fn bench(&self, module: &str) -> Option<&BenchBlock> {
+        self.benches.iter().find(|b| b.module == module)
+    }
+
     // ── Staging layer ─────────────────────────────────────────────────────
 
     /// Stage a parameter override. Does NOT mutate the elaborated design —
@@ -198,6 +210,64 @@ impl Design {
     /// Clear all staged overrides.
     pub fn clear_overrides(&self) {
         self.overrides.borrow_mut().clear();
+    }
+
+    /// An independent copy with its own, empty staging area — every other
+    /// field is a cheap structural clone. Used to give each `bench` entry
+    /// point a fresh view (SPEC_BENCH.md §9: staged overrides never leak
+    /// between entry points).
+    pub fn fork(&self) -> Design {
+        Design { overrides: Rc::new(RefCell::new(OverrideMap::new())), ..self.clone() }
+    }
+
+    /// Consume this design's staged overrides, producing a new `Design`
+    /// with them applied to `root_module`'s instances (and, for an empty
+    /// path, the module's own params). Non-structural only: the module set
+    /// and topology are unchanged, only `Value` defaults are patched —
+    /// exactly the effect `ppr_to_ir` would see from a differently-written
+    /// source (SPEC_BENCH.md §6.2 "the engine decides"; milestone 1 always
+    /// treats a param write as non-structural).
+    ///
+    /// The override path is the target instance's bare label within
+    /// `root_module` (SPEC_BENCH.md §3 name resolution — benches address a
+    /// flat, already-monomorphized netlist, so no hierarchical path is
+    /// needed). An override naming an unknown instance or param is a
+    /// fail-loud error, never a silent no-op.
+    pub fn with_overrides_applied(&self, root_module: &str) -> Result<Design, ElabError> {
+        let mut design = self.clone();
+        let overrides: Vec<(String, String, Value)> =
+            self.overrides.borrow().iter().map(|(p, n, v)| (p.clone(), n.clone(), v.clone())).collect();
+        let module = design.modules.get_mut(root_module).ok_or_else(|| {
+            ElabError::from(ElabErrorKind::Other(format!("bench root module `{root_module}` not found")))
+        })?;
+        for (path, param, value) in overrides {
+            if !value.is_const_scalar() {
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "cannot stage a {} value for `{param}`",
+                    value.type_name()
+                ))));
+            }
+            let const_val = value;
+            if path.is_empty() {
+                let p = module.params.iter_mut().find(|p| p.name == param).ok_or_else(|| {
+                    ElabError::from(ElabErrorKind::Other(format!(
+                        "unknown param `{param}` on module `{root_module}`"
+                    )))
+                })?;
+                p.default = Some(const_val);
+                continue;
+            }
+            let instance = module.instances.iter_mut().find(|i| i.name() == path).ok_or_else(|| {
+                ElabError::from(ElabErrorKind::Other(format!(
+                    "unknown instance `{path}` in `{root_module}`"
+                )))
+            })?;
+            match instance.params.iter_mut().find(|(name, _)| name == &param) {
+                Some((_, v)) => *v = const_val,
+                None => instance.params.push((param, const_val)),
+            }
+        }
+        Ok(design)
     }
 
     // ── Internal access (pub(crate)) ──────────────────────────────────────
@@ -233,6 +303,10 @@ impl Design {
     /// Mutable access to the consts map. For internal elaboration use.
     pub(crate) fn consts_map_mut(&mut self) -> &mut HashMap<String, Value> {
         &mut self.consts
+    }
+    /// Mutable access to the bench blocks vec. For internal elaboration use.
+    pub(crate) fn benches_vec_mut(&mut self) -> &mut Vec<BenchBlock> {
+        &mut self.benches
     }
 
     /// Insert a module by name. Used internally by the elaborator and by

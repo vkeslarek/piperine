@@ -15,9 +15,8 @@
 pub mod analog;
 pub mod digital;
 pub mod flatten;
-pub mod math;
+pub use piperine_ir::math;
 
-mod diff;
 mod emit;
 
 use thiserror::Error;

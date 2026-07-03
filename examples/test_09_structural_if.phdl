@@ -12,3 +12,10 @@ mod OptResistor(inout p : Electrical, inout n : Electrical) {
         r1 : Resistor(p, n);
     }
 }
+
+bench OptResistor {
+    fn test_floating_resistor_rests_near_ground() {
+        var res = $op();
+        $assert(res.v(p, n) < 1e-6, "no source: p and n should both settle near 0V");
+    }
+}

@@ -3,7 +3,8 @@
 //! `Stmt`s inlined into a behavioral context — into `BehaviorStmt`.
 
 use crate::parse::ast::{BehaviorDecl, BehaviorKind, BehaviorStmt as AstBehaviorStmt};
-use crate::elab::const_eval::{ConstEnv, ConstVal};
+use crate::elab::const_eval::ConstEnv;
+use crate::value::Value;
 use crate::pom::{Behavior, BehaviorStmt, ElabError, ElabErrorKind, MatchArm};
 
 use super::Elaborator;
@@ -69,10 +70,10 @@ impl Elaborator {
 
             AstBehaviorStmt::If { cond, then_body, else_body } => {
                 let folded = match env.eval(cond) {
-                    Ok(ConstVal::Bool(true)) | Ok(ConstVal::Nat(1)) => {
+                    Ok(Value::Bool(true)) | Ok(Value::Nat(1)) => {
                         self.lower_behavior_stmts(then_body, kind.clone(), env)?
                     }
-                    Ok(ConstVal::Bool(false)) | Ok(ConstVal::Nat(0)) => {
+                    Ok(Value::Bool(false)) | Ok(Value::Nat(0)) => {
                         if let Some(eb) = else_body {
                             self.lower_behavior_stmts(eb, kind.clone(), env)?
                         } else {
@@ -122,7 +123,7 @@ impl Elaborator {
                 let end = if range.inclusive { end_val + 1 } else { end_val };
                 for i in start..end {
                     env.push();
-                    env.define(var.clone(), ConstVal::Nat(i));
+                    env.define(var.clone(), Value::Nat(i));
                     // The `for` is syntactic sugar (SPEC §10): unroll with
                     // the loop variable substituted by its concrete value.
                     // Each iteration produces a fully-resolved copy of the
@@ -189,6 +190,14 @@ impl Elaborator {
         use crate::parse::ast::Stmt;
         match stmt {
             Stmt::VarDecl { name, ty, default } => {
+                // Type inference (an omitted `ty`) is only valid in an
+                // interpreted `bench` body, which never reaches this
+                // statically-elaborated path (SPEC Part I §9).
+                let ty = ty.as_ref().ok_or_else(|| {
+                    ElabError::from(ElabErrorKind::Other(format!(
+                        "`var {name}` needs an explicit type outside a bench (type inference is bench-only)"
+                    )))
+                })?;
                 let vt = self.resolve_value_type(ty, env)?;
                 Ok(vec![BehaviorStmt::VarDecl {
                     name: name.clone(),
@@ -247,7 +256,17 @@ impl Elaborator {
                     .collect::<Result<Vec<_>, ElabError>>()?;
                 Ok(vec![BehaviorStmt::Match { expr: expr.clone(), arms: elab_arms }])
             }
-            Stmt::For { var, range, body } => {
+            Stmt::For { var, iter, body } => {
+                let range = match iter {
+                    crate::parse::ast::ForIter::Range(r) => r,
+                    crate::parse::ast::ForIter::Expr(_) => {
+                        return Err(ElabErrorKind::Other(format!(
+                            "for-loop in event block (var `{}`) must have an elaboration-constant range (`a..b`), not a runtime iterable",
+                            var
+                        ))
+                        .into());
+                    }
+                };
                 let start = env.eval_nat(&range.start).map_err(|e| ElabErrorKind::ConstEval {
                     context: format!("for-loop in event block (var `{}`)", var),
                     source: e,
@@ -260,7 +279,7 @@ impl Elaborator {
                 let mut unrolled = Vec::new();
                 for i in start..end {
                     env.push();
-                    env.define(var.clone(), ConstVal::Nat(i));
+                    env.define(var.clone(), Value::Nat(i));
                     for s in &body.stmts {
                         unrolled.extend(self.lower_stmt_to_behavior(s, kind.clone(), env)?);
                     }

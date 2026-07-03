@@ -1,5 +1,10 @@
-//! The Piperine IR — the post-elaboration, resolved representation both
-//! frontends lower into and the codegen consumes. See `docs/SPEC.md`.
+//! # piperine-ir
+//!
+//! The Piperine IR — the post-elaboration, resolved representation the
+//! frontend (`piperine-lang`) lowers into and the backend
+//! (`piperine-codegen`) consumes. Pure data: no JIT, no solver, no parser —
+//! this crate is the contract between the two, so the dependency arrows
+//! match the pipeline arrows.
 //!
 //! Everything here is *resolved*: names are interned ids into a per-module
 //! [`SymbolTable`]; ground is the reserved [`NodeId::GROUND`]. The IR carries
@@ -9,7 +14,10 @@
 mod expr;
 mod stmt;
 mod symbols;
+mod diff;
 mod validate;
+
+pub mod math;
 
 pub use expr::{Analysis, Axis, IrBinOp, IrExpr, IrUnOp, SimQuery};
 pub use stmt::{

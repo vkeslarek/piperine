@@ -1466,11 +1466,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "piperine-bench"
+version = "0.1.1"
+dependencies = [
+ "piperine-codegen",
+ "piperine-lang",
+ "piperine-solver",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "piperine-cli"
 version = "0.1.1"
 dependencies = [
  "clap",
  "include_dir",
+ "piperine-bench",
  "piperine-codegen",
  "piperine-lang",
  "piperine-project",
@@ -1486,10 +1497,15 @@ dependencies = [
  "cranelift-jit",
  "cranelift-module",
  "num-complex",
+ "piperine-ir",
  "piperine-solver",
  "tempfile",
  "thiserror 2.0.18",
 ]
+
+[[package]]
+name = "piperine-ir"
+version = "0.1.1"
 
 [[package]]
 name = "piperine-lang"
@@ -1498,6 +1514,7 @@ dependencies = [
  "miette",
  "num-complex",
  "piperine-codegen",
+ "piperine-ir",
  "piperine-solver",
  "tempfile",
  "thiserror 2.0.18",

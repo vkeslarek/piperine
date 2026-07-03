@@ -3,7 +3,7 @@
 
 use crate::pom::{Function, Module, NetType, ValueType, Design};
 use crate::parse::ast::{DisciplineItem, DisciplineDecl};
-use piperine_codegen::ir::*;
+use piperine_ir::*;
 use super::stmt::lower_stmts;
 use super::LowerCtx;
 use std::collections::HashSet;
@@ -76,7 +76,7 @@ pub(crate) fn convert_mod(m: &Module, prog: &Design) -> IrModule {
     // 2. Params
     for p in m.params() {
         let ty = elab_value_type_to_ir(p.value_type());
-        let default = p.default().map(|v| const_val_to_ir(v, &mut symbols));
+        let default = p.default().map(|v| value_to_ir(v, &mut symbols));
         symbols.add_param(p.name(), ty, default);
     }
 
@@ -90,7 +90,7 @@ pub(crate) fn convert_mod(m: &Module, prog: &Design) -> IrModule {
     for v in m.vars() {
         let ty = elab_value_type_to_ir(v.value_type());
         let id = symbols.add_var(v.name(), ty);
-        let init = v.init().map(|v| const_val_to_ir(v, &mut symbols));
+        let init = v.init().map(|v| value_to_ir(v, &mut symbols));
         // GAPS §I.15 — We don't have IrVarDecl in IrModule anymore, it's just in SymbolTable.
         // We can just add them to the symbol table, the initialization goes into digital/analog bodies or is handled elsewhere.
         // Wait, if it has an init, we probably should emit a VarDecl statement in the body or something.
@@ -126,7 +126,7 @@ pub(crate) fn convert_mod(m: &Module, prog: &Design) -> IrModule {
             for (pname, pval) in inst.params() {
                 // Find index of parameter in child module.
                 if let Some(idx) = child.params().iter().position(|p| p.name() == pname) {
-                    params.push((ParamId(idx as u32), const_val_to_ir(pval, &mut symbols)));
+                    params.push((ParamId(idx as u32), value_to_ir(pval, &mut symbols)));
                 }
             }
         }
@@ -176,15 +176,15 @@ pub(crate) fn elab_value_type_to_ir(ty: &ValueType) -> IrType {
     }
 }
 
-pub(crate) fn const_val_to_ir(v: &crate::elab::const_eval::ConstVal, symbols: &mut SymbolTable) -> IrExpr {
-    use crate::elab::const_eval::ConstVal;
+pub(crate) fn value_to_ir(v: &crate::value::Value, symbols: &mut SymbolTable) -> IrExpr {
+    use crate::value::Value;
     match v {
-        ConstVal::Real(r) => IrExpr::Real(*r),
-        ConstVal::Nat(n) => IrExpr::Int(*n as i64),
-        ConstVal::Int(i) => IrExpr::Int(*i),
-        ConstVal::Bool(b) => IrExpr::Bool(*b),
-        ConstVal::Str(_) => IrExpr::Real(0.0), // No strings in IrExpr
-        ConstVal::EnumVariant(enum_name, variant) => {
+        Value::Real(r) => IrExpr::Real(*r),
+        Value::Nat(n) => IrExpr::Int(*n as i64),
+        Value::Int(i) => IrExpr::Int(*i),
+        Value::Bool(b) => IrExpr::Bool(*b),
+        Value::Str(_) => IrExpr::Real(0.0), // No strings in IrExpr
+        Value::EnumVariant(enum_name, variant) => {
             // Stable tag: hash the qualified name to a deterministic i64.
             use std::collections::hash_map::DefaultHasher;
             use std::hash::{Hash, Hasher};
@@ -192,6 +192,10 @@ pub(crate) fn const_val_to_ir(v: &crate::elab::const_eval::ConstVal, symbols: &m
             format!("{}::{}", enum_name, variant).hash(&mut h);
             IrExpr::Int(h.finish() as i64)
         }
+        // Non-scalar values (collections, closures, …) cannot reach here:
+        // POM param/var storage only ever holds const scalars (rejected at
+        // fold time). Mirror the string fallback for the remaining scalars.
+        _ => IrExpr::Real(0.0),
     }
 }
 

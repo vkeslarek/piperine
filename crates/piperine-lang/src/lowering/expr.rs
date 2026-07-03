@@ -1,7 +1,7 @@
 //! Expression lowering: `Expr` → `IrExpr`
 
 use crate::parse::ast::{ArrayBody, BindOp, BinaryOp, Block, Expr, Literal, Stmt, UnaryOp};
-use piperine_codegen::ir::*;
+use piperine_ir::*;
 use super::analog_ops::analog_ops;
 use super::syscalls::syscalls;
 use super::LowerCtx;
@@ -150,7 +150,20 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
                 let id = ctx.lookup_var(name).unwrap_or(VarId(0));
                 IrExpr::Var(id)
             } else if let Some(id) = ctx.lookup_node(name) {
-                if ctx.is_digital { IrExpr::Net(id) } else { IrExpr::Real(0.0) } // Just a fallback for non-digital context
+                if ctx.is_digital {
+                    IrExpr::Net(id)
+                } else if ctx.symbols.node(id).domain == piperine_ir::Domain::Digital {
+                    // An analog body reading a digital-domain node by bare
+                    // name (not through `V`/`I`) bridges through a shadow
+                    // var — the same D2A path a `var` read already uses.
+                    // Never a silent 0.0 (GAPS: fail loud, not a stub).
+                    IrExpr::Var(ctx.shadow_var_for(id, name))
+                } else {
+                    // A bare analog-domain node reference outside `V`/`I`
+                    // has no defined meaning (SPEC: node access is via
+                    // V/I only) — GAPS fallback, unchanged.
+                    IrExpr::Real(0.0)
+                }
             } else if let Some(value) = ctx.lookup_enum_value(name) {
                 IrExpr::Int(value)
             } else {
@@ -244,7 +257,7 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
         Expr::Array(body) => lower_array(body, ctx),
 
         Expr::Cast(_target, inner) => lower_expr(inner, ctx),
-        Expr::BundleLit { .. } | Expr::Lambda { .. } => IrExpr::Real(0.0),
+        Expr::BundleLit { .. } | Expr::Lambda { .. } | Expr::Tuple(_) => IrExpr::Real(0.0),
     }
 }
 
@@ -346,7 +359,7 @@ pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrEx
 
     // Built-in math functions (exp, ln, sqrt, pow, sin, …) lower as
     // `MathCall`, resolved by name to a libm intrinsic at JIT time.
-    if piperine_codegen::jit::math::math_fn(name).is_some() {
+    if piperine_ir::math::math_fn(name).is_some() {
         let ir_args = args.iter().map(|a| lower_expr(a, ctx)).collect();
         return IrExpr::MathCall(name.to_string(), ir_args);
     }

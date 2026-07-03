@@ -58,7 +58,7 @@ impl ComponentDef for ModuleDeclaration {
         }
         let mut new_env = crate::elab::const_eval::ConstEnv::new();
         for (param_name, val) in self.const_params.iter().zip(const_args.iter()) {
-            new_env.define(param_name.clone(), crate::elab::const_eval::ConstVal::Nat(*val));
+            new_env.define(param_name.clone(), crate::value::Value::Nat(*val));
         }
         instantiator.elaborate_mod_decl(self, &mut new_env, type_subst)
     }

@@ -47,6 +47,19 @@ pub enum Item {
     ImplDecl(ImplDecl),
     FnDecl(FnDecl),
     ConstDecl(ConstDecl),
+    BenchDecl(BenchDecl),
+}
+
+/// `bench ModName { fn ... }` — the effectful post-elaboration scripting
+/// layer attached to a module by name (SPEC_BENCH.md §2), the same way
+/// `analog`/`digital` attach via [`BehaviorDecl`]. Bodies use the ordinary
+/// `fn` grammar; only the runtime context differs (SPEC_BENCH.md §1/§3).
+#[derive(Debug, Clone)]
+pub struct BenchDecl {
+    pub attrs: Vec<Attribute>,
+    pub is_pub: bool,
+    pub name: String,
+    pub fns: Vec<FnDecl>,
 }
 
 /// A `::`-separated module path, e.g. `devices::passives::Resistor`.
@@ -373,16 +386,71 @@ pub struct Block {
 /// A statement inside a function body or event block.
 #[derive(Debug, Clone)]
 pub enum Stmt {
-    VarDecl { name: String, ty: Type, default: Option<Expr> },
+    /// `var name [: Type] = expr;` — the type annotation is optional here
+    /// (unlike a `mod`-body `var`): a `bench`/interpreted fn never needs a
+    /// static type, so an omitted `ty` infers from `default` at runtime.
+    /// A statically-elaborated fn/method body (an `impl` or global `fn`)
+    /// still requires an explicit type (SPEC Part I §9) — the elaborator
+    /// enforces that, not the parser.
+    VarDecl { name: String, ty: Option<Type>, default: Option<Expr> },
     Return(Expr),
     If { cond: Expr, then_body: Block, else_body: Option<Block> },
     Match { expr: Expr, arms: Vec<StmtMatchArm> },
-    For { var: String, range: Range, body: Block },
+    For { var: String, iter: ForIter, body: Block },
     Bind { dest: Expr, op: BindOp, src: Expr },
     Expr(Expr),
 }
 
+/// What a fn-body `for` loops over: an elaboration-time range (as in a
+/// module/behavior body) or a runtime value-layer list (SPEC Part I §9 —
+/// `for rl in [1e3, 1e4, ...]`, only valid where the interpreter runs).
+#[derive(Debug, Clone)]
+pub enum ForIter {
+    Range(Range),
+    Expr(Expr),
+}
+
+impl Block {
+    /// Collect every `$name(...)` system-task call reachable from this
+    /// block, recursively. Used to validate a `bench` fn against the
+    /// system-task availability table (SPEC_BENCH.md §7/§11) before it is
+    /// ever interpreted — an unimplemented task is a fail-loud elaboration
+    /// error, not a runtime surprise.
+    pub fn collect_syscalls(&self, out: &mut Vec<String>) {
+        self.stmts.iter().for_each(|s| s.collect_syscalls(out));
+        if let Some(e) = &self.expr { e.collect_syscalls(out); }
+    }
+}
+
 impl Stmt {
+    /// Collect every `$name(...)` system-task call reachable from this
+    /// statement, recursively.
+    pub fn collect_syscalls(&self, out: &mut Vec<String>) {
+        match self {
+            Stmt::VarDecl { default: Some(e), .. } => e.collect_syscalls(out),
+            Stmt::VarDecl { default: None, .. } => {}
+            Stmt::Return(e) => e.collect_syscalls(out),
+            Stmt::If { cond, then_body, else_body } => {
+                cond.collect_syscalls(out);
+                then_body.collect_syscalls(out);
+                if let Some(b) = else_body { b.collect_syscalls(out); }
+            }
+            Stmt::Match { expr, arms } => {
+                expr.collect_syscalls(out);
+                arms.iter().for_each(|a| a.body.collect_syscalls(out));
+            }
+            Stmt::For { iter, body, .. } => {
+                if let ForIter::Expr(e) = iter { e.collect_syscalls(out); }
+                body.collect_syscalls(out);
+            }
+            Stmt::Bind { dest, src, .. } => {
+                dest.collect_syscalls(out);
+                src.collect_syscalls(out);
+            }
+            Stmt::Expr(e) => e.collect_syscalls(out),
+        }
+    }
+
     /// Substitute `var → value` in all expressions of this statement.
     pub fn subst_const(&mut self, var: &str, value: u64) {
         match self {
@@ -404,7 +472,14 @@ impl Stmt {
                     if let Some(e) = &mut a.body.expr { e.subst_const(var, value); }
                 });
             }
-            Stmt::For { body, .. } => {
+            Stmt::For { iter, body, .. } => {
+                match iter {
+                    ForIter::Range(r) => {
+                        r.start.subst_const(var, value);
+                        r.end.subst_const(var, value);
+                    }
+                    ForIter::Expr(e) => e.subst_const(var, value),
+                }
                 body.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
                 if let Some(e) = &mut body.expr { e.subst_const(var, value); }
             }
@@ -582,11 +657,58 @@ pub enum Expr {
     Block(Block),
     If { cond: Box<Expr>, then_body: Block, else_body: Block },
     Array(ArrayBody),
+    /// `(a, b, ...)` — a value-layer tuple literal (SPEC Part I §6.1).
+    /// `(e)` with no comma is a parenthesized group, not a 1-tuple.
+    Tuple(Vec<Expr>),
     BundleLit { ty: Type, fields: Vec<(String, Expr)> },
     Lambda { params: Vec<String>, body: Box<Expr> },
 }
 
 impl Expr {
+    /// Collect every `$name(...)` system-task call reachable from this
+    /// expression, recursively (lambda bodies included — unlike
+    /// `subst_const`, a syscall inside a lambda is still reachable).
+    pub fn collect_syscalls(&self, out: &mut Vec<String>) {
+        match self {
+            Expr::SysCall(name, args) => {
+                out.push(name.clone());
+                args.iter().for_each(|a| a.collect_syscalls(out));
+            }
+            Expr::Unary(_, inner) | Expr::Cast(_, inner) | Expr::Field(inner, _) => {
+                inner.collect_syscalls(out)
+            }
+            Expr::Binary(l, _, r) => {
+                l.collect_syscalls(out);
+                r.collect_syscalls(out);
+            }
+            Expr::Call(callee, args) => {
+                callee.collect_syscalls(out);
+                args.iter().for_each(|a| a.collect_syscalls(out));
+            }
+            Expr::Index(base, idx) => {
+                base.collect_syscalls(out);
+                idx.collect_syscalls(out);
+            }
+            Expr::Slice(base, _) => base.collect_syscalls(out),
+            Expr::Block(b) => b.collect_syscalls(out),
+            Expr::If { cond, then_body, else_body } => {
+                cond.collect_syscalls(out);
+                then_body.collect_syscalls(out);
+                else_body.collect_syscalls(out);
+            }
+            Expr::Array(ArrayBody::List(items)) => items.iter().for_each(|e| e.collect_syscalls(out)),
+            Expr::Array(ArrayBody::Repeat(v, n)) => {
+                v.collect_syscalls(out);
+                n.collect_syscalls(out);
+            }
+            Expr::Array(ArrayBody::Comprehension(e, _, _)) => e.collect_syscalls(out),
+            Expr::Tuple(items) => items.iter().for_each(|e| e.collect_syscalls(out)),
+            Expr::BundleLit { fields, .. } => fields.iter().for_each(|(_, e)| e.collect_syscalls(out)),
+            Expr::Lambda { body, .. } => body.collect_syscalls(out),
+            Expr::Literal(_) | Expr::Ident(_) | Expr::Path(_) => {}
+        }
+    }
+
     /// Substitute every `Ident(name)` matching `var` with `Literal::Int(value)`.
     /// Used during behavioral `for` unrolling to replace the loop variable
     /// with its concrete iteration value (the `for` is syntactic sugar —
@@ -641,6 +763,9 @@ impl Expr {
             Expr::Block(b) => {
                 b.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
                 if let Some(e) = &mut b.expr { e.subst_const(var, value); }
+            }
+            Expr::Tuple(items) => {
+                items.iter_mut().for_each(|e| e.subst_const(var, value));
             }
             Expr::BundleLit { fields, .. } => {
                 fields.iter_mut().for_each(|(_, e)| e.subst_const(var, value));

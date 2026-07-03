@@ -17,9 +17,10 @@
 use std::collections::HashMap;
 
 use crate::parse::ast::{
-    BehaviorDecl, DisciplineDecl, EnumDecl, FnDecl, ImplDecl, ModuleDeclaration, SourceFile,
+    BehaviorDecl, BenchDecl, DisciplineDecl, EnumDecl, FnDecl, ImplDecl, ModuleDeclaration, SourceFile,
 };
-use crate::elab::const_eval::{ConstEnv, ConstVal};
+use crate::elab::const_eval::ConstEnv;
+use crate::value::Value;
 use crate::elab::event::EventRegistry;
 use crate::pom::{ElabError, ElabErrorKind, Design, Module};
 
@@ -35,6 +36,7 @@ pub struct Elaborator {
     enums: HashMap<String, EnumDecl>,
     module_decls: HashMap<String, ModuleDeclaration>,
     behavior_decls: Vec<BehaviorDecl>,
+    bench_decls: Vec<BenchDecl>,
     fn_decls: HashMap<String, FnDecl>,
     capability_decls: HashMap<String, crate::parse::ast::CapabilityDecl>,
     impl_decls: Vec<ImplDecl>,
@@ -52,6 +54,7 @@ impl Elaborator {
             enums: HashMap::new(),
             module_decls: HashMap::new(),
             behavior_decls: Vec::new(),
+            bench_decls: Vec::new(),
             fn_decls: HashMap::new(),
             capability_decls: HashMap::new(),
             impl_decls: Vec::new(),
@@ -63,7 +66,7 @@ impl Elaborator {
     /// Every enum variant's discriminant as a global const: bare (`Idle`)
     /// and qualified (`SarState::Idle`). Values default sequential from
     /// zero, continuing after an explicit discriminant (SPEC §6.4).
-    fn enum_variant_globals(&self) -> Result<HashMap<String, ConstVal>, ElabError> {
+    fn enum_variant_globals(&self) -> Result<HashMap<String, Value>, ElabError> {
         let mut globals = HashMap::new();
         for (enum_name, decl) in &self.enums {
             let mut next: i64 = 0;
@@ -77,8 +80,8 @@ impl Elaborator {
                             }
                         })?;
                         match val {
-                            ConstVal::Int(v) => v,
-                            ConstVal::Nat(v) => v as i64,
+                            Value::Int(v) => v,
+                            Value::Nat(v) => v as i64,
                             other => {
                                 return Err(ElabError::from(ElabErrorKind::Other(format!(
                                     "enum `{enum_name}` variant `{}` has non-integer discriminant {other:?}",
@@ -89,8 +92,8 @@ impl Elaborator {
                     }
                     None => next,
                 };
-                globals.insert(variant.name.clone(), ConstVal::Int(value));
-                globals.insert(format!("{enum_name}::{}", variant.name), ConstVal::Int(value));
+                globals.insert(variant.name.clone(), Value::Int(value));
+                globals.insert(format!("{enum_name}::{}", variant.name), Value::Int(value));
                 next = value + 1;
             }
         }
@@ -139,7 +142,7 @@ impl Elaborator {
                 let env = ConstEnv::with_globals(evaluated_globals.clone());
                 if let Ok(val) = env.eval(&decl.value) {
                     evaluated_globals.insert(name.clone(), val.clone());
-                    prog.consts_map_mut().insert(name.clone(), (&val).into());
+                    prog.consts_map_mut().insert(name.clone(), val);
                     resolved.push(name.clone());
                 }
             }
@@ -210,6 +213,33 @@ impl Elaborator {
                     }
                 }
             }
+        }
+
+        // Attach `bench` blocks by target module name (mirrors the behavior
+        // attach pass above; unlike behaviors, generic/monomorphized-suffix
+        // targets are out of scope for milestone 1 — SPEC_BENCH.md §2).
+        for bench in &self.bench_decls.clone() {
+            if !prog.modules_map_mut().contains_key(&bench.name) {
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "bench `{}` names an unknown or generic module (generics are not yet supported as bench targets)",
+                    bench.name
+                ))));
+            }
+            for f in &bench.fns {
+                let mut syscalls = Vec::new();
+                f.body.collect_syscalls(&mut syscalls);
+                for name in syscalls {
+                    if !crate::eval::tasks::bench_task_implemented(&name) {
+                        return Err(ElabError::from(ElabErrorKind::Other(format!(
+                            "`${name}` is not yet implemented in a bench (SPEC_BENCH.md §7/§11)"
+                        ))));
+                    }
+                }
+            }
+            prog.benches_vec_mut().push(crate::pom::BenchBlock {
+                module: bench.name.clone(),
+                fns: bench.fns.clone(),
+            });
         }
 
         // GAPS §J.4 — resolve calls to built-in casts and validate diagnostics

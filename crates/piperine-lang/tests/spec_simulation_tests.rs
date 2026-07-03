@@ -327,16 +327,28 @@ fn spec_bit_to_voltage_d2a_bridge() {
     let cm = compiled(&prog, "BitToVoltage");
     let kernel = cm.analog().expect("bit_to_voltage has analog kernel");
 
-    // The conditional forces become resistive contributions (not force rows).
-    // Verify the residual evaluates without panicking — the switch-branch
-    // approximation produces a variable conductance that conducts.
-    let mut res = [0.0, 0.0, 0.0];
+    // The digital port `d` is read through the D2A shadow-var bridge (the
+    // vars bank), not through `volts` — its terminal slot is never an MNA
+    // unknown. Verify the residual evaluates for both digital states; the
+    // conditional forces become resistive contributions (not force rows)
+    // via the switch-branch variable conductance.
+    let vars = vec![0.0; kernel.num_vars()];
+    let mut res = vec![0.0; kernel.terminals().len()];
     kernel.eval_residual(
-        &[0.0, 0.0, 1.0], // gnd, d(digital), a=1V
-        &[0.0, 1.8],      // vlow=0, vhigh=1.8
-        &[], &[], &SimCtx::default(), &mut res,
+        &vec![0.0; kernel.terminals().len()],
+        &[0.0, 1.8], // vlow=0, vhigh=1.8
+        &[], &vars, &SimCtx::default(), &mut res,
     );
-    let _ = res; // Just verify it doesn't panic.
+    assert!(res.iter().all(|v| v.is_finite()), "d=0 residual finite: {res:?}");
+
+    let vars_high = vec![1.0; kernel.num_vars()];
+    res.fill(0.0);
+    kernel.eval_residual(
+        &vec![0.0; kernel.terminals().len()],
+        &[0.0, 1.8],
+        &[], &vars_high, &SimCtx::default(), &mut res,
+    );
+    assert!(res.iter().all(|v| v.is_finite()), "d=1 residual finite: {res:?}");
 }
 
 // ═════════════ Section B.8 — DeltaSigma (full mixed-signal) ═══════════════════

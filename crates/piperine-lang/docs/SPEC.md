@@ -136,6 +136,21 @@ or literal is.
 `UInt[N]`, `SInt[N]`, and `Complex` are **standard-library bundles**, not primitives (§6.6).
 `Boolean` widens to `Quad` implicitly; other casts are explicit (`real`, `int`, `bit`).
 
+**Collections and tuples** (interpreted `fn`-body grammar — `bench` and const-eval, §9; not yet
+lowered for `analog`/`digital`):
+
+- `(a, b, ...)` — a tuple literal; `.0`/`.1`/... index. `(e)` with no comma is a parenthesized
+  group, not a 1-tuple.
+- `[a, b, ...]` / `[v; N]` / `[expr | i in a..b]` — a runtime list (`Vec<T>`), value-layer, with
+  `.push(v)`, `.len()`, `.get(i) -> Option<T>`. The same array-literal syntax also produces a
+  fixed-size elaboration-constant `Array` in a `mod`/`analog`/`digital` context (§7) — which form
+  applies follows from context, as with every other dual-position construct in this grammar.
+- `Option<T>` — `.is_some()`, `.is_none()`, `.unwrap()`, `.unwrap_or(default)`.
+
+`Map<K, V>`, `Set<T>`, and `Result<T, E>` are reserved (named in the reflection API, Part IV) but
+have no literal syntax or value-layer operations yet — using one outside Part IV's own read-only
+accessors is `NotConst`/`Undefined`, not a silent stub.
+
 #### 6.2 Disciplines — net types
 
 A discipline is one of exactly two kinds:
@@ -303,6 +318,15 @@ so it serves every context uniformly:
 
 Arguments pass by value (basic types) or read-only reference (bundles). `mod` = reusable
 structure; `fn` = reusable value computation.
+
+This `fn`-body grammar (`var`, `if`/`else`, `match`, `for`, `return`, expressions, lambdas) is also
+what a bundle `impl` method and a `bench` block (SPEC_BENCH.md Part II) are written in — same
+statements and expressions everywhere, interpreted rather than inlined-and-differentiated in the
+effectful `bench` context (SPEC_BENCH.md §1). Two differences from the elaboration/analog/digital
+positions of this same grammar: `for x in <expr>` may iterate a runtime `Vec` value, not just an
+elaboration-constant range (§6.1); and `var name = expr;` may omit its type, inferred from `expr`
+at interpretation time — both are only valid where the body is interpreted (`bench`), not
+statically elaborated (an `impl`/global `fn` still requires `var name : Type = expr;`).
 
 #### 9.1 Higher-order functions and generation
 

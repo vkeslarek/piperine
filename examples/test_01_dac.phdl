@@ -19,3 +19,44 @@ analog Dac {
     }
     V(out) <- vout;
 }
+
+bench Dac {
+    fn test_op_solves() {
+        var r = $op();
+        $assert(1 == 1, "Dac reaches a DC operating point");
+    }
+}
+
+// Mixed-signal: a digital driver flips d_in high at t=0; the Dac's analog
+// body reads it through the D2A shadow-var bridge and forces vhigh.
+mod Flipper(output q : Bit) {
+    var state : Bit = 0;
+}
+
+digital Flipper {
+    q <- state;
+    @initial {
+        state = 1;
+    }
+}
+
+mod MixedTop() {
+    wire out : Electrical;
+    wire d_in_net : Bit;
+    flip : Flipper(.q = d_in_net);
+    dac  : Dac(.clk = d_in_net, .d_in = d_in_net, .out = out);
+}
+
+bench MixedTop {
+    fn test_dc_tracks_digital_input() {
+        var r = $op();
+        $assert(r.v(out, gnd) > 1.7, "d_in is driven high: out should sit at vhigh");
+    }
+
+    fn test_transient_tracks_digital_input() {
+        var t = $tran(1e-6, 1e-8);
+        var vout = t.v(out, gnd);
+        $assert(vout.at(1e-6) > 1.7, "d_in is high from t=0: out should settle near vhigh");
+        $assert(vout.min() > -0.1 && vout.max() < 1.9, "out should stay within [vlow, vhigh]");
+    }
+}

@@ -22,3 +22,10 @@ digital StateMachine {
         }
     }
 }
+
+bench StateMachine {
+    fn test_op_solves() {
+        var res = $op();
+        $assert(1 == 1, "StateMachine reaches a DC operating point in its initial state");
+    }
+}

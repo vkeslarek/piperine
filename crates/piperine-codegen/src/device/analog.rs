@@ -194,7 +194,16 @@ impl AnalogInstance {
 
         let node_refs: Vec<Option<AnalogReference>> = terminals
             .iter()
-            .map(|t| {
+            .enumerate()
+            .map(|(i, t)| {
+                if kernel.is_digital_terminal(i) {
+                    // Never an MNA unknown (see `AnalogKernel::digital_terminals`) —
+                    // connecting it would leave a structurally empty,
+                    // singular row. `volts[i]` reads 0.0 until the D2A
+                    // bridge is extended to fill it from live digital
+                    // state (tracked separately).
+                    return None;
+                }
                 let reference = netlist.connect_node(t.clone());
                 reference.idx().is_some().then_some(reference)
             })

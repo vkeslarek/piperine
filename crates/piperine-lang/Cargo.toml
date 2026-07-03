@@ -5,10 +5,14 @@ edition.workspace = true
 
 [dependencies]
 thiserror = "2.0"
-piperine-solver = { path = "../piperine-solver" }
-piperine-codegen = { path = "../piperine-codegen" }
+piperine-ir = { path = "../piperine-ir" }
 num-complex.workspace = true
 miette = { version = "7.6.0", features = ["fancy"] }
 
 [dev-dependencies]
+# The frontend's own build needs only the IR contract; the backend and
+# solver appear here solely because the integration tests drive the full
+# pipeline (parse → elaborate → IR → JIT → solve).
+piperine-codegen = { path = "../piperine-codegen" }
+piperine-solver = { path = "../piperine-solver" }
 tempfile.workspace = true

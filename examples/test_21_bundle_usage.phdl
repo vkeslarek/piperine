@@ -21,3 +21,9 @@ mod Top() {
 
     amp : DiffAmp(.in = sig_in,.out = sig_out);
 }
+
+// No bench here: `sig_in.p`/`sig_in.n` have no DC path to ground at all (the
+// VCVS only drives `out` from `in`, never the reverse) — `$op()` is
+// structurally singular. A bench would need bias resistors wired onto the
+// bundle-expanded input nets; deferred until bundle net-field addressing
+// from a mod body is exercised elsewhere.

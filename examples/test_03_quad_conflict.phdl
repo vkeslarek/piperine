@@ -19,3 +19,10 @@ mod TopLevel(inout bus : Logic) {
     d1 : Driver1(bus);
     d2 : Driver2(bus);
 }
+
+bench TopLevel {
+    fn test_op_solves() {
+        var r = $op();
+        $assert(1 == 1, "conflicting quad drivers still resolve to a DC operating point");
+    }
+}

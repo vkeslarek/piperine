@@ -33,11 +33,10 @@ pub enum Commands {
         /// The file to run
         file: Option<String>,
     },
-    /// Run automated testbenches
+    /// Run `bench` entry points (SPEC_BENCH.md)
     Test {
-        /// Directory containing tests
-        #[arg(default_value = "tests")]
-        dir: String,
+        /// The file to test; defaults to every `.phdl` under `src/`
+        file: Option<String>,
     },
     /// Create a new piperine project
     New {
@@ -64,8 +63,8 @@ pub fn execute() {
         Commands::Run { file } => {
             commands::run::execute(file);
         }
-        Commands::Test { dir } => {
-            commands::test::execute(dir);
+        Commands::Test { file } => {
+            commands::test::execute(file);
         }
         Commands::New { name } => {
             commands::new::execute(name);
