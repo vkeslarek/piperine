@@ -1,65 +1,97 @@
-# Piperine CLI (Refinement Document)
+# Piperine CLI & Decentralized Dependency Manager
 
-This document outlines the high-level design and functionality of the command-line interface (CLI) for Piperine. Inspired by Cargo (Rust's package manager), the CLI aims to provide an intuitive, standardized workflow for developing, compiling, and simulating Verilog-AMS projects.
+Este documento serve como a especificação detalhada final da CLI (Command Line Interface) do Piperine. O sistema não é apenas uma interface em torno do compilador, mas sim um empacotador de infraestrutura completa, possuindo controle de manifesto (`Piperine.toml`) e um poderoso **sistema nativo de resolução de dependências git**.
 
-## 1. Project Management (`Piperine.toml`)
+## 1. O Manifesto (`Piperine.toml`)
 
-To manage large analog/mixed-signal designs, Piperine introduces a project-based approach using a manifest file: `Piperine.toml` (similar to `Cargo.toml`).
+O `Piperine.toml` é a raiz do seu projeto. A CLI mapeia as instruções escritas nesse arquivo para determinar como e de onde buscar códigos-fonte de terceiros para o seu hardware ou biblioteca de simulação, além de definir meta-dados gerais.
 
-### `Piperine.toml` Concept
-*   **Project Metadata:** Defines the project name, version, authors, and default top-level module.
-*   **Dependencies:** (Future) Allows fetching external Verilog-AMS libraries, OpenVAF models, or SPICE netlists from a centralized registry or git repositories.
-*   **Workspace Organization:** Supports splitting a large chip design into smaller sub-packages (e.g., analog front-end, digital core, PLL).
-*   **Profiles:** Defines compilation profiles (e.g., `dev` for fast compilation/debugging with `$display`, `release` for optimized ngspice simulations).
+### Estrutura Geral
+```toml
+[project]
+name = "meu_projeto_spice"
+version = "0.1.0"
+authors = ["Autor <autor@email.com>"]
+edition = "2024"
 
-## 2. Core Commands (Cargo-Inspired)
+[dependencies]
+# Dependência remota em um branch específico de release
+spice = { git = "https://github.com/vkeslarek/piperine-spice.git", version = "0.1.0" }
 
-### `piperine check`
-*   **Purpose:** Fast syntax and semantic validation.
-*   **Behavior:** Parses `.vams` files, checks for syntax errors, missing includes, and basic type resolution without fully elaborating or generating a netlist.
-*   **Use case:** Ideal for fast feedback loops during coding or within IDE integrations/LSP.
+# Dependência remota buscando a branch `develop` explicitamente
+std_analog = { git = "https://github.com/piperine/std_analog.git", branch = "develop" }
 
-### `piperine fmt`
-*   **Purpose:** Code formatting.
-*   **Behavior:** Automatically formats `.vams` and `.va` files according to standard Piperine style guidelines (indentation, whitespace, alignment of port declarations).
-*   **Use case:** Keeping the codebase clean and enforcing a consistent style across the team.
+# Dependência remota congelada (pinned) num commit sha específico
+dsp = { git = "https://gitlab.com/corp/dsp.git", rev = "a1b2c3d4" }
 
-### `piperine build`
-*   **Purpose:** Elaboration and compilation.
-*   **Behavior:** 
-    *   Resolves all module instantiations and parameters.
-    *   Generates the intermediate SPICE deck for the ngspice backend.
-    *   Compiles Verilog-A device models into shared objects (`.osdi`) using OpenVAF if required.
-*   **Use case:** Preparing the design for simulation or exporting it for other EDA tools.
+# Dependência remota apontando para a latest tag referenciada pelo origin
+utils = { git = "https://github.com/piperine/utils.git" } 
 
-### `piperine run`
-*   **Purpose:** Execute the simulation.
-*   **Behavior:** 
-    *   Automatically runs `piperine build` if the design is outdated.
-    *   Spawns the `piperine-worker` pool.
-    *   Executes the continuous-time (ngspice) and discrete-time (procedural blocks) co-simulation.
-    *   Streams `$display` outputs and waveform data to the terminal or a file.
-*   **Use case:** Simulating a specific module or the default top-level design.
+# Dependência apontando para um caminho no sistema local
+local_lib = { path = "../local_lib" }
+```
 
-### `piperine test`
-*   **Purpose:** Automated testing.
-*   **Behavior:** 
-    *   Discovers modules marked as testbenches or located in a `tests/` directory.
-    *   Runs simulations in parallel.
-    *   Reports successes and failures based on `$fatal`, `$error`, or assertion triggers.
-*   **Use case:** Continuous Integration (CI) and regression testing.
+### O Hash de Versionamento (`Piperine.lock`)
+Sempre que uma instrução for resolvida pela primeira vez (ou se sofrer modificação), a CLI iterará sobre o repositório git clonado e extrairá o **HEAD Hash** gerando/atualizando o arquivo `Piperine.lock`. Ele garante reprodutibilidade integral. Nenhuma atualização ocorrerá independentemente do que aconteça no servidor remoto a menos que explicitamente solicitado ou caso não exista lock.
 
-## 3. Additional Suggested Commands
+---
 
-### `piperine init` / `piperine new`
-*   **Purpose:** Scaffolding a new project.
-*   **Behavior:** Creates a new directory structure (e.g., `src/`, `tests/`) and generates a skeleton `Piperine.toml`.
+## 2. A Árvore de Comandos de Dependência
 
-### `piperine clean`
-*   **Purpose:** Removing build artifacts.
-*   **Behavior:** Deletes the `target/` directory containing generated SPICE decks, compiled `.osdi` models, and temporary simulation data.
+A CLI oferece três comandos literais desenhados para não te forçar a editar o `Piperine.toml` diretamente e para realizar a checagem cruzada da existência desses pacotes antes de registrá-los em código:
 
-## 4. Next Steps for Development
-*   Define the exact schema for `Piperine.toml` (sections, keys, data types).
-*   Implement `piperine new` and `piperine check` as the first CLI milestones.
-*   Integrate the CLI with the existing parser and `piperine-coordinator`.
+### 2.1 `piperine add <nome> [opções]`
+Adiciona com segurança bibliotecas e pacotes ao seu projeto de forma segura:
+* Se você adicionar um pacote, a CLI tentará **baixá-lo, clonar e fazer o checkout da tag informada imediatamente**.
+* Se a URL estiver incorreta, ou o branch ou commit não existirem, a CLI usa uma política de "Fail-Fast": **Ela não salva o nome do pacote no seu arquivo `Piperine.toml`** preservando-o intacto.
+
+**Argumentos suportados (mutuamente exclusivos em versão):**
+- `--git <url>`: O endereço do repositório
+- `--version <x.y.z>`: O sistema autocompletará referenciando a tag local remota formatada do release: `release/vx.y.z`
+- `--branch <name>`: Aponta diretamente para uma branch
+- `--rev <hash>`: Faz checkout de um Hash
+- `--path <diretorio>`: Liga uma lib a um sistema de diretórios local
+
+### 2.2 `piperine remove <nome>`
+A rotina inteligente de deleção:
+1. Remove a linha de dependência do seu manifesto TOML.
+2. Reconstrói a árvore de dependências virtuais do restante das bibliotecas remanescentes.
+3. Se verificar que **nenhuma outra sub-dependência utiliza este repositório internamente**, ela deleta o diretório do cache em `target/deps/<nome>`, limpando a sua máquina de lixos.
+
+### 2.3 `piperine tree`
+Visualiza a topologia de todas as bibliotecas clonadas. Essencial quando você está lidando com pacotes AMS enormes. Ele reflete de onde as instâncias dos códigos fontes do compiler estão sendo lidas.
+```text
+$ piperine tree
+meu_projeto v0.1.0
+├── spice (/home/user/meu_projeto/target/deps/spice)
+├── dsp (/home/user/meu_projeto/target/deps/dsp)
+```
+
+---
+
+## 3. Comandos de Pipeline & Integração
+
+### 3.1 Resolvendo Transições
+Sempre que você chamar **`piperine build`**, **`run`**, **`test`** ou **`check`**, o compilador entra em uma rotina estrita de validação de pacotes antes mesmo de processar o primeiro AST:
+
+1. A chamada ao `Resolver::new` da crate `piperine-project` é invocada.
+2. É feita a leitura do `Piperine.toml` e `Piperine.lock`.
+3. Todos os pacotes são postos num hash de validação.
+4. **Resolução de Conflito Estrita**: Se um pacote externo A puxar `dsp v0.1.0` e um pacote externo B puxar `dsp v0.2.0`, diferente de outros package managers, o Piperine aplica *HARD FAILURE*, jogando um erro não-recuperável. A equipe deve resolver manualmente os paths e as calls para alinhar versões, não há tolerância para versionamentos duplos (uma vez que os simuladores lidam com hardware unificado).
+5. O `build_source_map` recebe a árvore de bibliotecas completa, iterando e fazendo os injects como `SourceMap::add_namespace`.
+
+Isso permite que um desenvolvedor consiga abrir um arquivo Phdl do projeto dele e simplesmente declarar:
+```phdl
+use spice::sources::vsrc;
+
+mod meu_top {
+    // ...
+}
+```
+A CLI instruirá o compilador a buscar o pacote diretamente no `target/deps/spice/src/sources.phdl`.
+
+### 3.2 O Scaffolding (`piperine new <nome>`)
+Configura a base de um novo repositório isolado, criando um diretório e inserindo nativamente um `Piperine.toml` básico juntamente à hierarquia de diretórios `src/main.phdl`.
+
+### 3.3 A Standard Library Fallback Interna
+Se a execução for feita num repositório em que a CLI ainda roda sob source (ex: executando o CLI localmente de dentro do diretório do clone do Piperine na máquina do desenvolvedor de ferramentas), ela injeta também dinamicamente `piperine::*` rastreando a pasta superior `crates/piperine-lang/headers/` para viabilizar simulações de desenvolvimento, demonstrando sua flexibilidade como toolchain.
