@@ -37,7 +37,7 @@ jobs:
         run: |
           cd target/release
           if [[ "${{ matrix.archive_name }}" == *.zip ]]; then
-            zip ../../${{ matrix.archive_name }} ${{ matrix.artifact_name }}
+            7z a ../../${{ matrix.archive_name }} ${{ matrix.artifact_name }}
           else
             tar -czvf ../../${{ matrix.archive_name }} ${{ matrix.artifact_name }}
           fi
