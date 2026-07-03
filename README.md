@@ -1,148 +1,129 @@
+![Piperine Logo](assets/logo.svg)
+
 # Piperine
 
 > ⚠️ **Work in progress — not production ready.** APIs, syntax, and behavior
-> change without notice. The implementation covers a meaningful subset of the
-> language design (see [`docs/GAPS.md`](docs/GAPS.md) for what is *not* yet
-> implemented). Use it to explore and contribute, not for anything you
+> change without notice. Use it to explore and contribute, not for anything you
 > depend on.
 
-A hardware-description language and simulator for analog and mixed-signal
-circuits. Both Verilog-A/AMS (`.va`, `.vams`) and a new native HDL called
-**PHDL** (`.phdl`, `.ppr`) lower to a shared IR, which compiles to a
-pure-Rust Newton–Raphson solver. The solver also accepts optional
-`.osdi` device models compiled by OpenVAF-Reloaded for industrial device
-libraries (BSIM, EKV, PSP, …).
+**Piperine** is a modern hardware-description language (HDL) and simulator for analog and mixed-signal circuits. 
 
-## Architecture
+It aims to unify continuous (Newton-Raphson) and discrete (event-driven) hardware into a single, cohesive model. Piperine supports both industry-standard **Verilog-A/AMS** (`.va`, `.vams`) and our new native language called **PHDL** (`.phdl`), compiling them into an intermediate representation that runs on a pure-Rust solver.
 
+## Key Features
+
+- **One Mixed-Signal Model:** Analog (`analog` block) and digital (`digital` block) behaviors share the same module constructs. The boundary between them is explicit and type-checked.
+- **No-Magic Philosophy:** Type conversions and domain crossings are explicit. No implicit driver resolutions that lead to hidden bugs.
+- **Scriptable Verification (`bench`):** A built-in effectful scripting layer runs tests, measurements, and parameter sweeps using an interactive Uniform API.
+- **Parametric & Generics:** Build flexible, reusable components with type generics and compile-time evaluated constants.
+- **OSDI Support:** Fully integrates with `.osdi` version 0.4 device models.
+
+## What it looks like (PHDL)
+
+Forget boilerplate-heavy connect-rules. In PHDL, analog and digital behaviors sit elegantly side-by-side. 
+
+### 1. True Mixed-Signal: First-Order Delta-Sigma Modulator
+Here, a single component crosses the analog/digital boundary twice. Notice how the `analog` block handles the continuous integration, while the `digital` block safely handles discrete clock edges:
+
+```phdl
+mod DeltaSigma ( input vin : Electrical, inout gnd : Ground, input clk : Bit, output dout : Bit ) {
+    param c : Real = 1.0e-12;  
+    param r : Real = 1.0e3;  
+    param vref : Real = 1.0;
+
+    wire intg : Electrical;            // integrator output
+    var  q : Bit = 0;                  // quantizer register (held across clocks)
+}
+
+analog DeltaSigma {
+    var vfb : Real = if (q == 1) { vref } else { -vref };   // digital state read in analog
+    I(intg, gnd) <+ c * ddt(V(intg, gnd));                  // integrating capacitor
+    I(intg, gnd) <+ (vfb - V(vin)) / r;                     // (feedback − input) drives the node
+}
+
+digital DeltaSigma {
+    dout <- q;
+    @ posedge(clk) { q = (V(intg) > 0.0); }                 // clocked 1-bit quantizer
+}
 ```
-   .va / .vams    ──►  piperine-ams    ──►      ┌──────────────────┐
-   (Verilog-A/AMS)  ◄─►   frontend     ◄─►      │  piperine-codegen │
-                                                  │   (IR + lowering)  │
-   .phdl / .ppr    ──►  piperine-lang  ──►      └────────┬─────────┘
-   (PHDL / .ppr)     ◄─►   frontend     ◄─►               │
-                                                            ▼
-                                                  Vec<Box<dyn Device>>
-                                                            │
-                                                  ┌─────────┴─────────┐
-                                                  ▼                   ▼
-                                       ┌──────────────────┐  ┌──────────────────────┐
-                                       │  piperine-solver   │  │  piperine-solver OSDI │
-                                       │  (Newton-Raphson,  │  │  (.osdi shared libs)  │
-                                       │   AC/DC/Tran/      │  │                        │
-                                       │   Noise/TF)         │  └──────────────────────┘
-                                       └──────────────────┘
+
+### 2. Parametric Generics & Compile-Time Evaluation
+Forget writing endless scripts just to generate hardware. In PHDL, structural and behavioral scaling is resolved natively at compile time via pure data generation using `for` loops and parameter bounds `[N]`:
+
+```phdl
+mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0e3; }
+
+// N-stage RC ladder
+mod Ladder[N] ( inout bus : Electrical, inout gnd : Ground ) {
+    param r : Real = 1.0e3;  
+    param cpar : Real = 5.0e-15;
+
+    wire tap : Electrical[N];
+    
+    for i in 0..N {
+        rseg[i] : Resistor ( bus, tap[i] )    { .r = r };
+        rgnd[i] : Resistor ( tap[i], gnd )    { .r = r };
+    }
+}
+
+analog Ladder {
+    for i in 0..N {
+        // Easily probe the child instance nodes to add parasitics!
+        I(rseg[i].n, gnd) <+ cpar * ddt(V(rseg[i].n, gnd));
+    }
+}
 ```
 
-The **IR (`crates/piperine-codegen/src/ir.rs`) is the only contract** between
-the frontends and the solver. `piperine-solver` does *not* depend on
-`piperine-codegen`; the codegen depends on the solver's `Device` and
-`CircuitInstance` traits because it lowers IR into them. Verify this
-dependency direction with `cargo metadata` if you change it.
+### 3. Scriptable Verification: Parameter Sweeps
+Testing isn't an afterthought. PHDL includes an effectful `bench` block with a built-in Uniform API that evolves the traditional `.measure` statements into pure, natively integrated code:
 
-## Crates
-
-| Crate | Role | Key files |
-|-------|------|-----------|
-| `piperine-ams` | Verilog-A/AMS frontend | `src/{lexer,parser,preprocessor,grammar,ast,model,fmt}.rs`, `headers/*.vams` |
-| `piperine-lang` | PHDL frontend (parse + elab) | `src/parse/`, `src/elab/`, `src/resolve/`, `src/stdlib/` |
-| `piperine-codegen` | IR + Cranelift JIT + lowering to `Device` | `src/ir.rs`, `src/from_ams.rs`, `src/from_ppr.rs`, `src/from_ir.rs`, `src/ir_analog_to_device.rs`, `src/ir_digital_to_interp.rs`, `src/phdl_device.rs`, `src/codegen/` |
-| `piperine-solver` | Newton-Raphson, AC/DC/Tran/Noise/TF, OSDI loader | `src/{analog,digital,osdi,solver,math,topology}.rs` |
-| `piperine-cli` | clap subcommands | `src/commands/{check,fmt,build,run,test,new,clean}.rs` |
-| `piperine-project` | `Piperine.toml` reader | `src/lib.rs` |
-
-## Quick start
-
-```sh
-cargo build                          # build the workspace
-cargo test                           # ~270 tests; must pass (see tests-baseline.md)
-cargo test -p piperine-codegen        # always re-run after touching codegen
+```phdl
+bench AmpSweep {
+    fn dc_gain_vs_load() {
+        var curve : Vec<(Real, Real)> = [];
+        
+        // Native loops for parameter sweeps!
+        for rl in [1e3, 1e4, 1e5, 1e6] {
+            load.resistance = rl;
+            var r = $op(); // Run Operating Point analysis
+            curve.push((rl, r.v(out) / r.v(in_)));
+        }
+        
+        $write("gain_vs_load.csv", curve);
+    }
+}
 ```
+
+### 4. Typed Metadata (Attributes)
+Say goodbye to using messy, unstructured `PRAGMA` comments to pass physical design intent to your tools. PHDL introduces typed, schema-validated attributes that cleanly attach layout, routing, and floorplanning intent directly to your netlist components:
+
+```phdl
+// The compiler validates `min_width` and `layer` against your project's `layout` schema plugin!
+@layout(min_width = 2.0e-6, layer = "m3") 
+@route(priority = high) 
+wire clk : Electrical;
+```
+
+*(Note: Scriptable verification via `bench` blocks and the Uniform API is currently in design and will be added in future releases).*
+
+## Usage
+
+Use the `piperine` command line interface to work with your circuit designs.
 
 ### Verifying a design
 
-```sh
-# Parse + elaborate + sanity-check a PHDL or Verilog-A file
-cargo run -p piperine-cli -- check path/to/circuit.phdl
+You can parse, elaborate, and sanity-check your PHDL or Verilog-A files:
 
-# Format (token-level pretty-printer for Verilog-A)
-cargo run -p piperine-cli -- fmt path/to/circuit.vams
+```sh
+piperine check path/to/circuit.phdl
 ```
 
-The other CLI subcommands (`build`, `run`, `test`, `clean`) are stubs that
-print "TODO: call simulator/compiler". See [`docs/GAPS.md`](docs/GAPS.md)
-for the planned scope.
+### Formatting
 
-### OSDI tests
+Keep your code clean with the built-in formatter:
 
-The OSDI subset of `piperine-solver` tests loads real `.osdi` device models
-produced by OpenVAF-Reloaded. `OPENVAF_BIN` is auto-downloaded by
-`piperine-solver/build.rs` on linux x86_64. On other platforms the build
-script falls back to a system `openvaf`.
+```sh
+piperine fmt path/to/circuit.vams
+```
 
-## Where to read next
-
-| Doc | What it covers |
-|-----|----------------|
-| [`AGENTS.md`](AGENTS.md) | Build/test commands, frozen-file rules, conventions, test baseline |
-| [`docs/piperine-hdl-spec.md`](docs/piperine-hdl-spec.md) | The PHDL language design |
-| [`crates/piperine-codegen/IR-SYSTEM.md`](crates/piperine-codegen/IR-SYSTEM.md) | The IR contract between frontends and solver |
-| [`docs/GAPS.md`](docs/GAPS.md) | Spec-vs-code gap analysis; the authoritative development guide |
-
-## IR in 30 seconds
-
-`IrProgram { source, modules, functions }`. Each `IrModule` has ports,
-params, wires, branches, vars, instances, connections, an optional
-`analog` body, and an optional `digital` body. Analog statements are
-`Contrib` / `Force` / `IndirectContrib`; digital statements mirror
-Verilog-A's `initial`/`always` (`Assign` / `NonBlocking` / `EventControl`).
-`IrExpr` covers literals, params, vars, branch access (`V(a,b)` /
-`I(a,b)`), all arithmetic, `Call` (math), `Sim` queries
-(`$temperature`, `$vt`, `$abstime`, …), and reactive `StateRef`s. See
-`IR-SYSTEM.md` for the full grammar and semantics.
-
-The IR is emitted to Cranelift JIT code that takes `(node_voltages,
-params, sim_ctx, rhs)` (or `jac`/`charge`/`charge_jacobian` for the
-derivative/companion-model variants). The 4th argument, `SimCtx`, is a
-32-byte struct carrying the live simulator state — see A.2/A.3 in GAPS
-for the threading story.
-
-## Conventions
-
-- **Panics:** never `unwrap()`/`expect()` on user-input paths; return
-  `Result<_, E>`. `unwrap()` is acceptable only behind a provable
-  invariant (`peek`-guarded lexer reads, FFI length-checked slices), and
-  should carry a `// SAFETY:` comment.
-- **Fail-loud over silent zero:** the codegen uses
-  `CodegenError::Unsupported(...)` rather than `todo!()`/`unimplemented!()`
-  and rejects IrExpr constructs that would silently compile to a wrong
-  value. See `validate_ir_contrib` in `ir_emit.rs`.
-- **Numeric conventions:** analog = `f64`; digital = `LogicValue` (`Zero`,
-  `One`, `X`, `Z`); mixed-signal nets = anonymous `usize` indices.
-- **No new dependencies** without checking `Cargo.toml` and the
-  workspace `[workspace.dependencies]` table first.
-
-## Status
-
-This is a **work in progress**. The current implementation is roughly:
-
-- **AMS frontend** — full Verilog-A/AMS grammar parses; digital
-  (`initial`/`always`) and generate blocks are not yet lowered to IR
-  (`digital: None` hardcoded).
-- **PHDL frontend** — parses and elaborates most of the spec; generics,
-  capabilities, bundles, enums, and higher-order functions are
-  parse-only or partial.
-- **Codegen** — handles resistive `I(p,n) <+ …` contributions and `ddt`
-  via the companion model. Forces (`V(p,n) <-`), indirect contributions,
-  and most analog operators are rejected with clear errors.
-- **Solver** — DC, AC, Tran (backward Euler only), Noise (adjoint),
-  Transfer Function. Trapezoidal integration and LTE-based timestep control
-  are defined but not wired into the transient loop.
-- **Mixed-signal** — A2D and D2A bridges are not yet implemented; the
-  solver passes empty analog voltages into `eval_discrete` and the digital
-  state is invisible to analog stamping.
-- **OSDI** — fully functional via OpenVAF-Reloaded.
-
-See [`docs/GAPS.md`](docs/GAPS.md) for the full gap analysis with
-file:line citations, proposed solutions, and acceptance criteria for each
-gap.
+*(Note: The other CLI subcommands like `build`, `run`, `test`, and `clean` are currently under development.)*
