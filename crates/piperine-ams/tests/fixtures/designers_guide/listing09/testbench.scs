@@ -1,9 +1,0 @@
-// Test resistor model
-
-simulator lang=spectre
-
-ahdl_include "motor2.vams"
-
-I1  (0) test
-
-doDC dc print=yes

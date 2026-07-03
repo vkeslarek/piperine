@@ -9,7 +9,9 @@ fn discover_files(file: Option<String>) -> Vec<PathBuf> {
         return vec![PathBuf::from(f)];
     }
     let Some(root) = piperine_project::get_current_project_root() else {
-        eprintln!("Error: No Piperine.toml found in current or parent directories. Please provide a file.");
+        eprintln!(
+            "Error: No Piperine.toml found in current or parent directories. Please provide a file."
+        );
         std::process::exit(1);
     };
     let src_dir = root.join("src");
@@ -22,7 +24,8 @@ fn discover_files(file: Option<String>) -> Vec<PathBuf> {
                     let p = entry.path();
                     if p.is_dir() {
                         stack.push(p);
-                    } else if p.is_file() && p.extension().and_then(|s| s.to_str()) == Some("phdl") {
+                    } else if p.is_file() && p.extension().and_then(|s| s.to_str()) == Some("phdl")
+                    {
                         paths.push(p);
                     }
                 }
@@ -36,20 +39,15 @@ fn discover_files(file: Option<String>) -> Vec<PathBuf> {
     paths
 }
 
-fn source_map(project_root: &std::path::Path) -> piperine_lang::SourceMap {
-    let mut source_map = piperine_lang::SourceMap::new(project_root.to_path_buf());
-    let headers_dir = project_root.join("headers");
-    if headers_dir.exists() {
-        source_map = source_map.with_prelude(headers_dir.join("prelude.phdl"));
-        source_map.add_namespace("piperine", headers_dir.clone());
-        source_map.add_namespace("spice", headers_dir.join("ngspice"));
-    }
+fn source_map() -> piperine_lang::SourceMap {
+    let (source_map, _project_root) = super::utils::build_source_map();
     source_map
 }
 
-pub fn execute(file: Option<String>) {
-    let project_root = piperine_project::get_current_project_root().unwrap_or_else(|| std::env::current_dir().unwrap());
-    let source_map = source_map(&project_root);
+pub fn execute(list: bool, file: Option<String>) {
+    let project_root = piperine_project::get_current_project_root()
+        .unwrap_or_else(|| std::env::current_dir().unwrap());
+    let source_map = source_map();
 
     let mut had_failure = false;
     let mut ran_any = false;
@@ -70,17 +68,43 @@ pub fn execute(file: Option<String>) {
                 continue;
             }
         };
+
+        if list {
+            for bench in design.benches() {
+                for entry in bench.entry_points() {
+                    ran_any = true;
+                    println!("{}::{}", bench.module(), entry.sig.name);
+                }
+            }
+            continue;
+        }
+
         let report = BenchRunner::new(&design).run_all();
         for result in &report.results {
             ran_any = true;
             match &result.outcome {
-                BenchOutcome::Passed => println!("ok   {}::{}::{}", path.display(), result.module, result.entry),
+                BenchOutcome::Passed => println!(
+                    "ok   {}::{}::{}",
+                    path.display(),
+                    result.module,
+                    result.entry
+                ),
                 BenchOutcome::Failed(msg) => {
-                    println!("FAIL {}::{}::{} — {msg}", path.display(), result.module, result.entry);
+                    println!(
+                        "FAIL {}::{}::{} — {msg}",
+                        path.display(),
+                        result.module,
+                        result.entry
+                    );
                     had_failure = true;
                 }
                 BenchOutcome::Error(msg) => {
-                    println!("ERR  {}::{}::{} — {msg}", path.display(), result.module, result.entry);
+                    println!(
+                        "ERR  {}::{}::{} — {msg}",
+                        path.display(),
+                        result.module,
+                        result.entry
+                    );
                     had_failure = true;
                 }
             }

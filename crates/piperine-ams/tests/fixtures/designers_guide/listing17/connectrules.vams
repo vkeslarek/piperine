@@ -1,5 +1,0 @@
-`include "disciplines.vams"
-
-connectrules my_connectrules;
-    connect a2d #(.dt(10n));
-endconnectrules

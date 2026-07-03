@@ -1,0 +1,4 @@
+[[package]]
+name = "spice"
+source = "file:///home/keslarek/Git/piperine-spice"
+hash = "f4ee27d605298817e7ccacda983d5a491991a9a9"

@@ -1,0 +1,8 @@
+[project]
+name = "test_spice_proj"
+version = "0.1.0"
+authors = ["Keslarek"]
+edition = "2024"
+
+[dependencies]
+spice = { git = "file:///home/keslarek/Git/piperine-spice", version = "0.1.0" }

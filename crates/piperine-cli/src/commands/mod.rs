@@ -1,7 +1,8 @@
-pub mod new;
-pub mod check;
-pub mod fmt;
 pub mod build;
+pub mod check;
+pub mod clean;
+pub mod fmt;
+pub mod new;
 pub mod run;
 pub mod test;
-pub mod clean;
+pub mod utils;
