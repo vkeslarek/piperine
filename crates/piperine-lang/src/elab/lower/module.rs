@@ -235,8 +235,8 @@ impl Elaborator {
 
             ModuleStatement::WireDecl { name, ty, attrs: _, span: _ } => {
                 let resolved_name = type_subst.get(&ty.name).map(|s| s.as_str()).unwrap_or(&ty.name);
-                if let Some(bundle) = self.bundles.get(resolved_name).cloned() {
-                    if self.is_net_capable_bundle(resolved_name) {
+                if let Some(bundle) = self.bundles.get(resolved_name).cloned()
+                    && self.is_net_capable_bundle(resolved_name) {
                         for field in &bundle.fields {
                             let field_ty = self.resolve_net_type(&field.ty, env, type_subst)?;
                             out.push(ModBodyItem::Wire(Wire { attributes: Vec::new(),
@@ -246,7 +246,6 @@ impl Elaborator {
                         }
                         return Ok(());
                     }
-                }
                 let nt = self.resolve_net_type(ty, env, type_subst)?;
                 out.push(ModBodyItem::Wire(Wire { attributes: Vec::new(), name: name.clone(), ty: nt }));
             }
@@ -390,18 +389,15 @@ impl Elaborator {
                 let mut elab_ports = Vec::new();
                 for p in &ports {
                     let mut expanded = false;
-                    if let crate::parse::ast::Expr::Ident(p_name) = p {
-                        if let Some(ty_name) = local_types.get(p_name) {
-                            if let Some(bundle) = self.bundles.get(ty_name).cloned() {
-                                if self.is_net_capable_bundle(ty_name) {
+                    if let crate::parse::ast::Expr::Ident(p_name) = p
+                        && let Some(ty_name) = local_types.get(p_name)
+                            && let Some(bundle) = self.bundles.get(ty_name).cloned()
+                                && self.is_net_capable_bundle(ty_name) {
                                     expanded = true;
                                     for field in &bundle.fields {
                                         elab_ports.push(crate::pom::net_type::NetRef::simple(format!("{}_{}", p_name, field.name)));
                                     }
                                 }
-                            }
-                        }
-                    }
                     if !expanded {
                         elab_ports.push(self.eval_net_ref(p, env)?);
                     }
@@ -441,10 +437,10 @@ impl Elaborator {
 
             ModuleStatement::Connection { lhs, rhs, attrs: _, span: _ } => {
                 let mut is_bundle_conn = false;
-                if let (crate::parse::ast::Expr::Ident(l_name), crate::parse::ast::Expr::Ident(r_name)) = (lhs, rhs) {
-                    if let Some(l_ty_name) = local_types.get(l_name) {
-                        if let Some(bundle) = self.bundles.get(l_ty_name).cloned() {
-                            if self.is_net_capable_bundle(l_ty_name) {
+                if let (crate::parse::ast::Expr::Ident(l_name), crate::parse::ast::Expr::Ident(r_name)) = (lhs, rhs)
+                    && let Some(l_ty_name) = local_types.get(l_name)
+                        && let Some(bundle) = self.bundles.get(l_ty_name).cloned()
+                            && self.is_net_capable_bundle(l_ty_name) {
                                 is_bundle_conn = true;
                                 for field in &bundle.fields {
                                     let l_ref = crate::pom::net_type::NetRef::simple(format!("{}_{}", l_name, field.name));
@@ -452,9 +448,6 @@ impl Elaborator {
                                     out.push(ModBodyItem::Conn(Connection { lhs: l_ref, rhs: r_ref }));
                                 }
                             }
-                        }
-                    }
-                }
                 
                 if !is_bundle_conn {
                     let lhs_ref = self.eval_net_ref(lhs, env)?;

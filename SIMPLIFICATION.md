@@ -77,7 +77,7 @@ solver's `analysis/*` + `solver/*` layering stays; it reads fine at its current 
 
 ## 3. The plan, expanded
 
-### P1 — Extract `piperine-ir`: the IR becomes the contract crate
+### P1 — Extract `piperine-ir`: the IR becomes the contract crate [DONE]
 **[structural — Claude]** *(fixes D6; enables P2, P12; partial D12)*
 
 New crate `crates/piperine-ir`: pure data, no Cranelift, no solver.
@@ -103,7 +103,7 @@ Deliberately *not* in this step: making piperine-solver consume `piperine-ir` no
 (the `NodeIdentifier` unification, D12). That is follow-up work once ir exists — tracked
 under P12b below.
 
-### P2 — One `Value` type
+### P2 — One `Value` type [DONE]
 **[structural — Claude]** *(fixes D1)*
 
 `eval::Value` is already the superset (scalars + tuple/list/record/option + closures +
@@ -136,7 +136,7 @@ suite green.
 
 Biggest churn; scheduled after P4 so only one walker needs porting.
 
-### P4 — A real walk/fold on the AST
+### P4 — A real walk/fold on the AST [DONE]
 **[structural — Claude]** *(fixes D3)*
 
 Plain inherent methods, no macros:
@@ -181,7 +181,7 @@ let passes: [&dyn ElabPass; N] =
 `elaborate()` becomes a readable loop; elaboration *order* becomes visible instead of
 buried in a 280-line driver.
 
-### P7 — Delete the legacy `Circuit`/`instantiate` solver entry
+### P7 — Delete the legacy `Circuit`/`instantiate` solver entry [DONE]
 **[delegate]** *(fixes D8 — reduced scope per review: Newton/analysis layering and the
 `Device` trait stay as they are)*
 
@@ -192,7 +192,7 @@ wiring in `piperine-solver/src/circuit.rs`; port their tests to
 Acceptance: `grep -rn "instantiate\b" crates/piperine-solver` → gone; solver + osdi test
 files still pass.
 
-### P8 — Delete `piperine-ams`
+### P8 — Delete `piperine-ams` [DONE]
 **[delegate]** *(fixes part of D10, D13 — review decision: delete, don't archive)*
 
 `git rm -r crates/piperine-ams`; drop the `exclude` from the root `Cargo.toml`; update
@@ -203,7 +203,7 @@ keeps the old code).
 Acceptance: `grep -rni "piperine.ams\|\.vams\|ams_to_ir" --include="*.md" --include="*.toml"`
 → only historical notes explicitly marked as removed; workspace builds.
 
-### P9 — One error story
+### P9 — One error story [DONE]
 **[delegate, per-crate increments]** *(fixes D11)*
 
 - One public thiserror enum per crate, `#[from]` chaining.
@@ -225,7 +225,7 @@ Acceptance per increment: crate's public API exposes exactly one error type; no
 - Recreate a short `ARCHITECTURE.md` — §1's diagram, kept current, is the template.
 - CLAUDE.md: pipeline diagram updated (AMS removed, bench layer added).
 
-### P11 — Dead-code and hygiene sweep
+### P11 — Dead-code and hygiene sweep [DONE]
 **[delegate — good first task]** *(fixes D10)*
 
 Fix the 25 warnings in piperine-lang (unused imports, unreachable selector-axes arm,

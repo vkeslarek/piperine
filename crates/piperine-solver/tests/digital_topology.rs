@@ -7,7 +7,10 @@
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 
-use piperine_solver::circuit::{Circuit, CircuitInstance};
+use piperine_solver::circuit::CircuitInstance;
+fn make_instance(title: &str) -> CircuitInstance {
+    CircuitInstance::from_devices_and_netlist(title, vec![], piperine_solver::analog::Netlist::new())
+}
 use piperine_solver::device::Device;
 use piperine_solver::digital::{LogicValue, DigitalNet, DigitalEvent};
 use piperine_solver::topology::{DigitalState, DigitalTopology};
@@ -267,8 +270,7 @@ fn make_rs_latch_instance(title: &str, r_val: LogicValue, s_val: LogicValue, q_v
     state.nets[2] = q_val;
     state.nets[3] = qb_val;
 
-    let circuit = Circuit::new(title);
-    let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
+    let mut instance = make_instance(title);
     instance.digital_state = state;
     instance.devices.push(Box::new(NorGate { inputs: [DigitalNet(0), DigitalNet(3)], output: DigitalNet(2), delay: 1e-10, id: 0 }));
     instance.devices.push(Box::new(NorGate { inputs: [DigitalNet(1), DigitalNet(2)], output: DigitalNet(3), delay: 1e-10, id: 1 }));
@@ -335,8 +337,7 @@ fn test_dff_rising_edge_capture() {
     state.nets[1] = LogicValue::One;  // D=1
     state.schedule(DigitalEvent { time: 2e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0 });
 
-    let circuit = Circuit::new("DFFCapture");
-    let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
+    let mut instance = make_instance("DFFCapture");
     instance.digital_state = state;
     instance.devices.push(Box::new(DFF::new(0, DigitalNet(0), DigitalNet(1), DigitalNet(2), 0.5e-9)));
     instance.rebuild_digital_topology();
@@ -358,8 +359,7 @@ fn test_dff_does_not_capture_on_falling_edge() {
     state.nets[2] = LogicValue::Zero; // Q=0 initially
     state.schedule(DigitalEvent { time: 2e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 99, seq: 0 });
 
-    let circuit = Circuit::new("DFFNoCapture");
-    let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
+    let mut instance = make_instance("DFFNoCapture");
     instance.digital_state = state;
     instance.devices.push(Box::new(DFF::new(0, DigitalNet(0), DigitalNet(1), DigitalNet(2), 0.5e-9)));
     instance.rebuild_digital_topology();
@@ -386,8 +386,7 @@ fn test_dff_pipeline_three_stages() {
         state.schedule(DigitalEvent { time: t, net: DigitalNet(0), value: val, source: 99, seq: i as u64 });
     }
 
-    let circuit = Circuit::new("DFFPipeline");
-    let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
+    let mut instance = make_instance("DFFPipeline");
     instance.digital_state = state;
     instance.devices.push(Box::new(DFF::new(0, DigitalNet(0), DigitalNet(1), DigitalNet(2), 0.1e-9)));
     instance.devices.push(Box::new(DFF::new(1, DigitalNet(0), DigitalNet(2), DigitalNet(3), 0.1e-9)));
@@ -413,8 +412,7 @@ fn test_ring_oscillator_five_inv() {
     let mut state = DigitalState::new(5);
     state.schedule(DigitalEvent { time: 0.0, net: DigitalNet(0), value: LogicValue::Zero, source: 999, seq: 0 });
 
-    let circuit = Circuit::new("RingOsc5");
-    let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
+    let mut instance = make_instance("RingOsc5");
     for i in 0..5usize {
         instance.devices.push(Box::new(Inverter {
             input: DigitalNet(i), output: DigitalNet((i + 1) % 5), delay: 1e-9, id: i,
@@ -538,8 +536,7 @@ fn test_a2d_rising_then_falling() {
 
 #[test]
 fn test_cosim_d2a_event_at_correct_time() {
-    let circuit = Circuit::new("D2ACosim");
-    let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
+    let mut instance = make_instance("D2ACosim");
     let mut state = DigitalState::new(1);
     state.schedule(DigitalEvent { time: 5e-9, net: DigitalNet(0), value: LogicValue::One, source: 0, seq: 0 });
 
@@ -566,8 +563,7 @@ fn test_cosim_d2a_event_at_correct_time() {
 
 #[test]
 fn test_cosim_d2a_multiple_events() {
-    let circuit = Circuit::new("D2AMulti");
-    let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
+    let mut instance = make_instance("D2AMulti");
     let mut state = DigitalState::new(1);
     state.schedule(DigitalEvent { time: 2e-9, net: DigitalNet(0), value: LogicValue::One,  source: 0, seq: 0 });
     state.schedule(DigitalEvent { time: 7e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 0, seq: 1 });

@@ -34,11 +34,10 @@ impl DigitalTopology {
         let mut adj: Vec<Vec<usize>> = vec![vec![]; n];
         for (j, dev) in devices.iter().enumerate() {
             for &net in dev.digital_input_nets() {
-                if let Some(&i) = output_to_dev.get(&net) {
-                    if i != j && !adj[i].contains(&j) {
+                if let Some(&i) = output_to_dev.get(&net)
+                    && i != j && !adj[i].contains(&j) {
                         adj[i].push(j);
                     }
-                }
             }
         }
 
@@ -241,7 +240,7 @@ impl DigitalState {
                     true
                 } else {
                     device.digital_output_nets().iter().enumerate().any(|(i, n)| {
-                        prev_outs.get(i).map_or(false, |&old| self.nets[n.0] != old)
+                        prev_outs.get(i).is_some_and(|&old| self.nets[n.0] != old)
                     })
                 };
                 output_changed_at[topo_pos] = outputs_changed;

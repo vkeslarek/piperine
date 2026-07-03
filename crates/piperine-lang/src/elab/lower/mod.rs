@@ -21,7 +21,6 @@ use crate::parse::ast::{
 };
 use crate::elab::const_eval::ConstEnv;
 use crate::value::Value;
-use crate::elab::event::EventRegistry;
 use crate::pom::{ElabError, ElabErrorKind, Design, Module};
 
 mod behavior;
@@ -204,14 +203,13 @@ impl Elaborator {
                     continue; // already attached above
                 }
                 // Monomorphized name: "BaseName__arg1_arg2_..."
-                if let Some(rest) = name.strip_prefix(&format!("{base}__")) {
-                    if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit() || c == '_') {
+                if let Some(rest) = name.strip_prefix(&format!("{base}__"))
+                    && !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit() || c == '_') {
                         // Avoid duplicate attachment if already present.
                         if !module.behaviors.iter().any(|b| b.name == behavior.name && b.kind == behavior.kind) {
                             module.behaviors.push(behavior.clone());
                         }
                     }
-                }
             }
         }
 

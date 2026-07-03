@@ -10,9 +10,36 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use piperine_solver::circuit::Circuit;
-use piperine_solver::osdi::OsdiDevice;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use piperine_solver::analog::{NodeIdentifier, Netlist};
 use piperine_solver::circuit::CircuitInstance;
+use piperine_solver::osdi::OsdiDevice;
+use piperine_solver::device::Device;
+
+pub struct Circuit {
+    pub title: String,
+    pub components: HashMap<String, OsdiDevice>,
+    pub node_counter: AtomicUsize,
+}
+impl Circuit {
+    pub fn new(title: impl Into<String>) -> Self {
+        Self { title: title.into(), components: HashMap::new(), node_counter: AtomicUsize::new(0) }
+    }
+    pub fn port(&self) -> NodeIdentifier {
+        NodeIdentifier::Anonymous(self.node_counter.fetch_add(1, Ordering::Relaxed))
+    }
+    pub fn components_mut(&mut self) -> &mut HashMap<String, OsdiDevice> { &mut self.components }
+
+    pub fn instantiate(&self) -> CircuitInstance {
+        let mut netlist = Netlist::new();
+        let ctx = piperine_solver::solver::Context::default();
+        let devices = self.components.values()
+            .map(|spec| Box::new(OsdiDevice::from_spec(spec, &mut netlist, &ctx)) as Box<dyn Device>)
+            .collect();
+        CircuitInstance::from_devices_and_netlist(self.title.clone(), devices, netlist)
+    }
+}
 
 use piperine_solver::analog::GND;
 use piperine_solver::osdi::model::AnalogModel;
@@ -136,7 +163,7 @@ fn test_circuit_instantiation_single_device() {
 
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![n1.clone(), GND], vec![("r".to_string(), 1000.0)]));
 
-    let inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let inst = circuit.instantiate();
     assert_eq!(inst.all_devices().len(), 1);
     assert!(inst.netlist().max_index().is_some());
 }
@@ -156,7 +183,7 @@ fn test_circuit_instantiation_multiple_devices() {
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![n1.clone(), n2.clone()], vec![("r".to_string(), 500.0)]));
     circuit.components_mut().insert("R2".to_string(), OsdiDevice::new_with_params("R2".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![n2.clone(), GND], vec![("r".to_string(), 500.0)]));
 
-    let inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let inst = circuit.instantiate();
     assert_eq!(inst.all_devices().len(), 3);
 }
 
@@ -179,7 +206,7 @@ fn test_dc_isource_resistor() {
     circuit.components_mut().insert("I1".to_string(), OsdiDevice::new_with_params("I1".to_string(), isource.lib.clone(), isource.descriptor_idx, vec![GND, v_node.clone()], vec![("idc".to_string(), 1e-3)]));
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![v_node.clone(), GND], vec![("r".to_string(), 1000.0)]));
 
-    let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let mut inst = circuit.instantiate();
     let dc = inst.dc(Context::default()).unwrap().solve().unwrap();
 
     let v = dc.get_node(&v_node).expect("node voltage");
@@ -205,7 +232,7 @@ fn test_dc_parallel_resistors() {
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![v_node.clone(), GND], vec![("r".to_string(), 1000.0)]));
     circuit.components_mut().insert("R2".to_string(), OsdiDevice::new_with_params("R2".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![v_node.clone(), GND], vec![("r".to_string(), 1000.0)]));
 
-    let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let mut inst = circuit.instantiate();
     let dc = inst.dc(Context::default()).unwrap().solve().unwrap();
 
     let v = dc.get_node(&v_node).expect("node voltage");
@@ -233,7 +260,7 @@ fn test_dc_series_resistors() {
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![v_top.clone(), v_mid.clone()], vec![("r".to_string(), 1000.0)]));
     circuit.components_mut().insert("R2".to_string(), OsdiDevice::new_with_params("R2".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![v_mid.clone(), GND], vec![("r".to_string(), 500.0)]));
 
-    let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let mut inst = circuit.instantiate();
     let dc = inst.dc(Context::default()).unwrap().solve().unwrap();
 
     let vt = dc.get_node(&v_top).expect("v_top");
@@ -262,7 +289,7 @@ fn test_dc_three_node_chain() {
     circuit.components_mut().insert("R2".to_string(), OsdiDevice::new_with_params("R2".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![n2.clone(), n3.clone()], vec![("r".to_string(), 1000.0)]));
     circuit.components_mut().insert("R3".to_string(), OsdiDevice::new_with_params("R3".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![n3.clone(), GND], vec![("r".to_string(), 1000.0)]));
 
-    let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let mut inst = circuit.instantiate();
     let dc = inst.dc(Context::default()).unwrap().solve().unwrap();
 
     let v1 = dc.get_node(&n1).unwrap();
@@ -288,7 +315,7 @@ fn test_dc_high_impedance() {
     circuit.components_mut().insert("I1".to_string(), OsdiDevice::new_with_params("I1".to_string(), isource.lib.clone(), isource.descriptor_idx, vec![GND, v_node.clone()], vec![("idc".to_string(), 1e-3)]));
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![v_node.clone(), GND], vec![("r".to_string(), 10000.0)]));
 
-    let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let mut inst = circuit.instantiate();
     let dc = inst.dc(Context::default()).unwrap().solve().unwrap();
 
     let v = dc.get_node(&v_node).unwrap();
@@ -312,7 +339,7 @@ fn test_opvar_readout_doesnt_crash() {
     circuit.components_mut().insert("I1".to_string(), OsdiDevice::new_with_params("I1".to_string(), isource.lib.clone(), isource.descriptor_idx, vec![GND, v_node.clone()], vec![("idc".to_string(), 1e-3)]));
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![v_node.clone(), GND], vec![("r".to_string(), 1000.0)]));
 
-    let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let mut inst = circuit.instantiate();
     let _dc = inst.dc(Context::default()).unwrap().solve().unwrap();
 
     for (i, rt) in inst.all_devices().iter().enumerate() {
@@ -339,7 +366,7 @@ fn test_noisy_resistor_opvars() {
     circuit.components_mut().insert("I1".to_string(), OsdiDevice::new_with_params("I1".to_string(), isource.lib.clone(), isource.descriptor_idx, vec![GND, v_node.clone()], vec![("idc".to_string(), 1e-3)]));
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), noisy_resistor.lib.clone(), noisy_resistor.descriptor_idx, vec![v_node.clone(), GND], vec![("r".to_string(), 1000.0)]));
 
-    let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let mut inst = circuit.instantiate();
     let _dc = inst.dc(Context::default()).unwrap().solve().unwrap();
 
     // Find the noisy resistor runtime and check opvars
@@ -375,7 +402,7 @@ fn test_noisy_resistor_has_noise_sources() {
     circuit.components_mut().insert("I1".to_string(), OsdiDevice::new_with_params("I1".to_string(), isource.lib.clone(), isource.descriptor_idx, vec![GND, v_node.clone()], vec![("idc".to_string(), 1e-3)]));
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), noisy_resistor.lib.clone(), noisy_resistor.descriptor_idx, vec![v_node.clone(), GND], vec![("r".to_string(), 1000.0)]));
 
-    let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let mut inst = circuit.instantiate();
     let dc = inst.dc(Context::default()).unwrap().solve().unwrap();
 
     let ac_ctx = AcAnalysisContext { frequency: 1e3 };
@@ -409,7 +436,7 @@ fn test_noise_psd_thermal_value() {
     circuit.components_mut().insert("I1".to_string(), OsdiDevice::new_with_params("I1".to_string(), isource.lib.clone(), isource.descriptor_idx, vec![GND, v_node.clone()], vec![("idc".to_string(), 1e-3)]));
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), noisy_resistor.lib.clone(), noisy_resistor.descriptor_idx, vec![v_node.clone(), GND], vec![("r".to_string(), 1000.0)]));
 
-    let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let mut inst = circuit.instantiate();
     let dc = inst.dc(Context::default()).unwrap().solve().unwrap();
 
     let ac_ctx = AcAnalysisContext { frequency: 1e3 };
@@ -453,7 +480,7 @@ fn test_noise_psd_scales_with_resistance() {
         circuit.components_mut().insert("I1".to_string(), OsdiDevice::new_with_params("I1".to_string(), isource.lib.clone(), isource.descriptor_idx, vec![GND, v_node.clone()], vec![("idc".to_string(), 1e-3)]));
         circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), noisy_resistor.lib.clone(), noisy_resistor.descriptor_idx, vec![v_node.clone(), GND], vec![("r".to_string(), r_val)]));
 
-        let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+        let mut inst = circuit.instantiate();
         let dc = inst.dc(Context::default()).unwrap().solve().unwrap();
 
         let mut total = 0.0;
@@ -498,7 +525,7 @@ fn test_noise_zero_for_non_noisy_device() {
     circuit.components_mut().insert("I1".to_string(), OsdiDevice::new_with_params("I1".to_string(), isource.lib.clone(), isource.descriptor_idx, vec![GND, v_node.clone()], vec![("idc".to_string(), 1e-3)]));
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![v_node.clone(), GND], vec![("r".to_string(), 1000.0)]));
 
-    let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let mut inst = circuit.instantiate();
     let dc = inst.dc(Context::default()).unwrap().solve().unwrap();
 
     let ac_ctx = AcAnalysisContext { frequency: 1e3 };
@@ -528,7 +555,7 @@ fn test_set_temperature_doesnt_crash() {
     circuit.components_mut().insert("I1".to_string(), OsdiDevice::new_with_params("I1".to_string(), isource.lib.clone(), isource.descriptor_idx, vec![GND, v_node.clone()], vec![("idc".to_string(), 1e-3)]));
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![v_node.clone(), GND], vec![("r".to_string(), 1000.0)]));
 
-    let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let mut inst = circuit.instantiate();
 
     // Set various temperatures — should not crash
     for temp in [200.0, 300.0, 400.0, 500.0] {
@@ -548,7 +575,7 @@ fn test_temperature_small_change_no_rerun() {
     let n1 = circuit.port();
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![n1.clone(), GND], vec![("r".to_string(), 1000.0)]));
 
-    let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let mut inst = circuit.instantiate();
     for rt in inst.all_devices_mut() {
         // Default is 300.15K. Setting to 300.155 (0.005K diff) should be no-op.
         rt.set_temperature(300.155);
@@ -573,7 +600,7 @@ fn test_dc_at_different_temperatures() {
         circuit.components_mut().insert("I1".to_string(), OsdiDevice::new_with_params("I1".to_string(), isource.lib.clone(), isource.descriptor_idx, vec![GND, v_node.clone()], vec![("idc".to_string(), 1e-3)]));
         circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![v_node.clone(), GND], vec![("r".to_string(), 1000.0), ("zeta".to_string(), zeta), ("tnom".to_string(), 300.0)]));
 
-        let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+        let mut inst = circuit.instantiate();
         for rt in inst.all_devices_mut() {
             rt.set_temperature(temp);
         }
@@ -625,7 +652,7 @@ fn test_noise_at_different_temperatures() {
         circuit.components_mut().insert("I1".to_string(), OsdiDevice::new_with_params("I1".to_string(), isource.lib.clone(), isource.descriptor_idx, vec![GND, v_node.clone()], vec![("idc".to_string(), 1e-3)]));
         circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), noisy_resistor.lib.clone(), noisy_resistor.descriptor_idx, vec![v_node.clone(), GND], vec![("r".to_string(), 1000.0), ("tnom".to_string(), 300.15)]));
 
-        let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+        let mut inst = circuit.instantiate();
         for rt in inst.all_devices_mut() {
             rt.set_temperature(temp);
         }
@@ -702,7 +729,7 @@ fn test_bound_step_hint_default() {
     let n1 = circuit.port();
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![n1.clone(), GND], vec![("r".to_string(), 1000.0)]));
 
-    let inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let inst = circuit.instantiate();
     for rt in inst.all_devices() {
         assert!(rt.bound_step_hint().is_infinite());
     }
@@ -725,7 +752,7 @@ fn test_netlist_node_count() {
     circuit.components_mut().insert("R2".to_string(), OsdiDevice::new_with_params("R2".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![n2.clone(), n3.clone()], vec![("r".to_string(), 200.0)]));
     circuit.components_mut().insert("R3".to_string(), OsdiDevice::new_with_params("R3".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![n3.clone(), GND], vec![("r".to_string(), 300.0)]));
 
-    let inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let inst = circuit.instantiate();
     assert_eq!(inst.all_devices().len(), 4);
     let max_idx = inst.netlist().max_index().unwrap();
     assert!(max_idx >= 2, "should have at least 3 unknowns");
@@ -750,7 +777,7 @@ fn test_ac_analysis_runs() {
     circuit.components_mut().insert("I1".to_string(), OsdiDevice::new_with_params("I1".to_string(), isource.lib.clone(), isource.descriptor_idx, vec![GND, v_node.clone()], vec![("idc".to_string(), 1e-3)]));
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![v_node.clone(), GND], vec![("r".to_string(), 1000.0)]));
 
-    let mut inst = CircuitInstance::instantiate(&circuit).expect("instantiate");
+    let mut inst = circuit.instantiate();
     let options = AcSweepAnalysisOptions {
         start_frequency: 1.0,
         stop_frequency: 1e6,

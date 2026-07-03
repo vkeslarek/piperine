@@ -17,7 +17,7 @@ impl<'a> Evaluator<'a> {
         &self,
         selector: &Selector,
         mut current: NodeSelection<'a>,
-    ) -> Result<NodeSelection<'a>, String> {
+    ) -> Result<NodeSelection<'a>, crate::pom::error::SelectorError> {
         if selector.absolute {
             if let Some(top) = self.design.top() {
                 current = NodeSelection::from_vec(vec![Node::Module(top)]);
@@ -36,7 +36,7 @@ impl<'a> Evaluator<'a> {
         &self,
         step: &Step,
         current: NodeSelection<'a>,
-    ) -> Result<NodeSelection<'a>, String> {
+    ) -> Result<NodeSelection<'a>, crate::pom::error::SelectorError> {
         let mut next_candidates = Vec::new();
 
         for node in current.iter() {
@@ -176,8 +176,8 @@ impl<'a> Evaluator<'a> {
                     self.collect_descendants(Node::Module(child_mod), out);
                 }
             }
-        } else if let Node::Instance(inst) = node {
-            if let Some(child_mod) = self.design.module(inst.module_name()) {
+        } else if let Node::Instance(inst) = node
+            && let Some(child_mod) = self.design.module(inst.module_name()) {
                 for child_inst in child_mod.instances() {
                     out.push(Node::Instance(child_inst));
                     if let Some(grandchild_mod) = self.design.module(child_inst.module_name()) {
@@ -185,10 +185,9 @@ impl<'a> Evaluator<'a> {
                     }
                 }
             }
-        }
     }
 
-    fn walk_axis(&self, node: Node<'a>, axis: &Axis) -> Result<Vec<Node<'a>>, String> {
+    fn walk_axis(&self, node: Node<'a>, axis: &Axis) -> Result<Vec<Node<'a>>, crate::pom::error::SelectorError> {
         let mut res = Vec::new();
         match axis {
             Axis::Inst => {
@@ -196,65 +195,60 @@ impl<'a> Evaluator<'a> {
                     for i in m.instances() {
                         res.push(Node::Instance(i));
                     }
-                } else if let Node::Instance(inst) = node {
-                    if let Some(child_mod) = self.design.module(inst.module_name()) {
+                } else if let Node::Instance(inst) = node
+                    && let Some(child_mod) = self.design.module(inst.module_name()) {
                         for i in child_mod.instances() {
                             res.push(Node::Instance(i));
                         }
                     }
-                }
             }
             Axis::Net => {
                 if let Node::Module(m) = node {
                     for w in m.wires() {
                         res.push(Node::Wire(w));
                     }
-                } else if let Node::Instance(inst) = node {
-                    if let Some(child_mod) = self.design.module(inst.module_name()) {
+                } else if let Node::Instance(inst) = node
+                    && let Some(child_mod) = self.design.module(inst.module_name()) {
                         for w in child_mod.wires() {
                             res.push(Node::Wire(w));
                         }
                     }
-                }
             }
             Axis::Port => {
                 if let Node::Module(m) = node {
                     for p in m.ports() {
                         res.push(Node::Port(p));
                     }
-                } else if let Node::Instance(inst) = node {
-                    if let Some(child_mod) = self.design.module(inst.module_name()) {
+                } else if let Node::Instance(inst) = node
+                    && let Some(child_mod) = self.design.module(inst.module_name()) {
                         for p in child_mod.ports() {
                             res.push(Node::Port(p));
                         }
                     }
-                }
             }
             Axis::Param => {
                 if let Node::Module(m) = node {
                     for p in m.params() {
                         res.push(Node::Param(p));
                     }
-                } else if let Node::Instance(inst) = node {
-                    if let Some(child_mod) = self.design.module(inst.module_name()) {
+                } else if let Node::Instance(inst) = node
+                    && let Some(child_mod) = self.design.module(inst.module_name()) {
                         for p in child_mod.params() {
                             res.push(Node::Param(p));
                         }
                     }
-                }
             }
             Axis::Behavior => {
                 if let Node::Module(m) = node {
                     for b in m.behaviors() {
                         res.push(Node::Behavior(b));
                     }
-                } else if let Node::Instance(inst) = node {
-                    if let Some(child_mod) = self.design.module(inst.module_name()) {
+                } else if let Node::Instance(inst) = node
+                    && let Some(child_mod) = self.design.module(inst.module_name()) {
                         for b in child_mod.behaviors() {
                             res.push(Node::Behavior(b));
                         }
                     }
-                }
             }
 
             Axis::Attr => {
@@ -272,9 +266,9 @@ impl<'a> Evaluator<'a> {
             }
             Axis::Driver | Axis::Load | Axis::Parent | Axis::Ancestor => {
                 // To be implemented: structural connectivity and parent axes
-                return Err(format!("Axis {:?} not yet implemented", axis));
+                return Err(crate::pom::error::SelectorError::AxisNotImplemented(axis.clone()));
             }
-            _ => return Err(format!("Axis {:?} not yet implemented", axis)),
+
         }
         Ok(res)
     }

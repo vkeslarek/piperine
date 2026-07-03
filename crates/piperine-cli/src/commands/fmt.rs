@@ -1,7 +1,7 @@
-use std::fs;
-use std::path::{Path, PathBuf};
-use piperine_lang::parse::format::{TokenFormatter, FormatOptions};
+use piperine_lang::parse::format::{FormatOptions, TokenFormatter};
 use piperine_lang::parse::lexer::Lexer;
+use std::fs;
+use std::path::PathBuf;
 
 pub fn execute(file: Option<String>) {
     let path = if let Some(f) = file {
@@ -10,7 +10,9 @@ pub fn execute(file: Option<String>) {
         if let Some(root) = piperine_project::get_current_project_root() {
             root.join("src").join("main.phdl")
         } else {
-            eprintln!("Error: No Piperine.toml found in current or parent directories. Please provide a file.");
+            eprintln!(
+                "Error: No Piperine.toml found in current or parent directories. Please provide a file."
+            );
             std::process::exit(1);
         }
     };
@@ -20,7 +22,7 @@ pub fn execute(file: Option<String>) {
         eprintln!("Error reading file: {}", e);
         std::process::exit(1);
     });
-    
+
     let mut lexer = Lexer::new(&input);
     let raw_tokens = lexer.tokenize_all().unwrap_or_else(|e| {
         eprintln!("Lexer error: {}", e);

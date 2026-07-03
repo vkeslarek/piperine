@@ -46,11 +46,12 @@ fn a4_shift_in_digital_guard_is_rejected_not_silently_add() {
 fn make_digital_ir_with_unary_op(
     module_name: &str,
     op: piperine_codegen::ir::IrUnOp,
+    param_ty: piperine_codegen::ir::IrType,
 ) -> IrProgram {
     use piperine_codegen::ir::{IrExpr, IrModule, IrStmt, IrDigitalBody, Source, Domain, Lval};
     let mut prog = IrProgram::new(Source::Ams);
     let mut module = IrModule::new(module_name);
-    let param_x = module.symbols.add_param("x", piperine_codegen::ir::IrType::Real, None);
+    let param_x = module.symbols.add_param("x", param_ty, None);
     let node_out = module.symbols.add_node("out", Domain::Digital);
     module.digital = Some(IrDigitalBody {
         inputs: Vec::new(),
@@ -67,8 +68,8 @@ fn make_digital_ir_with_unary_op(
 
 #[test]
 fn a5_bitnot_in_digital_is_rejected_not_silently_not() {
-    use piperine_codegen::ir::IrUnOp;
-    let prog = make_digital_ir_with_unary_op("bitnot_fsm", IrUnOp::BitNot);
+    use piperine_codegen::ir::{IrUnOp, IrType};
+    let prog = make_digital_ir_with_unary_op("bitnot_fsm", IrUnOp::BitNot, IrType::Real);
     let err = DigitalKernel::compile(prog.module("bitnot_fsm").unwrap())
         .err()
         .expect("BitNot in digital must fail");
@@ -81,8 +82,8 @@ fn a5_bitnot_in_digital_is_rejected_not_silently_not() {
 
 #[test]
 fn a5_reduction_op_in_digital_is_rejected_not_silently_not() {
-    use piperine_codegen::ir::IrUnOp;
-    let prog = make_digital_ir_with_unary_op("redand_fsm", IrUnOp::RedAnd);
+    use piperine_codegen::ir::{IrUnOp, IrType};
+    let prog = make_digital_ir_with_unary_op("redand_fsm", IrUnOp::RedAnd, IrType::Real);
     let err = DigitalKernel::compile(prog.module("redand_fsm").unwrap())
         .err()
         .expect("RedAnd in digital must fail");
@@ -95,8 +96,8 @@ fn a5_reduction_op_in_digital_is_rejected_not_silently_not() {
 
 #[test]
 fn a5_neg_in_digital_still_works() {
-    use piperine_codegen::ir::IrUnOp;
-    let prog = make_digital_ir_with_unary_op("neg_fsm", IrUnOp::Neg);
+    use piperine_codegen::ir::{IrUnOp, IrType};
+    let prog = make_digital_ir_with_unary_op("neg_fsm", IrUnOp::Neg, IrType::Integer);
     DigitalKernel::compile(prog.module("neg_fsm").unwrap()).expect("Neg in digital must still work");
 }
 

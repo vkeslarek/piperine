@@ -48,11 +48,10 @@ fn main() {
                     }
                 }
                 
-                if let Some(bin) = found_bin {
-                    if bin != openvaf_bin {
+                if let Some(bin) = found_bin
+                    && bin != openvaf_bin {
                         fs::rename(bin, &openvaf_bin).unwrap();
                     }
-                }
                 
                 let _ = fs::remove_file(tarball);
             }

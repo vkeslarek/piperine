@@ -3,7 +3,7 @@
 //! resolved or elaborated.
 
 use crate::parse::ast::Item;
-use crate::pom::{ElabError, ElabErrorKind};
+use crate::pom::ElabError;
 
 use super::Elaborator;
 

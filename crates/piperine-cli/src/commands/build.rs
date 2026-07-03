@@ -1,6 +1,6 @@
-use std::path::{PathBuf, Path};
+use include_dir::{Dir, include_dir};
 use std::fs;
-use include_dir::{include_dir, Dir};
+use std::path::PathBuf;
 
 static HEADERS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../piperine-lang/headers");
 
@@ -18,7 +18,9 @@ pub fn execute(file: Option<String>) {
     if !toolchain_headers.exists() {
         println!("Setting up toolchain headers in target/toolchain/headers...");
         fs::create_dir_all(&toolchain_headers).unwrap();
-        HEADERS_DIR.extract(&toolchain_headers).expect("Failed to extract headers to target directory");
+        HEADERS_DIR
+            .extract(&toolchain_headers)
+            .expect("Failed to extract headers to target directory");
     }
 
     let path = if let Some(f) = file {
@@ -26,8 +28,7 @@ pub fn execute(file: Option<String>) {
     } else {
         root.join("src").join("main.phdl")
     };
-    
+
     println!("Building design for: {}", path.display());
     // TODO: call compiler/elaborator
 }
-

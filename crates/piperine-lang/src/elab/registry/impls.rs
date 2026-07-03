@@ -1,5 +1,5 @@
 use crate::parse::ast::{DisciplineDecl, EnumDecl, BundleDecl, ModuleDeclaration, FnDecl, Type as AstType};
-use crate::pom::{TypeRef, NetType, ValueType, ElabError, ElabErrorKind, Module};
+use crate::pom::{TypeRef, NetType, ValueType, ElabError, ElabErrorKind};
 use crate::elab::const_eval::ConstEnv;
 use super::types::TypeDef;
 use super::components::ComponentDef;
@@ -47,7 +47,7 @@ impl TypeDef for BundleDecl {
 impl ComponentDef for ModuleDeclaration {
     fn name(&self) -> &str { &self.name }
     fn is_generic(&self) -> bool { !self.const_params.is_empty() || !self.type_params.is_empty() }
-    fn instantiate(&self, instantiator: &mut dyn crate::elab::registry::components::Instantiator, const_args: &[u64], env: &mut ConstEnv, type_subst: &HashMap<String, String>) -> Result<crate::pom::Module, ElabError> {
+    fn instantiate(&self, instantiator: &mut dyn crate::elab::registry::components::Instantiator, const_args: &[u64], _env: &mut ConstEnv, type_subst: &HashMap<String, String>) -> Result<crate::pom::Module, ElabError> {
         if self.const_params.len() != const_args.len() {
             return Err(ElabError::from(ElabErrorKind::Other(format!(
                 "module `{}` expects {} const params, got {}",

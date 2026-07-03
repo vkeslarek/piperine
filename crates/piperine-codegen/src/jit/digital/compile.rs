@@ -32,254 +32,17 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
 use crate::ir::{
-    Domain, EdgeKind, IrBinOp, IrDigitalBody, IrExpr, IrModule, IrStmt, IrType, IrUnOp, Lval,
+    IrBinOp, IrDigitalBody, IrExpr, IrModule, IrStmt, IrType, IrUnOp, Lval,
     NodeId, Pattern, SimQuery, Trit, VarId,
 };
 
-use super::flatten::Inliner;
-use super::{math, CodegenError};
+use super::super::flatten::Inliner;
+use super::super::{math, CodegenError};
 
-/// The digital JIT ABI: one pointer-table argument. Field order is the JIT
-/// contract — the emitter reads fields by index (8 bytes each).
-#[repr(C)]
-pub struct DigitalAbi {
-    /// Quad-coded values of `inputs`, in kernel input order.
-    pub inputs: *const i64,
-    /// Quad-coded values of `outputs`, in kernel output order.
-    pub outputs: *mut i64,
-    /// Pre-edge copies of the variable banks (read by `seq` and `comb`).
-    pub vars_int_old: *const i64,
-    pub vars_real_old: *const f64,
-    /// Live variable banks.
-    pub vars_int: *mut i64,
-    pub vars_real: *mut f64,
-    /// Parameter values, indexed by `ParamId`.
-    pub params: *const f64,
-    /// Per-clocked-block fired flags (0/1), set by the device from edges.
-    pub fired: *const i64,
-    /// Live simulator state (`$abstime`, `$temperature`).
-    pub sim: *const super::SimCtx,
-    /// Per-analog-terminal voltages (the A2D bridge: digital bodies read
-    /// analog potentials through this array). Indexed by the analog
-    /// terminal order established in `DigitalLayout`.
-    pub analog_voltages: *const f64,
-}
+use super::abi::*;
+use super::layout::*;
 
-/// Byte offset of a [`DigitalAbi`] field.
-#[derive(Clone, Copy)]
-enum AbiField {
-    Inputs = 0,
-    Outputs = 8,
-    VarsIntOld = 16,
-    VarsRealOld = 24,
-    VarsInt = 32,
-    VarsReal = 40,
-    Params = 48,
-    Fired = 56,
-    Sim = 64,
-    AnalogVoltages = 72,
-}
-
-type DigitalFn = unsafe extern "C" fn(*const DigitalAbi);
-type WatchFn = unsafe extern "C" fn(*const DigitalAbi, *mut i64);
-
-/// Where each symbol lives at runtime.
-#[derive(Debug, Default)]
-pub struct DigitalLayout {
-    input_index: HashMap<NodeId, usize>,
-    output_index: HashMap<NodeId, usize>,
-    int_slot: HashMap<VarId, usize>,
-    real_slot: HashMap<VarId, usize>,
-    num_int: usize,
-    num_real: usize,
-    /// Index of each analog terminal in the `analog_voltages` ABI array.
-    /// Populated from the module's analog-domain nodes (ports + internal
-    /// wires). Used by the A2D bridge to read `V(node)` in digital bodies.
-    analog_index: HashMap<NodeId, usize>,
-    num_analog: usize,
-}
-
-impl DigitalLayout {
-    fn build(module: &IrModule, body: &IrDigitalBody) -> Self {
-        let mut layout = Self::default();
-        for (i, &node) in body.inputs.iter().enumerate() {
-            layout.input_index.insert(node, i);
-        }
-        for (i, &node) in body.outputs.iter().enumerate() {
-            layout.output_index.insert(node, i);
-        }
-        for (id, info) in module.symbols.vars() {
-            match info.ty {
-                IrType::Real => {
-                    layout.real_slot.insert(id, layout.num_real);
-                    layout.num_real += 1;
-                }
-                IrType::Integer | IrType::Bool | IrType::Quad => {
-                    layout.int_slot.insert(id, layout.num_int);
-                    layout.num_int += 1;
-                }
-            }
-        }
-        // Map analog-domain nodes to indices in the analog_voltages array.
-        // The order follows the symbol table's node iteration (ground is
-        // NodeId(0), always analog, always 0 V — skipped).
-        for (id, info) in module.symbols.nodes() {
-            if info.domain == Domain::Analog && !id.is_ground() {
-                layout.analog_index.insert(id, layout.num_analog);
-                layout.num_analog += 1;
-            }
-        }
-        layout
-    }
-
-    pub fn num_int_slots(&self) -> usize {
-        self.num_int
-    }
-
-    pub fn num_real_slots(&self) -> usize {
-        self.num_real
-    }
-
-    pub fn int_slot(&self, var: VarId) -> Option<usize> {
-        self.int_slot.get(&var).copied()
-    }
-
-    pub fn real_slot(&self, var: VarId) -> Option<usize> {
-        self.real_slot.get(&var).copied()
-    }
-
-    /// Number of analog terminals (for the `analog_voltages` array size).
-    pub fn num_analog(&self) -> usize {
-        self.num_analog
-    }
-
-    /// Index of an analog node in the `analog_voltages` array, or `None`
-    /// for ground / digital-only nodes.
-    pub fn analog_index(&self, node: NodeId) -> Option<usize> {
-        if node.is_ground() {
-            None
-        } else {
-            self.analog_index.get(&node).copied()
-        }
-    }
-
-    /// Export all variable values as `f64`, indexed by `VarId`. Integer-bank
-    /// vars are converted to `f64`. Used by the D2A bridge: the analog side
-    /// reads digital register values through this export.
-    pub fn export_vars(&self, vars_int: &[i64], vars_real: &[f64]) -> Vec<f64> {
-        let num_vars = self.int_slot.len() + self.real_slot.len();
-        let mut result = vec![0.0; num_vars];
-        for (&var_id, &slot) in &self.int_slot {
-            if let Some(i) = var_id.0.checked_sub(0) {
-                if (i as usize) < num_vars && slot < vars_int.len() {
-                    result[i as usize] = vars_int[slot] as f64;
-                }
-            }
-        }
-        for (&var_id, &slot) in &self.real_slot {
-            if let Some(i) = var_id.0.checked_sub(0) {
-                if (i as usize) < num_vars && slot < vars_real.len() {
-                    result[i as usize] = vars_real[slot];
-                }
-            }
-        }
-        result
-    }
-}
-
-/// One clocked block's edge sensitivity: indices into the watch-term array
-/// plus the polarity that fires the block. `is_initial` marks a block that
-/// fires once during `init` (from `@ initial` in a digital body) rather than
-/// on a signal edge.
-#[derive(Debug, Clone)]
-pub struct ClockedSpec {
-    pub terms: Vec<(usize, EdgeKind)>,
-    pub is_initial: bool,
-}
-
-/// A register power-on value: variable plus its init expression (evaluated
-/// with instance parameters).
-#[derive(Debug, Clone)]
-pub struct RegInit {
-    pub var: VarId,
-    pub init: IrExpr,
-}
-
-/// A compiled digital kernel.
-pub struct DigitalKernel {
-    name: String,
-    inputs: Vec<NodeId>,
-    outputs: Vec<NodeId>,
-    layout: DigitalLayout,
-    clocked_blocks: Vec<ClockedSpec>,
-    num_watch_terms: usize,
-    reg_inits: Vec<RegInit>,
-    comb: DigitalFn,
-    seq: Option<DigitalFn>,
-    watch: Option<WatchFn>,
-    _jit: JITModule,
-}
-
-unsafe impl Send for DigitalKernel {}
-unsafe impl Sync for DigitalKernel {}
-
-impl DigitalKernel {
-    pub fn compile(module: &IrModule) -> Result<Self, CodegenError> {
-        DigitalCompiler::new(module)?.compile()
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn inputs(&self) -> &[NodeId] {
-        &self.inputs
-    }
-
-    pub fn outputs(&self) -> &[NodeId] {
-        &self.outputs
-    }
-
-    pub fn layout(&self) -> &DigitalLayout {
-        &self.layout
-    }
-
-    pub fn clocked_blocks(&self) -> &[ClockedSpec] {
-        &self.clocked_blocks
-    }
-
-    pub fn num_watch_terms(&self) -> usize {
-        self.num_watch_terms
-    }
-
-    pub fn reg_inits(&self) -> &[RegInit] {
-        &self.reg_inits
-    }
-
-    /// Run the combinational function.
-    pub fn eval_comb(&self, abi: &DigitalAbi) {
-        unsafe { (self.comb)(abi as *const DigitalAbi) }
-    }
-
-    /// Run the register updates for the fired blocks (`abi.fired`).
-    pub fn eval_seq(&self, abi: &DigitalAbi) {
-        if let Some(f) = self.seq {
-            unsafe { f(abi as *const DigitalAbi) }
-        }
-    }
-
-    /// Evaluate the event watch terms into `out` (quad-coded).
-    pub fn eval_watch(&self, abi: &DigitalAbi, out: &mut [i64]) {
-        debug_assert_eq!(out.len(), self.num_watch_terms);
-        if let Some(f) = self.watch {
-            unsafe { f(abi as *const DigitalAbi, out.as_mut_ptr()) }
-        }
-    }
-}
-
-// ─── Compiler ─────────────────────────────────────────────────────────────────
-
-struct DigitalCompiler<'m> {
+pub(crate) struct DigitalCompiler<'m> {
     module: &'m IrModule,
     body: &'m IrDigitalBody,
     layout: DigitalLayout,
@@ -289,7 +52,7 @@ struct DigitalCompiler<'m> {
 }
 
 impl<'m> DigitalCompiler<'m> {
-    fn new(module: &'m IrModule) -> Result<Self, CodegenError> {
+    pub(crate) fn new(module: &'m IrModule) -> Result<Self, CodegenError> {
         let body = module
             .digital
             .as_ref()
@@ -324,7 +87,7 @@ impl<'m> DigitalCompiler<'m> {
         })
     }
 
-    fn compile(mut self) -> Result<DigitalKernel, CodegenError> {
+    pub(crate) fn compile(mut self) -> Result<DigitalKernel, CodegenError> {
         // Split the body: combinational statements vs clocked blocks, and
         // collect register power-on inits.
         let mut comb_stmts: Vec<&IrStmt> = Vec::new();
@@ -408,7 +171,7 @@ impl<'m> DigitalCompiler<'m> {
     }
 
     /// Compile a statement-body function (`comb` or `seq`).
-    fn compile_body_fn(
+    pub(crate) fn compile_body_fn(
         &mut self,
         name: &str,
         stmts: &[&IrStmt],
@@ -430,7 +193,7 @@ impl<'m> DigitalCompiler<'m> {
     }
 
     /// Compile the watch function: each term's quad value to `out[i]`.
-    fn compile_watch_fn(&mut self, name: &str, terms: &[IrExpr]) -> Result<FuncId, CodegenError> {
+    pub(crate) fn compile_watch_fn(&mut self, name: &str, terms: &[IrExpr]) -> Result<FuncId, CodegenError> {
         self.build_fn(name, true, |emitter| {
             let out_ptr = emitter.watch_out.expect("watch fn has an out pointer");
             for (i, term) in terms.iter().enumerate() {
@@ -528,7 +291,7 @@ impl<'m> DigitalCompiler<'m> {
 /// Whether variable reads see the live banks (comb) or the pre-edge copies
 /// (seq register semantics).
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum VarReads {
+pub(crate) enum VarReads {
     Live,
     PreEdge,
 }

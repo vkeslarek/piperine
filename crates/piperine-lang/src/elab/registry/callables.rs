@@ -1,15 +1,21 @@
-use crate::pom::{Function, Behavior, ElabError, ElabErrorKind};
+use crate::pom::ElabError;
 use crate::parse::ast::Expr;
 use std::collections::HashMap;
 
 pub trait CallableDef: Send + Sync {
     fn name(&self) -> &str;
-    fn validate_call(&self, args: &[Expr]) -> Result<(), ElabError> { Ok(()) }
+    fn validate_call(&self, _args: &[Expr]) -> Result<(), ElabError> { Ok(()) }
     fn is_capability(&self) -> bool { false }
 }
 
 pub struct CallableRegistry {
     callables: HashMap<String, Box<dyn CallableDef>>,
+}
+
+impl Default for CallableRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CallableRegistry {

@@ -72,11 +72,10 @@ impl Operator {
             Operator::Integrate { modulus, value, time: last_time, .. } => {
                 let dt = (time - *last_time).max(0.0);
                 *value += dt * input;
-                if let Some(m) = *modulus {
-                    if m > 0.0 {
+                if let Some(m) = *modulus
+                    && m > 0.0 {
                         *value -= m * (*value / m).floor();
                     }
-                }
                 *last_time = time;
                 *value
             }
@@ -285,8 +284,7 @@ impl AnalogInstance {
             .map(|(_, &period)| EventDetector { seeded: false, prev: 0.0, next_fire: period })
             .collect();
 
-        let mut sim = SimCtx::default();
-        sim.param_given_mask = param_given_mask;
+        let sim = SimCtx { param_given_mask, ..Default::default() };
         let n = kernel.num_terminals();
         let num_vars = kernel.num_vars();
         let mut instance = Self {
@@ -395,11 +393,10 @@ impl AnalogInstance {
         let n = self.num_terminals();
         let mut stamps = Vec::new();
         for (i, value) in rhs.iter().enumerate() {
-            if *value != 0.0 {
-                if let Some(row) = &self.node_refs[i] {
+            if *value != 0.0
+                && let Some(row) = &self.node_refs[i] {
                     stamps.push(Stamp::Rhs(row.clone(), *value));
                 }
-            }
         }
         for i in 0..n {
             for j in 0..n {
@@ -499,11 +496,11 @@ impl AnalogInstance {
         tran_ctx: &TransientAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
-        let dt: f64 = tran_ctx.dt.into();
+        let dt: f64 = tran_ctx.dt;
         let alpha = if dt > 0.0 { 1.0 / dt } else { 0.0 };
-        self.sim.abstime = tran_ctx.time.into();
+        self.sim.abstime = tran_ctx.time;
         self.sim.step = dt;
-        self.sim.tfinal = tran_ctx.tfinal.into();
+        self.sim.tfinal = tran_ctx.tfinal;
         self.sync_sim(context, Analysis::Tran);
 
         let volts = self.collect_volts(&|k| {
@@ -535,7 +532,7 @@ impl AnalogInstance {
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, Complex64>> {
         self.sync_sim(context, Analysis::Ac);
-        let freq: f64 = ac_ctx.frequency.into();
+        let freq: f64 = ac_ctx.frequency;
         let omega = 2.0 * std::f64::consts::PI * freq;
 
         let refs = self.node_refs.clone();
@@ -620,9 +617,9 @@ impl AnalogInstance {
             .zip(psd)
             .filter_map(|((plus, minus), value)| {
                 let (plus, minus) = (plus.clone()?, minus.clone()?);
-                (value > 0.0).then(|| Noise {
+                (value > 0.0).then_some(Noise {
                     terminals: (plus, minus),
-                    value: value.into(),
+                    value,
                 })
             })
             .collect()
@@ -687,7 +684,7 @@ impl AnalogInstance {
 
     fn sync_sim(&mut self, context: &Context, analysis: Analysis) {
         self.sim.temperature = context.temperature;
-        self.sim.gmin = context.gmin.into();
+        self.sim.gmin = context.gmin;
         self.sim.current_analysis = super::analysis_code(analysis);
         // Outside transient there is no integration step; companion terms
         // that scale with `sim.step` (the `idt` in-step coupling) vanish.

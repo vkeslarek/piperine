@@ -5,7 +5,8 @@ pub fn execute() {
         let target_dir = root.join("target");
         if target_dir.exists() {
             println!("Cleaning target directory...");
-            fs::remove_dir_all(target_dir).unwrap_or_else(|e| eprintln!("Failed to clean target: {}", e));
+            fs::remove_dir_all(target_dir)
+                .unwrap_or_else(|e| eprintln!("Failed to clean target: {}", e));
         } else {
             println!("Target directory already clean.");
         }

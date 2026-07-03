@@ -216,7 +216,7 @@ impl OsdiDevice {
         let mut ffi_errors = Vec::with_capacity(32);
         let mut ffi_info = OsdiInitInfo { flags, num_errors: 0, errors: ffi_errors.as_mut_ptr() };
         if let Some(setup) = setup_fn {
-            unsafe { setup(std::ptr::null_mut(), self.inst_data.as_mut_ptr() as *mut c_void, self.model_data.as_ptr() as *mut c_void, temp, num_terminals as u32, &ffi_paras, &mut ffi_info); }
+            unsafe { setup(std::ptr::null_mut(), self.inst_data.as_mut_ptr() as *mut c_void, self.model_data.as_ptr() as *mut c_void, temp, num_terminals, &ffi_paras, &mut ffi_info); }
         }
     }
 
@@ -388,9 +388,8 @@ impl OsdiDevice {
             if off + 4 > self.inst_data.len() { continue; }
             let mapping = u32::from_ne_bytes(self.inst_data[off..off + 4].try_into().unwrap()) as usize;
             if mapping == 0 || mapping >= SCRATCH { continue; }
-            if let Some(Some(cref)) = self.node_refs.get(i) {
-                if let Some(k) = cref.idx() { prev_solve[mapping] = state_fn(k); }
-            }
+            if let Some(Some(cref)) = self.node_refs.get(i)
+                && let Some(k) = cref.idx() { prev_solve[mapping] = state_fn(k); }
         }
         prev_solve
     }
@@ -545,9 +544,8 @@ impl Device for OsdiDevice {
         self.collect_rhs_stamps(&rhs, &mut stamps);
         let jac = self.load_resist_jac();
         for (j, (r, c)) in self.resist_jac_refs().into_iter().enumerate() {
-            if j < jac.len() && jac[j] != 0.0 {
-                if let (Some(r), Some(c)) = (r, c) { stamps.push(Stamp::Matrix(r, c, jac[j])); }
-            }
+            if j < jac.len() && jac[j] != 0.0
+                && let (Some(r), Some(c)) = (r, c) { stamps.push(Stamp::Matrix(r, c, jac[j])); }
         }
         stamps
     }
@@ -564,22 +562,20 @@ impl Device for OsdiDevice {
         let mut stamps = Vec::new();
         let res_jac = self.load_resist_jac();
         for (j, (r, c)) in self.resist_jac_refs().into_iter().enumerate() {
-            if j < res_jac.len() && res_jac[j] != 0.0 {
-                if let (Some(r), Some(c)) = (r, c) { stamps.push(Stamp::Matrix(r, c, Complex64::new(res_jac[j], 0.0))); }
-            }
+            if j < res_jac.len() && res_jac[j] != 0.0
+                && let (Some(r), Some(c)) = (r, c) { stamps.push(Stamp::Matrix(r, c, Complex64::new(res_jac[j], 0.0))); }
         }
         let react_jac = self.load_react_jac();
         for (j, (r, c)) in self.react_jac_refs().into_iter().enumerate() {
-            if j < react_jac.len() && react_jac[j] != 0.0 {
-                if let (Some(r), Some(c)) = (r, c) { stamps.push(Stamp::Matrix(r, c, Complex64::new(0.0, react_jac[j]))); }
-            }
+            if j < react_jac.len() && react_jac[j] != 0.0
+                && let (Some(r), Some(c)) = (r, c) { stamps.push(Stamp::Matrix(r, c, Complex64::new(0.0, react_jac[j]))); }
         }
         stamps
     }
 
     fn load_transient(&mut self, states: &TransientAnalysisState, tran_ctx: &TransientAnalysisContext, context: &Context) -> Vec<Stamp<AnalogReference, f64>> {
         let flags = ANALYSIS_TRAN | CALC_RESIST_RESIDUAL | CALC_REACT_RESIDUAL | CALC_RESIST_JACOBIAN | CALC_REACT_JACOBIAN | CALC_RESIST_LIM_RHS | CALC_REACT_LIM_RHS | ENABLE_LIM;
-        let dt: f64 = tran_ctx.dt.into();
+        let dt: f64 = tran_ctx.dt;
         let alpha = 1.0 / dt;
         let prev_solve = self.build_prev_solve(&|k| states.latest().and_then(|s| s.get(k).copied()).unwrap_or(0.0));
         let ret = self.eval_with_prev_solve(flags, context, false, context.time, &prev_solve);
@@ -592,15 +588,13 @@ impl Device for OsdiDevice {
         self.collect_rhs_stamps(&rhs, &mut stamps);
         let jac = self.load_resist_jac();
         for (j, (r, c)) in self.resist_jac_refs().into_iter().enumerate() {
-            if j < jac.len() && jac[j] != 0.0 {
-                if let (Some(r), Some(c)) = (r, c) { stamps.push(Stamp::Matrix(r, c, jac[j])); }
-            }
+            if j < jac.len() && jac[j] != 0.0
+                && let (Some(r), Some(c)) = (r, c) { stamps.push(Stamp::Matrix(r, c, jac[j])); }
         }
         let react_jac = self.load_react_jac();
         for (j, (r, c)) in self.react_jac_refs().into_iter().enumerate() {
-            if j < react_jac.len() && react_jac[j] != 0.0 {
-                if let (Some(r), Some(c)) = (r, c) { stamps.push(Stamp::Matrix(r, c, react_jac[j] * alpha)); }
-            }
+            if j < react_jac.len() && react_jac[j] != 0.0
+                && let (Some(r), Some(c)) = (r, c) { stamps.push(Stamp::Matrix(r, c, react_jac[j] * alpha)); }
         }
         stamps
     }

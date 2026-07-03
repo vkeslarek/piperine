@@ -110,7 +110,7 @@ impl<'a> Kinded for Node<'a> {
 }
 
 impl<'a> Node<'a> {
-    pub fn select(&self, design: &'a crate::pom::design::Design, path: &str) -> Result<crate::pom::selection::NodeSelection<'a>, String> {
+    pub fn select(&self, design: &'a crate::pom::design::Design, path: &str) -> Result<crate::pom::selection::NodeSelection<'a>, crate::pom::error::SelectorError> {
         let sel = path.parse::<crate::pom::selector::Selector>()?;
         crate::pom::selector::Evaluator::new(design).evaluate(&sel, crate::pom::selection::NodeSelection::from_vec(vec![*self]))
     }
@@ -242,5 +242,25 @@ impl<'a> TryFrom<Node<'a>> for &'a crate::pom::module::Attribute {
     type Error = &'static str;
     fn try_from(node: Node<'a>) -> Result<Self, Self::Error> {
         if let Node::Attribute(a) = node { Ok(a) } else { Err("Node is not an Attribute") }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn id_is_stable() {
+        let a = Id::new(42);
+        let b = Id::new(42);
+        assert_eq!(a, b);
+        assert_eq!(a.as_u64(), 42);
+    }
+
+    #[test]
+    fn id_is_distinct() {
+        let a = Id::new(1);
+        let b = Id::new(2);
+        assert_ne!(a, b);
     }
 }

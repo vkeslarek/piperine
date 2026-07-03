@@ -28,9 +28,9 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         _alpha_hint: f64,
     ) -> crate::result::Result<Vec<Stamp<AnalogReference, f64>>> {
         let tran_ctx = TransientAnalysisContext {
-            time: self.time.into(),
-            dt: self.dt.into(),
-            tfinal: self.tfinal.into(),
+            time: self.time,
+            dt: self.dt,
+            tfinal: self.tfinal,
         };
 
         let mut all_stamps = Vec::new();
@@ -113,8 +113,8 @@ impl<'a> TransientSolver<'a> {
             circuit,
             context,
             time: 0.0,
-            dt: options.dt.into(),
-            tfinal: options.stop_time.into(),
+            dt: options.dt,
+            tfinal: options.stop_time,
         };
 
         let solver = NewtonRaphsonSolver::new(&mut system, size, 4)?;
@@ -165,8 +165,8 @@ impl<'a> TransientSolver<'a> {
     }
 
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
-        let stop_time: f64 = self.options.stop_time.into();
-        let mut dt: f64 = self.options.dt.into();
+        let stop_time: f64 = self.options.stop_time;
+        let mut dt: f64 = self.options.dt;
         let max_step: f64 = dt;
 
         let initial_snapshot = self.compute_initial_conditions()?;

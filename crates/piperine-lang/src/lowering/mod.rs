@@ -87,10 +87,6 @@ impl<'a> LowerCtx<'a> {
         self.enum_values.get(name).copied()
     }
 
-    /// Lookup a named instance port (e.g. `load.p`) → NodeId.
-    pub fn lookup_instance_port(&self, qualified: &str) -> Option<NodeId> {
-        self.instance_ports.get(qualified).copied()
-    }
 
     /// Allocate a new state variable of `kind`, returning its `StateId`.
     pub fn alloc_state(&mut self, kind: IrStateKind, arg: IrExpr) -> StateId {
@@ -190,7 +186,7 @@ pub fn ppr_to_ir(prog: &Design) -> IrProgram {
             ctx.enum_values = prog.enum_value_map();
 
             let stmts = lower_stmts(behavior.body(), &mut ctx);
-            digital_shadows.extend(ctx.digital_shadows.drain(..));
+            digital_shadows.append(&mut ctx.digital_shadows);
 
             if is_digital {
                 // Populate digital inputs/outputs from the module's ports:

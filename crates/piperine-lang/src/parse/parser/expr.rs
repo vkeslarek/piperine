@@ -250,8 +250,8 @@ impl<'a> Parser<'a> {
         }
 
         // BundleLit: `TypeRef { .field = expr, ... }` — look-ahead on `{ .` or `{ }`.
-        if self.peek() == Some(&Tok::LBrace) {
-            if self.peek_at(1) == Some(&Tok::Dot) || self.peek_at(1) == Some(&Tok::RBrace) {
+        if self.peek() == Some(&Tok::LBrace)
+            && (self.peek_at(1) == Some(&Tok::Dot) || self.peek_at(1) == Some(&Tok::RBrace)) {
                 self.eat(&Tok::LBrace);
                 let mut fields = Vec::new();
                 if !self.eat(&Tok::RBrace) {
@@ -286,7 +286,6 @@ impl<'a> Parser<'a> {
                 };
                 expr = Expr::BundleLit { ty: Type { name: type_name, args: vec![], dimensions: dims }, fields };
             }
-        }
 
         Ok(expr)
     }
@@ -312,13 +311,11 @@ impl<'a> Parser<'a> {
                 Tok::BitOr
                     if brace_depth == 0 && paren_depth == 0 && brack_depth == 0 =>
                 {
-                    if i + 2 < self.toks.len() {
-                        if let Tok::Ident(kw) = &self.toks[i + 2].tok {
-                            if kw == "in" {
+                    if i + 2 < self.toks.len()
+                        && let Tok::Ident(kw) = &self.toks[i + 2].tok
+                            && kw == "in" {
                                 is_comp = true;
                             }
-                        }
-                    }
                     break;
                 }
                 _ => {}

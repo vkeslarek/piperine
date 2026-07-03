@@ -29,7 +29,6 @@
 //! file-based resolution.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 
 use crate::parse::{ast, parse_str, SourceFile};
 use crate::source_map::SourceMap;
@@ -102,11 +101,10 @@ impl<'a> Resolver<'a> {
 
         if let Some(prelude_path) = &self.source_map.prelude_path {
             // Load custom prelude dynamically
-            if let Ok(src) = std::fs::read_to_string(prelude_path) {
-                if let Ok(source) = parse_str(&src) {
+            if let Ok(src) = std::fs::read_to_string(prelude_path)
+                && let Ok(source) = parse_str(&src) {
                     items.extend(source.items);
                 }
-            }
         }
         items
     }

@@ -16,12 +16,11 @@ impl Parse for BenchDecl {
         let mut fns = Vec::new();
         while !parser.eat(&Tok::RBrace) {
             let _ = parser.parse_attributes()?;
-            if let Some(Tok::Ident(s)) = parser.peek() {
-                if s == "fn" || s == "pub" {
+            if let Some(Tok::Ident(s)) = parser.peek()
+                && (s == "fn" || s == "pub") {
                     fns.push(FnDecl::parse(parser)?);
                     continue;
                 }
-            }
             return Err(format!("Expected `fn`, found {:?}", parser.peek()).into());
         }
         Ok(BenchDecl { attrs, is_pub, name, fns })

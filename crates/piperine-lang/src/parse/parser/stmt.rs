@@ -158,8 +158,8 @@ impl<'a> Parser<'a> {
         }
 
         let mut ports = Vec::new();
-        if self.eat(&Tok::LParen) {
-            if !self.eat(&Tok::RParen) {
+        if self.eat(&Tok::LParen)
+            && !self.eat(&Tok::RParen) {
                 ports.push(self.parse_port_conn()?);
                 while self.eat(&Tok::Comma) {
                     if self.peek() == Some(&Tok::RParen) {
@@ -169,11 +169,10 @@ impl<'a> Parser<'a> {
                 }
                 self.expect(&Tok::RParen)?;
             }
-        }
 
         let mut params = Vec::new();
-        if self.eat(&Tok::LBrace) {
-            if !self.eat(&Tok::RBrace) {
+        if self.eat(&Tok::LBrace)
+            && !self.eat(&Tok::RBrace) {
                 self.expect(&Tok::Dot)?;
                 let pname = self.parse_ident()?;
                 self.expect(&Tok::Assign)?;
@@ -191,7 +190,6 @@ impl<'a> Parser<'a> {
                 }
                 self.expect(&Tok::RBrace)?;
             }
-        }
 
         self.expect(&Tok::Semi)?;
         let end = self.previous_span_end();
@@ -487,7 +485,7 @@ impl<'a> Parser<'a> {
             let expr = self.parse_expr()?;
             return Ok(PortConnection::Named { port, expr });
         }
-        Ok(self.parse_expr().map(PortConnection::Positional)?)
+        self.parse_expr().map(PortConnection::Positional)
     }
 
     pub(crate) fn parse_pattern(&mut self) -> Result<Pattern, crate::parse::error::ParseError> {
@@ -517,7 +515,7 @@ impl Parse for ModuleStatement {
 
 impl Parse for BehaviorDecl {
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
-        let start = parser.current_span_start();
+        let _start = parser.current_span_start();
         let attrs = parser.parse_attributes()?;
         let is_pub = parser.eat_ident("pub");
         let kind = if parser.eat_ident("analog") { BehaviorKind::Analog } else if parser.eat_ident("digital") { BehaviorKind::Digital } else { return Err("Expected analog or digital".into()); };

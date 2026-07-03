@@ -115,24 +115,21 @@ pub fn find_definition(
         }
         // It might be a port/param/wire inside a module.
         for m in design.modules() {
-            if m.port(word).is_some() {
-                if let Some(r) = find_decl(source, "input ", word)
+            if m.port(word).is_some()
+                && let Some(r) = find_decl(source, "input ", word)
                     .or_else(|| find_decl(source, "output ", word))
                     .or_else(|| find_decl(source, "inout ", word))
                 {
                     return Some(r);
                 }
-            }
-            if m.param(word).is_some() {
-                if let Some(r) = find_decl(source, "param ", word) {
+            if m.param(word).is_some()
+                && let Some(r) = find_decl(source, "param ", word) {
                     return Some(r);
                 }
-            }
-            if m.wire(word).is_some() {
-                if let Some(r) = find_decl(source, "wire ", word) {
+            if m.wire(word).is_some()
+                && let Some(r) = find_decl(source, "wire ", word) {
                     return Some(r);
                 }
-            }
         }
     }
 

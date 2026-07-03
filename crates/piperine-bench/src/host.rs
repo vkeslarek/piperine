@@ -107,9 +107,9 @@ impl Host for SimHost {
     }
 
     fn assign(&mut self, target: &Expr, value: &Value) -> Result<bool, EvalError> {
-        if let Expr::Field(base, param) = target {
-            if let Expr::Ident(label) = base.as_ref() {
-                if self.resolve_instance(label).is_some() {
+        if let Expr::Field(base, param) = target
+            && let Expr::Ident(label) = base.as_ref()
+                && self.resolve_instance(label).is_some() {
                     // One Value type end to end (SIMPLIFICATION.md P2) — a
                     // staged override is the interpreter's value verbatim.
                     // Non-scalars are rejected fail-loud when the next
@@ -117,8 +117,6 @@ impl Host for SimHost {
                     self.session.stage(label, param, value.clone());
                     return Ok(true);
                 }
-            }
-        }
         Ok(false)
     }
 }

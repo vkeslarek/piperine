@@ -115,7 +115,7 @@ impl SystemFunction for Limit {
 struct Analysis;
 impl SystemFunction for Analysis {
     fn lower(&self, _: &str, args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        let kind = match args.first() {
+        let _kind = match args.first() {
             Some(Expr::Literal(Literal::String(s))) => s.clone(),
             _ => "dc".into(),
         };

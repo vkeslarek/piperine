@@ -89,8 +89,8 @@ pub(crate) fn convert_mod(m: &Module, prog: &Design) -> IrModule {
     // 4. Vars
     for v in m.vars() {
         let ty = elab_value_type_to_ir(v.value_type());
-        let id = symbols.add_var(v.name(), ty);
-        let init = v.init().map(|v| value_to_ir(v, &mut symbols));
+        let _id = symbols.add_var(v.name(), ty);
+        let _init = v.init().map(|v| value_to_ir(v, &mut symbols));
         // GAPS §I.15 — We don't have IrVarDecl in IrModule anymore, it's just in SymbolTable.
         // We can just add them to the symbol table, the initialization goes into digital/analog bodies or is handled elsewhere.
         // Wait, if it has an init, we probably should emit a VarDecl statement in the body or something.
@@ -155,13 +155,6 @@ pub(crate) fn convert_mod(m: &Module, prog: &Design) -> IrModule {
     }
 }
 
-pub(crate) fn discipline_name(ty: &NetType) -> Option<String> {
-    match ty {
-        NetType::Discipline(s) => Some(s.clone()),
-        NetType::Array(inner, _) => discipline_name(inner),
-    }
-}
-
 pub(crate) fn elab_value_type_to_ir(ty: &ValueType) -> IrType {
     match ty {
         ValueType::Real | ValueType::Natural => IrType::Real,
@@ -176,7 +169,7 @@ pub(crate) fn elab_value_type_to_ir(ty: &ValueType) -> IrType {
     }
 }
 
-pub(crate) fn value_to_ir(v: &crate::value::Value, symbols: &mut SymbolTable) -> IrExpr {
+pub(crate) fn value_to_ir(v: &crate::value::Value, _symbols: &mut SymbolTable) -> IrExpr {
     use crate::value::Value;
     match v {
         Value::Real(r) => IrExpr::Real(*r),

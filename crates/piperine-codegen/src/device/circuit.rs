@@ -308,9 +308,9 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
         // Comparator: `input vp : Electrical, input vn : Electrical,
         // output out : Bit`): wire the analog port terminals into the
         // netlist so the A2D bridge can read their voltages.
-        if device.analog.is_none() {
-            if let Some(digital) = device.digital() {
-                if digital.kernel().layout().num_analog() > 0 {
+        if device.analog.is_none()
+            && let Some(digital) = device.digital()
+                && digital.kernel().layout().num_analog() > 0 {
                     let mut refs = Vec::new();
                     let mut node_ids = Vec::new();
                     for (port_idx, port) in child.ports.iter().enumerate() {
@@ -324,8 +324,6 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                     }
                     device.set_analog_terminals(refs, node_ids);
                 }
-            }
-        }
 
         self.devices.push(Box::new(device));
         Ok(())
@@ -387,9 +385,9 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
         );
 
         // A2D bridge for digital-only top behavior with analog port reads.
-        if device.analog.is_none() {
-            if let Some(digital) = device.digital() {
-                if digital.kernel().layout().num_analog() > 0 {
+        if device.analog.is_none()
+            && let Some(digital) = device.digital()
+                && digital.kernel().layout().num_analog() > 0 {
                     let mut refs = Vec::new();
                     let mut node_ids = Vec::new();
                     for port in self.top.ports.iter() {
@@ -400,8 +398,6 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                     }
                     device.set_analog_terminals(refs, node_ids);
                 }
-            }
-        }
 
         self.devices.push(Box::new(device));
         Ok(())

@@ -14,8 +14,8 @@ impl<'a> ParseAttributesExt for Parser<'a> {
         while self.eat(&Tok::At) {
             let name = self.parse_ident()?;
             let mut args = Vec::new();
-            if self.eat(&Tok::LParen) {
-                if !self.eat(&Tok::RParen) {
+            if self.eat(&Tok::LParen)
+                && !self.eat(&Tok::RParen) {
                     let k = self.parse_ident()?;
                     self.expect(&Tok::Assign)?;
                     let v = crate::parse::ast::Expr::parse(self)?;
@@ -29,7 +29,6 @@ impl<'a> ParseAttributesExt for Parser<'a> {
                     }
                     self.expect(&Tok::RParen)?;
                 }
-            }
             attrs.push(Attribute { name, args });
         }
         Ok(attrs)
@@ -37,8 +36,8 @@ impl<'a> ParseAttributesExt for Parser<'a> {
 
     fn parse_attr_list(&mut self) -> Result<Vec<AttrArg>, ParseError> {
         let mut attrs = Vec::new();
-        if self.eat(&Tok::LParen) {
-            if !self.eat(&Tok::RParen) {
+        if self.eat(&Tok::LParen)
+            && !self.eat(&Tok::RParen) {
                 let aname = self.parse_ident()?;
                 self.expect(&Tok::Assign)?;
                 let expr = crate::parse::ast::Expr::parse(self)?;
@@ -54,7 +53,6 @@ impl<'a> ParseAttributesExt for Parser<'a> {
                 }
                 self.expect(&Tok::RParen)?;
             }
-        }
         Ok(attrs)
     }
 }

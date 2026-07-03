@@ -15,14 +15,14 @@ impl OsdiModel {
     /// Load a single-descriptor OSDI model from a `.osdi` file.
     pub fn load(path: &Path) -> crate::result::Result<Self> {
         let lib = OsdiLib::load(path)
-            .map_err(|e| crate::error::Error::simple("Load Error", &e.to_string()))?;
+            .map_err(|e| crate::error::Error::simple("Load Error", e.to_string()))?;
         Ok(Self { lib, descriptor_idx: 0 })
     }
 
     /// Load all descriptors from an OSDI file as separate models.
     pub fn load_all(path: &Path) -> crate::result::Result<Vec<Self>> {
         let lib = OsdiLib::load(path)
-            .map_err(|e| crate::error::Error::simple("Load Error", &e.to_string()))?;
+            .map_err(|e| crate::error::Error::simple("Load Error", e.to_string()))?;
         let count = lib.num_descriptors();
         Ok((0..count).map(|i| Self { lib: lib.clone(), descriptor_idx: i }).collect())
     }

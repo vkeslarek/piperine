@@ -452,11 +452,10 @@ impl<'h, H: Host> Interpreter<'h, H> {
                 };
             }
             let floats: Result<Vec<f64>, EvalError> = arg_values.iter().map(as_real).collect();
-            if let Ok(floats) = floats {
-                if let Some(result) = piperine_ir::math::eval_const_math(name, &floats) {
+            if let Ok(floats) = floats
+                && let Some(result) = piperine_ir::math::eval_const_math(name, &floats) {
                     return Ok(Value::Real(result));
                 }
-            }
             return Err(EvalError::Undefined(name.clone()));
         }
 
@@ -520,13 +519,12 @@ impl<'h, H: Host> Interpreter<'h, H> {
         for (name, expr) in fields {
             values.insert(name.clone(), self.eval_expr(expr)?);
         }
-        if let Some(decl) = self.host.lookup(&format!("bundle:{}", ty.name)) {
-            if let Value::Record(defaults) = decl {
+        if let Some(decl) = self.host.lookup(&format!("bundle:{}", ty.name))
+            && let Value::Record(defaults) = decl {
                 for (name, default) in defaults.borrow().iter() {
                     values.entry(name.clone()).or_insert_with(|| default.clone());
                 }
             }
-        }
         Ok(Value::Record(Rc::new(std::cell::RefCell::new(values))))
     }
 }

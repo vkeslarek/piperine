@@ -1,5 +1,5 @@
 [project]
-name = "test_spice_proj"
+name = "spice_proj"
 version = "0.1.0"
 authors = ["Keslarek"]
 edition = "2024"

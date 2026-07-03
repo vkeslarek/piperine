@@ -14,8 +14,34 @@ use std::cmp::Reverse;
 use std::path::PathBuf;
 
 use piperine_solver::osdi::model::AnalogModel;
-use piperine_solver::analog::GND;
-use piperine_solver::circuit::{Circuit, CircuitInstance};
+use piperine_solver::analog::{GND, Netlist};
+use piperine_solver::circuit::CircuitInstance;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+pub struct Circuit {
+    pub title: String,
+    pub components: HashMap<String, OsdiDevice>,
+    pub node_counter: AtomicUsize,
+}
+impl Circuit {
+    pub fn new(title: impl Into<String>) -> Self {
+        Self { title: title.into(), components: HashMap::new(), node_counter: AtomicUsize::new(0) }
+    }
+    pub fn port(&self) -> piperine_solver::analog::NodeIdentifier {
+        piperine_solver::analog::NodeIdentifier::Anonymous(self.node_counter.fetch_add(1, Ordering::Relaxed))
+    }
+    pub fn components_mut(&mut self) -> &mut HashMap<String, OsdiDevice> { &mut self.components }
+
+    pub fn instantiate(&self) -> CircuitInstance {
+        let mut netlist = Netlist::new();
+        let ctx = piperine_solver::solver::Context::default();
+        let devices = self.components.values()
+            .map(|spec| Box::new(OsdiDevice::from_spec(spec, &mut netlist, &ctx)) as Box<dyn Device>)
+            .collect();
+        CircuitInstance::from_devices_and_netlist(self.title.clone(), devices, netlist)
+    }
+}
 use piperine_solver::osdi::OsdiDevice;
 
 use piperine_solver::device::Device;
@@ -123,7 +149,7 @@ fn leak_tmp(tmp: tempfile::TempDir) {
 #[test]
 fn test_pure_digital_ring_oscillator() {
     let circuit = Circuit::new("RingOsc");
-    let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
+    let mut instance = circuit.instantiate();
 
     let mut digital_state = DigitalState::new(5);
     digital_state.schedule(DigitalEvent {
@@ -189,7 +215,7 @@ fn test_analog_rc_transient() {
     circuit.components_mut().insert("R1".to_string(), OsdiDevice::new_with_params("R1".to_string(), resistor.lib.clone(), resistor.descriptor_idx, vec![n1.clone(), GND], vec![("r".to_string(), 1000.0)]));
     circuit.components_mut().insert("C1".to_string(), OsdiDevice::new_with_params("C1".to_string(), capacitor.lib.clone(), capacitor.descriptor_idx, vec![n1.clone(), GND], vec![("c".to_string(), 1e-9)]));
 
-    let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
+    let mut instance = circuit.instantiate();
 
     let stop_time = 5e-6;
     let dt = 50e-9;
@@ -226,7 +252,7 @@ fn test_analog_rc_transient() {
 #[test]
 fn test_d2a_event_scheduling_in_solver() {
     let circuit = Circuit::new("D2A_EventScheduling");
-    let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
+    let mut instance = circuit.instantiate();
 
     let mut digital_state = DigitalState::new(1);
     digital_state.schedule(DigitalEvent { time: 2e-9, net: DigitalNet(0), value: LogicValue::One,  source: 0, seq: 0 });
@@ -278,7 +304,7 @@ fn test_a2d_event_timing() {
         vec![("v_start".to_string(), 0.0), ("v_end".to_string(), 2.0), ("ramp_time".to_string(), 10e-9)],
     ));
 
-    let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
+    let mut instance = circuit.instantiate();
     instance.digital_state = DigitalState::new(1);
 
     let stop_time = 15e-9;
@@ -324,7 +350,7 @@ fn test_a2d_event_timing() {
 #[test]
 fn test_cosim_d2a_to_analog_ramp() {
     let circuit = Circuit::new("CosimD2ARamp");
-    let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
+    let mut instance = circuit.instantiate();
 
     let mut digital_state = DigitalState::new(1);
     digital_state.schedule(DigitalEvent { time: 5e-9, net: DigitalNet(0), value: LogicValue::One, source: 0, seq: 0 });
@@ -359,7 +385,7 @@ fn test_cosim_d2a_to_analog_ramp() {
 #[test]
 fn test_combinational_chain_zero_delay() {
     let circuit = Circuit::new("CombChain");
-    let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
+    let mut instance = circuit.instantiate();
 
     let mut digital_state = DigitalState::new(3);
     digital_state.nets[0] = LogicValue::One;
@@ -401,7 +427,7 @@ fn test_combinational_chain_zero_delay() {
 #[test]
 fn test_multi_digital_device_topo_order() {
     let circuit = Circuit::new("MultiInvChain");
-    let mut instance = CircuitInstance::instantiate(&circuit).unwrap();
+    let mut instance = circuit.instantiate();
 
     let mut digital_state = DigitalState::new(6);
     digital_state.nets[0] = LogicValue::One;

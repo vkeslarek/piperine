@@ -16,6 +16,12 @@ pub struct ElabContext {
     pub events: EventRegistry,
 }
 
+impl Default for ElabContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ElabContext {
     pub fn new() -> Self {
         let mut types = TypeRegistry::new();

@@ -8,9 +8,8 @@ use std::collections::HashMap;
 
 use crate::parse::ast::{BehaviorKind, FnDecl, FnParam, ImplDecl};
 use crate::elab::const_eval::ConstEnv;
-use crate::value::Value;
 use crate::pom::{
-    BehaviorStmt, ElabError, ElabErrorKind, Function, ImplBlock, Module, TypeRef, ValueType,
+    BehaviorStmt, ElabError, ElabErrorKind, Function, ImplBlock, TypeRef, ValueType,
 };
 
 use super::Elaborator;

@@ -63,11 +63,10 @@ impl<'a> Parser<'a> {
     }
 
     pub fn expected(&mut self, syntax: crate::parse::predict::ExpectedSyntax) {
-        if self.cursor_offset.is_some() {
-            if !self.expectations.contains(&syntax) {
+        if self.cursor_offset.is_some()
+            && !self.expectations.contains(&syntax) {
                 self.expectations.push(syntax);
             }
-        }
     }
 
     fn check_cursor(&mut self) -> bool {
@@ -128,7 +127,7 @@ impl<'a> Parser<'a> {
     pub(crate) fn make_error(&self, msg: String) -> crate::parse::error::ParseError {
         crate::parse::error::ParseError::Generic {
             message: msg,
-            span: miette::SourceSpan::new(self.current_span_start().into(), 1usize.into()),
+            span: miette::SourceSpan::new(self.current_span_start().into(), 1usize),
         }
     }
 
@@ -166,18 +165,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub(crate) fn parse_ident_as(&mut self, role: crate::parse::predict::IdentRole) -> Result<String, crate::parse::error::ParseError> {
-        self.expected(crate::parse::predict::ExpectedSyntax::Ident(role));
-        match self.peek() {
-            Some(Tok::Ident(s)) => {
-                let res = s.clone();
-                self.expectations.clear();
-                self.pos += 1;
-                Ok(res)
-            }
-            _ => Err(format!("Expected identifier, found {:?}", self.peek()).into()),
-        }
-    }
 
     // ─────────────────────────── §2  Compilation unit ────────────────────────
 
@@ -210,11 +197,10 @@ impl<'a> Parser<'a> {
                     });
                     if !self.completion_triggered && self.pos < self.toks.len() {
                         // Prevent infinite loops if we hit a sync token but parsing still fails immediately
-                        if let Some(t) = self.peek() {
-                            if !matches!(t, Tok::Ident(s) if matches!(s.as_str(), "mod" | "fn" | "discipline" | "bundle" | "enum" | "capability" | "impl" | "use" | "pub")) {
+                        if let Some(t) = self.peek()
+                            && !matches!(t, Tok::Ident(s) if matches!(s.as_str(), "mod" | "fn" | "discipline" | "bundle" | "enum" | "capability" | "impl" | "use" | "pub")) {
                                 self.pos += 1;
                             }
-                        }
                     }
                 }
             }

@@ -30,6 +30,89 @@ impl MatchArm {
     pub fn body(&self) -> &[BehaviorStmt] { &self.body }
 }
 
+impl BehaviorStmt {
+    /// Immutable visit of every expression in this statement, pre-order.
+    /// See [`crate::parse::ast::Expr::walk`].
+    pub fn walk_exprs(&self, f: &mut impl FnMut(&crate::parse::ast::Expr) -> crate::parse::ast::Walk) {
+        
+        match self {
+            BehaviorStmt::VarDecl { default, .. } => {
+                if let Some(e) = default { e.walk(f); }
+            }
+            BehaviorStmt::Bind { dest, src, .. } => { dest.walk(f); src.walk(f); }
+            BehaviorStmt::If { cond, then_body, else_body } => {
+                cond.walk(f);
+                then_body.iter().for_each(|s| s.walk_exprs(f));
+                if let Some(b) = else_body { b.iter().for_each(|s| s.walk_exprs(f)); }
+            }
+            BehaviorStmt::Match { expr, arms } => {
+                expr.walk(f);
+                arms.iter().for_each(|a| a.body.iter().for_each(|s| s.walk_exprs(f)));
+            }
+            BehaviorStmt::Event { spec, guard, body } => {
+                spec.walk_exprs(f);
+                if let Some(g) = guard { g.walk(f); }
+                body.iter().for_each(|s| s.walk_exprs(f));
+            }
+            BehaviorStmt::Return(e) | BehaviorStmt::Expr(e) => e.walk(f),
+            BehaviorStmt::Diagnostic { args, .. } => args.iter().for_each(|a| a.walk(f)),
+        }
+    }
+
+    /// Mutable visit of every expression in this statement, pre-order.
+    /// See [`crate::parse::ast::Expr::walk_mut`].
+    pub fn walk_exprs_mut(&mut self, f: &mut impl FnMut(&mut crate::parse::ast::Expr) -> crate::parse::ast::Walk) {
+        
+        match self {
+            BehaviorStmt::VarDecl { default, .. } => {
+                if let Some(e) = default { e.walk_mut(f); }
+            }
+            BehaviorStmt::Bind { dest, src, .. } => { dest.walk_mut(f); src.walk_mut(f); }
+            BehaviorStmt::If { cond, then_body, else_body } => {
+                cond.walk_mut(f);
+                then_body.iter_mut().for_each(|s| s.walk_exprs_mut(f));
+                if let Some(b) = else_body { b.iter_mut().for_each(|s| s.walk_exprs_mut(f)); }
+            }
+            BehaviorStmt::Match { expr, arms } => {
+                expr.walk_mut(f);
+                arms.iter_mut().for_each(|a| a.body.iter_mut().for_each(|s| s.walk_exprs_mut(f)));
+            }
+            BehaviorStmt::Event { spec, guard, body } => {
+                spec.walk_exprs_mut(f);
+                if let Some(g) = guard { g.walk_mut(f); }
+                body.iter_mut().for_each(|s| s.walk_exprs_mut(f));
+            }
+            BehaviorStmt::Return(e) | BehaviorStmt::Expr(e) => e.walk_mut(f),
+            BehaviorStmt::Diagnostic { args, .. } => args.iter_mut().for_each(|a| a.walk_mut(f)),
+        }
+    }
+
+    /// Visit every sub-statement in this statement's children (pre-order,
+    /// recursive). The callback fires for each direct child statement —
+    /// `If` bodies, `Match` arms, `Event` bodies. The callback does *not*
+    /// fire for `self`; callers that want to visit the root too should call
+    /// `f(self)` before `self.walk_stmts(f)`.
+    pub fn walk_stmts(&self, f: &mut impl FnMut(&BehaviorStmt)) {
+        match self {
+            BehaviorStmt::If { then_body, else_body, .. } => {
+                for s in then_body { f(s); s.walk_stmts(f); }
+                if let Some(b) = else_body {
+                    for s in b { f(s); s.walk_stmts(f); }
+                }
+            }
+            BehaviorStmt::Match { arms, .. } => {
+                for arm in arms {
+                    for s in &arm.body { f(s); s.walk_stmts(f); }
+                }
+            }
+            BehaviorStmt::Event { body, .. } => {
+                for s in body { f(s); s.walk_stmts(f); }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// A behavior block inside a module (analog or digital).
 #[derive(Debug, Clone)]
 pub struct Behavior {

@@ -1,14 +1,14 @@
 //! Expression lowering: `Expr` → `IrExpr`
 
-use crate::parse::ast::{ArrayBody, BindOp, BinaryOp, Block, Expr, Literal, Stmt, UnaryOp};
+use crate::parse::ast::{ArrayBody, BinaryOp, Block, Expr, Literal, Stmt, UnaryOp};
 use piperine_ir::*;
 use super::analog_ops::analog_ops;
 use super::syscalls::syscalls;
 use super::LowerCtx;
 
 pub(crate) fn parse_contrib_dest(dest: &Expr, ctx: &mut LowerCtx) -> (NatureId, NodeId, NodeId) {
-    if let Expr::Call(func, args) = dest {
-        if let Expr::Ident(name) = func.as_ref() {
+    if let Expr::Call(func, args) = dest
+        && let Expr::Ident(name) = func.as_ref() {
             let nature_kind = match name.as_str() {
                 "V" => NatureKind::Potential,
                 "I" => NatureKind::Flow,
@@ -24,7 +24,6 @@ pub(crate) fn parse_contrib_dest(dest: &Expr, ctx: &mut LowerCtx) -> (NatureId, 
             
             return (nature, plus, minus);
         }
-    }
     
     let nature = ctx.symbols.add_nature("I", NatureKind::Flow);
     (nature, NodeId::GROUND, NodeId::GROUND)
@@ -41,11 +40,10 @@ pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
                 Expr::Ident(base_name) => Some(format!("{base_name}.{field}")),
                 // `name[i].port` after for-unroll becomes `name[0].port` etc.
                 Expr::Index(inner, idx) => {
-                    if let Expr::Ident(base_name) = inner.as_ref() {
-                        if let Expr::Literal(Literal::Int(i)) = idx.as_ref() {
+                    if let Expr::Ident(base_name) = inner.as_ref()
+                        && let Expr::Literal(Literal::Int(i)) = idx.as_ref() {
                             return Some(format!("{base_name}_{i}.{field}"));
                         }
-                    }
                     None
                 }
                 _ => None,
@@ -56,8 +54,9 @@ pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
 }
 
 pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut LowerCtx) {
-    match expr {
-        Expr::Call(func, args) => {
+    use crate::parse::ast::Walk;
+    expr.walk(&mut |e| {
+        if let Expr::Call(func, args) = e {
             if let Expr::Ident(name) = func.as_ref() {
                 match name.as_str() {
                     "white_noise" => {
@@ -73,7 +72,7 @@ pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut Low
                             kind: IrNoise::White { psd },
                             label,
                         });
-                        return;
+                        return Walk::SkipChildren;
                     }
                     "flicker_noise" => {
                         let psd = args.first()
@@ -91,39 +90,14 @@ pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut Low
                             kind: IrNoise::Flicker { psd, exponent },
                             label,
                         });
-                        return;
+                        return Walk::SkipChildren;
                     }
                     _ => {}
                 }
             }
-            for arg in args {
-                scan_noise(arg, plus, minus, ctx);
-            }
         }
-        Expr::Binary(l, _, r) => {
-            scan_noise(l, plus, minus, ctx);
-            scan_noise(r, plus, minus, ctx);
-        }
-        Expr::Unary(_, inner) => scan_noise(inner, plus, minus, ctx),
-        Expr::If { cond, then_body, else_body } => {
-            scan_noise_expr_block(cond, plus, minus, ctx);
-            scan_noise_block(then_body, plus, minus, ctx);
-            scan_noise_block(else_body, plus, minus, ctx);
-        }
-        _ => {}
-    }
-}
-
-pub(crate) fn scan_noise_block(block: &Block, plus: NodeId, minus: NodeId, ctx: &mut LowerCtx) {
-    for s in &block.stmts {
-        if let Stmt::Bind { op: BindOp::Contrib, src, .. } = s {
-            scan_noise(src, plus, minus, ctx);
-        }
-    }
-}
-
-pub(crate) fn scan_noise_expr_block(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut LowerCtx) {
-    scan_noise(expr, plus, minus, ctx);
+        Walk::Continue
+    });
 }
 
 pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
@@ -266,7 +240,7 @@ pub(crate) fn lower_array(body: &ArrayBody, ctx: &mut LowerCtx) -> IrExpr {
         ArrayBody::List(exprs) => {
             IrExpr::Array(exprs.iter().map(|e| lower_expr(e, ctx)).collect())
         }
-        ArrayBody::Repeat(v, n) => {
+        ArrayBody::Repeat(v, _n) => {
             IrExpr::Array(vec![lower_expr(v, ctx)]) // ArrayRepeat removed
         }
         ArrayBody::Comprehension(expr, var, range) => {

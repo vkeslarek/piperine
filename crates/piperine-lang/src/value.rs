@@ -268,3 +268,47 @@ impl From<num_complex::Complex64> for Value {
         Self::Complex(c.re, c.im)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn value_real_construction_and_access() {
+        let v = Value::Real(3.14);
+        assert_eq!(v.as_real(), Some(3.14));
+        assert_eq!(v.as_integer(), None);
+    }
+
+    #[test]
+    fn value_natural_construction_and_access() {
+        let v = Value::Nat(42);
+        assert_eq!(v.as_natural(), Some(42));
+    }
+
+    #[test]
+    fn value_boolean_construction_and_access() {
+        let v = Value::Bool(true);
+        assert_eq!(v.as_boolean(), Some(true));
+    }
+
+    #[test]
+    fn value_string_construction_and_access() {
+        let v = Value::Str("hello".into());
+        assert_eq!(v.as_string(), Some("hello"));
+    }
+
+    #[test]
+    fn value_integer_construction_and_access() {
+        let v = Value::Int(-7);
+        assert_eq!(v.as_integer(), Some(-7));
+    }
+
+    #[test]
+    fn value_type_name() {
+        assert_eq!(Value::Real(0.0).type_name(), "Real");
+        assert_eq!(Value::Nat(0).type_name(), "Natural");
+        assert_eq!(Value::Bool(false).type_name(), "Boolean");
+        assert_eq!(Value::Str("".into()).type_name(), "String");
+    }
+}

@@ -35,12 +35,11 @@ impl Parse for ImplDecl {
         let mut methods = Vec::new();
         while !parser.eat(&Tok::RBrace) {
             let _ = parser.parse_attributes()?;
-            if let Some(crate::parse::lexer::Tok::Ident(s)) = parser.peek() {
-                if s == "fn" || s == "pub" {
+            if let Some(crate::parse::lexer::Tok::Ident(s)) = parser.peek()
+                && (s == "fn" || s == "pub") {
                     methods.push(FnDecl::parse(parser)?);
                     continue;
                 }
-            }
             return Err(format!("Expected `fn`, found {:?}", parser.peek()).into());
         }
         Ok(ImplDecl { attrs, is_pub, capability, ty: ident1, const_args, type_args, methods })

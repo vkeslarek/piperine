@@ -261,11 +261,10 @@ impl Device for PiperineDevice {
                     let num_analog = d.kernel().layout().num_analog();
                     let mut compact = vec![0.0; num_analog];
                     for (term_idx, &node_id) in self.analog_terminal_node_ids.iter().enumerate() {
-                        if let Some(compact_idx) = d.kernel().layout().analog_index(node_id) {
-                            if compact_idx < compact.len() && term_idx < self.last_analog_voltages.len() {
+                        if let Some(compact_idx) = d.kernel().layout().analog_index(node_id)
+                            && compact_idx < compact.len() && term_idx < self.last_analog_voltages.len() {
                                 compact[compact_idx] = self.last_analog_voltages[term_idx];
                             }
-                        }
                     }
                     compact
                 } else {
@@ -291,11 +290,10 @@ impl Device for PiperineDevice {
             let num_analog = digital.kernel().layout().num_analog();
             let mut compact = vec![0.0; num_analog];
             for (term_idx, &node_id) in terminal_ids.iter().enumerate() {
-                if let Some(compact_idx) = digital.kernel().layout().analog_index(node_id) {
-                    if compact_idx < compact.len() && term_idx < last_volts.len() {
+                if let Some(compact_idx) = digital.kernel().layout().analog_index(node_id)
+                    && compact_idx < compact.len() && term_idx < last_volts.len() {
                         compact[compact_idx] = last_volts[term_idx];
                     }
-                }
             }
             av = compact;
             &av

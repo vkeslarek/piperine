@@ -37,8 +37,8 @@ impl TransientAnalysisOptions {
             stop_time,
             dt,
             adaptive: false,
-            dt_min: 1e-15.into(),
-            dt_max: (stop_time / 100.0).into(),
+            dt_min: 1e-15,
+            dt_max: (stop_time / 100.0),
         }
     }
 
@@ -48,8 +48,8 @@ impl TransientAnalysisOptions {
             stop_time,
             dt: dt_initial,
             adaptive: true,
-            dt_min: 1e-15.into(),
-            dt_max: (stop_time / 100.0).into(),
+            dt_min: 1e-15,
+            dt_max: (stop_time / 100.0),
         }
     }
 

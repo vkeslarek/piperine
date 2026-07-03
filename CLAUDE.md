@@ -38,7 +38,7 @@ No worker/IPC build step — the solver is in-process.
 
 | Crate | Role |
 |-------|------|
-| `piperine-ams` | Verilog-AMS frontend: preprocessor, lexer, recursive-descent parser → AST (`grammar/`, `ast/`), `Document::parse[_file]`, formatter (`fmt`). |
+
 | `piperine-lang` | PHDL frontend: lexer/parser (`parse/`), name resolution (`resolve/`), elaboration → `elab::ir::ElabProgram` (`elab/`). `parse_and_elaborate`. |
 | `piperine-codegen` | The IR (`ir.rs`) + both lowerings (`from_ams`, `from_ppr`) + IR→device (`from_ir`, `ir_analog_to_device`, `ir_digital_to_interp`) + Cranelift/interp codegen (`codegen/`). |
 | `piperine-solver` | Native solver: DC/AC/transient/noise/TF analyses (`analysis/`, `solver/`), MNA/linear algebra (`math/`, faer), `Device` trait, OSDI loader (`osdi/`), digital topology. |
@@ -101,7 +101,7 @@ The OSDI device (`solver/src/osdi/device.rs`) is the reference for reactive/nois
 
 ## Files not to edit casually
 
-- `crates/piperine-lang/src/parse/`, `crates/piperine-ams/src/grammar/` — hand-written
+- `crates/piperine-lang/src/parse/` — hand-written
   recursive-descent parsers; changes ripple through all parsing.
 - `crates/piperine-codegen/src/ir.rs` — the shared IR contract for both frontends.
 - `crates/piperine-codegen/src/codegen/analog.rs` — the shared JIT residual/Jacobian skeleton.

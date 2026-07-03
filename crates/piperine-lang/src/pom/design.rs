@@ -55,7 +55,7 @@ impl Design {
     }
 
     /// Evaluate a selector path against this design.
-    pub fn select<'a>(&'a self, path: &str) -> Result<crate::pom::selection::NodeSelection<'a>, String> {
+    pub fn select<'a>(&'a self, path: &str) -> Result<crate::pom::selection::NodeSelection<'a>, crate::pom::error::SelectorError> {
         let sel = path.parse::<crate::pom::selector::Selector>()?;
         let initial_context = if sel.absolute {
             crate::pom::selection::NodeSelection::new()
@@ -309,9 +309,9 @@ impl Design {
         &mut self.benches
     }
 
-    /// Insert a module by name. Used internally by the elaborator and by
-    /// the digital interpreter bridge to build synthetic modules for
-    /// digital-only test scenarios.
+    /// Insert a module by name. Test-only: the selector unit tests build
+    /// synthetic designs without running the elaborator.
+    #[cfg(test)]
     pub(crate) fn insert_module(&mut self, name: String, module: Module) {
         self.modules.insert(name, module);
     }

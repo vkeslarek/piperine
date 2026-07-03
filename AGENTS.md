@@ -5,13 +5,13 @@ This file briefs AI coding agents on the Piperine codebase. Read it before makin
 ## What Piperine is
 
 A hardware-description language and simulator for analog and mixed-signal circuits.
-It has two frontends that lower to a single intermediate representation (IR); the IR
+It has a frontend that lowers to an intermediate representation (IR); the IR
 in turn compiles (via Cranelift JIT + a tree-walking digital interpreter) into the
 solver's `Device` trait:
 
 ```
-   .va / .vams    ──►  piperine-ams    ──►      ┌──────────────────┐
-   (Verilog-A/AMS)  ◄─►   frontend     ◄─►      │  piperine-codegen │
+                                                ┌──────────────────┐
+                                                │  piperine-codegen │
                                                 │   (IR + lowering)  │
    .phdl / .ppr    ──►  piperine-lang  ──►      └────────┬─────────┘
    (PHDL / .ppr)     ◄─►   frontend     ◄─►               │
@@ -45,10 +45,6 @@ The current baseline is captured in `tests-baseline.md`.
 
 ```
 crates/
-├── piperine-ams/           Verilog-A/AMS frontend
-│   ├── src/{lexer,parser,preprocessor,grammar,ast,model,fmt}.rs
-│   ├── headers/{constants,disciplines}.vams
-│   └── tests/{fixtures,fixtures_fmt,fixtures_ppr}/   ← test corpus (frozen)
 ├── piperine-lang/          PHDL frontend
 │   ├── src/{parse,elab,resolve,stdlib}/
 │   └── tests/examples/      PHDL reference files (→ IR regression)

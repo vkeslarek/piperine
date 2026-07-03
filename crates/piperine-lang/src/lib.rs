@@ -26,11 +26,12 @@
 //! ## Quick start
 //!
 //! ```rust
+//! let mut sm = piperine_lang::SourceMap::new(std::path::PathBuf::from("."));
 //! let design = piperine_lang::parse_and_elaborate(
 //!     "discipline Electrical { potential v: Real; flow i: Real; }
-//!      mod Resistor (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }"
-//! )?;
-//! # Ok::<(), String>(())
+//!      mod Resistor (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }",
+//!      &mut sm
+//! ).unwrap();
 //! ```
 //!
 //! ## Module organisation

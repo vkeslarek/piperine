@@ -1,6 +1,6 @@
+use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
-use std::fs;
 
 pub fn execute(name: Option<String>) {
     let project_name = if let Some(n) = name {
@@ -19,9 +19,11 @@ pub fn execute(name: Option<String>) {
     }
 
     let path = Path::new(&project_name);
-    
+
     // Check if Piperine.toml already exists
-    if path.join("Piperine.toml").exists() || (path.components().count() == 0 && Path::new("Piperine.toml").exists()) {
+    if path.join("Piperine.toml").exists()
+        || (path.components().count() == 0 && Path::new("Piperine.toml").exists())
+    {
         eprintln!("Error: Piperine.toml already exists.");
         std::process::exit(1);
     }
@@ -42,5 +44,3 @@ pub fn execute(name: Option<String>) {
     std::env::set_current_dir(path).unwrap();
     crate::commands::build::execute(None);
 }
-
-

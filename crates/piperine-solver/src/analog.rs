@@ -53,19 +53,19 @@ impl BranchIdentifier {
     }
 }
 
-impl Into<BranchIdentifier> for String {
-    fn into(self) -> BranchIdentifier {
+impl From<String> for BranchIdentifier {
+    fn from(val: String) -> Self {
         BranchIdentifier {
-            component: self,
+            component: val,
             name: None,
         }
     }
 }
 
-impl Into<BranchIdentifier> for &str {
-    fn into(self) -> BranchIdentifier {
+impl From<&str> for BranchIdentifier {
+    fn from(val: &str) -> Self {
         BranchIdentifier {
-            component: self.to_string(),
+            component: val.to_string(),
             name: None,
         }
     }
@@ -146,9 +146,9 @@ impl AnalogReference {
     }
 }
 
-impl Into<Arc<AnalogVariable>> for AnalogReference {
-    fn into(self) -> Arc<AnalogVariable> {
-        self.variable
+impl From<AnalogReference> for Arc<AnalogVariable> {
+    fn from(val: AnalogReference) -> Self {
+        val.variable
     }
 }
 
@@ -161,6 +161,12 @@ impl AsIndex for AnalogReference {
 pub struct Netlist {
     circuit_map: BiMap<AnalogReference, Arc<AnalogVariable>>,
     last_seen_idx: AtomicUsize,
+}
+
+impl Default for Netlist {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Netlist {

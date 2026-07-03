@@ -30,7 +30,7 @@ impl Scalar for f64 {
     }
 
     fn is_finite(&self) -> bool {
-        f64::is_finite(self.clone())
+        f64::is_finite(*self)
     }
 }
 
@@ -40,6 +40,6 @@ impl Scalar for Complex<f64> {
     }
 
     fn is_finite(&self) -> bool {
-        Complex::is_finite(self.clone())
+        Complex::is_finite(*self)
     }
 }

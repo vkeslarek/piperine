@@ -81,14 +81,3 @@ fn parse_and_collect_errors(source: &str) -> (Option<Design>, Vec<ParseError>) {
     (design, all_errors)
 }
 
-/// Extract a byte offset from a lexer error message ("... at byte N").
-fn extract_byte_offset(error: &str) -> Option<usize> {
-    error
-        .split("at byte ")
-        .last()
-        .and_then(|s| {
-            s.split(|c: char| !c.is_ascii_digit())
-                .next()
-                .and_then(|n| n.parse::<usize>().ok())
-        })
-}

@@ -160,7 +160,7 @@ impl<'a> DcSolver<'a> {
             if let Some(reference_idx) = reference.idx() {
                 values.insert(
                     reference.variable().clone(),
-                    raw_solution[reference_idx].clone(),
+                    raw_solution[reference_idx],
                 );
             }
         }

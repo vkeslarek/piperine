@@ -1,11 +1,61 @@
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
-use std::fs;
 use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use std::collections::HashMap;
+
+pub mod git;
+pub mod lockfile;
+pub mod resolver;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PiperineToml {
     pub project: Project,
+    #[serde(default)]
+    pub dependencies: HashMap<String, DependencySource>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum DependencySource {
+    Git(GitDependency),
+    Path(PathDependency),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PathDependency {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GitDependency {
+    pub git: String,
+    pub version: Option<String>,
+    pub branch: Option<String>,
+    pub rev: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum GitRequirement {
+    Version(String),
+    Branch(String),
+    Rev(String),
+    Latest,
+}
+
+impl GitDependency {
+    pub fn requirement(&self) -> GitRequirement {
+        if let Some(ref v) = self.version {
+            GitRequirement::Version(v.clone())
+        } else if let Some(ref b) = self.branch {
+            GitRequirement::Branch(b.clone())
+        } else if let Some(ref r) = self.rev {
+            GitRequirement::Rev(r.clone())
+        } else {
+            GitRequirement::Latest
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,6 +64,18 @@ pub struct Project {
     pub version: String,
     pub authors: Vec<String>,
     pub edition: String,
+}
+
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum ProjectError {
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Failed to parse TOML: {0}")]
+    Parse(#[from] toml::de::Error),
+    #[error("Failed to serialize TOML: {0}")]
+    Serialize(#[from] toml::ser::Error),
 }
 
 impl PiperineToml {
@@ -25,6 +87,7 @@ impl PiperineToml {
                 authors: vec![],
                 edition: "2024".to_string(),
             },
+            dependencies: HashMap::new(),
         }
     }
 
@@ -32,14 +95,16 @@ impl PiperineToml {
         toml::to_string_pretty(self)
     }
 
-    pub fn load(path: &Path) -> Result<Self, String> {
-        let content = fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
-        toml::from_str(&content).map_err(|e| format!("Failed to parse TOML: {}", e))
+    pub fn load(path: &Path) -> Result<Self, ProjectError> {
+        let content = fs::read_to_string(path)?;
+        let project = toml::from_str(&content)?;
+        Ok(project)
     }
 
-    pub fn save(&self, path: &Path) -> Result<(), String> {
-        let content = self.to_string_pretty().map_err(|e| format!("Failed to serialize TOML: {}", e))?;
-        fs::write(path, content).map_err(|e| format!("Failed to write file: {}", e))
+    pub fn save(&self, path: &Path) -> Result<(), ProjectError> {
+        let content = self.to_string_pretty()?;
+        fs::write(path, content)?;
+        Ok(())
     }
 }
 

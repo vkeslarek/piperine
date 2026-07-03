@@ -156,3 +156,31 @@ pub enum ReflectError {
     #[error("{0}")]
     Other(String),
 }
+
+/// An error parsing or evaluating a selector.
+#[derive(Debug, Clone, PartialEq, Error)]
+pub enum SelectorError {
+    #[error("Empty selector")]
+    EmptySelector,
+    #[error("Expected `::` after axis")]
+    ExpectedDoubleColon,
+    #[error("Expected NodeTest")]
+    ExpectedNodeTest,
+    #[error("Unknown axis: {0}")]
+    UnknownAxis(String),
+    #[error("Axis {0:?} not yet implemented")]
+    AxisNotImplemented(crate::pom::selector::ast::Axis),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reflect_error_display() {
+        let e = ReflectError::NotFound("module `foo`".into());
+        assert!(e.to_string().contains("foo"));
+        let e = ReflectError::NotSettable("name".into());
+        assert!(e.to_string().contains("settable"));
+    }
+}
