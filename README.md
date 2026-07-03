@@ -1,8 +1,6 @@
 <div align="center">
 
-# Piperine
-
-<img src="assets/logo.svg" alt="Piperine Logo" width="180"/>
+<img src="assets/logo.svg" alt="Piperine Logo" width="50%"/>
 
 **A modern hardware-description language (HDL) and simulator for analog and mixed-signal circuits.**
 
