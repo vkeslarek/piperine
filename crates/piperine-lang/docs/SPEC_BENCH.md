@@ -297,7 +297,7 @@ No other construct is added; the bench is the existing `fn` language in an effec
 | `$info/$warn/$error/$fatal` | ✓ | ✓ | ✓ **implemented** | run log |
 | math (`exp`, `abs`, …) | ✓ | ✓ | ✓ **implemented** | same |
 | `$op(cfg)` | — | — | ✓ **implemented** (`$op()` and `$op(OpConfig { .solver = Solver { … } })`) | DC operating point → `OpResult` |
-| `$tran(cfg)` | — | — | ✓ **implemented** (`TranConfig { .stop, .step /*0 = adaptive auto*/, .solver }`; positional `(stop, step)` kept as convenience; `.start != 0` and `ic:` maps not yet) | transient → `Trace` |
+| `$tran(cfg)` | — | — | ✓ **implemented** (`TranConfig { .stop, .step /*0 = adaptive auto*/, .start /*delayed-start: solve from 0, record from .start*/, .solver }`; positional `(stop, step)` kept as convenience; `ic:` maps not yet) | transient → `Trace` |
 | `$ac(cfg)` | — | — | ✓ **implemented** (`AcConfig { .fstart, .fstop, .points, .scale, .solver }`; `Oct` maps onto the solver's log sweep) | frequency sweep → complex `Trace` |
 | `$noise(out, cfg)` | — | — | ✓ **implemented** (output net is positional — the spec's `out : Branch` field awaits a Branch value type) | `NoiseTrace.{psd,total}` |
 | result `.v/.i` | — | — | ✓ **implemented** on `OpResult`, `Trace`, and the AC `Trace` (`Trace.i` only for ideal-source branches — no reactive read yet) | measurement (§4, §6) |

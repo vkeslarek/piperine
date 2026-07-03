@@ -166,11 +166,18 @@ impl<'a> TransientSolver<'a> {
 
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
         let stop_time: f64 = self.options.stop_time;
+        let record_from: f64 = self.options.record_from;
         let mut dt: f64 = self.options.dt;
         let max_step: f64 = dt;
 
         let initial_snapshot = self.compute_initial_conditions()?;
-        let mut steps = vec![initial_snapshot];
+        let mut steps = Vec::new();
+        // The t=0 DC operating point is only part of the recorded output when
+        // recording starts at (or before) t=0; a delayed start drops it but
+        // still computes it — the initial state seeds the integration.
+        if 0.0 >= record_from {
+            steps.push(initial_snapshot);
+        }
 
         let mut current_time = 0.0;
         let min_step = 1e-15;
@@ -207,7 +214,11 @@ impl<'a> TransientSolver<'a> {
                     t_next,
                 );
                 self.system.circuit.digital_state.commit();
-                steps.push(snapshot);
+                // A delayed-start transient still solves every step (state
+                // evolution matters); only the recording is gated.
+                if t_next >= record_from {
+                    steps.push(snapshot);
+                }
                 current_time = t_next;
                 // Use dt_proposed for growth so an event-clamped step doesn't shrink dt permanently
                 dt = f64::min(f64::max(dt_proposed * 2.0, min_step), max_step);

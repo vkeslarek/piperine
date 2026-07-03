@@ -210,6 +210,33 @@ fn tran_traces_a_settled_rc_node_over_time() {
     }
 }
 
+#[test]
+fn tran_delayed_start_records_from_start_not_zero() {
+    // SPEC_BENCH.md §5.1 `TranConfig.start`: solve from t=0 (state evolution
+    // matters), but only record steps with `t >= start` (ngspice `.tran tstart
+    // tstop` semantics). The RC node sits at the DC steady state (5V) for the
+    // whole run, so a delayed start must still see ~5V at the first recorded
+    // sample — and that sample's time must be `>= start`, not 0.
+    let src = format!(
+        "{CIRCUIT}
+        bench RcCharge {{
+            fn test_delayed_start() {{
+                var t = $tran(TranConfig {{ .stop = 1e-3, .step = 1e-4, .start = 0.5e-3 }});
+                var axis = t.axis();
+                $assert(axis.len() > 1, \"delayed-start trace still has samples\");
+                $assert(axis.at(0.0) >= 0.5e-3, \"recording starts at .start, not t=0\");
+                var v = t.v(out, gnd);
+                $assert(v.at(axis.at(0.0)) > 4.9, \"still settled at the delayed start\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("RcCharge", "test_delayed_start") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
 // ─── Appendix A closure: config bundles, $ac, $noise, $write ──────────────────
 
 #[test]

@@ -96,7 +96,16 @@ impl SimSession {
     /// elaborate-and-solve recipe as [`Self::run_op`], through
     /// `CircuitInstance::transient` instead of `::dc`. `step: None` (the
     /// config bundle's `step = 0.0` "auto") selects the adaptive stepper.
-    pub fn run_tran(&self, stop: f64, step: Option<f64>, config: &SolverConfig) -> Result<Trace, BenchError> {
+    /// `start` (SPEC_BENCH.md §5.1 `TranConfig.start`) is the earliest
+    /// recorded time — the solver still integrates from t=0, but steps with
+    /// `t < start` are dropped from the trace.
+    pub fn run_tran(
+        &self,
+        stop: f64,
+        step: Option<f64>,
+        start: f64,
+        config: &SolverConfig,
+    ) -> Result<Trace, BenchError> {
         let applied = self.design.with_overrides_applied(&self.module)?;
         let ir = piperine_lang::ppr_to_ir(&applied)?;
         let mut compiler = CircuitCompiler::new(&ir);
@@ -106,7 +115,8 @@ impl SimSession {
         let opts = match step {
             Some(dt) => piperine_solver::analysis::transient::TransientAnalysisOptions::new(stop, dt),
             None => piperine_solver::analysis::transient::TransientAnalysisOptions::new_adaptive(stop, stop * 1e-3),
-        };
+        }
+        .with_record_from(start);
         let result = circuit.transient(opts, config.to_context())?.solve()?;
         Ok(Trace::new(result, Rc::new(info)))
     }

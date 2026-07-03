@@ -28,6 +28,13 @@ pub struct TransientAnalysisOptions {
 
     /// Maximum allowed timestep (default: stop_time / 100)
     pub dt_max: Second,
+
+    /// Earliest time at which a step is *recorded* (SPEC_BENCH.md §5.1
+    /// `TranConfig.start`). The solver still integrates from t=0 — the state
+    /// evolution matters — but steps with `t < record_from` are dropped from
+    /// the result (ngspice `.tran tstart tstop` semantics). Defaults to 0
+    /// (record everything, the pre-existing behavior).
+    pub record_from: Second,
 }
 
 impl TransientAnalysisOptions {
@@ -39,6 +46,7 @@ impl TransientAnalysisOptions {
             adaptive: false,
             dt_min: 1e-15,
             dt_max: (stop_time / 100.0),
+            record_from: 0.0,
         }
     }
 
@@ -50,6 +58,7 @@ impl TransientAnalysisOptions {
             adaptive: true,
             dt_min: 1e-15,
             dt_max: (stop_time / 100.0),
+            record_from: 0.0,
         }
     }
 
@@ -62,6 +71,12 @@ impl TransientAnalysisOptions {
     /// Set maximum timestep
     pub fn with_dt_max(mut self, dt_max: Second) -> Self {
         self.dt_max = dt_max;
+        self
+    }
+
+    /// Set the earliest recorded time (`TranConfig.start`).
+    pub fn with_record_from(mut self, record_from: Second) -> Self {
+        self.record_from = record_from;
         self
     }
 }

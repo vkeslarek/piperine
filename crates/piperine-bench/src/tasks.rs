@@ -103,22 +103,17 @@ impl SimTask for Tran {
         "tran"
     }
     fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError> {
-        // `$tran(TranConfig { .stop = …, [.step], [.solver] })`, or the
-        // positional convenience `$tran(stop, step)`.
-        let (stop, step, cfg) = match args.first() {
+        // `$tran(TranConfig { .stop = …, [.step], [.start], [.solver] })`, or
+        // the positional convenience `$tran(stop, step)`.
+        let (stop, step, start, cfg) = match args.first() {
             Some(rec @ Value::Record(_)) => {
                 let stop = required_real(rec, "TranConfig", "stop")?;
                 let step = match real_field(rec, "step")? {
                     Some(s) if s > 0.0 => Some(s),
                     _ => None, // 0.0 = "auto" → adaptive stepping
                 };
-                if real_field(rec, "start")?.unwrap_or(0.0) != 0.0 {
-                    return Err(EvalError::TaskUnavailable {
-                        name: "tran (with .start != 0)".into(),
-                        context: "this toolchain (delayed-start transient is not yet implemented)",
-                    });
-                }
-                (stop, step, solver_config(args.first())?)
+                let start = real_field(rec, "start")?.unwrap_or(0.0);
+                (stop, step, start, solver_config(args.first())?)
             }
             _ => {
                 let stop = as_real(args.first().ok_or_else(|| {
@@ -127,10 +122,10 @@ impl SimTask for Tran {
                 let step = as_real(args.get(1).ok_or_else(|| {
                     EvalError::TypeMismatch("positional $tran needs (stop, step)".into())
                 })?)?;
-                (stop, Some(step), SolverConfig::default())
+                (stop, Some(step), 0.0, SolverConfig::default())
             }
         };
-        let trace = session.run_tran(stop, step, &cfg).map_err(EvalError::from)?;
+        let trace = session.run_tran(stop, step, start, &cfg).map_err(EvalError::from)?;
         Ok(Value::Object(std::rc::Rc::new(trace)))
     }
 }

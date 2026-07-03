@@ -8,7 +8,7 @@ discipline Ground {
 // Ordinary value bundles with defaults; an analysis takes one as its single
 // argument (no stateful setter tasks — no hidden state).
 // GAPS: the spec's `ic`/`nodeset` Map<Net, Real> fields await the Map value
-// type; `TranConfig.start` awaits solver support.
+// type.
 
 enum Scale { Lin, Dec, Oct }
 enum CrossDir { Rising, Falling, Either }
