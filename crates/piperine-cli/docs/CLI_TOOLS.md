@@ -95,3 +95,43 @@ Sets up the foundation of a new isolated repository, creating a directory and na
 
 ### 3.3 The Internal Standard Library Fallback
 If execution takes place within a repository where the CLI is still running from source (e.g., executing the CLI locally from within the Piperine clone directory on the tool developer's machine), it will dynamically inject `piperine::*` by tracking the parent folder `crates/piperine-lang/headers/` to enable development simulations, proving its toolchain flexibility.
+
+## 4. Compilation & Execution Commands
+
+The CLI acts as the main entry point to the Piperine compiler. All of the commands below inherently resolve dependencies via `Piperine.toml` before execution.
+
+### 4.1 `piperine check [file]`
+**Purpose:** Fast syntax and semantic validation.
+- Parses and elaborates the abstract syntax tree and type-checks the code.
+- If `[file]` is not provided, it automatically traverses the `src/` directory, discovering and validating all `.phdl` files.
+- Ideal for fast feedback loops during coding or IDE/LSP integrations.
+
+### 4.2 `piperine build [file]`
+**Purpose:** Full project elaboration.
+- Currently behaves similarly to `check` by fully elaborating the design.
+- In the future, this command will act as the hook for exporting netlists, emitting SPICE decks, and generating Cranelift artifacts or `.osdi` extensions for OpenVAF models.
+- Defaults to building `src/main.phdl` if no file is provided.
+
+### 4.3 `piperine run [file] [--entry <module::fn>]`
+**Purpose:** Direct execution of simulation benches.
+- Evaluates the design and invokes the `BenchRunner`.
+- If an `--entry` parameter is provided (e.g., `my_bench::dc_test`), it executes exclusively that simulation node.
+- Otherwise, it evaluates and executes all `bench` entry points discovered within the specified file.
+- Outputs the simulation execution trace, evaluating `$op()` and `$tran()` analog routines natively.
+
+### 4.4 `piperine test [file] [--list]`
+**Purpose:** Project-wide regression testing.
+- Discovers and runs every simulation bench across the entire project (`src/**/*.phdl`).
+- Validates successes and failures based on assertion triggers.
+- The `--list` flag can be used to simply map and print all available test benches in the project without actually running them.
+
+### 4.5 `piperine fmt [file]`
+**Purpose:** Source code formatting.
+- Automatically formats the Phdl files using the `TokenFormatter`.
+- Corrects indentation, spacing, and structural layout of the source files.
+- Operates in-place. Defaults to `src/main.phdl` if no target is specified.
+
+### 4.6 `piperine clean`
+**Purpose:** Cache and artifact cleanup.
+- Deletes the `target/` directory for the active project.
+- Useful for forcing the `Resolver` to re-fetch all cached git dependencies (`target/deps/`) or wiping old elaboration binaries.
