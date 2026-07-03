@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - 'release/v*'
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: piperine
+            asset_name: piperine-linux-x86_64
+          - os: macos-latest
+            artifact_name: piperine
+            asset_name: piperine-macos-aarch64
+          - os: windows-latest
+            artifact_name: piperine.exe
+            asset_name: piperine-windows-x86_64.exe
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release --bin piperine
+
+      - name: Rename binary for upload
+        shell: bash
+        run: cp target/release/${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: ${{ matrix.asset_name }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Get Version
+        id: get_version
+        run: |
+          # The branch name is like release/v0.0.1
+          # This extracts just v0.0.1
+          VERSION=${GITHUB_REF#refs/heads/release/}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: Release ${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          files: artifacts/**/*
