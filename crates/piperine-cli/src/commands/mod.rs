@@ -1,8 +1,11 @@
+pub mod add;
 pub mod build;
 pub mod check;
 pub mod clean;
 pub mod fmt;
 pub mod new;
+pub mod remove;
 pub mod run;
 pub mod test;
+pub mod tree;
 pub mod utils;

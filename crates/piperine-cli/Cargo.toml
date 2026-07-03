@@ -10,6 +10,8 @@ piperine-codegen = { version = "0.1.0", path = "../piperine-codegen" }
 piperine-bench = { version = "0.1.1", path = "../piperine-bench" }
 piperine-project = { version = "0.1.0", path = "../piperine-project" }
 include_dir = "0.7.4"
+thiserror.workspace = true
+toml_edit = "0.25.12"
 
 [dev-dependencies]
 tempfile.workspace = true
