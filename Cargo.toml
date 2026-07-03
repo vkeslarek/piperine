@@ -12,7 +12,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 
 [package]
@@ -26,8 +26,8 @@ serde = { workspace = true }
 bincode = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-piperine-cli = { version = "0.1.0", path = "crates/piperine-cli" }
-piperine-project = { version = "0.1.0", path = "crates/piperine-project" }
+piperine-cli = { version = "0.1.1", path = "crates/piperine-cli" }
+piperine-project = { version = "0.1.1", path = "crates/piperine-project" }
 
 [dev-dependencies]
 tracing = { workspace = true }
