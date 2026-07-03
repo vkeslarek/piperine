@@ -1,0 +1,42 @@
+// Self-clocked (periodic) sampler
+//
+// Version 1a, 15 November 04
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+//
+// This is the version corresponds to the standard, but it does not
+// run in the existing version of Spectre (5.0 May 03). See sampler2.vams
+// for an alternate version that does run in Spectre.
+
+
+`include "disciplines.vams"
+
+module sampler (ps, ns);
+    parameter real period=1 from (0:inf);       // sampling period (s)
+    parameter real toff=0 from [0:inf);         // offset time for sampling (s)
+    parameter string filename="sampler-data";   // name of output file
+    input ps, ns; voltage ps, ns;               // input port
+    integer file;
+
+    analog begin
+        // Open the output file
+        @(initial_step) begin
+            file = $fopen(filename);
+            if (!file) begin
+                $strobe("%m: cannot open file: %s", filename);
+                $finish(1);
+            end
+        end
+
+        // Sample the input
+        @(timer(toff, period))
+            $fstrobe(file, "%g\t%g", $abstime, V(ps,ns));
+
+        // Close the output file
+        @(final_step) 
+            $fclose(file);
+    end
+endmodule

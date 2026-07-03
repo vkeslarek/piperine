@@ -1,8 +1,0 @@
-[package]
-name = "piperine-common"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-serde = { version = "1", features = ["derive"] }
-ipc-channel = { workspace = true }

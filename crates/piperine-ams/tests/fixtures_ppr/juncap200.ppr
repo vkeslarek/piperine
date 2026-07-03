@@ -1,0 +1,76 @@
+// JUNCAP200 junction model version 200.6.2
+// Translated from juncap200.va
+// This is a complex compact model - see original file for full equations
+
+mod JUNCAP200 (
+    inout A : Electrical,
+    inout K : Electrical,
+)
+{
+    // Model parameters
+    param LEVEL : Natural = 200;          // Model level must be 200
+    param TYPE : Integer = 1;             // Type parameter: 1=n-type, -1=p-type from [-1:1] exclude 0
+    param DTA : Real = 0.0;               // Temperature offset with respect to ambient temperature (K)
+
+    // Instance parameters
+    param AB : Real = 1.0e-12;            // Junction area (m^2) from [1.0e-12 : inf)
+    param LS : Real = 1.0e-6;             // STI-edge part of junction perimeter (m) from [1.0e-6 : inf)
+    param LG : Real = 1.0e-6;             // Gate-edge part of junction perimeter (m) from [1.0e-6 : inf)
+    param MULT : Real = 1.0;              // Number of devices in parallel from [1.0 : inf)
+    param TRISE : Real = 0.0;             // Device temperature offset (K)
+    aliasparam DTEMP = TRISE;
+
+    // Internal variables
+    var MULT_i : Real;
+    var EPSSI : Real;
+
+    // Operating point variables
+    var vak : Real;                       // Voltage between anode and cathode
+    var cj : Real;                        // Total junction capacitance (F)
+    var cjbot : Real;                     // Junction capacitance (bottom component) (F)
+    var cjgat : Real;                     // Junction capacitance (gate-edge component) (F)
+    var cjsti : Real;                     // Junction capacitance (STI-edge component) (F)
+    var ij : Real;                        // Total junction current (A)
+    var ijbot : Real;                     // Junction current (bottom component) (A)
+    var ijgat : Real;                     // Junction current (gate-edge component) (A)
+    var ijsti : Real;                     // Junction current (STI-edge component) (A)
+    var si : Real;                        // Total junction current noise spectral density (A^2/Hz)
+    var idsatsbot : Real;                 // Total bottom saturation current (A)
+    var idsatssti : Real;                 // Total STI-edge saturation current (A)
+    var idsatsgat : Real;                 // Total gate-edge saturation current (A)
+    var cjosbot : Real;                   // Total bottom capacity (F)
+    var cjossti : Real;                   // Total STI-edge capacity (F)
+    var cjosgat : Real;                   // Total gate-edge capacity (F)
+    var vbisbot : Real;                   // Built-in voltage of the bottom junction (V)
+    var vbissti : Real;                   // Built-in voltage of the STI-edge junction (V)
+    var vbisgat : Real;                   // Built-in voltage of the gate-edge junction (V)
+
+    // Local evaluation variables
+    var ijunbot : Real;
+    var qjunbot : Real;
+    var ijunsti : Real;
+    var qjunsti : Real;
+    var ijungat : Real;
+    var qjungat : Real;
+    var ijun : Real;
+    var qjun : Real;
+    var jnoise : Real;
+    var VAK : Real;
+
+    analog JUNCAP200 {
+        // DC and AC bias dependent quantities
+        VAK = TYPE * V(A, K);
+
+        // Current contribution
+        I(A, K) <+ (TYPE * MULT_i) * ijun;
+
+        // Charge contribution via ddt
+        I(A, K) <+ ddt((TYPE * MULT_i) * qjun);
+
+        // Noise contribution (shot noise)
+        // I(A, K) <+ white_noise(MULT_i * jnoise, "shot");
+
+        // Operating point variables
+        vak = VAK;
+    }
+}

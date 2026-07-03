@@ -1,0 +1,22 @@
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+discipline Bit {
+    storage Boolean;
+}
+
+mod CrossDetector(input vin : Electrical, output cross_pulse : Bit) {
+    var pulse : Bit = 0;
+}
+
+digital CrossDetector {
+    cross_pulse <- pulse;
+}
+
+analog CrossDetector {
+    @cross(V(vin) - 1.0) {
+        // dummy
+    }
+}

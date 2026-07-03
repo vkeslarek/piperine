@@ -1,0 +1,48 @@
+// Digital Disciplines
+discipline Bit { storage Boolean; }
+discipline Logic { storage Quad; resolve tri; }
+discipline DDiscrete { storage Quad; }
+
+// Electrical
+discipline Electrical {
+    potential v : Real (unit = "V", abstol = 1e-6);
+    flow      i : Real (unit = "A", abstol = 1e-12);
+}
+
+// Storage-Real value nets (former signal-flow: read/driven by name — SPEC §6.2)
+discipline Voltage { storage Real; }
+discipline Current { storage Real; }
+
+// Magnetic
+discipline Magnetic {
+    potential mmf : Real (unit = "A*turn", abstol = 1e-12);
+    flow      phi : Real (unit = "Wb", abstol = 1e-9);
+}
+
+// Thermal
+discipline Thermal {
+    potential temp : Real (unit = "K", abstol = 1e-4);
+    flow      pwr  : Real (unit = "W", abstol = 1e-9);
+}
+
+// Kinematic
+discipline Kinematic {
+    potential pos : Real (unit = "m", abstol = 1e-6);
+    flow      f   : Real (unit = "N", abstol = 1e-6);
+}
+
+discipline KinematicV {
+    potential vel : Real (unit = "m/s", abstol = 1e-6);
+    flow      f   : Real (unit = "N", abstol = 1e-6);
+}
+
+// Rotational
+discipline Rotational {
+    potential theta : Real (unit = "rads", abstol = 1e-6);
+    flow      tau   : Real (unit = "N*m", abstol = 1e-6);
+}
+
+discipline RotationalOmega {
+    potential omega : Real (unit = "rads/s", abstol = 1e-6);
+    flow      tau   : Real (unit = "N*m", abstol = 1e-6);
+}

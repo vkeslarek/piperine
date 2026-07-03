@@ -1,0 +1,88 @@
+// Phase-Frequency Detector with Charge Pump
+//
+// pfd_cp1: a simple three state phase-frequency detector
+// pfd_cp2: a phase-frequency detector that exhibits Gaussian synchronous jitter
+//
+// Both charge pumps include an output clamp that encourages the output voltage to
+// fall within the rails.
+//
+// Version 1e, 3 August 2010
+//
+// Ken Kundert (ken@designers-guide.com)
+//
+// Downloaded from The Designer's Guide Community (www.designers-guide.org).
+// Post any questions to www.designers-guide.org/Forum
+
+mod pfd_cp1(out, ref, fb);
+
+    output out;
+    wire out : Electrical;
+    input ref;
+    wire ref : Voltage;
+    input fb;
+    wire fb : Voltage;
+    param iout : Real = 100u;
+    param vh : Real = +1;
+    param vl : Real = -1;
+    param vth : Real = (vh + vl) / 2;
+    param dir : Integer = 1 from [ - 1 : 1 ] exclude 0;
+    param tt : Real = 1n from(0 : inf);
+    param td : Real = 0 from [ 0 : inf);
+    param rclamp : Real = 100 from(0 : inf);
+    var state : Integer;
+
+    analog begin
+        @(cross(V(ref) - vth, dir)) if (state > -1) state = state - 1;
+        @(cross(V(fb) - vth, dir)) if (state < 1) state = state + 1;
+
+        I(out) <+ transition(iout * state, td, tt);
+
+        if (V(out) > vh) I(out) <+ (V(out) - vh) / rclamp;
+        else if (V(out) < vl) I(out) <+ (V(out) - vl) / rclamp;
+
+        I(out) <+ V(out) / 1T;
+    end
+endmod
+
+mod pfd_cp2(out, ref, fb);
+
+    output out;
+    wire out : Electrical;
+    input ref;
+    wire ref : Voltage;
+    input fb;
+    wire fb : Voltage;
+    param iout : Real = 100u;
+    param vh : Real = +1;
+    param vl : Real = -1;
+    param vth : Real = (vh + vl) / 2;
+    param dir : Integer = 1 from [ - 1 : 1 ] exclude 0;
+    param tt : Real = 1n from(0 : inf);
+    param td : Real = 0 from(0 : inf);
+    param jitter : Real = 0 from [ 0 : td / 5);
+    param ttol : Real = 1p from(0 : td / 5);
+    param rclamp : Real = 100 from(0 : inf);
+    var state : Integer;
+    var seed : Integer;
+    var dt : Real;
+
+    analog begin
+        @(initial_step) seed = 716;
+
+        @(cross(V(ref) - vth, dir, ttol)) begin
+            if (state > -1) state = state - 1;
+            dt = jitter * $rdist_normal(seed, 0, 1);
+        end
+        @(cross(V(fb) - vth, dir, ttol)) begin
+            if (state < 1) state = state + 1;
+            dt = jitter * $rdist_normal(seed, 0, 1);
+        end
+
+        I(out) <+ transition(iout * state, td + dt, tt);
+
+        if (V(out) > vh) I(out) <+ (V(out) - vh) / rclamp;
+        else if (V(out) < vl) I(out) <+ (V(out) - vl) / rclamp;
+
+        I(out) <+ V(out) / 1T;
+    end
+endmod

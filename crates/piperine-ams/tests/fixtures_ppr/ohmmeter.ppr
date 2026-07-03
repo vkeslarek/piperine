@@ -1,0 +1,36 @@
+// VerilogA for VerilogAmsLib, ohmmeter, veriloga
+
+mod ohmmeter(dutp, dutm, iprobe, r, g);
+    input dutp, iprobe;
+    output dutm, r, g;
+
+    wire dutp, dutm, iprobe, r, g : Electrical;
+
+    param max_resistance : Real = 1k;
+    param min_resistance : Real = -1;
+    param max_conductance : Real = 1;
+    param min_conductance : Real = -1;
+
+    var r_val : Real;
+    var g_val : Real;
+
+    analog begin
+        V(dutm, iprobe) <+ 0;
+        r_val = V(dutp, dutm) / I(iprobe);
+        g_val = I(iprobe) / V(dutp, dutm);
+        if (r_val > max_resistance) begin
+            r_val = max_resistance;
+        end
+        if (r_val < min_resistance) begin
+            r_val = min_resistance;
+        end
+        if (g_val > max_conductance) begin
+            g_val = max_conductance;
+        end
+        if (g_val < min_conductance) begin
+            g_val = min_conductance;
+        end
+        V(r) <+ r_val;
+        V(g) <+ g_val;
+    end
+endmod

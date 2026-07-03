@@ -1,0 +1,29 @@
+// BSIM-BULK 107.0.0 released 03/04/2020
+// BSIM Bulk MOSFET Model Equations (Verilog-A)
+// Copyright 2020 University of California
+
+mod bsimbulk107(d, g, s, b, t);
+    wire d, g, s, b:Electrical;
+    wire di, di1, si, si1, gi, gm, bi, sbulk, dbulk, ddbulk:Electrical;
+    wire t:Thermal;
+    wire N1, N2:Electrical;
+
+    // Instance parameters
+    param:Real L = 1.0e-5 from [ 0 : inf);
+    param:Real W = 1.0e-5 from [ 0 : inf);
+    param:Natural NF = 1 from [ 1 : inf);
+    param:Real NRS = 1.0 from [ 0 : inf);
+    param:Real NRD = 1.0 from [ 0 : inf);
+    // ... (more instance parameters)
+
+    // Model parameters
+    param:Natural TYPE = 1 from [ -1 : 1 ] exclude 0;
+    param:Natural CVMOD = 0 from [ 0 : 1];
+    param:Natural COVMOD = 0 from [ 0 : 1];
+    param:Real TOXE = 3.0e-9 from [ 0 : inf];
+    // ... (more model parameters)
+
+    analog bsimbulk107 {
+        // BSIM-BULK 107 model equations
+    }
+endmod

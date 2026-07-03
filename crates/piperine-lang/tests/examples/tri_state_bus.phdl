@@ -1,0 +1,4 @@
+discipline DataLine { storage Quad; resolve tri; }
+
+mod Driver[N] ( input en : Bit, input val : Logic[N], inout bus : DataLine[N] );
+digital Driver { if (en == 1) { bus <- val; } else { bus <- [0qZ; N]; } }

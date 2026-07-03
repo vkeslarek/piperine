@@ -1,0 +1,63 @@
+// N-bit Analog to Digital Converter
+//
+// Version 1c, 10 February 08
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide Community (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+// Taken from "The Designer's Guide to Verilog-AMS" by Kundert & Zinke.
+// Chapter 3, Listing 26.
+//
+// This version of the ADC was modified to work in the existing
+// version of Spectre (6.1.1 May 2007).
+
+mod adc(out, in, clk);
+    // parameter integer bits = 8 from [1:24];
+    // `define bits 8  // resolution (bits)
+    // NOTE: bits defined as constant, not a parameter in this translation
+    param fullscale : Real = 1.0;
+    // input range is from 0 to fullscale (V)
+    param td : Real = 0;
+    // delay from clock edge to output (s)
+    param tt : Real = 0;
+    // transition time of output (s)
+    param vdd : Real = 5.0;
+    // voltage level of logic 1 (V)
+    param thresh : Real = vdd / 2;
+    // logic threshold level (V)
+    param dir : Integer = 1 from [ - 1 : 1 ] exclude 0;
+    // 1 for rising edges, -1 for falling
+
+    wire in : Voltage;
+    wire clk : Voltage;
+    var out : Logic;
+
+    var sample : Real;
+    var midpoint : Real;
+    var result : Logic[0 : 8 - 1];
+    var i : Integer;
+
+    analog adc {
+        @ (cross(V(clk) - thresh, dir) or initial_step) begin
+            sample = V(in);
+            midpoint = fullscale / 2.0;
+            for (i = 8 - 1; i >= 0; i = i - 1) begin
+                if (sample > midpoint) begin
+                    result[i] = 1;
+                    sample = sample - midpoint;
+                end
+                else begin
+                    result[i] = 0;
+                end
+                sample = 2.0 * sample;
+            end
+        end
+        // generate i(8 - 1, 0) begin
+        //     V(out[i]) <+ transition(result[i] ? vdd : 0.0, td, tt);
+        // end
+        // NOTE: transition() limitation - ddt approximation or comment needed
+    }
+endmod
+
+// `undef bits

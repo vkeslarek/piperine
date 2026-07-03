@@ -1,0 +1,45 @@
+{
+    "name": "piperine-lang-server-test",
+    "displayName": "Piperine Language Server Test",
+    "description": "Test extension for piperine-lang-server LSP",
+    "version": "0.1.0",
+    "publisher": "local",
+    "private": true,
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "activationEvents": [
+        "onLanguage:phdl"
+    ],
+    "main": "./extension.js",
+    "contributes": {
+        "languages": [
+            {
+                "id": "phdl",
+                "aliases": ["PHDL", "phdl"],
+                "extensions": [".phdl", ".ppr"],
+                "configuration": "../language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "phdl",
+                "scopeName": "source.phdl",
+                "path": "./syntaxes/phdl.tmLanguage.json"
+            }
+        ],
+        "configuration": {
+            "title": "Piperine Language Server",
+            "properties": {
+                "phdl.server.path": {
+                    "type": "string",
+                    "default": "target/debug/piperine-lang-server",
+                    "description": "Path to the piperine-lang-server binary"
+                }
+            }
+        }
+    },
+    "dependencies": {
+        "vscode-languageclient": "^9.0.0"
+    }
+}

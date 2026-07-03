@@ -1,0 +1,50 @@
+// Skin Effect Model
+//
+// Version 1a, 1 June 04
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide Community (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+// Taken from "The Designer's Guide to Verilog-AMS" by Kundert & Zinke.
+// Chapter 2a, Listing 29.
+//
+// This version of the skin effect model was modified to work in the existing
+// version of Spectre (5.0 May 2003).
+
+`include "disciplines.vams"
+`include "constants.vams"
+
+module skin_effect(p, n);
+    // parameter integer lumps = 10 from (1:30];
+    `define lumps 10  // number of lumps in approximation
+    parameter real f0 = 1 from(0 : inf);
+    // lower frequency bound (Hz)
+    parameter real f1 = 10 from(f0 : inf);
+    // upper frequency bound (Hz)
+    parameter real r0 = 1 from(0 : inf);
+    // DC series resistance (Ohms)
+    electrical p, n;
+    real mult, mult2, wp, wz;
+    real zeros [ 0 : 2 * `lumps - 1 ], poles [ 0 : 2 * `lumps - 1 ];
+    integer i;
+
+    analog begin
+        @(initial_step) begin
+            mult = pow(f1 / f0, 1.0 / (4 * `lumps));
+            mult2 = mult * mult;
+            wz = 2 * `M_PI * mult * f0;
+            wp = mult2 * wz;
+            for (i = 0;  i < `lumps;  i = i + 1) begin
+                zeros [ 2 * i ] = -wz;
+                zeros [ 2 * i + 1 ] = 0;
+                poles [ 2 * i ] = -wp;
+                poles [ 2 * i + 1 ] = 0;
+                wz = mult2 * wp;
+                wp = mult2 * wz;
+            end
+        end
+        V(p, n) <+ r0 * laplace_zp(I(p, n), zeros, poles);
+    end
+endmodule
+

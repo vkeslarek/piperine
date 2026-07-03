@@ -1,0 +1,14 @@
+mod Inverter ( input a : Electrical, inout y : Electrical, inout gnd : Ground ) {
+    param gain : Real = 10.0;  param c : Real = 1.0e-15;  param r : Real = 1.0e3;
+}
+analog Inverter {
+    var target : Real = -gain * V(a, gnd);                  // inverting gain
+    I(y, gnd) <+ c * ddt(V(y, gnd)) + (V(y, gnd) - target) / r;   // single-pole settling
+}
+
+mod RingOsc[N] ( inout gnd : Ground ) {                     // N odd
+    wire node : Electrical[N];
+    for i in 0..N {
+        Inverter ( node[i], node[(i + 1) % N], gnd );       // last stage closes the ring
+    }
+}

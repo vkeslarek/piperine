@@ -1,0 +1,24 @@
+discipline Bit {
+    storage Boolean;
+}
+
+enum State {
+    S0, S1, S2,
+}
+
+mod StateMachine(input clk : Bit, output out : Bit) {
+    var st : State = State::S0;
+}
+
+digital StateMachine {
+    out <- (st == State::S2);
+    @posedge(clk) {
+        if (st == State::S0) {
+            st = State::S1;
+        } else if (st == State::S1) {
+            st = State::S2;
+        } else {
+            st = State::S0;
+        }
+    }
+}

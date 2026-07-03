@@ -1,0 +1,22 @@
+// Verilog-AMS file that exercises every P1 gap.
+// This file must parse without error after all P1 fixes are applied.
+
+// Gap 2: module with parameter port list
+mod amp(gain, bw, in, out);
+    param gain : Real = 10.0;
+    param bw : Real = 1e6;
+
+    wire in : Electrical;
+    wire out : Electrical;
+
+    wire w : Logic;
+    // and g1(w, in, in); - gate instantiation not supported
+    // not inv1(out, w);
+
+    analog amp {
+        V(out) <+ gain * V(in);
+    }
+endmod
+
+// Gap 10: UDP (P2, but shown here)
+// primitive not directly supported in Piperine

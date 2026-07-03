@@ -1,0 +1,11 @@
+// Test circuit for fracpole
+simulator lang=spectre
+include "fracpole.scs"
+
+Itest (z 0) isource mag=1
+FP    (z 0) fracpole
+
+genImpedance ac start=100mHz stop=10MHz dec=100
+// plot the real part of z to see fracpole resistance.
+// plot the imaginary part of z to see fracpole reactance.
+// plot the magnitude of z to see fracpole impedance.

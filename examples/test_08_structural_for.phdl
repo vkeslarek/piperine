@@ -1,0 +1,15 @@
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+mod Resistor(inout p : Electrical, inout n : Electrical) {
+    param r : Real = 1000.0;
+}
+
+mod ResistorString(inout p : Electrical, inout n : Electrical) {
+    wire taps : Electrical[5];
+    for i in 0 .. 4 {
+        rseg[i] : Resistor(taps[i], taps[i + 1]);
+    }
+}

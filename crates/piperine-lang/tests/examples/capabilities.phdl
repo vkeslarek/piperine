@@ -1,0 +1,28 @@
+// capabilities.phdl - Core logic and arithmetic models
+
+capability Add { fn add(self, o: Self) -> Self; }
+capability Sub { fn sub(self, o: Self) -> Self; }
+capability Mul { fn mul(self, o: Self) -> Self; }
+
+capability Number : Add, Sub, Mul {
+    fn double(self) -> Self { return self.add(self); }
+}
+
+mod Adder <T: Add + Net> ( input a : T, input b : T, output y : T );
+digital Adder { y <- a + b; }
+
+bundle Pair <T: Type> { fst : T, snd : T }
+
+bundle UInt[N] { bits : Bit[N] }
+
+impl Add for UInt[N] {
+    fn add(self, o: Self) -> Self {
+        var r : Bit[N];
+        var carry : Boolean = 0;
+        for i in 0..N {
+            r[i]  = self.bits[i] ^ o.bits[i] ^ carry;
+            carry = (self.bits[i] & o.bits[i]) | (carry & (self.bits[i] ^ o.bits[i]));
+        }
+        return UInt[N] { .bits = r };
+    }
+}

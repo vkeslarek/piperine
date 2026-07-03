@@ -1,0 +1,127 @@
+// Fixed frequency oscillators
+//
+// Version 1b, 23 October 2006
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide (www.designers-guide.org).
+// Post any questions to www.designers-guide.org/Forum
+
+mod osc1(out);
+
+    output out;
+    wire out : Voltage;
+    param freq : Real = 1 from(0 : inf);
+    param vl : Real = -1;
+    param vh : Real = 1;
+    param tt : Real = 0.01 / freq from(0 : inf);
+    var n : Integer;
+    var next : Real;
+
+    analog begin
+        @(initial_step) begin
+            next = 0.5 / freq + $abstime;
+        end
+        @(timer(next)) begin
+            n = !n;
+            next = next + 0.5 / freq;
+        end
+        V(out) <+ transition(n ? vh : vl, 0, tt);
+    end
+endmod
+
+mod osc2(out);
+
+    output out;
+    wire out : Voltage;
+    param freq : Real = 1 from(0 : inf);
+    param vl : Real = -1;
+    param vh : Real = 1;
+    param tt : Real = 0.01 / freq from(0 : inf);
+    param jitter : Real = 0 from [ 0 : 0.1 / freq);
+    var n : Integer;
+    var seed : Integer;
+    var next : Real;
+    var dT : Real;
+
+    analog begin
+        @(initial_step) begin
+            seed = 286;
+            next = 0.5 / freq + $abstime;
+        end
+        @(timer(next)) begin
+            n = !n;
+            dT = jitter * $rdist_normal(seed, 0, 1);
+            next = next + 0.5 / freq + `M_SQRT1_2 * dT;
+        end
+        V(out) <+ transition(n ? vh : vl, 0, tt);
+    end
+endmod
+
+mod osc3(out);
+
+    output out;
+    wire out : Voltage;
+    param freq : Real = 1 from(0 : inf);
+    param vl : Real = -1;
+    param vh : Real = 1;
+    param tt : Real = 0.01 / freq from(0 : inf);
+    param jitter : Real = 0 from [ 0 : 0.1 / freq);
+    var n : Integer;
+    var Seed : Integer;
+    var next : Real;
+    var dT : Real;
+    var dt : Real;
+    var SD : Real;
+
+    analog begin
+        @(initial_step) begin
+            Seed = -459;
+            SD = jitter;
+            next = 0.5 / freq + $abstime;
+        end
+        @(timer(next + dt)) begin
+            n = !n;
+            dt = SD * $rdist_normal(Seed, 0, 1);
+            next = next + 0.5 / freq;
+        end
+        V(out) <+ transition(n ? vh : vl, 0, tt);
+    end
+endmod
+
+mod osc4(out);
+
+    output out;
+    wire out : Voltage;
+    param freq : Real = 1 from(0 : inf);
+    param vl : Real = -1;
+    param vh : Real = 1;
+    param tt : Real = 0.01 / freq from(0 : inf);
+    param acc_jitter : Real = 0 from [ 0 : 0.1 / freq);
+    param sync_jitter : Real = 0 from [ 0 : 0.1 / freq);
+    var n : Integer;
+    var accSeed : Integer;
+    var syncSeed : Integer;
+    var next : Real;
+    var dT : Real;
+    var dt : Real;
+    var accSD : Real;
+    var syncSD : Real;
+
+    analog begin
+        @(initial_step) begin
+            accSeed = 286;
+            syncSeed = -459;
+            accSD = acc_jitter * `M_SQRT1_2;
+            syncSD = sync_jitter;
+            next = 0.5 / freq + $abstime;
+        end
+        @(timer(next + dt)) begin
+            n = !n;
+            dT = accSD * $rdist_normal(accSeed, 0, 1);
+            dt = syncSD * $rdist_normal(syncSeed, 0, 1);
+            next = next + 0.5 / freq + dT;
+        end
+        V(out) <+ transition(n ? vh : vl, 0, tt);
+    end
+endmod

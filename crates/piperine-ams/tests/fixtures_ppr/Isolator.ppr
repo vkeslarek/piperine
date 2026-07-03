@@ -1,0 +1,24 @@
+// Optical Isolator
+//
+// Version 1a
+//
+
+// Note: optical discipline is not standard in PHDL
+// The optical discipline and OptE() access function would need to be defined
+
+mod Isolator(inout [0:3] in : ?Optical?, inout [0:3] out : ?Optical?) {
+    param isolation : Real = 20; // [dB]
+    // optical [0:1] transfer_pol, transfer;
+    // wire transfer_pol : Optical[2], transfer : Optical[2];
+    // Note: Polar2Cartesian and CartesianMultiplier are external modules
+    // Instance connections would need translation:
+    // Polar2Cartesian Polar2Cartesian1(transfer_pol, transfer);
+    // CartesianMultiplier CartesianMultiplier1(transfer, out[2:3], in[2:3]);
+    analog Isolator {
+        // OptE(transfer_pol[0]) <+ pow(10, -isolation / 20);
+        // OptE(transfer_pol[1]) <+ 0;
+        // OptE(out[0]) <+ OptE(in[0]);
+        // OptE(out[1]) <+ OptE(in[1]);
+        // Note: optical discipline and OptE() access not standard in PHDL
+    }
+}

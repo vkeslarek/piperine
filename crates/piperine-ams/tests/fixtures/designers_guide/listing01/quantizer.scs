@@ -1,0 +1,12 @@
+// Test circuit for quantizer
+
+simulator lang=spectre
+
+ahdl_include "quantizer.vams"
+
+Vclk (clk 0) vsource type=pulse val1=1 period=1us
+Vin  (in 0)  vsource type=sine ampl=1 freq=5kHz sinephase=45
+Quantizer (out in clk) quantizer levels=21 vh=1 vl=-1 vth=0.5 tt=10ns
+
+doDc dc print=yes
+resp tran stop=200uS

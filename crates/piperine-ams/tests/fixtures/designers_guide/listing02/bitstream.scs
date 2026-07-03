@@ -1,0 +1,10 @@
+// Test bitstream models
+
+simulator lang=spectre
+
+ahdl_include "bitstream.vams"
+
+BS1 (out) bitStream
+BS2 (out2) bitStream2 seed=987432
+
+doTran tran stop=100

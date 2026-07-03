@@ -1,0 +1,6 @@
+// GAPS §C.1 — `Ground` discipline is predefined (§6.2).
+// Injected into every compilation unit by the resolver.
+
+discipline Ground {
+    potential v : Real (unit = "V", abstol = 1e-6);
+}

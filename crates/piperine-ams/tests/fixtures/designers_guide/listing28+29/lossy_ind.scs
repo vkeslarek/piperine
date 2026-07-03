@@ -1,0 +1,11 @@
+// test bench for inductor model with skin-effect
+
+simulator lang=spectre
+
+ahdl_include "lossy_ind.vams"
+ahdl_include "skin_effect2.vams"
+
+L1 (n 0) lossy_ind l=2.6nH esr=1m rcp=8 h=704k cp=230fF
+I1 (n 0) isource mag=1
+
+acswp ac start=10kHz stop=100GHz dec=20 title="Coilcraft A01T Mini Spring"

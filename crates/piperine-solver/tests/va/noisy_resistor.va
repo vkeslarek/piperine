@@ -1,0 +1,34 @@
+`include "constants.vams"
+`include "disciplines.vams"
+
+// Simple resistor with thermal noise and opvars for testing.
+// 4kT/R thermal noise is the canonical noise source for resistors.
+module noisy_resistor(inout electrical p, inout electrical n);
+
+    (*desc="Resistance", units="Ohm"*)
+    parameter real r = 1000.0 from (0:inf);
+
+    (*desc="Reference temperature", units="K"*)
+    parameter real tnom = 300.15 from (0:inf);
+
+    real vr, ir, conductance;
+
+    (*desc="Operating conductance", units="S"*) real gop;
+    (*desc="Power dissipated", units="W"*) real pdiss;
+
+    analog begin
+        // Temperature-dependent resistance (linear TCR)
+        conductance = 1.0 / (r * $temperature / tnom);
+        vr = V(p, n);
+        ir = vr * conductance;
+
+        I(p, n) <+ ir;
+
+        // Thermal noise: PSD = 4kT * G
+        I(p, n) <+ white_noise(4.0 * `P_K * $temperature * conductance, "thermal");
+
+        // Operating variables
+        gop = conductance;
+        pdiss = vr * ir;
+    end
+endmodule

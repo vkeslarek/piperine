@@ -1,0 +1,68 @@
+// Basic Diode Model with Reverse Recovery
+// P.O. Lauritzen, University of Washington
+// Ported from MAST to Verilog-A by Stanislav Banas, June 2010
+
+mod diode_basic(anode, cathode);
+    wire anode, cathode, qm:Electrical;
+
+    param:Real area = 1 from(0 : inf);
+    param:Real is = 1e-14 from(0 : inf);
+    param:Real n = 1 from(0 : inf);
+    param:Real cjo = 0 from [ 0 : inf);
+    param:Real m = 0.5 from [ 0 : 1.0);
+    param:Real phi = 0.7 exclude 0;
+    param:Real fc = 0.5 from(0 : 1 ];
+    param:Real tt = 1p from(0 : inf);
+    param:Real tau = 1p from [ 0 : inf);
+    param:Real rs = 0 from [ 0 : inf);
+    param:Real ik = 1 from(0 : inf);
+    param:Real tnom = 27 from(-273.15 : inf);
+    param:Real xti = 3 from(-inf : inf);
+    param:Real eg = 1.11 from [ 0 : inf);
+    param:Real trs = 0 from(-inf : inf);
+    param:Real gmin = 1e-12 from [ 0 : 1);
+
+    var Vd, Id, Qd;
+    var f1, f2, f3, fcp;
+    var kfwd;
+    var temp_ratio, delta_temp, eg_temp, is_temp, rs_temp, ni, phi_temp;
+    var Qe, Qm, Im;
+
+    analog diode_basic {
+        temp_ratio = (temp / (tnom + 273.15));
+        delta_temp = (temp - (tnom + 273.15));
+        eg_temp = (eg - (7.02e-4 * temp * temp) / (temp + 1108));
+        is_temp = (is * pow(temp_ratio, xti) * exp(1.602e-19 / (2 * 1.38e-23) * (-eg_temp / temp + eg / (tnom + 273.15))));
+        rs_temp = (rs * (1 + trs * delta_temp));
+        ni = 1.45e10 * pow(temp_ratio, 1.5) * exp(1.602e-19 / (2 * 1.38e-23) * (-eg_temp / temp + eg / (tnom + 273.15)));
+        phi_temp = phi * temp_ratio + 2 * 8.617e-5 * temp * ln(1.45e10 / ni);
+
+        f1 = (phi_temp / (1 - m)) * (1 - pow((1 - fc), (1 - m)));
+        f2 = pow((1 - fc), (1 + m));
+        f3 = 1 - fc * (1 + m);
+        fcp = fc * phi_temp;
+
+        Vd = V(anode, cathode);
+        Id = I(anode, cathode);
+        Qm = V(qm);
+
+        //junction capacitance
+        if (Vd <= fcp) Qd = area * cjo * phi_temp * (1 - pow((1 - Vd / phi_temp), (1 - m))) / (1 - m);
+        else Qd = area * cjo * (f1 + (1 / f2) * (f3 * (Vd - fcp) + (0.5 * m / phi_temp) * (Vd * Vd - fcp * fcp)));
+
+        //knee current
+        kfwd = (1 / (1 + sqrt((is_temp * (exp((Vd - rs_temp / area * Id) / (n * 8.617e-5 * temp) - 1))) / ik)));
+
+        //Calculation of charge at junction edge
+        Qe = tau * area * kfwd * is_temp * (exp((Vd - rs_temp / area * Id) / (n * 8.617e-5 * temp)) - 1);
+
+        //Diffusion current
+        Im = (Qe - Qm) / tt;
+        V(qm) <+ tau * Im - ddt(tau * Qm);
+
+        //iteration of capacitance
+        I(anode, cathode) <+ Im + (ddt(Qd));
+        //parallel conductance
+        I(anode, cathode) <+ gmin * Vd;
+    }
+endmod

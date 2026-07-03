@@ -1,0 +1,29 @@
+// BSIM-CMG 110.0.0 released 01/01/2016
+// BSIM Common Multi-Gate Model Equations (Verilog-A)
+// Copyright 2016 Regents of the University of California
+
+mod bsimcmg(d, g, s, e, t);
+    wire g, d, s, e:Electrical;
+    wire si, di:Electrical;
+    wire t:Thermal;
+
+    // Model parameters (from include files)
+    param:Natural SHMOD = 0 from [ 0 : 1];
+    param:Natural RDSMOD = 0 from [ 0 : 2];
+    param:Natural NQSMOD = 0 from [ 0 : 2];
+    param:Natural RGATEMOD = 0 from [ 0 : 1];
+    param:Natural TNOIMOD = 0 from [ 0 : 1];
+
+    // Instance parameters
+    param:Real L = 1.0e-5 from [ 0 : inf);
+    param:Real W = 1.0e-5 from [ 0 : inf);
+    param:Real NF = 1 from [ 1 : inf);
+    param:Natural M = 1 from [ 1 : inf];
+    // ... (additional parameters from include files)
+
+    analog bsimcmg {
+        // BSIM-CMG model implementation
+        // From bsimcmg_body.include
+        // Multi-gate FET model equations
+    }
+endmod

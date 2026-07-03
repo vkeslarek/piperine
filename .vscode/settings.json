@@ -1,0 +1,9 @@
+// VS Code settings for piperine-lang-server development.
+// Configures the language server for .phdl files.
+{
+    "phdl.server.path": "target/debug/piperine-lang-server",
+    "files.associations": {
+        "*.phdl": "phdl",
+        "*.ppr": "phdl"
+    }
+}

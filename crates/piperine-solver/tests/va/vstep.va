@@ -1,0 +1,24 @@
+`include "constants.vams"
+`include "disciplines.vams"
+
+// Voltage step source: V = v_off for t < 0, V = v_on for t >= 0.
+// Uses transition() for smooth step to avoid convergence issues.
+module vstep_va(p, n);
+    inout p, n;
+    electrical p, n;
+
+    branch (p, n) br;
+
+    (*desc="Off voltage", units="V"*)
+    parameter real v_off = 0.0;
+
+    (*desc="On voltage", units="V"*)
+    parameter real v_on = 1.8;
+
+    (*desc="Rise time", units="s"*)
+    parameter real t_rise = 1e-12 from (0:inf];
+
+    analog begin
+        V(br) <+ transition(v_on, 0, t_rise);
+    end
+endmodule

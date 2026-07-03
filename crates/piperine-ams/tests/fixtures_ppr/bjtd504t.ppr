@@ -1,0 +1,24 @@
+// Copyright (c) 2000-2007, NXP Semiconductor
+// Copyright (c) 2007-2014, Delft University of Technology
+// Copyright (c) 2015, Auburn University
+// All rights reserved, see IP_NOTICE_DISCLAIMER_LICENSE for further information.
+
+mod bjtd504t(c, b, e, dt);
+    wire c : Electrical;
+    wire b : Electrical;
+    wire e : Electrical;
+    wire dt : Electrical;
+
+    wire e1 : Electrical;
+    wire b1 : Electrical;
+    wire b2 : Electrical;
+    wire c1 : Electrical;
+    wire c2 : Electrical;
+    wire c3 : Electrical;
+    wire c4 : Electrical;
+    wire noi : Electrical;
+
+    analog bjtd504t {
+        // Contains includes - see original file for complete implementation
+    }
+endmod

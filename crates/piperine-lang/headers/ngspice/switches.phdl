@@ -1,0 +1,115 @@
+// NGSPICE faithful models — switches.
+//
+// Source: ngspice/src/spicelib/devices/{sw,csw}/
+//   swdefs.h   swload.c   swmparam.c   swparam.c   swsetup.c
+//   cswdefs.h  cswload.c  cswmpar.c    cswparam.c  cswsetup.c
+//
+// SW  = voltage-controlled switch (S element)
+// CSW = current-controlled switch (W element)
+//
+// Both use the same 4-state hysteresis machine (REALLY_OFF, REALLY_ON,
+// HYST_OFF, HYST_ON) and the same conductance selection (gon / goff).
+// Equations translated from swload.c / cswload.c.
+// ════════════════════════════════════════════════════════════════════════════
+
+use piperine::constants;
+use piperine::disciplines;
+use piperine::ngspice::constants;
+
+bundle SwModel {
+    vt   : Real = 0.0,          // threshold voltage (V)
+    vh   : Real = 0.0,          // hysteresis voltage (V) — may be negative
+    ron  : Real = 1.0,          // ON resistance (Ω)
+    roff : Real = 0.0,          // OFF resistance (Ω) — 0 = 1/gmin
+}
+
+// ── SW: voltage-controlled switch ───────────────────────────────────────────
+
+mod sw (
+    inout p  : Electrical,
+    inout n  : Electrical,
+    inout cp : Electrical,       // controlling voltage +
+    inout cn : Electrical,       // controlling voltage −
+) {
+    param model : SwModel = SwModel {};
+    param off   : Boolean = 1;   // initial state: 1 = open, 0 = closed
+
+    var sw_state : Real = 0.0;   // 0 = OFF, 1 = ON (persistent module state)
+}
+
+analog sw {
+    var gmin : Real = $simparam("gmin", 1.0e-12);
+    var gon  : Real = 1.0 / model.ron;
+    var goff : Real = if (model.roff > 0.0) { 1.0 / model.roff } else { gmin };
+
+    // Initialise state (swsetup.c: on → REALLY_ON, off → REALLY_OFF)
+    @ initial {
+        sw_state = if (off) { 0.0 } else { 1.0 };
+    }
+
+    // Control voltage (swload.c)
+    var vc : Real = V(cp, cn);
+
+    // Hysteresis state machine (swload.c: four-state machine)
+    if (model.vh >= 0.0) {
+        // Positive hysteresis (standard)
+        @ above(vc - (model.vt + model.vh))  { sw_state = 1.0; }  // turn ON
+        @ above((model.vt - model.vh) - vc)  { sw_state = 0.0; }  // turn OFF
+    } else {
+        // Negative hysteresis (anti-hysteresis — thresholds swapped)
+        @ above(vc - (model.vt - model.vh))  { sw_state = 1.0; }  // turn ON
+        @ above((model.vt + model.vh) - vc)  { sw_state = 0.0; }  // turn OFF
+    }
+
+    // Conductance (swload.c: g_now = gon if ON, goff if OFF)
+    var g : Real = if (sw_state > 0.5) { gon } else { goff };
+
+    // Stamp: pure conductance (swload.c)
+    I(p, n) <+ g * V(p, n);
+}
+
+// ── CSW: current-controlled switch ──────────────────────────────────────────
+
+bundle CswModel {
+    it   : Real = 0.0,          // threshold current (A)
+    ih   : Real = 0.0,          // hysteresis current (A)
+    ron  : Real = 1.0,          // ON resistance (Ω)
+    roff : Real = 0.0,          // OFF resistance (Ω) — 0 = 1/gmin
+}
+
+mod csw (
+    inout p  : Electrical,
+    inout n  : Electrical,
+    inout cp : Electrical,       // controlling branch +
+    inout cn : Electrical,       // controlling branch −
+) {
+    param model : CswModel = CswModel {};
+    param off   : Boolean = 1;
+
+    var sw_state : Real = 0.0;
+}
+
+analog csw {
+    var gmin : Real = $simparam("gmin", 1.0e-12);
+    var gon  : Real = 1.0 / model.ron;
+    var goff : Real = if (model.roff > 0.0) { 1.0 / model.roff } else { gmin };
+
+    @ initial {
+        sw_state = if (off) { 0.0 } else { 1.0 };
+    }
+
+    // Control current (cswload.c: reads branch current of controlling vsrc)
+    var ic : Real = I(cp, cn);
+
+    // Same hysteresis state machine as SW (cswload.c)
+    if (model.ih >= 0.0) {
+        @ above(ic - (model.it + model.ih))  { sw_state = 1.0; }
+        @ above((model.it - model.ih) - ic)  { sw_state = 0.0; }
+    } else {
+        @ above(ic - (model.it - model.ih))  { sw_state = 1.0; }
+        @ above((model.it + model.ih) - ic)  { sw_state = 0.0; }
+    }
+
+    var g : Real = if (sw_state > 0.5) { gon } else { goff };
+    I(p, n) <+ g * V(p, n);
+}

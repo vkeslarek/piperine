@@ -1,0 +1,44 @@
+// Random Bitstream Generator
+//
+// Version 1a, 22 Nov 03
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+
+`include "disciplines.vams"
+
+module bitStream (out);
+    output out;
+    electrical out;
+    parameter real start = 0.0;
+    parameter real period = 1.0;
+    integer x;
+
+    analog begin
+	@(timer(start, period))
+	    x = ($random >= 0) ? 1 : 0;
+	V(out) <+ transition( x, 0.0, period/100.0 );
+    end
+endmodule
+
+
+// This version support a seed parameter
+
+module bitStream2 (out);
+    output out;
+    electrical out;
+    parameter real start = 0.0;
+    parameter real period = 1.0;
+    parameter integer seed = 0;
+    integer x, y;
+
+    analog begin
+	@(initial_step)
+	    y = seed;
+	@(timer(start, period))
+	    x = ($random(y) >= 0) ? 1 : 0;
+	V(out) <+ transition( x, 0.0, period/100.0 );
+    end
+endmodule

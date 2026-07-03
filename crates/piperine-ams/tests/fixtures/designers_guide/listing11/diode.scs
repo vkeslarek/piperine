@@ -1,0 +1,12 @@
+// Test diode model
+
+simulator lang=spectre
+
+ahdl_include "diode.vams"
+
+V1  (n 0) vsource type=dc dc=0.65 mag=1
+D1  (n 0) diode cjo=1pf
+
+doDCop dc print=yes
+doDCswp dc start=-1 stop=0.65 step=1mV dev=V1
+doAC ac start=-1 stop=0.65 step=1mV dev=V1 freq=1THz/(2*M_PI)

@@ -1,0 +1,32 @@
+// VerilogA for VerilogAmsLib, tah_ideal, veriloga
+
+// `include "constants.vams"
+// `include "disciplines.vams"
+
+mod tah_ideal ( input clk : Electrical, input in : Electrical, inout out : Electrical ) {
+    // Track when high, hold when low
+    param ron : Real = 25.0;
+    param vtrans_clk : Real = 2.5;
+
+    var iout : Real;
+    // var i : Integer; // genvar not needed in PHDL
+
+    analog tah_ideal {
+        @(initial) begin
+            iout = 0.0;
+        end
+
+        @(cross(V(clk) - vtrans_clk, 1)) begin
+            iout = 0.0;
+        end
+
+        if (V(clk) < vtrans_clk) begin
+            iout = V(out, in) / ron;
+        end
+
+        I(out) <+ iout;
+        I(in) <+ -iout;
+    }
+}
+
+endmodule

@@ -1,0 +1,18 @@
+discipline Bit {
+    storage Boolean;
+}
+
+mod SrLatch(input s : Bit, input r : Bit, output q : Bit) {
+    var st : Bit = 0;
+}
+
+digital SrLatch {
+    q <- st;
+    @(posedge(s) | posedge(r)) {
+        if (s == 1) {
+            st = 1;
+        } else {
+            st = 0;
+        }
+    }
+}

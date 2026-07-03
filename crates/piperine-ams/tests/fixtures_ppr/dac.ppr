@@ -1,0 +1,37 @@
+// Fully Event Driven Digital to Analog Converter
+//
+// Version 1a, 1 June 04
+//
+// Olaf Zinke
+//
+// Downloaded from The Designer's Guide Community (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+// Taken from "The Designer's Guide to Verilog-AMS" by Kundert & Zinke.
+// Chapter 4, Listing 9.
+
+mod dac(out, in, clk) {
+    param bits : Natural = 8 from [1:24]; // resolution (bits)
+    param fullscale : Real = 1.0; // output range is from 0 to fullscale (V)
+    param td : Real = 0.0; // delay from clock edge to output (s)
+    param dir : Integer = 1 from [-1:1] exclude 0; // +1 triggers on rising clock edge, -1 on falling
+    output out : Wreal;
+    input in[0:bits-1] : Logic;
+    input clk : Logic;
+    var result : Real, aout : Real;
+    var weight : Integer;
+    var i : Integer;
+    param idir : Natural = (dir == 1 ? 1 : 0);
+
+    always @(clk) begin
+        if (clk == idir) begin
+            aout = 0.0;
+            weight = 2;
+            for (i = bits - 1; i >= 0; i = i - 1) begin
+                if (in[i]) aout = aout + fullscale / weight;
+                weight = weight * 2;
+            end
+            result = # (td / 1.0E-9) aout;
+        end
+    end
+    assign out = result;
+}

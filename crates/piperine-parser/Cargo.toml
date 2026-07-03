@@ -1,8 +1,0 @@
-[package]
-name = "piperine-parser"
-version.workspace = true
-edition.workspace = true
-
-
-[dependencies]
-thiserror = "2.0"

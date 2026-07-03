@@ -1,0 +1,8 @@
+// File with deliberate errors to test diagnostics.
+// Syntax error: `@` is not a valid character.
+mod BadModule (inout p: Electrical, inout n: Electrical) {
+    param x: @Unknown;
+}
+
+// This module references a nonexistent discipline "Nonexistent".
+mod BadWire (inout p: Nonexistent) {}

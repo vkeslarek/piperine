@@ -1,0 +1,47 @@
+// ASM HEMT Model Version 101.0.0
+// Copyright 2018 Sourabh Khandelwal and IIT Kanpur
+// Complex compact model - simplified structure translation
+
+mod asmhemt101_0(d, g, s, b, dt);
+    // Core parameters translated
+    param tnom : Real = 27.0 from(-273.15 : inf);
+    param tbar : Real = 2.5e-8 from(0.1e-9 : inf);
+    param l : Real = 0.25e-6 from(20e-9 : inf);
+    param w : Real = 200.0e-6 from(20e-9 : inf);
+    param nf : Integer = 1 from [ 1 : inf);
+    param epsilon : Real = 10.66e-11 from(0 : inf);
+    param voff : Real = -2.0 from [ -100.0 : 5 ];
+    param u0 : Real = 170.0e-3 from(0 : inf);
+    param ua : Real = 0.0e-9 from(0 : inf);
+    param ub : Real = 0.0e-18 from(0 : inf);
+    param vsat : Real = 1.9e5 from(1.0e3 : inf);
+    param delta : Real = 2.0 from [ 2.0 : inf);
+    param Lambda : Real = 0.0 from [ 0 : inf);
+    param shmod : Integer = 1 from [ 0 : 1 ];
+    param rth0 : Real = 5.0 from [ 0 : inf);
+    param cth0 : Real = 1.0e-9 from [ 0 : inf);
+    param rdsmod : Integer = 0 from [ 0 : 1 ];
+    param gatemod : Integer = 0 from [ 0 : 1 ];
+    param trapmod : Integer = 0 from [ 0 : 3 ];
+    // ... more parameters
+
+    wire d : Electrical;
+    wire g : Electrical;
+    wire s : Electrical;
+    wire b : Electrical;
+    wire dt : Thermal;
+
+    var Vds : Real;
+    var Vgs : Real;
+    var Ids : Real;
+    var Tdev : Real;
+    var Vth : Real;
+
+    analog asmhemt101_0 {
+        // See original file for complete implementation
+        // $vt -> 8.617e-5 * temp
+        Tdev = $temperature;
+        Vth = 8.617e-5 * Tdev;
+        I(d, s) <+ Ids;
+    }
+endmod

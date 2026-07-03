@@ -1,0 +1,12 @@
+// Test port model
+
+simulator lang=spectre
+
+ahdl_include "port2.vams"
+
+P1  (n 0) port r=50 dc=1 mag=1
+R1  (n 0) resistor r=50
+
+doDC dc print=yes
+doAC ac freq=1 
+doNoise (n 0) noise freq=1 

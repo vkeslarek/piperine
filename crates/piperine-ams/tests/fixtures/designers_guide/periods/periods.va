@@ -1,0 +1,39 @@
+// Frequency meter
+//
+// Version 1b, 10 October 06
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+
+// Uses last_crossing() for best accuracy
+// Create two variables that are unused in the module, period and freq.
+// These two variables are here so that you can plot their values
+// in a post-processing environment. You can delete them if you do
+// not need them for this.
+
+`include "disciplines.vams"
+
+(*instrument_module*)
+module measure_periods(in);
+    parameter real thresh=0;	// threshold (V)
+    parameter integer dir = 1 from [-1:1] exclude 0;
+				// 1 for rising edges, -1 for falling
+    input in;
+    voltage in;
+    integer timing;
+    real t0, t, period, freq;
+    analog begin
+	t = last_crossing(V(in) - thresh, dir);
+	@(cross(V(in) - thresh, dir)) begin
+	    if (timing) begin
+		period = t - t0;
+		freq = 1/period;
+		$strobe("period = %rs (measured at %rs).\n", t - t0, $abstime);
+	    end
+	    t0 = t;
+	    timing = 1;
+	end
+    end
+endmodule

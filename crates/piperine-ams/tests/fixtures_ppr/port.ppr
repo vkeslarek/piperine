@@ -1,0 +1,30 @@
+// Resistive port
+//
+// Version 1a, 1 June 04
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide Community (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+// Taken from "The Designer's Guide to Verilog-AMS" by Kundert & Zinke.
+// Chapter 3, Listing 16.
+//
+// This version complies with the Verilog-AMS (vers. 2.1) but does not
+// run in the existing version of Spectre (5.0 May 03). See port2.vams
+// for an alternate version that does run in Spectre.
+mod port(p, n);
+    param r : Real = 0.0 from ( 0.0 : inf );
+    // port resistance (Ohm)
+    param dc : Real = 0.0;
+    // DC level into a matched load (V)
+    param mag : Real = 0.0;
+    // AC magnitude into a matched load (V)
+    inout p, n;
+    wire p : Electrical, n : Electrical;
+
+    analog SpicePort {
+        V(p, n) <+ r * I(p, n) + 2.0 * dc;
+        V(p, n) <+ 2.0 * ac_stim(, 2.0 * mag);
+        V(p, n) <+ white_noise(4.0 * 1.3806488e-23 * temp * r, "thermal");
+    }
+endmod

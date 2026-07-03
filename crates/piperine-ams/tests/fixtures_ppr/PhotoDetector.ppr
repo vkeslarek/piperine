@@ -1,0 +1,18 @@
+// Photo detector
+
+mod PhotoDetector(opt_in, ele_out);
+    inout [ 0 : 3 ] opt_in;
+    output ele_out;
+    wire [ 0 : 3 ] opt_in : Optical;
+    wire ele_out : Electrical;
+
+    param responsivity : Real = 1.0;
+    param bandwidth : Real = 30e9;
+
+    analog begin
+        I(ele_out) <+ laplace_nd((-responsivity * (pow(OptE(opt_in [ 0 ]), 2) + pow(OptE(opt_in [ 1 ]), 2))), { 1 }, { 1, 1 / bandwidth / 2 / `M_PI });
+
+        OptE(opt_in [ 2 ]) <+ 0;
+        OptE(opt_in [ 2 ]) <+ 0;
+    end
+endmod

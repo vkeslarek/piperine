@@ -1,0 +1,31 @@
+// Photonic crystal waveguide
+// Currently, the only difference from 'Waveguide' is the parameters
+// ToDo: Implement transmission and delay spectrum
+
+mod Pcw(node1, node2);
+    inout [ 0 : 3 ] node1;
+    inout [ 0 : 3 ] node2;
+    wire [ 0 : 3 ] node1, node2 : Optical;
+    wire [ 0 : 1 ] fwd, bwd, transfer_pol, transfer : Optical;
+
+    param length : Real = 100e-6;
+    param equivalentIndex : Real = 2.31;
+    param groupIndex : Real = 20;
+    param loss : Real = 2.0;
+    var alpha : Real = 23.0258509299404568 * loss;
+
+    Polar2Cartesian Polar2Cartesian1(transfer_pol, transfer);
+
+    CartesianMultiplier CartesianMultiplier1(transfer, node1 [ 0 : 1 ], fwd [ 0 : 1 ]);
+    CartesianMultiplier CartesianMultiplier2(transfer, node2 [ 2 : 3 ], bwd [ 0 : 1 ]);
+
+    analog begin
+        OptE(transfer_pol [ 0 ]) <+ exp(-alpha / 2 * length);
+        OptE(transfer_pol [ 1 ]) <+ (-length * equivalentIndex * 2 * `M_PI * `F_REF / `P_C) % (2 * `M_PI);
+
+        OptE(node2 [ 0 ]) <+ absdelay(OptE(fwd [ 0 ]), length * groupIndex / `P_C);
+        OptE(node2 [ 1 ]) <+ absdelay(OptE(fwd [ 1 ]), length * groupIndex / `P_C);
+        OptE(node1 [ 2 ]) <+ absdelay(OptE(bwd [ 0 ]), length * groupIndex / `P_C);
+        OptE(node1 [ 3 ]) <+ absdelay(OptE(bwd [ 1 ]), length * groupIndex / `P_C);
+    end
+endmod

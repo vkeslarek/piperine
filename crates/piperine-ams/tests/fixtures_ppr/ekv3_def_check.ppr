@@ -1,0 +1,14 @@
+// EKV3 Mode Selection Check
+// Ensures no more than one mode selection is defined
+// Priority order (highest to lowest): NQS, RF, RF_S, DC, DC_S
+// Default mode is DC_S if none specified
+
+mod ekv3_def_check;
+    // Mode selection logic:
+    // if NQS defined -> use NQS mode (NCS=5)
+    // else if RF defined -> use RF mode
+    // else if RF_S defined -> use RF_S mode
+    // else if DC defined -> use DC mode
+    // else if DC_S defined -> use DC_S mode
+    // else -> default to DC_S mode
+endmod

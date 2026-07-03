@@ -1,0 +1,24 @@
+mod fd(out, clk, reset);
+    input clk, reset;
+    output out;
+    wire out;
+    var q : Logic;
+    var i : Integer;
+
+    @ posedge reset begin
+        i = 0;
+        q = 0;
+    end
+
+    @ posedge clk begin
+        if (~reset) begin
+            i = i + 1;
+            if (i == 63) begin
+                q = ~q;
+                i = 0;
+            end
+        end
+    end
+
+    assign out = q & ~reset;
+endmod

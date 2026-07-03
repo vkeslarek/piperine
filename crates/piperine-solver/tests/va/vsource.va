@@ -1,0 +1,17 @@
+`include "constants.vams"
+`include "disciplines.vams"
+
+// Simple DC voltage source: V(p,n) = vdc
+module vsource_va(p, n);
+    inout p, n;
+    electrical p, n;
+
+    branch (p, n) br;
+
+    (*desc="DC voltage", units="V"*)
+    parameter real vdc = 1.0;
+
+    analog begin
+        V(br) <+ vdc;
+    end
+endmodule

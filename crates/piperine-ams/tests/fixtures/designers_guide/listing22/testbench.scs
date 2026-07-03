@@ -1,0 +1,12 @@
+// Test VCO
+
+simulator lang=spectre
+
+ahdl_include "vco.vams"
+ahdl_include "freqmeter.vams"
+
+Vin  (in 0) vsource type=sine ampl=1 freq=1MHz
+VCO  (out in) vco Vmin=-1 Vmax=1 Fmin=1GHz Fmax=2GHz
+FM  (out) freqmeter
+
+doTran tran stop=2us

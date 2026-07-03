@@ -1,0 +1,107 @@
+// JFET (junction field-effect transistor) model
+//
+// Equations taken from Cadence's Affirma Spectre Circuit Simulator
+// Device Model Equations, Copyright 2002 Cadence Design Systems
+// Verilog-A translation by Geoffrey Coram, Analog Devices, Inc.
+//
+// Version 2, 29 June 2022
+//
+// Downloaded from The Designer's Guide (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+
+// Note: limexp(x) -> exp(x) in PHDL
+// Note: $limit() calls not directly translatable
+// Note: white_noise() and flicker_noise() not directly translatable
+
+mod jfetva(inout g : Electrical, inout d : Electrical, inout s : Electrical) {
+    wire g : Electrical, d : Electrical, s : Electrical;
+    wire di : Electrical, si : Electrical;
+    wire br_rd : Electrical, br_rs : Electrical, br_ds : Electrical;
+    wire br_gs : Electrical, br_gd : Electrical;
+
+    param njfet : Natural = 1; // constraint: 0 <= njfet <= 1
+    param pjfet : Natural = 0; // constraint: 0 <= pjfet <= 1
+    param level : Natural = 1; // constraint: 1 <= level <= 4, level != 3
+
+    // channel current parameters
+    param vto : Real = -2;
+    param beta : Real = 1.0e-4; // constraint: beta >= 0
+    param lambda : Real = 0.0; // constraint: lambda >= 0
+    param lambda1 : Real = 0.0; // constraint: lambda1 >= 0
+    param alpha : Real = 2.0; // constraint: alpha >= 0
+    param np : Real = 2.0; // constraint: np >= 0
+    param io : Real = 0.0; // constraint: io >= 0
+    param ns : Real = 1.0; // constraint: ns > 0
+
+    // extrinsic resistors
+    param rd : Real = 0.0; // constraint: rd >= 0
+    param rs : Real = 0.0; // constraint: rs >= 0
+
+    // capacitance parameters
+    param tt : Real = 0.0; // constraint: tt >= 0
+    param cgd : Real = 0.0; // constraint: cgd >= 0
+    param cgs : Real = 0.0; // constraint: cgs >= 0
+    param fc : Real = 0.5; // constraint: 0 <= fc <= 0.95
+    param mj : Real = 0.5; // constraint: 0 < mj <= 1.0
+    param pb : Real = 1.0; // constraint: pb > 0
+
+    // gate junction currents
+    param is : Real = 1.0e-14; // constraint: is > 0
+    param n : Real = 1.0; // constraint: n > 0
+
+    // temperature parameters
+    param tnom : Real = 27.0; // constraint: tnom >= 0
+    param dtemp : Real = 0.0;
+    param xti : Real = 3.0; // constraint: xti > 0
+    param bto : Real = 0; // constraint: bto >= -tnom - 273.15
+    param bte : Real = 0;
+    param tc1 : Real = 0.0;
+    param tc2 : Real = 0.0;
+
+    // noise parameters
+    param kf : Real = 0.0; // constraint: kf >= 0
+    param af : Real = 1.0; // constraint: af >= 0.1
+
+    var vgs : Real, vgd : Real, vds : Real, vdsat : Real;
+    var igs : Real, igd : Real, id_chan : Real;
+    var gm : Real, gds : Real, qgd : Real, qgs : Real, qd : Real, qs : Real;
+
+    var type_ : Real, mode : Real;
+    var T : Real, TnomK : Real, Vt : Real, Vtnom : Real, delta_T : Real, ratio_T : Real, factor : Real, eg : Real, eg_tnom : Real;
+    var pb_T : Real, cgd_T : Real, cgs_T : Real, rd_T : Real, rs_T : Real, beta_T : Real, is_T : Real;
+    var f1 : Real, f2 : Real, f3 : Real, Fcp : Real, qgd_diff : Real, qgs_diff : Real, qgd_dep : Real, qgs_dep : Real;
+    var v_gs : Real, v_gd : Real, v_ds : Real, Vth : Real, Vds_out : Real, Vgst : Real, Vdsat_out : Real, Vdseff : Real, Ids : Real;
+
+    fn spice_energygap(temp : Real) -> Real {
+        return 1.16 - (7.02e-4 * temp * temp) / (1108.0 + temp);
+    }
+
+    analog jfetva {
+        // Note: $error() calls cannot be translated - they would need to be handled differently
+        // Note: $simparam() not directly translatable
+
+        // temperature equations
+        // T = $temperature + dtemp;
+        // Vt = P_K * T / P_Q;
+
+        // resistors
+        // V(br_rd) <+ I(br_rd) * rd_T;
+        // V(br_rs) <+ I(br_rs) * rs_T;
+
+        // gate currents
+        // igd = type * (is_T * (exp(v_gd / (n * Vt)) - 1.0) + gmin * v_gd);
+        // igs = type * (is_T * (exp(v_gs / (n * Vt)) - 1.0) + gmin * v_gs);
+
+        // I(br_gd) <+ igd;
+        // I(br_gs) <+ igs;
+
+        // gate capacitances with ddt() contributions
+        // I(br_gd) <+ ddt(qgd);
+        // I(br_gs) <+ ddt(qgs);
+
+        // channel current with mode selection
+        // I(br_ds) <+ id_chan;
+
+        // noise - white_noise() and flicker_noise() not directly translatable
+    }
+}

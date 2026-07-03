@@ -1,0 +1,34 @@
+// Warn on Breakdown
+//
+// Version 1a, 1 June 04
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide Community (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+// Taken from "The Designer's Guide to Verilog-AMS" by Kundert & Zinke.
+// Chapter 5, Listing 4.
+//
+// This is the version given in the book, but it does not
+// run in the existing version of Spectre (5.0 May 03). See breakdown2.vams
+// for an alternate version that does run in Spectre.
+
+`include "disciplines.vams"
+
+module breakdown(n);
+    parameter real threshold = 1000.0;
+    // message emitted when this level is exceeded (V)
+    parameter message = "Warning: breakdown voltage exceeded.";
+    // the message to print
+    input n;
+    voltage n;
+    integer given;
+
+    analog begin
+        @(above(V(n) - threshold)) begin
+            if (!given) $strobe(message);
+            given = 1;
+        end
+    end
+endmodule
+

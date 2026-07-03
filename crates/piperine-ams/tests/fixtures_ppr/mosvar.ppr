@@ -1,0 +1,43 @@
+// MOSVAR - MOS varactor model
+// Version 1.3.0, July 2015
+// Copyright 2008 Arizona State University and Freescale Semiconductor
+// Copyright 2015 Silicon Integration Initiative, Inc.
+//
+// Note: This is a MOS varactor model based on surface potential calculations.
+// Full translation requires extensive manual work.
+
+mod mosvar(inout d : Electrical, inout g : Electrical, inout s : Electrical, inout b : Electrical) {
+    wire d : Electrical, g : Electrical, s : Electrical, b : Electrical;
+
+    // Device type parameter
+    param type : Integer = 1; // constraint: -1 <= type <= 1, type != 0 (NMOS=1, PMOS=-1)
+
+    // Basic geometry parameters
+    param l : Real = 1.0e-6; // constraint: l > 0
+    param w : Real = 1.0e-6; // constraint: w > 0
+
+    // Oxide thickness
+    param tox : Real = 5.0e-9; // constraint: tox >= 0
+
+    // Doping parameters
+    param nsub : Real = 1.0e21; // constraint: nsub >= 0
+    param nac : Real = 0.0; // constraint: nac >= 0
+
+    // Temperature parameters
+    param tnom : Real = 27.0; // constraint: tnom >= 0
+    param dta : Real = 0.0;
+
+    // Multiplicity factor
+    param mult : Real = 1.0; // constraint: mult >= 1
+
+    // Junction parameters
+    param cj : Real = 1.0e-4; // constraint: cj >= 0
+    param cjs : Real = 1.0e-4; // constraint: cjs >= 0
+    param vbi : Real = 1.0; // constraint: vbi > 0
+    param pbsw : Real = 0.5; // constraint: pbsw > 0
+
+    analog mosvar {
+        // Behavioral code with junction capacitance calculations
+        // not directly translatable
+    }
+}

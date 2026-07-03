@@ -1,0 +1,12 @@
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+mod Resistor(inout p : Electrical, inout n : Electrical) {
+    param r : Real = 1000.0;
+}
+
+analog Resistor {
+    I(p, n) <+ V(p, n) / r;
+}

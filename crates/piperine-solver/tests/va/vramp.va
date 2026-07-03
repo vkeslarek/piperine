@@ -1,0 +1,32 @@
+`include "constants.vams"
+`include "disciplines.vams"
+
+// Linear voltage ramp: starts at v_start, ramps to v_end over ramp_time.
+// V(t) = v_start + (v_end - v_start) * min(t / ramp_time, 1.0)
+// Implemented as a current source into a virtual branch with voltage contribution.
+module vramp_va(p, n);
+    inout p, n;
+    electrical p, n;
+
+    branch (p, n) br;
+
+    (*desc="Start voltage", units="V"*)
+    parameter real v_start = 0.0;
+
+    (*desc="End voltage", units="V"*)
+    parameter real v_end = 2.0;
+
+    (*desc="Ramp duration", units="s"*)
+    parameter real ramp_time = 10e-9 from (0:inf];
+
+    real v_target;
+
+    analog begin
+        if ($abstime >= ramp_time)
+            v_target = v_end;
+        else
+            v_target = v_start + (v_end - v_start) * $abstime / ramp_time;
+
+        V(br) <+ v_target;
+    end
+endmodule

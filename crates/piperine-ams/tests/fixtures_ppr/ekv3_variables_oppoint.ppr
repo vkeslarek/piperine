@@ -1,0 +1,99 @@
+/////////////////////////////////////////////
+//OPERATING POINTS DEFINITION
+
+///////////////////////////////////////////////////////////////////////////
+// OPPATTR function used for printing Opeating Points
+// insideADMS OPPATTR (*spice:name=1 , info=2 , unit=3 , ask="yes" *)
+// else     OPPATTR (* desc=2 , units=3 *)
+///////////////////////////////////////////////////////////////////////////
+
+///// POTENTIAL INFO ///////////////////////
+
+`OPPATTR("VDS", "VDS", "V") var VDS : Real;
+`OPPATTR("VGS", "VGS", "V") var VGS : Real;
+`OPPATTR("VBS", "VBS", "V") var VBS : Real;
+`OPPATTR("VDB", "VDB", "V") var VDB : Real;
+`OPPATTR("VGB", "VGB", "V") var VGB : Real;
+///// CURRENT INFO /////////////////////////
+`OPPATTR("Beta", "Beta", "A/V^2") var Beta : Real;
+`OPPATTR("IDSi", "Intrinsic Current", "A") var ids_intr : Real;
+`OPPATTR("IDSedge", "Edge Effect Current", "A") var ids_edge_effect : Real;
+`OPPATTR("IDex", "Extrinsic Current Drain Side", "A") var ID : Real;
+`OPPATTR("ISex", "Extrinsic Current Source Side", "A") var IS : Real;
+`OPPATTR("IBex", "Extrinsic Current Bulk Side", "A") var IB : Real;
+///////////////////////////////////////////////////////////////
+`OPPATTR("n", "Slope Factor n", "") var slopefactor : Real;
+//`OPPATTR("nq","Inversion Charge Linearization Factor","") real     nq;
+`OPPATTR("Vp", "Pinch-Off Voltage", "") var Vp : Real;
+`OPPATTR("VOD", "Overdrive Voltage n*(Vp-Vs)", "V") var VOD : Real;
+`OPPATTR("VDSAT", "Saturation Voltage", "V") var VDSAT : Real;
+//`OPPATTR("sat","Saturation Flag","s") real sat;
+`OPPATTR("VTH", "Effective Threshold Voltage VTH", "V") var VTH : Real;
+`OPPATTR("VTB", "Effective Threshold Voltage VTB", "V") var Vtb : Real;
+/////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////
+`OPPATTR("Nf", "Number of fingers", "") var Nf : Real;
+//////CURRENT - CHARGE  INFO ////////////////////
+//`OPPATTR("if","Forward Normalized Current","") real      if_;
+//`OPPATTR("irp","Reverse Normalized Current","") real   irp;
+//`OPPATTR("qs","Normalized Source Inversion Charge","") real      qs;
+//`OPPATTR("qdp","Normalized Drain Inversion Charge","") real    qdp;
+`OPPATTR("IC", "Inversion Coefficient", "") var ic : Real;
+`OPPATTR("ISPEC", "Specific Current", "A") var ISPEC : Real;
+//////TRANCONDUCTANCE INFO //////////////////
+`OPPATTR("gmgi", "intrinsic gate tranconductance", "S") var gmgi : Real;
+`OPPATTR("gmsi", "intrinsic source tranconductance", "S") var gmsi : Real;
+`OPPATTR("gmdi", "intrinsic drain tranconductance", "S") var gmdi : Real;
+`OPPATTR("gmbi", "intrinsic bulk tranconductance", "S") var gmbi : Real;
+`OPPATTR("gmgex", "extrinsic gate tranconductance", "S") var gmgex : Real;
+`OPPATTR("gmsex", "extrinsic source tranconductance", "S") var gmsex : Real;
+`OPPATTR("gmdex", "extrinsic drain tranconductance", "S") var gmdex : Real;
+`OPPATTR("gmbex", "extrinsic bulk tranconductance", "S") var gmbex : Real;
+`OPPATTR("GmgUtId", "Gmg*UT/Ids", "") var GmgUtId : Real;
+`OPPATTR("GmsUtId", "Gms*UT/Ids", "") var GmsUtId : Real;
+`OPPATTR("GmdUtId", "Gmd*UT/Ids", "") var GmdUtId : Real;
+`OPPATTR("GmbUtId", "Gmb*UT/Ids", "") var GmbUtId : Real;
+`OPPATTR("Avi", "Intrinsic Gain", "") var Avi : Real;
+`OPPATTR("GmgId", "Gm/Ids", "1/V") var GmId : Real;
+`OPPATTR("VM", "Early Voltage Ids/gds", "V") var VM : Real;
+`OPPATTR("Ft", "Transit Frequency", "Hz") var Ft : Real;
+//`OPPATTR("TFP","(Gm/Ids)*Ft","Hz/V") real TFP;
+//`OPPATTR("GTFP","(Gm/Ids)*Ft*Avi","Hz/V") real GTFP;
+`OPPATTR("tau0", "Tau0", "s") var tau0 : Real;
+`OPPATTR("tau", "NQS Time Constant", "s") var tau : Real;
+
+///////////////INTRINSIC CAPACITANCES/////////////////////////////////////////////////////////////
+`OPPATTR("Cggi", "Cggi", "F") var Cggi : Real;
+`OPPATTR("Cgsi", "Cgsi", "F") var Cgsi : Real;
+`OPPATTR("Cgdi", "Cgdi", "F") var Cgdi : Real;
+`OPPATTR("Cgbi", "Cgbi", "F") var Cgbi : Real;
+`OPPATTR("Csgi", "Csgi", "F") var Csgi : Real;
+`OPPATTR("Csdi", "Csdi", "F") var Csdi : Real;
+`OPPATTR("Csbi", "Csbi", "F") var Csbi : Real;
+`OPPATTR("Cssi", "Cssi", "F") var Cssi : Real;
+`OPPATTR("Cdgi", "Cdgi", "F") var Cdgi : Real;
+`OPPATTR("Cddi", "Cddi", "F") var Cddi : Real;
+`OPPATTR("Cdbi", "Cdbi", "F") var Cdbi : Real;
+`OPPATTR("Cdsi", "Cdsi", "F") var Cdsi : Real;
+`OPPATTR("Cbgi", "Cbgi", "F") var Cbgi : Real;
+`OPPATTR("Cbdi", "Cbdi", "F") var Cbdi : Real;
+`OPPATTR("Cbbi", "Cbbi", "F") var Cbbi : Real;
+`OPPATTR("Cbsi", "Cbsi", "F") var Cbsi : Real;
+`OPPATTR("Cgsex", "Extrinsic Gate-Source capacitance", "F") var Cgsex : Real;
+`OPPATTR("Cgdex", "Extrinsic Gate-Drain capacitance", "F") var Cgdex : Real;
+`OPPATTR("Cgbex", "Extrinsic Gate-Bulk capacitance", "F") var Cgbex : Real;
+`OPPATTR("Ctotex", "Total extrinsic Capacitance", "F") var Ctotex : Real;
+`OPPATTR("Cgsov", "Cgsov", "F") var Cgsov : Real;
+`OPPATTR("Cgdov", "Cgdov", "F") var Cgdov : Real;
+///////////////////////////////////////////////////////////////////////////////////////////////////
+`OPPATTR("SID_flicker", "Flicker Noise PSD SdID @ 1Hz", "A^2/Hz") var SID_flicker : Real;
+`OPPATTR("SID_thermal", "Thermal Noise PSD SdID", "A^2/Hz") var SID_thermal : Real;
+`OPPATTR("SVG_flicker", "Flicker Noise PSD SdVG @ 1Hz", "V^2/Hz") var SVG_flicker : Real;
+`OPPATTR("SVG_thermal", "Thermal Noise PSD SdVG", "V^2/Hz") var SVG_thermal : Real;
+
+//`OPPATTR("sigmaDIdoId","Relative Current Mismatch","") real siId;
+//`OPPATTR("sigmaVg","Gate Voltage Offset","V") real siVg;
+
+`OPPATTR("I0", "Technology Current", "V") var i0 : Real;
+//`OPPATTR("M_","M_"," ") real mtmp;
+//`OPPATTR("sqrtpsip","sqrtpsip"," ") real sqrtpsip;

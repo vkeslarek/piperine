@@ -1,0 +1,17 @@
+// Reflection interface
+
+// `include "constants.vams"
+// `include "disciplines.vams"
+
+mod ReflectionInterface ( inout [0:3] node1 : Optical, inout [0:3] node2 : Optical ) {
+    param reflection : Real = 0.0;
+
+    analog ReflectionInterface {
+        OptE(node1[2]) <+ sqrt(1.0 - reflection) * OptE(node2[2]) + sqrt(reflection) * OptE(node1[0]);
+        OptE(node1[3]) <+ sqrt(1.0 - reflection) * OptE(node2[3]) + sqrt(reflection) * OptE(node1[1]);
+        OptE(node2[0]) <+ sqrt(1.0 - reflection) * OptE(node1[0]) + sqrt(reflection) * OptE(node2[2]);
+        OptE(node2[1]) <+ sqrt(1.0 - reflection) * OptE(node1[1]) + sqrt(reflection) * OptE(node2[3]);
+    }
+}
+
+endmodule

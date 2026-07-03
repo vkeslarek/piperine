@@ -1,0 +1,13 @@
+#!/bin/sh
+
+rm -rf worklib
+mkdir worklib
+
+ncvlog -ams dac.vams -messages
+ncvlog -ams testbench.vams -messages
+
+ncelab testbench -timescale 10ps/1ps -messages
+
+ncsim testbench -messages -input run.tcl
+
+rm *.log

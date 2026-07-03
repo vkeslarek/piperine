@@ -1,0 +1,3 @@
+// Spectre control file
+
+transient tran stop=1ms

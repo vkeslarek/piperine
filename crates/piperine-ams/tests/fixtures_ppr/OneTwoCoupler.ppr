@@ -1,0 +1,20 @@
+// Optical one-by-two splitter
+
+mod OneTwoCoupler(one, two1, two2);
+    inout [ 0 : 3 ] one, two1, two2;
+    wire [ 0 : 3 ] one, two1, two2 : Optical;
+
+    param kappa : Real = 0.5;
+    param reflectionOne : Real = 0.1;
+    param reflectionTwo1 : Real = 0.1;
+    param reflectionTwo2 : Real = 0.1;
+
+    analog begin
+        OptE(two1 [ 0 ]) <+ sqrt(kappa) * OptE(one [ 0 ]) + reflectionTwo1 * OptE(two1 [ 2 ]);
+        OptE(two1 [ 1 ]) <+ sqrt(kappa) * OptE(one [ 1 ]) + reflectionTwo1 * OptE(two1 [ 3 ]);
+        OptE(two2 [ 0 ]) <+ sqrt(1 - kappa) * OptE(one [ 0 ]) + reflectionTwo2 * OptE(two2 [ 2 ]);
+        OptE(two2 [ 1 ]) <+ sqrt(1 - kappa) * OptE(one [ 1 ]) + reflectionTwo2 * OptE(two2 [ 3 ]);
+        OptE(one [ 2 ]) <+ OptE(two1 [ 2 ]) * sqrt(kappa) + OptE(two2 [ 2 ]) * sqrt(1 - kappa) + reflectionOne * OptE(one [ 0 ]);
+        OptE(one [ 3 ]) <+ OptE(two1 [ 3 ]) * sqrt(kappa) + OptE(two2 [ 3 ]) * sqrt(1 - kappa) + reflectionOne * OptE(one [ 1 ]);
+    end
+endmod

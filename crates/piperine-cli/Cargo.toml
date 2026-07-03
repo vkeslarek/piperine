@@ -1,0 +1,14 @@
+[package]
+name = "piperine-cli"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+clap = { version = "4.6.1", features = ["derive"] }
+    piperine-lang = { version = "0.1.0", path = "../piperine-lang" }
+piperine-codegen = { version = "0.1.0", path = "../piperine-codegen" }
+piperine-project = { version = "0.1.0", path = "../piperine-project" }
+include_dir = "0.7.4"
+
+[dev-dependencies]
+tempfile.workspace = true

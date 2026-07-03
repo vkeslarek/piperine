@@ -1,0 +1,66 @@
+// Various Resistor Models
+//
+// Version 1a, 11 Apr 03
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+
+`include "disciplines.vams"
+
+
+
+// Conductance Form of Resistor
+// Most efficient on most simulators.
+// Best for large valued resistors (r > 1); r must not be 0.
+
+module res1(p, n);
+
+inout p, n;
+electrical p, n;
+parameter real r=1 exclude 0;
+
+analog begin
+    I(p,n) <+ V(p,n)/r;
+end
+endmodule
+
+
+
+// Resistance Form of Resistor
+// Best for small valued resistors (r < 1).
+
+module res2(p, n);
+
+inout p, n;
+electrical p, n;
+parameter real r=1;
+
+analog begin
+    V(p,n) <+ r*I(p,n);
+end
+endmodule
+
+
+
+// Both Forms of Resistor
+// Works equally well for large and small valued resistors.
+
+module res3(p, n);
+
+inout p, n;
+electrical p, n;
+parameter real r=1;
+branch (p, n) resistor;
+
+analog begin
+    if (r > 1e12*resistor.flow.abstol)
+	I(resistor) <+ V(resistor)/r;
+    else
+	V(resistor) <+ r*I(resistor);
+end
+endmodule
+
+
+

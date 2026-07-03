@@ -1,0 +1,176 @@
+// HICUM/L0 Version 1.32: A Verilog-A description
+// (A simplified version of HICUM Level2 model for BJT)
+//
+// Note: This is a highly complex model with many macros, iterative solvers,
+// and behavioral code. Full translation requires extensive manual work.
+// This placeholder captures the module structure and key parameters.
+
+mod hic0_full(inout c : Electrical, inout b : Electrical, inout e : Electrical, inout s : Electrical, inout tnode : Electrical) {
+    wire c : Electrical, b : Electrical, e : Electrical, s : Electrical, tnode : Electrical;
+    wire ci : Electrical, bi : Electrical, ei : Electrical;
+    wire xf1 : Electrical, xf2 : Electrical, xf : Electrical;
+
+    // Collector current parameters
+    param is : Real = 1.0e-16; // constraint: is >= 0
+    param it_mod : Natural = 0; // constraint: 0 <= it_mod <= 1
+    param mcf : Real = 1.00; // constraint: 0 < mcf <= 10
+    param mcr : Real = 1.00; // constraint: 0 < mcr <= 10
+    param vef : Real = 1.0e6; // constraint: vef >= 0
+    param ver : Real = 1.0e6; // constraint: ver >= 0
+    param aver : Real = 0.0; // constraint: 0 <= aver <= 100
+    param iqf : Real = 1.0e6; // constraint: iqf >= 0
+    param fiqf : Real = 0.0; // constraint: 0 <= fiqf <= 1
+    param iqr : Real = 1.0e6; // constraint: iqr >= 0
+    param iqfh : Real = 1.0e6; // constraint: iqfh >= 0
+    param tfh : Real = 0.0; // constraint: tfh >= 0
+    param ahq : Real = 0.0; // constraint: -0.9 <= ahq
+
+    // Base current parameters
+    param ibes : Real = 1e-18; // constraint: 0 <= ibes <= 1
+    param mbe : Real = 1.0; // constraint: 0 < mbe <= 10
+    param ires : Real = 0.0; // constraint: 0 <= ires <= 1
+    param mre : Real = 2.0; // constraint: 0 < mre <= 10
+    param ibcs : Real = 0.0; // constraint: 0 <= ibcs <= 1
+    param mbc : Real = 1.0; // constraint: 0 < mbc <= 10
+
+    // BE depletion cap parameters
+    param cje0 : Real = 1.0e-20; // constraint: cje0 >= 0
+    param vde : Real = 0.9; // constraint: 0 < vde <= 10
+    param ze : Real = 0.5; // constraint: 0 < ze <= 1
+    param aje : Real = 2.5; // constraint: aje >= 1
+    param vdedc : Real = 0.9; // constraint: 0 < vdedc <= 10
+    param zedc : Real = 0.5; // constraint: 0 < zedc <= 2
+    param ajedc : Real = 2.5; // constraint: ajedc >= 1
+
+    // Transit time parameters
+    param t0 : Real = 0.0; // constraint: t0 >= 0
+    param dt0h : Real = 0.0; // constraint: dt0h >= 0
+    param tbvl : Real = 0.0; // constraint: tbvl >= 0
+    param tef0 : Real = 0.0; // constraint: tef0 >= 0
+    param gte : Real = 1.0; // constraint: 0 < gte <= 20
+    param thcs : Real = 0.0; // constraint: thcs >= 0
+    param ahc : Real = 0.1; // constraint: 0 < ahc <= 10
+    param tr : Real = 0.0; // constraint: tr >= 0
+
+    // Critical current parameters
+    param rci0 : Real = 150; // constraint: rci0 >= 0
+    param vlim : Real = 0.5; // constraint: 0 < vlim <= 10
+    param vpt : Real = 100; // constraint: 0 < vpt <= 100
+    param vces : Real = 0.1; // constraint: 0 <= vces <= 1
+
+    // BC depletion cap parameters (internal and external)
+    param cjci0 : Real = 1.0e-20; // constraint: cjci0 >= 0
+    param vdci : Real = 0.7; // constraint: 0 < vdci <= 10
+    param zci : Real = 0.333; // constraint: 0 < zci <= 1
+    param vptci : Real = 100; // constraint: 0 < vptci <= 100
+    param cjcx0 : Real = 1.0e-20; // constraint: cjcx0 >= 0
+    param vdcx : Real = 0.7; // constraint: 0 < vdcx <= 10
+    param zcx : Real = 0.333; // constraint: 0 < zcx <= 1
+    param vptcx : Real = 100; // constraint: 0 < vptcx <= 100
+    param fbc : Real = 1.0; // constraint: 0 <= fbc <= 1
+
+    // Base resistance parameters
+    param rbi0 : Real = 0.0; // constraint: rbi0 >= 0
+    param vr0e : Real = 2.5; // constraint: vr0e >= 0
+    param vr0c : Real = 1.0e6; // constraint: vr0c >= 0
+    param fgeo : Real = 0.656; // constraint: fgeo >= 0
+
+    // Series resistances
+    param rbx : Real = 0.0; // constraint: rbx >= 0
+    param rcx : Real = 0.0; // constraint: rcx >= 0
+    param re : Real = 0.0; // constraint: re >= 0
+
+    // Substrate transfer current, diode current and cap parameters
+    param itss : Real = 0.0; // constraint: 0 <= itss <= 1.0
+    param msf : Real = 1.0; // constraint: 0 < msf <= 10
+    param iscs : Real = 0.0; // constraint: 0 <= iscs <= 1.0
+    param msc : Real = 1.0; // constraint: 0 < msc <= 10
+    param cjs0 : Real = 1.0e-20; // constraint: cjs0 >= 0
+    param vds : Real = 0.3; // constraint: 0 < vds <= 10
+    param zs : Real = 0.3; // constraint: 0 < zs <= 1
+    param vpts : Real = 100; // constraint: 0 < vpts <= 100
+
+    // Parasitic caps
+    param cbcpar : Real = 0.0; // constraint: cbcpar >= 0
+    param cbepar : Real = 0.0; // constraint: cbepar >= 0
+
+    // BC avalanche current
+    param eavl : Real = 0.0; // constraint: eavl >= 0
+    param kavl : Real = 0.0; // constraint: kavl >= 0
+
+    // Non-quasi-static Effect
+    param alqf : Real = 0.167; // constraint: 0 < alqf <= 1
+    param alit : Real = 0.333; // constraint: 0 < alit <= 1
+    param flnqs : Natural = 0; // constraint: 0 <= flnqs <= 1
+
+    // Temperature dependence parameters
+    param vgb : Real = 1.2; // constraint: 0 < vgb <= 10
+    param vge : Real = 1.17; // constraint: 0 < vge <= 10
+    param vgc : Real = 1.17; // constraint: 0 < vgc <= 10
+    param vgs : Real = 1.17; // constraint: 0 < vgs <= 10
+    param f1vg : Real = -1.02377e-4;
+    param alt0 : Real = 0.0;
+    param kt0 : Real = 0.0;
+    param zetact : Real = 3.0;
+    param zetabet : Real = 3.5;
+    param zetaci : Real = 0.0;
+    param alvs : Real = 0.0;
+    param alces : Real = 0.0;
+    param zetarbi : Real = 0.0;
+    param zetarbx : Real = 0.0;
+    param zetarcx : Real = 0.0;
+    param zetare : Real = 0.0;
+    param zetaiqf : Real = 0.0;
+    param alkav : Real = 0.0;
+    param aleav : Real = 0.0;
+    param zetarth : Real = 0.0;
+    param tef_temp : Natural = 1;
+    param zetaver : Real = -1.0;
+    param zetavgbe : Real = 1.0;
+    param dvgbe : Real = 0.0;
+    param aliqfh : Real = 0.0;
+    param kiqfh : Real = 0.0;
+
+    // Self-heating
+    param flsh : Natural = 0; // constraint: 0 <= flsh <= 2
+    param rth : Real = 0.0; // constraint: rth >= 0
+    param cth : Real = 0.0; // constraint: cth >= 0
+
+    // Transistor type
+    param npn : Natural = 1; // constraint: 0 <= npn <= 1
+    param pnp : Natural = 1; // constraint: 0 <= pnp <= 1
+    // type = (npn == 0 ? (pnp == 0 ? 0 : 1) : (pnp == 0 ? -1 : 0));
+
+    // Circuit simulator specific parameters
+    param tnom : Real = 27.0; // constraint: tnom >= 0
+    param dtemp : Real = 0.0;
+
+    // Local variables
+    var HICUMtype : Real;
+    var VT : Real, Tamb : Real, Tdev : Real, TnomK : Real, dT : Real;
+    var qtt0 : Real, ln_qtt0 : Real;
+    var is_t : Real, ibes_t : Real, ires_t : Real, ibcs_t : Real;
+    var itss_t : Real, iscs_t : Real, cje0_t : Real, cjci0_t : Real, cjcx0_t : Real;
+    var rci0_t : Real, vlim_t : Real, rbx_t : Real, rcx_t : Real, re_t : Real;
+    var rbi0_t : Real, t0_t : Real, tef0_t : Real, thcs_t : Real;
+    var it : Real, itf : Real, itr : Real;
+    var qje : Real, qjci : Real, qjcx : Real, qjcii : Real;
+    var qjei : Real, qf : Real, qr : Real;
+    var rb : Real, rbi : Real;
+    var gmin : Real;
+
+    // Note: The analog block contains highly complex behavioral code with:
+    // - QJMODF, QJMOD, HICJQ macros for charge calculations
+    // - Multiple iterative solve blocks
+    // - $limit() function calls
+    // - ddx() operator for capacitance calculation
+    // - Extensive temperature dependence calculations
+    // - NQS (Non-Quasi-Static) modeling with gyrator networks
+    // - Noise calculations (thermal and flicker)
+    // - Self-heating effects
+    // Full translation requires careful manual work.
+
+    analog hic0_full {
+        // Behavioral code not directly translatable - requires manual translation
+    }
+}

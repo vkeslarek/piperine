@@ -1,0 +1,31 @@
+// Frequency Meter
+//
+// Version 1a, 1 June 04
+//
+// Ken Kundert
+//
+// Downloaded from The Designer's Guide Community (www.designers-guide.org).
+// Post any questions on www.designers-guide.org/Forum.
+
+`include "disciplines.vams"
+
+module freqmeter (in);
+    input in;
+    voltage in;
+    real tstart;
+    integer file;
+
+    analog begin
+	@(initial_step)
+	    file=$fopen("freqmeter.out");
+	    
+	@(cross(V(in), +1)) begin
+	    if (tstart > 0)
+		$fstrobe(file, "%g\t%g", $abstime, 1/($abstime-tstart));
+	    tstart = $abstime;
+	end
+
+	@(final_step)
+	    $fclose(file);
+    end
+endmodule

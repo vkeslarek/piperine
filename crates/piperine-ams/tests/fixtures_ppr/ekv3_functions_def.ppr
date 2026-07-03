@@ -1,0 +1,12 @@
+// EKV3 Function Definitions
+// QV calculates normalized inversion charge
+// NQ calculates charge slope factor (with poly-Si depletion)
+// QX calculates charges at source/drain nodes
+// QG calculates charge at gate node
+
+mod ekv3_functions;
+    // QV(q, v) - normalized inversion charge calculation
+    // NQ(nq, psi_p, sqrt_psi_p, qs, qd, dpd, gamma_b, gamma_g2) - charge slope factor
+    // QX(qx, psi_p, nq, qs, qd, powqs_qd2, powqsqd1_2) - end-of-channel charges
+    // QG(qG, psi_p, qs, qd, powqs_qd2, powqsqd1_2, qsqd1, v_o, gamma_g2) - gate charge
+endmod

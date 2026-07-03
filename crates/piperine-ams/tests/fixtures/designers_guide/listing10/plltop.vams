@@ -1,0 +1,23 @@
+`include "constants.vams"
+`include "disciplines.vams"
+`timescale 10ps / 1ps
+
+module plltop ();
+    electrical gnd;
+    ground gnd;
+    reg reset;
+
+    initial begin
+	reset = 1;
+	#100
+	reset = 0;
+    end
+
+    vsource #(.type("sine"), .ampl(2.5), .dc(2.5), .freq(15M)) Vin (ref, gnd);
+    pfd PFD (.reset(reset), .qinc(up), .active(fb) , .ref(ref), .qdec(dwn));
+    cp #(.cur(1m)) CP (.nout(gnd), .dec(dwn), .inc(up), .pout(err));
+    capacitor #(.c(30n)) C (err, err2);
+    resistor #(.r(200)) R (err2, gnd);
+    vco #(.f0(1.5E9), .kvco(50.0E6), .rin(100k)) VCO (.ps(err), .ns(gnd), .out(out));
+    fd FD (.reset(reset), .out(fb), .clk(out));
+endmodule

@@ -1,0 +1,12 @@
+// Test ideal diode
+
+simulator lang=spectre
+
+ahdl_include "ideal-diode.vams"
+
+Vin (in  0) vsource type=sine ampl=1 freq=1
+R1  (in  out) resistor r=1
+D1  (out 0) diode
+
+dcSwp dc start=-1 stop=1 dev=Vin param=dc
+sineResp tran start=0 stop=1.1 errpreset=conservative

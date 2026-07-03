@@ -1,0 +1,41 @@
+// Translated from quantizer.vams
+// N-level triggered quantizer (like an ADC followed by a DAC)
+
+mod quantizer (
+    output out : Voltage,
+    input in : Voltage,
+    input clk : Voltage
+) {
+    param levels : Natural = 2 from [2 : inf];
+    // number of quantization levels
+    param vh : Real = +1.0;
+    // voltage of highest level (V)
+    param vl : Real = -1.0 from(-inf : vh);
+    // voltage of lowest level (V)
+    param vth : Real = (vh + vl) / 2.0;
+    // threshold voltage of clock (V)
+    param dir : Integer = +1 from [-1 : +1] exclude 0;
+    // if dir=+1, rising clock edge triggers
+    // if dir=-1, falling clock edge triggers
+    param td : Real = 0.0 from [0.0 : inf];
+    // output delay (s)
+    param tt : Real = 0.0 from [0.0 : inf];
+    // output transition time (s)
+
+    var quantized : Real;
+    var delta : Real;
+    var level : Integer;
+
+    // NOTE: transition() has limited support
+    // NOTE: cross() events have limited support
+    analog quantizer {
+        // @(cross(V(clk) - vth, dir) or initial_step) begin
+        //     delta = (vh - vl) / (levels - 1);
+        //     level = (V(in) - vl) / delta;
+        //     if (level < 0) level = 0;
+        //     else if (level >= levels) level = levels - 1;
+        //     quantized = level * delta + vl;
+        // end
+        // V(out) <+ transition(quantized, td, tt);
+    }
+}
