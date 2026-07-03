@@ -5,4 +5,4 @@ authors = ["Keslarek"]
 edition = "2024"
 
 [dependencies]
-spice = { git = "file:///home/keslarek/Git/piperine-spice", version = "0.1.0" }
+spice = { git = "https://github.com/vkeslarek/piperine-spice.git", version = "0.1.0" }
