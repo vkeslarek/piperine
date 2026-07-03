@@ -1,12 +1,16 @@
-![Piperine Logo](assets/logo.svg)
+<div align="center">
 
 # Piperine
+
+<img src="assets/logo.svg" alt="Piperine Logo" width="180"/>
+
+**A modern hardware-description language (HDL) and simulator for analog and mixed-signal circuits.**
+
+</div>
 
 > ⚠️ **Work in progress — not production ready.** APIs, syntax, and behavior
 > change without notice. Use it to explore and contribute, not for anything you
 > depend on.
-
-**Piperine** is a modern hardware-description language (HDL) and simulator for analog and mixed-signal circuits. 
 
 It aims to unify continuous (Newton-Raphson) and discrete (event-driven) hardware into a single, cohesive model. Piperine supports both industry-standard **Verilog-A/AMS** (`.va`, `.vams`) and our new native language called **PHDL** (`.phdl`), compiling them into an intermediate representation that runs on a pure-Rust solver.
 
