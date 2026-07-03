@@ -24,12 +24,12 @@ pub fn is_pure(name: &str) -> bool {
 }
 
 /// Names a `bench` may call today (SPEC_BENCH §7/§11 availability table):
-/// the pure diagnostics plus `$op`/`$tran`. Everything else in the table
-/// (`$ac`/`$noise`/`$option`/`$ic`/`$nodeset`/`$plot`/`$write`) is
-/// recognized syntax but not yet implemented — elaboration rejects a bench
-/// that calls it (fail-loud, never a silent no-op).
+/// the pure diagnostics plus the four analyses and `$write`. What remains
+/// (`$plot`, `extract`) is recognized syntax but not yet implemented —
+/// elaboration rejects a bench that calls it (fail-loud, never a silent
+/// no-op).
 pub fn bench_task_implemented(name: &str) -> bool {
-    is_pure(name) || name == "op" || name == "tran"
+    is_pure(name) || matches!(name, "op" | "tran" | "ac" | "noise" | "write")
 }
 
 struct Assert;

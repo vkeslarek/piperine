@@ -45,7 +45,7 @@ fn source_map() -> piperine_lang::SourceMap {
 }
 
 pub fn execute(list: bool, file: Option<String>) {
-    let project_root = piperine_project::get_current_project_root()
+    let _project_root = piperine_project::get_current_project_root()
         .unwrap_or_else(|| std::env::current_dir().unwrap());
     let source_map = source_map();
 

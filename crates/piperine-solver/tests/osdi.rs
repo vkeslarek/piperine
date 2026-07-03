@@ -394,7 +394,6 @@ fn test_noisy_resistor_has_noise_sources() {
     leak_tmp(t2);
 
     use piperine_solver::analysis::ac::AcAnalysisContext;
-    use piperine_solver::analysis::noise::NoiseSource;
 
     let mut circuit = Circuit::new("Noise Sources");
     let v_node = circuit.port();
@@ -428,7 +427,6 @@ fn test_noise_psd_thermal_value() {
     leak_tmp(t2);
 
     use piperine_solver::analysis::ac::AcAnalysisContext;
-    use piperine_solver::analysis::noise::NoiseSource;
 
     let mut circuit = Circuit::new("Thermal PSD");
     let v_node = circuit.port();
@@ -469,7 +467,6 @@ fn test_noise_psd_scales_with_resistance() {
     leak_tmp(t2);
 
     use piperine_solver::analysis::ac::AcAnalysisContext;
-    use piperine_solver::analysis::noise::NoiseSource;
 
     let ac_ctx = AcAnalysisContext { frequency: 1e3 };
 
@@ -517,7 +514,6 @@ fn test_noise_zero_for_non_noisy_device() {
     leak_tmp(t2);
 
     use piperine_solver::analysis::ac::AcAnalysisContext;
-    use piperine_solver::analysis::noise::NoiseSource;
 
     let mut circuit = Circuit::new("No Noise");
     let v_node = circuit.port();
@@ -641,7 +637,6 @@ fn test_noise_at_different_temperatures() {
     leak_tmp(t2);
 
     use piperine_solver::analysis::ac::AcAnalysisContext;
-    use piperine_solver::analysis::noise::NoiseSource;
 
     let ac_ctx = AcAnalysisContext { frequency: 1e3 };
 

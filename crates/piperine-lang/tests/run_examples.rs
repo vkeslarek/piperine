@@ -34,7 +34,7 @@ fn test_all_examples_compile() {
         match piperine_lang::parse_and_elaborate(&body, &piperine_lang::SourceMap::dummy()) {
             Ok(elab) => {
                 // Lower to IR
-                let ir = piperine_lang::ppr_to_ir(&elab);
+                let ir = piperine_lang::ppr_to_ir(&elab).expect("lowering failed");
                 
                 // For every module, compile it down to executable JIT/Interpreter code
                 for module in &ir.modules {

@@ -93,12 +93,12 @@ pub(crate) fn lower_stmt(stmt: &BehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt>
             
             let mut then_env = pre_env.clone();
             std::mem::swap(&mut ctx.env, &mut then_env);
-            let then_ = lower_stmts(then_body, ctx);
+            let then_ = lower_stmts(&then_body.stmts, ctx);
             std::mem::swap(&mut ctx.env, &mut then_env);
             
             let mut else_env = pre_env.clone();
             std::mem::swap(&mut ctx.env, &mut else_env);
-            let else_ = else_body.as_ref().map(|b| lower_stmts(b, ctx)).unwrap_or_default();
+            let else_ = else_body.as_ref().map(|b| lower_stmts(&b.stmts, ctx)).unwrap_or_default();
             std::mem::swap(&mut ctx.env, &mut else_env);
             
             merge_branch_env(&pre_env, &then_env, &else_env, &cond_ir, &mut ctx.env);
@@ -112,7 +112,7 @@ pub(crate) fn lower_stmt(stmt: &BehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt>
             
             let mut body_env = ctx.env.clone();
             std::mem::swap(&mut ctx.env, &mut body_env);
-            let body_ir = lower_stmts(body, ctx);
+            let body_ir = lower_stmts(&body.stmts, ctx);
             std::mem::swap(&mut ctx.env, &mut body_env);
             
             let body_with_guard = if let Some(guard_expr) = guard {
@@ -163,6 +163,16 @@ pub(crate) fn lower_stmt(stmt: &BehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt>
         }
         BehaviorStmt::Expr(e) => lower_expr_stmt(e, ctx),
         BehaviorStmt::Return(e) => vec![IrStmt::Return(Some(lower_expr(e, ctx)))],
+        BehaviorStmt::For { var, .. } => {
+            // Behavioral `for`s unroll at elaboration; one reaching the IR
+            // lowering means a phase was skipped — fail loud.
+            ctx.errors.push(super::LowerError {
+                module: ctx.module_name.clone(),
+                what: "unlowered behavioral `for` (loop var)",
+                name: var.clone(),
+            });
+            vec![]
+        }
     }
 }
 
@@ -206,28 +216,44 @@ pub(crate) fn lower_match(expr: &Expr, arms: &[crate::pom::MatchArm], ctx: &mut 
     let mut chain: Vec<(IrExpr, Vec<IrStmt>)> = vec![];
 
     for arm in arms {
-        match arm.pattern() {
+        match &arm.pat {
             Pattern::Wildcard => {
-                let mut bctx = LowerCtx::new(ctx.symbols, ctx.is_digital, ctx.module_vars.clone());
+                let mut bctx = LowerCtx::new(
+                    ctx.symbols,
+                    ctx.module_name.clone(),
+                    ctx.is_digital,
+                    ctx.module_vars.clone(),
+                );
                 bctx.env = ctx.env.clone();
                 bctx.enum_values = ctx.enum_values.clone();
-                default_body = lower_stmts(arm.body(), &mut bctx);
-                
-                // Inherit state variables from wildcard arm
+                bctx.consts = ctx.consts.clone();
+                default_body = lower_stmts(&arm.body.stmts, &mut bctx);
+
+                // Inherit state variables, errors, and shadows from the arm.
                 for s in bctx.states { if !ctx.states.contains(&s) { ctx.states.push(s); } }
                 ctx.noise_sources.extend(bctx.noise_sources.iter().cloned());
+                ctx.errors.append(&mut bctx.errors);
+                ctx.digital_shadows.append(&mut bctx.digital_shadows);
             }
             pattern @ (Pattern::Path(_) | Pattern::Literal(_) | Pattern::BitPattern(_)) => {
                 let cond = pattern_match_cond(pattern, &discriminant, ctx);
-                let mut bctx = LowerCtx::new(ctx.symbols, ctx.is_digital, ctx.module_vars.clone());
+                let mut bctx = LowerCtx::new(
+                    ctx.symbols,
+                    ctx.module_name.clone(),
+                    ctx.is_digital,
+                    ctx.module_vars.clone(),
+                );
                 bctx.env = ctx.env.clone();
                 bctx.enum_values = ctx.enum_values.clone();
-                let body = lower_stmts(arm.body(), &mut bctx);
+                bctx.consts = ctx.consts.clone();
+                let body = lower_stmts(&arm.body.stmts, &mut bctx);
                 chain.push((cond, body));
-                
-                // Inherit state variables from this arm
+
+                // Inherit state variables, errors, and shadows from the arm.
                 for s in bctx.states { if !ctx.states.contains(&s) { ctx.states.push(s); } }
                 ctx.noise_sources.extend(bctx.noise_sources.iter().cloned());
+                ctx.errors.append(&mut bctx.errors);
+                ctx.digital_shadows.append(&mut bctx.digital_shadows);
             }
         }
     }
@@ -251,7 +277,7 @@ pub(crate) fn lower_match(expr: &Expr, arms: &[crate::pom::MatchArm], ctx: &mut 
 /// discriminant. Enum paths compare against the variant discriminant,
 /// literals against their value, and a bit pattern (`0b1??0`)
 /// mask-compares: `(d & mask) == value` with `?` bits masked out.
-fn pattern_match_cond(pattern: &Pattern, discriminant: &IrExpr, ctx: &LowerCtx) -> IrExpr {
+fn pattern_match_cond(pattern: &Pattern, discriminant: &IrExpr, ctx: &mut LowerCtx) -> IrExpr {
     match pattern {
         Pattern::Wildcard => IrExpr::Bool(true),
         Pattern::Path(p) => {
@@ -260,7 +286,7 @@ fn pattern_match_cond(pattern: &Pattern, discriminant: &IrExpr, ctx: &LowerCtx) 
             // other path is a parameter reference.
             let target = match ctx.lookup_enum_value(&joined) {
                 Some(value) => IrExpr::Int(value),
-                None => IrExpr::Param(ctx.lookup_param(&joined).unwrap_or(ParamId(0))),
+                None => IrExpr::Param(ctx.require_ident_as_param(&joined)),
             };
             IrExpr::binary(IrBinOp::Eq, discriminant.clone(), target)
         }

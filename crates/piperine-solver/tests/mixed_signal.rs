@@ -182,6 +182,7 @@ impl Device for GatedCurrentSource {
 }
 
 /// Level-sensitive analog sample-and-hold. On posedge(clk), captures av[sample_idx].
+#[allow(dead_code)]
 struct SampleAndHold {
     clk_net: DigitalNet,
     sample_idx: usize,

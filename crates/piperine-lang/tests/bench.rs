@@ -56,10 +56,10 @@ fn bench_on_unknown_module_is_a_fail_loud_error() {
 #[test]
 fn bench_calling_an_unimplemented_task_is_rejected_at_elaboration() {
     let src = format!(
-        "{DUT} bench SwitchOpenTest {{ fn go() {{ var r = $ac(1.0, 1e9, 100); }} }}"
+        "{DUT} bench SwitchOpenTest {{ fn go() {{ var r = $plot(w, \"title\"); }} }}"
     );
     let err = elab_err(&src);
-    assert!(err.contains("$ac"), "unexpected error: {err}");
+    assert!(err.contains("$plot"), "unexpected error: {err}");
     assert!(err.contains("not yet implemented"), "unexpected error: {err}");
 }
 

@@ -293,6 +293,10 @@ impl<'a> Parser<'a> {
     /// Parses the `[...]` body of an array expression after the leading `[` has been consumed.
     /// Detects whether it is a repeat (`[v; N]`), comprehension (`[expr | i in range]`), or element list.
     pub(crate) fn parse_array_expr(&mut self) -> Result<Expr, crate::parse::error::ParseError> {
+        // `[]` — the empty list (SPEC_BENCH §12.4 `var curve : Vec<…> = [];`).
+        if self.eat(&Tok::RBrack) {
+            return Ok(Expr::Array(ArrayBody::List(vec![])));
+        }
         // Lookahead: detect comprehension `[ expr | var in range ]`.
         let mut is_comp = false;
         let mut brace_depth: i32 = 0;

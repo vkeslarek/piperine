@@ -24,7 +24,7 @@ use std::collections::BinaryHeap;
 /// elaboration or lowering error with the full diagnostic.
 fn compile(src: &str) -> IrProgram {
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
-    ppr_to_ir(&elab)
+    ppr_to_ir(&elab).expect("lowering failed")
 }
 
 /// Find a module by name in an IR program. Panics if absent.
@@ -437,7 +437,7 @@ fn spec_switch_branch_closed_is_low_impedance() {
     // The finite-parameter approximation converts V(a,b)<-0 under guard
     // into I(a,b) = G_LARGE * (V(a,b) - 0), so the residual at V(a)=1, V(b)=0
     // should be a large current (≈ 1/GMIN = 1e12 A).
-    let volts = [0.0, 1.0, 0.0]; // gnd, a=1V, b=0V (ctrl is node 1? need to check)
+    let _volts = [0.0, 1.0, 0.0]; // gnd, a=1V, b=0V (ctrl is node 1? need to check)
     // Actually ctrl is input : Bit (digital domain), a is inout : Electrical.
     // NodeId(0)=gnd, NodeId(1)=ctrl(digital), NodeId(2)=a, NodeId(3)=b
     // The switch branch reads ctrl through... the vars bank? No, ctrl is a port.

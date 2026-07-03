@@ -68,7 +68,7 @@ impl AnalogOp for Ddx {
         }
         let x = lower_expr(&args[0], ctx);
         let node_name = super::expr::ident_from_expr(Some(&args[1])).unwrap_or_else(|| "?".into());
-        let node = ctx.lookup_node(&node_name).unwrap_or(piperine_ir::NodeId::GROUND);
+        let node = ctx.require_node(&node_name);
         let id = ctx.alloc_state(IrStateKind::Ddx { node }, x);
         IrExpr::State(id)
     }

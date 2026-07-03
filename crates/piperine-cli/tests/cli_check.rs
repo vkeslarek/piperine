@@ -30,9 +30,6 @@ fn check_ppr_resistor_extracts_module() {
         ",
     );
     let summary = check_file(&p, &piperine_lang::SourceMap::dummy()).expect("check_file ok");
-    let modules = match summary {
-        piperine_cli::commands::check::CheckSummary::Ppr { module_names } => module_names,
-        other => panic!("expected PPR summary, got {other:?}"),
-    };
+    let piperine_cli::commands::check::CheckSummary::Ppr { module_names: modules } = summary;
     assert_eq!(modules, vec!["R".to_string()]);
 }

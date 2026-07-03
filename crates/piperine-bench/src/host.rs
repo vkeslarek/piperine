@@ -62,6 +62,40 @@ impl SimHost {
 
         Some(InstanceRef { label: label.to_string(), ports, params })
     }
+
+    /// A `Record` of `bundle`'s field defaults, recursively: a field whose
+    /// default is itself a bundle literal (`solver : Solver = Solver {}`)
+    /// resolves to that bundle's own defaults overlaid with the literal's
+    /// named fields. Fields with no default are simply absent — reading
+    /// one from an under-filled literal is a fail-loud `Undefined`.
+    fn bundle_defaults(&self, bundle: &str) -> Option<Value> {
+        use piperine_lang::parse::ast::Expr;
+        let decl = self.session.design().bundle(bundle)?;
+        let env = piperine_lang::elab::const_eval::ConstEnv::new();
+        let mut fields = HashMap::new();
+        for field in &decl.fields {
+            let Some(default) = &field.default else { continue };
+            let value = match default {
+                Expr::BundleLit { ty, fields: overrides } => {
+                    let Some(Value::Record(inner)) = self.bundle_defaults(&ty.name) else {
+                        continue;
+                    };
+                    for (name, expr) in overrides {
+                        if let Ok(v) = env.eval(expr) {
+                            inner.borrow_mut().insert(name.clone(), v);
+                        }
+                    }
+                    Value::Record(inner)
+                }
+                other => match env.eval(other) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                },
+            };
+            fields.insert(field.name.clone(), value);
+        }
+        Some(Value::Record(Rc::new(std::cell::RefCell::new(fields))))
+    }
 }
 
 impl Host for SimHost {
@@ -70,6 +104,12 @@ impl Host for SimHost {
     }
 
     fn lookup(&mut self, name: &str) -> Option<Value> {
+        // Interpreter protocol: `bundle:<Name>` asks for a Record of the
+        // bundle's field defaults, so an omitted field in a bundle literal
+        // (`OpConfig {}`) falls back to its declaration (SPEC §6.5).
+        if let Some(bundle_name) = name.strip_prefix("bundle:") {
+            return self.bundle_defaults(bundle_name);
+        }
         if GROUND_NAMES.contains(&name) {
             return Some(Value::Object(Rc::new(NetRef { name: "gnd".to_string() })));
         }
@@ -79,6 +119,15 @@ impl Host for SimHost {
         }
         if let Some(instance) = self.resolve_instance(name) {
             return Some(Value::Object(Rc::new(instance)));
+        }
+        // The bench module's own params, staged-override first (SPEC_BENCH
+        // §3 item 2 lists nets, instances, *and params*).
+        if let Some(p) = module.params.iter().find(|p| p.name == name) {
+            return self
+                .session
+                .design()
+                .get_override("", &p.name)
+                .or_else(|| p.value());
         }
         if let Some(value) = self.session.design().const_(name) {
             return Some(value.clone());
@@ -107,16 +156,66 @@ impl Host for SimHost {
     }
 
     fn assign(&mut self, target: &Expr, value: &Value) -> Result<bool, EvalError> {
-        if let Expr::Field(base, param) = target
-            && let Expr::Ident(label) = base.as_ref()
-                && self.resolve_instance(label).is_some() {
-                    // One Value type end to end (SIMPLIFICATION.md P2) — a
-                    // staged override is the interpreter's value verbatim.
-                    // Non-scalars are rejected fail-loud when the next
-                    // analysis applies overrides.
-                    self.session.stage(label, param, value.clone());
-                    return Ok(true);
-                }
+        if let Expr::Field(base, param) = target {
+            // `sw.ctrl = 1` — bare-name staging on one instance.
+            if let Expr::Ident(label) = base.as_ref()
+                && self.resolve_instance(label).is_some()
+            {
+                // One Value type end to end (SIMPLIFICATION.md P2) — a
+                // staged override is the interpreter's value verbatim.
+                // Non-scalars are rejected fail-loud when the next
+                // analysis applies overrides.
+                self.session.stage(label, param, value.clone());
+                return Ok(true);
+            }
+            // `select("//resistor").resistance = 2e6` — bulk staging
+            // across a selection (SPEC_BENCH §7). The selector path must
+            // be a string literal (milestone 1).
+            if let Expr::Call(callee, sel_args) = base.as_ref()
+                && let Expr::Ident(name) = callee.as_ref()
+                && name == "select"
+            {
+                let Some(Expr::Literal(piperine_lang::parse::ast::Literal::String(path))) =
+                    sel_args.first()
+                else {
+                    return Err(EvalError::TypeMismatch(
+                        "select(...) staging takes a string-literal path".into(),
+                    ));
+                };
+                return self.stage_selection(path, param, value);
+            }
+        }
         Ok(false)
+    }
+}
+
+impl SimHost {
+    /// Stage `param = value` on every instance a selector path matches —
+    /// fail-loud when the selection is empty or matches nothing stageable.
+    fn stage_selection(&mut self, path: &str, param: &str, value: &Value) -> Result<bool, EvalError> {
+        use piperine_lang::pom::node::Node;
+        let mut design = self.session.design().clone();
+        // Selector evaluation roots relative paths at the design top;
+        // point it at the bench's module.
+        design.set_top(self.session.module());
+        let selection = design
+            .select(path)
+            .map_err(|e| EvalError::Host(format!("select(\"{path}\"): {e}")))?;
+        let labels: Vec<String> = selection
+            .iter()
+            .filter_map(|node| match node {
+                Node::Instance(inst) => Some(inst.name().to_string()),
+                _ => None,
+            })
+            .collect();
+        if labels.is_empty() {
+            return Err(EvalError::Host(format!(
+                "select(\"{path}\") matched no instances to stage `{param}` on"
+            )));
+        }
+        for label in labels {
+            self.session.stage(&label, param, value.clone());
+        }
+        Ok(true)
     }
 }

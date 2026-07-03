@@ -1,5 +1,4 @@
 use piperine_lang::parse_and_elaborate;
-use piperine_lang::pom::ElabError;
 
 #[test]
 fn test_b5_implicit_widening_allowed() {
@@ -11,7 +10,7 @@ fn test_b5_implicit_widening_allowed() {
         b = a;
     }
     ";
-    let prog = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).unwrap();
+    let _prog = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).unwrap();
     // This should pass without error
 }
 
@@ -44,5 +43,5 @@ fn test_b5_explicit_cast_allowed() {
         b = real(a);
     }
     ";
-    let prog = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).unwrap();
+    let _prog = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).unwrap();
 }

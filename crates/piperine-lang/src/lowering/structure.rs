@@ -53,8 +53,11 @@ fn storage_value_type(decl: &DisciplineDecl) -> Option<&str> {
     None
 }
 
-/// Convert a PHDL [`Module`] into an [`IrModule`].
-pub(crate) fn convert_mod(m: &Module, prog: &Design) -> IrModule {
+/// Convert a PHDL [`Module`] into an [`IrModule`]. Unresolved names
+/// (a connection to an unknown net, an override of an unknown child param)
+/// are recorded in `errors` — `ppr_to_ir` fails if any were found
+/// (SIMPLIFICATION.md P5).
+pub(crate) fn convert_mod(m: &Module, prog: &Design, errors: &mut Vec<super::LowerError>) -> IrModule {
     use crate::parse::ast::Direction;
 
     let mut symbols = SymbolTable::new();
@@ -76,7 +79,7 @@ pub(crate) fn convert_mod(m: &Module, prog: &Design) -> IrModule {
     // 2. Params
     for p in m.params() {
         let ty = elab_value_type_to_ir(p.value_type());
-        let default = p.default().map(|v| value_to_ir(v, &mut symbols));
+        let default = p.default().map(value_to_ir);
         symbols.add_param(p.name(), ty, default);
     }
 
@@ -90,7 +93,7 @@ pub(crate) fn convert_mod(m: &Module, prog: &Design) -> IrModule {
     for v in m.vars() {
         let ty = elab_value_type_to_ir(v.value_type());
         let _id = symbols.add_var(v.name(), ty);
-        let _init = v.init().map(|v| value_to_ir(v, &mut symbols));
+        let _init = v.init().map(value_to_ir);
         // GAPS §I.15 — We don't have IrVarDecl in IrModule anymore, it's just in SymbolTable.
         // We can just add them to the symbol table, the initialization goes into digital/analog bodies or is handled elsewhere.
         // Wait, if it has an init, we probably should emit a VarDecl statement in the body or something.
@@ -100,18 +103,36 @@ pub(crate) fn convert_mod(m: &Module, prog: &Design) -> IrModule {
     //    `ppr_to_ir` pass 1.5 (after all module skeletons are built), so
     //    that `FnId`s are consistent. Skip here to avoid duplicates.
 
-    // 6. Instances
+    // 6. Instances. Name → id resolved through a map built once
+    // (SIMPLIFICATION.md P12), and a connection naming an unknown net is
+    // an error — the old fallback silently grounded it.
+    let node_by_name: std::collections::HashMap<String, NodeId> =
+        symbols.nodes().map(|(id, n)| (n.name.clone(), id)).collect();
     let mut instances = Vec::new();
     for inst in m.instances() {
         let mut connections = Vec::new();
         for r in inst.ports() {
             let name = r.to_string();
-            let mut node_id = NodeId::GROUND;
-            if name == "gnd" || name == "GND" || name == "vss" || name == "VSS" || name == "0" {
-                node_id = NodeId::GROUND;
-            } else if let Some((id, _)) = symbols.nodes().find(|(_, n)| n.name == name) {
-                node_id = id;
-            }
+            let node_id = if super::GROUND_NAMES.contains(&name.as_str()) {
+                NodeId::GROUND
+            } else if let Some(&id) = node_by_name.get(&name) {
+                id
+            } else if let Some(&id) = node_by_name.get(r.net()) {
+                // GAPS: an array wire (`tap : Electrical[5]`) is a single
+                // IR node today — every `tap[i]` collapses onto it. Wrong
+                // electrically (the taps should be distinct), but strictly
+                // better than the historic behavior, which silently
+                // grounded every indexed connection. Array-net expansion
+                // is the real fix.
+                id
+            } else {
+                errors.push(super::LowerError {
+                    module: m.name().to_string(),
+                    what: "net (instance connection)",
+                    name,
+                });
+                NodeId::GROUND
+            };
             connections.push(node_id);
         }
         
@@ -124,9 +145,17 @@ pub(crate) fn convert_mod(m: &Module, prog: &Design) -> IrModule {
         // Wait, since we are returning IrModule now, let's look up the target module in `prog`.
         if let Some(child) = prog.module(inst.module_name()) {
             for (pname, pval) in inst.params() {
-                // Find index of parameter in child module.
+                // Find index of parameter in child module. An override
+                // naming an unknown child param is an error — the old code
+                // silently dropped it (the typo'd override just vanished).
                 if let Some(idx) = child.params().iter().position(|p| p.name() == pname) {
-                    params.push((ParamId(idx as u32), value_to_ir(pval, &mut symbols)));
+                    params.push((ParamId(idx as u32), value_to_ir(pval)));
+                } else {
+                    errors.push(super::LowerError {
+                        module: m.name().to_string(),
+                        what: "parameter (instance override)",
+                        name: format!("{}.{pname}", inst.name()),
+                    });
                 }
             }
         }
@@ -169,7 +198,7 @@ pub(crate) fn elab_value_type_to_ir(ty: &ValueType) -> IrType {
     }
 }
 
-pub(crate) fn value_to_ir(v: &crate::value::Value, _symbols: &mut SymbolTable) -> IrExpr {
+pub(crate) fn value_to_ir(v: &crate::value::Value) -> IrExpr {
     use crate::value::Value;
     match v {
         Value::Real(r) => IrExpr::Real(*r),
@@ -192,7 +221,12 @@ pub(crate) fn value_to_ir(v: &crate::value::Value, _symbols: &mut SymbolTable) -
     }
 }
 
-pub(crate) fn convert_fn(f: &Function, prog: &Design, symbols: &mut SymbolTable) -> IrFunction {
+pub(crate) fn convert_fn(
+    f: &Function,
+    prog: &Design,
+    symbols: &mut SymbolTable,
+    errors: &mut Vec<super::LowerError>,
+) -> IrFunction {
     let mut params = Vec::new();
     let mut module_vars = HashSet::new();
     for (n, ty) in f.params() {
@@ -202,9 +236,11 @@ pub(crate) fn convert_fn(f: &Function, prog: &Design, symbols: &mut SymbolTable)
         module_vars.insert(n.to_string());
     }
     
-    let mut ctx = LowerCtx::new(symbols, false, module_vars);
+    let mut ctx = LowerCtx::new(symbols, format!("fn {}", f.name()), false, module_vars);
     ctx.enum_values = prog.enum_value_map();
+    ctx.consts = LowerCtx::const_irs(prog);
     let body = lower_stmts(f.body(), &mut ctx);
+    errors.append(&mut ctx.errors);
     
     let returns = Some(IrType::Real); // Best effort fallback
     IrFunction { name: f.name().to_string(), params, returns, body }

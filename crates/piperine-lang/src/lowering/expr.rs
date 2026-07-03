@@ -17,11 +17,12 @@ pub(crate) fn parse_contrib_dest(dest: &Expr, ctx: &mut LowerCtx) -> (NatureId, 
             let nature = ctx.symbols.add_nature(name.as_str(), nature_kind);
             
             let plus_name = ident_from_expr(args.first()).unwrap_or_else(|| "?".into());
+            // `V(a)` / `I(a)` — an omitted second terminal is ground.
             let minus_name = ident_from_expr(args.get(1)).unwrap_or_else(|| "0".into());
-            
-            let plus = ctx.lookup_node(&plus_name).unwrap_or(NodeId::GROUND);
-            let minus = ctx.lookup_node(&minus_name).unwrap_or(NodeId::GROUND);
-            
+
+            let plus = ctx.require_node(&plus_name);
+            let minus = ctx.require_node(&minus_name);
+
             return (nature, plus, minus);
         }
     
@@ -121,8 +122,7 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
             if let Some(val) = ctx.env.get(name) {
                 val.clone()
             } else if ctx.module_vars.contains(name) {
-                let id = ctx.lookup_var(name).unwrap_or(VarId(0));
-                IrExpr::Var(id)
+                IrExpr::Var(ctx.require_var(name))
             } else if let Some(id) = ctx.lookup_node(name) {
                 if ctx.is_digital {
                     IrExpr::Net(id)
@@ -140,9 +140,12 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
                 }
             } else if let Some(value) = ctx.lookup_enum_value(name) {
                 IrExpr::Int(value)
+            } else if let Some(c) = ctx.consts.get(name) {
+                c.clone()
             } else {
-                let id = ctx.lookup_param(name).unwrap_or(ParamId(0));
-                IrExpr::Param(id)
+                // Last namespace standing: a parameter — or an unresolved
+                // name, which is an error, not a silent `ParamId(0)`.
+                IrExpr::Param(ctx.require_ident_as_param(name))
             }
         }
 
@@ -153,8 +156,7 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
             } else if let Some(value) = ctx.lookup_enum_value(&name) {
                 IrExpr::Int(value)
             } else {
-                let id = ctx.lookup_param(&name).unwrap_or(ParamId(0));
-                IrExpr::Param(id)
+                IrExpr::Param(ctx.require_ident_as_param(&name))
             }
         }
 
@@ -222,9 +224,12 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
             // that the named instance's port is connected to.
             if let Some(id) = ctx.lookup_node(&qualified) {
                 if ctx.is_digital { IrExpr::Net(id) } else { IrExpr::Real(0.0) }
-            } else {
-                let id = ctx.lookup_param(&qualified).unwrap_or(ParamId(0));
+            } else if let Some(id) = ctx.lookup_param(&qualified.replace('.', "_")) {
+                // A bundle-typed param field (`model.rsh`) was flattened to
+                // a scalar param `model_rsh` at elaboration (GAPS §I.14).
                 IrExpr::Param(id)
+            } else {
+                IrExpr::Param(ctx.require_ident_as_param(&qualified))
             }
         }
 
@@ -251,11 +256,19 @@ pub(crate) fn lower_array(body: &ArrayBody, ctx: &mut LowerCtx) -> IrExpr {
                 let inclusive = range.inclusive as i64;
                 let mut elems = vec![];
                 for i in start..(end + inclusive) {
-                    let mut iter_ctx = LowerCtx::new(ctx.symbols, ctx.is_digital, ctx.module_vars.clone());
+                    let mut iter_ctx = LowerCtx::new(
+                        ctx.symbols,
+                        ctx.module_name.clone(),
+                        ctx.is_digital,
+                        ctx.module_vars.clone(),
+                    );
                     iter_ctx.env = ctx.env.clone();
                     iter_ctx.enum_values = ctx.enum_values.clone();
+                    iter_ctx.consts = ctx.consts.clone();
                     iter_ctx.env.insert(var.clone(), IrExpr::Int(i));
                     elems.push(lower_expr(expr, &mut iter_ctx));
+                    ctx.errors.append(&mut iter_ctx.errors);
+                    ctx.digital_shadows.append(&mut iter_ctx.digital_shadows);
                 }
                 IrExpr::Array(elems)
             } else {
@@ -312,13 +325,13 @@ pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrEx
         return if args.len() >= 2 {
             let plus_name = ident_from_expr(Some(&args[0])).unwrap_or_else(|| "?".into());
             let minus_name = ident_from_expr(Some(&args[1])).unwrap_or_else(|| "0".into());
-            let plus = ctx.lookup_node(&plus_name).unwrap_or(NodeId::GROUND);
-            let minus = ctx.lookup_node(&minus_name).unwrap_or(NodeId::GROUND);
+            let plus = ctx.require_node(&plus_name);
+            let minus = ctx.require_node(&minus_name);
             let nature = ctx.symbols.add_nature(name, NatureKind::Potential);
             IrExpr::Branch { nature, plus, minus }
         } else if args.len() == 1 {
             let plus_name = ident_from_expr(Some(&args[0])).unwrap_or_else(|| "?".into());
-            let plus = ctx.lookup_node(&plus_name).unwrap_or(NodeId::GROUND);
+            let plus = ctx.require_node(&plus_name);
             let nature = ctx.symbols.add_nature(name, NatureKind::Potential);
             IrExpr::Branch { nature, plus, minus: NodeId::GROUND }
         } else {

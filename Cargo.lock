@@ -1533,6 +1533,7 @@ dependencies = [
 name = "piperine-bench"
 version = "0.1.1"
 dependencies = [
+ "num-complex",
  "piperine-codegen",
  "piperine-lang",
  "piperine-solver",

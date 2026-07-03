@@ -1,6 +1,6 @@
 use piperine_lang::SourceMap;
 use piperine_project::{PiperineToml, get_current_project_root, resolver::Resolver};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub fn build_source_map() -> (SourceMap, PathBuf) {
     let project_root =

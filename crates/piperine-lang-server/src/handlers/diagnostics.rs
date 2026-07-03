@@ -123,7 +123,9 @@ pub fn byte_to_line_col(source: &str, byte_offset: usize) -> (u32, u32) {
 }
 
 
-/// Extract a byte range from an error message (for tests).
+/// Extract a byte range from an error message. Test-support surface: the
+/// integration tests are the only consumers.
+#[allow(dead_code)]
 pub fn extract_error_range(source: &str, error: &str) -> Range {
     let pe = ParseError {
         message: error.into(),

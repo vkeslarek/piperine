@@ -1,4 +1,4 @@
-use crate::parse::ast::{BehaviorKind, BehaviorStmt, BindOp, EventSpec, Expr, ModuleStatement, Stmt};
+use crate::parse::ast::{BehaviorKind, BindOp, EventSpec, Expr, ModuleStatement, Stmt};
 use crate::pom::{ElabError, ElabErrorKind};
 use std::collections::HashMap;
 
@@ -123,50 +123,44 @@ impl EventRegistry {
         Ok(())
     }
 
-    /// Validates a slice of `BehaviorStmt`s against `kind` (Analog/Digital).
-    /// Delegates each statement to
-    /// [`validate_behavior_stmt`](EventRegistry::validate_behavior_stmt).
-    pub fn validate_behavior(&self, kind: BehaviorKind, stmts: &[BehaviorStmt]) -> Result<(), ElabError> {
+    /// Validates a slice of behavior-body statements against `kind`
+    /// (Analog/Digital): `<+` is analog-only, event specs must match the
+    /// domain. One statement type, one validator (SIMPLIFICATION.md P3 —
+    /// this used to be two near-identical recursions).
+    pub fn validate_behavior(&self, kind: BehaviorKind, stmts: &[Stmt]) -> Result<(), ElabError> {
         for stmt in stmts {
             self.validate_behavior_stmt(kind.clone(), stmt)?;
         }
         Ok(())
     }
 
-    /// Validates a single `BehaviorStmt` against the behavior kind.
-    /// Flags `Contrib` in digital blocks, and recursively validates
-    /// `If`/`Match`/`For`/`Event` sub-bodies.
-    fn validate_behavior_stmt(&self, kind: BehaviorKind, stmt: &BehaviorStmt) -> Result<(), ElabError> {
+    fn validate_behavior_stmt(&self, kind: BehaviorKind, stmt: &Stmt) -> Result<(), ElabError> {
         match stmt {
-            BehaviorStmt::Bind { op: BindOp::Contrib, .. } => {
+            Stmt::Bind { op: BindOp::Contrib, .. } => {
                 if kind == BehaviorKind::Digital {
                     return Err(ElabError::from(ElabErrorKind::ContribInDigital));
                 }
             }
-            BehaviorStmt::Bind { .. } => {}
-            BehaviorStmt::If { then_body, else_body, .. } => {
-                self.validate_behavior(kind.clone(), then_body)?;
+            Stmt::Bind { .. } => {}
+            Stmt::If { then_body, else_body, .. } => {
+                self.validate_behavior(kind.clone(), &then_body.stmts)?;
                 if let Some(eb) = else_body {
-                    self.validate_behavior(kind.clone(), eb)?;
+                    self.validate_behavior(kind.clone(), &eb.stmts)?;
                 }
             }
-            BehaviorStmt::Match { arms, .. } => {
+            Stmt::Match { arms, .. } => {
                 for arm in arms {
-                    self.validate_behavior(kind.clone(), &arm.body)?;
+                    self.validate_behavior(kind.clone(), &arm.body.stmts)?;
                 }
             }
-            BehaviorStmt::For { body, .. } => {
-                self.validate_behavior(kind.clone(), body)?;
+            Stmt::For { body, .. } => {
+                self.validate_behavior(kind.clone(), &body.stmts)?;
             }
-            BehaviorStmt::Event { spec, body, .. } => {
+            Stmt::Event { spec, body, .. } => {
                 self.validate_event_spec(kind.clone(), spec)?;
-                for stmt in &body.stmts {
-                    self.validate_stmt_in_behavior(kind.clone(), stmt)?;
-                }
+                self.validate_behavior(kind, &body.stmts)?;
             }
-            BehaviorStmt::VarDecl { .. }
-            | BehaviorStmt::Diagnostic { .. }
-            | BehaviorStmt::Expr(_) => {}
+            Stmt::VarDecl { .. } | Stmt::Diagnostic { .. } | Stmt::Return(_) | Stmt::Expr(_) => {}
         }
         Ok(())
     }
@@ -196,40 +190,4 @@ impl EventRegistry {
         Ok(())
     }
 
-    /// Validates a raw `Stmt` (from a function body) inside an event block.
-    /// Recursively checks `If`/`Match`/`For` children and rejects `Contrib`
-    /// in digital context.
-    fn validate_stmt_in_behavior(&self, kind: BehaviorKind, stmt: &Stmt) -> Result<(), ElabError> {
-        match stmt {
-            Stmt::Bind { op: BindOp::Contrib, .. } => {
-                if kind == BehaviorKind::Digital {
-                    return Err(ElabError::from(ElabErrorKind::ContribInDigital));
-                }
-            }
-            Stmt::If { then_body, else_body, .. } => {
-                for s in &then_body.stmts {
-                    self.validate_stmt_in_behavior(kind.clone(), s)?;
-                }
-                if let Some(eb) = else_body {
-                    for s in &eb.stmts {
-                        self.validate_stmt_in_behavior(kind.clone(), s)?;
-                    }
-                }
-            }
-            Stmt::Match { arms, .. } => {
-                for arm in arms {
-                    for s in &arm.body.stmts {
-                        self.validate_stmt_in_behavior(kind.clone(), s)?;
-                    }
-                }
-            }
-            Stmt::For { body, .. } => {
-                for s in &body.stmts {
-                    self.validate_stmt_in_behavior(kind.clone(), s)?;
-                }
-            }
-            _ => {}
-        }
-        Ok(())
-    }
 }

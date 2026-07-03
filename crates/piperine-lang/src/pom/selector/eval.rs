@@ -277,7 +277,7 @@ impl<'a> Evaluator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pom::module::{Instance, Module};
+    use crate::pom::module::Module;
 
     #[test]
     fn test_eval_simple() {

@@ -2,116 +2,17 @@
 //! statements, and [`Function`]/[`ImplBlock`] (value-layer computation).
 
 use crate::value::Value;
-use crate::parse::ast::{BehaviorKind, BindOp, EventSpec, Pattern};
+use crate::parse::ast::BehaviorKind;
 use crate::pom::net_type::TypeRef;
 use crate::pom::node::Kind;
 use crate::pom::traits::{Kinded, Named};
 
-#[derive(Debug, Clone)]
-pub enum BehaviorStmt {
-    VarDecl { name: String, ty: crate::pom::ValueType, default: Option<crate::parse::ast::Expr> },
-    Bind { dest: crate::parse::ast::Expr, op: BindOp, src: crate::parse::ast::Expr },
-    If { cond: crate::parse::ast::Expr, then_body: Vec<BehaviorStmt>, else_body: Option<Vec<BehaviorStmt>> },
-    Match { expr: crate::parse::ast::Expr, arms: Vec<MatchArm> },
-    Event { spec: EventSpec, guard: Option<crate::parse::ast::Expr>, body: Vec<BehaviorStmt> },
-    Return(crate::parse::ast::Expr),
-    Diagnostic { sys: String, args: Vec<crate::parse::ast::Expr> },
-    Expr(crate::parse::ast::Expr),
-}
-
-#[derive(Debug, Clone)]
-pub struct MatchArm {
-    pub pat: Pattern,
-    pub body: Vec<BehaviorStmt>,
-}
-
-impl MatchArm {
-    pub fn pattern(&self) -> &Pattern { &self.pat }
-    pub fn body(&self) -> &[BehaviorStmt] { &self.body }
-}
-
-impl BehaviorStmt {
-    /// Immutable visit of every expression in this statement, pre-order.
-    /// See [`crate::parse::ast::Expr::walk`].
-    pub fn walk_exprs(&self, f: &mut impl FnMut(&crate::parse::ast::Expr) -> crate::parse::ast::Walk) {
-        
-        match self {
-            BehaviorStmt::VarDecl { default, .. } => {
-                if let Some(e) = default { e.walk(f); }
-            }
-            BehaviorStmt::Bind { dest, src, .. } => { dest.walk(f); src.walk(f); }
-            BehaviorStmt::If { cond, then_body, else_body } => {
-                cond.walk(f);
-                then_body.iter().for_each(|s| s.walk_exprs(f));
-                if let Some(b) = else_body { b.iter().for_each(|s| s.walk_exprs(f)); }
-            }
-            BehaviorStmt::Match { expr, arms } => {
-                expr.walk(f);
-                arms.iter().for_each(|a| a.body.iter().for_each(|s| s.walk_exprs(f)));
-            }
-            BehaviorStmt::Event { spec, guard, body } => {
-                spec.walk_exprs(f);
-                if let Some(g) = guard { g.walk(f); }
-                body.iter().for_each(|s| s.walk_exprs(f));
-            }
-            BehaviorStmt::Return(e) | BehaviorStmt::Expr(e) => e.walk(f),
-            BehaviorStmt::Diagnostic { args, .. } => args.iter().for_each(|a| a.walk(f)),
-        }
-    }
-
-    /// Mutable visit of every expression in this statement, pre-order.
-    /// See [`crate::parse::ast::Expr::walk_mut`].
-    pub fn walk_exprs_mut(&mut self, f: &mut impl FnMut(&mut crate::parse::ast::Expr) -> crate::parse::ast::Walk) {
-        
-        match self {
-            BehaviorStmt::VarDecl { default, .. } => {
-                if let Some(e) = default { e.walk_mut(f); }
-            }
-            BehaviorStmt::Bind { dest, src, .. } => { dest.walk_mut(f); src.walk_mut(f); }
-            BehaviorStmt::If { cond, then_body, else_body } => {
-                cond.walk_mut(f);
-                then_body.iter_mut().for_each(|s| s.walk_exprs_mut(f));
-                if let Some(b) = else_body { b.iter_mut().for_each(|s| s.walk_exprs_mut(f)); }
-            }
-            BehaviorStmt::Match { expr, arms } => {
-                expr.walk_mut(f);
-                arms.iter_mut().for_each(|a| a.body.iter_mut().for_each(|s| s.walk_exprs_mut(f)));
-            }
-            BehaviorStmt::Event { spec, guard, body } => {
-                spec.walk_exprs_mut(f);
-                if let Some(g) = guard { g.walk_mut(f); }
-                body.iter_mut().for_each(|s| s.walk_exprs_mut(f));
-            }
-            BehaviorStmt::Return(e) | BehaviorStmt::Expr(e) => e.walk_mut(f),
-            BehaviorStmt::Diagnostic { args, .. } => args.iter_mut().for_each(|a| a.walk_mut(f)),
-        }
-    }
-
-    /// Visit every sub-statement in this statement's children (pre-order,
-    /// recursive). The callback fires for each direct child statement —
-    /// `If` bodies, `Match` arms, `Event` bodies. The callback does *not*
-    /// fire for `self`; callers that want to visit the root too should call
-    /// `f(self)` before `self.walk_stmts(f)`.
-    pub fn walk_stmts(&self, f: &mut impl FnMut(&BehaviorStmt)) {
-        match self {
-            BehaviorStmt::If { then_body, else_body, .. } => {
-                for s in then_body { f(s); s.walk_stmts(f); }
-                if let Some(b) = else_body {
-                    for s in b { f(s); s.walk_stmts(f); }
-                }
-            }
-            BehaviorStmt::Match { arms, .. } => {
-                for arm in arms {
-                    for s in &arm.body { f(s); s.walk_stmts(f); }
-                }
-            }
-            BehaviorStmt::Event { body, .. } => {
-                for s in body { f(s); s.walk_stmts(f); }
-            }
-            _ => {}
-        }
-    }
-}
+/// Behavior bodies are the surface [`Stmt`] type directly
+/// (SIMPLIFICATION.md P3): the elaborator const-folds structural `if`s and
+/// unrolls `for`s *in place*, and records the one thing it genuinely adds —
+/// resolved `var` types — in [`Behavior::var_types`], instead of deep-copying
+/// every statement into a parallel enum.
+pub use crate::parse::ast::{Stmt as BehaviorStmt, StmtMatchArm as MatchArm};
 
 /// A behavior block inside a module (analog or digital).
 #[derive(Debug, Clone)]
@@ -120,15 +21,19 @@ pub struct Behavior {
     pub name: String,
     /// Whether this is an analog or digital block.
     pub kind: BehaviorKind,
-    /// The statements making up the behavior body.
+    /// The statements making up the behavior body (elaborated: structural
+    /// `if`/`for` folded away).
     pub body: Vec<BehaviorStmt>,
+    /// Resolved value types of the body's `var` declarations, keyed by
+    /// name — the side table elaboration adds on top of the surface AST.
+    pub var_types: std::collections::HashMap<String, crate::pom::ValueType>,
 }
 
 impl Behavior {
     /// Construct a new Behavior (used by the elaborator and codegen).
     #[doc(hidden)]
     pub fn new(name: String, kind: BehaviorKind, body: Vec<BehaviorStmt>) -> Self {
-        Self { name, kind, body }
+        Self { name, kind, body, var_types: Default::default() }
     }
 
     /// The behavior block name.

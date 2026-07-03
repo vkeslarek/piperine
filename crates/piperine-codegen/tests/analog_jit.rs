@@ -143,6 +143,7 @@ fn capacitor() -> IrModule {
 
 /// A structural top: `modules` instanced once each with the given
 /// connections into shared top nodes.
+#[allow(dead_code)]
 fn top_with(
     instances: Vec<(&str, Vec<NodeId>, Vec<(ParamId, IrExpr)>)>,
     num_nodes: u32,

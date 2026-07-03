@@ -7,6 +7,8 @@ use thiserror::Error;
 pub enum BenchError {
     #[error("staging error: {0}")]
     Elaboration(#[from] piperine_lang::ElabError),
+    #[error("lowering error: {0}")]
+    Lowering(#[from] piperine_lang::LowerErrors),
     #[error("codegen error: {0}")]
     Codegen(#[from] piperine_codegen::CodegenError),
     #[error("solver error: {0}")]

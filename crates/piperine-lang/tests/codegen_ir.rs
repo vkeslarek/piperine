@@ -25,7 +25,7 @@ analog Resistor {
 #[test]
 fn test_compile_resistor() {
     let prog = parse_and_elaborate(RESISTOR_SRC, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let dev  = ir_analog_to_device(&ppr_to_ir(&prog), "Resistor").expect("codegen");
+    let dev  = ir_analog_to_device(&ppr_to_ir(&prog).expect("lowering failed"), "Resistor").expect("codegen");
 
     assert_eq!(dev.num_terminals(), 2);
     assert_eq!(dev.num_params(),    1);
@@ -35,7 +35,7 @@ fn test_compile_resistor() {
 #[test]
 fn test_resistor_residual_ohms_law() {
     let prog = parse_and_elaborate(RESISTOR_SRC, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let dev  = ir_analog_to_device(&ppr_to_ir(&prog), "Resistor").expect("codegen");
+    let dev  = ir_analog_to_device(&ppr_to_ir(&prog).expect("lowering failed"), "Resistor").expect("codegen");
 
     // V(p) = 1.0 V, V(n) = 0.0 V → V(p,n) = 1.0 V
     // R = 1000 Ω → I = 1.0 / 1000 = 0.001 A
@@ -53,7 +53,7 @@ fn test_resistor_residual_ohms_law() {
 #[test]
 fn test_resistor_jacobian_conductance() {
     let prog = parse_and_elaborate(RESISTOR_SRC, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let dev  = ir_analog_to_device(&ppr_to_ir(&prog), "Resistor").expect("codegen");
+    let dev  = ir_analog_to_device(&ppr_to_ir(&prog).expect("lowering failed"), "Resistor").expect("codegen");
 
     // G = 1/R = 0.001 S
     // J = [[ G, -G], [-G,  G]]
@@ -92,7 +92,7 @@ analog Vccs {
 #[test]
 fn test_vccs_residual() {
     let prog = parse_and_elaborate(VCCS_SRC, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let dev  = ir_analog_to_device(&ppr_to_ir(&prog), "Vccs").expect("codegen");
+    let dev  = ir_analog_to_device(&ppr_to_ir(&prog).expect("lowering failed"), "Vccs").expect("codegen");
 
     // V(inp,inn)=0.5 V, gm=0.01 → I=0.005 A
     let node_voltages = [0.5_f64, 0.0, 0.0, 0.0]; // inp=0.5, inn=0, outp=0, outn=0
@@ -111,7 +111,7 @@ fn test_vccs_residual() {
 #[test]
 fn test_vccs_jacobian_transconductance() {
     let prog = parse_and_elaborate(VCCS_SRC, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let dev  = ir_analog_to_device(&ppr_to_ir(&prog), "Vccs").expect("codegen");
+    let dev  = ir_analog_to_device(&ppr_to_ir(&prog).expect("lowering failed"), "Vccs").expect("codegen");
 
     let node_voltages = [0.5_f64, 0.0, 0.0, 0.0];
     let params        = [0.01_f64];
@@ -151,7 +151,7 @@ analog Diode {
 #[test]
 fn test_diode_residual_forward_bias() {
     let prog = parse_and_elaborate(DIODE_SRC, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let dev  = ir_analog_to_device(&ppr_to_ir(&prog), "Diode").expect("codegen");
+    let dev  = ir_analog_to_device(&ppr_to_ir(&prog).expect("lowering failed"), "Diode").expect("codegen");
 
     let vd   = 0.5_f64;
     let is_  = 1.0e-14_f64;
@@ -171,7 +171,7 @@ fn test_diode_residual_forward_bias() {
 #[test]
 fn test_diode_jacobian_forward_bias() {
     let prog = parse_and_elaborate(DIODE_SRC, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let dev  = ir_analog_to_device(&ppr_to_ir(&prog), "Diode").expect("codegen");
+    let dev  = ir_analog_to_device(&ppr_to_ir(&prog).expect("lowering failed"), "Diode").expect("codegen");
 
     let vd  = 0.5_f64;
     let is_ = 1.0e-14_f64;
@@ -210,7 +210,7 @@ mod Top ( inout vdd : Electrical, inout gnd : Electrical ) {
 #[test]
 fn test_jit_compiles() {
     let prog = parse_and_elaborate(RESISTOR_IN_TOP_SRC, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let _ci = CircuitCompiler::new(&ir).build_circuit("Top").expect("from_ir");
 }
 
@@ -232,7 +232,7 @@ mod Top ( inout vdd : Electrical, inout mid : Electrical, inout gnd : Electrical
 }
 ";
     let prog = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let _ci = CircuitCompiler::new(&ir).build_circuit("Top").expect("from_ir");
 }
 

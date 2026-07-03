@@ -54,7 +54,7 @@ pub enum CheckSummary {
 }
 
 pub fn execute(file: Option<String>) {
-    let (source_map, project_root) = super::utils::build_source_map();
+    let (source_map, _project_root) = super::utils::build_source_map();
 
     let target_paths = if let Some(f) = file {
         vec![PathBuf::from(f)]

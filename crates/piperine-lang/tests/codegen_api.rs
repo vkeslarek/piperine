@@ -6,7 +6,7 @@ use piperine_codegen::ir::IrProgram;
 
 fn parse_ppr(body: &str) -> IrProgram {
     let elab = parse_and_elaborate(body, &piperine_lang::SourceMap::dummy()).expect("PHDL parse/elab");
-    ppr_to_ir(&elab)
+    ppr_to_ir(&elab).expect("lowering failed")
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn ir_digital_compile_dff() {
         digital DFF { @ posedge(clk) { Q <- D; } }
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("parse_and_elaborate DFF");
-    let ir = ppr_to_ir(&elab);
+    let ir = ppr_to_ir(&elab).expect("lowering failed");
     let _interp = DigitalKernel::compile(ir.module("DFF").unwrap()).expect("DFF interp");
 }
 

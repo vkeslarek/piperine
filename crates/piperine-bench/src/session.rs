@@ -11,7 +11,7 @@ use piperine_solver::solver::Context;
 
 use crate::error::BenchError;
 use crate::objects::OpResult;
-use crate::waveform::Trace;
+use crate::waveform::{AcTrace, NoiseTrace, Trace};
 
 /// Analysis configuration read from a `Solver` config-bundle value
 /// (SPEC_BENCH.md §5.1) before an analysis runs.
@@ -21,12 +21,19 @@ pub struct SolverConfig {
     pub reltol: f64,
     pub abstol: f64,
     pub gmin: f64,
+    pub max_iter: usize,
 }
 
 impl Default for SolverConfig {
     fn default() -> Self {
         let ctx = Context::default();
-        Self { temperature: ctx.temperature, reltol: ctx.reltol, abstol: ctx.abstol, gmin: ctx.gmin }
+        Self {
+            temperature: ctx.temperature,
+            reltol: ctx.reltol,
+            abstol: ctx.abstol,
+            gmin: ctx.gmin,
+            max_iter: ctx.max_iter,
+        }
     }
 }
 
@@ -37,6 +44,7 @@ impl SolverConfig {
             reltol: self.reltol,
             abstol: self.abstol,
             gmin: self.gmin,
+            max_iter: self.max_iter,
             ..Context::default()
         }
     }
@@ -75,7 +83,7 @@ impl SimSession {
     /// config) — nothing here is remembered between calls.
     pub fn run_op(&self, config: &SolverConfig) -> Result<OpResult, BenchError> {
         let applied = self.design.with_overrides_applied(&self.module)?;
-        let ir = piperine_lang::ppr_to_ir(&applied);
+        let ir = piperine_lang::ppr_to_ir(&applied)?;
         let mut compiler = CircuitCompiler::new(&ir);
         let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
         circuit.init_digital();
@@ -84,18 +92,84 @@ impl SimSession {
         Ok(OpResult::new(dc, Rc::new(info)))
     }
 
-    /// Run a transient analysis (`$tran(stop, step)`, SPEC_BENCH.md §5):
-    /// same elaborate-and-solve recipe as [`Self::run_op`], through
-    /// `CircuitInstance::transient` instead of `::dc`.
-    pub fn run_tran(&self, stop: f64, step: f64, config: &SolverConfig) -> Result<Trace, BenchError> {
+    /// Run a transient analysis (`$tran`, SPEC_BENCH.md §5): same
+    /// elaborate-and-solve recipe as [`Self::run_op`], through
+    /// `CircuitInstance::transient` instead of `::dc`. `step: None` (the
+    /// config bundle's `step = 0.0` "auto") selects the adaptive stepper.
+    pub fn run_tran(&self, stop: f64, step: Option<f64>, config: &SolverConfig) -> Result<Trace, BenchError> {
         let applied = self.design.with_overrides_applied(&self.module)?;
-        let ir = piperine_lang::ppr_to_ir(&applied);
+        let ir = piperine_lang::ppr_to_ir(&applied)?;
         let mut compiler = CircuitCompiler::new(&ir);
         let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
         circuit.init_digital();
         circuit.rebuild_digital_topology();
-        let opts = piperine_solver::analysis::transient::TransientAnalysisOptions::new(stop, step);
+        let opts = match step {
+            Some(dt) => piperine_solver::analysis::transient::TransientAnalysisOptions::new(stop, dt),
+            None => piperine_solver::analysis::transient::TransientAnalysisOptions::new_adaptive(stop, stop * 1e-3),
+        };
         let result = circuit.transient(opts, config.to_context())?.solve()?;
         Ok(Trace::new(result, Rc::new(info)))
+    }
+
+    /// Run an AC small-signal sweep (`$ac`, SPEC_BENCH.md §5). `Oct` scale
+    /// maps to the solver's logarithmic sweep (it has lin/log only).
+    pub fn run_ac(
+        &self,
+        fstart: f64,
+        fstop: f64,
+        points: usize,
+        logarithmic: bool,
+        config: &SolverConfig,
+    ) -> Result<AcTrace, BenchError> {
+        let applied = self.design.with_overrides_applied(&self.module)?;
+        let ir = piperine_lang::ppr_to_ir(&applied)?;
+        let mut compiler = CircuitCompiler::new(&ir);
+        let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
+        circuit.init_digital();
+        circuit.rebuild_digital_topology();
+        let opts = piperine_solver::analysis::ac::AcSweepAnalysisOptions {
+            start_frequency: fstart,
+            stop_frequency: fstop,
+            steps: points,
+            logarithmic,
+        };
+        let result = circuit.ac(config.to_context())?.solve_sweep(opts)?;
+        Ok(AcTrace::new(result, Rc::new(info)))
+    }
+
+    /// Run an output-referred noise analysis (`$noise`, SPEC_BENCH.md §5)
+    /// at output net `out` (vs. ground), resolved by name against the
+    /// built circuit's net map.
+    pub fn run_noise(
+        &self,
+        out: &str,
+        fstart: f64,
+        fstop: f64,
+        points: usize,
+        logarithmic: bool,
+        config: &SolverConfig,
+    ) -> Result<NoiseTrace, BenchError> {
+        let applied = self.design.with_overrides_applied(&self.module)?;
+        let ir = piperine_lang::ppr_to_ir(&applied)?;
+        let mut compiler = CircuitCompiler::new(&ir);
+        let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
+        circuit.init_digital();
+        circuit.rebuild_digital_topology();
+        let out = info.nets.get(out).cloned().ok_or_else(|| {
+            BenchError::Measurement(format!("$noise output net `{out}` is not addressable"))
+        })?;
+        let opts = piperine_solver::analysis::noise::NoiseAnalysisOptions {
+            sweep_options: piperine_solver::analysis::ac::AcSweepAnalysisOptions {
+                start_frequency: fstart,
+                stop_frequency: fstop,
+                steps: points,
+                logarithmic,
+            },
+            output_node: out,
+            reference_node: piperine_solver::analog::NodeIdentifier::Gnd,
+            input_source_name: None,
+        };
+        let result = circuit.noise(opts, config.to_context())?.solve()?;
+        Ok(NoiseTrace::new(result))
     }
 }

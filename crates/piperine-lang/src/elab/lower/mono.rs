@@ -47,7 +47,7 @@ impl Elaborator {
             .body
             .stmts
             .iter()
-            .map(|s| self.lower_stmt_to_behavior(s, BehaviorKind::Analog, &mut env))
+            .map(|s| self.lower_stmt_to_behavior(s, BehaviorKind::Analog, &mut env, &mut Default::default()))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten()

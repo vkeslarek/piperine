@@ -296,14 +296,16 @@ No other construct is added; the bench is the existing `fn` language in an effec
 | `$assert(cond, msg)` | ✓ | ✓ | ✓ **implemented** | fails the test/flow |
 | `$info/$warn/$error/$fatal` | ✓ | ✓ | ✓ **implemented** | run log |
 | math (`exp`, `abs`, …) | ✓ | ✓ | ✓ **implemented** | same |
-| `$op(cfg)` | — | — | ✓ **implemented** (milestone 1: no-arg only — `cfg` always defaults) | DC operating point → `OpResult` |
-| `$tran(stop, step)` | — | — | ✓ **implemented** (positional `(stop, step)`, not yet the `TranConfig` bundle — no adaptive-step "auto", no `$ic`) | transient → `Trace` |
-| `$ac/$noise(cfg)` | — | — | ✓ *not yet implemented* | run an analysis → result object |
-| result `.v/.i` | — | — | ✓ **implemented** on `OpResult` and `Trace` (`Trace.i` only for ideal-source branches — no reactive read yet) | measurement (§4, §6) |
-| `Waveform` methods | — | — | ✓ **implemented**: `at/min/max/mean/rms/peak_to_peak/len/points/cross`; `map/fft/mag/phase/db` *not yet implemented* | measurement (§6) |
-| `select`, name/`.set` staging | — | — | ✓ **implemented**: bare-name staging (`sw.ctrl = 1`) only; `select(...)` bulk staging *not yet implemented* | reflection + override |
+| `$op(cfg)` | — | — | ✓ **implemented** (`$op()` and `$op(OpConfig { .solver = Solver { … } })`) | DC operating point → `OpResult` |
+| `$tran(cfg)` | — | — | ✓ **implemented** (`TranConfig { .stop, .step /*0 = adaptive auto*/, .solver }`; positional `(stop, step)` kept as convenience; `.start != 0` and `ic:` maps not yet) | transient → `Trace` |
+| `$ac(cfg)` | — | — | ✓ **implemented** (`AcConfig { .fstart, .fstop, .points, .scale, .solver }`; `Oct` maps onto the solver's log sweep) | frequency sweep → complex `Trace` |
+| `$noise(out, cfg)` | — | — | ✓ **implemented** (output net is positional — the spec's `out : Branch` field awaits a Branch value type) | `NoiseTrace.{psd,total}` |
+| result `.v/.i` | — | — | ✓ **implemented** on `OpResult`, `Trace`, and the AC `Trace` (`Trace.i` only for ideal-source branches — no reactive read yet) | measurement (§4, §6) |
+| `Waveform` methods | — | — | ✓ **implemented**: `at/min/max/mean/rms/peak_to_peak/len/points/cross/rise_time/fall_time/fft`, and `mag/phase/db` on `Waveform<Complex>`; `map(f)` *not yet implemented* (needs closure invocation from host objects) | measurement (§6) |
+| `select`, name/`.set` staging | — | — | ✓ **implemented**: bare-name staging (`sw.ctrl = 1`) and `select("...").param = v` bulk staging (string-literal paths); select-for-*measurement* not yet | reflection + override |
 | `extract`, `.attach`, `.meta` | — | — | ✓ *not yet implemented* | plugin annotations (extensibility spec) |
-| `$plot/$write(path, …)` | — | — | ✓ *not yet implemented* | emit artifacts |
+| `$write(path, …)` | — | — | ✓ **implemented** (CSV of lists/tuples/scalars) | emit artifacts |
+| `$plot(w, title)` | — | — | ✓ *not yet implemented* | emit artifacts |
 | `V(a,b)`/`I(a,b)` branch access | ✓ | — | ✗ | analog-only; bench uses a result object |
 | `<+`, `<-`, `ddt`, `idt`, operators | ✓ | — | ✗ | measure, not contribute |
 | `@` events, `posedge`/`cross` | ✓ | ✓ | ✗ | events belong to the solve |
@@ -313,12 +315,12 @@ configuration is fields of the analysis config bundle (§5.1). A task the toolch
 implement is a compile error in a bench, not a silent no-op — calling an unimplemented task fails
 at elaboration, before any analysis ever runs.
 
-**Also deferred past milestone 1** (Part I §9/§10): default parameter values on user-defined
-`fn`/method signatures (§10) — `.v`/`.i`'s own defaulted second argument is a built-in method, not
-a language feature, so it works today; a bench author's own `fn foo(x: Real = 1.0)` does not yet.
-`$op` itself does not yet read a config-bundle argument (milestone 1 always uses default solver
-settings) — the stdlib `Solver`/`OpConfig` bundles from §5.1 are not yet defined, and passing one
-to `$op(...)` is a no-op until they are.
+The §5.1 config bundles (`Solver`, `OpConfig`, `TranConfig`, `AcConfig`, `NoiseConfig`) and the
+`Scale`/`CrossDir` enums are **defined in the stdlib prelude** and consumed by the analyses; the
+spec's `ic`/`nodeset` `Map<Net, Real>` fields await the `Map` value type. Still deferred
+(Part I §9/§10): default parameter values on user-defined `fn`/method signatures — `.v`/`.i`'s own
+defaulted second argument is a built-in method, so it works today; a bench author's own
+`fn foo(x: Real = 1.0)` does not yet.
 
 ---
 

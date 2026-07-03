@@ -306,8 +306,8 @@ digital Sync {
     let ast = parse_str(src).unwrap();
     let doc = Document::from_ast(ast);
     let behavior = &doc.behaviors[0];
-    let event = behavior.body.iter().find(|s| matches!(s, BehaviorStmt::Event { .. })).unwrap();
-    if let BehaviorStmt::Event { body, .. } = event {
+    let event = behavior.body.iter().find(|s| matches!(s, Stmt::Event { .. })).unwrap();
+    if let Stmt::Event { body, .. } = event {
         // body is now a Block, not Vec<Stmt>
         assert!(!body.stmts.is_empty());
     }
@@ -371,11 +371,11 @@ analog LcTank {
     let behavior = &doc.behaviors[0];
 
     // The main body should have a Bind with Contrib
-    let bind = behavior.body.iter().find(|s| matches!(s, BehaviorStmt::Bind { op: BindOp::Contrib, .. }));
+    let bind = behavior.body.iter().find(|s| matches!(s, Stmt::Bind { op: BindOp::Contrib, .. }));
     assert!(bind.is_some(), "Expected a <+ contribution in behavior body");
 
     // The event body should parse successfully (@ initial { V(p, n) = 1.0; })
-    let event = behavior.body.iter().find(|s| matches!(s, BehaviorStmt::Event { .. }));
+    let event = behavior.body.iter().find(|s| matches!(s, Stmt::Event { .. }));
     assert!(event.is_some(), "Expected an event block");
 }
 

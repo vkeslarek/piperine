@@ -4,3 +4,46 @@
 discipline Ground {
     potential v : Real (unit = "V", abstol = 1e-6);
 }
+// ── SPEC_BENCH §5.1 — analysis configuration bundles ─────────────────────────
+// Ordinary value bundles with defaults; an analysis takes one as its single
+// argument (no stateful setter tasks — no hidden state).
+// GAPS: the spec's `ic`/`nodeset` Map<Net, Real> fields await the Map value
+// type; `TranConfig.start` awaits solver support.
+
+enum Scale { Lin, Dec, Oct }
+enum CrossDir { Rising, Falling, Either }
+
+bundle Solver {
+    temperature : Real = 300.15,
+    reltol : Real = 1e-3,
+    abstol : Real = 1e-12,
+    gmin : Real = 1e-12,
+    max_iter : Natural = 100,
+}
+
+bundle OpConfig {
+    solver : Solver = Solver {},
+}
+
+bundle TranConfig {
+    stop : Real,
+    step : Real = 0.0,
+    start : Real = 0.0,
+    solver : Solver = Solver {},
+}
+
+bundle AcConfig {
+    fstart : Real,
+    fstop : Real,
+    points : Natural = 100,
+    scale : Scale = Scale::Dec,
+    solver : Solver = Solver {},
+}
+
+bundle NoiseConfig {
+    fstart : Real,
+    fstop : Real,
+    points : Natural = 100,
+    scale : Scale = Scale::Dec,
+    solver : Solver = Solver {},
+}

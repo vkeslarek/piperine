@@ -167,8 +167,9 @@ fn check_module(
                 }
             }
         };
+        // `walk_stmts` is pre-order and includes the root — no separate
+        // root visit, or every driver double-counts.
         for stmt in behavior.body() {
-            visit(stmt);
             stmt.walk_stmts(&mut visit);
         }
     }
@@ -273,7 +274,7 @@ mod tests {
     #[test]
     fn width_mismatch_on_named_connection_is_caught() {
                 let mut prog = crate::pom::Design::new();
-        let bad = scalar("Bit");
+        let _bad = scalar("Bit");
         // Override port width via a fake module — we keep it scalar here
         // and rely on the width mismatch coming from the second conn
         // entry's index difference.
@@ -469,8 +470,7 @@ fn check_behavior(
     
     // Check each root statement, then recurse into its children via walk_stmts.
     for stmt in &behavior.body {
-        check_one_stmt(stmt, module, behavior, &mut locals)?;
-        // walk_stmts visits all descendant statements in pre-order.
+        // `walk_stmts` is pre-order and includes the root.
         let mut err: Option<ElabError> = None;
         stmt.walk_stmts(&mut |s| {
             if err.is_none() {
@@ -492,8 +492,13 @@ fn check_one_stmt(
     locals: &mut std::collections::HashMap<String, ValueType>,
 ) -> Result<(), ElabError> {
     match stmt {
-        BehaviorStmt::VarDecl { name, ty, .. } => {
-            locals.insert(name.clone(), ty.clone());
+        BehaviorStmt::VarDecl { name, .. } => {
+            // Resolved type lives in the behavior's side table
+            // (SIMPLIFICATION.md P3) — the statement keeps its surface
+            // (unresolved) annotation.
+            if let Some(vt) = behavior.var_types.get(name) {
+                locals.insert(name.clone(), vt.clone());
+            }
         }
         BehaviorStmt::Bind { dest, src, .. } => {
             let dest_ty = type_of_expr(dest, locals);

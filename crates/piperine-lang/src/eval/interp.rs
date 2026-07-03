@@ -14,18 +14,15 @@ use std::rc::Rc;
 use crate::parse::ast::{
     BinaryOp, Block, Expr, Literal, Pattern, Stmt, StmtMatchArm, UnaryOp,
 };
-use crate::pom::BehaviorStmt;
-
 use super::error::EvalError;
 use super::value::{Closure, Value};
 
 /// What a name resolves to when called: a value-layer closure, or a POM
-/// `fn`/bundle-method body to walk directly (its statements are
-/// [`BehaviorStmt`], not [`Stmt`] — the elaborator's representation for any
-/// already-monomorphized function body).
+/// `fn`/bundle-method body to walk directly (already elaborated — one
+/// statement type end to end, SIMPLIFICATION.md P3).
 pub enum Callable {
     Closure(Rc<Closure>),
-    Function { params: Vec<String>, body: Vec<BehaviorStmt> },
+    Function { params: Vec<String>, body: Vec<Stmt> },
 }
 
 /// The host-specific half of evaluation: name resolution, system-task
@@ -122,10 +119,10 @@ impl<'h, H: Host> Interpreter<'h, H> {
     /// Call a POM `Function`/bundle-method body (already elaborated —
     /// generics resolved, `for` unrolled). Increments `pure_depth`: these
     /// bodies are the language's pure fn layer, never the bench itself.
-    pub fn call_pom_fn(&mut self, params: &[String], body: &[BehaviorStmt], args: Vec<Value>) -> Result<Value, EvalError> {
+    pub fn call_pom_fn(&mut self, params: &[String], body: &[Stmt], args: Vec<Value>) -> Result<Value, EvalError> {
         let params: Vec<&str> = params.iter().map(String::as_str).collect();
         self.pure_depth += 1;
-        let result = self.call_with_params(&params, &args, |me| me.exec_behavior_stmts(body));
+        let result = self.call_with_params(&params, &args, |me| me.exec_stmts_and_tail(body, None));
         self.pure_depth -= 1;
         result.map(Flow::into_value)
     }
@@ -218,6 +215,14 @@ impl<'h, H: Host> Interpreter<'h, H> {
             Stmt::Match { expr, arms } => self.exec_match(expr, arms),
             Stmt::For { var, iter, body } => self.exec_for(var, iter, body),
             Stmt::Bind { dest, op, src } => self.exec_bind(dest, op, src),
+            Stmt::Event { .. } => Err(EvalError::TypeMismatch(
+                "event blocks are analog/digital-only, not valid in an interpreted fn body".into(),
+            )),
+            Stmt::Diagnostic { sys, args } => {
+                let arg_values = args.iter().map(|a| self.eval_expr(a)).collect::<Result<Vec<_>, _>>()?;
+                self.host.syscall(sys, arg_values)?;
+                Ok(Flow::Normal(Value::Unit))
+            }
             Stmt::Expr(e) => {
                 self.eval_expr(e)?;
                 Ok(Flow::Normal(Value::Unit))
@@ -297,64 +302,6 @@ impl<'h, H: Host> Interpreter<'h, H> {
             }
         }
         Err(EvalError::TypeMismatch(format!("no match arm covers {}", scrutinee.type_name())))
-    }
-
-    /// Execute a POM `Function`/bundle-method body (`BehaviorStmt` — the
-    /// elaborated statement form; `for` is already unrolled, so no `For`
-    /// variant appears here).
-    pub fn exec_behavior_stmts(&mut self, stmts: &[BehaviorStmt]) -> Result<Flow, EvalError> {
-        for stmt in stmts {
-            match self.exec_behavior_stmt(stmt)? {
-                Flow::Normal(_) => {}
-                ret @ Flow::Return(_) => return Ok(ret),
-            }
-        }
-        Ok(Flow::Normal(Value::Unit))
-    }
-
-    fn exec_behavior_stmt(&mut self, stmt: &BehaviorStmt) -> Result<Flow, EvalError> {
-        match stmt {
-            BehaviorStmt::VarDecl { name, default, .. } => {
-                let value = match default {
-                    Some(e) => self.eval_expr(e)?,
-                    None => Value::Unit,
-                };
-                self.define(name, value);
-                Ok(Flow::Normal(Value::Unit))
-            }
-            BehaviorStmt::Bind { dest, op, src } => self.exec_bind(dest, op, src),
-            BehaviorStmt::Return(e) => Ok(Flow::Return(self.eval_expr(e)?)),
-            BehaviorStmt::If { cond, then_body, else_body } => {
-                if self.eval_expr(cond)?.is_truthy() {
-                    self.exec_behavior_stmts(then_body)
-                } else if let Some(b) = else_body {
-                    self.exec_behavior_stmts(b)
-                } else {
-                    Ok(Flow::Normal(Value::Unit))
-                }
-            }
-            BehaviorStmt::Match { expr, arms } => {
-                let scrutinee = self.eval_expr(expr)?;
-                for arm in arms {
-                    if pattern_matches(arm.pattern(), &scrutinee) {
-                        return self.exec_behavior_stmts(arm.body());
-                    }
-                }
-                Err(EvalError::TypeMismatch(format!("no match arm covers {}", scrutinee.type_name())))
-            }
-            BehaviorStmt::Event { .. } => {
-                Err(EvalError::TypeMismatch("event blocks are analog/digital-only, not valid in a fn/method body".into()))
-            }
-            BehaviorStmt::Diagnostic { sys, args } => {
-                let arg_values = args.iter().map(|a| self.eval_expr(a)).collect::<Result<Vec<_>, _>>()?;
-                self.host.syscall(sys, arg_values)?;
-                Ok(Flow::Normal(Value::Unit))
-            }
-            BehaviorStmt::Expr(e) => {
-                self.eval_expr(e)?;
-                Ok(Flow::Normal(Value::Unit))
-            }
-        }
     }
 
     // ── Expressions ─────────────────────────────────────────────────────

@@ -33,14 +33,14 @@ analog TestMod {{
 #[test]
 fn resistor_resistive_contrib() {
     let prog = parse_and_elaborate(&src("I(p, n) <+ V(p, n) / R;"), &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
 
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     assert_eq!(body.stmts.len(), 1, "expected one stmt");
     match &body.stmts[0] {
         IrStmt::Contrib { nature, plus, minus, kind: ContribKind::Resistive, .. } => {
-            assert!(matches!(nature, n), "expected Flow nature");
+            assert!(matches!(nature, _n), "expected Flow nature");
             assert_eq!(m.symbols.node(*plus).name, "p");
             assert_eq!(m.symbols.node(*minus).name, "n");
         }
@@ -51,7 +51,7 @@ fn resistor_resistive_contrib() {
 #[test]
 fn resistor_printer_smoke() {
     let prog = parse_and_elaborate(&src("I(p, n) <+ V(p, n) / R;"), &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let out = format!("{ir:?}");
     assert!(out.contains("Contrib"), "output: {out}");
     assert!(out.contains("Branch"), "output: {out}");
@@ -62,7 +62,7 @@ fn resistor_printer_smoke() {
 #[test]
 fn capacitor_reactive_contrib_with_state_var() {
     let prog = parse_and_elaborate(&src("I(p, n) <+ C * ddt(V(p, n));"), &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
 
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
@@ -79,7 +79,7 @@ fn capacitor_reactive_contrib_with_state_var() {
 #[test]
 fn capacitor_printer_reactive() {
     let prog = parse_and_elaborate(&src("I(p, n) <+ C * ddt(V(p, n));"), &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let out = format!("{ir:?}");
     assert!(out.contains("Reactive("), "output: {out}");
     assert!(out.contains("Ddt"), "output: {out}");
@@ -100,10 +100,10 @@ analog TestMod {{
 }}
 ");
     let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
 
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
-    let body = m.analog.as_ref().expect("analog");
+    let _body = m.analog.as_ref().expect("analog");
     // The contribution expr should have V(p,n) inlined, not a free Param("vd")
     let out = format!("{ir:?}");
     // vd should be inlined as V(p, n) in the contribution
@@ -124,7 +124,7 @@ analog Diode {{
 }}
 ");
     let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let out = format!("{ir:?}");
     assert!(out.contains("\"exp\""), "output: {out}");
     assert!(out.contains("Branch"), "output: {out}");
@@ -146,7 +146,7 @@ analog IfMod {{
 }}
 ");
     let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
 
     let m = ir.modules.iter().find(|m| m.name == "IfMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
@@ -184,7 +184,7 @@ analog NestedIf {{
 }}
 ");
     let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
 
     let m = ir.modules.iter().find(|m| m.name == "NestedIf").expect("module");
     let body = m.analog.as_ref().expect("analog");
@@ -203,7 +203,7 @@ analog NestedIf {{
 #[test]
 fn module_ports_and_params_present() {
     let prog = parse_and_elaborate(&src("I(p, n) <+ V(p, n) / R;"), &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
 
     assert_eq!(m.ports.len(), 2);
@@ -222,7 +222,7 @@ fn noise_source_registered() {
     let prog = parse_and_elaborate(&src(
         "I(p, n) <+ white_noise(1e-24, \"rn1\");"
     ), &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     assert_eq!(body.noise.len(), 1, "expected one noise source");
@@ -238,7 +238,7 @@ fn flicker_noise_source_registered() {
     let prog = parse_and_elaborate(&src(
         "I(p, n) <+ flicker_noise(1e-25, 2.0, \"fn1\");"
     ), &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     assert_eq!(body.noise.len(), 1);
@@ -252,7 +252,7 @@ fn idtmod_state_var() {
     let prog = parse_and_elaborate(&src(
         "I(p, n) <+ idtmod(V(p, n), 0.0, 1.0);"
     ), &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     assert_eq!(body.states.len(), 1);
@@ -266,7 +266,7 @@ fn single_arg_current_access() {
     let prog = parse_and_elaborate(&src(
         "var ii: Real = I(p); I(p, n) <+ ii;"
     ), &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let out = format!("{ir:?}");
     // I(p) should become I(p, 0)
     assert!(out.contains("minus: NodeId(0)"), "output: {out}");
@@ -279,7 +279,7 @@ fn force_contribution() {
     let prog = parse_and_elaborate(&src(
         "V(p, n) <- 1.0;"
     ), &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     assert_eq!(body.stmts.len(), 1);
@@ -287,23 +287,27 @@ fn force_contribution() {
 }
 
 // ─── Match desugaring ─────────────────────────────────────────────────────────
+// (The historic version matched a `String` param against a bare `A` pattern —
+// that only "worked" because unresolved names silently lowered to `ParamId(0)`;
+// with fallible lowering (SIMPLIFICATION.md P5) it errors, as it should.)
 
 #[test]
 fn match_desugars_to_if_chain() {
     let src = format!("
 {DISCIPLINE}
+enum Mode {{ A, B }}
 mod MatchMod(inout p: Electrical, inout n: Electrical) {{
-    param mode: String = \"A\";
+    param mode: Integer = 0;
 }}
 analog MatchMod {{
     match mode {{
-        A => {{ I(p, n) <+ 0.0; }},
+        Mode::A => {{ I(p, n) <+ 0.0; }},
         _ => {{ I(p, n) <+ 1.0; }},
     }}
 }}
     ");
     let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let m = ir.modules.iter().find(|m| m.name == "MatchMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     // Match should desugar to at least one If
@@ -324,7 +328,7 @@ analog GuardMod {{
 }}
     ");
     let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let m = ir.modules.iter().find(|m| m.name == "GuardMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     // Should have an AnalogEvent with a Cross kind, and its body should contain an If (the guard)
@@ -352,7 +356,7 @@ analog AboveMod {{
 }}
     ");
     let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let m = ir.modules.iter().find(|m| m.name == "AboveMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     let has_above = body.stmts.iter().any(|s| matches!(
@@ -375,7 +379,7 @@ analog SpMod {{
 }}
     ");
     let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let out = format!("{ir:?}");
     assert!(out.contains("Simparam"), "output: {out}");
 }
@@ -392,7 +396,7 @@ analog BsMod {{
 }}
     ");
     let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let m = ir.modules.iter().find(|m| m.name == "BsMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     assert!(body.stmts.iter().any(|s| matches!(s, IrStmt::BoundStep { .. })));
@@ -412,7 +416,7 @@ digital DigMod {{
 }}
     ");
     let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let m = ir.modules.iter().find(|m| m.name == "DigMod").expect("module");
     assert!(m.digital.is_some(), "expected digital body");
 }
@@ -432,7 +436,7 @@ analog FnMod {{
 }}
     ");
     let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     assert!(ir.modules[0].symbols.fn_by_name("helper").is_some(), "expected helper function");
     let out = format!("{ir:?}");
     assert!(out.contains("name: \"helper\""), "output: {out}");
@@ -452,13 +456,10 @@ analog StrMod {{
 }}
     ");
     let prog = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let m = ir.modules.iter().find(|m| m.name == "StrMod").expect("module");
     let p = m.symbols.params().map(|(_, p)| p).find(|p| p.name == "name").expect("name param");
-    match &p.default {
-        _ => {}
-        other => panic!("expected String, got {other:?}"),
-    }
+    assert!(p.default.is_some(), "string param keeps a default");
 }
 
 // ─── transition analog operator ───────────────────────────────────────────────
@@ -468,7 +469,7 @@ fn transition_state_var() {
     let prog = parse_and_elaborate(&src(
         "I(p, n) <+ transition(V(p, n), 0.0, 1e-6, 1e-6);"
     ), &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let m = ir.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     assert_eq!(body.states.len(), 1);
@@ -482,14 +483,14 @@ fn logical_and_or_lower_to_ir_binop() {
     let prog = parse_and_elaborate(&src(
         "I(p, n) <+ if (V(p, n) > 0.0 && R < 2000.0) { 1.0 } else { 0.0 };"
     ), &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let out = format!("{ir:?}");
     assert!(out.contains("&&") || out.contains("And"), "output: {out}");
 
     let prog2 = parse_and_elaborate(&src(
         "I(p, n) <+ if (V(p, n) > 0.0 || R < 2000.0) { 1.0 } else { 0.0 };"
     ), &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir2 = ppr_to_ir(&prog2);
+    let ir2 = ppr_to_ir(&prog2).expect("lowering failed");
     let m = ir2.modules.iter().find(|m| m.name == "TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     // The condition folds into the Select's guard; walk for an Or binop.
@@ -521,7 +522,7 @@ analog ElseIfMod {{
 }}
 ");
     let prog = parse_and_elaborate(&src_, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let m = ir.modules.iter().find(|m| m.name == "ElseIfMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     // Should desugar to nested Select: Select(v>2, 2.0, Select(v>1, 1.0, 0.0))
@@ -532,4 +533,35 @@ analog ElseIfMod {{
         _ => false,
     });
     assert!(has_nested_select, "expected nested Select from else-if chain");
+}
+
+// ─── Fail-loud lowering (SIMPLIFICATION.md P5) ─────────────────────────────────
+
+#[test]
+fn unknown_name_in_contribution_is_a_lowering_error() {
+    // Historic behavior: `not_a_param` silently lowered to `ParamId(0)`,
+    // stamping whatever param 0 held. Now it is a `LowerErrors` naming the
+    // module and symbol.
+    let prog = parse_and_elaborate(&src(
+        "I(p, n) <+ V(p, n) / not_a_param;"
+    ), &piperine_lang::SourceMap::dummy()).expect("elab");
+    let err = ppr_to_ir(&prog).expect_err("unknown name must fail lowering");
+    let msg = err.to_string();
+    assert!(msg.contains("not_a_param"), "error names the symbol: {msg}");
+    assert!(msg.contains("TestMod"), "error names the module: {msg}");
+}
+
+#[test]
+fn unknown_net_in_instance_connection_is_a_lowering_error() {
+    let prog = parse_and_elaborate("
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1.0; }
+        analog R { I(p, n) <+ V(p, n) / r; }
+        mod Top() {
+            wire a : Electrical;
+            r1 : R(a, no_such_net);
+        }
+    ", &piperine_lang::SourceMap::dummy()).expect("elab");
+    let err = ppr_to_ir(&prog).expect_err("unknown net must fail lowering");
+    assert!(err.to_string().contains("no_such_net"), "{err}");
 }

@@ -27,4 +27,4 @@ pub use error::BenchError;
 pub use objects::{InstanceRef, NetRef, OpResult};
 pub use runner::{BenchOutcome, BenchReport, BenchResult, BenchRunner};
 pub use session::{SimSession, SolverConfig};
-pub use waveform::{Trace, Waveform};
+pub use waveform::{AcTrace, ComplexWaveform, NoiseTrace, Trace, Waveform};

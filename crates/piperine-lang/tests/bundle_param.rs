@@ -36,7 +36,7 @@ fn bundle_param_default_flattens_to_scalar_params() {
         "I(p, n) <+ V(p, n) / model.rsh;",
     );
     let prog = parse_and_elaborate(&s, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let m = ir.modules.iter().find(|m| m.name == "R").expect("module");
     let rsh = m.symbols.params().map(|(_, p)| p).find(|p| p.name == "model_rsh").expect("model_rsh param");
     assert_eq!(rsh.default, Some(IrExpr::Real(100.0)));
@@ -51,7 +51,7 @@ fn bundle_param_partial_literal_overrides_one_field() {
         "I(p, n) <+ V(p, n) / model.rsh;",
     );
     let prog = parse_and_elaborate(&s, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let m = ir.modules.iter().find(|m| m.name == "R").expect("module");
     let rsh = m.symbols.params().map(|(_, p)| p).find(|p| p.name == "model_rsh").expect("model_rsh param");
     assert_eq!(rsh.default, Some(IrExpr::Real(5.0)));
@@ -68,7 +68,7 @@ fn bundle_field_access_lowers_to_flattened_param() {
         "I(p, n) <+ V(p, n) / model.rsh;",
     );
     let prog = parse_and_elaborate(&s, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let ir = ppr_to_ir(&prog);
+    let ir = ppr_to_ir(&prog).expect("lowering failed");
     let out = format!("{ir:?}");
     assert!(out.contains("model_rsh"), "output: {out}");
 }

@@ -2,28 +2,97 @@
 //! is a unit struct implementing [`SimTask`] — the bench-side counterpart
 //! to [`piperine_lang::eval::Task`] (the shared pure registry, consulted as
 //! a fallback by [`crate::host::SimHost::syscall`]).
+//!
+//! Analyses take a **config bundle** (SPEC_BENCH.md §5.1, `Value::Record`
+//! built from the prelude's `OpConfig`/`TranConfig`/`AcConfig`/
+//! `NoiseConfig`) — configuration is an argument, never hidden state.
+//! `$tran(stop, step)` positional form is kept as a convenience alias.
 
 use std::collections::HashMap;
 
 use piperine_lang::eval::{EvalError, Value};
 
+use crate::objects::NetRef;
 use crate::session::{SimSession, SolverConfig};
 
-/// A bench-only system task (`$op`, and later `$tran`/`$ac`/`$noise`).
+/// A bench-only system task (`$op`, `$tran`, `$ac`, `$noise`, `$write`).
 pub trait SimTask {
     fn name(&self) -> &'static str;
     fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError>;
 }
+
+// ─── Config-bundle field access ───────────────────────────────────────────────
+
+/// A field of a config `Record`, or `None` when absent.
+fn field(rec: &Value, name: &str) -> Option<Value> {
+    match rec {
+        Value::Record(fields) => fields.borrow().get(name).cloned(),
+        _ => None,
+    }
+}
+
+fn as_real(v: &Value) -> Result<f64, EvalError> {
+    match v {
+        Value::Real(r) => Ok(*r),
+        Value::Nat(n) => Ok(*n as f64),
+        Value::Int(n) => Ok(*n as f64),
+        other => Err(EvalError::TypeMismatch(format!("expected a Real, got {}", other.type_name()))),
+    }
+}
+
+fn real_field(rec: &Value, name: &str) -> Result<Option<f64>, EvalError> {
+    field(rec, name).map(|v| as_real(&v)).transpose()
+}
+
+/// A required config field — absence is a fail-loud error naming it.
+fn required_real(rec: &Value, bundle: &str, name: &str) -> Result<f64, EvalError> {
+    real_field(rec, name)?
+        .ok_or_else(|| EvalError::TypeMismatch(format!("`{bundle}` needs `.{name}`")))
+}
+
+/// The `solver : Solver` sub-bundle of a config, folded onto the defaults.
+fn solver_config(cfg: Option<&Value>) -> Result<SolverConfig, EvalError> {
+    let mut sc = SolverConfig::default();
+    let Some(cfg) = cfg else { return Ok(sc) };
+    let Some(solver) = field(cfg, "solver") else { return Ok(sc) };
+    if let Some(t) = real_field(&solver, "temperature")? {
+        sc.temperature = t;
+    }
+    if let Some(r) = real_field(&solver, "reltol")? {
+        sc.reltol = r;
+    }
+    if let Some(a) = real_field(&solver, "abstol")? {
+        sc.abstol = a;
+    }
+    if let Some(g) = real_field(&solver, "gmin")? {
+        sc.gmin = g;
+    }
+    if let Some(m) = real_field(&solver, "max_iter")? {
+        sc.max_iter = m as usize;
+    }
+    Ok(sc)
+}
+
+/// `scale : Scale` → is the sweep logarithmic? (`Oct` maps onto the
+/// solver's logarithmic sweep — it distinguishes only lin/log.)
+fn is_log_scale(cfg: &Value) -> bool {
+    match field(cfg, "scale") {
+        Some(Value::EnumVariant(_, v)) => v != "Lin",
+        _ => true, // the prelude default is Dec
+    }
+}
+
+// ─── Analyses ─────────────────────────────────────────────────────────────────
 
 struct Op;
 impl SimTask for Op {
     fn name(&self) -> &'static str {
         "op"
     }
-    fn run(&self, _args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError> {
-        // Milestone 1: no config-bundle argument yet — always the default
-        // solver configuration (SPEC_BENCH.md §5.1 `OpConfig {}`).
-        let result = session.run_op(&SolverConfig::default()).map_err(EvalError::from)?;
+    fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError> {
+        // `$op()` or `$op(OpConfig { .solver = Solver { … } })`.
+        let cfg = solver_config(args.first())?;
+        let result = session.run_op(&cfg).map_err(EvalError::from)?;
         Ok(Value::Object(std::rc::Rc::new(result)))
     }
 }
@@ -34,31 +103,149 @@ impl SimTask for Tran {
         "tran"
     }
     fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError> {
-        // Milestone 1: positional `(stop, step)`, not yet the `TranConfig`
-        // bundle SPEC_BENCH.md §5.1 describes — `step` is required (no
-        // adaptive-step "auto" sentinel yet).
-        let stop = as_real(args.first())?;
-        let step = as_real(args.get(1))?;
-        let trace = session.run_tran(stop, step, &SolverConfig::default()).map_err(EvalError::from)?;
+        // `$tran(TranConfig { .stop = …, [.step], [.solver] })`, or the
+        // positional convenience `$tran(stop, step)`.
+        let (stop, step, cfg) = match args.first() {
+            Some(rec @ Value::Record(_)) => {
+                let stop = required_real(rec, "TranConfig", "stop")?;
+                let step = match real_field(rec, "step")? {
+                    Some(s) if s > 0.0 => Some(s),
+                    _ => None, // 0.0 = "auto" → adaptive stepping
+                };
+                if real_field(rec, "start")?.unwrap_or(0.0) != 0.0 {
+                    return Err(EvalError::TaskUnavailable {
+                        name: "tran (with .start != 0)".into(),
+                        context: "this toolchain (delayed-start transient is not yet implemented)",
+                    });
+                }
+                (stop, step, solver_config(args.first())?)
+            }
+            _ => {
+                let stop = as_real(args.first().ok_or_else(|| {
+                    EvalError::TypeMismatch("$tran needs a TranConfig or (stop, step)".into())
+                })?)?;
+                let step = as_real(args.get(1).ok_or_else(|| {
+                    EvalError::TypeMismatch("positional $tran needs (stop, step)".into())
+                })?)?;
+                (stop, Some(step), SolverConfig::default())
+            }
+        };
+        let trace = session.run_tran(stop, step, &cfg).map_err(EvalError::from)?;
         Ok(Value::Object(std::rc::Rc::new(trace)))
     }
 }
 
-fn as_real(v: Option<&Value>) -> Result<f64, EvalError> {
-    match v {
-        Some(Value::Real(r)) => Ok(*r),
-        Some(Value::Nat(n)) => Ok(*n as f64),
-        Some(Value::Int(n)) => Ok(*n as f64),
-        _ => Err(EvalError::TypeMismatch("expected a Real argument".into())),
+struct Ac;
+impl SimTask for Ac {
+    fn name(&self) -> &'static str {
+        "ac"
+    }
+    fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError> {
+        // `$ac(AcConfig { .fstart = …, .fstop = …, [.points, .scale, .solver] })`.
+        let cfg = args.first().ok_or_else(|| {
+            EvalError::TypeMismatch("$ac needs an AcConfig { .fstart, .fstop, … }".into())
+        })?;
+        let fstart = required_real(cfg, "AcConfig", "fstart")?;
+        let fstop = required_real(cfg, "AcConfig", "fstop")?;
+        let points = real_field(cfg, "points")?.unwrap_or(100.0) as usize;
+        let trace = session
+            .run_ac(fstart, fstop, points, is_log_scale(cfg), &solver_config(Some(cfg))?)
+            .map_err(EvalError::from)?;
+        Ok(Value::Object(std::rc::Rc::new(trace)))
     }
 }
+
+struct Noise;
+impl SimTask for Noise {
+    fn name(&self) -> &'static str {
+        "noise"
+    }
+    fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError> {
+        // `$noise(out, NoiseConfig { .fstart = …, .fstop = …, … })` — the
+        // output net is positional (the spec's `out : Branch` config field
+        // awaits a Branch value type).
+        let out = match args.first() {
+            Some(Value::Object(obj)) => obj
+                .as_any()
+                .downcast_ref::<NetRef>()
+                .ok_or_else(|| {
+                    EvalError::TypeMismatch(format!("$noise output must be a Net, got {}", obj.type_name()))
+                })?
+                .name
+                .clone(),
+            _ => return Err(EvalError::TypeMismatch("$noise needs (out_net, NoiseConfig)".into())),
+        };
+        let cfg = args.get(1).ok_or_else(|| {
+            EvalError::TypeMismatch("$noise needs (out_net, NoiseConfig { .fstart, .fstop, … })".into())
+        })?;
+        let fstart = required_real(cfg, "NoiseConfig", "fstart")?;
+        let fstop = required_real(cfg, "NoiseConfig", "fstop")?;
+        let points = real_field(cfg, "points")?.unwrap_or(100.0) as usize;
+        let trace = session
+            .run_noise(&out, fstart, fstop, points, is_log_scale(cfg), &solver_config(Some(cfg))?)
+            .map_err(EvalError::from)?;
+        Ok(Value::Object(std::rc::Rc::new(trace)))
+    }
+}
+
+// ─── Artifacts ────────────────────────────────────────────────────────────────
+
+struct Write;
+impl SimTask for Write {
+    fn name(&self) -> &'static str {
+        "write"
+    }
+    fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError> {
+        let _ = session;
+        let Some(Value::Str(path)) = args.first() else {
+            return Err(EvalError::TypeMismatch("$write needs (path, value)".into()));
+        };
+        let value = args
+            .get(1)
+            .ok_or_else(|| EvalError::TypeMismatch("$write needs (path, value)".into()))?;
+        let text = csv_of(value);
+        std::fs::write(path, text).map_err(|e| EvalError::Host(format!("$write `{path}`: {e}")))?;
+        Ok(Value::Unit)
+    }
+}
+
+/// CSV rendering: a list becomes one row per element (tuples split into
+/// columns), anything else a single line.
+fn csv_of(v: &Value) -> String {
+    fn cell(v: &Value) -> String {
+        v.to_string().trim_matches('"').to_string()
+    }
+    match v {
+        Value::List(items) => {
+            let mut out = String::new();
+            for item in items.borrow().iter() {
+                let row = match item {
+                    Value::Tuple(cols) => cols.iter().map(cell).collect::<Vec<_>>().join(","),
+                    other => cell(other),
+                };
+                out.push_str(&row);
+                out.push('\n');
+            }
+            out
+        }
+        Value::Tuple(cols) => {
+            let mut row = cols.iter().map(cell).collect::<Vec<_>>().join(",");
+            row.push('\n');
+            row
+        }
+        other => format!("{}\n", cell(other)),
+    }
+}
+
+// ─── Registry ─────────────────────────────────────────────────────────────────
 
 /// The bench-only task registry.
 pub struct SimTaskRegistry(HashMap<&'static str, Box<dyn SimTask>>);
 
 impl SimTaskRegistry {
     pub fn with_builtins() -> Self {
-        let tasks: Vec<Box<dyn SimTask>> = vec![Box::new(Op), Box::new(Tran)];
+        let tasks: Vec<Box<dyn SimTask>> =
+            vec![Box::new(Op), Box::new(Tran), Box::new(Ac), Box::new(Noise), Box::new(Write)];
         Self(tasks.into_iter().map(|t| (t.name(), t)).collect())
     }
 

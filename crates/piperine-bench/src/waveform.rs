@@ -70,6 +70,49 @@ impl Waveform {
         self.max() - self.min()
     }
 
+    /// Time for the waveform to rise from `lo` to `hi` (first rising
+    /// crossings, `hi` after `lo`) — `None` if either never happens.
+    fn rise_time(&self, lo: f64, hi: f64) -> Option<f64> {
+        let t_lo = self.cross(lo, "Rising")?;
+        let after: Vec<(f64, f64)> = self.points.iter().copied().filter(|(t, _)| *t >= t_lo).collect();
+        let t_hi = Waveform::new(after).cross(hi, "Rising")?;
+        Some(t_hi - t_lo)
+    }
+
+    /// Time for the waveform to fall from `hi` to `lo` (first falling
+    /// crossings, `lo` after `hi`) — `None` if either never happens.
+    fn fall_time(&self, hi: f64, lo: f64) -> Option<f64> {
+        let t_hi = self.cross(hi, "Falling")?;
+        let after: Vec<(f64, f64)> = self.points.iter().copied().filter(|(t, _)| *t >= t_hi).collect();
+        let t_lo = Waveform::new(after).cross(lo, "Falling")?;
+        Some(t_lo - t_hi)
+    }
+
+    /// Single-sided DFT (SPEC_BENCH §6 `fft()`): resamples onto a uniform
+    /// grid (adaptive transient steps are non-uniform), then a direct
+    /// O(n²) transform — bins `k = 0..n/2` at `f_k = k / (n·dt)`. Fine for
+    /// bench-sized traces; a windowed FFT is library work over `points()`.
+    fn fft(&self) -> ComplexWaveform {
+        let n = self.points.len();
+        if n < 2 {
+            return ComplexWaveform::new(vec![]);
+        }
+        let t0 = self.points[0].0;
+        let t1 = self.points[n - 1].0;
+        let dt = (t1 - t0) / (n - 1) as f64;
+        let samples: Vec<f64> = (0..n).map(|i| self.at(t0 + i as f64 * dt)).collect();
+        let mut bins = Vec::with_capacity(n / 2 + 1);
+        for k in 0..=(n / 2) {
+            let mut acc = num_complex::Complex64::default();
+            for (i, &x) in samples.iter().enumerate() {
+                let phi = -2.0 * std::f64::consts::PI * (k * i) as f64 / n as f64;
+                acc += num_complex::Complex64::new(phi.cos(), phi.sin()) * x;
+            }
+            bins.push((k as f64 / (n as f64 * dt), acc / n as f64));
+        }
+        ComplexWaveform::new(bins)
+    }
+
     /// First axis value where the waveform crosses `level`, in direction
     /// `dir` (`CrossDir::Rising`/`Falling`/`Either`). `None` if it never
     /// does.
@@ -111,6 +154,17 @@ impl Object for Waveform {
             "points" => Ok(Value::List(Rc::new(std::cell::RefCell::new(
                 self.points.iter().map(|(t, v)| Value::Tuple(vec![Value::Real(*t), Value::Real(*v)])).collect(),
             )))),
+            "fft" => Ok(Value::Object(Rc::new(self.fft()))),
+            "rise_time" => {
+                let lo = as_real(args.first())?;
+                let hi = as_real(args.get(1))?;
+                Ok(Value::Option(self.rise_time(lo, hi).map(|t| Box::new(Value::Real(t)))))
+            }
+            "fall_time" => {
+                let hi = as_real(args.first())?;
+                let lo = as_real(args.get(1))?;
+                Ok(Value::Option(self.fall_time(hi, lo).map(|t| Box::new(Value::Real(t)))))
+            }
             "cross" => {
                 let level = as_real(args.first())?;
                 let dir = match args.get(1) {
@@ -247,6 +301,190 @@ impl Object for Trace {
             "i" => self.i(&args),
             "axis" => Ok(self.axis()),
             other => Err(EvalError::Undefined(format!("method `{other}` on Trace"))),
+        }
+    }
+}
+
+// ─── AC: complex waveforms ─────────────────────────────────────────────────────
+
+/// A series of `(frequency, Complex)` samples — SPEC_BENCH §6
+/// `Waveform<Complex>`. Scalar reductions live on the `Real` projections
+/// returned by [`mag`](Self)/[`phase`](Self)/[`db`](Self).
+#[derive(Debug, Clone)]
+pub struct ComplexWaveform {
+    points: Vec<(f64, num_complex::Complex64)>,
+}
+
+impl ComplexWaveform {
+    pub fn new(points: Vec<(f64, num_complex::Complex64)>) -> Self {
+        Self { points }
+    }
+
+    fn project(&self, f: impl Fn(&num_complex::Complex64) -> f64) -> Waveform {
+        Waveform::new(self.points.iter().map(|(x, c)| (*x, f(c))).collect())
+    }
+}
+
+impl Object for ComplexWaveform {
+    fn type_name(&self) -> &str {
+        "Waveform"
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn call_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
+        match name {
+            "mag" => Ok(Value::Object(Rc::new(self.project(|c| c.norm())))),
+            "phase" => Ok(Value::Object(Rc::new(self.project(|c| c.arg())))),
+            "db" => Ok(Value::Object(Rc::new(self.project(|c| 20.0 * c.norm().log10())))),
+            "len" => Ok(Value::Nat(self.points.len() as u64)),
+            "at" => {
+                // Nearest sample (no complex interpolation): SPEC §6 `at`
+                // on a Complex waveform.
+                let x = as_real(args.first())?;
+                let c = self
+                    .points
+                    .iter()
+                    .min_by(|a, b| (a.0 - x).abs().total_cmp(&(b.0 - x).abs()))
+                    .map(|(_, c)| *c)
+                    .unwrap_or_default();
+                Ok(Value::Complex(c.re, c.im))
+            }
+            "points" => Ok(Value::List(Rc::new(std::cell::RefCell::new(
+                self.points
+                    .iter()
+                    .map(|(x, c)| Value::Tuple(vec![Value::Real(*x), Value::Complex(c.re, c.im)]))
+                    .collect(),
+            )))),
+            other => Err(EvalError::Undefined(format!("method `{other}` on Waveform<Complex>"))),
+        }
+    }
+}
+
+/// The result of `$ac(cfg)` (SPEC_BENCH §5/§6): a frequency sweep whose
+/// `.v`/`.i` read out complex waveforms.
+pub struct AcTrace {
+    result: piperine_solver::analysis::ac::AcAnalysisResult,
+    info: Rc<CircuitBuildInfo>,
+}
+
+impl std::fmt::Debug for AcTrace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AcTrace").finish_non_exhaustive()
+    }
+}
+
+impl AcTrace {
+    pub fn new(result: piperine_solver::analysis::ac::AcAnalysisResult, info: Rc<CircuitBuildInfo>) -> Self {
+        Self { result, info }
+    }
+
+    fn resolve_node(&self, arg: &Value) -> Result<NodeIdentifier, EvalError> {
+        match arg {
+            Value::Object(obj) => {
+                let net = obj
+                    .as_any()
+                    .downcast_ref::<NetRef>()
+                    .ok_or_else(|| EvalError::TypeMismatch(format!("expected a Net, got {}", obj.type_name())))?;
+                if net.name == "gnd" {
+                    return Ok(NodeIdentifier::Gnd);
+                }
+                self.info
+                    .nets
+                    .get(&net.name)
+                    .cloned()
+                    .ok_or_else(|| EvalError::Undefined(format!("net `{}` is not addressable", net.name)))
+            }
+            other => Err(EvalError::TypeMismatch(format!("expected a Net, got {}", other.type_name()))),
+        }
+    }
+
+    fn v(&self, args: &[Value]) -> Result<Value, EvalError> {
+        let a = self.resolve_node(
+            args.first().ok_or_else(|| EvalError::TypeMismatch("v() needs at least 1 argument".into()))?,
+        )?;
+        let b = match args.get(1) {
+            Some(v) => Some(self.resolve_node(v)?),
+            None => None,
+        };
+        let zero = num_complex::Complex64::default();
+        let points = self
+            .result
+            .iter()
+            .map(|step| {
+                let va = if a == NodeIdentifier::Gnd { zero } else { step.get_node(&a).copied().unwrap_or(zero) };
+                let vb = match &b {
+                    Some(b) if *b == NodeIdentifier::Gnd => zero,
+                    Some(b) => step.get_node(b).copied().unwrap_or(zero),
+                    None => zero,
+                };
+                (step.frequency, va - vb)
+            })
+            .collect();
+        Ok(Value::Object(Rc::new(ComplexWaveform::new(points))))
+    }
+
+    fn axis(&self) -> Value {
+        let points = self.result.iter().map(|s| (s.frequency, s.frequency)).collect();
+        Value::Object(Rc::new(Waveform::new(points)))
+    }
+}
+
+impl Object for AcTrace {
+    fn type_name(&self) -> &str {
+        "Trace"
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn call_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
+        match name {
+            "v" => self.v(&args),
+            "axis" => Ok(self.axis()),
+            other => Err(EvalError::Undefined(format!("method `{other}` on an AC Trace"))),
+        }
+    }
+}
+
+// ─── Noise ─────────────────────────────────────────────────────────────────────
+
+/// The result of `$noise(out, cfg)` (SPEC_BENCH §5/§6): output-referred
+/// noise PSD over frequency plus the integrated total.
+pub struct NoiseTrace {
+    result: piperine_solver::analysis::noise::NoiseAnalysisResult,
+}
+
+impl std::fmt::Debug for NoiseTrace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NoiseTrace").finish_non_exhaustive()
+    }
+}
+
+impl NoiseTrace {
+    pub fn new(result: piperine_solver::analysis::noise::NoiseAnalysisResult) -> Self {
+        Self { result }
+    }
+}
+
+impl Object for NoiseTrace {
+    fn type_name(&self) -> &str {
+        "NoiseTrace"
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn call_method(&self, name: &str, _args: Vec<Value>) -> Result<Value, EvalError> {
+        match name {
+            "psd" => Ok(Value::Object(Rc::new(Waveform::new(
+                self.result
+                    .frequencies
+                    .iter()
+                    .zip(&self.result.out_noise_sq)
+                    .map(|(f, v)| (*f, *v))
+                    .collect(),
+            )))),
+            "total" => Ok(Value::Real(self.result.integrated_noise)),
+            other => Err(EvalError::Undefined(format!("method `{other}` on NoiseTrace"))),
         }
     }
 }

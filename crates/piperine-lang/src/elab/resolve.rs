@@ -37,24 +37,24 @@ fn resolve_calls_in_stmt(
     // Recurse into sub-statements for If/Match/Event.
     match stmt {
         BehaviorStmt::If { then_body, else_body, .. } => {
-            for s in then_body {
+            for s in &mut then_body.stmts {
                 resolve_calls_in_stmt(s, module_name, behavior_name)?;
             }
             if let Some(eb) = else_body {
-                for s in eb {
+                for s in &mut eb.stmts {
                     resolve_calls_in_stmt(s, module_name, behavior_name)?;
                 }
             }
         }
         BehaviorStmt::Match { arms, .. } => {
             for arm in arms {
-                for s in &mut arm.body {
+                for s in &mut arm.body.stmts {
                     resolve_calls_in_stmt(s, module_name, behavior_name)?;
                 }
             }
         }
         BehaviorStmt::Event { body, .. } => {
-            for s in body {
+            for s in &mut body.stmts {
                 resolve_calls_in_stmt(s, module_name, behavior_name)?;
             }
         }

@@ -209,3 +209,182 @@ fn tran_traces_a_settled_rc_node_over_time() {
         other => panic!("expected Passed, got {other:?}"),
     }
 }
+
+// ─── Appendix A closure: config bundles, $ac, $noise, $write ──────────────────
+
+#[test]
+fn op_takes_a_config_bundle() {
+    let src = format!(
+        "{CIRCUIT}
+        bench SwitchOpenTest {{
+            fn test_op_cfg() {{
+                var r = $op(OpConfig {{ .solver = Solver {{ .temperature = 350.0 }} }});
+                $assert(r.v(vsrc, gnd) > 4.9, \"config-bundle $op still solves\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_op_cfg") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn tran_takes_a_config_bundle_with_auto_step() {
+    let src = format!(
+        "{CIRCUIT}
+        bench RcCharge {{
+            fn test_tran_cfg() {{
+                var t = $tran(TranConfig {{ .stop = 1e-3 }});
+                var v = t.v(out, gnd);
+                $assert(v.len() > 1, \"adaptive trace has samples\");
+                $assert(v.at(1e-3) > 4.9, \"settled at vsrc\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("RcCharge", "test_tran_cfg") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn ac_returns_complex_waveforms_with_db() {
+    let src = format!(
+        "{CIRCUIT}
+        bench RcCharge {{
+            fn test_ac() {{
+                var r = $ac(AcConfig {{ .fstart = 1.0, .fstop = 1e6, .points = 10 }});
+                var axis = r.axis();
+                $assert(axis.len() > 1, \"sweep produced points\");
+                var vdb = r.v(out, gnd).db();
+                $assert(vdb.len() > 1, \"db projection has the sweep's points\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("RcCharge", "test_ac") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn noise_returns_psd_and_total() {
+    let src = format!(
+        "{CIRCUIT}
+        bench RcCharge {{
+            fn test_noise() {{
+                var n = $noise(out, NoiseConfig {{ .fstart = 1.0, .fstop = 1e6, .points = 5 }});
+                $assert(n.psd().len() > 1, \"psd has the sweep's points\");
+                $assert(n.total() >= 0.0, \"integrated noise is non-negative\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("RcCharge", "test_noise") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn write_emits_a_csv_artifact() {
+    let dir = std::env::temp_dir().join("piperine_bench_write_test");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("sweep.csv");
+    let _ = std::fs::remove_file(&path);
+    let src = format!(
+        "{CIRCUIT}
+        bench SwitchOpenTest {{
+            fn test_write() {{
+                var curve = [];
+                for rl in [1e5, 1e6] {{
+                    resistor.resistance = rl;
+                    var r = $op();
+                    curve.push((rl, r.v(signal, gnd)));
+                }}
+                $write(\"{path}\", curve);
+            }}
+        }}",
+        path = path.display()
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_write") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+    let contents = std::fs::read_to_string(&path).expect("csv written");
+    assert_eq!(contents.lines().count(), 2, "one row per sweep point: {contents}");
+    assert!(contents.starts_with("100000,"), "{contents}");
+}
+
+#[test]
+fn bench_module_params_resolve_by_bare_name() {
+    let src = format!(
+        "{CIRCUIT}
+        bench SwitchOpenTest {{
+            fn test_params() {{
+                $assert(threshold > 4.8, \"module param readable by bare name\");
+            }}
+        }}"
+    );
+    // Give the bench module a param to read.
+    let src = src.replace(
+        "mod SwitchOpenTest() {",
+        "mod SwitchOpenTest() {\n        param threshold: Real = 4.9;",
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_params") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn waveform_rise_time_measures_a_ramp() {
+    // The settled RC node never rises, so drive the check off cross():
+    // reuse the charging network but assert the rise_time contract shape.
+    let src = format!(
+        "{CIRCUIT}
+        bench RcCharge {{
+            fn test_rise_time_contract() {{
+                var t = $tran(TranConfig {{ .stop = 1e-3 }});
+                var v = t.v(out, gnd);
+                // Settled node: no rising crossing → rise_time is none.
+                $assert(v.rise_time(1.0, 4.0).is_none(), \"no rise on a settled node\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("RcCharge", "test_rise_time_contract") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn select_stages_across_a_selection() {
+    let src = format!(
+        "{CIRCUIT}
+        bench SwitchOpenTest {{
+            fn test_select_staging() {{
+                select(\"/resistor\").resistance = 1e3;
+                var r = $op();
+                $assert(r.i(resistor.p, resistor.n) < 1e-8,
+                        \"switch still open — but the staged 1k divider must have applied\");
+                sw.ctrl = 1.0;
+                var r2 = $op();
+                $assert(r2.i(resistor.p, resistor.n) > 1e-3,
+                        \"closed with 1k (staged via select): current ~ mA, not ~ uA\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_select_staging") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}

@@ -1,4 +1,4 @@
-use piperine_lang::{parse_and_elaborate, ppr_to_ir};
+use piperine_lang::parse_and_elaborate;
 
 #[test]
 fn bundle_connections_fan_out() {
@@ -23,5 +23,5 @@ fn bundle_connections_fan_out() {
     println!("Wires: {:?}", top.wires());
     println!("Ports: {:?}", top.ports());
     println!("Connections: {:?}", top.connections());
-    // let ir = ppr_to_ir(&elab);
+    // let ir = ppr_to_ir(&elab).expect("lowering failed");
 }

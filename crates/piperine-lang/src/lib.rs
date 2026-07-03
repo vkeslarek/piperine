@@ -67,7 +67,7 @@ pub use resolve::{ResolveError, Resolver};
 pub use source_map::SourceMap;
 
 // ── IR lowering + runtime ─────────────────────────────────────────────────
-pub use lowering::ppr_to_ir;
+pub use lowering::{ppr_to_ir, LowerError, LowerErrors};
 
 /// Parse a PHDL source string and run the full elaboration pipeline.
 pub fn parse_and_elaborate(input: &str, source_map: &SourceMap) -> Result<Design, miette::Report> {

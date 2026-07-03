@@ -79,6 +79,7 @@ impl Device for Inverter {
     }
 }
 
+#[allow(dead_code)]
 struct DFF {
     inputs: [DigitalNet; 2], // [clk, d]
     q: DigitalNet,
@@ -87,6 +88,7 @@ struct DFF {
     id: usize,
 }
 
+#[allow(dead_code)]
 impl DFF {
     fn new(id: usize, clk: DigitalNet, d: DigitalNet, q: DigitalNet, clk_to_q: f64) -> Self {
         Self { inputs: [clk, d], q, last_clk: LogicValue::Zero, clk_to_q, id }

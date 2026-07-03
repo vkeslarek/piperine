@@ -26,6 +26,7 @@ use crate::pom::{ElabError, ElabErrorKind, Design, Module};
 mod behavior;
 mod module;
 mod mono;
+mod passes;
 mod register;
 mod resolve;
 
@@ -40,6 +41,11 @@ pub struct Elaborator {
     capability_decls: HashMap<String, crate::parse::ast::CapabilityDecl>,
     impl_decls: Vec<ImplDecl>,
     const_decls: HashMap<String, crate::parse::ast::ConstDecl>,
+    /// Items handed to `elaborate`, consumed by the `Register` pass.
+    pending_items: Vec<crate::parse::ast::Item>,
+    /// Folded global constants (enum variants + `const` decls), produced
+    /// by the `FoldGlobals` pass and read by `ElabModules`.
+    globals: HashMap<String, crate::value::Value>,
     ctx: crate::elab::registry::ElabContext,
 }
 
@@ -58,6 +64,8 @@ impl Elaborator {
             capability_decls: HashMap::new(),
             impl_decls: Vec::new(),
             const_decls: HashMap::new(),
+            pending_items: Vec::new(),
+            globals: HashMap::new(),
             ctx: crate::elab::registry::ElabContext::new(),
         }
     }
@@ -99,157 +107,16 @@ impl Elaborator {
         Ok(globals)
     }
 
-    /// Registers all top-level symbols from `source`, validates events,
-    /// then elaborates functions, impl blocks, non-generic modules, and
-    /// behaviors into a complete `Design`. Generic modules are monomorphized
-    /// on demand when encountered via instance lowering.
+    /// Run the elaboration pipeline over `source`: every stage is an
+    /// explicit entry in [`passes::PASSES`] (SIMPLIFICATION.md P6) — read
+    /// that array to read the phase order; this driver only loops.
     pub fn elaborate(&mut self, source: SourceFile) -> Result<Design, ElabError> {
-        self.register_items(source.items.iter())?;
-
-        // Validation pass — borrows self.events immutably. Must complete before
-        // any &mut self calls (elab_mod_inner, monomorphize).
-        {
-            let mod_decls: Vec<_> = self.module_decls.values().cloned().collect();
-            for decl in &mod_decls {
-                if decl.const_params.is_empty() && decl.type_params.is_empty() {
-                    self.ctx.events.validate_mod_body(&decl.body)?;
-                }
-            }
-            let beh_decls: Vec<_> = self.behavior_decls.clone();
-            for beh in &beh_decls {
-                self.ctx.events.validate_behavior(beh.kind.clone(), &beh.body)?;
-            }
+        self.pending_items = source.items;
+        let mut design = Design::new();
+        for pass in passes::PASSES {
+            pass.run(self, &mut design)?;
         }
-
-        let mut prog = Design::new();
-
-        *prog.disciplines_map_mut() = self.disciplines.clone();
-        *prog.bundles_map_mut() = self.bundles.clone();
-        *prog.enums_map_mut() = self.enums.clone();
-        *prog.capabilities_map_mut() = self.capability_decls.clone();
-
-        // Evaluate all global consts. Enum variants seed the global const
-        // environment first (SPEC §6.4 / B.1): a variant is usable bare
-        // (`Idle`) or qualified (`SarState::Idle`) wherever a constant is.
-        let mut evaluated_globals = self.enum_variant_globals()?;
-        let mut pending_consts: HashMap<String, crate::parse::ast::ConstDecl> = self.const_decls.clone();
-        let mut last_len = pending_consts.len() + 1;
-        while pending_consts.len() < last_len {
-            last_len = pending_consts.len();
-            let mut resolved = Vec::new();
-            for (name, decl) in &pending_consts {
-                let env = ConstEnv::with_globals(evaluated_globals.clone());
-                if let Ok(val) = env.eval(&decl.value) {
-                    evaluated_globals.insert(name.clone(), val.clone());
-                    prog.consts_map_mut().insert(name.clone(), val);
-                    resolved.push(name.clone());
-                }
-            }
-            for name in resolved {
-                pending_consts.remove(&name);
-            }
-        }
-        if !pending_consts.is_empty() {
-            return Err(ElabError::from(ElabErrorKind::Other(
-                "could not resolve one or more global constants".into(),
-            )));
-        }
-
-        for impl_decl in &self.impl_decls.clone() {
-            let block = self.elab_impl(impl_decl)?;
-            prog.impls_vec_mut().push(block);
-        }
-
-        for fn_decl in self.fn_decls.values().cloned().collect::<Vec<_>>() {
-            let f = self.elab_fn(&fn_decl)?;
-            prog.functions_map_mut().insert(f.name.clone(), f);
-        }
-
-        // Elaborate all non-generic modules. Monomorphization of generic
-        // modules is triggered on demand inside lower_mod_stmt when an
-        // instance with const args is encountered.
-        let mod_names: Vec<String> = self.module_decls.keys().cloned().collect();
-        for name in &mod_names {
-            let decl = self.module_decls[name].clone();
-            if decl.const_params.is_empty() && decl.type_params.is_empty() {
-                let mut env = ConstEnv::with_globals(evaluated_globals.clone());
-                let elab_mod = self.elab_mod_inner(&decl, &mut env, &HashMap::new())?;
-                prog.modules_map_mut().insert(name.clone(), elab_mod);
-            }
-        }
-
-        for beh in &self.behavior_decls.clone() {
-            let behavior = self.elab_behavior(beh)?;
-            if let Some(module) = prog.modules_map_mut().get_mut(&behavior.name) {
-                module.behaviors.push(behavior);
-            }
-        }
-
-        // Merge all on-demand monomorphized modules into the program.
-        for elab_mod in self.ctx.components.drain_mono_cache() {
-            let name = elab_mod.name.clone();
-            prog.modules_map_mut().entry(name).or_insert(elab_mod);
-        }
-
-        // Attach behaviors to monomorphized modules. A behavior declared as
-        // `analog Capacitor { ... }` (name "Capacitor") must also attach to
-        // `Capacitor__8` (monomorphized from `Capacitor[8]`). The base name
-        // is the part before the `__` suffix.
-        for beh in &self.behavior_decls.clone() {
-            let behavior = self.elab_behavior(beh)?;
-            let base = &behavior.name;
-            for (name, module) in prog.modules_map_mut().iter_mut() {
-                if name == base {
-                    continue; // already attached above
-                }
-                // Monomorphized name: "BaseName__arg1_arg2_..."
-                if let Some(rest) = name.strip_prefix(&format!("{base}__"))
-                    && !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit() || c == '_') {
-                        // Avoid duplicate attachment if already present.
-                        if !module.behaviors.iter().any(|b| b.name == behavior.name && b.kind == behavior.kind) {
-                            module.behaviors.push(behavior.clone());
-                        }
-                    }
-            }
-        }
-
-        // Attach `bench` blocks by target module name (mirrors the behavior
-        // attach pass above; unlike behaviors, generic/monomorphized-suffix
-        // targets are out of scope for milestone 1 — SPEC_BENCH.md §2).
-        for bench in &self.bench_decls.clone() {
-            if !prog.modules_map_mut().contains_key(&bench.name) {
-                return Err(ElabError::from(ElabErrorKind::Other(format!(
-                    "bench `{}` names an unknown or generic module (generics are not yet supported as bench targets)",
-                    bench.name
-                ))));
-            }
-            for f in &bench.fns {
-                let mut syscalls = Vec::new();
-                f.body.collect_syscalls(&mut syscalls);
-                for name in syscalls {
-                    if !crate::eval::tasks::bench_task_implemented(&name) {
-                        return Err(ElabError::from(ElabErrorKind::Other(format!(
-                            "`${name}` is not yet implemented in a bench (SPEC_BENCH.md §7/§11)"
-                        ))));
-                    }
-                }
-            }
-            prog.benches_vec_mut().push(crate::pom::BenchBlock {
-                module: bench.name.clone(),
-                fns: bench.fns.clone(),
-            });
-        }
-
-        // GAPS §J.4 — resolve calls to built-in casts and validate diagnostics
-        self.ctx.callables.resolve_calls(&mut prog)?;
-
-        // GAPS §B.1 + §B.2 — the typecheck pass walks every module's
-        // connections and rejects width mismatches and discipline
-        // crossings. Runs after elaboration (so all port/wire/instance
-        // bindings are typed) and before codegen.
-        crate::elab::typecheck::typecheck_program(&prog)?;
-
-        Ok(prog)
+        Ok(design)
     }
 
 }

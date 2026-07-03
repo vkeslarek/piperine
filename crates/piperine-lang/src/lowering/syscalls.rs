@@ -92,14 +92,14 @@ impl SystemFunction for Simparam {
 struct ParamGiven;
 impl SystemFunction for ParamGiven {
     fn lower(&self, _: &str, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::ParamGiven(ctx.lookup_param(&string_arg(args, 0)).unwrap_or(piperine_ir::ParamId(0))))
+        IrExpr::Sim(SimQuery::ParamGiven(ctx.require_param_given(&string_arg(args, 0))))
     }
 }
 
 struct PortConnected;
 impl SystemFunction for PortConnected {
     fn lower(&self, _: &str, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::PortConnected(ctx.lookup_node(&string_arg(args, 0)).unwrap_or(piperine_ir::NodeId::GROUND)))
+        IrExpr::Sim(SimQuery::PortConnected(ctx.require_node(&string_arg(args, 0))))
     }
 }
 

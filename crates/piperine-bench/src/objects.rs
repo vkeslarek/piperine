@@ -139,11 +139,15 @@ impl OpResult {
     }
 
     fn i(&self, args: &[Value]) -> Result<Value, EvalError> {
-        if args.len() != 2 {
-            return Err(EvalError::TypeMismatch("i() needs exactly 2 arguments".into()));
+        if args.is_empty() || args.len() > 2 {
+            return Err(EvalError::TypeMismatch("i() takes 1 or 2 arguments".into()));
         }
         let a = self.resolve_node(&args[0])?;
-        let b = self.resolve_node(&args[1])?;
+        // `i(a)` — the omitted second terminal is ground (SPEC_BENCH §6).
+        let b = match args.get(1) {
+            Some(v) => self.resolve_node(v)?,
+            None => NodeIdentifier::Gnd,
+        };
         let instance = self.find_branch_instance(a.clone(), b)?;
         if instance.num_forces > 0 {
             let branch = BranchIdentifier::new(instance.label.clone(), "force0".to_string());

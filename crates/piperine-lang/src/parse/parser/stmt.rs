@@ -219,41 +219,37 @@ impl<'a> Parser<'a> {
         Ok(BehaviorDecl { attrs, is_pub, kind, name, body })
     }
 
-    /// Parses a single statement inside an `analog`/`digital` behavior block.
-    pub(crate) fn parse_behavior_stmt(&mut self) -> Result<BehaviorStmt, crate::parse::error::ParseError> {
+    /// Parses a single statement inside an `analog`/`digital` behavior
+    /// block. One `Stmt` type serves fn bodies and behavior bodies
+    /// (SIMPLIFICATION.md P3); the behavior-only forms parsed here are
+    /// `@`-events, `$`-diagnostics in statement position, and `<+`/`<-`
+    /// binds — context validation (`elab`) rejects them elsewhere.
+    pub(crate) fn parse_behavior_stmt(&mut self) -> Result<Stmt, crate::parse::error::ParseError> {
         if self.eat_ident("var") {
             let name = self.parse_ident()?;
             self.expect(&Tok::Colon)?;
             let ty = self.parse_type()?;
             let default = if self.eat(&Tok::Assign) { Some(self.parse_expr()?) } else { None };
             self.expect(&Tok::Semi)?;
-            return Ok(BehaviorStmt::VarDecl { name, ty, default });
+            return Ok(Stmt::VarDecl { name, ty: Some(ty), default });
         }
         if self.eat_ident("if") {
             self.expect(&Tok::LParen)?;
             let cond = self.parse_expr()?;
             self.expect(&Tok::RParen)?;
-            self.expect(&Tok::LBrace)?;
-            let mut then_body = Vec::new();
-            while !self.eat(&Tok::RBrace) {
-                then_body.push(self.parse_behavior_stmt()?);
-            }
+            let then_body = self.parse_behavior_body()?;
             let else_body = if self.eat_ident("else") {
-                let mut e_body = Vec::new();
                 if self.eat_ident("if") {
                     self.pos -= 1;
-                    e_body.push(self.parse_behavior_stmt()?);
+                    let stmt = self.parse_behavior_stmt()?;
+                    Some(Block { stmts: vec![stmt], expr: None })
                 } else {
-                    self.expect(&Tok::LBrace)?;
-                    while !self.eat(&Tok::RBrace) {
-                        e_body.push(self.parse_behavior_stmt()?);
-                    }
+                    Some(self.parse_behavior_body()?)
                 }
-                Some(e_body)
             } else {
                 None
             };
-            return Ok(BehaviorStmt::If { cond, then_body, else_body });
+            return Ok(Stmt::If { cond, then_body, else_body });
         }
         if self.eat_ident("match") {
             let expr = self.parse_expr()?;
@@ -262,29 +258,23 @@ impl<'a> Parser<'a> {
             while !self.eat(&Tok::RBrace) {
                 let pat = self.parse_pattern()?;
                 self.expect(&Tok::FatArrow)?;
-                let mut body = Vec::new();
-                if self.eat(&Tok::LBrace) {
-                    while !self.eat(&Tok::RBrace) {
-                        body.push(self.parse_behavior_stmt()?);
-                    }
+                let body = if self.peek() == Some(&Tok::LBrace) {
+                    self.parse_behavior_body()?
                 } else {
-                    body.push(self.parse_behavior_stmt()?);
-                }
+                    let stmt = self.parse_behavior_stmt()?;
+                    Block { stmts: vec![stmt], expr: None }
+                };
                 self.eat(&Tok::Comma);
-                arms.push(MatchArm { pat, body });
+                arms.push(StmtMatchArm { pat, body });
             }
-            return Ok(BehaviorStmt::Match { expr, arms });
+            return Ok(Stmt::Match { expr, arms });
         }
         if self.eat_ident("for") {
             let var = self.parse_ident()?;
             self.expect_ident_str("in")?;
             let range = self.parse_range()?;
-            self.expect(&Tok::LBrace)?;
-            let mut body = Vec::new();
-            while !self.eat(&Tok::RBrace) {
-                body.push(self.parse_behavior_stmt()?);
-            }
-            return Ok(BehaviorStmt::For { var, range, body });
+            let body = self.parse_behavior_body()?;
+            return Ok(Stmt::For { var, iter: ForIter::Range(range), body });
         }
         if self.eat(&Tok::At) {
             let spec = self.parse_event_spec()?;
@@ -297,7 +287,7 @@ impl<'a> Parser<'a> {
                 None
             };
             let body = self.parse_block()?;
-            return Ok(BehaviorStmt::Event { spec, guard, body });
+            return Ok(Stmt::Event { spec, guard, body });
         }
         if let Some(Tok::SysCall(sys)) = self.peek() {
             let sys = sys.clone();
@@ -315,26 +305,37 @@ impl<'a> Parser<'a> {
                 self.expect(&Tok::RParen)?;
             }
             self.expect(&Tok::Semi)?;
-            return Ok(BehaviorStmt::Diagnostic { sys, args });
+            return Ok(Stmt::Diagnostic { sys, args });
         }
 
         let expr = self.parse_expr()?;
         if self.eat(&Tok::Contrib) {
             let src = self.parse_expr()?;
             self.expect(&Tok::Semi)?;
-            Ok(BehaviorStmt::Bind { dest: expr, op: BindOp::Contrib, src })
+            Ok(Stmt::Bind { dest: expr, op: BindOp::Contrib, src })
         } else if self.eat(&Tok::Force) {
             let src = self.parse_expr()?;
             self.expect(&Tok::Semi)?;
-            Ok(BehaviorStmt::Bind { dest: expr, op: BindOp::Force, src })
+            Ok(Stmt::Bind { dest: expr, op: BindOp::Force, src })
         } else if self.eat(&Tok::Assign) {
             let src = self.parse_expr()?;
             self.expect(&Tok::Semi)?;
-            Ok(BehaviorStmt::Bind { dest: expr, op: BindOp::Assign, src })
+            Ok(Stmt::Bind { dest: expr, op: BindOp::Assign, src })
         } else {
             self.expect(&Tok::Semi)?;
-            Ok(BehaviorStmt::Expr(expr))
+            Ok(Stmt::Expr(expr))
         }
+    }
+
+    /// Parses a braced list of behavior statements into a [`Block`]
+    /// (behavior blocks have no trailing-expression value).
+    fn parse_behavior_body(&mut self) -> Result<Block, crate::parse::error::ParseError> {
+        self.expect(&Tok::LBrace)?;
+        let mut stmts = Vec::new();
+        while !self.eat(&Tok::RBrace) {
+            stmts.push(self.parse_behavior_stmt()?);
+        }
+        Ok(Block { stmts, expr: None })
     }
 
     // ─────────────────────────── §7.2  Events ────────────────────────────────

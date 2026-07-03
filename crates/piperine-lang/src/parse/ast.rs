@@ -398,6 +398,13 @@ pub enum Stmt {
     Match { expr: Expr, arms: Vec<StmtMatchArm> },
     For { var: String, iter: ForIter, body: Block },
     Bind { dest: Expr, op: BindOp, src: Expr },
+    /// An event block `@ EventSpec [when (guard)] { ... }` — behavior
+    /// bodies only (validated by `elab`, not the type system: one `Stmt`
+    /// serves fn bodies and `analog`/`digital` bodies alike,
+    /// SIMPLIFICATION.md P3).
+    Event { spec: EventSpec, guard: Option<Expr>, body: Block },
+    /// A `$display`-family diagnostic call in statement position.
+    Diagnostic { sys: String, args: Vec<Expr> },
     Expr(Expr),
 }
 
@@ -488,6 +495,14 @@ impl Stmt {
                 dest.walk(f);
                 src.walk(f);
             }
+            Stmt::Event { spec, guard, body } => {
+                spec.walk_exprs(f);
+                if let Some(g) = guard {
+                    g.walk(f);
+                }
+                body.walk_exprs(f);
+            }
+            Stmt::Diagnostic { args, .. } => args.iter().for_each(|a| a.walk(f)),
         }
     }
 
@@ -525,6 +540,14 @@ impl Stmt {
                 dest.walk_mut(f);
                 src.walk_mut(f);
             }
+            Stmt::Event { spec, guard, body } => {
+                spec.walk_exprs_mut(f);
+                if let Some(g) = guard {
+                    g.walk_mut(f);
+                }
+                body.walk_exprs_mut(f);
+            }
+            Stmt::Diagnostic { args, .. } => args.iter_mut().for_each(|a| a.walk_mut(f)),
         }
     }
 
@@ -532,6 +555,31 @@ impl Stmt {
     /// See [`Expr::subst_const`] for the lambda-body exception.
     pub fn subst_const(&mut self, var: &str, value: u64) {
         self.walk_exprs_mut(&mut Expr::subst_visitor(var, value));
+    }
+
+    /// Visit this statement and every nested statement, pre-order
+    /// (if/match/for/event bodies, in source order).
+    pub fn walk_stmts(&self, f: &mut impl FnMut(&Stmt)) {
+        f(self);
+        match self {
+            Stmt::If { then_body, else_body, .. } => {
+                then_body.stmts.iter().for_each(|s| s.walk_stmts(f));
+                if let Some(b) = else_body {
+                    b.stmts.iter().for_each(|s| s.walk_stmts(f));
+                }
+            }
+            Stmt::Match { arms, .. } => arms
+                .iter()
+                .for_each(|a| a.body.stmts.iter().for_each(|s| s.walk_stmts(f))),
+            Stmt::For { body, .. } | Stmt::Event { body, .. } => {
+                body.stmts.iter().for_each(|s| s.walk_stmts(f));
+            }
+            Stmt::VarDecl { .. }
+            | Stmt::Return(_)
+            | Stmt::Bind { .. }
+            | Stmt::Diagnostic { .. }
+            | Stmt::Expr(_) => {}
+        }
     }
 }
 
@@ -553,7 +601,7 @@ pub struct BehaviorDecl {
     pub is_pub: bool,
     pub kind: BehaviorKind,
     pub name: String,
-    pub body: Vec<BehaviorStmt>,
+    pub body: Vec<Stmt>,
 }
 
 /// The kind of a behavior block: analog (continuous-time) or digital (event-driven).
@@ -563,125 +611,6 @@ pub enum BehaviorKind {
     Analog,
     /// Event-driven digital behavior.
     Digital,
-}
-
-/// A statement inside an `analog` or `digital` block.
-///
-/// `For` loops in behavior blocks are unrolled at elaboration — their bounds
-/// must be elaboration constants. The unrolled form appears in
-/// [`BehaviorStmt`][crate::pom::BehaviorStmt].
-#[derive(Debug, Clone)]
-pub enum BehaviorStmt {
-    VarDecl { name: String, ty: Type, default: Option<Expr> },
-    Bind { dest: Expr, op: BindOp, src: Expr },
-    If { cond: Expr, then_body: Vec<BehaviorStmt>, else_body: Option<Vec<BehaviorStmt>> },
-    Match { expr: Expr, arms: Vec<MatchArm> },
-    For { var: String, range: Range, body: Vec<BehaviorStmt> },
-    /// An event block: `@ EventSpec [when (guard)] { ... }`.
-    Event { spec: EventSpec, guard: Option<Expr>, body: Block },
-    Diagnostic { sys: String, args: Vec<Expr> },
-    Expr(Expr),
-}
-
-impl BehaviorStmt {
-    /// Immutable visit of every expression in this statement, pre-order
-    /// (event-spec args and guards included). See [`Expr::walk`].
-    pub fn walk_exprs(&self, f: &mut impl FnMut(&Expr) -> Walk) {
-        match self {
-            BehaviorStmt::VarDecl { default, .. } => {
-                if let Some(e) = default {
-                    e.walk(f);
-                }
-            }
-            BehaviorStmt::Bind { dest, src, .. } => {
-                dest.walk(f);
-                src.walk(f);
-            }
-            BehaviorStmt::If { cond, then_body, else_body } => {
-                cond.walk(f);
-                then_body.iter().for_each(|s| s.walk_exprs(f));
-                if let Some(b) = else_body {
-                    b.iter().for_each(|s| s.walk_exprs(f));
-                }
-            }
-            BehaviorStmt::Match { expr, arms } => {
-                expr.walk(f);
-                arms.iter()
-                    .for_each(|a| a.body.iter().for_each(|s| s.walk_exprs(f)));
-            }
-            BehaviorStmt::For { range, body, .. } => {
-                range.start.walk(f);
-                range.end.walk(f);
-                body.iter().for_each(|s| s.walk_exprs(f));
-            }
-            BehaviorStmt::Event { spec, guard, body } => {
-                spec.walk_exprs(f);
-                if let Some(g) = guard {
-                    g.walk(f);
-                }
-                body.walk_exprs(f);
-            }
-            BehaviorStmt::Diagnostic { args, .. } => {
-                args.iter().for_each(|a| a.walk(f));
-            }
-            BehaviorStmt::Expr(e) => e.walk(f),
-        }
-    }
-
-    /// Mutable visit of every expression in this statement, pre-order
-    /// (event-spec args and guards included). See [`Expr::walk`].
-    pub fn walk_exprs_mut(&mut self, f: &mut impl FnMut(&mut Expr) -> Walk) {
-        match self {
-            BehaviorStmt::VarDecl { default, .. } => {
-                if let Some(e) = default {
-                    e.walk_mut(f);
-                }
-            }
-            BehaviorStmt::Bind { dest, src, .. } => {
-                dest.walk_mut(f);
-                src.walk_mut(f);
-            }
-            BehaviorStmt::If { cond, then_body, else_body } => {
-                cond.walk_mut(f);
-                then_body.iter_mut().for_each(|s| s.walk_exprs_mut(f));
-                if let Some(b) = else_body {
-                    b.iter_mut().for_each(|s| s.walk_exprs_mut(f));
-                }
-            }
-            BehaviorStmt::Match { expr, arms } => {
-                expr.walk_mut(f);
-                arms.iter_mut()
-                    .for_each(|a| a.body.iter_mut().for_each(|s| s.walk_exprs_mut(f)));
-            }
-            BehaviorStmt::For { range, body, .. } => {
-                range.start.walk_mut(f);
-                range.end.walk_mut(f);
-                body.iter_mut().for_each(|s| s.walk_exprs_mut(f));
-            }
-            BehaviorStmt::Event { spec, guard, body } => {
-                spec.walk_exprs_mut(f);
-                if let Some(g) = guard {
-                    g.walk_mut(f);
-                }
-                body.walk_exprs_mut(f);
-            }
-            BehaviorStmt::Diagnostic { args, .. } => {
-                args.iter_mut().for_each(|a| a.walk_mut(f));
-            }
-            BehaviorStmt::Expr(e) => e.walk_mut(f),
-        }
-    }
-
-    /// Substitute `var → value` in all expressions of this statement.
-    /// Used during behavioral `for` unrolling (the `for` is syntactic
-    /// sugar, fully resolved at elaboration — same as `if` const-folding).
-    ///
-    /// Note the change vs. the historic hand-rolled version: `For` range
-    /// bounds are now substituted too (an inner `for j in 0..i` sees the
-    /// outer unrolled `i`), which the old walker missed.
-    pub fn subst_const(&mut self, var: &str, value: u64) {
-        self.walk_exprs_mut(&mut Expr::subst_visitor(var, value));
-    }
 }
 
 impl EventSpec {
@@ -715,12 +644,6 @@ pub enum BindOp {
     Force,
     /// Value assignment: `dest = src`.
     Assign,
-}
-
-#[derive(Debug, Clone)]
-pub struct MatchArm {
-    pub pat: Pattern,
-    pub body: Vec<BehaviorStmt>,
 }
 
 #[derive(Debug, Clone)]
