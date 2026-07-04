@@ -182,16 +182,16 @@ impl ElabPass for AttachBehaviors {
 /// Attach `bench` blocks by target module name and validate every `$task`
 /// they call against the availability table (SPEC_BENCH.md §7/§11) — an
 /// unimplemented task is an elaboration error, not a runtime surprise.
+///
+/// A bench may target a generic base: it attaches to every monomorphized
+/// instance (`Base__args`, the same suffix rule as `AttachBehaviors`) and
+/// runs once per monomorph (SPEC_BENCH.md §3 — "Post monomorphization,
+/// generics appear in concrete form"). A bench targeting a generic base
+/// with zero monomorphs is an error (nothing to run).
 struct AttachBenches;
 impl ElabPass for AttachBenches {
     fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
         for bench in &elab.bench_decls.clone() {
-            if !design.modules_map_mut().contains_key(&bench.name) {
-                return Err(ElabError::from(ElabErrorKind::Other(format!(
-                    "bench `{}` names an unknown or generic module (generics are not yet supported as bench targets)",
-                    bench.name
-                ))));
-            }
             for f in &bench.fns {
                 let mut syscalls = Vec::new();
                 f.body.collect_syscalls(&mut syscalls);
@@ -203,10 +203,35 @@ impl ElabPass for AttachBenches {
                     }
                 }
             }
-            design.benches_vec_mut().push(crate::pom::BenchBlock {
-                module: bench.name.clone(),
-                fns: bench.fns.clone(),
-            });
+            // Attach to the exact target if it is a concrete module, and to
+            // every monomorphized instance of a generic base. The mono cache
+            // is drained in `AttachBehaviors` (the pass above), so all
+            // monomorphs are already in the module map.
+            let prefix = format!("{}__", bench.name);
+            let mut targets: Vec<String> = Vec::new();
+            if design.modules_map_mut().contains_key(&bench.name) {
+                targets.push(bench.name.clone());
+            }
+            for name in design.modules_map_mut().keys() {
+                if let Some(rest) = name.strip_prefix(&prefix)
+                    && !rest.is_empty()
+                    && rest.chars().all(|c| c.is_ascii_digit() || c == '_')
+                {
+                    targets.push(name.clone());
+                }
+            }
+            if targets.is_empty() {
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "bench `{}` names an unknown or generic module with no monomorphized instances",
+                    bench.name
+                ))));
+            }
+            for target in targets {
+                design.benches_vec_mut().push(crate::pom::BenchBlock {
+                    module: target,
+                    fns: bench.fns.clone(),
+                });
+            }
         }
         Ok(())
     }

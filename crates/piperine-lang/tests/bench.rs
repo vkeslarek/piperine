@@ -54,6 +54,23 @@ fn bench_on_unknown_module_is_a_fail_loud_error() {
 }
 
 #[test]
+fn bench_targeting_generic_with_no_monomorphs_is_an_error() {
+    // SPEC_BENCH.md §3: a bench may target a generic base, but only if the
+    // base has monomorphized instances to run against. Zero monomorphs →
+    // fail-loud elaboration error (nothing to run).
+    let src = format!(
+        "{DUT}
+        mod Generic[N]() {{ }}
+        bench Generic {{ fn go() {{ }} }}"
+    );
+    let err = elab_err(&src);
+    assert!(
+        err.contains("no monomorphized instances"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn bench_calling_an_unimplemented_task_is_rejected_at_elaboration() {
     let src = format!(
         "{DUT} bench SwitchOpenTest {{ fn go() {{ var r = $plot(w, \"title\"); }} }}"

@@ -121,10 +121,7 @@ impl Elaborator {
         let mut env = ConstEnv::new();
         let mut module = def.instantiate(self, const_args, &mut env, &HashMap::new())?;
         module.name = mono_name.clone();
-        
-        self.ctx.components.drain_mono_cache(); // This isn't how we insert, wait
-        // Wait, we need to insert it. But drain_mono_cache is not an insert method.
-        // Let's rely on a helper we'll add to components.rs: insert_mono_cache
+
         self.ctx.components.insert_mono_cache(mono_name.clone(), module);
 
         Ok(mono_name)

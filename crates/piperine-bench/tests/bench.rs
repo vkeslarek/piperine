@@ -441,3 +441,43 @@ fn select_stages_across_a_selection() {
         other => panic!("expected Passed, got {other:?}"),
     }
 }
+
+#[test]
+fn generic_bench_target_runs_once_per_monomorph() {
+    // SPEC_BENCH.md §3: "Post monomorphization, generics appear in concrete
+    // form." A `bench Counter` targeting a generic base attaches to every
+    // monomorphized instance (Counter__8, Counter__12) via the same
+    // `Base__args` suffix rule AttachBehaviors uses, and runs once per
+    // monomorph.
+    let src = format!(
+        "{CIRCUIT}
+        mod Counter[N]() {{
+            wire gnd : Electrical;
+            wire out : Electrical;
+            source : VoltageSource (.p = out, .n = gnd) {{ .voltage = 5.0 }};
+            r : Resistor (.p = out, .n = gnd) {{ .resistance = 1000.0 }};
+        }}
+        mod Top() {{
+            c8 : Counter[8]();
+            c12 : Counter[12]();
+        }}
+        bench Counter {{
+            fn test_runs() {{
+                var r = $op();
+                $assert(r.v(out, gnd) > 4.9, \"source holds the node\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    let report = BenchRunner::new(&design).run_all();
+    let modules: Vec<String> = report.results.iter().map(|r| r.module.clone()).collect();
+    assert!(
+        modules.contains(&"Counter__8".to_string()),
+        "bench should attach to Counter__8; got {modules:?}"
+    );
+    assert!(
+        modules.contains(&"Counter__12".to_string()),
+        "bench should attach to Counter__12; got {modules:?}"
+    );
+    assert!(report.all_passed(), "both monomorph benches should pass");
+}

@@ -227,6 +227,27 @@ fn test_non_instantiated_generic_not_in_modules() {
     assert!(!generic_present, "un-instantiated generic should not be in modules");
 }
 
+#[test]
+fn test_two_monomorphs_of_same_base_both_exist() {
+    // Regression: `monomorphize` used to drain the mono cache before each
+    // insert, so only the last monomorph of a base survived. Two distinct
+    // const args must produce two distinct, coexisting monomorphs.
+    let prog = elab(
+        "discipline Electrical { potential v: Real; flow i: Real; }
+         mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0e3; }
+         mod Chain[N] ( inout a : Electrical, inout b : Electrical ) {
+             wire node : Electrical[N];
+             for i in 0..N { Resistor( node[i], node[i] ); }
+         }
+         mod Top ( inout a : Electrical, inout b : Electrical ) {
+             Chain[4]( a, b );
+             Chain[8]( a, b );
+         }",
+    );
+    assert!(prog.module("Chain__4").is_some(), "Chain__4 should exist");
+    assert!(prog.module("Chain__8").is_some(), "Chain__8 should coexist with Chain__4");
+}
+
 // ──────────────────────────── behavior elaboration ────────────────────────────
 
 #[test]
