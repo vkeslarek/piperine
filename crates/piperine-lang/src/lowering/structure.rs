@@ -194,6 +194,9 @@ pub(crate) fn elab_value_type_to_ir(ty: &ValueType) -> IrType {
         ValueType::Quad => IrType::Quad,
         ValueType::Str => IrType::Real,
         ValueType::Enum(_) => IrType::Integer,
+        // Bundle-typed params are flattened per-field before this runs
+        // (`convert_fn`); the scalar fallback is never a field's own type.
+        ValueType::Bundle(_) => IrType::Real,
         ValueType::Array(inner, _) => elab_value_type_to_ir(inner),
         ValueType::FnPtr(_, _) => IrType::Real,
     }
@@ -228,18 +231,47 @@ pub(crate) fn convert_fn(
     symbols: &mut SymbolTable,
     errors: &mut Vec<super::LowerError>,
 ) -> IrFunction {
+    convert_fn_named(f.name(), f, prog, symbols, errors)
+}
+
+/// [`convert_fn`] with an explicit IR name — impl methods register as
+/// `Type::method`. Bundle-typed params (GAPS §I.14 extended to fns) are
+/// flattened into one scalar var per field (`m` : `ResModel` → `m_rsh`,
+/// `m_kf`); the body's `m.rsh` resolves through the qualified-name var
+/// lookup, and call sites expand a bundle argument to match.
+pub(crate) fn convert_fn_named(
+    ir_name: &str,
+    f: &Function,
+    prog: &Design,
+    symbols: &mut SymbolTable,
+    errors: &mut Vec<super::LowerError>,
+) -> IrFunction {
     let mut params = Vec::new();
     let mut module_vars = HashSet::new();
+    let mut bundle_bindings: Vec<(String, (String, Vec<String>))> = Vec::new();
     for (n, ty) in f.params() {
+        if let Some(crate::pom::ValueType::Bundle(bname)) = ty.as_value() {
+            let fields = bundle_field_names(prog, bname);
+            for field in &fields {
+                let flat = format!("{n}_{field}");
+                let vid = symbols.add_var(&flat, IrType::Real);
+                params.push(vid);
+                module_vars.insert(flat);
+            }
+            bundle_bindings.push((n.to_string(), (bname.clone(), fields)));
+            continue;
+        }
         let vty = elab_value_type_to_ir(ty.as_value().unwrap_or(&crate::pom::ValueType::Real));
         let vid = symbols.add_var(n, vty);
         params.push(vid);
         module_vars.insert(n.to_string());
     }
     
-    let mut ctx = LowerCtx::new(symbols, format!("fn {}", f.name()), false, module_vars);
+    let mut ctx = LowerCtx::new(symbols, format!("fn {ir_name}"), false, module_vars);
     ctx.enum_values = prog.enum_value_map();
     ctx.consts = LowerCtx::const_irs(prog);
+    ctx.bundle_bindings = bundle_bindings.into_iter().collect();
+    ctx.fn_bundle_sigs = fn_bundle_signatures(prog);
     // Lower default expressions (parallel to params) — elaboration
     // constants, so each lowers to a constant `IrExpr` (the language spec Part I §9.1).
     let defaults: Vec<Option<IrExpr>> = f
@@ -251,5 +283,45 @@ pub(crate) fn convert_fn(
     errors.append(&mut ctx.errors);
 
     let returns = Some(IrType::Real); // Best effort fallback
-    IrFunction { name: f.name().to_string(), params, defaults, returns, body }
+    IrFunction { name: ir_name.to_string(), params, defaults, returns, body }
+}
+
+/// Field names of a value bundle, declaration order.
+pub(crate) fn bundle_field_names(prog: &Design, bundle: &str) -> Vec<String> {
+    prog.bundle(bundle)
+        .map(|b| b.fields.iter().map(|f| f.name.clone()).collect())
+        .unwrap_or_default()
+}
+
+/// Bundle-typed parameter positions of every non-generic fn and impl
+/// method (methods keyed `Type::method`, with `self` as the leading
+/// position) — what call-site expansion consults.
+pub(crate) fn fn_bundle_signatures(
+    prog: &Design,
+) -> std::collections::HashMap<String, Vec<Option<(String, Vec<String>)>>> {
+    let sig_of = |params: &[(String, crate::pom::TypeRef)]| {
+        params
+            .iter()
+            .map(|(_, ty)| match ty.as_value() {
+                Some(crate::pom::ValueType::Bundle(b)) => {
+                    Some((b.clone(), bundle_field_names(prog, b)))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut out = std::collections::HashMap::new();
+    for f in prog.functions() {
+        if !f.is_generic() {
+            out.insert(f.name().to_string(), sig_of(f.params()));
+        }
+    }
+    for ib in prog.impls() {
+        for m in &ib.methods {
+            let mut sig = vec![Some((ib.ty.clone(), bundle_field_names(prog, &ib.ty)))];
+            sig.extend(sig_of(&m.params));
+            out.insert(format!("{}::{}", ib.ty, m.name), sig);
+        }
+    }
+    out
 }

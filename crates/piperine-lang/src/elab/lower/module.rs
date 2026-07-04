@@ -93,6 +93,7 @@ impl Elaborator {
                 name: format!("{pname}_{}", field.name),
                 ty: vt,
                 default: Some(val),
+                bundle_origin: Some((pname.to_string(), bundle_name.to_string())),
             }));
         }
         Ok(())
@@ -230,6 +231,7 @@ impl Elaborator {
                     name: name.clone(),
                     ty: vt,
                     default: def,
+                    bundle_origin: None,
                 }));
             }
 

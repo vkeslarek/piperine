@@ -228,6 +228,10 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
                 // A bundle-typed param field (`model.rsh`) was flattened to
                 // a scalar param `model_rsh` at elaboration (GAPS §I.14).
                 IrExpr::Param(id)
+            } else if let Some(id) = ctx.lookup_var(&qualified.replace('.', "_")) {
+                // A bundle-typed *fn* param field (`m.rsh` inside
+                // `fn f(m: ResModel)`) — flattened to a var by `convert_fn`.
+                IrExpr::Var(id)
             } else {
                 IrExpr::Param(ctx.require_ident_as_param(&qualified))
             }
@@ -236,7 +240,67 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
         Expr::Array(body) => lower_array(body, ctx),
 
         Expr::Cast(_target, inner) => lower_expr(inner, ctx),
-        Expr::BundleLit { .. } | Expr::Lambda { .. } | Expr::Tuple(_) | Expr::MapLit(_) => IrExpr::Real(0.0),
+        // Value-layer-only constructs: no faithful scalar lowering exists,
+        // so reaching one in an analog/digital body is a loud error, never
+        // a silent 0.0 (SPEC §11).
+        Expr::BundleLit { ty, .. } => {
+            ctx.errors.push(crate::lowering::LowerError {
+                module: ctx.module_name.clone(),
+                what: "bundle literal in expression position",
+                name: ty.name.clone(),
+            });
+            IrExpr::Real(0.0)
+        }
+        Expr::Lambda { .. } | Expr::Tuple(_) | Expr::MapLit(_) => {
+            ctx.errors.push(crate::lowering::LowerError {
+                module: ctx.module_name.clone(),
+                what: "value-layer expression (lambda/tuple/map)",
+                name: expr_to_name(expr),
+            });
+            IrExpr::Real(0.0)
+        }
+    }
+}
+
+/// Expand a bundle-valued call argument into per-field scalars, appended
+/// to `out` in field order. Supported shapes: a bundle-typed binding
+/// (`model`, expanding through the flattened params/vars) and a bundle
+/// literal (`ResModel { .rsh = 2e3 }`, omitted fields taking the bundle's
+/// declared defaults through the binding-independent literal fields only —
+/// a literal missing a field with no default fails loud at the field
+/// lookup). Returns `false` for anything else.
+fn lower_bundle_arg(
+    arg: &Expr,
+    _bundle: &str,
+    fields: &[String],
+    out: &mut Vec<IrExpr>,
+    ctx: &mut LowerCtx,
+) -> bool {
+    match arg {
+        Expr::Ident(n) if ctx.bundle_bindings.contains_key(n) => {
+            for f in fields {
+                let e = Expr::Field(Box::new(Expr::Ident(n.clone())), f.clone());
+                out.push(lower_expr(&e, ctx));
+            }
+            true
+        }
+        Expr::BundleLit { fields: lit_fields, .. } => {
+            for f in fields {
+                match lit_fields.iter().find(|(n, _)| n == f) {
+                    Some((_, e)) => out.push(lower_expr(e, ctx)),
+                    None => {
+                        ctx.errors.push(crate::lowering::LowerError {
+                            module: ctx.module_name.clone(),
+                            what: "bundle literal missing a field (no default expansion here yet)",
+                            name: f.clone(),
+                        });
+                        out.push(IrExpr::Real(0.0));
+                    }
+                }
+            }
+            true
+        }
+        _ => false,
     }
 }
 
@@ -316,9 +380,52 @@ pub(crate) fn block_value(block: &Block, ctx: &mut LowerCtx) -> IrExpr {
 }
 
 pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
+    // `recv.method(args)` — an impl-method call. The receiver must be a
+    // bundle-typed binding (module param or fn param); the method was
+    // registered as the IR fn `Bundle::method` with `self` flattened
+    // per-field, so the call expands `recv` into its field scalars.
+    if let Expr::Field(recv, method) = func {
+        let recv_bundle = match recv.as_ref() {
+            Expr::Ident(n) => ctx.bundle_bindings.get(n).cloned().map(|b| (n.clone(), b)),
+            _ => None,
+        };
+        let Some((recv_name, (bundle, fields))) = recv_bundle else {
+            ctx.errors.push(crate::lowering::LowerError {
+                module: ctx.module_name.clone(),
+                what: "method call receiver (not a bundle-typed binding)",
+                name: format!("{}.{method}(…)", expr_to_name(recv)),
+            });
+            return IrExpr::Real(0.0);
+        };
+        let mangled = format!("{bundle}::{method}");
+        let Some(fn_id) = ctx.symbols.fn_by_name(&mangled) else {
+            ctx.errors.push(crate::lowering::LowerError {
+                module: ctx.module_name.clone(),
+                what: "impl method",
+                name: mangled,
+            });
+            return IrExpr::Real(0.0);
+        };
+        let mut ir_args: Vec<IrExpr> = fields
+            .iter()
+            .map(|f| lower_expr(&Expr::Field(Box::new(Expr::Ident(recv_name.clone())), f.clone()), ctx))
+            .collect();
+        for a in args {
+            ir_args.push(lower_expr(a, ctx));
+        }
+        return IrExpr::Call(fn_id, ir_args);
+    }
+
     let name = match func {
         Expr::Ident(s) => s.as_str(),
-        _ => return IrExpr::Real(0.0),
+        _ => {
+            ctx.errors.push(crate::lowering::LowerError {
+                module: ctx.module_name.clone(),
+                what: "call target (not a plain fn or method name)",
+                name: expr_to_name(func),
+            });
+            return IrExpr::Real(0.0);
+        }
     };
 
     if name == "V" || name == "I" {
@@ -351,9 +458,27 @@ pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrEx
         return IrExpr::MathCall(name.to_string(), ir_args);
     }
 
-    // User function: look up by name in the symbol table.
+    // User function: look up by name in the symbol table. Bundle-typed
+    // parameter positions expand their argument into per-field scalars
+    // (matching `convert_fn`'s flattened signature).
     if let Some(fn_id) = ctx.symbols.fn_by_name(name) {
-        let ir_args = args.iter().map(|a| lower_expr(a, ctx)).collect();
+        let sig = ctx.fn_bundle_sigs.get(name).cloned();
+        let mut ir_args: Vec<IrExpr> = Vec::new();
+        for (i, a) in args.iter().enumerate() {
+            match sig.as_ref().and_then(|s| s.get(i)).and_then(|p| p.as_ref()) {
+                Some((bundle, fields)) => {
+                    if !lower_bundle_arg(a, bundle, fields, &mut ir_args, ctx) {
+                        ctx.errors.push(crate::lowering::LowerError {
+                            module: ctx.module_name.clone(),
+                            what: "bundle-typed argument (pass a bundle binding or literal)",
+                            name: format!("{name}(… arg #{} …)", i + 1),
+                        });
+                        return IrExpr::Real(0.0);
+                    }
+                }
+                None => ir_args.push(lower_expr(a, ctx)),
+            }
+        }
         return IrExpr::Call(fn_id, ir_args);
     }
 

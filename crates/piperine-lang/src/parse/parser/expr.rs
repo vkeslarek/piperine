@@ -232,8 +232,15 @@ impl<'a> Parser<'a> {
                     expr = Expr::Index(Box::new(expr), Box::new(idx));
                 }
             } else if self.eat(&Tok::Dot) {
-                let field = self.parse_ident()?;
-                expr = Expr::Field(Box::new(expr), field);
+                // Tuple index `t.0` (SPEC §6.1) or a named field access.
+                if let Some(Tok::Int(n)) = self.peek() {
+                    let index = n.to_string();
+                    self.pos += 1;
+                    expr = Expr::Field(Box::new(expr), index);
+                } else {
+                    let field = self.parse_ident()?;
+                    expr = Expr::Field(Box::new(expr), field);
+                }
             } else if self.eat(&Tok::DoubleColon) {
                 let seg = self.parse_ident()?;
                 expr = match expr {

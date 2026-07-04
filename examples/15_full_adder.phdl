@@ -1,12 +1,7 @@
-// Pure digital combinational logic: a 1-bit full adder. The sum/carry are
-// computed in the `digital` block; a tiny analog readback stage encodes
-// `sum + 2·carry` as a voltage so the bench can sweep all eight input
-// combinations and check the truth table numerically.
-
-discipline Electrical {
-    potential v : Real;
-    flow i : Real;
-}
+// Pure digital combinational logic: a 1-bit full adder — no analog anywhere.
+// The bench stages the input drivers, runs `$op` (the DC mixed-signal loop
+// settles combinational logic), and reads the output Bit nets directly:
+// `r.v(sum)` returns the logic value as 0/1.
 
 discipline Bit {
     storage Boolean;
@@ -23,7 +18,7 @@ digital BitDriver {
     q <- b;
 }
 
-mod FullAdder(input a : Bit, input b : Bit, input cin : Bit, inout rec : Electrical, inout gnd : Electrical) {
+mod FullAdder(input a : Bit, input b : Bit, input cin : Bit, output sum : Bit, output cout : Bit) {
     var s : Bit = 0;
     var c : Bit = 0;
 }
@@ -31,29 +26,20 @@ mod FullAdder(input a : Bit, input b : Bit, input cin : Bit, inout rec : Electri
 digital FullAdder {
     s = (a != b) != cin;
     c = (a && b) || (cin && (a != b));
-}
-
-analog FullAdder {
-    var total : Real = 0.0;
-    if (s == 1) {
-        total = total + 1.0;
-    }
-    if (c == 1) {
-        total = total + 2.0;
-    }
-    V(rec, gnd) <- total;
+    sum <- s;
+    cout <- c;
 }
 
 mod AdderBoard() {
-    wire gnd : Electrical;
-    wire rec : Electrical;
     wire na : Bit;
     wire nb : Bit;
     wire nc : Bit;
+    wire nsum : Bit;
+    wire ncout : Bit;
     da : BitDriver(.q = na);
     db : BitDriver(.q = nb);
     dc : BitDriver(.q = nc);
-    fa : FullAdder(.a = na, .b = nb, .cin = nc, .rec = rec, .gnd = gnd);
+    fa : FullAdder(.a = na, .b = nb, .cin = nc, .sum = nsum, .cout = ncout);
 }
 
 bench AdderBoard {
@@ -65,10 +51,10 @@ bench AdderBoard {
                     da.level = a;
                     db.level = b;
                     dc.level = cin;
-                    var t = $tran(TranConfig { .stop = 1e-6, .step = 1e-7 });
-                    var total = t.v(rec, gnd).at(1e-6);
+                    var r = $op();
+                    var total = r.v(nsum) + 2.0 * r.v(ncout);
                     $display(a, "+", b, "+", cin, "=", total);
-                    $assert(abs(total - (a + b + cin)) < 1e-6, "sum + 2*carry counts the ones");
+                    $assert(abs(total - (a + b + cin)) < 1e-9, "sum + 2*carry counts the ones");
                 }
             }
         }

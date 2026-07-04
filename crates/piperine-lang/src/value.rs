@@ -43,7 +43,12 @@ pub enum Value {
     /// A bundle-literal instance (config bundles included). Field lookup
     /// falls back to the bundle's declared `FieldDecl.default` at
     /// construction time — there is no lazy default resolution here.
-    Record(Rc<RefCell<HashMap<String, Value>>>),
+    Record {
+        /// The bundle type this literal instantiates (`"DiodeModel"`) —
+        /// what `impl` method dispatch resolves against.
+        ty: String,
+        fields: Rc<RefCell<HashMap<String, Value>>>,
+    },
     /// A `Map<K, V>` association list (piperine-bench/docs/SPEC.md §5.1 — `ic`/`nodeset`
     /// per-node hints). Backed by a `Vec<(Value, Value)>`, not a `HashMap`:
     /// `Value` keys aren't `Hash`/`Eq`-clean, and N is tiny. Shared/mutable
@@ -130,7 +135,7 @@ impl Value {
             Self::EnumVariant(..) => "EnumVariant",
             Self::Tuple(_) => "Tuple",
             Self::List(_) => "List",
-            Self::Record(_) => "Record",
+            Self::Record { .. } => "Record",
             Self::Map(_) => "Map",
             Self::Option(_) => "Option",
             Self::Closure(_) => "Closure",
@@ -280,7 +285,9 @@ impl PartialEq for Value {
             (Value::EnumVariant(ae, av), Value::EnumVariant(be, bv)) => ae == be && av == bv,
             (Value::Tuple(a), Value::Tuple(b)) => a == b,
             (Value::List(a), Value::List(b)) => *a.borrow() == *b.borrow(),
-            (Value::Record(a), Value::Record(b)) => *a.borrow() == *b.borrow(),
+            (Value::Record { fields: a, .. }, Value::Record { fields: b, .. }) => {
+                *a.borrow() == *b.borrow()
+            }
             (Value::Map(a), Value::Map(b)) => *a.borrow() == *b.borrow(),
             (Value::Option(a), Value::Option(b)) => a == b,
             (Value::Object(a), Value::Object(b)) => a.equals(b.as_any()),

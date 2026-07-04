@@ -90,6 +90,15 @@ pub(crate) struct LowerCtx<'a> {
     /// SIMPLIFICATION.md P5 these silently fell through to `ParamId(0)` —
     /// a physics constant read as "whatever param 0 is".
     pub consts: HashMap<String, IrExpr>,
+    /// Bundle-typed value bindings in scope (module bundle params and
+    /// flattened fn params): logical name → (bundle type, field names).
+    /// What `model.method(...)` and bundle-valued call arguments resolve
+    /// against (GAPS §I.14 extended to fns/methods).
+    pub bundle_bindings: HashMap<String, (String, Vec<String>)>,
+    /// Per-fn bundle-typed parameter positions (fn name → one entry per
+    /// declared param, `Some((bundle, fields))` for bundle-typed ones) —
+    /// call sites expand a bundle argument into its per-field scalars.
+    pub fn_bundle_sigs: HashMap<String, Vec<Option<(String, Vec<String>)>>>,
     /// Digital-domain nodes read from *this* analog body (a port or wire
     /// whose value comes from the digital side, referenced by bare name —
     /// not through `V`/`I`), bridged through a synthetic module-level
@@ -132,6 +141,8 @@ impl<'a> LowerCtx<'a> {
             instance_ports: HashMap::new(),
             enum_values: HashMap::new(),
             consts: HashMap::new(),
+            bundle_bindings: HashMap::new(),
+            fn_bundle_sigs: HashMap::new(),
             digital_shadows: Vec::new(),
         }
     }
@@ -297,6 +308,26 @@ pub fn ppr_to_ir(prog: &Design) -> Result<IrProgram, LowerErrors> {
             let ir_f = convert_fn(f, prog, &mut m.symbols, &mut errors);
             m.symbols.add_fn(ir_f);
         }
+        // Impl methods register as `Type::method` with `self` prepended as
+        // a bundle-typed param (flattened per-field like any other) —
+        // `model.conductance()` lowers to a plain fn call (SPEC §6.5/§6.6).
+        for ib in prog.impls() {
+            for method in &ib.methods {
+                let mut synth = method.clone();
+                synth.params.insert(
+                    0,
+                    (
+                        "self".to_string(),
+                        crate::pom::TypeRef::Value(crate::pom::ValueType::Bundle(ib.ty.clone())),
+                    ),
+                );
+                synth.defaults.insert(0, None);
+                let mangled = format!("{}::{}", ib.ty, method.name);
+                let ir_f =
+                    structure::convert_fn_named(&mangled, &synth, prog, &mut m.symbols, &mut errors);
+                m.symbols.add_fn(ir_f);
+            }
+        }
     }
 
     // Pass 2: Lower behaviors using the built SymbolTables.
@@ -351,6 +382,18 @@ pub fn ppr_to_ir(prog: &Design) -> Result<IrProgram, LowerErrors> {
             ctx.instance_ports = instance_ports.clone();
             ctx.enum_values = prog.enum_value_map();
             ctx.consts = LowerCtx::const_irs(prog);
+            ctx.fn_bundle_sigs = structure::fn_bundle_signatures(prog);
+            // Module bundle params (flattened at elaboration) — resolvable
+            // as method receivers and bundle-valued call arguments.
+            for p in m.params() {
+                if let Some((logical, bundle)) = &p.bundle_origin {
+                    ctx.bundle_bindings
+                        .entry(logical.clone())
+                        .or_insert_with(|| {
+                            (bundle.clone(), structure::bundle_field_names(prog, bundle))
+                        });
+                }
+            }
 
             let stmts = lower_stmts(behavior.body(), &mut ctx);
             digital_shadows.append(&mut ctx.digital_shadows);

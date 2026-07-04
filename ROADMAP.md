@@ -50,26 +50,27 @@ only prep is keeping `Attribute` surfaces public on POM nodes (they are).
 - `Trace.i` over time on devices with runtime state/vars — fails loud (per-step var/state
   banks are not recorded in `TransientAnalysisResult`).
 
-## Language / interpreter gaps the example gallery exposed
+## Language / interpreter gaps
 
-- **`impl` methods are elaborated but nothing can call them** — and worse, a method call
-  on a bundle param inside an analog body (`model.conductance()`) compiles to a broken
-  contribution (singular matrix) instead of failing loud. Needs either method-call
-  lowering (inline like free fns) or a named `CodegenError`. Same on the bench side:
-  records have no user-method dispatch (`call_builtin_method` knows only builtins), so
-  **capabilities have no consumer anywhere yet** — the reason the example gallery has a
-  bundle model-card example but no capability example.
-- Bench `fn`s cannot call sibling bench `fn`s (`resolve_callable` serves top-level POM
-  fns only) — the spec's "fn helper(x: T) -> U // reusable" doesn't hold today.
-- Tuple field access `t.0` does not parse (SPEC §6.1 promises it); `for` patterns can't
-  destructure tuples either.
-- Top-level `fn`s with bundle-typed params fail IR lowering ("unresolved names") even
-  when only a bench calls them — bundle params flatten for module `param`s but not for
-  fn signatures.
+**Closed 2026-07-04** (each with a gate test in `piperine-bench/tests/bench.rs`):
+`impl` method dispatch everywhere (interpreter via `Host::resolve_method` on tagged
+`Value::Record`s; analog/digital via `Bundle::method` IR fns with `self` flattened
+per-field); bench fn → sibling bench fn calls (`Callable::BenchFn`, effectful); tuple
+index `t.0`; bundle-typed fn params (flattened like module bundle params, call sites
+expand the argument); the lowering's silent `Real(0.0)` fallbacks for method calls and
+value-layer expressions are now loud `LowerError`s. Digital nets read directly off `$op`
+results (`r.v(bit_net)` → 0/1, NaN for X/Z).
+
+Still open:
+- `for` patterns can't destructure tuples (`for (a, b) in …`); loop bodies index `case.0`.
+- A bundle *literal* passed as a bundle-typed argument inside an analog body must name
+  every field — the declared field defaults aren't expanded at that call site yet.
 - Net/instance arrays are not addressable from a bench (`tap[2]`, `bank[0]`), and a
   bench-built circuit collapses a `wire x : T[N]` array into a single net.
 - A bench top module must have at least one instance (leaf top = empty circuit);
   `.i(a, b)` needs a unique two-terminal match between the named nets.
+- `Trace` (transient) does not record digital net values over time — digital readback is
+  `$op`-only today.
 
 ## Language server
 

@@ -29,6 +29,10 @@ pub struct CircuitBuildInfo {
     /// Top-module net name → solver node (`"gnd"` included, mapping to
     /// [`NodeIdentifier::Gnd`]).
     pub nets: HashMap<String, NodeIdentifier>,
+    /// Top-module digital net name → index into
+    /// `CircuitInstance::digital_state.nets` — how a bench reads a `Bit`
+    /// net's logic value off a result.
+    pub digital_nets: HashMap<String, usize>,
     /// One entry per top-level instance, in declaration order.
     pub instances: Vec<BuiltInstanceInfo>,
 }
@@ -177,7 +181,11 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
             devices: Vec::new(),
             digital_nets: HashMap::new(),
             next_anon,
-            build_info: CircuitBuildInfo { nets, instances: Vec::new() },
+            build_info: CircuitBuildInfo {
+                nets,
+                digital_nets: HashMap::new(),
+                instances: Vec::new(),
+            },
         }
     }
 
@@ -414,10 +422,16 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
         }
     }
 
-    fn finish(self, title: &str) -> (CircuitInstance, CircuitBuildInfo) {
+    fn finish(mut self, title: &str) -> (CircuitInstance, CircuitBuildInfo) {
         let mut circuit = CircuitInstance::from_devices_and_netlist(title, self.devices, self.netlist);
         circuit.digital_state = DigitalState::new(self.digital_nets.len());
-        let _ = (self.top, self.top_params);
+        // Name → digital-net index, for bench-side readback.
+        for (id, info) in self.top.symbols.nodes() {
+            if let Some(dn) = self.digital_nets.get(&id) {
+                self.build_info.digital_nets.insert(info.name.clone(), dn.0);
+            }
+        }
+        let _ = self.top_params;
         (circuit, self.build_info)
     }
 }

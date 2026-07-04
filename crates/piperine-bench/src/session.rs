@@ -95,10 +95,34 @@ impl SimSession {
         let mut dc = circuit.dc(config.to_context())?;
         dc.apply_initial_conditions(ivs);
         let result = dc.solve()?;
-        Ok(OpResult::new(result, Rc::new(info)))
+        drop(dc);
+        // Digital nets settle inside the DC mixed-signal loop — snapshot
+        // them so `r.v(bit_net)` reads logic values off the result.
+        let digital = Self::snapshot_digital(&info, &circuit);
+        Ok(OpResult::new(result, digital, Rc::new(info)))
     }
 
-    /// Run a transient analysis (`$tran`, piperine-bench/docs/SPEC.md §5): same
+    /// The top module's digital net values as reals (0/1; X/Z read as NaN so
+/// an assertion on an undriven net fails loud, never silently passes).
+fn snapshot_digital(
+        info: &piperine_codegen::device::CircuitBuildInfo,
+    circuit: &piperine_solver::circuit::CircuitInstance,
+) -> std::collections::HashMap<String, f64> {
+    use piperine_solver::digital::LogicValue;
+    info.digital_nets
+        .iter()
+        .map(|(name, &idx)| {
+            let v = match circuit.digital_state.nets.get(idx) {
+                Some(LogicValue::Zero) => 0.0,
+                Some(LogicValue::One) => 1.0,
+                _ => f64::NAN,
+            };
+            (name.clone(), v)
+        })
+        .collect()
+}
+
+/// Run a transient analysis (`$tran`, piperine-bench/docs/SPEC.md §5): same
     /// elaborate-and-solve recipe as [`Self::run_op`], through
     /// `CircuitInstance::transient` instead of `::dc`. `step: None` (the
     /// config bundle's `step = 0.0` "auto") selects the adaptive stepper.
