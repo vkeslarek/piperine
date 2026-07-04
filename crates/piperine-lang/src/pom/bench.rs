@@ -13,6 +13,7 @@ use crate::parse::ast::FnDecl;
 /// A `bench` block, attached to a module by name.
 #[derive(Debug, Clone)]
 pub struct BenchBlock {
+    pub span: Option<miette::SourceSpan>,
     /// The module this bench is rooted at (SPEC_BENCH.md §3).
     pub module: String,
     /// Entry points and helpers, in source order.

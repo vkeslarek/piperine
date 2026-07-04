@@ -228,6 +228,7 @@ impl ElabPass for AttachBenches {
             }
             for target in targets {
                 design.benches_vec_mut().push(crate::pom::BenchBlock {
+                    span: None,
                     module: target,
                     fns: bench.fns.clone(),
                 });

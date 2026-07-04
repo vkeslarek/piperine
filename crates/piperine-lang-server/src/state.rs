@@ -1,8 +1,6 @@
 //! Per-document state: parsed design, errors, and version tracking.
 
 use std::collections::HashMap;
-
-use lsp_server::Connection;
 use lsp_types::Uri;
 
 use piperine_lang::Design;
@@ -28,12 +26,12 @@ pub struct DocumentState {
 #[derive(Debug, Clone)]
 pub struct ParseError {
     pub message: String,
-    /// Byte offset into the source, if known.
-    pub byte_offset: Option<usize>,
+    /// Span in the source.
+    pub span: Option<miette::SourceSpan>,
 }
 
 impl ServerState {
-    pub fn new(_connection: &Connection) -> Self {
+    pub fn new() -> Self {
         Self { documents: HashMap::new() }
     }
 
@@ -42,28 +40,24 @@ impl ServerState {
     pub fn dummy() -> Self {
         Self { documents: HashMap::new() }
     }
+}
 
-    /// Store or update a document's source text, parse it, and collect errors.
-    pub fn upsert_document(&mut self, uri: Uri, source: String, version: i32) {
-        let (design, errors) = parse_and_collect_errors(&source);
-        // Mute eprintln to prevent log spam during typing
-        self.documents.insert(
-            uri,
-            DocumentState { source, version, design, errors },
-        );
+impl Default for ServerState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 /// Run the full lexer+parser+elaborator pipeline and collect all errors
 /// with their byte positions extracted from error messages.
-fn parse_and_collect_errors(source: &str) -> (Option<Design>, Vec<ParseError>) {
+pub fn parse_and_collect_errors(source: &str) -> (Option<Design>, Vec<ParseError>) {
     let mut all_errors = Vec::new();
     let (source_file, parse_errors) = piperine_lang::parse::parse_str_tolerant(source);
     
     for e in parse_errors {
         all_errors.push(ParseError {
             message: e.to_string(),
-            byte_offset: e.byte_offset(),
+            span: e.span(),
         });
     }
 
@@ -72,7 +66,7 @@ fn parse_and_collect_errors(source: &str) -> (Option<Design>, Vec<ParseError>) {
         Err(e) => {
             all_errors.push(ParseError {
                 message: e.to_string(),
-                byte_offset: None,
+                span: e.span,
             });
             None
         }
@@ -80,4 +74,3 @@ fn parse_and_collect_errors(source: &str) -> (Option<Design>, Vec<ParseError>) {
 
     (design, all_errors)
 }
-

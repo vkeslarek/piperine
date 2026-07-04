@@ -35,10 +35,14 @@ pub enum ParseError {
 
 impl ParseError {
     pub fn byte_offset(&self) -> Option<usize> {
+        self.span().map(|s| s.offset())
+    }
+
+    pub fn span(&self) -> Option<SourceSpan> {
         match self {
-            ParseError::UnexpectedEof { span } => Some(span.offset()),
-            ParseError::UnexpectedTok { span, .. } => Some(span.offset()),
-            ParseError::Generic { span, .. } => Some(span.offset()),
+            ParseError::UnexpectedEof { span } => Some(*span),
+            ParseError::UnexpectedTok { span, .. } => Some(*span),
+            ParseError::Generic { span, .. } => Some(*span),
             ParseError::Legacy { .. } => None,
         }
     }

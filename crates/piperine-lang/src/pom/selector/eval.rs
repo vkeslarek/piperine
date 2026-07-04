@@ -287,12 +287,12 @@ mod tests {
             "Child".into(),
             vec![], vec![], vec![], vec![], vec![], vec![]
         );
-        let inst1 = crate::pom::Instance { attributes: vec![], label: Some("c1".into()),
+        let inst1 = crate::pom::Instance { span: None, attributes: vec![], label: Some("c1".into()),
             module: "Child".into(),
             ports: vec![],
             params: vec![],
         };
-        let inst2 = crate::pom::Instance { attributes: vec![], label: Some("c2".into()),
+        let inst2 = crate::pom::Instance { span: None, attributes: vec![], label: Some("c2".into()),
             module: "Child".into(),
             ports: vec![],
             params: vec![],
@@ -347,15 +347,15 @@ mod tests {
             },
         };
 
-        let w1 = crate::pom::module::Wire { name: "clk".into(), attributes: vec![attr1],
+        let w1 = crate::pom::module::Wire { span: None, name: "clk".into(), attributes: vec![attr1],
             ty: crate::pom::net_type::NetType::Discipline("Electrical".into()),
         };
 
-        let w2 = crate::pom::module::Wire { name: "rst".into(), attributes: vec![attr2],
+        let w2 = crate::pom::module::Wire { span: None, name: "rst".into(), attributes: vec![attr2],
             ty: crate::pom::net_type::NetType::Discipline("Electrical".into()),
         };
 
-        let w3 = crate::pom::module::Wire { name: "data".into(), attributes: vec![],
+        let w3 = crate::pom::module::Wire { span: None, name: "data".into(), attributes: vec![],
             ty: crate::pom::net_type::NetType::Discipline("Electrical".into()),
         };
 

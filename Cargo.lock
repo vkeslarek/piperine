@@ -1594,6 +1594,7 @@ dependencies = [
  "crossbeam-channel",
  "lsp-server",
  "lsp-types",
+ "miette",
  "piperine-lang",
  "piperine-project",
  "serde",

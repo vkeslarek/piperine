@@ -17,6 +17,7 @@ pub use crate::parse::ast::{Stmt as BehaviorStmt, StmtMatchArm as MatchArm};
 /// A behavior block inside a module (analog or digital).
 #[derive(Debug, Clone)]
 pub struct Behavior {
+    pub span: Option<miette::SourceSpan>,
     /// Behavior block name.
     pub name: String,
     /// Whether this is an analog or digital block.
@@ -33,7 +34,7 @@ impl Behavior {
     /// Construct a new Behavior (used by the elaborator and codegen).
     #[doc(hidden)]
     pub fn new(name: String, kind: BehaviorKind, body: Vec<BehaviorStmt>) -> Self {
-        Self { name, kind, body, var_types: Default::default() }
+        Self { span: None, name, kind, body, var_types: Default::default() }
     }
 
     /// The behavior block name.
@@ -57,6 +58,7 @@ impl Kinded for Behavior { fn kind(&self) -> Kind { Kind::Behavior } }
 /// A value-layer function definition.
 #[derive(Debug, Clone)]
 pub struct Function {
+    pub span: Option<miette::SourceSpan>,
     /// Function name.
     pub name: String,
     /// Parameter names and types.
@@ -98,6 +100,7 @@ impl Named for Function { fn name(&self) -> &str { self.name() } }
 /// An `impl` block — associates methods with a type, optionally gated by a capability.
 #[derive(Debug, Clone)]
 pub struct ImplBlock {
+    pub span: Option<miette::SourceSpan>,
     /// Optional capability gate (e.g. `analog`, `digital`).
     pub capability: Option<String>,
     /// The type being implemented.

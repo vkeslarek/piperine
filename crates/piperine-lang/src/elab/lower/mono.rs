@@ -62,7 +62,7 @@ impl Elaborator {
 
         let is_generic = !fn_decl.sig.type_params.is_empty();
 
-        Ok(Function { name: fn_decl.sig.name.clone(), params, defaults, ret, body, is_generic })
+        Ok(Function { span: None, name: fn_decl.sig.name.clone(), params, defaults, ret, body, is_generic })
     }
 
     // ─────────────────────────── Impl elaboration ─────────────────────────────
@@ -89,6 +89,7 @@ impl Elaborator {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(ImplBlock {
+            span: None,
             capability: impl_decl.capability.clone(),
             ty: impl_decl.ty.clone(),
             const_args,

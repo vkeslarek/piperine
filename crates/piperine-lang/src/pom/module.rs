@@ -29,6 +29,7 @@ impl Kinded for Attribute { fn kind(&self) -> Kind { Kind::Attribute } }
 /// A module port — direction, name, and net type.
 #[derive(Debug, Clone)]
 pub struct Port {
+    pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
     pub direction: crate::parse::ast::Direction,
     pub name: String,
@@ -53,6 +54,7 @@ impl Kinded for Port { fn kind(&self) -> Kind { Kind::Port } }
 
 #[derive(Debug, Clone)]
 pub struct Param {
+    pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
     pub name: String,
     pub ty: ValueType,
@@ -81,6 +83,7 @@ impl Kinded for Param { fn kind(&self) -> Kind { Kind::Param } }
 /// A named wire with a net type.
 #[derive(Debug, Clone)]
 pub struct Wire {
+    pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
     pub name: String,
     pub ty: NetType,
@@ -103,6 +106,7 @@ impl Kinded for Wire { fn kind(&self) -> Kind { Kind::Wire } }
 /// A submodule instance — label, module name, port bindings, and params.
 #[derive(Debug, Clone)]
 pub struct Instance {
+    pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
     pub label: Option<String>,
     pub module: String,
@@ -138,6 +142,7 @@ impl Kinded for Instance { fn kind(&self) -> Kind { Kind::Instance } }
 /// equivalent of a C `static` local, used for things like hysteresis state.
 #[derive(Debug, Clone)]
 pub struct Var {
+    pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
     pub name: String,
     pub ty: ValueType,
@@ -159,6 +164,7 @@ impl Kinded for Var { fn kind(&self) -> Kind { Kind::Var } }
 /// A named connection between two net references.
 #[derive(Debug, Clone)]
 pub struct Connection {
+    pub span: Option<miette::SourceSpan>,
     pub lhs: NetRef,
     pub rhs: NetRef,
 }
@@ -174,6 +180,7 @@ impl Connection {
 
 #[derive(Debug, Clone)]
 pub struct Module {
+    pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
     pub name: String,
     pub ports: Vec<Port>,
@@ -203,7 +210,7 @@ impl Module {
         connections: Vec<Connection>,
         behaviors: Vec<Behavior>,
     ) -> Self {
-        Self { attributes: Vec::new(), name, ports, params, wires, vars: Vec::new(), instances, connections, behaviors }
+        Self { span: None, attributes: Vec::new(), name, ports, params, wires, vars: Vec::new(), instances, connections, behaviors }
     }
 
     /// The module's name.
