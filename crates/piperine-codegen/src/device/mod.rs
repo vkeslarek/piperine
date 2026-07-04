@@ -206,10 +206,10 @@ impl Device for PiperineDevice {
     fn noise_current_psd(
         &mut self,
         dc_point: &DcAnalysisResult,
-        _ac_ctx: &AcAnalysisContext,
+        ac_context: &AcAnalysisContext,
     ) -> Vec<Noise> {
         match &mut self.analog {
-            Some(analog) => analog.noise_current_psd(dc_point),
+            Some(analog) => analog.noise_current_psd(dc_point, ac_context),
             None => Vec::new(),
         }
     }

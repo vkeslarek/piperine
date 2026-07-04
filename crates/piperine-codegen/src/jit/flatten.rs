@@ -110,8 +110,11 @@ pub struct FlatAnalog {
     pub forces: Vec<FlatForce>,
     /// `$bound_step` expressions (the device hint is their minimum).
     pub bound_steps: Vec<IrExpr>,
-    /// Resolved noise PSDs, in `body.noise` order: `(plus, minus, psd)`.
-    pub noise: Vec<(NodeId, NodeId, IrExpr)>,
+    /// Resolved noise PSDs, in `body.noise` order: `(plus, minus, psd,
+    /// exponent)`. `exponent = None` for white noise (constant PSD);
+    /// `Some(expr)` for flicker `S(f) = psd * (f_ref / f)^exp` with
+    /// `f_ref = 1` Hz and `f = SimCtx.frequency` (SPEC_BENCH_GAPS G10).
+    pub noise: Vec<(NodeId, NodeId, IrExpr, Option<IrExpr>)>,
     /// Diagnostics collected (not executed) from the analog body.
     pub diagnostics: Vec<FlatDiagnostic>,
     /// Runtime-state slots (`delay`/`slew`/`idt`) the device must service,
@@ -453,14 +456,25 @@ impl<'m> AnalogFlattener<'m> {
         }
 
         // Noise PSDs resolve against the final variable environment.
+        // The flicker exponent (SPEC_BENCH_GAPS G10) is preserved alongside
+        // the PSD — formerly dropped (`Flicker { psd, .. }`).
         for source in &body.noise {
-            let psd = match &source.kind {
-                crate::ir::IrNoise::White { psd } => psd.clone(),
-                crate::ir::IrNoise::Flicker { psd, .. } => psd.clone(),
+            let (psd_src, exponent_src) = match &source.kind {
+                crate::ir::IrNoise::White { psd } => (psd.clone(), None),
+                crate::ir::IrNoise::Flicker { psd, exponent } => {
+                    (psd.clone(), Some(exponent.clone()))
+                }
             };
-            let psd = resolve_expr(&psd, &self.scope, &mut self.inliner)?;
+            let psd = resolve_expr(&psd_src, &self.scope, &mut self.inliner)?;
             let psd = self.finish_expr(psd)?;
-            self.out.noise.push((source.plus, source.minus, psd));
+            let exponent = match exponent_src {
+                Some(e) => {
+                    let e = resolve_expr(&e, &self.scope, &mut self.inliner)?;
+                    Some(self.finish_expr(e)?)
+                }
+                None => None,
+            };
+            self.out.noise.push((source.plus, source.minus, psd, exponent));
         }
         Ok(self.out)
     }

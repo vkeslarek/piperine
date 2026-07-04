@@ -595,7 +595,11 @@ impl AnalogInstance {
         stamps
     }
 
-    pub fn noise_current_psd(&mut self, dc_point: &DcAnalysisResult) -> Vec<Noise> {
+    pub fn noise_current_psd(
+        &mut self,
+        dc_point: &DcAnalysisResult,
+        ac_context: &piperine_solver::analysis::ac::AcAnalysisContext,
+    ) -> Vec<Noise> {
         let count = self.kernel.num_noise();
         if count == 0 {
             return Vec::new();
@@ -608,6 +612,9 @@ impl AnalogInstance {
                 .and_then(|r| dc_op_voltage(r, dc_point))
                 .unwrap_or(0.0)
         });
+        // Thread the AC frequency into SimCtx so flicker noise can read it
+        // (SPEC_BENCH_GAPS G10 — formerly `_ac_context` was ignored here).
+        self.sim.frequency = ac_context.frequency;
         let mut psd = vec![0.0; count];
         self.kernel
             .eval_noise(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut psd);

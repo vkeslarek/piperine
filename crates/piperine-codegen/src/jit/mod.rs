@@ -68,6 +68,11 @@ pub struct SimCtx {
     pub param_given_mask: u64,
     /// The running analysis, as `Analysis as u64` (`$analysis`).
     pub current_analysis: u64,
+    /// AC analysis frequency in Hz (`$ac_frequency`); used by noise
+    /// sources whose PSD depends on frequency (`flicker_noise`). Zero
+    /// outside AC analyses. Appended last so existing field offsets for
+    /// the JIT-ABI struct are preserved.
+    pub frequency: f64,
 }
 
 impl SimCtx {
@@ -92,6 +97,7 @@ impl Default for SimCtx {
             tfinal: 0.0,
             param_given_mask: 0,
             current_analysis: 0,
+            frequency: 0.0,
         }
     }
 }

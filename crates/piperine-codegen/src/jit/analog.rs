@@ -116,6 +116,10 @@ pub struct AnalogKernel {
     force_terminals: Vec<(NodeId, NodeId)>,
     /// Per-noise-source terminals `(plus, minus)`.
     noise_terminals: Vec<(NodeId, NodeId)>,
+    /// Per-noise-source exponent for flicker (`None` = white noise).
+    /// `S(f) = psd * (1 / f)^exponent` evaluated against `SimCtx.frequency`.
+    /// SPEC_BENCH_GAPS G10.
+    noise_exponents: Vec<Option<IrExpr>>,
     runtime_states: Vec<RuntimeStateSpec>,
     events: Vec<CompiledEvent>,
     num_event_actions: usize,
@@ -460,7 +464,7 @@ impl<'m> AnalogCompiler<'m> {
             add(p);
             add(m);
         }
-        for &(plus, minus, _) in &flat.noise {
+        for &(plus, minus, _, _) in &flat.noise {
             add(plus);
             add(minus);
         }
@@ -500,7 +504,7 @@ impl<'m> AnalogCompiler<'m> {
         let noise_id = if noise.is_empty() {
             None
         } else {
-            let psds: Vec<IrExpr> = noise.iter().map(|(_, _, psd)| psd.clone()).collect();
+            let psds: Vec<IrExpr> = noise.iter().map(|(_, _, psd, _)| psd.clone()).collect();
             Some(self.compile_rows("noise", &psds)?)
         };
 
@@ -612,7 +616,8 @@ impl<'m> AnalogCompiler<'m> {
             num_forces: forces.len(),
             num_noise: noise.len(),
             force_terminals: forces.iter().map(|f| (f.plus, f.minus)).collect(),
-            noise_terminals: noise.iter().map(|&(p, m, _)| (p, m)).collect(),
+            noise_terminals: noise.iter().map(|&(p, m, _, _)| (p, m)).collect(),
+            noise_exponents: noise.iter().map(|(_, _, _, exp)| exp.clone()).collect(),
             runtime_states,
             events: compiled_events,
             num_event_actions,
@@ -831,7 +836,7 @@ impl FlatAnalog {
             .map(|c| &c.expr)
             .chain(self.forces.iter().map(|f| &f.expr))
             .chain(self.bound_steps.iter())
-            .chain(self.noise.iter().map(|(_, _, psd)| psd))
+            .chain(self.noise.iter().map(|(_, _, psd, _)| psd))
             .chain(self.runtime_states.iter().map(|(_, input)| input))
             .chain(self.events.iter().flat_map(FlatEvent::exprs))
     }
