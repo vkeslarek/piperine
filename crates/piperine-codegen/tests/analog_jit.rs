@@ -282,6 +282,7 @@ fn user_function_is_inlined() {
     let double = t.module.symbols.add_fn(IrFunction {
         name: "double".into(),
         params: vec![x],
+        defaults: vec![None],
         returns: Some(IrType::Real),
         body: vec![IrStmt::Return(Some(bin(IrBinOp::Mul, IrExpr::Var(x), real(2.0))))],
     });

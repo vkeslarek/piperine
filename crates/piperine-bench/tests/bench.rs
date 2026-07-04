@@ -511,6 +511,68 @@ fn waveform_map_applies_a_closure_per_sample() {
 }
 
 #[test]
+fn default_param_on_a_pom_fn_called_from_bench() {
+    // SPEC_BENCH.md §10 (G8): a user `fn` may carry a trailing default
+    // parameter; a call may omit it. This exercises the interpreter path
+    // (call_pom_fn) — a top-level fn called from a bench with one arg
+    // (default filled) and two args (explicit).
+    let src = format!(
+        "{CIRCUIT}
+        fn scale(x: Real, k: Real = 2.0) -> Real {{ x * k }}
+        bench SwitchOpenTest {{
+            fn test_default_param() {{
+                var y = scale(5.0);
+                $assert(y > 9.9 && y < 10.1, \"scale(5) with default k=2 -> 10\");
+                var z = scale(5.0, 3.0);
+                $assert(z > 14.9 && z < 15.1, \"scale(5, 3) -> 15\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_default_param") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn default_param_on_an_analog_fn_used_in_a_contribution() {
+    // SPEC_BENCH.md §10 (G8): an analog fn with a default, used in a
+    // contribution — exercises the IR/inliner path (defaults lowered to
+    // constant IrExpr and filled at expansion). `gain(V/r)` omits `k`, so
+    // the contribution is `2.0 * V/r` → I = 2*5/1k = 10 mA.
+    let src = format!(
+        "{CIRCUIT}
+        fn gain(x: Real, k: Real = 2.0) -> Real {{ x * k }}
+        mod GmRes(inout p : Electrical, inout n : Electrical) {{
+            param r : Real = 1e3;
+        }}
+        analog GmRes {{ I(p, n) <+ gain(V(p, n) / r); }}
+        mod GmTest() {{
+            wire gnd : Electrical;
+            wire out : Electrical;
+            wire mid : Electrical;
+            source : VoltageSource (.p = out, .n = gnd) {{ .voltage = 5.0 }};
+            g : GmRes (.p = out, .n = mid) {{ .r = 1e3 }};
+            load : Resistor (.p = mid, .n = gnd) {{ .resistance = 500.0 }};
+        }}
+        bench GmTest {{
+            fn test_default_in_contribution() {{
+                var r = $op();
+                var i = r.i(g.p, g.n);
+                // gain(V/r) with default k=2: I = 2*(5-2.5)/1k = 5mA.
+                $assert(i > 4.5e-3 && i < 5.5e-3, \"default k=2 in contribution -> 5mA\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("GmTest", "test_default_in_contribution") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
 fn trace_i_over_time_recomputes_a_resistor_current() {
     // SPEC_BENCH.md §4/§6 (G3): `Trace.i(a, b)` beyond ideal-source
     // branches — a resistor's current over time is recomputed per step from

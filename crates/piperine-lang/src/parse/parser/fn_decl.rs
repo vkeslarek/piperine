@@ -19,6 +19,7 @@ impl Parse for FnSig {
         }
         parser.expect(&Tok::LParen)?;
         let mut params = Vec::new();
+        let mut saw_default = false;
         if !parser.eat(&Tok::RParen) {
             if parser.eat_ident("self") {
                 params.push(FnParam::SelfParam);
@@ -26,7 +27,13 @@ impl Parse for FnSig {
                 let n = parser.parse_ident()?;
                 parser.expect(&Tok::Colon)?;
                 let ty = Type::parse(parser)?;
-                params.push(FnParam::Typed(n, ty));
+                let default = if parser.eat(&Tok::Assign) {
+                    saw_default = true;
+                    Some(parser.parse_expr()?)
+                } else {
+                    None
+                };
+                params.push(FnParam::Typed { name: n, ty, default });
             }
             while parser.eat(&Tok::Comma) {
                 if parser.peek() == Some(&Tok::RParen) {
@@ -35,7 +42,19 @@ impl Parse for FnSig {
                 let n = parser.parse_ident()?;
                 parser.expect(&Tok::Colon)?;
                 let ty = Type::parse(parser)?;
-                params.push(FnParam::Typed(n, ty));
+                // SPEC_BENCH.md §10: defaults are trailing-only — a
+                // non-defaulted parameter cannot follow a defaulted one.
+                let default = if parser.eat(&Tok::Assign) {
+                    saw_default = true;
+                    Some(parser.parse_expr()?)
+                } else if saw_default {
+                    return Err(crate::parse::error::ParseError::from(
+                        "a non-defaulted parameter cannot follow a defaulted one (defaults must be trailing)",
+                    ));
+                } else {
+                    None
+                };
+                params.push(FnParam::Typed { name: n, ty, default });
             }
             parser.expect(&Tok::RParen)?;
         }

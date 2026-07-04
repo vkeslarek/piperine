@@ -143,6 +143,7 @@ impl Host for SimHost {
         let f = self.session.design().function(name)?;
         Some(Callable::Function {
             params: f.params().iter().map(|(n, _)| n.clone()).collect(),
+            defaults: f.defaults().to_vec(),
             body: f.body().to_vec(),
         })
     }

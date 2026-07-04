@@ -24,18 +24,20 @@ impl Elaborator {
     pub(crate) fn elab_fn(&self, fn_decl: &FnDecl) -> Result<Function, ElabError> {
         let mut env = ConstEnv::new();
 
-        let params = fn_decl
+        let (params, defaults): (Vec<(String, TypeRef)>, Vec<Option<crate::parse::ast::Expr>>) = fn_decl
             .sig
             .params
             .iter()
             .filter_map(|p| match p {
                 FnParam::SelfParam => None,
-                FnParam::Typed(name, ty) => {
+                FnParam::Typed { name, ty, default } => {
                     let resolved = self.resolve_type(ty, &env, &HashMap::new()).ok()?;
-                    Some(Ok((name.clone(), resolved)))
+                    Some(Ok(((name.clone(), resolved), default.clone())))
                 }
             })
-            .collect::<Result<Vec<_>, ElabError>>()?;
+            .collect::<Result<Vec<_>, ElabError>>()?
+            .into_iter()
+            .unzip();
 
         let ret = self
             .resolve_type(&fn_decl.sig.ret, &env, &HashMap::new())
@@ -55,12 +57,12 @@ impl Elaborator {
 
         // Trailing expression becomes an implicit return.
         if let Some(expr) = &fn_decl.body.expr {
-            body.push(BehaviorStmt::Expr(*expr.clone()));
+            body.push(BehaviorStmt::Return(*expr.clone()));
         }
 
         let is_generic = !fn_decl.sig.type_params.is_empty();
 
-        Ok(Function { name: fn_decl.sig.name.clone(), params, ret, body, is_generic })
+        Ok(Function { name: fn_decl.sig.name.clone(), params, defaults, ret, body, is_generic })
     }
 
     // ─────────────────────────── Impl elaboration ─────────────────────────────

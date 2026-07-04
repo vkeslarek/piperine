@@ -22,7 +22,12 @@ use super::value::{Closure, Value};
 /// statement type end to end, SIMPLIFICATION.md P3).
 pub enum Callable {
     Closure(Rc<Closure>),
-    Function { params: Vec<String>, body: Vec<Stmt> },
+    Function {
+        params: Vec<String>,
+        /// Default expressions, parallel to `params` (SPEC_BENCH.md §10).
+        defaults: Vec<Option<Expr>>,
+        body: Vec<Stmt>,
+    },
 }
 
 /// The host-specific half of evaluation: name resolution, system-task
@@ -120,26 +125,41 @@ impl<'h, H: Host> Interpreter<'h, H> {
 
     /// Call a value-layer closure or bench-local `fn` (parsed AST, not yet
     /// elaborated into a POM `Function`).
-    pub fn call_fn_decl(&mut self, decl: &crate::parse::ast::FnDecl, args: Vec<Value>) -> Result<Value, EvalError> {
-        let params: Vec<&str> = decl
+    pub fn call_fn_decl(&mut self, decl: &crate::parse::ast::FnDecl, mut args: Vec<Value>) -> Result<Value, EvalError> {
+        use crate::parse::ast::FnParam;
+        let params: Vec<(&str, Option<&Expr>)> = decl
             .sig
             .params
             .iter()
             .filter_map(|p| match p {
-                crate::parse::ast::FnParam::Typed(name, _) => Some(name.as_str()),
-                crate::parse::ast::FnParam::SelfParam => None,
+                FnParam::Typed { name, default, .. } => Some((name.as_str(), default.as_ref())),
+                FnParam::SelfParam => None,
             })
             .collect();
-        self.call_with_params(&params, &args, |me| me.exec_block(&decl.body)).map(Flow::into_value)
+        self.fill_defaults(&params, &mut args)?;
+        let names: Vec<&str> = params.iter().map(|(n, _)| *n).collect();
+        self.call_with_params(&names, &args, |me| me.exec_block(&decl.body)).map(Flow::into_value)
     }
 
     /// Call a POM `Function`/bundle-method body (already elaborated —
     /// generics resolved, `for` unrolled). Increments `pure_depth`: these
     /// bodies are the language's pure fn layer, never the bench itself.
-    pub fn call_pom_fn(&mut self, params: &[String], body: &[Stmt], args: Vec<Value>) -> Result<Value, EvalError> {
-        let params: Vec<&str> = params.iter().map(String::as_str).collect();
+    pub fn call_pom_fn(
+        &mut self,
+        params: &[String],
+        defaults: &[Option<Expr>],
+        body: &[Stmt],
+        mut args: Vec<Value>,
+    ) -> Result<Value, EvalError> {
+        let paired: Vec<(&str, Option<&Expr>)> = params
+            .iter()
+            .zip(defaults.iter())
+            .map(|(n, d)| (n.as_str(), d.as_ref()))
+            .collect();
+        self.fill_defaults(&paired, &mut args)?;
+        let names: Vec<&str> = params.iter().map(String::as_str).collect();
         self.pure_depth += 1;
-        let result = self.call_with_params(&params, &args, |me| me.exec_stmts_and_tail(body, None));
+        let result = self.call_with_params(&names, &args, |me| me.exec_stmts_and_tail(body, None));
         self.pure_depth -= 1;
         result.map(Flow::into_value)
     }
@@ -164,6 +184,41 @@ impl<'h, H: Host> Interpreter<'h, H> {
         let result = body(self);
         self.pop_scope();
         result
+    }
+
+    /// Fill a call's missing trailing arguments from their default expressions
+    /// (SPEC_BENCH.md §10). Defaults are elaboration constants, evaluated in a
+    /// fresh empty scope so they cannot accidentally read the caller's locals.
+    /// A missing argument with no default is a fail-loud arity error.
+    fn fill_defaults(
+        &mut self,
+        params: &[(&str, Option<&Expr>)],
+        args: &mut Vec<Value>,
+    ) -> Result<(), EvalError> {
+        if args.len() > params.len() {
+            return Err(EvalError::TypeMismatch(format!(
+                "expected {} argument(s), got {}",
+                params.len(),
+                args.len()
+            )));
+        }
+        for (i, (_, default)) in params.iter().enumerate().skip(args.len()) {
+            match default {
+                Some(expr) => {
+                    self.push_scope();
+                    let v = self.eval_expr(expr);
+                    self.pop_scope();
+                    args.push(v?);
+                }
+                None => {
+                    return Err(EvalError::TypeMismatch(format!(
+                        "missing argument #{} (no default)",
+                        i + 1
+                    )));
+                }
+            }
+        }
+        Ok(())
     }
 
     fn call_closure(&mut self, closure: &Closure, args: Vec<Value>) -> Result<Value, EvalError> {
@@ -433,7 +488,9 @@ impl<'h, H: Host> Interpreter<'h, H> {
             if let Some(callable) = self.host.resolve_callable(name) {
                 return match callable {
                     Callable::Closure(c) => self.call_closure(&c, arg_values),
-                    Callable::Function { params, body } => self.call_pom_fn(&params, &body, arg_values),
+                    Callable::Function { params, defaults, body } => {
+                        self.call_pom_fn(&params, &defaults, &body, arg_values)
+                    }
                 };
             }
             // Host-intercepted plain-name call (e.g. `select("...")`).

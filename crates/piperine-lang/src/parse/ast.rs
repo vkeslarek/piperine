@@ -369,7 +369,11 @@ pub struct FnDecl {
 #[derive(Debug, Clone)]
 pub enum FnParam {
     SelfParam,
-    Typed(String, Type),
+    /// A typed parameter, optionally with a default value (SPEC_BENCH.md §10
+    /// — trailing parameters may carry a default; a call may omit them).
+    /// Defaults are elaboration constants. The default is `None` for
+    /// non-defaulted (leading) params.
+    Typed { name: String, ty: Type, default: Option<Expr> },
 }
 
 // ─────────────────────────────── Blocks & statements ─────────────────────────

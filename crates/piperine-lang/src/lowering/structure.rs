@@ -5,6 +5,7 @@ use crate::pom::{Function, Module, NetType, ValueType, Design};
 use crate::parse::ast::{DisciplineItem, DisciplineDecl};
 use piperine_ir::*;
 use super::stmt::lower_stmts;
+use super::expr::lower_expr;
 use super::LowerCtx;
 use std::collections::HashSet;
 
@@ -239,9 +240,16 @@ pub(crate) fn convert_fn(
     let mut ctx = LowerCtx::new(symbols, format!("fn {}", f.name()), false, module_vars);
     ctx.enum_values = prog.enum_value_map();
     ctx.consts = LowerCtx::const_irs(prog);
+    // Lower default expressions (parallel to params) — elaboration
+    // constants, so each lowers to a constant `IrExpr` (SPEC_BENCH.md §10).
+    let defaults: Vec<Option<IrExpr>> = f
+        .defaults()
+        .iter()
+        .map(|d| d.as_ref().map(|e| lower_expr(e, &mut ctx)))
+        .collect();
     let body = lower_stmts(f.body(), &mut ctx);
     errors.append(&mut ctx.errors);
-    
+
     let returns = Some(IrType::Real); // Best effort fallback
-    IrFunction { name: f.name().to_string(), params, returns, body }
+    IrFunction { name: f.name().to_string(), params, defaults, returns, body }
 }

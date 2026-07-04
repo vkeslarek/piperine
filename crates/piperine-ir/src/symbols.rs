@@ -199,6 +199,10 @@ pub enum IrNoise {
 pub struct IrFunction {
     pub name: String,
     pub params: Vec<VarId>,
+    /// Default value expressions, parallel to [`params`](Self::params) —
+    /// `None` for a non-defaulted param, `Some(expr)` for a defaulted
+    /// trailing one (SPEC_BENCH.md §10). Filled by the inliner at expansion.
+    pub defaults: Vec<Option<IrExpr>>,
     pub returns: Option<IrType>,
     pub body: Vec<IrStmt>,
 }

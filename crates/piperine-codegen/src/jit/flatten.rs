@@ -152,7 +152,28 @@ impl<'m> Inliner<'m> {
             .symbols
             .try_fn(id)
             .ok_or_else(|| CodegenError::Function(format!("dangling fn #{}", id.0)))?;
-        if function.params.len() != args.len() {
+        // Fill missing trailing arguments from the function's default
+        // expressions (SPEC_BENCH.md §10). Defaults are elaboration
+        // constants, already lowered to constant `IrExpr`s at `convert_fn`.
+        let args = if args.len() < function.params.len() {
+            let mut full = args;
+            for i in full.len()..function.params.len() {
+                match function.defaults.get(i).and_then(|d| d.as_ref()) {
+                    Some(default) => full.push(default.clone()),
+                    None => {
+                        self.depth -= 1;
+                        return Err(CodegenError::Function(format!(
+                            "`{}` expects {} args, got {} (missing arg #{} has no default)",
+                            function.name,
+                            function.params.len(),
+                            full.len(),
+                            i + 1
+                        )));
+                    }
+                }
+            }
+            full
+        } else if args.len() > function.params.len() {
             self.depth -= 1;
             return Err(CodegenError::Function(format!(
                 "`{}` expects {} args, got {}",
@@ -160,7 +181,9 @@ impl<'m> Inliner<'m> {
                 function.params.len(),
                 args.len()
             )));
-        }
+        } else {
+            args
+        };
 
         let mut scope = Scope::new();
         for (&param, arg) in function.params.iter().zip(args) {

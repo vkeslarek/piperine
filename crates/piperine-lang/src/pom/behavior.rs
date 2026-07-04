@@ -61,6 +61,11 @@ pub struct Function {
     pub name: String,
     /// Parameter names and types.
     pub params: Vec<(String, TypeRef)>,
+    /// Default value expressions, parallel to [`params`](Self::params) —
+    /// `None` for a non-defaulted (leading) param, `Some(expr)` for a
+    /// trailing defaulted one (SPEC_BENCH.md §10). Defaults are
+    /// elaboration constants.
+    pub defaults: Vec<Option<crate::parse::ast::Expr>>,
     /// Return type.
     pub ret: TypeRef,
     /// Function body statements.
@@ -76,6 +81,8 @@ impl Function {
     pub fn name(&self) -> &str { &self.name }
     /// The function parameters (name, type).
     pub fn params(&self) -> &[(String, TypeRef)] { &self.params }
+    /// Default value expressions, parallel to [`params`](Self::params).
+    pub fn defaults(&self) -> &[Option<crate::parse::ast::Expr>] { &self.defaults }
     /// The function return type.
     pub fn ret(&self) -> &TypeRef { &self.ret }
     /// The function body statements.

@@ -317,10 +317,11 @@ at elaboration, before any analysis ever runs.
 
 The §5.1 config bundles (`Solver`, `OpConfig`, `TranConfig`, `AcConfig`, `NoiseConfig`) and the
 `Scale`/`CrossDir` enums are **defined in the stdlib prelude** and consumed by the analyses; the
-spec's `ic`/`nodeset` `Map<Net, Real>` fields await the `Map` value type. Still deferred
-(Part I §9/§10): default parameter values on user-defined `fn`/method signatures — `.v`/`.i`'s own
-defaulted second argument is a built-in method, so it works today; a bench author's own
-`fn foo(x: Real = 1.0)` does not yet.
+spec's `ic`/`nodeset` `Map<Net, Real>` fields await the `Map` value type. Default parameter values
+on user-defined `fn`/method signatures (Part I §9/§10) are **implemented**: trailing params may
+carry a default (`fn foo(x: Real, k: Real = 2.0)`), a call may omit them, and defaults are
+elaboration constants honored by both the interpreter (bench/POM fns) and the IR inliner (analog
+fns used in contributions).
 
 ---
 

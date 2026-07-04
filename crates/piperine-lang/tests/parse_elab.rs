@@ -427,6 +427,32 @@ fn test_error_on_malformed_module() {
 }
 
 #[test]
+fn test_default_param_must_be_trailing() {
+    // SPEC_BENCH.md §10: a non-defaulted parameter cannot follow a defaulted
+    // one — defaults are trailing-only.
+    let result = parse_str("fn bad(x: Real = 1.0, y: Real) -> Real { x }");
+    let err = result.expect_err("expected a parse error for a non-trailing default");
+    assert!(
+        err.to_string().contains("non-defaulted parameter cannot follow a defaulted one"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn test_default_param_parses_when_trailing() {
+    let ast = parse_str("fn good(x: Real, y: Real = 1.0) -> Real { x }").unwrap();
+    let f = ast
+        .items
+        .iter()
+        .find_map(|i| if let Item::FnDecl(f) = i { Some(f) } else { None })
+        .expect("fn parsed");
+    let params: Vec<_> = f.sig.params.iter().collect();
+    assert_eq!(params.len(), 2);
+    assert!(matches!(params[0], FnParam::Typed { default: None, .. }));
+    assert!(matches!(params[1], FnParam::Typed { default: Some(_), .. }));
+}
+
+#[test]
 fn test_error_on_missing_semicolon() {
     let result = parse_str("use foo::bar");
     assert!(result.is_err());
