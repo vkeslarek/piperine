@@ -481,3 +481,53 @@ fn generic_bench_target_runs_once_per_monomorph() {
     );
     assert!(report.all_passed(), "both monomorph benches should pass");
 }
+
+#[test]
+fn waveform_map_applies_a_closure_per_sample() {
+    // SPEC_BENCH.md §6 `Waveform.map(f)` (G2): a closure-taking method on a
+    // host object — the interpreter invokes the closure per sample. A Real
+    // result stays a Waveform; a Complex result stays a ComplexWaveform.
+    let src = format!(
+        "{CIRCUIT}
+        bench RcCharge {{
+            fn test_map() {{
+                var t = $tran(TranConfig {{ .stop = 1e-3, .step = 1e-4 }});
+                var v = t.v(out, gnd);
+                var doubled = v.map(|x| x * 2.0);
+                $assert(doubled.len() == v.len(), \"map preserves length\");
+                $assert(doubled.at(0.0) > 9.9, \"each sample doubled (~10V)\");
+                var a = $ac(AcConfig {{ .fstart = 1.0, .fstop = 1e6, .points = 5 }});
+                var cw = a.v(out, gnd);
+                var passthrough = cw.map(|c| c);
+                $assert(passthrough.len() == cw.len(), \"complex map preserves length\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("RcCharge", "test_map") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn waveform_map_rejects_a_non_numeric_closure_result() {
+    // A closure that returns something other than Real/Complex is a
+    // fail-loud type mismatch, not a silent no-op.
+    let src = format!(
+        "{CIRCUIT}
+        bench RcCharge {{
+            fn test_map_mismatch() {{
+                var t = $tran(TranConfig {{ .stop = 1e-3, .step = 1e-4 }});
+                var v = t.v(out, gnd);
+                var bad = v.map(|x| [x]);
+                $assert(bad.len() == v.len(), \"unreachable\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("RcCharge", "test_map_mismatch") {
+        BenchOutcome::Error(msg) => assert!(msg.contains("map"), "expected a map error, got: {msg}"),
+        other => panic!("expected Error, got {other:?}"),
+    }
+}

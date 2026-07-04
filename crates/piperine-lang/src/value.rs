@@ -73,6 +73,23 @@ pub trait Object: fmt::Debug {
     fn as_any(&self) -> &dyn Any;
     /// Dispatch a method call `recv.name(args)`.
     fn call_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError>;
+
+    /// Dispatch a method call that receives a [`Value::Closure`] argument.
+    /// Host objects can't invoke closures themselves (only the interpreter
+    /// can), so when the interpreter sees a closure argument to a method on
+    /// an `Object`, it routes here and hands over an `invoke` callback that
+    /// re-enters the interpreter to call the closure. The default forwards
+    /// to [`call_method`](Self::call_method), so objects that don't take
+    /// callbacks are unaffected — the closure-taking methods (`Waveform::map`,
+    /// ...) override this.
+    fn call_method_with(
+        &self,
+        name: &str,
+        args: Vec<Value>,
+        _invoke: &mut dyn FnMut(&Closure, Vec<Value>) -> Result<Value, EvalError>,
+    ) -> Result<Value, EvalError> {
+        self.call_method(name, args)
+    }
 }
 
 impl Value {

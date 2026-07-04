@@ -385,6 +385,18 @@ impl<'h, H: Host> Interpreter<'h, H> {
 
         if let Expr::Field(recv, method) = callee {
             let recv_value = self.eval_expr(recv)?;
+            // A method on a host `Object` that takes a `Value::Closure`
+            // argument needs interpreter support to invoke it — host objects
+            // can't call closures themselves. Route through
+            // `Object::call_method_with` when a closure is in play; the
+            // non-closure fast path is unchanged.
+            if let Value::Object(obj) = &recv_value
+                && arg_values.iter().any(|a| matches!(a, Value::Closure(_)))
+            {
+                let obj = obj.clone();
+                let mut invoke = |c: &Closure, args: Vec<Value>| self.call_closure(c, args);
+                return obj.call_method_with(method, arg_values, &mut invoke);
+            }
             return recv_value.call_builtin_method(method, arg_values);
         }
 

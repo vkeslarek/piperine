@@ -6,7 +6,7 @@ use std::any::Any;
 use std::rc::Rc;
 
 use piperine_codegen::device::CircuitBuildInfo;
-use piperine_lang::eval::{EvalError, Object, Value};
+use piperine_lang::eval::{Closure, EvalError, Object, Value};
 use piperine_solver::analog::{BranchIdentifier, NodeIdentifier};
 use piperine_solver::analysis::transient::TransientAnalysisResult;
 
@@ -176,6 +176,66 @@ impl Object for Waveform {
             }
             other => Err(EvalError::Undefined(format!("method `{other}` on Waveform"))),
         }
+    }
+
+    fn call_method_with(
+        &self,
+        name: &str,
+        args: Vec<Value>,
+        invoke: &mut dyn FnMut(&Closure, Vec<Value>) -> Result<Value, EvalError>,
+    ) -> Result<Value, EvalError> {
+        match name {
+            // `Waveform<Real>::map(f: fn(Real) -> U) -> Waveform<U>` (SPEC_BENCH.md
+            // §6): apply `f` to each value, keeping the axis. A Real result
+            // stays a `Waveform`; a Complex result widens to `ComplexWaveform`.
+            "map" => {
+                let f = one_closure(args)?;
+                let mut reals = Vec::with_capacity(self.points.len());
+                let mut complex = Vec::with_capacity(self.points.len());
+                let mut all_real = true;
+                for (t, v) in &self.points {
+                    match invoke(&f, vec![Value::Real(*v)])? {
+                        Value::Real(r) => {
+                            reals.push((*t, r));
+                            complex.push((*t, num_complex::Complex64::new(r, 0.0)));
+                        }
+                        Value::Complex(re, im) => {
+                            all_real = false;
+                            complex.push((*t, num_complex::Complex64::new(re, im)));
+                        }
+                        other => {
+                            return Err(EvalError::TypeMismatch(format!(
+                                "Waveform.map: closure must return Real or Complex, got {}",
+                                other.type_name()
+                            )));
+                        }
+                    }
+                }
+                if all_real {
+                    Ok(Value::Object(Rc::new(Waveform::new(reals))))
+                } else {
+                    Ok(Value::Object(Rc::new(ComplexWaveform::new(complex))))
+                }
+            }
+            _ => self.call_method(name, args),
+        }
+    }
+}
+
+/// Extract the single closure argument of a callback-taking method.
+fn one_closure(mut args: Vec<Value>) -> Result<Rc<Closure>, EvalError> {
+    if args.len() != 1 {
+        return Err(EvalError::TypeMismatch(format!(
+            "expected 1 argument, got {}",
+            args.len()
+        )));
+    }
+    match args.remove(0) {
+        Value::Closure(c) => Ok(c),
+        other => Err(EvalError::TypeMismatch(format!(
+            "expected a closure, got {}",
+            other.type_name()
+        ))),
     }
 }
 
@@ -357,6 +417,50 @@ impl Object for ComplexWaveform {
                     .collect(),
             )))),
             other => Err(EvalError::Undefined(format!("method `{other}` on Waveform<Complex>"))),
+        }
+    }
+
+    fn call_method_with(
+        &self,
+        name: &str,
+        args: Vec<Value>,
+        invoke: &mut dyn FnMut(&Closure, Vec<Value>) -> Result<Value, EvalError>,
+    ) -> Result<Value, EvalError> {
+        match name {
+            // `Waveform<Complex>::map(f: fn(Complex) -> U) -> Waveform<U>`
+            // (SPEC_BENCH.md §6): apply `f` to each complex value, keeping
+            // the axis. A Real result projects to a `Waveform`; a Complex
+            // result stays a `ComplexWaveform`.
+            "map" => {
+                let f = one_closure(args)?;
+                let mut reals = Vec::with_capacity(self.points.len());
+                let mut complex = Vec::with_capacity(self.points.len());
+                let mut all_real = true;
+                for (t, c) in &self.points {
+                    match invoke(&f, vec![Value::Complex(c.re, c.im)])? {
+                        Value::Real(r) => {
+                            reals.push((*t, r));
+                            complex.push((*t, num_complex::Complex64::new(r, 0.0)));
+                        }
+                        Value::Complex(re, im) => {
+                            all_real = false;
+                            complex.push((*t, num_complex::Complex64::new(re, im)));
+                        }
+                        other => {
+                            return Err(EvalError::TypeMismatch(format!(
+                                "Waveform.map: closure must return Real or Complex, got {}",
+                                other.type_name()
+                            )));
+                        }
+                    }
+                }
+                if all_real {
+                    Ok(Value::Object(Rc::new(Waveform::new(reals))))
+                } else {
+                    Ok(Value::Object(Rc::new(ComplexWaveform::new(complex))))
+                }
+            }
+            _ => self.call_method(name, args),
         }
     }
 }
