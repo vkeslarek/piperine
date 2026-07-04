@@ -24,7 +24,7 @@ pub enum Callable {
     Closure(Rc<Closure>),
     Function {
         params: Vec<String>,
-        /// Default expressions, parallel to `params` (SPEC_BENCH.md §10).
+        /// Default expressions, parallel to `params` (the language spec Part I §9.1).
         defaults: Vec<Option<Expr>>,
         body: Vec<Stmt>,
     },
@@ -94,7 +94,7 @@ pub struct Interpreter<'h, H: Host> {
     host: &'h mut H,
     scopes: Vec<HashMap<String, Value>>,
     /// Nonzero while executing a POM `fn`/bundle-method body — these are
-    /// pure value computations (SPEC_BENCH §1: "elaboration, `analog`,
+    /// pure value computations (bench spec §1: "elaboration, `analog`,
     /// `digital`, ordinary `fn` ... cannot reach [effectful tasks]").
     /// `$`-syscalls a host marks effectful are rejected while this is set.
     pure_depth: u32,
@@ -187,7 +187,7 @@ impl<'h, H: Host> Interpreter<'h, H> {
     }
 
     /// Fill a call's missing trailing arguments from their default expressions
-    /// (SPEC_BENCH.md §10). Defaults are elaboration constants, evaluated in a
+    /// (the language spec Part I §9.1). Defaults are elaboration constants, evaluated in a
     /// fresh empty scope so they cannot accidentally read the caller's locals.
     /// A missing argument with no default is a fail-loud arity error.
     fn fill_defaults(

@@ -35,20 +35,12 @@ pub fn build_source_map() -> (SourceMap, PathBuf) {
         }
     }
 
-    // Keep legacy headers mapped for now
+    // Keep legacy headers mapped for now; fall back to the repo checkout
+    // this binary was built from (dev builds).
     let mut headers_dir = project_root.join("headers");
     if !headers_dir.exists() {
-        // Fallback for running locally in the git repo
-        if let Ok(repo_root) = std::env::current_dir() {
-            let possible_headers = repo_root.join("../../../../crates/piperine-lang/headers");
-            if possible_headers.exists() {
-                headers_dir = possible_headers;
-            } else {
-                headers_dir = std::path::PathBuf::from(
-                    "/home/keslarek/Git/piperine/crates/piperine-lang/headers",
-                );
-            }
-        }
+        headers_dir =
+            PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
     }
 
     if headers_dir.exists() {

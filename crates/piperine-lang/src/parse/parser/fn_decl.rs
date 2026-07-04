@@ -42,7 +42,7 @@ impl Parse for FnSig {
                 let n = parser.parse_ident()?;
                 parser.expect(&Tok::Colon)?;
                 let ty = Type::parse(parser)?;
-                // SPEC_BENCH.md §10: defaults are trailing-only — a
+                // the language spec Part I §9.1: defaults are trailing-only — a
                 // non-defaulted parameter cannot follow a defaulted one.
                 let default = if parser.eat(&Tok::Assign) {
                     saw_default = true;
@@ -60,7 +60,7 @@ impl Parse for FnSig {
         }
         // `-> RetType` is optional; an omitted return type is `Unit` (the
         // common case for a `bench` entry point, which is a procedure, not
-        // a value computation — SPEC_BENCH.md §2).
+        // a value computation — piperine-bench/docs/SPEC.md §2).
         let ret = if parser.eat(&Tok::Arrow) {
             Type::parse(parser)?
         } else {
@@ -78,6 +78,6 @@ impl Parse for FnDecl {
         parser.expect_ident_str("fn")?;
         let sig = FnSig::parse(parser)?;
         let body = parser.parse_block()?;
-        Ok(FnDecl { attrs, is_pub, sig, body })
+        Ok(FnDecl { span: None, attrs, is_pub, sig, body })
     }
 }

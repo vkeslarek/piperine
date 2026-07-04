@@ -42,6 +42,6 @@ impl Parse for ImplDecl {
                 }
             return Err(format!("Expected `fn`, found {:?}", parser.peek()).into());
         }
-        Ok(ImplDecl { attrs, is_pub, capability, ty: ident1, const_args, type_args, methods })
+        Ok(ImplDecl { span: None, attrs, is_pub, capability, ty: ident1, const_args, type_args, methods })
     }
 }

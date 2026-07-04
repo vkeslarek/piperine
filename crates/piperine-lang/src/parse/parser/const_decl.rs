@@ -15,6 +15,6 @@ impl Parse for ConstDecl {
         parser.expect(&Tok::Assign)?;
         let value = crate::parse::ast::Expr::parse(parser)?;
         parser.expect(&Tok::Semi)?;
-        Ok(ConstDecl { attrs, is_pub, name, ty, value })
+        Ok(ConstDecl { span: None, attrs, is_pub, name, ty, value })
     }
 }

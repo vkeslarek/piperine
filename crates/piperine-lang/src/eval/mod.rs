@@ -6,7 +6,7 @@
 //! - [`const_host::ConstHost`] — pure, backs [`crate::elab::const_eval::ConstEnv`]
 //!   (array dims, structural `for`/`if`, param defaults, enum discriminants).
 //! - a `SimHost` in `piperine-bench` — effectful, backs the `bench` block
-//!   (SPEC_BENCH.md): runs analyses, stages overrides, does I/O.
+//!   (piperine-bench/docs/SPEC.md): runs analyses, stages overrides, does I/O.
 //!
 //! [`interp::Interpreter`] and [`interp::Host`] hold everything context-
 //! independent; a host supplies name resolution, system-task dispatch, and

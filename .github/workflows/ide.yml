@@ -1,0 +1,36 @@
+name: IDE Extension CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'editors/vscode/**'
+      - '.github/workflows/ide.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'editors/vscode/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: editors/vscode
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: 'editors/vscode/package-lock.json'
+
+    - name: Install Dependencies
+      run: npm ci
+
+    - name: Package Extension
+      run: npx vsce package --no-publish

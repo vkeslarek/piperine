@@ -1,6 +1,6 @@
 //! # piperine-bench
 //!
-//! The effectful runtime for PHDL's `bench` block (`crates/piperine-lang/docs/SPEC_BENCH.md`):
+//! The effectful runtime for PHDL's `bench` block (`crates/piperine-lang/docs/piperine-bench/docs/SPEC.md`):
 //! runs analyses over an elaborated [`piperine_lang::Design`], measures
 //! through result objects, and stages parameter overrides.
 //!

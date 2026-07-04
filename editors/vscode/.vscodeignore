@@ -1,0 +1,24 @@
+# Dev / build artifacts
+node_modules/
+*.vsix
+
+# Test fixtures
+test-fixtures/
+
+# Build script (not needed inside the packaged extension)
+build-vsix.sh
+
+# Git / editor
+.gitignore
+.git/
+.vscode/
+
+# Docs
+README.md
+CHANGELOG.md
+
+# Source maps
+*.map
+
+# Package manager
+package-lock.json

@@ -216,7 +216,7 @@ impl<'a> Parser<'a> {
         while !self.eat(&Tok::RBrace) {
             body.push(self.parse_behavior_stmt()?);
         }
-        Ok(BehaviorDecl { attrs, is_pub, kind, name, body })
+        Ok(BehaviorDecl { span: None, attrs, is_pub, kind, name, body })
     }
 
     /// Parses a single statement inside an `analog`/`digital` behavior

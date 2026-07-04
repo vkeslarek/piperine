@@ -3,7 +3,7 @@
 //! to [`piperine_lang::eval::Task`] (the shared pure registry, consulted as
 //! a fallback by [`crate::host::SimHost::syscall`]).
 //!
-//! Analyses take a **config bundle** (SPEC_BENCH.md §5.1, `Value::Record`
+//! Analyses take a **config bundle** (piperine-bench/docs/SPEC.md §5.1, `Value::Record`
 //! built from the prelude's `OpConfig`/`TranConfig`/`AcConfig`/
 //! `NoiseConfig`) — configuration is an argument, never hidden state.
 //! `$tran(stop, step)` positional form is kept as a convenience alias.
@@ -32,7 +32,7 @@ fn field(rec: &Value, name: &str) -> Option<Value> {
 }
 
 /// A `Map`-typed config field (`ic`/`nodeset`), defaulting to an empty map
-/// when absent or not a Map (SPEC_BENCH.md §5.1).
+/// when absent or not a Map (piperine-bench/docs/SPEC.md §5.1).
 fn field_opt_map(cfg: Option<&Value>, name: &str) -> Value {
     cfg.and_then(|c| field(c, name))
         .and_then(|v| if matches!(v, Value::Map(_)) { Some(v) } else { None })
@@ -168,7 +168,7 @@ impl SimTask for Noise {
     }
     fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError> {
         // `$noise(NoiseConfig { .out = Net | (Net, Net), .fstart = …, .fstop
-        // = …, … })`. The spec's `out : Branch` config field (SPEC_BENCH.md
+        // = …, … })`. The spec's `out : Branch` config field (piperine-bench/docs/SPEC.md
         // §5.1) is the output branch: a bare `Net` means `(net, gnd)`, a
         // `(Net, Net)` pair means `(plus, minus)`. The deprecated positional
         // alias `$noise(out, cfg)` is kept for one release.
@@ -200,7 +200,7 @@ impl SimTask for Noise {
     }
 }
 
-/// Resolve a `Branch` config value (SPEC_BENCH.md §5.1 `NoiseConfig.out`)
+/// Resolve a `Branch` config value (piperine-bench/docs/SPEC.md §5.1 `NoiseConfig.out`)
 /// to a `(plus, minus)` net-name pair. A bare `Net` is `(net, gnd)`; a
 /// `(Net, Net)` tuple is `(plus, minus)`.
 fn branch_nets(v: &Value) -> Result<(String, String), EvalError> {

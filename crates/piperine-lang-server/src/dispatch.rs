@@ -3,11 +3,14 @@
 
 use lsp_server::{Request, Notification};
 use lsp_types::notification::{
-    DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, DidSaveTextDocument,
+    DidCloseTextDocument, DidOpenTextDocument, DidSaveTextDocument,
     Notification as _,
 };
 use lsp_types::request::{
-    Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, Request as _,
+    CodeActionRequest, CodeLensRequest, Completion, DocumentHighlightRequest, DocumentSymbolRequest,
+    FoldingRangeRequest, GotoDefinition, HoverRequest, InlayHintRequest, PrepareRenameRequest,
+    References, Rename, Request as _, SelectionRangeRequest, SemanticTokensFullRequest,
+    SignatureHelpRequest, WorkspaceSymbolRequest,
 };
 
 use crate::handlers;
@@ -34,6 +37,45 @@ pub fn handle_request(state: &mut ServerState, req: Request, conn_sender: &Sende
         }
         DocumentSymbolRequest::METHOD => {
             handlers::symbols::handle(state, req, &connection);
+        }
+        lsp_types::request::Formatting::METHOD => {
+            handlers::formatting::handle(state, req, &connection);
+        }
+        CodeLensRequest::METHOD => {
+            handlers::code_lens::handle(state, req, &connection);
+        }
+        SemanticTokensFullRequest::METHOD => {
+            handlers::semantic_tokens::handle(state, req, &connection);
+        }
+        References::METHOD => {
+            handlers::references::handle(state, req, &connection);
+        }
+        Rename::METHOD => {
+            handlers::rename::handle_rename(state, req, &connection);
+        }
+        PrepareRenameRequest::METHOD => {
+            handlers::rename::handle_prepare_rename(state, req, &connection);
+        }
+        SignatureHelpRequest::METHOD => {
+            handlers::signature_help::handle(state, req, &connection);
+        }
+        CodeActionRequest::METHOD => {
+            handlers::code_actions::handle(state, req, &connection);
+        }
+        InlayHintRequest::METHOD => {
+            handlers::inlay_hints::handle(state, req, &connection);
+        }
+        FoldingRangeRequest::METHOD => {
+            handlers::folding_range::handle(state, req, &connection);
+        }
+        SelectionRangeRequest::METHOD => {
+            handlers::selection_range::handle(state, req, &connection);
+        }
+        WorkspaceSymbolRequest::METHOD => {
+            handlers::workspace_symbols::handle(state, req, &connection);
+        }
+        DocumentHighlightRequest::METHOD => {
+            handlers::document_highlight::handle(state, req, &connection);
         }
         "$/cancelRequest" => {
             // Ignore cancel requests for now
@@ -62,12 +104,7 @@ pub fn handle_notification(state: &mut ServerState, not: Notification, conn_send
                 let source = params.text_document.text;
                 let version = params.text_document.version;
 
-                state.documents.insert(uri.clone(), DocumentState {
-                    source,
-                    version,
-                    design: None,
-                    errors: Vec::new(),
-                });
+                state.documents.insert(uri.clone(), DocumentState::new(source, version));
                 // Analysis is triggered via Elaborate message
             }
         }
@@ -91,9 +128,8 @@ pub fn handle_notification(state: &mut ServerState, not: Notification, conn_send
             let uris: Vec<_> = state.documents.keys().cloned().collect();
             for uri in uris {
                 if let Some(doc) = state.documents.get_mut(&uri) {
-                    let (design, errors) = crate::state::parse_and_collect_errors(&doc.source);
-                    doc.design = design;
-                    doc.errors = errors;
+                    let source_map = crate::project::ProjectContext::discover(&uri).source_map();
+                    doc.analyze(&source_map);
                     crate::handlers::diagnostics::publish_diagnostics(state, &uri, &connection);
                 }
             }

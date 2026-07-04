@@ -214,7 +214,7 @@ impl Design {
 
     /// An independent copy with its own, empty staging area — every other
     /// field is a cheap structural clone. Used to give each `bench` entry
-    /// point a fresh view (SPEC_BENCH.md §9: staged overrides never leak
+    /// point a fresh view (piperine-bench/docs/SPEC.md §9: staged overrides never leak
     /// between entry points).
     pub fn fork(&self) -> Design {
         Design { overrides: Rc::new(RefCell::new(OverrideMap::new())), ..self.clone() }
@@ -225,11 +225,11 @@ impl Design {
     /// path, the module's own params). Non-structural only: the module set
     /// and topology are unchanged, only `Value` defaults are patched —
     /// exactly the effect `ppr_to_ir` would see from a differently-written
-    /// source (SPEC_BENCH.md §6.2 "the engine decides"; milestone 1 always
+    /// source (piperine-bench/docs/SPEC.md §6.2 "the engine decides"; milestone 1 always
     /// treats a param write as non-structural).
     ///
     /// The override path is the target instance's bare label within
-    /// `root_module` (SPEC_BENCH.md §3 name resolution — benches address a
+    /// `root_module` (piperine-bench/docs/SPEC.md §3 name resolution — benches address a
     /// flat, already-monomorphized netlist, so no hierarchical path is
     /// needed). An override naming an unknown instance or param is a
     /// fail-loud error, never a silent no-op.

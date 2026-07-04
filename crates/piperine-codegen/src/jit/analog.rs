@@ -112,14 +112,17 @@ pub struct AnalogKernel {
     num_vars: usize,
     num_forces: usize,
     num_noise: usize,
+    num_ac_stims: usize,
     /// Per-force branch terminals `(plus, minus)`.
     force_terminals: Vec<(NodeId, NodeId)>,
+    /// Per-`ac_stim` branch terminals `(plus, minus)`.
+    ac_stim_terminals: Vec<(NodeId, NodeId)>,
     /// Per-noise-source terminals `(plus, minus)`.
     noise_terminals: Vec<(NodeId, NodeId)>,
-    /// Per-noise-source exponent for flicker (`None` = white noise).
-    /// `S(f) = psd * (1 / f)^exponent` evaluated against `SimCtx.frequency`.
-    /// SPEC_BENCH_GAPS G10.
-    noise_exponents: Vec<Option<IrExpr>>,
+    /// Per-noise-source flicker exponents (one row per source, `0` for
+    /// white noise): `S(f) = psd * (1 / f)^exponent` evaluated against
+    /// `SimCtx.frequency`. `None` when every source is white.
+    noise_exponents: Option<AnalogFn>,
     runtime_states: Vec<RuntimeStateSpec>,
     events: Vec<CompiledEvent>,
     num_event_actions: usize,
@@ -135,6 +138,10 @@ pub struct AnalogKernel {
     force_jacobian: Option<AnalogFn>,
     /// Noise PSD per source; `None` without noise.
     noise: Option<AnalogFn>,
+    /// `ac_stim` magnitude and phase rows (one per source); `None` without
+    /// AC stimuli.
+    ac_stim_mag: Option<AnalogFn>,
+    ac_stim_phase: Option<AnalogFn>,
     /// Runtime-state input values (one per state slot); `None` without
     /// runtime states.
     state_inputs: Option<AnalogFn>,
@@ -203,6 +210,15 @@ impl AnalogKernel {
     /// Terminals `(plus, minus)` per noise source.
     pub fn noise_terminals(&self) -> &[(NodeId, NodeId)] {
         &self.noise_terminals
+    }
+
+    pub fn num_ac_stims(&self) -> usize {
+        self.num_ac_stims
+    }
+
+    /// Terminals `(plus, minus)` per `ac_stim` source.
+    pub fn ac_stim_terminals(&self) -> &[(NodeId, NodeId)] {
+        &self.ac_stim_terminals
     }
 
     /// Size of the runtime-state value array instances must provide.
@@ -339,11 +355,32 @@ impl AnalogKernel {
         }
     }
 
-    /// Write each noise source's PSD to `out[0..num_noise]`.
+    /// Write each `ac_stim` source's magnitude and phase (radians) to
+    /// `mags`/`phases` (`num_ac_stims` each).
+    pub fn eval_ac_stim(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, mags: &mut [f64], phases: &mut [f64]) {
+        if let (Some(m), Some(p)) = (self.ac_stim_mag, self.ac_stim_phase) {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(m, volts, params, state, vars, sim, mags);
+            Self::call(p, volts, params, state, vars, sim, phases);
+        }
+    }
+
+    /// Write each noise source's PSD at `sim.frequency` to
+    /// `out[0..num_noise]`: the source's PSD expression, scaled by
+    /// `(1 / f)^exponent` for flicker sources.
     pub fn eval_noise(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.noise {
             self.check_input_lens(volts, params, state, vars);
             Self::call(f, volts, params, state, vars, sim, out);
+        }
+        if let Some(f) = self.noise_exponents {
+            let mut exponents = vec![0.0; self.num_noise];
+            Self::call(f, volts, params, state, vars, sim, &mut exponents);
+            for (psd, exponent) in out.iter_mut().zip(exponents) {
+                if exponent != 0.0 && sim.frequency > 0.0 {
+                    *psd *= sim.frequency.powf(-exponent);
+                }
+            }
         }
     }
 
@@ -507,6 +544,28 @@ impl<'m> AnalogCompiler<'m> {
             let psds: Vec<IrExpr> = noise.iter().map(|(_, _, psd, _)| psd.clone()).collect();
             Some(self.compile_rows("noise", &psds)?)
         };
+        let ac_stims = std::mem::take(&mut self.flat.ac_stims);
+        let (ac_stim_mag_id, ac_stim_phase_id) = if ac_stims.is_empty() {
+            (None, None)
+        } else {
+            let mags: Vec<IrExpr> = ac_stims.iter().map(|s| s.mag.clone()).collect();
+            let phases: Vec<IrExpr> = ac_stims.iter().map(|s| s.phase.clone()).collect();
+            (
+                Some(self.compile_rows("ac_stim_mag", &mags)?),
+                Some(self.compile_rows("ac_stim_phase", &phases)?),
+            )
+        };
+        // Flicker exponent rows (0 for white sources) — only compiled when
+        // at least one source is flicker.
+        let noise_exp_id = if noise.iter().any(|(_, _, _, exp)| exp.is_some()) {
+            let rows: Vec<IrExpr> = noise
+                .iter()
+                .map(|(_, _, _, exp)| exp.clone().unwrap_or(IrExpr::Real(0.0)))
+                .collect();
+            Some(self.compile_rows("noise_exponents", &rows)?)
+        } else {
+            None
+        };
 
         let state_inputs_id = if runtime_inputs.is_empty() {
             None
@@ -615,9 +674,11 @@ impl<'m> AnalogCompiler<'m> {
             num_vars: self.module.symbols.vars().count(),
             num_forces: forces.len(),
             num_noise: noise.len(),
+            num_ac_stims: ac_stims.len(),
             force_terminals: forces.iter().map(|f| (f.plus, f.minus)).collect(),
+            ac_stim_terminals: ac_stims.iter().map(|s| (s.plus, s.minus)).collect(),
             noise_terminals: noise.iter().map(|&(p, m, _, _)| (p, m)).collect(),
-            noise_exponents: noise.iter().map(|(_, _, _, exp)| exp.clone()).collect(),
+            noise_exponents: noise_exp_id.map(|id| get(&self.jit, id)),
             runtime_states,
             events: compiled_events,
             num_event_actions,
@@ -629,6 +690,8 @@ impl<'m> AnalogCompiler<'m> {
             force: force_id.map(|id| get(&self.jit, id)),
             force_jacobian: force_jac_id.map(|id| get(&self.jit, id)),
             noise: noise_id.map(|id| get(&self.jit, id)),
+            ac_stim_mag: ac_stim_mag_id.map(|id| get(&self.jit, id)),
+            ac_stim_phase: ac_stim_phase_id.map(|id| get(&self.jit, id)),
             state_inputs: state_inputs_id.map(|id| get(&self.jit, id)),
             event_triggers: event_triggers_id.map(|id| get(&self.jit, id)),
             event_actions: event_actions_id.map(|id| get(&self.jit, id)),
@@ -835,6 +898,7 @@ impl FlatAnalog {
             .chain(&self.charge)
             .map(|c| &c.expr)
             .chain(self.forces.iter().map(|f| &f.expr))
+            .chain(self.ac_stims.iter().flat_map(|s| [&s.mag, &s.phase]))
             .chain(self.bound_steps.iter())
             .chain(self.noise.iter().map(|(_, _, psd, _)| psd))
             .chain(self.runtime_states.iter().map(|(_, input)| input))

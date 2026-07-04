@@ -180,12 +180,12 @@ impl ElabPass for AttachBehaviors {
 }
 
 /// Attach `bench` blocks by target module name and validate every `$task`
-/// they call against the availability table (SPEC_BENCH.md §7/§11) — an
+/// they call against the availability table (piperine-bench/docs/SPEC.md §7/§11) — an
 /// unimplemented task is an elaboration error, not a runtime surprise.
 ///
 /// A bench may target a generic base: it attaches to every monomorphized
 /// instance (`Base__args`, the same suffix rule as `AttachBehaviors`) and
-/// runs once per monomorph (SPEC_BENCH.md §3 — "Post monomorphization,
+/// runs once per monomorph (piperine-bench/docs/SPEC.md §3 — "Post monomorphization,
 /// generics appear in concrete form"). A bench targeting a generic base
 /// with zero monomorphs is an error (nothing to run).
 struct AttachBenches;
@@ -198,7 +198,7 @@ impl ElabPass for AttachBenches {
                 for name in syscalls {
                     if !crate::eval::tasks::bench_task_implemented(&name) {
                         return Err(ElabError::from(ElabErrorKind::Other(format!(
-                            "`${name}` is not yet implemented in a bench (SPEC_BENCH.md §7/§11)"
+                            "`${name}` is not yet implemented in a bench (piperine-bench/docs/SPEC.md §7/§11)"
                         ))));
                     }
                 }

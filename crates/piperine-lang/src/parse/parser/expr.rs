@@ -249,7 +249,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // Map literal: `Map { k: v, ... }` or `Map {}` (SPEC_BENCH.md §5.1).
+        // Map literal: `Map { k: v, ... }` or `Map {}` (piperine-bench/docs/SPEC.md §5.1).
         // Disambiguated from a bundle literal by the `Map` type name and the
         // `k: v` (colon) entry syntax.
         if let Expr::Ident(name) = &expr {
@@ -320,7 +320,7 @@ impl<'a> Parser<'a> {
     /// Parses the `[...]` body of an array expression after the leading `[` has been consumed.
     /// Detects whether it is a repeat (`[v; N]`), comprehension (`[expr | i in range]`), or element list.
     pub(crate) fn parse_array_expr(&mut self) -> Result<Expr, crate::parse::error::ParseError> {
-        // `[]` — the empty list (SPEC_BENCH §12.4 `var curve : Vec<…> = [];`).
+        // `[]` — the empty list (bench spec §12.4 `var curve : Vec<…> = [];`).
         if self.eat(&Tok::RBrack) {
             return Ok(Expr::Array(ArrayBody::List(vec![])));
         }

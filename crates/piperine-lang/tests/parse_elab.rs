@@ -428,7 +428,7 @@ fn test_error_on_malformed_module() {
 
 #[test]
 fn test_default_param_must_be_trailing() {
-    // SPEC_BENCH.md §10: a non-defaulted parameter cannot follow a defaulted
+    // the language spec Part I §9.1: a non-defaulted parameter cannot follow a defaulted
     // one — defaults are trailing-only.
     let result = parse_str("fn bad(x: Real = 1.0, y: Real) -> Real { x }");
     let err = result.expect_err("expected a parse error for a non-trailing default");

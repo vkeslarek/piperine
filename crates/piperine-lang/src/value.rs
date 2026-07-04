@@ -44,7 +44,7 @@ pub enum Value {
     /// falls back to the bundle's declared `FieldDecl.default` at
     /// construction time — there is no lazy default resolution here.
     Record(Rc<RefCell<HashMap<String, Value>>>),
-    /// A `Map<K, V>` association list (SPEC_BENCH.md §5.1 — `ic`/`nodeset`
+    /// A `Map<K, V>` association list (piperine-bench/docs/SPEC.md §5.1 — `ic`/`nodeset`
     /// per-node hints). Backed by a `Vec<(Value, Value)>`, not a `HashMap`:
     /// `Value` keys aren't `Hash`/`Eq`-clean, and N is tiny. Shared/mutable
     /// so `.insert(...)` is visible through every alias, like `List`.
@@ -83,7 +83,7 @@ pub trait Object: fmt::Debug {
     /// objects' data compares equal (e.g. two `NetRef`s with the same name).
     /// The default is identity (distinct objects compare unequal), which is
     /// the safe fallback; concrete object types that have meaningful value
-    /// identity override this (SPEC_BENCH.md §5.1 — `Map<Net, Real>` keys
+    /// identity override this (piperine-bench/docs/SPEC.md §5.1 — `Map<Net, Real>` keys
     /// must compare by net name, not object pointer).
     fn equals(&self, _other: &dyn Any) -> bool {
         false

@@ -25,6 +25,8 @@ pub enum CheckError {
     Io(#[from] std::io::Error),
     #[error("elaboration failed: {0}")]
     Elab(String),
+    #[error("elaboration failed:\n{0:?}")]
+    ElabReport(miette::Report),
 }
 
 pub fn check_file(
@@ -37,7 +39,7 @@ pub fn check_file(
         FileFormat::Ppr => {
             let body = std::fs::read_to_string(path)?;
             let elab = piperine_lang::parse_and_elaborate(&body, source_map)
-                .map_err(|e| CheckError::Elab(format!("{:?}", e)))?;
+                .map_err(|e| CheckError::ElabReport(e))?;
             let module_names: Vec<String> = elab.modules().map(|m| m.name().to_string()).collect();
             println!("  PHDL modules: {}", module_names.len());
             for name in &module_names {
@@ -108,7 +110,14 @@ pub fn execute(file: Option<String>) {
     let mut had_error = false;
     for path in target_paths {
         if let Err(e) = check_file(&path, &source_map) {
-            eprintln!("Error in file {}: {}", path.display(), e);
+            match e {
+                CheckError::ElabReport(report) => {
+                    eprintln!("Error in file {}:\n{:?}", path.display(), report);
+                }
+                other => {
+                    eprintln!("Error in file {}: {}", path.display(), other);
+                }
+            }
             had_error = true;
         }
     }

@@ -8,3 +8,4 @@ pub mod server;
 pub mod state;
 pub mod text_pos;
 pub mod symbol_index;
+pub mod project;

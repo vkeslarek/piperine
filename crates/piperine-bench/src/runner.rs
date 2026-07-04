@@ -1,4 +1,4 @@
-//! [`BenchRunner`] — discovers and runs `bench` entry points (SPEC_BENCH.md
+//! [`BenchRunner`] — discovers and runs `bench` entry points (piperine-bench/docs/SPEC.md
 //! §2/§9): each gets a freshly forked [`Design`] and [`SimHost`], so staged
 //! overrides never leak between entry points.
 
@@ -13,7 +13,7 @@ use crate::session::SimSession;
 pub enum BenchOutcome {
     /// Ran to completion; every `$assert` (if any) held.
     Passed,
-    /// An `$assert`/`$error`/`$fatal` raised (SPEC_BENCH.md §8 — a test's
+    /// An `$assert`/`$error`/`$fatal` raised (piperine-bench/docs/SPEC.md §8 — a test's
     /// contract is its asserts).
     Failed(String),
     /// Anything else went wrong: an undefined name, a type mismatch, a
@@ -60,7 +60,7 @@ impl<'d> BenchRunner<'d> {
     }
 
     /// Run a single named entry point (`piperine test <module>::<fn>`-style
-    /// selection), against a fresh fork (SPEC_BENCH.md §9 isolation).
+    /// selection), against a fresh fork (piperine-bench/docs/SPEC.md §9 isolation).
     pub fn run_entry(&self, module: &str, entry: &str) -> BenchOutcome {
         let Some(bench) = self.design.bench(module) else {
             return BenchOutcome::Error(format!("no bench attached to module `{module}`"));

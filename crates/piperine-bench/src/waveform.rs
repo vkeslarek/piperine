@@ -1,4 +1,4 @@
-//! [`Waveform`] and [`Trace`] — the `$tran` result surface (SPEC_BENCH.md
+//! [`Waveform`] and [`Trace`] — the `$tran` result surface (piperine-bench/docs/SPEC.md
 //! §6): a swept analysis returns a [`Trace`], and `.v`/`.i` on it read out
 //! a [`Waveform`] over the analysis axis (time, for `$tran`).
 
@@ -13,7 +13,7 @@ use piperine_solver::analysis::transient::TransientAnalysisResult;
 use crate::objects::NetRef;
 
 /// A series of `(axis, value)` samples — one measured quantity over time
-/// (SPEC_BENCH.md §6.1). Points are assumed sorted by axis (true for every
+/// (piperine-bench/docs/SPEC.md §6.1). Points are assumed sorted by axis (true for every
 /// analysis this crate runs).
 #[derive(Debug, Clone)]
 pub struct Waveform {
@@ -88,7 +88,7 @@ impl Waveform {
         Some(t_lo - t_hi)
     }
 
-    /// Single-sided DFT (SPEC_BENCH §6 `fft()`): resamples onto a uniform
+    /// Single-sided DFT (bench spec §6 `fft()`): resamples onto a uniform
     /// grid (adaptive transient steps are non-uniform), then a direct
     /// O(n²) transform — bins `k = 0..n/2` at `f_k = k / (n·dt)`. Fine for
     /// bench-sized traces; a windowed FFT is library work over `points()`.
@@ -185,7 +185,7 @@ impl Object for Waveform {
         invoke: &mut dyn FnMut(&Closure, Vec<Value>) -> Result<Value, EvalError>,
     ) -> Result<Value, EvalError> {
         match name {
-            // `Waveform<Real>::map(f: fn(Real) -> U) -> Waveform<U>` (SPEC_BENCH.md
+            // `Waveform<Real>::map(f: fn(Real) -> U) -> Waveform<U>` (piperine-bench/docs/SPEC.md
             // §6): apply `f` to each value, keeping the axis. A Real result
             // stays a `Waveform`; a Complex result widens to `ComplexWaveform`.
             "map" => {
@@ -248,7 +248,7 @@ fn as_real(v: Option<&Value>) -> Result<f64, EvalError> {
     }
 }
 
-/// The result of `$tran(stop, step)` (SPEC_BENCH.md §5/§6): a swept
+/// The result of `$tran(stop, step)` (piperine-bench/docs/SPEC.md §5/§6): a swept
 /// transient result, read by name into a [`Waveform`] per branch/node.
 pub struct Trace {
     result: TransientAnalysisResult,
@@ -308,7 +308,7 @@ impl Trace {
         Ok(Value::Object(Rc::new(Waveform::new(points))))
     }
 
-    /// A branch current over time (SPEC_BENCH.md §4/§6). Ideal sources
+    /// A branch current over time (piperine-bench/docs/SPEC.md §4/§6). Ideal sources
     /// (`<-`, `num_forces > 0`) read the exact MNA branch unknown per step.
     /// Other two-terminal devices (resistors, capacitors, nonlinear) are
     /// recomputed per step from the solved terminal voltages: the resistive
@@ -417,7 +417,7 @@ impl Object for Trace {
 
 // ─── AC: complex waveforms ─────────────────────────────────────────────────────
 
-/// A series of `(frequency, Complex)` samples — SPEC_BENCH §6
+/// A series of `(frequency, Complex)` samples — bench spec §6
 /// `Waveform<Complex>`. Scalar reductions live on the `Real` projections
 /// returned by [`mag`](Self)/[`phase`](Self)/[`db`](Self).
 #[derive(Debug, Clone)]
@@ -478,7 +478,7 @@ impl Object for ComplexWaveform {
     ) -> Result<Value, EvalError> {
         match name {
             // `Waveform<Complex>::map(f: fn(Complex) -> U) -> Waveform<U>`
-            // (SPEC_BENCH.md §6): apply `f` to each complex value, keeping
+            // (piperine-bench/docs/SPEC.md §6): apply `f` to each complex value, keeping
             // the axis. A Real result projects to a `Waveform`; a Complex
             // result stays a `ComplexWaveform`.
             "map" => {
@@ -515,7 +515,7 @@ impl Object for ComplexWaveform {
     }
 }
 
-/// The result of `$ac(cfg)` (SPEC_BENCH §5/§6): a frequency sweep whose
+/// The result of `$ac(cfg)` (bench spec §5/§6): a frequency sweep whose
 /// `.v`/`.i` read out complex waveforms.
 pub struct AcTrace {
     result: piperine_solver::analysis::ac::AcAnalysisResult,
@@ -602,7 +602,7 @@ impl Object for AcTrace {
 
 // ─── Noise ─────────────────────────────────────────────────────────────────────
 
-/// The result of `$noise(out, cfg)` (SPEC_BENCH §5/§6): output-referred
+/// The result of `$noise(out, cfg)` (bench spec §5/§6): output-referred
 /// noise PSD over frequency plus the integrated total.
 pub struct NoiseTrace {
     result: piperine_solver::analysis::noise::NoiseAnalysisResult,

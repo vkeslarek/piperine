@@ -63,7 +63,7 @@ pub fn execute(list: bool, file: Option<String>) {
         let design = match piperine_lang::parse_and_elaborate(&body, &source_map) {
             Ok(d) => d,
             Err(e) => {
-                eprintln!("Error elaborating {}: {e:?}", path.display());
+                eprintln!("Error elaborating {}:\n{:?}", path.display(), e);
                 had_failure = true;
                 continue;
             }

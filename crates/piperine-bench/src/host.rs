@@ -1,5 +1,5 @@
 //! [`SimHost`] — the effectful [`Host`] backing a `bench`: resolves bare
-//! names against the bench's module (SPEC_BENCH.md §3), dispatches system
+//! names against the bench's module (piperine-bench/docs/SPEC.md §3), dispatches system
 //! tasks (bench-only first, then the shared pure registry), and stages
 //! assignments as POM overrides (§6.2).
 
@@ -128,7 +128,7 @@ impl Host for SimHost {
         if let Some(instance) = self.resolve_instance(name) {
             return Some(Value::Object(Rc::new(instance)));
         }
-        // The bench module's own params, staged-override first (SPEC_BENCH
+        // The bench module's own params, staged-override first (bench spec
         // §3 item 2 lists nets, instances, *and params*).
         if let Some(p) = module.params.iter().find(|p| p.name == name) {
             return self
@@ -186,7 +186,7 @@ impl Host for SimHost {
                 return Ok(true);
             }
             // `select("//resistor").resistance = 2e6` — bulk staging
-            // across a selection (SPEC_BENCH §7). The selector path must
+            // across a selection (bench spec §7). The selector path must
             // be a string literal (milestone 1).
             if let Expr::Call(callee, sel_args) = base.as_ref()
                 && let Expr::Ident(name) = callee.as_ref()
@@ -226,7 +226,7 @@ impl Host for SimHost {
 }
 
 impl SimHost {
-    /// Evaluate `select("path")` in expression position (SPEC_BENCH.md
+    /// Evaluate `select("path")` in expression position (piperine-bench/docs/SPEC.md
     /// §7/§13): return a [`SelectionRef`] of the matched instance labels
     /// with a param snapshot per instance.
     fn eval_select(&mut self, args: &[Value]) -> Result<Value, EvalError> {

@@ -592,6 +592,28 @@ impl AnalogInstance {
                 stamps.push(Stamp::Matrix(branch.clone(), m, Complex64::new(-1.0, 0.0)));
             }
         }
+        // `ac_stim` sources: `mag·e^{j·phase}` enters the residual at the
+        // branch terminals, so it lands on the RHS negated at `plus` (the
+        // system is `A·x = b` with the residual moved to `b`).
+        let ns = self.kernel.num_ac_stims();
+        if ns > 0 {
+            let mut mags = vec![0.0; ns];
+            let mut phases = vec![0.0; ns];
+            self.kernel
+                .eval_ac_stim(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut mags, &mut phases);
+            for (i, &(plus, minus)) in self.kernel.ac_stim_terminals().iter().enumerate() {
+                let stim = Complex64::from_polar(mags[i], phases[i]);
+                if stim == Complex64::ZERO {
+                    continue;
+                }
+                if let Some(p) = self.terminal_ref(plus) {
+                    stamps.push(Stamp::Rhs(p, -stim));
+                }
+                if let Some(m) = self.terminal_ref(minus) {
+                    stamps.push(Stamp::Rhs(m, stim));
+                }
+            }
+        }
         stamps
     }
 
@@ -613,7 +635,7 @@ impl AnalogInstance {
                 .unwrap_or(0.0)
         });
         // Thread the AC frequency into SimCtx so flicker noise can read it
-        // (SPEC_BENCH_GAPS G10 — formerly `_ac_context` was ignored here).
+        // (formerly `_ac_context` was ignored here).
         self.sim.frequency = ac_context.frequency;
         let mut psd = vec![0.0; count];
         self.kernel

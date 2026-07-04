@@ -4,7 +4,7 @@ use crate::parse::lexer::Tok;
 use super::{Parse, Parser};
 
 impl Parse for BenchDecl {
-    /// Parses `bench Name { fn ... }` (SPEC_BENCH.md §2) — modeled on
+    /// Parses `bench Name { fn ... }` (piperine-bench/docs/SPEC.md §2) — modeled on
     /// [`ImplDecl`][super::impl_decl], since a bench body is the same
     /// `fn`-only grammar.
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
@@ -23,6 +23,6 @@ impl Parse for BenchDecl {
                 }
             return Err(format!("Expected `fn`, found {:?}", parser.peek()).into());
         }
-        Ok(BenchDecl { attrs, is_pub, name, fns })
+        Ok(BenchDecl { span: None, attrs, is_pub, name, fns })
     }
 }

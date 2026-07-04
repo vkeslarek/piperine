@@ -28,12 +28,12 @@ impl Parse for CapabilityDecl {
                     items.push(CapItem::FnSig(sig));
                 } else {
                     let body = parser.parse_block()?;
-                    items.push(CapItem::FnDecl(FnDecl { attrs: parser.parse_attributes()?, is_pub: false, sig, body }));
+                    items.push(CapItem::FnDecl(FnDecl { span: None, attrs: parser.parse_attributes()?, is_pub: false, sig, body }));
                 }
             } else {
                 return Err("Expected `fn` inside capability".into());
             }
         }
-        Ok(CapabilityDecl { attrs, is_pub, name, supers, items })
+        Ok(CapabilityDecl { span: None, attrs, is_pub, name, supers, items })
     }
 }

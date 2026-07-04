@@ -1,4 +1,4 @@
-//! Parser/elaboration-level tests for the `bench` block (SPEC_BENCH.md).
+//! Parser/elaboration-level tests for the `bench` block (piperine-bench/docs/SPEC.md).
 //! End-to-end analysis behavior (`$op` actually solving) is covered in
 //! `piperine-bench`'s own test suite — this crate only owns syntax,
 //! attachment, availability validation, and override staging.
@@ -55,7 +55,7 @@ fn bench_on_unknown_module_is_a_fail_loud_error() {
 
 #[test]
 fn bench_targeting_generic_with_no_monomorphs_is_an_error() {
-    // SPEC_BENCH.md §3: a bench may target a generic base, but only if the
+    // piperine-bench/docs/SPEC.md §3: a bench may target a generic base, but only if the
     // base has monomorphized instances to run against. Zero monomorphs →
     // fail-loud elaboration error (nothing to run).
     let src = format!(

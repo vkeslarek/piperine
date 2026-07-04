@@ -36,7 +36,7 @@ pub enum Commands {
         #[arg(long, short)]
         file: Option<String>,
     },
-    /// Run `bench` entry points (SPEC_BENCH.md)
+    /// Run `bench` entry points (piperine-bench/docs/SPEC.md)
     Test {
         /// List all available bench entry points instead of running them
         #[arg(long, short)]

@@ -28,7 +28,7 @@ pub fn execute(entry: Option<String>, file: Option<String>) {
     let design = match piperine_lang::parse_and_elaborate(&body, &source_map) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("Error elaborating {}: {:?}", path.display(), e);
+            eprintln!("Error elaborating {}:\n{:?}", path.display(), e);
             std::process::exit(1);
         }
     };

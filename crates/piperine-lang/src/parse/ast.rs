@@ -51,11 +51,12 @@ pub enum Item {
 }
 
 /// `bench ModName { fn ... }` — the effectful post-elaboration scripting
-/// layer attached to a module by name (SPEC_BENCH.md §2), the same way
+/// layer attached to a module by name (piperine-bench/docs/SPEC.md §2), the same way
 /// `analog`/`digital` attach via [`BehaviorDecl`]. Bodies use the ordinary
-/// `fn` grammar; only the runtime context differs (SPEC_BENCH.md §1/§3).
+/// `fn` grammar; only the runtime context differs (piperine-bench/docs/SPEC.md §1/§3).
 #[derive(Debug, Clone)]
 pub struct BenchDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
@@ -71,6 +72,7 @@ pub struct Path {
 /// A global constant declaration `const Name : Type = Expr;`
 #[derive(Debug, Clone)]
 pub struct ConstDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
@@ -220,6 +222,7 @@ pub struct Type {
 /// `discipline Name { ... }`
 #[derive(Debug, Clone)]
 pub struct DisciplineDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
@@ -272,6 +275,7 @@ pub struct AttrArg {
 /// Net-capable bundles used as ports are expanded to flat fields.
 #[derive(Debug, Clone)]
 pub struct BundleDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
@@ -295,6 +299,7 @@ pub struct FieldDecl {
 /// `enum Name [: ReprType] { Variant [= Expr], ... }`
 #[derive(Debug, Clone)]
 pub struct EnumDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
@@ -315,6 +320,7 @@ pub struct EnumVariant {
 /// `capability Name [: Super, ...] { fn sig; | fn decl { } }`
 #[derive(Debug, Clone)]
 pub struct CapabilityDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
@@ -333,6 +339,7 @@ pub enum CapItem {
 /// `impl [Capability for] TypeRef { fn ... }`
 #[derive(Debug, Clone)]
 pub struct ImplDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     /// `Some` for capability impls; `None` for inherent method impls.
@@ -360,6 +367,7 @@ pub struct FnSig {
 /// retains the body as-is and monomorphizes at call sites.
 #[derive(Debug, Clone)]
 pub struct FnDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub sig: FnSig,
@@ -369,7 +377,7 @@ pub struct FnDecl {
 #[derive(Debug, Clone)]
 pub enum FnParam {
     SelfParam,
-    /// A typed parameter, optionally with a default value (SPEC_BENCH.md §10
+    /// A typed parameter, optionally with a default value (the language spec Part I §9.1
     /// — trailing parameters may carry a default; a call may omit them).
     /// Defaults are elaboration constants. The default is `None` for
     /// non-defaulted (leading) params.
@@ -450,7 +458,7 @@ impl Block {
 
     /// Collect every `$name(...)` system-task call reachable from this
     /// block. Used to validate a `bench` fn against the system-task
-    /// availability table (SPEC_BENCH.md §7/§11) before it is ever
+    /// availability table (piperine-bench/docs/SPEC.md §7/§11) before it is ever
     /// interpreted — an unimplemented task is a fail-loud elaboration
     /// error, not a runtime surprise.
     pub fn collect_syscalls(&self, out: &mut Vec<String>) {
@@ -601,6 +609,7 @@ pub struct StmtMatchArm {
 /// module. Validation rules differ by `kind` (§9 of elaboration spec).
 #[derive(Debug, Clone)]
 pub struct BehaviorDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub kind: BehaviorKind,
@@ -711,7 +720,7 @@ pub enum Expr {
     /// `(e)` with no comma is a parenthesized group, not a 1-tuple.
     Tuple(Vec<Expr>),
     BundleLit { ty: Type, fields: Vec<(String, Expr)> },
-    /// A `Map { k: v, ... }` literal (SPEC_BENCH.md §5.1 — `Map<K, V>`,
+    /// A `Map { k: v, ... }` literal (piperine-bench/docs/SPEC.md §5.1 — `Map<K, V>`,
     /// used for `ic`/`nodeset` per-node hints). `Map {}` is the empty map.
     MapLit(Vec<(Expr, Expr)>),
     Lambda { params: Vec<String>, body: Box<Expr> },

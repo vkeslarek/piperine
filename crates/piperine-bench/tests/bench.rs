@@ -1,4 +1,4 @@
-//! End-to-end tests: parse → elaborate → `BenchRunner` (SPEC_BENCH.md §12.1,
+//! End-to-end tests: parse → elaborate → `BenchRunner` (piperine-bench/docs/SPEC.md §12.1,
 //! adapted to milestone-1's supported grammar — no config bundles yet).
 
 use piperine_bench::{BenchOutcome, BenchRunner};
@@ -182,7 +182,7 @@ fn tune_loop_stages_across_iterations_of_a_for() {
 
 #[test]
 fn tran_traces_a_settled_rc_node_over_time() {
-    // No pulsed source / `$ic` yet (SPEC_BENCH.md §11 — deferred), so the
+    // No pulsed source / `$ic` yet (piperine-bench/docs/SPEC.md §11 — deferred), so the
     // transient's auto-computed initial condition is already the DC
     // steady state (a capacitor blocks no current at DC, so `out` sits at
     // 5V for the whole run) — this exercises `$tran`/`Trace`/`Waveform`
@@ -212,7 +212,7 @@ fn tran_traces_a_settled_rc_node_over_time() {
 
 #[test]
 fn tran_delayed_start_records_from_start_not_zero() {
-    // SPEC_BENCH.md §5.1 `TranConfig.start`: solve from t=0 (state evolution
+    // piperine-bench/docs/SPEC.md §5.1 `TranConfig.start`: solve from t=0 (state evolution
     // matters), but only record steps with `t >= start` (ngspice `.tran tstart
     // tstop` semantics). The RC node sits at the DC steady state (5V) for the
     // whole run, so a delayed start must still see ~5V at the first recorded
@@ -319,7 +319,7 @@ fn noise_returns_psd_and_total() {
 
 #[test]
 fn noise_config_out_field_drives_the_analysis() {
-    // SPEC_BENCH.md §5.1 `NoiseConfig.out` (G6): the output is a config
+    // piperine-bench/docs/SPEC.md §5.1 `NoiseConfig.out` (G6): the output is a config
     // field — a `Branch` expressed as a bare `Net` (`(net, gnd)`) or a
     // `(Net, Net)` pair. Both must drive the analysis. The deprecated
     // positional `$noise(out, cfg)` alias is covered by the test above.
@@ -444,7 +444,7 @@ fn select_stages_across_a_selection() {
 
 #[test]
 fn generic_bench_target_runs_once_per_monomorph() {
-    // SPEC_BENCH.md §3: "Post monomorphization, generics appear in concrete
+    // piperine-bench/docs/SPEC.md §3: "Post monomorphization, generics appear in concrete
     // form." A `bench Counter` targeting a generic base attaches to every
     // monomorphized instance (Counter__8, Counter__12) via the same
     // `Base__args` suffix rule AttachBehaviors uses, and runs once per
@@ -484,7 +484,7 @@ fn generic_bench_target_runs_once_per_monomorph() {
 
 #[test]
 fn waveform_map_applies_a_closure_per_sample() {
-    // SPEC_BENCH.md §6 `Waveform.map(f)` (G2): a closure-taking method on a
+    // piperine-bench/docs/SPEC.md §6 `Waveform.map(f)` (G2): a closure-taking method on a
     // host object — the interpreter invokes the closure per sample. A Real
     // result stays a Waveform; a Complex result stays a ComplexWaveform.
     let src = format!(
@@ -512,7 +512,7 @@ fn waveform_map_applies_a_closure_per_sample() {
 
 #[test]
 fn default_param_on_a_pom_fn_called_from_bench() {
-    // SPEC_BENCH.md §10 (G8): a user `fn` may carry a trailing default
+    // the language spec Part I §9.1 (G8): a user `fn` may carry a trailing default
     // parameter; a call may omit it. This exercises the interpreter path
     // (call_pom_fn) — a top-level fn called from a bench with one arg
     // (default filled) and two args (explicit).
@@ -537,7 +537,7 @@ fn default_param_on_a_pom_fn_called_from_bench() {
 
 #[test]
 fn default_param_on_an_analog_fn_used_in_a_contribution() {
-    // SPEC_BENCH.md §10 (G8): an analog fn with a default, used in a
+    // the language spec Part I §9.1 (G8): an analog fn with a default, used in a
     // contribution — exercises the IR/inliner path (defaults lowered to
     // constant IrExpr and filled at expansion). `gain(V/r)` omits `k`, so
     // the contribution is `2.0 * V/r` → I = 2*5/1k = 10 mA.
@@ -574,7 +574,7 @@ fn default_param_on_an_analog_fn_used_in_a_contribution() {
 
 #[test]
 fn trace_i_over_time_recomputes_a_resistor_current() {
-    // SPEC_BENCH.md §4/§6 (G3): `Trace.i(a, b)` beyond ideal-source
+    // piperine-bench/docs/SPEC.md §4/§6 (G3): `Trace.i(a, b)` beyond ideal-source
     // branches — a resistor's current over time is recomputed per step from
     // the solved terminal voltages (previously an error). A pure resistive
     // divider settles instantly, so the series current is the DC value:
@@ -637,7 +637,7 @@ fn trace_i_over_time_exercises_the_reactive_path() {
 
 #[test]
 fn select_in_expression_position_returns_a_usable_selection() {
-    // SPEC_BENCH.md §7/§13 (G9): `select("...")` in expression position
+    // piperine-bench/docs/SPEC.md §7/§13 (G9): `select("...")` in expression position
     // returns a SelectionRef — `len`/`labels`/field-read work, and staging
     // via a held selection (`s.resistance = 1e3`) re-runs against the live
     // design. Field-reads return a List (always, no singleton coercion) of
@@ -691,7 +691,7 @@ fn waveform_map_rejects_a_non_numeric_closure_result() {
 
 #[test]
 fn map_literal_and_methods() {
-    // SPEC_BENCH.md §5.1 (G5): the `Map<Net, Real>` value type — `Map {}`
+    // piperine-bench/docs/SPEC.md §5.1 (G5): the `Map<Net, Real>` value type — `Map {}`
     // literal (empty and with entries), `.insert(k, v)`, `.get(k)`,
     // `.len()`. Used by `ic`/`nodeset` config fields.
     let src = format!(
@@ -722,7 +722,7 @@ fn map_literal_and_methods() {
 
 #[test]
 fn tran_ic_seeds_the_t0_state() {
-    // SPEC_BENCH.md §5.1 `TranConfig.ic`: a `Map<Net, Real>` hint seeds
+    // piperine-bench/docs/SPEC.md §5.1 `TranConfig.ic`: a `Map<Net, Real>` hint seeds
     // the t=0 node voltages (milestone-1 seed — both companion rows
     // overwrite, so dV/dt = 0 at t=0; the cap doesn't gradually charge
     // because there's no preceding steady-state for the companion to
@@ -747,7 +747,7 @@ fn tran_ic_seeds_the_t0_state() {
 
 #[test]
 fn noise_white_noise_produces_a_real_psd() {
-    // SPEC_BENCH.md §5/§6 (G10): a device's `white_noise(...)` contribution
+    // piperine-bench/docs/SPEC.md §5/§6 (G10): a device's `white_noise(...)` contribution
     // reaches the noise solver and contributes to `$noise` PSD/total. This
     // is a smoke test verifying the structural fix (frequency threaded into
     // `SimCtx`, `_ac_context` no longer ignored in
@@ -786,7 +786,7 @@ fn noise_white_noise_produces_a_real_psd() {
 
 #[test]
 fn op_nodeset_hint_is_accepted() {
-    // SPEC_BENCH.md §5.1 `OpConfig.nodeset`: accepted and threaded to the DC
+    // piperine-bench/docs/SPEC.md §5.1 `OpConfig.nodeset`: accepted and threaded to the DC
     // solver as an initial guess. Linear circuits converge regardless, so
     // we assert the bench runs and the OP matches the steady state.
     let src = format!(
@@ -800,6 +800,69 @@ fn op_nodeset_hint_is_accepted() {
     );
     let design = elab(&src);
     match BenchRunner::new(&design).run_entry("RcCharge", "test_nodeset") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn ac_stim_drives_a_low_pass_response() {
+    // piperine-bench/docs/SPEC.md G11: `ac_stim` must inject real small-signal
+    // stimulus, not just survive the sweep. 1 A of AC current into R‖C
+    // gives |V(f)| = R / sqrt(1 + (f/f3db)^2), f3db = 1/(2πRC) ≈ 159.15 Hz
+    // for R = 1k, C = 1u: flat 1000 V in the passband, 707 V at f3db.
+    let src = format!(
+        "{CIRCUIT}
+        mod AcSource(inout p: Electrical, inout n: Electrical) {{
+        }}
+        analog AcSource {{ I(p, n) <+ -ac_stim(1.0); }}
+
+        mod RcLowPass() {{
+            wire gnd : Electrical;
+            wire out : Electrical;
+            stim : AcSource  (.p = out, .n = gnd);
+            r1   : Resistor  (.p = out, .n = gnd) {{ .resistance = 1e3 }};
+            c1   : Capacitor (.p = out, .n = gnd) {{ .c = 1e-6 }};
+        }}
+
+        bench RcLowPass {{
+            fn test_low_pass() {{
+                var r = $ac(AcConfig {{ .fstart = 1.0, .fstop = 1e4, .points = 400 }});
+                var mag = r.v(out, gnd).mag();
+                var passband = mag.at(1.0);
+                $assert(passband > 990.0, \"passband magnitude is R\");
+                $assert(passband < 1010.0, \"passband magnitude is R\");
+                var corner = mag.at(159.155);
+                $assert(corner > 690.0, \"corner magnitude is R/sqrt(2)\");
+                $assert(corner < 725.0, \"corner magnitude is R/sqrt(2)\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("RcLowPass", "test_low_pass") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn display_prints_values_without_failing() {
+    // Bench spec §11 `$display(args…)`: renders scalars, tuples, and lists,
+    // joined by a space, no severity prefix. The bench must pass — a
+    // formatting error would surface as an Error outcome.
+    let src = format!(
+        "{CIRCUIT}
+        bench RcCharge {{
+            fn test_display() {{
+                var r = $op();
+                $display(\"v(out) =\", r.v(out, gnd));
+                $display((1.0, 2.0), [1, 2, 3], Map {{ out: 5.0 }});
+                $display();
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("RcCharge", "test_display") {
         BenchOutcome::Passed => {}
         other => panic!("expected Passed, got {other:?}"),
     }

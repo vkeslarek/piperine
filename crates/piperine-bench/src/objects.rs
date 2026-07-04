@@ -1,6 +1,6 @@
 //! Value-layer objects a bench can hold and call methods on: net/instance
 //! handles produced by name resolution, and [`OpResult`] — the immutable
-//! snapshot `$op()` returns (SPEC_BENCH.md §4/§6).
+//! snapshot `$op()` returns (piperine-bench/docs/SPEC.md §4/§6).
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -11,7 +11,7 @@ use piperine_lang::eval::{EvalError, Object, Value};
 use piperine_solver::analog::{BranchIdentifier, NodeIdentifier};
 use piperine_solver::analysis::dc::DcAnalysisResult;
 
-/// A resolved top-level net (SPEC_BENCH.md §3 bare-name resolution). The
+/// A resolved top-level net (piperine-bench/docs/SPEC.md §3 bare-name resolution). The
 /// argument type `.v`/`.i` expect.
 #[derive(Debug, Clone)]
 pub struct NetRef {
@@ -28,7 +28,7 @@ impl Object for NetRef {
     fn call_method(&self, name: &str, _args: Vec<Value>) -> Result<Value, EvalError> {
         Err(EvalError::Undefined(format!("method `{name}` on a Net")))
     }
-    /// Two `NetRef`s compare equal when their net names match — SPEC_BENCH.md
+    /// Two `NetRef`s compare equal when their net names match — piperine-bench/docs/SPEC.md
     /// §5.1 `Map<Net, Real>` keys are nets compared by name, not by object
     /// identity, so two bench resolutions of the same bare net name hash to
     /// the same key.
@@ -41,7 +41,7 @@ impl Object for NetRef {
 /// the port's connected [`NetRef`] or a param's current (staged-or-default)
 /// value — both baked in at construction time by
 /// [`crate::host::SimHost::lookup`], which has the `Design` access needed
-/// to resolve them (SPEC_BENCH.md §3).
+/// to resolve them (piperine-bench/docs/SPEC.md §3).
 #[derive(Debug, Clone)]
 pub struct InstanceRef {
     pub label: String,
@@ -75,7 +75,7 @@ impl Object for InstanceRef {
 }
 
 /// A selection of instances returned by `select("...")` in expression
-/// position (SPEC_BENCH.md §7/§13). Holds the matched instance labels plus a
+/// position (piperine-bench/docs/SPEC.md §7/§13). Holds the matched instance labels plus a
 /// snapshot of each instance's params at `select()` time — result objects
 /// must be `'static`, so it cannot borrow the `Design`.
 ///
@@ -130,7 +130,7 @@ impl Object for SelectionRef {
     }
 }
 
-/// The immutable snapshot returned by `$op()` (SPEC_BENCH.md §4/§6): DC
+/// The immutable snapshot returned by `$op()` (piperine-bench/docs/SPEC.md §4/§6): DC
 /// operating-point node potentials and branch currents, read by name
 /// through [`CircuitBuildInfo`].
 pub struct OpResult {
@@ -183,7 +183,7 @@ impl OpResult {
     }
 
     /// The unique two-terminal instance whose ports connect exactly to
-    /// `(a, b)` — the branch a bare `.i(net_a, net_b)` names (SPEC_BENCH.md
+    /// `(a, b)` — the branch a bare `.i(net_a, net_b)` names (piperine-bench/docs/SPEC.md
     /// §14 node-reference question, resolved: the instance-port form
     /// `r.i(resistor.p, resistor.n)` is unambiguous by construction since
     /// both args already name the same instance; this two-net form is
@@ -197,7 +197,7 @@ impl OpResult {
             return Err(EvalError::TypeMismatch("i() takes 1 or 2 arguments".into()));
         }
         let a = self.resolve_node(&args[0])?;
-        // `i(a)` — the omitted second terminal is ground (SPEC_BENCH §6).
+        // `i(a)` — the omitted second terminal is ground (bench spec §6).
         let b = match args.get(1) {
             Some(v) => self.resolve_node(v)?,
             None => NodeIdentifier::Gnd,
@@ -217,7 +217,7 @@ impl OpResult {
         instance.kernel.eval_residual(&volts, &instance.params, &[], &[], &sim, &mut residual);
         // Sign convention: positive current flows from terminal `a` into
         // the device; `residual[0]` is the current out of terminal 0
-        // (SPEC_BENCH.md §4 `.i(a, b)` — positive a → b).
+        // (piperine-bench/docs/SPEC.md §4 `.i(a, b)` — positive a → b).
         let current = if instance.terminals[0] == a { residual[0] } else { -residual[0] };
         Ok(Value::Real(current))
     }
@@ -240,7 +240,7 @@ impl Object for OpResult {
 }
 
 /// The unique two-terminal instance whose ports connect exactly to `(a, b)`
-/// (SPEC_BENCH.md §14 — `.i(a, b)` names the branch; the instance-port form
+/// (piperine-bench/docs/SPEC.md §14 — `.i(a, b)` names the branch; the instance-port form
 /// is unambiguous, this two-net form errors on ambiguity). Shared by
 /// `OpResult::i` (DC) and `Trace::i` (over time).
 pub(crate) fn find_two_terminal_instance(

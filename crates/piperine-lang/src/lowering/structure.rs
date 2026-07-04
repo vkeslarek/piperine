@@ -241,7 +241,7 @@ pub(crate) fn convert_fn(
     ctx.enum_values = prog.enum_value_map();
     ctx.consts = LowerCtx::const_irs(prog);
     // Lower default expressions (parallel to params) — elaboration
-    // constants, so each lowers to a constant `IrExpr` (SPEC_BENCH.md §10).
+    // constants, so each lowers to a constant `IrExpr` (the language spec Part I §9.1).
     let defaults: Vec<Option<IrExpr>> = f
         .defaults()
         .iter()

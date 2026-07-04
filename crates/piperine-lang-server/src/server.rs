@@ -3,12 +3,14 @@
 use std::time::{Duration, Instant};
 use std::collections::HashMap;
 
-use crossbeam_channel::{select, Receiver, Sender};
+use crossbeam_channel::{select, Sender};
 use lsp_server::{Connection, Message, Request, Notification};
 use lsp_types::{
     CompletionOptions, HoverProviderCapability, OneOf, ServerCapabilities,
     TextDocumentSyncCapability, TextDocumentSyncKind, WorkspaceServerCapabilities,
-    WorkspaceFoldersServerCapabilities,
+    WorkspaceFoldersServerCapabilities, RenameOptions, SignatureHelpOptions,
+    CodeActionProviderCapability, FoldingRangeProviderCapability,
+    SelectionRangeProviderCapability,
 };
 use lsp_types::notification::Notification as _;
 
@@ -47,19 +49,13 @@ impl LanguageServer {
                             doc.source = source;
                             doc.version = version;
                         } else {
-                            state.documents.insert(uri, crate::state::DocumentState {
-                                source,
-                                version,
-                                design: None,
-                                errors: Vec::new(),
-                            });
+                            state.documents.insert(uri, crate::state::DocumentState::new(source, version));
                         }
                     }
                     WorkerMsg::Elaborate { uri } => {
                         if let Some(doc) = state.documents.get_mut(&uri) {
-                            let (design, errors) = crate::state::parse_and_collect_errors(&doc.source);
-                            doc.design = design;
-                            doc.errors = errors;
+                            let source_map = crate::project::ProjectContext::discover(&uri).source_map();
+                            doc.analyze(&source_map);
                             let dummy_conn = lsp_server::Connection {
                                 sender: conn_sender.clone(),
                                 receiver: crossbeam_channel::never(),
@@ -171,6 +167,48 @@ pub fn server_capabilities() -> ServerCapabilities {
             }),
             ..Default::default()
         }),
+        document_formatting_provider: Some(OneOf::Left(true)),
+        semantic_tokens_provider: Some(lsp_types::SemanticTokensServerCapabilities::SemanticTokensOptions(
+            lsp_types::SemanticTokensOptions {
+                work_done_progress_options: Default::default(),
+                legend: lsp_types::SemanticTokensLegend {
+                    token_types: vec![
+                        lsp_types::SemanticTokenType::NAMESPACE,
+                        lsp_types::SemanticTokenType::PARAMETER,
+                        lsp_types::SemanticTokenType::VARIABLE,
+                        lsp_types::SemanticTokenType::PROPERTY,
+                        lsp_types::SemanticTokenType::FUNCTION,
+                        lsp_types::SemanticTokenType::MACRO,
+                        lsp_types::SemanticTokenType::ENUM_MEMBER,
+                        lsp_types::SemanticTokenType::TYPE,
+                    ],
+                    token_modifiers: vec![
+                        lsp_types::SemanticTokenModifier::READONLY,
+                    ],
+                },
+                range: Some(false),
+                full: Some(lsp_types::SemanticTokensFullOptions::Bool(true)),
+            }
+        )),
+        code_lens_provider: Some(lsp_types::CodeLensOptions {
+            resolve_provider: Some(false),
+        }),
+        references_provider: Some(OneOf::Left(true)),
+        rename_provider: Some(OneOf::Right(RenameOptions {
+            prepare_provider: Some(true),
+            work_done_progress_options: Default::default(),
+        })),
+        signature_help_provider: Some(SignatureHelpOptions {
+            trigger_characters: Some(vec!["(".to_string(), ",".to_string()]),
+            retrigger_characters: None,
+            work_done_progress_options: Default::default(),
+        }),
+        code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
+        inlay_hint_provider: Some(OneOf::Left(true)),
+        folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
+        selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
+        workspace_symbol_provider: Some(OneOf::Left(true)),
+        document_highlight_provider: Some(OneOf::Left(true)),
         ..Default::default()
     }
 }

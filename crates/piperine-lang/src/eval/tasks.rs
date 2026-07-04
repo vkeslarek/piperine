@@ -17,13 +17,14 @@ pub trait Task {
     fn eval(&self, args: Vec<Value>) -> Result<Value, EvalError>;
 }
 
-/// Names reachable from a pure fn/method body (SPEC_BENCH §1/§11):
-/// diagnostics and asserts, but never an analysis or staging task.
+/// Names reachable from a pure fn/method body (bench spec §1/§11):
+/// diagnostics, asserts, and `$display`, but never an analysis or staging
+/// task.
 pub fn is_pure(name: &str) -> bool {
-    matches!(name, "assert" | "info" | "warn" | "error" | "fatal")
+    matches!(name, "assert" | "info" | "warn" | "error" | "fatal" | "display")
 }
 
-/// Names a `bench` may call today (SPEC_BENCH §7/§11 availability table):
+/// Names a `bench` may call today (bench spec §7/§11 availability table):
 /// the pure diagnostics plus the four analyses and `$write`. What remains
 /// (`$plot`, `extract`) is recognized syntax but not yet implemented —
 /// elaboration rejects a bench that calls it (fail-loud, never a silent
@@ -62,6 +63,17 @@ impl Task for Diagnostic {
     }
 }
 
+/// `$display(args…)` — the Verilog-family print: arguments rendered and
+/// joined by a space, no severity prefix, trailing newline.
+struct Display;
+impl Task for Display {
+    fn name(&self) -> &'static str { "display" }
+    fn eval(&self, args: Vec<Value>) -> Result<Value, EvalError> {
+        println!("{}", args.iter().map(display).collect::<Vec<_>>().join(" "));
+        Ok(Value::Unit)
+    }
+}
+
 fn two_args(mut args: Vec<Value>) -> Result<(Value, Value), EvalError> {
     if args.len() != 2 {
         return Err(EvalError::TypeMismatch(format!("expected 2 arguments, got {}", args.len())));
@@ -72,12 +84,29 @@ fn two_args(mut args: Vec<Value>) -> Result<(Value, Value), EvalError> {
 }
 
 fn display(v: &Value) -> String {
+    let join = |xs: &[Value]| xs.iter().map(display).collect::<Vec<_>>().join(", ");
     match v {
+        Value::Unit => "()".into(),
         Value::Str(s) => s.clone(),
         Value::Real(r) => r.to_string(),
         Value::Nat(n) => n.to_string(),
         Value::Int(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
+        Value::Complex(re, im) => format!("{re}{im:+}j"),
+        Value::EnumVariant(e, variant) => format!("{e}::{variant}"),
+        Value::Tuple(xs) => format!("({})", join(xs)),
+        Value::List(xs) => format!("[{}]", join(&xs.borrow())),
+        Value::Map(kvs) => {
+            let body = kvs
+                .borrow()
+                .iter()
+                .map(|(k, v)| format!("{}: {}", display(k), display(v)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("Map {{ {body} }}")
+        }
+        Value::Option(None) => "None".into(),
+        Value::Option(Some(x)) => format!("Some({})", display(x)),
         other => format!("<{}>", other.type_name()),
     }
 }
@@ -89,6 +118,7 @@ impl TaskRegistry {
     pub fn with_builtins() -> Self {
         let tasks: Vec<Box<dyn Task>> = vec![
             Box::new(Assert),
+            Box::new(Display),
             Box::new(Diagnostic { name: "info", prefix: "info", fatal: false }),
             Box::new(Diagnostic { name: "warn", prefix: "warn", fatal: false }),
             Box::new(Diagnostic { name: "error", prefix: "error", fatal: true }),

@@ -65,7 +65,7 @@ pub struct Function {
     pub params: Vec<(String, TypeRef)>,
     /// Default value expressions, parallel to [`params`](Self::params) —
     /// `None` for a non-defaulted (leading) param, `Some(expr)` for a
-    /// trailing defaulted one (SPEC_BENCH.md §10). Defaults are
+    /// trailing defaulted one (the language spec Part I §9.1). Defaults are
     /// elaboration constants.
     pub defaults: Vec<Option<crate::parse::ast::Expr>>,
     /// Return type.

@@ -94,7 +94,7 @@ pub struct TransientSolver<'a> {
     pub system: TransientSystem<'a>,
     pub solver: NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>,
     pub options: TransientAnalysisOptions,
-    /// User-supplied initial node voltages (SPEC_BENCH.md §5.1
+    /// User-supplied initial node voltages (piperine-bench/docs/SPEC.md §5.1
     /// `TranConfig.ic`), pushed after the DC operating point so the t=0
     /// state reflects them. Milestone-1: a seed (the companion model's
     /// first step may show a transient); full enforced-hold is deferred.
@@ -134,7 +134,7 @@ impl<'a> TransientSolver<'a> {
     }
 
     /// Seed the transient's t=0 state with user initial node voltages
-    /// (SPEC_BENCH.md §5.1 `TranConfig.ic`). Applied after the DC operating
+    /// (piperine-bench/docs/SPEC.md §5.1 `TranConfig.ic`). Applied after the DC operating
     /// point in `compute_initial_conditions`.
     pub fn apply_initial_conditions(&mut self, ivs: Vec<InitialValue<AnalogReference, f64>>) {
         self.initial_conditions = ivs;

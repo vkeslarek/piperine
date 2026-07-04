@@ -12,6 +12,9 @@ pub enum SymbolKind {
     Function,
     Behavior,
     Bench,
+    Enum,
+    Bundle,
+    Discipline,
 }
 
 #[derive(Debug, Clone)]
@@ -109,6 +112,39 @@ pub fn resolve_at(design: &Design, source: &str, byte_offset: usize) -> Option<R
                 kind: SymbolKind::Bench,
                 name: b.module.clone(),
                 decl_span: b.span,
+                type_info: None,
+            });
+        }
+    }
+
+    for (name, e) in design.enums() {
+        if *name == word {
+            return Some(Resolution {
+                kind: SymbolKind::Enum,
+                name: name.clone(),
+                decl_span: e.span,
+                type_info: None,
+            });
+        }
+    }
+
+    for (name, b) in design.bundles() {
+        if *name == word {
+            return Some(Resolution {
+                kind: SymbolKind::Bundle,
+                name: name.clone(),
+                decl_span: b.span,
+                type_info: None,
+            });
+        }
+    }
+
+    for (name, d) in design.disciplines() {
+        if *name == word {
+            return Some(Resolution {
+                kind: SymbolKind::Discipline,
+                name: name.clone(),
+                decl_span: d.span,
                 type_info: None,
             });
         }

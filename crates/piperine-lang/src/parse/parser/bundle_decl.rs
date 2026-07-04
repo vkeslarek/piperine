@@ -8,6 +8,7 @@ impl Parse for BundleDecl {
 
     /// Parses a bundle declaration: `bundle Name[CONST]<TYPE> { field: Type [= default], ... }`.
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
+        let start = parser.current_span_start();
         let attrs = parser.parse_attributes()?;
         let is_pub = parser.eat_ident("pub");
         parser.expect_ident_str("bundle")?;
@@ -41,6 +42,8 @@ impl Parse for BundleDecl {
                 break;
             }
         }
-        Ok(BundleDecl { attrs, is_pub, name, const_params, type_params, fields })
+        let end = parser.previous_span_end();
+        let span = Some((start, end - start).into());
+        Ok(BundleDecl { span, attrs, is_pub, name, const_params, type_params, fields })
     }
 }

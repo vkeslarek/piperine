@@ -124,7 +124,7 @@ impl<'a> DcSolver<'a> {
         Ok(Self { system, solver })
     }
 
-    /// Seed the DC Newton initial guess with node-voltage hints (SPEC_BENCH.md
+    /// Seed the DC Newton initial guess with node-voltage hints (piperine-bench/docs/SPEC.md
     /// §5.1 `OpConfig.nodeset`). Applied before [`solve`](Self::solve); the
     /// solver still converges to the operating point — this only changes the
     /// starting guess, useful for nonlinear circuits with multiple solutions.
