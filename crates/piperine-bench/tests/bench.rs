@@ -318,6 +318,32 @@ fn noise_returns_psd_and_total() {
 }
 
 #[test]
+fn noise_config_out_field_drives_the_analysis() {
+    // SPEC_BENCH.md §5.1 `NoiseConfig.out` (G6): the output is a config
+    // field — a `Branch` expressed as a bare `Net` (`(net, gnd)`) or a
+    // `(Net, Net)` pair. Both must drive the analysis. The deprecated
+    // positional `$noise(out, cfg)` alias is covered by the test above.
+    let src = format!(
+        "{CIRCUIT}
+        bench RcCharge {{
+            fn test_noise_out_field() {{
+                var n1 = $noise(NoiseConfig {{ .out = out, .fstart = 1.0, .fstop = 1e6, .points = 5 }});
+                $assert(n1.psd().len() > 1, \"single-net .out drives the sweep\");
+                $assert(n1.total() >= 0.0, \"single-net .out integrates\");
+                var n2 = $noise(NoiseConfig {{ .out = (out, gnd), .fstart = 1.0, .fstop = 1e6, .points = 5 }});
+                $assert(n2.psd().len() > 1, \"net-pair .out drives the sweep\");
+                $assert(n2.total() >= 0.0, \"net-pair .out integrates\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("RcCharge", "test_noise_out_field") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
 fn write_emits_a_csv_artifact() {
     let dir = std::env::temp_dir().join("piperine_bench_write_test");
     let _ = std::fs::create_dir_all(&dir);

@@ -147,12 +147,13 @@ impl SimSession {
         Ok(AcTrace::new(result, Rc::new(info)))
     }
 
-    /// Run an output-referred noise analysis (`$noise`, SPEC_BENCH.md §5)
-    /// at output net `out` (vs. ground), resolved by name against the
-    /// built circuit's net map.
+    /// Run an output-referred noise analysis (`$noise`, SPEC_BENCH.md §5).
+    /// `out` and `reference` are net names resolved against the built
+    /// circuit's net map (ground names map to the reference node).
     pub fn run_noise(
         &self,
         out: &str,
+        reference: &str,
         fstart: f64,
         fstop: f64,
         points: usize,
@@ -165,9 +166,8 @@ impl SimSession {
         let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
         circuit.init_digital();
         circuit.rebuild_digital_topology();
-        let out = info.nets.get(out).cloned().ok_or_else(|| {
-            BenchError::Measurement(format!("$noise output net `{out}` is not addressable"))
-        })?;
+        let out = resolve_net(&info, out)?;
+        let reference = resolve_net(&info, reference)?;
         let opts = piperine_solver::analysis::noise::NoiseAnalysisOptions {
             sweep_options: piperine_solver::analysis::ac::AcSweepAnalysisOptions {
                 start_frequency: fstart,
@@ -176,10 +176,25 @@ impl SimSession {
                 logarithmic,
             },
             output_node: out,
-            reference_node: piperine_solver::analog::NodeIdentifier::Gnd,
+            reference_node: reference,
             input_source_name: None,
         };
         let result = circuit.noise(opts, config.to_context())?.solve()?;
         Ok(NoiseTrace::new(result))
     }
+}
+
+/// Resolve a bench-visible net name to a solver node identifier. Ground
+/// names (`gnd`/`GND`/`vss`/`VSS`) map to the reference node; anything else
+/// is looked up in the built circuit's net map.
+fn resolve_net(
+    info: &piperine_codegen::device::CircuitBuildInfo,
+    name: &str,
+) -> Result<piperine_solver::analog::NodeIdentifier, BenchError> {
+    if matches!(name, "gnd" | "GND" | "vss" | "VSS") {
+        return Ok(piperine_solver::analog::NodeIdentifier::Gnd);
+    }
+    info.nets.get(name).cloned().ok_or_else(|| {
+        BenchError::Measurement(format!("net `{name}` is not addressable"))
+    })
 }

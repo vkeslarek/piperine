@@ -41,6 +41,7 @@ bundle AcConfig {
 }
 
 bundle NoiseConfig {
+    out : Branch,
     fstart : Real,
     fstop : Real,
     points : Natural = 100,

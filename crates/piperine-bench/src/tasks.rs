@@ -156,30 +156,65 @@ impl SimTask for Noise {
         "noise"
     }
     fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError> {
-        // `$noise(out, NoiseConfig { .fstart = …, .fstop = …, … })` — the
-        // output net is positional (the spec's `out : Branch` config field
-        // awaits a Branch value type).
-        let out = match args.first() {
-            Some(Value::Object(obj)) => obj
-                .as_any()
-                .downcast_ref::<NetRef>()
-                .ok_or_else(|| {
-                    EvalError::TypeMismatch(format!("$noise output must be a Net, got {}", obj.type_name()))
-                })?
-                .name
-                .clone(),
-            _ => return Err(EvalError::TypeMismatch("$noise needs (out_net, NoiseConfig)".into())),
+        // `$noise(NoiseConfig { .out = Net | (Net, Net), .fstart = …, .fstop
+        // = …, … })`. The spec's `out : Branch` config field (SPEC_BENCH.md
+        // §5.1) is the output branch: a bare `Net` means `(net, gnd)`, a
+        // `(Net, Net)` pair means `(plus, minus)`. The deprecated positional
+        // alias `$noise(out, cfg)` is kept for one release.
+        let (cfg, out_value) = match args.as_slice() {
+            [rec @ Value::Record(_)] => {
+                let out = field(rec, "out").ok_or_else(|| {
+                    EvalError::TypeMismatch("NoiseConfig needs `.out = Net | (Net, Net)`".into())
+                })?;
+                (rec, out)
+            }
+            [Value::Object(obj), cfg @ Value::Record(_)]
+                if obj.as_any().downcast_ref::<NetRef>().is_some() =>
+            {
+                let out_name = obj.as_any().downcast_ref::<NetRef>().unwrap().name.clone();
+                (cfg, Value::Object(std::rc::Rc::new(NetRef { name: out_name })))
+            }
+            _ => return Err(EvalError::TypeMismatch(
+                "$noise needs a NoiseConfig { .out = …, .fstart, .fstop, … } (or the deprecated $noise(out, cfg) alias)".into(),
+            )),
         };
-        let cfg = args.get(1).ok_or_else(|| {
-            EvalError::TypeMismatch("$noise needs (out_net, NoiseConfig { .fstart, .fstop, … })".into())
-        })?;
+        let (out, reference) = branch_nets(&out_value)?;
         let fstart = required_real(cfg, "NoiseConfig", "fstart")?;
         let fstop = required_real(cfg, "NoiseConfig", "fstop")?;
         let points = real_field(cfg, "points")?.unwrap_or(100.0) as usize;
         let trace = session
-            .run_noise(&out, fstart, fstop, points, is_log_scale(cfg), &solver_config(Some(cfg))?)
+            .run_noise(&out, &reference, fstart, fstop, points, is_log_scale(cfg), &solver_config(Some(cfg))?)
             .map_err(EvalError::from)?;
         Ok(Value::Object(std::rc::Rc::new(trace)))
+    }
+}
+
+/// Resolve a `Branch` config value (SPEC_BENCH.md §5.1 `NoiseConfig.out`)
+/// to a `(plus, minus)` net-name pair. A bare `Net` is `(net, gnd)`; a
+/// `(Net, Net)` tuple is `(plus, minus)`.
+fn branch_nets(v: &Value) -> Result<(String, String), EvalError> {
+    fn net_name(v: &Value) -> Result<String, EvalError> {
+        match v {
+            Value::Object(obj) => obj
+                .as_any()
+                .downcast_ref::<NetRef>()
+                .map(|n| n.name.clone())
+                .ok_or_else(|| {
+                    EvalError::TypeMismatch(format!("$noise `.out` must be a Net, got {}", obj.type_name()))
+                }),
+            other => Err(EvalError::TypeMismatch(format!(
+                "$noise `.out` must be a Net, got {}",
+                other.type_name()
+            ))),
+        }
+    }
+    match v {
+        Value::Tuple(items) if items.len() == 2 => {
+            let plus = net_name(&items[0])?;
+            let minus = net_name(&items[1])?;
+            Ok((plus, minus))
+        }
+        other => Ok((net_name(other)?, "gnd".to_string())),
     }
 }
 
