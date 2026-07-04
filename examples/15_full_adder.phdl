@@ -1,0 +1,76 @@
+// Pure digital combinational logic: a 1-bit full adder. The sum/carry are
+// computed in the `digital` block; a tiny analog readback stage encodes
+// `sum + 2·carry` as a voltage so the bench can sweep all eight input
+// combinations and check the truth table numerically.
+
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+discipline Bit {
+    storage Boolean;
+}
+
+// Drives a Bit net from a stageable Real parameter.
+mod BitDriver(output q : Bit) {
+    param level : Real = 0.0;
+    var b : Bit = 0;
+}
+
+digital BitDriver {
+    b = level > 0.5;
+    q <- b;
+}
+
+mod FullAdder(input a : Bit, input b : Bit, input cin : Bit, inout rec : Electrical, inout gnd : Electrical) {
+    var s : Bit = 0;
+    var c : Bit = 0;
+}
+
+digital FullAdder {
+    s = (a != b) != cin;
+    c = (a && b) || (cin && (a != b));
+}
+
+analog FullAdder {
+    var total : Real = 0.0;
+    if (s == 1) {
+        total = total + 1.0;
+    }
+    if (c == 1) {
+        total = total + 2.0;
+    }
+    V(rec, gnd) <- total;
+}
+
+mod AdderBoard() {
+    wire gnd : Electrical;
+    wire rec : Electrical;
+    wire na : Bit;
+    wire nb : Bit;
+    wire nc : Bit;
+    da : BitDriver(.q = na);
+    db : BitDriver(.q = nb);
+    dc : BitDriver(.q = nc);
+    fa : FullAdder(.a = na, .b = nb, .cin = nc, .rec = rec, .gnd = gnd);
+}
+
+bench AdderBoard {
+
+    fn test_truth_table() {
+        for a in [0.0, 1.0] {
+            for b in [0.0, 1.0] {
+                for cin in [0.0, 1.0] {
+                    da.level = a;
+                    db.level = b;
+                    dc.level = cin;
+                    var t = $tran(TranConfig { .stop = 1e-6, .step = 1e-7 });
+                    var total = t.v(rec, gnd).at(1e-6);
+                    $display(a, "+", b, "+", cin, "=", total);
+                    $assert(abs(total - (a + b + cin)) < 1e-6, "sum + 2*carry counts the ones");
+                }
+            }
+        }
+    }
+}

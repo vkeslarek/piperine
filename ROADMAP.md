@@ -50,6 +50,27 @@ only prep is keeping `Attribute` surfaces public on POM nodes (they are).
 - `Trace.i` over time on devices with runtime state/vars — fails loud (per-step var/state
   banks are not recorded in `TransientAnalysisResult`).
 
+## Language / interpreter gaps the example gallery exposed
+
+- **`impl` methods are elaborated but nothing can call them** — and worse, a method call
+  on a bundle param inside an analog body (`model.conductance()`) compiles to a broken
+  contribution (singular matrix) instead of failing loud. Needs either method-call
+  lowering (inline like free fns) or a named `CodegenError`. Same on the bench side:
+  records have no user-method dispatch (`call_builtin_method` knows only builtins), so
+  **capabilities have no consumer anywhere yet** — the reason the example gallery has a
+  bundle model-card example but no capability example.
+- Bench `fn`s cannot call sibling bench `fn`s (`resolve_callable` serves top-level POM
+  fns only) — the spec's "fn helper(x: T) -> U // reusable" doesn't hold today.
+- Tuple field access `t.0` does not parse (SPEC §6.1 promises it); `for` patterns can't
+  destructure tuples either.
+- Top-level `fn`s with bundle-typed params fail IR lowering ("unresolved names") even
+  when only a bench calls them — bundle params flatten for module `param`s but not for
+  fn signatures.
+- Net/instance arrays are not addressable from a bench (`tap[2]`, `bank[0]`), and a
+  bench-built circuit collapses a `wire x : T[N]` array into a single net.
+- A bench top module must have at least one instance (leaf top = empty circuit);
+  `.i(a, b)` needs a unique two-terminal match between the named nets.
+
 ## Language server
 
 - True scope-aware name resolution: `symbol_index::resolve_at` is still a global first-match
