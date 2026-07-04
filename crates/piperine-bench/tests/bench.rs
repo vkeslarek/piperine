@@ -511,6 +511,69 @@ fn waveform_map_applies_a_closure_per_sample() {
 }
 
 #[test]
+fn trace_i_over_time_recomputes_a_resistor_current() {
+    // SPEC_BENCH.md §4/§6 (G3): `Trace.i(a, b)` beyond ideal-source
+    // branches — a resistor's current over time is recomputed per step from
+    // the solved terminal voltages (previously an error). A pure resistive
+    // divider settles instantly, so the series current is the DC value:
+    // 5V / (2k + 3k) = 1 mA.
+    let src = format!(
+        "{CIRCUIT}
+        mod Divider() {{
+            wire gnd : Electrical;
+            wire out : Electrical;
+            wire mid : Electrical;
+            source : VoltageSource (.p = out, .n = gnd) {{ .voltage = 5.0 }};
+            r1 : Resistor (.p = out, .n = mid) {{ .resistance = 2e3 }};
+            r2 : Resistor (.p = mid, .n = gnd) {{ .resistance = 3e3 }};
+        }}
+        bench Divider {{
+            fn test_i_over_time() {{
+                var t = $tran(TranConfig {{ .stop = 1e-3, .step = 1e-4 }});
+                var i = t.i(r1.p, r1.n);
+                $assert(i.len() > 1, \"current waveform has samples\");
+                $assert(i.at(0.0) > 0.9e-3 && i.at(0.0) < 1.1e-3,
+                        \"series current ~ 1mA (5V / 5k)\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("Divider", "test_i_over_time") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn trace_i_over_time_exercises_the_reactive_path() {
+    // A capacitor's current over time (previously an error — caps aren't
+    // force devices) is the reactive `dQ/dt`. The settled RC starts at its
+    // DC operating point, so both the cap current and the resistor current
+    // are ~0 — this verifies the reactive recompute runs without crashing
+    // and reports the steady-state zero, not that `Trace.i` only handles
+    // ideal sources.
+    let src = format!(
+        "{CIRCUIT}
+        bench RcCharge {{
+            fn test_i_reactive_settled() {{
+                var t = $tran(TranConfig {{ .stop = 1e-3, .step = 1e-4 }});
+                var ic = t.i(c1.p, c1.n);
+                $assert(ic.len() > 1, \"cap current waveform has samples\");
+                $assert(ic.peak_to_peak() < 1e-6, \"settled cap current ~ 0\");
+                var ir = t.i(r1.p, r1.n);
+                $assert(ir.len() > 1, \"resistor current waveform has samples\");
+                $assert(ir.at(0.0) < 1e-6, \"settled resistor current ~ 0\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("RcCharge", "test_i_reactive_settled") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
 fn select_in_expression_position_returns_a_usable_selection() {
     // SPEC_BENCH.md §7/§13 (G9): `select("...")` in expression position
     // returns a SelectionRef — `len`/`labels`/field-read work, and staging

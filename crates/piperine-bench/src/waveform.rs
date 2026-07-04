@@ -308,37 +308,87 @@ impl Trace {
         Ok(Value::Object(Rc::new(Waveform::new(points))))
     }
 
-    /// A force-device branch current over time (SPEC_BENCH.md §4/§6): the
-    /// instance-port form, restricted to devices with an MNA branch
-    /// unknown (an ideal source, `<-`) — the general two-terminal residual
-    /// read `OpResult::i` performs is DC-only (no reactive part), so it is
-    /// not offered here.
+    /// A branch current over time (SPEC_BENCH.md §4/§6). Ideal sources
+    /// (`<-`, `num_forces > 0`) read the exact MNA branch unknown per step.
+    /// Other two-terminal devices (resistors, capacitors, nonlinear) are
+    /// recomputed per step from the solved terminal voltages: the resistive
+    /// part via `eval_residual`, the reactive part via `dQ/dt` of
+    /// `eval_charge` (backward-Euler differentiation, consistent with the
+    /// solver's own companion). Devices whose residual reads runtime
+    /// state/vars (not recorded per step) fail loud (G3 milestone split).
     fn i(&self, args: &[Value]) -> Result<Value, EvalError> {
-        if args.len() != 2 {
-            return Err(EvalError::TypeMismatch("i() needs exactly 2 arguments".into()));
+        if args.is_empty() || args.len() > 2 {
+            return Err(EvalError::TypeMismatch("i() takes 1 or 2 arguments".into()));
         }
         let a = self.resolve_node(&args[0])?;
-        let b = self.resolve_node(&args[1])?;
-        let instance = self
-            .info
-            .instances
-            .iter()
-            .find(|inst| {
-                inst.num_forces > 0
-                    && inst.terminals.len() == 2
-                    && ((inst.terminals[0] == a && inst.terminals[1] == b) || (inst.terminals[0] == b && inst.terminals[1] == a))
-            })
-            .ok_or_else(|| {
-                EvalError::TypeMismatch("no force-device (ideal source) branch connects those nets over time".into())
-            })?;
-        let points = self
-            .result
-            .iter()
-            .map(|step| {
-                let branch = BranchIdentifier::new(instance.label.clone(), "force0".to_string());
-                (step.time(), step.get_branch(branch).unwrap_or(0.0))
-            })
-            .collect();
+        let b = match args.get(1) {
+            Some(v) => self.resolve_node(v)?,
+            None => NodeIdentifier::Gnd,
+        };
+        let instance = crate::objects::find_two_terminal_instance(&self.info, a.clone(), b.clone())?;
+        if instance.num_forces > 0 {
+            let branch = BranchIdentifier::new(instance.label.clone(), "force0".to_string());
+            let points = self
+                .result
+                .iter()
+                .map(|step| (step.time(), step.get_branch(branch.clone()).unwrap_or(0.0)))
+                .collect();
+            return Ok(Value::Object(Rc::new(Waveform::new(points))));
+        }
+        // Fail loud for devices whose residual reads runtime state/vars not
+        // recorded per step (G3 milestone split). `ddt` is reactive (charge),
+        // not state, so R/C/nonlinear devices pass; `idt`/`delay` read state.
+        let (_, state_read, vars_read) = instance.kernel.read_bounds();
+        if state_read > 0 || vars_read > 0 {
+            return Err(EvalError::Host(format!(
+                "`i()` over time on `{}` is not yet recorded: the device reads runtime state/vars not captured per step",
+                instance.label
+            )));
+        }
+        // Resistive current (terminal-0 reference) + terminal-0 charge, per
+        // step. The reactive current a→b is `sign * dQ_0/dt`; the resistive
+        // is `sign * residual[0]` (same convention as `OpResult::i`).
+        let sign = if instance.terminals[0] == a { 1.0 } else { -1.0 };
+        let sim = piperine_codegen::SimCtx::default();
+        let n = self.result.len();
+        let mut t_series = Vec::with_capacity(n);
+        let mut i_res = Vec::with_capacity(n);
+        let mut q0 = Vec::with_capacity(n);
+        for step in self.result.iter() {
+            let volts: Vec<f64> = instance
+                .terminals
+                .iter()
+                .map(|t| if *t == NodeIdentifier::Gnd { 0.0 } else { step.get_node(t).unwrap_or(0.0) })
+                .collect();
+            let mut residual = vec![0.0; instance.terminals.len()];
+            instance
+                .kernel
+                .eval_residual(&volts, &instance.params, &[], &[], &sim, &mut residual);
+            let mut charge = vec![0.0; instance.terminals.len()];
+            instance
+                .kernel
+                .eval_charge(&volts, &instance.params, &[], &[], &sim, &mut charge);
+            i_res.push(residual[0]);
+            q0.push(charge[0]);
+            t_series.push(step.time());
+        }
+        let mut points = Vec::with_capacity(n);
+        for k in 0..n {
+            // Backward-Euler dQ_0/dt; the first sample has no predecessor —
+            // reuse the forward difference (or 0 for a single-step trace).
+            let dq_dt = if k == 0 {
+                if n > 1 && (t_series[1] - t_series[0]) > 0.0 {
+                    (q0[1] - q0[0]) / (t_series[1] - t_series[0])
+                } else {
+                    0.0
+                }
+            } else if (t_series[k] - t_series[k - 1]) > 0.0 {
+                (q0[k] - q0[k - 1]) / (t_series[k] - t_series[k - 1])
+            } else {
+                0.0
+            };
+            points.push((t_series[k], sign * (i_res[k] + dq_dt)));
+        }
         Ok(Value::Object(Rc::new(Waveform::new(points))))
     }
 

@@ -212,6 +212,15 @@ impl AnalogKernel {
         self.num_vars
     }
 
+    /// The max `State`/`Var` id the compiled code actually loads, as
+    /// `(params_read, state_read, vars_read)` (from [`FlatAnalog::read_bounds`]).
+    /// A kernel with `state_read == 0 && vars_read == 0` reads no runtime
+    /// state/vars, so its residual/charge can be recomputed outside the
+    /// solver from terminal voltages alone (the common R/C/nonlinear case).
+    pub fn read_bounds(&self) -> (usize, usize, usize) {
+        self.read_bounds
+    }
+
     pub fn runtime_states(&self) -> &[RuntimeStateSpec] {
         &self.runtime_states
     }

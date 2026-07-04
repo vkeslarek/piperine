@@ -177,21 +177,7 @@ impl OpResult {
     /// both args already name the same instance; this two-net form is
     /// provided for completeness and errors on any ambiguity).
     fn find_branch_instance(&self, a: NodeIdentifier, b: NodeIdentifier) -> Result<&piperine_codegen::device::BuiltInstanceInfo, EvalError> {
-        let matches: Vec<_> = self
-            .info
-            .instances
-            .iter()
-            .filter(|inst| {
-                inst.terminals.len() == 2
-                    && ((inst.terminals[0] == a && inst.terminals[1] == b)
-                        || (inst.terminals[0] == b && inst.terminals[1] == a))
-            })
-            .collect();
-        match matches.as_slice() {
-            [one] => Ok(one),
-            [] => Err(EvalError::TypeMismatch("no two-terminal instance connects those nets".into())),
-            _ => Err(EvalError::TypeMismatch("more than one instance connects those nets — use the instance-port form".into())),
-        }
+        find_two_terminal_instance(&self.info, a, b)
     }
 
     fn i(&self, args: &[Value]) -> Result<Value, EvalError> {
@@ -238,5 +224,32 @@ impl Object for OpResult {
             "i" => self.i(&args),
             other => Err(EvalError::Undefined(format!("method `{other}` on OpResult"))),
         }
+    }
+}
+
+/// The unique two-terminal instance whose ports connect exactly to `(a, b)`
+/// (SPEC_BENCH.md §14 — `.i(a, b)` names the branch; the instance-port form
+/// is unambiguous, this two-net form errors on ambiguity). Shared by
+/// `OpResult::i` (DC) and `Trace::i` (over time).
+pub(crate) fn find_two_terminal_instance(
+    info: &CircuitBuildInfo,
+    a: NodeIdentifier,
+    b: NodeIdentifier,
+) -> Result<&piperine_codegen::device::BuiltInstanceInfo, EvalError> {
+    let matches: Vec<_> = info
+        .instances
+        .iter()
+        .filter(|inst| {
+            inst.terminals.len() == 2
+                && ((inst.terminals[0] == a && inst.terminals[1] == b)
+                    || (inst.terminals[0] == b && inst.terminals[1] == a))
+        })
+        .collect();
+    match matches.as_slice() {
+        [one] => Ok(one),
+        [] => Err(EvalError::TypeMismatch("no two-terminal instance connects those nets".into())),
+        _ => Err(EvalError::TypeMismatch(
+            "more than one instance connects those nets — use the instance-port form".into(),
+        )),
     }
 }
