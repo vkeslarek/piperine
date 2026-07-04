@@ -1,5 +1,0 @@
-`include "disciplines.vams"
-
-connectrules my_connectrules;
-    connect d2a;
-endconnectrules

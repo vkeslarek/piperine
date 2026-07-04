@@ -49,13 +49,12 @@ impl<'a> Parser<'a> {
             } else if self.eat_ident("for") {
                 let var = self.parse_ident()?;
                 self.expect_ident_str("in")?;
-                let range = self.parse_range()?;
+                let iter = self.parse_for_iter()?;
                 let body = self.parse_block()?;
-                stmts.push(Stmt::For { var, range, body });
+                stmts.push(Stmt::For { var, iter, body });
             } else if self.eat_ident("var") {
                 let name = self.parse_ident()?;
-                self.expect(&Tok::Colon)?;
-                let ty = self.parse_type()?;
+                let ty = if self.eat(&Tok::Colon) { Some(self.parse_type()?) } else { None };
                 let default =
                     if self.eat(&Tok::Assign) { Some(self.parse_expr()?) } else { None };
                 self.expect(&Tok::Semi)?;

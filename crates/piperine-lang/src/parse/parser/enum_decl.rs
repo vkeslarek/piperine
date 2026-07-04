@@ -8,6 +8,7 @@ impl Parse for EnumDecl {
 
     /// Parses an enum declaration: `enum Name[: Repr] { Variant [= expr], ... }`.
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
+        let start = parser.current_span_start();
         let attrs = parser.parse_attributes()?;
         let is_pub = parser.eat_ident("pub");
         parser.expect_ident_str("enum")?;
@@ -24,6 +25,8 @@ impl Parse for EnumDecl {
                 break;
             }
         }
-        Ok(EnumDecl { attrs, is_pub, name, repr, variants })
+        let end = parser.previous_span_end();
+        let span = Some((start, end - start).into());
+        Ok(EnumDecl { span, attrs, is_pub, name, repr, variants })
     }
 }

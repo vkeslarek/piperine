@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 
 use crate::parse::ast::{Expr, Literal};
-use piperine_codegen::ir::*;
+use piperine_ir::*;
 
 use super::expr::lower_expr;
 use super::LowerCtx;
@@ -62,14 +62,14 @@ impl SystemFunction for Mfactor {
 struct XPosition;
 impl SystemFunction for XPosition {
     fn lower(&self, _: &str, _args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::Position(piperine_codegen::ir::Axis::X))
+        IrExpr::Sim(SimQuery::Position(piperine_ir::Axis::X))
     }
 }
 
 struct YPosition;
 impl SystemFunction for YPosition {
     fn lower(&self, _: &str, _args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::Position(piperine_codegen::ir::Axis::Y))
+        IrExpr::Sim(SimQuery::Position(piperine_ir::Axis::Y))
     }
 }
 
@@ -92,14 +92,14 @@ impl SystemFunction for Simparam {
 struct ParamGiven;
 impl SystemFunction for ParamGiven {
     fn lower(&self, _: &str, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::ParamGiven(ctx.lookup_param(&string_arg(args, 0)).unwrap_or(piperine_codegen::ir::ParamId(0))))
+        IrExpr::Sim(SimQuery::ParamGiven(ctx.require_param_given(&string_arg(args, 0))))
     }
 }
 
 struct PortConnected;
 impl SystemFunction for PortConnected {
     fn lower(&self, _: &str, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::PortConnected(ctx.lookup_node(&string_arg(args, 0)).unwrap_or(piperine_codegen::ir::NodeId::GROUND)))
+        IrExpr::Sim(SimQuery::PortConnected(ctx.require_node(&string_arg(args, 0))))
     }
 }
 
@@ -115,16 +115,16 @@ impl SystemFunction for Limit {
 struct Analysis;
 impl SystemFunction for Analysis {
     fn lower(&self, _: &str, args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        let kind = match args.first() {
+        let _kind = match args.first() {
             Some(Expr::Literal(Literal::String(s))) => s.clone(),
             _ => "dc".into(),
         };
         let kind = match string_arg(args, 0).as_str() {
-            "ac" => piperine_codegen::ir::Analysis::Ac,
-            "dc" => piperine_codegen::ir::Analysis::Dc,
-            "tran" => piperine_codegen::ir::Analysis::Tran,
-            "noise" => piperine_codegen::ir::Analysis::Noise,
-            _ => piperine_codegen::ir::Analysis::Dc,
+            "ac" => piperine_ir::Analysis::Ac,
+            "dc" => piperine_ir::Analysis::Dc,
+            "tran" => piperine_ir::Analysis::Tran,
+            "noise" => piperine_ir::Analysis::Noise,
+            _ => piperine_ir::Analysis::Dc,
         };
         IrExpr::Sim(SimQuery::Analysis(kind))
     }

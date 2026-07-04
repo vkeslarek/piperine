@@ -19,6 +19,7 @@ impl Parse for FnSig {
         }
         parser.expect(&Tok::LParen)?;
         let mut params = Vec::new();
+        let mut saw_default = false;
         if !parser.eat(&Tok::RParen) {
             if parser.eat_ident("self") {
                 params.push(FnParam::SelfParam);
@@ -26,7 +27,13 @@ impl Parse for FnSig {
                 let n = parser.parse_ident()?;
                 parser.expect(&Tok::Colon)?;
                 let ty = Type::parse(parser)?;
-                params.push(FnParam::Typed(n, ty));
+                let default = if parser.eat(&Tok::Assign) {
+                    saw_default = true;
+                    Some(parser.parse_expr()?)
+                } else {
+                    None
+                };
+                params.push(FnParam::Typed { name: n, ty, default });
             }
             while parser.eat(&Tok::Comma) {
                 if parser.peek() == Some(&Tok::RParen) {
@@ -35,12 +42,30 @@ impl Parse for FnSig {
                 let n = parser.parse_ident()?;
                 parser.expect(&Tok::Colon)?;
                 let ty = Type::parse(parser)?;
-                params.push(FnParam::Typed(n, ty));
+                // the language spec Part I §9.1: defaults are trailing-only — a
+                // non-defaulted parameter cannot follow a defaulted one.
+                let default = if parser.eat(&Tok::Assign) {
+                    saw_default = true;
+                    Some(parser.parse_expr()?)
+                } else if saw_default {
+                    return Err(crate::parse::error::ParseError::from(
+                        "a non-defaulted parameter cannot follow a defaulted one (defaults must be trailing)",
+                    ));
+                } else {
+                    None
+                };
+                params.push(FnParam::Typed { name: n, ty, default });
             }
             parser.expect(&Tok::RParen)?;
         }
-        parser.expect(&Tok::Arrow)?;
-        let ret = Type::parse(parser)?;
+        // `-> RetType` is optional; an omitted return type is `Unit` (the
+        // common case for a `bench` entry point, which is a procedure, not
+        // a value computation — piperine-bench/docs/SPEC.md §2).
+        let ret = if parser.eat(&Tok::Arrow) {
+            Type::parse(parser)?
+        } else {
+            Type { name: "Unit".into(), args: Vec::new(), dimensions: Vec::new() }
+        };
         Ok(FnSig { name, type_params, params, ret })
     }
 }
@@ -53,6 +78,6 @@ impl Parse for FnDecl {
         parser.expect_ident_str("fn")?;
         let sig = FnSig::parse(parser)?;
         let body = parser.parse_block()?;
-        Ok(FnDecl { attrs, is_pub, sig, body })
+        Ok(FnDecl { span: None, attrs, is_pub, sig, body })
     }
 }

@@ -7,8 +7,8 @@
             "request": "launch",
             "runtimeExecutable": "${execPath}",
             "args": [
-                "--extensionDevelopmentPath=${workspaceFolder}/.vscode/extension",
-                "${workspaceFolder}/.vscode/test-fixtures"
+                "--extensionDevelopmentPath=${workspaceFolder}/editors/vscode",
+                "${workspaceFolder}/examples"
             ],
             "outFiles": [],
             "preLaunchTask": "build-lang-server"

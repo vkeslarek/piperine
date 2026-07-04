@@ -1,24 +1,17 @@
 //! Completion handler: provides keyword and context-aware completions using piperine-lang predictive parsing.
 
-use lsp_server::{Connection, Request, Response};
+use lsp_server::{Connection, Request};
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionList, CompletionParams,
-    CompletionResponse, InsertTextFormat, Position,
+    CompletionResponse, InsertTextFormat,
 };
-use serde_json::from_value;
 
+use super::{ConnectionExt, RequestExt};
 use crate::state::ServerState;
 use piperine_lang::parse::predict::{ExpectedSyntax, IdentRole};
 
 pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
-    let (id, params) = (req.id, req.params);
-    let params = match from_value::<CompletionParams>(params) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("invalid completion params: {e}");
-            return;
-        }
-    };
+    let Some((id, params)) = req.parse::<CompletionParams>(connection) else { return };
 
     let uri = params.text_document_position.text_document.uri;
     let pos = params.text_document_position.position;
@@ -27,41 +20,16 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
         .documents
         .get(&uri)
         .map(|doc| {
-            let offset = position_to_offset(&doc.source, pos);
+            let offset = crate::text_pos::position_to_byte(&doc.source, pos);
             let expected = piperine_lang::parse::predict_at_cursor(&doc.source, offset);
             build_completions_predictive(&expected, doc.design.as_ref())
         })
         .unwrap_or_default();
 
-    let result = CompletionResponse::List(CompletionList { is_incomplete: true, items });
-
-    let response = Response {
-        id,
-        result: Some(serde_json::to_value(result).unwrap()),
-        error: None,
-    };
-    connection
-        .sender
-        .send(lsp_server::Message::Response(response))
-        .unwrap();
+    let result = CompletionResponse::List(CompletionList { is_incomplete: false, items });
+    connection.respond(id, result);
 }
 
-fn position_to_offset(source: &str, position: Position) -> usize {
-    let mut line = 0u32;
-    let mut col = 0u32;
-    for (i, c) in source.char_indices() {
-        if line == position.line && col == position.character {
-            return i;
-        }
-        if c == '\n' {
-            line += 1;
-            col = 0;
-        } else {
-            col += 1;
-        }
-    }
-    source.len()
-}
 
 pub fn build_completions_predictive(expected: &[ExpectedSyntax], design: Option<&piperine_lang::Design>) -> Vec<CompletionItem> {
     let mut items = Vec::new();
@@ -120,21 +88,53 @@ pub fn build_completions_predictive(expected: &[ExpectedSyntax], design: Option<
 
 fn add_top_level_completions(items: &mut Vec<CompletionItem>) {
     let keywords = [
-        ("mod", "Module declaration", CompletionItemKind::KEYWORD),
         ("fn", "Function declaration", CompletionItemKind::KEYWORD),
-        ("analog", "Analog behavior block", CompletionItemKind::KEYWORD),
         ("digital", "Digital behavior block", CompletionItemKind::KEYWORD),
-        ("discipline", "Discipline declaration", CompletionItemKind::KEYWORD),
         ("bundle", "Bundle (struct) declaration", CompletionItemKind::KEYWORD),
         ("enum", "Enum declaration", CompletionItemKind::KEYWORD),
         ("capability", "Capability (trait) declaration", CompletionItemKind::KEYWORD),
         ("impl", "Impl block", CompletionItemKind::KEYWORD),
         ("pub", "Public visibility", CompletionItemKind::KEYWORD),
         ("use", "Import declaration", CompletionItemKind::KEYWORD),
+        ("const", "Constant declaration", CompletionItemKind::KEYWORD),
     ];
     for (kw, desc, kind) in &keywords {
         items.push(kw_item(kw, desc, *kind));
     }
+    
+    // Snippets
+    items.push(CompletionItem {
+        label: "mod".into(),
+        kind: Some(CompletionItemKind::SNIPPET),
+        detail: Some("Module snippet".into()),
+        insert_text: Some("mod ${1:Name} {\n\t$0\n}".into()),
+        insert_text_format: Some(InsertTextFormat::SNIPPET),
+        ..Default::default()
+    });
+    items.push(CompletionItem {
+        label: "analog".into(),
+        kind: Some(CompletionItemKind::SNIPPET),
+        detail: Some("Analog block snippet".into()),
+        insert_text: Some("analog {\n\t$0\n}".into()),
+        insert_text_format: Some(InsertTextFormat::SNIPPET),
+        ..Default::default()
+    });
+    items.push(CompletionItem {
+        label: "bench".into(),
+        kind: Some(CompletionItemKind::SNIPPET),
+        detail: Some("Bench block snippet".into()),
+        insert_text: Some("bench ${1:Name} {\n\t$0\n}".into()),
+        insert_text_format: Some(InsertTextFormat::SNIPPET),
+        ..Default::default()
+    });
+    items.push(CompletionItem {
+        label: "discipline".into(),
+        kind: Some(CompletionItemKind::SNIPPET),
+        detail: Some("Discipline snippet".into()),
+        insert_text: Some("discipline ${1:Name} {\n\tdomain: ${2:continuous},\n\t$0\n}".into()),
+        insert_text_format: Some(InsertTextFormat::SNIPPET),
+        ..Default::default()
+    });
 }
 
 fn add_behavior_completions(items: &mut Vec<CompletionItem>) {

@@ -1,9 +1,0 @@
-dac_func.c
-dac_DcFuncDerLoad.c
-dac_DcFuncLoad.c
-dac_TranFuncDerLoad.c
-dac_TranFuncLoad.c
-dac_NoiseLoadBiasDep.c
-dac_OpPointCalc.c
-dac_PseudoTranFuncDerLoad.c
-dac_PseudoTranFuncLoad.c

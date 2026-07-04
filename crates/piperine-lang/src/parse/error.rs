@@ -4,14 +4,14 @@ use thiserror::Error;
 #[derive(Error, Diagnostic, Debug, Clone)]
 pub enum ParseError {
     #[error("Unexpected end of file")]
-    #[diagnostic(code(piperine::parse::eof))]
+    #[diagnostic(code(E1001))]
     UnexpectedEof {
         #[label("parser reached the end of this file here")]
         span: SourceSpan,
     },
     
     #[error("Unexpected token")]
-    #[diagnostic(code(piperine::parse::unexpected_tok))]
+    #[diagnostic(code(E1002))]
     UnexpectedTok {
         #[label("found this instead of expected token")]
         span: SourceSpan,
@@ -19,7 +19,7 @@ pub enum ParseError {
     },
     
     #[error("{message}")]
-    #[diagnostic(code(piperine::parse::generic))]
+    #[diagnostic(code(E1003))]
     Generic {
         message: String,
         #[label("here")]
@@ -27,7 +27,7 @@ pub enum ParseError {
     },
 
     #[error("{message}")]
-    #[diagnostic(code(piperine::parse::legacy))]
+    #[diagnostic(code(E1004))]
     Legacy {
         message: String,
     },
@@ -35,10 +35,14 @@ pub enum ParseError {
 
 impl ParseError {
     pub fn byte_offset(&self) -> Option<usize> {
+        self.span().map(|s| s.offset())
+    }
+
+    pub fn span(&self) -> Option<SourceSpan> {
         match self {
-            ParseError::UnexpectedEof { span } => Some(span.offset()),
-            ParseError::UnexpectedTok { span, .. } => Some(span.offset()),
-            ParseError::Generic { span, .. } => Some(span.offset()),
+            ParseError::UnexpectedEof { span } => Some(*span),
+            ParseError::UnexpectedTok { span, .. } => Some(*span),
+            ParseError::Generic { span, .. } => Some(*span),
             ParseError::Legacy { .. } => None,
         }
     }

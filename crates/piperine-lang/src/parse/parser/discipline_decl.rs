@@ -8,6 +8,7 @@ impl Parse for DisciplineDecl {
 
     /// Parses a discipline declaration: `discipline Name { potential/flow/storage/resolve ... }`.
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
+        let start = parser.current_span_start();
         let attrs = parser.parse_attributes()?;
         let is_pub = parser.eat_ident("pub");
         parser.expect_ident_str("discipline")?;
@@ -62,6 +63,8 @@ impl Parse for DisciplineDecl {
                 return Err("Unknown discipline item".into());
             }
         }
-        Ok(DisciplineDecl { attrs, is_pub, name, items })
+        let end = parser.previous_span_end();
+        let span = Some((start, end - start).into());
+        Ok(DisciplineDecl { span, attrs, is_pub, name, items })
     }
 }

@@ -72,11 +72,10 @@ impl Operator {
             Operator::Integrate { modulus, value, time: last_time, .. } => {
                 let dt = (time - *last_time).max(0.0);
                 *value += dt * input;
-                if let Some(m) = *modulus {
-                    if m > 0.0 {
+                if let Some(m) = *modulus
+                    && m > 0.0 {
                         *value -= m * (*value / m).floor();
                     }
-                }
                 *last_time = time;
                 *value
             }
@@ -194,7 +193,16 @@ impl AnalogInstance {
 
         let node_refs: Vec<Option<AnalogReference>> = terminals
             .iter()
-            .map(|t| {
+            .enumerate()
+            .map(|(i, t)| {
+                if kernel.is_digital_terminal(i) {
+                    // Never an MNA unknown (see `AnalogKernel::digital_terminals`) —
+                    // connecting it would leave a structurally empty,
+                    // singular row. `volts[i]` reads 0.0 until the D2A
+                    // bridge is extended to fill it from live digital
+                    // state (tracked separately).
+                    return None;
+                }
                 let reference = netlist.connect_node(t.clone());
                 reference.idx().is_some().then_some(reference)
             })
@@ -276,8 +284,7 @@ impl AnalogInstance {
             .map(|(_, &period)| EventDetector { seeded: false, prev: 0.0, next_fire: period })
             .collect();
 
-        let mut sim = SimCtx::default();
-        sim.param_given_mask = param_given_mask;
+        let sim = SimCtx { param_given_mask, ..Default::default() };
         let n = kernel.num_terminals();
         let num_vars = kernel.num_vars();
         let mut instance = Self {
@@ -386,11 +393,10 @@ impl AnalogInstance {
         let n = self.num_terminals();
         let mut stamps = Vec::new();
         for (i, value) in rhs.iter().enumerate() {
-            if *value != 0.0 {
-                if let Some(row) = &self.node_refs[i] {
+            if *value != 0.0
+                && let Some(row) = &self.node_refs[i] {
                     stamps.push(Stamp::Rhs(row.clone(), *value));
                 }
-            }
         }
         for i in 0..n {
             for j in 0..n {
@@ -490,11 +496,11 @@ impl AnalogInstance {
         tran_ctx: &TransientAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
-        let dt: f64 = tran_ctx.dt.into();
+        let dt: f64 = tran_ctx.dt;
         let alpha = if dt > 0.0 { 1.0 / dt } else { 0.0 };
-        self.sim.abstime = tran_ctx.time.into();
+        self.sim.abstime = tran_ctx.time;
         self.sim.step = dt;
-        self.sim.tfinal = tran_ctx.tfinal.into();
+        self.sim.tfinal = tran_ctx.tfinal;
         self.sync_sim(context, Analysis::Tran);
 
         let volts = self.collect_volts(&|k| {
@@ -526,7 +532,7 @@ impl AnalogInstance {
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, Complex64>> {
         self.sync_sim(context, Analysis::Ac);
-        let freq: f64 = ac_ctx.frequency.into();
+        let freq: f64 = ac_ctx.frequency;
         let omega = 2.0 * std::f64::consts::PI * freq;
 
         let refs = self.node_refs.clone();
@@ -586,10 +592,36 @@ impl AnalogInstance {
                 stamps.push(Stamp::Matrix(branch.clone(), m, Complex64::new(-1.0, 0.0)));
             }
         }
+        // `ac_stim` sources: `mag·e^{j·phase}` enters the residual at the
+        // branch terminals, so it lands on the RHS negated at `plus` (the
+        // system is `A·x = b` with the residual moved to `b`).
+        let ns = self.kernel.num_ac_stims();
+        if ns > 0 {
+            let mut mags = vec![0.0; ns];
+            let mut phases = vec![0.0; ns];
+            self.kernel
+                .eval_ac_stim(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut mags, &mut phases);
+            for (i, &(plus, minus)) in self.kernel.ac_stim_terminals().iter().enumerate() {
+                let stim = Complex64::from_polar(mags[i], phases[i]);
+                if stim == Complex64::ZERO {
+                    continue;
+                }
+                if let Some(p) = self.terminal_ref(plus) {
+                    stamps.push(Stamp::Rhs(p, -stim));
+                }
+                if let Some(m) = self.terminal_ref(minus) {
+                    stamps.push(Stamp::Rhs(m, stim));
+                }
+            }
+        }
         stamps
     }
 
-    pub fn noise_current_psd(&mut self, dc_point: &DcAnalysisResult) -> Vec<Noise> {
+    pub fn noise_current_psd(
+        &mut self,
+        dc_point: &DcAnalysisResult,
+        ac_context: &piperine_solver::analysis::ac::AcAnalysisContext,
+    ) -> Vec<Noise> {
         let count = self.kernel.num_noise();
         if count == 0 {
             return Vec::new();
@@ -602,6 +634,9 @@ impl AnalogInstance {
                 .and_then(|r| dc_op_voltage(r, dc_point))
                 .unwrap_or(0.0)
         });
+        // Thread the AC frequency into SimCtx so flicker noise can read it
+        // (formerly `_ac_context` was ignored here).
+        self.sim.frequency = ac_context.frequency;
         let mut psd = vec![0.0; count];
         self.kernel
             .eval_noise(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut psd);
@@ -611,9 +646,9 @@ impl AnalogInstance {
             .zip(psd)
             .filter_map(|((plus, minus), value)| {
                 let (plus, minus) = (plus.clone()?, minus.clone()?);
-                (value > 0.0).then(|| Noise {
+                (value > 0.0).then_some(Noise {
                     terminals: (plus, minus),
-                    value: value.into(),
+                    value,
                 })
             })
             .collect()
@@ -678,7 +713,7 @@ impl AnalogInstance {
 
     fn sync_sim(&mut self, context: &Context, analysis: Analysis) {
         self.sim.temperature = context.temperature;
-        self.sim.gmin = context.gmin.into();
+        self.sim.gmin = context.gmin;
         self.sim.current_analysis = super::analysis_code(analysis);
         // Outside transient there is no integration step; companion terms
         // that scale with `sim.step` (the `idt` in-step coupling) vanish.

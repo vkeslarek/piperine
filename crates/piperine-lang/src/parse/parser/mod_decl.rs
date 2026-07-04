@@ -31,8 +31,8 @@ impl Parse for ModuleDeclaration {
         }
 
         let mut ports = Vec::new();
-        if parser.eat(&Tok::LParen) {
-            if !parser.eat(&Tok::RParen) {
+        if parser.eat(&Tok::LParen)
+            && !parser.eat(&Tok::RParen) {
                 ports.push(Port::parse(parser)?);
                 while parser.eat(&Tok::Comma) {
                     if parser.peek() == Some(&Tok::RParen) {
@@ -42,7 +42,6 @@ impl Parse for ModuleDeclaration {
                 }
                 parser.expect(&Tok::RParen)?;
             }
-        }
 
         let mut body = Vec::new();
         if parser.eat(&Tok::LBrace) {
@@ -77,7 +76,7 @@ impl Parse for TypeParam {
 impl Parse for Port {
     /// Parses a module port: `direction name : type`.
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
-        let start = parser.current_span_start();
+        let _start = parser.current_span_start();
         let attrs = parser.parse_attributes()?;
         let direction = if parser.eat_ident("input") {
             Direction::Input

@@ -1,5 +1,5 @@
 use crate::parse::ast::ModuleDeclaration;
-use crate::pom::{Module, ElabError, ElabErrorKind};
+use crate::pom::{Module, ElabError};
 use crate::elab::const_eval::ConstEnv;
 use std::collections::HashMap;
 
@@ -19,6 +19,12 @@ pub trait ComponentDef: Send + Sync {
 pub struct ComponentRegistry {
     components: HashMap<String, Box<dyn ComponentDef>>,
     mono_cache: std::cell::RefCell<HashMap<String, Module>>,
+}
+
+impl Default for ComponentRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ComponentRegistry {

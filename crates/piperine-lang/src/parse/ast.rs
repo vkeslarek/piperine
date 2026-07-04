@@ -47,6 +47,20 @@ pub enum Item {
     ImplDecl(ImplDecl),
     FnDecl(FnDecl),
     ConstDecl(ConstDecl),
+    BenchDecl(BenchDecl),
+}
+
+/// `bench ModName { fn ... }` — the effectful post-elaboration scripting
+/// layer attached to a module by name (piperine-bench/docs/SPEC.md §2), the same way
+/// `analog`/`digital` attach via [`BehaviorDecl`]. Bodies use the ordinary
+/// `fn` grammar; only the runtime context differs (piperine-bench/docs/SPEC.md §1/§3).
+#[derive(Debug, Clone)]
+pub struct BenchDecl {
+    pub span: Option<miette::SourceSpan>,
+    pub attrs: Vec<Attribute>,
+    pub is_pub: bool,
+    pub name: String,
+    pub fns: Vec<FnDecl>,
 }
 
 /// A `::`-separated module path, e.g. `devices::passives::Resistor`.
@@ -58,6 +72,7 @@ pub struct Path {
 /// A global constant declaration `const Name : Type = Expr;`
 #[derive(Debug, Clone)]
 pub struct ConstDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
@@ -207,6 +222,7 @@ pub struct Type {
 /// `discipline Name { ... }`
 #[derive(Debug, Clone)]
 pub struct DisciplineDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
@@ -259,6 +275,7 @@ pub struct AttrArg {
 /// Net-capable bundles used as ports are expanded to flat fields.
 #[derive(Debug, Clone)]
 pub struct BundleDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
@@ -282,6 +299,7 @@ pub struct FieldDecl {
 /// `enum Name [: ReprType] { Variant [= Expr], ... }`
 #[derive(Debug, Clone)]
 pub struct EnumDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
@@ -302,6 +320,7 @@ pub struct EnumVariant {
 /// `capability Name [: Super, ...] { fn sig; | fn decl { } }`
 #[derive(Debug, Clone)]
 pub struct CapabilityDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,
@@ -320,6 +339,7 @@ pub enum CapItem {
 /// `impl [Capability for] TypeRef { fn ... }`
 #[derive(Debug, Clone)]
 pub struct ImplDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     /// `Some` for capability impls; `None` for inherent method impls.
@@ -347,6 +367,7 @@ pub struct FnSig {
 /// retains the body as-is and monomorphizes at call sites.
 #[derive(Debug, Clone)]
 pub struct FnDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub sig: FnSig,
@@ -356,7 +377,11 @@ pub struct FnDecl {
 #[derive(Debug, Clone)]
 pub enum FnParam {
     SelfParam,
-    Typed(String, Type),
+    /// A typed parameter, optionally with a default value (the language spec Part I §9.1
+    /// — trailing parameters may carry a default; a call may omit them).
+    /// Defaults are elaboration constants. The default is `None` for
+    /// non-defaulted (leading) params.
+    Typed { name: String, ty: Type, default: Option<Expr> },
 }
 
 // ─────────────────────────────── Blocks & statements ─────────────────────────
@@ -373,47 +398,199 @@ pub struct Block {
 /// A statement inside a function body or event block.
 #[derive(Debug, Clone)]
 pub enum Stmt {
-    VarDecl { name: String, ty: Type, default: Option<Expr> },
+    /// `var name [: Type] = expr;` — the type annotation is optional here
+    /// (unlike a `mod`-body `var`): a `bench`/interpreted fn never needs a
+    /// static type, so an omitted `ty` infers from `default` at runtime.
+    /// A statically-elaborated fn/method body (an `impl` or global `fn`)
+    /// still requires an explicit type (SPEC Part I §9) — the elaborator
+    /// enforces that, not the parser.
+    VarDecl { name: String, ty: Option<Type>, default: Option<Expr> },
     Return(Expr),
     If { cond: Expr, then_body: Block, else_body: Option<Block> },
     Match { expr: Expr, arms: Vec<StmtMatchArm> },
-    For { var: String, range: Range, body: Block },
+    For { var: String, iter: ForIter, body: Block },
     Bind { dest: Expr, op: BindOp, src: Expr },
+    /// An event block `@ EventSpec [when (guard)] { ... }` — behavior
+    /// bodies only (validated by `elab`, not the type system: one `Stmt`
+    /// serves fn bodies and `analog`/`digital` bodies alike,
+    /// SIMPLIFICATION.md P3).
+    Event { spec: EventSpec, guard: Option<Expr>, body: Block },
+    /// A `$display`-family diagnostic call in statement position.
+    Diagnostic { sys: String, args: Vec<Expr> },
     Expr(Expr),
 }
 
+/// What a fn-body `for` loops over: an elaboration-time range (as in a
+/// module/behavior body) or a runtime value-layer list (SPEC Part I §9 —
+/// `for rl in [1e3, 1e4, ...]`, only valid where the interpreter runs).
+#[derive(Debug, Clone)]
+pub enum ForIter {
+    Range(Range),
+    Expr(Expr),
+}
+
+/// Traversal control returned by a walker closure: keep descending into the
+/// current node's children, or skip them (the walk continues with the next
+/// sibling either way). See [`Expr::walk`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Walk {
+    Continue,
+    SkipChildren,
+}
+
+impl Block {
+    /// Visit every expression in this block, pre-order (statements in
+    /// source order, then the trailing expression). See [`Expr::walk`].
+    pub fn walk_exprs(&self, f: &mut impl FnMut(&Expr) -> Walk) {
+        self.stmts.iter().for_each(|s| s.walk_exprs(f));
+        if let Some(e) = &self.expr {
+            e.walk(f);
+        }
+    }
+
+    /// Mutable counterpart of [`Block::walk_exprs`].
+    pub fn walk_exprs_mut(&mut self, f: &mut impl FnMut(&mut Expr) -> Walk) {
+        self.stmts.iter_mut().for_each(|s| s.walk_exprs_mut(f));
+        if let Some(e) = &mut self.expr {
+            e.walk_mut(f);
+        }
+    }
+
+    /// Collect every `$name(...)` system-task call reachable from this
+    /// block. Used to validate a `bench` fn against the system-task
+    /// availability table (piperine-bench/docs/SPEC.md §7/§11) before it is ever
+    /// interpreted — an unimplemented task is a fail-loud elaboration
+    /// error, not a runtime surprise.
+    pub fn collect_syscalls(&self, out: &mut Vec<String>) {
+        self.walk_exprs(&mut |e| {
+            if let Expr::SysCall(name, _) = e {
+                out.push(name.clone());
+            }
+            Walk::Continue
+        });
+    }
+}
+
 impl Stmt {
-    /// Substitute `var → value` in all expressions of this statement.
-    pub fn subst_const(&mut self, var: &str, value: u64) {
+    /// Visit every expression in this statement, pre-order. See
+    /// [`Expr::walk`].
+    pub fn walk_exprs(&self, f: &mut impl FnMut(&Expr) -> Walk) {
         match self {
-            Stmt::VarDecl { default: Some(e), .. } => e.subst_const(var, value),
-            Stmt::Return(e) => e.subst_const(var, value),
+            Stmt::VarDecl { default, .. } => {
+                if let Some(e) = default {
+                    e.walk(f);
+                }
+            }
+            Stmt::Return(e) | Stmt::Expr(e) => e.walk(f),
             Stmt::If { cond, then_body, else_body } => {
-                cond.subst_const(var, value);
-                then_body.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
-                if let Some(e) = &mut then_body.expr { e.subst_const(var, value); }
+                cond.walk(f);
+                then_body.walk_exprs(f);
                 if let Some(b) = else_body {
-                    b.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
-                    if let Some(e) = &mut b.expr { e.subst_const(var, value); }
+                    b.walk_exprs(f);
                 }
             }
             Stmt::Match { expr, arms } => {
-                expr.subst_const(var, value);
-                arms.iter_mut().for_each(|a| {
-                    a.body.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
-                    if let Some(e) = &mut a.body.expr { e.subst_const(var, value); }
-                });
+                expr.walk(f);
+                arms.iter().for_each(|a| a.body.walk_exprs(f));
             }
-            Stmt::For { body, .. } => {
-                body.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
-                if let Some(e) = &mut body.expr { e.subst_const(var, value); }
+            Stmt::For { iter, body, .. } => {
+                match iter {
+                    ForIter::Range(r) => {
+                        r.start.walk(f);
+                        r.end.walk(f);
+                    }
+                    ForIter::Expr(e) => e.walk(f),
+                }
+                body.walk_exprs(f);
             }
             Stmt::Bind { dest, src, .. } => {
-                dest.subst_const(var, value);
-                src.subst_const(var, value);
+                dest.walk(f);
+                src.walk(f);
             }
-            Stmt::Expr(e) => e.subst_const(var, value),
-            _ => {}
+            Stmt::Event { spec, guard, body } => {
+                spec.walk_exprs(f);
+                if let Some(g) = guard {
+                    g.walk(f);
+                }
+                body.walk_exprs(f);
+            }
+            Stmt::Diagnostic { args, .. } => args.iter().for_each(|a| a.walk(f)),
+        }
+    }
+
+    /// Mutable counterpart of [`Stmt::walk_exprs`].
+    pub fn walk_exprs_mut(&mut self, f: &mut impl FnMut(&mut Expr) -> Walk) {
+        match self {
+            Stmt::VarDecl { default, .. } => {
+                if let Some(e) = default {
+                    e.walk_mut(f);
+                }
+            }
+            Stmt::Return(e) | Stmt::Expr(e) => e.walk_mut(f),
+            Stmt::If { cond, then_body, else_body } => {
+                cond.walk_mut(f);
+                then_body.walk_exprs_mut(f);
+                if let Some(b) = else_body {
+                    b.walk_exprs_mut(f);
+                }
+            }
+            Stmt::Match { expr, arms } => {
+                expr.walk_mut(f);
+                arms.iter_mut().for_each(|a| a.body.walk_exprs_mut(f));
+            }
+            Stmt::For { iter, body, .. } => {
+                match iter {
+                    ForIter::Range(r) => {
+                        r.start.walk_mut(f);
+                        r.end.walk_mut(f);
+                    }
+                    ForIter::Expr(e) => e.walk_mut(f),
+                }
+                body.walk_exprs_mut(f);
+            }
+            Stmt::Bind { dest, src, .. } => {
+                dest.walk_mut(f);
+                src.walk_mut(f);
+            }
+            Stmt::Event { spec, guard, body } => {
+                spec.walk_exprs_mut(f);
+                if let Some(g) = guard {
+                    g.walk_mut(f);
+                }
+                body.walk_exprs_mut(f);
+            }
+            Stmt::Diagnostic { args, .. } => args.iter_mut().for_each(|a| a.walk_mut(f)),
+        }
+    }
+
+    /// Substitute `var → value` in all expressions of this statement.
+    /// See [`Expr::subst_const`] for the lambda-body exception.
+    pub fn subst_const(&mut self, var: &str, value: u64) {
+        self.walk_exprs_mut(&mut Expr::subst_visitor(var, value));
+    }
+
+    /// Visit this statement and every nested statement, pre-order
+    /// (if/match/for/event bodies, in source order).
+    pub fn walk_stmts(&self, f: &mut impl FnMut(&Stmt)) {
+        f(self);
+        match self {
+            Stmt::If { then_body, else_body, .. } => {
+                then_body.stmts.iter().for_each(|s| s.walk_stmts(f));
+                if let Some(b) = else_body {
+                    b.stmts.iter().for_each(|s| s.walk_stmts(f));
+                }
+            }
+            Stmt::Match { arms, .. } => arms
+                .iter()
+                .for_each(|a| a.body.stmts.iter().for_each(|s| s.walk_stmts(f))),
+            Stmt::For { body, .. } | Stmt::Event { body, .. } => {
+                body.stmts.iter().for_each(|s| s.walk_stmts(f));
+            }
+            Stmt::VarDecl { .. }
+            | Stmt::Return(_)
+            | Stmt::Bind { .. }
+            | Stmt::Diagnostic { .. }
+            | Stmt::Expr(_) => {}
         }
     }
 }
@@ -432,11 +609,12 @@ pub struct StmtMatchArm {
 /// module. Validation rules differ by `kind` (§9 of elaboration spec).
 #[derive(Debug, Clone)]
 pub struct BehaviorDecl {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub kind: BehaviorKind,
     pub name: String,
-    pub body: Vec<BehaviorStmt>,
+    pub body: Vec<Stmt>,
 }
 
 /// The kind of a behavior block: analog (continuous-time) or digital (event-driven).
@@ -448,62 +626,24 @@ pub enum BehaviorKind {
     Digital,
 }
 
-/// A statement inside an `analog` or `digital` block.
-///
-/// `For` loops in behavior blocks are unrolled at elaboration — their bounds
-/// must be elaboration constants. The unrolled form appears in
-/// [`BehaviorStmt`][crate::pom::BehaviorStmt].
-#[derive(Debug, Clone)]
-pub enum BehaviorStmt {
-    VarDecl { name: String, ty: Type, default: Option<Expr> },
-    Bind { dest: Expr, op: BindOp, src: Expr },
-    If { cond: Expr, then_body: Vec<BehaviorStmt>, else_body: Option<Vec<BehaviorStmt>> },
-    Match { expr: Expr, arms: Vec<MatchArm> },
-    For { var: String, range: Range, body: Vec<BehaviorStmt> },
-    /// An event block: `@ EventSpec [when (guard)] { ... }`.
-    Event { spec: EventSpec, guard: Option<Expr>, body: Block },
-    Diagnostic { sys: String, args: Vec<Expr> },
-    Expr(Expr),
-}
-
-impl BehaviorStmt {
-    /// Substitute `var → value` in all expressions of this statement.
-    /// Used during behavioral `for` unrolling (the `for` is syntactic
-    /// sugar, fully resolved at elaboration — same as `if` const-folding).
-    pub fn subst_const(&mut self, var: &str, value: u64) {
+impl EventSpec {
+    /// Immutable visit of every expression in this event spec (`Named` args,
+    /// recursively through `Or`).
+    pub fn walk_exprs(&self, f: &mut impl FnMut(&Expr) -> Walk) {
         match self {
-            BehaviorStmt::VarDecl { default: Some(e), .. } => e.subst_const(var, value),
-            BehaviorStmt::Bind { dest, src, .. } => {
-                dest.subst_const(var, value);
-                src.subst_const(var, value);
-            }
-            BehaviorStmt::If { cond, then_body, else_body } => {
-                cond.subst_const(var, value);
-                then_body.iter_mut().for_each(|s| s.subst_const(var, value));
-                if let Some(b) = else_body {
-                    b.iter_mut().for_each(|s| s.subst_const(var, value));
-                }
-            }
-            BehaviorStmt::Match { expr, arms } => {
-                expr.subst_const(var, value);
-                arms.iter_mut().for_each(|a| {
-                    a.body.iter_mut().for_each(|s| s.subst_const(var, value));
-                });
-            }
-            BehaviorStmt::For { body, .. } => {
-                body.iter_mut().for_each(|s| s.subst_const(var, value));
-            }
-            BehaviorStmt::Event { spec, guard, body } => {
-                if let EventSpec::Named { arg, .. } = spec { arg.subst_const(var, value); }
-                if let Some(g) = guard { g.subst_const(var, value); }
-                body.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
-                if let Some(e) = &mut body.expr { e.subst_const(var, value); }
-            }
-            BehaviorStmt::Diagnostic { args, .. } => {
-                args.iter_mut().for_each(|a| a.subst_const(var, value));
-            }
-            BehaviorStmt::Expr(e) => e.subst_const(var, value),
-            _ => {}
+            EventSpec::Named { arg, .. } => arg.walk(f),
+            EventSpec::Initial | EventSpec::Final => {}
+            EventSpec::Or(specs) => specs.iter().for_each(|s| s.walk_exprs(f)),
+        }
+    }
+
+    /// Mutable visit of every expression in this event spec (`Named` args,
+    /// recursively through `Or`).
+    pub fn walk_exprs_mut(&mut self, f: &mut impl FnMut(&mut Expr) -> Walk) {
+        match self {
+            EventSpec::Named { arg, .. } => arg.walk_mut(f),
+            EventSpec::Initial | EventSpec::Final => {}
+            EventSpec::Or(specs) => specs.iter_mut().for_each(|s| s.walk_exprs_mut(f)),
         }
     }
 }
@@ -517,12 +657,6 @@ pub enum BindOp {
     Force,
     /// Value assignment: `dest = src`.
     Assign,
-}
-
-#[derive(Debug, Clone)]
-pub struct MatchArm {
-    pub pat: Pattern,
-    pub body: Vec<BehaviorStmt>,
 }
 
 #[derive(Debug, Clone)]
@@ -582,72 +716,159 @@ pub enum Expr {
     Block(Block),
     If { cond: Box<Expr>, then_body: Block, else_body: Block },
     Array(ArrayBody),
+    /// `(a, b, ...)` — a value-layer tuple literal (SPEC Part I §6.1).
+    /// `(e)` with no comma is a parenthesized group, not a 1-tuple.
+    Tuple(Vec<Expr>),
     BundleLit { ty: Type, fields: Vec<(String, Expr)> },
+    /// A `Map { k: v, ... }` literal (piperine-bench/docs/SPEC.md §5.1 — `Map<K, V>`,
+    /// used for `ic`/`nodeset` per-node hints). `Map {}` is the empty map.
+    MapLit(Vec<(Expr, Expr)>),
     Lambda { params: Vec<String>, body: Box<Expr> },
 }
 
 impl Expr {
+    /// Visit this expression and every sub-expression, pre-order: `f` sees
+    /// the node first; return [`Walk::SkipChildren`] to prune the subtree.
+    /// Descends through blocks (their statements' expressions in source
+    /// order), lambda bodies, event args — everything.
+    ///
+    /// This and [`Expr::walk_mut`] are the **only** exhaustive child
+    /// enumerations over `Expr` outside the transformers (eval, to-IR,
+    /// formatter, predict): a new variant is added here once and every
+    /// search/rewrite in the crate follows (SIMPLIFICATION.md P4).
+    pub fn walk(&self, f: &mut impl FnMut(&Expr) -> Walk) {
+        if f(self) == Walk::SkipChildren {
+            return;
+        }
+        match self {
+            Expr::Literal(_) | Expr::Ident(_) | Expr::Path(_) => {}
+            Expr::SysCall(_, args) | Expr::Tuple(args) => {
+                args.iter().for_each(|a| a.walk(f));
+            }
+            Expr::Unary(_, inner) | Expr::Cast(_, inner) | Expr::Field(inner, _) | Expr::Lambda { body: inner, .. } => {
+                inner.walk(f);
+            }
+            Expr::Binary(l, _, r) | Expr::Index(l, r) => {
+                l.walk(f);
+                r.walk(f);
+            }
+            Expr::Call(callee, args) => {
+                callee.walk(f);
+                args.iter().for_each(|a| a.walk(f));
+            }
+            Expr::Slice(base, range) => {
+                base.walk(f);
+                range.start.walk(f);
+                range.end.walk(f);
+            }
+            Expr::Block(b) => b.walk_exprs(f),
+            Expr::If { cond, then_body, else_body } => {
+                cond.walk(f);
+                then_body.walk_exprs(f);
+                else_body.walk_exprs(f);
+            }
+            Expr::Array(ArrayBody::List(items)) => items.iter().for_each(|e| e.walk(f)),
+            Expr::Array(ArrayBody::Repeat(v, n)) => {
+                v.walk(f);
+                n.walk(f);
+            }
+            Expr::Array(ArrayBody::Comprehension(e, _, range)) => {
+                e.walk(f);
+                range.start.walk(f);
+                range.end.walk(f);
+            }
+            Expr::BundleLit { fields, .. } => fields.iter().for_each(|(_, e)| e.walk(f)),
+            Expr::MapLit(entries) => entries.iter().for_each(|(k, v)| {
+                k.walk(f);
+                v.walk(f);
+            }),
+        }
+    }
+
+    /// Mutable counterpart of [`Expr::walk`]: `f` may replace the node in
+    /// place; the walk then descends into the (possibly new) node's
+    /// children.
+    pub fn walk_mut(&mut self, f: &mut impl FnMut(&mut Expr) -> Walk) {
+        if f(self) == Walk::SkipChildren {
+            return;
+        }
+        match self {
+            Expr::Literal(_) | Expr::Ident(_) | Expr::Path(_) => {}
+            Expr::SysCall(_, args) | Expr::Tuple(args) => {
+                args.iter_mut().for_each(|a| a.walk_mut(f));
+            }
+            Expr::Unary(_, inner) | Expr::Cast(_, inner) | Expr::Field(inner, _) | Expr::Lambda { body: inner, .. } => {
+                inner.walk_mut(f);
+            }
+            Expr::Binary(l, _, r) | Expr::Index(l, r) => {
+                l.walk_mut(f);
+                r.walk_mut(f);
+            }
+            Expr::Call(callee, args) => {
+                callee.walk_mut(f);
+                args.iter_mut().for_each(|a| a.walk_mut(f));
+            }
+            Expr::Slice(base, range) => {
+                base.walk_mut(f);
+                range.start.walk_mut(f);
+                range.end.walk_mut(f);
+            }
+            Expr::Block(b) => b.walk_exprs_mut(f),
+            Expr::If { cond, then_body, else_body } => {
+                cond.walk_mut(f);
+                then_body.walk_exprs_mut(f);
+                else_body.walk_exprs_mut(f);
+            }
+            Expr::Array(ArrayBody::List(items)) => items.iter_mut().for_each(|e| e.walk_mut(f)),
+            Expr::Array(ArrayBody::Repeat(v, n)) => {
+                v.walk_mut(f);
+                n.walk_mut(f);
+            }
+            Expr::Array(ArrayBody::Comprehension(e, _, range)) => {
+                e.walk_mut(f);
+                range.start.walk_mut(f);
+                range.end.walk_mut(f);
+            }
+            Expr::BundleLit { fields, .. } => fields.iter_mut().for_each(|(_, e)| e.walk_mut(f)),
+            Expr::MapLit(entries) => entries.iter_mut().for_each(|(k, v)| {
+                k.walk_mut(f);
+                v.walk_mut(f);
+            }),
+        }
+    }
+
+    /// The `walk_mut` visitor implementing loop-variable substitution:
+    /// `Ident(var)` → `Literal::Int(value)`, skipping lambda bodies (their
+    /// parameters may shadow `var`; capture is not substitution).
+    pub(crate) fn subst_visitor(var: &str, value: u64) -> impl FnMut(&mut Expr) -> Walk + '_ {
+        move |e| match e {
+            Expr::Ident(name) if name == var => {
+                *e = Expr::Literal(Literal::Int(value));
+                Walk::Continue
+            }
+            Expr::Lambda { .. } => Walk::SkipChildren,
+            _ => Walk::Continue,
+        }
+    }
+
+    /// Collect every `$name(...)` system-task call reachable from this
+    /// expression (lambda bodies included — unlike `subst_const`, a syscall
+    /// inside a lambda is still reachable).
+    pub fn collect_syscalls(&self, out: &mut Vec<String>) {
+        self.walk(&mut |e| {
+            if let Expr::SysCall(name, _) = e {
+                out.push(name.clone());
+            }
+            Walk::Continue
+        });
+    }
+
     /// Substitute every `Ident(name)` matching `var` with `Literal::Int(value)`.
     /// Used during behavioral `for` unrolling to replace the loop variable
     /// with its concrete iteration value (the `for` is syntactic sugar —
     /// same as `if` const-folding, the bound must be an elaboration constant).
     pub fn subst_const(&mut self, var: &str, value: u64) {
-        match self {
-            Expr::Ident(name) if name == var => {
-                *self = Expr::Literal(Literal::Int(value));
-            }
-            Expr::Unary(_, inner) => inner.subst_const(var, value),
-            Expr::Binary(l, _, r) => {
-                l.subst_const(var, value);
-                r.subst_const(var, value);
-            }
-            Expr::Call(func, args) => {
-                func.subst_const(var, value);
-                args.iter_mut().for_each(|a| a.subst_const(var, value));
-            }
-            Expr::Cast(_, inner) => inner.subst_const(var, value),
-            Expr::Index(base, idx) => {
-                base.subst_const(var, value);
-                idx.subst_const(var, value);
-            }
-            Expr::Slice(base, range) => {
-                base.subst_const(var, value);
-                range.start.subst_const(var, value);
-                range.end.subst_const(var, value);
-            }
-            Expr::Field(base, _) => base.subst_const(var, value),
-            Expr::If { cond, then_body, else_body } => {
-                cond.subst_const(var, value);
-                then_body.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
-                if let Some(e) = &mut then_body.expr { e.subst_const(var, value); }
-                else_body.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
-                if let Some(e) = &mut else_body.expr { e.subst_const(var, value); }
-            }
-            Expr::Array(ArrayBody::List(elems)) => {
-                elems.iter_mut().for_each(|e| e.subst_const(var, value));
-            }
-            Expr::Array(ArrayBody::Repeat(v, n)) => {
-                v.subst_const(var, value);
-                n.subst_const(var, value);
-            }
-            Expr::Array(ArrayBody::Comprehension(e, _, range)) => {
-                e.subst_const(var, value);
-                range.start.subst_const(var, value);
-                range.end.subst_const(var, value);
-            }
-            Expr::SysCall(_, args) => {
-                args.iter_mut().for_each(|a| a.subst_const(var, value));
-            }
-            Expr::Block(b) => {
-                b.stmts.iter_mut().for_each(|s| s.subst_const(var, value));
-                if let Some(e) = &mut b.expr { e.subst_const(var, value); }
-            }
-            Expr::BundleLit { fields, .. } => {
-                fields.iter_mut().for_each(|(_, e)| e.subst_const(var, value));
-            }
-            Expr::Lambda { .. } => { /* don't substitute into lambda bodies */ }
-            Expr::Literal(_) | Expr::Ident(_) | Expr::Path(_) => {}
-        }
+        self.walk_mut(&mut Expr::subst_visitor(var, value));
     }
 }
 

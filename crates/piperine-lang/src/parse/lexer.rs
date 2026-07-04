@@ -175,15 +175,14 @@ impl<'a> Lexer<'a> {
             let start = self.pos;
             
             // Handle whitespace (skip spaces, emit newlines)
-            if let Some(c) = self.peek_char() {
-                if c.is_whitespace() {
+            if let Some(c) = self.peek_char()
+                && c.is_whitespace() {
                     self.advance();
                     if c == '\n' {
                         tokens.push(Lexed { tok: Tok::Newline, start, end: self.pos });
                     }
                     continue;
                 }
-            }
             
             // Handle comments
             if self.input[self.pos..].starts_with("//") {
@@ -262,7 +261,7 @@ impl<'a> Lexer<'a> {
                 '^' => Tok::BitXor,
                 '$' => {
                     let mut ident = String::new();
-                    while self.peek_char().map_or(false, |c| c.is_ascii_alphanumeric() || c == '_') {
+                    while self.peek_char().is_some_and(|c| c.is_ascii_alphanumeric() || c == '_') {
                         ident.push(self.advance().unwrap());
                     }
                     Tok::SysCall(ident)
@@ -281,7 +280,7 @@ impl<'a> Lexer<'a> {
                 c if c.is_ascii_alphabetic() || c == '_' => {
                     let mut ident = String::new();
                     ident.push(c);
-                    while self.peek_char().map_or(false, |c| c.is_ascii_alphanumeric() || c == '_') {
+                    while self.peek_char().is_some_and(|c| c.is_ascii_alphanumeric() || c == '_') {
                         ident.push(self.advance().unwrap());
                     }
                     Tok::Ident(ident)
@@ -378,7 +377,7 @@ impl<'a> Lexer<'a> {
                 let after_is_alpha = self.input[after_pos..]
                     .chars()
                     .next()
-                    .map_or(false, |c| c.is_ascii_alphanumeric() || c == '_');
+                    .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_');
                 if !after_is_alpha {
                     self.advance(); // consume the SI suffix character
                     let base: f64 = if is_real {

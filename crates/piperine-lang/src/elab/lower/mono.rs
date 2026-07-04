@@ -7,9 +7,9 @@
 use std::collections::HashMap;
 
 use crate::parse::ast::{BehaviorKind, FnDecl, FnParam, ImplDecl};
-use crate::elab::const_eval::{ConstEnv, ConstVal};
+use crate::elab::const_eval::ConstEnv;
 use crate::pom::{
-    BehaviorStmt, ElabError, ElabErrorKind, Function, ImplBlock, Module, TypeRef, ValueType,
+    BehaviorStmt, ElabError, ElabErrorKind, Function, ImplBlock, TypeRef, ValueType,
 };
 
 use super::Elaborator;
@@ -24,18 +24,20 @@ impl Elaborator {
     pub(crate) fn elab_fn(&self, fn_decl: &FnDecl) -> Result<Function, ElabError> {
         let mut env = ConstEnv::new();
 
-        let params = fn_decl
+        let (params, defaults): (Vec<(String, TypeRef)>, Vec<Option<crate::parse::ast::Expr>>) = fn_decl
             .sig
             .params
             .iter()
             .filter_map(|p| match p {
                 FnParam::SelfParam => None,
-                FnParam::Typed(name, ty) => {
+                FnParam::Typed { name, ty, default } => {
                     let resolved = self.resolve_type(ty, &env, &HashMap::new()).ok()?;
-                    Some(Ok((name.clone(), resolved)))
+                    Some(Ok(((name.clone(), resolved), default.clone())))
                 }
             })
-            .collect::<Result<Vec<_>, ElabError>>()?;
+            .collect::<Result<Vec<_>, ElabError>>()?
+            .into_iter()
+            .unzip();
 
         let ret = self
             .resolve_type(&fn_decl.sig.ret, &env, &HashMap::new())
@@ -47,7 +49,7 @@ impl Elaborator {
             .body
             .stmts
             .iter()
-            .map(|s| self.lower_stmt_to_behavior(s, BehaviorKind::Analog, &mut env))
+            .map(|s| self.lower_stmt_to_behavior(s, BehaviorKind::Analog, &mut env, &mut Default::default()))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten()
@@ -55,12 +57,12 @@ impl Elaborator {
 
         // Trailing expression becomes an implicit return.
         if let Some(expr) = &fn_decl.body.expr {
-            body.push(BehaviorStmt::Expr(*expr.clone()));
+            body.push(BehaviorStmt::Return(*expr.clone()));
         }
 
         let is_generic = !fn_decl.sig.type_params.is_empty();
 
-        Ok(Function { name: fn_decl.sig.name.clone(), params, ret, body, is_generic })
+        Ok(Function { span: None, name: fn_decl.sig.name.clone(), params, defaults, ret, body, is_generic })
     }
 
     // ─────────────────────────── Impl elaboration ─────────────────────────────
@@ -87,6 +89,7 @@ impl Elaborator {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(ImplBlock {
+            span: None,
             capability: impl_decl.capability.clone(),
             ty: impl_decl.ty.clone(),
             const_args,
@@ -121,10 +124,7 @@ impl Elaborator {
         let mut env = ConstEnv::new();
         let mut module = def.instantiate(self, const_args, &mut env, &HashMap::new())?;
         module.name = mono_name.clone();
-        
-        self.ctx.components.drain_mono_cache(); // This isn't how we insert, wait
-        // Wait, we need to insert it. But drain_mono_cache is not an insert method.
-        // Let's rely on a helper we'll add to components.rs: insert_mono_cache
+
         self.ctx.components.insert_mono_cache(mono_name.clone(), module);
 
         Ok(mono_name)

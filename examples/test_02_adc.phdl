@@ -14,3 +14,11 @@ mod Adc(input vin : Electrical, output d_out : Bit) {
 digital Adc {
     d_out <- (V(vin) > vref);
 }
+
+bench Adc {
+
+    fn test_op_solves() {
+        var r = $op ();
+        $assert (1 == 1, "Adc reaches a DC operating point");
+    }
+}

@@ -19,6 +19,38 @@ use crate::jit::CodegenError;
 
 use super::{AnalogInstance, CompiledModule, DigitalInstance, PiperineDevice};
 
+/// Everything a caller outside the solver needs to *address* a built
+/// circuit by name — the top module's net names, and each instance's
+/// compiled kernel/params/terminals for reading a device-internal quantity
+/// (e.g. a branch current) that isn't already a solver-level result. Built
+/// alongside the circuit by [`CircuitCompiler::build_circuit_mapped`];
+/// `build_circuit` discards this and is a thin wrapper over it.
+pub struct CircuitBuildInfo {
+    /// Top-module net name → solver node (`"gnd"` included, mapping to
+    /// [`NodeIdentifier::Gnd`]).
+    pub nets: HashMap<String, NodeIdentifier>,
+    /// One entry per top-level instance, in declaration order.
+    pub instances: Vec<BuiltInstanceInfo>,
+}
+
+/// A single instantiated device as built into the circuit: its compiled
+/// kernel plus everything [`crate::jit::analog::AnalogKernel::eval_residual`]
+/// needs to recompute a terminal current outside the solver's own MNA
+/// stamping (used to read `.i(a, b)` on a two-terminal device with no force
+/// row).
+pub struct BuiltInstanceInfo {
+    pub label: String,
+    pub module: String,
+    pub kernel: Arc<crate::jit::analog::AnalogKernel>,
+    pub params: Vec<f64>,
+    pub terminals: Vec<NodeIdentifier>,
+    /// Number of MNA branch-current unknowns this instance owns
+    /// (`BranchIdentifier::new(label, "force{i}")`, i < num_forces) — a
+    /// nonzero count means the current is already a solver variable and
+    /// should be read via `DcAnalysisResult::get_branch`, not recomputed.
+    pub num_forces: usize,
+}
+
 /// Compiles an [`IrProgram`] into solver circuits. Kernels are cached per
 /// module name, so instantiating a module many times compiles it once.
 pub struct CircuitCompiler<'p> {
@@ -50,6 +82,18 @@ impl<'p> CircuitCompiler<'p> {
     /// the parent's `analog`/`digital` blocks contribute to the children's
     /// port nodes (KCL accumulation — parasitic load, coupling, trim).
     pub fn build_circuit(&mut self, top: &str) -> Result<CircuitInstance, CodegenError> {
+        self.build_circuit_mapped(top).map(|(circuit, _)| circuit)
+    }
+
+    /// Like [`Self::build_circuit`], but also returns a [`CircuitBuildInfo`]
+    /// mapping the top module's net names and each instance's compiled
+    /// kernel/params/terminals — everything a caller outside the solver
+    /// (a `bench` runner) needs to read a named quantity back out of the
+    /// built circuit.
+    pub fn build_circuit_mapped(
+        &mut self,
+        top: &str,
+    ) -> Result<(CircuitInstance, CircuitBuildInfo), CodegenError> {
         let top_module = self
             .program
             .module(top)
@@ -111,11 +155,20 @@ struct InstanceBuilder<'c, 'p> {
     digital_nets: HashMap<NodeId, DigitalNet>,
     /// Fresh ids for module-internal analog nodes (top node ids come first).
     next_anon: usize,
+    build_info: CircuitBuildInfo,
 }
 
 impl<'c, 'p> InstanceBuilder<'c, 'p> {
     fn new(compiler: &'c mut CircuitCompiler<'p>, top: &'c IrModule, top_params: Vec<f64>) -> Self {
         let next_anon = top.symbols.nodes().count();
+        let nets = top
+            .symbols
+            .nodes()
+            .map(|(id, info)| {
+                let node = if id.is_ground() { NodeIdentifier::Gnd } else { NodeIdentifier::Anonymous(id.0 as usize) };
+                (info.name.clone(), node)
+            })
+            .collect();
         Self {
             compiler,
             top,
@@ -124,6 +177,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
             devices: Vec::new(),
             digital_nets: HashMap::new(),
             next_anon,
+            build_info: CircuitBuildInfo { nets, instances: Vec::new() },
         }
     }
 
@@ -171,34 +225,44 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
             .iter()
             .fold(0u64, |mask, (id, _)| mask | (1 << id.0.min(63)));
 
-        let analog = compiled
-            .analog()
-            .map(|kernel| {
-                // Terminal identifiers: connected parent nodes for ports,
-                // fresh anonymous nodes for module-internal terminals.
-                let terminals: Vec<NodeIdentifier> = kernel
-                    .terminals()
-                    .iter()
-                    .enumerate()
-                    .map(|(i, _)| match instance.connections.get(i) {
-                        Some(parent) => self.node_identifier(*parent),
-                        None => {
-                            let id = NodeIdentifier::Anonymous(self.next_anon);
-                            self.next_anon += 1;
-                            id
-                        }
-                    })
-                    .collect();
-                AnalogInstance::new(
-                    &instance.label,
-                    kernel.clone(),
-                    &terminals,
-                    params.clone(),
-                    param_given_mask,
-                    &mut self.netlist,
-                )
-            })
-            .transpose()?;
+        let analog_terminals: Option<Vec<NodeIdentifier>> = compiled.analog().map(|kernel| {
+            // Terminal identifiers: connected parent nodes for ports,
+            // fresh anonymous nodes for module-internal terminals.
+            kernel
+                .terminals()
+                .iter()
+                .enumerate()
+                .map(|(i, _)| match instance.connections.get(i) {
+                    Some(parent) => self.node_identifier(*parent),
+                    None => {
+                        let id = NodeIdentifier::Anonymous(self.next_anon);
+                        self.next_anon += 1;
+                        id
+                    }
+                })
+                .collect()
+        });
+        if let (Some(kernel), Some(terminals)) = (compiled.analog(), &analog_terminals) {
+            self.build_info.instances.push(BuiltInstanceInfo {
+                label: instance.label.clone(),
+                module: instance.module.clone(),
+                kernel: kernel.clone(),
+                params: params.clone(),
+                terminals: terminals.clone(),
+                num_forces: kernel.num_forces(),
+            });
+        }
+        let analog = match (compiled.analog(), analog_terminals) {
+            (Some(kernel), Some(terminals)) => Some(AnalogInstance::new(
+                &instance.label,
+                kernel.clone(),
+                &terminals,
+                params.clone(),
+                param_given_mask,
+                &mut self.netlist,
+            )?),
+            _ => None,
+        };
 
         let digital = compiled
             .digital()
@@ -244,9 +308,9 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
         // Comparator: `input vp : Electrical, input vn : Electrical,
         // output out : Bit`): wire the analog port terminals into the
         // netlist so the A2D bridge can read their voltages.
-        if device.analog.is_none() {
-            if let Some(digital) = device.digital() {
-                if digital.kernel().layout().num_analog() > 0 {
+        if device.analog.is_none()
+            && let Some(digital) = device.digital()
+                && digital.kernel().layout().num_analog() > 0 {
                     let mut refs = Vec::new();
                     let mut node_ids = Vec::new();
                     for (port_idx, port) in child.ports.iter().enumerate() {
@@ -260,8 +324,6 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                     }
                     device.set_analog_terminals(refs, node_ids);
                 }
-            }
-        }
 
         self.devices.push(Box::new(device));
         Ok(())
@@ -323,9 +385,9 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
         );
 
         // A2D bridge for digital-only top behavior with analog port reads.
-        if device.analog.is_none() {
-            if let Some(digital) = device.digital() {
-                if digital.kernel().layout().num_analog() > 0 {
+        if device.analog.is_none()
+            && let Some(digital) = device.digital()
+                && digital.kernel().layout().num_analog() > 0 {
                     let mut refs = Vec::new();
                     let mut node_ids = Vec::new();
                     for port in self.top.ports.iter() {
@@ -336,8 +398,6 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                     }
                     device.set_analog_terminals(refs, node_ids);
                 }
-            }
-        }
 
         self.devices.push(Box::new(device));
         Ok(())
@@ -354,10 +414,10 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
         }
     }
 
-    fn finish(self, title: &str) -> CircuitInstance {
+    fn finish(self, title: &str) -> (CircuitInstance, CircuitBuildInfo) {
         let mut circuit = CircuitInstance::from_devices_and_netlist(title, self.devices, self.netlist);
         circuit.digital_state = DigitalState::new(self.digital_nets.len());
         let _ = (self.top, self.top_params);
-        circuit
+        (circuit, self.build_info)
     }
 }

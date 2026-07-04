@@ -34,6 +34,7 @@ impl Parse for Item {
             "impl" => Ok(Item::ImplDecl(ImplDecl::parse(parser)?)),
             "fn" => Ok(Item::FnDecl(FnDecl::parse(parser)?)),
             "const" => Ok(Item::ConstDecl(ConstDecl::parse(parser)?)),
+            "bench" => Ok(Item::BenchDecl(BenchDecl::parse(parser)?)),
             _ => Err(format!("Unknown top-level item: {}", ident).into()),
         }
     }

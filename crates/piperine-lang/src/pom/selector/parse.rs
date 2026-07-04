@@ -3,12 +3,12 @@ use super::ast::*;
 use std::str::FromStr;
 
 impl FromStr for Selector {
-    type Err = String;
+    type Err = crate::pom::error::SelectorError;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         let mut chars = input.trim().chars().peekable();
         if chars.peek().is_none() {
-            return Err("Empty selector".into());
+            return Err(crate::pom::error::SelectorError::EmptySelector);
         }
 
         let mut absolute = false;
@@ -58,7 +58,7 @@ impl FromStr for Selector {
                         "load" => Axis::Load,
                         "parent" => Axis::Parent,
                         "ancestor" => Axis::Ancestor,
-                        _ => return Err(format!("Unknown axis: {}", word)),
+                        _ => return Err(crate::pom::error::SelectorError::UnknownAxis(word.to_string())),
                     };
                     word.clear();
                     while let Some(&c) = chars.peek() {
@@ -70,7 +70,7 @@ impl FromStr for Selector {
                         }
                     }
                 } else {
-                    return Err("Expected :: after axis".into());
+                    return Err(crate::pom::error::SelectorError::ExpectedDoubleColon);
                 }
             }
 
@@ -79,7 +79,7 @@ impl FromStr for Selector {
             } else if !word.is_empty() {
                 step.test = NodeTest::Name(word);
             } else {
-                return Err("Expected NodeTest".into());
+                return Err(crate::pom::error::SelectorError::ExpectedNodeTest);
             }
 
             while let Some(&c) = chars.peek() {
@@ -100,7 +100,7 @@ impl FromStr for Selector {
                         step.predicates.push(Predicate::Last);
                     } else if pred_str.starts_with('@') {
                         // Simple parser for [@attr_name == "value"]
-                        let mut tokens = pred_str.split_whitespace().collect::<Vec<_>>();
+                        let tokens = pred_str.split_whitespace().collect::<Vec<_>>();
                         if tokens.len() == 1 {
                             // Existence check: [@layout]
                             let attr = tokens[0].trim_start_matches('@').to_string();

@@ -98,6 +98,20 @@ impl FlatEvent {
     }
 }
 
+/// One `ac_stim` small-signal source extracted from a flow contribution.
+/// Zero in every analysis except AC, where it enters the RHS as
+/// `mag·e^{j·phase}` on the `(plus, minus)` branch.
+#[derive(Debug)]
+pub struct FlatAcStim {
+    pub plus: NodeId,
+    pub minus: NodeId,
+    /// Stimulus magnitude as it enters the contribution (linear scaling
+    /// and sign folded in).
+    pub mag: IrExpr,
+    /// Phase in radians.
+    pub phase: IrExpr,
+}
+
 /// The flattened analog behavior, ready for the Cranelift skeleton.
 #[derive(Debug, Default)]
 pub struct FlatAnalog {
@@ -108,10 +122,15 @@ pub struct FlatAnalog {
     pub charge: Vec<FlatContrib>,
     /// Ideal potential sources.
     pub forces: Vec<FlatForce>,
+    /// AC stimulus sources (`ac_stim`) extracted from flow contributions.
+    pub ac_stims: Vec<FlatAcStim>,
     /// `$bound_step` expressions (the device hint is their minimum).
     pub bound_steps: Vec<IrExpr>,
-    /// Resolved noise PSDs, in `body.noise` order: `(plus, minus, psd)`.
-    pub noise: Vec<(NodeId, NodeId, IrExpr)>,
+    /// Resolved noise PSDs, in `body.noise` order: `(plus, minus, psd,
+    /// exponent)`. `exponent = None` for white noise (constant PSD);
+    /// `Some(expr)` for flicker `S(f) = psd * (f_ref / f)^exp` with
+    /// `f_ref = 1` Hz and `f = SimCtx.frequency`.
+    pub noise: Vec<(NodeId, NodeId, IrExpr, Option<IrExpr>)>,
     /// Diagnostics collected (not executed) from the analog body.
     pub diagnostics: Vec<FlatDiagnostic>,
     /// Runtime-state slots (`delay`/`slew`/`idt`) the device must service,
@@ -152,7 +171,28 @@ impl<'m> Inliner<'m> {
             .symbols
             .try_fn(id)
             .ok_or_else(|| CodegenError::Function(format!("dangling fn #{}", id.0)))?;
-        if function.params.len() != args.len() {
+        // Fill missing trailing arguments from the function's default
+        // expressions (the language spec Part I §9.1). Defaults are elaboration
+        // constants, already lowered to constant `IrExpr`s at `convert_fn`.
+        let args = if args.len() < function.params.len() {
+            let mut full = args;
+            for i in full.len()..function.params.len() {
+                match function.defaults.get(i).and_then(|d| d.as_ref()) {
+                    Some(default) => full.push(default.clone()),
+                    None => {
+                        self.depth -= 1;
+                        return Err(CodegenError::Function(format!(
+                            "`{}` expects {} args, got {} (missing arg #{} has no default)",
+                            function.name,
+                            function.params.len(),
+                            full.len(),
+                            i + 1
+                        )));
+                    }
+                }
+            }
+            full
+        } else if args.len() > function.params.len() {
             self.depth -= 1;
             return Err(CodegenError::Function(format!(
                 "`{}` expects {} args, got {}",
@@ -160,7 +200,9 @@ impl<'m> Inliner<'m> {
                 function.params.len(),
                 args.len()
             )));
-        }
+        } else {
+            args
+        };
 
         let mut scope = Scope::new();
         for (&param, arg) in function.params.iter().zip(args) {
@@ -430,14 +472,25 @@ impl<'m> AnalogFlattener<'m> {
         }
 
         // Noise PSDs resolve against the final variable environment.
+        // The flicker exponent is preserved alongside
+        // the PSD — formerly dropped (`Flicker { psd, .. }`).
         for source in &body.noise {
-            let psd = match &source.kind {
-                crate::ir::IrNoise::White { psd } => psd.clone(),
-                crate::ir::IrNoise::Flicker { psd, .. } => psd.clone(),
+            let (psd_src, exponent_src) = match &source.kind {
+                crate::ir::IrNoise::White { psd } => (psd.clone(), None),
+                crate::ir::IrNoise::Flicker { psd, exponent } => {
+                    (psd.clone(), Some(exponent.clone()))
+                }
             };
-            let psd = resolve_expr(&psd, &self.scope, &mut self.inliner)?;
+            let psd = resolve_expr(&psd_src, &self.scope, &mut self.inliner)?;
             let psd = self.finish_expr(psd)?;
-            self.out.noise.push((source.plus, source.minus, psd));
+            let exponent = match exponent_src {
+                Some(e) => {
+                    let e = resolve_expr(&e, &self.scope, &mut self.inliner)?;
+                    Some(self.finish_expr(e)?)
+                }
+                None => None,
+            };
+            self.out.noise.push((source.plus, source.minus, psd, exponent));
         }
         Ok(self.out)
     }
@@ -708,6 +761,7 @@ impl<'m> AnalogFlattener<'m> {
         minus: NodeId,
         _declared: ContribKind,
     ) -> Result<(), CodegenError> {
+        let expr = self.extract_ac_stim(expr, plus, minus)?;
         let has_ddt = expr
             .find_state(&|id| matches!(self.module.symbols.state(id).kind, IrStateKind::Ddt))
             .is_some();
@@ -727,6 +781,50 @@ impl<'m> AnalogFlattener<'m> {
         let resistive = self.finish_expr(resistive)?;
         self.out.resistive.push(FlatContrib { plus, minus, expr: resistive });
         Ok(())
+    }
+
+    /// Pull any `ac_stim` out of a flow contribution: the residual keeps
+    /// `expr[ac_stim → 0]` ("zero outside AC analysis", SPEC Part VI) and
+    /// the AC stimulus row is `expr[ac_stim → mag] − expr[ac_stim → 0]`,
+    /// so linear scaling and sign fold into the magnitude.
+    fn extract_ac_stim(
+        &mut self,
+        expr: IrExpr,
+        plus: NodeId,
+        minus: NodeId,
+    ) -> Result<IrExpr, CodegenError> {
+        let mut count = 0usize;
+        let mut phase_expr = None;
+        expr.visit(&mut |e| {
+            if let IrExpr::AcStim { phase, .. } = e {
+                count += 1;
+                phase_expr = Some(phase.as_ref().clone());
+            }
+        });
+        if count == 0 {
+            return Ok(expr);
+        }
+        if count > 1 {
+            return Err(CodegenError::unsupported(
+                "multiple `ac_stim` calls in one contribution",
+            ));
+        }
+
+        let substitute = |with_mag: bool| {
+            expr.rewrite(&mut |e| match e {
+                IrExpr::AcStim { mag, .. } => {
+                    if with_mag { *mag } else { IrExpr::Real(0.0) }
+                }
+                other => other,
+            })
+        };
+        let with_mag = substitute(true);
+        let without = substitute(false);
+        let mag = IrExpr::binary(crate::ir::IrBinOp::Sub, with_mag, without.clone());
+        let mag = self.finish_expr(mag)?;
+        let phase = self.finish_expr(phase_expr.expect("count == 1"))?;
+        self.out.ac_stims.push(FlatAcStim { plus, minus, mag, phase });
+        Ok(without)
     }
 
     /// Replace `ddt` `State(id)` reads with the operator's input (`arg`) or

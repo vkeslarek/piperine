@@ -74,7 +74,7 @@ impl<'a> TransferFunctionSolver<'a> {
             .ok_or_else(|| {
                 crate::error::Error::simple(
                     "TF",
-                    &format!(
+                    format!(
                         "Input source branch '{}' not found",
                         options.input_source.component
                     ),

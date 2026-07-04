@@ -1,14 +1,13 @@
 [workspace]
 members = [
+    "crates/piperine-bench",
+    "crates/piperine-ir",
     "crates/piperine-cli",
     "crates/piperine-codegen",
     "crates/piperine-lang",
     "crates/piperine-project",
     "crates/piperine-lang-server",
     "crates/piperine-solver",
-]
-exclude = [
-    "crates/piperine-ams",
 ]
 
 [workspace.package]
@@ -62,4 +61,3 @@ rand_distr = "0.5.1"
 paste = "1.0.15"
 libloading = "0.8"
 tempfile = "3"
-ipc-channel = "0.22"

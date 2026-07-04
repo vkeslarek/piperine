@@ -138,55 +138,40 @@ fn check_module(
     for inst in module.instances() {
         if let Some(child) = design.modules.get(inst.module_name()) {
             for (i, p) in child.ports().iter().enumerate() {
-                if p.direction() == &crate::parse::ast::Direction::Output || p.direction() == &crate::parse::ast::Direction::Inout {
-                    if let Some(net_ref) = inst.ports().get(i) {
+                if (p.direction() == &crate::parse::ast::Direction::Output || p.direction() == &crate::parse::ast::Direction::Inout)
+                    && let Some(net_ref) = inst.ports().get(i) {
                         add_driver(net_ref.to_string());
                     }
-                }
             }
         }
     }
 
     // 3. Forces and assigns in behaviors drive nets
     use crate::pom::behavior::BehaviorStmt;
-    fn visit_behavior(stmts: &[BehaviorStmt], add_driver: &mut dyn FnMut(String)) {
-        for stmt in stmts {
-            match stmt {
-                BehaviorStmt::Bind { dest, op, .. } => {
-                    if op == &crate::parse::ast::BindOp::Force || op == &crate::parse::ast::BindOp::Assign {
-                        // Extract base name from Expr if possible
-                        if let crate::parse::ast::Expr::Ident(name) = dest {
-                            add_driver(name.clone());
-                        } else if let crate::parse::ast::Expr::Index(base, _) = dest {
-                            if let crate::parse::ast::Expr::Ident(name) = &**base {
-                                // We simplify and just use the base name for now, or we could try to format it
-                                add_driver(name.clone());
-                            }
-                        } else if let crate::parse::ast::Expr::Field(base, field) = dest {
-                            if let crate::parse::ast::Expr::Ident(name) = &**base {
-                                add_driver(format!("{}_{}", name, field));
-                            }
-                        }
-                    }
-                }
-                BehaviorStmt::If { then_body, else_body, .. } => {
-                    visit_behavior(then_body, add_driver);
-                    if let Some(eb) = else_body {
-                        visit_behavior(eb, add_driver);
-                    }
-                }
-                BehaviorStmt::Match { arms, .. } => {
-                    for arm in arms {
-                        visit_behavior(arm.body(), add_driver);
-                    }
-                }
-                BehaviorStmt::Event { body, .. } => visit_behavior(body, add_driver),
-                _ => {}
-            }
-        }
-    }
     for behavior in module.behaviors() {
-        visit_behavior(behavior.body(), &mut add_driver);
+        let mut visit = |stmt: &BehaviorStmt| {
+            if let BehaviorStmt::Bind { dest, op, .. } = stmt {
+                if op == &crate::parse::ast::BindOp::Force || op == &crate::parse::ast::BindOp::Assign {
+                    // Extract base name from Expr if possible
+                    if let crate::parse::ast::Expr::Ident(name) = dest {
+                        add_driver(name.clone());
+                    } else if let crate::parse::ast::Expr::Index(base, _) = dest {
+                        if let crate::parse::ast::Expr::Ident(name) = &**base {
+                            // We simplify and just use the base name for now, or we could try to format it
+                            add_driver(name.clone());
+                        }
+                    } else if let crate::parse::ast::Expr::Field(base, field) = dest
+                        && let crate::parse::ast::Expr::Ident(name) = &**base {
+                            add_driver(format!("{}_{}", name, field));
+                        }
+                }
+            }
+        };
+        // `walk_stmts` is pre-order and includes the root — no separate
+        // root visit, or every driver double-counts.
+        for stmt in behavior.body() {
+            stmt.walk_stmts(&mut visit);
+        }
     }
 
     for (root, count) in drivers {
@@ -273,7 +258,7 @@ mod tests {
     fn scalar(name: &str) -> crate::pom::Module {
         crate::pom::Module::new(
             "T".into(),
-            vec![crate::pom::module::Port { attributes: vec![],
+            vec![crate::pom::module::Port { span: None, attributes: vec![],
                 direction: crate::parse::ast::Direction::Inout,
                 name: "p".into(),
                 ty: ty(name),
@@ -289,23 +274,23 @@ mod tests {
     #[test]
     fn width_mismatch_on_named_connection_is_caught() {
                 let mut prog = crate::pom::Design::new();
-        let bad = scalar("Bit");
+        let _bad = scalar("Bit");
         // Override port width via a fake module — we keep it scalar here
         // and rely on the width mismatch coming from the second conn
         // entry's index difference.
         let bad_mod = crate::pom::Module::new(
             "T".into(),
-            vec![crate::pom::module::Port { attributes: vec![],
+            vec![crate::pom::module::Port { span: None, attributes: vec![],
                 direction: crate::parse::ast::Direction::Inout,
                 name: "p".into(),
                 ty: NetType::Array(Box::new(ty("Bit")), 8),
             }],
             vec![],
             vec![
-                crate::pom::module::Wire { attributes: vec![], name: "w".into(), ty: NetType::Array(Box::new(ty("Bit")), 4) },
+                crate::pom::module::Wire { span: None, attributes: vec![], name: "w".into(), ty: NetType::Array(Box::new(ty("Bit")), 4) },
             ],
             vec![],
-            vec![crate::pom::module::Connection {
+            vec![crate::pom::module::Connection { span: None,
                 lhs: crate::pom::net_type::NetRef::simple("p"),
                 rhs: crate::pom::net_type::NetRef::simple("w"),
             }],
@@ -325,11 +310,11 @@ mod tests {
             vec![],
             vec![],
             vec![
-                crate::pom::module::Wire { attributes: vec![], name: "a".into(), ty: NetType::Array(Box::new(ty("Bit")), 8) },
-                crate::pom::module::Wire { attributes: vec![], name: "b".into(), ty: NetType::Array(Box::new(ty("Bit")), 4) },
+                crate::pom::module::Wire { span: None, attributes: vec![], name: "a".into(), ty: NetType::Array(Box::new(ty("Bit")), 8) },
+                crate::pom::module::Wire { span: None, attributes: vec![], name: "b".into(), ty: NetType::Array(Box::new(ty("Bit")), 4) },
             ],
             vec![],
-            vec![crate::pom::module::Connection {
+            vec![crate::pom::module::Connection { span: None,
                 lhs: crate::pom::net_type::NetRef::simple("a"),
                 rhs: crate::pom::net_type::NetRef::simple("b"),
             }],
@@ -348,12 +333,12 @@ mod tests {
         let bad_mod = crate::pom::Module::new(
             "T".into(),
             vec![
-                crate::pom::module::Port { attributes: vec![],
+                crate::pom::module::Port { span: None, attributes: vec![],
                     direction: crate::parse::ast::Direction::Inout,
                     name: "e".into(),
                     ty: ty("Electrical"),
                 },
-                crate::pom::module::Port { attributes: vec![],
+                crate::pom::module::Port { span: None, attributes: vec![],
                     direction: crate::parse::ast::Direction::Inout,
                     name: "t".into(),
                     ty: ty("Thermal"),
@@ -362,7 +347,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
-            vec![crate::pom::module::Connection {
+            vec![crate::pom::module::Connection { span: None,
                 lhs: crate::pom::net_type::NetRef::simple("e"),
                 rhs: crate::pom::net_type::NetRef::simple("t"),
             }],
@@ -382,11 +367,11 @@ mod tests {
             vec![],
             vec![],
             vec![
-                crate::pom::module::Wire { attributes: vec![], name: "a".into(), ty: ty("Electrical") },
-                crate::pom::module::Wire { attributes: vec![], name: "b".into(), ty: ty("Electrical") },
+                crate::pom::module::Wire { span: None, attributes: vec![], name: "a".into(), ty: ty("Electrical") },
+                crate::pom::module::Wire { span: None, attributes: vec![], name: "b".into(), ty: ty("Electrical") },
             ],
             vec![],
-            vec![crate::pom::module::Connection {
+            vec![crate::pom::module::Connection { span: None,
                 lhs: crate::pom::net_type::NetRef::simple("a"),
                 rhs: crate::pom::net_type::NetRef::simple("b"),
             }],
@@ -405,15 +390,15 @@ mod tests {
             vec![],
             vec![],
             vec![
-                crate::pom::module::Wire { attributes: vec![], name: "w".into(), ty: ty("Bit") },
+                crate::pom::module::Wire { span: None, attributes: vec![], name: "w".into(), ty: ty("Bit") },
             ],
             vec![
-                crate::pom::Instance { attributes: vec![], label: Some("u1".into()),
+                crate::pom::Instance { span: None, attributes: vec![], label: Some("u1".into()),
                     module: "Driver".into(),
                     ports: vec![crate::pom::net_type::NetRef::simple("w")],
                     params: vec![],
                 },
-                crate::pom::Instance { attributes: vec![], label: Some("u2".into()),
+                crate::pom::Instance { span: None, attributes: vec![], label: Some("u2".into()),
                     module: "Driver".into(),
                     ports: vec![crate::pom::net_type::NetRef::simple("w")],
                     params: vec![],
@@ -425,7 +410,7 @@ mod tests {
         let driver_mod = crate::pom::Module::new(
             "Driver".into(),
             vec![
-                crate::pom::module::Port { attributes: vec![],
+                crate::pom::module::Port { span: None, attributes: vec![],
                     direction: crate::parse::ast::Direction::Output,
                     name: "o".into(),
                     ty: ty("Bit"),
@@ -483,27 +468,43 @@ fn check_behavior(
         locals.insert(name.clone(), discipline_value_type(net_ty.discipline_name(), design));
     }
     
+    // Check each root statement, then recurse into its children via walk_stmts.
     for stmt in &behavior.body {
-        check_behavior_stmt(stmt, module, behavior, &mut locals)?;
+        // `walk_stmts` is pre-order and includes the root.
+        let mut err: Option<ElabError> = None;
+        stmt.walk_stmts(&mut |s| {
+            if err.is_none() {
+                if let Err(e) = check_one_stmt(s, module, behavior, &mut locals) {
+                    err = Some(e);
+                }
+            }
+        });
+        if let Some(e) = err { return Err(e); }
     }
     Ok(())
 }
 
-fn check_behavior_stmt(
+/// Check a single statement node (no recursion into children).
+fn check_one_stmt(
     stmt: &BehaviorStmt,
     module: &DesignModule,
     behavior: &Behavior,
     locals: &mut std::collections::HashMap<String, ValueType>,
 ) -> Result<(), ElabError> {
     match stmt {
-        BehaviorStmt::VarDecl { name, ty, .. } => {
-            locals.insert(name.clone(), ty.clone());
+        BehaviorStmt::VarDecl { name, .. } => {
+            // Resolved type lives in the behavior's side table
+            // (SIMPLIFICATION.md P3) — the statement keeps its surface
+            // (unresolved) annotation.
+            if let Some(vt) = behavior.var_types.get(name) {
+                locals.insert(name.clone(), vt.clone());
+            }
         }
         BehaviorStmt::Bind { dest, src, .. } => {
             let dest_ty = type_of_expr(dest, locals);
             let src_ty = type_of_expr(src, locals);
-            if let (Some(d), Some(s)) = (dest_ty, src_ty) {
-                if d != s {
+            if let (Some(d), Some(s)) = (dest_ty, src_ty)
+                && d != s {
                     // Implicit widenings (SPEC §4/§6.1): `Boolean` widens to
                     // `Quad`; the integer literals `0`/`1` are also Boolean/
                     // Quad/Natural literals, so integer-typed sources may
@@ -517,38 +518,13 @@ fn check_behavior_stmt(
                             | (ValueType::Boolean, ValueType::Natural)
                             | (ValueType::Quad, ValueType::Natural)
                     );
-                    if widening_ok {
-                        // Allowed
-                    } else {
+                    if !widening_ok {
                         return Err(ElabError::from(ElabErrorKind::Other(format!(
                             "typecheck ({}::{}): implicit cast from {:?} to {:?} not allowed. Use an explicit cast.",
                             module.name(), behavior.name, s, d
                         ))));
                     }
                 }
-            }
-        }
-        BehaviorStmt::If { then_body, else_body, .. } => {
-            for s in then_body {
-                check_behavior_stmt(s, module, behavior, locals)?;
-            }
-            if let Some(eb) = else_body {
-                for s in eb {
-                    check_behavior_stmt(s, module, behavior, locals)?;
-                }
-            }
-        }
-        BehaviorStmt::Match { arms, .. } => {
-            for arm in arms {
-                for s in arm.body() {
-                    check_behavior_stmt(s, module, behavior, locals)?;
-                }
-            }
-        }
-        BehaviorStmt::Event { body, .. } => {
-            for s in body {
-                check_behavior_stmt(s, module, behavior, locals)?;
-            }
         }
         _ => {}
     }

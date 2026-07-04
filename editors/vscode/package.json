@@ -1,0 +1,81 @@
+{
+    "name": "piperine",
+    "displayName": "Piperine PHDL",
+    "description": "PHDL language support and language server integration",
+    "version": "0.1.0",
+    "publisher": "piperine-lang",
+    "categories": ["Programming Languages"],
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "activationEvents": [
+        "onLanguage:phdl"
+    ],
+    "main": "./extension.js",
+    "scripts": {
+        "package": "vsce package",
+        "vscode:prepublish": "npm install"
+    },
+    "contributes": {
+        "languages": [
+            {
+                "id": "phdl",
+                "aliases": ["PHDL", "phdl"],
+                "extensions": [".phdl", ".ppr"],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "snippets": [
+            {
+                "language": "phdl",
+                "path": "./snippets/phdl.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "phdl",
+                "scopeName": "source.phdl",
+                "path": "./syntaxes/phdl.tmLanguage.json"
+            }
+        ],
+        "configuration": {
+            "title": "Piperine Language Server",
+            "properties": {
+                "phdl.server.path": {
+                    "type": "string",
+                    "default": "piperine-lang-server",
+                    "description": "Path to the piperine-lang-server binary"
+                },
+                "phdl.cli.path": {
+                    "type": "string",
+                    "default": "piperine",
+                    "description": "Path to the piperine CLI binary (used for bench runner)"
+                },
+                "phdl.trace.server": {
+                    "type": "string",
+                    "enum": ["off", "messages", "verbose"],
+                    "default": "off",
+                    "description": "Trace the communication between VS Code and the language server."
+                }
+            }
+        },
+        "commands": [
+            {
+                "command": "piperine.restartServer",
+                "title": "Piperine: Restart Language Server",
+                "category": "Piperine"
+            },
+            {
+                "command": "piperine.test",
+                "title": "Piperine: Run Bench",
+                "category": "Piperine"
+            }
+        ]
+    },
+    "dependencies": {
+        "vscode-languageclient": "^9.0.0"
+    },
+    "devDependencies": {
+        "@vscode/vsce": "^2.31.1"
+    }
+}

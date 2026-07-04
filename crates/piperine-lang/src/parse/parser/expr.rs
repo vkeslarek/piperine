@@ -144,9 +144,25 @@ impl<'a> Parser<'a> {
             }
             Some(Tok::LParen) => {
                 self.pos += 1;
-                let e = self.parse_expr()?;
-                self.expect(&Tok::RParen)?;
-                e
+                if self.eat(&Tok::RParen) {
+                    Expr::Tuple(vec![])
+                } else {
+                    let first = self.parse_expr()?;
+                    if self.eat(&Tok::Comma) {
+                        let mut items = vec![first];
+                        while !self.eat(&Tok::RParen) {
+                            items.push(self.parse_expr()?);
+                            if !self.eat(&Tok::Comma) {
+                                self.expect(&Tok::RParen)?;
+                                break;
+                            }
+                        }
+                        Expr::Tuple(items)
+                    } else {
+                        self.expect(&Tok::RParen)?;
+                        first
+                    }
+                }
             }
             Some(Tok::LBrace) => Expr::Block(self.parse_block()?),
             Some(Tok::Not) => {
@@ -233,9 +249,36 @@ impl<'a> Parser<'a> {
             }
         }
 
+        // Map literal: `Map { k: v, ... }` or `Map {}` (piperine-bench/docs/SPEC.md §5.1).
+        // Disambiguated from a bundle literal by the `Map` type name and the
+        // `k: v` (colon) entry syntax.
+        if let Expr::Ident(name) = &expr {
+            if name == "Map" && self.peek() == Some(&Tok::LBrace) {
+                self.eat(&Tok::LBrace);
+                let mut entries = Vec::new();
+                if !self.eat(&Tok::RBrace) {
+                    let k = self.parse_expr()?;
+                    self.expect(&Tok::Colon)?;
+                    let v = self.parse_expr()?;
+                    entries.push((k, v));
+                    while self.eat(&Tok::Comma) {
+                        if self.peek() == Some(&Tok::RBrace) {
+                            break;
+                        }
+                        let k = self.parse_expr()?;
+                        self.expect(&Tok::Colon)?;
+                        let v = self.parse_expr()?;
+                        entries.push((k, v));
+                    }
+                    self.expect(&Tok::RBrace)?;
+                }
+                expr = Expr::MapLit(entries);
+            }
+        }
+
         // BundleLit: `TypeRef { .field = expr, ... }` — look-ahead on `{ .` or `{ }`.
-        if self.peek() == Some(&Tok::LBrace) {
-            if self.peek_at(1) == Some(&Tok::Dot) || self.peek_at(1) == Some(&Tok::RBrace) {
+        if self.peek() == Some(&Tok::LBrace)
+            && (self.peek_at(1) == Some(&Tok::Dot) || self.peek_at(1) == Some(&Tok::RBrace)) {
                 self.eat(&Tok::LBrace);
                 let mut fields = Vec::new();
                 if !self.eat(&Tok::RBrace) {
@@ -270,7 +313,6 @@ impl<'a> Parser<'a> {
                 };
                 expr = Expr::BundleLit { ty: Type { name: type_name, args: vec![], dimensions: dims }, fields };
             }
-        }
 
         Ok(expr)
     }
@@ -278,6 +320,10 @@ impl<'a> Parser<'a> {
     /// Parses the `[...]` body of an array expression after the leading `[` has been consumed.
     /// Detects whether it is a repeat (`[v; N]`), comprehension (`[expr | i in range]`), or element list.
     pub(crate) fn parse_array_expr(&mut self) -> Result<Expr, crate::parse::error::ParseError> {
+        // `[]` — the empty list (bench spec §12.4 `var curve : Vec<…> = [];`).
+        if self.eat(&Tok::RBrack) {
+            return Ok(Expr::Array(ArrayBody::List(vec![])));
+        }
         // Lookahead: detect comprehension `[ expr | var in range ]`.
         let mut is_comp = false;
         let mut brace_depth: i32 = 0;
@@ -296,13 +342,11 @@ impl<'a> Parser<'a> {
                 Tok::BitOr
                     if brace_depth == 0 && paren_depth == 0 && brack_depth == 0 =>
                 {
-                    if i + 2 < self.toks.len() {
-                        if let Tok::Ident(kw) = &self.toks[i + 2].tok {
-                            if kw == "in" {
+                    if i + 2 < self.toks.len()
+                        && let Tok::Ident(kw) = &self.toks[i + 2].tok
+                            && kw == "in" {
                                 is_comp = true;
                             }
-                        }
-                    }
                     break;
                 }
                 _ => {}

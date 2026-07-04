@@ -10,3 +10,11 @@ mod Resistor(inout p : Electrical, inout n : Electrical) {
 analog Resistor {
     I(p, n) <+ V(p, n) / r;
 }
+
+bench Resistor {
+
+    fn test_floating_resistor_rests_near_ground() {
+        var r = $op ();
+        $assert (r.v(p, n) < 1e-6, "no source: p and n should both settle near 0V");
+    }
+}

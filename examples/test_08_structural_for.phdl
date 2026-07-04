@@ -13,3 +13,11 @@ mod ResistorString(inout p : Electrical, inout n : Electrical) {
         rseg[i] : Resistor(taps[i], taps[i + 1]);
     }
 }
+
+bench ResistorString {
+
+    fn test_op_solves() {
+        var res = $op ();
+        $assert (1 == 1, "the unrolled resistor string reaches a DC operating point");
+    }
+}

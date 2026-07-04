@@ -23,3 +23,8 @@ target
 /ngspice/
 crates/piperine-parser/tests/fixtures/*
 crates/piperine-parser/tests/fixtures_fmt/*
+
+# VS Code extension build artifacts
+editors/vscode/bin/
+editors/vscode/*.vsix
+editors/vscode/node_modules/

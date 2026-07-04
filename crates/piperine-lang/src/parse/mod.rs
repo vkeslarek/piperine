@@ -71,12 +71,25 @@ pub fn predict_at_cursor(input: &str, cursor_offset: usize) -> Vec<predict::Expe
     parser.expectations
 }
 
-#[test]
-fn test_predict_at_cursor_mod_body() {
-    let source = "mod Res2 (inout p: Electrical, inout n: Electrical) {\n    \n}";
-    // offset 58 is right after the spaces on the second line
-    let expectations = predict_at_cursor(source, 58);
-    println!("EXPECTATIONS: {:#?}", expectations);
-    assert!(!expectations.is_empty(), "Should not be empty!");
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
+    #[test]
+    fn test_predict_at_cursor_mod_body() {
+        let source = "mod Res2 (inout p: Electrical, inout n: Electrical) {\n    \n}";
+        // offset 58 is right after the spaces on the second line
+        let expectations = predict_at_cursor(source, 58);
+        println!("EXPECTATIONS: {:#?}", expectations);
+        assert!(!expectations.is_empty(), "Should not be empty!");
+    }
+
+    #[test]
+    fn test_port_prediction() {
+        let source = "mod Res2 ( )";
+        // offset 10 is inside ( )
+        let cursor = 10;
+        let expected = predict_at_cursor(source, cursor);
+        println!("EXPECTATIONS 10: {:#?}", expected);
+    }
+}

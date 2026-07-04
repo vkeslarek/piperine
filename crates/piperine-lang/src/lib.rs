@@ -26,11 +26,12 @@
 //! ## Quick start
 //!
 //! ```rust
+//! let mut sm = piperine_lang::SourceMap::new(std::path::PathBuf::from("."));
 //! let design = piperine_lang::parse_and_elaborate(
 //!     "discipline Electrical { potential v: Real; flow i: Real; }
-//!      mod Resistor (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }"
-//! )?;
-//! # Ok::<(), String>(())
+//!      mod Resistor (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }",
+//!      &mut sm
+//! ).unwrap();
 //! ```
 //!
 //! ## Module organisation
@@ -45,16 +46,18 @@
 //! | [`resolve`] | `use` declaration resolver |
 
 pub mod elab;
+pub mod eval;
 pub mod lowering;
 pub mod parse;
 pub mod pom;
 pub mod resolve;
+pub mod value;
 pub mod source_map;
 
 // ── POM types ────────────────────────────────────────────────────────────
 pub use pom::{
     ElabError,
-    Behavior, BehaviorStmt, Connection, Design, Function, ImplBlock,
+    Behavior, BehaviorStmt, BenchBlock, Connection, Design, Function, ImplBlock,
     Instance, MatchArm, Module, NetRef, NetType, Param, Port, TypeRef,
     ValueType, Wire,
     Id, Kind, Kinded, Named, NetTyped, OverrideMap, ReflectError, Selection, Value,
@@ -64,7 +67,7 @@ pub use resolve::{ResolveError, Resolver};
 pub use source_map::SourceMap;
 
 // ── IR lowering + runtime ─────────────────────────────────────────────────
-pub use lowering::ppr_to_ir;
+pub use lowering::{ppr_to_ir, LowerError, LowerErrors};
 
 /// Parse a PHDL source string and run the full elaboration pipeline.
 pub fn parse_and_elaborate(input: &str, source_map: &SourceMap) -> Result<Design, miette::Report> {

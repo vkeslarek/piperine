@@ -1,0 +1,68 @@
+{
+    "Module": {
+        "prefix": "mod",
+        "body": [
+            "mod ${1:Name} {",
+            "    ${2}",
+            "}"
+        ],
+        "description": "Create a new module"
+    },
+    "Analog Block": {
+        "prefix": "analog",
+        "body": [
+            "analog ${1:BehaviorName} {",
+            "    ${2}",
+            "}"
+        ],
+        "description": "Create an analog behavior block"
+    },
+    "Digital Block": {
+        "prefix": "digital",
+        "body": [
+            "digital ${1:BehaviorName} {",
+            "    ${2}",
+            "}"
+        ],
+        "description": "Create a digital behavior block"
+    },
+    "Bench Block": {
+        "prefix": "bench",
+        "body": [
+            "bench ${1:BenchName} {",
+            "    fn ${2:main}() {",
+            "        let cfg = TranConfig { .stop = 10u };",
+            "        let r = \\$tran(cfg);",
+            "        \\$assert(r.at(10u) > 0.0);",
+            "    }",
+            "}"
+        ],
+        "description": "Create a benchmark block with an entry function"
+    },
+    "Discipline": {
+        "prefix": "discipline",
+        "body": [
+            "discipline ${1:Name} {",
+            "    .potential = ${2:Voltage};",
+            "    .flow = ${3:Current};",
+            "}"
+        ],
+        "description": "Define a new discipline"
+    },
+    "Instance": {
+        "prefix": "inst",
+        "body": [
+            "${1:label} : ${2:Mod}(${3:ports}) { .${4:param} = ${5:value} };"
+        ],
+        "description": "Instantiate a module with ports and parameters"
+    },
+    "For loop (sweep)": {
+        "prefix": "for",
+        "body": [
+            "for ${1:val} in ${2:start}..${3:end} {",
+            "    ${4}",
+            "}"
+        ],
+        "description": "For loop (useful for sweep staging)"
+    }
+}

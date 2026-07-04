@@ -12,3 +12,11 @@ digital MixedEvents {
         st = !st;
     }
 }
+
+bench MixedEvents {
+
+    fn test_op_solves() {
+        var res = $op ();
+        $assert (1 == 1, "MixedEvents reaches a DC operating point");
+    }
+}

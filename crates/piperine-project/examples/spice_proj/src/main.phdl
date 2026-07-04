@@ -1,0 +1,24 @@
+use spice::sources;
+use spice::passives;
+
+mod simple_circuit () {
+    wire p : Electrical;
+    wire n : Ground;
+
+    // VSource from p to n
+    v1 : vsrc ( .p = p, .n = n ) {
+        .dc = 5.0
+    };
+
+    // Resistor from p to n
+    r1 : res ( .p = p, .n = n ) {
+        .r = 1000.0
+    };
+}
+
+bench simple_circuit {
+    fn dc_test() {
+        var r = $op();
+        $info("Circuit solved!");
+    }
+}

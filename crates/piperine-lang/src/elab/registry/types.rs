@@ -1,5 +1,5 @@
 use crate::parse::ast::{DisciplineDecl, EnumDecl, BundleDecl, Type as AstType};
-use crate::pom::{TypeRef, ValueType, NetType, ElabError, ElabErrorKind};
+use crate::pom::{TypeRef, ElabError};
 use crate::elab::const_eval::ConstEnv;
 use std::collections::HashMap;
 
@@ -13,6 +13,12 @@ pub trait TypeDef: Send + Sync {
 
 pub struct TypeRegistry {
     types: HashMap<String, Box<dyn TypeDef>>,
+}
+
+impl Default for TypeRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TypeRegistry {

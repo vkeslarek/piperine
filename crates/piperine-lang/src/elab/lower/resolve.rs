@@ -220,6 +220,7 @@ impl Elaborator {
             for field in &bundle.fields {
                 let field_ty = self.resolve_net_type(&field.ty, env, type_subst)?;
                 out.push(Port {
+                    span: None,
                     attributes: Vec::new(),
                     direction: port.direction.clone(),
                     name: format!("{}_{}", port.name, field.name),
@@ -231,6 +232,7 @@ impl Elaborator {
 
         let net_ty = self.resolve_net_type(&port.ty, env, type_subst)?;
         Ok(vec![Port {
+            span: None,
             attributes: Vec::new(),
             direction: port.direction.clone(),
             name: port.name.clone(),

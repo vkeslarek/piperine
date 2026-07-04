@@ -1,0 +1,6 @@
+[project]
+name = "piperine-examples"
+version = "0.1.0"
+authors = ["Keslarek"]
+edition = "2024"
+

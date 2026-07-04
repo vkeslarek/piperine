@@ -1,9 +1,0 @@
-adc_func.c
-adc_DcFuncDerLoad.c
-adc_DcFuncLoad.c
-adc_TranFuncDerLoad.c
-adc_TranFuncLoad.c
-adc_NoiseLoadBiasDep.c
-adc_OpPointCalc.c
-adc_PseudoTranFuncDerLoad.c
-adc_PseudoTranFuncLoad.c

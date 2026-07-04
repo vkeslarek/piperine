@@ -28,16 +28,21 @@ pub enum Commands {
         /// The file to build
         file: Option<String>,
     },
-    /// Run a simulation
+    /// Run a simulation explicitly
     Run {
-        /// The file to run
+        /// The entry point to run (e.g. `module::fn`)
+        entry: Option<String>,
+        /// The file containing the entry point (defaults to src/main.phdl)
+        #[arg(long, short)]
         file: Option<String>,
     },
-    /// Run automated testbenches
+    /// Run `bench` entry points (piperine-bench/docs/SPEC.md)
     Test {
-        /// Directory containing tests
-        #[arg(default_value = "tests")]
-        dir: String,
+        /// List all available bench entry points instead of running them
+        #[arg(long, short)]
+        list: bool,
+        /// The file to test; defaults to every `.phdl` under `src/`
+        file: Option<String>,
     },
     /// Create a new piperine project
     New {
@@ -46,6 +51,33 @@ pub enum Commands {
     },
     /// Clean build artifacts
     Clean,
+    /// Add a new dependency to Piperine.toml
+    Add {
+        /// Name of the package
+        name: String,
+        /// Git URL
+        #[arg(long)]
+        git: Option<String>,
+        /// Version mapping (maps to release/v<version>)
+        #[arg(long)]
+        version: Option<String>,
+        /// Specific git branch
+        #[arg(long)]
+        branch: Option<String>,
+        /// Specific git revision
+        #[arg(long)]
+        rev: Option<String>,
+        /// Local path
+        #[arg(long)]
+        path: Option<String>,
+    },
+    /// Remove a dependency from Piperine.toml
+    Remove {
+        /// Name of the package
+        name: String,
+    },
+    /// Display dependency tree
+    Tree,
 }
 
 pub fn execute() {
@@ -61,17 +93,33 @@ pub fn execute() {
         Commands::Build { file } => {
             commands::build::execute(file);
         }
-        Commands::Run { file } => {
-            commands::run::execute(file);
+        Commands::Run { entry, file } => {
+            commands::run::execute(entry, file);
         }
-        Commands::Test { dir } => {
-            commands::test::execute(dir);
+        Commands::Test { list, file } => {
+            commands::test::execute(list, file);
         }
         Commands::New { name } => {
             commands::new::execute(name);
         }
         Commands::Clean => {
             commands::clean::execute();
+        }
+        Commands::Add {
+            name,
+            git,
+            version,
+            branch,
+            rev,
+            path,
+        } => {
+            commands::add::execute(name, git, version, branch, rev, path);
+        }
+        Commands::Remove { name } => {
+            commands::remove::execute(name);
+        }
+        Commands::Tree => {
+            commands::tree::execute();
         }
     }
 }

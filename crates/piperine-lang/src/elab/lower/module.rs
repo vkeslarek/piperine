@@ -6,7 +6,8 @@ use std::collections::HashMap;
 
 use crate::parse::ast::{Expr, ModuleDeclaration};
 use crate::parse::ast::ModuleStatement;
-use crate::elab::const_eval::{ConstEnv, ConstVal};
+use crate::elab::const_eval::ConstEnv;
+use crate::value::Value;
 use crate::pom::{Connection, ElabError, ElabErrorKind, Instance, Module, Param, Var, Wire};
 
 use super::Elaborator;
@@ -88,7 +89,7 @@ impl Elaborator {
                 source: e,
             }))?;
             let vt = self.resolve_value_type(&field.ty, env)?;
-            out.push(ModBodyItem::Param(Param { attributes: Vec::new(),
+            out.push(ModBodyItem::Param(Param { span: None, attributes: Vec::new(),
                 name: format!("{pname}_{}", field.name),
                 ty: vt,
                 default: Some(val),
@@ -106,7 +107,7 @@ impl Elaborator {
         pname: &str,
         fields: &[(String, Expr)],
         env: &ConstEnv,
-    ) -> Result<Vec<(String, ConstVal)>, ElabError> {
+    ) -> Result<Vec<(String, Value)>, ElabError> {
         fields
             .iter()
             .map(|(fname, fexpr)| {
@@ -166,7 +167,7 @@ impl Elaborator {
             }
         }
 
-        Ok(Module { attributes: Vec::new(), name: decl.name.clone(), ports, params, wires, vars, instances, connections, behaviors: vec![] })
+        Ok(Module { span: decl.span, attributes: Vec::new(), name: decl.name.clone(), ports, params, wires, vars, instances, connections, behaviors: vec![] })
     }
 
     /// Lowers a slice of `ModuleStatement`s, appending the resulting
@@ -202,7 +203,7 @@ impl Elaborator {
         out: &mut Vec<ModBodyItem>,
     ) -> Result<(), ElabError> {
         match stmt {
-            ModuleStatement::ParamDecl { name, ty, default, attrs: _, span: _ } => {
+            ModuleStatement::ParamDecl { name, ty, default, span, .. } => {
                 // GAPS §I.14 — a bundle-typed param (`param model : DioModel
                 // = DioModel {};`) is flattened here into one scalar param
                 // per bundle field, named `{name}_{field}`. This matches
@@ -225,32 +226,31 @@ impl Elaborator {
                 } else {
                     None
                 };
-                out.push(ModBodyItem::Param(Param { attributes: Vec::new(),
+                out.push(ModBodyItem::Param(Param { span: *span, attributes: Vec::new(),
                     name: name.clone(),
                     ty: vt,
                     default: def,
                 }));
             }
 
-            ModuleStatement::WireDecl { name, ty, attrs: _, span: _ } => {
+            ModuleStatement::WireDecl { name, ty, span, .. } => {
                 let resolved_name = type_subst.get(&ty.name).map(|s| s.as_str()).unwrap_or(&ty.name);
-                if let Some(bundle) = self.bundles.get(resolved_name).cloned() {
-                    if self.is_net_capable_bundle(resolved_name) {
+                if let Some(bundle) = self.bundles.get(resolved_name).cloned()
+                    && self.is_net_capable_bundle(resolved_name) {
                         for field in &bundle.fields {
                             let field_ty = self.resolve_net_type(&field.ty, env, type_subst)?;
-                            out.push(ModBodyItem::Wire(Wire { attributes: Vec::new(),
+                            out.push(ModBodyItem::Wire(Wire { span: *span, attributes: Vec::new(),
                                 name: format!("{}_{}", name, field.name),
                                 ty: field_ty,
                             }));
                         }
                         return Ok(());
                     }
-                }
                 let nt = self.resolve_net_type(ty, env, type_subst)?;
-                out.push(ModBodyItem::Wire(Wire { attributes: Vec::new(), name: name.clone(), ty: nt }));
+                out.push(ModBodyItem::Wire(Wire { span: *span, attributes: Vec::new(), name: name.clone(), ty: nt }));
             }
 
-            ModuleStatement::VarDecl { name, ty, default, attrs: _, span: _ } => {
+            ModuleStatement::VarDecl { name, ty, default, span, .. } => {
                 // §7.2 + §I.15 — a `var` declared directly in a `mod` body
                 // (as opposed to inside `analog`/`digital`) is persistent
                 // module-level state, e.g. `var sw_state : Real = 0.0;` in
@@ -293,6 +293,7 @@ impl Elaborator {
                     })
                     .transpose()?;
                 out.push(ModBodyItem::ModVar(Var {
+                    span: *span,
                     attributes: Vec::new(),
                     name: name.clone(),
                     ty: vt,
@@ -312,7 +313,7 @@ impl Elaborator {
                 let end = if range.inclusive { end_val + 1 } else { end_val };
                 for i in start..end {
                     env.push();
-                    env.define(var.clone(), ConstVal::Nat(i));
+                    env.define(var.clone(), Value::Nat(i));
                     let body = body.clone();
                     self.lower_mod_stmts(&body, env, type_subst, local_types, out)?;
                     env.pop();
@@ -325,8 +326,8 @@ impl Elaborator {
                     source: e,
                 })?;
                 let taken = match val {
-                    ConstVal::Bool(true) | ConstVal::Nat(1) => then_body.as_slice(),
-                    ConstVal::Nat(n) if n != 0 => then_body.as_slice(),
+                    Value::Bool(true) | Value::Nat(1) => then_body.as_slice(),
+                    Value::Nat(n) if n != 0 => then_body.as_slice(),
                     _ => else_body.as_deref().unwrap_or(&[]),
                 };
                 let taken = taken.to_vec();
@@ -341,7 +342,9 @@ impl Elaborator {
                 type_args: _,
                 ports,
                 params,
-             attrs: _, span: _ } => {
+                span,
+                ..
+            } => {
                 let label = if let Some(n) = name {
                     if let Some(idx_expr) = array_index {
                         let idx = env.eval_nat(idx_expr).map_err(|e| ElabErrorKind::ConstEval {
@@ -389,18 +392,15 @@ impl Elaborator {
                 let mut elab_ports = Vec::new();
                 for p in &ports {
                     let mut expanded = false;
-                    if let crate::parse::ast::Expr::Ident(p_name) = p {
-                        if let Some(ty_name) = local_types.get(p_name) {
-                            if let Some(bundle) = self.bundles.get(ty_name).cloned() {
-                                if self.is_net_capable_bundle(ty_name) {
+                    if let crate::parse::ast::Expr::Ident(p_name) = p
+                        && let Some(ty_name) = local_types.get(p_name)
+                            && let Some(bundle) = self.bundles.get(ty_name).cloned()
+                                && self.is_net_capable_bundle(ty_name) {
                                     expanded = true;
                                     for field in &bundle.fields {
                                         elab_ports.push(crate::pom::net_type::NetRef::simple(format!("{}_{}", p_name, field.name)));
                                     }
                                 }
-                            }
-                        }
-                    }
                     if !expanded {
                         elab_ports.push(self.eval_net_ref(p, env)?);
                     }
@@ -412,7 +412,7 @@ impl Elaborator {
                 // matching the bundle-param flattening done for `param`
                 // declarations above — fields the literal omits are left
                 // to the child module's own flattened defaults.
-                let mut resolved_params: Vec<(String, ConstVal)> = Vec::new();
+                let mut resolved_params: Vec<(String, Value)> = Vec::new();
                 for pa in params {
                     match &pa.expr {
                         Expr::BundleLit { fields, .. } => {
@@ -430,7 +430,7 @@ impl Elaborator {
                     }
                 }
 
-                out.push(ModBodyItem::Inst(Instance { attributes: Vec::new(),
+                out.push(ModBodyItem::Inst(Instance { span: *span, attributes: Vec::new(),
                     label,
                     module: mono_name,
                     ports: elab_ports,
@@ -438,27 +438,24 @@ impl Elaborator {
                 }));
             }
 
-            ModuleStatement::Connection { lhs, rhs, attrs: _, span: _ } => {
+            ModuleStatement::Connection { lhs, rhs, span, .. } => {
                 let mut is_bundle_conn = false;
-                if let (crate::parse::ast::Expr::Ident(l_name), crate::parse::ast::Expr::Ident(r_name)) = (lhs, rhs) {
-                    if let Some(l_ty_name) = local_types.get(l_name) {
-                        if let Some(bundle) = self.bundles.get(l_ty_name).cloned() {
-                            if self.is_net_capable_bundle(l_ty_name) {
+                if let (crate::parse::ast::Expr::Ident(l_name), crate::parse::ast::Expr::Ident(r_name)) = (lhs, rhs)
+                    && let Some(l_ty_name) = local_types.get(l_name)
+                        && let Some(bundle) = self.bundles.get(l_ty_name).cloned()
+                            && self.is_net_capable_bundle(l_ty_name) {
                                 is_bundle_conn = true;
                                 for field in &bundle.fields {
                                     let l_ref = crate::pom::net_type::NetRef::simple(format!("{}_{}", l_name, field.name));
                                     let r_ref = crate::pom::net_type::NetRef::simple(format!("{}_{}", r_name, field.name));
-                                    out.push(ModBodyItem::Conn(Connection { lhs: l_ref, rhs: r_ref }));
+                                    out.push(ModBodyItem::Conn(Connection { span: *span, lhs: l_ref, rhs: r_ref }));
                                 }
                             }
-                        }
-                    }
-                }
                 
                 if !is_bundle_conn {
                     let lhs_ref = self.eval_net_ref(lhs, env)?;
                     let rhs_ref = self.eval_net_ref(rhs, env)?;
-                    out.push(ModBodyItem::Conn(Connection { lhs: lhs_ref, rhs: rhs_ref }));
+                    out.push(ModBodyItem::Conn(Connection { span: *span, lhs: lhs_ref, rhs: rhs_ref }));
                 }
             }
 
@@ -470,16 +467,18 @@ impl Elaborator {
                     source: e,
                 })?;
                 let holds = match value {
-                    ConstVal::Bool(b) => b,
-                    ConstVal::Int(v) => v != 0,
-                    ConstVal::Nat(v) => v != 0,
-                    ConstVal::Real(r) => r != 0.0,
-                    ConstVal::Str(_) => true,
-                    ConstVal::EnumVariant(_, _) => true,
+                    Value::Bool(b) => b,
+                    Value::Int(v) => v != 0,
+                    Value::Nat(v) => v != 0,
+                    Value::Real(r) => r != 0.0,
+                    // Any other constant (string, enum variant, complex, …)
+                    // is "present" and treated as a passing condition —
+                    // pre-unification behavior, unchanged.
+                    _ => true,
                 };
                 if !holds {
                     let text = match env.eval(msg) {
-                        Ok(ConstVal::Str(s)) => s,
+                        Ok(Value::Str(s)) => s,
                         _ => "assertion failed".into(),
                     };
                     return Err(ElabError::from(ElabErrorKind::Other(format!("$assert failed: {text}"))));

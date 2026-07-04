@@ -7,8 +7,8 @@ impl FormatRule for BlockRule {
     fn before_token(&mut self, t: &Lexed, _next: Option<&Lexed>, state: &mut FormatState, output: &mut String) {
         match &t.tok {
             Tok::Ident(s) => {
-                if matches!(s.as_str(), "mod" | "fn" | "discipline" | "bundle" | "enum" | "capability" | "impl" | "const" | "use" | "analog" | "digital") {
-                    if state.brace_depth <= 1 && !output.is_empty() {
+                if matches!(s.as_str(), "mod" | "fn" | "discipline" | "bundle" | "enum" | "capability" | "impl" | "const" | "use" | "analog" | "digital")
+                    && state.brace_depth <= 1 && !output.is_empty() {
                         let mut newline_count = 0;
                         for c in output.chars().rev() {
                             if c == '\n' {
@@ -22,16 +22,14 @@ impl FormatRule for BlockRule {
                             newline_count += 1;
                         }
                     }
-                }
             }
             Tok::RBrace => {
                 state.indent_level = state.indent_level.saturating_sub(1);
                 state.brace_depth = state.brace_depth.saturating_sub(1);
-                if !output.trim_end().ends_with('{') {
-                    if !state.at_line_start {
+                if !output.trim_end().ends_with('{')
+                    && !state.at_line_start {
                         state.push_newline(output);
                     }
-                }
             }
             _ => {}
         }

@@ -20,3 +20,14 @@ analog Ladder {
         I(rseg[i].n, gnd) <+ cpar * ddt(V(rseg[i].n, gnd));
     }
 }
+
+// No bench here: `Ladder` itself instantiates `Resistor` (one level of
+// hierarchy already), and the codegen path a bench drives
+// (`CircuitCompiler::build_circuit_mapped`) does not yet flatten nested
+// hierarchy — a bench can only attach to a module whose own instances are
+// all leaves. Wrapping `Ladder` in a `Top()` to add a bias resistor would
+// create that second level and hits the same "flatten during elaboration"
+// limit. Bench-ing `Ladder` directly is also structurally singular at DC
+// (every tap reaches `gnd` only through a zero-conductance capacitor).
+// Deferred until either hierarchy flattening or `$tran` (where the
+// capacitors' own dynamics resolve the initial condition) lands.

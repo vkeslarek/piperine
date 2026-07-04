@@ -5,6 +5,7 @@ use crate::circuit::CircuitInstance;
 use crate::analog::AnalogReference;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
+use crate::math::iv::InitialValue;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::solver::dc::DcSolver;
@@ -28,9 +29,9 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         _alpha_hint: f64,
     ) -> crate::result::Result<Vec<Stamp<AnalogReference, f64>>> {
         let tran_ctx = TransientAnalysisContext {
-            time: self.time.into(),
-            dt: self.dt.into(),
-            tfinal: self.tfinal.into(),
+            time: self.time,
+            dt: self.dt,
+            tfinal: self.tfinal,
         };
 
         let mut all_stamps = Vec::new();
@@ -93,6 +94,11 @@ pub struct TransientSolver<'a> {
     pub system: TransientSystem<'a>,
     pub solver: NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>,
     pub options: TransientAnalysisOptions,
+    /// User-supplied initial node voltages (piperine-bench/docs/SPEC.md §5.1
+    /// `TranConfig.ic`), pushed after the DC operating point so the t=0
+    /// state reflects them. Milestone-1: a seed (the companion model's
+    /// first step may show a transient); full enforced-hold is deferred.
+    initial_conditions: Vec<InitialValue<AnalogReference, f64>>,
 }
 
 impl<'a> TransientSolver<'a> {
@@ -113,8 +119,8 @@ impl<'a> TransientSolver<'a> {
             circuit,
             context,
             time: 0.0,
-            dt: options.dt.into(),
-            tfinal: options.stop_time.into(),
+            dt: options.dt,
+            tfinal: options.stop_time,
         };
 
         let solver = NewtonRaphsonSolver::new(&mut system, size, 4)?;
@@ -123,7 +129,15 @@ impl<'a> TransientSolver<'a> {
             system,
             solver,
             options,
+            initial_conditions: Vec::new(),
         })
+    }
+
+    /// Seed the transient's t=0 state with user initial node voltages
+    /// (piperine-bench/docs/SPEC.md §5.1 `TranConfig.ic`). Applied after the DC operating
+    /// point in `compute_initial_conditions`.
+    pub fn apply_initial_conditions(&mut self, ivs: Vec<InitialValue<AnalogReference, f64>>) {
+        self.initial_conditions = ivs;
     }
 
     fn compute_initial_conditions(&mut self) -> crate::result::Result<TransientStep> {
@@ -136,6 +150,14 @@ impl<'a> TransientSolver<'a> {
 
         self.solver.push_initial_conditions(iv_dc.clone());
         self.solver.push_initial_conditions(iv_dc);
+        // User `ic` seeds the t=0 state. Pushed twice so both rows of the
+        // companion's history buffer see the ic values (avoids a
+        // discontinuity that would spike the first transient step) —
+        // milestone-1 seed; full enforced-hold is deferred.
+        if !self.initial_conditions.is_empty() {
+            self.solver.push_initial_conditions(self.initial_conditions.clone());
+            self.solver.push_initial_conditions(self.initial_conditions.clone());
+        }
 
         Ok(self.snapshot(0.0))
     }
@@ -165,12 +187,19 @@ impl<'a> TransientSolver<'a> {
     }
 
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
-        let stop_time: f64 = self.options.stop_time.into();
-        let mut dt: f64 = self.options.dt.into();
+        let stop_time: f64 = self.options.stop_time;
+        let record_from: f64 = self.options.record_from;
+        let mut dt: f64 = self.options.dt;
         let max_step: f64 = dt;
 
         let initial_snapshot = self.compute_initial_conditions()?;
-        let mut steps = vec![initial_snapshot];
+        let mut steps = Vec::new();
+        // The t=0 DC operating point is only part of the recorded output when
+        // recording starts at (or before) t=0; a delayed start drops it but
+        // still computes it — the initial state seeds the integration.
+        if 0.0 >= record_from {
+            steps.push(initial_snapshot);
+        }
 
         let mut current_time = 0.0;
         let min_step = 1e-15;
@@ -207,7 +236,11 @@ impl<'a> TransientSolver<'a> {
                     t_next,
                 );
                 self.system.circuit.digital_state.commit();
-                steps.push(snapshot);
+                // A delayed-start transient still solves every step (state
+                // evolution matters); only the recording is gated.
+                if t_next >= record_from {
+                    steps.push(snapshot);
+                }
                 current_time = t_next;
                 // Use dt_proposed for growth so an event-clamped step doesn't shrink dt permanently
                 dt = f64::min(f64::max(dt_proposed * 2.0, min_step), max_step);

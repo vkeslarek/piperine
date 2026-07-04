@@ -1,14 +1,14 @@
 //! Expression lowering: `Expr` → `IrExpr`
 
-use crate::parse::ast::{ArrayBody, BindOp, BinaryOp, Block, Expr, Literal, Stmt, UnaryOp};
-use piperine_codegen::ir::*;
+use crate::parse::ast::{ArrayBody, BinaryOp, Block, Expr, Literal, Stmt, UnaryOp};
+use piperine_ir::*;
 use super::analog_ops::analog_ops;
 use super::syscalls::syscalls;
 use super::LowerCtx;
 
 pub(crate) fn parse_contrib_dest(dest: &Expr, ctx: &mut LowerCtx) -> (NatureId, NodeId, NodeId) {
-    if let Expr::Call(func, args) = dest {
-        if let Expr::Ident(name) = func.as_ref() {
+    if let Expr::Call(func, args) = dest
+        && let Expr::Ident(name) = func.as_ref() {
             let nature_kind = match name.as_str() {
                 "V" => NatureKind::Potential,
                 "I" => NatureKind::Flow,
@@ -17,14 +17,14 @@ pub(crate) fn parse_contrib_dest(dest: &Expr, ctx: &mut LowerCtx) -> (NatureId, 
             let nature = ctx.symbols.add_nature(name.as_str(), nature_kind);
             
             let plus_name = ident_from_expr(args.first()).unwrap_or_else(|| "?".into());
+            // `V(a)` / `I(a)` — an omitted second terminal is ground.
             let minus_name = ident_from_expr(args.get(1)).unwrap_or_else(|| "0".into());
-            
-            let plus = ctx.lookup_node(&plus_name).unwrap_or(NodeId::GROUND);
-            let minus = ctx.lookup_node(&minus_name).unwrap_or(NodeId::GROUND);
-            
+
+            let plus = ctx.require_node(&plus_name);
+            let minus = ctx.require_node(&minus_name);
+
             return (nature, plus, minus);
         }
-    }
     
     let nature = ctx.symbols.add_nature("I", NatureKind::Flow);
     (nature, NodeId::GROUND, NodeId::GROUND)
@@ -41,11 +41,10 @@ pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
                 Expr::Ident(base_name) => Some(format!("{base_name}.{field}")),
                 // `name[i].port` after for-unroll becomes `name[0].port` etc.
                 Expr::Index(inner, idx) => {
-                    if let Expr::Ident(base_name) = inner.as_ref() {
-                        if let Expr::Literal(Literal::Int(i)) = idx.as_ref() {
+                    if let Expr::Ident(base_name) = inner.as_ref()
+                        && let Expr::Literal(Literal::Int(i)) = idx.as_ref() {
                             return Some(format!("{base_name}_{i}.{field}"));
                         }
-                    }
                     None
                 }
                 _ => None,
@@ -56,8 +55,9 @@ pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
 }
 
 pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut LowerCtx) {
-    match expr {
-        Expr::Call(func, args) => {
+    use crate::parse::ast::Walk;
+    expr.walk(&mut |e| {
+        if let Expr::Call(func, args) = e {
             if let Expr::Ident(name) = func.as_ref() {
                 match name.as_str() {
                     "white_noise" => {
@@ -73,7 +73,7 @@ pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut Low
                             kind: IrNoise::White { psd },
                             label,
                         });
-                        return;
+                        return Walk::SkipChildren;
                     }
                     "flicker_noise" => {
                         let psd = args.first()
@@ -91,39 +91,14 @@ pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut Low
                             kind: IrNoise::Flicker { psd, exponent },
                             label,
                         });
-                        return;
+                        return Walk::SkipChildren;
                     }
                     _ => {}
                 }
             }
-            for arg in args {
-                scan_noise(arg, plus, minus, ctx);
-            }
         }
-        Expr::Binary(l, _, r) => {
-            scan_noise(l, plus, minus, ctx);
-            scan_noise(r, plus, minus, ctx);
-        }
-        Expr::Unary(_, inner) => scan_noise(inner, plus, minus, ctx),
-        Expr::If { cond, then_body, else_body } => {
-            scan_noise_expr_block(cond, plus, minus, ctx);
-            scan_noise_block(then_body, plus, minus, ctx);
-            scan_noise_block(else_body, plus, minus, ctx);
-        }
-        _ => {}
-    }
-}
-
-pub(crate) fn scan_noise_block(block: &Block, plus: NodeId, minus: NodeId, ctx: &mut LowerCtx) {
-    for s in &block.stmts {
-        if let Stmt::Bind { op: BindOp::Contrib, src, .. } = s {
-            scan_noise(src, plus, minus, ctx);
-        }
-    }
-}
-
-pub(crate) fn scan_noise_expr_block(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut LowerCtx) {
-    scan_noise(expr, plus, minus, ctx);
+        Walk::Continue
+    });
 }
 
 pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
@@ -147,15 +122,30 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
             if let Some(val) = ctx.env.get(name) {
                 val.clone()
             } else if ctx.module_vars.contains(name) {
-                let id = ctx.lookup_var(name).unwrap_or(VarId(0));
-                IrExpr::Var(id)
+                IrExpr::Var(ctx.require_var(name))
             } else if let Some(id) = ctx.lookup_node(name) {
-                if ctx.is_digital { IrExpr::Net(id) } else { IrExpr::Real(0.0) } // Just a fallback for non-digital context
+                if ctx.is_digital {
+                    IrExpr::Net(id)
+                } else if ctx.symbols.node(id).domain == piperine_ir::Domain::Digital {
+                    // An analog body reading a digital-domain node by bare
+                    // name (not through `V`/`I`) bridges through a shadow
+                    // var — the same D2A path a `var` read already uses.
+                    // Never a silent 0.0 (GAPS: fail loud, not a stub).
+                    IrExpr::Var(ctx.shadow_var_for(id, name))
+                } else {
+                    // A bare analog-domain node reference outside `V`/`I`
+                    // has no defined meaning (SPEC: node access is via
+                    // V/I only) — GAPS fallback, unchanged.
+                    IrExpr::Real(0.0)
+                }
             } else if let Some(value) = ctx.lookup_enum_value(name) {
                 IrExpr::Int(value)
+            } else if let Some(c) = ctx.consts.get(name) {
+                c.clone()
             } else {
-                let id = ctx.lookup_param(name).unwrap_or(ParamId(0));
-                IrExpr::Param(id)
+                // Last namespace standing: a parameter — or an unresolved
+                // name, which is an error, not a silent `ParamId(0)`.
+                IrExpr::Param(ctx.require_ident_as_param(name))
             }
         }
 
@@ -166,8 +156,7 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
             } else if let Some(value) = ctx.lookup_enum_value(&name) {
                 IrExpr::Int(value)
             } else {
-                let id = ctx.lookup_param(&name).unwrap_or(ParamId(0));
-                IrExpr::Param(id)
+                IrExpr::Param(ctx.require_ident_as_param(&name))
             }
         }
 
@@ -235,16 +224,19 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
             // that the named instance's port is connected to.
             if let Some(id) = ctx.lookup_node(&qualified) {
                 if ctx.is_digital { IrExpr::Net(id) } else { IrExpr::Real(0.0) }
-            } else {
-                let id = ctx.lookup_param(&qualified).unwrap_or(ParamId(0));
+            } else if let Some(id) = ctx.lookup_param(&qualified.replace('.', "_")) {
+                // A bundle-typed param field (`model.rsh`) was flattened to
+                // a scalar param `model_rsh` at elaboration (GAPS §I.14).
                 IrExpr::Param(id)
+            } else {
+                IrExpr::Param(ctx.require_ident_as_param(&qualified))
             }
         }
 
         Expr::Array(body) => lower_array(body, ctx),
 
         Expr::Cast(_target, inner) => lower_expr(inner, ctx),
-        Expr::BundleLit { .. } | Expr::Lambda { .. } => IrExpr::Real(0.0),
+        Expr::BundleLit { .. } | Expr::Lambda { .. } | Expr::Tuple(_) | Expr::MapLit(_) => IrExpr::Real(0.0),
     }
 }
 
@@ -253,7 +245,7 @@ pub(crate) fn lower_array(body: &ArrayBody, ctx: &mut LowerCtx) -> IrExpr {
         ArrayBody::List(exprs) => {
             IrExpr::Array(exprs.iter().map(|e| lower_expr(e, ctx)).collect())
         }
-        ArrayBody::Repeat(v, n) => {
+        ArrayBody::Repeat(v, _n) => {
             IrExpr::Array(vec![lower_expr(v, ctx)]) // ArrayRepeat removed
         }
         ArrayBody::Comprehension(expr, var, range) => {
@@ -264,11 +256,19 @@ pub(crate) fn lower_array(body: &ArrayBody, ctx: &mut LowerCtx) -> IrExpr {
                 let inclusive = range.inclusive as i64;
                 let mut elems = vec![];
                 for i in start..(end + inclusive) {
-                    let mut iter_ctx = LowerCtx::new(ctx.symbols, ctx.is_digital, ctx.module_vars.clone());
+                    let mut iter_ctx = LowerCtx::new(
+                        ctx.symbols,
+                        ctx.module_name.clone(),
+                        ctx.is_digital,
+                        ctx.module_vars.clone(),
+                    );
                     iter_ctx.env = ctx.env.clone();
                     iter_ctx.enum_values = ctx.enum_values.clone();
+                    iter_ctx.consts = ctx.consts.clone();
                     iter_ctx.env.insert(var.clone(), IrExpr::Int(i));
                     elems.push(lower_expr(expr, &mut iter_ctx));
+                    ctx.errors.append(&mut iter_ctx.errors);
+                    ctx.digital_shadows.append(&mut iter_ctx.digital_shadows);
                 }
                 IrExpr::Array(elems)
             } else {
@@ -325,13 +325,13 @@ pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrEx
         return if args.len() >= 2 {
             let plus_name = ident_from_expr(Some(&args[0])).unwrap_or_else(|| "?".into());
             let minus_name = ident_from_expr(Some(&args[1])).unwrap_or_else(|| "0".into());
-            let plus = ctx.lookup_node(&plus_name).unwrap_or(NodeId::GROUND);
-            let minus = ctx.lookup_node(&minus_name).unwrap_or(NodeId::GROUND);
+            let plus = ctx.require_node(&plus_name);
+            let minus = ctx.require_node(&minus_name);
             let nature = ctx.symbols.add_nature(name, NatureKind::Potential);
             IrExpr::Branch { nature, plus, minus }
         } else if args.len() == 1 {
             let plus_name = ident_from_expr(Some(&args[0])).unwrap_or_else(|| "?".into());
-            let plus = ctx.lookup_node(&plus_name).unwrap_or(NodeId::GROUND);
+            let plus = ctx.require_node(&plus_name);
             let nature = ctx.symbols.add_nature(name, NatureKind::Potential);
             IrExpr::Branch { nature, plus, minus: NodeId::GROUND }
         } else {
@@ -346,7 +346,7 @@ pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrEx
 
     // Built-in math functions (exp, ln, sqrt, pow, sin, …) lower as
     // `MathCall`, resolved by name to a libm intrinsic at JIT time.
-    if piperine_codegen::jit::math::math_fn(name).is_some() {
+    if piperine_ir::math::math_fn(name).is_some() {
         let ir_args = args.iter().map(|a| lower_expr(a, ctx)).collect();
         return IrExpr::MathCall(name.to_string(), ir_args);
     }

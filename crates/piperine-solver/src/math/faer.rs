@@ -27,11 +27,10 @@ impl SymbolicMatrix for FaerSymbolicMatrix {
         let mut triplets = Vec::new();
 
         for stamp in stamps {
-            if let Stamp::Matrix(r, c, val) = stamp {
-                if let (Some(ri), Some(ci)) = (r.as_index(), c.as_index()) {
+            if let Stamp::Matrix(r, c, val) = stamp
+                && let (Some(ri), Some(ci)) = (r.as_index(), c.as_index()) {
                     triplets.push(Triplet::new(ri, ci, val));
                 }
-            }
         }
 
         let mat = SparseColMat::try_new_from_triplets(size, size, &triplets).map_err(|err| {
@@ -176,12 +175,12 @@ impl<E: 'static + Scalar> LinearSystem<E> for FaerDenseLinearSystem<E> {
             match stamp {
                 Stamp::Matrix(r, c, val) => {
                     if let (Some(ri), Some(ci)) = (r.as_index(), c.as_index()) {
-                        self.matrix[(ri, ci)] = self.matrix[(ri, ci)] + val;
+                        self.matrix[(ri, ci)] += val;
                     }
                 }
                 Stamp::Rhs(r, val) => {
                     if let Some(ri) = r.as_index() {
-                        self.rhs[ri] = self.rhs[ri] + val;
+                        self.rhs[ri] += val;
                     }
                 }
             }

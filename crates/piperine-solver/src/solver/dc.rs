@@ -3,6 +3,7 @@ use crate::circuit::CircuitInstance;
 use crate::analog::AnalogReference;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
+use crate::math::iv::InitialValue;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::solver::Context;
@@ -123,6 +124,16 @@ impl<'a> DcSolver<'a> {
         Ok(Self { system, solver })
     }
 
+    /// Seed the DC Newton initial guess with node-voltage hints (piperine-bench/docs/SPEC.md
+    /// §5.1 `OpConfig.nodeset`). Applied before [`solve`](Self::solve); the
+    /// solver still converges to the operating point — this only changes the
+    /// starting guess, useful for nonlinear circuits with multiple solutions.
+    pub fn apply_initial_conditions(&mut self, ivs: Vec<InitialValue<AnalogReference, f64>>) {
+        if !ivs.is_empty() {
+            self.solver.push_initial_conditions(ivs);
+        }
+    }
+
     pub fn solve(&mut self) -> crate::result::Result<DcAnalysisResult> {
         let max_iter = self.system.context.max_iter;
 
@@ -160,7 +171,7 @@ impl<'a> DcSolver<'a> {
             if let Some(reference_idx) = reference.idx() {
                 values.insert(
                     reference.variable().clone(),
-                    raw_solution[reference_idx].clone(),
+                    raw_solution[reference_idx],
                 );
             }
         }

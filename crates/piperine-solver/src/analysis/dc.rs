@@ -54,7 +54,7 @@ impl DcAnalysisResult {
     pub fn as_iv(&self, netlist: &Netlist) -> Vec<InitialValue<AnalogReference, f64>> {
         let mut initial_values = Vec::with_capacity(self.values.len());
         for (var, value) in &self.values {
-            if let Some(reference) = netlist.reference_for(&var).cloned() {
+            if let Some(reference) = netlist.reference_for(var).cloned() {
                 initial_values.push(InitialValue {
                     reference,
                     value: *value,

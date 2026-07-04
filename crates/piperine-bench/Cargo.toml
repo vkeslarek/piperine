@@ -1,0 +1,11 @@
+[package]
+name = "piperine-bench"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror = "2.0"
+piperine-lang = { path = "../piperine-lang" }
+piperine-codegen = { path = "../piperine-codegen" }
+piperine-solver = { path = "../piperine-solver" }
+num-complex.workspace = true

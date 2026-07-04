@@ -16,7 +16,7 @@ pub type NodeSelection<'a> = Selection<crate::pom::node::Node<'a>>;
 
 impl<'a> NodeSelection<'a> {
     /// Sub-select via the selector grammar.
-    pub fn where_path(&self, design: &'a crate::pom::design::Design, path: &str) -> Result<NodeSelection<'a>, String> {
+    pub fn where_path(&self, design: &'a crate::pom::design::Design, path: &str) -> Result<NodeSelection<'a>, crate::pom::error::SelectorError> {
         let sel = path.parse::<crate::pom::selector::Selector>()?;
         crate::pom::selector::Evaluator::new(design).evaluate(&sel, self.clone())
     }
@@ -94,6 +94,77 @@ impl<T> IntoIterator for Selection<T> {
     type IntoIter = std::vec::IntoIter<T>;
     fn into_iter(self) -> Self::IntoIter {
         self.items.into_iter()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selection_empty() {
+        let sel: Selection<i32> = Selection::new();
+        assert!(sel.is_empty());
+        assert_eq!(sel.len(), 0);
+        assert_eq!(sel.first(), None);
+    }
+
+    #[test]
+    fn selection_from_vec() {
+        let sel = Selection::from_vec(vec![1, 2, 3]);
+        assert_eq!(sel.len(), 3);
+        assert!(!sel.is_empty());
+        assert_eq!(sel.first(), Some(&1));
+    }
+
+    #[test]
+    fn selection_get_bounds_checked() {
+        let sel = Selection::from_vec(vec![10, 20]);
+        assert_eq!(sel.get(0), Some(&10));
+        assert_eq!(sel.get(1), Some(&20));
+        assert_eq!(sel.get(2), None);
+    }
+
+    #[test]
+    fn selection_one_exactly_one() {
+        let sel = Selection::from_vec(vec![42]);
+        assert_eq!(sel.one(), Ok(42));
+    }
+
+    #[test]
+    fn selection_one_zero_errors() {
+        let sel: Selection<i32> = Selection::new();
+        let err = sel.one().unwrap_err();
+        assert!(matches!(err, ReflectError::NotFound(_)));
+    }
+
+    #[test]
+    fn selection_one_many_errors() {
+        let sel = Selection::from_vec(vec![1, 2]);
+        let err = sel.one().unwrap_err();
+        assert!(matches!(err, ReflectError::Other(_)));
+    }
+
+    #[test]
+    fn selection_iter() {
+        let sel = Selection::from_vec(vec![1, 2, 3]);
+        let collected: Vec<&i32> = sel.iter().collect();
+        assert_eq!(collected, vec![&1, &2, &3]);
+    }
+
+    #[test]
+    fn selection_filter() {
+        let sel = Selection::from_vec(vec![1, 2, 3, 4, 5]);
+        let evens = sel.filter(|x| *x % 2 == 0);
+        assert_eq!(evens.len(), 2);
+        assert_eq!(evens.get(0), Some(&2));
+    }
+
+    #[test]
+    fn selection_map() {
+        let sel = Selection::from_vec(vec![1, 2, 3]);
+        let doubled: Vec<i32> = sel.map(|x| x * 2);
+        assert_eq!(doubled, vec![2, 4, 6]);
     }
 }
 

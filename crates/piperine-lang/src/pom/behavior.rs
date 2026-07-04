@@ -1,51 +1,40 @@
 //! POM behavioral nodes — [`Behavior`] (an `analog`/`digital` block), its
 //! statements, and [`Function`]/[`ImplBlock`] (value-layer computation).
 
-use crate::elab::const_eval::ConstVal;
-use crate::parse::ast::{BehaviorKind, BindOp, EventSpec, Pattern};
+use crate::value::Value;
+use crate::parse::ast::BehaviorKind;
 use crate::pom::net_type::TypeRef;
 use crate::pom::node::Kind;
 use crate::pom::traits::{Kinded, Named};
 
-#[derive(Debug, Clone)]
-pub enum BehaviorStmt {
-    VarDecl { name: String, ty: crate::pom::ValueType, default: Option<crate::parse::ast::Expr> },
-    Bind { dest: crate::parse::ast::Expr, op: BindOp, src: crate::parse::ast::Expr },
-    If { cond: crate::parse::ast::Expr, then_body: Vec<BehaviorStmt>, else_body: Option<Vec<BehaviorStmt>> },
-    Match { expr: crate::parse::ast::Expr, arms: Vec<MatchArm> },
-    Event { spec: EventSpec, guard: Option<crate::parse::ast::Expr>, body: Vec<BehaviorStmt> },
-    Return(crate::parse::ast::Expr),
-    Diagnostic { sys: String, args: Vec<crate::parse::ast::Expr> },
-    Expr(crate::parse::ast::Expr),
-}
-
-#[derive(Debug, Clone)]
-pub struct MatchArm {
-    pub pat: Pattern,
-    pub body: Vec<BehaviorStmt>,
-}
-
-impl MatchArm {
-    pub fn pattern(&self) -> &Pattern { &self.pat }
-    pub fn body(&self) -> &[BehaviorStmt] { &self.body }
-}
+/// Behavior bodies are the surface [`Stmt`] type directly
+/// (SIMPLIFICATION.md P3): the elaborator const-folds structural `if`s and
+/// unrolls `for`s *in place*, and records the one thing it genuinely adds —
+/// resolved `var` types — in [`Behavior::var_types`], instead of deep-copying
+/// every statement into a parallel enum.
+pub use crate::parse::ast::{Stmt as BehaviorStmt, StmtMatchArm as MatchArm};
 
 /// A behavior block inside a module (analog or digital).
 #[derive(Debug, Clone)]
 pub struct Behavior {
+    pub span: Option<miette::SourceSpan>,
     /// Behavior block name.
     pub name: String,
     /// Whether this is an analog or digital block.
     pub kind: BehaviorKind,
-    /// The statements making up the behavior body.
+    /// The statements making up the behavior body (elaborated: structural
+    /// `if`/`for` folded away).
     pub body: Vec<BehaviorStmt>,
+    /// Resolved value types of the body's `var` declarations, keyed by
+    /// name — the side table elaboration adds on top of the surface AST.
+    pub var_types: std::collections::HashMap<String, crate::pom::ValueType>,
 }
 
 impl Behavior {
     /// Construct a new Behavior (used by the elaborator and codegen).
     #[doc(hidden)]
     pub fn new(name: String, kind: BehaviorKind, body: Vec<BehaviorStmt>) -> Self {
-        Self { name, kind, body }
+        Self { span: None, name, kind, body, var_types: Default::default() }
     }
 
     /// The behavior block name.
@@ -69,10 +58,16 @@ impl Kinded for Behavior { fn kind(&self) -> Kind { Kind::Behavior } }
 /// A value-layer function definition.
 #[derive(Debug, Clone)]
 pub struct Function {
+    pub span: Option<miette::SourceSpan>,
     /// Function name.
     pub name: String,
     /// Parameter names and types.
     pub params: Vec<(String, TypeRef)>,
+    /// Default value expressions, parallel to [`params`](Self::params) —
+    /// `None` for a non-defaulted (leading) param, `Some(expr)` for a
+    /// trailing defaulted one (the language spec Part I §9.1). Defaults are
+    /// elaboration constants.
+    pub defaults: Vec<Option<crate::parse::ast::Expr>>,
     /// Return type.
     pub ret: TypeRef,
     /// Function body statements.
@@ -88,6 +83,8 @@ impl Function {
     pub fn name(&self) -> &str { &self.name }
     /// The function parameters (name, type).
     pub fn params(&self) -> &[(String, TypeRef)] { &self.params }
+    /// Default value expressions, parallel to [`params`](Self::params).
+    pub fn defaults(&self) -> &[Option<crate::parse::ast::Expr>] { &self.defaults }
     /// The function return type.
     pub fn ret(&self) -> &TypeRef { &self.ret }
     /// The function body statements.
@@ -103,12 +100,13 @@ impl Named for Function { fn name(&self) -> &str { self.name() } }
 /// An `impl` block — associates methods with a type, optionally gated by a capability.
 #[derive(Debug, Clone)]
 pub struct ImplBlock {
+    pub span: Option<miette::SourceSpan>,
     /// Optional capability gate (e.g. `analog`, `digital`).
     pub capability: Option<String>,
     /// The type being implemented.
     pub ty: String,
     /// Constant generic arguments of the type.
-    pub const_args: Vec<ConstVal>,
+    pub const_args: Vec<Value>,
     /// Methods defined in this impl block.
     pub methods: Vec<Function>,
 }

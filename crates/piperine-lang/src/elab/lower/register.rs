@@ -3,7 +3,7 @@
 //! resolved or elaborated.
 
 use crate::parse::ast::Item;
-use crate::pom::{ElabError, ElabErrorKind};
+use crate::pom::ElabError;
 
 use super::Elaborator;
 
@@ -40,6 +40,9 @@ impl Elaborator {
                 }
                 Item::BehaviorDecl(b) => {
                     self.behavior_decls.push(b.clone());
+                }
+                Item::BenchDecl(b) => {
+                    self.bench_decls.push(b.clone());
                 }
                 Item::FnDecl(f) => {
                     self.fn_decls.insert(f.sig.name.clone(), f.clone());

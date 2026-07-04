@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::pom::Design;
 
-use piperine_codegen::ir::*;
+use piperine_ir::*;
 
 pub mod analog_ops;
 pub mod event;
@@ -13,8 +13,37 @@ pub mod stmt;
 pub mod structure;
 pub mod syscalls;
 
-use structure::{convert_fn, convert_mod, const_val_to_ir};
+use structure::{convert_fn, convert_mod, value_to_ir};
 use stmt::lower_stmts;
+
+// ─── Errors ───────────────────────────────────────────────────────────────────
+
+/// One unresolved name found while lowering `Design` → IR (SIMPLIFICATION.md
+/// P5). This phase used to paper over these with `ParamId(0)`/`GROUND`
+/// placeholders — silently mis-wiring the circuit; now every failed
+/// resolution is recorded and [`ppr_to_ir`] refuses to hand out the program.
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("in module `{module}`: unresolved {what} `{name}`")]
+pub struct LowerError {
+    pub module: String,
+    pub what: &'static str,
+    pub name: String,
+}
+
+/// Every unresolved name of one lowering run, reported together (fixing a
+/// batch beats fixing one per compile).
+#[derive(Debug, thiserror::Error)]
+pub struct LowerErrors(pub Vec<LowerError>);
+
+impl std::fmt::Display for LowerErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{} unresolved name(s) while lowering to IR:", self.0.len())?;
+        for e in &self.0 {
+            writeln!(f, "  - {e}")?;
+        }
+        Ok(())
+    }
+}
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 
@@ -25,6 +54,20 @@ pub(crate) struct LowerCtx<'a> {
     pub env: HashMap<String, IrExpr>,
     /// The module's symbol table, populated during `convert_mod`.
     pub symbols: &'a mut SymbolTable,
+    /// The module being lowered — error context only.
+    pub module_name: String,
+    /// Unresolved names found so far; `ppr_to_ir` fails if any module's
+    /// lowering left this non-empty. The `require_*` lookups push here and
+    /// return a placeholder id that never escapes — the whole program is
+    /// discarded on error.
+    pub errors: Vec<LowerError>,
+    /// Name → id maps built once from the symbol table (SIMPLIFICATION.md
+    /// P12: resolve names once, ids afterwards). `nodes`/`params` are fixed
+    /// before behavior lowering starts; `vars` gains entries only through
+    /// [`LowerCtx::shadow_var_for`], which keeps its map in sync.
+    nodes: HashMap<String, NodeId>,
+    params: HashMap<String, ParamId>,
+    vars: HashMap<String, VarId>,
     /// State variables (ddt, idt, etc.) allocated during this behavior lowering.
     pub states: Vec<StateId>,
     /// Noise sources discovered from contribution right-hand sides.
@@ -43,21 +86,93 @@ pub(crate) struct LowerCtx<'a> {
     /// Enum variant discriminants, keyed bare (`Idle`) and qualified
     /// (`SarState::Idle`). SPEC §6.4: a variant is an integer constant.
     pub enum_values: HashMap<String, i64>,
+    /// Global `const` values as IR literals (`NG_K`, `M_PI`, …). Before
+    /// SIMPLIFICATION.md P5 these silently fell through to `ParamId(0)` —
+    /// a physics constant read as "whatever param 0 is".
+    pub consts: HashMap<String, IrExpr>,
+    /// Digital-domain nodes read from *this* analog body (a port or wire
+    /// whose value comes from the digital side, referenced by bare name —
+    /// not through `V`/`I`), bridged through a synthetic module-level
+    /// shadow `var`: the same D2A path (`AnalogInstance::sync_vars`) a
+    /// real `var` read already uses, so this never falls back to a silent
+    /// `Real(0.0)`. The caller (`ppr_to_ir`) merges these into the
+    /// module's digital body (creating one if the module has none) after
+    /// every behavior is lowered.
+    pub digital_shadows: Vec<(NodeId, VarId)>,
 }
 
+/// The ground-node aliases every net namespace accepts (SPEC: gnd-family).
+pub(crate) const GROUND_NAMES: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
+
 impl<'a> LowerCtx<'a> {
-    /// Create a fresh lowering context.
-    pub fn new(symbols: &'a mut SymbolTable, is_digital: bool, module_vars: HashSet<String>) -> Self {
+    /// Create a fresh lowering context. Snapshots the symbol table's
+    /// name → id maps once — every later lookup is a hash probe, not a
+    /// table scan.
+    pub fn new(
+        symbols: &'a mut SymbolTable,
+        module_name: String,
+        is_digital: bool,
+        module_vars: HashSet<String>,
+    ) -> Self {
+        let nodes = symbols.nodes().map(|(id, n)| (n.name.clone(), id)).collect();
+        let params = symbols.params().map(|(id, p)| (p.name.clone(), id)).collect();
+        let vars = symbols.vars().map(|(id, v)| (v.name.clone(), id)).collect();
         Self {
             env: HashMap::new(),
             symbols,
+            module_name,
+            errors: Vec::new(),
+            nodes,
+            params,
+            vars,
             states: vec![],
             noise_sources: vec![],
             is_digital,
             module_vars,
             instance_ports: HashMap::new(),
             enum_values: HashMap::new(),
+            consts: HashMap::new(),
+            digital_shadows: Vec::new(),
         }
+    }
+
+    /// Global-const IR literals for `prog`, shared by every context.
+    pub fn const_irs(prog: &Design) -> HashMap<String, IrExpr> {
+        prog.consts().map(|(name, v)| (name.clone(), structure::value_to_ir(v))).collect()
+    }
+
+    /// `$param_given("name")` resolution: exact param name first, then a
+    /// unique flattened bundle field (`narrow` → `model_narrow`) — the
+    /// syscall's argument predates bundle flattening (GAPS §I.14).
+    pub fn require_param_given(&mut self, name: &str) -> ParamId {
+        if let Some(id) = self.lookup_param(name) {
+            return id;
+        }
+        let suffix = format!("_{name}");
+        let mut matches = self.params.iter().filter(|(n, _)| n.ends_with(&suffix));
+        if let (Some((_, &id)), None) = (matches.next(), matches.next()) {
+            return id;
+        }
+        self.errors.push(LowerError {
+            module: self.module_name.clone(),
+            what: "parameter ($param_given)",
+            name: name.to_string(),
+        });
+        ParamId(0)
+    }
+
+    /// The shadow `var` bridging digital-domain node `id` (named `name`,
+    /// for a readable IR symbol) into this analog body. Reuses the same
+    /// shadow if `id` was already read earlier in this behavior.
+    pub fn shadow_var_for(&mut self, id: NodeId, name: &str) -> VarId {
+        if let Some((_, var)) = self.digital_shadows.iter().find(|(node, _)| *node == id) {
+            return *var;
+        }
+        let shadow_name = format!("__shadow_{name}");
+        let var = self.symbols.add_var(shadow_name.clone(), IrType::Bool);
+        self.vars.insert(shadow_name, var);
+        self.digital_shadows.push((id, var));
+        var
     }
 
     /// Lookup an enum variant's discriminant by bare or qualified name.
@@ -65,10 +180,6 @@ impl<'a> LowerCtx<'a> {
         self.enum_values.get(name).copied()
     }
 
-    /// Lookup a named instance port (e.g. `load.p`) → NodeId.
-    pub fn lookup_instance_port(&self, qualified: &str) -> Option<NodeId> {
-        self.instance_ports.get(qualified).copied()
-    }
 
     /// Allocate a new state variable of `kind`, returning its `StateId`.
     pub fn alloc_state(&mut self, kind: IrStateKind, arg: IrExpr) -> StateId {
@@ -79,26 +190,80 @@ impl<'a> LowerCtx<'a> {
 
     /// Lookup a parameter by name.
     pub fn lookup_param(&self, name: &str) -> Option<ParamId> {
-        self.symbols.params().find(|(_, p)| p.name == name).map(|(id, _)| id)
+        self.params.get(name).copied()
     }
 
     /// Lookup a variable by name.
     pub fn lookup_var(&self, name: &str) -> Option<VarId> {
-        self.symbols.vars().find(|(_, v)| v.name == name).map(|(id, _)| id)
+        self.vars.get(name).copied()
     }
 
     /// Lookup a node (net/port) by name. Also resolves named-instance
     /// port accesses (`load.p` → the parent NodeId the port connects to,
     /// SPEC §7.3).
     pub fn lookup_node(&self, name: &str) -> Option<NodeId> {
-        if name == "gnd" || name == "GND" || name == "vss" || name == "VSS" || name == "0" {
+        if GROUND_NAMES.contains(&name) {
             return Some(NodeId::GROUND);
         }
         // Check instance port map first (e.g. "load.p" or "rseg_0.n").
         if let Some(id) = self.instance_ports.get(name) {
             return Some(*id);
         }
-        self.symbols.nodes().find(|(_, n)| n.name == name).map(|(id, _)| id)
+        if let Some(id) = self.nodes.get(name) {
+            return Some(*id);
+        }
+        // A net-capable bundle port (`out : Differential`) was expanded to
+        // flat scalar ports `out_p`/`out_n` at elaboration (SPEC §7 bundle
+        // expansion) — `out.p` in the behavior body names the flat form.
+        if name.contains('.') {
+            return self.nodes.get(&name.replace('.', "_")).copied();
+        }
+        None
+    }
+
+    // ── Fail-loud lookups (SIMPLIFICATION.md P5) ──────────────────────────
+    //
+    // Each returns a placeholder id on failure *after* recording the error;
+    // `ppr_to_ir` discards the whole program when any error was recorded,
+    // so a placeholder can never mis-wire a circuit that gets simulated.
+
+    /// Resolve a node name or record an "unresolved net" error.
+    pub fn require_node(&mut self, name: &str) -> NodeId {
+        self.lookup_node(name).unwrap_or_else(|| {
+            self.errors.push(LowerError {
+                module: self.module_name.clone(),
+                what: "net",
+                name: name.to_string(),
+            });
+            NodeId::GROUND
+        })
+    }
+
+
+    /// Resolve a bare identifier that fell through every other namespace
+    /// (env binding, module var, node, enum variant): it must be a
+    /// parameter, or it is an unresolved name.
+    pub fn require_ident_as_param(&mut self, name: &str) -> ParamId {
+        self.lookup_param(name).unwrap_or_else(|| {
+            self.errors.push(LowerError {
+                module: self.module_name.clone(),
+                what: "name",
+                name: name.to_string(),
+            });
+            ParamId(0)
+        })
+    }
+
+    /// Resolve a var name or record an "unresolved variable" error.
+    pub fn require_var(&mut self, name: &str) -> VarId {
+        self.lookup_var(name).unwrap_or_else(|| {
+            self.errors.push(LowerError {
+                module: self.module_name.clone(),
+                what: "variable",
+                name: name.to_string(),
+            });
+            VarId(0)
+        })
     }
 }
 
@@ -106,12 +271,18 @@ impl<'a> LowerCtx<'a> {
 
 /// Lower a PHDL design into an [`IrProgram`] by converting every module and
 /// attaching its analog/digital behavior blocks.
-pub fn ppr_to_ir(prog: &Design) -> IrProgram {
+///
+/// Fallible (SIMPLIFICATION.md P5): any name that fails to resolve — a
+/// typo'd net in an instance connection, an unknown parameter in a
+/// contribution — is an error naming the module and symbol, never a
+/// silently grounded node or `ParamId(0)`.
+pub fn ppr_to_ir(prog: &Design) -> Result<IrProgram, LowerErrors> {
     let mut modules: Vec<IrModule> = Vec::new();
+    let mut errors: Vec<LowerError> = Vec::new();
 
     // Pass 1: Build the IrModule skeleton with SymbolTable for all modules.
     for m in prog.modules() {
-        modules.push(convert_mod(m, prog));
+        modules.push(convert_mod(m, prog, &mut errors));
     }
 
     // Pass 1.5: Add non-generic functions to each module's symbol table.
@@ -123,7 +294,7 @@ pub fn ppr_to_ir(prog: &Design) -> IrProgram {
             if f.is_generic() {
                 continue;
             }
-            let ir_f = convert_fn(f, prog, &mut m.symbols);
+            let ir_f = convert_fn(f, prog, &mut m.symbols, &mut errors);
             m.symbols.add_fn(ir_f);
         }
     }
@@ -133,34 +304,57 @@ pub fn ppr_to_ir(prog: &Design) -> IrProgram {
         // Build the instance-port map (SPEC §7.3): for each named instance,
         // map `"label.port_name"` → parent NodeId. This lets the parent's
         // analog body reference child ports (`I(load.p, gnd) <+ …`).
+        let node_by_name: HashMap<String, NodeId> =
+            modules[i].symbols.nodes().map(|(id, n)| (n.name.clone(), id)).collect();
         let mut instance_ports: HashMap<String, NodeId> = HashMap::new();
         for inst in m.instances() {
             if let Some(label) = inst.label() {
                 // Look up the child module to get port names.
                 if let Some(child) = prog.module(inst.module_name()) {
                     for (port_idx, port) in child.ports().iter().enumerate() {
-                        let parent_node = inst.ports().get(port_idx)
-                            .and_then(|nr| {
-                                let name = nr.net();
-                                modules[i].symbols.nodes()
-                                    .find(|(_, n)| n.name == name)
-                                    .map(|(id, _)| id)
-                            })
-                            .unwrap_or(NodeId::GROUND);
+                        let Some(net_ref) = inst.ports().get(port_idx) else {
+                            // Unconnected trailing port: legal, the device
+                            // gets a fresh internal node at codegen.
+                            continue;
+                        };
+                        let name = net_ref.net();
+                        let parent_node = if GROUND_NAMES.contains(&name) {
+                            NodeId::GROUND
+                        } else if let Some(&id) = node_by_name.get(name) {
+                            id
+                        } else {
+                            errors.push(LowerError {
+                                module: m.name().to_string(),
+                                what: "net (instance connection)",
+                                name: name.to_string(),
+                            });
+                            NodeId::GROUND
+                        };
                         instance_ports.insert(format!("{label}.{}", port.name()), parent_node);
                     }
                 }
             }
         }
 
+        // Digital-domain nodes read from an analog body (§ shadow-var
+        // bridge, `LowerCtx::shadow_var_for`), collected across every
+        // analog behavior and merged into the module's digital body below
+        // — creating one if the module declares no `digital` block at all
+        // (a module can be purely analog but still read a digital port).
+        let mut digital_shadows: Vec<(NodeId, VarId)> = Vec::new();
+
         for behavior in m.behaviors() {
             let is_digital = behavior.is_digital();
             let module_vars: HashSet<String> = m.vars().iter().map(|v| v.name().to_string()).collect();
-            let mut ctx = LowerCtx::new(&mut modules[i].symbols, is_digital, module_vars);
+            let mut ctx =
+                LowerCtx::new(&mut modules[i].symbols, m.name().to_string(), is_digital, module_vars);
             ctx.instance_ports = instance_ports.clone();
             ctx.enum_values = prog.enum_value_map();
+            ctx.consts = LowerCtx::const_irs(prog);
 
             let stmts = lower_stmts(behavior.body(), &mut ctx);
+            digital_shadows.append(&mut ctx.digital_shadows);
+            errors.append(&mut ctx.errors);
 
             if is_digital {
                 // Populate digital inputs/outputs from the module's ports:
@@ -190,7 +384,7 @@ pub fn ppr_to_ir(prog: &Design) -> IrProgram {
                 // is an edge-triggered register). Collect their VarIds and
                 // emit `VarDecl` statements with their initializers so the
                 // digital compiler can extract `reg_inits`.
-                let var_inits: Vec<(String, Option<&crate::elab::const_eval::ConstVal>)> = m
+                let var_inits: Vec<(String, Option<&crate::value::Value>)> = m
                     .vars()
                     .iter()
                     .map(|v| (v.name().to_string(), v.init()))
@@ -204,7 +398,7 @@ pub fn ppr_to_ir(prog: &Design) -> IrProgram {
                     };
                     regs.push(vid);
                     if let Some(init) = vinit {
-                        let init_expr = const_val_to_ir(init, &mut modules[i].symbols);
+                        let init_expr = value_to_ir(init);
                         reg_decls.push(IrStmt::VarDecl { var: vid, init: Some(init_expr) });
                     }
                 }
@@ -226,11 +420,35 @@ pub fn ppr_to_ir(prog: &Design) -> IrProgram {
                 });
             }
         }
+
+        if !digital_shadows.is_empty() {
+            let assigns: Vec<IrStmt> = digital_shadows
+                .iter()
+                .map(|(node, var)| IrStmt::Assign { lval: Lval::Var(*var), expr: IrExpr::Net(*node) })
+                .collect();
+            match &mut modules[i].digital {
+                Some(body) => body.stmts.extend(assigns),
+                None => {
+                    // No `digital` block at all: synthesize a body whose
+                    // only job is exporting these nodes' values into the
+                    // shadow vars every step (SPEC §9 combinational
+                    // semantics — a bare top-level `Assign`, re-evaluated
+                    // each digital eval, never a one-shot).
+                    let inputs = digital_shadows.iter().map(|(node, _)| *node).collect();
+                    modules[i].digital =
+                        Some(IrDigitalBody { inputs, outputs: Vec::new(), regs: Vec::new(), stmts: assigns });
+                }
+            }
+        }
     }
 
 
-    IrProgram {
+    if !errors.is_empty() {
+        return Err(LowerErrors(errors));
+    }
+
+    Ok(IrProgram {
         source: Source::Ppr,
         modules,
-    }
+    })
 }
