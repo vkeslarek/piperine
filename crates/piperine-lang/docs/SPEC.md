@@ -21,6 +21,9 @@ closed and grows through extension layers.
 - **VI — Builtins.** Normative catalog of math, analog operators, `$`-syscalls, tasks, events,
   and the prelude/stdlib, with fidelity gaps and the alias policy.
 
+The `bench` block and the uniform simulation API are specified separately in
+`crates/piperine-bench/docs/SPEC.md`.
+
 ---
 
 # Part I — Language Specification
@@ -147,8 +150,13 @@ lowered for `analog`/`digital`):
   applies follows from context, as with every other dual-position construct in this grammar.
 - `Option<T>` — `.is_some()`, `.is_none()`, `.unwrap()`, `.unwrap_or(default)`.
 
-`Map<K, V>`, `Set<T>`, and `Result<T, E>` are reserved (named in the reflection API, Part IV) but
-have no literal syntax or value-layer operations yet — using one outside Part IV's own read-only
+- `Map<K, V>` — an association literal `Map { key: value, … }` (`Map {}` is empty), value-layer,
+  with `.insert(k, v)`, `.get(k) -> Option<V>`, `.len()`; structural equality. Keys compare by
+  value (small-N association list, not a hash table). Backs the `ic:`/`nodeset:` fields of the
+  analysis config bundles (bench spec §5.1, `crates/piperine-bench/docs/SPEC.md`).
+
+`Set<T>` and `Result<T, E>` are reserved (named in the reflection API, Part IV) but have no
+literal syntax or value-layer operations yet — using one outside Part IV's own read-only
 accessors is `NotConst`/`Undefined`, not a silent stub.
 
 #### 6.2 Disciplines — net types
@@ -320,15 +328,29 @@ Arguments pass by value (basic types) or read-only reference (bundles). `mod` = 
 structure; `fn` = reusable value computation.
 
 This `fn`-body grammar (`var`, `if`/`else`, `match`, `for`, `return`, expressions, lambdas) is also
-what a bundle `impl` method and a `bench` block (SPEC_BENCH.md Part II) are written in — same
-statements and expressions everywhere, interpreted rather than inlined-and-differentiated in the
-effectful `bench` context (SPEC_BENCH.md §1). Two differences from the elaboration/analog/digital
+what a bundle `impl` method and a `bench` block (bench spec, `crates/piperine-bench/docs/SPEC.md`)
+are written in — same statements and expressions everywhere, interpreted rather than
+inlined-and-differentiated in the effectful `bench` context (bench spec §1). Two differences from
+the elaboration/analog/digital
 positions of this same grammar: `for x in <expr>` may iterate a runtime `Vec` value, not just an
 elaboration-constant range (§6.1); and `var name = expr;` may omit its type, inferred from `expr`
 at interpretation time — both are only valid where the body is interpreted (`bench`), not
 statically elaborated (an `impl`/global `fn` still requires `var name : Type = expr;`).
 
-#### 9.1 Higher-order functions and generation
+#### 9.1 Default parameter values
+
+A `fn`/method parameter may carry a default: `fn v(self, a: Net, b: Net = gnd) -> Real`.
+**Trailing** parameters only — a defaulted parameter followed by a non-defaulted one is a parse
+error. A call may omit trailing defaulted arguments (`r.v(a)` ≡ `r.v(a, gnd)`); arity checking
+counts only the non-defaulted prefix. Defaults are elaboration constants, evaluated in the
+callee's scope against the already-bound earlier parameters.
+
+This applies uniformly — bundle `impl` methods, global `fn`s, bench helpers, and analog `fn`s
+used in contributions — honored by both the interpreter and the IR inliner (defaults are
+const-folded at call-site lowering). It replaces overloading-by-arity (which PHDL does not have)
+and makes optional config (`op(cfg: OpConfig = OpConfig {})`) expressible.
+
+#### 9.2 Higher-order functions and generation
 
 Generation is the elaboration phase evaluating pure values/types to emit hardware — not macros
 over syntax. A function is a value: type `fn(T, U) -> R`; lambdas `|a, b| a + b` are pure and

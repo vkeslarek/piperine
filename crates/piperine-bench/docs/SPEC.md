@@ -1,4 +1,9 @@
-# Piperine HDL — Specification, Part II: The `bench` Block and the Uniform API
+# Piperine Bench — Specification: The `bench` Block and the Uniform API
+
+*Companion to the language specification (`crates/piperine-lang/docs/SPEC.md`). "Part I"
+references below point there. Language-structural material that once lived here (default
+parameter values, the config-bundle and `Waveform<T>` groundwork) is now Part I §9.1/§6; this
+document keeps its original section numbering — code comments cite it as `§N`.*
 
 `bench` is the effectful scripting layer of PHDL. It runs **after** elaboration and
 monomorphization, over the concrete netlist, and is where a designer runs simulations, measures
@@ -9,7 +14,7 @@ PHDL is one **strongly-typed** language with two faces: the *compiled* face (ela
 `analog`/`digital` behavior) and the *interpreted* face (the `bench`, run interactively over an
 elaborated design). The bench body is the **same `fn` grammar as a bundle `impl`** (Part I §9);
 only the context differs — effectful, rooted at a module, with the simulation and reflection
-tasks available (§10).
+tasks available (§11).
 
 The same operations are exposed as a **uniform object-model API** (§8) callable identically from
 a Piperine `bench`, from Piperine-as-a-library, from Python, and from Rust. `$op()` inside a
@@ -66,7 +71,7 @@ bench ModName {
 
 Attached to a module by name, as `analog ModName`/`digital ModName` are. A **testbench module**
 is the common case: a ports-less top instantiating the DUT plus stimulus (§11). Bodies use the
-`fn` grammar of Part I §9 (with the default-parameter extension of §10). A zero-argument `fn` is
+`fn` grammar of Part I §9 (with default parameter values, Part I §9.1). A zero-argument `fn` is
 a runnable **entry point** the toolchain discovers (`piperine test`/`run`); a test asserts, a
 flow sweeps/tunes/reports — the split is behavioral, not syntactic. A `bench` fn is **not pure**.
 
@@ -91,11 +96,11 @@ method:
 ```phdl
 var r = $op();
 r.v(a, b)     // potential across (a, b)
-r.v(a)        // potential of a vs. ground  (default second argument, §10)
+r.v(a)        // potential of a vs. ground  (default second argument, Part I §9.1)
 r.i(a, b)     // branch flow
 ```
 
-`r.v(a)` and `r.v(a, b)` are the same method with a defaulted second argument (§10). Because a
+`r.v(a)` and `r.v(a, b)` are the same method with a defaulted second argument (Part I §9.1). Because a
 result is a value, there is no active-result state: two analyses are two values
 (`var dc = $op(); var tr = $tran(TranConfig { .stop = 1e-3 });`). Results are immutable snapshots
 (§9). The measurement return type follows the analysis: `OpResult` yields `Real`, a `Trace`
@@ -271,23 +276,13 @@ sugar, Rust explicit `..default()`), never a different shape.
 
 ---
 
-## 10. Language extensions (belong to Part I §9)
+## 10. Language extensions — moved to Part I
 
-The bench needs one genuine language change; the rest rides existing features.
-
-- **Default parameter values.** A `fn`/method parameter may carry a default:
-  `fn v(self, a: Net, b: Net = gnd) -> Real`. Trailing parameters may have defaults; a call may
-  omit them (`r.v(a)` ≡ `r.v(a, gnd)`). Defaults are elaboration constants. This applies to all
-  functions and methods, in bundle `impl`s and benches alike, so it is a Part I §9 addition, not
-  a bench-only rule. It replaces overloading-by-arity (which PHDL does not have) and makes
-  optional config (`op(cfg: OpConfig = OpConfig {})`) expressible.
-- **Config bundles** ride Part I §6.5 (bundles with field defaults) — no new syntax; "extensive
-  parameters" become a bundle argument rather than a stateful setter, which is what keeps analyses
-  free of hidden state.
-- **`Waveform<T>`** rides Part I §6.6 generics — a generic stdlib value type, with signal
-  processing as library functions over it.
-
-No other construct is added; the bench is the existing `fn` language in an effectful context.
+The bench needed one genuine language change — **default parameter values** on `fn`/method
+signatures — now specified (and implemented) in the language spec, Part I §9.1. Config bundles
+ride Part I §6.5 and `Waveform<T>` rides Part I §6.6 generics; no bench-only construct exists.
+The bench is the existing `fn` language in an effectful context. (Stub kept so §-references in
+code comments stay stable.)
 
 ---
 
@@ -297,6 +292,7 @@ No other construct is added; the bench is the existing `fn` language in an effec
 |-------------|:------:|:-------:|:-----:|------------------|
 | `$assert(cond, msg)` | ✓ | ✓ | ✓ **implemented** | fails the test/flow |
 | `$info/$warn/$error/$fatal` | ✓ | ✓ | ✓ **implemented** | run log |
+| `$display(args…)` | ✓ | ✓ | ✓ **implemented** (arguments rendered — scalars, tuples, lists, maps, options — joined by a space, no severity prefix) | print to the run output |
 | math (`exp`, `abs`, …) | ✓ | ✓ | ✓ **implemented** | same |
 | `$op(cfg)` | — | — | ✓ **implemented** (`$op()` and `$op(OpConfig { .solver = Solver { … } })`) | DC operating point → `OpResult` |
 | `$tran(cfg)` | — | — | ✓ **implemented** (`TranConfig { .stop, .step /*0 = adaptive auto*/, .start /*delayed-start: solve from 0, record from .start*/, .solver }`; positional `(stop, step)` kept as convenience; `ic:` maps not yet) | transient → `Trace` |
@@ -320,7 +316,7 @@ at elaboration, before any analysis ever runs.
 The §5.1 config bundles (`Solver`, `OpConfig`, `TranConfig`, `AcConfig`, `NoiseConfig`) and the
 `Scale`/`CrossDir` enums are **defined in the stdlib prelude** and consumed by the analyses; the
 `Map` value type backs the `ic`/`nodeset` fields. Default parameter values on user-defined `fn`/method
-signatures (Part I §9/§10) are **implemented**: trailing params may carry a default
+signatures (Part I §9.1) are **implemented**: trailing params may carry a default
 (`fn foo(x: Real, k: Real = 2.0)`), a call may omit them, and defaults are elaboration constants
 honored by both the interpreter (bench/POM fns) and the IR inliner (analog fns used in contributions).
 
