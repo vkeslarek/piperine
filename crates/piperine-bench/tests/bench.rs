@@ -511,6 +511,38 @@ fn waveform_map_applies_a_closure_per_sample() {
 }
 
 #[test]
+fn select_in_expression_position_returns_a_usable_selection() {
+    // SPEC_BENCH.md §7/§13 (G9): `select("...")` in expression position
+    // returns a SelectionRef — `len`/`labels`/field-read work, and staging
+    // via a held selection (`s.resistance = 1e3`) re-runs against the live
+    // design. Field-reads return a List (always, no singleton coercion) of
+    // the param snapshot taken at `select()` time.
+    let src = format!(
+        "{CIRCUIT}
+        bench SwitchOpenTest {{
+            fn test_select_expr() {{
+                var s = select(\"/resistor\");
+                $assert(s.len() == 1, \"one resistor matched\");
+                $assert(s.labels().len() == 1, \"labels is a list of one\");
+                var rs = s.resistance;
+                $assert(rs.len() == 1, \"field-read is a list, not a scalar\");
+                $assert(rs.get(0).unwrap() > 1e5, \"resistance snapshot ~ 1e6\");
+                s.resistance = 1e3;
+                sw.ctrl = 1.0;
+                var r = $op();
+                $assert(r.i(resistor.p, resistor.n) > 1e-3,
+                        \"closed with 1k staged via held selection: ~ mA\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_select_expr") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
 fn waveform_map_rejects_a_non_numeric_closure_result() {
     // A closure that returns something other than Real/Complex is a
     // fail-loud type mismatch, not a silent no-op.

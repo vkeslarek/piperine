@@ -62,6 +62,62 @@ impl Object for InstanceRef {
     }
 }
 
+/// A selection of instances returned by `select("...")` in expression
+/// position (SPEC_BENCH.md §7/§13). Holds the matched instance labels plus a
+/// snapshot of each instance's params at `select()` time — result objects
+/// must be `'static`, so it cannot borrow the `Design`.
+///
+/// Staging via a held selection (`s.ctrl = 1`) re-runs against the *live*
+/// design through `SimHost::assign_field_on`. Field-reads (`.resistance`)
+/// return the snapshot (milestone-1 liveness caveat: re-staging after
+/// `select()` is not reflected in a field-read). Field-reads always yield a
+/// `List` — one value per instance, no singleton-scalar coercion.
+#[derive(Debug)]
+pub struct SelectionRef {
+    pub labels: Vec<String>,
+    /// param snapshot per instance, parallel to `labels`.
+    params: Vec<HashMap<String, Value>>,
+}
+
+impl SelectionRef {
+    pub fn new(labels: Vec<String>, params: Vec<HashMap<String, Value>>) -> Self {
+        Self { labels, params }
+    }
+}
+
+impl Object for SelectionRef {
+    fn type_name(&self) -> &str {
+        "Selection"
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn call_method(&self, name: &str, _args: Vec<Value>) -> Result<Value, EvalError> {
+        match name {
+            "len" => Ok(Value::Nat(self.labels.len() as u64)),
+            "labels" => Ok(Value::List(Rc::new(std::cell::RefCell::new(
+                self.labels.iter().map(|s| Value::Str(s.clone())).collect(),
+            )))),
+            // A field-read (`s.resistance`, no parens) → snapshot per
+            // instance, as a List (always a List, even for a singleton).
+            _ => {
+                let values: Result<Vec<Value>, EvalError> = self
+                    .params
+                    .iter()
+                    .map(|p| {
+                        p.get(name).cloned().ok_or_else(|| {
+                            EvalError::Undefined(format!(
+                                "`{name}` is not a param of every selected instance"
+                            ))
+                        })
+                    })
+                    .collect();
+                Ok(Value::List(Rc::new(std::cell::RefCell::new(values?))))
+            }
+        }
+    }
+}
+
 /// The immutable snapshot returned by `$op()` (SPEC_BENCH.md §4/§6): DC
 /// operating-point node potentials and branch currents, read by name
 /// through [`CircuitBuildInfo`].

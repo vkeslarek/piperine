@@ -10,7 +10,7 @@ use piperine_lang::eval::tasks::dispatch_pure;
 use piperine_lang::eval::{Callable, EvalError, Host, TaskRegistry, Value};
 use piperine_lang::parse::ast::Expr;
 
-use crate::objects::{InstanceRef, NetRef};
+use crate::objects::{InstanceRef, NetRef, SelectionRef};
 use crate::session::SimSession;
 use crate::tasks::SimTaskRegistry;
 
@@ -147,6 +147,14 @@ impl Host for SimHost {
         })
     }
 
+    fn call_host_fn(&mut self, name: &str, args: &[Value]) -> Option<Result<Value, EvalError>> {
+        if name == "select" {
+            Some(self.eval_select(args))
+        } else {
+            None
+        }
+    }
+
     fn syscall(&mut self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
         if let Some(task) = self.sim_tasks.lookup(name) {
             return task.run(args, &self.session);
@@ -187,9 +195,61 @@ impl Host for SimHost {
         }
         Ok(false)
     }
+
+    fn assign_field_on(&mut self, target: &Value, field: &str, value: &Value) -> Result<bool, EvalError> {
+        // `s.ctrl = 1` where `s` holds a `SelectionRef`: stage on every
+        // instance in the (live) selection.
+        if let Value::Object(obj) = target
+            && let Some(sel) = obj.as_any().downcast_ref::<SelectionRef>()
+        {
+            if sel.labels.is_empty() {
+                return Err(EvalError::Host(format!(
+                    "cannot stage `{field}` on an empty selection"
+                )));
+            }
+            for label in &sel.labels {
+                self.session.stage(label, field, value.clone());
+            }
+            return Ok(true);
+        }
+        Ok(false)
+    }
 }
 
 impl SimHost {
+    /// Evaluate `select("path")` in expression position (SPEC_BENCH.md
+    /// §7/§13): return a [`SelectionRef`] of the matched instance labels
+    /// with a param snapshot per instance.
+    fn eval_select(&mut self, args: &[Value]) -> Result<Value, EvalError> {
+        let Some(Value::Str(path)) = args.first() else {
+            return Err(EvalError::TypeMismatch(
+                "select(...) takes a string-literal path".into(),
+            ));
+        };
+        use piperine_lang::pom::node::Node;
+        let mut design = self.session.design().clone();
+        design.set_top(self.session.module());
+        let selection = design
+            .select(path)
+            .map_err(|e| EvalError::Host(format!("select(\"{path}\"): {e}")))?;
+        let mut labels = Vec::new();
+        let mut params = Vec::new();
+        for node in selection.iter() {
+            if let Node::Instance(inst) = node {
+                let label = inst.name().to_string();
+                let snap = self.resolve_instance(&label).map(|i| i.params).unwrap_or_default();
+                labels.push(label);
+                params.push(snap);
+            }
+        }
+        if labels.is_empty() {
+            return Err(EvalError::Host(format!(
+                "select(\"{path}\") matched no instances"
+            )));
+        }
+        Ok(Value::Object(Rc::new(SelectionRef::new(labels, params))))
+    }
+
     /// Stage `param = value` on every instance a selector path matches —
     /// fail-loud when the selection is empty or matches nothing stageable.
     fn stage_selection(&mut self, path: &str, param: &str, value: &Value) -> Result<bool, EvalError> {

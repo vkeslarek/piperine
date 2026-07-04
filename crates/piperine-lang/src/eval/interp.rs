@@ -43,6 +43,14 @@ pub trait Host {
         None
     }
 
+    /// Intercept a plain-name call (`name(args)`, not a `$`-syscall) the host
+    /// wants to own — e.g. `select("...")` returning a `SelectionRef`.
+    /// Consulted between `resolve_callable` and the built-in math fallback;
+    /// returns `None` to let the interpreter fall back.
+    fn call_host_fn(&mut self, _name: &str, _args: &[Value]) -> Option<Result<Value, EvalError>> {
+        None
+    }
+
     /// Dispatch a `$name(args)` system task.
     fn syscall(&mut self, name: &str, args: Vec<Value>) -> Result<Value, EvalError>;
 
@@ -51,6 +59,15 @@ pub trait Host {
     /// not a host-owned location, so the interpreter should fall back to
     /// assigning a local `var`.
     fn assign(&mut self, target: &Expr, value: &Value) -> Result<bool, EvalError>;
+
+    /// Handle `target.field = value` where `target` is a host object the
+    /// host wants to intercept (e.g. `s.ctrl = 1` on a held `SelectionRef`).
+    /// The interpreter evaluates the base `Expr` itself (the host only sees
+    /// `&Expr` in [`assign`](Self::assign), so it cannot), then calls this
+    /// with the resulting value. Returns `Ok(true)` if consumed.
+    fn assign_field_on(&mut self, _target: &Value, _field: &str, _value: &Value) -> Result<bool, EvalError> {
+        Ok(false)
+    }
 }
 
 /// The result of executing a block or function body: a plain fallthrough
@@ -239,6 +256,15 @@ impl<'h, H: Host> Interpreter<'h, H> {
         if self.host.assign(dest, &value)? {
             return Ok(Flow::Normal(Value::Unit));
         }
+        // Held-object field assignment (e.g. `s.ctrl = 1` on a `SelectionRef`
+        // the bench holds in a local var): `assign` only sees the `Expr`, so
+        // evaluate the base here and hand the value to `assign_field_on`.
+        if let Expr::Field(base, field) = dest {
+            let base_value = self.eval_expr(base)?;
+            if self.host.assign_field_on(&base_value, field, &value)? {
+                return Ok(Flow::Normal(Value::Unit));
+            }
+        }
         // Not host-owned: must be a local `var` (`Expr::Ident`).
         match dest {
             Expr::Ident(name) if self.set_local(name, value) => Ok(Flow::Normal(Value::Unit)),
@@ -410,10 +436,14 @@ impl<'h, H: Host> Interpreter<'h, H> {
                     Callable::Function { params, body } => self.call_pom_fn(&params, &body, arg_values),
                 };
             }
+            // Host-intercepted plain-name call (e.g. `select("...")`).
+            if let Some(result) = self.host.call_host_fn(name, &arg_values) {
+                return result;
+            }
             let floats: Result<Vec<f64>, EvalError> = arg_values.iter().map(as_real).collect();
             if let Ok(floats) = floats
                 && let Some(result) = piperine_ir::math::eval_const_math(name, &floats) {
-                    return Ok(Value::Real(result));
+                return Ok(Value::Real(result));
                 }
             return Err(EvalError::Undefined(name.clone()));
         }

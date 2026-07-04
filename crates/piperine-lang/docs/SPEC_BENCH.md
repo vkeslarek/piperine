@@ -302,7 +302,7 @@ No other construct is added; the bench is the existing `fn` language in an effec
 | `$noise(cfg)` | — | — | ✓ **implemented** (`NoiseConfig { .out = Net \| (Net, Net), .fstart, .fstop, .points, .scale, .solver }` — the spec's `out : Branch` field, a bare Net meaning `(net, gnd)` or a `(Net, Net)` pair; the positional `$noise(out, cfg)` alias is kept for one release) | `NoiseTrace.{psd,total}` |
 | result `.v/.i` | — | — | ✓ **implemented** on `OpResult`, `Trace`, and the AC `Trace` (`Trace.i` only for ideal-source branches — no reactive read yet) | measurement (§4, §6) |
 | `Waveform` methods | — | — | ✓ **implemented**: `at/min/max/mean/rms/peak_to_peak/len/points/cross/rise_time/fall_time/fft`, `mag/phase/db` on `Waveform<Complex>`, and `map(f)` (a closure-taking method — the interpreter invokes the closure per sample; Real result stays `Waveform`, Complex result stays `ComplexWaveform`) | measurement (§6) |
-| `select`, name/`.set` staging | — | — | ✓ **implemented**: bare-name staging (`sw.ctrl = 1`) and `select("...").param = v` bulk staging (string-literal paths); select-for-*measurement* not yet | reflection + override |
+| `select`, name/`.set` staging | — | — | ✓ **implemented**: bare-name staging (`sw.ctrl = 1`), `select("...").param = v` bulk staging (string-literal paths), and `select("...")` in *expression* position returning a `SelectionRef` (`len`/`labels`/field-read; staging via a held selection re-runs against the live design) | reflection + override |
 | `extract`, `.attach`, `.meta` | — | — | ✓ *not yet implemented* | plugin annotations (extensibility spec) |
 | `$write(path, …)` | — | — | ✓ **implemented** (CSV of lists/tuples/scalars) | emit artifacts |
 | `$plot(w, title)` | — | — | ✓ *not yet implemented* | emit artifacts |
