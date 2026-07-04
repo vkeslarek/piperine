@@ -24,9 +24,10 @@ mod Top() {
 }
 
 bench Top {
+
     fn test_math_functions_force_p() {
-        var res = $op();
+        var res = $op ();
         // exp(1) + ln(exp(1)) + sqrt(4) + pow(2,3) = e + 1 + 2 + 8 = e + 11
-        $assert(res.v(node, gnd) > 13.71 && res.v(node, gnd) < 13.72, "V(p) should be e + 11");
+        $assert (res.v(node, gnd) > 13.71 && res.v(node, gnd) < 13.72, "V(p) should be e + 11");
     }
 }

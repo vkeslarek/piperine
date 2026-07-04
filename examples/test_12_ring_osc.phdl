@@ -13,8 +13,9 @@ analog Inverter {
 }
 
 bench Inverter {
+
     fn test_inverter_rests_near_ground() {
-        var res = $op();
-        $assert(res.v(y, gnd) < 1e-6, "floating input: output should rest near 0V at DC");
+        var res = $op ();
+        $assert (res.v(y, gnd) < 1e-6, "floating input: output should rest near 0V at DC");
     }
 }

@@ -12,8 +12,9 @@ digital BusTest {
 }
 
 bench BusTest {
+
     fn test_op_solves() {
-        var res = $op();
-        $assert(1 == 1, "BusTest reaches a DC operating point");
+        var res = $op ();
+        $assert (1 == 1, "BusTest reaches a DC operating point");
     }
 }

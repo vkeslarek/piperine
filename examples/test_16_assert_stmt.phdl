@@ -11,8 +11,9 @@ digital AssertTest {
 }
 
 bench AssertTest {
+
     fn test_op_solves() {
-        var res = $op();
-        $assert(1 == 1, "AssertTest reaches a DC operating point");
+        var res = $op ();
+        $assert (1 == 1, "AssertTest reaches a DC operating point");
     }
 }

@@ -18,8 +18,9 @@ analog Switch {
 }
 
 bench Switch {
+
     fn test_op_solves() {
-        var res = $op();
-        $assert(1 == 1, "Switch reaches a DC operating point");
+        var res = $op ();
+        $assert (1 == 1, "Switch reaches a DC operating point");
     }
 }

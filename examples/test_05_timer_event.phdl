@@ -14,8 +14,9 @@ digital ClockGen {
 }
 
 bench ClockGen {
+
     fn test_op_solves() {
-        var r = $op();
-        $assert(1 == 1, "ClockGen reaches a DC operating point");
+        var r = $op ();
+        $assert (1 == 1, "ClockGen reaches a DC operating point");
     }
 }
