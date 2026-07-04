@@ -1,0 +1,59 @@
+// Single-pole op-amp macromodel (gm into R‖C, ideal output buffer) wired
+// as a unity follower. DC: the closed loop lands within 1/A0 of the input.
+// Transient: from a zeroed compensation node, the step settles with
+// τ = 1/(2π·GBW) — checked at 1 τ and at 6 τ.
+
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+mod VoltageSource(inout p : Electrical, inout n : Electrical) {
+    param voltage : Real = 1.0;
+}
+
+analog VoltageSource {
+    V(p, n) <- voltage;
+}
+
+// A0 = gm·rp = 1e4, pole fp = 1/(2π·rp·cp) = 10 Hz, GBW = A0·fp = 100 kHz.
+// The compensation node is a pin so the testbench can preset it.
+mod OpAmp(input inp : Electrical, input inn : Electrical, inout pole : Electrical, inout out : Electrical, inout gnd : Electrical) {
+    param gm : Real = 1e-3;
+    param rp : Real = 1e7;
+    param cp : Real = 1.5915e-9;
+}
+
+analog OpAmp {
+    I(pole, gnd) <+ -gm * (V(inp, gnd) - V(inn, gnd));
+    I(pole, gnd) <+ V(pole, gnd) / rp;
+    I(pole, gnd) <+ cp * ddt(V(pole, gnd));
+    V(out, gnd) <- V(pole, gnd);
+}
+
+mod Follower() {
+    wire gnd : Electrical;
+    wire vin : Electrical;
+    wire comp : Electrical;
+    wire out : Electrical;
+    src : VoltageSource(.p = vin, .n = gnd) { .voltage = 1.0 };
+    amp : OpAmp(.inp = vin, .inn = out, .pole = comp, .out = out, .gnd = gnd);
+}
+
+bench Follower {
+
+    fn test_dc_tracks_input() {
+        var r = $op();
+        // Closed-loop error = 1/(1+A0) = 1e-4.
+        $assert(abs(r.v(out, gnd) - 1.0) < 5e-4, "follower output equals its input");
+    }
+
+    fn test_step_settles_at_gbw() {
+        // Zero the compensation node: the loop slews back with
+        // τ = 1/(2π·GBW) ≈ 1.59 µs.
+        var t = $tran(TranConfig { .stop = 1e-5, .step = 2e-8, .ic = Map { comp: 0.0 } });
+        var v = t.v(out, gnd);
+        $assert(abs(v.at(1.59e-6) - 0.632) < 0.05, "one closed-loop tau reaches 63%");
+        $assert(v.at(1e-5) > 0.99, "six tau settles to the input");
+    }
+}

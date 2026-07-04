@@ -98,7 +98,7 @@ both a package and the workspace) — always pass `--workspace`.
   `codegen_ir.rs`), end-to-end sim (`spec_simulation.rs`), bench gating (`bench.rs`),
   ngspice headers (`ngspice_*.rs`).
 - `piperine-bench/tests/bench.rs` — bench e2e (has the `elab` helper + `CIRCUIT` fixture);
-  `run_examples.rs` — all 21 `examples/*.phdl` benches must stay green.
+  `run_examples.rs` — every `examples/*.phdl` bench must stay green.
 - `piperine-solver/tests/` — solver-level analyses, mixed-signal, OSDI, cosim.
 
 ## Documentation

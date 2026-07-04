@@ -79,6 +79,14 @@ pub trait Object: fmt::Debug {
     /// Dispatch a method call `recv.name(args)`.
     fn call_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError>;
 
+    /// Human-readable rendering for `$display` — result objects override
+    /// this to print a table (a `Waveform` prints its samples, an
+    /// `OpResult` its node voltages). The default is the diagnostic
+    /// placeholder `<TypeName>`.
+    fn render(&self) -> String {
+        format!("<{}>", self.type_name())
+    }
+
     /// Value-based equality for [`Value::PartialEq`] — returns true when two
     /// objects' data compares equal (e.g. two `NetRef`s with the same name).
     /// The default is identity (distinct objects compare unequal), which is

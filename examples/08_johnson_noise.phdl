@@ -1,0 +1,48 @@
+// Johnson–Nyquist noise of a resistor, band-limited by its own parallel
+// capacitance. The bench checks physics, not plumbing: the output PSD
+// plateau is 4kTR and the integrated noise approaches the classic kT/C.
+
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+// R = 1 kΩ at T = 300 K: thermal current PSD 4kT/R ≈ 1.657e-23 A²/Hz.
+mod NoisyResistor(inout p : Electrical, inout n : Electrical) {
+    param r : Real = 1e3;
+    param psd_4ktr : Real = 1.657e-23;    // 4·k·300/R, A²/Hz
+}
+
+analog NoisyResistor {
+    I(p, n) <+ V(p, n) / r;
+    I(p, n) <+ white_noise(psd_4ktr, "thermal");
+}
+
+mod Capacitor(inout p : Electrical, inout n : Electrical) {
+    param c : Real = 1e-9;
+}
+
+analog Capacitor {
+    I(p, n) <+ c * ddt(V(p, n));
+}
+
+mod NoiseCell() {
+    wire gnd : Electrical;
+    wire out : Electrical;
+    r1 : NoisyResistor(.p = out, .n = gnd);
+    c1 : Capacitor(.p = out, .n = gnd);    // fc ≈ 159 kHz
+}
+
+bench NoiseCell {
+
+    fn test_thermal_noise_physics() {
+        var n = $noise(NoiseConfig { .out = out, .fstart = 1.0, .fstop = 1e7, .points = 200 });
+        var psd = n.psd();
+        // Low-frequency plateau: S_v = 4kTR ≈ 1.657e-17 V²/Hz.
+        var plateau = psd.at(100.0);
+        $display("plateau:", plateau, "V^2/Hz, integrated:", n.total(), "V^2");
+        $assert(plateau > 1.3e-17 && plateau < 2.0e-17, "plateau is 4kTR");
+        // Integrated RMS over the band: √(kT/C) ≈ 2.03 µV (band covers ~98%).
+        $assert(n.total() > 1.8e-6 && n.total() < 2.2e-6, "total RMS noise is sqrt(kT/C)");
+    }
+}

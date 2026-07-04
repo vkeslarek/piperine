@@ -117,6 +117,13 @@ where
             system.apply_limit(&self.state, current_guess.view_mut());
 
             if system.converged(&self.state, &current_guess.view()) {
+                // Commit the converged solution — the buffer's latest row is
+                // what snapshots read and what the next timestep's companion
+                // models treat as the accepted point.
+                self.state
+                    .latest_mut()
+                    .unwrap()
+                    .assign(&current_guess.view());
                 system.convergence_success_callback(&self.state, &current_guess.view());
                 debug!("Converged in {} iterations", iter + 1);
                 return Ok(current_guess);

@@ -1,0 +1,61 @@
+// Bang-bang thermostat: a thermal RC plant (ambient 20 °C, τ = 10 ms in
+// simulation seconds) heated by a controlled source; `@above` events flip
+// the heater off at 25 °C and back on at 22 °C. The bench uses a
+// delayed-start transient (`TranConfig.start`) to skip the warm-up and
+// asserts the steady limit cycle stays inside the hysteresis band.
+
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+// Heat capacity + leak to ambient: 1 V ≡ 1 °C.
+mod ThermalPlant(inout temp : Electrical, inout gnd : Electrical) {
+    param tamb : Real = 20.0;
+    param rth : Real = 10.0;      // °C per W
+    param cth : Real = 1e-3;      // τ = rth·cth = 10 ms
+}
+
+analog ThermalPlant {
+    I(temp, gnd) <+ cth * ddt(V(temp, gnd));
+    I(temp, gnd) <+ (V(temp, gnd) - tamb) / rth;
+}
+
+// The controller injects heat while `heater` is on; the events implement
+// the hysteresis comparator.
+mod Controller(inout temp : Electrical, inout gnd : Electrical) {
+    param t_high : Real = 25.0;
+    param t_low : Real = 22.0;
+    param power : Real = 1.0;     // W → +10 °C above ambient when always-on
+    var heater : Real = 1.0;
+}
+
+analog Controller {
+    I(temp, gnd) <+ -heater * power;
+    @above(V(temp, gnd) - t_high) {
+        heater = 0.0;
+    }
+    @above(t_low - V(temp, gnd)) {
+        heater = 1.0;
+    }
+}
+
+mod Thermostat() {
+    wire gnd : Electrical;
+    wire temp : Electrical;
+    plant : ThermalPlant(.temp = temp, .gnd = gnd);
+    ctrl  : Controller(.temp = temp, .gnd = gnd);
+}
+
+bench Thermostat {
+
+    fn test_limit_cycle_holds_the_band() {
+        // Record only after 50 ms (5 τ) — the initial approach is skipped.
+        var t = $tran(TranConfig { .stop = 0.2, .step = 1e-4, .start = 0.05 });
+        var temp = t.v(temp, gnd);
+        $display("cycling range:", temp.min(), "to", temp.max());
+        $assert(temp.min() > 20.5, "heater turns on before falling to ambient");
+        $assert(temp.max() < 26.5, "heater turns off near the top threshold");
+        $assert(temp.peak_to_peak() > 1.0, "the controller actually cycles");
+    }
+}

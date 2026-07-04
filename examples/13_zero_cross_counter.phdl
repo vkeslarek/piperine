@@ -1,0 +1,54 @@
+// Zero-crossing counter: a `@cross` event increments a counter every time
+// a 1 kHz sine crosses zero (either direction); the count is exposed as a
+// voltage. Three full periods have six crossings after t = 0 — the bench
+// checks the count and cross-validates with `Waveform.cross`.
+
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+mod SineSource(inout p : Electrical, inout n : Electrical) {
+    param amplitude : Real = 1.0;
+    param freq : Real = 1e3;
+}
+
+analog SineSource {
+    V(p, n) <- amplitude * sin(6.283185307179586 * freq * $abstime);
+}
+
+mod CrossCounter(input vin : Electrical, inout count : Electrical, inout gnd : Electrical) {
+    var n : Real = 0.0;
+}
+
+analog CrossCounter {
+    V(count, gnd) <- n;
+    @cross(V(vin, gnd)) {
+        n = n + 1.0;
+    }
+}
+
+mod Counter() {
+    wire gnd : Electrical;
+    wire sig : Electrical;
+    wire count : Electrical;
+    src : SineSource(.p = sig, .n = gnd);
+    det : CrossCounter(.vin = sig, .count = count, .gnd = gnd);
+}
+
+bench Counter {
+
+    fn test_counts_six_crossings_in_three_periods() {
+        var t = $tran(TranConfig { .stop = 3e-3, .step = 5e-6 });
+        var n = t.v(count, gnd);
+        $display("crossings counted:", n.at(3e-3));
+        // t=0 starts *at* zero (not a crossing); then T/2, T, 3T/2, ... —
+        // six crossings in (0, 3T].
+        $assert(abs(n.at(3e-3) - 6.0) < 1.1, "six zero crossings in three periods");
+        // Cross-check with the waveform-side detector: the first falling
+        // crossing of the sine itself is at T/2.
+        var first = t.v(sig, gnd).cross(0.0, "Falling");
+        $assert(first.is_some(), "the sine crosses zero");
+        $assert(abs(first.unwrap() - 5e-4) < 5e-5, "first falling crossing at T/2");
+    }
+}

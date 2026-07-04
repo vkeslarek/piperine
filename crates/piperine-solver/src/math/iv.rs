@@ -15,7 +15,13 @@ pub trait InitialValueApplyExt<A: AsIndex, E: Scalar> {
 
 impl<A: AsIndex, E: Scalar> InitialValueApplyExt<A, E> for CircularArrayBuffer2<E> {
     fn apply_iv(&mut self, initial_values: Vec<InitialValue<A, E>>) {
-        self.push(&Array1::zeros(self.size()).view());
+        // Overlay the initial values on the latest state (e.g. user `ic`
+        // on top of the DC point) rather than zeroing unrelated nodes.
+        let base = self
+            .latest()
+            .map(|row| row.to_owned())
+            .unwrap_or_else(|| Array1::zeros(self.size()));
+        self.push(&base.view());
 
         if let Some(mut row) = self.latest_mut() {
             for iv in initial_values {

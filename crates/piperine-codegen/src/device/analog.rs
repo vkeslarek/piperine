@@ -507,9 +507,14 @@ impl AnalogInstance {
             states.latest().and_then(|s| s.get(k).copied()).unwrap_or(0.0)
         });
         let (res, mut jac) = self.eval_rhs_jac(&volts);
-        // Backward-Euler companion: `alpha·dQ/dV` on the Jacobian; the
-        // history source falls out of the Norton transform because the
-        // linearisation point is the previously accepted solution.
+        // Backward-Euler companion: `alpha·dQ/dV` on the Jacobian plus the
+        // explicit history source `alpha·(Q(v_prev) − Q(v_guess))`. The
+        // linearisation point is the *current Newton guess* (the buffer's
+        // latest row is rewritten every iteration), so the history term
+        // must reference the previously accepted solution explicitly —
+        // folding it into the Norton transform would cancel the reactive
+        // current at convergence and collapse every step to the DC point.
+        let mut rhs = self.norton_rhs(&volts, &res, &jac);
         if self.kernel.has_reactive() {
             let n = self.num_terminals();
             let mut qjac = vec![0.0; n * n];
@@ -518,8 +523,28 @@ impl AnalogInstance {
             for (j, q) in jac.iter_mut().zip(&qjac) {
                 *j += alpha * q;
             }
+            if alpha > 0.0 {
+                let prev_volts = self.collect_volts(&|k| {
+                    states.view(1).and_then(|s| s.get(k).copied()).unwrap_or(0.0)
+                });
+                let mut q_now = vec![0.0; n];
+                let mut q_prev = vec![0.0; n];
+                self.kernel
+                    .eval_charge(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut q_now);
+                self.kernel
+                    .eval_charge(&prev_volts, &self.params, &self.state, &self.vars, &self.sim, &mut q_prev);
+                for (r, (qp, qn)) in rhs.iter_mut().zip(q_prev.iter().zip(&q_now)) {
+                    *r += alpha * (qp - qn);
+                }
+                // `alpha·dQ/dV·v_guess` entered `rhs` through `norton_rhs`
+                // only if the Jacobian already carried it — it did not (the
+                // reactive part was added after), so add it here.
+                for i in 0..n {
+                    let coupling: f64 = (0..n).map(|jx| qjac[i * n + jx] * volts[jx]).sum();
+                    rhs[i] += alpha * coupling;
+                }
+            }
         }
-        let rhs = self.norton_rhs(&volts, &res, &jac);
         let mut stamps = self.nodal_stamps(&rhs, &jac);
         stamps.extend(self.force_stamps(&volts));
         stamps
@@ -645,7 +670,10 @@ impl AnalogInstance {
             .iter()
             .zip(psd)
             .filter_map(|((plus, minus), value)| {
-                let (plus, minus) = (plus.clone()?, minus.clone()?);
+                // A ground-mapped terminal is the reference node, not a
+                // reason to drop the source (mirrors the OSDI device).
+                let plus = plus.clone().unwrap_or_else(AnalogReference::ground);
+                let minus = minus.clone().unwrap_or_else(AnalogReference::ground);
                 (value > 0.0).then_some(Noise {
                     terminals: (plus, minus),
                     value,

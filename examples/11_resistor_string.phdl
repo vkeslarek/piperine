@@ -1,0 +1,45 @@
+// Structural generation: a `for` loop instantiates a bank of four matched
+// resistors in parallel (250 Ω equivalent) as the bottom leg of a divider.
+// v(mid) = 5 · 250/(1000+250) = 1 V, string current 4 mA split evenly.
+
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+mod VoltageSource(inout p : Electrical, inout n : Electrical) {
+    param voltage : Real = 5.0;
+}
+
+analog VoltageSource {
+    V(p, n) <- voltage;
+}
+
+mod Resistor(inout p : Electrical, inout n : Electrical) {
+    param r : Real = 1e3;
+}
+
+analog Resistor {
+    I(p, n) <+ V(p, n) / r;
+}
+
+mod ParallelBank() {
+    wire gnd : Electrical;
+    wire top : Electrical;
+    wire mid : Electrical;
+    src   : VoltageSource(.p = top, .n = gnd);
+    r_top : Resistor(.p = top, .n = mid);
+    for i in 0 .. 4 {
+        bank[i] : Resistor(.p = mid, .n = gnd);
+    }
+}
+
+bench ParallelBank {
+
+    fn test_bank_divides() {
+        var r = $op();
+        $display(r);
+        $assert(abs(r.v(mid, gnd) - 1.0) < 1e-6, "4x 1k in parallel is 250 ohms");
+        $assert(abs(r.i(r_top.p, r_top.n) - 4e-3) < 1e-8, "string current is 5V / 1.25k");
+    }
+}

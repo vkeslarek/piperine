@@ -166,8 +166,8 @@ Trace                                       // $tran and $ac
   axis() -> Waveform<Real>                  // time or frequency
 
 NoiseTrace
-  psd()   -> Waveform<Real>
-  total() -> Real
+  psd()   -> Waveform<Real>       // output-referred PSD, V²/Hz
+  total() -> Real                 // integrated RMS noise over the sweep band, V
 
 Waveform<T>                                 // a generic series over the analysis axis
   at(x: Real) -> T

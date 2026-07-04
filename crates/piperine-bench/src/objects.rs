@@ -230,6 +230,20 @@ impl Object for OpResult {
     fn as_any(&self) -> &dyn Any {
         self
     }
+    fn render(&self) -> String {
+        let mut nets: Vec<_> = self.info.nets.iter().collect();
+        nets.sort_by(|a, b| a.0.cmp(b.0));
+        let mut out = format!("\n{:>12}  {:>16}\n", "net", "V");
+        for (name, node) in nets {
+            let v = if *node == NodeIdentifier::Gnd {
+                0.0
+            } else {
+                self.dc.get_node(node).unwrap_or(0.0)
+            };
+            out.push_str(&format!("{:>12}  {:>16.6e}\n", name, v));
+        }
+        out
+    }
     fn call_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
         match name {
             "v" => self.v(&args),

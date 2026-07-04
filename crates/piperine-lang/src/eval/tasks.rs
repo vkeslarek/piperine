@@ -107,6 +107,7 @@ fn display(v: &Value) -> String {
         }
         Value::Option(None) => "None".into(),
         Value::Option(Some(x)) => format!("Some({})", display(x)),
+        Value::Object(o) => o.render(),
         other => format!("<{}>", other.type_name()),
     }
 }
