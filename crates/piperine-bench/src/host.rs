@@ -87,9 +87,17 @@ impl SimHost {
                     }
                     Value::Record(inner)
                 }
-                other => match env.eval(other) {
-                    Ok(v) => v,
-                    Err(_) => continue,
+                other => match other {
+                    // `Map {}` default — the empty map is a compile-time
+                    // constant (a non-empty Map literal holds Net keys, not
+                    // const, and is never a declared default).
+                    Expr::MapLit(entries) if entries.is_empty() => {
+                        Value::Map(Rc::new(std::cell::RefCell::new(vec![])))
+                    }
+                    other => match env.eval(other) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    },
                 },
             };
             fields.insert(field.name.clone(), value);

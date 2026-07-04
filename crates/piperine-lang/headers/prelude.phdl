@@ -7,8 +7,8 @@ discipline Ground {
 // ── SPEC_BENCH §5.1 — analysis configuration bundles ─────────────────────────
 // Ordinary value bundles with defaults; an analysis takes one as its single
 // argument (no stateful setter tasks — no hidden state).
-// GAPS: the spec's `ic`/`nodeset` Map<Net, Real> fields await the Map value
-// type.
+// GAPS: none — `ic`/`nodeset` `Map<Net, Real>` fields and `TranConfig.start`
+// are implemented (the Map value type and delayed-start transient both work).
 
 enum Scale { Lin, Dec, Oct }
 enum CrossDir { Rising, Falling, Either }
@@ -23,12 +23,14 @@ bundle Solver {
 
 bundle OpConfig {
     solver : Solver = Solver {},
+    nodeset : Map<Net, Real> = Map {},
 }
 
 bundle TranConfig {
     stop : Real,
     step : Real = 0.0,
     start : Real = 0.0,
+    ic : Map<Net, Real> = Map {},
     solver : Solver = Solver {},
 }
 

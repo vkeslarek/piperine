@@ -28,6 +28,13 @@ impl Object for NetRef {
     fn call_method(&self, name: &str, _args: Vec<Value>) -> Result<Value, EvalError> {
         Err(EvalError::Undefined(format!("method `{name}` on a Net")))
     }
+    /// Two `NetRef`s compare equal when their net names match — SPEC_BENCH.md
+    /// §5.1 `Map<Net, Real>` keys are nets compared by name, not by object
+    /// identity, so two bench resolutions of the same bare net name hash to
+    /// the same key.
+    fn equals(&self, other: &dyn Any) -> bool {
+        other.downcast_ref::<NetRef>().is_some_and(|n| n.name == self.name)
+    }
 }
 
 /// A resolved top-level instance. Field access (`resistor.p`) resolves to
@@ -59,6 +66,11 @@ impl Object for InstanceRef {
             return Ok(value.clone());
         }
         Err(EvalError::Undefined(format!("`{name}` is not a port or param of `{}`", self.label)))
+    }
+    /// Two `InstanceRef`s compare equal when their labels match, so a Map
+    /// keyed by instance can be used with bare-name lookups.
+    fn equals(&self, other: &dyn Any) -> bool {
+        other.downcast_ref::<InstanceRef>().is_some_and(|i| i.label == self.label)
     }
 }
 

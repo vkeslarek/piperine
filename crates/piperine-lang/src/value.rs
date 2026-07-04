@@ -44,6 +44,11 @@ pub enum Value {
     /// falls back to the bundle's declared `FieldDecl.default` at
     /// construction time — there is no lazy default resolution here.
     Record(Rc<RefCell<HashMap<String, Value>>>),
+    /// A `Map<K, V>` association list (SPEC_BENCH.md §5.1 — `ic`/`nodeset`
+    /// per-node hints). Backed by a `Vec<(Value, Value)>`, not a `HashMap`:
+    /// `Value` keys aren't `Hash`/`Eq`-clean, and N is tiny. Shared/mutable
+    /// so `.insert(...)` is visible through every alias, like `List`.
+    Map(Rc<RefCell<Vec<(Value, Value)>>>),
     Option(Option<Box<Value>>),
     Closure(Rc<Closure>),
     /// A host-defined object (e.g. `OpResult`, `NetRef`). Method calls on it
@@ -73,6 +78,16 @@ pub trait Object: fmt::Debug {
     fn as_any(&self) -> &dyn Any;
     /// Dispatch a method call `recv.name(args)`.
     fn call_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError>;
+
+    /// Value-based equality for [`Value::PartialEq`] — returns true when two
+    /// objects' data compares equal (e.g. two `NetRef`s with the same name).
+    /// The default is identity (distinct objects compare unequal), which is
+    /// the safe fallback; concrete object types that have meaningful value
+    /// identity override this (SPEC_BENCH.md §5.1 — `Map<Net, Real>` keys
+    /// must compare by net name, not object pointer).
+    fn equals(&self, _other: &dyn Any) -> bool {
+        false
+    }
 
     /// Dispatch a method call that receives a [`Value::Closure`] argument.
     /// Host objects can't invoke closures themselves (only the interpreter
@@ -108,6 +123,7 @@ impl Value {
             Self::Tuple(_) => "Tuple",
             Self::List(_) => "List",
             Self::Record(_) => "Record",
+            Self::Map(_) => "Map",
             Self::Option(_) => "Option",
             Self::Closure(_) => "Closure",
             Self::Object(o) => o.type_name(),
@@ -151,6 +167,24 @@ impl Value {
                 let [default] = take1(args)?;
                 Ok(inner.clone().map(|v| *v).unwrap_or(default))
             }
+            (Value::Map(entries), "insert") => {
+                let mut it = args.into_iter();
+                let k = it.next().ok_or_else(|| EvalError::TypeMismatch("insert needs 2 arguments".into()))?;
+                let v = it.next().ok_or_else(|| EvalError::TypeMismatch("insert needs 2 arguments".into()))?;
+                let mut e = entries.borrow_mut();
+                if let Some(slot) = e.iter_mut().find(|(ek, _)| ek == &k) {
+                    slot.1 = v;
+                } else {
+                    e.push((k, v));
+                }
+                Ok(Value::Unit)
+            }
+            (Value::Map(entries), "get") => {
+                let [k] = take1(args)?;
+                let found = entries.borrow().iter().find(|(ek, _)| ek == &k).map(|(_, v)| v.clone());
+                Ok(Value::Option(found.map(Box::new)))
+            }
+            (Value::Map(entries), "len") => Ok(Value::Nat(entries.borrow().len() as u64)),
             (Value::Object(obj), _) => obj.call_method(name, args),
             (recv, other) => {
                 Err(EvalError::Undefined(format!("method `{other}` on {}", recv.type_name())))
@@ -239,7 +273,9 @@ impl PartialEq for Value {
             (Value::Tuple(a), Value::Tuple(b)) => a == b,
             (Value::List(a), Value::List(b)) => *a.borrow() == *b.borrow(),
             (Value::Record(a), Value::Record(b)) => *a.borrow() == *b.borrow(),
+            (Value::Map(a), Value::Map(b)) => *a.borrow() == *b.borrow(),
             (Value::Option(a), Value::Option(b)) => a == b,
+            (Value::Object(a), Value::Object(b)) => a.equals(b.as_any()),
             _ => false,
         }
     }

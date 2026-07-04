@@ -5,6 +5,7 @@ use crate::circuit::CircuitInstance;
 use crate::analog::AnalogReference;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
+use crate::math::iv::InitialValue;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::solver::dc::DcSolver;
@@ -93,6 +94,11 @@ pub struct TransientSolver<'a> {
     pub system: TransientSystem<'a>,
     pub solver: NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>,
     pub options: TransientAnalysisOptions,
+    /// User-supplied initial node voltages (SPEC_BENCH.md §5.1
+    /// `TranConfig.ic`), pushed after the DC operating point so the t=0
+    /// state reflects them. Milestone-1: a seed (the companion model's
+    /// first step may show a transient); full enforced-hold is deferred.
+    initial_conditions: Vec<InitialValue<AnalogReference, f64>>,
 }
 
 impl<'a> TransientSolver<'a> {
@@ -123,7 +129,15 @@ impl<'a> TransientSolver<'a> {
             system,
             solver,
             options,
+            initial_conditions: Vec::new(),
         })
+    }
+
+    /// Seed the transient's t=0 state with user initial node voltages
+    /// (SPEC_BENCH.md §5.1 `TranConfig.ic`). Applied after the DC operating
+    /// point in `compute_initial_conditions`.
+    pub fn apply_initial_conditions(&mut self, ivs: Vec<InitialValue<AnalogReference, f64>>) {
+        self.initial_conditions = ivs;
     }
 
     fn compute_initial_conditions(&mut self) -> crate::result::Result<TransientStep> {
@@ -136,6 +150,14 @@ impl<'a> TransientSolver<'a> {
 
         self.solver.push_initial_conditions(iv_dc.clone());
         self.solver.push_initial_conditions(iv_dc);
+        // User `ic` seeds the t=0 state. Pushed twice so both rows of the
+        // companion's history buffer see the ic values (avoids a
+        // discontinuity that would spike the first transient step) —
+        // milestone-1 seed; full enforced-hold is deferred.
+        if !self.initial_conditions.is_empty() {
+            self.solver.push_initial_conditions(self.initial_conditions.clone());
+            self.solver.push_initial_conditions(self.initial_conditions.clone());
+        }
 
         Ok(self.snapshot(0.0))
     }

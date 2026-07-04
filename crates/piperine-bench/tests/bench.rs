@@ -688,3 +688,80 @@ fn waveform_map_rejects_a_non_numeric_closure_result() {
         other => panic!("expected Error, got {other:?}"),
     }
 }
+
+#[test]
+fn map_literal_and_methods() {
+    // SPEC_BENCH.md §5.1 (G5): the `Map<Net, Real>` value type — `Map {}`
+    // literal (empty and with entries), `.insert(k, v)`, `.get(k)`,
+    // `.len()`. Used by `ic`/`nodeset` config fields.
+    let src = format!(
+        "{CIRCUIT}
+        bench SwitchOpenTest {{
+            fn test_map() {{
+                var m = Map {{}};
+                $assert(m.len() == 0, \"empty map\");
+                m.insert(resistor, 1e6);
+                $assert(m.len() == 1, \"len after insert\");
+                var r = m.get(resistor);
+                $assert(r.is_some(), \"get returns some\");
+                $assert(r.unwrap() > 1e5, \"get value\");
+                m.insert(resistor, 2e3);
+                var r2 = m.get(resistor);
+                $assert(r2.unwrap() > 1e3 && r2.unwrap() < 1e4, \"insert updates\");
+                m.insert(sw, 0.0);
+                $assert(m.len() == 2, \"two keys\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_map") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn tran_ic_seeds_the_t0_state() {
+    // SPEC_BENCH.md §5.1 `TranConfig.ic`: a `Map<Net, Real>` hint seeds
+    // the t=0 node voltages (milestone-1 seed — both companion rows
+    // overwrite, so dV/dt = 0 at t=0; the cap doesn't gradually charge
+    // because there's no preceding steady-state for the companion to
+    // interpolate from). We assert the seed reaches the t=0 snapshot.
+    let src = format!(
+        "{CIRCUIT}
+        bench RcCharge {{
+            fn test_ic() {{
+                var t = $tran(TranConfig {{ .stop = 1e-3, .step = 1e-4, .ic = Map {{ out: 0.0 }} }});
+                var v = t.v(out, gnd);
+                $assert(v.len() > 1, \"transient runs with ic\");
+                $assert(v.at(0.0) < 0.5, \"ic seed: t=0 out near 0\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("RcCharge", "test_ic") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn op_nodeset_hint_is_accepted() {
+    // SPEC_BENCH.md §5.1 `OpConfig.nodeset`: accepted and threaded to the DC
+    // solver as an initial guess. Linear circuits converge regardless, so
+    // we assert the bench runs and the OP matches the steady state.
+    let src = format!(
+        "{CIRCUIT}
+        bench RcCharge {{
+            fn test_nodeset() {{
+                var r = $op(OpConfig {{ .nodeset = Map {{ out: 5.0 }} }});
+                $assert(r.v(out, gnd) > 4.9, \"op converges with nodeset\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("RcCharge", "test_nodeset") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}

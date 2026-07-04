@@ -442,6 +442,14 @@ impl<'h, H: Host> Interpreter<'h, H> {
 
             Expr::BundleLit { ty, fields } => self.eval_bundle_lit(ty, fields),
 
+            Expr::MapLit(entries) => {
+                let pairs = entries
+                    .iter()
+                    .map(|(k, v)| Ok((self.eval_expr(k)?, self.eval_expr(v)?)))
+                    .collect::<Result<Vec<_>, EvalError>>()?;
+                Ok(Value::Map(Rc::new(std::cell::RefCell::new(pairs))))
+            }
+
             Expr::Lambda { params, body } => {
                 let captured = self.scopes.iter().flat_map(|s| s.clone()).collect::<HashMap<_, _>>();
                 Ok(Value::Closure(Rc::new(Closure {

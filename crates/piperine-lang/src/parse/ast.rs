@@ -711,6 +711,9 @@ pub enum Expr {
     /// `(e)` with no comma is a parenthesized group, not a 1-tuple.
     Tuple(Vec<Expr>),
     BundleLit { ty: Type, fields: Vec<(String, Expr)> },
+    /// A `Map { k: v, ... }` literal (SPEC_BENCH.md §5.1 — `Map<K, V>`,
+    /// used for `ic`/`nodeset` per-node hints). `Map {}` is the empty map.
+    MapLit(Vec<(Expr, Expr)>),
     Lambda { params: Vec<String>, body: Box<Expr> },
 }
 
@@ -766,6 +769,10 @@ impl Expr {
                 range.end.walk(f);
             }
             Expr::BundleLit { fields, .. } => fields.iter().for_each(|(_, e)| e.walk(f)),
+            Expr::MapLit(entries) => entries.iter().for_each(|(k, v)| {
+                k.walk(f);
+                v.walk(f);
+            }),
         }
     }
 
@@ -814,6 +821,10 @@ impl Expr {
                 range.end.walk_mut(f);
             }
             Expr::BundleLit { fields, .. } => fields.iter_mut().for_each(|(_, e)| e.walk_mut(f)),
+            Expr::MapLit(entries) => entries.iter_mut().for_each(|(k, v)| {
+                k.walk_mut(f);
+                v.walk_mut(f);
+            }),
         }
     }
 

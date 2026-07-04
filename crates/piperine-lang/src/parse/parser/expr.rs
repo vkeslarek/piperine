@@ -249,6 +249,33 @@ impl<'a> Parser<'a> {
             }
         }
 
+        // Map literal: `Map { k: v, ... }` or `Map {}` (SPEC_BENCH.md §5.1).
+        // Disambiguated from a bundle literal by the `Map` type name and the
+        // `k: v` (colon) entry syntax.
+        if let Expr::Ident(name) = &expr {
+            if name == "Map" && self.peek() == Some(&Tok::LBrace) {
+                self.eat(&Tok::LBrace);
+                let mut entries = Vec::new();
+                if !self.eat(&Tok::RBrace) {
+                    let k = self.parse_expr()?;
+                    self.expect(&Tok::Colon)?;
+                    let v = self.parse_expr()?;
+                    entries.push((k, v));
+                    while self.eat(&Tok::Comma) {
+                        if self.peek() == Some(&Tok::RBrace) {
+                            break;
+                        }
+                        let k = self.parse_expr()?;
+                        self.expect(&Tok::Colon)?;
+                        let v = self.parse_expr()?;
+                        entries.push((k, v));
+                    }
+                    self.expect(&Tok::RBrace)?;
+                }
+                expr = Expr::MapLit(entries);
+            }
+        }
+
         // BundleLit: `TypeRef { .field = expr, ... }` — look-ahead on `{ .` or `{ }`.
         if self.peek() == Some(&Tok::LBrace)
             && (self.peek_at(1) == Some(&Tok::Dot) || self.peek_at(1) == Some(&Tok::RBrace)) {

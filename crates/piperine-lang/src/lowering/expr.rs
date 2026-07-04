@@ -236,7 +236,7 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
         Expr::Array(body) => lower_array(body, ctx),
 
         Expr::Cast(_target, inner) => lower_expr(inner, ctx),
-        Expr::BundleLit { .. } | Expr::Lambda { .. } | Expr::Tuple(_) => IrExpr::Real(0.0),
+        Expr::BundleLit { .. } | Expr::Lambda { .. } | Expr::Tuple(_) | Expr::MapLit(_) => IrExpr::Real(0.0),
     }
 }
 

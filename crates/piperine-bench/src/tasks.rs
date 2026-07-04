@@ -31,6 +31,14 @@ fn field(rec: &Value, name: &str) -> Option<Value> {
     }
 }
 
+/// A `Map`-typed config field (`ic`/`nodeset`), defaulting to an empty map
+/// when absent or not a Map (SPEC_BENCH.md §5.1).
+fn field_opt_map(cfg: Option<&Value>, name: &str) -> Value {
+    cfg.and_then(|c| field(c, name))
+        .and_then(|v| if matches!(v, Value::Map(_)) { Some(v) } else { None })
+        .unwrap_or_else(|| Value::Map(std::rc::Rc::new(std::cell::RefCell::new(vec![]))))
+}
+
 fn as_real(v: &Value) -> Result<f64, EvalError> {
     match v {
         Value::Real(r) => Ok(*r),
@@ -90,9 +98,11 @@ impl SimTask for Op {
         "op"
     }
     fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError> {
-        // `$op()` or `$op(OpConfig { .solver = Solver { … } })`.
-        let cfg = solver_config(args.first())?;
-        let result = session.run_op(&cfg).map_err(EvalError::from)?;
+        // `$op()` or `$op(OpConfig { .solver = …, .nodeset = Map { … } })`.
+        let cfg = args.first();
+        let nodeset = field_opt_map(cfg, "nodeset");
+        let sc = solver_config(cfg)?;
+        let result = session.run_op(&sc, &nodeset).map_err(EvalError::from)?;
         Ok(Value::Object(std::rc::Rc::new(result)))
     }
 }
@@ -125,7 +135,8 @@ impl SimTask for Tran {
                 (stop, Some(step), 0.0, SolverConfig::default())
             }
         };
-        let trace = session.run_tran(stop, step, start, &cfg).map_err(EvalError::from)?;
+        let ic = field_opt_map(args.first(), "ic");
+        let trace = session.run_tran(stop, step, start, &cfg, &ic).map_err(EvalError::from)?;
         Ok(Value::Object(std::rc::Rc::new(trace)))
     }
 }
