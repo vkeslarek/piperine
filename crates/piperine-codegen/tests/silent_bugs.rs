@@ -1,20 +1,20 @@
 //! Regression tests for Part A + D of `docs/GAPS.md`.
-//! PHDL-specific tests (parse_and_elaborate, ppr_to_ir, from_ir).
+//! PHDL-specific tests (parse_and_elaborate, lower_bodies, CircuitCompiler).
 
-use piperine_codegen::{ir::IrProgram, SimCtx};
-use piperine_lang::{parse_and_elaborate, ppr_to_ir};
+use std::collections::HashMap;
+
+use piperine_codegen::SimCtx;
+use piperine_lang::parse_and_elaborate;
+use piperine_codegen::ir::LoweredBody;
 use piperine_codegen::{CircuitCompiler, DigitalKernel};
 
 // ── A.4 — Digital Pow/Shl/Shr silently become Add ─────────────────────────
 
 #[test]
 fn a4_shift_in_digital_guard_is_rejected_not_silently_add() {
-    use piperine_codegen::ir::{
-        IrBinOp, IrDigitalBody, IrExpr, IrModule, IrStmt, Source,
-    };
+    use piperine_codegen::ir::{IrBinOp, IrDigitalBody, IrExpr, IrStmt};
 
-    let mut prog = IrProgram::new(Source::Ams);
-    let mut module = IrModule::new("shift_fsm");
+    let mut module = LoweredBody::new("shift_fsm");
     let param_x = module.symbols.add_param("x", piperine_codegen::ir::IrType::Real, None);
     module.digital = Some(IrDigitalBody {
         inputs: Vec::new(),
@@ -30,8 +30,7 @@ fn a4_shift_in_digital_guard_is_rejected_not_silently_add() {
             else_: vec![],
         }],
     });
-    prog.modules.push(module);
-    let err = DigitalKernel::compile(prog.module("shift_fsm").unwrap())
+    let err = DigitalKernel::compile(&module)
         .err()
         .expect("shift in digital guard must fail");
     let msg = format!("{err:?}").to_lowercase();
@@ -47,10 +46,9 @@ fn make_digital_ir_with_unary_op(
     module_name: &str,
     op: piperine_codegen::ir::IrUnOp,
     param_ty: piperine_codegen::ir::IrType,
-) -> IrProgram {
-    use piperine_codegen::ir::{IrExpr, IrModule, IrStmt, IrDigitalBody, Source, Domain, Lval};
-    let mut prog = IrProgram::new(Source::Ams);
-    let mut module = IrModule::new(module_name);
+) -> LoweredBody {
+    use piperine_codegen::ir::{IrExpr, IrStmt, IrDigitalBody, Domain, Lval};
+    let mut module = LoweredBody::new(module_name);
     let param_x = module.symbols.add_param("x", param_ty, None);
     let node_out = module.symbols.add_node("out", Domain::Digital);
     module.digital = Some(IrDigitalBody {
@@ -62,15 +60,14 @@ fn make_digital_ir_with_unary_op(
             expr: IrExpr::Unary(op, Box::new(IrExpr::Param(param_x))),
         }],
     });
-    prog.modules.push(module);
-    prog
+    module
 }
 
 #[test]
 fn a5_bitnot_in_digital_is_rejected_not_silently_not() {
     use piperine_codegen::ir::{IrUnOp, IrType};
-    let prog = make_digital_ir_with_unary_op("bitnot_fsm", IrUnOp::BitNot, IrType::Real);
-    let err = DigitalKernel::compile(prog.module("bitnot_fsm").unwrap())
+    let module = make_digital_ir_with_unary_op("bitnot_fsm", IrUnOp::BitNot, IrType::Real);
+    let err = DigitalKernel::compile(&module)
         .err()
         .expect("BitNot in digital must fail");
     let msg = format!("{err:?}").to_lowercase();
@@ -83,8 +80,8 @@ fn a5_bitnot_in_digital_is_rejected_not_silently_not() {
 #[test]
 fn a5_reduction_op_in_digital_is_rejected_not_silently_not() {
     use piperine_codegen::ir::{IrUnOp, IrType};
-    let prog = make_digital_ir_with_unary_op("redand_fsm", IrUnOp::RedAnd, IrType::Real);
-    let err = DigitalKernel::compile(prog.module("redand_fsm").unwrap())
+    let module = make_digital_ir_with_unary_op("redand_fsm", IrUnOp::RedAnd, IrType::Real);
+    let err = DigitalKernel::compile(&module)
         .err()
         .expect("RedAnd in digital must fail");
     let msg = format!("{err:?}").to_lowercase();
@@ -97,58 +94,49 @@ fn a5_reduction_op_in_digital_is_rejected_not_silently_not() {
 #[test]
 fn a5_neg_in_digital_still_works() {
     use piperine_codegen::ir::{IrUnOp, IrType};
-    let prog = make_digital_ir_with_unary_op("neg_fsm", IrUnOp::Neg, IrType::Integer);
-    DigitalKernel::compile(prog.module("neg_fsm").unwrap()).expect("Neg in digital must still work");
+    let module = make_digital_ir_with_unary_op("neg_fsm", IrUnOp::Neg, IrType::Integer);
+    DigitalKernel::compile(&module).expect("Neg in digital must still work");
 }
 
-// ── A.6 — from_ir propagates child compile errors ──────────────────────────
+// ── A.6 — CircuitCompiler propagates child compile errors ──────────────────
 
 #[test]
 fn a6_from_ir_propagates_child_compile_error_not_silent_skip() {
-    use piperine_codegen::ir::{
-        ContribKind, IrAnalogBody, IrDirection, IrExpr, IrInstance,
-        IrModule, IrPort, IrStmt, Source, Domain, NatureKind, StateId
-    };
+    use piperine_codegen::ir::{ContribKind, IrAnalogBody, IrStmt, NatureKind, StateId};
 
-    let mut prog = IrProgram::new(Source::Ams);
-    let mut module_vsource = IrModule::new("vsource");
-    let node_p = module_vsource.symbols.add_node("p", Domain::Analog);
-    let node_n = module_vsource.symbols.add_node("n", Domain::Analog);
-    module_vsource.ports = vec![
-        IrPort { node: node_p, direction: IrDirection::Inout },
-        IrPort { node: node_n, direction: IrDirection::Inout },
-    ];
-    let nature_i = module_vsource.symbols.add_nature("I", NatureKind::Flow);
-    // Deliberately invalid: references StateId(99) which doesn't exist.
-    // This must produce a validation error that propagates through from_ir.
-    module_vsource.analog = Some(IrAnalogBody {
+    // `vsource` exists in the POM (so the top's instance connection/port
+    // count resolves normally); its *resolved body* is then swapped for a
+    // hand-corrupted one — deliberately invalid: references StateId(99),
+    // which doesn't exist — to check the error names both the instance and
+    // the module when CircuitCompiler tries to compile it.
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod vsource (inout p: Electrical, inout n: Electrical) {}
+        mod top (inout a: Electrical, inout b: Electrical) { u1 : vsource(.p = a, .n = b); }
+    ";
+    let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elab");
+    let mut bodies = piperine_codegen::ir::lower_bodies(&design).expect("lowering failed");
+
+    let vsource = bodies.get_mut("vsource").expect("vsource lowered");
+    let nature_i = vsource.symbols.add_nature("I", NatureKind::Flow);
+    let (node_p, node_n) = {
+        let mut nodes = vsource.symbols.nodes().map(|(id, _)| id);
+        (nodes.next().unwrap(), nodes.next().unwrap())
+    };
+    vsource.analog = Some(IrAnalogBody {
         states: Vec::new(),
         noise: Vec::new(),
         stmts: vec![IrStmt::Contrib {
             nature: nature_i,
             plus: node_p,
             minus: node_n,
-            expr: IrExpr::Real(1.0),
+            expr: piperine_codegen::ir::IrExpr::Real(1.0),
             kind: ContribKind::Reactive(StateId(99)),
         }],
     });
-    prog.modules.push(module_vsource);
 
-    let mut module_top = IrModule::new("top");
-    let node_a = module_top.symbols.add_node("a", Domain::Analog);
-    let node_b = module_top.symbols.add_node("b", Domain::Analog);
-    module_top.ports = vec![
-        IrPort { node: node_a, direction: IrDirection::Inout },
-        IrPort { node: node_b, direction: IrDirection::Inout },
-    ];
-    module_top.instances = vec![IrInstance {
-        label: "u1".into(),
-        module: "vsource".into(),
-        connections: vec![node_a, node_b],
-        params: Vec::new(),
-    }];
-    prog.modules.push(module_top);
-    let err = CircuitCompiler::new(&prog).build_circuit("top").err().expect("top with bad child must bubble error");
+    let mut compiler = CircuitCompiler::new(&design, &bodies);
+    let err = compiler.build_circuit("top").err().expect("top with bad child must bubble error");
     let msg = err.to_string();
     assert!(msg.contains("u1"), "A.6: error should name instance u1, got: {msg}");
     assert!(msg.contains("vsource"), "A.6: error should name module vsource, got: {msg}");
@@ -164,8 +152,8 @@ fn a7_capacitor_compiles_through_ir_path() {
         analog Cap { I(p, n) <+ c * ddt(V(p, n)); }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
-    let ir = ppr_to_ir(&elab).expect("lowering failed");
-    let dev = ir_analog_to_device(&ir, "Cap").expect("capacitor compiles through IR path");
+    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let dev = ir_analog_to_device(&bodies, "Cap").expect("capacitor compiles through IR path");
     assert!(dev.has_reactive(), "capacitor must have reactive contributions");
 }
 
@@ -180,8 +168,8 @@ fn d5_user_fn_inlined_at_call_site_in_contribution() {
         analog Resistor { I(p, n) <+ scale_v(V(p, n)) / r; }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
-    let ir = ppr_to_ir(&elab).expect("lowering failed");
-    let dev = ir_analog_to_device(&ir, "Resistor").expect("D.5: user-fn inlining must compile");
+    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let dev = ir_analog_to_device(&bodies, "Resistor").expect("D.5: user-fn inlining must compile");
     let params = [1.0e3_f64];
     let v = [0.5_f64, 0.0_f64];
     let mut rhs = [0.0_f64; 2];
@@ -199,8 +187,8 @@ fn d5_user_fn_call_to_nonbuiltin_is_inlined_not_silently_zero() {
         analog Gain { I(p, n) <+ amp(V(p, n), g); }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses");
-    let ir = ppr_to_ir(&elab).expect("lowering failed");
-    let dev = ir_analog_to_device(&ir, "Gain").expect("D.5: user fn must compile");
+    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let dev = ir_analog_to_device(&bodies, "Gain").expect("D.5: user fn must compile");
     let params = [2.0_f64];
     let v = [0.5_f64, 0.0_f64];
     let mut rhs = [0.0_f64; 2];
@@ -216,8 +204,8 @@ fn d5_user_fn_missing_still_errors() {
         analog Bad { I(p, n) <+ no_such_fn(V(p, n)); }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses");
-    let ir = ppr_to_ir(&elab).expect("lowering failed");
-    let result = ir_analog_to_device(&ir, "Bad");
+    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let result = ir_analog_to_device(&bodies, "Bad");
     let err = result.err().expect("D.5: missing fn must fail loudly");
     let msg = format!("{err:?}").to_lowercase();
     assert!(msg.contains("no_such_fn") || msg.contains("unknown") || msg.contains("unsupported"));
@@ -234,8 +222,8 @@ fn d5_spec_diode_with_user_fn_compiles() {
         analog Diode { I(a, c) <+ is_sat * (exp(V(a, c) / thermal_voltage(temp)) - 1.0); }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("Diode model parses");
-    let ir = ppr_to_ir(&elab).expect("lowering failed");
-    let dev = ir_analog_to_device(&ir, "Diode").expect("Diode compiles");
+    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let dev = ir_analog_to_device(&bodies, "Diode").expect("Diode compiles");
     let params = [1.0e-14_f64, 300.0_f64];
     let v = [0.5_f64, 0.0_f64];
     let mut rhs = [0.0_f64; 2];
@@ -255,8 +243,8 @@ fn d2_idt_in_contribution_lowers_to_integrator() {
         analog Inductor { I(p, n) <+ idt(V(p, n)) / L; }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses");
-    let ir = ppr_to_ir(&elab).expect("lowering failed");
-    let dev = ir_analog_to_device(&ir, "Inductor").expect("D.2: idt must compile");
+    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let dev = ir_analog_to_device(&bodies, "Inductor").expect("D.2: idt must compile");
     // idt is a runtime-serviced integrator (state + dt·x), not a charge.
     assert_eq!(dev.runtime_states().len(), 1, "D.2: idt allocates one integrator state");
     assert!(!dev.has_reactive(), "D.2: idt is not a charge contribution");
@@ -290,8 +278,8 @@ fn d1_voltage_force_compiles_with_force_residual() {
         analog VSource { V(p, n) <- dc; }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("VSource parses");
-    let ir = ppr_to_ir(&elab).expect("lowering failed");
-    let dev = ir_analog_to_device(&ir, "VSource").expect("D.1: VSource compiles");
+    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let dev = ir_analog_to_device(&bodies, "VSource").expect("D.1: VSource compiles");
     assert!(dev.num_forces() > 0, "D.1: must have force function");
     let params = [1.5_f64];
     let v = [1.2_f64, 0.4_f64];
@@ -310,16 +298,16 @@ fn d1_op_amp_with_force_compiles() {
         analog OpAmp { V(out) <- gain * V(inp, inn); }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("OpAmp parses");
-    let ir = ppr_to_ir(&elab).expect("lowering failed");
-    let dev = ir_analog_to_device(&ir, "OpAmp").expect("D.1: OpAmp compiles");
+    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let dev = ir_analog_to_device(&bodies, "OpAmp").expect("D.1: OpAmp compiles");
     assert!(dev.num_forces() > 0, "D.1: OpAmp must have force function");
 }
 
 fn ir_analog_to_device(
-    prog: &piperine_codegen::ir::IrProgram,
+    bodies: &HashMap<String, LoweredBody>,
     name: &str,
 ) -> Result<std::sync::Arc<piperine_codegen::AnalogKernel>, piperine_codegen::CodegenError> {
-    let module = prog.module(name).ok_or_else(|| piperine_codegen::CodegenError::ModuleNotFound(name.into()))?;
+    let module = bodies.get(name).ok_or_else(|| piperine_codegen::CodegenError::ModuleNotFound(name.into()))?;
     let compiled = piperine_codegen::CompiledModule::compile(module)?;
     compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).map(|a| a.clone())
 }

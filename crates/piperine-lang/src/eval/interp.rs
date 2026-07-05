@@ -587,7 +587,7 @@ impl<'h, H: Host> Interpreter<'h, H> {
             }
             let floats: Result<Vec<f64>, EvalError> = arg_values.iter().map(as_real).collect();
             if let Ok(floats) = floats
-                && let Some(result) = piperine_ir::math::eval_const_math(name, &floats) {
+                && let Some(result) = piperine_math::eval_const_math(name, &floats) {
                 return Ok(Value::Real(result));
                 }
             return Err(EvalError::Undefined(name.clone()));

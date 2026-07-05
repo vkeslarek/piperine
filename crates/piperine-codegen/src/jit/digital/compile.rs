@@ -32,7 +32,7 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
 use crate::ir::{
-    IrBinOp, IrDigitalBody, IrExpr, IrModule, IrStmt, IrType, IrUnOp, Lval,
+    IrBinOp, IrDigitalBody, IrExpr, LoweredBody, IrStmt, IrType, IrUnOp, Lval,
     NodeId, Pattern, SimQuery, Trit, VarId,
 };
 
@@ -43,7 +43,7 @@ use super::abi::*;
 use super::layout::*;
 
 pub(crate) struct DigitalCompiler<'m> {
-    module: &'m IrModule,
+    module: &'m LoweredBody,
     body: &'m IrDigitalBody,
     layout: DigitalLayout,
     jit: JITModule,
@@ -52,7 +52,7 @@ pub(crate) struct DigitalCompiler<'m> {
 }
 
 impl<'m> DigitalCompiler<'m> {
-    pub(crate) fn new(module: &'m IrModule) -> Result<Self, CodegenError> {
+    pub(crate) fn new(module: &'m LoweredBody) -> Result<Self, CodegenError> {
         let body = module
             .digital
             .as_ref()
@@ -343,7 +343,7 @@ enum DigTy {
 
 struct DigitalEmitter<'a, 'f, 'm> {
     builder: &'a mut FunctionBuilder<'f>,
-    module: &'m IrModule,
+    module: &'m LoweredBody,
     layout: &'a DigitalLayout,
     pointers: Pointers,
     reads: VarReads,
@@ -1068,7 +1068,7 @@ impl DigitalEmitter<'_, '_, '_> {
 /// global net ids wired to kernel input/output `i`; the `*_base` fields are the
 /// member's offsets into the shared int/real variable banks and the params bank.
 pub struct NetworkMemberSpec<'m> {
-    pub module: &'m crate::ir::IrModule,
+    pub module: &'m crate::ir::LoweredBody,
     pub in_net_slots: Vec<usize>,
     pub out_net_slots: Vec<usize>,
     pub int_base: usize,

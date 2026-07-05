@@ -2,7 +2,7 @@
 //!
 //! Every test is grounded in a PHDL source excerpt from
 //! `crates/piperine-lang/docs/SPEC.md` (Appendix A / B, §10). The pipeline is
-//! `parse_and_elaborate → ppr_to_ir → CompiledModule::compile`, then the
+//! `parse_and_elaborate → lower_bodies → CompiledModule::compile`, then the
 //! compiled kernels are driven numerically to verify the simulation dynamics
 //! the SPEC prescribes — analog residuals, digital register pipelines,
 //! mixed-signal A2D/D2A bridges, switch branches, and structural circuits.
@@ -10,33 +10,40 @@
 use piperine_codegen::ir::*;
 use piperine_codegen::device::DigitalInstance;
 use piperine_codegen::{CircuitCompiler, CompiledModule, SimCtx};
-use piperine_lang::{parse_and_elaborate, ppr_to_ir};
+use piperine_lang::parse_and_elaborate;
 use piperine_solver::analog::NodeIdentifier;
 use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
 use piperine_solver::solver::Context;
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::collections::HashMap;
 
 // ═════════════════════════════ Helpers ═══════════════════════════════════════
 
-/// Compile a PHDL source string and return the IR program. Panics on any
-/// elaboration or lowering error with the full diagnostic.
-fn compile(src: &str) -> IrProgram {
+/// Compile a PHDL source string and return every module's resolved lowering.
+/// Panics on any elaboration or lowering error with the full diagnostic.
+fn compile(src: &str) -> HashMap<String, LoweredBody> {
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
-    ppr_to_ir(&elab).expect("lowering failed")
+    piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed")
 }
 
-/// Find a module by name in an IR program. Panics if absent.
-fn module<'p>(prog: &'p IrProgram, name: &str) -> &'p IrModule {
-    prog.modules
-        .iter()
-        .find(|m| m.name == name)
-        .unwrap_or_else(|| panic!("module `{name}` not in IR"))
+/// Like [`compile`], but also keeps the elaborated `Design` alive — needed
+/// by `CircuitCompiler::new`, which reads instance structure from the POM
+/// directly (there is no `IrProgram` structural twin to carry both).
+fn elaborate_and_lower(src: &str) -> (piperine_lang::Design, HashMap<String, LoweredBody>) {
+    let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
+    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("lowering failed");
+    (design, bodies)
+}
+
+/// Find a module's resolved body by name. Panics if absent.
+fn module<'p>(prog: &'p HashMap<String, LoweredBody>, name: &str) -> &'p LoweredBody {
+    prog.get(name).unwrap_or_else(|| panic!("module `{name}` not in IR"))
 }
 
 /// Compile a single module to a `CompiledModule`, asserting success.
-fn compiled(prog: &IrProgram, name: &str) -> CompiledModule {
+fn compiled(prog: &HashMap<String, LoweredBody>, name: &str) -> CompiledModule {
     CompiledModule::compile(module(prog, name)).expect("compile {name}")
 }
 
@@ -570,10 +577,10 @@ fn spec_parametric_module_monomorphizes() {
 
 // ═════════════ Section Sim — DC operating point with sources ══════════════════
 
-/// Build an IR program from source + a structural top, compile, and solve DC.
-fn dc_solve(src: &str, top: &str) -> (IrProgram, piperine_solver::circuit::CircuitInstance, piperine_solver::analysis::dc::DcAnalysisResult) {
-    let prog = compile(src);
-    let mut compiler = CircuitCompiler::new(&prog);
+/// Build a resolved lowering from source + a structural top, compile, and solve DC.
+fn dc_solve(src: &str, top: &str) -> (HashMap<String, LoweredBody>, piperine_solver::circuit::CircuitInstance, piperine_solver::analysis::dc::DcAnalysisResult) {
+    let (design, prog) = elaborate_and_lower(src);
+    let mut compiler = CircuitCompiler::new(&design, &prog);
     let mut circuit = compiler.build_circuit(top).expect("build circuit");
     circuit.init_digital();
     circuit.rebuild_digital_topology();
@@ -740,7 +747,7 @@ fn sim_dc_diode_pnjlim_converges() {
 fn sim_tran_rc_charging() {
     use piperine_solver::analysis::transient::TransientAnalysisOptions;
 
-    let prog = compile("
+    let (design, prog) = elaborate_and_lower("
         discipline Electrical { potential v : Real; flow i : Real; }
         mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
         analog VSource { V(p, n) <- dc; }
@@ -754,7 +761,7 @@ fn sim_tran_rc_charging() {
             c1 : Capacitor ( out, gnd );
         }
     ");
-    let mut compiler = CircuitCompiler::new(&prog);
+    let mut compiler = CircuitCompiler::new(&design, &prog);
     let mut circuit = compiler.build_circuit("Top").expect("build circuit");
     circuit.init_digital();
     circuit.rebuild_digital_topology();
@@ -776,7 +783,7 @@ fn sim_tran_rc_charging() {
 /// pass the analog voltage to the digital evaluator.
 #[test]
 fn sim_dc_comparator_a2d_bridge() {
-    let prog = compile("
+    let (design, prog) = elaborate_and_lower("
         discipline Electrical { potential v : Real; flow i : Real; }
         discipline Bit { storage Boolean; }
         mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
@@ -791,7 +798,7 @@ fn sim_dc_comparator_a2d_bridge() {
             cmp : Comparator ( vp, vn, gnd );
         }
     ");
-    let mut compiler = CircuitCompiler::new(&prog);
+    let mut compiler = CircuitCompiler::new(&design, &prog);
     let mut circuit = compiler.build_circuit("Top").expect("build circuit");
     circuit.init_digital();
     circuit.rebuild_digital_topology();
@@ -895,7 +902,7 @@ fn spec_parent_contribution_with_behavioral_for_and_indexed_ports() {
 fn sim_tran_above_event_toggles_switch_state() {
     use piperine_solver::analysis::transient::TransientAnalysisOptions;
 
-    let prog = compile("
+    let (design, prog) = elaborate_and_lower("
         discipline Electrical { potential v : Real; flow i : Real; }
         mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
         analog VSource { V(p, n) <- dc; }
@@ -921,7 +928,7 @@ fn sim_tran_above_event_toggles_switch_state() {
             vc : Ramp ( ctl, gnd ) { .slope = 1.0e4 };
         }
     ");
-    let mut compiler = CircuitCompiler::new(&prog);
+    let mut compiler = CircuitCompiler::new(&design, &prog);
     let mut circuit = compiler.build_circuit("Top").expect("build circuit");
     circuit.init_digital();
     circuit.rebuild_digital_topology();

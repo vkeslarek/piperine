@@ -10,7 +10,7 @@ use piperine_solver::solver::Context;
 
 /// A two-terminal module scaffold: ports `p`, `n`, natures `V`/`I`.
 struct TwoTerminal {
-    module: IrModule,
+    module: LoweredBody,
     p: NodeId,
     n: NodeId,
     v: NatureId,
@@ -19,7 +19,7 @@ struct TwoTerminal {
 
 impl TwoTerminal {
     fn new(name: &str) -> Self {
-        let mut module = IrModule::new(name);
+        let mut module = LoweredBody::new(name);
         let p = module.symbols.add_node("p", Domain::Analog);
         let n = module.symbols.add_node("n", Domain::Analog);
         let v = module.symbols.add_nature("V", NatureKind::Potential);
@@ -34,7 +34,7 @@ impl TwoTerminal {
     }
 
     /// `I(p,n) <+ expr` as the whole analog body.
-    fn with_flow_contrib(mut self, expr: IrExpr, kind: ContribKind) -> IrModule {
+    fn with_flow_contrib(mut self, expr: IrExpr, kind: ContribKind) -> LoweredBody {
         self.module.analog = Some(IrAnalogBody {
             states: Vec::new(),
             noise: Vec::new(),
@@ -57,35 +57,15 @@ fn bin(op: IrBinOp, a: IrExpr, b: IrExpr) -> IrExpr {
 }
 
 /// `resistor(r = 1k)`: `I(p,n) <+ V(p,n) / r`.
-fn resistor() -> IrModule {
+fn resistor() -> LoweredBody {
     let mut t = TwoTerminal::new("resistor");
     let r = t.module.symbols.add_param("r", IrType::Real, Some(real(1000.0)));
     let expr = bin(IrBinOp::Div, t.v_pn(), param(r));
     t.with_flow_contrib(expr, ContribKind::Resistive)
 }
 
-/// `isource(dc = 1mA)`: `I(p,n) <+ -dc` (drives current from n to p).
-fn isource() -> IrModule {
-    let mut t = TwoTerminal::new("isource");
-    let dc = t.module.symbols.add_param("dc", IrType::Real, Some(real(1e-3)));
-    let expr = IrExpr::Unary(IrUnOp::Neg, Box::new(param(dc)));
-    t.with_flow_contrib(expr, ContribKind::Resistive)
-}
-
-/// `vsource(dc = 1V)`: `V(p,n) <- dc`.
-fn vsource() -> IrModule {
-    let mut t = TwoTerminal::new("vsource");
-    let dc = t.module.symbols.add_param("dc", IrType::Real, Some(real(1.0)));
-    t.module.analog = Some(IrAnalogBody {
-        states: Vec::new(),
-        noise: Vec::new(),
-        stmts: vec![IrStmt::Force { nature: t.v, plus: t.p, minus: t.n, expr: param(dc) }],
-    });
-    t.module
-}
-
 /// `diode(is = 1e-14)`: `I(p,n) <+ is * (exp(V/vt) - 1)` with vt from a var.
-fn diode() -> IrModule {
+fn diode() -> LoweredBody {
     let mut t = TwoTerminal::new("diode");
     let is = t.module.symbols.add_param("is", IrType::Real, Some(real(1e-14)));
     let vt = t.module.symbols.add_var("vt", IrType::Real);
@@ -122,7 +102,7 @@ fn diode() -> IrModule {
 }
 
 /// `capacitor(c = 1u)`: `I(p,n) <+ ddt(c * V(p,n))`.
-fn capacitor() -> IrModule {
+fn capacitor() -> LoweredBody {
     let mut t = TwoTerminal::new("capacitor");
     let c = t.module.symbols.add_param("c", IrType::Real, Some(real(1e-6)));
     let arg = bin(IrBinOp::Mul, param(c), t.v_pn());
@@ -139,28 +119,6 @@ fn capacitor() -> IrModule {
         }],
     });
     t.module
-}
-
-/// A structural top: `modules` instanced once each with the given
-/// connections into shared top nodes.
-#[allow(dead_code)]
-fn top_with(
-    instances: Vec<(&str, Vec<NodeId>, Vec<(ParamId, IrExpr)>)>,
-    num_nodes: u32,
-) -> IrModule {
-    let mut top = IrModule::new("top");
-    for i in 0..num_nodes {
-        top.symbols.add_node(format!("n{i}"), Domain::Analog);
-    }
-    for (index, (module, connections, params)) in instances.into_iter().enumerate() {
-        top.instances.push(IrInstance {
-            label: format!("x{index}"),
-            module: module.to_string(),
-            connections,
-            params,
-        });
-    }
-    top
 }
 
 // ─── Kernel-level numeric tests ───────────────────────────────────────────────
@@ -337,65 +295,66 @@ fn validation_rejects_mismatched_contrib_kind() {
 
 // ─── Circuit-level tests through the solver ───────────────────────────────────
 
-fn program(modules: Vec<IrModule>) -> IrProgram {
-    let mut p = IrProgram::new(Source::Ppr);
-    p.modules = modules;
-    p
+// These circuit-level tests exercise the full pipeline (parse → elaborate →
+// lower_bodies → CircuitCompiler) instead of hand-built resolved bodies —
+// there is no way to hand-build a multi-module POM `Design` from outside
+// `piperine-lang` (its structural fields are crate-private by design), and
+// a tiny PHDL snippet is a more faithful fixture for "does the compiler
+// wire instances correctly" than a hand-rolled structural twin ever was.
+const DISCIPLINE: &str = "discipline Electrical { potential v : Real; flow i : Real; }\n";
+const ISOURCE: &str = "mod Isource(inout p : Electrical, inout n : Electrical) { param dc : Real = 1e-3; }\nanalog Isource { I(p, n) <+ -dc; }\n";
+const VSOURCE: &str = "mod Vsource(inout p : Electrical, inout n : Electrical) { param dc : Real = 1.0; }\nanalog Vsource { V(p, n) <- dc; }\n";
+const RESISTOR: &str = "mod Resistor(inout p : Electrical, inout n : Electrical) { param r : Real = 1e3; }\nanalog Resistor { I(p, n) <+ V(p, n) / r; }\n";
+const DIODE: &str = "mod Diode(inout p : Electrical, inout n : Electrical) { param is : Real = 1e-14; }\nanalog Diode { I(p, n) <+ is * (exp(V(p, n) / $vt) - 1.0); }\n";
+const CAPACITOR: &str = "mod Capacitor(inout p : Electrical, inout n : Electrical) { param c : Real = 1e-6; }\nanalog Capacitor { I(p, n) <+ ddt(c * V(p, n)); }\n";
+
+/// Elaborate `body` (module defs, no top) with a `Top` module wired from
+/// `wires`/`instances`, then build the circuit.
+fn build_top(
+    body: &str,
+    top_src: &str,
+) -> (piperine_solver::circuit::CircuitInstance, piperine_codegen::CircuitBuildInfo) {
+    let src = format!("{DISCIPLINE}{body}\nmod Top() {{\n{top_src}\n}}\n");
+    let design = piperine_lang::parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy())
+        .expect("parse_and_elaborate");
+    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("lower_bodies");
+    let mut compiler = CircuitCompiler::new(&design, &bodies);
+    compiler.build_circuit_mapped("Top").expect("build circuit")
+}
+
+fn voltage(
+    result: &piperine_solver::analysis::dc::DcAnalysisResult,
+    info: &piperine_codegen::CircuitBuildInfo,
+    net: &str,
+) -> f64 {
+    let node = info.nets.get(net).unwrap_or_else(|| panic!("no net `{net}`"));
+    result
+        .get(piperine_solver::analog::AnalogVariable::Node(node.clone()))
+        .unwrap_or_else(|| panic!("no voltage for `{net}`"))
 }
 
 #[test]
 fn dc_current_source_into_resistor() {
     // isource (1 mA) feeding a 1 kΩ resistor to ground → V(node) = 1 V.
-    let mut top = IrModule::new("top");
-    let node = top.symbols.add_node("out", Domain::Analog);
-    top.instances.push(IrInstance {
-        label: "i1".into(),
-        module: "isource".into(),
-        connections: vec![node, NodeId::GROUND],
-        params: vec![],
-    });
-    top.instances.push(IrInstance {
-        label: "r1".into(),
-        module: "resistor".into(),
-        connections: vec![node, NodeId::GROUND],
-        params: vec![],
-    });
-
-    let program = program(vec![isource(), resistor(), top]);
-    let mut compiler = CircuitCompiler::new(&program);
-    let mut circuit = compiler.build_circuit("top").expect("build circuit");
+    let body = format!("{ISOURCE}{RESISTOR}");
+    let top = "wire out : Electrical;\ni1 : Isource(.p = out, .n = gnd);\nr1 : Resistor(.p = out, .n = gnd);";
+    let (mut circuit, info) = build_top(&body, top);
     let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
 
-    let voltage = node_voltage(&circuit, 1);
-    let v = result.get(voltage).expect("node voltage");
+    let v = voltage(&result, &info, "out");
     assert!((v - 1.0).abs() < 1e-9, "V(out) = {v}");
 }
 
 #[test]
 fn dc_voltage_divider_with_force_source() {
     // vsource 5 V across two series 1 kΩ resistors → middle at 2.5 V.
-    let mut top = IrModule::new("top");
-    let vin = top.symbols.add_node("vin", Domain::Analog);
-    let mid = top.symbols.add_node("mid", Domain::Analog);
-    let mut push = |label: &str, module: &str, conns: Vec<NodeId>, params: Vec<(ParamId, IrExpr)>| {
-        top.instances.push(IrInstance {
-            label: label.into(),
-            module: module.into(),
-            connections: conns,
-            params,
-        });
-    };
-    push("v1", "vsource", vec![vin, NodeId::GROUND], vec![(ParamId(0), real(5.0))]);
-    push("r1", "resistor", vec![vin, mid], vec![]);
-    push("r2", "resistor", vec![mid, NodeId::GROUND], vec![]);
-
-    let program = program(vec![vsource(), resistor(), top]);
-    let mut compiler = CircuitCompiler::new(&program);
-    let mut circuit = compiler.build_circuit("top").expect("build circuit");
+    let body = format!("{VSOURCE}{RESISTOR}");
+    let top = "wire vin : Electrical;\nwire mid : Electrical;\nv1 : Vsource(.p = vin, .n = gnd) { .dc = 5.0 };\nr1 : Resistor(.p = vin, .n = mid);\nr2 : Resistor(.p = mid, .n = gnd);";
+    let (mut circuit, info) = build_top(&body, top);
     let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
 
-    let v_in = result.get(node_voltage(&circuit, 1)).expect("vin");
-    let v_mid = result.get(node_voltage(&circuit, 2)).expect("mid");
+    let v_in = voltage(&result, &info, "vin");
+    let v_mid = voltage(&result, &info, "mid");
     assert!((v_in - 5.0).abs() < 1e-9, "V(vin) = {v_in}");
     assert!((v_mid - 2.5).abs() < 1e-9, "V(mid) = {v_mid}");
 }
@@ -403,34 +362,12 @@ fn dc_voltage_divider_with_force_source() {
 #[test]
 fn dc_diode_resistor_operating_point() {
     // 5 V source through 1 kΩ into a diode: V_d ≈ 0.65–0.75 V and KCL holds.
-    let mut top = IrModule::new("top");
-    let vin = top.symbols.add_node("vin", Domain::Analog);
-    let vd = top.symbols.add_node("vd", Domain::Analog);
-    top.instances.push(IrInstance {
-        label: "v1".into(),
-        module: "vsource".into(),
-        connections: vec![vin, NodeId::GROUND],
-        params: vec![(ParamId(0), real(5.0))],
-    });
-    top.instances.push(IrInstance {
-        label: "r1".into(),
-        module: "resistor".into(),
-        connections: vec![vin, vd],
-        params: vec![],
-    });
-    top.instances.push(IrInstance {
-        label: "d1".into(),
-        module: "diode".into(),
-        connections: vec![vd, NodeId::GROUND],
-        params: vec![],
-    });
-
-    let program = program(vec![vsource(), resistor(), diode(), top]);
-    let mut compiler = CircuitCompiler::new(&program);
-    let mut circuit = compiler.build_circuit("top").expect("build circuit");
+    let body = format!("{VSOURCE}{RESISTOR}{DIODE}");
+    let top = "wire vin : Electrical;\nwire vd : Electrical;\nv1 : Vsource(.p = vin, .n = gnd) { .dc = 5.0 };\nr1 : Resistor(.p = vin, .n = vd);\nd1 : Diode(.p = vd, .n = gnd);";
+    let (mut circuit, info) = build_top(&body, top);
     let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
 
-    let v_d = result.get(node_voltage(&circuit, 2)).expect("vd");
+    let v_d = voltage(&result, &info, "vd");
     assert!(v_d > 0.5 && v_d < 0.9, "diode drop {v_d}");
     // KCL: resistor current equals diode current at the operating point.
     let context = Context::default();
@@ -449,31 +386,9 @@ fn transient_rc_charges_toward_source() {
     use piperine_solver::analysis::transient::TransientAnalysisOptions;
 
     // 5 V step into R = 1 kΩ, C = 1 µF (τ = 1 ms), simulate 5 ms.
-    let mut top = IrModule::new("top");
-    let vin = top.symbols.add_node("vin", Domain::Analog);
-    let out = top.symbols.add_node("out", Domain::Analog);
-    top.instances.push(IrInstance {
-        label: "v1".into(),
-        module: "vsource".into(),
-        connections: vec![vin, NodeId::GROUND],
-        params: vec![(ParamId(0), real(5.0))],
-    });
-    top.instances.push(IrInstance {
-        label: "r1".into(),
-        module: "resistor".into(),
-        connections: vec![vin, out],
-        params: vec![],
-    });
-    top.instances.push(IrInstance {
-        label: "c1".into(),
-        module: "capacitor".into(),
-        connections: vec![out, NodeId::GROUND],
-        params: vec![],
-    });
-
-    let program = program(vec![vsource(), resistor(), capacitor(), top]);
-    let mut compiler = CircuitCompiler::new(&program);
-    let mut circuit = compiler.build_circuit("top").expect("build circuit");
+    let body = format!("{VSOURCE}{RESISTOR}{CAPACITOR}");
+    let top = "wire vin : Electrical;\nwire out : Electrical;\nv1 : Vsource(.p = vin, .n = gnd) { .dc = 5.0 };\nr1 : Resistor(.p = vin, .n = out);\nc1 : Capacitor(.p = out, .n = gnd);";
+    let (mut circuit, info) = build_top(&body, top);
 
     let options = TransientAnalysisOptions::new(5e-3.into(), 1e-5.into());
     let result = circuit
@@ -483,25 +398,13 @@ fn transient_rc_charges_toward_source() {
         .unwrap();
 
     // After 5 τ the capacitor is essentially charged.
+    let out_node = info.nets.get("out").expect("out net");
     let final_v = result
         .last()
-        .and_then(|step| {
-            step.get_node(&piperine_solver::analog::NodeIdentifier::Anonymous(2))
-        })
+        .and_then(|step| step.get_node(out_node))
         .expect("final out voltage");
     assert!(
         (final_v - 5.0).abs() < 0.05,
         "V(out) after 5τ = {final_v}"
     );
-}
-
-/// The `AnalogVariable` for a top-level node id (as allocated by the
-/// circuit compiler: `Anonymous(node_id)`).
-fn node_voltage(
-    _circuit: &piperine_solver::circuit::CircuitInstance,
-    node_id: usize,
-) -> piperine_solver::analog::AnalogVariable {
-    piperine_solver::analog::AnalogVariable::Node(
-        piperine_solver::analog::NodeIdentifier::Anonymous(node_id),
-    )
 }

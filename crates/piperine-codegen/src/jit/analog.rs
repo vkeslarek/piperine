@@ -22,7 +22,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
-use crate::ir::{CrossDir, Domain, IrExpr, IrModule, IrStateKind, NodeId, StateId, VarId};
+use crate::ir::{CrossDir, Domain, IrExpr, LoweredBody, IrStateKind, NodeId, StateId, VarId};
 
 use super::emit::AnalogEmitter;
 use super::flatten::{
@@ -182,7 +182,7 @@ unsafe impl Sync for AnalogKernel {}
 
 impl AnalogKernel {
     /// Flatten and compile `module`'s analog body.
-    pub fn compile(module: &IrModule) -> Result<Self, CodegenError> {
+    pub fn compile(module: &LoweredBody) -> Result<Self, CodegenError> {
         let flat = AnalogFlattener::new(module).flatten()?;
         AnalogCompiler::new(module, flat)?.compile()
     }
@@ -553,7 +553,7 @@ fn limit_branch(limit: &IrExpr) -> Option<(NodeId, NodeId)> {
 
 /// Builds every kernel function inside one Cranelift JIT module.
 struct AnalogCompiler<'m> {
-    module: &'m IrModule,
+    module: &'m LoweredBody,
     flat: FlatAnalog,
     terminals: Vec<NodeId>,
     num_ports: usize,
@@ -568,7 +568,7 @@ struct AnalogCompiler<'m> {
 }
 
 impl<'m> AnalogCompiler<'m> {
-    fn new(module: &'m IrModule, flat: FlatAnalog) -> Result<Self, CodegenError> {
+    fn new(module: &'m LoweredBody, flat: FlatAnalog) -> Result<Self, CodegenError> {
         let mut jit_builder = JITBuilder::new(cranelift_module::default_libcall_names())
             .map_err(|e| CodegenError::Module(e.to_string()))?;
         for f in math::MATH_FNS {
@@ -615,7 +615,7 @@ impl<'m> AnalogCompiler<'m> {
 
     /// Ports in declaration order, then every non-ground internal node the
     /// flattened body touches.
-    fn terminal_order(module: &IrModule, flat: &FlatAnalog) -> (Vec<NodeId>, usize) {
+    fn terminal_order(module: &LoweredBody, flat: &FlatAnalog) -> (Vec<NodeId>, usize) {
         let mut terminals: Vec<NodeId> = module.ports.iter().map(|p| p.node).collect();
         let num_ports = terminals.len();
         let mut add = |node: NodeId| {

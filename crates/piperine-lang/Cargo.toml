@@ -5,14 +5,17 @@ edition.workspace = true
 
 [dependencies]
 thiserror = "2.0"
-piperine-ir = { path = "../piperine-ir" }
+piperine-math = { path = "../piperine-math" }
 num-complex.workspace = true
 miette = { version = "7.6.0", features = ["fancy"] }
 
 [dev-dependencies]
-# The frontend's own build needs only the IR contract; the backend and
+# The frontend's own build needs only piperine-math (the builtin-math
+# dispatch table shared with the const/bench interpreter); the backend and
 # solver appear here solely because the integration tests drive the full
-# pipeline (parse → elaborate → IR → JIT → solve).
+# pipeline (parse → elaborate → codegen::lower → JIT → solve). codegen
+# depends on piperine-lang for its POM types, so this edge only exists for
+# lang's own test binaries — not a real dependency cycle.
 piperine-codegen = { path = "../piperine-codegen" }
 piperine-solver = { path = "../piperine-solver" }
 tempfile.workspace = true

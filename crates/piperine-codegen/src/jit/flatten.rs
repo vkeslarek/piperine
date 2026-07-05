@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 
 use crate::ir::{
-    ContribKind, CrossDir, EventSource, IrAnalogEvent, IrExpr, IrModule, IrStateKind, IrStmt,
+    ContribKind, CrossDir, EventSource, IrAnalogEvent, IrExpr, LoweredBody, IrStateKind, IrStmt,
     Lval, NatureId, NatureKind, NodeId, Pattern, Severity, StateId, Trit, VarId,
 };
 
@@ -150,14 +150,14 @@ pub struct FlatAnalog {
 /// Inlines user function calls by symbolic substitution. Function bodies may
 /// use `VarDecl`/`Assign`/`If`/`Match`/`Return`; every path must return.
 pub struct Inliner<'m> {
-    module: &'m IrModule,
+    module: &'m LoweredBody,
     depth: u32,
 }
 
 impl<'m> Inliner<'m> {
     const MAX_DEPTH: u32 = 32;
 
-    pub fn new(module: &'m IrModule) -> Self {
+    pub fn new(module: &'m LoweredBody) -> Self {
         Self { module, depth: 0 }
     }
 
@@ -432,7 +432,7 @@ fn chain_guards(guard: Option<&IrExpr>, no_prior: &Option<IrExpr>, cond: &IrExpr
 /// Flattens an analog body into [`FlatAnalog`]. One-shot: construct, call
 /// [`Self::flatten`].
 pub struct AnalogFlattener<'m> {
-    module: &'m IrModule,
+    module: &'m LoweredBody,
     inliner: Inliner<'m>,
     scope: Scope,
     out: FlatAnalog,
@@ -441,7 +441,7 @@ pub struct AnalogFlattener<'m> {
 }
 
 impl<'m> AnalogFlattener<'m> {
-    pub fn new(module: &'m IrModule) -> Self {
+    pub fn new(module: &'m LoweredBody) -> Self {
         let mut scope = Scope::new();
         // Pre-populate the scope with module-level persistent vars (SPEC
         // §I.15, §9): these survive across evaluations. In a mixed-signal

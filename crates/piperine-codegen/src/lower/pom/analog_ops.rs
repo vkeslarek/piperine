@@ -10,8 +10,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 
-use crate::parse::ast::Expr;
-use piperine_ir::*;
+use piperine_lang::parse::ast::Expr;
+use crate::lower::*;
 
 use super::expr::lower_expr;
 use super::LowerCtx;
@@ -124,7 +124,7 @@ impl AnalogOp for Laplace {
         let x = lower_expr(&args[0], ctx);
         
         let to_vec = |e: &Expr, ctx: &mut LowerCtx| -> Vec<IrExpr> {
-            if let Expr::Array(crate::parse::ast::ArrayBody::List(list)) = e {
+            if let Expr::Array(piperine_lang::parse::ast::ArrayBody::List(list)) = e {
                 list.iter().map(|item| lower_expr(item, ctx)).collect()
             } else {
                 vec![lower_expr(e, ctx)]
@@ -134,10 +134,10 @@ impl AnalogOp for Laplace {
         let den = to_vec(&args[2], ctx);
         
         let variant = match self.variant {
-            "zp" => piperine_ir::LaplaceKind::ZerosPoles,
-            "np" => piperine_ir::LaplaceKind::NumPoles,
-            "zd" => piperine_ir::LaplaceKind::ZerosDen,
-            _ => piperine_ir::LaplaceKind::NumDen,
+            "zp" => crate::lower::LaplaceKind::ZerosPoles,
+            "np" => crate::lower::LaplaceKind::NumPoles,
+            "zd" => crate::lower::LaplaceKind::ZerosDen,
+            _ => crate::lower::LaplaceKind::NumDen,
         };
         let id = ctx.alloc_state(
             IrStateKind::Laplace { variant, num, den },
@@ -159,7 +159,7 @@ impl AnalogOp for ZTransform {
         let x = lower_expr(&args[0], ctx);
         
         let to_vec = |e: &Expr, ctx: &mut LowerCtx| -> Vec<IrExpr> {
-            if let Expr::Array(crate::parse::ast::ArrayBody::List(list)) = e {
+            if let Expr::Array(piperine_lang::parse::ast::ArrayBody::List(list)) = e {
                 list.iter().map(|item| lower_expr(item, ctx)).collect()
             } else {
                 vec![lower_expr(e, ctx)]
@@ -170,10 +170,10 @@ impl AnalogOp for ZTransform {
         let sample_dt = lower_expr(&args[3], ctx);
         
         let variant = match self.variant {
-            "zp" => piperine_ir::ZKind::ZerosPoles,
-            "np" => piperine_ir::ZKind::NumPoles,
-            "zd" => piperine_ir::ZKind::ZerosDen,
-            _ => piperine_ir::ZKind::NumDen,
+            "zp" => crate::lower::ZKind::ZerosPoles,
+            "np" => crate::lower::ZKind::NumPoles,
+            "zd" => crate::lower::ZKind::ZerosDen,
+            _ => crate::lower::ZKind::NumDen,
         };
         
         let id = ctx.alloc_state(

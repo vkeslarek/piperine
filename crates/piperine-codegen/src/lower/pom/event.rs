@@ -1,8 +1,8 @@
 //! Event spec (`@ posedge(clk)`, `@ cross(...)`, ...) → `IrEventKind`.
 
-use crate::parse::ast::EventSpec;
+use piperine_lang::parse::ast::EventSpec;
 
-use piperine_ir::*;
+use crate::lower::*;
 
 use super::expr::lower_expr;
 use super::LowerCtx;

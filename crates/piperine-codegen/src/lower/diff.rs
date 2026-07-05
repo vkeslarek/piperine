@@ -6,7 +6,7 @@
 //! iteration (reactive parts are handled by the charge Jacobian), so their
 //! derivative is zero.
 
-use crate::{IrBinOp, IrExpr, IrUnOp, NodeId};
+use super::{IrBinOp, IrExpr, IrUnOp, NodeId};
 
 impl IrExpr {
     /// `∂self / ∂V(plus, minus)` as a new expression.
@@ -39,7 +39,7 @@ impl IrExpr {
             // value's dependence on the branch, i.e. d(vnew)/dV. This matches
             // ngspice, which stamps the conductance at the limited operating
             // point with d(vlim)/d(vnode) = 1.
-            IrExpr::Sim(crate::expr::SimQuery::Limit { args, .. }) => args
+            IrExpr::Sim(super::SimQuery::Limit { args, .. }) => args
                 .first()
                 .map(|vnew| vnew.differentiate(seed))
                 .unwrap_or_else(|| lit(0.0)),

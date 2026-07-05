@@ -1,5 +1,5 @@
 [package]
-name = "piperine-ir"
+name = "piperine-math"
 version.workspace = true
 edition.workspace = true
 

@@ -2,10 +2,10 @@
 //! function-body statements → `IrStmt`, plus the branch phi-merge that
 //! keeps a `var` reassigned in an `if` consistent across arms.
 
-use crate::pom::BehaviorStmt;
-use crate::parse::ast::{BindOp, Expr, Literal, Pattern};
+use piperine_lang::pom::BehaviorStmt;
+use piperine_lang::parse::ast::{BindOp, Expr, Literal, Pattern};
 
-use piperine_ir::*;
+use crate::lower::*;
 
 use super::event::convert_event_spec;
 use super::expr::{lower_expr, parse_contrib_dest, scan_noise};
@@ -123,10 +123,10 @@ pub(crate) fn lower_stmt(stmt: &BehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt>
             };
             kinds.into_iter().map(|kind| {
                 match kind {
-                    crate::lowering::event::LoweredEvent::Analog(source) => {
+                    super::event::LoweredEvent::Analog(source) => {
                         IrStmt::AnalogEvent(IrAnalogEvent { source, body: body_with_guard.clone() })
                     }
-                    crate::lowering::event::LoweredEvent::Digital(event) => {
+                    super::event::LoweredEvent::Digital(event) => {
                         IrStmt::ClockedBlock { event, body: body_with_guard.clone() }
                     }
                 }
@@ -210,7 +210,7 @@ pub(crate) fn lower_expr_stmt(expr: &Expr, ctx: &mut LowerCtx) -> Vec<IrStmt> {
     vec![]
 }
 
-pub(crate) fn lower_match(expr: &Expr, arms: &[crate::pom::MatchArm], ctx: &mut LowerCtx) -> Vec<IrStmt> {
+pub(crate) fn lower_match(expr: &Expr, arms: &[piperine_lang::pom::MatchArm], ctx: &mut LowerCtx) -> Vec<IrStmt> {
     let discriminant = lower_expr(expr, ctx);
     let mut default_body = vec![];
     let mut chain: Vec<(IrExpr, Vec<IrStmt>)> = vec![];

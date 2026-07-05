@@ -279,7 +279,7 @@ impl IrExpr {
             }
             IrExpr::MathCall(name, args) => {
                 let vals: Vec<f64> = args.iter().map(eval).collect::<Result<_, _>>()?;
-                crate::math::eval_const_math(name, &vals)
+                piperine_math::eval_const_math(name, &vals)
                     .ok_or_else(|| format!("`{name}` is not a const-evaluable math builtin"))
             }
             other => Err(format!("expression is not compile-time constant: {other:?}")),

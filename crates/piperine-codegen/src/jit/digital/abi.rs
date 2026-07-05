@@ -30,7 +30,7 @@ use crate::jit::digital::compile::DigitalCompiler;
 use cranelift_jit::JITModule;
 
 use crate::ir::{
-    EdgeKind, IrExpr, IrModule,
+    EdgeKind, IrExpr, LoweredBody,
     NodeId, VarId,
 };
 
@@ -121,7 +121,7 @@ unsafe impl Send for DigitalKernel {}
 unsafe impl Sync for DigitalKernel {}
 
 impl DigitalKernel {
-    pub fn compile(module: &IrModule) -> Result<Self, CodegenError> {
+    pub fn compile(module: &LoweredBody) -> Result<Self, CodegenError> {
         DigitalCompiler::new(module)?.compile()
     }
 

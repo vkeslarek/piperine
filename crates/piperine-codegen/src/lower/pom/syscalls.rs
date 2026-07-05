@@ -7,8 +7,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 
-use crate::parse::ast::{Expr, Literal};
-use piperine_ir::*;
+use piperine_lang::parse::ast::{Expr, Literal};
+use crate::lower::*;
 
 use super::expr::lower_expr;
 use super::LowerCtx;
@@ -62,14 +62,14 @@ impl SystemFunction for Mfactor {
 struct XPosition;
 impl SystemFunction for XPosition {
     fn lower(&self, _: &str, _args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::Position(piperine_ir::Axis::X))
+        IrExpr::Sim(SimQuery::Position(crate::lower::Axis::X))
     }
 }
 
 struct YPosition;
 impl SystemFunction for YPosition {
     fn lower(&self, _: &str, _args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::Position(piperine_ir::Axis::Y))
+        IrExpr::Sim(SimQuery::Position(crate::lower::Axis::Y))
     }
 }
 
@@ -120,11 +120,11 @@ impl SystemFunction for Analysis {
             _ => "dc".into(),
         };
         let kind = match string_arg(args, 0).as_str() {
-            "ac" => piperine_ir::Analysis::Ac,
-            "dc" => piperine_ir::Analysis::Dc,
-            "tran" => piperine_ir::Analysis::Tran,
-            "noise" => piperine_ir::Analysis::Noise,
-            _ => piperine_ir::Analysis::Dc,
+            "ac" => crate::lower::Analysis::Ac,
+            "dc" => crate::lower::Analysis::Dc,
+            "tran" => crate::lower::Analysis::Tran,
+            "noise" => crate::lower::Analysis::Noise,
+            _ => crate::lower::Analysis::Dc,
         };
         IrExpr::Sim(SimQuery::Analysis(kind))
     }

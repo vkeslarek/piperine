@@ -29,7 +29,8 @@ use piperine_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_solver::math::linear::Stamp;
 use piperine_solver::solver::Context;
 
-use crate::ir::{Analysis, IrModule, NodeId};
+use crate::ir::{Analysis, NodeId};
+use crate::lower::pom::LoweredBody;
 use crate::jit::analog::AnalogKernel;
 use crate::jit::digital::DigitalKernel;
 use crate::jit::CodegenError;
@@ -49,7 +50,7 @@ pub struct CompiledModule {
 
 impl CompiledModule {
     /// Validate and compile every behavior body of `module`.
-    pub fn compile(module: &IrModule) -> Result<Self, CodegenError> {
+    pub fn compile(module: &LoweredBody) -> Result<Self, CodegenError> {
         module
             .validated()
             .map_err(|d| CodegenError::Invalid(format!("{}: {}", module.name, d.message)))?;

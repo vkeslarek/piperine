@@ -10,7 +10,8 @@ use std::collections::HashSet;
 use super::expr::IrExpr;
 use super::stmt::{ContribKind, IrStmt, Lval};
 use super::symbols::{StateId, SymbolTable, VarId};
-use super::{IrAnalogBody, IrDigitalBody, IrModule};
+use super::{IrAnalogBody, IrDigitalBody};
+use super::pom::LoweredBody;
 
 /// How bad a validation finding is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,7 +47,7 @@ enum BodyKind {
     Function,
 }
 
-impl IrModule {
+impl LoweredBody {
     /// Validate the module against the SPEC §11 contract. Returns every
     /// finding; the module is compilable iff none is an
     /// [`IrDiagnosticKind::Error`].
@@ -71,7 +72,7 @@ impl IrModule {
 }
 
 struct Validator<'m> {
-    module: &'m IrModule,
+    module: &'m LoweredBody,
     findings: Vec<IrDiagnostic>,
 }
 

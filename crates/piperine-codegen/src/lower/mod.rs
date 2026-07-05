@@ -1,15 +1,13 @@
-//! # piperine-ir
-//!
-//! The Piperine IR — the post-elaboration, resolved representation the
-//! frontend (`piperine-lang`) lowers into and the backend
-//! (`piperine-codegen`) consumes. Pure data: no JIT, no solver, no parser —
-//! this crate is the contract between the two, so the dependency arrows
-//! match the pipeline arrows.
+//! The resolved lowering layer — formerly the standalone `piperine-ir`
+//! crate. Verilog-AMS (the IR's other former producer) is gone; PHDL/PPR is
+//! the only frontend, so this is no longer a cross-crate contract, just
+//! codegen's private resolved form. Pure data plus the POM→resolved pass
+//! (`pom/`): no JIT, no solver.
 //!
 //! Everything here is *resolved*: names are interned ids into a per-module
-//! [`SymbolTable`]; ground is the reserved [`NodeId::GROUND`]. The IR carries
-//! no generics, lambdas, bundles, or structural control — those are
-//! elaborated away before emission.
+//! [`SymbolTable`]; ground is the reserved [`NodeId::GROUND`]. No generics,
+//! lambdas, bundles, or structural control — those are elaborated away
+//! before this layer.
 
 mod expr;
 mod stmt;
@@ -17,7 +15,9 @@ mod symbols;
 mod diff;
 mod validate;
 
-pub mod math;
+pub mod pom;
+
+pub use piperine_math as math;
 
 pub use expr::{Analysis, Axis, IrBinOp, IrExpr, IrUnOp, SimQuery};
 pub use stmt::{
@@ -30,6 +30,7 @@ pub use symbols::{
     SymbolTable, TableRef, VarId, VarInfo, ZKind,
 };
 pub use validate::{IrDiagnostic, IrDiagnosticKind};
+pub use pom::{lower_bodies, LowerError, LowerErrors, LoweredBody};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,7 +69,7 @@ pub struct IrDigitalBody {
     pub stmts: Vec<IrStmt>,
 }
 
-// ─── Module and program ───────────────────────────────────────────────────────
+// ─── Ports ────────────────────────────────────────────────────────────────────
 
 /// Port direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,70 +80,12 @@ pub enum IrDirection {
 }
 
 /// A module port: a resolved node plus a direction. The node's domain
-/// (analog/digital) lives on its `NodeInfo`.
+/// (analog/digital) lives on its `NodeInfo`. Instance-level structure
+/// (connections, param overrides) is resolved directly from the POM by
+/// `device::circuit` at circuit-build time — there is no `IrModule`/
+/// `IrInstance` structural twin.
 #[derive(Debug, Clone)]
 pub struct IrPort {
     pub node: NodeId,
     pub direction: IrDirection,
-}
-
-/// A child instance. `connections[i]` is the parent node wired to the child's
-/// i-th port; `params` carries override expressions evaluated in the parent's
-/// scope, keyed by the child's `ParamId`.
-#[derive(Debug, Clone)]
-pub struct IrInstance {
-    pub label: String,
-    pub module: String,
-    pub connections: Vec<NodeId>,
-    pub params: Vec<(ParamId, IrExpr)>,
-}
-
-/// A monomorphic, flat module.
-#[derive(Debug, Clone)]
-pub struct IrModule {
-    pub name: String,
-    pub symbols: SymbolTable,
-    pub ports: Vec<IrPort>,
-    pub instances: Vec<IrInstance>,
-    pub analog: Option<IrAnalogBody>,
-    pub digital: Option<IrDigitalBody>,
-}
-
-impl IrModule {
-    /// A module with an empty symbol table and no bodies.
-    pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            symbols: SymbolTable::new(),
-            ports: Vec::new(),
-            instances: Vec::new(),
-            analog: None,
-            digital: None,
-        }
-    }
-}
-
-/// Which frontend produced the program.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Source {
-    Ams,
-    Ppr,
-}
-
-/// A resolved program: a set of monomorphic modules.
-#[derive(Debug, Clone)]
-pub struct IrProgram {
-    pub source: Source,
-    pub modules: Vec<IrModule>,
-}
-
-impl IrProgram {
-    pub fn new(source: Source) -> Self {
-        Self { source, modules: Vec::new() }
-    }
-
-    /// Look up a module by name.
-    pub fn module(&self, name: &str) -> Option<&IrModule> {
-        self.modules.iter().find(|m| m.name == name)
-    }
 }

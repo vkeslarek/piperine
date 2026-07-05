@@ -79,15 +79,15 @@ impl SimSession {
     }
 
     /// Run a DC operating-point analysis (`$op`, piperine-bench/docs/SPEC.md §5): apply
-    /// staged overrides, re-elaborate to IR, build the circuit, and solve.
+    /// staged overrides, lower to resolved bodies, build the circuit, and solve.
     /// Every analysis is a pure function of (design + staged overrides +
     /// config) — nothing here is remembered between calls. `nodeset`
     /// (piperine-bench/docs/SPEC.md §5.1 `OpConfig.nodeset`) seeds the Newton initial
     /// guess.
     pub fn run_op(&self, config: &SolverConfig, nodeset: &Value) -> Result<OpResult, BenchError> {
         let applied = self.design.with_overrides_applied(&self.module)?;
-        let ir = piperine_lang::ppr_to_ir(&applied)?;
-        let mut compiler = CircuitCompiler::new(&ir);
+        let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
+        let mut compiler = CircuitCompiler::new(&applied, &bodies);
         let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
         circuit.init_digital();
         circuit.rebuild_digital_topology();
@@ -139,8 +139,8 @@ fn snapshot_digital(
         ic: &Value,
     ) -> Result<Trace, BenchError> {
         let applied = self.design.with_overrides_applied(&self.module)?;
-        let ir = piperine_lang::ppr_to_ir(&applied)?;
-        let mut compiler = CircuitCompiler::new(&ir);
+        let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
+        let mut compiler = CircuitCompiler::new(&applied, &bodies);
         let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
         circuit.init_digital();
         circuit.rebuild_digital_topology();
@@ -167,8 +167,8 @@ fn snapshot_digital(
         config: &SolverConfig,
     ) -> Result<AcTrace, BenchError> {
         let applied = self.design.with_overrides_applied(&self.module)?;
-        let ir = piperine_lang::ppr_to_ir(&applied)?;
-        let mut compiler = CircuitCompiler::new(&ir);
+        let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
+        let mut compiler = CircuitCompiler::new(&applied, &bodies);
         let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
         circuit.init_digital();
         circuit.rebuild_digital_topology();
@@ -196,8 +196,8 @@ fn snapshot_digital(
         config: &SolverConfig,
     ) -> Result<NoiseTrace, BenchError> {
         let applied = self.design.with_overrides_applied(&self.module)?;
-        let ir = piperine_lang::ppr_to_ir(&applied)?;
-        let mut compiler = CircuitCompiler::new(&ir);
+        let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
+        let mut compiler = CircuitCompiler::new(&applied, &bodies);
         let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
         circuit.init_digital();
         circuit.rebuild_digital_topology();

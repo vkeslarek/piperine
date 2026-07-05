@@ -1,6 +1,8 @@
 //! # piperine-lang
 //!
-//! Parser, elaborator, and IR lowering for PHDL.
+//! Parser and elaborator for PHDL — produces the POM (`Design`), the single
+//! resolved-enough object model. `piperine-codegen` lowers a `Design`
+//! straight into devices; there is no separate IR crate.
 //!
 //! ## Pipeline
 //!
@@ -16,10 +18,7 @@
 //!  ▼  SourceFile::elaborate
 //! Design                  (elaborated design + POM root)
 //!  │
-//!  ▼  lowering::ppr_to_ir
-//! IrProgram               (the central IR for piperine-codegen)
-//!  │
-//!  ▼  runtime::from_ir
+//!  ▼  piperine_codegen::CircuitCompiler::from_design
 //! CircuitInstance         (ready for piperine-solver)
 //! ```
 //!
@@ -41,13 +40,10 @@
 //! | [`parse`] | Lexer, parser, and parse-AST types |
 //! | [`elab`] | Elaborator, event registry, const evaluator |
 //! | [`pom`] | Piperine Object Model — Design, Module, Port, Value, OverrideMap, ... |
-//! | [`lowering`] | Design → IrProgram (`ppr_to_ir`) |
-//! | [`runtime`] | IrProgram → Device/CircuitInstance (`from_ir`, `PhdlDevice`, `DigitalInterpreter`) |
 //! | [`resolve`] | `use` declaration resolver |
 
 pub mod elab;
 pub mod eval;
-pub mod lowering;
 pub mod parse;
 pub mod pom;
 pub mod resolve;
@@ -65,9 +61,6 @@ pub use pom::{
 pub use parse::{parse_str, Lexed, Lexer, Tok};
 pub use resolve::{ResolveError, Resolver};
 pub use source_map::SourceMap;
-
-// ── IR lowering + runtime ─────────────────────────────────────────────────
-pub use lowering::{ppr_to_ir, LowerError, LowerErrors};
 
 /// Parse a PHDL source string and run the full elaboration pipeline.
 pub fn parse_and_elaborate(input: &str, source_map: &SourceMap) -> Result<Design, miette::Report> {

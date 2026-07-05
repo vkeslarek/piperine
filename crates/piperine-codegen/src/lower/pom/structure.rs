@@ -1,9 +1,9 @@
 //! Module structure → IR: ports, params, wires, instances, connections,
 //! and the value-type/const conversions they need.
 
-use crate::pom::{Function, Module, NetType, ValueType, Design};
-use crate::parse::ast::{DisciplineItem, DisciplineDecl};
-use piperine_ir::*;
+use piperine_lang::pom::{Function, Module, NetType, ValueType, Design};
+use piperine_lang::parse::ast::{DisciplineItem, DisciplineDecl};
+use crate::lower::*;
 use super::stmt::lower_stmts;
 use super::expr::lower_expr;
 use super::LowerCtx;
@@ -54,16 +54,18 @@ fn storage_value_type(decl: &DisciplineDecl) -> Option<&str> {
     None
 }
 
-/// Convert a PHDL [`Module`] into an [`IrModule`]. Unresolved names
-/// (a connection to an unknown net, an override of an unknown child param)
-/// are recorded in `errors` — `ppr_to_ir` fails if any were found
-/// (SIMPLIFICATION.md P5).
-pub(crate) fn convert_mod(m: &Module, prog: &Design, errors: &mut Vec<super::LowerError>) -> IrModule {
-    use crate::parse::ast::Direction;
+/// Build a module's [`SymbolTable`] and resolved [`IrPort`]s from its POM
+/// structure (ports, params, wires, vars). Instance connections and param
+/// overrides are resolved directly from the POM by
+/// `device::circuit::InstanceBuilder`, at circuit-build time — they are
+/// per-*instantiation*, not part of a module's own resolved shape, so
+/// building them here would only be a structural twin nobody but the
+/// circuit builder reads.
+pub(crate) fn build_symbols_and_ports(m: &Module, prog: &Design) -> (SymbolTable, Vec<IrPort>) {
+    use piperine_lang::parse::ast::Direction;
 
     let mut symbols = SymbolTable::new();
     let mut ports = Vec::new();
-
 
     // 1. Ports
     for p in m.ports() {
@@ -90,99 +92,20 @@ pub(crate) fn convert_mod(m: &Module, prog: &Design, errors: &mut Vec<super::Low
         symbols.add_node(w.name(), domain);
     }
 
-    // 4. Vars
+    // 4. Vars — module-level persistent state (GAPS §I.15). The slot is
+    // allocated here; its initializer becomes a `VarDecl` statement in the
+    // owning behavior during pass 2 (`lower_bodies`), once we know whether
+    // it's analog or digital state.
     for v in m.vars() {
         let ty = elab_value_type_to_ir(v.value_type());
-        let _id = symbols.add_var(v.name(), ty);
-        let _init = v.init().map(value_to_ir);
-        // GAPS §I.15 — We don't have IrVarDecl in IrModule anymore, it's just in SymbolTable.
-        // We can just add them to the symbol table, the initialization goes into digital/analog bodies or is handled elsewhere.
-        // Wait, if it has an init, we probably should emit a VarDecl statement in the body or something.
+        symbols.add_var(v.name(), ty);
     }
 
-    // 5. Global Functions are added to each module's symbol table in
-    //    `ppr_to_ir` pass 1.5 (after all module skeletons are built), so
+    // 5. Global functions are added to each module's symbol table in
+    //    `lower_bodies` pass 1.5 (after all module skeletons are built), so
     //    that `FnId`s are consistent. Skip here to avoid duplicates.
 
-    // 6. Instances. Name → id resolved through a map built once
-    // (SIMPLIFICATION.md P12), and a connection naming an unknown net is
-    // an error — the old fallback silently grounded it.
-    let node_by_name: std::collections::HashMap<String, NodeId> =
-        symbols.nodes().map(|(id, n)| (n.name.clone(), id)).collect();
-    let mut instances = Vec::new();
-    for inst in m.instances() {
-        let mut connections = Vec::new();
-        for r in inst.ports() {
-            let name = r.to_string();
-            let node_id = if super::GROUND_NAMES.contains(&name.as_str()) {
-                NodeId::GROUND
-            } else if let Some(&id) = node_by_name.get(&name) {
-                id
-            } else if let Some(&id) = node_by_name.get(r.net()) {
-                // GAPS: an array wire (`tap : Electrical[5]`) is a single
-                // IR node today — every `tap[i]` collapses onto it. Wrong
-                // electrically (the taps should be distinct), but strictly
-                // better than the historic behavior, which silently
-                // grounded every indexed connection. Array-net expansion
-                // is the real fix.
-                id
-            } else {
-                errors.push(super::LowerError {
-                    module: m.name().to_string(),
-                    what: "net (instance connection)",
-                    name,
-                });
-                NodeId::GROUND
-            };
-            connections.push(node_id);
-        }
-        
-        let mut params = Vec::new();
-        // Since we don't know child ParamId in pass 1, we just do a best-effort lookup by name.
-        // But wait, IrInstance has Vec<(ParamId, IrExpr)>. The target param name is in inst.params().
-        // To resolve ParamId properly, we should look it up in the child module's SymbolTable.
-        // Since we don't have it here yet, we will just construct ParamId(0) for now and fix it in Pass 2,
-        // OR we can just pass the child module's param index.
-        // Wait, since we are returning IrModule now, let's look up the target module in `prog`.
-        if let Some(child) = prog.module(inst.module_name()) {
-            for (pname, pval) in inst.params() {
-                // Find index of parameter in child module. An override
-                // naming an unknown child param is an error — the old code
-                // silently dropped it (the typo'd override just vanished).
-                if let Some(idx) = child.params().iter().position(|p| p.name() == pname) {
-                    params.push((ParamId(idx as u32), value_to_ir(pval)));
-                } else {
-                    errors.push(super::LowerError {
-                        module: m.name().to_string(),
-                        what: "parameter (instance override)",
-                        name: format!("{}.{pname}", inst.name()),
-                    });
-                }
-            }
-        }
-        
-        instances.push(IrInstance {
-            label: inst.name().to_string(),
-            module: inst.module_name().to_string(),
-            connections,
-            params,
-        });
-    }
-
-    // Net connections (aliasing)
-    // The new IR doesn't have `connections` (aliasing) on IrModule.
-    // It's handled during lowering or we drop them if unsupported.
-    // Actually, aliasing is dropped or resolved before this? The user prompt said:
-    // "The new `IrModule` only takes `name`, `symbols`, `ports`, `instances`, `analog`, `digital`."
-
-    IrModule {
-        name: m.name().to_string(),
-        symbols,
-        ports,
-        instances,
-        analog: None,
-        digital: None,
-    }
+    (symbols, ports)
 }
 
 pub(crate) fn elab_value_type_to_ir(ty: &ValueType) -> IrType {
@@ -202,8 +125,8 @@ pub(crate) fn elab_value_type_to_ir(ty: &ValueType) -> IrType {
     }
 }
 
-pub(crate) fn value_to_ir(v: &crate::value::Value) -> IrExpr {
-    use crate::value::Value;
+pub(crate) fn value_to_ir(v: &piperine_lang::value::Value) -> IrExpr {
+    use piperine_lang::value::Value;
     match v {
         Value::Real(r) => IrExpr::Real(*r),
         Value::Nat(n) => IrExpr::Int(*n as i64),
@@ -250,7 +173,7 @@ pub(crate) fn convert_fn_named(
     let mut module_vars = HashSet::new();
     let mut bundle_bindings: Vec<(String, (String, Vec<String>))> = Vec::new();
     for (n, ty) in f.params() {
-        if let Some(crate::pom::ValueType::Bundle(bname)) = ty.as_value() {
+        if let Some(piperine_lang::pom::ValueType::Bundle(bname)) = ty.as_value() {
             let fields = bundle_field_names(prog, bname);
             for field in &fields {
                 let flat = format!("{n}_{field}");
@@ -261,7 +184,7 @@ pub(crate) fn convert_fn_named(
             bundle_bindings.push((n.to_string(), (bname.clone(), fields)));
             continue;
         }
-        let vty = elab_value_type_to_ir(ty.as_value().unwrap_or(&crate::pom::ValueType::Real));
+        let vty = elab_value_type_to_ir(ty.as_value().unwrap_or(&piperine_lang::pom::ValueType::Real));
         let vid = symbols.add_var(n, vty);
         params.push(vid);
         module_vars.insert(n.to_string());
@@ -299,11 +222,11 @@ pub(crate) fn bundle_field_names(prog: &Design, bundle: &str) -> Vec<String> {
 pub(crate) fn fn_bundle_signatures(
     prog: &Design,
 ) -> std::collections::HashMap<String, Vec<Option<(String, Vec<String>)>>> {
-    let sig_of = |params: &[(String, crate::pom::TypeRef)]| {
+    let sig_of = |params: &[(String, piperine_lang::pom::TypeRef)]| {
         params
             .iter()
             .map(|(_, ty)| match ty.as_value() {
-                Some(crate::pom::ValueType::Bundle(b)) => {
+                Some(piperine_lang::pom::ValueType::Bundle(b)) => {
                     Some((b.clone(), bundle_field_names(prog, b)))
                 }
                 _ => None,

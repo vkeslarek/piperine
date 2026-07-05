@@ -27,7 +27,7 @@ use std::collections::HashMap;
 
 
 use crate::ir::{
-    Domain, IrDigitalBody, IrModule, IrType,
+    Domain, IrDigitalBody, LoweredBody, IrType,
     NodeId, VarId,
 };
 
@@ -49,7 +49,7 @@ pub struct DigitalLayout {
 }
 
 impl DigitalLayout {
-    pub(crate) fn build(module: &IrModule, body: &IrDigitalBody) -> Self {
+    pub(crate) fn build(module: &LoweredBody, body: &IrDigitalBody) -> Self {
         let mut layout = Self::default();
         for (i, &node) in body.inputs.iter().enumerate() {
             layout.input_index.insert(node, i);

@@ -18,7 +18,7 @@ use std::sync::Arc;
 use piperine_solver::digital::{DigitalNet, LogicValue};
 use piperine_solver::digital_interface::{DigitalEventModel, DigitalPorts, EvalCtx, EventSink};
 
-use crate::ir::IrModule;
+use crate::ir::LoweredBody;
 use crate::jit::digital::compile::{NetworkComb, NetworkMemberSpec};
 use crate::jit::{CodegenError, SimCtx};
 
@@ -38,7 +38,7 @@ fn from_quad(q: i64) -> LogicValue {
 /// A member's wiring inside a fused cone: its module, the global net ids its
 /// comb reads/writes, its parameter values, and its bank/param bases.
 pub struct NetworkMember {
-    pub module: Arc<IrModule>,
+    pub module: Arc<LoweredBody>,
     pub in_nets: Vec<DigitalNet>,
     pub out_nets: Vec<DigitalNet>,
     pub params: Vec<f64>,

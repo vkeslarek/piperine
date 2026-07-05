@@ -1700,15 +1700,12 @@ dependencies = [
  "cranelift-jit",
  "cranelift-module",
  "num-complex",
- "piperine-ir",
+ "piperine-lang",
+ "piperine-math",
  "piperine-solver",
  "tempfile",
  "thiserror 2.0.18",
 ]
-
-[[package]]
-name = "piperine-ir"
-version = "0.1.1"
 
 [[package]]
 name = "piperine-lang"
@@ -1717,7 +1714,7 @@ dependencies = [
  "miette",
  "num-complex",
  "piperine-codegen",
- "piperine-ir",
+ "piperine-math",
  "piperine-solver",
  "tempfile",
  "thiserror 2.0.18",
@@ -1737,6 +1734,10 @@ dependencies = [
  "serde_json",
  "url",
 ]
+
+[[package]]
+name = "piperine-math"
+version = "0.1.1"
 
 [[package]]
 name = "piperine-project"

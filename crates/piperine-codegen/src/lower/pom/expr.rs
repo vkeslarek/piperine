@@ -1,7 +1,7 @@
 //! Expression lowering: `Expr` → `IrExpr`
 
-use crate::parse::ast::{ArrayBody, BinaryOp, Block, Expr, Literal, Stmt, UnaryOp};
-use piperine_ir::*;
+use piperine_lang::parse::ast::{ArrayBody, BinaryOp, Block, Expr, Literal, Stmt, UnaryOp};
+use crate::lower::*;
 use super::analog_ops::analog_ops;
 use super::syscalls::syscalls;
 use super::LowerCtx;
@@ -55,7 +55,7 @@ pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
 }
 
 pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut LowerCtx) {
-    use crate::parse::ast::Walk;
+    use piperine_lang::parse::ast::Walk;
     expr.walk(&mut |e| {
         if let Expr::Call(func, args) = e {
             if let Expr::Ident(name) = func.as_ref() {
@@ -112,7 +112,7 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
         // to the default here) or a `.is_present()` guard. A bare `none`
         // reaching lowering is a real error, not a silent 0.0.
         Expr::Literal(Literal::None) => {
-            ctx.errors.push(crate::lowering::LowerError {
+            ctx.errors.push(super::LowerError {
                 module: ctx.module_name.clone(),
                 what: "`none` in a runtime context — read the optional via .get_or(default)",
                 name: "none".into(),
@@ -138,7 +138,7 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
             } else if let Some(id) = ctx.lookup_node(name) {
                 if ctx.is_digital {
                     IrExpr::Net(id)
-                } else if ctx.symbols.node(id).domain == piperine_ir::Domain::Digital {
+                } else if ctx.symbols.node(id).domain == crate::lower::Domain::Digital {
                     // An analog body reading a digital-domain node by bare
                     // name (not through `V`/`I`) bridges through a shadow
                     // var — the same D2A path a `var` read already uses.
@@ -256,7 +256,7 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
         // so reaching one in an analog/digital body is a loud error, never
         // a silent 0.0 (SPEC §11).
         Expr::BundleLit { ty, .. } => {
-            ctx.errors.push(crate::lowering::LowerError {
+            ctx.errors.push(super::LowerError {
                 module: ctx.module_name.clone(),
                 what: "bundle literal in expression position",
                 name: ty.name.clone(),
@@ -264,7 +264,7 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
             IrExpr::Real(0.0)
         }
         Expr::Lambda { .. } | Expr::Tuple(_) | Expr::MapLit(_) => {
-            ctx.errors.push(crate::lowering::LowerError {
+            ctx.errors.push(super::LowerError {
                 module: ctx.module_name.clone(),
                 what: "value-layer expression (lambda/tuple/map)",
                 name: expr_to_name(expr),
@@ -301,7 +301,7 @@ fn lower_bundle_arg(
                 match lit_fields.iter().find(|(n, _)| n == f) {
                     Some((_, e)) => out.push(lower_expr(e, ctx)),
                     None => {
-                        ctx.errors.push(crate::lowering::LowerError {
+                        ctx.errors.push(super::LowerError {
                             module: ctx.module_name.clone(),
                             what: "bundle literal missing a field (no default expansion here yet)",
                             name: f.clone(),
@@ -403,11 +403,11 @@ pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrEx
         && matches!(method.as_str(), "is_present" | "is_some" | "is_none" | "get_or" | "unwrap_or" | "unwrap")
     {
         let given_id = ctx.require_param_given(pname);
-        let given = IrExpr::Sim(piperine_ir::SimQuery::ParamGiven(given_id));
+        let given = IrExpr::Sim(crate::lower::SimQuery::ParamGiven(given_id));
         let value = IrExpr::Param(ctx.require_ident_as_param(pname));
         return match method.as_str() {
             "is_present" | "is_some" => given,
-            "is_none" => IrExpr::Unary(piperine_ir::IrUnOp::Not, Box::new(given)),
+            "is_none" => IrExpr::Unary(crate::lower::IrUnOp::Not, Box::new(given)),
             "get_or" | "unwrap_or" => {
                 let default = args.first().map_or(IrExpr::Real(0.0), |a| lower_expr(a, ctx));
                 IrExpr::Select(Box::new(given), Box::new(value), Box::new(default))
@@ -426,7 +426,7 @@ pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrEx
             _ => None,
         };
         let Some((recv_name, (bundle, fields))) = recv_bundle else {
-            ctx.errors.push(crate::lowering::LowerError {
+            ctx.errors.push(super::LowerError {
                 module: ctx.module_name.clone(),
                 what: "method call receiver (not a bundle-typed binding)",
                 name: format!("{}.{method}(…)", expr_to_name(recv)),
@@ -435,7 +435,7 @@ pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrEx
         };
         let mangled = format!("{bundle}::{method}");
         let Some(fn_id) = ctx.symbols.fn_by_name(&mangled) else {
-            ctx.errors.push(crate::lowering::LowerError {
+            ctx.errors.push(super::LowerError {
                 module: ctx.module_name.clone(),
                 what: "impl method",
                 name: mangled,
@@ -455,7 +455,7 @@ pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrEx
     let name = match func {
         Expr::Ident(s) => s.as_str(),
         _ => {
-            ctx.errors.push(crate::lowering::LowerError {
+            ctx.errors.push(super::LowerError {
                 module: ctx.module_name.clone(),
                 what: "call target (not a plain fn or method name)",
                 name: expr_to_name(func),
@@ -489,7 +489,7 @@ pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrEx
 
     // Built-in math functions (exp, ln, sqrt, pow, sin, …) lower as
     // `MathCall`, resolved by name to a libm intrinsic at JIT time.
-    if piperine_ir::math::math_fn(name).is_some() {
+    if crate::lower::math::math_fn(name).is_some() {
         let ir_args = args.iter().map(|a| lower_expr(a, ctx)).collect();
         return IrExpr::MathCall(name.to_string(), ir_args);
     }
@@ -504,7 +504,7 @@ pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrEx
             match sig.as_ref().and_then(|s| s.get(i)).and_then(|p| p.as_ref()) {
                 Some((bundle, fields)) => {
                     if !lower_bundle_arg(a, bundle, fields, &mut ir_args, ctx) {
-                        ctx.errors.push(crate::lowering::LowerError {
+                        ctx.errors.push(super::LowerError {
                             module: ctx.module_name.clone(),
                             what: "bundle-typed argument (pass a bundle binding or literal)",
                             name: format!("{name}(… arg #{} …)", i + 1),

@@ -11,8 +11,8 @@ use piperine_codegen::ir::DigitalEvent as IrEvent;
 use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
 
 /// `inverter`: `y = ~a` (combinational).
-fn inverter() -> IrModule {
-    let mut m = IrModule::new("inverter");
+fn inverter() -> LoweredBody {
+    let mut m = LoweredBody::new("inverter");
     let a = m.symbols.add_node("a", Domain::Digital);
     let y = m.symbols.add_node("y", Domain::Digital);
     m.ports.push(IrPort { node: a, direction: IrDirection::In });
@@ -30,8 +30,8 @@ fn inverter() -> IrModule {
 }
 
 /// `dff`: `q` follows `d` on `posedge clk`, reset value 0.
-fn dff() -> IrModule {
-    let mut m = IrModule::new("dff");
+fn dff() -> LoweredBody {
+    let mut m = LoweredBody::new("dff");
     let clk = m.symbols.add_node("clk", Domain::Digital);
     let d = m.symbols.add_node("d", Domain::Digital);
     let q = m.symbols.add_node("q", Domain::Digital);
@@ -153,7 +153,7 @@ fn dff_captures_on_rising_edge_only() {
 fn pipeline_reads_pre_edge_values() {
     // Two registers in one clocked block: r2 <= r1; r1 <= d. On a single
     // edge r2 must take r1's *old* value (a pipeline, not a wire).
-    let mut m = IrModule::new("pipe2");
+    let mut m = LoweredBody::new("pipe2");
     let clk = m.symbols.add_node("clk", Domain::Digital);
     let d = m.symbols.add_node("d", Domain::Digital);
     let q = m.symbols.add_node("q", Domain::Digital);
@@ -207,7 +207,7 @@ fn pipeline_reads_pre_edge_values() {
 fn match_selects_arm_and_default() {
     // sel ? (match) — y = match a { 0 => 1, 1 => 0, _ => X } as an
     // explicit Match statement over quad values.
-    let mut m = IrModule::new("mux_match");
+    let mut m = LoweredBody::new("mux_match");
     let a = m.symbols.add_node("a", Domain::Digital);
     let y = m.symbols.add_node("y", Domain::Digital);
     m.ports.push(IrPort { node: a, direction: IrDirection::In });

@@ -1,10 +1,13 @@
-//! Lower `Design` (PPR/PHDL) → `IrProgram`.
+//! Lower a POM `Design` (PPR/PHDL) straight into each module's resolved
+//! [`LoweredBody`] — no separate IR crate, no `IrModule`/`IrProgram`
+//! structural twin. Instance wiring (connections, param overrides) is left
+//! to `device::circuit`, which reads the POM directly.
 
 use std::collections::{HashMap, HashSet};
 
-use crate::pom::Design;
+use piperine_lang::pom::Design;
 
-use piperine_ir::*;
+use crate::lower::*;
 
 pub mod analog_ops;
 pub mod event;
@@ -13,8 +16,31 @@ pub mod stmt;
 pub mod structure;
 pub mod syscalls;
 
-use structure::{convert_fn, convert_mod, value_to_ir};
+use structure::{build_symbols_and_ports, convert_fn, value_to_ir};
 use stmt::lower_stmts;
+
+/// A module's resolved lowering: its symbol table, resolved ports, and
+/// analog/digital bodies. This is what `device::CompiledModule::compile`
+/// consumes; the POM `Module`/`Instance` themselves are read directly by
+/// `device::circuit` for structure (connections, param overrides).
+#[derive(Debug, Clone, Default)]
+pub struct LoweredBody {
+    /// The owning module's name — diagnostics only (`lower_bodies`'s
+    /// returned map is already keyed by this same name).
+    pub name: String,
+    pub symbols: SymbolTable,
+    pub ports: Vec<IrPort>,
+    pub analog: Option<IrAnalogBody>,
+    pub digital: Option<IrDigitalBody>,
+}
+
+impl LoweredBody {
+    /// An empty resolved body — used by hand-built test fixtures (the old
+    /// `IrModule::new`).
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into(), ..Default::default() }
+    }
+}
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
@@ -280,33 +306,34 @@ impl<'a> LowerCtx<'a> {
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
-/// Lower a PHDL design into an [`IrProgram`] by converting every module and
-/// attaching its analog/digital behavior blocks.
+/// Lower every module of a POM `Design` into its [`LoweredBody`] (symbol
+/// table + resolved analog/digital bodies), keyed by module name.
 ///
 /// Fallible (SIMPLIFICATION.md P5): any name that fails to resolve — a
 /// typo'd net in an instance connection, an unknown parameter in a
 /// contribution — is an error naming the module and symbol, never a
 /// silently grounded node or `ParamId(0)`.
-pub fn ppr_to_ir(prog: &Design) -> Result<IrProgram, LowerErrors> {
-    let mut modules: Vec<IrModule> = Vec::new();
+pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, LowerErrors> {
+    let mut bodies: Vec<LoweredBody> = Vec::new();
     let mut errors: Vec<LowerError> = Vec::new();
 
-    // Pass 1: Build the IrModule skeleton with SymbolTable for all modules.
+    // Pass 1: build the symbol table + resolved ports for every module.
     for m in prog.modules() {
-        modules.push(convert_mod(m, prog, &mut errors));
+        let (symbols, ports) = build_symbols_and_ports(m, prog);
+        bodies.push(LoweredBody { name: m.name().to_string(), symbols, ports, analog: None, digital: None });
     }
 
     // Pass 1.5: Add non-generic functions to each module's symbol table.
     // Generic functions (map, reduce, …) are elaboration-time generators:
     // they are monomorphized at call sites and never lowered as-is, so
     // adding their unresolved bodies would produce dangling references.
-    for m in &mut modules {
+    for body in &mut bodies {
         for f in prog.functions() {
             if f.is_generic() {
                 continue;
             }
-            let ir_f = convert_fn(f, prog, &mut m.symbols, &mut errors);
-            m.symbols.add_fn(ir_f);
+            let ir_f = convert_fn(f, prog, &mut body.symbols, &mut errors);
+            body.symbols.add_fn(ir_f);
         }
         // Impl methods register as `Type::method` with `self` prepended as
         // a bundle-typed param (flattened per-field like any other) —
@@ -318,14 +345,14 @@ pub fn ppr_to_ir(prog: &Design) -> Result<IrProgram, LowerErrors> {
                     0,
                     (
                         "self".to_string(),
-                        crate::pom::TypeRef::Value(crate::pom::ValueType::Bundle(ib.ty.clone())),
+                        piperine_lang::pom::TypeRef::Value(piperine_lang::pom::ValueType::Bundle(ib.ty.clone())),
                     ),
                 );
                 synth.defaults.insert(0, None);
                 let mangled = format!("{}::{}", ib.ty, method.name);
                 let ir_f =
-                    structure::convert_fn_named(&mangled, &synth, prog, &mut m.symbols, &mut errors);
-                m.symbols.add_fn(ir_f);
+                    structure::convert_fn_named(&mangled, &synth, prog, &mut body.symbols, &mut errors);
+                body.symbols.add_fn(ir_f);
             }
         }
     }
@@ -336,7 +363,7 @@ pub fn ppr_to_ir(prog: &Design) -> Result<IrProgram, LowerErrors> {
         // map `"label.port_name"` → parent NodeId. This lets the parent's
         // analog body reference child ports (`I(load.p, gnd) <+ …`).
         let node_by_name: HashMap<String, NodeId> =
-            modules[i].symbols.nodes().map(|(id, n)| (n.name.clone(), id)).collect();
+            bodies[i].symbols.nodes().map(|(id, n)| (n.name.clone(), id)).collect();
         let mut instance_ports: HashMap<String, NodeId> = HashMap::new();
         for inst in m.instances() {
             if let Some(label) = inst.label() {
@@ -378,7 +405,7 @@ pub fn ppr_to_ir(prog: &Design) -> Result<IrProgram, LowerErrors> {
             let is_digital = behavior.is_digital();
             let module_vars: HashSet<String> = m.vars().iter().map(|v| v.name().to_string()).collect();
             let mut ctx =
-                LowerCtx::new(&mut modules[i].symbols, m.name().to_string(), is_digital, module_vars);
+                LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), is_digital, module_vars);
             ctx.instance_ports = instance_ports.clone();
             ctx.enum_values = prog.enum_value_map();
             ctx.consts = LowerCtx::const_irs(prog);
@@ -407,8 +434,8 @@ pub fn ppr_to_ir(prog: &Design) -> Result<IrProgram, LowerErrors> {
                 // them and in outputs so the evaluator can drive them).
                 let mut inputs = Vec::new();
                 let mut outputs = Vec::new();
-                for port in &modules[i].ports {
-                    let node = modules[i].symbols.node(port.node);
+                for port in &bodies[i].ports {
+                    let node = bodies[i].symbols.node(port.node);
                     if node.domain != Domain::Digital {
                         continue;
                     }
@@ -427,7 +454,7 @@ pub fn ppr_to_ir(prog: &Design) -> Result<IrProgram, LowerErrors> {
                 // is an edge-triggered register). Collect their VarIds and
                 // emit `VarDecl` statements with their initializers so the
                 // digital compiler can extract `reg_inits`.
-                let var_inits: Vec<(String, Option<&crate::value::Value>)> = m
+                let var_inits: Vec<(String, Option<&piperine_lang::value::Value>)> = m
                     .vars()
                     .iter()
                     .map(|v| (v.name().to_string(), v.init()))
@@ -435,7 +462,7 @@ pub fn ppr_to_ir(prog: &Design) -> Result<IrProgram, LowerErrors> {
                 let mut regs = Vec::new();
                 let mut reg_decls = Vec::new();
                 for (vname, vinit) in var_inits {
-                    let vid = match modules[i].symbols.vars().find(|(_, info)| info.name == vname).map(|(id, _)| id) {
+                    let vid = match bodies[i].symbols.vars().find(|(_, info)| info.name == vname).map(|(id, _)| id) {
                         Some(id) => id,
                         None => continue,
                     };
@@ -449,14 +476,14 @@ pub fn ppr_to_ir(prog: &Design) -> Result<IrProgram, LowerErrors> {
                 let mut all_stmts = reg_decls;
                 all_stmts.extend(stmts);
 
-                modules[i].digital = Some(IrDigitalBody {
+                bodies[i].digital = Some(IrDigitalBody {
                     inputs,
                     outputs,
                     regs,
                     stmts: all_stmts,
                 });
             } else {
-                modules[i].analog = Some(IrAnalogBody {
+                bodies[i].analog = Some(IrAnalogBody {
                     states: ctx.states,
                     noise: ctx.noise_sources,
                     stmts,
@@ -469,7 +496,7 @@ pub fn ppr_to_ir(prog: &Design) -> Result<IrProgram, LowerErrors> {
                 .iter()
                 .map(|(node, var)| IrStmt::Assign { lval: Lval::Var(*var), expr: IrExpr::Net(*node) })
                 .collect();
-            match &mut modules[i].digital {
+            match &mut bodies[i].digital {
                 Some(body) => body.stmts.extend(assigns),
                 None => {
                     // No `digital` block at all: synthesize a body whose
@@ -478,20 +505,16 @@ pub fn ppr_to_ir(prog: &Design) -> Result<IrProgram, LowerErrors> {
                     // semantics — a bare top-level `Assign`, re-evaluated
                     // each digital eval, never a one-shot).
                     let inputs = digital_shadows.iter().map(|(node, _)| *node).collect();
-                    modules[i].digital =
+                    bodies[i].digital =
                         Some(IrDigitalBody { inputs, outputs: Vec::new(), regs: Vec::new(), stmts: assigns });
                 }
             }
         }
     }
 
-
     if !errors.is_empty() {
         return Err(LowerErrors(errors));
     }
 
-    Ok(IrProgram {
-        source: Source::Ppr,
-        modules,
-    })
+    Ok(prog.modules().map(|m| m.name().to_string()).zip(bodies).collect())
 }
