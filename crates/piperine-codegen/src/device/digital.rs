@@ -209,6 +209,108 @@ impl DigitalInstance {
         self.scratch = s;
     }
 
+    /// Phase 1 of a two-phase delta cycle: detect clock edges and, if any
+    /// clocked block fires, commit register writes using the pre-settle
+    /// `nets` snapshot. Never writes output nets — see
+    /// `Device::digital_seq_phase`.
+    pub fn eval_seq_phase(&mut self, t: f64, nets: &[LogicValue], analog_voltages: &[f64]) -> bool {
+        self.sim.abstime = t;
+        let mut s = std::mem::take(&mut self.scratch);
+
+        s.inputs.clear();
+        s.inputs
+            .extend(self.in_nets.iter().map(|n| Quad::from_logic(nets[n.0])));
+        s.prev_outputs.clear();
+        s.prev_outputs
+            .extend(self.out_nets.iter().map(|n| Quad::from_logic(nets[n.0])));
+        s.outputs.clear();
+        s.outputs.extend_from_slice(&s.prev_outputs);
+
+        self.watch_values(&mut s, analog_voltages);
+        s.fired.clear();
+        s.fired.extend(self.kernel.clocked_blocks().iter().map(|block| {
+            let fired = block.terms.iter().any(|&(term, edge)| {
+                let (prev, cur) = (self.prev_watch[term], s.watch[term]);
+                match edge {
+                    EdgeKind::Rising => prev != 1 && cur == 1,
+                    EdgeKind::Falling => prev != 0 && cur == 0,
+                    EdgeKind::Any => prev != cur,
+                }
+            });
+            i64::from(fired)
+        }));
+        self.prev_watch.copy_from_slice(&s.watch);
+
+        let any_fired = s.fired.iter().any(|&f| f != 0);
+        if any_fired {
+            s.vars_int_old.clear();
+            s.vars_int_old.extend_from_slice(&self.vars_int);
+            s.vars_real_old.clear();
+            s.vars_real_old.extend_from_slice(&self.vars_real);
+            let abi = DigitalAbi {
+                inputs: s.inputs.as_ptr(),
+                outputs: s.outputs.as_mut_ptr(),
+                vars_int_old: s.vars_int_old.as_ptr(),
+                vars_real_old: s.vars_real_old.as_ptr(),
+                vars_int: self.vars_int.as_mut_ptr(),
+                vars_real: self.vars_real.as_mut_ptr(),
+                params: self.params.as_ptr(),
+                fired: s.fired.as_ptr(),
+                sim: &self.sim as *const SimCtx,
+                analog_voltages: analog_voltages.as_ptr(),
+            };
+            self.kernel.eval_seq(&abi);
+        }
+        self.scratch = s;
+        any_fired
+    }
+
+    /// Phase 2: recompute combinational outputs from live `nets` and the
+    /// (possibly just-committed) register banks, emitting change events.
+    /// Does not redo edge detection or register writes — see
+    /// `Device::digital_comb_phase`.
+    pub fn eval_comb_phase(
+        &mut self,
+        t: f64,
+        nets: &[LogicValue],
+        analog_voltages: &[f64],
+        event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
+    ) {
+        self.sim.abstime = t;
+        let mut s = std::mem::take(&mut self.scratch);
+
+        s.inputs.clear();
+        s.inputs
+            .extend(self.in_nets.iter().map(|n| Quad::from_logic(nets[n.0])));
+        s.prev_outputs.clear();
+        s.prev_outputs
+            .extend(self.out_nets.iter().map(|n| Quad::from_logic(nets[n.0])));
+        s.outputs.clear();
+        s.outputs.extend_from_slice(&s.prev_outputs);
+
+        let abi = DigitalAbi {
+            inputs: s.inputs.as_ptr(),
+            outputs: s.outputs.as_mut_ptr(),
+            vars_int_old: self.vars_int.as_ptr(),
+            vars_real_old: self.vars_real.as_ptr(),
+            vars_int: self.vars_int.as_mut_ptr(),
+            vars_real: self.vars_real.as_mut_ptr(),
+            params: self.params.as_ptr(),
+            fired: s.fired.as_ptr(),
+            sim: &self.sim as *const SimCtx,
+            analog_voltages: analog_voltages.as_ptr(),
+        };
+        self.kernel.eval_comb(&abi);
+
+        for i in 0..self.out_nets.len() {
+            let (net, new) = (self.out_nets[i], s.outputs[i]);
+            if new != s.prev_outputs[i] {
+                self.push_event(event_queue, t, net, new);
+            }
+        }
+        self.scratch = s;
+    }
+
     /// Run `seq` (with pre-edge bank copies) then `comb`. The pre-edge
     /// copies are made only when a clocked block fired — only `seq` reads
     /// them.

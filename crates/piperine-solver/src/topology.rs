@@ -152,9 +152,19 @@ impl DigitalState {
                 }
             }
 
-            for device in devices.iter_mut() {
+            // Two-phase delta cycle (see `evaluate_dag_ordered`): commit every
+            // device's register writes from the pre-settle net snapshot
+            // before any device's comb output is recomputed, so a register
+            // chain samples the same pre-edge values instead of racing.
+            let mut fired = vec![false; devices.len()];
+            for (i, device) in devices.iter_mut().enumerate() {
                 if device.has_digital_input_on(&changed) {
-                    device.eval_discrete(t, &self.nets, &[], &mut self.event_queue);
+                    fired[i] = device.digital_seq_phase(t, &self.nets, &[]);
+                }
+            }
+            for (i, device) in devices.iter_mut().enumerate() {
+                if fired[i] || device.has_digital_input_on(&changed) {
+                    device.digital_comb_phase(t, &self.nets, &[], &mut self.event_queue);
                 }
             }
 
@@ -199,6 +209,22 @@ impl DigitalState {
         }
         if all_changed.is_empty() { return; }
 
+        // Phase 1 of the delta cycle (Verilator-style two-phase register
+        // commit): every device samples the same pre-settle net snapshot and
+        // commits its register writes before ANY device's comb output is
+        // recomputed. Without this, a register chain (e.g. a shift
+        // register) would race ahead within a single clock edge — the first
+        // flop's new Q would already be visible to the second flop's D
+        // sampling in the same delta cycle (SPEC §9 requires non-blocking
+        // semantics: all registers read pre-edge values).
+        let mut seq_fired = vec![false; devices.len()];
+        for &dev_idx in &topology.topo_order {
+            let device = &mut devices[dev_idx];
+            if device.has_digital_input_on(&all_changed) {
+                seq_fired[dev_idx] = device.digital_seq_phase(t, &self.nets, &[]);
+            }
+        }
+
         const MAX_ITERS: usize = 1000;
         let mut restart_from: usize = 0;
 
@@ -215,7 +241,7 @@ impl DigitalState {
                 let topo_pos = restart_from + offset;
                 let device = &mut devices[dev_idx];
 
-                if !device.has_digital_input_on(&all_changed) {
+                if !device.has_digital_input_on(&all_changed) && !seq_fired[dev_idx] {
                     continue;
                 }
 
@@ -223,7 +249,7 @@ impl DigitalState {
                 prev_outs.extend(device.digital_output_nets().iter().map(|n| self.nets[n.0]));
 
                 local_q.clear();
-                device.eval_discrete(t, &self.nets, &[], &mut local_q);
+                device.digital_comb_phase(t, &self.nets, &[], &mut local_q);
 
                 while let Some(Reverse(ev)) = local_q.pop() {
                     if ev.time <= t + epsilon {

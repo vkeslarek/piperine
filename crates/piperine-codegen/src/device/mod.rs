@@ -253,59 +253,15 @@ impl Device for PiperineDevice {
         analog_voltages: &[f64],
         event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
     ) {
-        let (digital, analog) = match (&mut self.digital, &self.analog) {
-            (Some(d), Some(a)) => (d, a),
-            (Some(d), None) => {
-                // Digital-only device with possible analog inputs.
-                // Collect analog voltages from the cached terminal voltages
-                // (updated by `accept_timestep`).
-                let av: Vec<f64> = if !analog_voltages.is_empty() {
-                    analog_voltages.to_vec()
-                } else if !self.last_analog_voltages.is_empty() {
-                    // Map from terminal order to the digital layout's
-                    // compact analog_index order.
-                    let num_analog = d.kernel().layout().num_analog();
-                    let mut compact = vec![0.0; num_analog];
-                    for (term_idx, &node_id) in self.analog_terminal_node_ids.iter().enumerate() {
-                        if let Some(compact_idx) = d.kernel().layout().analog_index(node_id)
-                            && compact_idx < compact.len() && term_idx < self.last_analog_voltages.len() {
-                                compact[compact_idx] = self.last_analog_voltages[term_idx];
-                            }
-                    }
-                    compact
-                } else {
-                    Vec::new()
-                };
-                d.eval(t, nets, &av, event_queue);
-                return;
-            }
-            (None, _) => return,
-        };
-
-        // A2D bridge: if the solver didn't provide analog voltages (the
-        // common case — topology.rs passes `&[]`), collect them from the
-        // analog instance's last accepted terminal voltages. Map from
-        // terminal order to the compact analog_index order the digital
-        // kernel expects.
-        let av: Vec<f64>;
-        let av_ref: &[f64] = if !analog_voltages.is_empty() {
-            analog_voltages
-        } else {
-            let terminal_ids = analog.terminal_node_ids();
-            let last_volts = analog.last_volts();
-            let num_analog = digital.kernel().layout().num_analog();
-            let mut compact = vec![0.0; num_analog];
-            for (term_idx, &node_id) in terminal_ids.iter().enumerate() {
-                if let Some(compact_idx) = digital.kernel().layout().analog_index(node_id)
-                    && compact_idx < compact.len() && term_idx < last_volts.len() {
-                        compact[compact_idx] = last_volts[term_idx];
-                    }
-            }
-            av = compact;
-            &av
-        };
-
-        digital.eval(t, nets, av_ref, event_queue);
+        let Some(digital) = &mut self.digital else { return };
+        let av = Self::analog_voltages_for(
+            digital.kernel().layout(),
+            self.analog.as_ref(),
+            &self.analog_terminal_node_ids,
+            &self.last_analog_voltages,
+            analog_voltages,
+        );
+        digital.eval(t, nets, &av, event_queue);
 
         // D2A bridge: sync digital register values into the analog vars
         // bank so the analog body sees the latest digital state.
@@ -313,6 +269,86 @@ impl Device for PiperineDevice {
             let vars = digital.export_vars();
             analog.sync_vars(&vars);
         }
+    }
+
+    fn digital_seq_phase(&mut self, t: f64, nets: &[LogicValue], analog_voltages: &[f64]) -> bool {
+        let Some(digital) = &mut self.digital else { return false };
+        let av = Self::analog_voltages_for(
+            digital.kernel().layout(),
+            self.analog.as_ref(),
+            &self.analog_terminal_node_ids,
+            &self.last_analog_voltages,
+            analog_voltages,
+        );
+        digital.eval_seq_phase(t, nets, &av)
+    }
+
+    fn digital_comb_phase(
+        &mut self,
+        t: f64,
+        nets: &[LogicValue],
+        analog_voltages: &[f64],
+        event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
+    ) {
+        let Some(digital) = &mut self.digital else { return };
+        let av = Self::analog_voltages_for(
+            digital.kernel().layout(),
+            self.analog.as_ref(),
+            &self.analog_terminal_node_ids,
+            &self.last_analog_voltages,
+            analog_voltages,
+        );
+        digital.eval_comb_phase(t, nets, &av, event_queue);
+
+        // D2A bridge: sync digital register values into the analog vars
+        // bank so the analog body sees the latest digital state.
+        if let Some(analog) = &mut self.analog {
+            let vars = digital.export_vars();
+            analog.sync_vars(&vars);
+        }
+    }
+}
+
+impl PiperineDevice {
+    /// A2D bridge: resolve the analog voltages a digital kernel should see
+    /// this evaluation. Prefers voltages the solver passed explicitly;
+    /// otherwise reads the device's own analog instance (mixed device) or
+    /// its cached terminal voltages (digital-only device with analog input
+    /// ports), remapped from terminal order into the kernel's compact
+    /// `analog_index` order.
+    fn analog_voltages_for(
+        layout: &crate::jit::digital::DigitalLayout,
+        analog: Option<&AnalogInstance>,
+        terminal_node_ids: &[NodeId],
+        last_analog_voltages: &[f64],
+        provided: &[f64],
+    ) -> Vec<f64> {
+        if !provided.is_empty() {
+            return provided.to_vec();
+        }
+        let num_analog = layout.num_analog();
+        let mut compact = vec![0.0; num_analog];
+        match analog {
+            Some(analog) => {
+                let terminal_ids = analog.terminal_node_ids();
+                let last_volts = analog.last_volts();
+                for (term_idx, &node_id) in terminal_ids.iter().enumerate() {
+                    if let Some(compact_idx) = layout.analog_index(node_id)
+                        && compact_idx < compact.len() && term_idx < last_volts.len() {
+                            compact[compact_idx] = last_volts[term_idx];
+                        }
+                }
+            }
+            None => {
+                for (term_idx, &node_id) in terminal_node_ids.iter().enumerate() {
+                    if let Some(compact_idx) = layout.analog_index(node_id)
+                        && compact_idx < compact.len() && term_idx < last_analog_voltages.len() {
+                            compact[compact_idx] = last_analog_voltages[term_idx];
+                        }
+                }
+            }
+        }
+        compact
     }
 }
 

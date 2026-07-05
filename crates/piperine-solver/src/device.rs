@@ -99,4 +99,36 @@ pub trait Device: Send + Sync {
         _analog_voltages: &[f64],
         _event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
     ) {}
+
+    /// Phase 1 of a synchronous digital delta cycle (Verilator-style
+    /// two-phase register commit — see `topology::DigitalState::evaluate_dag_ordered`).
+    /// Detects clock edges against `nets` and, if a clocked block fires,
+    /// commits this device's register writes using the *pre-settle* net
+    /// snapshot — never touching output nets. Every device in the delta
+    /// cycle runs this phase before any device runs [`Device::digital_comb_phase`],
+    /// so a chain of registers samples the same pre-edge values instead of
+    /// racing each other within one edge (SPEC §9 non-blocking semantics).
+    /// Returns whether a clocked block fired (forces a comb re-evaluation
+    /// even when no input net changed).
+    fn digital_seq_phase(&mut self, _t: f64, _nets: &[LogicValue], _analog_voltages: &[f64]) -> bool {
+        false
+    }
+
+    /// Phase 2: recompute this device's combinational outputs from live
+    /// `nets` and its (possibly just-committed) register banks, emitting
+    /// change events. Does not redo edge detection or register writes.
+    ///
+    /// Default: forwards to [`Device::eval_discrete`] — correct for any
+    /// device that never overrides `digital_seq_phase` (pure combinational
+    /// devices, test mocks, simple external models), since there is then no
+    /// separate register phase to race against.
+    fn digital_comb_phase(
+        &mut self,
+        t: f64,
+        nets: &[LogicValue],
+        analog_voltages: &[f64],
+        event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
+    ) {
+        self.eval_discrete(t, nets, analog_voltages, event_queue);
+    }
 }

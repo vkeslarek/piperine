@@ -322,6 +322,16 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                     let mut refs = Vec::new();
                     let mut node_ids = Vec::new();
                     for (port_idx, port) in child.ports.iter().enumerate() {
+                        // Only ports the digital kernel actually reads as
+                        // analog (Electrical) terminals get a netlist node —
+                        // a digital-typed port (e.g. `output y : Bit`) must
+                        // never allocate an MNA unknown, or it leaves an
+                        // unstamped row (`SymbolicSingular`).
+                        if digital.kernel().layout().analog_index(port.node).is_none() {
+                            refs.push(None);
+                            node_ids.push(port.node);
+                            continue;
+                        }
                         let parent = instance.connections.get(port_idx)
                             .copied()
                             .unwrap_or(NodeId::GROUND);
@@ -399,6 +409,11 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                     let mut refs = Vec::new();
                     let mut node_ids = Vec::new();
                     for port in self.top.ports.iter() {
+                        if digital.kernel().layout().analog_index(port.node).is_none() {
+                            refs.push(None);
+                            node_ids.push(port.node);
+                            continue;
+                        }
                         let node_id = self.node_identifier(port.node);
                         let reference = self.netlist.connect_node(node_id);
                         refs.push(reference.idx().map(|_| reference));
