@@ -161,6 +161,12 @@ pub struct AnalogInstance {
     vars: Vec<f64>,
     /// Last accepted node voltages (for `bound_step_hint`).
     last_volts: Vec<f64>,
+    /// Whether `$limit` voltage limiting was still moving at the last load
+    /// (vetoes Newton convergence — see `update_limits`).
+    limiting_active: bool,
+    /// Per-`$limit` seed voltage `vcrit`, kept so `update_limits` can tell an
+    /// unbiased (still-seeded) junction from a tracked one.
+    limit_seeds: Vec<f64>,
 }
 
 impl AnalogInstance {
@@ -287,6 +293,7 @@ impl AnalogInstance {
         let sim = SimCtx { param_given_mask, ..Default::default() };
         let n = kernel.num_terminals();
         let num_vars = kernel.num_vars();
+        let num_limits = kernel.num_limits();
         let mut instance = Self {
             state,
             kernel,
@@ -300,8 +307,11 @@ impl AnalogInstance {
             event_periods,
             vars: vec![0.0; num_vars],
             last_volts: vec![0.0; n],
+            limiting_active: false,
+            limit_seeds: vec![0.0; num_limits],
         };
         instance.fire_initial_events();
+        instance.seed_limits();
         Ok(instance)
     }
 
@@ -484,10 +494,119 @@ impl AnalogInstance {
             state.latest().and_then(|s| s.get(k).copied()).unwrap_or(0.0)
         });
         let (res, jac) = self.eval_rhs_jac(&volts);
-        let rhs = self.norton_rhs(&volts, &res, &jac);
+        // With `$limit`, the residual was evaluated at the *limited* junction
+        // voltages, so the Norton companion must linearize there too
+        // (ngspice: `cdeq = cd − gd·vlim`, not `cd − gd·vnode`). Otherwise the
+        // node is pinned at a non-solution.
+        let veff = self.limited_volts(&volts);
+        let rhs = self.norton_rhs(&veff, &res, &jac);
         let mut stamps = self.nodal_stamps(&rhs, &jac);
         stamps.extend(self.force_stamps(&volts));
+        self.update_limits(&volts);
         stamps
+    }
+
+    /// Node voltages with each `$limit` junction branch replaced by its limited
+    /// value `vlim` — the linearization point for the Norton transform when
+    /// voltage limiting is active. Non-junction nodes are unchanged. Returns
+    /// `volts` unchanged when the device has no `$limit`.
+    fn limited_volts(&self, volts: &[f64]) -> Vec<f64> {
+        let nl = self.kernel.num_limits();
+        if nl == 0 {
+            return volts.to_vec();
+        }
+        let mut vlim = vec![0.0; nl];
+        self.kernel
+            .eval_limit_update(volts, &self.params, &self.state, &self.vars, &self.sim, &mut vlim);
+        let mut vnew = vec![0.0; nl];
+        self.kernel
+            .eval_limit_vnew(volts, &self.params, &self.state, &self.vars, &self.sim, &mut vnew);
+        let mut veff = volts.to_vec();
+        for (i, branch) in self.kernel.limit_branches().iter().enumerate() {
+            let Some((plus, minus)) = branch else { continue };
+            let vp = plus.map_or(0.0, |p| volts[p]);
+            let vm = minus.map_or(0.0, |m| volts[m]);
+            let vbr_raw = vp - vm;
+            // `vnew = type · vbr_raw`, type = ±1: recover the branch polarity so
+            // the limited node-space voltage is `vlim / type`.
+            let ty = if vbr_raw.abs() > 1e-12 { (vnew[i] / vbr_raw).signum() } else { 1.0 };
+            let vbr_eff = vlim[i] * ty;
+            // Move the minus node if it is a real node (keeps a shared plus node
+            // — e.g. a BJT base' — fixed); otherwise move the plus node.
+            if let Some(m) = minus {
+                veff[*m] = vp - vbr_eff;
+            } else if let Some(p) = plus {
+                veff[*p] = vm + vbr_eff;
+            }
+        }
+        veff
+    }
+
+    /// Advance the `$limit` vold slots after loading: store this iteration's
+    /// limited voltages so the next Newton iteration limits against them
+    /// (ngspice stores the limited junction voltage in device state). This is
+    /// what makes junction devices converge — without it a stiff exponential
+    /// overshoots and stalls. Called each iteration of DC and transient loads;
+    /// AC/noise reuse the converged DC vold (limiter inactive there).
+    fn update_limits(&mut self, volts: &[f64]) {
+        let nl = self.kernel.num_limits();
+        if nl == 0 {
+            return;
+        }
+        let base = self.kernel.limit_base();
+        let mut vlim = vec![0.0; nl];
+        self.kernel
+            .eval_limit_update(volts, &self.params, &self.state, &self.vars, &self.sim, &mut vlim);
+        let mut vnew = vec![0.0; nl];
+        self.kernel
+            .eval_limit_vnew(volts, &self.params, &self.state, &self.vars, &self.sim, &mut vnew);
+        // A junction is "still limiting" iff pnjlim actually clamped this
+        // iteration — the limited value differs from the raw branch voltage
+        // (ngspice's `Check == 1`). While that holds, the Newton loop must not
+        // declare convergence (see PiperineDevice::limiting_active): a clamped
+        // junction can momentarily satisfy KCL at a non-solution voltage. Tiny
+        // Newton jitter once limiting is off (vnew ≈ vlim) must NOT veto, hence
+        // the tolerance below.
+        let mut active = false;
+        for (i, v) in vlim.into_iter().enumerate() {
+            let old = self.state[base + i];
+            // Preserve the vcrit seed until the junction is first biased:
+            // `pnjlim(0, vcrit) = 0` on the opening iterations would discard the
+            // seed and let the node float to the supply (ngspice MODEINITJCT).
+            let seeded = (old - self.limit_seeds[i]).abs() <= 1e-12;
+            if seeded && v < old {
+                continue;
+            }
+            if (vnew[i] - v).abs() > 1e-6 + 1e-4 * vnew[i].abs() {
+                active = true;
+            }
+            self.state[base + i] = v;
+        }
+        self.limiting_active = active;
+    }
+
+    /// Whether junction voltage limiting is still moving (see `update_limits`).
+    pub fn limiting_active(&self) -> bool {
+        self.limiting_active
+    }
+
+    /// Seed each `$limit` vold slot with its critical voltage `vcrit`, so a
+    /// junction starts limiting near turn-on (ngspice MODEINITJCT) rather than
+    /// from 0 V. `vcrit` depends only on params/temperature, not node voltages.
+    fn seed_limits(&mut self) {
+        let nl = self.kernel.num_limits();
+        if nl == 0 {
+            return;
+        }
+        let base = self.kernel.limit_base();
+        let zeros = vec![0.0; self.num_terminals()];
+        let mut seeds = vec![0.0; nl];
+        self.kernel
+            .eval_limit_seed(&zeros, &self.params, &self.state, &self.vars, &self.sim, &mut seeds);
+        for (i, s) in seeds.iter().enumerate() {
+            self.state[base + i] = *s;
+        }
+        self.limit_seeds = seeds;
     }
 
     pub fn load_transient(
@@ -514,7 +633,8 @@ impl AnalogInstance {
         // must reference the previously accepted solution explicitly —
         // folding it into the Norton transform would cancel the reactive
         // current at convergence and collapse every step to the DC point.
-        let mut rhs = self.norton_rhs(&volts, &res, &jac);
+        let veff = self.limited_volts(&volts);
+        let mut rhs = self.norton_rhs(&veff, &res, &jac);
         if self.kernel.has_reactive() {
             let n = self.num_terminals();
             let mut qjac = vec![0.0; n * n];
@@ -547,6 +667,7 @@ impl AnalogInstance {
         }
         let mut stamps = self.nodal_stamps(&rhs, &jac);
         stamps.extend(self.force_stamps(&volts));
+        self.update_limits(&volts);
         stamps
     }
 
@@ -615,6 +736,21 @@ impl AnalogInstance {
             if let Some(m) = self.terminal_ref(minus) {
                 stamps.push(Stamp::Matrix(m.clone(), branch.clone(), Complex64::new(-1.0, 0.0)));
                 stamps.push(Stamp::Matrix(branch.clone(), m, Complex64::new(-1.0, 0.0)));
+            }
+        }
+        // Ideal AC voltage stimulus attached to a force branch: the branch
+        // equation RHS becomes `mag·e^{jφ}` (V(plus) − V(minus) = stim).
+        if self.kernel.has_force_ac_stim() {
+            let nf = self.kernel.num_forces();
+            let mut mags = vec![0.0; nf];
+            let mut phases = vec![0.0; nf];
+            self.kernel
+                .eval_force_ac_stim(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut mags, &mut phases);
+            for (i, branch) in self.force_refs.iter().enumerate() {
+                let stim = Complex64::from_polar(mags[i], phases[i]);
+                if stim != Complex64::ZERO {
+                    stamps.push(Stamp::Rhs(branch.clone(), stim));
+                }
             }
         }
         // `ac_stim` sources: `mag·e^{j·phase}` enters the residual at the

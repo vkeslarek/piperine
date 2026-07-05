@@ -141,6 +141,12 @@ impl Device for PiperineDevice {
         &self.label
     }
 
+    fn limiting_active(&self) -> bool {
+        self.analog
+            .as_ref()
+            .is_some_and(AnalogInstance::limiting_active)
+    }
+
     // ── Analog ──
 
     fn bound_step_hint(&self) -> f64 {

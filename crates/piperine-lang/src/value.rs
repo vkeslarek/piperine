@@ -170,13 +170,15 @@ impl Value {
                 let idx = as_index(&i)?;
                 Ok(Value::Option(items.borrow().get(idx).cloned().map(Box::new)))
             }
-            (Value::Option(inner), "is_some") => Ok(Value::Bool(inner.is_some())),
+            // `is_present`/`get_or` are the optional-param sugars (SPEC §…);
+            // `is_some`/`is_none`/`unwrap`/`unwrap_or` are the value-layer aliases.
+            (Value::Option(inner), "is_some" | "is_present") => Ok(Value::Bool(inner.is_some())),
             (Value::Option(inner), "is_none") => Ok(Value::Bool(inner.is_none())),
             (Value::Option(inner), "unwrap") => inner
                 .clone()
                 .map(|v| *v)
                 .ok_or_else(|| EvalError::Host("unwrap of an empty Option".into())),
-            (Value::Option(inner), "unwrap_or") => {
+            (Value::Option(inner), "unwrap_or" | "get_or") => {
                 let [default] = take1(args)?;
                 Ok(inner.clone().map(|v| *v).unwrap_or(default))
             }
@@ -226,17 +228,22 @@ impl Value {
     /// `ConstVal` could hold). Const-eval call sites that must reject
     /// collections/closures narrow with this.
     pub fn is_const_scalar(&self) -> bool {
-        matches!(
-            self,
+        match self {
             Value::Int(_)
-                | Value::Nat(_)
-                | Value::Real(_)
-                | Value::Bool(_)
-                | Value::Str(_)
-                | Value::Complex(..)
-                | Value::Quad(_)
-                | Value::EnumVariant(..)
-        )
+            | Value::Nat(_)
+            | Value::Real(_)
+            | Value::Bool(_)
+            | Value::Str(_)
+            | Value::Complex(..)
+            | Value::Quad(_)
+            | Value::EnumVariant(..) => true,
+            // An optional is a compile-time constant iff absent (`none`) or
+            // wrapping a constant scalar — this lets `param x : Real? = none`
+            // and `param x : Real? = 1.2` be elaboration constants.
+            Value::Option(None) => true,
+            Value::Option(Some(inner)) => inner.is_const_scalar(),
+            _ => false,
+        }
     }
 
     /// Extract the inner `f64` if this is a `Real`.

@@ -1,0 +1,84 @@
+// Multi-module digital correctness: a 4-bit ripple-carry adder built from four
+// 1-bit FullAdder instances chained by their carry. This exercises the thing
+// that matters across module boundaries — the carry propagates fa0 → fa1 → fa2
+// → fa3, so a wrong inter-module wiring or a settle bug shows up immediately.
+// The bench is EXHAUSTIVE: all 256 (a, b) pairs, a,b ∈ [0, 15], asserting
+// s = a + b as a 5-bit result. It is also the correctness oracle for the fused
+// digital-network JIT (piperine-codegen/docs/DIGITAL_JIT.md): the same cone,
+// per-device or fused, must produce this table.
+
+discipline Bit {
+    storage Boolean;
+}
+
+// Stageable one-bit driver: a Real param → a Bit net.
+mod BitDriver(output q : Bit) {
+    param level : Real = 0.0;
+    var b : Bit = 0;
+}
+digital BitDriver {
+    b = level > 0.5;
+    q <- b;
+}
+
+// 1-bit full adder: sum = a ⊕ b ⊕ cin, cout = majority(a, b, cin).
+mod FullAdder(input a : Bit, input b : Bit, input cin : Bit,
+              output sum : Bit, output cout : Bit) {
+    var s : Bit = 0;
+    var c : Bit = 0;
+}
+digital FullAdder {
+    s = (a != b) != cin;
+    c = (a && b) || (cin && (a != b));
+    sum <- s;
+    cout <- c;
+}
+
+mod Adder4() {
+    // Input bit nets, LSB-first.
+    wire a0 : Bit; wire a1 : Bit; wire a2 : Bit; wire a3 : Bit;
+    wire b0 : Bit; wire b1 : Bit; wire b2 : Bit; wire b3 : Bit;
+    // Carry chain between adder stages.
+    wire c0 : Bit; wire c1 : Bit; wire c2 : Bit;
+    // Sum bits + final carry.
+    wire s0 : Bit; wire s1 : Bit; wire s2 : Bit; wire s3 : Bit; wire cout : Bit;
+    // Constant 0 for the first carry-in (a driver left at level 0).
+    wire zero : Bit;
+
+    dz : BitDriver(.q = zero);
+    da0 : BitDriver(.q = a0); da1 : BitDriver(.q = a1);
+    da2 : BitDriver(.q = a2); da3 : BitDriver(.q = a3);
+    db0 : BitDriver(.q = b0); db1 : BitDriver(.q = b1);
+    db2 : BitDriver(.q = b2); db3 : BitDriver(.q = b3);
+
+    fa0 : FullAdder(.a = a0, .b = b0, .cin = zero, .sum = s0, .cout = c0);
+    fa1 : FullAdder(.a = a1, .b = b1, .cin = c0,   .sum = s1, .cout = c1);
+    fa2 : FullAdder(.a = a2, .b = b2, .cin = c1,   .sum = s2, .cout = c2);
+    fa3 : FullAdder(.a = a3, .b = b3, .cin = c2,   .sum = s3, .cout = cout);
+}
+
+bench Adder4 {
+
+    fn test_exhaustive_sum() {
+        var vals = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+                    8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0];
+        for a in vals {
+            for b in vals {
+                da0.level = a - 2.0 * floor(a / 2.0);
+                da1.level = floor(a / 2.0) - 2.0 * floor(a / 4.0);
+                da2.level = floor(a / 4.0) - 2.0 * floor(a / 8.0);
+                da3.level = floor(a / 8.0);
+                db0.level = b - 2.0 * floor(b / 2.0);
+                db1.level = floor(b / 2.0) - 2.0 * floor(b / 4.0);
+                db2.level = floor(b / 4.0) - 2.0 * floor(b / 8.0);
+                db3.level = floor(b / 8.0);
+
+                var r = $op();
+                var sum = r.v(s0) + 2.0 * r.v(s1) + 4.0 * r.v(s2)
+                        + 8.0 * r.v(s3) + 16.0 * r.v(cout);
+                $assert(abs(sum - (a + b)) < 1e-9,
+                        "ripple carry: a + b matches the 5-bit result");
+            }
+        }
+    }
+}

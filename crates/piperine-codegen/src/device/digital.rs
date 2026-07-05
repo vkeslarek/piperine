@@ -7,6 +7,7 @@ use std::collections::BinaryHeap;
 use std::sync::Arc;
 
 use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
+use piperine_solver::digital_interface::{DigitalEventModel, DigitalPorts, EvalCtx, EventSink};
 
 use crate::ir::{EdgeKind, IrType};
 use crate::jit::digital::{DigitalAbi, DigitalKernel};
@@ -291,5 +292,41 @@ impl DigitalInstance {
             seq: self.seq,
         }));
         self.seq += 1;
+    }
+}
+
+/// `DigitalInstance` satisfies the stable event contract
+/// ([`DigitalEventModel`], the "OSDI for digital"). This is the seam the
+/// scheduler migrates onto: today it drives instances through
+/// `Device::eval_discrete` over a raw queue; the contract lets a fused JIT
+/// network (`jit/digital/network.rs`) or an external co-sim take the same slot.
+///
+/// Transitional adapter: `evaluate`/`init` run the existing native path into a
+/// scratch queue and forward each event through the [`EventSink`], preserving
+/// wire semantics (net/value/relative delay). The follow-up refactors the
+/// native path to emit through the sink directly, dropping the scratch hop.
+impl DigitalEventModel for DigitalInstance {
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: &self.in_nets, outputs: &self.out_nets }
+    }
+
+    fn init(&mut self, sink: &mut dyn EventSink) {
+        let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
+        DigitalInstance::init(self, &mut q);
+        for Reverse(ev) in q.into_sorted_vec() {
+            sink.emit(ev.net, ev.value, ev.time);
+        }
+    }
+
+    fn evaluate(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+        let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
+        DigitalInstance::eval(self, ctx.time, ctx.nets, ctx.analog, &mut q);
+        for Reverse(ev) in q.into_sorted_vec() {
+            sink.emit(ev.net, ev.value, ev.time - ctx.time);
+        }
+    }
+
+    fn samples_analog(&self) -> bool {
+        self.kernel.layout().num_analog() > 0
     }
 }

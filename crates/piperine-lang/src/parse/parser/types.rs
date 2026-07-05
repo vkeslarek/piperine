@@ -42,6 +42,9 @@ impl<'a> Parser<'a> {
             self.expect(&Tok::RBrack)?;
         }
 
-        Ok(Type { name, args, dimensions })
+        // Trailing `?` marks an optional type (`Real?`).
+        let optional = self.eat(&Tok::Question);
+
+        Ok(Type { name, args, dimensions, optional })
     }
 }

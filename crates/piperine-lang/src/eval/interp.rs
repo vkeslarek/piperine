@@ -306,10 +306,19 @@ impl<'h, H: Host> Interpreter<'h, H> {
 
     fn exec_stmt(&mut self, stmt: &Stmt) -> Result<Flow, EvalError> {
         match stmt {
-            Stmt::VarDecl { name, default, .. } => {
+            Stmt::VarDecl { name, ty, default } => {
                 let value = match default {
                     Some(e) => self.eval_expr(e)?,
                     None => Value::Unit,
+                };
+                // Coerce a plain value into `Some` when the binding is optional
+                // (`var b : Real? = 2.5`); `none` already evaluates to
+                // `Option(None)`, and an existing `Option` passes through.
+                let value = match ty {
+                    Some(t) if t.optional && !matches!(value, Value::Option(_)) => {
+                        Value::Option(Some(Box::new(value)))
+                    }
+                    _ => value,
                 };
                 self.define(name, value);
                 Ok(Flow::Normal(Value::Unit))
@@ -673,6 +682,8 @@ fn eval_literal(lit: &Literal) -> Value {
         Literal::Bool(b) => Value::Bool(*b),
         Literal::String(s) => Value::Str(s.clone()),
         Literal::Quad(q) => Value::Str(format!("0q{q}")),
+        // `none` — the absent optional value.
+        Literal::None => Value::Option(None),
     }
 }
 

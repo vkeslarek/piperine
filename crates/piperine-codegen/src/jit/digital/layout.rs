@@ -33,7 +33,7 @@ use crate::ir::{
 
 
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct DigitalLayout {
     pub(crate) input_index: HashMap<NodeId, usize>,
     pub(crate) output_index: HashMap<NodeId, usize>,

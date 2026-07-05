@@ -17,6 +17,11 @@ pub fn build_source_map() -> (SourceMap, PathBuf) {
     // Resolve project dependencies
     let toml_path = project_root.join("Piperine.toml");
     if let Ok(toml) = PiperineToml::load(&toml_path) {
+        // Register the project's own package name so a package can refer to its
+        // own modules by name (e.g. `use spice::constants;` inside the `spice`
+        // package). Without this a standalone library cannot self-reference.
+        source_map.add_namespace(&toml.project.name, source_map.root_path.clone());
+
         let mut resolver = Resolver::new(&project_root, false);
         match resolver.resolve(&toml) {
             Ok(resolved_deps) => {
@@ -35,8 +40,7 @@ pub fn build_source_map() -> (SourceMap, PathBuf) {
         }
     }
 
-    // Keep legacy headers mapped for now; fall back to the repo checkout
-    // this binary was built from (dev builds).
+    // The `piperine` stdlib prelude ships with the compiler.
     let mut headers_dir = project_root.join("headers");
     if !headers_dir.exists() {
         headers_dir =
@@ -46,11 +50,6 @@ pub fn build_source_map() -> (SourceMap, PathBuf) {
     if headers_dir.exists() {
         source_map = source_map.with_prelude(headers_dir.join("prelude.phdl"));
         source_map.add_namespace("piperine", headers_dir.clone());
-        // spice is now a real dependency, but just in case we need fallback
-        let spice_fallback = headers_dir.join("ngspice");
-        if spice_fallback.exists() {
-            source_map.add_namespace("spice", spice_fallback);
-        }
     }
 
     (source_map, project_root)

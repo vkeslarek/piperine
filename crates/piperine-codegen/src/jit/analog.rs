@@ -108,6 +108,23 @@ pub struct AnalogKernel {
     num_ports: usize,
     num_params: usize,
     num_state_slots: usize,
+    /// Number of `$limit` vold slots (appended to the state bank after the
+    /// module's runtime-state slots).
+    num_limits: usize,
+    /// Per-`$limit` updated value `vlim` (one row per slot); `None` without
+    /// any `$limit`. The device stores these back into the state bank.
+    limit_update: Option<AnalogFn>,
+    /// Per-`$limit` seed value `vcrit` (one row per slot); `None` without any
+    /// `$limit`. Used to initialize the vold slots at device creation.
+    limit_seed: Option<AnalogFn>,
+    /// Per-`$limit` raw (unlimited) `vnew` value (one row per slot); `None`
+    /// without any `$limit`. Used with `limit_branches` to detect the branch
+    /// polarity when building the limited Norton linearization point.
+    limit_vnew: Option<AnalogFn>,
+    /// Per-`$limit` junction branch as terminal slot indices `(plus, minus)`
+    /// (`None` slot = ground); the outer `None` means the branch was not
+    /// uniquely identifiable and the raw voltage is used.
+    limit_branches: Vec<Option<(Option<usize>, Option<usize>)>>,
     /// Number of module-level persistent variable slots (the vars bank).
     num_vars: usize,
     num_forces: usize,
@@ -136,6 +153,10 @@ pub struct AnalogKernel {
     /// row-major); `None` without forces.
     force: Option<AnalogFn>,
     force_jacobian: Option<AnalogFn>,
+    /// Per-force AC stimulus magnitude/phase rows (one entry per force; 0 for
+    /// forces without an `ac_stim`). `None` when no force carries a stimulus.
+    force_ac_mag: Option<AnalogFn>,
+    force_ac_phase: Option<AnalogFn>,
     /// Noise PSD per source; `None` without noise.
     noise: Option<AnalogFn>,
     /// `ac_stim` magnitude and phase rows (one per source); `None` without
@@ -200,6 +221,49 @@ impl AnalogKernel {
 
     pub fn num_noise(&self) -> usize {
         self.num_noise
+    }
+
+    /// Number of `$limit` vold slots. They occupy state-bank slots
+    /// `[num_state_slots − num_limits, num_state_slots)`.
+    pub fn num_limits(&self) -> usize {
+        self.num_limits
+    }
+
+    /// State-bank slot index of the first `$limit` vold slot.
+    pub fn limit_base(&self) -> usize {
+        self.num_state_slots - self.num_limits
+    }
+
+    /// Compute each `$limit`'s updated value `vlim` at `volts` (using the
+    /// current vold stored in `state`). The device writes these back into the
+    /// state bank to seed the next Newton iteration.
+    pub fn eval_limit_update(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.limit_update {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(f, volts, params, state, vars, sim, out);
+        }
+    }
+
+    /// Initial `vold` per `$limit` slot (`vcrit`), for seeding the state bank
+    /// at device creation (ngspice MODEINITJCT).
+    pub fn eval_limit_seed(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.limit_seed {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(f, volts, params, state, vars, sim, out);
+        }
+    }
+
+    /// Raw (unlimited) `vnew` per `$limit` slot.
+    pub fn eval_limit_vnew(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.limit_vnew {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(f, volts, params, state, vars, sim, out);
+        }
+    }
+
+    /// Junction branch (terminal slots) per `$limit`.
+    pub fn limit_branches(&self) -> &[Option<(Option<usize>, Option<usize>)>] {
+        &self.limit_branches
     }
 
     /// Branch terminals `(plus, minus)` per force row.
@@ -365,6 +429,21 @@ impl AnalogKernel {
         }
     }
 
+    /// True when at least one force branch carries an AC stimulus.
+    pub fn has_force_ac_stim(&self) -> bool {
+        self.force_ac_mag.is_some()
+    }
+
+    /// Write each force branch's AC stimulus magnitude and phase (radians) to
+    /// `mags`/`phases` (`num_forces` each; 0 for branches without a stimulus).
+    pub fn eval_force_ac_stim(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, mags: &mut [f64], phases: &mut [f64]) {
+        if let (Some(m), Some(p)) = (self.force_ac_mag, self.force_ac_phase) {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(m, volts, params, state, vars, sim, mags);
+            Self::call(p, volts, params, state, vars, sim, phases);
+        }
+    }
+
     /// Write each noise source's PSD at `sim.frequency` to
     /// `out[0..num_noise]`: the source's PSD expression, scaled by
     /// `(1 / f)^exponent` for flicker sources.
@@ -422,6 +501,54 @@ impl AnalogKernel {
     }
 }
 
+/// Collect the unique `$limit` expressions across every flattened expression,
+/// in a stable order. Each becomes a `vold` slot appended to the state bank
+/// (see `AnalogEmitter::emit_limit`). Uniqueness is by structural equality so
+/// the same limit reused across contributions shares one slot.
+fn collect_limits(flat: &FlatAnalog) -> Vec<IrExpr> {
+    let mut limits: Vec<IrExpr> = Vec::new();
+    let mut scan = |e: &IrExpr| {
+        e.visit(&mut |node| {
+            if matches!(node, IrExpr::Sim(crate::ir::SimQuery::Limit { .. }))
+                && !limits.iter().any(|l| l == node)
+            {
+                limits.push(node.clone());
+            }
+        });
+    };
+    for c in &flat.resistive {
+        scan(&c.expr);
+    }
+    for c in &flat.charge {
+        scan(&c.expr);
+    }
+    for f in &flat.forces {
+        scan(&f.expr);
+    }
+    limits
+}
+
+/// The junction branch `(plus, minus)` a `$limit` acts on: the single branch
+/// read inside its first argument `vnew` (e.g. `V(pp,n)` or `type·V(bp,ep)`).
+/// Used to feed the *limited* branch voltage into the Norton linearization
+/// point (see `AnalogInstance::load_dc`). Returns `None` if `vnew` has no
+/// unique branch, in which case the limiter falls back to the raw voltage.
+fn limit_branch(limit: &IrExpr) -> Option<(NodeId, NodeId)> {
+    let IrExpr::Sim(crate::ir::SimQuery::Limit { args, .. }) = limit else {
+        return None;
+    };
+    let vnew = args.first()?;
+    let mut found: Option<(NodeId, NodeId)> = None;
+    let mut count = 0usize;
+    vnew.visit(&mut |node| {
+        if let IrExpr::Branch { plus, minus, .. } = node {
+            count += 1;
+            found = Some((*plus, *minus));
+        }
+    });
+    if count == 1 { found } else { None }
+}
+
 // ─── Compiler ─────────────────────────────────────────────────────────────────
 
 /// Builds every kernel function inside one Cranelift JIT module.
@@ -434,6 +561,10 @@ struct AnalogCompiler<'m> {
     jit: JITModule,
     math_ids: HashMap<&'static str, FuncId>,
     fb_ctx: FunctionBuilderContext,
+    /// Unique `$limit` expressions, in slot order (see `AnalogEmitter::limits`).
+    limits: Vec<IrExpr>,
+    /// State-bank slot where `$limit` vold slots begin (= module state count).
+    limit_base: usize,
 }
 
 impl<'m> AnalogCompiler<'m> {
@@ -465,6 +596,9 @@ impl<'m> AnalogCompiler<'m> {
             .map(|(i, &n)| (n, i))
             .collect();
 
+        let limits = collect_limits(&flat);
+        let limit_base = module.symbols.num_states();
+
         Ok(Self {
             module,
             flat,
@@ -474,6 +608,8 @@ impl<'m> AnalogCompiler<'m> {
             jit,
             math_ids,
             fb_ctx: FunctionBuilderContext::new(),
+            limits,
+            limit_base,
         })
     }
 
@@ -538,12 +674,86 @@ impl<'m> AnalogCompiler<'m> {
             )
         };
 
+        // AC drive attached to force branches (ideal AC voltage stimulus). One
+        // row per force; branches without a stimulus contribute 0. Compiled
+        // only when at least one force carries an `ac_stim`.
+        let (force_ac_mag_id, force_ac_phase_id) = if forces.iter().any(|f| f.ac_stim.is_some()) {
+            let mags: Vec<IrExpr> = forces
+                .iter()
+                .map(|f| f.ac_stim.as_ref().map_or(IrExpr::Real(0.0), |(m, _)| m.clone()))
+                .collect();
+            let phases: Vec<IrExpr> = forces
+                .iter()
+                .map(|f| f.ac_stim.as_ref().map_or(IrExpr::Real(0.0), |(_, p)| p.clone()))
+                .collect();
+            (
+                Some(self.compile_rows("force_ac_mag", &mags)?),
+                Some(self.compile_rows("force_ac_phase", &phases)?),
+            )
+        } else {
+            (None, None)
+        };
+
         let noise_id = if noise.is_empty() {
             None
         } else {
             let psds: Vec<IrExpr> = noise.iter().map(|(_, _, psd, _)| psd.clone()).collect();
             Some(self.compile_rows("noise", &psds)?)
         };
+        // `$limit` update: one row per slot yielding the limited value `vlim`,
+        // which the device writes back into the state bank each Newton
+        // iteration to become the next iteration's `vold`.
+        let limit_update_id = if self.limits.is_empty() {
+            None
+        } else {
+            let rows = self.limits.clone();
+            Some(self.compile_rows("limit_update", &rows)?)
+        };
+        // `$limit` seed: the critical voltage `vcrit` (arg 3) per slot. Junctions
+        // start limiting from vcrit — ngspice's MODEINITJCT — so a diode begins
+        // near turn-on instead of at 0 V (which floats the node to the supply
+        // and makes vold crawl up chasing a runaway node).
+        let limit_seed_id = if self.limits.is_empty() {
+            None
+        } else {
+            let seeds: Vec<IrExpr> = self
+                .limits
+                .iter()
+                .map(|l| match l {
+                    IrExpr::Sim(crate::ir::SimQuery::Limit { args, .. }) if args.len() >= 4 => {
+                        args[3].clone()
+                    }
+                    _ => IrExpr::Real(0.0),
+                })
+                .collect();
+            Some(self.compile_rows("limit_seed", &seeds)?)
+        };
+        // Raw `vnew` (arg 0) per slot, for branch-polarity detection.
+        let limit_vnew_id = if self.limits.is_empty() {
+            None
+        } else {
+            let vnews: Vec<IrExpr> = self
+                .limits
+                .iter()
+                .map(|l| match l {
+                    IrExpr::Sim(crate::ir::SimQuery::Limit { args, .. }) if !args.is_empty() => {
+                        args[0].clone()
+                    }
+                    _ => IrExpr::Real(0.0),
+                })
+                .collect();
+            Some(self.compile_rows("limit_vnew", &vnews)?)
+        };
+        // Junction branch (as terminal slots) per limit.
+        let limit_branches: Vec<Option<(Option<usize>, Option<usize>)>> = self
+            .limits
+            .iter()
+            .map(|l| {
+                limit_branch(l).map(|(p, m)| {
+                    (self.slot.get(&p).copied(), self.slot.get(&m).copied())
+                })
+            })
+            .collect();
         let ac_stims = std::mem::take(&mut self.flat.ac_stims);
         let (ac_stim_mag_id, ac_stim_phase_id) = if ac_stims.is_empty() {
             (None, None)
@@ -670,7 +880,12 @@ impl<'m> AnalogCompiler<'m> {
             name: self.module.name.clone(),
             num_ports: self.num_ports,
             num_params: self.module.symbols.num_params(),
-            num_state_slots: self.module.symbols.num_states(),
+            num_state_slots: self.module.symbols.num_states() + self.limits.len(),
+            num_limits: self.limits.len(),
+            limit_update: limit_update_id.map(|id| get(&self.jit, id)),
+            limit_seed: limit_seed_id.map(|id| get(&self.jit, id)),
+            limit_vnew: limit_vnew_id.map(|id| get(&self.jit, id)),
+            limit_branches,
             num_vars: self.module.symbols.vars().count(),
             num_forces: forces.len(),
             num_noise: noise.len(),
@@ -689,6 +904,8 @@ impl<'m> AnalogCompiler<'m> {
             charge_jacobian: charge_jac_id.map(|id| get(&self.jit, id)),
             force: force_id.map(|id| get(&self.jit, id)),
             force_jacobian: force_jac_id.map(|id| get(&self.jit, id)),
+            force_ac_mag: force_ac_mag_id.map(|id| get(&self.jit, id)),
+            force_ac_phase: force_ac_phase_id.map(|id| get(&self.jit, id)),
             noise: noise_id.map(|id| get(&self.jit, id)),
             ac_stim_mag: ac_stim_mag_id.map(|id| get(&self.jit, id)),
             ac_stim_phase: ac_stim_phase_id.map(|id| get(&self.jit, id)),
@@ -877,6 +1094,9 @@ impl<'m> AnalogCompiler<'m> {
             vars_ptr,
             sim_ptr,
             math: &math,
+            limits: &self.limits,
+            limit_base: self.limit_base,
+            cse: HashMap::new(),
         };
         body(&mut emitter, &self.slot, out_ptr)?;
 

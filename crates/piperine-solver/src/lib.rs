@@ -3,6 +3,7 @@ pub mod analog;
 pub mod circuit;
 pub mod device;
 pub mod digital;
+pub mod digital_interface;
 pub mod error;
 pub mod math;
 pub mod osdi;

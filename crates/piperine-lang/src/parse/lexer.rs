@@ -110,6 +110,8 @@ pub enum Tok {
     BitOr,
     /// `^`
     BitXor,
+    /// `?` — optional-type marker (`Real?`)
+    Question,
     /// `@`
     At,
     /// \n
@@ -259,6 +261,7 @@ impl<'a> Lexer<'a> {
                     if self.match_char('|') { Tok::Or } else { Tok::BitOr }
                 }
                 '^' => Tok::BitXor,
+                '?' => Tok::Question,
                 '$' => {
                     let mut ident = String::new();
                     while self.peek_char().is_some_and(|c| c.is_ascii_alphanumeric() || c == '_') {

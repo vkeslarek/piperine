@@ -57,7 +57,7 @@
                 },
                 {
                     "name": "keyword.other.phdl",
-                    "match": "\\b(use|pub)\\b"
+                    "match": "\\b(use|pub|self)\\b"
                 }
             ]
         },

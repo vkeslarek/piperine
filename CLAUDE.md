@@ -71,7 +71,12 @@ both a package and the workspace) — always pass `--workspace`.
 ## Known gaps (all fail loud — see ROADMAP.md)
 
 - `transition`, `laplace_*`, `zi_*` — recognised in IR, no companion model yet.
-- `ac_stim` in potential contributions; multiple `ac_stim` per contribution.
+- `ac_stim` in potential contributions is now supported (force-branch AC drive → voltage
+  sources do AC); multiple `ac_stim` per contribution is still fail-loud.
+- `$limit` (pnjlim/fetlim) is not lowered in the JIT — blocks junction devices from
+  compiling through `CircuitCompiler` (works in the bench interpreter). See ROADMAP.
+- `@initial` cannot force a branch (`V<-ic`); large analog bodies (mos1) exceed Cranelift's
+  function-size limit; `Option<T>` is not a valid `param` type. See ROADMAP.
 - `idt` contributes 0 in AC (no `1/jω` stamp).
 - `$plot`, `extract`/`.attach`/`.meta` — bench tasks not yet implemented (allowlist-gated).
 
@@ -106,4 +111,7 @@ both a package and the workspace) — always pass `--workspace`.
 - Language spec: `crates/piperine-lang/docs/SPEC.md` (Parts I–VI)
 - Bench spec: `crates/piperine-bench/docs/SPEC.md` (update §11 status rows when closing gaps)
 - IR spec: `crates/piperine-codegen/docs/SPEC.md`
+- Digital network JIT + event interface: `crates/piperine-codegen/docs/DIGITAL_JIT.md`
+  (the stable `DigitalEventModel` boundary in `solver/src/digital_interface.rs`; the fused
+  Verilator-style cone compiler scaffold in `codegen/src/jit/digital/network.rs`)
 - Open items: `ROADMAP.md`

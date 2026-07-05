@@ -330,8 +330,38 @@ impl Trace {
         }
     }
 
+    /// The raw net name from a `NetRef` argument, if any.
+    fn net_name(arg: &Value) -> Option<String> {
+        match arg {
+            Value::Object(obj) => obj.as_any().downcast_ref::<NetRef>().map(|n| n.name.clone()),
+            _ => None,
+        }
+    }
+
     fn v(&self, args: &[Value]) -> Result<Value, EvalError> {
-        let a = self.resolve_node(args.first().ok_or_else(|| EvalError::TypeMismatch("v() needs at least 1 argument".into()))?)?;
+        let first = args.first().ok_or_else(|| EvalError::TypeMismatch("v() needs at least 1 argument".into()))?;
+        // Digital net: read its logic value (0/1, NaN for X/Z) over time — the
+        // transient records a digital snapshot per step (SPEC §…), so sequential
+        // logic is observable through `$tran` where `$op` (stateless) cannot.
+        if let Some(name) = Self::net_name(first)
+            && let Some(&idx) = self.info.digital_nets.get(&name)
+        {
+            use piperine_solver::digital::LogicValue;
+            let points = self
+                .result
+                .iter()
+                .map(|step| {
+                    let v = match step.digital(idx) {
+                        Some(LogicValue::Zero) => 0.0,
+                        Some(LogicValue::One) => 1.0,
+                        _ => f64::NAN,
+                    };
+                    (step.time(), v)
+                })
+                .collect();
+            return Ok(Value::Object(Rc::new(Waveform::new(points))));
+        }
+        let a = self.resolve_node(first)?;
         let b = match args.get(1) {
             Some(v) => Some(self.resolve_node(v)?),
             None => None,

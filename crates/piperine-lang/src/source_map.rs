@@ -4,7 +4,8 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub struct SourceMap {
     /// Mapping of base namespaces to their filesystem paths.
-    /// E.g. "spice" -> "/absolute/path/to/ngspice"
+    /// E.g. "piperine" -> "/path/to/stdlib/headers", or a package name from
+    /// `Piperine.toml` -> that package's `src/` directory.
     pub namespaces: HashMap<String, PathBuf>,
     /// The root path for unqualified `use` statements.
     /// E.g. `use capabilities;` -> `<root_path>/capabilities.phdl`
@@ -36,7 +37,6 @@ impl SourceMap {
         let mut map = Self::new("headers".into());
         map = map.with_prelude("headers/prelude.phdl".into());
         map.add_namespace("piperine", "headers");
-        map.add_namespace("spice", "headers/ngspice");
         map
     }
 }

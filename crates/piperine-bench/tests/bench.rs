@@ -1024,3 +1024,87 @@ fn op_result_reads_digital_nets_directly() {
         other => panic!("expected Passed, got {other:?}"),
     }
 }
+
+#[test]
+fn capability_typed_param_resolves_through_its_default() {
+    // `param model : Junction = DiodeModel {}` — the capability is the
+    // declared type; the concrete bundle comes from the default and must
+    // implement it. Methods dispatch against the concrete impl.
+    let src = "
+        discipline Electrical { potential v : Real; flow i : Real; }
+        capability Conductive { fn conductance(self) -> Real; }
+        bundle ResModel { rsh : Real = 1e3, }
+        impl Conductive for ResModel {
+            fn conductance(self) -> Real { return 1.0 / self.rsh; }
+        }
+        mod R(inout p : Electrical, inout n : Electrical) {
+            param model : Conductive = ResModel {};
+        }
+        analog R { I(p, n) <+ V(p, n) * model.conductance(); }
+        mod VSrc(inout p : Electrical, inout n : Electrical) { param voltage : Real = 5.0; }
+        analog VSrc { V(p, n) <- voltage; }
+        mod Divider() {
+            wire gnd : Electrical; wire vin : Electrical; wire mid : Electrical;
+            src : VSrc(.p = vin, .n = gnd);
+            r1 : R(.p = vin, .n = mid);
+            r2 : R(.p = mid, .n = gnd);
+        }
+        bench Divider {
+            fn test_capability_param() {
+                var r = $op();
+                $assert(abs(r.v(mid, gnd) - 2.5) < 1e-6, \"capability-typed model card works\");
+            }
+        }";
+    let design = elab(src);
+    match BenchRunner::new(&design).run_entry("Divider", "test_capability_param") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn capability_typed_param_rejects_a_non_implementing_bundle() {
+    // Fail-loud half: a default whose bundle does not `impl` the declared
+    // capability is an elaboration error, not a silent acceptance.
+    let src = "
+        discipline Electrical { potential v : Real; flow i : Real; }
+        capability Conductive { fn conductance(self) -> Real; }
+        bundle Other { x : Real = 1.0, }
+        mod R(inout p : Electrical, inout n : Electrical) {
+            param model : Conductive = Other {};
+        }
+        analog R { I(p, n) <+ V(p, n); }";
+    let err = piperine_lang::parse_str(src)
+        .expect("parse failed")
+        .elaborate(&SourceMap::dummy())
+        .expect_err("elaboration must reject the non-implementing bundle");
+    assert!(
+        err.to_string().contains("does not implement"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn optional_value_none_is_present_and_get_or() {
+    // Value-layer optionals (`T?` + `none`) in a bench: `none` is absent,
+    // `.is_present()` is false, `.get_or(d)` yields the default; a supplied
+    // optional is present and `.get_or` yields its value.
+    let src = format!(
+        "{CIRCUIT}
+        bench SwitchOpenTest {{
+            fn test_optionals() {{
+                var a : Real? = none;
+                $assert(!a.is_present(), \"none is absent\");
+                $assert(abs(a.get_or(7.0) - 7.0) < 1e-12, \"get_or returns the default\");
+                var b : Real? = 2.5;
+                $assert(b.is_present(), \"a supplied optional is present\");
+                $assert(abs(b.get_or(7.0) - 2.5) < 1e-12, \"get_or returns the value\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_optionals") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}

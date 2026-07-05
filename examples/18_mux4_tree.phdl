@@ -1,0 +1,66 @@
+// Multi-module hierarchy: a 4:1 multiplexer built as a tree of three 2:1 mux
+// instances. `out = mux(mux(i0,i1,sel0), mux(i2,i3,sel0), sel1)`. The two
+// leaf muxes and the root mux are separate modules wired through internal nets,
+// so the test proves selection propagates correctly through two levels of
+// module boundaries. EXHAUSTIVE over all 2^6 = 64 input/select combinations.
+
+discipline Bit {
+    storage Boolean;
+}
+
+mod BitDriver(output q : Bit) {
+    param level : Real = 0.0;
+    var b : Bit = 0;
+}
+digital BitDriver {
+    b = level > 0.5;
+    q <- b;
+}
+
+// 2:1 mux: y = sel ? b : a.
+mod Mux2(input a : Bit, input b : Bit, input sel : Bit, output y : Bit) {
+    var m : Bit = 0;
+}
+digital Mux2 {
+    m = (a && !sel) || (b && sel);
+    y <- m;
+}
+
+mod Mux4() {
+    wire i0 : Bit; wire i1 : Bit; wire i2 : Bit; wire i3 : Bit;
+    wire sel0 : Bit; wire sel1 : Bit;
+    wire lo : Bit; wire hi : Bit; wire out : Bit;
+
+    d0 : BitDriver(.q = i0); d1 : BitDriver(.q = i1);
+    d2 : BitDriver(.q = i2); d3 : BitDriver(.q = i3);
+    ds0 : BitDriver(.q = sel0); ds1 : BitDriver(.q = sel1);
+
+    // Level 1: two leaf muxes selected by sel0.
+    mlo : Mux2(.a = i0, .b = i1, .sel = sel0, .y = lo);
+    mhi : Mux2(.a = i2, .b = i3, .sel = sel0, .y = hi);
+    // Level 2: root mux selected by sel1.
+    mroot : Mux2(.a = lo, .b = hi, .sel = sel1, .y = out);
+}
+
+bench Mux4 {
+
+    fn test_exhaustive_selection() {
+        var bits = [0.0, 1.0];
+        for v0 in bits { for v1 in bits { for v2 in bits { for v3 in bits {
+            for s0 in bits { for s1 in bits {
+                d0.level = v0; d1.level = v1; d2.level = v2; d3.level = v3;
+                ds0.level = s0; ds1.level = s1;
+
+                var r = $op();
+                // Expected: index = sel1*2 + sel0 selects one input (one-hot
+                // product form, all Real — no branching needed).
+                var expected = v0 * (1.0 - s0) * (1.0 - s1)
+                             + v1 * s0 * (1.0 - s1)
+                             + v2 * (1.0 - s0) * s1
+                             + v3 * s0 * s1;
+                $assert(abs(r.v(out) - expected) < 1e-9,
+                        "4:1 mux picks input [sel1,sel0] through two module levels");
+            }}
+        }}}}
+    }
+}

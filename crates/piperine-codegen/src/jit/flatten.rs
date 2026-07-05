@@ -34,11 +34,17 @@ pub struct FlatContrib {
 
 /// A flattened potential source: `V(plus) − V(minus) = expr` (one MNA
 /// branch-current unknown per force).
+///
+/// `ac_stim` carries an optional small-signal drive `(mag, phase)` attached to
+/// the branch: in AC analysis the branch equation's RHS becomes `mag·e^{jφ}`
+/// (an ideal AC voltage stimulus), while the DC/transient value stays `expr`.
+/// This is how a faithful independent voltage source injects its AC magnitude.
 #[derive(Debug, Clone)]
 pub struct FlatForce {
     pub plus: NodeId,
     pub minus: NodeId,
     pub expr: IrExpr,
+    pub ac_stim: Option<(IrExpr, IrExpr)>,
 }
 
 /// A diagnostic statement carried through for tooling; analog diagnostics are
@@ -464,11 +470,19 @@ impl<'m> AnalogFlattener<'m> {
             .ok_or_else(|| CodegenError::Invalid(format!("`{}` has no analog body", self.module.name)))?;
         self.walk(&body.stmts, None)?;
 
-        // Accumulated potential contributions become force rows.
+        // Accumulated potential contributions become force rows. Any `ac_stim`
+        // in the branch expression becomes the branch's AC drive (see FlatForce).
         let potentials = std::mem::take(&mut self.potential_acc);
         for (plus, minus, expr) in potentials {
-            let expr = self.finish_expr(expr)?;
-            self.out.forces.push(FlatForce { plus, minus, expr });
+            let (without, stim) = split_ac_stim(expr)?;
+            let expr = self.finish_expr(without)?;
+            let ac_stim = match stim {
+                Some((mag, phase)) => {
+                    Some((self.finish_expr(mag)?, self.finish_expr(phase)?))
+                }
+                None => None,
+            };
+            self.out.forces.push(FlatForce { plus, minus, expr, ac_stim });
         }
 
         // Noise PSDs resolve against the final variable environment.
@@ -739,7 +753,7 @@ impl<'m> AnalogFlattener<'m> {
                     return self.add_flow(switch_expr, plus, minus, ContribKind::Resistive);
                 }
                 let expr = self.finish_expr(resolved)?;
-                self.out.forces.push(FlatForce { plus, minus, expr });
+                self.out.forces.push(FlatForce { plus, minus, expr, ac_stim: None });
                 Ok(())
             }
             NatureKind::Flow => {
@@ -793,37 +807,12 @@ impl<'m> AnalogFlattener<'m> {
         plus: NodeId,
         minus: NodeId,
     ) -> Result<IrExpr, CodegenError> {
-        let mut count = 0usize;
-        let mut phase_expr = None;
-        expr.visit(&mut |e| {
-            if let IrExpr::AcStim { phase, .. } = e {
-                count += 1;
-                phase_expr = Some(phase.as_ref().clone());
-            }
-        });
-        if count == 0 {
-            return Ok(expr);
+        let (without, stim) = split_ac_stim(expr)?;
+        if let Some((mag, phase)) = stim {
+            let mag = self.finish_expr(mag)?;
+            let phase = self.finish_expr(phase)?;
+            self.out.ac_stims.push(FlatAcStim { plus, minus, mag, phase });
         }
-        if count > 1 {
-            return Err(CodegenError::unsupported(
-                "multiple `ac_stim` calls in one contribution",
-            ));
-        }
-
-        let substitute = |with_mag: bool| {
-            expr.rewrite(&mut |e| match e {
-                IrExpr::AcStim { mag, .. } => {
-                    if with_mag { *mag } else { IrExpr::Real(0.0) }
-                }
-                other => other,
-            })
-        };
-        let with_mag = substitute(true);
-        let without = substitute(false);
-        let mag = IrExpr::binary(crate::ir::IrBinOp::Sub, with_mag, without.clone());
-        let mag = self.finish_expr(mag)?;
-        let phase = self.finish_expr(phase_expr.expect("count == 1"))?;
-        self.out.ac_stims.push(FlatAcStim { plus, minus, mag, phase });
         Ok(without)
     }
 
@@ -941,4 +930,42 @@ impl<'m> AnalogFlattener<'m> {
             None => Ok(out),
         }
     }
+}
+
+/// Split a contribution expression around a single `ac_stim`. Returns the
+/// residual `expr[ac_stim → 0]` and, if a stimulus is present, its
+/// `(magnitude, phase)`. The magnitude folds in any linear scaling and sign as
+/// `expr[ac_stim → mag] − expr[ac_stim → 0]`. Neither expression is finished;
+/// the caller registers states via `finish_expr`.
+#[allow(clippy::type_complexity)]
+fn split_ac_stim(expr: IrExpr) -> Result<(IrExpr, Option<(IrExpr, IrExpr)>), CodegenError> {
+    let mut count = 0usize;
+    let mut phase_expr = None;
+    expr.visit(&mut |e| {
+        if let IrExpr::AcStim { phase, .. } = e {
+            count += 1;
+            phase_expr = Some(phase.as_ref().clone());
+        }
+    });
+    if count == 0 {
+        return Ok((expr, None));
+    }
+    if count > 1 {
+        return Err(CodegenError::unsupported(
+            "multiple `ac_stim` calls in one contribution",
+        ));
+    }
+    let substitute = |with_mag: bool| {
+        expr.rewrite(&mut |e| match e {
+            IrExpr::AcStim { mag, .. } => {
+                if with_mag { *mag } else { IrExpr::Real(0.0) }
+            }
+            other => other,
+        })
+    };
+    let with_mag = substitute(true);
+    let without = substitute(false);
+    let mag = IrExpr::binary(crate::ir::IrBinOp::Sub, with_mag, without.clone());
+    let phase = phase_expr.expect("count == 1");
+    Ok((without, Some((mag, phase))))
 }

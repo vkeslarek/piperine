@@ -28,7 +28,7 @@ impl Elaborator {
 
         if !ty.dimensions.is_empty() {
             let inner_ty =
-                Type { name: ty.name.clone(), args: ty.args.clone(), dimensions: vec![] };
+                Type { name: ty.name.clone(), args: ty.args.clone(), dimensions: vec![], optional: ty.optional };
             let inner = self.resolve_type(&inner_ty, env, type_subst)?;
             let mut result = inner;
             for dim_expr in &ty.dimensions {

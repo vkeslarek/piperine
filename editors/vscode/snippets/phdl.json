@@ -64,5 +64,34 @@
             "}"
         ],
         "description": "For loop (useful for sweep staging)"
+    },
+    "Bundle": {
+        "prefix": "bundle",
+        "body": [
+            "bundle ${1:Name} {",
+            "    ${2:field}: ${3:Type},",
+            "}"
+        ],
+        "description": "Create a new bundle"
+    },
+    "Capability": {
+        "prefix": "capability",
+        "body": [
+            "capability ${1:Name} {",
+            "    fn ${2:method}(self, ${3:args}) -> ${4:RetType};",
+            "}"
+        ],
+        "description": "Create a new capability"
+    },
+    "Impl": {
+        "prefix": "impl",
+        "body": [
+            "impl ${1:Capability} for ${2:Type} {",
+            "    fn ${3:method}(self, ${4:args}) -> ${5:RetType} {",
+            "        ${6}",
+            "    }",
+            "}"
+        ],
+        "description": "Implement a capability for a type"
     }
 }

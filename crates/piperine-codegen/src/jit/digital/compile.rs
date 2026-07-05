@@ -1060,3 +1060,203 @@ impl DigitalEmitter<'_, '_, '_> {
         self.builder.ins().select(flag, one, zero)
     }
 }
+
+// ─── Fused combinational network (Verilator-style whole-cone JIT) ───────────────
+
+/// One member of a fused combinational network: its IR module plus how it binds
+/// into the network-wide arrays. `in_net_slots[i]`/`out_net_slots[i]` are the
+/// global net ids wired to kernel input/output `i`; the `*_base` fields are the
+/// member's offsets into the shared int/real variable banks and the params bank.
+pub struct NetworkMemberSpec<'m> {
+    pub module: &'m crate::ir::IrModule,
+    pub in_net_slots: Vec<usize>,
+    pub out_net_slots: Vec<usize>,
+    pub int_base: usize,
+    pub real_base: usize,
+    pub param_base: usize,
+}
+
+/// The fused combinational function: evaluates every member's `comb` body in
+/// rank order over the shared arrays. One native call settles an acyclic cone.
+/// Args: `(nets, vars_int, vars_real, params, sim, analog)`.
+pub type NetworkCombFn = unsafe extern "C" fn(
+    *mut i64,
+    *mut i64,
+    *mut f64,
+    *const f64,
+    *const crate::jit::SimCtx,
+    *const f64,
+);
+
+/// A compiled fused combinational network kernel.
+pub struct NetworkComb {
+    func: NetworkCombFn,
+    _jit: JITModule,
+}
+
+unsafe impl Send for NetworkComb {}
+unsafe impl Sync for NetworkComb {}
+
+impl NetworkComb {
+    /// Run the fused comb over the network arrays (one rank-ordered pass).
+    ///
+    /// # Safety
+    /// Pointers must be valid for the network's bank sizes; `sim`/`analog`
+    /// non-null (pass a dummy `analog` when the cone samples none).
+    pub unsafe fn run(
+        &self,
+        nets: *mut i64,
+        vars_int: *mut i64,
+        vars_real: *mut f64,
+        params: *const f64,
+        sim: *const crate::jit::SimCtx,
+        analog: *const f64,
+    ) {
+        unsafe { (self.func)(nets, vars_int, vars_real, params, sim, analog) }
+    }
+
+    /// Fuse the combinational bodies of `members` into one Cranelift function.
+    ///
+    /// Members must be pure combinational digital: no clocked blocks and no
+    /// analog sampling (those stay per-device; the network builder only pulls
+    /// eligible instances into a cone). Fails loud otherwise — never a silent
+    /// wrong fuse.
+    pub fn compile(members: &[NetworkMemberSpec]) -> Result<Self, CodegenError> {
+        let mut jit_builder = JITBuilder::new(cranelift_module::default_libcall_names())
+            .map_err(|e| CodegenError::Module(e.to_string()))?;
+        for f in math::MATH_FNS {
+            jit_builder.symbol(f.name, f.symbol);
+        }
+        let mut jit = JITModule::new(jit_builder);
+        let mut math_ids: HashMap<&'static str, FuncId> = HashMap::new();
+        for f in math::MATH_FNS {
+            let mut sig = jit.make_signature();
+            for _ in 0..f.arity {
+                sig.params.push(AbiParam::new(types::F64));
+            }
+            sig.returns.push(AbiParam::new(types::F64));
+            let id = jit
+                .declare_function(f.name, Linkage::Import, &sig)
+                .map_err(|e| CodegenError::Module(e.to_string()))?;
+            math_ids.insert(f.name, id);
+        }
+
+        let ptr_ty = jit.target_config().pointer_type();
+        let mut sig = Signature::new(jit.isa().default_call_conv());
+        for _ in 0..6 {
+            sig.params.push(AbiParam::new(ptr_ty));
+        }
+        let func_id = jit
+            .declare_function("network_comb", Linkage::Export, &sig)
+            .map_err(|e| CodegenError::Module(e.to_string()))?;
+
+        // Pre-build each member's remapped layout: port nodes → global net
+        // slots; variable/analog slots stay module-local (bank pointers carry
+        // the per-member base offset instead).
+        let mut layouts: Vec<DigitalLayout> = Vec::with_capacity(members.len());
+        for m in members {
+            let body = m.module.digital.as_ref().ok_or_else(|| {
+                CodegenError::Invalid(format!("`{}` has no digital body", m.module.name))
+            })?;
+            if body.stmts.iter().any(|s| matches!(s, IrStmt::ClockedBlock { .. })) {
+                return Err(CodegenError::unsupported(format!(
+                    "network fusion of clocked module `{}` (comb-only cones for now)",
+                    m.module.name
+                )));
+            }
+            let mut layout = DigitalLayout::build(m.module, body);
+            if layout.num_analog() > 0 {
+                return Err(CodegenError::unsupported(format!(
+                    "network fusion of analog-sampling module `{}`",
+                    m.module.name
+                )));
+            }
+            if m.in_net_slots.len() != body.inputs.len() || m.out_net_slots.len() != body.outputs.len() {
+                return Err(CodegenError::Invalid(format!(
+                    "`{}` net wiring does not match its port count",
+                    m.module.name
+                )));
+            }
+            // Remap port nodes to global net slots (both banks are the shared
+            // net array, so inputs and outputs index the same pointer).
+            layout.input_index.clear();
+            for (i, &node) in body.inputs.iter().enumerate() {
+                layout.input_index.insert(node, m.in_net_slots[i]);
+            }
+            layout.output_index.clear();
+            for (i, &node) in body.outputs.iter().enumerate() {
+                layout.output_index.insert(node, m.out_net_slots[i]);
+            }
+            layouts.push(layout);
+        }
+
+        let mut fb_ctx = FunctionBuilderContext::new();
+        let mut ctx = jit.make_context();
+        ctx.func.signature = sig;
+        let mut builder = FunctionBuilder::new(&mut ctx.func, &mut fb_ctx);
+
+        let math: HashMap<&'static str, FuncRef> = math_ids
+            .iter()
+            .map(|(&name, &id)| (name, jit.declare_func_in_func(id, builder.func)))
+            .collect();
+
+        let entry = builder.create_block();
+        builder.append_block_params_for_function_params(entry);
+        builder.switch_to_block(entry);
+        builder.seal_block(entry);
+        let p = builder.block_params(entry);
+        let (nets_ptr, vars_int_ptr, vars_real_ptr, params_ptr, sim_ptr, analog_ptr) =
+            (p[0], p[1], p[2], p[3], p[4], p[5]);
+
+        for (m, layout) in members.iter().zip(&layouts) {
+            // Offset the member's bank pointers so its module-local slots index
+            // the network-wide banks.
+            let vint = builder.ins().iadd_imm(vars_int_ptr, (m.int_base * 8) as i64);
+            let vreal = builder.ins().iadd_imm(vars_real_ptr, (m.real_base * 8) as i64);
+            let par = builder.ins().iadd_imm(params_ptr, (m.param_base * 8) as i64);
+            let pointers = Pointers {
+                inputs: nets_ptr,
+                outputs: nets_ptr,
+                // Combinational members read live vars (no pre-edge/fired use).
+                vars_int_old: vint,
+                vars_real_old: vreal,
+                vars_int: vint,
+                vars_real: vreal,
+                params: par,
+                fired: nets_ptr, // unused: no clocked blocks in a fused member
+                sim: sim_ptr,
+                analog_voltages: analog_ptr,
+            };
+            let mut emitter = DigitalEmitter {
+                builder: &mut builder,
+                module: m.module,
+                layout,
+                pointers,
+                reads: VarReads::Live,
+                math: &math,
+                watch_out: None,
+            };
+            let body = m.module.digital.as_ref().unwrap();
+            for stmt in &body.stmts {
+                // Skip register power-on decls (handled at init, not in comb).
+                if let IrStmt::VarDecl { var, init: Some(_) } = stmt
+                    && body.regs.contains(var)
+                {
+                    continue;
+                }
+                emitter.emit_stmt(stmt)?;
+            }
+        }
+
+        builder.ins().return_(&[]);
+        builder.finalize();
+        jit.define_function(func_id, &mut ctx)
+            .map_err(|e| CodegenError::Module(e.to_string()))?;
+        jit.finalize_definitions()
+            .map_err(|e| CodegenError::Module(e.to_string()))?;
+
+        let func: NetworkCombFn =
+            unsafe { std::mem::transmute(jit.get_finalized_function(func_id)) };
+        Ok(NetworkComb { func, _jit: jit })
+    }
+}

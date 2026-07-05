@@ -40,6 +40,10 @@ impl ProjectContext {
         // Resolve project dependencies declared in Piperine.toml.
         let toml_path = project_root.join("Piperine.toml");
         if let Ok(toml) = PiperineToml::load(&toml_path) {
+            // Register the project's own package name so it can refer to its
+            // own modules by name (e.g. `use spice::constants;`).
+            source_map.add_namespace(&toml.project.name, source_map.root_path.clone());
+
             let mut resolver = Resolver::new(project_root, false);
             match resolver.resolve(&toml) {
                 Ok(resolved_deps) => {
@@ -69,12 +73,6 @@ impl ProjectContext {
         if headers_dir.exists() {
             source_map = source_map.with_prelude(headers_dir.join("prelude.phdl"));
             source_map.add_namespace("piperine", headers_dir.clone());
-            // spice is a real dependency now; keep the fallback namespace
-            // for projects that haven't migrated.
-            let spice_fallback = headers_dir.join("ngspice");
-            if spice_fallback.exists() {
-                source_map.add_namespace("spice", spice_fallback);
-            }
         }
 
         source_map

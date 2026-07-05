@@ -89,6 +89,15 @@ impl CircuitInstance {
         self.digital_topology = Some(DigitalTopology::build(&self.devices));
     }
 
+    /// Run digital evaluation at time `t`.
+    ///
+    /// Integration seam for the fused-network JIT (see
+    /// `piperine-codegen/docs/DIGITAL_JIT.md`): today this either walks the
+    /// ranked DAG calling each device's `eval_discrete`, or falls back to the
+    /// event/delta-cycle loop. The follow-up adds a third arm — a single fused
+    /// `DigitalEventModel` over the whole combinational cone — that replaces the
+    /// per-device loop with one native call, the scheduler unchanged (it still
+    /// only sees the event boundary).
     pub fn run_digital_at(&mut self, t: f64) {
         match &self.digital_topology {
             Some(topo) => self.digital_state.evaluate_dag_ordered(t, &mut self.devices, topo),

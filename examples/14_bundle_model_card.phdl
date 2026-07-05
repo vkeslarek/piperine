@@ -11,31 +11,40 @@ discipline Electrical {
 }
 
 bundle DiodeModel {
-    isat : Real = 1e-14,     // saturation current, A
-    vt : Real = 0.02585,     // thermal voltage, V
+    isat : Real = 1e-14,  // saturation current, A
+    vt : Real = 0.02585,  // thermal voltage, V
 }
 
 capability Junction {
+
     fn current(self, v : Real) -> Real;
+
     fn forward_drop(self, i : Real) -> Real;
 }
 
 impl Junction for DiodeModel {
     // Shockley law and its inverse.
+
     fn current(self, v : Real) -> Real {
         return self.isat * (exp(v / self.vt) - 1.0);
     }
+
     fn forward_drop(self, i : Real) -> Real {
         return self.vt * ln(i / self.isat);
     }
 }
 
+// The param is typed by the *capability*, not the concrete bundle —
+// bounded polymorphism resolved at elaboration: the default's literal
+// names the concrete type, which must `impl Junction`.
+
 mod Diode(inout a : Electrical, inout c : Electrical) {
-    param model : DiodeModel = DiodeModel {};
+    param model : Junction = DiodeModel { };
 }
 
 analog Diode {
-    I(a, c) <+ model.current(V(a, c));      // capability method in a contribution
+    I(a, c) <+ model.current(V(a, c));
+    // capability method in a contribution
 }
 
 mod VoltageSource(inout p : Electrical, inout n : Electrical) {
@@ -58,31 +67,35 @@ mod BiasCell() {
     wire gnd : Electrical;
     wire vin : Electrical;
     wire out : Electrical;
-    src : VoltageSource(.p = vin, .n = gnd) { .voltage = 5.0 };
-    rb  : Resistor(.p = vin, .n = out) { .r = 1e3 };
-    d1  : Diode(.a = out, .c = gnd);
+    src : VoltageSource(.p = vin,.n = gnd) {
+        .voltage = 5.0
+    };
+    rb : Resistor(.p = vin,.n = out) {
+        .r = 1e3
+    };
+    d1 : Diode(.a = out,.c = gnd) { };
 }
 
 bench BiasCell {
 
     fn test_measured_drop_matches_the_model_card() {
-        var r = $op();
+        var r = $op ();
         var vd = r.v(out, gnd);
         // Predict with the same bundle + method the device uses: i ≈ (5 − vd)/R.
-        var card = DiodeModel {};
+        var card = DiodeModel { };
         var predicted = card.forward_drop((5.0 - vd) / 1e3);
-        $display("measured:", vd, " predicted:", predicted);
-        $assert(abs(vd - predicted) < 1e-3, "solver agrees with the analytic model card");
+        $display ("measured:", vd, " predicted:", predicted);
+        $assert (abs(vd - predicted) < 1e-3, "solver agrees with the analytic model card");
     }
 
     fn test_staging_a_model_field() {
-        var r1 = $op();
+        var r1 = $op ();
         // A bundle param flattens to per-field params — stage one field.
         d1.model_isat = 1e-12;
-        var r2 = $op();
+        var r2 = $op ();
         // 100x the saturation current lowers the drop by vt·ln(100) ≈ 119 mV.
         var shift = r1.v(out, gnd) - r2.v(out, gnd);
-        $display("drop shift:", shift);
-        $assert(abs(shift - 0.119) < 5e-3, "isat scaling shifts the drop by vt*ln(100)");
+        $display ("drop shift:", shift);
+        $assert (abs(shift - 0.119) < 5e-3, "isat scaling shifts the drop by vt*ln(100)");
     }
 }

@@ -33,6 +33,17 @@ impl IrExpr {
     /// Core chain-rule walk; `seed` gives the derivative of a branch read.
     fn differentiate(&self, seed: &impl Fn(NodeId, NodeId) -> IrExpr) -> IrExpr {
         match self {
+            // Voltage limiting (`$limit("pnjlim"/"fetlim", vnew, …)`) is a
+            // convergence aid that is the identity at the solution, so it is
+            // transparent to differentiation: the Jacobian sees the limited
+            // value's dependence on the branch, i.e. d(vnew)/dV. This matches
+            // ngspice, which stamps the conductance at the limited operating
+            // point with d(vlim)/d(vnode) = 1.
+            IrExpr::Sim(crate::expr::SimQuery::Limit { args, .. }) => args
+                .first()
+                .map(|vnew| vnew.differentiate(seed))
+                .unwrap_or_else(|| lit(0.0)),
+
             IrExpr::Real(_)
             | IrExpr::Int(_)
             | IrExpr::Bool(_)
@@ -111,7 +122,13 @@ impl IrExpr {
             .map(|a| a.differentiate(seed))
             .unwrap_or_else(|| lit(0.0));
         match name {
-            "exp" | "limexp" => mul(math1("exp", u), du),
+            "exp" => mul(math1("exp", u), du),
+            // `limexp` clamps its exponent (≤ 80) so junction currents can't
+            // overflow. Its derivative must clamp too — using plain `exp` here
+            // overflows to ∞ and poisons the Jacobian (NaN in the linear solve).
+            // Bounding gm/gd with `limexp` keeps Newton stable; the two agree
+            // exactly wherever the exponent is unclamped (the physical range).
+            "limexp" => mul(math1("limexp", u), du),
             "ln" | "log" => div(du, u),
             "log10" => div(du, mul(u, lit(std::f64::consts::LN_10))),
             "sqrt" => div(du, mul(lit(2.0), math1("sqrt", u))),

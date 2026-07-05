@@ -274,5 +274,6 @@ impl<'a> TransientSolver<'a> {
         }
 
         TransientStep::new(time, values)
+            .with_digital(self.system.circuit.digital_state.nets.clone())
     }
 }

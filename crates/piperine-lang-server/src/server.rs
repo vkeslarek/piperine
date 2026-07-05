@@ -1,4 +1,9 @@
 //! Server state and capability declaration.
+//!
+//! Architecture: a **single** worker thread owns all mutable server state
+//! (required because `Design` contains `Rc<…>` and is therefore not `Send`).
+//! Requests are fed into a **high-priority** channel that is drained first,
+//! so hover / goto-def responses are never blocked behind a slow elaboration.
 
 use std::time::{Duration, Instant};
 use std::collections::HashMap;
@@ -16,51 +21,139 @@ use lsp_types::notification::Notification as _;
 
 use crate::state::ServerState;
 
-pub enum WorkerMsg {
+/// High-priority messages: requests and notifications that must be answered
+/// immediately without waiting for an ongoing elaboration.
+pub enum RequestMsg {
     Request(Request),
     Notification(Notification),
+}
+
+/// Low-priority messages: document updates and elaboration triggers.
+pub enum AnalysisMsg {
+    /// A document was opened or its text changed; update the stored source.
     UpdateSource { uri: lsp_types::Uri, source: String, version: i32 },
+    /// Run full elaboration for `uri` and publish diagnostics.
     Elaborate { uri: lsp_types::Uri },
 }
 
 pub struct LanguageServer {
     pub connection: Connection,
-    pub worker_tx: Sender<WorkerMsg>,
+    /// High-priority channel: requests answered first.
+    pub request_tx: Sender<RequestMsg>,
+    /// Low-priority channel: elaboration.
+    pub analysis_tx: Sender<AnalysisMsg>,
     pub pending_analysis: HashMap<lsp_types::Uri, Instant>,
 }
 
 impl LanguageServer {
     pub fn new(connection: Connection) -> Self {
-        let (worker_tx, rx) = crossbeam_channel::unbounded::<WorkerMsg>();
+        let (request_tx, request_rx) = crossbeam_channel::unbounded::<RequestMsg>();
+        let (analysis_tx, analysis_rx) = crossbeam_channel::unbounded::<AnalysisMsg>();
+
         let conn_sender = connection.sender.clone();
 
+        // Single worker thread — owns all state (Design is !Send via Rc).
+        // The select! loop drains the high-priority `request_rx` before picking
+        // up any analysis work, so the user never sees a hover "hang" during
+        // a slow elaboration pass.
         std::thread::spawn(move || {
             let mut state = ServerState::new();
-            for msg in rx {
-                match msg {
-                    WorkerMsg::Request(req) => {
-                        crate::dispatch::handle_request(&mut state, req, &conn_sender);
-                    }
-                    WorkerMsg::Notification(not) => {
-                        crate::dispatch::handle_notification(&mut state, not, &conn_sender);
-                    }
-                    WorkerMsg::UpdateSource { uri, source, version } => {
-                        if let Some(doc) = state.documents.get_mut(&uri) {
-                            doc.source = source;
-                            doc.version = version;
-                        } else {
-                            state.documents.insert(uri, crate::state::DocumentState::new(source, version));
+
+            loop {
+                // Drain all pending requests first (high-priority).
+                let mut did_request = true;
+                while did_request {
+                    did_request = false;
+                    if let Ok(msg) = request_rx.try_recv() {
+                        did_request = true;
+                        match msg {
+                            RequestMsg::Request(req) => {
+                                crate::dispatch::handle_request(&mut state, req, &conn_sender);
+                            }
+                            RequestMsg::Notification(not) => {
+                                crate::dispatch::handle_notification(&mut state, not, &conn_sender);
+                            }
                         }
                     }
-                    WorkerMsg::Elaborate { uri } => {
-                        if let Some(doc) = state.documents.get_mut(&uri) {
-                            let source_map = crate::project::ProjectContext::discover(&uri).source_map();
-                            doc.analyze(&source_map);
-                            let dummy_conn = lsp_server::Connection {
-                                sender: conn_sender.clone(),
-                                receiver: crossbeam_channel::never(),
-                            };
-                            crate::handlers::diagnostics::publish_diagnostics(&state, &uri, &dummy_conn);
+                }
+
+                // Now block until either a request or an analysis message arrives.
+                select! {
+                    recv(request_rx) -> msg => {
+                        if let Ok(msg) = msg {
+                            match msg {
+                                RequestMsg::Request(req) => {
+                                    crate::dispatch::handle_request(&mut state, req, &conn_sender);
+                                }
+                                RequestMsg::Notification(not) => {
+                                    crate::dispatch::handle_notification(&mut state, not, &conn_sender);
+                                }
+                            }
+                        } else {
+                            break; // channel closed
+                        }
+                    }
+                    recv(analysis_rx) -> msg => {
+                        if let Ok(msg) = msg {
+                            match msg {
+                                AnalysisMsg::UpdateSource { uri, source, version } => {
+                                    if let Some(doc) = state.documents.get_mut(&uri) {
+                                        doc.source = source;
+                                        doc.version = version;
+                                    } else {
+                                        state.documents.insert(
+                                            uri,
+                                            crate::state::DocumentState::new(source, version),
+                                        );
+                                    }
+                                }
+                                AnalysisMsg::Elaborate { uri } => {
+                                    // Drain any requests that arrived while
+                                    // we were deciding to elaborate.
+                                    while let Ok(req_msg) = request_rx.try_recv() {
+                                        match req_msg {
+                                            RequestMsg::Request(req) => {
+                                                crate::dispatch::handle_request(&mut state, req, &conn_sender);
+                                            }
+                                            RequestMsg::Notification(not) => {
+                                                crate::dispatch::handle_notification(&mut state, not, &conn_sender);
+                                            }
+                                        }
+                                    }
+
+                                    // Run elaboration (slow path).
+                                    if let Some(doc) = state.documents.get_mut(&uri) {
+                                        let source_map =
+                                            crate::project::ProjectContext::discover(&uri)
+                                                .source_map();
+                                        doc.analyze(&source_map);
+                                    }
+                                    let dummy_conn = lsp_server::Connection {
+                                        sender: conn_sender.clone(),
+                                        receiver: crossbeam_channel::never(),
+                                    };
+                                    crate::handlers::diagnostics::publish_diagnostics(
+                                        &state,
+                                        &uri,
+                                        &dummy_conn,
+                                    );
+
+                                    // Drain requests again — a hover might have
+                                    // arrived while we were elaborating.
+                                    while let Ok(req_msg) = request_rx.try_recv() {
+                                        match req_msg {
+                                            RequestMsg::Request(req) => {
+                                                crate::dispatch::handle_request(&mut state, req, &conn_sender);
+                                            }
+                                            RequestMsg::Notification(not) => {
+                                                crate::dispatch::handle_notification(&mut state, not, &conn_sender);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            break; // channel closed
                         }
                     }
                 }
@@ -69,7 +162,8 @@ impl LanguageServer {
 
         Self {
             connection,
-            worker_tx,
+            request_tx,
+            analysis_tx,
             pending_analysis: HashMap::new(),
         }
     }
@@ -98,7 +192,7 @@ impl LanguageServer {
                             if self.connection.handle_shutdown(&req)? {
                                 return Ok(());
                             }
-                            let _ = self.worker_tx.send(WorkerMsg::Request(req));
+                            let _ = self.request_tx.send(RequestMsg::Request(req));
                         }
                         Ok(Message::Notification(not)) => {
                             if not.method == lsp_types::notification::DidChangeTextDocument::METHOD {
@@ -106,10 +200,10 @@ impl LanguageServer {
                                     let uri = params.text_document.uri;
                                     let version = params.text_document.version;
                                     if let Some(change) = params.content_changes.into_iter().last() {
-                                        let _ = self.worker_tx.send(WorkerMsg::UpdateSource { 
-                                            uri: uri.clone(), 
-                                            source: change.text, 
-                                            version 
+                                        let _ = self.analysis_tx.send(AnalysisMsg::UpdateSource {
+                                            uri: uri.clone(),
+                                            source: change.text,
+                                            version,
                                         });
                                         self.pending_analysis.insert(uri, Instant::now() + Duration::from_millis(250));
                                     }
@@ -117,14 +211,15 @@ impl LanguageServer {
                             } else if not.method == lsp_types::notification::DidOpenTextDocument::METHOD {
                                 if let Ok(params) = serde_json::from_value::<lsp_types::DidOpenTextDocumentParams>(not.params.clone()) {
                                     let uri = params.text_document.uri;
-                                    let _ = self.worker_tx.send(WorkerMsg::Notification(not));
+                                    // Register the document source immediately via the
+                                    // high-priority channel, then schedule elaboration.
+                                    let _ = self.request_tx.send(RequestMsg::Notification(not));
                                     self.pending_analysis.insert(uri, Instant::now() + Duration::from_millis(10));
                                 }
                             } else if not.method == "workspace/didChangeWatchedFiles" {
-                                // Handled in worker thread, but we can also trigger full analysis if needed.
-                                let _ = self.worker_tx.send(WorkerMsg::Notification(not));
+                                let _ = self.request_tx.send(RequestMsg::Notification(not));
                             } else {
-                                let _ = self.worker_tx.send(WorkerMsg::Notification(not));
+                                let _ = self.request_tx.send(RequestMsg::Notification(not));
                             }
                         }
                         Ok(Message::Response(_)) => {}
@@ -141,7 +236,7 @@ impl LanguageServer {
                     }
                     for uri in uris_to_dispatch {
                         self.pending_analysis.remove(&uri);
-                        let _ = self.worker_tx.send(WorkerMsg::Elaborate { uri });
+                        let _ = self.analysis_tx.send(AnalysisMsg::Elaborate { uri });
                     }
                 }
             }

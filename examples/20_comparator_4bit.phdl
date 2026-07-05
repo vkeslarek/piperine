@@ -1,0 +1,82 @@
+// Multi-module comparison: a 4-bit magnitude comparator built as a chain of
+// single-bit comparator slices, MSB → LSB. Each slice takes the running
+// (greater, equal) decision from the more-significant slice and refines it:
+//   gt_out = gt_in OR (eq_in AND a_i AND NOT b_i)
+//   eq_out = eq_in AND (a_i == b_i)
+// The decision ripples down four module boundaries. EXHAUSTIVE over all
+// 16 × 16 = 256 (a, b) pairs, asserting both `a > b` and `a == b`.
+
+discipline Bit {
+    storage Boolean;
+}
+
+mod BitDriver(output q : Bit) {
+    param level : Real = 0.0;
+    var b : Bit = 0;
+}
+digital BitDriver {
+    b = level > 0.5;
+    q <- b;
+}
+
+mod CmpSlice(input ai : Bit, input bi : Bit, input gt_in : Bit, input eq_in : Bit,
+             output gt_out : Bit, output eq_out : Bit) {
+    var g : Bit = 0;
+    var e : Bit = 0;
+}
+digital CmpSlice {
+    g = gt_in || (eq_in && (ai && !bi));
+    e = eq_in && (ai == bi);
+    gt_out <- g;
+    eq_out <- e;
+}
+
+mod Comparator4() {
+    wire a0 : Bit; wire a1 : Bit; wire a2 : Bit; wire a3 : Bit;
+    wire b0 : Bit; wire b1 : Bit; wire b2 : Bit; wire b3 : Bit;
+    // Running decision down the chain (MSB slice first).
+    wire g3 : Bit; wire e3 : Bit;
+    wire g2 : Bit; wire e2 : Bit;
+    wire g1 : Bit; wire e1 : Bit;
+    wire gt : Bit; wire eq : Bit;
+    // Head constants: gt_in = 0, eq_in = 1 into the MSB slice.
+    wire zero : Bit; wire one : Bit;
+
+    dz : BitDriver(.q = zero);
+    do1 : BitDriver(.q = one) { .level = 1.0 };
+    da0 : BitDriver(.q = a0); da1 : BitDriver(.q = a1);
+    da2 : BitDriver(.q = a2); da3 : BitDriver(.q = a3);
+    db0 : BitDriver(.q = b0); db1 : BitDriver(.q = b1);
+    db2 : BitDriver(.q = b2); db3 : BitDriver(.q = b3);
+
+    s3 : CmpSlice(.ai = a3, .bi = b3, .gt_in = zero, .eq_in = one, .gt_out = g3, .eq_out = e3);
+    s2 : CmpSlice(.ai = a2, .bi = b2, .gt_in = g3,   .eq_in = e3,  .gt_out = g2, .eq_out = e2);
+    s1 : CmpSlice(.ai = a1, .bi = b1, .gt_in = g2,   .eq_in = e2,  .gt_out = g1, .eq_out = e1);
+    s0 : CmpSlice(.ai = a0, .bi = b0, .gt_in = g1,   .eq_in = e1,  .gt_out = gt, .eq_out = eq);
+}
+
+bench Comparator4 {
+
+    fn test_exhaustive_compare() {
+        var vals = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+                    8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0];
+        for a in vals {
+            for b in vals {
+                da0.level = a - 2.0 * floor(a / 2.0);
+                da1.level = floor(a / 2.0) - 2.0 * floor(a / 4.0);
+                da2.level = floor(a / 4.0) - 2.0 * floor(a / 8.0);
+                da3.level = floor(a / 8.0);
+                db0.level = b - 2.0 * floor(b / 2.0);
+                db1.level = floor(b / 2.0) - 2.0 * floor(b / 4.0);
+                db2.level = floor(b / 4.0) - 2.0 * floor(b / 8.0);
+                db3.level = floor(b / 8.0);
+
+                var r = $op();
+                var want_gt = if (a > b) { 1.0 } else { 0.0 };
+                var want_eq = if (a == b) { 1.0 } else { 0.0 };
+                $assert(abs(r.v(gt) - want_gt) < 1e-9, "gt chain: a > b");
+                $assert(abs(r.v(eq) - want_eq) < 1e-9, "eq chain: a == b");
+            }
+        }
+    }
+}

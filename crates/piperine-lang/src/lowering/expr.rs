@@ -107,6 +107,18 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
         Expr::Literal(Literal::Int(n)) => IrExpr::Int(*n as i64),
         Expr::Literal(Literal::Bool(b)) => IrExpr::Bool(*b),
         Expr::Literal(Literal::String(_s)) => IrExpr::Real(0.0), // No strings in new IR
+        // `none` is an elaboration-time absent value: reading an optional in a
+        // runtime (IR) context must go through `.get_or(default)` (which folds
+        // to the default here) or a `.is_present()` guard. A bare `none`
+        // reaching lowering is a real error, not a silent 0.0.
+        Expr::Literal(Literal::None) => {
+            ctx.errors.push(crate::lowering::LowerError {
+                module: ctx.module_name.clone(),
+                what: "`none` in a runtime context — read the optional via .get_or(default)",
+                name: "none".into(),
+            });
+            IrExpr::Real(0.0)
+        }
         Expr::Literal(Literal::Quad(s)) => {
             let val = match s.trim_start_matches("0q") {
                 "0" | "" => 0u8,
@@ -380,6 +392,30 @@ pub(crate) fn block_value(block: &Block, ctx: &mut LowerCtx) -> IrExpr {
 }
 
 pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
+    // Optional-param sugar: `p.is_present()` / `p.get_or(default)` on a scalar
+    // parameter `p : T?` map onto the parameter-presence mechanism —
+    // `is_present` ≡ `$param_given(p)`, `get_or(d)` ≡ `param_given ? p : d`.
+    // This works per-instance without specializing the module (an absent
+    // optional's value slot is never read; the select masks it).
+    if let Expr::Field(recv, method) = func
+        && let Expr::Ident(pname) = recv.as_ref()
+        && ctx.lookup_param(pname).is_some()
+        && matches!(method.as_str(), "is_present" | "is_some" | "is_none" | "get_or" | "unwrap_or" | "unwrap")
+    {
+        let given_id = ctx.require_param_given(pname);
+        let given = IrExpr::Sim(piperine_ir::SimQuery::ParamGiven(given_id));
+        let value = IrExpr::Param(ctx.require_ident_as_param(pname));
+        return match method.as_str() {
+            "is_present" | "is_some" => given,
+            "is_none" => IrExpr::Unary(piperine_ir::IrUnOp::Not, Box::new(given)),
+            "get_or" | "unwrap_or" => {
+                let default = args.first().map_or(IrExpr::Real(0.0), |a| lower_expr(a, ctx));
+                IrExpr::Select(Box::new(given), Box::new(value), Box::new(default))
+            }
+            // `unwrap` assumes presence (no runtime check available in IR).
+            _ => value,
+        };
+    }
     // `recv.method(args)` — an impl-method call. The receiver must be a
     // bundle-typed binding (module param or fn param); the method was
     // registered as the IR fn `Bundle::method` with `self` flattened
