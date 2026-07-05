@@ -24,8 +24,8 @@ impl TwoTerminal {
         let n = module.symbols.add_node("n", Domain::Analog);
         let v = module.symbols.add_nature("V", NatureKind::Potential);
         let i = module.symbols.add_nature("I", NatureKind::Flow);
-        module.ports.push(IrPort { node: p, direction: IrDirection::Inout });
-        module.ports.push(IrPort { node: n, direction: IrDirection::Inout });
+        module.ports.push(Port { node: p, direction: Direction::Inout });
+        module.ports.push(Port { node: n, direction: Direction::Inout });
         Self { module, p, n, v, i }
     }
 
@@ -35,7 +35,7 @@ impl TwoTerminal {
 
     /// `I(p,n) <+ expr` as the whole analog body.
     fn with_flow_contrib(mut self, expr: IrExpr, kind: ContribKind) -> LoweredBody {
-        self.module.analog = Some(IrAnalogBody {
+        self.module.analog = Some(AnalogBody {
             states: Vec::new(),
             noise: Vec::new(),
             stmts: vec![IrStmt::Contrib { nature: self.i, plus: self.p, minus: self.n, expr, kind }],
@@ -52,24 +52,24 @@ fn param(id: ParamId) -> IrExpr {
     IrExpr::Param(id)
 }
 
-fn bin(op: IrBinOp, a: IrExpr, b: IrExpr) -> IrExpr {
+fn bin(op: BinOp, a: IrExpr, b: IrExpr) -> IrExpr {
     IrExpr::binary(op, a, b)
 }
 
 /// `resistor(r = 1k)`: `I(p,n) <+ V(p,n) / r`.
 fn resistor() -> LoweredBody {
     let mut t = TwoTerminal::new("resistor");
-    let r = t.module.symbols.add_param("r", IrType::Real, Some(real(1000.0)));
-    let expr = bin(IrBinOp::Div, t.v_pn(), param(r));
+    let r = t.module.symbols.add_param("r", Type::Real, Some(real(1000.0)));
+    let expr = bin(BinOp::Div, t.v_pn(), param(r));
     t.with_flow_contrib(expr, ContribKind::Resistive)
 }
 
 /// `diode(is = 1e-14)`: `I(p,n) <+ is * (exp(V/vt) - 1)` with vt from a var.
 fn diode() -> LoweredBody {
     let mut t = TwoTerminal::new("diode");
-    let is = t.module.symbols.add_param("is", IrType::Real, Some(real(1e-14)));
-    let vt = t.module.symbols.add_var("vt", IrType::Real);
-    let body = IrAnalogBody {
+    let is = t.module.symbols.add_param("is", Type::Real, Some(real(1e-14)));
+    let vt = t.module.symbols.add_var("vt", Type::Real);
+    let body = AnalogBody {
         states: Vec::new(),
         noise: Vec::new(),
         stmts: vec![
@@ -82,13 +82,13 @@ fn diode() -> LoweredBody {
                 plus: t.p,
                 minus: t.n,
                 expr: bin(
-                    IrBinOp::Mul,
+                    BinOp::Mul,
                     param(is),
                     bin(
-                        IrBinOp::Sub,
+                        BinOp::Sub,
                         IrExpr::MathCall(
                             "exp".into(),
-                            vec![bin(IrBinOp::Div, t.v_pn(), IrExpr::Var(vt))],
+                            vec![bin(BinOp::Div, t.v_pn(), IrExpr::Var(vt))],
                         ),
                         real(1.0),
                     ),
@@ -104,10 +104,10 @@ fn diode() -> LoweredBody {
 /// `capacitor(c = 1u)`: `I(p,n) <+ ddt(c * V(p,n))`.
 fn capacitor() -> LoweredBody {
     let mut t = TwoTerminal::new("capacitor");
-    let c = t.module.symbols.add_param("c", IrType::Real, Some(real(1e-6)));
-    let arg = bin(IrBinOp::Mul, param(c), t.v_pn());
-    let ddt = t.module.symbols.add_state(IrStateVar { kind: IrStateKind::Ddt, arg });
-    t.module.analog = Some(IrAnalogBody {
+    let c = t.module.symbols.add_param("c", Type::Real, Some(real(1e-6)));
+    let arg = bin(BinOp::Mul, param(c), t.v_pn());
+    let ddt = t.module.symbols.add_state(StateVar { kind: StateKind::Ddt, arg });
+    t.module.analog = Some(AnalogBody {
         states: vec![ddt],
         noise: Vec::new(),
         stmts: vec![IrStmt::Contrib {
@@ -205,16 +205,16 @@ fn capacitor_charge_and_charge_jacobian() {
 fn guarded_contribution_folds_into_select() {
     // I(p,n) <+ if (V > 1) V/r else 0 — via an If statement.
     let mut t = TwoTerminal::new("clipper");
-    let r = t.module.symbols.add_param("r", IrType::Real, Some(real(100.0)));
-    let cond = bin(IrBinOp::Gt, t.v_pn(), real(1.0));
+    let r = t.module.symbols.add_param("r", Type::Real, Some(real(100.0)));
+    let cond = bin(BinOp::Gt, t.v_pn(), real(1.0));
     let contrib = IrStmt::Contrib {
         nature: t.i,
         plus: t.p,
         minus: t.n,
-        expr: bin(IrBinOp::Div, t.v_pn(), param(r)),
+        expr: bin(BinOp::Div, t.v_pn(), param(r)),
         kind: ContribKind::Resistive,
     };
-    t.module.analog = Some(IrAnalogBody {
+    t.module.analog = Some(AnalogBody {
         states: Vec::new(),
         noise: Vec::new(),
         stmts: vec![IrStmt::If { cond, then_: vec![contrib], else_: vec![] }],
@@ -236,13 +236,13 @@ fn guarded_contribution_folds_into_select() {
 fn user_function_is_inlined() {
     // fn double(x) = x * 2; I(p,n) <+ double(V(p,n))
     let mut t = TwoTerminal::new("doubler");
-    let x = t.module.symbols.add_var("x", IrType::Real);
-    let double = t.module.symbols.add_fn(IrFunction {
+    let x = t.module.symbols.add_var("x", Type::Real);
+    let double = t.module.symbols.add_fn(Function {
         name: "double".into(),
         params: vec![x],
         defaults: vec![None],
-        returns: Some(IrType::Real),
-        body: vec![IrStmt::Return(Some(bin(IrBinOp::Mul, IrExpr::Var(x), real(2.0))))],
+        returns: Some(Type::Real),
+        body: vec![IrStmt::Return(Some(bin(BinOp::Mul, IrExpr::Var(x), real(2.0))))],
     });
     let expr = IrExpr::Call(double, vec![t.v_pn()]);
     let module = t.with_flow_contrib(expr, ContribKind::Resistive);
@@ -257,8 +257,8 @@ fn user_function_is_inlined() {
 fn unsupported_operator_fails_loud_with_name() {
     // transition() has no lowering yet — must be a named error.
     let mut t = TwoTerminal::new("bad");
-    let state = t.module.symbols.add_state(IrStateVar {
-        kind: IrStateKind::Transition {
+    let state = t.module.symbols.add_state(StateVar {
+        kind: StateKind::Transition {
             delay: real(0.0),
             rise: real(1e-9),
             fall: real(1e-9),
@@ -288,7 +288,7 @@ fn validation_rejects_mismatched_contrib_kind() {
     }
     let findings = corrupted.validate();
     assert!(
-        findings.iter().any(|d| d.kind == IrDiagnosticKind::Error),
+        findings.iter().any(|d| d.kind == DiagnosticKind::Error),
         "resistive-marked reactive contribution must fail validation"
     );
 }

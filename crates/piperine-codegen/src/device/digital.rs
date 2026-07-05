@@ -9,7 +9,7 @@ use std::sync::Arc;
 use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
 use piperine_solver::digital_interface::{DigitalEventModel, DigitalPorts, EvalCtx, EventSink};
 
-use crate::ir::{EdgeKind, IrType};
+use crate::ir::{EdgeKind, Type};
 use crate::jit::digital::{DigitalAbi, DigitalKernel};
 use crate::jit::{CodegenError, SimCtx};
 
@@ -376,7 +376,7 @@ impl DigitalInstance {
         } else if let Some(slot) = layout.int_slot(var) {
             self.vars_int[slot] = value as i64;
         }
-        let _ = IrType::Real; // conversions are slot-driven
+        let _ = Type::Real; // conversions are slot-driven
     }
 
     fn push_event(

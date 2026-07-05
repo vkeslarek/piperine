@@ -19,17 +19,17 @@ pub mod pom;
 
 pub use piperine_math as math;
 
-pub use expr::{Analysis, Axis, IrBinOp, IrExpr, IrUnOp, SimQuery};
+pub use expr::{Analysis, Axis, BinOp, IrExpr, UnOp, SimQuery};
 pub use stmt::{
-    ContribKind, CrossDir, DigitalEvent, EdgeKind, EventSource, IrAnalogEvent, IrStmt, Lval,
+    ContribKind, CrossDir, DigitalEvent, EdgeKind, EventSource, AnalogEvent, IrStmt, Lval,
     Pattern, Severity, Trit,
 };
 pub use symbols::{
-    Domain, FnId, InterpMode, IrFunction, IrNoise, IrNoiseSource, IrStateKind, IrStateVar,
+    Domain, FnId, InterpMode, Function, NoiseKind, NoiseSource, StateKind, StateVar,
     LaplaceKind, NatureId, NatureInfo, NatureKind, NodeId, NodeInfo, ParamId, ParamInfo, StateId,
     SymbolTable, TableRef, VarId, VarInfo, ZKind,
 };
-pub use validate::{IrDiagnostic, IrDiagnosticKind};
+pub use validate::{Diagnostic, DiagnosticKind};
 pub use pom::{lower_bodies, LowerError, LowerErrors, LoweredBody};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ pub use pom::{lower_bodies, LowerError, LowerErrors, LoweredBody};
 /// `Integer`/`Bool` distinguish storage and control flow; `Quad` is 4-state
 /// digital (0/1/X/Z).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IrType {
+pub enum Type {
     Real,
     Integer,
     Bool,
@@ -50,17 +50,17 @@ pub enum IrType {
 /// Analog behavior: contribution/force statements plus structured control,
 /// with operator state slots and noise sources hoisted out at emit time.
 #[derive(Debug, Clone, Default)]
-pub struct IrAnalogBody {
+pub struct AnalogBody {
     /// Operator state slots referenced by this body (ids into `symbols.states`).
     pub states: Vec<StateId>,
-    pub noise: Vec<IrNoiseSource>,
+    pub noise: Vec<NoiseSource>,
     pub stmts: Vec<IrStmt>,
 }
 
 /// Digital behavior: the PHDL model — combinational logic with inferred
 /// memory, plus clocked registers. Not the Verilog procedural kernel.
 #[derive(Debug, Clone, Default)]
-pub struct IrDigitalBody {
+pub struct DigitalBody {
     pub inputs: Vec<NodeId>,
     pub outputs: Vec<NodeId>,
     /// Variables holding state across timesteps (registers and latches).
@@ -73,7 +73,7 @@ pub struct IrDigitalBody {
 
 /// Port direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IrDirection {
+pub enum Direction {
     In,
     Out,
     Inout,
@@ -85,7 +85,7 @@ pub enum IrDirection {
 /// `device::circuit` at circuit-build time — there is no `IrModule`/
 /// `IrInstance` structural twin.
 #[derive(Debug, Clone)]
-pub struct IrPort {
+pub struct Port {
     pub node: NodeId,
-    pub direction: IrDirection,
+    pub direction: Direction,
 }

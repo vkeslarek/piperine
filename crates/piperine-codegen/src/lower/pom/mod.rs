@@ -29,9 +29,9 @@ pub struct LoweredBody {
     /// returned map is already keyed by this same name).
     pub name: String,
     pub symbols: SymbolTable,
-    pub ports: Vec<IrPort>,
-    pub analog: Option<IrAnalogBody>,
-    pub digital: Option<IrDigitalBody>,
+    pub ports: Vec<Port>,
+    pub analog: Option<AnalogBody>,
+    pub digital: Option<DigitalBody>,
 }
 
 impl LoweredBody {
@@ -97,7 +97,7 @@ pub(crate) struct LowerCtx<'a> {
     /// State variables (ddt, idt, etc.) allocated during this behavior lowering.
     pub states: Vec<StateId>,
     /// Noise sources discovered from contribution right-hand sides.
-    pub noise_sources: Vec<IrNoiseSource>,
+    pub noise_sources: Vec<NoiseSource>,
     /// Set to `true` while lowering a `digital` body.  Lets the Bind-Force
     /// arm pick the digital-drive form (`IrStmt::Assign`) instead of the
     /// analog-force form (`IrStmt::Force`).
@@ -206,7 +206,7 @@ impl<'a> LowerCtx<'a> {
             return *var;
         }
         let shadow_name = format!("__shadow_{name}");
-        let var = self.symbols.add_var(shadow_name.clone(), IrType::Bool);
+        let var = self.symbols.add_var(shadow_name.clone(), Type::Bool);
         self.vars.insert(shadow_name, var);
         self.digital_shadows.push((id, var));
         var
@@ -219,8 +219,8 @@ impl<'a> LowerCtx<'a> {
 
 
     /// Allocate a new state variable of `kind`, returning its `StateId`.
-    pub fn alloc_state(&mut self, kind: IrStateKind, arg: IrExpr) -> StateId {
-        let id = self.symbols.add_state(IrStateVar { kind, arg });
+    pub fn alloc_state(&mut self, kind: StateKind, arg: IrExpr) -> StateId {
+        let id = self.symbols.add_state(StateVar { kind, arg });
         self.states.push(id);
         id
     }
@@ -440,9 +440,9 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                         continue;
                     }
                     match port.direction {
-                        IrDirection::In => inputs.push(port.node),
-                        IrDirection::Out => outputs.push(port.node),
-                        IrDirection::Inout => {
+                        Direction::In => inputs.push(port.node),
+                        Direction::Out => outputs.push(port.node),
+                        Direction::Inout => {
                             inputs.push(port.node);
                             outputs.push(port.node);
                         }
@@ -476,14 +476,14 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                 let mut all_stmts = reg_decls;
                 all_stmts.extend(stmts);
 
-                bodies[i].digital = Some(IrDigitalBody {
+                bodies[i].digital = Some(DigitalBody {
                     inputs,
                     outputs,
                     regs,
                     stmts: all_stmts,
                 });
             } else {
-                bodies[i].analog = Some(IrAnalogBody {
+                bodies[i].analog = Some(AnalogBody {
                     states: ctx.states,
                     noise: ctx.noise_sources,
                     stmts,
@@ -506,7 +506,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                     // each digital eval, never a one-shot).
                     let inputs = digital_shadows.iter().map(|(node, _)| *node).collect();
                     bodies[i].digital =
-                        Some(IrDigitalBody { inputs, outputs: Vec::new(), regs: Vec::new(), stmts: assigns });
+                        Some(DigitalBody { inputs, outputs: Vec::new(), regs: Vec::new(), stmts: assigns });
                 }
             }
         }

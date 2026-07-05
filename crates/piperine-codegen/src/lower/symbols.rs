@@ -2,7 +2,7 @@
 
 use super::expr::IrExpr;
 use super::IrStmt;
-use super::IrType;
+use super::Type;
 
 // ─── Ids ──────────────────────────────────────────────────────────────────────
 
@@ -57,14 +57,14 @@ pub struct NodeInfo {
 #[derive(Debug, Clone)]
 pub struct ParamInfo {
     pub name: String,
-    pub ty: IrType,
+    pub ty: Type,
     pub default: Option<IrExpr>,
 }
 
 #[derive(Debug, Clone)]
 pub struct VarInfo {
     pub name: String,
-    pub ty: IrType,
+    pub ty: Type,
 }
 
 /// Whether a nature is an across (potential) or through (flow) quantity.
@@ -83,7 +83,7 @@ pub struct NatureInfo {
 
 // ─── Analog state operators (SPEC §7) ─────────────────────────────────────────
 
-/// Inline measured-data table for [`IrStateKind::Table`].
+/// Inline measured-data table for [`StateKind::Table`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableRef {
     /// `(input, output)` sample points, sorted by input.
@@ -115,13 +115,13 @@ pub enum ZKind {
 /// An analog operator with internal state, referenced by `IrExpr::State(id)`.
 /// `arg` is the operator input, evaluated each Newton iteration.
 #[derive(Debug, Clone)]
-pub struct IrStateVar {
-    pub kind: IrStateKind,
+pub struct StateVar {
+    pub kind: StateKind,
     pub arg: IrExpr,
 }
 
 #[derive(Debug, Clone)]
-pub enum IrStateKind {
+pub enum StateKind {
     /// `ddt(x)` — time derivative (reactive).
     Ddt,
     /// `idt(x, ic)` — time integral (reactive).
@@ -144,7 +144,7 @@ pub enum IrStateKind {
     ZTransform { variant: ZKind, num: Vec<IrExpr>, den: Vec<IrExpr>, sample_dt: IrExpr },
 }
 
-impl IrStateKind {
+impl StateKind {
     /// Reactive operators contribute charge stamped with the integration
     /// coefficient; resistive ones evaluate to a plain state value.
     pub fn is_reactive(&self) -> bool {
@@ -178,15 +178,15 @@ impl IrStateKind {
 // ─── Noise (SPEC §6.2) ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
-pub struct IrNoiseSource {
+pub struct NoiseSource {
     pub plus: NodeId,
     pub minus: NodeId,
-    pub kind: IrNoise,
+    pub kind: NoiseKind,
     pub label: Option<String>,
 }
 
 #[derive(Debug, Clone)]
-pub enum IrNoise {
+pub enum NoiseKind {
     White { psd: IrExpr },
     Flicker { psd: IrExpr, exponent: IrExpr },
 }
@@ -196,14 +196,14 @@ pub enum IrNoise {
 /// A user-defined function. Parameters are variable slots in the module's
 /// symbol table; the body uses the shared statement set (SPEC §8).
 #[derive(Debug, Clone)]
-pub struct IrFunction {
+pub struct Function {
     pub name: String,
     pub params: Vec<VarId>,
     /// Default value expressions, parallel to [`params`](Self::params) —
     /// `None` for a non-defaulted param, `Some(expr)` for a defaulted
     /// trailing one (the language spec Part I §9.1). Filled by the inliner at expansion.
     pub defaults: Vec<Option<IrExpr>>,
-    pub returns: Option<IrType>,
+    pub returns: Option<Type>,
     pub body: Vec<IrStmt>,
 }
 
@@ -216,9 +216,9 @@ pub struct SymbolTable {
     nodes: Vec<NodeInfo>,
     params: Vec<ParamInfo>,
     vars: Vec<VarInfo>,
-    states: Vec<IrStateVar>,
+    states: Vec<StateVar>,
     natures: Vec<NatureInfo>,
-    fns: Vec<IrFunction>,
+    fns: Vec<Function>,
 }
 
 impl SymbolTable {
@@ -244,19 +244,19 @@ impl SymbolTable {
     pub fn add_param(
         &mut self,
         name: impl Into<String>,
-        ty: IrType,
+        ty: Type,
         default: Option<IrExpr>,
     ) -> ParamId {
         self.params.push(ParamInfo { name: name.into(), ty, default });
         ParamId(self.params.len() as u32 - 1)
     }
 
-    pub fn add_var(&mut self, name: impl Into<String>, ty: IrType) -> VarId {
+    pub fn add_var(&mut self, name: impl Into<String>, ty: Type) -> VarId {
         self.vars.push(VarInfo { name: name.into(), ty });
         VarId(self.vars.len() as u32 - 1)
     }
 
-    pub fn add_state(&mut self, state: IrStateVar) -> StateId {
+    pub fn add_state(&mut self, state: StateVar) -> StateId {
         self.states.push(state);
         StateId(self.states.len() as u32 - 1)
     }
@@ -266,7 +266,7 @@ impl SymbolTable {
         NatureId(self.natures.len() as u32 - 1)
     }
 
-    pub fn add_fn(&mut self, function: IrFunction) -> FnId {
+    pub fn add_fn(&mut self, function: Function) -> FnId {
         self.fns.push(function);
         FnId(self.fns.len() as u32 - 1)
     }
@@ -285,7 +285,7 @@ impl SymbolTable {
         &self.vars[id.0 as usize]
     }
 
-    pub fn state(&self, id: StateId) -> &IrStateVar {
+    pub fn state(&self, id: StateId) -> &StateVar {
         &self.states[id.0 as usize]
     }
 
@@ -293,7 +293,7 @@ impl SymbolTable {
         &self.natures[id.0 as usize]
     }
 
-    pub fn function(&self, id: FnId) -> &IrFunction {
+    pub fn function(&self, id: FnId) -> &Function {
         &self.fns[id.0 as usize]
     }
 
@@ -311,7 +311,7 @@ impl SymbolTable {
         self.vars.get(id.0 as usize)
     }
 
-    pub fn try_state(&self, id: StateId) -> Option<&IrStateVar> {
+    pub fn try_state(&self, id: StateId) -> Option<&StateVar> {
         self.states.get(id.0 as usize)
     }
 
@@ -319,7 +319,7 @@ impl SymbolTable {
         self.natures.get(id.0 as usize)
     }
 
-    pub fn try_fn(&self, id: FnId) -> Option<&IrFunction> {
+    pub fn try_fn(&self, id: FnId) -> Option<&Function> {
         self.fns.get(id.0 as usize)
     }
 
@@ -337,7 +337,7 @@ impl SymbolTable {
         self.vars.iter().enumerate().map(|(i, v)| (VarId(i as u32), v))
     }
 
-    pub fn states(&self) -> impl Iterator<Item = (StateId, &IrStateVar)> {
+    pub fn states(&self) -> impl Iterator<Item = (StateId, &StateVar)> {
         self.states.iter().enumerate().map(|(i, s)| (StateId(i as u32), s))
     }
 

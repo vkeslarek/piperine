@@ -22,7 +22,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
-use crate::ir::{CrossDir, Domain, IrExpr, LoweredBody, IrStateKind, NodeId, StateId, VarId};
+use crate::ir::{CrossDir, Domain, IrExpr, LoweredBody, StateKind, NodeId, StateId, VarId};
 
 use super::emit::AnalogEmitter;
 use super::flatten::{
@@ -854,14 +854,14 @@ impl<'m> AnalogCompiler<'m> {
             .iter()
             .map(|(id, _)| {
                 let kind = match &self.module.symbols.state(*id).kind {
-                    IrStateKind::Delay { delay } => RuntimeState::Delay { delay: delay.clone() },
-                    IrStateKind::Slew { rise, fall } => {
+                    StateKind::Delay { delay } => RuntimeState::Delay { delay: delay.clone() },
+                    StateKind::Slew { rise, fall } => {
                         RuntimeState::Slew { rise: rise.clone(), fall: fall.clone() }
                     }
-                    IrStateKind::Idt { ic } => {
+                    StateKind::Idt { ic } => {
                         RuntimeState::Integrator { ic: ic.clone(), modulus: None }
                     }
-                    IrStateKind::IdtMod { ic, modulus } => RuntimeState::Integrator {
+                    StateKind::IdtMod { ic, modulus } => RuntimeState::Integrator {
                         ic: ic.clone(),
                         modulus: Some(modulus.clone()),
                     },

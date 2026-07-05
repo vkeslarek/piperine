@@ -15,15 +15,15 @@ fn inverter() -> LoweredBody {
     let mut m = LoweredBody::new("inverter");
     let a = m.symbols.add_node("a", Domain::Digital);
     let y = m.symbols.add_node("y", Domain::Digital);
-    m.ports.push(IrPort { node: a, direction: IrDirection::In });
-    m.ports.push(IrPort { node: y, direction: IrDirection::Out });
-    m.digital = Some(IrDigitalBody {
+    m.ports.push(Port { node: a, direction: Direction::In });
+    m.ports.push(Port { node: y, direction: Direction::Out });
+    m.digital = Some(DigitalBody {
         inputs: vec![a],
         outputs: vec![y],
         regs: vec![],
         stmts: vec![IrStmt::Assign {
             lval: Lval::Net(y),
-            expr: IrExpr::Unary(IrUnOp::Not, Box::new(IrExpr::Net(a))),
+            expr: IrExpr::Unary(UnOp::Not, Box::new(IrExpr::Net(a))),
         }],
     });
     m
@@ -35,11 +35,11 @@ fn dff() -> LoweredBody {
     let clk = m.symbols.add_node("clk", Domain::Digital);
     let d = m.symbols.add_node("d", Domain::Digital);
     let q = m.symbols.add_node("q", Domain::Digital);
-    let r = m.symbols.add_var("r", IrType::Quad);
-    m.ports.push(IrPort { node: clk, direction: IrDirection::In });
-    m.ports.push(IrPort { node: d, direction: IrDirection::In });
-    m.ports.push(IrPort { node: q, direction: IrDirection::Out });
-    m.digital = Some(IrDigitalBody {
+    let r = m.symbols.add_var("r", Type::Quad);
+    m.ports.push(Port { node: clk, direction: Direction::In });
+    m.ports.push(Port { node: d, direction: Direction::In });
+    m.ports.push(Port { node: q, direction: Direction::Out });
+    m.digital = Some(DigitalBody {
         inputs: vec![clk, d],
         outputs: vec![q],
         regs: vec![r],
@@ -157,12 +157,12 @@ fn pipeline_reads_pre_edge_values() {
     let clk = m.symbols.add_node("clk", Domain::Digital);
     let d = m.symbols.add_node("d", Domain::Digital);
     let q = m.symbols.add_node("q", Domain::Digital);
-    let r1 = m.symbols.add_var("r1", IrType::Quad);
-    let r2 = m.symbols.add_var("r2", IrType::Quad);
-    m.ports.push(IrPort { node: clk, direction: IrDirection::In });
-    m.ports.push(IrPort { node: d, direction: IrDirection::In });
-    m.ports.push(IrPort { node: q, direction: IrDirection::Out });
-    m.digital = Some(IrDigitalBody {
+    let r1 = m.symbols.add_var("r1", Type::Quad);
+    let r2 = m.symbols.add_var("r2", Type::Quad);
+    m.ports.push(Port { node: clk, direction: Direction::In });
+    m.ports.push(Port { node: d, direction: Direction::In });
+    m.ports.push(Port { node: q, direction: Direction::Out });
+    m.digital = Some(DigitalBody {
         inputs: vec![clk, d],
         outputs: vec![q],
         regs: vec![r1, r2],
@@ -210,9 +210,9 @@ fn match_selects_arm_and_default() {
     let mut m = LoweredBody::new("mux_match");
     let a = m.symbols.add_node("a", Domain::Digital);
     let y = m.symbols.add_node("y", Domain::Digital);
-    m.ports.push(IrPort { node: a, direction: IrDirection::In });
-    m.ports.push(IrPort { node: y, direction: IrDirection::Out });
-    m.digital = Some(IrDigitalBody {
+    m.ports.push(Port { node: a, direction: Direction::In });
+    m.ports.push(Port { node: y, direction: Direction::Out });
+    m.digital = Some(DigitalBody {
         inputs: vec![a],
         outputs: vec![y],
         regs: vec![],

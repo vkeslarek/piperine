@@ -1,7 +1,7 @@
 //! Tests: PPR/PHDL source → IR lowering and pseudo-language printer.
 
 use piperine_codegen::ir::{
-    ContribKind, IrBinOp, IrExpr, IrStmt, IrStateKind, LowerErrors, LoweredBody,
+    ContribKind, BinOp, IrExpr, IrStmt, StateKind, LowerErrors, LoweredBody,
 };
 use piperine_lang::parse_and_elaborate;
 
@@ -73,7 +73,7 @@ fn capacitor_reactive_contrib_with_state_var() {
     let m = ir.get("TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     assert_eq!(body.states.len(), 1, "expected one state var");
-    assert!(matches!(m.symbols.state(body.states[0]).kind, piperine_codegen::ir::IrStateKind::Ddt));
+    assert!(matches!(m.symbols.state(body.states[0]).kind, piperine_codegen::ir::StateKind::Ddt));
 
     assert_eq!(body.stmts.len(), 1);
     match &body.stmts[0] {
@@ -235,7 +235,7 @@ fn noise_source_registered() {
     let ns = &body.noise[0];
     assert_eq!(m.symbols.node(ns.plus).name, "p");
     assert_eq!(m.symbols.node(ns.minus).name, "n");
-    assert!(matches!(&ns.kind, piperine_codegen::ir::IrNoise::White { .. }));
+    assert!(matches!(&ns.kind, piperine_codegen::ir::NoiseKind::White { .. }));
     assert_eq!(ns.label.as_deref(), Some("rn1"));
 }
 
@@ -248,7 +248,7 @@ fn flicker_noise_source_registered() {
     let m = ir.get("TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     assert_eq!(body.noise.len(), 1);
-    assert!(matches!(&body.noise[0].kind, piperine_codegen::ir::IrNoise::Flicker { .. }));
+    assert!(matches!(&body.noise[0].kind, piperine_codegen::ir::NoiseKind::Flicker { .. }));
 }
 
 // ─── idtmod ────────────────────────────────────────────────────────────────────
@@ -262,7 +262,7 @@ fn idtmod_state_var() {
     let m = ir.get("TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     assert_eq!(body.states.len(), 1);
-    assert!(matches!(m.symbols.state(body.states[0]).kind, IrStateKind::IdtMod { .. }));
+    assert!(matches!(m.symbols.state(body.states[0]).kind, StateKind::IdtMod { .. }));
 }
 
 // ─── Single-arg I(node) ───────────────────────────────────────────────────────
@@ -367,7 +367,7 @@ analog AboveMod {{
     let body = m.analog.as_ref().expect("analog");
     let has_above = body.stmts.iter().any(|s| matches!(
         s,
-        IrStmt::AnalogEvent(piperine_codegen::ir::IrAnalogEvent { source: piperine_codegen::ir::EventSource::Above { .. }, .. })
+        IrStmt::AnalogEvent(piperine_codegen::ir::AnalogEvent { source: piperine_codegen::ir::EventSource::Above { .. }, .. })
     ));
     assert!(has_above, "expected Above event");
 }
@@ -479,7 +479,7 @@ fn transition_state_var() {
     let m = ir.get("TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     assert_eq!(body.states.len(), 1);
-    assert!(matches!(m.symbols.state(body.states[0]).kind, IrStateKind::Transition { .. }));
+    assert!(matches!(m.symbols.state(body.states[0]).kind, StateKind::Transition { .. }));
 }
 
 // ─── `&&` / `||` logical operators ─────────────────────────────────────────────
@@ -502,7 +502,7 @@ fn logical_and_or_lower_to_ir_binop() {
     // The condition folds into the Select's guard; walk for an Or binop.
     fn contains_or(e: &IrExpr) -> bool {
         match e {
-            IrExpr::Binary(op, l, r) => *op == IrBinOp::Or || contains_or(l) || contains_or(r),
+            IrExpr::Binary(op, l, r) => *op == BinOp::Or || contains_or(l) || contains_or(r),
             IrExpr::Select(c, t, e) => contains_or(c) || contains_or(t) || contains_or(e),
             _ => false,
         }

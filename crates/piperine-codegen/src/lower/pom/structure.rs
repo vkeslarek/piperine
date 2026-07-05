@@ -1,7 +1,7 @@
 //! Module structure → IR: ports, params, wires, instances, connections,
 //! and the value-type/const conversions they need.
 
-use piperine_lang::pom::{Function, Module, NetType, ValueType, Design};
+use piperine_lang::pom::{Function as PomFunction, Module, NetType, ValueType, Design};
 use piperine_lang::parse::ast::{DisciplineItem, DisciplineDecl};
 use crate::lower::*;
 use super::stmt::lower_stmts;
@@ -54,14 +54,14 @@ fn storage_value_type(decl: &DisciplineDecl) -> Option<&str> {
     None
 }
 
-/// Build a module's [`SymbolTable`] and resolved [`IrPort`]s from its POM
+/// Build a module's [`SymbolTable`] and resolved [`Port`]s from its POM
 /// structure (ports, params, wires, vars). Instance connections and param
 /// overrides are resolved directly from the POM by
 /// `device::circuit::InstanceBuilder`, at circuit-build time — they are
 /// per-*instantiation*, not part of a module's own resolved shape, so
 /// building them here would only be a structural twin nobody but the
 /// circuit builder reads.
-pub(crate) fn build_symbols_and_ports(m: &Module, prog: &Design) -> (SymbolTable, Vec<IrPort>) {
+pub(crate) fn build_symbols_and_ports(m: &Module, prog: &Design) -> (SymbolTable, Vec<Port>) {
     use piperine_lang::parse::ast::Direction;
 
     let mut symbols = SymbolTable::new();
@@ -72,11 +72,11 @@ pub(crate) fn build_symbols_and_ports(m: &Module, prog: &Design) -> (SymbolTable
         let domain = domain_of(prog, p.net_type());
         let node_id = symbols.add_node(p.name(), domain);
         let direction = match p.direction() {
-            Direction::Input => IrDirection::In,
-            Direction::Output => IrDirection::Out,
-            Direction::Inout => IrDirection::Inout,
+            Direction::Input => super::super::Direction::In,
+            Direction::Output => super::super::Direction::Out,
+            Direction::Inout => super::super::Direction::Inout,
         };
-        ports.push(IrPort { node: node_id, direction });
+        ports.push(Port { node: node_id, direction });
     }
 
     // 2. Params
@@ -108,20 +108,20 @@ pub(crate) fn build_symbols_and_ports(m: &Module, prog: &Design) -> (SymbolTable
     (symbols, ports)
 }
 
-pub(crate) fn elab_value_type_to_ir(ty: &ValueType) -> IrType {
+pub(crate) fn elab_value_type_to_ir(ty: &ValueType) -> Type {
     match ty {
-        ValueType::Real | ValueType::Natural => IrType::Real,
-        ValueType::Integer => IrType::Integer,
-        ValueType::Complex => IrType::Real, // Or Complex if it existed
-        ValueType::Boolean => IrType::Bool,
-        ValueType::Quad => IrType::Quad,
-        ValueType::Str => IrType::Real,
-        ValueType::Enum(_) => IrType::Integer,
+        ValueType::Real | ValueType::Natural => Type::Real,
+        ValueType::Integer => Type::Integer,
+        ValueType::Complex => Type::Real, // Or Complex if it existed
+        ValueType::Boolean => Type::Bool,
+        ValueType::Quad => Type::Quad,
+        ValueType::Str => Type::Real,
+        ValueType::Enum(_) => Type::Integer,
         // Bundle-typed params are flattened per-field before this runs
         // (`convert_fn`); the scalar fallback is never a field's own type.
-        ValueType::Bundle(_) => IrType::Real,
+        ValueType::Bundle(_) => Type::Real,
         ValueType::Array(inner, _) => elab_value_type_to_ir(inner),
-        ValueType::FnPtr(_, _) => IrType::Real,
+        ValueType::FnPtr(_, _) => Type::Real,
     }
 }
 
@@ -149,11 +149,11 @@ pub(crate) fn value_to_ir(v: &piperine_lang::value::Value) -> IrExpr {
 }
 
 pub(crate) fn convert_fn(
-    f: &Function,
+    f: &PomFunction,
     prog: &Design,
     symbols: &mut SymbolTable,
     errors: &mut Vec<super::LowerError>,
-) -> IrFunction {
+) -> Function {
     convert_fn_named(f.name(), f, prog, symbols, errors)
 }
 
@@ -164,11 +164,11 @@ pub(crate) fn convert_fn(
 /// lookup, and call sites expand a bundle argument to match.
 pub(crate) fn convert_fn_named(
     ir_name: &str,
-    f: &Function,
+    f: &PomFunction,
     prog: &Design,
     symbols: &mut SymbolTable,
     errors: &mut Vec<super::LowerError>,
-) -> IrFunction {
+) -> Function {
     let mut params = Vec::new();
     let mut module_vars = HashSet::new();
     let mut bundle_bindings: Vec<(String, (String, Vec<String>))> = Vec::new();
@@ -177,7 +177,7 @@ pub(crate) fn convert_fn_named(
             let fields = bundle_field_names(prog, bname);
             for field in &fields {
                 let flat = format!("{n}_{field}");
-                let vid = symbols.add_var(&flat, IrType::Real);
+                let vid = symbols.add_var(&flat, Type::Real);
                 params.push(vid);
                 module_vars.insert(flat);
             }
@@ -205,8 +205,8 @@ pub(crate) fn convert_fn_named(
     let body = lower_stmts(f.body(), &mut ctx);
     errors.append(&mut ctx.errors);
 
-    let returns = Some(IrType::Real); // Best effort fallback
-    IrFunction { name: ir_name.to_string(), params, defaults, returns, body }
+    let returns = Some(Type::Real); // Best effort fallback
+    Function { name: ir_name.to_string(), params, defaults, returns, body }
 }
 
 /// Field names of a value bundle, declaration order.

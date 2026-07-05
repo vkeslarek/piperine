@@ -6,7 +6,7 @@
 //! iteration (reactive parts are handled by the charge Jacobian), so their
 //! derivative is zero.
 
-use super::{IrBinOp, IrExpr, IrUnOp, NodeId};
+use super::{BinOp, IrExpr, UnOp, NodeId};
 
 impl IrExpr {
     /// `∂self / ∂V(plus, minus)` as a new expression.
@@ -57,7 +57,7 @@ impl IrExpr {
 
             IrExpr::Branch { plus, minus, .. } => seed(*plus, *minus),
 
-            IrExpr::Unary(IrUnOp::Neg, x) => neg(x.differentiate(seed)),
+            IrExpr::Unary(UnOp::Neg, x) => neg(x.differentiate(seed)),
             // Boolean / bitwise results are piecewise constant.
             IrExpr::Unary(_, _) => lit(0.0),
 
@@ -79,29 +79,29 @@ impl IrExpr {
         }
     }
 
-    fn d_binary(op: IrBinOp, a: &IrExpr, b: &IrExpr, seed: &impl Fn(NodeId, NodeId) -> IrExpr) -> IrExpr {
+    fn d_binary(op: BinOp, a: &IrExpr, b: &IrExpr, seed: &impl Fn(NodeId, NodeId) -> IrExpr) -> IrExpr {
         let da = a.differentiate(seed);
         let db = b.differentiate(seed);
         match op {
-            IrBinOp::Add => add(da, db),
-            IrBinOp::Sub => sub(da, db),
-            IrBinOp::Mul => add(mul(da, b.clone()), mul(a.clone(), db)),
-            IrBinOp::Div => div(
+            BinOp::Add => add(da, db),
+            BinOp::Sub => sub(da, db),
+            BinOp::Mul => add(mul(da, b.clone()), mul(a.clone(), db)),
+            BinOp::Div => div(
                 sub(mul(da, b.clone()), mul(a.clone(), db)),
                 mul(b.clone(), b.clone()),
             ),
             // General power rule: (u^v)' = u^v · (v'·ln u + v·u'/u).
             // With a constant exponent (the common case) v' = 0 and it
             // folds to v·u^(v−1)·u'.
-            IrBinOp::Pow => {
+            BinOp::Pow => {
                 if is_zero(&db) {
                     mul(
-                        mul(b.clone(), IrExpr::binary(IrBinOp::Pow, a.clone(), sub(b.clone(), lit(1.0)))),
+                        mul(b.clone(), IrExpr::binary(BinOp::Pow, a.clone(), sub(b.clone(), lit(1.0)))),
                         da,
                     )
                 } else {
                     mul(
-                        IrExpr::binary(IrBinOp::Pow, a.clone(), b.clone()),
+                        IrExpr::binary(BinOp::Pow, a.clone(), b.clone()),
                         add(
                             mul(db, math1("ln", a.clone())),
                             div(mul(b.clone(), da), a.clone()),
@@ -143,7 +143,7 @@ impl IrExpr {
             "tanh" => mul(sub(lit(1.0), mul(math1("tanh", u.clone()), math1("tanh", u))), du),
             "abs" => mul(
                 IrExpr::select(
-                    IrExpr::binary(IrBinOp::Ge, u, lit(0.0)),
+                    IrExpr::binary(BinOp::Ge, u, lit(0.0)),
                     lit(1.0),
                     lit(-1.0),
                 ),
@@ -155,7 +155,7 @@ impl IrExpr {
                     .get(1)
                     .map(|a| a.differentiate(seed))
                     .unwrap_or_else(|| lit(0.0));
-                IrExpr::binary(IrBinOp::Pow, u, v).d_via_pow(du, dv)
+                IrExpr::binary(BinOp::Pow, u, v).d_via_pow(du, dv)
             }
             "min" | "max" => {
                 let v = args.get(1).cloned().unwrap_or_else(|| lit(0.0));
@@ -164,9 +164,9 @@ impl IrExpr {
                     .map(|a| a.differentiate(seed))
                     .unwrap_or_else(|| lit(0.0));
                 let pick_first = if name == "min" {
-                    IrExpr::binary(IrBinOp::Le, u, v)
+                    IrExpr::binary(BinOp::Le, u, v)
                 } else {
-                    IrExpr::binary(IrBinOp::Ge, u, v)
+                    IrExpr::binary(BinOp::Ge, u, v)
                 };
                 IrExpr::select(pick_first, du, dv)
             }
@@ -178,17 +178,17 @@ impl IrExpr {
     /// Rewrites `self` (which must be `Pow(u, v)`) into its derivative given
     /// `du`/`dv`; shared by the operator and the `pow` call.
     fn d_via_pow(self, du: IrExpr, dv: IrExpr) -> IrExpr {
-        let IrExpr::Binary(IrBinOp::Pow, u, v) = self else {
+        let IrExpr::Binary(BinOp::Pow, u, v) = self else {
             return lit(0.0);
         };
         if is_zero(&dv) {
             mul(
-                mul((*v).clone(), IrExpr::binary(IrBinOp::Pow, (*u).clone(), sub((*v).clone(), lit(1.0)))),
+                mul((*v).clone(), IrExpr::binary(BinOp::Pow, (*u).clone(), sub((*v).clone(), lit(1.0)))),
                 du,
             )
         } else {
             mul(
-                IrExpr::Binary(IrBinOp::Pow, u.clone(), v.clone()),
+                IrExpr::Binary(BinOp::Pow, u.clone(), v.clone()),
                 add(mul(dv, math1("ln", (*u).clone())), div(mul((*v).clone(), du), (*u).clone())),
             )
         }
@@ -216,14 +216,14 @@ fn add(a: IrExpr, b: IrExpr) -> IrExpr {
     if is_zero(&b) {
         return a;
     }
-    IrExpr::binary(IrBinOp::Add, a, b)
+    IrExpr::binary(BinOp::Add, a, b)
 }
 
 fn sub(a: IrExpr, b: IrExpr) -> IrExpr {
     if is_zero(&b) {
         return a;
     }
-    IrExpr::binary(IrBinOp::Sub, a, b)
+    IrExpr::binary(BinOp::Sub, a, b)
 }
 
 fn mul(a: IrExpr, b: IrExpr) -> IrExpr {
@@ -236,7 +236,7 @@ fn mul(a: IrExpr, b: IrExpr) -> IrExpr {
     if is_one(&b) {
         return a;
     }
-    IrExpr::binary(IrBinOp::Mul, a, b)
+    IrExpr::binary(BinOp::Mul, a, b)
 }
 
 fn div(a: IrExpr, b: IrExpr) -> IrExpr {
@@ -246,14 +246,14 @@ fn div(a: IrExpr, b: IrExpr) -> IrExpr {
     if is_one(&b) {
         return a;
     }
-    IrExpr::binary(IrBinOp::Div, a, b)
+    IrExpr::binary(BinOp::Div, a, b)
 }
 
 fn neg(a: IrExpr) -> IrExpr {
     if let IrExpr::Real(v) = &a {
         return lit(-v);
     }
-    IrExpr::Unary(IrUnOp::Neg, Box::new(a))
+    IrExpr::Unary(UnOp::Neg, Box::new(a))
 }
 
 fn math1(name: &str, a: IrExpr) -> IrExpr {

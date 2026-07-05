@@ -32,7 +32,7 @@ impl AnalogOp for Ddt {
     fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
         let Some(a0) = args.first() else { return IrExpr::Real(0.0) };
         let x = lower_expr(a0, ctx);
-        let id = ctx.alloc_state(IrStateKind::Ddt, x);
+        let id = ctx.alloc_state(StateKind::Ddt, x);
         IrExpr::State(id)
     }
 }
@@ -43,7 +43,7 @@ impl AnalogOp for Idt {
         let Some(a0) = args.first() else { return IrExpr::Real(0.0) };
         let x = lower_expr(a0, ctx);
         let ic = arg(args, 1, ctx, 0.0);
-        let id = ctx.alloc_state(IrStateKind::Idt { ic }, x);
+        let id = ctx.alloc_state(StateKind::Idt { ic }, x);
         IrExpr::State(id)
     }
 }
@@ -55,7 +55,7 @@ impl AnalogOp for IdtMod {
         let x = lower_expr(a0, ctx);
         let ic = arg(args, 1, ctx, 0.0);
         let modulus = arg(args, 2, ctx, 1.0);
-        let id = ctx.alloc_state(IrStateKind::IdtMod { ic, modulus }, x);
+        let id = ctx.alloc_state(StateKind::IdtMod { ic, modulus }, x);
         IrExpr::State(id)
     }
 }
@@ -69,7 +69,7 @@ impl AnalogOp for Ddx {
         let x = lower_expr(&args[0], ctx);
         let node_name = super::expr::ident_from_expr(Some(&args[1])).unwrap_or_else(|| "?".into());
         let node = ctx.require_node(&node_name);
-        let id = ctx.alloc_state(IrStateKind::Ddx { node }, x);
+        let id = ctx.alloc_state(StateKind::Ddx { node }, x);
         IrExpr::State(id)
     }
 }
@@ -80,7 +80,7 @@ impl AnalogOp for Delay {
         let Some(a0) = args.first() else { return IrExpr::Real(0.0) };
         let x = lower_expr(a0, ctx);
         let delay = arg(args, 1, ctx, 0.0);
-        let id = ctx.alloc_state(IrStateKind::Delay { delay }, x);
+        let id = ctx.alloc_state(StateKind::Delay { delay }, x);
         IrExpr::State(id)
     }
 }
@@ -94,7 +94,7 @@ impl AnalogOp for Transition {
         let rise = arg(args, 2, ctx, 0.0);
         let fall = arg(args, 3, ctx, 0.0);
         let tol = arg(args, 4, ctx, 0.0);
-        let id = ctx.alloc_state(IrStateKind::Transition { delay, rise, fall, tol }, x);
+        let id = ctx.alloc_state(StateKind::Transition { delay, rise, fall, tol }, x);
         IrExpr::State(id)
     }
 }
@@ -106,7 +106,7 @@ impl AnalogOp for Slew {
         let x = lower_expr(a0, ctx);
         let rise = arg(args, 1, ctx, 0.0);
         let fall = arg(args, 2, ctx, 0.0);
-        let id = ctx.alloc_state(IrStateKind::Slew { rise, fall }, x);
+        let id = ctx.alloc_state(StateKind::Slew { rise, fall }, x);
         IrExpr::State(id)
     }
 }
@@ -140,7 +140,7 @@ impl AnalogOp for Laplace {
             _ => crate::lower::LaplaceKind::NumDen,
         };
         let id = ctx.alloc_state(
-            IrStateKind::Laplace { variant, num, den },
+            StateKind::Laplace { variant, num, den },
             x,
         );
         IrExpr::State(id)
@@ -177,7 +177,7 @@ impl AnalogOp for ZTransform {
         };
         
         let id = ctx.alloc_state(
-            IrStateKind::ZTransform { variant, num, den, sample_dt },
+            StateKind::ZTransform { variant, num, den, sample_dt },
             x,
         );
         IrExpr::State(id)

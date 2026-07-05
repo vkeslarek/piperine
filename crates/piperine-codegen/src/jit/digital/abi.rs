@@ -1,4 +1,4 @@
-//! Digital kernel compilation: an [`crate::ir::IrDigitalBody`] to native
+//! Digital kernel compilation: an [`crate::ir::DigitalBody`] to native
 //! code. There is no digital interpreter — combinational logic, register
 //! updates, and event watching all compile through Cranelift.
 //!

@@ -10,12 +10,12 @@ use std::collections::HashSet;
 use super::expr::IrExpr;
 use super::stmt::{ContribKind, IrStmt, Lval};
 use super::symbols::{StateId, SymbolTable, VarId};
-use super::{IrAnalogBody, IrDigitalBody};
+use super::{AnalogBody, DigitalBody};
 use super::pom::LoweredBody;
 
 /// How bad a validation finding is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IrDiagnosticKind {
+pub enum DiagnosticKind {
     /// The module must not be compiled.
     Error,
     /// Suspicious but compilable (e.g. an inferred digital latch).
@@ -24,18 +24,18 @@ pub enum IrDiagnosticKind {
 
 /// One validation finding.
 #[derive(Debug, Clone)]
-pub struct IrDiagnostic {
-    pub kind: IrDiagnosticKind,
+pub struct Diagnostic {
+    pub kind: DiagnosticKind,
     pub message: String,
 }
 
-impl IrDiagnostic {
+impl Diagnostic {
     fn error(message: impl Into<String>) -> Self {
-        Self { kind: IrDiagnosticKind::Error, message: message.into() }
+        Self { kind: DiagnosticKind::Error, message: message.into() }
     }
 
     fn warning(message: impl Into<String>) -> Self {
-        Self { kind: IrDiagnosticKind::Warning, message: message.into() }
+        Self { kind: DiagnosticKind::Warning, message: message.into() }
     }
 }
 
@@ -50,8 +50,8 @@ enum BodyKind {
 impl LoweredBody {
     /// Validate the module against the SPEC §11 contract. Returns every
     /// finding; the module is compilable iff none is an
-    /// [`IrDiagnosticKind::Error`].
-    pub fn validate(&self) -> Vec<IrDiagnostic> {
+    /// [`DiagnosticKind::Error`].
+    pub fn validate(&self) -> Vec<Diagnostic> {
         let mut v = Validator { module: self, findings: Vec::new() };
         v.run();
         v.findings
@@ -59,11 +59,11 @@ impl LoweredBody {
 
     /// Validate and fail on the first error, for callers that just want a
     /// yes/no before compiling.
-    pub fn validated(&self) -> Result<&Self, IrDiagnostic> {
+    pub fn validated(&self) -> Result<&Self, Diagnostic> {
         match self
             .validate()
             .into_iter()
-            .find(|d| d.kind == IrDiagnosticKind::Error)
+            .find(|d| d.kind == DiagnosticKind::Error)
         {
             Some(err) => Err(err),
             None => Ok(self),
@@ -73,7 +73,7 @@ impl LoweredBody {
 
 struct Validator<'m> {
     module: &'m LoweredBody,
-    findings: Vec<IrDiagnostic>,
+    findings: Vec<Diagnostic>,
 }
 
 impl Validator<'_> {
@@ -101,10 +101,10 @@ impl Validator<'_> {
     }
 
     fn error(&mut self, message: impl Into<String>) {
-        self.findings.push(IrDiagnostic::error(message));
+        self.findings.push(Diagnostic::error(message));
     }
 
-    fn check_analog(&mut self, body: &IrAnalogBody) {
+    fn check_analog(&mut self, body: &AnalogBody) {
         for &id in &body.states {
             if self.symbols().try_state(id).is_none() {
                 self.error(format!("analog body references dangling state #{}", id.0));
@@ -114,8 +114,8 @@ impl Validator<'_> {
             self.check_node(source.plus);
             self.check_node(source.minus);
             match &source.kind {
-                super::symbols::IrNoise::White { psd } => self.check_expr(psd),
-                super::symbols::IrNoise::Flicker { psd, exponent } => {
+                super::symbols::NoiseKind::White { psd } => self.check_expr(psd),
+                super::symbols::NoiseKind::Flicker { psd, exponent } => {
                     self.check_expr(psd);
                     self.check_expr(exponent);
                 }
@@ -124,7 +124,7 @@ impl Validator<'_> {
         self.check_stmts(&body.stmts, BodyKind::Analog);
     }
 
-    fn check_digital(&mut self, body: &IrDigitalBody) {
+    fn check_digital(&mut self, body: &DigitalBody) {
         for &node in body.inputs.iter().chain(&body.outputs) {
             self.check_node(node);
         }
@@ -140,7 +140,7 @@ impl Validator<'_> {
     /// SPEC §11: a combinational variable read on a path where it was not
     /// assigned infers a latch — a warning (registers, updated only inside
     /// clocked blocks, are silent).
-    fn check_latches(&mut self, body: &IrDigitalBody) {
+    fn check_latches(&mut self, body: &DigitalBody) {
         let comb_assigned = Self::comb_assigned_vars(&body.stmts);
         let mut assigned = HashSet::new();
         let mut latched = HashSet::new();
@@ -150,7 +150,7 @@ impl Validator<'_> {
                 .symbols()
                 .try_var(var)
                 .map_or_else(|| format!("#{}", var.0), |v| v.name.clone());
-            self.findings.push(IrDiagnostic::warning(format!(
+            self.findings.push(Diagnostic::warning(format!(
                 "inferred latch: combinational variable `{name}` is read on a path where it \
                  was not assigned"
             )));
@@ -385,14 +385,14 @@ impl Validator<'_> {
     fn check_node(&mut self, id: super::symbols::NodeId) {
         if self.symbols().try_node(id).is_none() {
             self.findings
-                .push(IrDiagnostic::error(format!("dangling node id #{}", id.0)));
+                .push(Diagnostic::error(format!("dangling node id #{}", id.0)));
         }
     }
 
     fn check_nature(&mut self, id: super::symbols::NatureId) {
         if self.symbols().try_nature(id).is_none() {
             self.findings
-                .push(IrDiagnostic::error(format!("dangling nature id #{}", id.0)));
+                .push(Diagnostic::error(format!("dangling nature id #{}", id.0)));
         }
     }
 
@@ -428,7 +428,7 @@ impl Validator<'_> {
                 _ => None,
             };
             if let Some(what) = dangling {
-                self.findings.push(IrDiagnostic::error(format!(
+                self.findings.push(Diagnostic::error(format!(
                     "expression references dangling {what}"
                 )));
             }

@@ -12,17 +12,17 @@ use piperine_codegen::{CircuitCompiler, DigitalKernel};
 
 #[test]
 fn a4_shift_in_digital_guard_is_rejected_not_silently_add() {
-    use piperine_codegen::ir::{IrBinOp, IrDigitalBody, IrExpr, IrStmt};
+    use piperine_codegen::ir::{BinOp, DigitalBody, IrExpr, IrStmt};
 
     let mut module = LoweredBody::new("shift_fsm");
-    let param_x = module.symbols.add_param("x", piperine_codegen::ir::IrType::Real, None);
-    module.digital = Some(IrDigitalBody {
+    let param_x = module.symbols.add_param("x", piperine_codegen::ir::Type::Real, None);
+    module.digital = Some(DigitalBody {
         inputs: Vec::new(),
         outputs: Vec::new(),
         regs: Vec::new(),
         stmts: vec![IrStmt::If {
             cond: IrExpr::Binary(
-                IrBinOp::Shl,
+                BinOp::Shl,
                 Box::new(IrExpr::Param(param_x)),
                 Box::new(IrExpr::Int(4)),
             ),
@@ -44,14 +44,14 @@ fn a4_shift_in_digital_guard_is_rejected_not_silently_add() {
 
 fn make_digital_ir_with_unary_op(
     module_name: &str,
-    op: piperine_codegen::ir::IrUnOp,
-    param_ty: piperine_codegen::ir::IrType,
+    op: piperine_codegen::ir::UnOp,
+    param_ty: piperine_codegen::ir::Type,
 ) -> LoweredBody {
-    use piperine_codegen::ir::{IrExpr, IrStmt, IrDigitalBody, Domain, Lval};
+    use piperine_codegen::ir::{IrExpr, IrStmt, DigitalBody, Domain, Lval};
     let mut module = LoweredBody::new(module_name);
     let param_x = module.symbols.add_param("x", param_ty, None);
     let node_out = module.symbols.add_node("out", Domain::Digital);
-    module.digital = Some(IrDigitalBody {
+    module.digital = Some(DigitalBody {
         inputs: Vec::new(),
         outputs: vec![node_out],
         regs: Vec::new(),
@@ -65,8 +65,8 @@ fn make_digital_ir_with_unary_op(
 
 #[test]
 fn a5_bitnot_in_digital_is_rejected_not_silently_not() {
-    use piperine_codegen::ir::{IrUnOp, IrType};
-    let module = make_digital_ir_with_unary_op("bitnot_fsm", IrUnOp::BitNot, IrType::Real);
+    use piperine_codegen::ir::{UnOp, Type};
+    let module = make_digital_ir_with_unary_op("bitnot_fsm", UnOp::BitNot, Type::Real);
     let err = DigitalKernel::compile(&module)
         .err()
         .expect("BitNot in digital must fail");
@@ -79,8 +79,8 @@ fn a5_bitnot_in_digital_is_rejected_not_silently_not() {
 
 #[test]
 fn a5_reduction_op_in_digital_is_rejected_not_silently_not() {
-    use piperine_codegen::ir::{IrUnOp, IrType};
-    let module = make_digital_ir_with_unary_op("redand_fsm", IrUnOp::RedAnd, IrType::Real);
+    use piperine_codegen::ir::{UnOp, Type};
+    let module = make_digital_ir_with_unary_op("redand_fsm", UnOp::RedAnd, Type::Real);
     let err = DigitalKernel::compile(&module)
         .err()
         .expect("RedAnd in digital must fail");
@@ -93,8 +93,8 @@ fn a5_reduction_op_in_digital_is_rejected_not_silently_not() {
 
 #[test]
 fn a5_neg_in_digital_still_works() {
-    use piperine_codegen::ir::{IrUnOp, IrType};
-    let module = make_digital_ir_with_unary_op("neg_fsm", IrUnOp::Neg, IrType::Integer);
+    use piperine_codegen::ir::{UnOp, Type};
+    let module = make_digital_ir_with_unary_op("neg_fsm", UnOp::Neg, Type::Integer);
     DigitalKernel::compile(&module).expect("Neg in digital must still work");
 }
 
@@ -102,7 +102,7 @@ fn a5_neg_in_digital_still_works() {
 
 #[test]
 fn a6_from_ir_propagates_child_compile_error_not_silent_skip() {
-    use piperine_codegen::ir::{ContribKind, IrAnalogBody, IrStmt, NatureKind, StateId};
+    use piperine_codegen::ir::{ContribKind, AnalogBody, IrStmt, NatureKind, StateId};
 
     // `vsource` exists in the POM (so the top's instance connection/port
     // count resolves normally); its *resolved body* is then swapped for a
@@ -123,7 +123,7 @@ fn a6_from_ir_propagates_child_compile_error_not_silent_skip() {
         let mut nodes = vsource.symbols.nodes().map(|(id, _)| id);
         (nodes.next().unwrap(), nodes.next().unwrap())
     };
-    vsource.analog = Some(IrAnalogBody {
+    vsource.analog = Some(AnalogBody {
         states: Vec::new(),
         noise: Vec::new(),
         stmts: vec![IrStmt::Contrib {

@@ -49,7 +49,7 @@ pub(crate) fn lower_stmt(stmt: &BehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt>
             if let Expr::Ident(name) = dest {
                 let val = lower_expr(src, ctx);
                 if !ctx.env.contains_key(name) && ctx.module_vars.contains(name) {
-                    let var_id = ctx.lookup_var(name).unwrap_or_else(|| ctx.symbols.add_var(name.clone(), IrType::Real));
+                    let var_id = ctx.lookup_var(name).unwrap_or_else(|| ctx.symbols.add_var(name.clone(), Type::Real));
                     vec![IrStmt::Assign { lval: Lval::Var(var_id), expr: val }]
                 } else {
                     ctx.env.insert(name.clone(), val);
@@ -124,7 +124,7 @@ pub(crate) fn lower_stmt(stmt: &BehaviorStmt, ctx: &mut LowerCtx) -> Vec<IrStmt>
             kinds.into_iter().map(|kind| {
                 match kind {
                     super::event::LoweredEvent::Analog(source) => {
-                        IrStmt::AnalogEvent(IrAnalogEvent { source, body: body_with_guard.clone() })
+                        IrStmt::AnalogEvent(AnalogEvent { source, body: body_with_guard.clone() })
                     }
                     super::event::LoweredEvent::Digital(event) => {
                         IrStmt::ClockedBlock { event, body: body_with_guard.clone() }
@@ -288,10 +288,10 @@ fn pattern_match_cond(pattern: &Pattern, discriminant: &IrExpr, ctx: &mut LowerC
                 Some(value) => IrExpr::Int(value),
                 None => IrExpr::Param(ctx.require_ident_as_param(&joined)),
             };
-            IrExpr::binary(IrBinOp::Eq, discriminant.clone(), target)
+            IrExpr::binary(BinOp::Eq, discriminant.clone(), target)
         }
         Pattern::Literal(v) => {
-            IrExpr::binary(IrBinOp::Eq, discriminant.clone(), IrExpr::Int(*v as i64))
+            IrExpr::binary(BinOp::Eq, discriminant.clone(), IrExpr::Int(*v as i64))
         }
         Pattern::BitPattern(bits) => {
             let mut mask = 0i64;
@@ -309,8 +309,8 @@ fn pattern_match_cond(pattern: &Pattern, discriminant: &IrExpr, ctx: &mut LowerC
                 }
             }
             IrExpr::binary(
-                IrBinOp::Eq,
-                IrExpr::binary(IrBinOp::BitAnd, discriminant.clone(), IrExpr::Int(mask)),
+                BinOp::Eq,
+                IrExpr::binary(BinOp::BitAnd, discriminant.clone(), IrExpr::Int(mask)),
                 IrExpr::Int(value),
             )
         }

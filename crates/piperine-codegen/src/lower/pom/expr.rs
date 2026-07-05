@@ -67,10 +67,10 @@ pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut Low
                         let label = args.get(1).and_then(|a| {
                             if let Expr::Literal(Literal::String(s)) = a { Some(s.clone()) } else { None }
                         });
-                        ctx.noise_sources.push(IrNoiseSource {
+                        ctx.noise_sources.push(NoiseSource {
                             plus,
                             minus,
-                            kind: IrNoise::White { psd },
+                            kind: NoiseKind::White { psd },
                             label,
                         });
                         return Walk::SkipChildren;
@@ -85,10 +85,10 @@ pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut Low
                         let label = args.get(2).and_then(|a| {
                             if let Expr::Literal(Literal::String(s)) = a { Some(s.clone()) } else { None }
                         });
-                        ctx.noise_sources.push(IrNoiseSource {
+                        ctx.noise_sources.push(NoiseSource {
                             plus,
                             minus,
-                            kind: IrNoise::Flicker { psd, exponent },
+                            kind: NoiseKind::Flicker { psd, exponent },
                             label,
                         });
                         return Walk::SkipChildren;
@@ -173,10 +173,10 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
         }
 
         Expr::Unary(UnaryOp::Neg, inner) => {
-            IrExpr::Unary(IrUnOp::Neg, Box::new(lower_expr(inner, ctx)))
+            IrExpr::Unary(UnOp::Neg, Box::new(lower_expr(inner, ctx)))
         }
         Expr::Unary(UnaryOp::Not, inner) => {
-            IrExpr::Unary(IrUnOp::Not, Box::new(lower_expr(inner, ctx)))
+            IrExpr::Unary(UnOp::Not, Box::new(lower_expr(inner, ctx)))
         }
 
         Expr::Binary(lhs, op, rhs) => {
@@ -407,7 +407,7 @@ pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrEx
         let value = IrExpr::Param(ctx.require_ident_as_param(pname));
         return match method.as_str() {
             "is_present" | "is_some" => given,
-            "is_none" => IrExpr::Unary(crate::lower::IrUnOp::Not, Box::new(given)),
+            "is_none" => IrExpr::Unary(crate::lower::UnOp::Not, Box::new(given)),
             "get_or" | "unwrap_or" => {
                 let default = args.first().map_or(IrExpr::Real(0.0), |a| lower_expr(a, ctx));
                 IrExpr::Select(Box::new(given), Box::new(value), Box::new(default))
@@ -533,23 +533,23 @@ pub(crate) fn lower_syscall(name: &str, args: &[Expr], ctx: &mut LowerCtx) -> Ir
     IrExpr::MathCall(format!("${key}"), ir_args)
 }
 
-pub(crate) fn lower_binop(op: &BinaryOp) -> IrBinOp {
+pub(crate) fn lower_binop(op: &BinaryOp) -> BinOp {
     match op {
-        BinaryOp::Add => IrBinOp::Add,
-        BinaryOp::Sub => IrBinOp::Sub,
-        BinaryOp::Mul => IrBinOp::Mul,
-        BinaryOp::Div => IrBinOp::Div,
-        BinaryOp::Rem => IrBinOp::Rem,
-        BinaryOp::Eq => IrBinOp::Eq,
-        BinaryOp::Neq => IrBinOp::Ne,
-        BinaryOp::Lt => IrBinOp::Lt,
-        BinaryOp::Le => IrBinOp::Le,
-        BinaryOp::Gt => IrBinOp::Gt,
-        BinaryOp::Ge => IrBinOp::Ge,
-        BinaryOp::BitAnd => IrBinOp::BitAnd,
-        BinaryOp::BitOr => IrBinOp::BitOr,
-        BinaryOp::BitXor => IrBinOp::BitXor,
-        BinaryOp::And => IrBinOp::And,
-        BinaryOp::Or => IrBinOp::Or,
+        BinaryOp::Add => BinOp::Add,
+        BinaryOp::Sub => BinOp::Sub,
+        BinaryOp::Mul => BinOp::Mul,
+        BinaryOp::Div => BinOp::Div,
+        BinaryOp::Rem => BinOp::Rem,
+        BinaryOp::Eq => BinOp::Eq,
+        BinaryOp::Neq => BinOp::Ne,
+        BinaryOp::Lt => BinOp::Lt,
+        BinaryOp::Le => BinOp::Le,
+        BinaryOp::Gt => BinOp::Gt,
+        BinaryOp::Ge => BinOp::Ge,
+        BinaryOp::BitAnd => BinOp::BitAnd,
+        BinaryOp::BitOr => BinOp::BitOr,
+        BinaryOp::BitXor => BinOp::BitXor,
+        BinaryOp::And => BinOp::And,
+        BinaryOp::Or => BinOp::Or,
     }
 }

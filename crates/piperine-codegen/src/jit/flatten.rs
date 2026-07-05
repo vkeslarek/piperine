@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 
 use crate::ir::{
-    ContribKind, CrossDir, EventSource, IrAnalogEvent, IrExpr, LoweredBody, IrStateKind, IrStmt,
+    ContribKind, CrossDir, EventSource, AnalogEvent, IrExpr, LoweredBody, StateKind, IrStmt,
     Lval, NatureId, NatureKind, NodeId, Pattern, Severity, StateId, Trit, VarId,
 };
 
@@ -310,7 +310,7 @@ impl FnWalker<'_, '_> {
                         self.walk(body, Some(&arm_guard))?;
                         no_prior = Some(match no_prior {
                             None => not(&cond),
-                            Some(prev) => IrExpr::binary(crate::ir::IrBinOp::And, prev, not(&cond)),
+                            Some(prev) => IrExpr::binary(crate::ir::BinOp::And, prev, not(&cond)),
                         });
                     }
                     let default_guard = match &no_prior {
@@ -392,7 +392,7 @@ fn resolve_expr(
 
 /// The boolean condition under which `pattern` matches `scrutinee`.
 fn pattern_condition(scrutinee: &IrExpr, pattern: &Pattern) -> Result<IrExpr, CodegenError> {
-    use crate::ir::IrBinOp::Eq;
+    use crate::ir::BinOp::Eq;
     match pattern {
         Pattern::Wildcard => Ok(IrExpr::Bool(true)),
         Pattern::Value(e) => Ok(IrExpr::binary(Eq, scrutinee.clone(), e.clone())),
@@ -408,13 +408,13 @@ fn pattern_condition(scrutinee: &IrExpr, pattern: &Pattern) -> Result<IrExpr, Co
 }
 
 fn not(expr: &IrExpr) -> IrExpr {
-    IrExpr::Unary(crate::ir::IrUnOp::Not, Box::new(expr.clone()))
+    IrExpr::Unary(crate::ir::UnOp::Not, Box::new(expr.clone()))
 }
 
 fn and_guards(guard: Option<&IrExpr>, cond: &IrExpr) -> IrExpr {
     match guard {
         None => cond.clone(),
-        Some(g) => IrExpr::binary(crate::ir::IrBinOp::And, g.clone(), cond.clone()),
+        Some(g) => IrExpr::binary(crate::ir::BinOp::And, g.clone(), cond.clone()),
     }
 }
 
@@ -422,7 +422,7 @@ fn and_guards(guard: Option<&IrExpr>, cond: &IrExpr) -> IrExpr {
 fn chain_guards(guard: Option<&IrExpr>, no_prior: &Option<IrExpr>, cond: &IrExpr) -> IrExpr {
     let with_prior = match no_prior {
         None => cond.clone(),
-        Some(prev) => IrExpr::binary(crate::ir::IrBinOp::And, prev.clone(), cond.clone()),
+        Some(prev) => IrExpr::binary(crate::ir::BinOp::And, prev.clone(), cond.clone()),
     };
     and_guards(guard, &with_prior)
 }
@@ -490,8 +490,8 @@ impl<'m> AnalogFlattener<'m> {
         // the PSD — formerly dropped (`Flicker { psd, .. }`).
         for source in &body.noise {
             let (psd_src, exponent_src) = match &source.kind {
-                crate::ir::IrNoise::White { psd } => (psd.clone(), None),
-                crate::ir::IrNoise::Flicker { psd, exponent } => {
+                crate::ir::NoiseKind::White { psd } => (psd.clone(), None),
+                crate::ir::NoiseKind::Flicker { psd, exponent } => {
                     (psd.clone(), Some(exponent.clone()))
                 }
             };
@@ -550,7 +550,7 @@ impl<'m> AnalogFlattener<'m> {
                         self.walk(body, Some(&arm_guard))?;
                         no_prior = Some(match no_prior {
                             None => not(&cond),
-                            Some(prev) => IrExpr::binary(crate::ir::IrBinOp::And, prev, not(&cond)),
+                            Some(prev) => IrExpr::binary(crate::ir::BinOp::And, prev, not(&cond)),
                         });
                     }
                     let default_guard = match &no_prior {
@@ -588,7 +588,7 @@ impl<'m> AnalogFlattener<'m> {
     /// persistent-variable updates (plus `if`/`match`/diagnostics); anything
     /// else has no runtime-event lowering and is a named error. `@ final`
     /// admits diagnostics only (there is no end-of-run device hook).
-    fn add_event(&mut self, event: &IrAnalogEvent, guard: Option<&IrExpr>) -> Result<(), CodegenError> {
+    fn add_event(&mut self, event: &AnalogEvent, guard: Option<&IrExpr>) -> Result<(), CodegenError> {
         let resolve = |s: &mut Self, e: &IrExpr| {
             resolve_expr(e, &s.scope, &mut s.inliner).and_then(|e| s.finish_expr(e))
         };
@@ -656,7 +656,7 @@ impl<'m> AnalogFlattener<'m> {
                         self.collect_event_actions(body, Some(&arm_guard), actions)?;
                         no_prior = Some(match no_prior {
                             None => not(&cond),
-                            Some(prev) => IrExpr::binary(crate::ir::IrBinOp::And, prev, not(&cond)),
+                            Some(prev) => IrExpr::binary(crate::ir::BinOp::And, prev, not(&cond)),
                         });
                     }
                     let default_guard = match &no_prior {
@@ -708,7 +708,7 @@ impl<'m> AnalogFlattener<'m> {
                     .find(|(p, m, _)| *p == plus && *m == minus)
                 {
                     Some((_, _, acc)) => {
-                        *acc = IrExpr::binary(crate::ir::IrBinOp::Add, acc.clone(), guarded);
+                        *acc = IrExpr::binary(crate::ir::BinOp::Add, acc.clone(), guarded);
                     }
                     None => self.potential_acc.push((plus, minus, guarded)),
                 }
@@ -742,14 +742,14 @@ impl<'m> AnalogFlattener<'m> {
                     const GMIN: f64 = 1e-12;
                     const G_LARGE: f64 = 1.0 / GMIN;
                     let branch = IrExpr::Branch { nature, plus, minus };
-                    let v_minus_expr = IrExpr::binary(crate::ir::IrBinOp::Sub, branch, resolved);
+                    let v_minus_expr = IrExpr::binary(crate::ir::BinOp::Sub, branch, resolved);
                     let conductance = IrExpr::Select(
                         Box::new(g.clone()),
                         Box::new(IrExpr::Real(G_LARGE)),
                         Box::new(IrExpr::Real(GMIN)),
                     );
                     let switch_expr =
-                        IrExpr::binary(crate::ir::IrBinOp::Mul, conductance, v_minus_expr);
+                        IrExpr::binary(crate::ir::BinOp::Mul, conductance, v_minus_expr);
                     return self.add_flow(switch_expr, plus, minus, ContribKind::Resistive);
                 }
                 let expr = self.finish_expr(resolved)?;
@@ -777,7 +777,7 @@ impl<'m> AnalogFlattener<'m> {
     ) -> Result<(), CodegenError> {
         let expr = self.extract_ac_stim(expr, plus, minus)?;
         let has_ddt = expr
-            .find_state(&|id| matches!(self.module.symbols.state(id).kind, IrStateKind::Ddt))
+            .find_state(&|id| matches!(self.module.symbols.state(id).kind, StateKind::Ddt))
             .is_some();
 
         if has_ddt {
@@ -786,7 +786,7 @@ impl<'m> AnalogFlattener<'m> {
             // cancel.
             let with_arg = self.substitute_ddt(&expr, true)?;
             let with_zero = self.substitute_ddt(&expr, false)?;
-            let charge = IrExpr::binary(crate::ir::IrBinOp::Sub, with_arg, with_zero);
+            let charge = IrExpr::binary(crate::ir::BinOp::Sub, with_arg, with_zero);
             let charge = self.finish_expr(charge)?;
             self.out.charge.push(FlatContrib { plus, minus, expr: charge });
         }
@@ -823,7 +823,7 @@ impl<'m> AnalogFlattener<'m> {
         let out = expr.rewrite(&mut |e| {
             if let IrExpr::State(id) = &e {
                 let state = self.module.symbols.state(*id);
-                if matches!(state.kind, IrStateKind::Ddt) {
+                if matches!(state.kind, StateKind::Ddt) {
                     if !with_arg {
                         return IrExpr::Real(0.0);
                     }
@@ -855,13 +855,13 @@ impl<'m> AnalogFlattener<'m> {
             let state = self.module.symbols.state(id);
             match &state.kind {
                 // `ddt` was substituted away by the charge split.
-                IrStateKind::Ddt => {
+                StateKind::Ddt => {
                     error.get_or_insert(CodegenError::Invalid(
                         "`ddt` state survived the reactive split".into(),
                     ));
                     e
                 }
-                IrStateKind::Ddx { node } => {
+                StateKind::Ddx { node } => {
                     match resolve_expr(&state.arg.clone(), &self.scope, &mut self.inliner)
                         .map(|arg| arg.d_dnode(*node))
                     {
@@ -877,7 +877,7 @@ impl<'m> AnalogFlattener<'m> {
                 // accepted step, `dt` = sim.step, 0 at DC so the value is
                 // the accumulated integral / initial condition). The `dt·x`
                 // term gives the in-step Jacobian coupling `dt·∂x/∂V`.
-                IrStateKind::Idt { .. } | IrStateKind::IdtMod { .. } => {
+                StateKind::Idt { .. } | StateKind::IdtMod { .. } => {
                     match resolve_expr(&state.arg.clone(), &self.scope, &mut self.inliner) {
                         Ok(arg) => {
                             if !self.out.runtime_states.iter().any(|(s, _)| *s == id) {
@@ -888,9 +888,9 @@ impl<'m> AnalogFlattener<'m> {
                                 default: Box::new(IrExpr::Real(0.0)),
                             });
                             IrExpr::binary(
-                                crate::ir::IrBinOp::Add,
+                                crate::ir::BinOp::Add,
                                 e,
-                                IrExpr::binary(crate::ir::IrBinOp::Mul, step, arg),
+                                IrExpr::binary(crate::ir::BinOp::Mul, step, arg),
                             )
                         }
                         Err(err) => {
@@ -899,7 +899,7 @@ impl<'m> AnalogFlattener<'m> {
                         }
                     }
                 }
-                IrStateKind::Delay { .. } | IrStateKind::Slew { .. } => {
+                StateKind::Delay { .. } | StateKind::Slew { .. } => {
                     match resolve_expr(&state.arg.clone(), &self.scope, &mut self.inliner) {
                         Ok(arg) => {
                             if !self.out.runtime_states.iter().any(|(s, _)| *s == id) {
@@ -913,10 +913,10 @@ impl<'m> AnalogFlattener<'m> {
                         }
                     }
                 }
-                kind @ (IrStateKind::Transition { .. }
-                | IrStateKind::Table { .. }
-                | IrStateKind::Laplace { .. }
-                | IrStateKind::ZTransform { .. }) => {
+                kind @ (StateKind::Transition { .. }
+                | StateKind::Table { .. }
+                | StateKind::Laplace { .. }
+                | StateKind::ZTransform { .. }) => {
                     error.get_or_insert(CodegenError::unsupported(format!(
                         "analog operator `{}` lowering is not implemented yet",
                         kind.name()
@@ -965,7 +965,7 @@ fn split_ac_stim(expr: IrExpr) -> Result<(IrExpr, Option<(IrExpr, IrExpr)>), Cod
     };
     let with_mag = substitute(true);
     let without = substitute(false);
-    let mag = IrExpr::binary(crate::ir::IrBinOp::Sub, with_mag, without.clone());
+    let mag = IrExpr::binary(crate::ir::BinOp::Sub, with_mag, without.clone());
     let phase = phase_expr.expect("count == 1");
     Ok((without, Some((mag, phase))))
 }

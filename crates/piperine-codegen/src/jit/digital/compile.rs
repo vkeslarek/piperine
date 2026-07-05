@@ -1,4 +1,4 @@
-//! Digital kernel compilation: an [`crate::ir::IrDigitalBody`] to native
+//! Digital kernel compilation: an [`crate::ir::DigitalBody`] to native
 //! code. There is no digital interpreter — combinational logic, register
 //! updates, and event watching all compile through Cranelift.
 //!
@@ -32,7 +32,7 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
 use crate::ir::{
-    IrBinOp, IrDigitalBody, IrExpr, LoweredBody, IrStmt, IrType, IrUnOp, Lval,
+    BinOp, DigitalBody, IrExpr, LoweredBody, IrStmt, Type, UnOp, Lval,
     NodeId, Pattern, SimQuery, Trit, VarId,
 };
 
@@ -44,7 +44,7 @@ use super::layout::*;
 
 pub(crate) struct DigitalCompiler<'m> {
     module: &'m LoweredBody,
-    body: &'m IrDigitalBody,
+    body: &'m DigitalBody,
     layout: DigitalLayout,
     jit: JITModule,
     math_ids: HashMap<&'static str, FuncId>,
@@ -506,7 +506,7 @@ impl DigitalEmitter<'_, '_, '_> {
             Lval::Var(var) => {
                 let info = self.module.symbols.var(*var);
                 match info.ty {
-                    IrType::Real => {
+                    Type::Real => {
                         let slot = self.layout.real_slot(*var).expect("layout covers all vars");
                         let value = self.coerce(value, DigTy::Real)?;
                         self.builder.ins().store(
@@ -516,7 +516,7 @@ impl DigitalEmitter<'_, '_, '_> {
                             (slot * 8) as i32,
                         );
                     }
-                    IrType::Quad => {
+                    Type::Quad => {
                         let slot = self.layout.int_slot(*var).expect("layout covers all vars");
                         let value = self.coerce(value, DigTy::Quad)?;
                         self.builder.ins().store(
@@ -526,7 +526,7 @@ impl DigitalEmitter<'_, '_, '_> {
                             (slot * 8) as i32,
                         );
                     }
-                    IrType::Integer | IrType::Bool => {
+                    Type::Integer | Type::Bool => {
                         let slot = self.layout.int_slot(*var).expect("layout covers all vars");
                         let value = self.coerce(value, DigTy::Int)?;
                         self.builder.ins().store(
@@ -578,7 +578,7 @@ impl DigitalEmitter<'_, '_, '_> {
                     (id.0 * 8) as i32,
                 );
                 match self.module.symbols.param(*id).ty {
-                    IrType::Real => Ok(Typed::real(value)),
+                    Type::Real => Ok(Typed::real(value)),
                     _ => {
                         let as_int = self.builder.ins().fcvt_to_sint(types::I64, value);
                         Ok(Typed::int(as_int))
@@ -683,7 +683,7 @@ impl DigitalEmitter<'_, '_, '_> {
     fn load_var(&mut self, var: VarId) -> Typed {
         let info = self.module.symbols.var(var);
         match info.ty {
-            IrType::Real => {
+            Type::Real => {
                 let slot = self.layout.real_slot(var).expect("layout covers all vars");
                 let bank = match self.reads {
                     VarReads::Live => self.pointers.vars_real,
@@ -706,7 +706,7 @@ impl DigitalEmitter<'_, '_, '_> {
                         .ins()
                         .load(types::I64, MemFlags::trusted(), bank, (slot * 8) as i32);
                 match ty {
-                    IrType::Quad => Typed::quad(value),
+                    Type::Quad => Typed::quad(value),
                     _ => Typed::int(value),
                 }
             }
@@ -739,35 +739,35 @@ impl DigitalEmitter<'_, '_, '_> {
         }
     }
 
-    fn emit_unary(&mut self, op: IrUnOp, x: Typed) -> Result<Typed, CodegenError> {
+    fn emit_unary(&mut self, op: UnOp, x: Typed) -> Result<Typed, CodegenError> {
         match (op, x.ty) {
-            (IrUnOp::Neg, DigTy::Real) => Ok(Typed::real(self.builder_fneg(x.value))),
-            (IrUnOp::Neg, DigTy::Int) => Ok(Typed::int(self.builder_ineg(x.value))),
-            (IrUnOp::Not | IrUnOp::BitNot, DigTy::Quad) => {
+            (UnOp::Neg, DigTy::Real) => Ok(Typed::real(self.builder_fneg(x.value))),
+            (UnOp::Neg, DigTy::Int) => Ok(Typed::int(self.builder_ineg(x.value))),
+            (UnOp::Not | UnOp::BitNot, DigTy::Quad) => {
                 let x = self.normalize_z(x.value);
                 Ok(Typed::quad(self.quad_not(x)))
             }
-            (IrUnOp::Not, DigTy::Int) => {
+            (UnOp::Not, DigTy::Int) => {
                 let zero = self.builder_i64(0);
                 let flag = self.builder.ins().icmp(IntCC::Equal, x.value, zero);
                 Ok(Typed::int(self.builder_flag_i64(flag)))
             }
-            (IrUnOp::Not, DigTy::Real) => {
+            (UnOp::Not, DigTy::Real) => {
                 let zero = self.builder_f64(0.0);
                 let flag = self.builder.ins().fcmp(FloatCC::Equal, x.value, zero);
                 Ok(Typed::int(self.builder_flag_i64(flag)))
             }
-            (IrUnOp::BitNot, DigTy::Int) => Ok(Typed::int(self.builder.ins().bnot(x.value))),
+            (UnOp::BitNot, DigTy::Int) => Ok(Typed::int(self.builder.ins().bnot(x.value))),
             // A reduction over a scalar is the scalar (buses are rejected).
-            (IrUnOp::RedAnd | IrUnOp::RedOr | IrUnOp::RedXor, DigTy::Quad | DigTy::Int) => Ok(x),
+            (UnOp::RedAnd | UnOp::RedOr | UnOp::RedXor, DigTy::Quad | DigTy::Int) => Ok(x),
             (op, ty) => Err(CodegenError::unsupported(format!(
                 "unary {op:?} on {ty:?} in digital codegen"
             ))),
         }
     }
 
-    fn emit_binary(&mut self, op: IrBinOp, a: Typed, b: Typed) -> Result<Typed, CodegenError> {
-        use IrBinOp::*;
+    fn emit_binary(&mut self, op: BinOp, a: Typed, b: Typed) -> Result<Typed, CodegenError> {
+        use BinOp::*;
         // Quad logic when either side is 4-state and the operator is logical.
         let quadish = a.ty == DigTy::Quad || b.ty == DigTy::Quad;
         match op {

@@ -10,7 +10,7 @@ use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{types, FuncRef, InstBuilder, MemFlags, Value};
 use cranelift_frontend::FunctionBuilder;
 
-use crate::ir::{IrBinOp, IrExpr, IrUnOp, SimQuery};
+use crate::ir::{BinOp, IrExpr, UnOp, SimQuery};
 
 use super::{math, CodegenError, SimCtx};
 
@@ -92,31 +92,31 @@ const T_NEG: u8 = 0;
 const T_SELECT: u8 = 1;
 const T_NOT: u8 = 2;
 const T_FCMP_BASE: u8 = 16; // + FloatCC as u8 (16..30)
-const T_BIN_BASE: u8 = 40; // + IrBinOp index
+const T_BIN_BASE: u8 = 40; // + BinOp index
 
 /// Distinct CSE tag per binary op (offset past the fcmp/select tags).
-fn bin_tag(op: IrBinOp) -> u8 {
+fn bin_tag(op: BinOp) -> u8 {
     T_BIN_BASE
         + match op {
-            IrBinOp::Add => 0,
-            IrBinOp::Sub => 1,
-            IrBinOp::Mul => 2,
-            IrBinOp::Div => 3,
-            IrBinOp::Rem => 4,
-            IrBinOp::Eq => 5,
-            IrBinOp::Ne => 6,
-            IrBinOp::Lt => 7,
-            IrBinOp::Le => 8,
-            IrBinOp::Gt => 9,
-            IrBinOp::Ge => 10,
-            IrBinOp::And => 11,
-            IrBinOp::Or => 12,
-            IrBinOp::Pow => 13,
-            IrBinOp::BitAnd => 14,
-            IrBinOp::BitOr => 15,
-            IrBinOp::BitXor => 16,
-            IrBinOp::Shl => 17,
-            IrBinOp::Shr => 18,
+            BinOp::Add => 0,
+            BinOp::Sub => 1,
+            BinOp::Mul => 2,
+            BinOp::Div => 3,
+            BinOp::Rem => 4,
+            BinOp::Eq => 5,
+            BinOp::Ne => 6,
+            BinOp::Lt => 7,
+            BinOp::Le => 8,
+            BinOp::Gt => 9,
+            BinOp::Ge => 10,
+            BinOp::And => 11,
+            BinOp::Or => 12,
+            BinOp::Pow => 13,
+            BinOp::BitAnd => 14,
+            BinOp::BitOr => 15,
+            BinOp::BitXor => 16,
+            BinOp::Shl => 17,
+            BinOp::Shr => 18,
         }
 }
 
@@ -252,7 +252,7 @@ impl AnalogEmitter<'_, '_> {
                     None => self.load_sim_f64(SimField::TEMPERATURE),
                 };
                 let kb_over_q = self.cse_const(SimCtx::K_B_OVER_Q);
-                Ok(self.cse_op2(bin_tag(IrBinOp::Mul), temperature, kb_over_q, |b| {
+                Ok(self.cse_op2(bin_tag(BinOp::Mul), temperature, kb_over_q, |b| {
                     b.ins().fmul(temperature, kb_over_q)
                 }))
             }
@@ -386,13 +386,13 @@ impl AnalogEmitter<'_, '_> {
         Ok(self.builder.ins().select(cond, limited, vnew))
     }
 
-    fn emit_unary(&mut self, op: IrUnOp, x: &IrExpr) -> Result<Value, CodegenError> {
+    fn emit_unary(&mut self, op: UnOp, x: &IrExpr) -> Result<Value, CodegenError> {
         match op {
-            IrUnOp::Neg => {
+            UnOp::Neg => {
                 let v = self.emit(x)?;
                 Ok(self.cse_op1(T_NEG, v, |b| b.ins().fneg(v)))
             }
-            IrUnOp::Not => {
+            UnOp::Not => {
                 let v = self.emit(x)?;
                 let key = CseKey::Op1(T_NOT, v.as_u32());
                 if let Some(&hit) = self.cse.get(&key) {
@@ -404,14 +404,14 @@ impl AnalogEmitter<'_, '_> {
                 self.cse.insert(key, val);
                 Ok(val)
             }
-            IrUnOp::BitNot | IrUnOp::RedAnd | IrUnOp::RedOr | IrUnOp::RedXor => Err(
+            UnOp::BitNot | UnOp::RedAnd | UnOp::RedOr | UnOp::RedXor => Err(
                 CodegenError::unsupported(format!("unary {op:?} in an analog expression")),
             ),
         }
     }
 
-    fn emit_binary(&mut self, op: IrBinOp, a: &IrExpr, b: &IrExpr) -> Result<Value, CodegenError> {
-        if op == IrBinOp::Pow {
+    fn emit_binary(&mut self, op: BinOp, a: &IrExpr, b: &IrExpr) -> Result<Value, CodegenError> {
+        if op == BinOp::Pow {
             let lhs = self.emit(a)?;
             let rhs = self.emit(b)?;
             return self.call_math("pow", &[lhs, rhs]);
@@ -427,40 +427,40 @@ impl AnalogEmitter<'_, '_> {
             e.bool_to_f64(flag)
         };
         let val = match op {
-            IrBinOp::Add => self.builder.ins().fadd(lhs, rhs),
-            IrBinOp::Sub => self.builder.ins().fsub(lhs, rhs),
-            IrBinOp::Mul => self.builder.ins().fmul(lhs, rhs),
-            IrBinOp::Div => self.builder.ins().fdiv(lhs, rhs),
-            IrBinOp::Rem => {
+            BinOp::Add => self.builder.ins().fadd(lhs, rhs),
+            BinOp::Sub => self.builder.ins().fsub(lhs, rhs),
+            BinOp::Mul => self.builder.ins().fmul(lhs, rhs),
+            BinOp::Div => self.builder.ins().fdiv(lhs, rhs),
+            BinOp::Rem => {
                 // fmod: a − floor(a/b)·b
                 let quotient = self.builder.ins().fdiv(lhs, rhs);
                 let floored = self.call_math("floor", &[quotient])?;
                 let product = self.builder.ins().fmul(floored, rhs);
                 self.builder.ins().fsub(lhs, product)
             }
-            IrBinOp::Eq => cmp(self, FloatCC::Equal),
-            IrBinOp::Ne => cmp(self, FloatCC::NotEqual),
-            IrBinOp::Lt => cmp(self, FloatCC::LessThan),
-            IrBinOp::Le => cmp(self, FloatCC::LessThanOrEqual),
-            IrBinOp::Gt => cmp(self, FloatCC::GreaterThan),
-            IrBinOp::Ge => cmp(self, FloatCC::GreaterThanOrEqual),
-            IrBinOp::And | IrBinOp::Or => {
+            BinOp::Eq => cmp(self, FloatCC::Equal),
+            BinOp::Ne => cmp(self, FloatCC::NotEqual),
+            BinOp::Lt => cmp(self, FloatCC::LessThan),
+            BinOp::Le => cmp(self, FloatCC::LessThanOrEqual),
+            BinOp::Gt => cmp(self, FloatCC::GreaterThan),
+            BinOp::Ge => cmp(self, FloatCC::GreaterThanOrEqual),
+            BinOp::And | BinOp::Or => {
                 let zero = self.cse_const(0.0);
                 let a_true = self.builder.ins().fcmp(FloatCC::NotEqual, lhs, zero);
                 let b_true = self.builder.ins().fcmp(FloatCC::NotEqual, rhs, zero);
-                let combined = if op == IrBinOp::And {
+                let combined = if op == BinOp::And {
                     self.builder.ins().band(a_true, b_true)
                 } else {
                     self.builder.ins().bor(a_true, b_true)
                 };
                 self.bool_to_f64(combined)
             }
-            IrBinOp::BitAnd | IrBinOp::BitOr | IrBinOp::BitXor | IrBinOp::Shl | IrBinOp::Shr => {
+            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr => {
                 return Err(CodegenError::unsupported(format!(
                     "bitwise/shift {op:?} in an analog expression"
                 )));
             }
-            IrBinOp::Pow => unreachable!("handled above"),
+            BinOp::Pow => unreachable!("handled above"),
         };
         self.cse.insert(key, val);
         Ok(val)

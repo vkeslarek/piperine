@@ -80,7 +80,7 @@ pub enum EventSource {
 
 /// An analog event: a trigger plus a statement body.
 #[derive(Debug, Clone)]
-pub struct IrAnalogEvent {
+pub struct AnalogEvent {
     pub source: EventSource,
     pub body: Vec<IrStmt>,
 }
@@ -134,7 +134,7 @@ pub enum IrStmt {
     },
     /// `<-` — single-driver ideal source / short.
     Force { nature: NatureId, plus: NodeId, minus: NodeId, expr: IrExpr },
-    AnalogEvent(IrAnalogEvent),
+    AnalogEvent(AnalogEvent),
     // ── Digital and analog-sequential ──
     /// Combinational or register assignment (context decides, SPEC §9); in an
     /// analog body, a sequential variable binding.

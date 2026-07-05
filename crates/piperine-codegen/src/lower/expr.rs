@@ -37,7 +37,7 @@ pub enum SimQuery {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IrBinOp {
+pub enum BinOp {
     Add,
     Sub,
     Mul,
@@ -62,7 +62,7 @@ pub enum IrBinOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IrUnOp {
+pub enum UnOp {
     Neg,
     Not,
     BitNot,
@@ -100,8 +100,8 @@ pub enum IrExpr {
     // user functions (resolved to `FnId`).
     MathCall(String, Vec<IrExpr>),
     Call(FnId, Vec<IrExpr>),
-    Binary(IrBinOp, Box<IrExpr>, Box<IrExpr>),
-    Unary(IrUnOp, Box<IrExpr>),
+    Binary(BinOp, Box<IrExpr>, Box<IrExpr>),
+    Unary(UnOp, Box<IrExpr>),
     /// `cond ? a : b`.
     Select(Box<IrExpr>, Box<IrExpr>, Box<IrExpr>),
     // Vectors (buses).
@@ -113,7 +113,7 @@ pub enum IrExpr {
 
 impl IrExpr {
     /// Shorthand for a binary node.
-    pub fn binary(op: IrBinOp, lhs: IrExpr, rhs: IrExpr) -> IrExpr {
+    pub fn binary(op: BinOp, lhs: IrExpr, rhs: IrExpr) -> IrExpr {
         IrExpr::Binary(op, Box::new(lhs), Box::new(rhs))
     }
 
@@ -252,25 +252,25 @@ impl IrExpr {
             IrExpr::Param(id) => {
                 param(*id).ok_or_else(|| format!("parameter #{} has no value", id.0))
             }
-            IrExpr::Unary(IrUnOp::Neg, a) => Ok(-eval(a)?),
-            IrExpr::Unary(IrUnOp::Not, a) => Ok(f64::from(eval(a)? == 0.0)),
+            IrExpr::Unary(UnOp::Neg, a) => Ok(-eval(a)?),
+            IrExpr::Unary(UnOp::Not, a) => Ok(f64::from(eval(a)? == 0.0)),
             IrExpr::Binary(op, a, b) => {
                 let (a, b) = (eval(a)?, eval(b)?);
                 match op {
-                    IrBinOp::Add => Ok(a + b),
-                    IrBinOp::Sub => Ok(a - b),
-                    IrBinOp::Mul => Ok(a * b),
-                    IrBinOp::Div => Ok(a / b),
-                    IrBinOp::Rem => Ok(a % b),
-                    IrBinOp::Pow => Ok(a.powf(b)),
-                    IrBinOp::Eq => Ok(f64::from(a == b)),
-                    IrBinOp::Ne => Ok(f64::from(a != b)),
-                    IrBinOp::Lt => Ok(f64::from(a < b)),
-                    IrBinOp::Le => Ok(f64::from(a <= b)),
-                    IrBinOp::Gt => Ok(f64::from(a > b)),
-                    IrBinOp::Ge => Ok(f64::from(a >= b)),
-                    IrBinOp::And => Ok(f64::from(a != 0.0 && b != 0.0)),
-                    IrBinOp::Or => Ok(f64::from(a != 0.0 || b != 0.0)),
+                    BinOp::Add => Ok(a + b),
+                    BinOp::Sub => Ok(a - b),
+                    BinOp::Mul => Ok(a * b),
+                    BinOp::Div => Ok(a / b),
+                    BinOp::Rem => Ok(a % b),
+                    BinOp::Pow => Ok(a.powf(b)),
+                    BinOp::Eq => Ok(f64::from(a == b)),
+                    BinOp::Ne => Ok(f64::from(a != b)),
+                    BinOp::Lt => Ok(f64::from(a < b)),
+                    BinOp::Le => Ok(f64::from(a <= b)),
+                    BinOp::Gt => Ok(f64::from(a > b)),
+                    BinOp::Ge => Ok(f64::from(a >= b)),
+                    BinOp::And => Ok(f64::from(a != 0.0 && b != 0.0)),
+                    BinOp::Or => Ok(f64::from(a != 0.0 || b != 0.0)),
                     other => Err(format!("operator {other:?} is not const-evaluable")),
                 }
             }
