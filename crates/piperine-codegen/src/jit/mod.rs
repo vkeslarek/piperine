@@ -15,7 +15,7 @@
 pub mod analog;
 pub mod digital;
 pub mod flatten;
-pub use piperine_math as math;
+pub use piperine_lang::math;
 
 mod emit;
 

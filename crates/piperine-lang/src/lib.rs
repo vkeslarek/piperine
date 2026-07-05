@@ -49,7 +49,7 @@ pub mod pom;
 pub mod resolve;
 pub mod value;
 pub mod source_map;
-
+pub mod math;
 // ── POM types ────────────────────────────────────────────────────────────
 pub use pom::{
     ElabError,

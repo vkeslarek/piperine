@@ -17,7 +17,7 @@ mod validate;
 
 pub mod pom;
 
-pub use piperine_math as math;
+pub use piperine_lang::math;
 
 pub use expr::{Analysis, Axis, BinOp, IrExpr, UnOp, SimQuery};
 pub use stmt::{

@@ -5,7 +5,6 @@ edition.workspace = true
 
 [dependencies]
 thiserror = "2.0"
-piperine-math = { path = "../piperine-math" }
 num-complex.workspace = true
 miette = { version = "7.6.0", features = ["fancy"] }
 
