@@ -1,6 +1,7 @@
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Reverse;
 use crate::digital::{LogicValue, DigitalNet, DigitalEvent};
+use crate::digital::interface::{EvalCtx, QueueSink};
 use crate::core::device::Device;
 
 // ---------------------------------------------------------------------------
@@ -26,7 +27,7 @@ impl DigitalTopology {
         let mut output_to_dev: HashMap<DigitalNet, usize> = HashMap::new();
         for (i, dev) in devices.iter().enumerate() {
             if let Some(d) = dev.as_digital_ref() {
-                for &net in d.digital_output_nets() {
+                for &net in d.boundary().outputs {
                     output_to_dev.insert(net, i);
                 }
             }
@@ -36,7 +37,7 @@ impl DigitalTopology {
         let mut adj: Vec<Vec<usize>> = vec![vec![]; n];
         for (j, dev) in devices.iter().enumerate() {
             if let Some(d) = dev.as_digital_ref() {
-                for &net in d.digital_input_nets() {
+                for &net in d.boundary().inputs {
                     if let Some(&i) = output_to_dev.get(&net) {
                         if i != j && !adj[i].contains(&j) {
                             adj[i].push(j);
@@ -136,6 +137,7 @@ impl DigitalState {
         let epsilon = 1e-12;
         let max_delta_cycles = 1000;
         let mut delta_count = 0;
+        let mut seq: u64 = 0;
 
         loop {
             let mut events_now = Vec::new();
@@ -161,18 +163,20 @@ impl DigitalState {
             // device's register writes from the pre-settle net snapshot
             // before any device's comb output is recomputed, so a register
             // chain samples the same pre-edge values instead of racing.
+            let ctx = EvalCtx { time: t, nets: &self.nets, analog: &[] };
             let mut fired = vec![false; devices.len()];
             for (i, device) in devices.iter_mut().enumerate() {
                 if let Some(d) = device.as_digital() {
-                    if d.has_digital_input_on(&changed) {
-                        fired[i] = d.digital_seq_phase(t, &self.nets, ndarray::ArrayView1::from(&[]));
+                    if d.has_input_on(&changed) {
+                        fired[i] = d.seq_phase(&ctx);
                     }
                 }
             }
             for (i, device) in devices.iter_mut().enumerate() {
                 if let Some(d) = device.as_digital() {
-                    if fired[i] || d.has_digital_input_on(&changed) {
-                        d.digital_comb_phase(t, &self.nets, ndarray::ArrayView1::from(&[]), &mut self.event_queue);
+                    if fired[i] || d.has_input_on(&changed) {
+                        let mut sink = QueueSink::new(&mut self.event_queue, t, i, &mut seq);
+                        d.comb_phase(&ctx, &mut sink);
                     }
                 }
             }
@@ -226,12 +230,16 @@ impl DigitalState {
         // flop's new Q would already be visible to the second flop's D
         // sampling in the same delta cycle (SPEC §9 requires non-blocking
         // semantics: all registers read pre-edge values).
+        let mut seq: u64 = 0;
         let mut seq_fired = vec![false; devices.len()];
-        for &dev_idx in &topology.topo_order {
-            let device = &mut devices[dev_idx];
-            if let Some(d) = device.as_digital() {
-                if d.has_digital_input_on(&all_changed) {
-                    seq_fired[dev_idx] = d.digital_seq_phase(t, &self.nets, ndarray::ArrayView1::from(&[]));
+        {
+            let ctx = EvalCtx { time: t, nets: &self.nets, analog: &[] };
+            for &dev_idx in &topology.topo_order {
+                let device = &mut devices[dev_idx];
+                if let Some(d) = device.as_digital() {
+                    if d.has_input_on(&all_changed) {
+                        seq_fired[dev_idx] = d.seq_phase(&ctx);
+                    }
                 }
             }
         }
@@ -253,15 +261,21 @@ impl DigitalState {
                 let device = &mut devices[dev_idx];
 
                 if let Some(d) = device.as_digital() {
-                    if !d.has_digital_input_on(&all_changed) && !seq_fired[dev_idx] {
+                    if !d.has_input_on(&all_changed) && !seq_fired[dev_idx] {
                         continue;
                     }
 
                     prev_outs.clear();
-                    prev_outs.extend(d.digital_output_nets().iter().map(|n| self.nets[n.0]));
+                    prev_outs.extend(d.boundary().outputs.iter().map(|n| self.nets[n.0]));
 
                     local_q.clear();
-                    d.digital_comb_phase(t, &self.nets, ndarray::ArrayView1::from(&[]), &mut local_q);
+                    {
+                        // Scope ctx so the immutable borrow of self.nets ends
+                        // before we mutate it below when draining local_q.
+                        let ctx = EvalCtx { time: t, nets: &self.nets, analog: &[] };
+                        let mut sink = QueueSink::new(&mut local_q, t, dev_idx, &mut seq);
+                        d.comb_phase(&ctx, &mut sink);
+                    }
 
                     while let Some(Reverse(ev)) = local_q.pop() {
                         if ev.time <= t + epsilon {
@@ -274,10 +288,11 @@ impl DigitalState {
                         }
                     }
 
-                    let outputs_changed = if d.digital_output_nets().is_empty() {
+                    let outputs = d.boundary().outputs;
+                    let outputs_changed = if outputs.is_empty() {
                         true
                     } else {
-                        d.digital_output_nets().iter().enumerate().any(|(i, n)| {
+                        outputs.iter().enumerate().any(|(i, n)| {
                             prev_outs.get(i).is_some_and(|&old| self.nets[n.0] != old)
                         })
                     };

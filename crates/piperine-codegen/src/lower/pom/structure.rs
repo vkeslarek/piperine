@@ -148,6 +148,21 @@ pub(crate) fn value_to_ir(v: &piperine_lang::value::Value) -> IrExpr {
     }
 }
 
+/// Convert a POM runtime `Value` to a POM AST `Expr` for the digital path
+/// (register power-on inits). The digital `Builder` evaluates these via
+/// `Codegen`-trait dispatch, so no `IrExpr` is involved.
+pub(crate) fn value_to_pom_expr(v: &piperine_lang::value::Value) -> piperine_lang::parse::ast::Expr {
+    use piperine_lang::parse::ast::{Expr, Literal};
+    use piperine_lang::value::Value;
+    match v {
+        Value::Real(f) => Expr::Literal(Literal::Real(*f)),
+        Value::Int(i) => Expr::Literal(Literal::Int(*i as u64)),
+        Value::Nat(n) => Expr::Literal(Literal::Int(*n)),
+        Value::Bool(b) => Expr::Literal(Literal::Bool(*b)),
+        _ => Expr::Literal(Literal::Real(0.0)),
+    }
+}
+
 pub(crate) fn convert_fn(
     f: &PomFunction,
     prog: &Design,

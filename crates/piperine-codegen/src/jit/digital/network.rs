@@ -5,7 +5,7 @@
 //! every member's `comb` body in rank order over shared arrays. One native
 //! call settles an acyclic cone — no per-device dispatch, no event round-trips
 //! between gates that are just wires. The cone presents to the scheduler as one
-//! [`DigitalEventModel`]: it consumes the boundary input nets and emits events
+//! [`DigitalDevice`]: it consumes the boundary input nets and emits events
 //! only for the driven nets that changed.
 //!
 //! Scope (first cut): pure combinational members — no clocked blocks, no analog
@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use piperine_solver::digital::{DigitalNet, LogicValue};
-use piperine_solver::digital::interface::{DigitalEventModel, DigitalPorts, EvalCtx, EventSink};
+use piperine_solver::digital::interface::{DigitalDevice, DigitalPorts, EvalCtx, EventSink};
 
 use crate::ir::LoweredBody;
 use crate::jit::digital::compile::{NetworkComb, NetworkMemberSpec};
@@ -55,7 +55,7 @@ pub struct NetworkPorts {
     pub outputs: Vec<DigitalNet>,
 }
 
-/// A compiled, runnable fused combinational network. One [`DigitalEventModel`]
+/// A compiled, runnable fused combinational network. One [`DigitalDevice`]
 /// over the whole cone.
 pub struct DigitalNetwork {
     comb: NetworkComb,
@@ -178,7 +178,7 @@ impl DigitalNetwork {
     }
 }
 
-impl DigitalEventModel for DigitalNetwork {
+impl DigitalDevice for DigitalNetwork {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &self.ports.inputs, outputs: &self.ports.outputs }
     }
@@ -191,7 +191,7 @@ impl DigitalEventModel for DigitalNetwork {
         }
     }
 
-    fn evaluate(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
         self.sim.abstime = ctx.time;
         // Sync every cone net from the scheduler (inputs come from outside;
         // driven nets reflect our last emission, kept consistent for readback).

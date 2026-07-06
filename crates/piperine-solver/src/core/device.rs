@@ -1,5 +1,4 @@
-use ndarray::ArrayView1;
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 
 use num_complex::Complex64;
@@ -10,7 +9,7 @@ use crate::analysis::dc::DcAnalysisState;
 use crate::analysis::noise::Noise;
 use crate::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
 use crate::analog::AnalogReference;
-use crate::digital::{DigitalEvent, DigitalNet, LogicValue};
+use crate::digital::{DigitalEvent, LogicValue};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::linear::Stamp;
 use crate::solver::Context;
@@ -53,44 +52,7 @@ pub trait AnalogDevice: Send + Sync {
     ) -> Vec<Noise> { Vec::new() }
 }
 
-/// The purely digital contract.
-pub trait DigitalDevice: Send + Sync {
-    // ── Digital lifecycle ─────────────────────────────────────────────────────
-    fn digital_init(&mut self, _event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>) {}
-    fn digital_state_size(&self) -> usize { 0 }
-
-    // ── Digital topology ──────────────────────────────────────────────────────
-    fn digital_input_nets(&self) -> &[DigitalNet] { &[] }
-    fn digital_output_nets(&self) -> &[DigitalNet] { &[] }
-
-    fn has_digital_input_on(&self, changed: &HashSet<DigitalNet>) -> bool {
-        self.digital_input_nets().iter().any(|n| changed.contains(n))
-    }
-
-    
-
-    fn eval_discrete(
-        &mut self,
-        _t: f64,
-        _nets: &[LogicValue],
-        _analog_voltages: ArrayView1<f64>,
-        _event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
-    ) {}
-
-    fn digital_seq_phase(&mut self, _t: f64, _nets: &[LogicValue], _analog_voltages: ArrayView1<f64>) -> bool {
-        false
-    }
-
-    fn digital_comb_phase(
-        &mut self,
-        t: f64,
-        nets: &[LogicValue],
-        analog_voltages: ArrayView1<f64>,
-        event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
-    ) {
-        self.eval_discrete(t, nets, analog_voltages, event_queue);
-    }
-}
+pub use crate::digital::interface::DigitalDevice;
 
 /// Unified simulation device — acts as a downcaster to domain-specific logic.
 ///

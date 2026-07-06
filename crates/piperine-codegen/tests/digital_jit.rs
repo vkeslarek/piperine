@@ -1,13 +1,16 @@
-//! Digital JIT tests: hand-built IR digital bodies compiled to native
+//! Digital JIT tests: hand-built POM-Stmt digital bodies compiled to native
 //! kernels and driven through the event-driven device wrapper.
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
+use piperine_lang::parse::ast::{
+    BindOp, Block, EventSpec, Expr, Literal, Pattern, Stmt, StmtMatchArm, UnaryOp,
+};
+
 use piperine_codegen::device::DigitalInstance;
 use piperine_codegen::ir::*;
 use piperine_codegen::DigitalKernel;
-use piperine_codegen::ir::DigitalEvent as IrEvent;
 use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
 
 /// `inverter`: `y = ~a` (combinational).
@@ -21,9 +24,10 @@ fn inverter() -> LoweredBody {
         inputs: vec![a],
         outputs: vec![y],
         regs: vec![],
-        stmts: vec![IrStmt::Assign {
-            lval: Lval::Net(y),
-            expr: IrExpr::Unary(UnOp::Not, Box::new(IrExpr::Net(a))),
+        stmts: vec![Stmt::Bind {
+            dest: Expr::Ident("y".into()),
+            op: BindOp::Assign,
+            src: Expr::Unary(UnaryOp::Not, Box::new(Expr::Ident("a".into()))),
         }],
     });
     m
@@ -44,12 +48,28 @@ fn dff() -> LoweredBody {
         outputs: vec![q],
         regs: vec![r],
         stmts: vec![
-            IrStmt::VarDecl { var: r, init: Some(IrExpr::Quad(0)) },
-            IrStmt::ClockedBlock {
-                event: IrEvent::Posedge(IrExpr::Net(clk)),
-                body: vec![IrStmt::Assign { lval: Lval::Var(r), expr: IrExpr::Net(d) }],
+            Stmt::VarDecl {
+                name: "r".into(),
+                ty: None,
+                default: Some(Expr::Literal(Literal::Quad("0".into()))),
             },
-            IrStmt::Assign { lval: Lval::Net(q), expr: IrExpr::Var(r) },
+            Stmt::Event {
+                spec: EventSpec::Named { name: "posedge".into(), arg: Expr::Ident("clk".into()) },
+                guard: None,
+                body: Block {
+                    stmts: vec![Stmt::Bind {
+                        dest: Expr::Ident("r".into()),
+                        op: BindOp::Assign,
+                        src: Expr::Ident("d".into()),
+                    }],
+                    expr: None,
+                },
+            },
+            Stmt::Bind {
+                dest: Expr::Ident("q".into()),
+                op: BindOp::Assign,
+                src: Expr::Ident("r".into()),
+            },
         ],
     });
     m
@@ -167,16 +187,40 @@ fn pipeline_reads_pre_edge_values() {
         outputs: vec![q],
         regs: vec![r1, r2],
         stmts: vec![
-            IrStmt::VarDecl { var: r1, init: Some(IrExpr::Quad(0)) },
-            IrStmt::VarDecl { var: r2, init: Some(IrExpr::Quad(0)) },
-            IrStmt::ClockedBlock {
-                event: IrEvent::Posedge(IrExpr::Net(clk)),
-                body: vec![
-                    IrStmt::Assign { lval: Lval::Var(r2), expr: IrExpr::Var(r1) },
-                    IrStmt::Assign { lval: Lval::Var(r1), expr: IrExpr::Net(d) },
-                ],
+            Stmt::VarDecl {
+                name: "r1".into(),
+                ty: None,
+                default: Some(Expr::Literal(Literal::Quad("0".into()))),
             },
-            IrStmt::Assign { lval: Lval::Net(q), expr: IrExpr::Var(r2) },
+            Stmt::VarDecl {
+                name: "r2".into(),
+                ty: None,
+                default: Some(Expr::Literal(Literal::Quad("0".into()))),
+            },
+            Stmt::Event {
+                spec: EventSpec::Named { name: "posedge".into(), arg: Expr::Ident("clk".into()) },
+                guard: None,
+                body: Block {
+                    stmts: vec![
+                        Stmt::Bind {
+                            dest: Expr::Ident("r2".into()),
+                            op: BindOp::Assign,
+                            src: Expr::Ident("r1".into()),
+                        },
+                        Stmt::Bind {
+                            dest: Expr::Ident("r1".into()),
+                            op: BindOp::Assign,
+                            src: Expr::Ident("d".into()),
+                        },
+                    ],
+                    expr: None,
+                },
+            },
+            Stmt::Bind {
+                dest: Expr::Ident("q".into()),
+                op: BindOp::Assign,
+                src: Expr::Ident("r2".into()),
+            },
         ],
     });
     let kernel = std::sync::Arc::new(DigitalKernel::compile(&m).expect("compile pipe2"));
@@ -216,19 +260,43 @@ fn match_selects_arm_and_default() {
         inputs: vec![a],
         outputs: vec![y],
         regs: vec![],
-        stmts: vec![IrStmt::Match {
-            scrutinee: IrExpr::Net(a),
+        stmts: vec![Stmt::Match {
+            expr: Expr::Ident("a".into()),
             arms: vec![
-                (
-                    Pattern::BitPattern(vec![Trit::Zero]),
-                    vec![IrStmt::Assign { lval: Lval::Net(y), expr: IrExpr::Quad(1) }],
-                ),
-                (
-                    Pattern::BitPattern(vec![Trit::One]),
-                    vec![IrStmt::Assign { lval: Lval::Net(y), expr: IrExpr::Quad(0) }],
-                ),
+                StmtMatchArm {
+                    pat: Pattern::BitPattern("0".into()),
+                    body: Block {
+                        stmts: vec![Stmt::Bind {
+                            dest: Expr::Ident("y".into()),
+                            op: BindOp::Assign,
+                            src: Expr::Literal(Literal::Quad("1".into())),
+                        }],
+                        expr: None,
+                    },
+                },
+                StmtMatchArm {
+                    pat: Pattern::BitPattern("1".into()),
+                    body: Block {
+                        stmts: vec![Stmt::Bind {
+                            dest: Expr::Ident("y".into()),
+                            op: BindOp::Assign,
+                            src: Expr::Literal(Literal::Quad("0".into())),
+                        }],
+                        expr: None,
+                    },
+                },
+                StmtMatchArm {
+                    pat: Pattern::Wildcard,
+                    body: Block {
+                        stmts: vec![Stmt::Bind {
+                            dest: Expr::Ident("y".into()),
+                            op: BindOp::Assign,
+                            src: Expr::Literal(Literal::Quad("x".into())),
+                        }],
+                        expr: None,
+                    },
+                },
             ],
-            default: vec![IrStmt::Assign { lval: Lval::Net(y), expr: IrExpr::Quad(2) }],
         }],
     });
     let kernel = std::sync::Arc::new(DigitalKernel::compile(&m).expect("compile mux_match"));

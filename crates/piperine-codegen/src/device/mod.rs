@@ -24,7 +24,8 @@ use piperine_solver::analysis::dc::{DcAnalysisResult, DcAnalysisState};
 use piperine_solver::analysis::noise::Noise;
 use piperine_solver::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
 use piperine_solver::core::device::{AnalogDevice, Device, DigitalDevice};
-use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
+use piperine_solver::digital::DigitalEvent;
+use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};
 use piperine_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_solver::math::linear::Stamp;
 use piperine_solver::solver::Context;
@@ -218,7 +219,10 @@ impl AnalogDevice for PiperineDevice {
         }
         
         if self.digital.as_ref().map_or(false, |d| d.kernel().layout().num_analog() > 0) {
-            self.eval_discrete(ctx.time, nets, ndarray::ArrayView1::from(&[]), event_queue);
+            let eval_ctx = EvalCtx { time: ctx.time, nets, analog: &[] };
+            let mut seq = 0u64;
+            let mut sink = QueueSink::new(event_queue, ctx.time, 0, &mut seq);
+            self.evaluate(&eval_ctx, &mut sink);
         }
     }
 
@@ -235,80 +239,63 @@ impl AnalogDevice for PiperineDevice {
 }
 
 impl DigitalDevice for PiperineDevice {
-    fn digital_input_nets(&self) -> &[DigitalNet] {
-        self.digital
-            .as_ref()
-            .map_or(&[], DigitalInstance::input_nets)
+    fn boundary(&self) -> DigitalPorts<'_> {
+        match &self.digital {
+            Some(d) => DigitalPorts {
+                inputs: d.input_nets(),
+                outputs: d.output_nets(),
+            },
+            None => DigitalPorts { inputs: &[], outputs: &[] },
+        }
     }
 
-    fn digital_output_nets(&self) -> &[DigitalNet] {
-        self.digital
-            .as_ref()
-            .map_or(&[], DigitalInstance::output_nets)
-    }
-
-    fn digital_init(&mut self, event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+    fn init(&mut self, sink: &mut dyn EventSink) {
         if let Some(digital) = &mut self.digital {
-            digital.init(event_queue);
+            let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
+            digital.init(&mut q);
+            for Reverse(ev) in q.into_sorted_vec() {
+                sink.emit(ev.net, ev.value, ev.time);
+            }
         }
     }
 
-    fn eval_discrete(
-        &mut self,
-        t: f64,
-        nets: &[LogicValue],
-        analog_voltages: ndarray::ArrayView1<f64>,
-        event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
-    ) {
-        let Some(digital) = &mut self.digital else { return };
-        let av = Self::analog_voltages_for(
-            digital.kernel().layout(),
-            self.analog.as_ref(),
-            &self.analog_terminal_node_ids,
-            &self.last_analog_voltages,
-            analog_voltages.as_slice().unwrap(),
-        );
-        digital.eval(t, nets, &av, event_queue);
-
-        if let Some(analog) = &mut self.analog {
-            let vars = digital.export_vars();
-            analog.sync_vars(&vars);
-        }
-    }
-
-    fn digital_seq_phase(&mut self, t: f64, nets: &[LogicValue], analog_voltages: ndarray::ArrayView1<f64>) -> bool {
+    fn seq_phase(&mut self, ctx: &EvalCtx<'_>) -> bool {
         let Some(digital) = &mut self.digital else { return false };
         let av = Self::analog_voltages_for(
             digital.kernel().layout(),
             self.analog.as_ref(),
             &self.analog_terminal_node_ids,
             &self.last_analog_voltages,
-            analog_voltages.as_slice().unwrap(),
+            ctx.analog,
         );
-        digital.eval_seq_phase(t, nets, &av)
+        digital.eval_seq_phase(ctx.time, ctx.nets, &av)
     }
 
-    fn digital_comb_phase(
-        &mut self,
-        t: f64,
-        nets: &[LogicValue],
-        analog_voltages: ndarray::ArrayView1<f64>,
-        event_queue: &mut std::collections::BinaryHeap<std::cmp::Reverse<piperine_solver::digital::DigitalEvent>>,
-    ) {
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
         let Some(digital) = &mut self.digital else { return };
         let av = Self::analog_voltages_for(
             digital.kernel().layout(),
             self.analog.as_ref(),
             &self.analog_terminal_node_ids,
             &self.last_analog_voltages,
-            analog_voltages.as_slice().unwrap(),
+            ctx.analog,
         );
-        digital.eval_comb_phase(t, nets, &av, event_queue);
+        let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
+        digital.eval_comb_phase(ctx.time, ctx.nets, &av, &mut q);
+        for Reverse(ev) in q.into_sorted_vec() {
+            sink.emit(ev.net, ev.value, ev.time - ctx.time);
+        }
 
         if let Some(analog) = &mut self.analog {
             let vars = digital.export_vars();
             analog.sync_vars(&vars);
         }
+    }
+
+    fn samples_analog(&self) -> bool {
+        self.digital
+            .as_ref()
+            .map_or(false, |d| d.kernel().layout().num_analog() > 0)
     }
 }
 

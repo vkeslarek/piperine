@@ -25,18 +25,18 @@
 
 use std::collections::HashMap;
 
-use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{types, AbiParam, FuncRef, InstBuilder, MemFlags, Signature, Value};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
+use piperine_lang::parse::ast::{EventSpec, Expr, Stmt};
+
+use crate::codegen::{Builder, Codegen, DigTy, Resolver};
 use crate::ir::{
-    BinOp, DigitalBody, IrExpr, LoweredBody, IrStmt, Type, UnOp, Lval,
-    NodeId, Pattern, SimQuery, Trit, VarId,
+    DigitalBody, EdgeKind, LoweredBody, ParamId,
 };
 
-use super::super::flatten::Inliner;
 use super::super::{math, CodegenError};
 
 use super::abi::*;
@@ -49,6 +49,7 @@ pub(crate) struct DigitalCompiler<'m> {
     jit: JITModule,
     math_ids: HashMap<&'static str, FuncId>,
     fb_ctx: FunctionBuilderContext,
+    resolver: Resolver,
 }
 
 impl<'m> DigitalCompiler<'m> {
@@ -84,41 +85,60 @@ impl<'m> DigitalCompiler<'m> {
             jit,
             math_ids,
             fb_ctx: FunctionBuilderContext::new(),
+            resolver: Resolver::from_symbols(&module.symbols),
         })
     }
 
     pub(crate) fn compile(mut self) -> Result<DigitalKernel, CodegenError> {
         // Split the body: combinational statements vs clocked blocks, and
         // collect register power-on inits.
-        let mut comb_stmts: Vec<&IrStmt> = Vec::new();
-        let mut clocked: Vec<(&crate::ir::DigitalEvent, &[IrStmt])> = Vec::new();
+        let mut comb_stmts: Vec<&Stmt> = Vec::new();
+        let mut clocked: Vec<(&EventSpec, &[Stmt])> = Vec::new();
         let mut reg_inits = Vec::new();
         for stmt in &self.body.stmts {
             match stmt {
-                IrStmt::ClockedBlock { event, body } => clocked.push((event, body)),
-                IrStmt::VarDecl { var, init: Some(init) } if self.body.regs.contains(var) => {
-                    reg_inits.push(RegInit { var: *var, init: init.clone() });
+                Stmt::Event { spec, guard: _, body } => clocked.push((spec, &body.stmts)),
+                Stmt::VarDecl { name, default: Some(init), .. } => {
+                    // Register power-on init: the var must be in `regs`.
+                    if let Some(&var) = self.resolver.vars.get(name) {
+                        if self.body.regs.contains(&var) {
+                            reg_inits.push(RegInit { var, init: init.clone() });
+                            continue;
+                        }
+                    }
+                    comb_stmts.push(stmt);
                 }
                 other => comb_stmts.push(other),
             }
         }
 
-        // Number the atomic watch terms across all clocked blocks.
-        let mut watch_terms: Vec<IrExpr> = Vec::new();
+        // Number the atomic watch terms across all clocked blocks. Each
+        // `EventSpec::Named { name, arg }` contributes one term: the `arg`
+        // expression, with the edge polarity derived from `name`
+        // ("posedge"/"negedge"/"change").
+        let mut watch_terms: Vec<Expr> = Vec::new();
         let mut clocked_specs = Vec::new();
-        for (event, _) in &clocked {
+        for (spec, _) in &clocked {
             let mut terms = Vec::new();
-            for (expr, edge) in event.terms() {
-                let index = match watch_terms.iter().position(|t| t == expr) {
+            let mut event_terms = Vec::new();
+            extract_event_terms(spec, &mut event_terms);
+            for (edge_name, arg) in event_terms {
+                let index = match watch_terms.iter().position(|t| exprs_equal(t, &arg)) {
                     Some(i) => i,
                     None => {
-                        watch_terms.push(expr.clone());
+                        watch_terms.push(arg.clone());
                         watch_terms.len() - 1
                     }
                 };
+                let edge = match edge_name.as_str() {
+                    "posedge" => EdgeKind::Rising,
+                    "negedge" => EdgeKind::Falling,
+                    "change" => EdgeKind::Any,
+                    _ => EdgeKind::Any,
+                };
                 terms.push((index, edge));
             }
-            clocked_specs.push(ClockedSpec { terms, is_initial: event.is_initial() });
+            clocked_specs.push(ClockedSpec { terms, is_initial: is_initial_spec(spec) });
         }
 
         // `comb` reads live variable values: after `seq` writes register
@@ -127,17 +147,17 @@ impl<'m> DigitalCompiler<'m> {
         // pre-edge values — register updates are non-blocking within the
         // block (SPEC §10.3: "within the block reads see the pre-edge
         // value, a chain of register writes is a pipeline").
-        let comb_id = self.compile_body_fn("comb", &comb_stmts, VarReads::Live, None)?;
+        let comb_id = self.compile_body_fn("comb", &comb_stmts, VarReads::Live)?;
         let seq_id = if clocked.is_empty() {
             None
         } else {
-            let stmts: Vec<&IrStmt> = self
+            let stmts: Vec<&Stmt> = self
                 .body
                 .stmts
                 .iter()
-                .filter(|s| matches!(s, IrStmt::ClockedBlock { .. }))
+                .filter(|s| matches!(s, Stmt::Event { .. }))
                 .collect();
-            Some(self.compile_body_fn("seq", &stmts, VarReads::PreEdge, None)?)
+            Some(self.compile_body_fn("seq", &stmts, VarReads::PreEdge)?)
         };
         let watch_id = if watch_terms.is_empty() {
             None
@@ -155,6 +175,14 @@ impl<'m> DigitalCompiler<'m> {
         let watch: Option<WatchFn> =
             watch_id.map(|id| unsafe { std::mem::transmute(self.jit.get_finalized_function(id)) });
 
+        // Build the param name → ParamId index for `RegInit.init` evaluation.
+        let param_index: HashMap<String, ParamId> = self
+            .module
+            .symbols
+            .params()
+            .map(|(id, p)| (p.name.clone(), id))
+            .collect();
+
         Ok(DigitalKernel {
             name: self.module.name.clone(),
             inputs: self.body.inputs.clone(),
@@ -163,6 +191,7 @@ impl<'m> DigitalCompiler<'m> {
             clocked_blocks: clocked_specs,
             num_watch_terms: watch_terms.len(),
             reg_inits,
+            param_index,
             comb,
             seq,
             watch,
@@ -174,18 +203,17 @@ impl<'m> DigitalCompiler<'m> {
     pub(crate) fn compile_body_fn(
         &mut self,
         name: &str,
-        stmts: &[&IrStmt],
+        stmts: &[&Stmt],
         reads: VarReads,
-        _unused: Option<()>,
     ) -> Result<FuncId, CodegenError> {
-        self.build_fn(name, false, |emitter| {
+        self.build_fn(name, false, |b| {
             let mut clocked_index = 0usize;
             for stmt in stmts {
-                if let IrStmt::ClockedBlock { body, .. } = stmt {
-                    emitter.emit_guarded_block(clocked_index, body)?;
+                if let Stmt::Event { body, .. } = stmt {
+                    b.emit_guarded_block(clocked_index, &body.stmts)?;
                     clocked_index += 1;
                 } else {
-                    emitter.emit_stmt(stmt)?;
+                    b.emit_stmt(stmt)?;
                 }
             }
             Ok(())
@@ -193,13 +221,13 @@ impl<'m> DigitalCompiler<'m> {
     }
 
     /// Compile the watch function: each term's quad value to `out[i]`.
-    pub(crate) fn compile_watch_fn(&mut self, name: &str, terms: &[IrExpr]) -> Result<FuncId, CodegenError> {
-        self.build_fn(name, true, |emitter| {
-            let out_ptr = emitter.watch_out.expect("watch fn has an out pointer");
+    pub(crate) fn compile_watch_fn(&mut self, name: &str, terms: &[Expr]) -> Result<FuncId, CodegenError> {
+        self.build_fn(name, true, |b| {
+            let out_ptr = b.watch_out.expect("watch fn has an out pointer");
             for (i, term) in terms.iter().enumerate() {
-                let value = emitter.emit_expr(term)?;
-                let quad = emitter.coerce(value, DigTy::Quad)?;
-                emitter.builder.ins().store(
+                let value = term.emit(b)?;
+                let quad = b.coerce(value, DigTy::Quad)?;
+                b.builder.ins().store(
                     MemFlags::trusted(),
                     quad.value,
                     out_ptr,
@@ -214,7 +242,7 @@ impl<'m> DigitalCompiler<'m> {
         &mut self,
         name: &str,
         with_out: bool,
-        body: impl FnOnce(&mut DigitalEmitter) -> Result<(), CodegenError>,
+        body: impl FnOnce(&mut Builder) -> Result<(), CodegenError>,
         reads: VarReads,
     ) -> Result<FuncId, CodegenError> {
         let ptr_ty = self.jit.target_config().pointer_type();
@@ -265,16 +293,17 @@ impl<'m> DigitalCompiler<'m> {
             analog_voltages: load_field(&mut builder, AbiField::AnalogVoltages),
         };
 
-        let mut emitter = DigitalEmitter {
+        let mut b = Builder {
             builder: &mut builder,
             module: self.module,
+            resolver: &self.resolver,
             layout: &self.layout,
             pointers,
             reads,
             math: &math,
             watch_out,
         };
-        body(&mut emitter)?;
+        body(&mut b)?;
 
         builder.ins().return_(&[]);
         builder.finalize();
@@ -286,779 +315,88 @@ impl<'m> DigitalCompiler<'m> {
     }
 }
 
-// ─── Emitter ──────────────────────────────────────────────────────────────────
+// ─── Event-spec helpers ───────────────────────────────────────────────────────
+
+/// Walk an `EventSpec` and collect `(edge_name, arg)` pairs for each atomic
+/// `Named { name, arg }` term. `Initial`/`Final` contribute no terms.
+fn extract_event_terms(spec: &EventSpec, terms: &mut Vec<(String, Expr)>) {
+    match spec {
+        EventSpec::Named { name, arg } => terms.push((name.clone(), arg.clone())),
+        EventSpec::Initial | EventSpec::Final => {}
+        EventSpec::Or(specs) => {
+            for s in specs {
+                extract_event_terms(s, terms);
+            }
+        }
+    }
+}
+
+/// `true` if this spec (or any sub-spec in an `Or`) is `Initial`.
+fn is_initial_spec(spec: &EventSpec) -> bool {
+    match spec {
+        EventSpec::Initial => true,
+        EventSpec::Or(specs) => specs.iter().any(is_initial_spec),
+        _ => false,
+    }
+}
+
+/// Structural equality for `Expr` (which doesn't derive `PartialEq`).
+/// Used to deduplicate watch terms across clocked blocks.
+fn exprs_equal(a: &Expr, b: &Expr) -> bool {
+    use piperine_lang::parse::ast::Literal;
+    match (a, b) {
+        (Expr::Literal(la), Expr::Literal(lb)) => match (la, lb) {
+            (Literal::Real(x), Literal::Real(y)) => x == y,
+            (Literal::Int(x), Literal::Int(y)) => x == y,
+            (Literal::Bool(x), Literal::Bool(y)) => x == y,
+            (Literal::Quad(x), Literal::Quad(y)) => x == y,
+            (Literal::String(x), Literal::String(y)) => x == y,
+            (Literal::None, Literal::None) => true,
+            _ => false,
+        },
+        (Expr::Ident(x), Expr::Ident(y)) => x == y,
+        (Expr::Path(x), Expr::Path(y)) => x.segments == y.segments,
+        (Expr::Unary(op_a, x), Expr::Unary(op_b, y)) => op_a == op_b && exprs_equal(x, y),
+        (Expr::Binary(la, op_a, ra), Expr::Binary(lb, op_b, rb)) => {
+            op_a == op_b && exprs_equal(la, lb) && exprs_equal(ra, rb)
+        }
+        (Expr::Call(fa, aa), Expr::Call(fb, ab)) => {
+            exprs_equal(fa, fb) && aa.len() == ab.len()
+                && aa.iter().zip(ab).all(|(x, y)| exprs_equal(x, y))
+        }
+        (Expr::SysCall(na, aa), Expr::SysCall(nb, ab)) => {
+            na == nb && aa.len() == ab.len()
+                && aa.iter().zip(ab).all(|(x, y)| exprs_equal(x, y))
+        }
+        (Expr::Cast(ta, xa), Expr::Cast(tb, xb)) => ta == tb && exprs_equal(xa, xb),
+        (Expr::Field(ba, fa), Expr::Field(bb, fb)) => exprs_equal(ba, bb) && fa == fb,
+        (Expr::Index(ba, ia), Expr::Index(bb, ib)) => exprs_equal(ba, bb) && exprs_equal(ia, ib),
+        _ => false,
+    }
+}
+
+// ─── ABI helpers (shared with the Builder) ────────────────────────────────────
 
 /// Whether variable reads see the live banks (comb) or the pre-edge copies
 /// (seq register semantics).
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum VarReads {
+pub enum VarReads {
     Live,
     PreEdge,
 }
 
 /// Loaded ABI pointer table.
-struct Pointers {
-    inputs: Value,
-    outputs: Value,
-    vars_int_old: Value,
-    vars_real_old: Value,
-    vars_int: Value,
-    vars_real: Value,
-    params: Value,
-    fired: Value,
-    sim: Value,
-    analog_voltages: Value,
-}
-
-/// A value plus its digital type.
-#[derive(Clone, Copy)]
-struct Typed {
-    value: Value,
-    ty: DigTy,
-}
-
-impl Typed {
-    fn real(value: Value) -> Self {
-        Self { value, ty: DigTy::Real }
-    }
-
-    fn int(value: Value) -> Self {
-        Self { value, ty: DigTy::Int }
-    }
-
-    fn quad(value: Value) -> Self {
-        Self { value, ty: DigTy::Quad }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum DigTy {
-    /// Two-state integer/boolean (`i64`).
-    Int,
-    /// `f64`.
-    Real,
-    /// Four-state logic in `i64`: 0, 1, 2 = X, 3 = Z.
-    Quad,
-}
-
-struct DigitalEmitter<'a, 'f, 'm> {
-    builder: &'a mut FunctionBuilder<'f>,
-    module: &'m LoweredBody,
-    layout: &'a DigitalLayout,
-    pointers: Pointers,
-    reads: VarReads,
-    math: &'a HashMap<&'static str, FuncRef>,
-    watch_out: Option<Value>,
-}
-
-impl DigitalEmitter<'_, '_, '_> {
-    // ── Statements ──
-
-    fn emit_stmt(&mut self, stmt: &IrStmt) -> Result<(), CodegenError> {
-        match stmt {
-            IrStmt::Assign { lval, expr } => self.emit_assign(lval, expr),
-            IrStmt::VarDecl { var, init } => match init {
-                Some(init) => self.emit_assign(&Lval::Var(*var), init),
-                None => Ok(()),
-            },
-            IrStmt::If { cond, then_, else_ } => {
-                let cond = self.emit_expr(cond)?;
-                let flag = self.truthy(cond)?;
-                self.emit_branch(flag, then_, else_)
-            }
-            IrStmt::Match { scrutinee, arms, default } => {
-                let scrutinee = self.emit_expr(scrutinee)?;
-                self.emit_match(scrutinee, arms, default)
-            }
-            IrStmt::Diagnostic { .. } => Ok(()), // collected, not executed (SPEC §12)
-            IrStmt::ClockedBlock { .. } => Err(CodegenError::Invalid(
-                "nested clocked block — clocked blocks must be top-level".into(),
-            )),
-            other => Err(CodegenError::unsupported(format!(
-                "statement {other:?} in a digital body"
-            ))),
-        }
-    }
-
-    /// `if fired[index] { body }` around a clocked block's statements.
-    fn emit_guarded_block(&mut self, index: usize, body: &[IrStmt]) -> Result<(), CodegenError> {
-        let fired = self.builder.ins().load(
-            types::I64,
-            MemFlags::trusted(),
-            self.pointers.fired,
-            (index * 8) as i32,
-        );
-        let zero = self.builder.ins().iconst(types::I64, 0);
-        let flag = self.builder.ins().icmp(IntCC::NotEqual, fired, zero);
-        self.emit_branch(flag, body, &[])
-    }
-
-    /// Structured two-way branch over statement bodies.
-    fn emit_branch(
-        &mut self,
-        flag: Value,
-        then_: &[IrStmt],
-        else_: &[IrStmt],
-    ) -> Result<(), CodegenError> {
-        let then_block = self.builder.create_block();
-        let else_block = self.builder.create_block();
-        let merge_block = self.builder.create_block();
-
-        self.builder.ins().brif(flag, then_block, &[], else_block, &[]);
-
-        self.builder.switch_to_block(then_block);
-        self.builder.seal_block(then_block);
-        for stmt in then_ {
-            self.emit_stmt(stmt)?;
-        }
-        self.builder.ins().jump(merge_block, &[]);
-
-        self.builder.switch_to_block(else_block);
-        self.builder.seal_block(else_block);
-        for stmt in else_ {
-            self.emit_stmt(stmt)?;
-        }
-        self.builder.ins().jump(merge_block, &[]);
-
-        self.builder.switch_to_block(merge_block);
-        self.builder.seal_block(merge_block);
-        Ok(())
-    }
-
-    fn emit_match(
-        &mut self,
-        scrutinee: Typed,
-        arms: &[(Pattern, Vec<IrStmt>)],
-        default: &[IrStmt],
-    ) -> Result<(), CodegenError> {
-        match arms {
-            [] => {
-                for stmt in default {
-                    self.emit_stmt(stmt)?;
-                }
-                Ok(())
-            }
-            [(pattern, body), rest @ ..] => {
-                let flag = self.pattern_flag(scrutinee, pattern)?;
-                let then_block = self.builder.create_block();
-                let else_block = self.builder.create_block();
-                let merge_block = self.builder.create_block();
-                self.builder.ins().brif(flag, then_block, &[], else_block, &[]);
-
-                self.builder.switch_to_block(then_block);
-                self.builder.seal_block(then_block);
-                for stmt in body {
-                    self.emit_stmt(stmt)?;
-                }
-                self.builder.ins().jump(merge_block, &[]);
-
-                self.builder.switch_to_block(else_block);
-                self.builder.seal_block(else_block);
-                self.emit_match(scrutinee, rest, default)?;
-                self.builder.ins().jump(merge_block, &[]);
-
-                self.builder.switch_to_block(merge_block);
-                self.builder.seal_block(merge_block);
-                Ok(())
-            }
-        }
-    }
-
-    /// The i1 flag for "scrutinee matches pattern" (case equality: X matches X).
-    fn pattern_flag(&mut self, scrutinee: Typed, pattern: &Pattern) -> Result<Value, CodegenError> {
-        match pattern {
-            Pattern::Wildcard => Ok(self.builder.ins().iconst(types::I8, 1)),
-            Pattern::Value(expr) => {
-                let value = self.emit_expr(expr)?;
-                let value = self.coerce(value, scrutinee.ty)?;
-                match scrutinee.ty {
-                    DigTy::Real => Ok(self
-                        .builder
-                        .ins()
-                        .fcmp(FloatCC::Equal, scrutinee.value, value.value)),
-                    DigTy::Int | DigTy::Quad => Ok(self
-                        .builder
-                        .ins()
-                        .icmp(IntCC::Equal, scrutinee.value, value.value)),
-                }
-            }
-            Pattern::BitPattern(trits) => match trits.as_slice() {
-                [Trit::DontCare] => Ok(self.builder.ins().iconst(types::I8, 1)),
-                [trit] => {
-                    let target = i64::from(*trit == Trit::One);
-                    let scrutinee = self.coerce(scrutinee, DigTy::Quad)?;
-                    let target = self.builder.ins().iconst(types::I64, target);
-                    Ok(self
-                        .builder
-                        .ins()
-                        .icmp(IntCC::Equal, scrutinee.value, target))
-                }
-                _ => Err(CodegenError::unsupported(
-                    "multi-bit patterns in a digital `match` (bus signals)",
-                )),
-            },
-        }
-    }
-
-    fn emit_assign(&mut self, lval: &Lval, expr: &IrExpr) -> Result<(), CodegenError> {
-        let value = self.emit_expr(expr)?;
-        match lval {
-            Lval::Var(var) => {
-                let info = self.module.symbols.var(*var);
-                match info.ty {
-                    Type::Real => {
-                        let slot = self.layout.real_slot(*var).expect("layout covers all vars");
-                        let value = self.coerce(value, DigTy::Real)?;
-                        self.builder.ins().store(
-                            MemFlags::trusted(),
-                            value.value,
-                            self.pointers.vars_real,
-                            (slot * 8) as i32,
-                        );
-                    }
-                    Type::Quad => {
-                        let slot = self.layout.int_slot(*var).expect("layout covers all vars");
-                        let value = self.coerce(value, DigTy::Quad)?;
-                        self.builder.ins().store(
-                            MemFlags::trusted(),
-                            value.value,
-                            self.pointers.vars_int,
-                            (slot * 8) as i32,
-                        );
-                    }
-                    Type::Integer | Type::Bool => {
-                        let slot = self.layout.int_slot(*var).expect("layout covers all vars");
-                        let value = self.coerce(value, DigTy::Int)?;
-                        self.builder.ins().store(
-                            MemFlags::trusted(),
-                            value.value,
-                            self.pointers.vars_int,
-                            (slot * 8) as i32,
-                        );
-                    }
-                }
-                Ok(())
-            }
-            Lval::Net(node) => {
-                let index = self.layout.output_index.get(node).copied().ok_or_else(|| {
-                    CodegenError::Invalid(format!(
-                        "assignment to net `{}` which is not a digital output",
-                        self.module.symbols.node(*node).name
-                    ))
-                })?;
-                let value = self.coerce(value, DigTy::Quad)?;
-                self.builder.ins().store(
-                    MemFlags::trusted(),
-                    value.value,
-                    self.pointers.outputs,
-                    (index * 8) as i32,
-                );
-                Ok(())
-            }
-            Lval::Index(..) | Lval::Slice(..) => Err(CodegenError::unsupported(
-                "indexed/sliced assignment targets (bus signals)",
-            )),
-        }
-    }
-
-    // ── Expressions ──
-
-    fn emit_expr(&mut self, expr: &IrExpr) -> Result<Typed, CodegenError> {
-        match expr {
-            IrExpr::Real(v) => Ok(Typed::real(self.builder_f64(*v))),
-            IrExpr::Int(v) => Ok(Typed::int(self.builder_i64(*v))),
-            IrExpr::Bool(b) => Ok(Typed::int(self.builder_i64(i64::from(*b)))),
-            IrExpr::Quad(q) => Ok(Typed::quad(self.builder_i64(i64::from(*q)))),
-
-            IrExpr::Param(id) => {
-                let value = self.builder.ins().load(
-                    types::F64,
-                    MemFlags::trusted(),
-                    self.pointers.params,
-                    (id.0 * 8) as i32,
-                );
-                match self.module.symbols.param(*id).ty {
-                    Type::Real => Ok(Typed::real(value)),
-                    _ => {
-                        let as_int = self.builder.ins().fcvt_to_sint(types::I64, value);
-                        Ok(Typed::int(as_int))
-                    }
-                }
-            }
-
-            IrExpr::Var(id) => Ok(self.load_var(*id)),
-
-            IrExpr::Net(node) => self.load_net(*node),
-
-            IrExpr::Sim(query) => self.emit_sim(query),
-
-            IrExpr::Unary(op, x) => {
-                let x = self.emit_expr(x)?;
-                self.emit_unary(*op, x)
-            }
-            IrExpr::Binary(op, a, b) => {
-                let a = self.emit_expr(a)?;
-                let b = self.emit_expr(b)?;
-                self.emit_binary(*op, a, b)
-            }
-            IrExpr::Select(c, t, e) => {
-                let cond = self.emit_expr(c)?;
-                let flag = self.truthy(cond)?;
-                let then_ = self.emit_expr(t)?;
-                let else_ = self.emit_expr(e)?;
-                let (then_, else_) = self.unify(then_, else_)?;
-                let value = self.builder.ins().select(flag, then_.value, else_.value);
-                Ok(Typed { value, ty: then_.ty })
-            }
-            IrExpr::MathCall(name, args) => self.emit_math(name, args),
-            IrExpr::Call(id, args) => {
-                // Inline the user function symbolically, then emit the
-                // resulting expression.
-                let mut inliner = Inliner::new(self.module);
-                let expanded = inliner.expand(*id, args.to_vec())?;
-                self.emit_expr(&expanded)
-            }
-
-            IrExpr::Branch { plus, minus, .. } => {
-                // A2D bridge: read the analog voltage difference
-                // V(plus) − V(minus) from the analog_voltages array.
-                // Ground (NodeId::GROUND) is always 0 V.
-                let load_analog = |builder: &mut FunctionBuilder, node: NodeId| -> Result<Value, CodegenError> {
-                    if node.is_ground() {
-                        Ok(builder.ins().f64const(0.0))
-                    } else if let Some(idx) = self.layout.analog_index(node) {
-                        Ok(builder.ins().load(
-                            types::F64,
-                            MemFlags::trusted(),
-                            self.pointers.analog_voltages,
-                            (idx * 8) as i32,
-                        ))
-                    } else {
-                        Err(CodegenError::Invalid(format!(
-                            "analog node `{}` is not in the analog voltage array",
-                            self.module.symbols.node(node).name
-                        )))
-                    }
-                };
-                let vp = load_analog(self.builder, *plus)?;
-                let vm = load_analog(self.builder, *minus)?;
-                Ok(Typed::real(self.builder.ins().fsub(vp, vm)))
-            }
-
-            IrExpr::State(_) | IrExpr::AcStim { .. } => Err(
-                CodegenError::Invalid("analog state operator in a digital body".into()),
-            ),
-            IrExpr::Array(_) | IrExpr::Index(..) | IrExpr::Slice(..) => Err(
-                CodegenError::unsupported("bus/vector expressions in digital codegen"),
-            ),
-        }
-    }
-
-    /// Read a net (digital input or output) as a quad value.
-    fn load_net(&mut self, node: NodeId) -> Result<Typed, CodegenError> {
-        if let Some(&i) = self.layout.input_index.get(&node) {
-            let value = self.builder.ins().load(
-                types::I64,
-                MemFlags::trusted(),
-                self.pointers.inputs,
-                (i * 8) as i32,
-            );
-            return Ok(Typed::quad(value));
-        }
-        if let Some(&i) = self.layout.output_index.get(&node) {
-            let value = self.builder.ins().load(
-                types::I64,
-                MemFlags::trusted(),
-                self.pointers.outputs,
-                (i * 8) as i32,
-            );
-            return Ok(Typed::quad(value));
-        }
-        Err(CodegenError::Invalid(format!(
-            "net `{}` is neither a digital input nor output",
-            self.module.symbols.node(node).name
-        )))
-    }
-
-    fn load_var(&mut self, var: VarId) -> Typed {
-        let info = self.module.symbols.var(var);
-        match info.ty {
-            Type::Real => {
-                let slot = self.layout.real_slot(var).expect("layout covers all vars");
-                let bank = match self.reads {
-                    VarReads::Live => self.pointers.vars_real,
-                    VarReads::PreEdge => self.pointers.vars_real_old,
-                };
-                let value =
-                    self.builder
-                        .ins()
-                        .load(types::F64, MemFlags::trusted(), bank, (slot * 8) as i32);
-                Typed::real(value)
-            }
-            ty => {
-                let slot = self.layout.int_slot(var).expect("layout covers all vars");
-                let bank = match self.reads {
-                    VarReads::Live => self.pointers.vars_int,
-                    VarReads::PreEdge => self.pointers.vars_int_old,
-                };
-                let value =
-                    self.builder
-                        .ins()
-                        .load(types::I64, MemFlags::trusted(), bank, (slot * 8) as i32);
-                match ty {
-                    Type::Quad => Typed::quad(value),
-                    _ => Typed::int(value),
-                }
-            }
-        }
-    }
-
-    fn emit_sim(&mut self, query: &SimQuery) -> Result<Typed, CodegenError> {
-        match query {
-            SimQuery::Abstime => {
-                let value = self.builder.ins().load(
-                    types::F64,
-                    MemFlags::trusted(),
-                    self.pointers.sim,
-                    8, // SimCtx.abstime
-                );
-                Ok(Typed::real(value))
-            }
-            SimQuery::Temperature => {
-                let value = self.builder.ins().load(
-                    types::F64,
-                    MemFlags::trusted(),
-                    self.pointers.sim,
-                    0, // SimCtx.temperature
-                );
-                Ok(Typed::real(value))
-            }
-            other => Err(CodegenError::unsupported(format!(
-                "simulator query {other:?} in a digital body"
-            ))),
-        }
-    }
-
-    fn emit_unary(&mut self, op: UnOp, x: Typed) -> Result<Typed, CodegenError> {
-        match (op, x.ty) {
-            (UnOp::Neg, DigTy::Real) => Ok(Typed::real(self.builder_fneg(x.value))),
-            (UnOp::Neg, DigTy::Int) => Ok(Typed::int(self.builder_ineg(x.value))),
-            (UnOp::Not | UnOp::BitNot, DigTy::Quad) => {
-                let x = self.normalize_z(x.value);
-                Ok(Typed::quad(self.quad_not(x)))
-            }
-            (UnOp::Not, DigTy::Int) => {
-                let zero = self.builder_i64(0);
-                let flag = self.builder.ins().icmp(IntCC::Equal, x.value, zero);
-                Ok(Typed::int(self.builder_flag_i64(flag)))
-            }
-            (UnOp::Not, DigTy::Real) => {
-                let zero = self.builder_f64(0.0);
-                let flag = self.builder.ins().fcmp(FloatCC::Equal, x.value, zero);
-                Ok(Typed::int(self.builder_flag_i64(flag)))
-            }
-            (UnOp::BitNot, DigTy::Int) => Ok(Typed::int(self.builder.ins().bnot(x.value))),
-            // A reduction over a scalar is the scalar (buses are rejected).
-            (UnOp::RedAnd | UnOp::RedOr | UnOp::RedXor, DigTy::Quad | DigTy::Int) => Ok(x),
-            (op, ty) => Err(CodegenError::unsupported(format!(
-                "unary {op:?} on {ty:?} in digital codegen"
-            ))),
-        }
-    }
-
-    fn emit_binary(&mut self, op: BinOp, a: Typed, b: Typed) -> Result<Typed, CodegenError> {
-        use BinOp::*;
-        // Quad logic when either side is 4-state and the operator is logical.
-        let quadish = a.ty == DigTy::Quad || b.ty == DigTy::Quad;
-        match op {
-            And | Or | BitAnd | BitOr | BitXor if quadish => {
-                let a = self.coerce(a, DigTy::Quad)?;
-                let b = self.coerce(b, DigTy::Quad)?;
-                let av = self.normalize_z(a.value);
-                let bv = self.normalize_z(b.value);
-                let value = match op {
-                    And | BitAnd => self.quad_and(av, bv),
-                    Or | BitOr => self.quad_or(av, bv),
-                    BitXor => self.quad_xor(av, bv),
-                    _ => unreachable!(),
-                };
-                return Ok(Typed::quad(value));
-            }
-            Eq | Ne if quadish => {
-                let a = self.coerce(a, DigTy::Quad)?;
-                let b = self.coerce(b, DigTy::Quad)?;
-                let av = self.normalize_z(a.value);
-                let bv = self.normalize_z(b.value);
-                let value = self.quad_eq(av, bv, op == Ne);
-                return Ok(Typed::quad(value));
-            }
-            _ => {}
-        }
-
-        // Real arithmetic when either side is real.
-        if a.ty == DigTy::Real || b.ty == DigTy::Real {
-            let a = self.coerce(a, DigTy::Real)?;
-            let b = self.coerce(b, DigTy::Real)?;
-            let fcmp = |e: &mut Self, cc: FloatCC| {
-                let flag = e.builder.ins().fcmp(cc, a.value, b.value);
-                Typed { value: e.builder_flag_i64(flag), ty: DigTy::Int }
-            };
-            return match op {
-                Add => Ok(Typed::real(self.builder.ins().fadd(a.value, b.value))),
-                Sub => Ok(Typed::real(self.builder.ins().fsub(a.value, b.value))),
-                Mul => Ok(Typed::real(self.builder.ins().fmul(a.value, b.value))),
-                Div => Ok(Typed::real(self.builder.ins().fdiv(a.value, b.value))),
-                Pow => {
-                    let result = self.call_math("pow", &[a.value, b.value])?;
-                    Ok(Typed::real(result))
-                }
-                Eq => Ok(fcmp(self, FloatCC::Equal)),
-                Ne => Ok(fcmp(self, FloatCC::NotEqual)),
-                Lt => Ok(fcmp(self, FloatCC::LessThan)),
-                Le => Ok(fcmp(self, FloatCC::LessThanOrEqual)),
-                Gt => Ok(fcmp(self, FloatCC::GreaterThan)),
-                Ge => Ok(fcmp(self, FloatCC::GreaterThanOrEqual)),
-                other => Err(CodegenError::unsupported(format!(
-                    "binary {other:?} on reals in digital codegen"
-                ))),
-            };
-        }
-
-        // Two-state integer path (quads coerce through their 0/1 values;
-        // X/Z in arithmetic is rejected by coerce).
-        let a = self.coerce(a, DigTy::Int)?;
-        let b = self.coerce(b, DigTy::Int)?;
-        let icmp = |e: &mut Self, cc: IntCC| {
-            let flag = e.builder.ins().icmp(cc, a.value, b.value);
-            Typed { value: e.builder_flag_i64(flag), ty: DigTy::Int }
-        };
-        match op {
-            Add => Ok(Typed::int(self.builder.ins().iadd(a.value, b.value))),
-            Sub => Ok(Typed::int(self.builder.ins().isub(a.value, b.value))),
-            Mul => Ok(Typed::int(self.builder.ins().imul(a.value, b.value))),
-            Div => Ok(Typed::int(self.builder.ins().sdiv(a.value, b.value))),
-            Rem => Ok(Typed::int(self.builder.ins().srem(a.value, b.value))),
-            BitAnd => Ok(Typed::int(self.builder.ins().band(a.value, b.value))),
-            BitOr => Ok(Typed::int(self.builder.ins().bor(a.value, b.value))),
-            BitXor => Ok(Typed::int(self.builder.ins().bxor(a.value, b.value))),
-            Shl => Ok(Typed::int(self.builder.ins().ishl(a.value, b.value))),
-            Shr => Ok(Typed::int(self.builder.ins().ushr(a.value, b.value))),
-            Eq => Ok(icmp(self, IntCC::Equal)),
-            Ne => Ok(icmp(self, IntCC::NotEqual)),
-            Lt => Ok(icmp(self, IntCC::SignedLessThan)),
-            Le => Ok(icmp(self, IntCC::SignedLessThanOrEqual)),
-            Gt => Ok(icmp(self, IntCC::SignedGreaterThan)),
-            Ge => Ok(icmp(self, IntCC::SignedGreaterThanOrEqual)),
-            And | Or => {
-                let zero = self.builder_i64(0);
-                let a_true = self.builder.ins().icmp(IntCC::NotEqual, a.value, zero);
-                let b_true = self.builder.ins().icmp(IntCC::NotEqual, b.value, zero);
-                let combined = if op == And {
-                    self.builder.ins().band(a_true, b_true)
-                } else {
-                    self.builder.ins().bor(a_true, b_true)
-                };
-                Ok(Typed::int(self.builder_flag_i64(combined)))
-            }
-            Pow => Err(CodegenError::unsupported("integer `**` in digital codegen")),
-        }
-    }
-
-    fn emit_math(&mut self, name: &str, args: &[IrExpr]) -> Result<Typed, CodegenError> {
-        let values = args
-            .iter()
-            .map(|a| {
-                let v = self.emit_expr(a)?;
-                Ok(self.coerce(v, DigTy::Real)?.value)
-            })
-            .collect::<Result<Vec<_>, CodegenError>>()?;
-        let result = self.call_math(name, &values)?;
-        Ok(Typed::real(result))
-    }
-
-    fn call_math(&mut self, name: &str, args: &[Value]) -> Result<Value, CodegenError> {
-        let math_fn = math::math_fn(name)
-            .ok_or_else(|| CodegenError::unsupported(format!("math builtin `{name}`")))?;
-        if args.len() != math_fn.arity {
-            return Err(CodegenError::Invalid(format!(
-                "`{name}` expects {} args, got {}",
-                math_fn.arity,
-                args.len()
-            )));
-        }
-        let func = self.math[math_fn.name];
-        let call = self.builder.ins().call(func, args);
-        Ok(self.builder.inst_results(call)[0])
-    }
-
-    // ── Type plumbing ──
-
-    /// Truthiness flag: quad → `== 1`, int → `!= 0`, real → `!= 0.0`.
-    fn truthy(&mut self, v: Typed) -> Result<Value, CodegenError> {
-        match v.ty {
-            DigTy::Quad => {
-                let one = self.builder_i64(1);
-                Ok(self.builder.ins().icmp(IntCC::Equal, v.value, one))
-            }
-            DigTy::Int => {
-                let zero = self.builder_i64(0);
-                Ok(self.builder.ins().icmp(IntCC::NotEqual, v.value, zero))
-            }
-            DigTy::Real => {
-                let zero = self.builder_f64(0.0);
-                Ok(self.builder.ins().fcmp(FloatCC::NotEqual, v.value, zero))
-            }
-        }
-    }
-
-    fn unify(&mut self, a: Typed, b: Typed) -> Result<(Typed, Typed), CodegenError> {
-        if a.ty == b.ty {
-            return Ok((a, b));
-        }
-        if a.ty == DigTy::Real || b.ty == DigTy::Real {
-            return Ok((self.coerce(a, DigTy::Real)?, self.coerce(b, DigTy::Real)?));
-        }
-        // Int vs Quad: 0/1 integers lift losslessly into 4-state.
-        Ok((self.coerce(a, DigTy::Quad)?, self.coerce(b, DigTy::Quad)?))
-    }
-
-    fn coerce(&mut self, v: Typed, ty: DigTy) -> Result<Typed, CodegenError> {
-        if v.ty == ty {
-            return Ok(v);
-        }
-        match (v.ty, ty) {
-            (DigTy::Int, DigTy::Real) => {
-                Ok(Typed::real(self.builder.ins().fcvt_from_sint(types::F64, v.value)))
-            }
-            (DigTy::Real, DigTy::Int) => {
-                Ok(Typed::int(self.builder.ins().fcvt_to_sint(types::I64, v.value)))
-            }
-            // A 0/1 integer is already a valid quad; other values would be
-            // wrong, but Int here means a boolean-producing expression.
-            (DigTy::Int, DigTy::Quad) => Ok(Typed::quad(v.value)),
-            // Quad → Int: SPEC says Boolean widens to Quad implicitly. A
-            // `Bit` net (storage Boolean) is 2-state; its Quad encoding is
-            // always 0 or 1. For genuine 4-state nets used in integer
-            // context, X/Z collapse to 0 (2-state projection).
-            (DigTy::Quad, DigTy::Int) => {
-                let x = self.builder_i64(2);
-                let z = self.builder_i64(3);
-                let zero = self.builder_i64(0);
-                let is_x = self.builder.ins().icmp(IntCC::Equal, v.value, x);
-                let is_z = self.builder.ins().icmp(IntCC::Equal, v.value, z);
-                let not_4state = self.builder.ins().bnot(is_x);
-                let not_4state = self.builder.ins().band(not_4state, is_z);
-                let _ = not_4state; // suppress unused; the logic below suffices
-                // Map X (2) and Z (3) to 0; keep 0 and 1 as-is.
-                let x_or_z = self.builder.ins().bor(is_x, is_z);
-                let projected = self.builder.ins().select(x_or_z, zero, v.value);
-                Ok(Typed::int(projected))
-            }
-            (DigTy::Quad, DigTy::Real) | (DigTy::Real, DigTy::Quad) => Err(
-                CodegenError::unsupported("real ↔ 4-state conversion in digital codegen"),
-            ),
-            _ => unreachable!("same-type coercion handled above"),
-        }
-    }
-
-    // ── Quad logic (values normalised so Z reads as X) ──
-
-    /// Map Z (3) to X (2).
-    fn normalize_z(&mut self, v: Value) -> Value {
-        let three = self.builder_i64(3);
-        let two = self.builder_i64(2);
-        let is_z = self.builder.ins().icmp(IntCC::Equal, v, three);
-        self.builder.ins().select(is_z, two, v)
-    }
-
-    fn quad_not(&mut self, v: Value) -> Value {
-        // 0→1, 1→0, X→X.
-        let zero = self.builder_i64(0);
-        let one = self.builder_i64(1);
-        let two = self.builder_i64(2);
-        let is_zero = self.builder.ins().icmp(IntCC::Equal, v, zero);
-        let is_one = self.builder.ins().icmp(IntCC::Equal, v, one);
-        let inner = self.builder.ins().select(is_one, zero, two);
-        self.builder.ins().select(is_zero, one, inner)
-    }
-
-    fn quad_and(&mut self, a: Value, b: Value) -> Value {
-        // 0 dominates; 1&1 = 1; else X.
-        let zero = self.builder_i64(0);
-        let one = self.builder_i64(1);
-        let two = self.builder_i64(2);
-        let a_zero = self.builder.ins().icmp(IntCC::Equal, a, zero);
-        let b_zero = self.builder.ins().icmp(IntCC::Equal, b, zero);
-        let any_zero = self.builder.ins().bor(a_zero, b_zero);
-        let a_one = self.builder.ins().icmp(IntCC::Equal, a, one);
-        let b_one = self.builder.ins().icmp(IntCC::Equal, b, one);
-        let both_one = self.builder.ins().band(a_one, b_one);
-        let inner = self.builder.ins().select(both_one, one, two);
-        self.builder.ins().select(any_zero, zero, inner)
-    }
-
-    fn quad_or(&mut self, a: Value, b: Value) -> Value {
-        // 1 dominates; 0|0 = 0; else X.
-        let zero = self.builder_i64(0);
-        let one = self.builder_i64(1);
-        let two = self.builder_i64(2);
-        let a_one = self.builder.ins().icmp(IntCC::Equal, a, one);
-        let b_one = self.builder.ins().icmp(IntCC::Equal, b, one);
-        let any_one = self.builder.ins().bor(a_one, b_one);
-        let a_zero = self.builder.ins().icmp(IntCC::Equal, a, zero);
-        let b_zero = self.builder.ins().icmp(IntCC::Equal, b, zero);
-        let both_zero = self.builder.ins().band(a_zero, b_zero);
-        let inner = self.builder.ins().select(both_zero, zero, two);
-        self.builder.ins().select(any_one, one, inner)
-    }
-
-    fn quad_xor(&mut self, a: Value, b: Value) -> Value {
-        // X poisons; otherwise a ^ b.
-        let two = self.builder_i64(2);
-        let a_x = self.builder.ins().icmp(IntCC::Equal, a, two);
-        let b_x = self.builder.ins().icmp(IntCC::Equal, b, two);
-        let any_x = self.builder.ins().bor(a_x, b_x);
-        let xor = self.builder.ins().bxor(a, b);
-        self.builder.ins().select(any_x, two, xor)
-    }
-
-    fn quad_eq(&mut self, a: Value, b: Value, negate: bool) -> Value {
-        // X poisons; otherwise 0/1 comparison result.
-        let zero = self.builder_i64(0);
-        let one = self.builder_i64(1);
-        let two = self.builder_i64(2);
-        let a_x = self.builder.ins().icmp(IntCC::Equal, a, two);
-        let b_x = self.builder.ins().icmp(IntCC::Equal, b, two);
-        let any_x = self.builder.ins().bor(a_x, b_x);
-        let cc = if negate { IntCC::NotEqual } else { IntCC::Equal };
-        let flag = self.builder.ins().icmp(cc, a, b);
-        let result = self.builder.ins().select(flag, one, zero);
-        self.builder.ins().select(any_x, two, result)
-    }
-
-    // ── Small builder shorthands ──
-
-    fn builder_f64(&mut self, v: f64) -> Value {
-        self.builder.ins().f64const(v)
-    }
-
-    fn builder_i64(&mut self, v: i64) -> Value {
-        self.builder.ins().iconst(types::I64, v)
-    }
-
-    fn builder_fneg(&mut self, v: Value) -> Value {
-        self.builder.ins().fneg(v)
-    }
-
-    fn builder_ineg(&mut self, v: Value) -> Value {
-        self.builder.ins().ineg(v)
-    }
-
-    fn builder_flag_i64(&mut self, flag: Value) -> Value {
-        let one = self.builder_i64(1);
-        let zero = self.builder_i64(0);
-        self.builder.ins().select(flag, one, zero)
-    }
+pub struct Pointers {
+    pub inputs: Value,
+    pub outputs: Value,
+    pub vars_int_old: Value,
+    pub vars_real_old: Value,
+    pub vars_int: Value,
+    pub vars_real: Value,
+    pub params: Value,
+    pub fired: Value,
+    pub sim: Value,
+    pub analog_voltages: Value,
 }
 
 // ─── Fused combinational network (Verilator-style whole-cone JIT) ───────────────
@@ -1158,7 +496,7 @@ impl NetworkComb {
             let body = m.module.digital.as_ref().ok_or_else(|| {
                 CodegenError::Invalid(format!("`{}` has no digital body", m.module.name))
             })?;
-            if body.stmts.iter().any(|s| matches!(s, IrStmt::ClockedBlock { .. })) {
+            if body.stmts.iter().any(|s| matches!(s, Stmt::Event { .. })) {
                 return Err(CodegenError::unsupported(format!(
                     "network fusion of clocked module `{}` (comb-only cones for now)",
                     m.module.name
@@ -1227,9 +565,11 @@ impl NetworkComb {
                 sim: sim_ptr,
                 analog_voltages: analog_ptr,
             };
-            let mut emitter = DigitalEmitter {
+            let resolver = Resolver::from_symbols(&m.module.symbols);
+            let mut b = Builder {
                 builder: &mut builder,
                 module: m.module,
+                resolver: &resolver,
                 layout,
                 pointers,
                 reads: VarReads::Live,
@@ -1239,12 +579,13 @@ impl NetworkComb {
             let body = m.module.digital.as_ref().unwrap();
             for stmt in &body.stmts {
                 // Skip register power-on decls (handled at init, not in comb).
-                if let IrStmt::VarDecl { var, init: Some(_) } = stmt
-                    && body.regs.contains(var)
+                if let Stmt::VarDecl { name, default: Some(_), .. } = stmt
+                    && let Some(&var) = resolver.vars.get(name)
+                    && body.regs.contains(&var)
                 {
                     continue;
                 }
-                emitter.emit_stmt(stmt)?;
+                b.emit_stmt(stmt)?;
             }
         }
 

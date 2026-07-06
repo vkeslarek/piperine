@@ -1,7 +1,6 @@
-use piperine_solver::core::device::{Device, AnalogDevice, DigitalDevice};
-use piperine_solver::digital::{LogicValue, DigitalNet, DigitalEvent};
-use std::collections::BinaryHeap;
-use std::cmp::Reverse;
+use piperine_solver::core::device::{Device, DigitalDevice};
+use piperine_solver::digital::{LogicValue, DigitalNet};
+use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink};
 
 // ---------------------------------------------------------------------------
 // D2ADevice
@@ -63,31 +62,29 @@ impl Device for D2ADevice {
 }
 
 impl DigitalDevice for D2ADevice {
-    fn digital_input_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.input_net) }
-
-    fn digital_output_nets(&self) -> &[DigitalNet] { &[] }
-
-    fn eval_discrete(
-            &mut self,
-            t: f64,
-            nets: &[LogicValue],
-            _analog_voltages: ndarray::ArrayView1<f64>,
-            _queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
-        ) {
-            let new_val = nets[self.input_net.0];
-            if new_val != self.current_value {
-                let current_v = self.voltage_at(t);
-                self.v_from = current_v;
-                self.transition_start_time = t;
-                self.target_voltage = match new_val {
-                    LogicValue::One  => self.v_high,
-                    LogicValue::Zero => self.v_low,
-                    _                => self.v_from,
-                };
-                self.current_value = new_val;
-            }
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts {
+            inputs: std::slice::from_ref(&self.input_net),
+            outputs: &[],
         }
+    }
 
+    fn init(&mut self, _sink: &mut dyn EventSink) {}
+
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, _sink: &mut dyn EventSink) {
+        let new_val = ctx.nets[self.input_net.0];
+        if new_val != self.current_value {
+            let current_v = self.voltage_at(ctx.time);
+            self.v_from = current_v;
+            self.transition_start_time = ctx.time;
+            self.target_voltage = match new_val {
+                LogicValue::One  => self.v_high,
+                LogicValue::Zero => self.v_low,
+                _                => self.v_from,
+            };
+            self.current_value = new_val;
+        }
+    }
 }
 
 

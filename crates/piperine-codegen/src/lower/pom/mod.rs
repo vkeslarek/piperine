@@ -16,7 +16,8 @@ pub mod stmt;
 pub mod structure;
 pub mod syscalls;
 
-use structure::{build_symbols_and_ports, convert_fn, value_to_ir};
+use piperine_lang::parse::ast::{BindOp, Expr as PomExpr, Stmt as PomStmt};
+use structure::{build_symbols_and_ports, convert_fn, value_to_pom_expr};
 use stmt::lower_stmts;
 
 /// A module's resolved lowering: its symbol table, resolved ports, and
@@ -422,11 +423,12 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                 }
             }
 
-            let stmts = lower_stmts(behavior.body(), &mut ctx);
-            digital_shadows.append(&mut ctx.digital_shadows);
-            errors.append(&mut ctx.errors);
-
             if is_digital {
+                // Digital path: keep the POM `Stmt` tree directly — the
+                // `Codegen` trait + `Builder` emit it to Cranelift without
+                // the `IrStmt` intermediate. Name resolution happens at
+                // codegen time via the `Resolver`.
+                //
                 // Populate digital inputs/outputs from the module's ports:
                 // a digital input is a Digital-domain In port, a digital
                 // output is a Digital-domain Out port. Inout digital ports
@@ -460,7 +462,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                     .map(|v| (v.name().to_string(), v.init()))
                     .collect();
                 let mut regs = Vec::new();
-                let mut reg_decls = Vec::new();
+                let mut reg_decls: Vec<PomStmt> = Vec::new();
                 for (vname, vinit) in var_inits {
                     let vid = match bodies[i].symbols.vars().find(|(_, info)| info.name == vname).map(|(id, _)| id) {
                         Some(id) => id,
@@ -468,13 +470,13 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                     };
                     regs.push(vid);
                     if let Some(init) = vinit {
-                        let init_expr = value_to_ir(init);
-                        reg_decls.push(IrStmt::VarDecl { var: vid, init: Some(init_expr) });
+                        let init_expr = value_to_pom_expr(init);
+                        reg_decls.push(PomStmt::VarDecl { name: vname, ty: None, default: Some(init_expr) });
                     }
                 }
 
                 let mut all_stmts = reg_decls;
-                all_stmts.extend(stmts);
+                all_stmts.extend(behavior.body().iter().cloned());
 
                 bodies[i].digital = Some(DigitalBody {
                     inputs,
@@ -483,6 +485,11 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                     stmts: all_stmts,
                 });
             } else {
+                // Analog path: lower POM `Stmt` → `IrStmt` (the analog JIT
+                // still dispatches on `IrExpr`/`IrStmt`).
+                let stmts = lower_stmts(behavior.body(), &mut ctx);
+                digital_shadows.append(&mut ctx.digital_shadows);
+                errors.append(&mut ctx.errors);
                 bodies[i].analog = Some(AnalogBody {
                     states: ctx.states,
                     noise: ctx.noise_sources,
@@ -492,9 +499,17 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
         }
 
         if !digital_shadows.is_empty() {
-            let assigns: Vec<IrStmt> = digital_shadows
+            let assigns: Vec<PomStmt> = digital_shadows
                 .iter()
-                .map(|(node, var)| IrStmt::Assign { lval: Lval::Var(*var), expr: IrExpr::Net(*node) })
+                .map(|(node, var)| {
+                    let var_name = bodies[i].symbols.var(*var).name.clone();
+                    let node_name = bodies[i].symbols.node(*node).name.clone();
+                    PomStmt::Bind {
+                        dest: PomExpr::Ident(var_name),
+                        op: BindOp::Assign,
+                        src: PomExpr::Ident(node_name),
+                    }
+                })
                 .collect();
             match &mut bodies[i].digital {
                 Some(body) => body.stmts.extend(assigns),

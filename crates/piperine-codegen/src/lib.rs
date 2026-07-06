@@ -16,6 +16,7 @@
 //! - [`device`] — kernels wrapped as `piperine_solver` devices, plus the
 //!   program-level [`device::CircuitCompiler`].
 
+pub mod codegen;
 pub mod device;
 pub mod jit;
 pub mod lower;

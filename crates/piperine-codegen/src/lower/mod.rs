@@ -65,8 +65,10 @@ pub struct DigitalBody {
     pub outputs: Vec<NodeId>,
     /// Variables holding state across timesteps (registers and latches).
     pub regs: Vec<VarId>,
-    /// Combinational statements plus `ClockedBlock`s.
-    pub stmts: Vec<IrStmt>,
+    /// Combinational statements plus clocked `@`-blocks, kept as the POM
+    /// `Stmt` tree (the AST type). The `Codegen` trait emits these directly
+    /// to Cranelift via the `Builder` — no `IrStmt` intermediate.
+    pub stmts: Vec<piperine_lang::parse::ast::Stmt>,
 }
 
 // ─── Ports ────────────────────────────────────────────────────────────────────

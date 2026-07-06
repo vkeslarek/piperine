@@ -30,7 +30,7 @@ use crate::jit::digital::compile::DigitalCompiler;
 use cranelift_jit::JITModule;
 
 use crate::ir::{
-    EdgeKind, IrExpr, LoweredBody,
+    EdgeKind, LoweredBody, ParamId,
     NodeId, VarId,
 };
 
@@ -95,11 +95,12 @@ pub struct ClockedSpec {
 }
 
 /// A register power-on value: variable plus its init expression (evaluated
-/// with instance parameters).
+/// with instance parameters). Kept as the POM `Expr` — evaluated at runtime
+/// via `codegen::eval_const`.
 #[derive(Debug, Clone)]
 pub struct RegInit {
     pub var: VarId,
-    pub init: IrExpr,
+    pub init: piperine_lang::parse::ast::Expr,
 }
 
 /// A compiled digital kernel.
@@ -111,6 +112,9 @@ pub struct DigitalKernel {
     pub(crate) clocked_blocks: Vec<ClockedSpec>,
     pub(crate) num_watch_terms: usize,
     pub(crate) reg_inits: Vec<RegInit>,
+    /// Param name → ParamId, used to evaluate `RegInit.init` POM expressions
+    /// against the instance's parameter bank at power-on.
+    pub(crate) param_index: std::collections::HashMap<String, ParamId>,
     pub(crate) comb: DigitalFn,
     pub(crate) seq: Option<DigitalFn>,
     pub(crate) watch: Option<WatchFn>,

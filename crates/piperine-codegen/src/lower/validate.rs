@@ -133,18 +133,24 @@ impl Validator<'_> {
                 self.error(format!("digital body references dangling reg #{}", var.0));
             }
         }
-        self.check_stmts(&body.stmts, BodyKind::Digital);
-        self.check_latches(body);
+        self.check_digital_stmts(&body.stmts);
+        self.check_digital_latches(body);
     }
 
     /// SPEC §11: a combinational variable read on a path where it was not
     /// assigned infers a latch — a warning (registers, updated only inside
     /// clocked blocks, are silent).
-    fn check_latches(&mut self, body: &DigitalBody) {
-        let comb_assigned = Self::comb_assigned_vars(&body.stmts);
+    fn check_digital_latches(&mut self, body: &DigitalBody) {
+        let comb_assigned = Self::pom_comb_assigned_vars(&body.stmts, &self.module.symbols);
         let mut assigned = HashSet::new();
         let mut latched = HashSet::new();
-        Self::walk_definite_assignment(&body.stmts, &comb_assigned, &mut assigned, &mut latched);
+        Self::walk_pom_definite_assignment(
+            &body.stmts,
+            &comb_assigned,
+            &mut assigned,
+            &mut latched,
+            &self.module.symbols,
+        );
         for var in latched {
             let name = self
                 .symbols()
@@ -154,6 +160,43 @@ impl Validator<'_> {
                 "inferred latch: combinational variable `{name}` is read on a path where it \
                  was not assigned"
             )));
+        }
+    }
+
+    /// Validate POM `Stmt` tree for a digital body: reject analog-only
+    /// statements and check nested bodies.
+    fn check_digital_stmts(&mut self, stmts: &[piperine_lang::parse::ast::Stmt]) {
+        use piperine_lang::parse::ast::{BindOp, Stmt};
+        for stmt in stmts {
+            match stmt {
+                Stmt::Bind { op: BindOp::Contrib, .. } => {
+                    self.error("`<+` contribution in a digital body");
+                }
+                Stmt::Event { body, .. } => {
+                    self.check_digital_stmts(&body.stmts);
+                }
+                Stmt::If { then_body, else_body, .. } => {
+                    self.check_digital_stmts(&then_body.stmts);
+                    if let Some(eb) = else_body {
+                        self.check_digital_stmts(&eb.stmts);
+                    }
+                }
+                Stmt::Match { arms, .. } => {
+                    for arm in arms {
+                        self.check_digital_stmts(&arm.body.stmts);
+                    }
+                }
+                Stmt::For { .. } => {
+                    self.error("`for` loop in a digital body — must be unrolled at elaboration");
+                }
+                Stmt::Return(_) => {
+                    self.error("`return` in a digital body");
+                }
+                Stmt::VarDecl { .. }
+                | Stmt::Bind { .. }
+                | Stmt::Diagnostic { .. }
+                | Stmt::Expr(_) => {}
+            }
         }
     }
 
@@ -280,90 +323,115 @@ impl Validator<'_> {
         })
     }
 
-    /// Variables assigned by combinational statements (outside clocked
-    /// blocks). Only these can infer latches; clocked-only vars are
-    /// registers.
-    fn comb_assigned_vars(stmts: &[IrStmt]) -> HashSet<VarId> {
+    // ── POM `Stmt` latch analysis (digital path) ──────────────────────────
+
+    /// Variables assigned by combinational POM statements (outside `@`-blocks).
+    fn pom_comb_assigned_vars(
+        stmts: &[piperine_lang::parse::ast::Stmt],
+        symbols: &SymbolTable,
+    ) -> HashSet<VarId> {
         let mut out = HashSet::new();
-        Self::collect_comb_assigned(stmts, &mut out);
+        Self::collect_pom_comb_assigned(stmts, &mut out, symbols);
         out
     }
 
-    fn collect_comb_assigned(stmts: &[IrStmt], out: &mut HashSet<VarId>) {
+    fn collect_pom_comb_assigned(
+        stmts: &[piperine_lang::parse::ast::Stmt],
+        out: &mut HashSet<VarId>,
+        symbols: &SymbolTable,
+    ) {
+        use piperine_lang::parse::ast::{BindOp, Stmt};
         for stmt in stmts {
             match stmt {
-                IrStmt::ClockedBlock { .. } => {}
-                IrStmt::Assign { lval, .. } => {
-                    if let Some(var) = Self::lval_var(lval) {
-                        out.insert(var);
+                Stmt::Event { .. } => {}
+                Stmt::Bind { dest, op: BindOp::Assign | BindOp::Force, .. } => {
+                    if let piperine_lang::parse::ast::Expr::Ident(name) = dest {
+                        if let Some(id) = symbols.vars().find(|(_, v)| &v.name == name).map(|(id, _)| id) {
+                            out.insert(id);
+                        }
                     }
                 }
-                other => {
-                    for body in other.bodies() {
-                        Self::collect_comb_assigned(body, out);
+                Stmt::VarDecl { name, .. } => {
+                    if let Some(id) = symbols.vars().find(|(_, v)| &v.name == name).map(|(id, _)| id) {
+                        out.insert(id);
                     }
                 }
+                Stmt::If { then_body, else_body, .. } => {
+                    Self::collect_pom_comb_assigned(&then_body.stmts, out, symbols);
+                    if let Some(eb) = else_body {
+                        Self::collect_pom_comb_assigned(&eb.stmts, out, symbols);
+                    }
+                }
+                Stmt::Match { arms, .. } => {
+                    for arm in arms {
+                        Self::collect_pom_comb_assigned(&arm.body.stmts, out, symbols);
+                    }
+                }
+                _ => {}
             }
         }
     }
 
-    /// The root variable of an assignment target, if it is a variable.
-    fn lval_var(lval: &Lval) -> Option<VarId> {
-        match lval {
-            Lval::Var(id) => Some(*id),
-            Lval::Net(_) => None,
-            Lval::Index(inner, _) | Lval::Slice(inner, ..) => Self::lval_var(inner),
-        }
-    }
-
-    /// Walk combinational statements in order, tracking definitely-assigned
-    /// variables; a combinational variable read before definite assignment
-    /// is a latch. Branch arms merge by intersection.
-    fn walk_definite_assignment(
-        stmts: &[IrStmt],
+    /// Walk POM `Stmt` combinational statements tracking definite assignment.
+    fn walk_pom_definite_assignment(
+        stmts: &[piperine_lang::parse::ast::Stmt],
         comb: &HashSet<VarId>,
         assigned: &mut HashSet<VarId>,
         latched: &mut HashSet<VarId>,
+        symbols: &SymbolTable,
     ) {
-        let note_reads = |expr: &IrExpr, assigned: &HashSet<VarId>, latched: &mut HashSet<VarId>| {
-            expr.visit(&mut |e| {
-                if let IrExpr::Var(id) = e {
-                    if comb.contains(id) && !assigned.contains(id) {
-                        latched.insert(*id);
+        use piperine_lang::parse::ast::{BindOp, Expr, Stmt};
+        let note_reads = |expr: &Expr, assigned: &HashSet<VarId>, latched: &mut HashSet<VarId>| {
+            expr.walk(&mut |e| {
+                if let Expr::Ident(name) = e {
+                    if let Some(id) = symbols.vars().find(|(_, v)| &v.name == name).map(|(id, _)| id) {
+                        if comb.contains(&id) && !assigned.contains(&id) {
+                            latched.insert(id);
+                        }
                     }
                 }
+                piperine_lang::parse::ast::Walk::Continue
             });
+        };
+        let resolve_var = |name: &str| -> Option<VarId> {
+            symbols.vars().find(|(_, v)| v.name == name).map(|(id, _)| id)
         };
         for stmt in stmts {
             match stmt {
-                // Register reads see the pre-edge bank value by design.
-                IrStmt::ClockedBlock { .. } => {}
-                IrStmt::Assign { lval, expr } => {
-                    note_reads(expr, assigned, latched);
-                    if let Some(var) = Self::lval_var(lval) {
+                Stmt::Event { .. } => {}
+                Stmt::Bind { dest, op: BindOp::Assign | BindOp::Force, src } => {
+                    note_reads(src, assigned, latched);
+                    if let Expr::Ident(name) = dest {
+                        if let Some(var) = resolve_var(name) {
+                            assigned.insert(var);
+                        }
+                    }
+                }
+                Stmt::Bind { src, .. } => {
+                    note_reads(src, assigned, latched);
+                }
+                Stmt::VarDecl { name, default: Some(init), .. } => {
+                    note_reads(init, assigned, latched);
+                    if let Some(var) = resolve_var(name) {
                         assigned.insert(var);
                     }
                 }
-                IrStmt::VarDecl { var, init } => {
-                    if let Some(init) = init {
-                        note_reads(init, assigned, latched);
-                        assigned.insert(*var);
-                    }
-                }
-                IrStmt::If { cond, then_, else_ } => {
+                Stmt::VarDecl { .. } => {}
+                Stmt::If { cond, then_body, else_body } => {
                     note_reads(cond, assigned, latched);
                     let mut then_set = assigned.clone();
                     let mut else_set = assigned.clone();
-                    Self::walk_definite_assignment(then_, comb, &mut then_set, latched);
-                    Self::walk_definite_assignment(else_, comb, &mut else_set, latched);
+                    Self::walk_pom_definite_assignment(&then_body.stmts, comb, &mut then_set, latched, symbols);
+                    let else_stmts = else_body.as_ref().map(|b| b.stmts.as_slice()).unwrap_or(&[]);
+                    Self::walk_pom_definite_assignment(else_stmts, comb, &mut else_set, latched, symbols);
                     *assigned = then_set.intersection(&else_set).copied().collect();
                 }
-                IrStmt::Match { scrutinee, arms, default } => {
-                    note_reads(scrutinee, assigned, latched);
+                Stmt::Match { expr, arms } => {
+                    note_reads(expr, assigned, latched);
                     let mut merged: Option<HashSet<VarId>> = None;
-                    for body in arms.iter().map(|(_, b)| b.as_slice()).chain([default.as_slice()]) {
+                    for arm in arms {
                         let mut arm_set = assigned.clone();
-                        Self::walk_definite_assignment(body, comb, &mut arm_set, latched);
+                        Self::walk_pom_definite_assignment(&arm.body.stmts, comb, &mut arm_set, latched, symbols);
                         merged = Some(match merged {
                             None => arm_set,
                             Some(prev) => prev.intersection(&arm_set).copied().collect(),
@@ -374,9 +442,10 @@ impl Validator<'_> {
                     }
                 }
                 other => {
-                    for expr in other.exprs() {
-                        note_reads(expr, assigned, latched);
-                    }
+                    other.walk_exprs(&mut |e| {
+                        note_reads(e, assigned, latched);
+                        piperine_lang::parse::ast::Walk::Continue
+                    });
                 }
             }
         }

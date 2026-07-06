@@ -7,7 +7,7 @@ use std::collections::BinaryHeap;
 use std::sync::Arc;
 
 use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
-use piperine_solver::digital::interface::{DigitalEventModel, DigitalPorts, EvalCtx, EventSink};
+use piperine_solver::digital::interface::{DigitalDevice, DigitalPorts, EvalCtx, EventSink};
 
 use crate::ir::{EdgeKind, Type};
 use crate::jit::digital::{DigitalAbi, DigitalKernel};
@@ -30,6 +30,41 @@ impl Quad {
             3 => LogicValue::Z,
             _ => LogicValue::X,
         }
+    }
+}
+
+/// Evaluate a POM `Expr` as a compile-time/param constant. `param_lookup`
+/// resolves parameter names to their instance values. Returns `None` for
+/// anything that isn't a literal, a param reference, or simple arithmetic
+/// over those — matching the register-init use case (SPEC §9 power-on).
+fn eval_const_expr(
+    expr: &piperine_lang::parse::ast::Expr,
+    param_lookup: &impl Fn(&str) -> Option<f64>,
+) -> Option<f64> {
+    use piperine_lang::parse::ast::{BinaryOp, Expr, Literal, UnaryOp};
+    match expr {
+        Expr::Literal(Literal::Real(v)) => Some(*v),
+        Expr::Literal(Literal::Int(v)) => Some(*v as f64),
+        Expr::Literal(Literal::Bool(b)) => Some(if *b { 1.0 } else { 0.0 }),
+        Expr::Literal(Literal::Quad(s)) => match s.as_str() {
+            "0" => Some(0.0),
+            "1" => Some(1.0),
+            _ => Some(2.0),
+        },
+        Expr::Ident(name) => param_lookup(name),
+        Expr::Binary(lhs, op, rhs) => {
+            let l = eval_const_expr(lhs, param_lookup)?;
+            let r = eval_const_expr(rhs, param_lookup)?;
+            Some(match op {
+                BinaryOp::Add => l + r,
+                BinaryOp::Sub => l - r,
+                BinaryOp::Mul => l * r,
+                BinaryOp::Div => l / r,
+                _ => return None,
+            })
+        }
+        Expr::Unary(UnaryOp::Neg, x) => Some(-eval_const_expr(x, param_lookup)?),
+        _ => None,
     }
 }
 
@@ -123,16 +158,23 @@ impl DigitalInstance {
     pub fn init(&mut self, event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>) {
         // Integer-bank slots default to X only where the variable is
         // 4-state; two-state integers start at 0.
-        let inits: Vec<(crate::ir::VarId, crate::ir::IrExpr)> = self
+        let param_index = &self.kernel.param_index;
+        let params = &self.params;
+        let reg_values: Vec<(crate::ir::VarId, f64)> = self
             .kernel
             .reg_inits()
             .iter()
-            .map(|r| (r.var, r.init.clone()))
-            .collect();
-        for (var, init) in inits {
-            let value = init
-                .eval_const(&|id| self.params.get(id.0 as usize).copied())
+            .map(|r| {
+                let value = eval_const_expr(&r.init, &|name| {
+                    param_index
+                        .get(name)
+                        .and_then(|&id| params.get(id.0 as usize).copied())
+                })
                 .unwrap_or(0.0);
+                (r.var, value)
+            })
+            .collect();
+        for (var, value) in reg_values {
             self.write_var(var, value);
         }
 
@@ -397,17 +439,17 @@ impl DigitalInstance {
     }
 }
 
-/// `DigitalInstance` satisfies the stable event contract
-/// ([`DigitalEventModel`], the "OSDI for digital"). This is the seam the
-/// scheduler migrates onto: today it drives instances through
-/// `Device::eval_discrete` over a raw queue; the contract lets a fused JIT
-/// network (`jit/digital/network.rs`) or an external co-sim take the same slot.
+/// `DigitalInstance` satisfies the stable digital device contract
+/// ([`DigitalDevice`], the "OSDI for digital"). This is the seam the
+/// scheduler drives: today it calls `seq_phase`/`comb_phase` over a raw
+/// queue; the contract lets a fused JIT network
+/// (`jit/digital/network.rs`) or an external co-sim take the same slot.
 ///
-/// Transitional adapter: `evaluate`/`init` run the existing native path into a
-/// scratch queue and forward each event through the [`EventSink`], preserving
+/// Transitional adapter: `comb_phase` runs the existing native path into a
+/// scratch queue and forwards each event through the [`EventSink`], preserving
 /// wire semantics (net/value/relative delay). The follow-up refactors the
 /// native path to emit through the sink directly, dropping the scratch hop.
-impl DigitalEventModel for DigitalInstance {
+impl DigitalDevice for DigitalInstance {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &self.in_nets, outputs: &self.out_nets }
     }
@@ -420,9 +462,13 @@ impl DigitalEventModel for DigitalInstance {
         }
     }
 
-    fn evaluate(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+    fn seq_phase(&mut self, ctx: &EvalCtx<'_>) -> bool {
+        DigitalInstance::eval_seq_phase(self, ctx.time, ctx.nets, ctx.analog)
+    }
+
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
         let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
-        DigitalInstance::eval(self, ctx.time, ctx.nets, ctx.analog, &mut q);
+        DigitalInstance::eval_comb_phase(self, ctx.time, ctx.nets, ctx.analog, &mut q);
         for Reverse(ev) in q.into_sorted_vec() {
             sink.emit(ev.net, ev.value, ev.time - ctx.time);
         }

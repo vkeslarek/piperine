@@ -1,4 +1,3 @@
-use ndarray::ArrayView1;
 use std::cmp::Ordering;
 
 // ---------------------------------------------------------------------------
@@ -78,10 +77,11 @@ impl Ord for DigitalEvent {
 mod tests {
     use super::*;
     use crate::digital::scheduler::DigitalState;
+    use crate::digital::interface::{DigitalDevice, DigitalPorts, EvalCtx, EventSink};
     use crate::core::device::Device;
-    use std::collections::BinaryHeap;
     use std::cmp::Reverse;
 
+    #[allow(dead_code)]
     struct MockInverter {
         id: usize,
         input: DigitalNet,
@@ -91,28 +91,27 @@ mod tests {
 
     impl Device for MockInverter {
         fn device_name(&self) -> &str { "mock_inverter" }
-        fn as_digital(&mut self) -> Option<&mut dyn crate::core::device::DigitalDevice> { Some(self) }
-        fn as_digital_ref(&self) -> Option<&dyn crate::core::device::DigitalDevice> { Some(self) }
+        fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+        fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
     }
-    
-    impl crate::core::device::DigitalDevice for MockInverter {
-        fn digital_input_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.input) }
-        fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
 
-        fn eval_discrete(&mut self, current_time: f64, nets: &[LogicValue], _av: ArrayView1<f64>, event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>) {
-            let in_val = nets[self.input.0];
-            let out_val = match in_val {
+    impl DigitalDevice for MockInverter {
+        fn boundary(&self) -> DigitalPorts<'_> {
+            DigitalPorts {
+                inputs: std::slice::from_ref(&self.input),
+                outputs: std::slice::from_ref(&self.output),
+            }
+        }
+
+        fn init(&mut self, _sink: &mut dyn EventSink) {}
+
+        fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+            let out_val = match ctx.nets[self.input.0] {
                 LogicValue::Zero => LogicValue::One,
                 LogicValue::One => LogicValue::Zero,
                 _ => LogicValue::X,
             };
-            event_queue.push(Reverse(DigitalEvent {
-                time: current_time + self.delay,
-                net: self.output,
-                value: out_val,
-                source: self.id,
-                seq: 0,
-            }));
+            sink.emit(self.output, out_val, self.delay);
         }
     }
 

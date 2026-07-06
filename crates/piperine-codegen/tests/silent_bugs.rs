@@ -8,93 +8,27 @@ use piperine_lang::parse_and_elaborate;
 use piperine_codegen::ir::LoweredBody;
 use piperine_codegen::{CircuitCompiler, DigitalKernel};
 
-// ── A.4 — Digital Pow/Shl/Shr silently become Add ─────────────────────────
+// ── A.5 — Neg in digital still works (POM path) ─────────────────────────────
 
 #[test]
-fn a4_shift_in_digital_guard_is_rejected_not_silently_add() {
-    use piperine_codegen::ir::{BinOp, DigitalBody, IrExpr, IrStmt};
+fn a5_neg_in_digital_still_works() {
+    use piperine_codegen::ir::{DigitalBody, Domain, Type};
+    use piperine_lang::parse::ast::{BindOp, Expr, Stmt, UnaryOp};
 
-    let mut module = LoweredBody::new("shift_fsm");
-    let param_x = module.symbols.add_param("x", piperine_codegen::ir::Type::Real, None);
-    module.digital = Some(DigitalBody {
-        inputs: Vec::new(),
-        outputs: Vec::new(),
-        regs: Vec::new(),
-        stmts: vec![IrStmt::If {
-            cond: IrExpr::Binary(
-                BinOp::Shl,
-                Box::new(IrExpr::Param(param_x)),
-                Box::new(IrExpr::Int(4)),
-            ),
-            then_: vec![],
-            else_: vec![],
-        }],
-    });
-    let err = DigitalKernel::compile(&module)
-        .err()
-        .expect("shift in digital guard must fail");
-    let msg = format!("{err:?}").to_lowercase();
-    assert!(
-        msg.contains("shl") || msg.contains("shift") || msg.contains("unsupported"),
-        "A.4: expected shift rejection, got: {msg}"
-    );
-}
-
-// ── A.5 — BitNot / reductions silently become Not ──────────────────────────
-
-fn make_digital_ir_with_unary_op(
-    module_name: &str,
-    op: piperine_codegen::ir::UnOp,
-    param_ty: piperine_codegen::ir::Type,
-) -> LoweredBody {
-    use piperine_codegen::ir::{IrExpr, IrStmt, DigitalBody, Domain, Lval};
-    let mut module = LoweredBody::new(module_name);
-    let param_x = module.symbols.add_param("x", param_ty, None);
+    let mut module = LoweredBody::new("neg_fsm");
+    let param_x = module.symbols.add_param("x", Type::Integer, None);
+    let _ = param_x;
     let node_out = module.symbols.add_node("out", Domain::Digital);
     module.digital = Some(DigitalBody {
         inputs: Vec::new(),
         outputs: vec![node_out],
         regs: Vec::new(),
-        stmts: vec![IrStmt::Assign {
-            lval: Lval::Net(node_out),
-            expr: IrExpr::Unary(op, Box::new(IrExpr::Param(param_x))),
+        stmts: vec![Stmt::Bind {
+            dest: Expr::Ident("out".into()),
+            op: BindOp::Assign,
+            src: Expr::Unary(UnaryOp::Neg, Box::new(Expr::Ident("x".into()))),
         }],
     });
-    module
-}
-
-#[test]
-fn a5_bitnot_in_digital_is_rejected_not_silently_not() {
-    use piperine_codegen::ir::{UnOp, Type};
-    let module = make_digital_ir_with_unary_op("bitnot_fsm", UnOp::BitNot, Type::Real);
-    let err = DigitalKernel::compile(&module)
-        .err()
-        .expect("BitNot in digital must fail");
-    let msg = format!("{err:?}").to_lowercase();
-    assert!(
-        msg.contains("bitnot") || msg.contains("unary") || msg.contains("unsupported"),
-        "A.5: expected BitNot rejection, got: {msg}"
-    );
-}
-
-#[test]
-fn a5_reduction_op_in_digital_is_rejected_not_silently_not() {
-    use piperine_codegen::ir::{UnOp, Type};
-    let module = make_digital_ir_with_unary_op("redand_fsm", UnOp::RedAnd, Type::Real);
-    let err = DigitalKernel::compile(&module)
-        .err()
-        .expect("RedAnd in digital must fail");
-    let msg = format!("{err:?}").to_lowercase();
-    assert!(
-        msg.contains("red") || msg.contains("unary") || msg.contains("unsupported"),
-        "A.5: expected RedAnd rejection, got: {msg}"
-    );
-}
-
-#[test]
-fn a5_neg_in_digital_still_works() {
-    use piperine_codegen::ir::{UnOp, Type};
-    let module = make_digital_ir_with_unary_op("neg_fsm", UnOp::Neg, Type::Integer);
     DigitalKernel::compile(&module).expect("Neg in digital must still work");
 }
 

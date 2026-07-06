@@ -145,17 +145,20 @@ impl CircuitInstance {
     /// Initialize all digital devices and seed the `DigitalState` with t=0 events.
     ///
     /// Must be called once before the first [`run_digital_at`] call.  Collects
-    /// initial events from every device's `digital_init`, schedules them into
+    /// initial events from every device's `init`, schedules them into
     /// `digital_state`, then runs propagation at t=0 so all downstream logic
     /// reflects its power-on state.
     pub fn init_digital(&mut self) {
         use std::cmp::Reverse;
         use crate::digital::DigitalEvent;
+        use crate::digital::interface::QueueSink;
 
         let mut seed_queue = std::collections::BinaryHeap::<Reverse<DigitalEvent>>::new();
-        for device in &mut self.devices {
+        let mut seq: u64 = 0;
+        for (i, device) in self.devices.iter_mut().enumerate() {
             if let Some(d) = device.as_digital() {
-                d.digital_init(&mut seed_queue);
+                let mut sink = QueueSink::new(&mut seed_queue, 0.0, i, &mut seq);
+                d.init(&mut sink);
             }
         }
         for Reverse(event) in seed_queue {

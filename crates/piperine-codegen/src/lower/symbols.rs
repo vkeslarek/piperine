@@ -341,6 +341,10 @@ impl SymbolTable {
         self.states.iter().enumerate().map(|(i, s)| (StateId(i as u32), s))
     }
 
+    pub fn fns(&self) -> impl Iterator<Item = (FnId, &Function)> {
+        self.fns.iter().enumerate().map(|(i, f)| (FnId(i as u32), f))
+    }
+
     pub fn num_params(&self) -> usize {
         self.params.len()
     }
