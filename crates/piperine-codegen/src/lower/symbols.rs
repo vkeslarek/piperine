@@ -1,8 +1,8 @@
 //! Interned ids and the per-module symbol table (SPEC §3, §7).
 
-use super::expr::IrExpr;
-use super::IrStmt;
 use super::Type;
+
+use piperine_lang::parse::ast::Expr as PomExpr;
 
 // ─── Ids ──────────────────────────────────────────────────────────────────────
 
@@ -58,7 +58,7 @@ pub struct NodeInfo {
 pub struct ParamInfo {
     pub name: String,
     pub ty: Type,
-    pub default: Option<IrExpr>,
+    pub default: Option<PomExpr>,
 }
 
 #[derive(Debug, Clone)]
@@ -112,12 +112,12 @@ pub enum ZKind {
     ZerosDen,
 }
 
-/// An analog operator with internal state, referenced by `IrExpr::State(id)`.
+/// An analog operator with internal state, referenced by `__state_load(id)` markers.
 /// `arg` is the operator input, evaluated each Newton iteration.
 #[derive(Debug, Clone)]
 pub struct StateVar {
     pub kind: StateKind,
-    pub arg: IrExpr,
+    pub arg: PomExpr,
 }
 
 #[derive(Debug, Clone)]
@@ -125,23 +125,23 @@ pub enum StateKind {
     /// `ddt(x)` — time derivative (reactive).
     Ddt,
     /// `idt(x, ic)` — time integral (reactive).
-    Idt { ic: IrExpr },
+    Idt { ic: PomExpr },
     /// `idtmod(x, ic, modulus)` — modular integral (reactive).
-    IdtMod { ic: IrExpr, modulus: IrExpr },
+    IdtMod { ic: PomExpr, modulus: PomExpr },
     /// `ddx(x, node)` — compile-time derivative w.r.t. `V(node)`.
     Ddx { node: NodeId },
     /// `delay(x, t)` / `absdelay(x, t)` — delayed signal (ring buffer).
-    Delay { delay: IrExpr },
+    Delay { delay: PomExpr },
     /// `transition(x, td, tr, tf, ttol)` — waveform shaping.
-    Transition { delay: IrExpr, rise: IrExpr, fall: IrExpr, tol: IrExpr },
+    Transition { delay: PomExpr, rise: PomExpr, fall: PomExpr, tol: PomExpr },
     /// `slew(x, rise, fall)` — rate limiting.
-    Slew { rise: IrExpr, fall: IrExpr },
+    Slew { rise: PomExpr, fall: PomExpr },
     /// Measured-data lookup.
     Table { data: TableRef, mode: InterpMode },
     /// `laplace_*(x, num, den)` — Laplace filter (reactive).
-    Laplace { variant: LaplaceKind, num: Vec<IrExpr>, den: Vec<IrExpr> },
+    Laplace { variant: LaplaceKind, num: Vec<PomExpr>, den: Vec<PomExpr> },
     /// `zi_*(x, num, den, dt)` — Z-transform filter (reactive).
-    ZTransform { variant: ZKind, num: Vec<IrExpr>, den: Vec<IrExpr>, sample_dt: IrExpr },
+    ZTransform { variant: ZKind, num: Vec<PomExpr>, den: Vec<PomExpr>, sample_dt: PomExpr },
 }
 
 impl StateKind {
@@ -187,8 +187,8 @@ pub struct NoiseSource {
 
 #[derive(Debug, Clone)]
 pub enum NoiseKind {
-    White { psd: IrExpr },
-    Flicker { psd: IrExpr, exponent: IrExpr },
+    White { psd: PomExpr },
+    Flicker { psd: PomExpr, exponent: PomExpr },
 }
 
 // ─── Functions ────────────────────────────────────────────────────────────────
@@ -202,9 +202,9 @@ pub struct Function {
     /// Default value expressions, parallel to [`params`](Self::params) —
     /// `None` for a non-defaulted param, `Some(expr)` for a defaulted
     /// trailing one (the language spec Part I §9.1). Filled by the inliner at expansion.
-    pub defaults: Vec<Option<IrExpr>>,
+    pub defaults: Vec<Option<PomExpr>>,
     pub returns: Option<Type>,
-    pub body: Vec<IrStmt>,
+    pub body: Vec<piperine_lang::parse::ast::Stmt>,
 }
 
 // ─── Symbol table ─────────────────────────────────────────────────────────────
@@ -245,7 +245,7 @@ impl SymbolTable {
         &mut self,
         name: impl Into<String>,
         ty: Type,
-        default: Option<IrExpr>,
+        default: Option<PomExpr>,
     ) -> ParamId {
         self.params.push(ParamInfo { name: name.into(), ty, default });
         ParamId(self.params.len() as u32 - 1)

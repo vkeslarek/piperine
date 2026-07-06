@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Lower a POM `Design` (PPR/PHDL) straight into each module's resolved
 //! [`LoweredBody`] — no separate IR crate, no `IrModule`/`IrProgram`
 //! structural twin. Instance wiring (connections, param overrides) is left
@@ -18,7 +19,7 @@ pub mod syscalls;
 
 use piperine_lang::parse::ast::{BindOp, Expr as PomExpr, Stmt as PomStmt};
 use structure::{build_symbols_and_ports, convert_fn, value_to_pom_expr};
-use stmt::lower_stmts;
+use stmt::resolve_stmts;
 
 /// A module's resolved lowering: its symbol table, resolved ports, and
 /// analog/digital bodies. This is what `device::CompiledModule::compile`
@@ -77,8 +78,8 @@ impl std::fmt::Display for LowerErrors {
 /// Lowering context carrying the current scope, state-variable counter, and
 /// discovered noise-source list.
 pub(crate) struct LowerCtx<'a> {
-    /// Name → IR expression bindings for the current scope.
-    pub env: HashMap<String, IrExpr>,
+    /// Name → POM expression bindings for the current scope.
+    pub env: HashMap<String, PomExpr>,
     /// The module's symbol table, populated during `convert_mod`.
     pub symbols: &'a mut SymbolTable,
     /// The module being lowered — error context only.
@@ -100,8 +101,8 @@ pub(crate) struct LowerCtx<'a> {
     /// Noise sources discovered from contribution right-hand sides.
     pub noise_sources: Vec<NoiseSource>,
     /// Set to `true` while lowering a `digital` body.  Lets the Bind-Force
-    /// arm pick the digital-drive form (`IrStmt::Assign`) instead of the
-    /// analog-force form (`IrStmt::Force`).
+    /// arm pick the digital-drive form (`Assign`) instead of the
+    /// analog-force form (`Force`).
     pub is_digital: bool,
     /// Names of the owning module's persistent `var`s (GAPS §I.15).
     pub module_vars: HashSet<String>,
@@ -113,10 +114,8 @@ pub(crate) struct LowerCtx<'a> {
     /// Enum variant discriminants, keyed bare (`Idle`) and qualified
     /// (`SarState::Idle`). SPEC §6.4: a variant is an integer constant.
     pub enum_values: HashMap<String, i64>,
-    /// Global `const` values as IR literals (`NG_K`, `M_PI`, …). Before
-    /// SIMPLIFICATION.md P5 these silently fell through to `ParamId(0)` —
-    /// a physics constant read as "whatever param 0 is".
-    pub consts: HashMap<String, IrExpr>,
+    /// Global `const` values as POM expressions (`NG_K`, `M_PI`, …).
+    pub consts: HashMap<String, PomExpr>,
     /// Bundle-typed value bindings in scope (module bundle params and
     /// flattened fn params): logical name → (bundle type, field names).
     /// What `model.method(...)` and bundle-valued call arguments resolve
@@ -174,9 +173,9 @@ impl<'a> LowerCtx<'a> {
         }
     }
 
-    /// Global-const IR literals for `prog`, shared by every context.
-    pub fn const_irs(prog: &Design) -> HashMap<String, IrExpr> {
-        prog.consts().map(|(name, v)| (name.clone(), structure::value_to_ir(v))).collect()
+    /// Global-const POM expressions for `prog`, shared by every context.
+    pub fn const_irs(prog: &Design) -> HashMap<String, PomExpr> {
+        prog.consts().map(|(name, v)| (name.clone(), structure::value_to_pom_expr(v))).collect()
     }
 
     /// `$param_given("name")` resolution: exact param name first, then a
@@ -220,7 +219,7 @@ impl<'a> LowerCtx<'a> {
 
 
     /// Allocate a new state variable of `kind`, returning its `StateId`.
-    pub fn alloc_state(&mut self, kind: StateKind, arg: IrExpr) -> StateId {
+    pub fn alloc_state(&mut self, kind: StateKind, arg: PomExpr) -> StateId {
         let id = self.symbols.add_state(StateVar { kind, arg });
         self.states.push(id);
         id
@@ -421,6 +420,16 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                             (bundle.clone(), structure::bundle_field_names(prog, bundle))
                         });
                 }
+                // Also register bundle-typed params themselves (e.g.
+                // `param rmodel : ResistorModel`) so `rmodel.get_or(…)`
+                // and `rmodel.rsh` resolve.
+                if let piperine_lang::pom::ValueType::Bundle(bundle) = &p.ty {
+                    ctx.bundle_bindings
+                        .entry(p.name().to_string())
+                        .or_insert_with(|| {
+                            (bundle.clone(), structure::bundle_field_names(prog, bundle))
+                        });
+                }
             }
 
             if is_digital {
@@ -485,9 +494,10 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                     stmts: all_stmts,
                 });
             } else {
-                // Analog path: lower POM `Stmt` → `IrStmt` (the analog JIT
-                // still dispatches on `IrExpr`/`IrStmt`).
-                let stmts = lower_stmts(behavior.body(), &mut ctx);
+                // Analog path: resolve POM `Stmt` (keep POM structure, mark
+                // analog operators with state ids). The flattener and Builder
+                // dispatch on POM `Expr`/`Stmt` directly.
+                let stmts = resolve_stmts(behavior.body(), &mut ctx);
                 digital_shadows.append(&mut ctx.digital_shadows);
                 errors.append(&mut ctx.errors);
                 bodies[i].analog = Some(AnalogBody {

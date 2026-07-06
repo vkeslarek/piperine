@@ -1,9 +1,12 @@
-//! Expression lowering: `Expr` → `IrExpr`
+//! Expression resolution for analog bodies: walks POM `Expr` and resolves
+//! constants, enum values, analog operators (→ `__ddt(id, x)` markers), and
+//! user function inlining — keeping the POM `Expr` structure. The Builder
+//! resolves names to ids at JIT emit time via the `Resolver`.
 
-use piperine_lang::parse::ast::{ArrayBody, BinaryOp, Block, Expr, Literal, Stmt, UnaryOp};
+use piperine_lang::parse::ast::{ArrayBody, Block, Expr, Literal, Stmt};
 use crate::lower::*;
+
 use super::analog_ops::analog_ops;
-use super::syscalls::syscalls;
 use super::LowerCtx;
 
 pub(crate) fn parse_contrib_dest(dest: &Expr, ctx: &mut LowerCtx) -> (NatureId, NodeId, NodeId) {
@@ -15,9 +18,8 @@ pub(crate) fn parse_contrib_dest(dest: &Expr, ctx: &mut LowerCtx) -> (NatureId, 
                 _ => NatureKind::Flow,
             };
             let nature = ctx.symbols.add_nature(name.as_str(), nature_kind);
-            
+
             let plus_name = ident_from_expr(args.first()).unwrap_or_else(|| "?".into());
-            // `V(a)` / `I(a)` — an omitted second terminal is ground.
             let minus_name = ident_from_expr(args.get(1)).unwrap_or_else(|| "0".into());
 
             let plus = ctx.require_node(&plus_name);
@@ -25,7 +27,7 @@ pub(crate) fn parse_contrib_dest(dest: &Expr, ctx: &mut LowerCtx) -> (NatureId, 
 
             return (nature, plus, minus);
         }
-    
+
     let nature = ctx.symbols.add_nature("I", NatureKind::Flow);
     (nature, NodeId::GROUND, NodeId::GROUND)
 }
@@ -33,13 +35,9 @@ pub(crate) fn parse_contrib_dest(dest: &Expr, ctx: &mut LowerCtx) -> (NatureId, 
 pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
     match e? {
         Expr::Ident(s) => Some(s.clone()),
-        // SPEC §7.3: `name.port` — a named instance's port, resolved by the
-        // parent's analog body. We return the qualified string so the caller
-        // can look it up in `ctx.instance_ports` or `ctx.lookup_node`.
         Expr::Field(base, field) => {
             match base.as_ref() {
                 Expr::Ident(base_name) => Some(format!("{base_name}.{field}")),
-                // `name[i].port` after for-unroll becomes `name[0].port` etc.
                 Expr::Index(inner, idx) => {
                     if let Expr::Ident(base_name) = inner.as_ref()
                         && let Expr::Literal(Literal::Int(i)) = idx.as_ref() {
@@ -62,8 +60,8 @@ pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut Low
                 match name.as_str() {
                     "white_noise" => {
                         let psd = args.first()
-                            .map(|a| lower_expr(a, ctx))
-                            .unwrap_or(IrExpr::Real(0.0));
+                            .map(|a| resolve_expr(a, ctx))
+                            .unwrap_or(Expr::Literal(Literal::Real(0.0)));
                         let label = args.get(1).and_then(|a| {
                             if let Expr::Literal(Literal::String(s)) = a { Some(s.clone()) } else { None }
                         });
@@ -77,11 +75,11 @@ pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut Low
                     }
                     "flicker_noise" => {
                         let psd = args.first()
-                            .map(|a| lower_expr(a, ctx))
-                            .unwrap_or(IrExpr::Real(0.0));
+                            .map(|a| resolve_expr(a, ctx))
+                            .unwrap_or(Expr::Literal(Literal::Real(0.0)));
                         let exponent = args.get(1)
-                            .map(|a| lower_expr(a, ctx))
-                            .unwrap_or(IrExpr::Real(1.0));
+                            .map(|a| resolve_expr(a, ctx))
+                            .unwrap_or(Expr::Literal(Literal::Real(1.0)));
                         let label = args.get(2).and_then(|a| {
                             if let Expr::Literal(Literal::String(s)) = a { Some(s.clone()) } else { None }
                         });
@@ -101,116 +99,87 @@ pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut Low
     });
 }
 
-pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
+/// Resolve a POM `Expr` for the analog path: constants/enum values → literals,
+/// analog operators → `__ddt(id, x)` markers, user functions → inlined, V/I/math
+/// kept as-is (Builder resolves at emit time).
+pub(crate) fn resolve_expr(expr: &Expr, ctx: &mut LowerCtx) -> Expr {
     match expr {
-        Expr::Literal(Literal::Real(f)) => IrExpr::Real(*f),
-        Expr::Literal(Literal::Int(n)) => IrExpr::Int(*n as i64),
-        Expr::Literal(Literal::Bool(b)) => IrExpr::Bool(*b),
-        Expr::Literal(Literal::String(_s)) => IrExpr::Real(0.0), // No strings in new IR
-        // `none` is an elaboration-time absent value: reading an optional in a
-        // runtime (IR) context must go through `.get_or(default)` (which folds
-        // to the default here) or a `.is_present()` guard. A bare `none`
-        // reaching lowering is a real error, not a silent 0.0.
-        Expr::Literal(Literal::None) => {
-            ctx.errors.push(super::LowerError {
-                module: ctx.module_name.clone(),
-                what: "`none` in a runtime context — read the optional via .get_or(default)",
-                name: "none".into(),
-            });
-            IrExpr::Real(0.0)
-        }
-        Expr::Literal(Literal::Quad(s)) => {
-            let val = match s.trim_start_matches("0q") {
-                "0" | "" => 0u8,
-                "1" => 1,
-                "X" | "x" => 2,
-                "Z" | "z" => 3,
-                _ => 0,
-            };
-            IrExpr::Quad(val)
-        }
+        Expr::Literal(_) => expr.clone(),
 
         Expr::Ident(name) => {
-            if let Some(val) = ctx.env.get(name) {
-                val.clone()
-            } else if ctx.module_vars.contains(name) {
-                IrExpr::Var(ctx.require_var(name))
-            } else if let Some(id) = ctx.lookup_node(name) {
-                if ctx.is_digital {
-                    IrExpr::Net(id)
-                } else if ctx.symbols.node(id).domain == crate::lower::Domain::Digital {
-                    // An analog body reading a digital-domain node by bare
-                    // name (not through `V`/`I`) bridges through a shadow
-                    // var — the same D2A path a `var` read already uses.
-                    // Never a silent 0.0 (GAPS: fail loud, not a stub).
-                    IrExpr::Var(ctx.shadow_var_for(id, name))
-                } else {
-                    // A bare analog-domain node reference outside `V`/`I`
-                    // has no defined meaning (SPEC: node access is via
-                    // V/I only) — GAPS fallback, unchanged.
-                    IrExpr::Real(0.0)
-                }
-            } else if let Some(value) = ctx.lookup_enum_value(name) {
-                IrExpr::Int(value)
+            if let Some(value) = ctx.lookup_enum_value(name) {
+                Expr::Literal(Literal::Int(value as u64))
             } else if let Some(c) = ctx.consts.get(name) {
                 c.clone()
+            } else if let Some(id) = ctx.lookup_node(name) {
+                if ctx.is_digital {
+                    expr.clone()
+                } else if ctx.symbols.node(id).domain == crate::lower::Domain::Digital {
+                    let var = ctx.shadow_var_for(id, name);
+                    Expr::Ident(ctx.symbols.var(var).name.clone())
+                } else {
+                    // Analog node in an analog body — keep as Ident so
+                    // the flattener (parse_dest) and Builder can resolve it.
+                    expr.clone()
+                }
             } else {
-                // Last namespace standing: a parameter — or an unresolved
-                // name, which is an error, not a silent `ParamId(0)`.
-                IrExpr::Param(ctx.require_ident_as_param(name))
+                expr.clone()
             }
         }
 
         Expr::Path(p) => {
-            let name = p.segments.join("::");
-            if let Some(val) = ctx.env.get(&name) {
-                val.clone()
-            } else if let Some(value) = ctx.lookup_enum_value(&name) {
-                IrExpr::Int(value)
+            let joined = p.segments.join("::");
+            if let Some(value) = ctx.lookup_enum_value(&joined) {
+                Expr::Literal(Literal::Int(value as u64))
             } else {
-                IrExpr::Param(ctx.require_ident_as_param(&name))
+                expr.clone()
             }
         }
 
-        Expr::Unary(UnaryOp::Neg, inner) => {
-            IrExpr::Unary(UnOp::Neg, Box::new(lower_expr(inner, ctx)))
-        }
-        Expr::Unary(UnaryOp::Not, inner) => {
-            IrExpr::Unary(UnOp::Not, Box::new(lower_expr(inner, ctx)))
+        Expr::Unary(op, inner) => {
+            Expr::Unary(op.clone(), Box::new(resolve_expr(inner, ctx)))
         }
 
         Expr::Binary(lhs, op, rhs) => {
-            let l = Box::new(lower_expr(lhs, ctx));
-            let r = Box::new(lower_expr(rhs, ctx));
-            IrExpr::Binary(lower_binop(op), l, r)
+            Expr::Binary(
+                Box::new(resolve_expr(lhs, ctx)),
+                op.clone(),
+                Box::new(resolve_expr(rhs, ctx)),
+            )
         }
 
-        Expr::Call(func, args) => lower_call(func, args, ctx),
+        Expr::Call(func, args) => resolve_call(func, args, ctx),
 
-        Expr::SysCall(name, args) => lower_syscall(name, args, ctx),
+        Expr::SysCall(name, args) => {
+            let resolved: Vec<Expr> = args.iter().map(|a| resolve_expr(a, ctx)).collect();
+            Expr::SysCall(name.clone(), resolved)
+        }
 
         Expr::If { cond, then_body, else_body } => {
-            let c = Box::new(lower_expr(cond, ctx));
-            let t = Box::new(block_value(then_body, ctx));
-            let e = Box::new(block_value(else_body, ctx));
-            IrExpr::Select(c, t, e)
+            Expr::If {
+                cond: Box::new(resolve_expr(cond, ctx)),
+                then_body: resolve_block(then_body, ctx),
+                else_body: resolve_block(else_body, ctx),
+            }
         }
 
-        Expr::Block(b) => block_value(b, ctx),
+        Expr::Block(b) => Expr::Block(resolve_block(b, ctx)),
 
         Expr::Index(base, idx) => {
-            IrExpr::Index(
-                Box::new(lower_expr(base, ctx)),
-                Box::new(lower_expr(idx, ctx)),
+            Expr::Index(
+                Box::new(resolve_expr(base, ctx)),
+                Box::new(resolve_expr(idx, ctx)),
             )
         }
 
         Expr::Slice(base, range) => {
-            IrExpr::Slice(
-                Box::new(lower_expr(base, ctx)),
-                Box::new(lower_expr(&range.start, ctx)),
-                Box::new(lower_expr(&range.end, ctx)),
-                range.inclusive,
+            Expr::Slice(
+                Box::new(resolve_expr(base, ctx)),
+                piperine_lang::parse::ast::Range {
+                    start: Box::new(resolve_expr(&range.start, ctx)),
+                    end: Box::new(resolve_expr(&range.end, ctx)),
+                    inclusive: range.inclusive,
+                },
             )
         }
 
@@ -232,36 +201,28 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
                     format!("{base_name}_{field}")
                 }
             };
-            // SPEC §7.3: `name.port` resolves to the parent-scope node
-            // that the named instance's port is connected to.
-            if let Some(id) = ctx.lookup_node(&qualified) {
-                if ctx.is_digital { IrExpr::Net(id) } else { IrExpr::Real(0.0) }
-            } else if let Some(id) = ctx.lookup_param(&qualified.replace('.', "_")) {
-                // A bundle-typed param field (`model.rsh`) was flattened to
-                // a scalar param `model_rsh` at elaboration (GAPS §I.14).
-                IrExpr::Param(id)
-            } else if let Some(id) = ctx.lookup_var(&qualified.replace('.', "_")) {
-                // A bundle-typed *fn* param field (`m.rsh` inside
-                // `fn f(m: ResModel)`) — flattened to a var by `convert_fn`.
-                IrExpr::Var(id)
+            // Named instance port access (`load.p`): resolve to the
+            // parent-scope node it's connected to, so the Builder can
+            // find it by name in the SymbolTable.
+            if let Some(node_id) = ctx.lookup_node(&qualified) {
+                let node_name = ctx.symbols.node(node_id).name.clone();
+                Expr::Ident(node_name)
             } else {
-                IrExpr::Param(ctx.require_ident_as_param(&qualified))
+                Expr::Ident(qualified.replace('.', "_"))
             }
         }
 
-        Expr::Array(body) => lower_array(body, ctx),
+        Expr::Array(body) => resolve_array(body, ctx),
 
-        Expr::Cast(_target, inner) => lower_expr(inner, ctx),
-        // Value-layer-only constructs: no faithful scalar lowering exists,
-        // so reaching one in an analog/digital body is a loud error, never
-        // a silent 0.0 (SPEC §11).
+        Expr::Cast(_target, inner) => resolve_expr(inner, ctx),
+
         Expr::BundleLit { ty, .. } => {
             ctx.errors.push(super::LowerError {
                 module: ctx.module_name.clone(),
                 what: "bundle literal in expression position",
                 name: ty.name.clone(),
             });
-            IrExpr::Real(0.0)
+            Expr::Literal(Literal::Real(0.0))
         }
         Expr::Lambda { .. } | Expr::Tuple(_) | Expr::MapLit(_) => {
             ctx.errors.push(super::LowerError {
@@ -269,60 +230,21 @@ pub(crate) fn lower_expr(expr: &Expr, ctx: &mut LowerCtx) -> IrExpr {
                 what: "value-layer expression (lambda/tuple/map)",
                 name: expr_to_name(expr),
             });
-            IrExpr::Real(0.0)
+            Expr::Literal(Literal::Real(0.0))
         }
     }
 }
 
-/// Expand a bundle-valued call argument into per-field scalars, appended
-/// to `out` in field order. Supported shapes: a bundle-typed binding
-/// (`model`, expanding through the flattened params/vars) and a bundle
-/// literal (`ResModel { .rsh = 2e3 }`, omitted fields taking the bundle's
-/// declared defaults through the binding-independent literal fields only —
-/// a literal missing a field with no default fails loud at the field
-/// lookup). Returns `false` for anything else.
-fn lower_bundle_arg(
-    arg: &Expr,
-    _bundle: &str,
-    fields: &[String],
-    out: &mut Vec<IrExpr>,
-    ctx: &mut LowerCtx,
-) -> bool {
-    match arg {
-        Expr::Ident(n) if ctx.bundle_bindings.contains_key(n) => {
-            for f in fields {
-                let e = Expr::Field(Box::new(Expr::Ident(n.clone())), f.clone());
-                out.push(lower_expr(&e, ctx));
-            }
-            true
-        }
-        Expr::BundleLit { fields: lit_fields, .. } => {
-            for f in fields {
-                match lit_fields.iter().find(|(n, _)| n == f) {
-                    Some((_, e)) => out.push(lower_expr(e, ctx)),
-                    None => {
-                        ctx.errors.push(super::LowerError {
-                            module: ctx.module_name.clone(),
-                            what: "bundle literal missing a field (no default expansion here yet)",
-                            name: f.clone(),
-                        });
-                        out.push(IrExpr::Real(0.0));
-                    }
-                }
-            }
-            true
-        }
-        _ => false,
-    }
-}
-
-pub(crate) fn lower_array(body: &ArrayBody, ctx: &mut LowerCtx) -> IrExpr {
+fn resolve_array(body: &ArrayBody, ctx: &mut LowerCtx) -> Expr {
     match body {
         ArrayBody::List(exprs) => {
-            IrExpr::Array(exprs.iter().map(|e| lower_expr(e, ctx)).collect())
+            Expr::Array(ArrayBody::List(exprs.iter().map(|e| resolve_expr(e, ctx)).collect()))
         }
-        ArrayBody::Repeat(v, _n) => {
-            IrExpr::Array(vec![lower_expr(v, ctx)]) // ArrayRepeat removed
+        ArrayBody::Repeat(v, n) => {
+            Expr::Array(ArrayBody::Repeat(
+                Box::new(resolve_expr(v, ctx)),
+                Box::new(resolve_expr(n, ctx)),
+            ))
         }
         ArrayBody::Comprehension(expr, var, range) => {
             if let (Some(start), Some(end)) = (
@@ -341,14 +263,14 @@ pub(crate) fn lower_array(body: &ArrayBody, ctx: &mut LowerCtx) -> IrExpr {
                     iter_ctx.env = ctx.env.clone();
                     iter_ctx.enum_values = ctx.enum_values.clone();
                     iter_ctx.consts = ctx.consts.clone();
-                    iter_ctx.env.insert(var.clone(), IrExpr::Int(i));
-                    elems.push(lower_expr(expr, &mut iter_ctx));
+                    iter_ctx.env.insert(var.clone(), Expr::Literal(Literal::Int(i as u64)));
+                    elems.push(resolve_expr(expr, &mut iter_ctx));
                     ctx.errors.append(&mut iter_ctx.errors);
                     ctx.digital_shadows.append(&mut iter_ctx.digital_shadows);
                 }
-                IrExpr::Array(elems)
+                Expr::Array(ArrayBody::List(elems))
             } else {
-                IrExpr::Array(vec![])
+                Expr::Array(ArrayBody::List(vec![]))
             }
         }
     }
@@ -373,54 +295,111 @@ pub(crate) fn expr_to_name(expr: &Expr) -> String {
     }
 }
 
-pub(crate) fn block_value(block: &Block, ctx: &mut LowerCtx) -> IrExpr {
-    for s in &block.stmts {
-        if let Stmt::VarDecl { name, default: Some(expr), .. } = s {
-            let val = lower_expr(expr, ctx);
-            ctx.env.insert(name.clone(), val);
-        }
-    }
-    if let Some(e) = &block.expr {
-        return lower_expr(e, ctx);
-    }
-    for s in block.stmts.iter().rev() {
-        if let Stmt::Expr(e) = s {
-            return lower_expr(e, ctx);
-        }
-    }
-    IrExpr::Real(0.0)
+pub(crate) fn resolve_block(block: &Block, ctx: &mut LowerCtx) -> Block {
+    let stmts: Vec<Stmt> = block.stmts.iter().map(|s| resolve_stmt(s, ctx)).collect();
+    let expr = block.expr.as_ref().map(|e| Box::new(resolve_expr(e, ctx)));
+    Block { stmts, expr }
 }
 
-pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-    // Optional-param sugar: `p.is_present()` / `p.get_or(default)` on a scalar
-    // parameter `p : T?` map onto the parameter-presence mechanism —
-    // `is_present` ≡ `$param_given(p)`, `get_or(d)` ≡ `param_given ? p : d`.
-    // This works per-instance without specializing the module (an absent
-    // optional's value slot is never read; the select masks it).
-    if let Expr::Field(recv, method) = func
-        && let Expr::Ident(pname) = recv.as_ref()
-        && ctx.lookup_param(pname).is_some()
-        && matches!(method.as_str(), "is_present" | "is_some" | "is_none" | "get_or" | "unwrap_or" | "unwrap")
-    {
-        let given_id = ctx.require_param_given(pname);
-        let given = IrExpr::Sim(crate::lower::SimQuery::ParamGiven(given_id));
-        let value = IrExpr::Param(ctx.require_ident_as_param(pname));
-        return match method.as_str() {
-            "is_present" | "is_some" => given,
-            "is_none" => IrExpr::Unary(crate::lower::UnOp::Not, Box::new(given)),
-            "get_or" | "unwrap_or" => {
-                let default = args.first().map_or(IrExpr::Real(0.0), |a| lower_expr(a, ctx));
-                IrExpr::Select(Box::new(given), Box::new(value), Box::new(default))
+/// Resolve a single statement's expressions (analog path — keeps POM `Stmt`).
+pub(crate) fn resolve_stmt(stmt: &Stmt, ctx: &mut LowerCtx) -> Stmt {
+    use piperine_lang::parse::ast::{BindOp, Stmt as S};
+    match stmt {
+        S::Bind { dest, op, src } => {
+            let src = resolve_expr(src, ctx);
+            if *op == BindOp::Contrib {
+                scan_noise(&src, NodeId::GROUND, NodeId::GROUND, ctx);
             }
-            // `unwrap` assumes presence (no runtime check available in IR).
-            _ => value,
-        };
+            S::Bind { dest: dest.clone(), op: op.clone(), src }
+        }
+        S::VarDecl { name, ty, default } => {
+            let default = default.as_ref().map(|e| resolve_expr(e, ctx));
+            S::VarDecl { name: name.clone(), ty: ty.clone(), default }
+        }
+        S::If { cond, then_body, else_body } => {
+            S::If {
+                cond: resolve_expr(cond, ctx),
+                then_body: resolve_block(then_body, ctx),
+                else_body: else_body.as_ref().map(|b| resolve_block(b, ctx)),
+            }
+        }
+        S::Match { expr, arms } => {
+            let expr = resolve_expr(expr, ctx);
+            let arms = arms.iter().map(|arm| {
+                piperine_lang::parse::ast::StmtMatchArm {
+                    pat: arm.pat.clone(),
+                    body: resolve_block(&arm.body, ctx),
+                }
+            }).collect();
+            S::Match { expr, arms }
+        }
+        S::Event { spec, guard, body } => {
+            let guard = guard.as_ref().map(|e| resolve_expr(e, ctx));
+            let body = resolve_block(body, ctx);
+            let spec = resolve_event_spec(spec, ctx);
+            S::Event { spec, guard, body }
+        }
+        S::Expr(e) => S::Expr(resolve_expr(e, ctx)),
+        S::Return(e) => S::Return(resolve_expr(e, ctx)),
+        S::Diagnostic { sys, args } => {
+            let args = args.iter().map(|a| resolve_expr(a, ctx)).collect();
+            S::Diagnostic { sys: sys.clone(), args }
+        }
+        other => other.clone(),
     }
-    // `recv.method(args)` — an impl-method call. The receiver must be a
-    // bundle-typed binding (module param or fn param); the method was
-    // registered as the IR fn `Bundle::method` with `self` flattened
-    // per-field, so the call expands `recv` into its field scalars.
+}
+
+/// Resolve expressions inside an `EventSpec` (hoist analog operators, etc.).
+fn resolve_event_spec(spec: &piperine_lang::parse::ast::EventSpec, ctx: &mut LowerCtx) -> piperine_lang::parse::ast::EventSpec {
+    use piperine_lang::parse::ast::EventSpec;
+    match spec {
+        EventSpec::Named { name, arg } => EventSpec::Named {
+            name: name.clone(),
+            arg: resolve_expr(arg, ctx),
+        },
+        EventSpec::Initial => EventSpec::Initial,
+        EventSpec::Final => EventSpec::Final,
+        EventSpec::Or(specs) => EventSpec::Or(
+            specs.iter().map(|s| resolve_event_spec(s, ctx)).collect(),
+        ),
+    }
+}
+
+fn resolve_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
+    // Method call: recv.method(args)
     if let Expr::Field(recv, method) = func {
+        // Optional-param sugar: `rmodel.get_or(default)` →
+        // `if $param_given("rmodel") { rmodel } else { default }`
+        if method == "get_or" {
+            if let Expr::Ident(name) = recv.as_ref() {
+                if ctx.params.contains_key(name) {
+                    use piperine_lang::parse::ast::{Block, Expr as E, Literal};
+                    let param_given = E::SysCall(
+                        "$param_given".into(),
+                        vec![E::Literal(Literal::String(name.clone()))],
+                    );
+                    let default = resolve_expr(&args[0], ctx);
+                    return E::If {
+                        cond: Box::new(param_given),
+                        then_body: Block { stmts: vec![], expr: Some(Box::new(E::Ident(name.clone()))) },
+                        else_body: Block { stmts: vec![], expr: Some(Box::new(default)) },
+                    };
+                }
+            }
+        }
+        // `is_present()` on an optional param → `$param_given("name")`
+        if method == "is_present" && args.is_empty() {
+            if let Expr::Ident(name) = recv.as_ref() {
+                if ctx.params.contains_key(name) {
+                    return Expr::SysCall(
+                        "$param_given".into(),
+                        vec![Expr::Literal(Literal::String(name.clone()))],
+                    );
+                }
+            }
+        }
+
+        // Bundle method call: receiver must be a bundle-typed binding.
         let recv_bundle = match recv.as_ref() {
             Expr::Ident(n) => ctx.bundle_bindings.get(n).cloned().map(|b| (n.clone(), b)),
             _ => None,
@@ -431,7 +410,7 @@ pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrEx
                 what: "method call receiver (not a bundle-typed binding)",
                 name: format!("{}.{method}(…)", expr_to_name(recv)),
             });
-            return IrExpr::Real(0.0);
+            return Expr::Literal(Literal::Real(0.0));
         };
         let mangled = format!("{bundle}::{method}");
         let Some(fn_id) = ctx.symbols.fn_by_name(&mangled) else {
@@ -440,116 +419,253 @@ pub(crate) fn lower_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> IrEx
                 what: "impl method",
                 name: mangled,
             });
-            return IrExpr::Real(0.0);
+            return Expr::Literal(Literal::Real(0.0));
         };
-        let mut ir_args: Vec<IrExpr> = fields
+        // Expand receiver into field scalars, then append explicit args.
+        let mut full_args: Vec<Expr> = fields
             .iter()
-            .map(|f| lower_expr(&Expr::Field(Box::new(Expr::Ident(recv_name.clone())), f.clone()), ctx))
+            .map(|f| resolve_expr(&Expr::Field(Box::new(Expr::Ident(recv_name.clone())), f.clone()), ctx))
             .collect();
-        for a in args {
-            ir_args.push(lower_expr(a, ctx));
+        let sig = ctx.fn_bundle_sigs.get(&mangled).cloned();
+        for (i, a) in args.iter().enumerate() {
+            // Skip the `self` position (index 0) which we already filled.
+            let sig_i = i + 1;
+            match sig.as_ref().and_then(|s| s.get(sig_i)).and_then(|p| p.as_ref()) {
+                Some((_b, flds)) => {
+                    if !lower_bundle_arg(a, flds, &mut full_args, ctx) {
+                        ctx.errors.push(super::LowerError {
+                            module: ctx.module_name.clone(),
+                            what: "bundle-typed argument",
+                            name: format!("{} arg #{}", mangled, sig_i + 1),
+                        });
+                        return Expr::Literal(Literal::Real(0.0));
+                    }
+                }
+                None => full_args.push(resolve_expr(a, ctx)),
+            }
         }
-        return IrExpr::Call(fn_id, ir_args);
+        return inline_user_fn(fn_id, &mangled, &full_args, ctx, /*already_resolved=*/ true);
     }
 
     let name = match func {
         Expr::Ident(s) => s.as_str(),
-        _ => {
-            ctx.errors.push(super::LowerError {
-                module: ctx.module_name.clone(),
-                what: "call target (not a plain fn or method name)",
-                name: expr_to_name(func),
-            });
-            return IrExpr::Real(0.0);
-        }
+        _ => return Expr::Literal(Literal::Real(0.0)),
     };
 
     if name == "V" || name == "I" {
-        return if args.len() >= 2 {
-            let plus_name = ident_from_expr(Some(&args[0])).unwrap_or_else(|| "?".into());
-            let minus_name = ident_from_expr(Some(&args[1])).unwrap_or_else(|| "0".into());
-            let plus = ctx.require_node(&plus_name);
-            let minus = ctx.require_node(&minus_name);
-            let nature = ctx.symbols.add_nature(name, NatureKind::Potential);
-            IrExpr::Branch { nature, plus, minus }
-        } else if args.len() == 1 {
-            let plus_name = ident_from_expr(Some(&args[0])).unwrap_or_else(|| "?".into());
-            let plus = ctx.require_node(&plus_name);
-            let nature = ctx.symbols.add_nature(name, NatureKind::Potential);
-            IrExpr::Branch { nature, plus, minus: NodeId::GROUND }
-        } else {
-            let nature = ctx.symbols.add_nature(name, NatureKind::Potential);
-            IrExpr::Branch { nature, plus: NodeId::GROUND, minus: NodeId::GROUND }
-        };
+        let resolved: Vec<Expr> = args.iter().map(|a| resolve_expr(a, ctx)).collect();
+        return Expr::Call(Box::new(func.clone()), resolved);
     }
 
     if let Some(op) = analog_ops().lookup(name) {
         return op.lower(args, ctx);
     }
 
-    // Built-in math functions (exp, ln, sqrt, pow, sin, …) lower as
-    // `MathCall`, resolved by name to a libm intrinsic at JIT time.
     if crate::lower::math::math_fn(name).is_some() {
-        let ir_args = args.iter().map(|a| lower_expr(a, ctx)).collect();
-        return IrExpr::MathCall(name.to_string(), ir_args);
+        let resolved: Vec<Expr> = args.iter().map(|a| resolve_expr(a, ctx)).collect();
+        return Expr::Call(Box::new(func.clone()), resolved);
     }
 
-    // User function: look up by name in the symbol table. Bundle-typed
-    // parameter positions expand their argument into per-field scalars
-    // (matching `convert_fn`'s flattened signature).
     if let Some(fn_id) = ctx.symbols.fn_by_name(name) {
-        let sig = ctx.fn_bundle_sigs.get(name).cloned();
-        let mut ir_args: Vec<IrExpr> = Vec::new();
-        for (i, a) in args.iter().enumerate() {
-            match sig.as_ref().and_then(|s| s.get(i)).and_then(|p| p.as_ref()) {
-                Some((bundle, fields)) => {
-                    if !lower_bundle_arg(a, bundle, fields, &mut ir_args, ctx) {
+        return inline_user_fn(fn_id, name, args, ctx, false);
+    }
+
+    let resolved: Vec<Expr> = args.iter().map(|a| resolve_expr(a, ctx)).collect();
+    Expr::Call(Box::new(func.clone()), resolved)
+}
+
+/// Expand a bundle-valued call argument into per-field scalars.
+fn lower_bundle_arg(
+    arg: &Expr,
+    fields: &[String],
+    out: &mut Vec<Expr>,
+    ctx: &mut LowerCtx,
+) -> bool {
+    match arg {
+        Expr::Ident(n) if ctx.bundle_bindings.contains_key(n) => {
+            for f in fields {
+                let e = Expr::Field(Box::new(Expr::Ident(n.clone())), f.clone());
+                out.push(resolve_expr(&e, ctx));
+            }
+            true
+        }
+        Expr::BundleLit { fields: lit_fields, .. } => {
+            for f in fields {
+                match lit_fields.iter().find(|(n, _)| n == f) {
+                    Some((_, e)) => out.push(resolve_expr(e, ctx)),
+                    None => {
                         ctx.errors.push(super::LowerError {
                             module: ctx.module_name.clone(),
-                            what: "bundle-typed argument (pass a bundle binding or literal)",
-                            name: format!("{name}(… arg #{} …)", i + 1),
+                            what: "bundle literal missing a field",
+                            name: f.clone(),
                         });
-                        return IrExpr::Real(0.0);
+                        out.push(Expr::Literal(Literal::Real(0.0)));
                     }
                 }
-                None => ir_args.push(lower_expr(a, ctx)),
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Inline a user function call by substituting parameters. The function body
+/// is POM `Stmt`; we walk it and substitute `Ident(param_name)` with the
+/// corresponding argument expression.
+fn inline_user_fn(fn_id: FnId, name: &str, args: &[Expr], ctx: &mut LowerCtx, already_resolved: bool) -> Expr {
+    let function = match ctx.symbols.try_fn(fn_id) {
+        Some(f) => f.clone(),
+        None => {
+            ctx.errors.push(super::LowerError {
+                module: ctx.module_name.clone(),
+                what: "function",
+                name: name.to_string(),
+            });
+            return Expr::Literal(Literal::Real(0.0));
+        }
+    };
+
+    // Expand bundle-typed arguments into per-field scalars (unless already done).
+    let mut full_args: Vec<Expr> = if already_resolved {
+        args.to_vec()
+    } else {
+        let sig = ctx.fn_bundle_sigs.get(name).cloned();
+        let mut collected: Vec<Expr> = Vec::new();
+        for (i, arg) in args.iter().enumerate() {
+            match sig.as_ref().and_then(|s| s.get(i)).and_then(|p| p.as_ref()) {
+                Some((_bundle, fields)) => {
+                    if !lower_bundle_arg(arg, fields, &mut collected, ctx) {
+                        ctx.errors.push(super::LowerError {
+                            module: ctx.module_name.clone(),
+                            what: "bundle-typed argument",
+                            name: format!("{} arg #{}", function.name, i + 1),
+                        });
+                        return Expr::Literal(Literal::Real(0.0));
+                    }
+                }
+                None => collected.push(resolve_expr(arg, ctx)),
             }
         }
-        return IrExpr::Call(fn_id, ir_args);
+        collected
+    };
+    while full_args.len() < function.params.len() {
+        let i = full_args.len();
+        match function.defaults.get(i).and_then(|d| d.as_ref()) {
+            Some(default) => full_args.push(default.clone()),
+            None => {
+                ctx.errors.push(super::LowerError {
+                    module: ctx.module_name.clone(),
+                    what: "function arg (missing, no default)",
+                    name: format!("{} arg #{}", function.name, i + 1),
+                });
+                return Expr::Literal(Literal::Real(0.0));
+            }
+        }
     }
 
-    // Unknown function: emit as `MathCall` so the JIT produces a
-    // descriptive error containing the function name (fail-loud, SPEC §11).
-    let ir_args = args.iter().map(|a| lower_expr(a, ctx)).collect();
-    IrExpr::MathCall(name.to_string(), ir_args)
-}
-
-pub(crate) fn lower_syscall(name: &str, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-    let key = name.trim_start_matches('$').to_lowercase();
-    if let Some(f) = syscalls().lookup(&key) {
-        return f.lower(&key, args, ctx);
+    let mut subst: std::collections::HashMap<String, Expr> = std::collections::HashMap::new();
+    for (&param_id, arg) in function.params.iter().zip(full_args) {
+        let pname = ctx.symbols.var(param_id).name.clone();
+        subst.insert(pname, arg);
     }
-    let ir_args = args.iter().map(|a| lower_expr(a, ctx)).collect();
-    IrExpr::MathCall(format!("${key}"), ir_args)
+
+    let body = function.body.clone();
+    inline_fn_body(&body, &mut subst, ctx)
 }
 
-pub(crate) fn lower_binop(op: &BinaryOp) -> BinOp {
-    match op {
-        BinaryOp::Add => BinOp::Add,
-        BinaryOp::Sub => BinOp::Sub,
-        BinaryOp::Mul => BinOp::Mul,
-        BinaryOp::Div => BinOp::Div,
-        BinaryOp::Rem => BinOp::Rem,
-        BinaryOp::Eq => BinOp::Eq,
-        BinaryOp::Neq => BinOp::Ne,
-        BinaryOp::Lt => BinOp::Lt,
-        BinaryOp::Le => BinOp::Le,
-        BinaryOp::Gt => BinOp::Gt,
-        BinaryOp::Ge => BinOp::Ge,
-        BinaryOp::BitAnd => BinOp::BitAnd,
-        BinaryOp::BitOr => BinOp::BitOr,
-        BinaryOp::BitXor => BinOp::BitXor,
-        BinaryOp::And => BinOp::And,
-        BinaryOp::Or => BinOp::Or,
+fn inline_fn_body(stmts: &[Stmt], subst: &mut std::collections::HashMap<String, Expr>, ctx: &mut LowerCtx) -> Expr {
+    for s in stmts {
+        use piperine_lang::parse::ast::Stmt as S;
+        match s {
+            S::Return(e) => {
+                return subst_expr(e, subst);
+            }
+            S::Bind { dest, op: _, src } if matches!(dest, Expr::Ident(_)) => {
+                if let Expr::Ident(name) = dest {
+                    let val = subst_expr(src, subst);
+                    subst.insert(name.clone(), val);
+                }
+            }
+            S::VarDecl { name, default: Some(e), .. } => {
+                let val = subst_expr(e, subst);
+                subst.insert(name.clone(), val);
+            }
+            S::VarDecl { name, default: None, .. } => {
+                subst.insert(name.clone(), Expr::Literal(Literal::Real(0.0)));
+            }
+            _ => {}
+        }
+    }
+    let _ = ctx;
+    Expr::Literal(Literal::Real(0.0))
+}
+
+fn subst_expr(expr: &Expr, subst: &std::collections::HashMap<String, Expr>) -> Expr {
+    match expr {
+        Expr::Ident(name) => {
+            subst.get(name).cloned().unwrap_or_else(|| expr.clone())
+        }
+        Expr::Unary(op, x) => Expr::Unary(op.clone(), Box::new(subst_expr(x, subst))),
+        Expr::Binary(l, op, r) => Expr::Binary(
+            Box::new(subst_expr(l, subst)),
+            op.clone(),
+            Box::new(subst_expr(r, subst)),
+        ),
+        Expr::Call(f, args) => {
+            let f = subst_expr(f, subst);
+            let args: Vec<Expr> = args.iter().map(|a| subst_expr(a, subst)).collect();
+            Expr::Call(Box::new(f), args)
+        }
+        Expr::SysCall(name, args) => {
+            let args: Vec<Expr> = args.iter().map(|a| subst_expr(a, subst)).collect();
+            Expr::SysCall(name.clone(), args)
+        }
+        Expr::If { cond, then_body, else_body } => Expr::If {
+            cond: Box::new(subst_expr(cond, subst)),
+            then_body: subst_block(then_body, subst),
+            else_body: subst_block(else_body, subst),
+        },
+        Expr::Block(b) => Expr::Block(subst_block(b, subst)),
+        Expr::Cast(t, x) => Expr::Cast(t.clone(), Box::new(subst_expr(x, subst))),
+        Expr::Field(base, field) => {
+            let base = subst_expr(base, subst);
+            Expr::Field(Box::new(base), field.clone())
+        }
+        Expr::Index(base, idx) => Expr::Index(
+            Box::new(subst_expr(base, subst)),
+            Box::new(subst_expr(idx, subst)),
+        ),
+        _ => expr.clone(),
+    }
+}
+
+fn subst_block(block: &Block, subst: &std::collections::HashMap<String, Expr>) -> Block {
+    Block {
+        stmts: block.stmts.iter().map(|s| subst_stmt(s, subst)).collect(),
+        expr: block.expr.as_ref().map(|e| Box::new(subst_expr(e, subst))),
+    }
+}
+
+fn subst_stmt(stmt: &Stmt, subst: &std::collections::HashMap<String, Expr>) -> Stmt {
+    use piperine_lang::parse::ast::Stmt as S;
+    match stmt {
+        S::Bind { dest, op, src } => S::Bind {
+            dest: subst_expr(dest, subst),
+            op: op.clone(),
+            src: subst_expr(src, subst),
+        },
+        S::VarDecl { name, ty, default } => S::VarDecl {
+            name: name.clone(),
+            ty: ty.clone(),
+            default: default.as_ref().map(|e| subst_expr(e, subst)),
+        },
+        S::If { cond, then_body, else_body } => S::If {
+            cond: subst_expr(cond, subst),
+            then_body: subst_block(then_body, subst),
+            else_body: else_body.as_ref().map(|b| subst_block(b, subst)),
+        },
+        S::Expr(e) => S::Expr(subst_expr(e, subst)),
+        S::Return(e) => S::Return(subst_expr(e, subst)),
+        other => other.clone(),
     }
 }

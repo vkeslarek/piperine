@@ -36,13 +36,14 @@ fn a5_neg_in_digital_still_works() {
 
 #[test]
 fn a6_from_ir_propagates_child_compile_error_not_silent_skip() {
-    use piperine_codegen::ir::{ContribKind, AnalogBody, IrStmt, NatureKind, StateId};
+    use piperine_codegen::ir::{AnalogBody, NatureKind};
+    use piperine_lang::parse::ast::{BindOp, Expr, Stmt};
 
     // `vsource` exists in the POM (so the top's instance connection/port
     // count resolves normally); its *resolved body* is then swapped for a
-    // hand-corrupted one — deliberately invalid: references StateId(99),
-    // which doesn't exist — to check the error names both the instance and
-    // the module when CircuitCompiler tries to compile it.
+    // hand-corrupted one — deliberately invalid: references a nonexistent
+    // identifier — to check the error names both the instance and the
+    // module when CircuitCompiler tries to compile it.
     let src = "
         discipline Electrical { potential v: Real; flow i: Real; }
         mod vsource (inout p: Electrical, inout n: Electrical) {}
@@ -52,20 +53,17 @@ fn a6_from_ir_propagates_child_compile_error_not_silent_skip() {
     let mut bodies = piperine_codegen::ir::lower_bodies(&design).expect("lowering failed");
 
     let vsource = bodies.get_mut("vsource").expect("vsource lowered");
-    let nature_i = vsource.symbols.add_nature("I", NatureKind::Flow);
-    let (node_p, node_n) = {
-        let mut nodes = vsource.symbols.nodes().map(|(id, _)| id);
-        (nodes.next().unwrap(), nodes.next().unwrap())
-    };
+    let _nature_i = vsource.symbols.add_nature("I", NatureKind::Flow);
     vsource.analog = Some(AnalogBody {
         states: Vec::new(),
         noise: Vec::new(),
-        stmts: vec![IrStmt::Contrib {
-            nature: nature_i,
-            plus: node_p,
-            minus: node_n,
-            expr: piperine_codegen::ir::IrExpr::Real(1.0),
-            kind: ContribKind::Reactive(StateId(99)),
+        stmts: vec![Stmt::Bind {
+            dest: Expr::Call(
+                Box::new(Expr::Ident("I".into())),
+                vec![Expr::Ident("p".into()), Expr::Ident("n".into())],
+            ),
+            op: BindOp::Contrib,
+            src: Expr::Ident("nonexistent_var_xyz".into()),
         }],
     });
 

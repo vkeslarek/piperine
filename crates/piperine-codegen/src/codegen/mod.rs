@@ -11,5 +11,5 @@
 pub mod builder;
 pub mod trait_;
 
-pub use builder::{Builder, DigTy, Resolver, Typed};
+pub use builder::{Builder, DigTy, Resolver, Typed, expr_structural_eq};
 pub use trait_::Codegen;

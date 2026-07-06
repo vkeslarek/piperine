@@ -17,8 +17,6 @@ pub mod digital;
 pub mod flatten;
 pub use piperine_lang::math;
 
-mod emit;
-
 use thiserror::Error;
 
 /// Errors from IR validation and JIT compilation. Every unimplemented

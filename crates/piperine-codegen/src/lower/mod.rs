@@ -12,17 +12,16 @@
 mod expr;
 mod stmt;
 mod symbols;
-mod diff;
+pub mod diff;
 mod validate;
 
 pub mod pom;
 
 pub use piperine_lang::math;
 
-pub use expr::{Analysis, Axis, BinOp, IrExpr, UnOp, SimQuery};
+pub use expr::{Analysis, Axis, BinOp, UnOp, pom_eval_const};
 pub use stmt::{
-    ContribKind, CrossDir, DigitalEvent, EdgeKind, EventSource, AnalogEvent, IrStmt, Lval,
-    Pattern, Severity, Trit,
+    ContribKind, CrossDir, DigitalEvent, EdgeKind, EventSource, AnalogEvent, Severity,
 };
 pub use symbols::{
     Domain, FnId, InterpMode, Function, NoiseKind, NoiseSource, StateKind, StateVar,
@@ -54,7 +53,7 @@ pub struct AnalogBody {
     /// Operator state slots referenced by this body (ids into `symbols.states`).
     pub states: Vec<StateId>,
     pub noise: Vec<NoiseSource>,
-    pub stmts: Vec<IrStmt>,
+    pub stmts: Vec<piperine_lang::parse::ast::Stmt>,
 }
 
 /// Digital behavior: the PHDL model — combinational logic with inferred

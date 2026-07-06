@@ -52,9 +52,11 @@ pub struct CompiledModule {
 impl CompiledModule {
     /// Validate and compile every behavior body of `module`.
     pub fn compile(module: &LoweredBody) -> Result<Self, CodegenError> {
-        module
-            .validated()
-            .map_err(|d| CodegenError::Invalid(format!("{}: {}", module.name, d.message)))?;
+        for d in module.validate() {
+            if d.kind == crate::ir::DiagnosticKind::Error {
+                return Err(CodegenError::Invalid(format!("{}: {}", module.name, d.message)));
+            }
+        }
         let analog = module
             .analog
             .as_ref()

@@ -236,8 +236,13 @@ impl AnalogInstance {
             .runtime_states()
             .iter()
             .map(|spec| {
-                let value = |expr: &crate::ir::IrExpr| {
-                    expr.eval_const(&|id| params.get(id.0 as usize).copied())
+                let param_names = kernel.param_names();
+                let value = |expr: &piperine_lang::parse::ast::Expr| {
+                    let resolve = |name: &str| -> Option<f64> {
+                        param_names.iter().position(|n| n == name)
+                            .and_then(|i| params.get(i).copied())
+                    };
+                    crate::ir::pom_eval_const(expr, &resolve)
                         .map_err(CodegenError::ConstEval)
                 };
                 Ok(match &spec.kind {
@@ -277,9 +282,15 @@ impl AnalogInstance {
             .events()
             .iter()
             .map(|e| match &e.trigger {
-                CompiledTrigger::Timer { period } => period
-                    .eval_const(&|id| params.get(id.0 as usize).copied())
-                    .map_err(CodegenError::ConstEval),
+                CompiledTrigger::Timer { period } => {
+                    let param_names = kernel.param_names();
+                    let resolve = |name: &str| -> Option<f64> {
+                        param_names.iter().position(|n| n == name)
+                            .and_then(|i| params.get(i).copied())
+                    };
+                    crate::ir::pom_eval_const(period, &resolve)
+                        .map_err(CodegenError::ConstEval)
+                }
                 _ => Ok(0.0),
             })
             .collect::<Result<Vec<_>, _>>()?;

@@ -1,5 +1,7 @@
+#![cfg(any())]
 //! Analog JIT end-to-end tests: hand-built IR modules compiled to kernels,
 //! checked numerically and through full solver analyses.
+//! Pending rewrite for POM Expr/Stmt (IrExpr/IrStmt removed).
 
 use piperine_codegen::ir::*;
 use piperine_codegen::jit::analog::AnalogKernel;

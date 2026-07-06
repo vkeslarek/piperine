@@ -293,16 +293,16 @@ impl<'m> DigitalCompiler<'m> {
             analog_voltages: load_field(&mut builder, AbiField::AnalogVoltages),
         };
 
-        let mut b = Builder {
-            builder: &mut builder,
-            module: self.module,
-            resolver: &self.resolver,
-            layout: &self.layout,
+        let mut b = Builder::new_digital(
+            &mut builder,
+            self.module,
+            &self.resolver,
+            &self.layout,
             pointers,
             reads,
-            math: &math,
+            &math,
             watch_out,
-        };
+        );
         body(&mut b)?;
 
         builder.ins().return_(&[]);
@@ -386,6 +386,7 @@ pub enum VarReads {
 }
 
 /// Loaded ABI pointer table.
+#[derive(Clone, Copy)]
 pub struct Pointers {
     pub inputs: Value,
     pub outputs: Value,
@@ -566,16 +567,16 @@ impl NetworkComb {
                 analog_voltages: analog_ptr,
             };
             let resolver = Resolver::from_symbols(&m.module.symbols);
-            let mut b = Builder {
-                builder: &mut builder,
-                module: m.module,
-                resolver: &resolver,
+            let mut b = Builder::new_digital(
+                &mut builder,
+                m.module,
+                &resolver,
                 layout,
                 pointers,
-                reads: VarReads::Live,
-                math: &math,
-                watch_out: None,
-            };
+                VarReads::Live,
+                &math,
+                None,
+            );
             let body = m.module.digital.as_ref().unwrap();
             for stmt in &body.stmts {
                 // Skip register power-on decls (handled at init, not in comb).

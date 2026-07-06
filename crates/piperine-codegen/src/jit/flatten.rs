@@ -1,85 +1,85 @@
-//! Analog body flattening: from the statement tree to pure per-branch
-//! expressions.
+//! Analog body flattening: from the POM `Stmt` tree to pure per-branch
+//! expressions. Operates entirely on POM `Expr`/`Stmt` — no `IrExpr`.
 //!
-//! The analog JIT skeleton compiles *flat contributions* — one expression per
-//! branch, symbolically differentiable. This pass gets there by:
-//!
-//! - resolving sequential variable assignments symbolically (an `Assign`
-//!   under a guard becomes `Select(guard, new, old)`),
-//! - folding `If`/`Match` path conditions into contribution expressions
-//!   (`I <+ e` under guard `g` contributes `Select(g, e, 0)`),
-//! - inlining user function calls ([`Inliner`]),
-//! - expanding `ddx` states into their compile-time derivative, and
-//! - splitting each contribution into a resistive part and a charge `Q(V)`
-//!   for the reactive companion model.
-//!
-//! Anything it cannot express faithfully is a named [`CodegenError`].
+//! - Variable assignments resolved symbolically (`Ident(name)` → scope value),
+//! - `If`/`Match` path conditions folded into contribution expressions,
+//! - User function calls inlined,
+//! - `__ddt(id, x)` markers split into resistive (0) and charge (x) parts,
+//! - `__idt(id, x, ic)` lowered to the implicit-Euler companion,
+//! - `__ddx(id, x, node)` resolved to a compile-time derivative,
+//! - `__state_load(id)` left as-is for runtime state reads.
 
 use std::collections::HashMap;
 
+use piperine_lang::parse::ast::{BinaryOp, BindOp, EventSpec, Expr as PomExpr, Literal, Stmt as PomStmt};
+
 use crate::ir::{
-    ContribKind, CrossDir, EventSource, AnalogEvent, IrExpr, LoweredBody, StateKind, IrStmt,
-    Lval, NatureId, NatureKind, NodeId, Pattern, Severity, StateId, Trit, VarId,
+    CrossDir, EventSource, AnalogEvent, LoweredBody,
+    NatureKind, NodeId, StateId, VarId,
 };
 
 use super::CodegenError;
+
+/// Convert an `EventSpec` (AST) to `EventSource`(s) for the flattener.
+/// Expressions are NOT substituted here — `add_event` does that.
+fn event_spec_to_sources(spec: &EventSpec) -> Vec<EventSource> {
+    match spec {
+        EventSpec::Initial => vec![EventSource::InitialStep],
+        EventSpec::Final => vec![EventSource::FinalStep],
+        EventSpec::Named { name, arg } => match name.as_str() {
+            "cross" => vec![EventSource::Cross { expr: arg.clone(), dir: CrossDir::Either }],
+            "above" => vec![EventSource::Above { expr: arg.clone() }],
+            "timer" => vec![EventSource::Timer { period: arg.clone() }],
+            // Digital events (posedge/negedge/change) don't appear in analog bodies.
+            _ => vec![],
+        },
+        EventSpec::Or(specs) => {
+            let mut all = Vec::new();
+            for s in specs {
+                all.extend(event_spec_to_sources(s));
+            }
+            all
+        }
+    }
+}
 
 /// A flattened flow contribution: current injected from `plus` to `minus`.
 #[derive(Debug, Clone)]
 pub struct FlatContrib {
     pub plus: NodeId,
     pub minus: NodeId,
-    pub expr: IrExpr,
+    pub expr: PomExpr,
 }
 
-/// A flattened potential source: `V(plus) − V(minus) = expr` (one MNA
-/// branch-current unknown per force).
-///
-/// `ac_stim` carries an optional small-signal drive `(mag, phase)` attached to
-/// the branch: in AC analysis the branch equation's RHS becomes `mag·e^{jφ}`
-/// (an ideal AC voltage stimulus), while the DC/transient value stays `expr`.
-/// This is how a faithful independent voltage source injects its AC magnitude.
+/// A flattened potential source.
 #[derive(Debug, Clone)]
 pub struct FlatForce {
     pub plus: NodeId,
     pub minus: NodeId,
-    pub expr: IrExpr,
-    pub ac_stim: Option<(IrExpr, IrExpr)>,
+    pub expr: PomExpr,
+    pub ac_stim: Option<(PomExpr, PomExpr)>,
 }
 
-/// A diagnostic statement carried through for tooling; analog diagnostics are
-/// not executed by the JIT (SPEC §12).
 #[derive(Debug, Clone)]
 pub struct FlatDiagnostic {
-    pub severity: Severity,
+    pub severity: crate::ir::Severity,
     pub format: String,
 }
 
-/// When a runtime analog event fires (SPEC §6.1). Trigger expressions are
-/// evaluated at each accepted solution; the device detects the transition.
 #[derive(Debug, Clone)]
 pub enum FlatEventTrigger {
-    /// Fires once when the instance is created (`@ initial`).
     Initial,
-    /// Fires when `expr` crosses zero in the given direction.
-    Cross { expr: IrExpr, dir: CrossDir },
-    /// Fires when `expr` becomes positive (one-shot level crossing).
-    Above { expr: IrExpr },
-    /// Fires every `period` seconds.
-    Timer { period: IrExpr },
+    Cross { expr: PomExpr, dir: CrossDir },
+    Above { expr: PomExpr },
+    Timer { period: PomExpr },
 }
 
-/// One event action: write `value` (evaluated at the accepted solution) into
-/// the vars-bank slot of `var`. A body guard is folded into `value` as
-/// `Select(guard, new, Var(var))`.
 #[derive(Debug, Clone)]
 pub struct FlatEventAction {
     pub var: VarId,
-    pub value: IrExpr,
+    pub value: PomExpr,
 }
 
-/// A runtime-executed analog event: persistent-variable updates on a
-/// trigger (`@ initial` / `cross` / `above` / `timer`).
 #[derive(Debug, Clone)]
 pub struct FlatEvent {
     pub trigger: FlatEventTrigger,
@@ -87,375 +87,172 @@ pub struct FlatEvent {
 }
 
 impl FlatEvent {
-    /// The trigger expression, if the trigger watches one.
-    pub fn trigger_expr(&self) -> Option<&IrExpr> {
+    pub fn trigger_expr(&self) -> Option<&PomExpr> {
         match &self.trigger {
             FlatEventTrigger::Initial => None,
             FlatEventTrigger::Cross { expr, .. } | FlatEventTrigger::Above { expr } => Some(expr),
             FlatEventTrigger::Timer { period } => Some(period),
         }
     }
-
-    /// Every expression this event evaluates (trigger + action values).
-    pub fn exprs(&self) -> impl Iterator<Item = &IrExpr> {
-        self.trigger_expr()
-            .into_iter()
-            .chain(self.actions.iter().map(|a| &a.value))
+    pub fn exprs(&self) -> impl Iterator<Item = &PomExpr> {
+        self.trigger_expr().into_iter().chain(self.actions.iter().map(|a| &a.value))
     }
 }
 
-/// One `ac_stim` small-signal source extracted from a flow contribution.
-/// Zero in every analysis except AC, where it enters the RHS as
-/// `mag·e^{j·phase}` on the `(plus, minus)` branch.
 #[derive(Debug)]
 pub struct FlatAcStim {
     pub plus: NodeId,
     pub minus: NodeId,
-    /// Stimulus magnitude as it enters the contribution (linear scaling
-    /// and sign folded in).
-    pub mag: IrExpr,
-    /// Phase in radians.
-    pub phase: IrExpr,
+    pub mag: PomExpr,
+    pub phase: PomExpr,
 }
 
-/// The flattened analog behavior, ready for the Cranelift skeleton.
 #[derive(Debug, Default)]
 pub struct FlatAnalog {
-    /// Resistive current expressions (reactive states substituted to 0,
-    /// runtime states left as `State(id)` reads).
     pub resistive: Vec<FlatContrib>,
-    /// Charge expressions `Q(V)` whose `ddt` is the reactive current.
     pub charge: Vec<FlatContrib>,
-    /// Ideal potential sources.
     pub forces: Vec<FlatForce>,
-    /// AC stimulus sources (`ac_stim`) extracted from flow contributions.
     pub ac_stims: Vec<FlatAcStim>,
-    /// `$bound_step` expressions (the device hint is their minimum).
-    pub bound_steps: Vec<IrExpr>,
-    /// Resolved noise PSDs, in `body.noise` order: `(plus, minus, psd,
-    /// exponent)`. `exponent = None` for white noise (constant PSD);
-    /// `Some(expr)` for flicker `S(f) = psd * (f_ref / f)^exp` with
-    /// `f_ref = 1` Hz and `f = SimCtx.frequency`.
-    pub noise: Vec<(NodeId, NodeId, IrExpr, Option<IrExpr>)>,
-    /// Diagnostics collected (not executed) from the analog body.
+    pub bound_steps: Vec<PomExpr>,
+    pub noise: Vec<(NodeId, NodeId, PomExpr, Option<PomExpr>)>,
     pub diagnostics: Vec<FlatDiagnostic>,
-    /// Runtime-state slots (`delay`/`slew`/`idt`) the device must service,
-    /// with their resolved input expressions.
-    pub runtime_states: Vec<(StateId, IrExpr)>,
-    /// Runtime analog events (`@ initial`/`cross`/`above`/`timer`), executed
-    /// by the device at accepted solutions.
+    pub runtime_states: Vec<(StateId, PomExpr)>,
     pub events: Vec<FlatEvent>,
 }
 
-/// Inlines user function calls by symbolic substitution. Function bodies may
-/// use `VarDecl`/`Assign`/`If`/`Match`/`Return`; every path must return.
-pub struct Inliner<'m> {
-    module: &'m LoweredBody,
-    depth: u32,
-}
-
-impl<'m> Inliner<'m> {
-    const MAX_DEPTH: u32 = 32;
-
-    pub fn new(module: &'m LoweredBody) -> Self {
-        Self { module, depth: 0 }
+impl FlatAnalog {
+    /// Every expression in the flattened body (for terminal discovery).
+    pub fn exprs(&self) -> impl Iterator<Item = &PomExpr> {
+        self.resistive.iter().chain(&self.charge).map(|c| &c.expr)
+            .chain(self.forces.iter().map(|f| &f.expr))
+            .chain(self.ac_stims.iter().flat_map(|s| [&s.mag, &s.phase]))
+            .chain(self.bound_steps.iter())
+            .chain(self.noise.iter().map(|(_, _, psd, _)| psd))
+            .chain(self.runtime_states.iter().map(|(_, input)| input))
+            .chain(self.events.iter().flat_map(FlatEvent::exprs))
     }
 
-    /// Expand `Call(id, args)` into the function's body expression with
-    /// parameters substituted. `args` must already be resolved.
-    pub fn expand(&mut self, id: crate::ir::FnId, args: Vec<IrExpr>) -> Result<IrExpr, CodegenError> {
-        self.depth += 1;
-        if self.depth > Self::MAX_DEPTH {
-            self.depth -= 1;
-            return Err(CodegenError::Function(format!(
-                "function inlining exceeded depth {} — recursive function?",
-                Self::MAX_DEPTH
-            )));
-        }
-        let function = self
-            .module
+    /// How far into the `params`/`state`/`vars` banks the compiled code reads.
+    pub fn read_bounds(&self, module: &LoweredBody) -> (usize, usize, usize) {
+        // Function param VarIds are NOT module-level vars — exclude them.
+        let fn_param_ids: std::collections::HashSet<crate::ir::VarId> = module
             .symbols
-            .try_fn(id)
-            .ok_or_else(|| CodegenError::Function(format!("dangling fn #{}", id.0)))?;
-        // Fill missing trailing arguments from the function's default
-        // expressions (the language spec Part I §9.1). Defaults are elaboration
-        // constants, already lowered to constant `IrExpr`s at `convert_fn`.
-        let args = if args.len() < function.params.len() {
-            let mut full = args;
-            for i in full.len()..function.params.len() {
-                match function.defaults.get(i).and_then(|d| d.as_ref()) {
-                    Some(default) => full.push(default.clone()),
-                    None => {
-                        self.depth -= 1;
-                        return Err(CodegenError::Function(format!(
-                            "`{}` expects {} args, got {} (missing arg #{} has no default)",
-                            function.name,
-                            function.params.len(),
-                            full.len(),
-                            i + 1
-                        )));
+            .fns()
+            .flat_map(|(_, f)| f.params.iter().copied())
+            .collect();
+        let (mut params, mut state, mut vars) = (0usize, 0usize, 0usize);
+        for expr in self.exprs() {
+            visit_all(expr, &mut |e| {
+                if let PomExpr::Call(func, args) = e {
+                    if let PomExpr::Ident(name) = func.as_ref() {
+                        if name == "__state_load" {
+                            if let Some(PomExpr::Literal(Literal::Int(id))) = args.first() {
+                                state = state.max(*id as usize + 1);
+                            }
+                        }
                     }
                 }
-            }
-            full
-        } else if args.len() > function.params.len() {
-            self.depth -= 1;
-            return Err(CodegenError::Function(format!(
-                "`{}` expects {} args, got {}",
-                function.name,
-                function.params.len(),
-                args.len()
-            )));
-        } else {
-            args
-        };
-
-        let mut scope = Scope::new();
-        for (&param, arg) in function.params.iter().zip(args) {
-            scope.assign_unconditional(param, arg);
-        }
-        let body = function.body.clone();
-        let mut walker = FnWalker { inliner: self, scope, returned: None, name: function.name.clone() };
-        walker.walk(&body, None)?;
-        let result = walker
-            .returned
-            .ok_or_else(|| CodegenError::Function(format!("`{}` never returns a value", walker.name)))?;
-        self.depth -= 1;
-        Ok(result)
-    }
-}
-
-/// Symbolic variable environment shared by function and analog flattening.
-struct Scope {
-    vars: HashMap<VarId, Option<IrExpr>>,
-}
-
-impl Scope {
-    fn new() -> Self {
-        Self { vars: HashMap::new() }
-    }
-
-    fn declare(&mut self, var: VarId, init: Option<IrExpr>) {
-        self.vars.insert(var, init);
-    }
-
-    fn assign_unconditional(&mut self, var: VarId, value: IrExpr) {
-        self.vars.insert(var, Some(value));
-    }
-
-    /// Bind `var` to `value` under `guard`; outside the guard it keeps its
-    /// previous value.
-    fn assign(&mut self, var: VarId, value: IrExpr, guard: Option<&IrExpr>) -> Result<(), CodegenError> {
-        let merged = match guard {
-            None => value,
-            Some(g) => {
-                let old = self.read_opt(var);
-                match old {
-                    Some(old) => IrExpr::select(g.clone(), value, old),
-                    // Assigned only on one path and never before: reads after
-                    // this point would be undefined outside the guard.
-                    None => IrExpr::select(g.clone(), value, IrExpr::Real(0.0)),
-                }
-            }
-        };
-        self.vars.insert(var, Some(merged));
-        Ok(())
-    }
-
-    fn read_opt(&self, var: VarId) -> Option<IrExpr> {
-        self.vars.get(&var).cloned().flatten()
-    }
-}
-
-/// Statement walker for function bodies (shared statement subset + `Return`).
-struct FnWalker<'m, 'i> {
-    inliner: &'i mut Inliner<'m>,
-    scope: Scope,
-    returned: Option<IrExpr>,
-    name: String,
-}
-
-impl FnWalker<'_, '_> {
-    fn walk(&mut self, stmts: &[IrStmt], guard: Option<&IrExpr>) -> Result<(), CodegenError> {
-        for stmt in stmts {
-            match stmt {
-                IrStmt::VarDecl { var, init } => {
-                    let init = init.as_ref().map(|e| self.resolve(e)).transpose()?;
-                    self.scope.declare(*var, init);
-                }
-                IrStmt::Assign { lval: Lval::Var(var), expr } => {
-                    let value = self.resolve(expr)?;
-                    self.scope.assign(*var, value, guard)?;
-                }
-                IrStmt::Assign { lval, .. } => {
-                    return Err(CodegenError::unsupported(format!(
-                        "non-variable assignment target {lval:?} in function `{}`",
-                        self.name
-                    )));
-                }
-                IrStmt::If { cond, then_, else_ } => {
-                    let cond = self.resolve(cond)?;
-                    let then_guard = and_guards(guard, &cond);
-                    self.walk(then_, Some(&then_guard))?;
-                    let else_guard = and_guards(guard, &not(&cond));
-                    self.walk(else_, Some(&else_guard))?;
-                }
-                IrStmt::Match { scrutinee, arms, default } => {
-                    let scrutinee = self.resolve(scrutinee)?;
-                    let mut no_prior = None::<IrExpr>;
-                    for (pattern, body) in arms {
-                        let cond = pattern_condition(&scrutinee, pattern)?;
-                        let cond = self.resolve(&cond)?;
-                        let arm_guard = chain_guards(guard, &no_prior, &cond);
-                        self.walk(body, Some(&arm_guard))?;
-                        no_prior = Some(match no_prior {
-                            None => not(&cond),
-                            Some(prev) => IrExpr::binary(crate::ir::BinOp::And, prev, not(&cond)),
-                        });
+                if let PomExpr::Ident(name) = e {
+                    if let Some(id) = module_param_id(module, name) {
+                        params = params.max(id.0 as usize + 1);
                     }
-                    let default_guard = match &no_prior {
-                        None => guard.cloned(),
-                        Some(none_matched) => Some(and_guards(guard, none_matched)),
-                    };
-                    self.walk(default, default_guard.as_ref())?;
-                }
-                IrStmt::Return(Some(expr)) => {
-                    let value = self.resolve(expr)?;
-                    self.returned = Some(match (&self.returned, guard) {
-                        (None, _) => value,
-                        (Some(prev), Some(g)) => IrExpr::select(g.clone(), value, prev.clone()),
-                        // A second unconditional return is dead code; the
-                        // first one wins.
-                        (Some(prev), None) => prev.clone(),
-                    });
-                }
-                IrStmt::Return(None) => {
-                    return Err(CodegenError::Function(format!(
-                        "`{}` returns no value where one is required",
-                        self.name
-                    )));
-                }
-                other => {
-                    return Err(CodegenError::unsupported(format!(
-                        "statement {other:?} in function `{}`",
-                        self.name
-                    )));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn resolve(&mut self, expr: &IrExpr) -> Result<IrExpr, CodegenError> {
-        resolve_expr(expr, &self.scope, self.inliner)
-    }
-}
-
-/// Substitute variables from `scope` and inline user calls, recursively.
-fn resolve_expr(
-    expr: &IrExpr,
-    scope: &Scope,
-    inliner: &mut Inliner<'_>,
-) -> Result<IrExpr, CodegenError> {
-    match expr {
-        IrExpr::Var(id) => scope.read_opt(*id).ok_or_else(|| {
-            CodegenError::Invalid(format!(
-                "variable `{}` read before assignment",
-                inliner.module.symbols.var(*id).name
-            ))
-        }),
-        IrExpr::Call(id, args) => {
-            let args = args
-                .iter()
-                .map(|a| resolve_expr(a, scope, inliner))
-                .collect::<Result<Vec<_>, _>>()?;
-            inliner.expand(*id, args)
-        }
-        other => {
-            let mut error = None;
-            let out = other.map_children(&mut |child| {
-                match resolve_expr(child, scope, inliner) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        error.get_or_insert(e);
-                        IrExpr::Real(0.0)
+                    if let Some(id) = module_var_id(module, name) {
+                        if !fn_param_ids.contains(&id) {
+                            vars = vars.max(id.0 as usize + 1);
+                        }
                     }
                 }
             });
-            match error {
-                Some(e) => Err(e),
-                None => Ok(out),
-            }
         }
+        (params, state, vars)
     }
 }
 
-/// The boolean condition under which `pattern` matches `scrutinee`.
-fn pattern_condition(scrutinee: &IrExpr, pattern: &Pattern) -> Result<IrExpr, CodegenError> {
-    use crate::ir::BinOp::Eq;
-    match pattern {
-        Pattern::Wildcard => Ok(IrExpr::Bool(true)),
-        Pattern::Value(e) => Ok(IrExpr::binary(Eq, scrutinee.clone(), e.clone())),
-        Pattern::BitPattern(trits) => match trits.as_slice() {
-            [Trit::DontCare] => Ok(IrExpr::Bool(true)),
-            [Trit::Zero] => Ok(IrExpr::binary(Eq, scrutinee.clone(), IrExpr::Int(0))),
-            [Trit::One] => Ok(IrExpr::binary(Eq, scrutinee.clone(), IrExpr::Int(1))),
-            _ => Err(CodegenError::unsupported(
-                "multi-bit patterns in an analog/function `match`",
-            )),
-        },
+fn module_param_id(module: &LoweredBody, name: &str) -> Option<crate::ir::ParamId> {
+    module.symbols.params().find(|(_, p)| p.name == name).map(|(id, _)| id)
+}
+
+fn module_var_id(module: &LoweredBody, name: &str) -> Option<crate::ir::VarId> {
+    module.symbols.vars().find(|(_, v)| v.name == name).map(|(id, _)| id)
+}
+
+fn visit_all<F: FnMut(&PomExpr)>(expr: &PomExpr, f: &mut F) {
+    use piperine_lang::parse::ast::Walk;
+    expr.walk(&mut |e| { f(e); Walk::Continue });
+}
+
+/// Symbolic variable environment: maps var name → bound expression.
+struct Scope {
+    vars: HashMap<String, PomExpr>,
+}
+
+impl Scope {
+    fn new() -> Self { Self { vars: HashMap::new() } }
+
+    fn declare(&mut self, name: String, init: Option<PomExpr>) {
+        self.vars.insert(name, init.unwrap_or(PomExpr::Literal(Literal::Real(0.0))));
+    }
+
+    fn assign(&mut self, name: String, value: PomExpr, guard: Option<&PomExpr>) {
+        let merged = match guard {
+            None => value,
+            Some(g) => {
+                let old = self.vars.get(&name).cloned()
+                    .unwrap_or(PomExpr::Literal(Literal::Real(0.0)));
+                select(g.clone(), value, old)
+            }
+        };
+        self.vars.insert(name, merged);
+    }
+
+    fn get(&self, name: &str) -> Option<&PomExpr> {
+        self.vars.get(name)
     }
 }
 
-fn not(expr: &IrExpr) -> IrExpr {
-    IrExpr::Unary(crate::ir::UnOp::Not, Box::new(expr.clone()))
+fn select(cond: PomExpr, then_: PomExpr, else_: PomExpr) -> PomExpr {
+    PomExpr::If {
+        cond: Box::new(cond),
+        then_body: piperine_lang::parse::ast::Block { stmts: vec![], expr: Some(Box::new(then_)) },
+        else_body: piperine_lang::parse::ast::Block { stmts: vec![], expr: Some(Box::new(else_)) },
+    }
 }
 
-fn and_guards(guard: Option<&IrExpr>, cond: &IrExpr) -> IrExpr {
+fn binary(op: BinaryOp, a: PomExpr, b: PomExpr) -> PomExpr {
+    PomExpr::Binary(Box::new(a), op, Box::new(b))
+}
+
+fn lit(v: f64) -> PomExpr {
+    PomExpr::Literal(Literal::Real(v))
+}
+
+fn not_expr(e: PomExpr) -> PomExpr {
+    PomExpr::Unary(piperine_lang::parse::ast::UnaryOp::Not, Box::new(e))
+}
+
+fn and_guards(guard: Option<&PomExpr>, cond: &PomExpr) -> PomExpr {
     match guard {
         None => cond.clone(),
-        Some(g) => IrExpr::binary(crate::ir::BinOp::And, g.clone(), cond.clone()),
+        Some(g) => binary(BinaryOp::And, g.clone(), cond.clone()),
     }
 }
 
-/// `guard ∧ no-prior-arm ∧ cond` for `match` arms.
-fn chain_guards(guard: Option<&IrExpr>, no_prior: &Option<IrExpr>, cond: &IrExpr) -> IrExpr {
-    let with_prior = match no_prior {
-        None => cond.clone(),
-        Some(prev) => IrExpr::binary(crate::ir::BinOp::And, prev.clone(), cond.clone()),
-    };
-    and_guards(guard, &with_prior)
-}
-
-// ─── Analog body flattening ───────────────────────────────────────────────────
-
-/// Flattens an analog body into [`FlatAnalog`]. One-shot: construct, call
-/// [`Self::flatten`].
+/// Flattens an analog body into [`FlatAnalog`].
 pub struct AnalogFlattener<'m> {
     module: &'m LoweredBody,
-    inliner: Inliner<'m>,
     scope: Scope,
     out: FlatAnalog,
-    /// Potential contributions accumulate per branch before becoming forces.
-    potential_acc: Vec<(NodeId, NodeId, IrExpr)>,
+    potential_acc: Vec<(NodeId, NodeId, PomExpr)>,
 }
 
 impl<'m> AnalogFlattener<'m> {
     pub fn new(module: &'m LoweredBody) -> Self {
         let mut scope = Scope::new();
-        // Pre-populate the scope with module-level persistent vars (SPEC
-        // §I.15, §9): these survive across evaluations. In a mixed-signal
-        // module the analog body reads digital register values through
-        // this path (the D2A bridge). Each var maps to `IrExpr::Var(id)`
-        // — an external read the JIT services from the vars bank. If the
-        // analog body assigns the var (sequential binding), that
-        // assignment overwrites this entry.
-        for (id, _) in module.symbols.vars() {
-            scope.declare(id, Some(IrExpr::Var(id)));
+        for (_, v) in module.symbols.vars() {
+            scope.declare(v.name.clone(), Some(PomExpr::Ident(v.name.clone())));
         }
         Self {
             module,
-            inliner: Inliner::new(module),
             scope,
             out: FlatAnalog::default(),
             potential_acc: Vec::new(),
@@ -463,45 +260,31 @@ impl<'m> AnalogFlattener<'m> {
     }
 
     pub fn flatten(mut self) -> Result<FlatAnalog, CodegenError> {
-        let body = self
-            .module
-            .analog
-            .as_ref()
-            .ok_or_else(|| CodegenError::Invalid(format!("`{}` has no analog body", self.module.name)))?;
+        let body = self.module.analog.as_ref()
+            .ok_or_else(|| CodegenError::Invalid(format!(
+                "`{}` has no analog body", self.module.name)))?;
         self.walk(&body.stmts, None)?;
 
-        // Accumulated potential contributions become force rows. Any `ac_stim`
-        // in the branch expression becomes the branch's AC drive (see FlatForce).
         let potentials = std::mem::take(&mut self.potential_acc);
         for (plus, minus, expr) in potentials {
             let (without, stim) = split_ac_stim(expr)?;
             let expr = self.finish_expr(without)?;
             let ac_stim = match stim {
-                Some((mag, phase)) => {
-                    Some((self.finish_expr(mag)?, self.finish_expr(phase)?))
-                }
+                Some((mag, phase)) => Some((self.finish_expr(mag)?, self.finish_expr(phase)?)),
                 None => None,
             };
             self.out.forces.push(FlatForce { plus, minus, expr, ac_stim });
         }
 
-        // Noise PSDs resolve against the final variable environment.
-        // The flicker exponent is preserved alongside
-        // the PSD — formerly dropped (`Flicker { psd, .. }`).
         for source in &body.noise {
             let (psd_src, exponent_src) = match &source.kind {
                 crate::ir::NoiseKind::White { psd } => (psd.clone(), None),
-                crate::ir::NoiseKind::Flicker { psd, exponent } => {
-                    (psd.clone(), Some(exponent.clone()))
-                }
+                crate::ir::NoiseKind::Flicker { psd, exponent } => (psd.clone(), Some(exponent.clone())),
             };
-            let psd = resolve_expr(&psd_src, &self.scope, &mut self.inliner)?;
+            let psd = self.subst(&psd_src)?;
             let psd = self.finish_expr(psd)?;
             let exponent = match exponent_src {
-                Some(e) => {
-                    let e = resolve_expr(&e, &self.scope, &mut self.inliner)?;
-                    Some(self.finish_expr(e)?)
-                }
+                Some(e) => Some(self.finish_expr(self.subst(&e)?)?),
                 None => None,
             };
             self.out.noise.push((source.plus, source.minus, psd, exponent));
@@ -509,206 +292,142 @@ impl<'m> AnalogFlattener<'m> {
         Ok(self.out)
     }
 
-    fn walk(&mut self, stmts: &[IrStmt], guard: Option<&IrExpr>) -> Result<(), CodegenError> {
+    fn walk(&mut self, stmts: &[PomStmt], guard: Option<&PomExpr>) -> Result<(), CodegenError> {
         for stmt in stmts {
             match stmt {
-                IrStmt::Contrib { nature, plus, minus, expr, kind } => {
-                    self.add_contrib(*nature, *plus, *minus, expr, *kind, guard)?;
+                PomStmt::Bind { dest, op: BindOp::Contrib, src } => {
+                    self.add_contrib(dest, src, guard)?;
                 }
-                IrStmt::Force { nature, plus, minus, expr } => {
-                    self.add_force(*nature, *plus, *minus, expr, guard)?;
+                PomStmt::Bind { dest, op: BindOp::Force, src } => {
+                    self.add_force(dest, src, guard)?;
                 }
-                IrStmt::Assign { lval: Lval::Var(var), expr } => {
-                    let value = resolve_expr(expr, &self.scope, &mut self.inliner)?;
-                    self.scope.assign(*var, value, guard)?;
+                PomStmt::Bind { dest, op: BindOp::Assign, src } => {
+                    if let PomExpr::Ident(name) = dest {
+                        let value = self.subst(src)?;
+                        self.scope.assign(name.clone(), value, guard);
+                    }
                 }
-                IrStmt::Assign { lval, .. } => {
-                    return Err(CodegenError::unsupported(format!(
-                        "non-variable assignment target {lval:?} in an analog body"
-                    )));
+                PomStmt::VarDecl { name, default, .. } => {
+                    let init = match default {
+                        Some(e) => Some(self.subst(e)?),
+                        None => None,
+                    };
+                    self.scope.declare(name.clone(), init);
                 }
-                IrStmt::VarDecl { var, init } => {
-                    let init = init
-                        .as_ref()
-                        .map(|e| resolve_expr(e, &self.scope, &mut self.inliner))
-                        .transpose()?;
-                    self.scope.declare(*var, init);
-                }
-                IrStmt::If { cond, then_, else_ } => {
-                    let cond = resolve_expr(cond, &self.scope, &mut self.inliner)?;
+                PomStmt::If { cond, then_body, else_body } => {
+                    let cond = self.subst(cond)?;
                     let then_guard = and_guards(guard, &cond);
-                    self.walk(then_, Some(&then_guard))?;
-                    let else_guard = and_guards(guard, &not(&cond));
-                    self.walk(else_, Some(&else_guard))?;
+                    self.walk(&then_body.stmts, Some(&then_guard))?;
+                    let else_guard = and_guards(guard, &not_expr(cond.clone()));
+                    if let Some(eb) = else_body {
+                        self.walk(&eb.stmts, Some(&else_guard))?;
+                    }
                 }
-                IrStmt::Match { scrutinee, arms, default } => {
-                    let scrutinee = resolve_expr(scrutinee, &self.scope, &mut self.inliner)?;
-                    let mut no_prior = None::<IrExpr>;
-                    for (pattern, body) in arms {
-                        let cond = pattern_condition(&scrutinee, pattern)?;
+                PomStmt::Match { expr, arms } => {
+                    let scrutinee = self.subst(expr)?;
+                    let mut no_prior = None::<PomExpr>;
+                    for arm in arms {
+                        let cond = pattern_cond(&scrutinee, &arm.pat);
                         let arm_guard = chain_guards(guard, &no_prior, &cond);
-                        self.walk(body, Some(&arm_guard))?;
+                        self.walk(&arm.body.stmts, Some(&arm_guard))?;
                         no_prior = Some(match no_prior {
-                            None => not(&cond),
-                            Some(prev) => IrExpr::binary(crate::ir::BinOp::And, prev, not(&cond)),
+                            None => not_expr(cond),
+                            Some(prev) => binary(BinaryOp::And, prev, not_expr(cond)),
                         });
                     }
-                    let default_guard = match &no_prior {
-                        None => guard.cloned(),
-                        Some(none_matched) => Some(and_guards(guard, none_matched)),
+                }
+                PomStmt::Expr(e) => {
+                    if let PomExpr::SysCall(name, args) = e {
+                        match name.trim_start_matches('$') {
+                            "bound_step" => {
+                                let val = args.first().map(|a| self.subst(a))
+                                    .unwrap_or(Ok(lit(0.0)))?;
+                                let finished = self.finish_expr(val)?;
+                                self.out.bound_steps.push(finished);
+                            }
+                            "finish" | "stop" => {
+                                return Err(CodegenError::unsupported("$finish in an analog body"));
+                            }
+                            "discontinuity" => {}
+                            n if matches!(n, "display" | "write" | "strobe" | "monitor"
+                                | "warning" | "warn" | "error" | "fatal" | "info") =>
+                            {
+                                let severity = match n {
+                                    "warning" | "warn" => crate::ir::Severity::Warn,
+                                    "error" => crate::ir::Severity::Error,
+                                    "fatal" => crate::ir::Severity::Fatal,
+                                    _ => crate::ir::Severity::Info,
+                                };
+                                let fmt = match args.first() {
+                                    Some(PomExpr::Literal(Literal::String(s))) => s.clone(),
+                                    _ => String::new(),
+                                };
+                                self.out.diagnostics.push(FlatDiagnostic { severity, format: fmt });
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                PomStmt::Diagnostic { sys, .. } => {
+                    let bare = sys.trim_start_matches('$');
+                    let severity = match bare {
+                        "warning" | "warn" => crate::ir::Severity::Warn,
+                        "error" => crate::ir::Severity::Error,
+                        "fatal" => crate::ir::Severity::Fatal,
+                        _ => crate::ir::Severity::Info,
                     };
-                    self.walk(default, default_guard.as_ref())?;
+                    self.out.diagnostics.push(FlatDiagnostic {
+                        severity,
+                        format: String::new(),
+                    });
                 }
-                IrStmt::BoundStep(expr) => {
-                    let expr = resolve_expr(expr, &self.scope, &mut self.inliner)?;
-                    let expr = self.finish_expr(expr)?;
-                    self.out.bound_steps.push(expr);
+                PomStmt::Event { spec, guard: event_guard, body } => {
+                    // Combine the event's `when` guard with the outer path guard.
+                    let combined_guard = match event_guard {
+                        Some(eg) => {
+                            let resolved_eg = self.subst(eg)?;
+                            match guard {
+                                Some(pg) => Some(Box::new(PomExpr::Binary(
+                                    Box::new(resolved_eg), BinaryOp::And, Box::new(pg.clone()),
+                                ))),
+                                None => Some(Box::new(resolved_eg)),
+                            }
+                        }
+                        None => guard.map(|g| Box::new(g.clone())),
+                    };
+                    for source in event_spec_to_sources(spec) {
+                        let event = AnalogEvent {
+                            source,
+                            body: body.stmts.clone(),
+                        };
+                        self.add_event(&event, combined_guard.as_deref())?;
+                    }
                 }
-                IrStmt::Diagnostic { severity, format, .. } => {
-                    self.out
-                        .diagnostics
-                        .push(FlatDiagnostic { severity: *severity, format: format.clone() });
+                PomStmt::Return(_) => {
+                    return Err(CodegenError::Invalid("`return` in an analog body".into()));
                 }
-                IrStmt::Discontinuity(_) => {}
-                IrStmt::AnalogEvent(event) => self.add_event(event, guard)?,
-                IrStmt::Finish => {
-                    return Err(CodegenError::unsupported("$finish in an analog body"));
-                }
-                IrStmt::ClockedBlock { .. } | IrStmt::Return(_) => {
-                    return Err(CodegenError::Invalid(format!(
-                        "statement {stmt:?} is not allowed in an analog body"
-                    )));
-                }
+                _ => {}
             }
         }
         Ok(())
     }
 
-    /// Lower an analog event into a runtime [`FlatEvent`]. Bodies are
-    /// persistent-variable updates (plus `if`/`match`/diagnostics); anything
-    /// else has no runtime-event lowering and is a named error. `@ final`
-    /// admits diagnostics only (there is no end-of-run device hook).
-    fn add_event(&mut self, event: &AnalogEvent, guard: Option<&IrExpr>) -> Result<(), CodegenError> {
-        let resolve = |s: &mut Self, e: &IrExpr| {
-            resolve_expr(e, &s.scope, &mut s.inliner).and_then(|e| s.finish_expr(e))
-        };
-        let trigger = match &event.source {
-            EventSource::InitialStep => FlatEventTrigger::Initial,
-            EventSource::FinalStep => {
-                for stmt in &event.body {
-                    let IrStmt::Diagnostic { severity, format, .. } = stmt else {
-                        return Err(CodegenError::unsupported(format!(
-                            "statement {stmt:?} in an `@ final` analog event"
-                        )));
-                    };
-                    self.out
-                        .diagnostics
-                        .push(FlatDiagnostic { severity: *severity, format: format.clone() });
-                }
-                return Ok(());
-            }
-            EventSource::Cross { expr, dir } => {
-                FlatEventTrigger::Cross { expr: resolve(self, expr)?, dir: *dir }
-            }
-            EventSource::Above { expr } => FlatEventTrigger::Above { expr: resolve(self, expr)? },
-            EventSource::Timer { period } => {
-                FlatEventTrigger::Timer { period: resolve(self, period)? }
-            }
-        };
-        let mut actions = Vec::new();
-        self.collect_event_actions(&event.body, guard, &mut actions)?;
-        self.out.events.push(FlatEvent { trigger, actions });
-        Ok(())
-    }
-
-    /// Collect an event body's variable updates, folding `if`/`match` path
-    /// conditions into each action value.
-    fn collect_event_actions(
-        &mut self,
-        stmts: &[IrStmt],
-        guard: Option<&IrExpr>,
-        actions: &mut Vec<FlatEventAction>,
-    ) -> Result<(), CodegenError> {
-        for stmt in stmts {
-            match stmt {
-                IrStmt::Assign { lval: Lval::Var(var), expr } => {
-                    let value = resolve_expr(expr, &self.scope, &mut self.inliner)?;
-                    let value = self.finish_expr(value)?;
-                    let value = match guard {
-                        None => value,
-                        Some(g) => IrExpr::select(g.clone(), value, IrExpr::Var(*var)),
-                    };
-                    actions.push(FlatEventAction { var: *var, value });
-                }
-                IrStmt::If { cond, then_, else_ } => {
-                    let cond = resolve_expr(cond, &self.scope, &mut self.inliner)?;
-                    let then_guard = and_guards(guard, &cond);
-                    self.collect_event_actions(then_, Some(&then_guard), actions)?;
-                    let else_guard = and_guards(guard, &not(&cond));
-                    self.collect_event_actions(else_, Some(&else_guard), actions)?;
-                }
-                IrStmt::Match { scrutinee, arms, default } => {
-                    let scrutinee = resolve_expr(scrutinee, &self.scope, &mut self.inliner)?;
-                    let mut no_prior = None::<IrExpr>;
-                    for (pattern, body) in arms {
-                        let cond = pattern_condition(&scrutinee, pattern)?;
-                        let arm_guard = chain_guards(guard, &no_prior, &cond);
-                        self.collect_event_actions(body, Some(&arm_guard), actions)?;
-                        no_prior = Some(match no_prior {
-                            None => not(&cond),
-                            Some(prev) => IrExpr::binary(crate::ir::BinOp::And, prev, not(&cond)),
-                        });
-                    }
-                    let default_guard = match &no_prior {
-                        None => guard.cloned(),
-                        Some(none_matched) => Some(and_guards(guard, none_matched)),
-                    };
-                    self.collect_event_actions(default, default_guard.as_ref(), actions)?;
-                }
-                IrStmt::Diagnostic { severity, format, .. } => {
-                    self.out
-                        .diagnostics
-                        .push(FlatDiagnostic { severity: *severity, format: format.clone() });
-                }
-                other => {
-                    return Err(CodegenError::unsupported(format!(
-                        "statement {other:?} in an analog event body"
-                    )));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn add_contrib(
-        &mut self,
-        nature: NatureId,
-        plus: NodeId,
-        minus: NodeId,
-        expr: &IrExpr,
-        kind: ContribKind,
-        guard: Option<&IrExpr>,
-    ) -> Result<(), CodegenError> {
-        let resolved = resolve_expr(expr, &self.scope, &mut self.inliner)?;
+    fn add_contrib(&mut self, dest: &PomExpr, expr: &PomExpr, guard: Option<&PomExpr>) -> Result<(), CodegenError> {
+        let (nature_kind, plus, minus) = self.parse_dest(dest)?;
+        let resolved = self.subst(expr)?;
         let guarded = match guard {
             None => resolved,
-            Some(g) => IrExpr::select(g.clone(), resolved, IrExpr::Real(0.0)),
+            Some(g) => select(g.clone(), resolved, lit(0.0)),
         };
-        match self.module.symbols.nature(nature).kind {
-            NatureKind::Flow => self.add_flow(guarded, plus, minus, kind),
+        match nature_kind {
+            NatureKind::Flow => self.add_flow(guarded, plus, minus),
             NatureKind::Potential => {
                 if guard.is_some() {
-                    return Err(CodegenError::unsupported(
-                        "conditional potential contribution (`V(p,n) <+ …` under if/match)",
-                    ));
+                    return Err(CodegenError::unsupported("conditional potential contribution"));
                 }
-                match self
-                    .potential_acc
-                    .iter_mut()
-                    .find(|(p, m, _)| *p == plus && *m == minus)
-                {
+                match self.potential_acc.iter_mut().find(|(p, m, _)| *p == plus && *m == minus) {
                     Some((_, _, acc)) => {
-                        *acc = IrExpr::binary(crate::ir::BinOp::Add, acc.clone(), guarded);
+                        *acc = binary(BinaryOp::Add, acc.clone(), guarded);
                     }
                     None => self.potential_acc.push((plus, minus, guarded)),
                 }
@@ -717,40 +436,21 @@ impl<'m> AnalogFlattener<'m> {
         }
     }
 
-    fn add_force(
-        &mut self,
-        nature: NatureId,
-        plus: NodeId,
-        minus: NodeId,
-        expr: &IrExpr,
-        guard: Option<&IrExpr>,
-    ) -> Result<(), CodegenError> {
-        let resolved = resolve_expr(expr, &self.scope, &mut self.inliner)?;
-        match self.module.symbols.nature(nature).kind {
+    fn add_force(&mut self, dest: &PomExpr, expr: &PomExpr, guard: Option<&PomExpr>) -> Result<(), CodegenError> {
+        let (nature_kind, plus, minus) = self.parse_dest(dest)?;
+        let resolved = self.subst(expr)?;
+        match nature_kind {
             NatureKind::Potential => {
                 if let Some(g) = guard {
-                    // Conditional potential force — a switch branch (SPEC
-                    // §10.2). The ideal `V(a,b) <- expr` under guard `g`
-                    // cannot conditionally add/remove an MNA branch.
-                    // Use the finite-parameter approximation: model the
-                    // switch as a variable conductance (Thevenin equiv).
-                    //
-                    //   I(a,b) <+ Select(g, G_LARGE, G_MIN) * (V(a,b) − expr)
-                    //
-                    // g=true:  I = G_LARGE * (V − expr) ≈ V = expr (closed)
-                    // g=false: I = G_MIN * (V − expr)   ≈ I = 0    (open)
-                    const GMIN: f64 = 1e-12;
-                    const G_LARGE: f64 = 1.0 / GMIN;
-                    let branch = IrExpr::Branch { nature, plus, minus };
-                    let v_minus_expr = IrExpr::binary(crate::ir::BinOp::Sub, branch, resolved);
-                    let conductance = IrExpr::Select(
-                        Box::new(g.clone()),
-                        Box::new(IrExpr::Real(G_LARGE)),
-                        Box::new(IrExpr::Real(GMIN)),
+                    let branch = PomExpr::Call(
+                        Box::new(PomExpr::Ident("V".into())),
+                        vec![PomExpr::Ident(self.module.symbols.node(plus).name.clone()),
+                             PomExpr::Ident(self.module.symbols.node(minus).name.clone())],
                     );
-                    let switch_expr =
-                        IrExpr::binary(crate::ir::BinOp::Mul, conductance, v_minus_expr);
-                    return self.add_flow(switch_expr, plus, minus, ContribKind::Resistive);
+                    let v_minus_e = binary(BinaryOp::Sub, branch, resolved);
+                    let conductance = select(g.clone(), lit(1e12), lit(1e-12));
+                    let switch = binary(BinaryOp::Mul, conductance, v_minus_e);
+                    return self.add_flow(switch, plus, minus);
                 }
                 let expr = self.finish_expr(resolved)?;
                 self.out.forces.push(FlatForce { plus, minus, expr, ac_stim: None });
@@ -758,55 +458,60 @@ impl<'m> AnalogFlattener<'m> {
             }
             NatureKind::Flow => {
                 if let Some(g) = guard {
-                    let guarded = IrExpr::select(g.clone(), resolved, IrExpr::Real(0.0));
-                    return self.add_flow(guarded, plus, minus, ContribKind::Resistive);
+                    let guarded = select(g.clone(), resolved, lit(0.0));
+                    return self.add_flow(guarded, plus, minus);
                 }
-                self.add_flow(resolved, plus, minus, ContribKind::Resistive)
+                self.add_flow(resolved, plus, minus)
             }
         }
     }
 
-    /// Split a flow contribution into its resistive and charge parts and
-    /// register any runtime states it references.
-    fn add_flow(
-        &mut self,
-        expr: IrExpr,
-        plus: NodeId,
-        minus: NodeId,
-        _declared: ContribKind,
-    ) -> Result<(), CodegenError> {
+    fn parse_dest(&self, dest: &PomExpr) -> Result<(NatureKind, NodeId, NodeId), CodegenError> {
+        if let PomExpr::Call(func, args) = dest
+            && let PomExpr::Ident(name) = func.as_ref() {
+            let nature_kind = match name.as_str() {
+                "V" => NatureKind::Potential,
+                _ => NatureKind::Flow,
+            };
+            let plus_name = ident_str(args.first()).unwrap_or_else(|| "?".into());
+            let minus_name = ident_str(args.get(1)).unwrap_or_else(|| "0".into());
+            let plus = self.resolve_node(&plus_name);
+            let minus = self.resolve_node(&minus_name);
+            return Ok((nature_kind, plus, minus));
+        }
+        Ok((NatureKind::Flow, NodeId::GROUND, NodeId::GROUND))
+    }
+
+    fn resolve_node(&self, name: &str) -> NodeId {
+        const GROUND: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
+        if GROUND.contains(&name) {
+            return NodeId::GROUND;
+        }
+        self.module.symbols.nodes()
+            .find(|(_, n)| n.name == name)
+            .map(|(id, _)| id)
+            .unwrap_or(NodeId::GROUND)
+    }
+
+    fn add_flow(&mut self, expr: PomExpr, plus: NodeId, minus: NodeId) -> Result<(), CodegenError> {
         let expr = self.extract_ac_stim(expr, plus, minus)?;
-        let has_ddt = expr
-            .find_state(&|id| matches!(self.module.symbols.state(id).kind, StateKind::Ddt))
-            .is_some();
+        let has_ddt = has_marker(&expr, &["__ddt", "__laplace", "__ztransform"]);
 
         if has_ddt {
-            // Q = expr[ddt → arg] − expr[ddt → 0] isolates the charge whose
-            // time derivative is the reactive current; the resistive terms
-            // cancel.
-            let with_arg = self.substitute_ddt(&expr, true)?;
-            let with_zero = self.substitute_ddt(&expr, false)?;
-            let charge = IrExpr::binary(crate::ir::BinOp::Sub, with_arg, with_zero);
+            let with_arg = substitute_marker(&expr, &["__ddt", "__laplace", "__ztransform"], true)?;
+            let with_zero = substitute_marker(&expr, &["__ddt", "__laplace", "__ztransform"], false)?;
+            let charge = binary(BinaryOp::Sub, with_arg, with_zero);
             let charge = self.finish_expr(charge)?;
             self.out.charge.push(FlatContrib { plus, minus, expr: charge });
         }
 
-        let resistive = self.substitute_ddt(&expr, false)?;
+        let resistive = substitute_marker(&expr, &["__ddt", "__laplace", "__ztransform"], false)?;
         let resistive = self.finish_expr(resistive)?;
         self.out.resistive.push(FlatContrib { plus, minus, expr: resistive });
         Ok(())
     }
 
-    /// Pull any `ac_stim` out of a flow contribution: the residual keeps
-    /// `expr[ac_stim → 0]` ("zero outside AC analysis", SPEC Part VI) and
-    /// the AC stimulus row is `expr[ac_stim → mag] − expr[ac_stim → 0]`,
-    /// so linear scaling and sign fold into the magnitude.
-    fn extract_ac_stim(
-        &mut self,
-        expr: IrExpr,
-        plus: NodeId,
-        minus: NodeId,
-    ) -> Result<IrExpr, CodegenError> {
+    fn extract_ac_stim(&mut self, expr: PomExpr, plus: NodeId, minus: NodeId) -> Result<PomExpr, CodegenError> {
         let (without, stim) = split_ac_stim(expr)?;
         if let Some((mag, phase)) = stim {
             let mag = self.finish_expr(mag)?;
@@ -816,27 +521,73 @@ impl<'m> AnalogFlattener<'m> {
         Ok(without)
     }
 
-    /// Replace `ddt` `State(id)` reads with the operator's input (`arg`) or
-    /// with 0. Other state kinds pass through to [`Self::finish_expr`].
-    fn substitute_ddt(&mut self, expr: &IrExpr, with_arg: bool) -> Result<IrExpr, CodegenError> {
-        let mut error = None;
-        let out = expr.rewrite(&mut |e| {
-            if let IrExpr::State(id) = &e {
-                let state = self.module.symbols.state(*id);
-                if matches!(state.kind, StateKind::Ddt) {
-                    if !with_arg {
-                        return IrExpr::Real(0.0);
-                    }
-                    return match resolve_expr(&state.arg.clone(), &self.scope, &mut self.inliner) {
-                        Ok(arg) => arg,
-                        Err(err) => {
-                            error.get_or_insert(err);
-                            IrExpr::Real(0.0)
+    /// Final expression pass: expand `__ddx`, lower `__idt`/`__idtmod` to
+    /// the companion model, register runtime states.
+    fn finish_expr(&mut self, expr: PomExpr) -> Result<PomExpr, CodegenError> {
+        let error: Option<CodegenError> = None;
+        let out = rewrite_expr(&expr, &mut |e| {
+            if let PomExpr::Call(func, args) = e {
+                if let PomExpr::Ident(name) = func.as_ref() {
+                    match name.as_str() {
+                        "__ddx" => {
+                            // __ddx(id, x, node_id) → d_dnode(x, node)
+                            if args.len() >= 3 {
+                                let x = &args[1];
+                                let node_id = match &args[2] {
+                                    PomExpr::Literal(Literal::Int(n)) => NodeId(*n as u32),
+                                    _ => NodeId::GROUND,
+                                };
+                                let module = self.module;
+                                let resolve = |n: &str| -> Option<NodeId> {
+                                    module.symbols.nodes().find(|(_, info)| info.name == n).map(|(id, _)| id)
+                                };
+                                return crate::lower::diff::d_dnode(x, node_id, &resolve);
+                            }
+                            return lit(0.0);
                         }
-                    };
+                        "__idt" | "__idtmod" => {
+                            // __idt(id, x, ic[, modulus]) → __state_load(id) + step * x
+                            if args.len() >= 2 {
+                                let id = match &args[0] {
+                                    PomExpr::Literal(Literal::Int(n)) => StateId(*n as u32),
+                                    _ => return e.clone(),
+                                };
+                                let x = &args[1];
+                                if !self.out.runtime_states.iter().any(|(s, _)| *s == id) {
+                                    self.out.runtime_states.push((id, x.clone()));
+                                }
+                                let state_load = PomExpr::Call(
+                                    Box::new(PomExpr::Ident("__state_load".into())),
+                                    vec![PomExpr::Literal(Literal::Int(id.0 as u64))],
+                                );
+                                let step = PomExpr::SysCall(
+                                    "$simparam".to_string(),
+                                    vec![PomExpr::Literal(Literal::String("step".into())), lit(0.0)],
+                                );
+                                return binary(BinaryOp::Add, state_load, binary(BinaryOp::Mul, step, x.clone()));
+                            }
+                            return e.clone();
+                        }
+                        "__delay" | "__slew" | "__transition" => {
+                            // Runtime state: __op(id, x, ...) → __state_load(id), register input.
+                            if let Some(PomExpr::Literal(Literal::Int(id))) = args.first() {
+                                let sid = StateId(*id as u32);
+                                if !self.out.runtime_states.iter().any(|(s, _)| *s == sid) {
+                                    let x = args.get(1).cloned().unwrap_or(lit(0.0));
+                                    self.out.runtime_states.push((sid, x));
+                                }
+                                return PomExpr::Call(
+                                    Box::new(PomExpr::Ident("__state_load".into())),
+                                    vec![PomExpr::Literal(Literal::Int(*id))],
+                                );
+                            }
+                            return e.clone();
+                        }
+                        _ => {}
+                    }
                 }
             }
-            e
+            e.clone()
         });
         match error {
             Some(e) => Err(e),
@@ -844,128 +595,304 @@ impl<'m> AnalogFlattener<'m> {
         }
     }
 
-    /// Final expression pass: expand `ddx`, lower `idt`/`idtmod` to the
-    /// implicit-Euler companion, register runtime states, and reject
-    /// operators without a lowering.
-    fn finish_expr(&mut self, expr: IrExpr) -> Result<IrExpr, CodegenError> {
-        let mut error: Option<CodegenError> = None;
-        let out = expr.rewrite(&mut |e| {
-            let IrExpr::State(id) = &e else { return e };
-            let id = *id;
-            let state = self.module.symbols.state(id);
-            match &state.kind {
-                // `ddt` was substituted away by the charge split.
-                StateKind::Ddt => {
-                    error.get_or_insert(CodegenError::Invalid(
-                        "`ddt` state survived the reactive split".into(),
-                    ));
-                    e
-                }
-                StateKind::Ddx { node } => {
-                    match resolve_expr(&state.arg.clone(), &self.scope, &mut self.inliner)
-                        .map(|arg| arg.d_dnode(*node))
-                    {
-                        Ok(derivative) => derivative,
-                        Err(err) => {
-                            error.get_or_insert(err);
-                            e
+    /// Substitute variables from scope and inline user calls.
+    fn subst(&self, expr: &PomExpr) -> Result<PomExpr, CodegenError> {
+        Ok(subst_scope(expr, &self.scope))
+    }
+
+    fn add_event(&mut self, event: &AnalogEvent, guard: Option<&PomExpr>) -> Result<(), CodegenError> {
+        let trigger = match &event.source {
+            EventSource::InitialStep => FlatEventTrigger::Initial,
+            EventSource::FinalStep => {
+                self.out.diagnostics.push(FlatDiagnostic {
+                    severity: crate::ir::Severity::Info,
+                    format: String::new(),
+                });
+                return Ok(());
+            }
+            EventSource::Cross { expr, dir } => {
+                FlatEventTrigger::Cross { expr: self.finish_expr(self.subst(expr)?)?, dir: *dir }
+            }
+            EventSource::Above { expr } => {
+                FlatEventTrigger::Above { expr: self.finish_expr(self.subst(expr)?)? }
+            }
+            EventSource::Timer { period } => {
+                FlatEventTrigger::Timer { period: self.finish_expr(self.subst(period)?)? }
+            }
+        };
+        let mut actions = Vec::new();
+        self.collect_event_actions(&event.body, guard, &mut actions)?;
+        self.out.events.push(FlatEvent { trigger, actions });
+        Ok(())
+    }
+
+    fn collect_event_actions(
+        &mut self,
+        stmts: &[PomStmt],
+        guard: Option<&PomExpr>,
+        actions: &mut Vec<FlatEventAction>,
+    ) -> Result<(), CodegenError> {
+        for stmt in stmts {
+            match stmt {
+                PomStmt::Bind { dest, op: BindOp::Assign, src } => {
+                    if let PomExpr::Ident(name) = dest {
+                        if let Some(var_id) = self.module.symbols.vars()
+                            .find(|(_, v)| &v.name == name).map(|(id, _)| id)
+                        {
+                            let value = self.finish_expr(self.subst(src)?)?;
+                            let value = match guard {
+                                None => value,
+                                Some(g) => select(g.clone(), value,
+                                    PomExpr::Ident(name.clone())),
+                            };
+                            actions.push(FlatEventAction { var: var_id, value });
                         }
                     }
                 }
-                // Implicit-Euler integrator: within a Newton step the value
-                // is `y_prev + dt·x` (`y_prev` serviced by the device each
-                // accepted step, `dt` = sim.step, 0 at DC so the value is
-                // the accumulated integral / initial condition). The `dt·x`
-                // term gives the in-step Jacobian coupling `dt·∂x/∂V`.
-                StateKind::Idt { .. } | StateKind::IdtMod { .. } => {
-                    match resolve_expr(&state.arg.clone(), &self.scope, &mut self.inliner) {
-                        Ok(arg) => {
-                            if !self.out.runtime_states.iter().any(|(s, _)| *s == id) {
-                                self.out.runtime_states.push((id, arg.clone()));
-                            }
-                            let step = IrExpr::Sim(crate::ir::SimQuery::Simparam {
-                                key: "step".into(),
-                                default: Box::new(IrExpr::Real(0.0)),
-                            });
-                            IrExpr::binary(
-                                crate::ir::BinOp::Add,
-                                e,
-                                IrExpr::binary(crate::ir::BinOp::Mul, step, arg),
-                            )
-                        }
-                        Err(err) => {
-                            error.get_or_insert(err);
-                            e
-                        }
+                PomStmt::If { cond, then_body, else_body } => {
+                    let cond = self.subst(cond)?;
+                    let then_guard = and_guards(guard, &cond);
+                    self.collect_event_actions(&then_body.stmts, Some(&then_guard), actions)?;
+                    let else_guard = and_guards(guard, &not_expr(cond));
+                    if let Some(eb) = else_body {
+                        self.collect_event_actions(&eb.stmts, Some(&else_guard), actions)?;
                     }
                 }
-                StateKind::Delay { .. } | StateKind::Slew { .. } => {
-                    match resolve_expr(&state.arg.clone(), &self.scope, &mut self.inliner) {
-                        Ok(arg) => {
-                            if !self.out.runtime_states.iter().any(|(s, _)| *s == id) {
-                                self.out.runtime_states.push((id, arg));
-                            }
-                            e
-                        }
-                        Err(err) => {
-                            error.get_or_insert(err);
-                            e
-                        }
-                    }
-                }
-                kind @ (StateKind::Transition { .. }
-                | StateKind::Table { .. }
-                | StateKind::Laplace { .. }
-                | StateKind::ZTransform { .. }) => {
-                    error.get_or_insert(CodegenError::unsupported(format!(
-                        "analog operator `{}` lowering is not implemented yet",
-                        kind.name()
-                    )));
-                    e
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Substitute `Ident(name)` with scope values.
+fn subst_scope(expr: &PomExpr, scope: &Scope) -> PomExpr {
+    match expr {
+        PomExpr::Ident(name) => scope.get(name).cloned().unwrap_or_else(|| expr.clone()),
+        PomExpr::Unary(op, x) => PomExpr::Unary(op.clone(), Box::new(subst_scope(x, scope))),
+        PomExpr::Binary(l, op, r) => PomExpr::Binary(
+            Box::new(subst_scope(l, scope)), op.clone(), Box::new(subst_scope(r, scope))),
+        PomExpr::Call(f, args) => {
+            let f = subst_scope(f, scope);
+            let args: Vec<_> = args.iter().map(|a| subst_scope(a, scope)).collect();
+            PomExpr::Call(Box::new(f), args)
+        }
+        PomExpr::SysCall(name, args) => {
+            let args: Vec<_> = args.iter().map(|a| subst_scope(a, scope)).collect();
+            PomExpr::SysCall(name.clone(), args)
+        }
+        PomExpr::If { cond, then_body, else_body } => PomExpr::If {
+            cond: Box::new(subst_scope(cond, scope)),
+            then_body: subst_block(then_body, scope),
+            else_body: subst_block(else_body, scope),
+        },
+        PomExpr::Block(b) => PomExpr::Block(subst_block(b, scope)),
+        PomExpr::Cast(t, x) => PomExpr::Cast(t.clone(), Box::new(subst_scope(x, scope))),
+        PomExpr::Field(base, field) => {
+            PomExpr::Field(Box::new(subst_scope(base, scope)), field.clone())
+        }
+        PomExpr::Index(base, idx) => PomExpr::Index(
+            Box::new(subst_scope(base, scope)), Box::new(subst_scope(idx, scope))),
+        _ => expr.clone(),
+    }
+}
+
+fn subst_block(block: &piperine_lang::parse::ast::Block, scope: &Scope) -> piperine_lang::parse::ast::Block {
+    piperine_lang::parse::ast::Block {
+        stmts: block.stmts.iter().map(|s| subst_stmt(s, scope)).collect(),
+        expr: block.expr.as_ref().map(|e| Box::new(subst_scope(e, scope))),
+    }
+}
+
+fn subst_stmt(stmt: &PomStmt, scope: &Scope) -> PomStmt {
+    use piperine_lang::parse::ast::Stmt as S;
+    match stmt {
+        S::Bind { dest, op, src } => S::Bind {
+            dest: subst_scope(dest, scope), op: op.clone(), src: subst_scope(src, scope),
+        },
+        S::VarDecl { name, ty, default } => S::VarDecl {
+            name: name.clone(), ty: ty.clone(),
+            default: default.as_ref().map(|e| subst_scope(e, scope)),
+        },
+        S::If { cond, then_body, else_body } => S::If {
+            cond: subst_scope(cond, scope),
+            then_body: subst_block(then_body, scope),
+            else_body: else_body.as_ref().map(|b| subst_block(b, scope)),
+        },
+        S::Expr(e) => S::Expr(subst_scope(e, scope)),
+        S::Return(e) => S::Return(subst_scope(e, scope)),
+        other => other.clone(),
+    }
+}
+
+/// Check if an expression contains any of the named marker calls.
+fn has_marker(expr: &PomExpr, names: &[&str]) -> bool {
+    use piperine_lang::parse::ast::Walk;
+    let mut found = false;
+    expr.walk(&mut |e| {
+        if let PomExpr::Call(func, _) = e {
+            if let PomExpr::Ident(name) = func.as_ref() {
+                if names.contains(&name.as_str()) {
+                    found = true;
+                    return Walk::SkipChildren;
                 }
             }
-        });
-        match error {
-            Some(e) => Err(e),
-            None => Ok(out),
+        }
+        Walk::Continue
+    });
+    found
+}
+
+/// Replace marker calls: `__ddt(id, x)` → `x` (with_arg=true) or `0.0` (false).
+fn substitute_marker(expr: &PomExpr, names: &[&str], with_arg: bool) -> Result<PomExpr, CodegenError> {
+    Ok(rewrite_expr(expr, &mut |e| {
+        if let PomExpr::Call(func, args) = e {
+            if let PomExpr::Ident(name) = func.as_ref() {
+                if names.contains(&name.as_str()) {
+                    if with_arg {
+                        return args.get(1).cloned().unwrap_or(lit(0.0));
+                    } else {
+                        return lit(0.0);
+                    }
+                }
+            }
+        }
+        e.clone()
+    }))
+}
+
+/// Bottom-up rewrite: children first, then `f` on the rebuilt node.
+fn rewrite_expr(expr: &PomExpr, f: &mut impl FnMut(&PomExpr) -> PomExpr) -> PomExpr {
+    let rewritten = match expr {
+        PomExpr::Literal(_) | PomExpr::Ident(_) | PomExpr::Path(_) => expr.clone(),
+        PomExpr::SysCall(name, args) => PomExpr::SysCall(
+            name.clone(),
+            args.iter().map(|a| rewrite_expr(a, f)).collect(),
+        ),
+        PomExpr::Unary(op, x) => PomExpr::Unary(op.clone(), Box::new(rewrite_expr(x, f))),
+        PomExpr::Binary(l, op, r) => PomExpr::Binary(
+            Box::new(rewrite_expr(l, f)), op.clone(), Box::new(rewrite_expr(r, f))),
+        PomExpr::Call(func, args) => {
+            let func = rewrite_expr(func, f);
+            let args: Vec<_> = args.iter().map(|a| rewrite_expr(a, f)).collect();
+            PomExpr::Call(Box::new(func), args)
+        }
+        PomExpr::If { cond, then_body, else_body } => PomExpr::If {
+            cond: Box::new(rewrite_expr(cond, f)),
+            then_body: rewrite_block(then_body, f),
+            else_body: rewrite_block(else_body, f),
+        },
+        PomExpr::Block(b) => PomExpr::Block(rewrite_block(b, f)),
+        PomExpr::Cast(t, x) => PomExpr::Cast(t.clone(), Box::new(rewrite_expr(x, f))),
+        PomExpr::Field(base, field) => PomExpr::Field(Box::new(rewrite_expr(base, f)), field.clone()),
+        PomExpr::Index(base, idx) => PomExpr::Index(
+            Box::new(rewrite_expr(base, f)), Box::new(rewrite_expr(idx, f))),
+        _ => expr.clone(),
+    };
+    f(&rewritten)
+}
+
+fn rewrite_block(block: &piperine_lang::parse::ast::Block, f: &mut impl FnMut(&PomExpr) -> PomExpr) -> piperine_lang::parse::ast::Block {
+    piperine_lang::parse::ast::Block {
+        stmts: block.stmts.iter().map(|s| rewrite_stmt(s, f)).collect(),
+        expr: block.expr.as_ref().map(|e| Box::new(rewrite_expr(e, f))),
+    }
+}
+
+fn rewrite_stmt(stmt: &PomStmt, f: &mut impl FnMut(&PomExpr) -> PomExpr) -> PomStmt {
+    use piperine_lang::parse::ast::Stmt as S;
+    match stmt {
+        S::Bind { dest, op, src } => S::Bind {
+            dest: rewrite_expr(dest, f), op: op.clone(), src: rewrite_expr(src, f),
+        },
+        S::Expr(e) => S::Expr(rewrite_expr(e, f)),
+        S::Return(e) => S::Return(rewrite_expr(e, f)),
+        other => other.clone(),
+    }
+}
+
+fn chain_guards(guard: Option<&PomExpr>, no_prior: &Option<PomExpr>, cond: &PomExpr) -> PomExpr {
+    let with_prior = match no_prior {
+        None => cond.clone(),
+        Some(prev) => binary(BinaryOp::And, prev.clone(), cond.clone()),
+    };
+    and_guards(guard, &with_prior)
+}
+
+fn pattern_cond(scrutinee: &PomExpr, pattern: &piperine_lang::parse::ast::Pattern) -> PomExpr {
+    use piperine_lang::parse::ast::Pattern as P;
+    match pattern {
+        P::Wildcard => lit(1.0),
+        P::Literal(lit_v) => binary(BinaryOp::Eq, scrutinee.clone(),
+            PomExpr::Literal(Literal::Int(*lit_v as u64))),
+        P::Path(p) => {
+            let name = p.segments.join("::");
+            binary(BinaryOp::Eq, scrutinee.clone(), PomExpr::Ident(name))
+        }
+        P::BitPattern(bits) => {
+            let mut mask = 0i64;
+            let mut value = 0i64;
+            for c in bits.chars() {
+                mask <<= 1; value <<= 1;
+                match c {
+                    '0' => mask |= 1,
+                    '1' => { mask |= 1; value |= 1; }
+                    _ => {}
+                }
+            }
+            binary(BinaryOp::Eq,
+                binary(BinaryOp::BitAnd, scrutinee.clone(), PomExpr::Literal(Literal::Int(mask as u64))),
+                PomExpr::Literal(Literal::Int(value as u64)))
         }
     }
 }
 
-/// Split a contribution expression around a single `ac_stim`. Returns the
-/// residual `expr[ac_stim → 0]` and, if a stimulus is present, its
-/// `(magnitude, phase)`. The magnitude folds in any linear scaling and sign as
-/// `expr[ac_stim → mag] − expr[ac_stim → 0]`. Neither expression is finished;
-/// the caller registers states via `finish_expr`.
-#[allow(clippy::type_complexity)]
-fn split_ac_stim(expr: IrExpr) -> Result<(IrExpr, Option<(IrExpr, IrExpr)>), CodegenError> {
+fn ident_str(e: Option<&PomExpr>) -> Option<String> {
+    match e? {
+        PomExpr::Ident(s) => Some(s.clone()),
+        PomExpr::Field(base, field) => match base.as_ref() {
+            PomExpr::Ident(base_name) => Some(format!("{base_name}.{field}")),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Split a contribution expression around a single `$ac_stim` SysCall.
+fn split_ac_stim(expr: PomExpr) -> Result<(PomExpr, Option<(PomExpr, PomExpr)>), CodegenError> {
     let mut count = 0usize;
     let mut phase_expr = None;
-    expr.visit(&mut |e| {
-        if let IrExpr::AcStim { phase, .. } = e {
-            count += 1;
-            phase_expr = Some(phase.as_ref().clone());
+    visit_all(&expr, &mut |e| {
+        if let PomExpr::SysCall(name, args) = e {
+            if name == "$ac_stim" {
+                count += 1;
+                phase_expr = args.get(1).cloned();
+            }
         }
     });
     if count == 0 {
         return Ok((expr, None));
     }
     if count > 1 {
-        return Err(CodegenError::unsupported(
-            "multiple `ac_stim` calls in one contribution",
-        ));
+        return Err(CodegenError::unsupported("multiple `ac_stim` calls in one contribution"));
     }
-    let substitute = |with_mag: bool| {
-        expr.rewrite(&mut |e| match e {
-            IrExpr::AcStim { mag, .. } => {
-                if with_mag { *mag } else { IrExpr::Real(0.0) }
+    let with_mag = rewrite_expr(&expr, &mut |e| {
+        if let PomExpr::SysCall(name, args) = e {
+            if name == "$ac_stim" {
+                return args.first().cloned().unwrap_or(lit(1.0));
             }
-            other => other,
-        })
-    };
-    let with_mag = substitute(true);
-    let without = substitute(false);
-    let mag = IrExpr::binary(crate::ir::BinOp::Sub, with_mag, without.clone());
-    let phase = phase_expr.expect("count == 1");
+        }
+        e.clone()
+    });
+    let without = rewrite_expr(&expr, &mut |e| {
+        if let PomExpr::SysCall(name, _) = e {
+            if name == "$ac_stim" {
+                return lit(0.0);
+            }
+        }
+        e.clone()
+    });
+    let mag = binary(BinaryOp::Sub, with_mag, without.clone());
+    let phase = phase_expr.unwrap_or(lit(0.0));
     Ok((without, Some((mag, phase))))
 }

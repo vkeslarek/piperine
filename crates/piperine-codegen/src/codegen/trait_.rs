@@ -44,7 +44,7 @@ impl Codegen for Expr {
             Expr::Binary(lhs, op, rhs) => {
                 let l = lhs.emit(b)?;
                 let r = rhs.emit(b)?;
-                b.emit_binary(crate::ir::pom::expr::lower_binop(op), l, r)
+                b.emit_binary(crate::ir::BinOp::from_pom(op.clone()), l, r)
             }
             Expr::Unary(op, x) => {
                 let v = x.emit(b)?;

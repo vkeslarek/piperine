@@ -1,145 +1,33 @@
-//! System functions (`$temperature`, `$vt`, `$simparam`, …) as a trait +
-//! registry, mirroring [`analog_ops`](super::analog_ops).
-//!
-//! Adding a new `$`-syscall means adding a struct + a `register` call
-//! here, not growing the shared match in `lower_syscall`.
+//! System functions (`$temperature`, `$vt`, `$simparam`, …) — for the POM
+//! analog path, syscalls are kept as `Expr::SysCall` with resolved args.
+//! The Builder dispatches on the syscall name at JIT emit time.
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 
-use piperine_lang::parse::ast::{Expr, Literal};
-use crate::lower::*;
+use piperine_lang::parse::ast::Expr;
 
-use super::expr::lower_expr;
+use super::expr::resolve_expr;
 use super::LowerCtx;
 
-/// One `$`-prefixed system function. `name` is the syscall name actually
-/// invoked (lowercased, `$` stripped) — most impls ignore it, but the
-/// `dist_*` family needs it to build the right [`SimQuery::Random`] kind.
+/// One `$`-prefixed system function. For the POM path, most syscalls are
+/// kept as `Expr::SysCall` — the Builder resolves them at emit time.
+#[allow(dead_code)]
 pub(crate) trait SystemFunction: Send + Sync {
-    fn lower(&self, name: &str, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr;
+    fn lower(&self, name: &str, args: &[Expr], ctx: &mut LowerCtx) -> Expr;
 }
 
-fn string_arg(args: &[Expr], i: usize) -> String {
-    match args.get(i) {
-        Some(Expr::Literal(Literal::String(s))) => s.clone(),
-        _ => "?".into(),
+/// Default: keep the syscall as-is with resolved args.
+#[allow(dead_code)]
+struct KeepSyscall;
+impl SystemFunction for KeepSyscall {
+    fn lower(&self, name: &str, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
+        let resolved: Vec<Expr> = args.iter().map(|a| resolve_expr(a, ctx)).collect();
+        Expr::SysCall(name.to_string(), resolved)
     }
 }
 
-struct Temperature;
-impl SystemFunction for Temperature {
-    fn lower(&self, _: &str, _args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::Temperature)
-    }
-}
-
-struct Vt;
-impl SystemFunction for Vt {
-    fn lower(&self, _: &str, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        if args.is_empty() {
-            IrExpr::Sim(SimQuery::Vt(None))
-        } else {
-            IrExpr::Sim(SimQuery::Vt(Some(Box::new(lower_expr(&args[0], ctx)))))
-        }
-    }
-}
-
-struct Abstime;
-impl SystemFunction for Abstime {
-    fn lower(&self, _: &str, _args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::Abstime)
-    }
-}
-
-struct Mfactor;
-impl SystemFunction for Mfactor {
-    fn lower(&self, _: &str, _args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::Mfactor)
-    }
-}
-
-struct XPosition;
-impl SystemFunction for XPosition {
-    fn lower(&self, _: &str, _args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::Position(crate::lower::Axis::X))
-    }
-}
-
-struct YPosition;
-impl SystemFunction for YPosition {
-    fn lower(&self, _: &str, _args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::Position(crate::lower::Axis::Y))
-    }
-}
-
-struct Angle;
-impl SystemFunction for Angle {
-    fn lower(&self, _: &str, _args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::Angle)
-    }
-}
-
-struct Simparam;
-impl SystemFunction for Simparam {
-    fn lower(&self, _: &str, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        let key = string_arg(args, 0);
-        let default = args.get(1).map(|a| lower_expr(a, ctx)).unwrap_or(IrExpr::Real(0.0));
-        IrExpr::Sim(SimQuery::Simparam { key, default: Box::new(default) })
-    }
-}
-
-struct ParamGiven;
-impl SystemFunction for ParamGiven {
-    fn lower(&self, _: &str, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::ParamGiven(ctx.require_param_given(&string_arg(args, 0))))
-    }
-}
-
-struct PortConnected;
-impl SystemFunction for PortConnected {
-    fn lower(&self, _: &str, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Sim(SimQuery::PortConnected(ctx.require_node(&string_arg(args, 0))))
-    }
-}
-
-struct Limit;
-impl SystemFunction for Limit {
-    fn lower(&self, _: &str, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        let kind = string_arg(args, 0);
-        let limit_args = args.iter().skip(1).map(|a| lower_expr(a, ctx)).collect();
-        IrExpr::Sim(SimQuery::Limit { kind, args: limit_args })
-    }
-}
-
-struct Analysis;
-impl SystemFunction for Analysis {
-    fn lower(&self, _: &str, args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        let _kind = match args.first() {
-            Some(Expr::Literal(Literal::String(s))) => s.clone(),
-            _ => "dc".into(),
-        };
-        let kind = match string_arg(args, 0).as_str() {
-            "ac" => crate::lower::Analysis::Ac,
-            "dc" => crate::lower::Analysis::Dc,
-            "tran" => crate::lower::Analysis::Tran,
-            "noise" => crate::lower::Analysis::Noise,
-            _ => crate::lower::Analysis::Dc,
-        };
-        IrExpr::Sim(SimQuery::Analysis(kind))
-    }
-}
-
-/// Handles bare `$random` and the whole `$dist_*` family — `name` carries
-/// which one was actually called.
-struct Random;
-impl SystemFunction for Random {
-    fn lower(&self, name: &str, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        let dist_args = args.iter().map(|a| lower_expr(a, ctx)).collect();
-        IrExpr::Sim(SimQuery::Random { kind: name.to_string(), args: dist_args })
-    }
-}
-
+#[allow(dead_code)]
 pub(crate) struct SyscallRegistry {
     funcs: HashMap<&'static str, Arc<dyn SystemFunction + Send + Sync>>,
 }
@@ -151,25 +39,19 @@ impl SyscallRegistry {
 
     fn with_builtins() -> Self {
         let mut r = Self { funcs: HashMap::new() };
-        r.register("temperature", Temperature);
-        r.register("vt", Vt);
-        r.register("abstime", Abstime);
-        r.register("mfactor", Mfactor);
-        r.register("xposition", XPosition);
-        r.register("yposition", YPosition);
-        r.register("angle", Angle);
-        r.register("simparam", Simparam);
-        r.register("param_given", ParamGiven);
-        r.register("port_connected", PortConnected);
-        r.register("limit", Limit);
-        r.register("analysis", Analysis);
-        r.register("random", Random);
+        let names = [
+            "temperature", "vt", "abstime", "mfactor",
+            "xposition", "yposition", "angle", "simparam",
+            "param_given", "port_connected", "limit", "analysis", "random",
+        ];
+        for n in names {
+            r.register(n, KeepSyscall);
+        }
         r
     }
 
     /// Looks up the handler for `name` (already lowercased, `$` stripped).
-    /// Falls back to the `Random` handler for the whole `dist_*` family,
-    /// since those all produce a `SimQuery::Random` differing only by kind.
+    /// Falls back to the `Random` handler for the whole `dist_*` family.
     pub(crate) fn lookup(&self, name: &str) -> Option<Arc<dyn SystemFunction + Send + Sync>> {
         if let Some(f) = self.funcs.get(name) {
             return Some(f.clone());

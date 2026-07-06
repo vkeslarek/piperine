@@ -156,8 +156,12 @@ impl<'p> CircuitCompiler<'p> {
                     info.name, body.name
                 ))
             })?;
-            let value = default
-                .eval_const(&|p| values.get(p.0 as usize).copied().flatten())
+            let resolve = |name: &str| -> Option<f64> {
+                body.symbols.params()
+                    .find(|(_, p)| p.name == name)
+                    .and_then(|(id, _)| values.get(id.0 as usize).copied().flatten())
+            };
+            let value = crate::ir::pom_eval_const(default, &resolve)
                 .map_err(CodegenError::ConstEval)?;
             values[id.0 as usize] = Some(value);
         }
@@ -269,9 +273,15 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                             instance.name()
                         ))
                     })?;
-                let expr = crate::lower::pom::structure::value_to_ir(pval);
-                let value = expr
-                    .eval_const(&|p| self.top_params.get(p.0 as usize).copied())
+                let expr = crate::lower::pom::structure::value_to_pom_expr(pval);
+                let top = &self.top_params;
+                let top_body = &self.top_body;
+                let resolve = |name: &str| -> Option<f64> {
+                    top_body.symbols.params()
+                        .find(|(_, p)| p.name == name)
+                        .and_then(|(id, _)| top.get(id.0 as usize).copied())
+                };
+                let value = crate::ir::pom_eval_const(&expr, &resolve)
                     .map_err(CodegenError::ConstEval)?;
                 Ok((id, value))
             })

@@ -8,14 +8,86 @@ use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{types, FuncRef, InstBuilder, MemFlags, Value};
 use cranelift_frontend::FunctionBuilder;
 
-use piperine_lang::parse::ast::{BindOp, Expr, Pattern, Stmt};
+use piperine_lang::parse::ast::{BindOp, BinaryOp, Expr, Literal, Pattern, Stmt, UnaryOp};
 
-use crate::ir::{BinOp, FnId, LoweredBody, NodeId, ParamId, SimQuery, SymbolTable, Type, UnOp, VarId};
+use crate::ir::{BinOp, FnId, LoweredBody, NodeId, ParamId, SymbolTable, Type, UnOp, VarId};
 use crate::jit::digital::compile::{Pointers, VarReads};
 use crate::jit::digital::layout::DigitalLayout;
-use crate::jit::{math, CodegenError};
+use crate::jit::{math, CodegenError, SimCtx};
 
 use super::trait_::Codegen;
+
+// ─── Analog CSE infrastructure (copied from jit/emit.rs) ──────────────────────
+
+/// Structural key for common-subexpression elimination in analog emission.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub enum CseKey {
+    /// f64/const bit pattern.
+    Const(u64),
+    /// A load: `(bank tag, byte offset)`.
+    Load(u8, i32),
+    /// Unary op `(tag, child)`.
+    Op1(u8, u32),
+    /// Binary op / comparison `(tag, lhs, rhs)`.
+    Op2(u8, u32, u32),
+    /// Ternary (select) `(tag, a, b, c)`.
+    Op3(u8, u32, u32, u32),
+    /// Math builtin call `(name, args)`.
+    Call(&'static str, Vec<u32>),
+    /// Voltage-limited value for `$limit` slot `i`.
+    Limit(u32),
+}
+
+/// Byte offsets of [`SimCtx`] fields, as read by JIT code.
+struct SimField;
+
+impl SimField {
+    const TEMPERATURE: i32 = 0;
+    const ABSTIME: i32 = 8;
+    const MFACTOR: i32 = 16;
+    const GMIN: i32 = 24;
+    const STEP: i32 = 32;
+    const TFINAL: i32 = 40;
+    const PARAM_GIVEN_MASK: i32 = 48;
+    const CURRENT_ANALYSIS: i32 = 56;
+}
+
+// Load-bank tags.
+const BANK_STATE: u8 = 0;
+const BANK_VARS: u8 = 1;
+const BANK_SIM: u8 = 2;
+// Op tags (namespaced across unary/binary/select/cmp).
+const T_NEG: u8 = 0;
+const T_SELECT: u8 = 1;
+const T_NOT: u8 = 2;
+const T_FCMP_BASE: u8 = 16;
+const T_BIN_BASE: u8 = 40;
+
+/// Distinct CSE tag per binary op (offset past the fcmp/select tags).
+fn bin_tag(op: crate::ir::BinOp) -> u8 {
+    T_BIN_BASE
+        + match op {
+            crate::ir::BinOp::Add => 0,
+            crate::ir::BinOp::Sub => 1,
+            crate::ir::BinOp::Mul => 2,
+            crate::ir::BinOp::Div => 3,
+            crate::ir::BinOp::Rem => 4,
+            crate::ir::BinOp::Eq => 5,
+            crate::ir::BinOp::Ne => 6,
+            crate::ir::BinOp::Lt => 7,
+            crate::ir::BinOp::Le => 8,
+            crate::ir::BinOp::Gt => 9,
+            crate::ir::BinOp::Ge => 10,
+            crate::ir::BinOp::And => 11,
+            crate::ir::BinOp::Or => 12,
+            crate::ir::BinOp::Pow => 13,
+            crate::ir::BinOp::BitAnd => 14,
+            crate::ir::BinOp::BitOr => 15,
+            crate::ir::BinOp::BitXor => 16,
+            crate::ir::BinOp::Shl => 17,
+            crate::ir::BinOp::Shr => 18,
+        }
+}
 
 // ─── Name resolution ──────────────────────────────────────────────────────────
 
@@ -74,19 +146,134 @@ pub enum DigTy {
 // ─── Builder ──────────────────────────────────────────────────────────────────
 
 /// The codegen builder: wraps Cranelift + provides high-level emission methods.
-/// One per compiled function.
+/// One per compiled function. Dual-context: `new_digital` for digital bodies
+/// (quad logic, ABI pointers), `new_analog` for analog bodies (f64 scalar
+/// emission with CSE, bank pointers, `$limit`).
 pub struct Builder<'a, 'f, 'm> {
     pub builder: &'a mut FunctionBuilder<'f>,
     pub module: &'m LoweredBody,
     pub resolver: &'a Resolver,
-    pub layout: &'a DigitalLayout,
-    pub pointers: Pointers,
-    pub reads: VarReads,
     pub math: &'a HashMap<&'static str, FuncRef>,
     pub watch_out: Option<Value>,
+    // ── Digital context (Some for digital, None for analog) ──
+    pub layout: Option<&'a DigitalLayout>,
+    pub pointers: Option<Pointers>,
+    pub reads: Option<VarReads>,
+    // ── Analog context (Some for analog, None for digital) ──
+    /// Precomputed `V(plus) − V(minus)` per branch pair.
+    pub branch_voltages: Option<HashMap<(NodeId, NodeId), Value>>,
+    /// Parameter values, indexed by `ParamId`.
+    pub params: Option<Vec<Value>>,
+    /// `*const f64` runtime-state bank pointer.
+    pub state_ptr: Option<Value>,
+    /// `*const f64` module-level persistent variable bank pointer.
+    pub vars_ptr: Option<Value>,
+    /// `*const SimCtx`.
+    pub sim_ptr: Option<Value>,
+    /// Unique `$limit` expressions (POM `Expr`), in slot order.
+    pub limits: Option<Vec<Expr>>,
+    /// State-bank offset where `$limit` vold slots begin.
+    pub limit_base: usize,
+    /// Common-subexpression cache for analog emission.
+    pub cse: Option<HashMap<CseKey, Value>>,
 }
 
-impl Builder<'_, '_, '_> {
+impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
+    /// Construct a digital-context builder (quad logic, ABI pointers).
+    pub fn new_digital(
+        builder: &'a mut FunctionBuilder<'f>,
+        module: &'m LoweredBody,
+        resolver: &'a Resolver,
+        layout: &'a DigitalLayout,
+        pointers: Pointers,
+        reads: VarReads,
+        math: &'a HashMap<&'static str, FuncRef>,
+        watch_out: Option<Value>,
+    ) -> Self {
+        Self {
+            builder,
+            module,
+            resolver,
+            math,
+            watch_out,
+            layout: Some(layout),
+            pointers: Some(pointers),
+            reads: Some(reads),
+            branch_voltages: None,
+            params: None,
+            state_ptr: None,
+            vars_ptr: None,
+            sim_ptr: None,
+            limits: None,
+            limit_base: 0,
+            cse: None,
+        }
+    }
+
+    /// Construct an analog-context builder (f64 scalar emission, CSE, bank
+    /// pointers). `branch_voltages` and `params` are preloaded once; `limits`
+    /// are the unique `$limit` expressions in slot order.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_analog(
+        builder: &'a mut FunctionBuilder<'f>,
+        module: &'m LoweredBody,
+        resolver: &'a Resolver,
+        math: &'a HashMap<&'static str, FuncRef>,
+        branch_voltages: HashMap<(NodeId, NodeId), Value>,
+        params: Vec<Value>,
+        state_ptr: Value,
+        vars_ptr: Value,
+        sim_ptr: Value,
+        limits: Vec<Expr>,
+        limit_base: usize,
+    ) -> Self {
+        Self {
+            builder,
+            module,
+            resolver,
+            math,
+            watch_out: None,
+            layout: None,
+            pointers: None,
+            reads: None,
+            branch_voltages: Some(branch_voltages),
+            params: Some(params),
+            state_ptr: Some(state_ptr),
+            vars_ptr: Some(vars_ptr),
+            sim_ptr: Some(sim_ptr),
+            limits: Some(limits),
+            limit_base,
+            cse: Some(HashMap::new()),
+        }
+    }
+
+    // ── Digital-context accessors ──
+
+    #[allow(dead_code)]
+    fn layout(&self) -> &DigitalLayout {
+        self.layout.expect("digital context")
+    }
+    #[allow(dead_code)]
+    fn ptrs(&self) -> Pointers {
+        self.pointers.expect("digital context")
+    }
+    #[allow(dead_code)]
+    fn reads(&self) -> VarReads {
+        self.reads.expect("digital context")
+    }
+
+    // ── Analog-context accessors ──
+
+    fn state_ptr(&self) -> Value {
+        self.state_ptr.expect("analog context")
+    }
+    fn vars_ptr(&self) -> Value {
+        self.vars_ptr.expect("analog context")
+    }
+    fn sim_ptr(&self) -> Value {
+        self.sim_ptr.expect("analog context")
+    }
+
     // ── Name resolution & POM dispatch ──
 
     /// Resolve a name and load the corresponding value.
@@ -110,10 +297,11 @@ impl Builder<'_, '_, '_> {
 
     /// Load a parameter by id.
     pub fn load_param(&mut self, id: ParamId) -> Result<Typed, CodegenError> {
+        let params = self.pointers.expect("digital context").params;
         let value = self.builder.ins().load(
             types::F64,
             MemFlags::trusted(),
-            self.pointers.params,
+            params,
             (id.0 * 8) as i32,
         );
         let info = self.module.symbols.param(id);
@@ -183,20 +371,23 @@ impl Builder<'_, '_, '_> {
 
     /// Load an analog branch voltage V(plus) - V(minus) for the A2D bridge.
     fn load_branch(&mut self, plus: NodeId, minus: NodeId) -> Result<Typed, CodegenError> {
+        let ptrs = self.pointers.as_ref().expect("digital context");
+        let layout = self.layout.expect("digital context");
+        let module = self.module;
         let load_analog = |builder: &mut FunctionBuilder, node: NodeId| -> Result<Value, CodegenError> {
             if node.is_ground() {
                 Ok(builder.ins().f64const(0.0))
-            } else if let Some(idx) = self.layout.analog_index(node) {
+            } else if let Some(idx) = layout.analog_index(node) {
                 Ok(builder.ins().load(
                     types::F64,
                     MemFlags::trusted(),
-                    self.pointers.analog_voltages,
+                    ptrs.analog_voltages,
                     (idx * 8) as i32,
                 ))
             } else {
                 Err(CodegenError::Invalid(format!(
                     "analog node `{}` is not in the analog voltage array",
-                    self.module.symbols.node(node).name
+                    module.symbols.node(node).name
                 )))
             }
         };
@@ -208,12 +399,13 @@ impl Builder<'_, '_, '_> {
     /// Emit a `$`-syscall (simulator query).
     pub fn syscall(&mut self, name: &str, args: &[Expr]) -> Result<Typed, CodegenError> {
         let _ = args;
+        let sim = self.pointers.expect("digital context").sim;
         match name {
             "$abstime" => {
                 let value = self.builder.ins().load(
                     types::F64,
                     MemFlags::trusted(),
-                    self.pointers.sim,
+                    sim,
                     8,
                 );
                 Ok(Typed::real(value))
@@ -222,7 +414,7 @@ impl Builder<'_, '_, '_> {
                 let value = self.builder.ins().load(
                     types::F64,
                     MemFlags::trusted(),
-                    self.pointers.sim,
+                    sim,
                     0,
                 );
                 Ok(Typed::real(value))
@@ -340,44 +532,37 @@ impl Builder<'_, '_, '_> {
     /// Store a value to a variable slot.
     fn store_var(&mut self, id: VarId, value: Typed) -> Result<(), CodegenError> {
         let info = self.module.symbols.var(id);
-        match info.ty {
+        let layout = self.layout.expect("digital context");
+        let ptrs = self.pointers.expect("digital context");
+        let (slot, bank, target_ty) = match info.ty {
             Type::Real => {
-                let slot = self.layout.real_slot(id).expect("layout covers all vars");
-                let value = self.coerce(value, DigTy::Real)?;
-                self.builder.ins().store(
-                    MemFlags::trusted(),
-                    value.value,
-                    self.pointers.vars_real,
-                    (slot * 8) as i32,
-                );
+                let slot = layout.real_slot(id).expect("layout covers all vars");
+                (slot, ptrs.vars_real, DigTy::Real)
             }
             Type::Quad => {
-                let slot = self.layout.int_slot(id).expect("layout covers all vars");
-                let value = self.coerce(value, DigTy::Quad)?;
-                self.builder.ins().store(
-                    MemFlags::trusted(),
-                    value.value,
-                    self.pointers.vars_int,
-                    (slot * 8) as i32,
-                );
+                let slot = layout.int_slot(id).expect("layout covers all vars");
+                (slot, ptrs.vars_int, DigTy::Quad)
             }
             Type::Integer | Type::Bool => {
-                let slot = self.layout.int_slot(id).expect("layout covers all vars");
-                let value = self.coerce(value, DigTy::Int)?;
-                self.builder.ins().store(
-                    MemFlags::trusted(),
-                    value.value,
-                    self.pointers.vars_int,
-                    (slot * 8) as i32,
-                );
+                let slot = layout.int_slot(id).expect("layout covers all vars");
+                (slot, ptrs.vars_int, DigTy::Int)
             }
-        }
+        };
+        let value = self.coerce(value, target_ty)?;
+        self.builder.ins().store(
+            MemFlags::trusted(),
+            value.value,
+            bank,
+            (slot * 8) as i32,
+        );
         Ok(())
     }
 
     /// Store a value to an output net.
     fn store_net(&mut self, id: NodeId, value: Typed) -> Result<(), CodegenError> {
-        let index = self.layout.output_index.get(&id).copied().ok_or_else(|| {
+        let layout = self.layout.expect("digital context");
+        let outputs = self.pointers.expect("digital context").outputs;
+        let index = layout.output_index.get(&id).copied().ok_or_else(|| {
             CodegenError::Invalid(format!(
                 "assignment to net `{}` which is not a digital output",
                 self.module.symbols.node(id).name
@@ -387,7 +572,7 @@ impl Builder<'_, '_, '_> {
         self.builder.ins().store(
             MemFlags::trusted(),
             value.value,
-            self.pointers.outputs,
+            outputs,
             (index * 8) as i32,
         );
         Ok(())
@@ -468,14 +653,15 @@ impl Builder<'_, '_, '_> {
 
     /// Emit a guarded clocked block: `if fired[index] { body }`.
     pub fn emit_guarded_block(&mut self, index: usize, body: &[Stmt]) -> Result<(), CodegenError> {
-        let fired = self.builder.ins().load(
+        let fired = self.pointers.expect("digital context").fired;
+        let fired_val = self.builder.ins().load(
             types::I64,
             MemFlags::trusted(),
-            self.pointers.fired,
+            fired,
             (index * 8) as i32,
         );
         let zero = self.builder.ins().iconst(types::I64, 0);
-        let flag = self.builder.ins().icmp(IntCC::NotEqual, fired, zero);
+        let flag = self.builder.ins().icmp(IntCC::NotEqual, fired_val, zero);
         self.emit_if_branch(flag, body, &[])
     }
 
@@ -483,20 +669,22 @@ impl Builder<'_, '_, '_> {
 
     /// Read a net (digital input or output) as a quad value.
     fn load_net(&mut self, node: NodeId) -> Result<Typed, CodegenError> {
-        if let Some(&i) = self.layout.input_index.get(&node) {
+        let layout = self.layout.expect("digital context");
+        let ptrs = self.pointers.expect("digital context");
+        if let Some(&i) = layout.input_index.get(&node) {
             let value = self.builder.ins().load(
                 types::I64,
                 MemFlags::trusted(),
-                self.pointers.inputs,
+                ptrs.inputs,
                 (i * 8) as i32,
             );
             return Ok(Typed::quad(value));
         }
-        if let Some(&i) = self.layout.output_index.get(&node) {
+        if let Some(&i) = layout.output_index.get(&node) {
             let value = self.builder.ins().load(
                 types::I64,
                 MemFlags::trusted(),
-                self.pointers.outputs,
+                ptrs.outputs,
                 (i * 8) as i32,
             );
             return Ok(Typed::quad(value));
@@ -509,12 +697,15 @@ impl Builder<'_, '_, '_> {
 
     pub(crate) fn load_var(&mut self, var: VarId) -> Typed {
         let info = self.module.symbols.var(var);
+        let layout = self.layout.expect("digital context");
+        let ptrs = self.pointers.expect("digital context");
+        let reads = self.reads.expect("digital context");
         match info.ty {
             Type::Real => {
-                let slot = self.layout.real_slot(var).expect("layout covers all vars");
-                let bank = match self.reads {
-                    VarReads::Live => self.pointers.vars_real,
-                    VarReads::PreEdge => self.pointers.vars_real_old,
+                let slot = layout.real_slot(var).expect("layout covers all vars");
+                let bank = match reads {
+                    VarReads::Live => ptrs.vars_real,
+                    VarReads::PreEdge => ptrs.vars_real_old,
                 };
                 let value =
                     self.builder
@@ -523,10 +714,10 @@ impl Builder<'_, '_, '_> {
                 Typed::real(value)
             }
             ty => {
-                let slot = self.layout.int_slot(var).expect("layout covers all vars");
-                let bank = match self.reads {
-                    VarReads::Live => self.pointers.vars_int,
-                    VarReads::PreEdge => self.pointers.vars_int_old,
+                let slot = layout.int_slot(var).expect("layout covers all vars");
+                let bank = match reads {
+                    VarReads::Live => ptrs.vars_int,
+                    VarReads::PreEdge => ptrs.vars_int_old,
                 };
                 let value =
                     self.builder
@@ -537,33 +728,6 @@ impl Builder<'_, '_, '_> {
                     _ => Typed::int(value),
                 }
             }
-        }
-    }
-
-    #[allow(dead_code)]
-    fn emit_sim(&mut self, query: &SimQuery) -> Result<Typed, CodegenError> {
-        match query {
-            SimQuery::Abstime => {
-                let value = self.builder.ins().load(
-                    types::F64,
-                    MemFlags::trusted(),
-                    self.pointers.sim,
-                    8, // SimCtx.abstime
-                );
-                Ok(Typed::real(value))
-            }
-            SimQuery::Temperature => {
-                let value = self.builder.ins().load(
-                    types::F64,
-                    MemFlags::trusted(),
-                    self.pointers.sim,
-                    0, // SimCtx.temperature
-                );
-                Ok(Typed::real(value))
-            }
-            other => Err(CodegenError::unsupported(format!(
-                "simulator query {other:?} in a digital body"
-            ))),
         }
     }
 
@@ -889,6 +1053,485 @@ impl Builder<'_, '_, '_> {
         let zero = self.builder_i64(0);
         self.builder.ins().select(flag, one, zero)
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  Analog emission (POM Expr → f64 Value, with CSE)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// Emit a POM `Expr` as a scalar `f64` Cranelift `Value` in analog context.
+    /// This is the analog counterpart of the digital `Codegen::emit` trait —
+    /// same role as the former `AnalogEmitter::emit` but dispatching on POM
+    /// `Expr` instead of `IrExpr`.
+    pub fn emit_analog(&mut self, expr: &Expr) -> Result<Value, CodegenError> {
+        match expr {
+            Expr::Literal(Literal::Real(v)) => Ok(self.cse_const(*v)),
+            Expr::Literal(Literal::Int(v)) => Ok(self.cse_const(*v as f64)),
+            Expr::Literal(Literal::Bool(b)) => Ok(self.cse_const(f64::from(*b))),
+
+            // A bare identifier: param, module-level var, or state marker.
+            Expr::Ident(name) => {
+                if let Some(&id) = self.resolver.params.get(name) {
+                    return self.params.as_ref().expect("analog context")
+                        .get(id.0 as usize)
+                        .copied()
+                        .ok_or_else(|| CodegenError::Invalid(format!("param #{} out of range", id.0)));
+                }
+                if let Some(&id) = self.resolver.vars.get(name) {
+                    return Ok(self.cse_load(BANK_VARS, self.vars_ptr(), (id.0 * 8) as i32));
+                }
+                Err(CodegenError::Invalid(format!("unresolved analog identifier `{name}`")))
+            }
+
+            // Branch access: V(p,n) / I(p,n).
+            Expr::Call(func, args) => {
+                if let Expr::Ident(name) = func.as_ref() {
+                    match name.as_str() {
+                        "V" | "I" => return self.emit_analog_branch(args),
+                        "__state_load" => return self.emit_state_load(args),
+                        _ => {}
+                    }
+                    // Math builtins (exp, ln, sqrt, sin, …)
+                    if math::math_fn(name).is_some() {
+                        return self.emit_analog_math_call(name, args);
+                    }
+                }
+                Err(CodegenError::unsupported(format!(
+                    "call `{}` in an analog expression (should be inlined)",
+                    ident_from_expr(Some(func)).unwrap_or_default()
+                )))
+            }
+
+            // Syscalls: $temperature, $abstime, $vt, $simparam, $limit, …
+            Expr::SysCall(name, args) => self.emit_analog_syscall(name, args),
+
+            Expr::Unary(op, x) => self.emit_analog_unary(op.clone(), x),
+
+            Expr::Binary(lhs, op, rhs) => self.emit_analog_binary(op.clone(), lhs, rhs),
+
+            // Ternary select: If { cond, then, else } → Cranelift select.
+            Expr::If { cond, then_body, else_body } => {
+                let c = self.emit_analog_truthy(cond)?;
+                let t = self.emit_analog_block_value(then_body)?;
+                let e = self.emit_analog_block_value(else_body)?;
+                Ok(self.cse_op3(T_SELECT, c, t, e, |b| b.ins().select(c, t, e)))
+            }
+
+            Expr::Block(b) => self.emit_analog_block_value(b),
+
+            Expr::Cast(_, inner) => self.emit_analog(inner),
+
+            Expr::Field(base, field) => {
+                // Flattened bundle field: "base_field" as a combined name.
+                if let Expr::Ident(base_name) = base.as_ref() {
+                    let combined = format!("{base_name}_{field}");
+                    if let Some(&id) = self.resolver.params.get(&combined) {
+                        return self.params.as_ref().expect("analog context")
+                            .get(id.0 as usize)
+                            .copied()
+                            .ok_or_else(|| CodegenError::Invalid(format!("param #{} out of range", id.0)));
+                    }
+                    if let Some(&id) = self.resolver.vars.get(&combined) {
+                        return Ok(self.cse_load(BANK_VARS, self.vars_ptr(), (id.0 * 8) as i32));
+                    }
+                }
+                Err(CodegenError::unsupported(format!("unresolved field access in analog: {expr:?}")))
+            }
+
+            Expr::Literal(Literal::String(_)) | Expr::Literal(Literal::None) | Expr::Literal(Literal::Quad(_)) => {
+                Err(CodegenError::unsupported("non-real literal in an analog expression"))
+            }
+            Expr::Path(_) => Err(CodegenError::unsupported("path in an analog expression")),
+            Expr::Index(_, _) | Expr::Slice(_, _) | Expr::Array(_) | Expr::Tuple(_)
+            | Expr::BundleLit { .. } | Expr::MapLit(_) | Expr::Lambda { .. } => {
+                Err(CodegenError::unsupported("vector/value-layer expression in an analog contribution"))
+            }
+        }
+    }
+
+    /// Emit a branch voltage V(plus, minus) lookup from precomputed values.
+    fn emit_analog_branch(&mut self, args: &[Expr]) -> Result<Value, CodegenError> {
+        let plus_name = ident_from_expr(args.first()).unwrap_or_else(|| "?".into());
+        let minus_name = ident_from_expr(args.get(1)).unwrap_or_else(|| "0".into());
+        let plus = self.resolve_node(&plus_name)?;
+        let minus = self.resolve_node(&minus_name)?;
+        self.branch_voltages.as_ref().expect("analog context")
+            .get(&(plus, minus))
+            .copied()
+            .ok_or_else(|| CodegenError::Invalid(format!(
+                "branch V(#{}, #{}) missing from the precomputed set", plus.0, minus.0
+            )))
+    }
+
+    /// Emit `__state_load(id)` → load from the state bank.
+    fn emit_state_load(&mut self, args: &[Expr]) -> Result<Value, CodegenError> {
+        let id = match args.first() {
+            Some(Expr::Literal(Literal::Int(v))) => *v as u32,
+            _ => return Err(CodegenError::unsupported("__state_load expects a state id")),
+        };
+        Ok(self.cse_load(BANK_STATE, self.state_ptr(), (id * 8) as i32))
+    }
+
+    // ── CSE helpers ──
+
+    fn cse_const(&mut self, v: f64) -> Value {
+        let key = CseKey::Const(v.to_bits());
+        if let Some(&hit) = self.cse.as_mut().expect("analog context").get(&key) {
+            return hit;
+        }
+        let val = self.builder.ins().f64const(v);
+        self.cse.as_mut().expect("analog context").insert(key, val);
+        val
+    }
+
+    fn cse_load(&mut self, bank: u8, ptr: Value, offset: i32) -> Value {
+        let key = CseKey::Load(bank, offset);
+        if let Some(&hit) = self.cse.as_mut().expect("analog context").get(&key) {
+            return hit;
+        }
+        let val = self.builder.ins().load(types::F64, MemFlags::trusted(), ptr, offset);
+        self.cse.as_mut().expect("analog context").insert(key, val);
+        val
+    }
+
+    fn cse_op1(&mut self, tag: u8, x: Value, build: impl FnOnce(&mut FunctionBuilder) -> Value) -> Value {
+        let key = CseKey::Op1(tag, x.as_u32());
+        if let Some(&hit) = self.cse.as_mut().expect("analog context").get(&key) {
+            return hit;
+        }
+        let val = build(self.builder);
+        self.cse.as_mut().expect("analog context").insert(key, val);
+        val
+    }
+
+    fn cse_op2(&mut self, tag: u8, a: Value, b: Value, build: impl FnOnce(&mut FunctionBuilder) -> Value) -> Value {
+        let key = CseKey::Op2(tag, a.as_u32(), b.as_u32());
+        if let Some(&hit) = self.cse.as_mut().expect("analog context").get(&key) {
+            return hit;
+        }
+        let val = build(self.builder);
+        self.cse.as_mut().expect("analog context").insert(key, val);
+        val
+    }
+
+    fn cse_op3(&mut self, tag: u8, a: Value, b: Value, c: Value, build: impl FnOnce(&mut FunctionBuilder) -> Value) -> Value {
+        let key = CseKey::Op3(tag, a.as_u32(), b.as_u32(), c.as_u32());
+        if let Some(&hit) = self.cse.as_mut().expect("analog context").get(&key) {
+            return hit;
+        }
+        let val = build(self.builder);
+        self.cse.as_mut().expect("analog context").insert(key, val);
+        val
+    }
+
+    // ── Sim queries ──
+
+    fn emit_analog_syscall(&mut self, name: &str, args: &[Expr]) -> Result<Value, CodegenError> {
+        let key = name.trim_start_matches('$').to_lowercase();
+        match key.as_str() {
+            "temperature" => Ok(self.load_sim_f64(SimField::TEMPERATURE)),
+            "abstime" => Ok(self.load_sim_f64(SimField::ABSTIME)),
+            "mfactor" => Ok(self.load_sim_f64(SimField::MFACTOR)),
+            "vt" => {
+                let temperature = match args.first() {
+                    Some(e) => self.emit_analog(e)?,
+                    None => self.load_sim_f64(SimField::TEMPERATURE),
+                };
+                let kb_over_q = self.cse_const(SimCtx::K_B_OVER_Q);
+                Ok(self.cse_op2(bin_tag(crate::ir::BinOp::Mul), temperature, kb_over_q, |b| {
+                    b.ins().fmul(temperature, kb_over_q)
+                }))
+            }
+            "simparam" => {
+                let sim_key = match args.first() {
+                    Some(Expr::Literal(Literal::String(s))) => s.clone(),
+                    _ => "?".into(),
+                };
+                let default = args.get(1);
+                match sim_key.as_str() {
+                    "gmin" => Ok(self.load_sim_f64(SimField::GMIN)),
+                    "temperature" => Ok(self.load_sim_f64(SimField::TEMPERATURE)),
+                    "step" => self.sim_field_or_default(SimField::STEP, default),
+                    "tfinal" => self.sim_field_or_default(SimField::TFINAL, default),
+                    _ => default.map(|d| self.emit_analog(d)).unwrap_or(Ok(self.cse_const(0.0))),
+                }
+            }
+            "param_given" => {
+                let pname = match args.first() {
+                    Some(Expr::Literal(Literal::String(s))) => s.clone(),
+                    _ => "?".into(),
+                };
+                let id = *self.resolver.params.get(&pname).ok_or_else(|| {
+                    CodegenError::Invalid(format!("$param_given: unresolved param `{pname}`"))
+                })?;
+                let sim_ptr = self.sim_ptr();
+                let mask = self.builder.ins().load(
+                    types::I64,
+                    MemFlags::trusted(),
+                    sim_ptr,
+                    SimField::PARAM_GIVEN_MASK,
+                );
+                let shifted = self.builder.ins().ushr_imm(mask, i64::from(id.0));
+                let bit = self.builder.ins().band_imm(shifted, 1);
+                let zero = self.builder.ins().iconst(types::I64, 0);
+                let is_set = self.builder.ins().icmp(IntCC::NotEqual, bit, zero);
+                Ok(self.bool_to_f64(is_set))
+            }
+            "analysis" => {
+                let kind = match args.first() {
+                    Some(Expr::Literal(Literal::String(s))) => match s.as_str() {
+                        "ac" => 1u64,
+                        "dc" => 0,
+                        "tran" => 2,
+                        "noise" => 3,
+                        _ => 0,
+                    },
+                    _ => 0,
+                };
+                let sim_ptr = self.sim_ptr();
+                let current = self.builder.ins().load(
+                    types::I64,
+                    MemFlags::trusted(),
+                    sim_ptr,
+                    SimField::CURRENT_ANALYSIS,
+                );
+                let target = self.builder.ins().iconst(types::I64, kind as i64);
+                let matches = self.builder.ins().icmp(IntCC::Equal, current, target);
+                Ok(self.bool_to_f64(matches))
+            }
+            "limit" => self.emit_analog_limit(name, args),
+            _ => Err(CodegenError::unsupported(format!("syscall `{name}` in an analog expression"))),
+        }
+    }
+
+    /// Load a `SimCtx` f64 field.
+    fn load_sim_f64(&mut self, offset: i32) -> Value {
+        self.cse_load(BANK_SIM, self.sim_ptr(), offset)
+    }
+
+    /// Load a `SimCtx` f64 field, falling back to `default` when the field
+    /// is 0 (its "unset" sentinel).
+    fn sim_field_or_default(&mut self, offset: i32, default: Option<&Expr>) -> Result<Value, CodegenError> {
+        let field = self.load_sim_f64(offset);
+        let default = match default {
+            Some(e) => self.emit_analog(e)?,
+            None => self.cse_const(0.0),
+        };
+        let zero = self.cse_const(0.0);
+        let is_zero = self.builder.ins().fcmp(FloatCC::Equal, field, zero);
+        Ok(self.builder.ins().select(is_zero, default, field))
+    }
+
+    // ── $limit ──
+
+    fn emit_analog_limit(&mut self, full_name: &str, args: &[Expr]) -> Result<Value, CodegenError> {
+        // The first arg is the kind string ("pnjlim"/"fetlim"), the rest
+        // are (vnew, vseed, vte, vcrit).
+        let kind = match args.first() {
+            Some(Expr::Literal(Literal::String(s))) => s.as_str(),
+            _ => return Err(CodegenError::unsupported("$limit expects a kind string")),
+        };
+        if args.len() < 5 {
+            return Err(CodegenError::unsupported("$limit expects (kind, vnew, vseed, vte, vcrit)"));
+        }
+        // Find the slot by structural equality against the limits table.
+        let limits = self.limits.as_ref().expect("analog context");
+        let slot = limits.iter().position(|l| expr_structural_eq(l, &Expr::SysCall(full_name.to_string(), args.to_vec())))
+            .ok_or_else(|| CodegenError::Invalid("$limit expression missing from slot table".into()))?;
+        let key = CseKey::Limit(slot as u32);
+        if let Some(&hit) = self.cse.as_mut().expect("analog context").get(&key) {
+            return Ok(hit);
+        }
+        let vnew = self.emit_analog(&args[1])?;
+        let vte = self.emit_analog(&args[3])?;
+        let vcrit = self.emit_analog(&args[4])?;
+        let vold = self.cse_load(BANK_STATE, self.state_ptr(), ((self.limit_base + slot) * 8) as i32);
+        let vlim = match kind {
+            "pnjlim" => self.emit_pnjlim(vnew, vold, vte, vcrit)?,
+            "fetlim" => vnew,
+            other => return Err(CodegenError::unsupported(format!("$limit kind `{other}`"))),
+        };
+        self.cse.as_mut().expect("analog context").insert(key, vlim);
+        Ok(vlim)
+    }
+
+    /// Branchless ngspice DEVpnjlim (copied from emit.rs).
+    fn emit_pnjlim(&mut self, vnew: Value, vold: Value, vte: Value, vcrit: Value) -> Result<Value, CodegenError> {
+        let dv = self.builder.ins().fsub(vnew, vold);
+        let absdv = self.builder.ins().fabs(dv);
+        let two = self.cse_const(2.0);
+        let two_vte = self.builder.ins().fmul(two, vte);
+        let cond1 = self.builder.ins().fcmp(FloatCC::GreaterThan, vnew, vcrit);
+        let cond2 = self.builder.ins().fcmp(FloatCC::GreaterThan, absdv, two_vte);
+        let cond = self.builder.ins().band(cond1, cond2);
+        let one = self.cse_const(1.0);
+        let dv_over_vte = self.builder.ins().fdiv(dv, vte);
+        let arg = self.builder.ins().fadd(one, dv_over_vte);
+        let ln_arg = self.analog_call_math("ln", &[arg])?;
+        let vte_ln = self.builder.ins().fmul(vte, ln_arg);
+        let vold_plus = self.builder.ins().fadd(vold, vte_ln);
+        let zero = self.cse_const(0.0);
+        let arg_pos = self.builder.ins().fcmp(FloatCC::GreaterThan, arg, zero);
+        let posval = self.builder.ins().select(arg_pos, vold_plus, vcrit);
+        let vnew_over_vte = self.builder.ins().fdiv(vnew, vte);
+        let ln_vnew = self.analog_call_math("ln", &[vnew_over_vte])?;
+        let negval = self.builder.ins().fmul(vte, ln_vnew);
+        let vold_pos = self.builder.ins().fcmp(FloatCC::GreaterThan, vold, zero);
+        let limited = self.builder.ins().select(vold_pos, posval, negval);
+        Ok(self.builder.ins().select(cond, limited, vnew))
+    }
+
+    // ── Unary / binary / math ──
+
+    fn emit_analog_unary(&mut self, op: UnaryOp, x: &Expr) -> Result<Value, CodegenError> {
+        match op {
+            UnaryOp::Neg => {
+                let v = self.emit_analog(x)?;
+                Ok(self.cse_op1(T_NEG, v, |b| b.ins().fneg(v)))
+            }
+            UnaryOp::Not => {
+                let v = self.emit_analog(x)?;
+                let key = CseKey::Op1(T_NOT, v.as_u32());
+                if let Some(&hit) = self.cse.as_mut().expect("analog context").get(&key) {
+                    return Ok(hit);
+                }
+                let zero = self.cse_const(0.0);
+                let is_zero = self.builder.ins().fcmp(FloatCC::Equal, v, zero);
+                let val = self.bool_to_f64(is_zero);
+                self.cse.as_mut().expect("analog context").insert(key, val);
+                Ok(val)
+            }
+        }
+    }
+
+    fn emit_analog_binary(&mut self, op: BinaryOp, a: &Expr, b: &Expr) -> Result<Value, CodegenError> {
+        let ir_op = lower_binop_pom(op);
+        if ir_op == crate::ir::BinOp::Pow {
+            let lhs = self.emit_analog(a)?;
+            let rhs = self.emit_analog(b)?;
+            return self.analog_call_math("pow", &[lhs, rhs]);
+        }
+        let lhs = self.emit_analog(a)?;
+        let rhs = self.emit_analog(b)?;
+        let key = CseKey::Op2(bin_tag(ir_op), lhs.as_u32(), rhs.as_u32());
+        if let Some(&hit) = self.cse.as_mut().expect("analog context").get(&key) {
+            return Ok(hit);
+        }
+        let cmp = |e: &mut Self, cc: FloatCC| {
+            let flag = e.builder.ins().fcmp(cc, lhs, rhs);
+            e.bool_to_f64(flag)
+        };
+        let val = match ir_op {
+            crate::ir::BinOp::Add => self.builder.ins().fadd(lhs, rhs),
+            crate::ir::BinOp::Sub => self.builder.ins().fsub(lhs, rhs),
+            crate::ir::BinOp::Mul => self.builder.ins().fmul(lhs, rhs),
+            crate::ir::BinOp::Div => self.builder.ins().fdiv(lhs, rhs),
+            crate::ir::BinOp::Rem => {
+                let quotient = self.builder.ins().fdiv(lhs, rhs);
+                let floored = self.analog_call_math("floor", &[quotient])?;
+                let product = self.builder.ins().fmul(floored, rhs);
+                self.builder.ins().fsub(lhs, product)
+            }
+            crate::ir::BinOp::Eq => cmp(self, FloatCC::Equal),
+            crate::ir::BinOp::Ne => cmp(self, FloatCC::NotEqual),
+            crate::ir::BinOp::Lt => cmp(self, FloatCC::LessThan),
+            crate::ir::BinOp::Le => cmp(self, FloatCC::LessThanOrEqual),
+            crate::ir::BinOp::Gt => cmp(self, FloatCC::GreaterThan),
+            crate::ir::BinOp::Ge => cmp(self, FloatCC::GreaterThanOrEqual),
+            crate::ir::BinOp::And | crate::ir::BinOp::Or => {
+                let zero = self.cse_const(0.0);
+                let a_true = self.builder.ins().fcmp(FloatCC::NotEqual, lhs, zero);
+                let b_true = self.builder.ins().fcmp(FloatCC::NotEqual, rhs, zero);
+                let combined = if ir_op == crate::ir::BinOp::And {
+                    self.builder.ins().band(a_true, b_true)
+                } else {
+                    self.builder.ins().bor(a_true, b_true)
+                };
+                self.bool_to_f64(combined)
+            }
+            crate::ir::BinOp::BitAnd | crate::ir::BinOp::BitOr
+            | crate::ir::BinOp::BitXor | crate::ir::BinOp::Shl | crate::ir::BinOp::Shr => {
+                return Err(CodegenError::unsupported(format!("bitwise/shift {ir_op:?} in an analog expression")));
+            }
+            crate::ir::BinOp::Pow => unreachable!("handled above"),
+        };
+        self.cse.as_mut().expect("analog context").insert(key, val);
+        Ok(val)
+    }
+
+    fn emit_analog_math_call(&mut self, name: &str, args: &[Expr]) -> Result<Value, CodegenError> {
+        let values = args.iter()
+            .map(|a| self.emit_analog(a))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.analog_call_math(name, &values)
+    }
+
+    fn analog_call_math(&mut self, name: &str, args: &[Value]) -> Result<Value, CodegenError> {
+        let math_fn = math::math_fn(name)
+            .ok_or_else(|| CodegenError::unsupported(format!("math builtin `{name}`")))?;
+        if args.len() != math_fn.arity {
+            return Err(CodegenError::Invalid(format!(
+                "`{name}` expects {} args, got {}", math_fn.arity, args.len()
+            )));
+        }
+        let key = CseKey::Call(math_fn.name, args.iter().map(|v| v.as_u32()).collect());
+        if let Some(&hit) = self.cse.as_mut().expect("analog context").get(&key) {
+            return Ok(hit);
+        }
+        let func = self.math[math_fn.name];
+        let call = self.builder.ins().call(func, args);
+        let val = self.builder.inst_results(call)[0];
+        self.cse.as_mut().expect("analog context").insert(key, val);
+        Ok(val)
+    }
+
+    /// Emit `expr` and compare against zero, yielding an i1 flag.
+    fn emit_analog_truthy(&mut self, expr: &Expr) -> Result<Value, CodegenError> {
+        let value = self.emit_analog(expr)?;
+        let zero = self.cse_const(0.0);
+        let key = CseKey::Op2(T_FCMP_BASE + FloatCC::NotEqual as u8, value.as_u32(), zero.as_u32());
+        if let Some(&hit) = self.cse.as_mut().expect("analog context").get(&key) {
+            return Ok(hit);
+        }
+        let flag = self.builder.ins().fcmp(FloatCC::NotEqual, value, zero);
+        self.cse.as_mut().expect("analog context").insert(key, flag);
+        Ok(flag)
+    }
+
+    fn bool_to_f64(&mut self, flag: Value) -> Value {
+        let one = self.cse_const(1.0);
+        let zero = self.cse_const(0.0);
+        self.cse_op3(T_SELECT, flag, one, zero, |b| b.ins().select(flag, one, zero))
+    }
+
+    /// Cached f64 constant (analog context).
+    pub fn analog_f64const(&mut self, v: f64) -> Value {
+        self.cse_const(v)
+    }
+
+    /// `out[idx] = value` (f64 array store).
+    pub fn store_f64(&mut self, value: Value, ptr: Value, idx: usize) {
+        self.builder.ins().store(MemFlags::trusted(), value, ptr, (idx * 8) as i32);
+    }
+
+    /// `out[idx] += value` (f64 array accumulate).
+    pub fn accumulate_f64(&mut self, value: Value, ptr: Value, idx: usize) {
+        let current = self.builder.ins().load(types::F64, MemFlags::trusted(), ptr, (idx * 8) as i32);
+        let sum = self.builder.ins().fadd(current, value);
+        self.builder.ins().store(MemFlags::trusted(), sum, ptr, (idx * 8) as i32);
+    }
+
+    /// Evaluate a POM `Block` to its expression value (analog context).
+    fn emit_analog_block_value(&mut self, block: &piperine_lang::parse::ast::Block) -> Result<Value, CodegenError> {
+        if let Some(e) = &block.expr {
+            return self.emit_analog(e);
+        }
+        for s in block.stmts.iter().rev() {
+            if let Stmt::Expr(e) = s {
+                return self.emit_analog(e);
+            }
+        }
+        Ok(self.cse_const(0.0))
+    }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -901,5 +1544,97 @@ fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
             _ => None,
         },
         _ => None,
+    }
+}
+
+/// Map a POM `BinaryOp` to the IR `BinOp` (shared by digital and analog paths).
+fn lower_binop_pom(op: BinaryOp) -> crate::ir::BinOp {
+    use piperine_lang::parse::ast::BinaryOp as P;
+    match op {
+        P::Add => crate::ir::BinOp::Add,
+        P::Sub => crate::ir::BinOp::Sub,
+        P::Mul => crate::ir::BinOp::Mul,
+        P::Div => crate::ir::BinOp::Div,
+        P::Rem => crate::ir::BinOp::Rem,
+        P::Eq => crate::ir::BinOp::Eq,
+        P::Neq => crate::ir::BinOp::Ne,
+        P::Lt => crate::ir::BinOp::Lt,
+        P::Le => crate::ir::BinOp::Le,
+        P::Gt => crate::ir::BinOp::Gt,
+        P::Ge => crate::ir::BinOp::Ge,
+        P::BitAnd => crate::ir::BinOp::BitAnd,
+        P::BitOr => crate::ir::BinOp::BitOr,
+        P::BitXor => crate::ir::BinOp::BitXor,
+        P::And => crate::ir::BinOp::And,
+        P::Or => crate::ir::BinOp::Or,
+    }
+}
+
+/// Structural equality for POM `Expr` (which doesn't derive `PartialEq`).
+/// Used for `$limit` slot deduplication.
+pub fn expr_structural_eq(a: &Expr, b: &Expr) -> bool {
+    use piperine_lang::parse::ast::Literal;
+    match (a, b) {
+        (Expr::Literal(la), Expr::Literal(lb)) => match (la, lb) {
+            (Literal::Real(x), Literal::Real(y)) => x == y,
+            (Literal::Int(x), Literal::Int(y)) => x == y,
+            (Literal::Bool(x), Literal::Bool(y)) => x == y,
+            (Literal::String(x), Literal::String(y)) => x == y,
+            (Literal::Quad(x), Literal::Quad(y)) => x == y,
+            (Literal::None, Literal::None) => true,
+            _ => false,
+        },
+        (Expr::Ident(x), Expr::Ident(y)) => x == y,
+        (Expr::Path(x), Expr::Path(y)) => x.segments == y.segments,
+        (Expr::SysCall(na, aa), Expr::SysCall(nb, ab)) => {
+            na == nb && aa.len() == ab.len()
+                && aa.iter().zip(ab).all(|(x, y)| expr_structural_eq(x, y))
+        }
+        (Expr::Call(fa, aa), Expr::Call(fb, ab)) => {
+            expr_structural_eq(fa, fb) && aa.len() == ab.len()
+                && aa.iter().zip(ab).all(|(x, y)| expr_structural_eq(x, y))
+        }
+        (Expr::Unary(oa, xa), Expr::Unary(ob, xb)) => oa == ob && expr_structural_eq(xa, xb),
+        (Expr::Binary(la, oa, ra), Expr::Binary(lb, ob, rb)) => {
+            oa == ob && expr_structural_eq(la, lb) && expr_structural_eq(ra, rb)
+        }
+        (Expr::Cast(ta, xa), Expr::Cast(tb, xb)) => ta == tb && expr_structural_eq(xa, xb),
+        (Expr::Field(ba, fa), Expr::Field(bb, fb)) => expr_structural_eq(ba, bb) && fa == fb,
+        (Expr::Index(ba, ia), Expr::Index(bb, ib)) => expr_structural_eq(ba, bb) && expr_structural_eq(ia, ib),
+        (Expr::If { cond: ca, then_body: ta, else_body: ea },
+         Expr::If { cond: cb, then_body: tb, else_body: eb }) => {
+            expr_structural_eq(ca, cb)
+                && blocks_eq(ta, tb)
+                && blocks_eq(ea, eb)
+        }
+        _ => false,
+    }
+}
+
+fn blocks_eq(a: &piperine_lang::parse::ast::Block, b: &piperine_lang::parse::ast::Block) -> bool {
+    a.stmts.len() == b.stmts.len()
+        && a.stmts.iter().zip(&b.stmts).all(|(x, y)| stmts_eq(x, y))
+        && match (&a.expr, &b.expr) {
+            (Some(x), Some(y)) => expr_structural_eq(x, y),
+            (None, None) => true,
+            _ => false,
+        }
+}
+
+fn stmts_eq(a: &piperine_lang::parse::ast::Stmt, b: &piperine_lang::parse::ast::Stmt) -> bool {
+    use piperine_lang::parse::ast::Stmt as S;
+    match (a, b) {
+        (S::Bind { dest: da, op: oa, src: sa }, S::Bind { dest: db, op: ob, src: sb }) => {
+            oa == ob && expr_structural_eq(da, db) && expr_structural_eq(sa, sb)
+        }
+        (S::Expr(ea), S::Expr(eb)) => expr_structural_eq(ea, eb),
+        (S::VarDecl { name: na, default: da, .. }, S::VarDecl { name: nb, default: db, .. }) => {
+            na == nb && match (da, db) {
+                (Some(x), Some(y)) => expr_structural_eq(x, y),
+                (None, None) => true,
+                _ => false,
+            }
+        }
+        _ => false,
     }
 }

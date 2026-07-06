@@ -2,10 +2,9 @@
 //! and the value-type/const conversions they need.
 
 use piperine_lang::pom::{Function as PomFunction, Module, NetType, ValueType, Design};
-use piperine_lang::parse::ast::{DisciplineItem, DisciplineDecl};
+use piperine_lang::parse::ast::{DisciplineItem, DisciplineDecl, Expr as PomExpr};
 use crate::lower::*;
-use super::stmt::lower_stmts;
-use super::expr::lower_expr;
+use super::stmt::resolve_stmts;
 use super::LowerCtx;
 use std::collections::HashSet;
 
@@ -125,32 +124,12 @@ pub(crate) fn elab_value_type_to_ir(ty: &ValueType) -> Type {
     }
 }
 
-pub(crate) fn value_to_ir(v: &piperine_lang::value::Value) -> IrExpr {
-    use piperine_lang::value::Value;
-    match v {
-        Value::Real(r) => IrExpr::Real(*r),
-        Value::Nat(n) => IrExpr::Int(*n as i64),
-        Value::Int(i) => IrExpr::Int(*i),
-        Value::Bool(b) => IrExpr::Bool(*b),
-        Value::Str(_) => IrExpr::Real(0.0), // No strings in IrExpr
-        Value::EnumVariant(enum_name, variant) => {
-            // Stable tag: hash the qualified name to a deterministic i64.
-            use std::collections::hash_map::DefaultHasher;
-            use std::hash::{Hash, Hasher};
-            let mut h = DefaultHasher::new();
-            format!("{}::{}", enum_name, variant).hash(&mut h);
-            IrExpr::Int(h.finish() as i64)
-        }
-        // Non-scalar values (collections, closures, …) cannot reach here:
-        // POM param/var storage only ever holds const scalars (rejected at
-        // fold time). Mirror the string fallback for the remaining scalars.
-        _ => IrExpr::Real(0.0),
-    }
+pub(crate) fn value_to_ir(v: &piperine_lang::value::Value) -> PomExpr {
+    value_to_pom_expr(v)
 }
 
-/// Convert a POM runtime `Value` to a POM AST `Expr` for the digital path
-/// (register power-on inits). The digital `Builder` evaluates these via
-/// `Codegen`-trait dispatch, so no `IrExpr` is involved.
+/// Convert a POM runtime `Value` to a POM AST `Expr` for the analog/digital
+/// paths. The Builder evaluates these via `Codegen`-trait dispatch.
 pub(crate) fn value_to_pom_expr(v: &piperine_lang::value::Value) -> piperine_lang::parse::ast::Expr {
     use piperine_lang::parse::ast::{Expr, Literal};
     use piperine_lang::value::Value;
@@ -210,14 +189,14 @@ pub(crate) fn convert_fn_named(
     ctx.consts = LowerCtx::const_irs(prog);
     ctx.bundle_bindings = bundle_bindings.into_iter().collect();
     ctx.fn_bundle_sigs = fn_bundle_signatures(prog);
-    // Lower default expressions (parallel to params) — elaboration
-    // constants, so each lowers to a constant `IrExpr` (the language spec Part I §9.1).
-    let defaults: Vec<Option<IrExpr>> = f
+    // Resolve default expressions (parallel to params) — elaboration
+    // constants, so each resolves to a constant POM `Expr`.
+    let defaults: Vec<Option<PomExpr>> = f
         .defaults()
         .iter()
-        .map(|d| d.as_ref().map(|e| lower_expr(e, &mut ctx)))
+        .map(|d| d.as_ref().map(|e| super::expr::resolve_expr(e, &mut ctx)))
         .collect();
-    let body = lower_stmts(f.body(), &mut ctx);
+    let body = resolve_stmts(f.body(), &mut ctx);
     errors.append(&mut ctx.errors);
 
     let returns = Some(Type::Real); // Best effort fallback

@@ -1,12 +1,14 @@
-//! Event spec (`@ posedge(clk)`, `@ cross(...)`, ...) → `IrEventKind`.
+//! Event spec (`@ posedge(clk)`, `@ cross(...)`, ...) → resolved event info.
+#![allow(dead_code)]
+//! For the POM path, event trigger expressions are POM `Expr` (resolved
+//! but not lowered to `IrExpr`).
 
 use piperine_lang::parse::ast::EventSpec;
 
 use crate::lower::*;
 
-use super::expr::lower_expr;
+use super::expr::resolve_expr;
 use super::LowerCtx;
-
 
 pub(crate) enum LoweredEvent {
     Analog(EventSource),
@@ -16,13 +18,6 @@ pub(crate) enum LoweredEvent {
 /// Convert an event-spec AST node into a vector of [`LoweredEvent`],
 /// supporting `@initial`, `@final`, `@cross(...)`, `@above(...)`,
 /// `@timer(...)`, and digital edges (`@posedge`, `@negedge`, `@change`).
-///
-/// Domain-aware (SPEC §10.4): `initial`/`final` work in both analog and
-/// digital bodies. In an analog body they lower to `AnalogEvent` with
-/// `InitialStep`/`FinalStep`; in a digital body they lower to a
-/// `ClockedBlock` with `DigitalEvent::Initial`/`Final` (fires during
-/// `init`, never during edge-driven `eval`). `cross`/`above`/`timer` are
-/// analog-only; `posedge`/`negedge`/`change` are digital-only.
 pub(crate) fn convert_event_spec(spec: &EventSpec, ctx: &mut LowerCtx) -> Vec<LoweredEvent> {
     match spec {
         EventSpec::Initial => {
@@ -40,22 +35,18 @@ pub(crate) fn convert_event_spec(spec: &EventSpec, ctx: &mut LowerCtx) -> Vec<Lo
             }
         }
         EventSpec::Named { name, arg } => {
-            let arg_ir = lower_expr(arg, ctx);
+            let arg_resolved = resolve_expr(arg, ctx);
             match name.as_str() {
-                "cross" => vec![LoweredEvent::Analog(EventSource::Cross { dir: CrossDir::Either, expr: arg_ir })],
-                "above" => vec![LoweredEvent::Analog(EventSource::Above { expr: arg_ir })],
-                "timer" => vec![LoweredEvent::Analog(EventSource::Timer { period: arg_ir })],
-                // Digital-style events inside PHDL `digital` blocks.
-                "posedge"  => vec![LoweredEvent::Digital(DigitalEvent::Posedge(arg_ir))],
-                "negedge"  => vec![LoweredEvent::Digital(DigitalEvent::Negedge(arg_ir))],
-                "change"   => vec![LoweredEvent::Digital(DigitalEvent::Change(arg_ir))],
-                // Elaboration rejects unregistered event names (UnknownEvent)
-                // before lowering runs.
+                "cross" => vec![LoweredEvent::Analog(EventSource::Cross { dir: CrossDir::Either, expr: arg_resolved })],
+                "above" => vec![LoweredEvent::Analog(EventSource::Above { expr: arg_resolved })],
+                "timer" => vec![LoweredEvent::Analog(EventSource::Timer { period: arg_resolved })],
+                "posedge"  => vec![LoweredEvent::Digital(DigitalEvent::Posedge(arg_resolved))],
+                "negedge"  => vec![LoweredEvent::Digital(DigitalEvent::Negedge(arg_resolved))],
+                "change"   => vec![LoweredEvent::Digital(DigitalEvent::Change(arg_resolved))],
                 other => unreachable!("event `{other}` passed validation but has no IR lowering"),
             }
         }
         EventSpec::Or(specs) => {
-            // For digital events, we want to group them into DigitalEvent::Or
             let mut all = Vec::new();
             let mut digitals = Vec::new();
             for s in specs {

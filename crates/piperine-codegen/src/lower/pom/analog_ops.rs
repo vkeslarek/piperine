@@ -1,205 +1,210 @@
 //! Analog operators (`ddt`, `idt`, `transition`, `laplace_*`, …) as a
-//! trait + registry, mirroring the [`EventKind`](crate::elab::event::EventKind)
-//! pattern already used for `@`-events.
-//!
-//! Each operator owns its own lowering logic as an [`AnalogOp`] impl
-//! instead of living as one arm in a giant `match` in `lower_call`. Adding
-//! a new operator means adding a struct + a `register` call here, not
-//! growing a shared match statement.
+//! trait + registry. Each operator lowers to a POM `Expr` marker call
+//! `__<op>(state_id, resolved_args...)` — the flattener and Builder
+//! dispatch on the marker name.
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 
-use piperine_lang::parse::ast::Expr;
+use piperine_lang::parse::ast::{ArrayBody, Expr, Literal};
+
 use crate::lower::*;
 
-use super::expr::lower_expr;
+use super::expr::resolve_expr;
 use super::LowerCtx;
 
 /// One analog operator: `ddt(x)`, `laplace_np(x, num, den)`, etc.
 pub(crate) trait AnalogOp: Send + Sync {
-    /// Lower `name(args...)` (already resolved to this op) to an [`IrExpr`],
-    /// typically an [`IrExpr::StateRef`] allocated via `ctx.alloc_state`.
-    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr;
+    /// Lower `name(args...)` to a POM `Expr` marker call with a state id.
+    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr;
 }
 
-fn arg(args: &[Expr], i: usize, ctx: &mut LowerCtx, default: f64) -> IrExpr {
-    args.get(i).map(|a| lower_expr(a, ctx)).unwrap_or(IrExpr::Real(default))
+fn arg(args: &[Expr], i: usize, ctx: &mut LowerCtx, default: f64) -> Expr {
+    args.get(i).map(|a| resolve_expr(a, ctx)).unwrap_or(Expr::Literal(Literal::Real(default)))
+}
+
+/// Build a marker call: `__<name>(state_id, args...)`.
+fn marker(name: &str, id: StateId, args: Vec<Expr>) -> Expr {
+    let mut all = vec![Expr::Literal(Literal::Int(id.0 as u64))];
+    all.extend(args);
+    Expr::Call(Box::new(Expr::Ident(name.to_string())), all)
 }
 
 struct Ddt;
 impl AnalogOp for Ddt {
-    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        let Some(a0) = args.first() else { return IrExpr::Real(0.0) };
-        let x = lower_expr(a0, ctx);
-        let id = ctx.alloc_state(StateKind::Ddt, x);
-        IrExpr::State(id)
+    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
+        let Some(a0) = args.first() else { return Expr::Literal(Literal::Real(0.0)) };
+        let x = resolve_expr(a0, ctx);
+        let id = ctx.alloc_state(StateKind::Ddt, x.clone());
+        marker("__ddt", id, vec![x])
     }
 }
 
 struct Idt;
 impl AnalogOp for Idt {
-    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        let Some(a0) = args.first() else { return IrExpr::Real(0.0) };
-        let x = lower_expr(a0, ctx);
+    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
+        let Some(a0) = args.first() else { return Expr::Literal(Literal::Real(0.0)) };
+        let x = resolve_expr(a0, ctx);
         let ic = arg(args, 1, ctx, 0.0);
-        let id = ctx.alloc_state(StateKind::Idt { ic }, x);
-        IrExpr::State(id)
+        let id = ctx.alloc_state(StateKind::Idt { ic: ic.clone() }, x.clone());
+        marker("__idt", id, vec![x, ic])
     }
 }
 
 struct IdtMod;
 impl AnalogOp for IdtMod {
-    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        let Some(a0) = args.first() else { return IrExpr::Real(0.0) };
-        let x = lower_expr(a0, ctx);
+    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
+        let Some(a0) = args.first() else { return Expr::Literal(Literal::Real(0.0)) };
+        let x = resolve_expr(a0, ctx);
         let ic = arg(args, 1, ctx, 0.0);
         let modulus = arg(args, 2, ctx, 1.0);
-        let id = ctx.alloc_state(StateKind::IdtMod { ic, modulus }, x);
-        IrExpr::State(id)
+        let id = ctx.alloc_state(
+            StateKind::IdtMod { ic: ic.clone(), modulus: modulus.clone() },
+            x.clone(),
+        );
+        marker("__idtmod", id, vec![x, ic, modulus])
     }
 }
 
 struct Ddx;
 impl AnalogOp for Ddx {
-    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
+    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         if args.len() < 2 {
-            return IrExpr::Real(0.0);
+            return Expr::Literal(Literal::Real(0.0));
         }
-        let x = lower_expr(&args[0], ctx);
+        let x = resolve_expr(&args[0], ctx);
         let node_name = super::expr::ident_from_expr(Some(&args[1])).unwrap_or_else(|| "?".into());
         let node = ctx.require_node(&node_name);
-        let id = ctx.alloc_state(StateKind::Ddx { node }, x);
-        IrExpr::State(id)
+        let id = ctx.alloc_state(StateKind::Ddx { node }, x.clone());
+        marker("__ddx", id, vec![x, Expr::Literal(Literal::Int(node.0 as u64))])
     }
 }
 
 struct Delay;
 impl AnalogOp for Delay {
-    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        let Some(a0) = args.first() else { return IrExpr::Real(0.0) };
-        let x = lower_expr(a0, ctx);
+    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
+        let Some(a0) = args.first() else { return Expr::Literal(Literal::Real(0.0)) };
+        let x = resolve_expr(a0, ctx);
         let delay = arg(args, 1, ctx, 0.0);
-        let id = ctx.alloc_state(StateKind::Delay { delay }, x);
-        IrExpr::State(id)
+        let id = ctx.alloc_state(StateKind::Delay { delay: delay.clone() }, x.clone());
+        marker("__delay", id, vec![x, delay])
     }
 }
 
 struct Transition;
 impl AnalogOp for Transition {
-    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        let Some(a0) = args.first() else { return IrExpr::Real(0.0) };
-        let x = lower_expr(a0, ctx);
+    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
+        let Some(a0) = args.first() else { return Expr::Literal(Literal::Real(0.0)) };
+        let x = resolve_expr(a0, ctx);
         let delay = arg(args, 1, ctx, 0.0);
         let rise = arg(args, 2, ctx, 0.0);
         let fall = arg(args, 3, ctx, 0.0);
         let tol = arg(args, 4, ctx, 0.0);
-        let id = ctx.alloc_state(StateKind::Transition { delay, rise, fall, tol }, x);
-        IrExpr::State(id)
+        let id = ctx.alloc_state(
+            StateKind::Transition { delay: delay.clone(), rise: rise.clone(), fall: fall.clone(), tol: tol.clone() },
+            x.clone(),
+        );
+        marker("__transition", id, vec![x, delay, rise, fall, tol])
     }
 }
 
 struct Slew;
 impl AnalogOp for Slew {
-    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
-        let Some(a0) = args.first() else { return IrExpr::Real(0.0) };
-        let x = lower_expr(a0, ctx);
+    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
+        let Some(a0) = args.first() else { return Expr::Literal(Literal::Real(0.0)) };
+        let x = resolve_expr(a0, ctx);
         let rise = arg(args, 1, ctx, 0.0);
         let fall = arg(args, 2, ctx, 0.0);
-        let id = ctx.alloc_state(StateKind::Slew { rise, fall }, x);
-        IrExpr::State(id)
+        let id = ctx.alloc_state(StateKind::Slew { rise: rise.clone(), fall: fall.clone() }, x.clone());
+        marker("__slew", id, vec![x, rise, fall])
     }
 }
 
-/// `laplace_np` / `laplace_zp` / `laplace_pm` / `laplace_nm` / `laplace_npm`
-/// — one struct, five registrations differing only by `variant`.
 struct Laplace {
     variant: &'static str,
 }
 impl AnalogOp for Laplace {
-    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
+    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         if args.len() < 3 {
-            return IrExpr::Real(0.0);
+            return Expr::Literal(Literal::Real(0.0));
         }
-        let x = lower_expr(&args[0], ctx);
-        
-        let to_vec = |e: &Expr, ctx: &mut LowerCtx| -> Vec<IrExpr> {
-            if let Expr::Array(piperine_lang::parse::ast::ArrayBody::List(list)) = e {
-                list.iter().map(|item| lower_expr(item, ctx)).collect()
+        let x = resolve_expr(&args[0], ctx);
+        let to_vec = |e: &Expr, ctx: &mut LowerCtx| -> Vec<Expr> {
+            if let Expr::Array(ArrayBody::List(list)) = e {
+                list.iter().map(|item| resolve_expr(item, ctx)).collect()
             } else {
-                vec![lower_expr(e, ctx)]
+                vec![resolve_expr(e, ctx)]
             }
         };
         let num = to_vec(&args[1], ctx);
         let den = to_vec(&args[2], ctx);
-        
         let variant = match self.variant {
-            "zp" => crate::lower::LaplaceKind::ZerosPoles,
-            "np" => crate::lower::LaplaceKind::NumPoles,
-            "zd" => crate::lower::LaplaceKind::ZerosDen,
-            _ => crate::lower::LaplaceKind::NumDen,
+            "zp" => LaplaceKind::ZerosPoles,
+            "np" => LaplaceKind::NumPoles,
+            "zd" => LaplaceKind::ZerosDen,
+            _ => LaplaceKind::NumDen,
         };
         let id = ctx.alloc_state(
-            StateKind::Laplace { variant, num, den },
-            x,
+            StateKind::Laplace { variant, num: num.clone(), den: den.clone() },
+            x.clone(),
         );
-        IrExpr::State(id)
+        let mut marker_args = vec![x];
+        marker_args.push(Expr::Array(ArrayBody::List(num)));
+        marker_args.push(Expr::Array(ArrayBody::List(den)));
+        marker("__laplace", id, marker_args)
     }
 }
 
-/// `zi_zd` / `zi_zp` / `zi_nd` / `zi_np` — one struct, four registrations.
 struct ZTransform {
     variant: &'static str,
 }
 impl AnalogOp for ZTransform {
-    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
+    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         if args.len() < 4 {
-            return IrExpr::Real(0.0);
+            return Expr::Literal(Literal::Real(0.0));
         }
-        let x = lower_expr(&args[0], ctx);
-        
-        let to_vec = |e: &Expr, ctx: &mut LowerCtx| -> Vec<IrExpr> {
-            if let Expr::Array(piperine_lang::parse::ast::ArrayBody::List(list)) = e {
-                list.iter().map(|item| lower_expr(item, ctx)).collect()
+        let x = resolve_expr(&args[0], ctx);
+        let to_vec = |e: &Expr, ctx: &mut LowerCtx| -> Vec<Expr> {
+            if let Expr::Array(ArrayBody::List(list)) = e {
+                list.iter().map(|item| resolve_expr(item, ctx)).collect()
             } else {
-                vec![lower_expr(e, ctx)]
+                vec![resolve_expr(e, ctx)]
             }
         };
         let num = to_vec(&args[1], ctx);
         let den = to_vec(&args[2], ctx);
-        let sample_dt = lower_expr(&args[3], ctx);
-        
+        let sample_dt = resolve_expr(&args[3], ctx);
         let variant = match self.variant {
-            "zp" => crate::lower::ZKind::ZerosPoles,
-            "np" => crate::lower::ZKind::NumPoles,
-            "zd" => crate::lower::ZKind::ZerosDen,
-            _ => crate::lower::ZKind::NumDen,
+            "zp" => ZKind::ZerosPoles,
+            "np" => ZKind::NumPoles,
+            "zd" => ZKind::ZerosDen,
+            _ => ZKind::NumDen,
         };
-        
         let id = ctx.alloc_state(
-            StateKind::ZTransform { variant, num, den, sample_dt },
-            x,
+            StateKind::ZTransform { variant, num: num.clone(), den: den.clone(), sample_dt: sample_dt.clone() },
+            x.clone(),
         );
-        IrExpr::State(id)
+        let mut marker_args = vec![x];
+        marker_args.push(Expr::Array(ArrayBody::List(num)));
+        marker_args.push(Expr::Array(ArrayBody::List(den)));
+        marker_args.push(sample_dt);
+        marker("__ztransform", id, marker_args)
     }
 }
 
 struct AcStim;
 impl AnalogOp for AcStim {
-    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> IrExpr {
+    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         let mag = arg(args, 0, ctx, 1.0);
         let phase = arg(args, 1, ctx, 0.0);
-        IrExpr::AcStim { mag: Box::new(mag), phase: Box::new(phase) }
+        Expr::SysCall("$ac_stim".to_string(), vec![mag, phase])
     }
 }
 
-/// `white_noise`/`flicker_noise` are extracted separately by `scan_noise`
-/// (which walks contribution RHS trees before lowering); in expression
-/// position they contribute nothing to the residual itself.
 struct NoiseCall;
 impl AnalogOp for NoiseCall {
-    fn lower(&self, _args: &[Expr], _ctx: &mut LowerCtx) -> IrExpr {
-        IrExpr::Real(0.0)
+    fn lower(&self, _args: &[Expr], _ctx: &mut LowerCtx) -> Expr {
+        Expr::Literal(Literal::Real(0.0))
     }
 }
 

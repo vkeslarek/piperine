@@ -1,261 +1,359 @@
-//! Symbolic differentiation of analog expressions.
+//! Symbolic differentiation of analog expressions (POM `Expr`).
 //!
 //! The Jacobian is built by differentiating each flattened contribution
 //! w.r.t. every branch voltage it reads, then emitting the derivative like
-//! any other expression. `State` reads are constants within a Newton
-//! iteration (reactive parts are handled by the charge Jacobian), so their
-//! derivative is zero.
+//! any other expression. `__state_load` / `__ddt` reads are constants within
+//! a Newton iteration (reactive parts are handled by the charge Jacobian).
 
-use super::{BinOp, IrExpr, UnOp, NodeId};
+use piperine_lang::parse::ast::{BinaryOp, Expr, Literal, UnaryOp};
 
-impl IrExpr {
-    /// `∂self / ∂V(plus, minus)` as a new expression.
-    pub fn d_dv(&self, plus: NodeId, minus: NodeId) -> IrExpr {
-        self.differentiate(&|p, m| {
-            if p == plus && m == minus {
-                lit(1.0)
-            } else {
-                lit(0.0)
-            }
-        })
-    }
+use super::symbols::NodeId;
 
-    /// `∂self / ∂V(node)` — the `ddx` derivative w.r.t. a single node
-    /// potential: a branch `V(a,b)` contributes `+1` if `a == node`,
-    /// `−1` if `b == node`.
-    pub fn d_dnode(&self, node: NodeId) -> IrExpr {
-        self.differentiate(&|p, m| {
-            let sign = f64::from(p == node) - f64::from(m == node);
-            lit(sign)
-        })
-    }
-
-    /// Core chain-rule walk; `seed` gives the derivative of a branch read.
-    fn differentiate(&self, seed: &impl Fn(NodeId, NodeId) -> IrExpr) -> IrExpr {
-        match self {
-            // Voltage limiting (`$limit("pnjlim"/"fetlim", vnew, …)`) is a
-            // convergence aid that is the identity at the solution, so it is
-            // transparent to differentiation: the Jacobian sees the limited
-            // value's dependence on the branch, i.e. d(vnew)/dV. This matches
-            // ngspice, which stamps the conductance at the limited operating
-            // point with d(vlim)/d(vnode) = 1.
-            IrExpr::Sim(super::SimQuery::Limit { args, .. }) => args
-                .first()
-                .map(|vnew| vnew.differentiate(seed))
-                .unwrap_or_else(|| lit(0.0)),
-
-            IrExpr::Real(_)
-            | IrExpr::Int(_)
-            | IrExpr::Bool(_)
-            | IrExpr::Quad(_)
-            | IrExpr::Param(_)
-            | IrExpr::Var(_)
-            | IrExpr::Sim(_)
-            | IrExpr::Net(_)
-            | IrExpr::State(_)
-            | IrExpr::AcStim { .. } => lit(0.0),
-
-            IrExpr::Branch { plus, minus, .. } => seed(*plus, *minus),
-
-            IrExpr::Unary(UnOp::Neg, x) => neg(x.differentiate(seed)),
-            // Boolean / bitwise results are piecewise constant.
-            IrExpr::Unary(_, _) => lit(0.0),
-
-            IrExpr::Binary(op, a, b) => Self::d_binary(*op, a, b, seed),
-
-            IrExpr::Select(c, t, e) => IrExpr::Select(
-                c.clone(),
-                Box::new(t.differentiate(seed)),
-                Box::new(e.differentiate(seed)),
-            ),
-
-            IrExpr::MathCall(name, args) => Self::d_math(name, args, seed),
-
-            // User calls are inlined before differentiation; vectors have no
-            // scalar derivative. Emission of these in an analog contribution
-            // is rejected upstream, so a zero here is unreachable rather
-            // than a silent fallback.
-            IrExpr::Call(..) | IrExpr::Array(_) | IrExpr::Index(..) | IrExpr::Slice(..) => lit(0.0),
+/// `∂expr / ∂V(plus, minus)` as a new POM expression. The `resolver` maps
+/// node names to `NodeId`s so `V(p,n)` branch accesses can be identified.
+pub fn d_dv(
+    expr: &Expr,
+    plus: NodeId,
+    minus: NodeId,
+    resolve_node: &impl Fn(&str) -> Option<NodeId>,
+) -> Expr {
+    differentiate(expr, &|p, m| {
+        if p == plus && m == minus {
+            lit(1.0)
+        } else {
+            lit(0.0)
         }
-    }
+    }, resolve_node)
+}
 
-    fn d_binary(op: BinOp, a: &IrExpr, b: &IrExpr, seed: &impl Fn(NodeId, NodeId) -> IrExpr) -> IrExpr {
-        let da = a.differentiate(seed);
-        let db = b.differentiate(seed);
-        match op {
-            BinOp::Add => add(da, db),
-            BinOp::Sub => sub(da, db),
-            BinOp::Mul => add(mul(da, b.clone()), mul(a.clone(), db)),
-            BinOp::Div => div(
-                sub(mul(da, b.clone()), mul(a.clone(), db)),
-                mul(b.clone(), b.clone()),
-            ),
-            // General power rule: (u^v)' = u^v · (v'·ln u + v·u'/u).
-            // With a constant exponent (the common case) v' = 0 and it
-            // folds to v·u^(v−1)·u'.
-            BinOp::Pow => {
-                if is_zero(&db) {
-                    mul(
-                        mul(b.clone(), IrExpr::binary(BinOp::Pow, a.clone(), sub(b.clone(), lit(1.0)))),
-                        da,
-                    )
-                } else {
-                    mul(
-                        IrExpr::binary(BinOp::Pow, a.clone(), b.clone()),
-                        add(
-                            mul(db, math1("ln", a.clone())),
-                            div(mul(b.clone(), da), a.clone()),
-                        ),
-                    )
+/// `∂expr / ∂V(node)` — the `ddx` derivative w.r.t. a single node potential.
+pub fn d_dnode(
+    expr: &Expr,
+    node: NodeId,
+    resolve_node: &impl Fn(&str) -> Option<NodeId>,
+) -> Expr {
+    differentiate(expr, &|p, m| {
+        let sign = f64::from(p == node) - f64::from(m == node);
+        lit(sign)
+    }, resolve_node)
+}
+
+/// Core chain-rule walk; `seed` gives the derivative of a branch read.
+fn differentiate(
+    expr: &Expr,
+    seed: &impl Fn(NodeId, NodeId) -> Expr,
+    resolve_node: &impl Fn(&str) -> Option<NodeId>,
+) -> Expr {
+    match expr {
+        // $limit is transparent to differentiation: d(vnew)/dV.
+        Expr::SysCall(name, args) if name == "$limit" => {
+            args.get(1).map(|vnew| differentiate(vnew, seed, resolve_node)).unwrap_or_else(|| lit(0.0))
+        }
+
+        Expr::Literal(Literal::Real(_))
+        | Expr::Literal(Literal::Int(_))
+        | Expr::Literal(Literal::Bool(_))
+        | Expr::Literal(Literal::String(_))
+        | Expr::Literal(Literal::None)
+        | Expr::Literal(Literal::Quad(_))
+        | Expr::SysCall(_, _) => lit(0.0),
+
+        // Branch access: V(p,n) — resolve node names to ids and seed.
+        Expr::Call(func, args) => {
+            if let Expr::Ident(name) = func.as_ref() {
+                if name == "V" || name == "I" {
+                    let plus_name = ident_str(args.first()).unwrap_or_else(|| "0".into());
+                    let minus_name = ident_str(args.get(1)).unwrap_or_else(|| "0".into());
+                    let p = resolve_node(&plus_name).unwrap_or(NodeId::GROUND);
+                    let m = resolve_node(&minus_name).unwrap_or(NodeId::GROUND);
+                    return seed(p, m);
+                }
+                // __state_load, __ddt, __idt, __delay, __slew, etc. — constants
+                // within a Newton iteration.
+                if name.starts_with("__") {
+                    return lit(0.0);
+                }
+                // Math builtins: chain rule.
+                if super::math::math_fn(name).is_some() {
+                    return d_math(name, args, seed, resolve_node);
                 }
             }
-            // Comparisons, logic, bit ops, shifts, remainder: piecewise
-            // constant almost everywhere.
-            _ => lit(0.0),
+            lit(0.0)
         }
-    }
 
-    fn d_math(name: &str, args: &[IrExpr], seed: &impl Fn(NodeId, NodeId) -> IrExpr) -> IrExpr {
-        let u = args.first().cloned().unwrap_or_else(|| lit(0.0));
-        let du = args
-            .first()
-            .map(|a| a.differentiate(seed))
-            .unwrap_or_else(|| lit(0.0));
-        match name {
-            "exp" => mul(math1("exp", u), du),
-            // `limexp` clamps its exponent (≤ 80) so junction currents can't
-            // overflow. Its derivative must clamp too — using plain `exp` here
-            // overflows to ∞ and poisons the Jacobian (NaN in the linear solve).
-            // Bounding gm/gd with `limexp` keeps Newton stable; the two agree
-            // exactly wherever the exponent is unclamped (the physical range).
-            "limexp" => mul(math1("limexp", u), du),
-            "ln" | "log" => div(du, u),
-            "log10" => div(du, mul(u, lit(std::f64::consts::LN_10))),
-            "sqrt" => div(du, mul(lit(2.0), math1("sqrt", u))),
-            "sin" => mul(math1("cos", u), du),
-            "cos" => mul(neg(math1("sin", u)), du),
-            "tan" => div(du, mul(math1("cos", u.clone()), math1("cos", u))),
-            "asin" => div(du, math1("sqrt", sub(lit(1.0), mul(u.clone(), u)))),
-            "acos" => div(neg(du), math1("sqrt", sub(lit(1.0), mul(u.clone(), u)))),
-            "atan" => div(du, add(lit(1.0), mul(u.clone(), u))),
-            "sinh" => mul(math1("cosh", u), du),
-            "cosh" => mul(math1("sinh", u), du),
-            "tanh" => mul(sub(lit(1.0), mul(math1("tanh", u.clone()), math1("tanh", u))), du),
-            "abs" => mul(
-                IrExpr::select(
-                    IrExpr::binary(BinOp::Ge, u, lit(0.0)),
-                    lit(1.0),
-                    lit(-1.0),
-                ),
-                du,
-            ),
-            "pow" => {
-                let v = args.get(1).cloned().unwrap_or_else(|| lit(1.0));
-                let dv = args
-                    .get(1)
-                    .map(|a| a.differentiate(seed))
-                    .unwrap_or_else(|| lit(0.0));
-                IrExpr::binary(BinOp::Pow, u, v).d_via_pow(du, dv)
+        Expr::Ident(_) => lit(0.0),
+        Expr::Path(_) => lit(0.0),
+
+        Expr::Unary(UnaryOp::Neg, x) => neg(differentiate(x, seed, resolve_node)),
+        Expr::Unary(UnaryOp::Not, _) => lit(0.0),
+
+        Expr::Binary(lhs, op, rhs) => d_binary(op.clone(), lhs, rhs, seed, resolve_node),
+
+        Expr::If { cond, then_body, else_body } => {
+            let t = block_deriv(then_body, seed, resolve_node);
+            let e = block_deriv(else_body, seed, resolve_node);
+            Expr::If {
+                cond: cond.clone(),
+                then_body: piperine_lang::parse::ast::Block { stmts: vec![], expr: Some(Box::new(t)) },
+                else_body: piperine_lang::parse::ast::Block { stmts: vec![], expr: Some(Box::new(e)) },
             }
-            "min" | "max" => {
-                let v = args.get(1).cloned().unwrap_or_else(|| lit(0.0));
-                let dv = args
-                    .get(1)
-                    .map(|a| a.differentiate(seed))
-                    .unwrap_or_else(|| lit(0.0));
-                let pick_first = if name == "min" {
-                    IrExpr::binary(BinOp::Le, u, v)
-                } else {
-                    IrExpr::binary(BinOp::Ge, u, v)
-                };
-                IrExpr::select(pick_first, du, dv)
+        }
+
+        Expr::Block(b) => {
+            if let Some(e) = &b.expr {
+                return differentiate(e, seed, resolve_node);
             }
-            // floor/ceil and friends are piecewise constant.
-            _ => lit(0.0),
+            for s in b.stmts.iter().rev() {
+                if let piperine_lang::parse::ast::Stmt::Expr(e) = s {
+                    return differentiate(e, seed, resolve_node);
+                }
+            }
+            lit(0.0)
+        }
+
+        Expr::Cast(_, inner) => differentiate(inner, seed, resolve_node),
+        Expr::Field(_, _) => lit(0.0),
+
+        _ => lit(0.0),
+    }
+}
+
+fn block_deriv(
+    block: &piperine_lang::parse::ast::Block,
+    seed: &impl Fn(NodeId, NodeId) -> Expr,
+    resolve_node: &impl Fn(&str) -> Option<NodeId>,
+) -> Expr {
+    if let Some(e) = &block.expr {
+        return differentiate(e, seed, resolve_node);
+    }
+    for s in block.stmts.iter().rev() {
+        if let piperine_lang::parse::ast::Stmt::Expr(e) = s {
+            return differentiate(e, seed, resolve_node);
         }
     }
+    lit(0.0)
+}
 
-    /// Rewrites `self` (which must be `Pow(u, v)`) into its derivative given
-    /// `du`/`dv`; shared by the operator and the `pow` call.
-    fn d_via_pow(self, du: IrExpr, dv: IrExpr) -> IrExpr {
-        let IrExpr::Binary(BinOp::Pow, u, v) = self else {
-            return lit(0.0);
-        };
-        if is_zero(&dv) {
-            mul(
-                mul((*v).clone(), IrExpr::binary(BinOp::Pow, (*u).clone(), sub((*v).clone(), lit(1.0)))),
-                du,
-            )
-        } else {
-            mul(
-                IrExpr::Binary(BinOp::Pow, u.clone(), v.clone()),
-                add(mul(dv, math1("ln", (*u).clone())), div(mul((*v).clone(), du), (*u).clone())),
-            )
+fn d_binary(
+    op: BinaryOp,
+    a: &Expr,
+    b: &Expr,
+    seed: &impl Fn(NodeId, NodeId) -> Expr,
+    resolve_node: &impl Fn(&str) -> Option<NodeId>,
+) -> Expr {
+    let da = differentiate(a, seed, resolve_node);
+    let db = differentiate(b, seed, resolve_node);
+    match op {
+        BinaryOp::Add => add(da, db),
+        BinaryOp::Sub => sub(da, db),
+        BinaryOp::Mul => add(mul(da, b.clone()), mul(a.clone(), db)),
+        BinaryOp::Div => div(
+            sub(mul(da, b.clone()), mul(a.clone(), db)),
+            mul(b.clone(), b.clone()),
+        ),
+        BinaryOp::And | BinaryOp::Or => lit(0.0),
+        _ => {
+            // For Pow and other ops, use the IR BinOp mapping.
+            let ir_op = super::BinOp::from_pom(op);
+            match ir_op {
+                super::BinOp::Pow => {
+                    if is_zero(&db) {
+                        mul(
+                            mul(b.clone(), binary(super::BinOp::Pow, a.clone(), sub(b.clone(), lit(1.0)))),
+                            da,
+                        )
+                    } else {
+                        mul(
+                            binary(super::BinOp::Pow, a.clone(), b.clone()),
+                            add(mul(db, math1("ln", a.clone())), div(mul(b.clone(), da), a.clone())),
+                        )
+                    }
+                }
+                _ => lit(0.0),
+            }
         }
     }
 }
 
-// ── Constant-folding constructors (keep derivative trees small) ──────────────
-
-fn lit(v: f64) -> IrExpr {
-    IrExpr::Real(v)
+fn d_math(
+    name: &str,
+    args: &[Expr],
+    seed: &impl Fn(NodeId, NodeId) -> Expr,
+    resolve_node: &impl Fn(&str) -> Option<NodeId>,
+) -> Expr {
+    let u = args.first().cloned().unwrap_or_else(|| lit(0.0));
+    let du = args.first().map(|a| differentiate(a, seed, resolve_node)).unwrap_or_else(|| lit(0.0));
+    match name {
+        "exp" | "limexp" => mul(math1(name, u), du),
+        "ln" | "log" => div(du, u),
+        "log10" => div(du, mul(u, lit(std::f64::consts::LN_10))),
+        "sqrt" => div(du, mul(lit(2.0), math1("sqrt", u))),
+        "sin" => mul(math1("cos", u), du),
+        "cos" => mul(neg(math1("sin", u)), du),
+        "tan" => div(du, mul(math1("cos", u.clone()), math1("cos", u))),
+        "asin" => div(du, math1("sqrt", sub(lit(1.0), mul(u.clone(), u)))),
+        "acos" => div(neg(du), math1("sqrt", sub(lit(1.0), mul(u.clone(), u)))),
+        "atan" => div(du, add(lit(1.0), mul(u.clone(), u))),
+        "sinh" => mul(math1("cosh", u), du),
+        "cosh" => mul(math1("sinh", u), du),
+        "tanh" => mul(sub(lit(1.0), mul(math1("tanh", u.clone()), math1("tanh", u))), du),
+        "abs" => mul(
+            Expr::If {
+                cond: Box::new(binary(super::BinOp::Ge, u.clone(), lit(0.0))),
+                then_body: block(lit(1.0)),
+                else_body: block(lit(-1.0)),
+            },
+            du,
+        ),
+        "pow" => {
+            let v = args.get(1).cloned().unwrap_or_else(|| lit(1.0));
+            let dv = args.get(1).map(|a| differentiate(a, seed, resolve_node)).unwrap_or_else(|| lit(0.0));
+            binary(super::BinOp::Pow, u, v).d_via_pow(du, dv)
+        }
+        "min" | "max" => {
+            let v = args.get(1).cloned().unwrap_or_else(|| lit(0.0));
+            let dv = args.get(1).map(|a| differentiate(a, seed, resolve_node)).unwrap_or_else(|| lit(0.0));
+            let pick_first = if name == "min" {
+                binary(super::BinOp::Le, u, v)
+            } else {
+                binary(super::BinOp::Ge, u, v)
+            };
+            Expr::If {
+                cond: Box::new(pick_first),
+                then_body: block(du),
+                else_body: block(dv),
+            }
+        }
+        _ => lit(0.0),
+    }
 }
 
-fn is_zero(e: &IrExpr) -> bool {
-    matches!(e, IrExpr::Real(v) if *v == 0.0)
+/// Collect every distinct `V(p,n)` branch pair in the tree.
+pub fn collect_branches(expr: &Expr, out: &mut Vec<(NodeId, NodeId)>, resolve_node: &impl Fn(&str) -> Option<NodeId>) {
+    use piperine_lang::parse::ast::Walk;
+    expr.walk(&mut |e| {
+        if let Expr::Call(func, args) = e {
+            if let Expr::Ident(name) = func.as_ref() {
+                if name == "V" || name == "I" {
+                    let plus_name = ident_str(args.first()).unwrap_or_else(|| "0".into());
+                    let minus_name = ident_str(args.get(1)).unwrap_or_else(|| "0".into());
+                    let p = resolve_node(&plus_name).unwrap_or(NodeId::GROUND);
+                    let m = resolve_node(&minus_name).unwrap_or(NodeId::GROUND);
+                    let pair = (p, m);
+                    if !out.contains(&pair) {
+                        out.push(pair);
+                    }
+                    return Walk::SkipChildren;
+                }
+            }
+        }
+        Walk::Continue
+    });
 }
 
-fn is_one(e: &IrExpr) -> bool {
-    matches!(e, IrExpr::Real(v) if *v == 1.0)
+/// Walk an expression and call `f` on each node (pre-order).
+pub fn visit_expr<F: FnMut(&Expr)>(expr: &Expr, f: &mut F) {
+    use piperine_lang::parse::ast::Walk;
+    expr.walk(&mut |e| {
+        f(e);
+        Walk::Continue
+    });
 }
 
-fn add(a: IrExpr, b: IrExpr) -> IrExpr {
-    if is_zero(&a) {
-        return b;
+fn ident_str(e: Option<&Expr>) -> Option<String> {
+    match e? {
+        Expr::Ident(s) => Some(s.clone()),
+        Expr::Field(base, field) => match base.as_ref() {
+            Expr::Ident(base_name) => Some(format!("{base_name}.{field}")),
+            _ => None,
+        },
+        _ => None,
     }
-    if is_zero(&b) {
-        return a;
-    }
-    IrExpr::binary(BinOp::Add, a, b)
 }
 
-fn sub(a: IrExpr, b: IrExpr) -> IrExpr {
-    if is_zero(&b) {
-        return a;
-    }
-    IrExpr::binary(BinOp::Sub, a, b)
+// ── Constant-folding constructors ──
+
+fn lit(v: f64) -> Expr {
+    Expr::Literal(Literal::Real(v))
 }
 
-fn mul(a: IrExpr, b: IrExpr) -> IrExpr {
-    if is_zero(&a) || is_zero(&b) {
-        return lit(0.0);
-    }
-    if is_one(&a) {
-        return b;
-    }
-    if is_one(&b) {
-        return a;
-    }
-    IrExpr::binary(BinOp::Mul, a, b)
+fn is_zero(e: &Expr) -> bool {
+    matches!(e, Expr::Literal(Literal::Real(v)) if *v == 0.0)
 }
 
-fn div(a: IrExpr, b: IrExpr) -> IrExpr {
-    if is_zero(&a) {
-        return lit(0.0);
-    }
-    if is_one(&b) {
-        return a;
-    }
-    IrExpr::binary(BinOp::Div, a, b)
+fn is_one(e: &Expr) -> bool {
+    matches!(e, Expr::Literal(Literal::Real(v)) if *v == 1.0)
 }
 
-fn neg(a: IrExpr) -> IrExpr {
-    if let IrExpr::Real(v) = &a {
+fn add(a: Expr, b: Expr) -> Expr {
+    if is_zero(&a) { return b; }
+    if is_zero(&b) { return a; }
+    binary(super::BinOp::Add, a, b)
+}
+
+fn sub(a: Expr, b: Expr) -> Expr {
+    if is_zero(&b) { return a; }
+    binary(super::BinOp::Sub, a, b)
+}
+
+fn mul(a: Expr, b: Expr) -> Expr {
+    if is_zero(&a) || is_zero(&b) { return lit(0.0); }
+    if is_one(&a) { return b; }
+    if is_one(&b) { return a; }
+    binary(super::BinOp::Mul, a, b)
+}
+
+fn div(a: Expr, b: Expr) -> Expr {
+    if is_zero(&a) { return lit(0.0); }
+    if is_one(&b) { return a; }
+    binary(super::BinOp::Div, a, b)
+}
+
+fn neg(a: Expr) -> Expr {
+    if let Expr::Literal(Literal::Real(v)) = &a {
         return lit(-v);
     }
-    IrExpr::Unary(UnOp::Neg, Box::new(a))
+    Expr::Unary(UnaryOp::Neg, Box::new(a))
 }
 
-fn math1(name: &str, a: IrExpr) -> IrExpr {
-    IrExpr::MathCall(name.to_string(), vec![a])
+fn binary(op: super::BinOp, lhs: Expr, rhs: Expr) -> Expr {
+    let pom_op = op.to_pom();
+    Expr::Binary(Box::new(lhs), pom_op, Box::new(rhs))
+}
+
+fn math1(name: &str, a: Expr) -> Expr {
+    Expr::Call(Box::new(Expr::Ident(name.to_string())), vec![a])
+}
+
+fn block(e: Expr) -> piperine_lang::parse::ast::Block {
+    piperine_lang::parse::ast::Block { stmts: vec![], expr: Some(Box::new(e)) }
+}
+
+// Extension trait for Pow differentiation.
+trait PowDeriv {
+    fn d_via_pow(self, du: Expr, dv: Expr) -> Expr;
+}
+
+impl PowDeriv for Expr {
+    fn d_via_pow(self, du: Expr, dv: Expr) -> Expr {
+        if is_zero(&dv) {
+            let (u, v) = unpack_pow(&self);
+            mul(mul(v.clone(), binary(super::BinOp::Pow, u.clone(), sub(v, lit(1.0)))), du)
+        } else {
+            let (u, v) = unpack_pow(&self);
+            mul(
+                binary(super::BinOp::Pow, u.clone(), v.clone()),
+                add(mul(dv, math1("ln", u.clone())), div(mul(v, du), u)),
+            )
+        }
+    }
+}
+
+fn unpack_pow(e: &Expr) -> (Expr, Expr) {
+    if let Expr::Binary(lhs, BinaryOp::BitXor, rhs) = e {
+        // This shouldn't happen — Pow is handled via Call("pow", ...)
+        (lhs.as_ref().clone(), rhs.as_ref().clone())
+    } else {
+        (e.clone(), lit(1.0))
+    }
 }
