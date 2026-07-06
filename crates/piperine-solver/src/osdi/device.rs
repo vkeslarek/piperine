@@ -1,3 +1,4 @@
+use crate::digital::LogicValue;
 use std::collections::VecDeque;
 use std::os::raw::{c_char, c_void};
 use std::sync::Arc;
@@ -9,7 +10,7 @@ use crate::analysis::dc::{DcAnalysisResult, DcAnalysisState};
 use crate::analysis::noise::Noise;
 use crate::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
 use crate::analog::{AnalogReference, BranchIdentifier, NodeIdentifier, Netlist};
-use crate::device::Device;
+use crate::core::device::Device;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::linear::Stamp;
 use crate::osdi::ffi::{
@@ -466,6 +467,11 @@ impl OsdiDevice {
 
 impl Device for OsdiDevice {
     fn device_name(&self) -> &str { &self.name }
+    fn as_analog(&mut self) -> Option<&mut dyn crate::core::device::AnalogDevice> { Some(self) }
+    fn as_analog_ref(&self) -> Option<&dyn crate::core::device::AnalogDevice> { Some(self) }
+}
+
+impl crate::core::device::AnalogDevice for OsdiDevice {
     fn limiting_active(&self) -> bool { self.limiting_active }
 
     fn bound_step_hint(&self) -> f64 {
@@ -519,7 +525,7 @@ impl Device for OsdiDevice {
         }
     }
 
-    fn accept_timestep(&mut self, _state: &CircularArrayBuffer2<f64>, _ctx: &Context) {
+    fn accept_timestep(&mut self, _state: &CircularArrayBuffer2<f64>, _ctx: &Context, _nets: &[LogicValue], _event_queue: &mut std::collections::BinaryHeap<std::cmp::Reverse<crate::digital::DigitalEvent>>) {
         let mut rhs = [0.0f64; SCRATCH];
         if let Some(f) = self.desc().load_residual_react {
             unsafe { f(self.inst_data.as_ptr() as *mut c_void, self.model_data.as_ptr() as *mut c_void, rhs.as_mut_ptr()); }

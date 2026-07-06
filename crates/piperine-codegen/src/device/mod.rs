@@ -23,7 +23,7 @@ use piperine_solver::analysis::ac::AcAnalysisContext;
 use piperine_solver::analysis::dc::{DcAnalysisResult, DcAnalysisState};
 use piperine_solver::analysis::noise::Noise;
 use piperine_solver::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
-use piperine_solver::device::Device;
+use piperine_solver::core::device::{AnalogDevice, Device, DigitalDevice};
 use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
 use piperine_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_solver::math::linear::Stamp;
@@ -141,14 +141,18 @@ impl Device for PiperineDevice {
     fn device_name(&self) -> &str {
         &self.label
     }
+    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> { Some(self) }
+    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> { Some(self) }
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
+}
 
+impl AnalogDevice for PiperineDevice {
     fn limiting_active(&self) -> bool {
         self.analog
             .as_ref()
             .is_some_and(AnalogInstance::limiting_active)
     }
-
-    // ── Analog ──
 
     fn bound_step_hint(&self) -> f64 {
         self.analog
@@ -191,13 +195,17 @@ impl Device for PiperineDevice {
         }
     }
 
-    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, ctx: &Context) {
+    fn accept_timestep(
+        &mut self,
+        state: &CircularArrayBuffer2<f64>,
+        ctx: &Context,
+        nets: &[piperine_solver::digital::LogicValue],
+        event_queue: &mut std::collections::BinaryHeap<std::cmp::Reverse<piperine_solver::digital::DigitalEvent>>,
+    ) {
         if let Some(analog) = &mut self.analog {
             analog.accept_timestep(state, ctx);
         }
-        // For digital-only devices with analog inputs: cache the analog
-        // terminal voltages so `eval_discrete` can pass them to the digital
-        // kernel (A2D bridge).
+        
         if self.analog.is_none() && !self.analog_terminal_refs.is_empty() {
             let latest = state.latest();
             for (i, opt_ref) in self.analog_terminal_refs.iter().enumerate() {
@@ -207,6 +215,10 @@ impl Device for PiperineDevice {
                     .and_then(|idx| latest.map(|s| s[idx]))
                     .unwrap_or(0.0);
             }
+        }
+        
+        if self.digital.as_ref().map_or(false, |d| d.kernel().layout().num_analog() > 0) {
+            self.eval_discrete(ctx.time, nets, ndarray::ArrayView1::from(&[]), event_queue);
         }
     }
 
@@ -220,15 +232,9 @@ impl Device for PiperineDevice {
             None => Vec::new(),
         }
     }
+}
 
-    // ── Digital ──
-
-    fn samples_analog(&self) -> bool {
-        self.digital
-            .as_ref()
-            .is_some_and(|d| d.kernel().layout().num_analog() > 0)
-    }
-
+impl DigitalDevice for PiperineDevice {
     fn digital_input_nets(&self) -> &[DigitalNet] {
         self.digital
             .as_ref()
@@ -251,7 +257,7 @@ impl Device for PiperineDevice {
         &mut self,
         t: f64,
         nets: &[LogicValue],
-        analog_voltages: &[f64],
+        analog_voltages: ndarray::ArrayView1<f64>,
         event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
     ) {
         let Some(digital) = &mut self.digital else { return };
@@ -260,26 +266,24 @@ impl Device for PiperineDevice {
             self.analog.as_ref(),
             &self.analog_terminal_node_ids,
             &self.last_analog_voltages,
-            analog_voltages,
+            analog_voltages.as_slice().unwrap(),
         );
         digital.eval(t, nets, &av, event_queue);
 
-        // D2A bridge: sync digital register values into the analog vars
-        // bank so the analog body sees the latest digital state.
         if let Some(analog) = &mut self.analog {
             let vars = digital.export_vars();
             analog.sync_vars(&vars);
         }
     }
 
-    fn digital_seq_phase(&mut self, t: f64, nets: &[LogicValue], analog_voltages: &[f64]) -> bool {
+    fn digital_seq_phase(&mut self, t: f64, nets: &[LogicValue], analog_voltages: ndarray::ArrayView1<f64>) -> bool {
         let Some(digital) = &mut self.digital else { return false };
         let av = Self::analog_voltages_for(
             digital.kernel().layout(),
             self.analog.as_ref(),
             &self.analog_terminal_node_ids,
             &self.last_analog_voltages,
-            analog_voltages,
+            analog_voltages.as_slice().unwrap(),
         );
         digital.eval_seq_phase(t, nets, &av)
     }
@@ -288,8 +292,8 @@ impl Device for PiperineDevice {
         &mut self,
         t: f64,
         nets: &[LogicValue],
-        analog_voltages: &[f64],
-        event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
+        analog_voltages: ndarray::ArrayView1<f64>,
+        event_queue: &mut std::collections::BinaryHeap<std::cmp::Reverse<piperine_solver::digital::DigitalEvent>>,
     ) {
         let Some(digital) = &mut self.digital else { return };
         let av = Self::analog_voltages_for(
@@ -297,12 +301,10 @@ impl Device for PiperineDevice {
             self.analog.as_ref(),
             &self.analog_terminal_node_ids,
             &self.last_analog_voltages,
-            analog_voltages,
+            analog_voltages.as_slice().unwrap(),
         );
         digital.eval_comb_phase(t, nets, &av, event_queue);
 
-        // D2A bridge: sync digital register values into the analog vars
-        // bank so the analog body sees the latest digital state.
         if let Some(analog) = &mut self.analog {
             let vars = digital.export_vars();
             analog.sync_vars(&vars);

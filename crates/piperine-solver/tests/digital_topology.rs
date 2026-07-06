@@ -1,19 +1,20 @@
-//! Comprehensive digital topology tests.
-//!
-//! Covers: DAG ordering, back-edge detection, zero-delay propagation,
-//! fan-out, diamond, RS latch, DFF pipeline, ring oscillator, disconnected
-//! subgraphs, D2A device, A2D state, and cosim integration.
+use ndarray::ArrayView1;
+// Comprehensive digital topology tests.
+//
+// Covers: DAG ordering, back-edge detection, zero-delay propagation,
+// fan-out, diamond, RS latch, DFF pipeline, ring oscillator, disconnected
+// subgraphs, D2A device, A2D state, and cosim integration.
 
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 
-use piperine_solver::circuit::CircuitInstance;
+use piperine_solver::core::circuit::CircuitInstance;
 fn make_instance(title: &str) -> CircuitInstance {
     CircuitInstance::from_devices_and_netlist(title, vec![], piperine_solver::analog::Netlist::new())
 }
-use piperine_solver::device::Device;
+use piperine_solver::core::device::{Device, AnalogDevice, DigitalDevice};
 use piperine_solver::digital::{LogicValue, DigitalNet, DigitalEvent};
-use piperine_solver::topology::{DigitalState, DigitalTopology};
+use piperine_solver::digital::scheduler::{DigitalState, DigitalTopology};
 use piperine_solver::analysis::transient::TransientAnalysisOptions;
 use piperine_solver::solver::Context;
 
@@ -29,41 +30,71 @@ struct Inverter { input: DigitalNet, output: DigitalNet, delay: f64, id: usize }
 
 impl Device for Inverter {
     fn device_name(&self) -> &str { "inverter" }
-    fn digital_input_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.input) }
-    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
-    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: &[f64], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
-        let out = match nets[self.input.0] {
-            LogicValue::Zero => LogicValue::One,
-            LogicValue::One  => LogicValue::Zero,
-            _                => LogicValue::X,
-        };
-        q.push(Reverse(DigitalEvent { time: t + self.delay, net: self.output, value: out, source: self.id, seq: 0 }));
-    }
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
 }
+
+impl DigitalDevice for Inverter {
+    fn digital_input_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.input) }
+
+    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
+
+    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: ArrayView1<f64>, q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+            let out = match nets[self.input.0] {
+                LogicValue::Zero => LogicValue::One,
+                LogicValue::One  => LogicValue::Zero,
+                _                => LogicValue::X,
+            };
+            q.push(Reverse(DigitalEvent { time: t + self.delay, net: self.output, value: out, source: self.id, seq: 0 }));
+        }
+
+}
+
+
 
 struct NorGate { inputs: [DigitalNet; 2], output: DigitalNet, delay: f64, id: usize }
 
 impl Device for NorGate {
     fn device_name(&self) -> &str { "nor_gate" }
-    fn digital_input_nets(&self) -> &[DigitalNet] { &self.inputs }
-    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
-    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: &[f64], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
-        let out = if self.inputs.iter().any(|n| nets[n.0] == LogicValue::One) { LogicValue::Zero } else { LogicValue::One };
-        q.push(Reverse(DigitalEvent { time: t + self.delay, net: self.output, value: out, source: self.id, seq: 0 }));
-    }
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
 }
+
+impl DigitalDevice for NorGate {
+    fn digital_input_nets(&self) -> &[DigitalNet] { &self.inputs }
+
+    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
+
+    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: ArrayView1<f64>, q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+            let out = if self.inputs.iter().any(|n| nets[n.0] == LogicValue::One) { LogicValue::Zero } else { LogicValue::One };
+            q.push(Reverse(DigitalEvent { time: t + self.delay, net: self.output, value: out, source: self.id, seq: 0 }));
+        }
+
+}
+
+
 
 struct AndGate { inputs: [DigitalNet; 2], output: DigitalNet, delay: f64, id: usize }
 
 impl Device for AndGate {
     fn device_name(&self) -> &str { "and_gate" }
-    fn digital_input_nets(&self) -> &[DigitalNet] { &self.inputs }
-    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
-    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: &[f64], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
-        let out = if self.inputs.iter().all(|n| nets[n.0] == LogicValue::One) { LogicValue::One } else { LogicValue::Zero };
-        q.push(Reverse(DigitalEvent { time: t + self.delay, net: self.output, value: out, source: self.id, seq: 0 }));
-    }
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
 }
+
+impl DigitalDevice for AndGate {
+    fn digital_input_nets(&self) -> &[DigitalNet] { &self.inputs }
+
+    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
+
+    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: ArrayView1<f64>, q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+            let out = if self.inputs.iter().all(|n| nets[n.0] == LogicValue::One) { LogicValue::One } else { LogicValue::Zero };
+            q.push(Reverse(DigitalEvent { time: t + self.delay, net: self.output, value: out, source: self.id, seq: 0 }));
+        }
+
+}
+
+
 
 struct DFF {
     inputs: [DigitalNet; 2], // [clk, d]
@@ -81,17 +112,27 @@ impl DFF {
 
 impl Device for DFF {
     fn device_name(&self) -> &str { "dff" }
-    fn digital_input_nets(&self) -> &[DigitalNet] { &self.inputs }
-    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.q) }
-    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: &[f64], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
-        let clk = nets[self.inputs[0].0];
-        let d   = nets[self.inputs[1].0];
-        if self.last_clk == LogicValue::Zero && clk == LogicValue::One {
-            q.push(Reverse(DigitalEvent { time: t + self.clk_to_q, net: self.q, value: d, source: self.id, seq: 0 }));
-        }
-        self.last_clk = clk;
-    }
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
 }
+
+impl DigitalDevice for DFF {
+    fn digital_input_nets(&self) -> &[DigitalNet] { &self.inputs }
+
+    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.q) }
+
+    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: ArrayView1<f64>, q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+            let clk = nets[self.inputs[0].0];
+            let d   = nets[self.inputs[1].0];
+            if self.last_clk == LogicValue::Zero && clk == LogicValue::One {
+                q.push(Reverse(DigitalEvent { time: t + self.clk_to_q, net: self.q, value: d, source: self.id, seq: 0 }));
+            }
+            self.last_clk = clk;
+        }
+
+}
+
+
 
 // ===================================================================
 // TOPOLOGY STRUCTURE TESTS
@@ -445,7 +486,7 @@ fn test_ring_oscillator_five_inv() {
 fn test_d2a_voltage_ramp() {
     let mut d = D2ADevice::new(DigitalNet(0));
     let mut q = BinaryHeap::new();
-    d.eval_discrete(0.0, &[LogicValue::One], &[], &mut q);
+    d.eval_discrete(0.0, &[LogicValue::One], (&[]).into(), &mut q);
     assert!((d.voltage_at(0.0)    - 0.0).abs() < 1e-12, "At t=0, output=0 (v_from)");
     assert!((d.voltage_at(50e-12) - 0.9).abs() < 1e-12, "Midpoint of 100ps rise = 0.9V");
     assert!((d.voltage_at(100e-12)- 1.8).abs() < 1e-12, "End of rise = 1.8V");
@@ -456,9 +497,9 @@ fn test_d2a_voltage_ramp() {
 fn test_d2a_no_restart_on_same_value() {
     let mut d = D2ADevice::new(DigitalNet(0));
     let mut q = BinaryHeap::new();
-    d.eval_discrete(0.0, &[LogicValue::One], &[], &mut q);
+    d.eval_discrete(0.0, &[LogicValue::One], (&[]).into(), &mut q);
     let ts = d.transition_start_time;
-    d.eval_discrete(5e-9, &[LogicValue::One], &[], &mut q); // same value
+    d.eval_discrete(5e-9, &[LogicValue::One], (&[]).into(), &mut q); // same value
     assert_eq!(d.transition_start_time, ts, "No transition restart on same value");
 }
 
@@ -466,8 +507,8 @@ fn test_d2a_no_restart_on_same_value() {
 fn test_d2a_x_holds_voltage() {
     let mut d = D2ADevice::new(DigitalNet(0));
     let mut q = BinaryHeap::new();
-    d.eval_discrete(0.0, &[LogicValue::One], &[], &mut q);  // start rising
-    d.eval_discrete(5e-9, &[LogicValue::X], &[], &mut q);   // X: hold
+    d.eval_discrete(0.0, &[LogicValue::One], (&[]).into(), &mut q);  // start rising
+    d.eval_discrete(5e-9, &[LogicValue::X], (&[]).into(), &mut q);   // X: hold
     assert!((d.target_voltage - 1.8).abs() < 1e-12, "X should hold at 1.8V");
 }
 
@@ -475,8 +516,8 @@ fn test_d2a_x_holds_voltage() {
 fn test_d2a_interrupted_ramp() {
     let mut d = D2ADevice::new(DigitalNet(0));
     let mut q = BinaryHeap::new();
-    d.eval_discrete(0.0, &[LogicValue::One], &[], &mut q);    // start rising 0→1.8V
-    d.eval_discrete(50e-12, &[LogicValue::Zero], &[], &mut q); // interrupt at midpoint
+    d.eval_discrete(0.0, &[LogicValue::One], (&[]).into(), &mut q);    // start rising 0→1.8V
+    d.eval_discrete(50e-12, &[LogicValue::Zero], (&[]).into(), &mut q); // interrupt at midpoint
     assert!((d.v_from - 0.9).abs() < 1e-9, "v_from should be midpoint 0.9V");
     assert_eq!(d.target_voltage, 0.0);
 }

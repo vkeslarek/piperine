@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use piperine_lang::parse_and_elaborate;
 use piperine_lang::pom::Design;
 use piperine_codegen::ir::LoweredBody;
-use piperine_solver::circuit::CircuitInstance;
+use piperine_solver::core::circuit::CircuitInstance;
 use piperine_codegen::CircuitCompiler;
 
 fn from_ir(design: &Design, bodies: &HashMap<String, LoweredBody>, top: &str) -> Result<CircuitInstance, String> {

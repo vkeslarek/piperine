@@ -106,7 +106,7 @@ impl SimSession {
 /// an assertion on an undriven net fails loud, never silently passes).
 fn snapshot_digital(
         info: &piperine_codegen::device::CircuitBuildInfo,
-    circuit: &piperine_solver::circuit::CircuitInstance,
+    circuit: &piperine_solver::core::circuit::CircuitInstance,
 ) -> std::collections::HashMap<String, f64> {
     use piperine_solver::digital::LogicValue;
     info.digital_nets

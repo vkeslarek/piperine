@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use piperine_solver::digital::{DigitalNet, LogicValue};
-use piperine_solver::digital_interface::{DigitalEventModel, DigitalPorts, EvalCtx, EventSink};
+use piperine_solver::digital::interface::{DigitalEventModel, DigitalPorts, EvalCtx, EventSink};
 
 use crate::ir::LoweredBody;
 use crate::jit::digital::compile::{NetworkComb, NetworkMemberSpec};

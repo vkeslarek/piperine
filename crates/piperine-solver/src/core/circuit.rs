@@ -2,8 +2,8 @@ use crate::analysis::noise::NoiseAnalysisOptions;
 use crate::analysis::tf::TransferFunctionAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
 use crate::analog::Netlist;
-use crate::device::Device;
-use crate::topology::{DigitalState, DigitalTopology};
+use crate::core::device::Device;
+use crate::digital::{DigitalState, DigitalTopology};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::solver::Context;
 use crate::solver::ac::AcSolver;
@@ -45,7 +45,11 @@ impl CircuitInstance {
     }
 
     pub fn update_all(&mut self, state: &CircularArrayBuffer2<f64>, context: &Context) {
-        self.devices.iter_mut().for_each(|d| d.update(state, context));
+        self.devices.iter_mut().for_each(|d| {
+            if let Some(a) = d.as_analog() {
+                a.update(state, context);
+            }
+        });
     }
 
     pub fn netlist(&self) -> &Netlist { &self.netlist }
@@ -113,28 +117,22 @@ impl CircuitInstance {
     ///
     /// Returns `true` if any digital output net changed value.
     pub fn accept_and_run_digital(&mut self, solution: &[f64], ctx: &Context, t: f64) -> bool {
-        // Build a 1-row state buffer so `accept_timestep` can read voltages.
+        use std::cmp::Reverse;
         use ndarray::Array1;
+        
         let mut state = CircularArrayBuffer2::new(1, solution.len());
         let row = Array1::from_vec(solution.to_vec());
         state.push(&row.view());
-        for device in &mut self.devices {
-            device.accept_timestep(&state, ctx);
-        }
 
         let before = self.digital_state.nets.clone();
-
-        // A2D bridge: a device whose digital body samples analog quantities
-        // gets no digital input event when only a voltage moved — evaluate
-        // it explicitly so it sees the fresh analog solution, then let the
-        // resulting events propagate through the ordinary digital run.
-        use std::cmp::Reverse;
         let mut seed_queue = std::collections::BinaryHeap::new();
+
         for device in &mut self.devices {
-            if device.samples_analog() {
-                device.eval_discrete(t, &self.digital_state.nets, &[], &mut seed_queue);
+            if let Some(a) = device.as_analog() {
+                a.accept_timestep(&state, ctx, &before, &mut seed_queue);
             }
         }
+        
         for Reverse(event) in seed_queue {
             self.digital_state.schedule(event);
         }
@@ -156,7 +154,9 @@ impl CircuitInstance {
 
         let mut seed_queue = std::collections::BinaryHeap::<Reverse<DigitalEvent>>::new();
         for device in &mut self.devices {
-            device.digital_init(&mut seed_queue);
+            if let Some(d) = device.as_digital() {
+                d.digital_init(&mut seed_queue);
+            }
         }
         for Reverse(event) in seed_queue {
             self.digital_state.schedule(event);

@@ -313,7 +313,7 @@ const CAPACITOR: &str = "mod Capacitor(inout p : Electrical, inout n : Electrica
 fn build_top(
     body: &str,
     top_src: &str,
-) -> (piperine_solver::circuit::CircuitInstance, piperine_codegen::CircuitBuildInfo) {
+) -> (piperine_solver::core::circuit::CircuitInstance, piperine_codegen::CircuitBuildInfo) {
     let src = format!("{DISCIPLINE}{body}\nmod Top() {{\n{top_src}\n}}\n");
     let design = piperine_lang::parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy())
         .expect("parse_and_elaborate");

@@ -1,7 +1,7 @@
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Reverse;
 use crate::digital::{LogicValue, DigitalNet, DigitalEvent};
-use crate::device::Device;
+use crate::core::device::Device;
 
 // ---------------------------------------------------------------------------
 // DigitalTopology — DAG order + back edges for a fixed set of devices
@@ -25,19 +25,24 @@ impl DigitalTopology {
         // net → device index that produces it
         let mut output_to_dev: HashMap<DigitalNet, usize> = HashMap::new();
         for (i, dev) in devices.iter().enumerate() {
-            for &net in dev.digital_output_nets() {
-                output_to_dev.insert(net, i);
+            if let Some(d) = dev.as_digital_ref() {
+                for &net in d.digital_output_nets() {
+                    output_to_dev.insert(net, i);
+                }
             }
         }
 
         // adj[i] = devices that consume at least one of device i's outputs
         let mut adj: Vec<Vec<usize>> = vec![vec![]; n];
         for (j, dev) in devices.iter().enumerate() {
-            for &net in dev.digital_input_nets() {
-                if let Some(&i) = output_to_dev.get(&net)
-                    && i != j && !adj[i].contains(&j) {
-                        adj[i].push(j);
+            if let Some(d) = dev.as_digital_ref() {
+                for &net in d.digital_input_nets() {
+                    if let Some(&i) = output_to_dev.get(&net) {
+                        if i != j && !adj[i].contains(&j) {
+                            adj[i].push(j);
+                        }
                     }
+                }
             }
         }
 
@@ -158,13 +163,17 @@ impl DigitalState {
             // chain samples the same pre-edge values instead of racing.
             let mut fired = vec![false; devices.len()];
             for (i, device) in devices.iter_mut().enumerate() {
-                if device.has_digital_input_on(&changed) {
-                    fired[i] = device.digital_seq_phase(t, &self.nets, &[]);
+                if let Some(d) = device.as_digital() {
+                    if d.has_digital_input_on(&changed) {
+                        fired[i] = d.digital_seq_phase(t, &self.nets, ndarray::ArrayView1::from(&[]));
+                    }
                 }
             }
             for (i, device) in devices.iter_mut().enumerate() {
-                if fired[i] || device.has_digital_input_on(&changed) {
-                    device.digital_comb_phase(t, &self.nets, &[], &mut self.event_queue);
+                if let Some(d) = device.as_digital() {
+                    if fired[i] || d.has_digital_input_on(&changed) {
+                        d.digital_comb_phase(t, &self.nets, ndarray::ArrayView1::from(&[]), &mut self.event_queue);
+                    }
                 }
             }
 
@@ -220,8 +229,10 @@ impl DigitalState {
         let mut seq_fired = vec![false; devices.len()];
         for &dev_idx in &topology.topo_order {
             let device = &mut devices[dev_idx];
-            if device.has_digital_input_on(&all_changed) {
-                seq_fired[dev_idx] = device.digital_seq_phase(t, &self.nets, &[]);
+            if let Some(d) = device.as_digital() {
+                if d.has_digital_input_on(&all_changed) {
+                    seq_fired[dev_idx] = d.digital_seq_phase(t, &self.nets, ndarray::ArrayView1::from(&[]));
+                }
             }
         }
 
@@ -241,35 +252,37 @@ impl DigitalState {
                 let topo_pos = restart_from + offset;
                 let device = &mut devices[dev_idx];
 
-                if !device.has_digital_input_on(&all_changed) && !seq_fired[dev_idx] {
-                    continue;
-                }
-
-                prev_outs.clear();
-                prev_outs.extend(device.digital_output_nets().iter().map(|n| self.nets[n.0]));
-
-                local_q.clear();
-                device.digital_comb_phase(t, &self.nets, &[], &mut local_q);
-
-                while let Some(Reverse(ev)) = local_q.pop() {
-                    if ev.time <= t + epsilon {
-                        if self.nets[ev.net.0] != ev.value {
-                            self.nets[ev.net.0] = ev.value;
-                            all_changed.insert(ev.net);
-                        }
-                    } else {
-                        self.event_queue.push(Reverse(ev));
+                if let Some(d) = device.as_digital() {
+                    if !d.has_digital_input_on(&all_changed) && !seq_fired[dev_idx] {
+                        continue;
                     }
-                }
 
-                let outputs_changed = if device.digital_output_nets().is_empty() {
-                    true
-                } else {
-                    device.digital_output_nets().iter().enumerate().any(|(i, n)| {
-                        prev_outs.get(i).is_some_and(|&old| self.nets[n.0] != old)
-                    })
-                };
-                output_changed_at[topo_pos] = outputs_changed;
+                    prev_outs.clear();
+                    prev_outs.extend(d.digital_output_nets().iter().map(|n| self.nets[n.0]));
+
+                    local_q.clear();
+                    d.digital_comb_phase(t, &self.nets, ndarray::ArrayView1::from(&[]), &mut local_q);
+
+                    while let Some(Reverse(ev)) = local_q.pop() {
+                        if ev.time <= t + epsilon {
+                            if self.nets[ev.net.0] != ev.value {
+                                self.nets[ev.net.0] = ev.value;
+                                all_changed.insert(ev.net);
+                            }
+                        } else {
+                            self.event_queue.push(Reverse(ev));
+                        }
+                    }
+
+                    let outputs_changed = if d.digital_output_nets().is_empty() {
+                        true
+                    } else {
+                        d.digital_output_nets().iter().enumerate().any(|(i, n)| {
+                            prev_outs.get(i).is_some_and(|&old| self.nets[n.0] != old)
+                        })
+                    };
+                    output_changed_at[topo_pos] = outputs_changed;
+                }
             }
 
             let mut next_restart: Option<usize> = None;

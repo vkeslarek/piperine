@@ -578,7 +578,7 @@ fn spec_parametric_module_monomorphizes() {
 // ═════════════ Section Sim — DC operating point with sources ══════════════════
 
 /// Build a resolved lowering from source + a structural top, compile, and solve DC.
-fn dc_solve(src: &str, top: &str) -> (HashMap<String, LoweredBody>, piperine_solver::circuit::CircuitInstance, piperine_solver::analysis::dc::DcAnalysisResult) {
+fn dc_solve(src: &str, top: &str) -> (HashMap<String, LoweredBody>, piperine_solver::core::circuit::CircuitInstance, piperine_solver::analysis::dc::DcAnalysisResult) {
     let (design, prog) = elaborate_and_lower(src);
     let mut compiler = CircuitCompiler::new(&design, &prog);
     let mut circuit = compiler.build_circuit(top).expect("build circuit");
@@ -953,7 +953,7 @@ fn sim_tran_above_event_toggles_switch_state() {
 #[test]
 fn digital_network_fuses_combinational_chain() {
     use piperine_codegen::jit::digital::network::{DigitalNetwork, NetworkMember};
-    use piperine_solver::digital_interface::{DigitalEventModel, EvalCtx, EventSink};
+    use piperine_solver::digital::interface::{DigitalEventModel, EvalCtx, EventSink};
     use std::sync::Arc;
 
     let prog = compile(format!("{CORE_LIB}

@@ -1,7 +1,7 @@
 use crate::analysis::transient::{
     TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisResult, TransientStep,
 };
-use crate::circuit::CircuitInstance;
+use crate::core::circuit::CircuitInstance;
 use crate::analog::AnalogReference;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
@@ -38,17 +38,20 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
 
         self.context.time = self.time;
         self.circuit.update_all(state, &self.context);
-        for tran in self.circuit.all_devices_mut() {
-            all_stamps.extend(tran.load_transient(state, &tran_ctx, &self.context));
+        for tran in &mut self.circuit.devices {
+            if let Some(a) = tran.as_analog() {
+                all_stamps.extend(a.load_transient(state, &tran_ctx, &self.context));
+            }
         }
         Ok(all_stamps)
     }
 
     fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
-        for device in self.circuit.all_devices() {
-            if device.limiting_active() {
-                debug!("Device {} requested limiting reiteration", device.device_name());
-                return false;
+        for device in &self.circuit.devices {
+            if let Some(a) = device.as_analog_ref() {
+                if a.limiting_active() {
+                    return false;
+                }
             }
         }
         let netlist = self.circuit.netlist();

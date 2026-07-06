@@ -1,4 +1,4 @@
-use piperine_solver::device::Device;
+use piperine_solver::core::device::{Device, AnalogDevice, DigitalDevice};
 use piperine_solver::digital::{LogicValue, DigitalNet, DigitalEvent};
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
@@ -58,31 +58,39 @@ impl D2ADevice {
 
 impl Device for D2ADevice {
     fn device_name(&self) -> &str { "d2a" }
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
+}
 
+impl DigitalDevice for D2ADevice {
     fn digital_input_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.input_net) }
+
     fn digital_output_nets(&self) -> &[DigitalNet] { &[] }
 
     fn eval_discrete(
-        &mut self,
-        t: f64,
-        nets: &[LogicValue],
-        _analog_voltages: &[f64],
-        _queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
-    ) {
-        let new_val = nets[self.input_net.0];
-        if new_val != self.current_value {
-            let current_v = self.voltage_at(t);
-            self.v_from = current_v;
-            self.transition_start_time = t;
-            self.target_voltage = match new_val {
-                LogicValue::One  => self.v_high,
-                LogicValue::Zero => self.v_low,
-                _                => self.v_from,
-            };
-            self.current_value = new_val;
+            &mut self,
+            t: f64,
+            nets: &[LogicValue],
+            _analog_voltages: ndarray::ArrayView1<f64>,
+            _queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
+        ) {
+            let new_val = nets[self.input_net.0];
+            if new_val != self.current_value {
+                let current_v = self.voltage_at(t);
+                self.v_from = current_v;
+                self.transition_start_time = t;
+                self.target_voltage = match new_val {
+                    LogicValue::One  => self.v_high,
+                    LogicValue::Zero => self.v_low,
+                    _                => self.v_from,
+                };
+                self.current_value = new_val;
+            }
         }
-    }
+
 }
+
+
 
 // ---------------------------------------------------------------------------
 // A2DState

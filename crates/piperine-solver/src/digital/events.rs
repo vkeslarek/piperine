@@ -1,3 +1,4 @@
+use ndarray::ArrayView1;
 use std::cmp::Ordering;
 
 // ---------------------------------------------------------------------------
@@ -76,8 +77,8 @@ impl Ord for DigitalEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::topology::DigitalState;
-    use crate::device::Device;
+    use crate::digital::scheduler::DigitalState;
+    use crate::core::device::Device;
     use std::collections::BinaryHeap;
     use std::cmp::Reverse;
 
@@ -90,11 +91,15 @@ mod tests {
 
     impl Device for MockInverter {
         fn device_name(&self) -> &str { "mock_inverter" }
-
+        fn as_digital(&mut self) -> Option<&mut dyn crate::core::device::DigitalDevice> { Some(self) }
+        fn as_digital_ref(&self) -> Option<&dyn crate::core::device::DigitalDevice> { Some(self) }
+    }
+    
+    impl crate::core::device::DigitalDevice for MockInverter {
         fn digital_input_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.input) }
         fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
 
-        fn eval_discrete(&mut self, current_time: f64, nets: &[LogicValue], _av: &[f64], event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+        fn eval_discrete(&mut self, current_time: f64, nets: &[LogicValue], _av: ArrayView1<f64>, event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>) {
             let in_val = nets[self.input.0];
             let out_val = match in_val {
                 LogicValue::Zero => LogicValue::One,

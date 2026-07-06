@@ -12,6 +12,7 @@ cranelift-frontend = "0.113"
 cranelift-jit      = "0.113"
 cranelift-module   = "0.113"
 num-complex.workspace = true
+ndarray.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
