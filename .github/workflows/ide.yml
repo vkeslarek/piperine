@@ -2,7 +2,9 @@ name: IDE Extension CI
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - 'release/v*'
     paths:
       - 'editors/vscode/**'
       - '.github/workflows/ide.yml'
@@ -10,6 +12,9 @@ on:
     branches: [ main ]
     paths:
       - 'editors/vscode/**'
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -34,3 +39,24 @@ jobs:
 
     - name: Package Extension
       run: npx vsce package
+
+    - name: Upload VSIX Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: piperine-vscode-extension
+        path: editors/vscode/*.vsix
+
+    - name: Extract Version
+      id: extract_version
+      if: startsWith(github.ref, 'refs/heads/release/v')
+      run: |
+        VERSION=${GITHUB_REF#refs/heads/release/}
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+    - name: Attach VSIX to Release
+      if: startsWith(github.ref, 'refs/heads/release/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ env.VERSION }}
+        files: editors/vscode/*.vsix
+        token: ${{ secrets.GITHUB_TOKEN }}
