@@ -33,16 +33,16 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build release binary
-        run: cargo build --release --bin piperine
+        run: cargo build --release -p piperine -p piperine-lang-server
 
       - name: Package binary
         shell: bash
         run: |
           cd target/release
           if [[ "${{ matrix.archive_name }}" == *.zip ]]; then
-            7z a ../../${{ matrix.archive_name }} ${{ matrix.artifact_name }}
+            7z a ../../${{ matrix.archive_name }} piperine.exe piperine-lang-server.exe
           else
-            tar -czvf ../../${{ matrix.archive_name }} ${{ matrix.artifact_name }}
+            tar -czvf ../../${{ matrix.archive_name }} piperine piperine-lang-server
           fi
           cd ../..
 
@@ -54,12 +54,39 @@ jobs:
 
   build-ide:
     name: Build VS Code Extension
+    needs: build
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: editors/vscode
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ../../downloaded_artifacts
+
+      - name: Extract and organize binaries
+        run: |
+          mkdir -p bin
+          
+          # Linux
+          tar -xzf ../../downloaded_artifacts/piperine-linux-x86_64.tar.gz/piperine-linux-x86_64.tar.gz
+          mv piperine bin/piperine-linux-x86_64
+          mv piperine-lang-server bin/piperine-lang-server-linux-x86_64
+          
+          # Mac
+          tar -xzf ../../downloaded_artifacts/piperine-macos-aarch64.tar.gz/piperine-macos-aarch64.tar.gz
+          mv piperine bin/piperine-macos-aarch64
+          mv piperine-lang-server bin/piperine-lang-server-macos-aarch64
+          
+          # Windows
+          7z x ../../downloaded_artifacts/piperine-windows-x86_64.zip/piperine-windows-x86_64.zip
+          mv piperine.exe bin/piperine-windows-x86_64.exe
+          mv piperine-lang-server.exe bin/piperine-lang-server-windows-x86_64.exe
+          
+          chmod +x bin/*
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

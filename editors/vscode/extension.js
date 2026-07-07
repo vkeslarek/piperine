@@ -13,21 +13,35 @@ let outputChannel;
 
 async function startClient(context) {
     const config = vscode.workspace.getConfiguration("phdl.server");
-    let serverPath = config.get("path", "piperine-lang-server");
+    let serverBaseName = config.get("path", "piperine-lang-server");
+
+    function getOsSpecificBinaryName(baseName) {
+        const isWindows = process.platform === "win32";
+        const isMac = process.platform === "darwin";
+        
+        let suffix = "-linux-x86_64";
+        if (isWindows) suffix = "-windows-x86_64.exe";
+        else if (isMac) suffix = "-macos-aarch64"; // Assuming we only package aarch64 for macos for now
+        
+        return baseName + suffix;
+    }
+
+    let serverPath = serverBaseName;
 
     if (!path.isAbsolute(serverPath)) {
+        const osSpecificName = getOsSpecificBinaryName(serverBaseName);
         const candidates = [
             // Workspace target directories
             ...(vscode.workspace.workspaceFolders || []).map(
-                (f) => path.join(f.uri.fsPath, "target", "release", serverPath),
+                (f) => path.join(f.uri.fsPath, "target", "release", serverBaseName),
             ),
             ...(vscode.workspace.workspaceFolders || []).map(
-                (f) => path.join(f.uri.fsPath, "target", "debug", serverPath),
+                (f) => path.join(f.uri.fsPath, "target", "debug", serverBaseName),
             ),
-            // Embedded binary inside the extension itself
-            path.join(context.extensionPath, "bin", serverPath),
+            // Embedded OS-specific binary inside the extension itself
+            path.join(context.extensionPath, "bin", osSpecificName),
             // Cargo global install
-            path.join(process.env.HOME || process.env.USERPROFILE || "", ".cargo", "bin", serverPath),
+            path.join(process.env.HOME || process.env.USERPROFILE || "", ".cargo", "bin", serverBaseName),
         ];
 
         for (const candidate of candidates) {
@@ -74,21 +88,35 @@ async function startClient(context) {
 
 function getPiperineCliPath(context) {
     const config = vscode.workspace.getConfiguration("phdl.cli");
-    let cliPath = config.get("path", "piperine");
+    let cliBaseName = config.get("path", "piperine");
+
+    function getOsSpecificBinaryName(baseName) {
+        const isWindows = process.platform === "win32";
+        const isMac = process.platform === "darwin";
+        
+        let suffix = "-linux-x86_64";
+        if (isWindows) suffix = "-windows-x86_64.exe";
+        else if (isMac) suffix = "-macos-aarch64";
+        
+        return baseName + suffix;
+    }
+
+    let cliPath = cliBaseName;
 
     if (!path.isAbsolute(cliPath)) {
+        const osSpecificName = getOsSpecificBinaryName(cliBaseName);
         const candidates = [
             // Workspace target directories
             ...(vscode.workspace.workspaceFolders || []).map(
-                (f) => path.join(f.uri.fsPath, "target", "release", cliPath),
+                (f) => path.join(f.uri.fsPath, "target", "release", cliBaseName),
             ),
             ...(vscode.workspace.workspaceFolders || []).map(
-                (f) => path.join(f.uri.fsPath, "target", "debug", cliPath),
+                (f) => path.join(f.uri.fsPath, "target", "debug", cliBaseName),
             ),
-            // Embedded binary inside the extension itself
-            path.join(context.extensionPath, "bin", cliPath),
+            // Embedded OS-specific binary inside the extension itself
+            path.join(context.extensionPath, "bin", osSpecificName),
             // Cargo global install
-            path.join(process.env.HOME || process.env.USERPROFILE || "", ".cargo", "bin", cliPath),
+            path.join(process.env.HOME || process.env.USERPROFILE || "", ".cargo", "bin", cliBaseName),
         ];
 
         for (const candidate of candidates) {
