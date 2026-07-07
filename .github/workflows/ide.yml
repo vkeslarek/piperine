@@ -33,4 +33,4 @@ jobs:
       run: npm ci
 
     - name: Package Extension
-      run: npx vsce package --no-publish
+      run: npx vsce package
