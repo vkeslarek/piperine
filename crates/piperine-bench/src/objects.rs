@@ -135,6 +135,9 @@ impl Object for SelectionRef {
 /// through [`CircuitBuildInfo`].
 pub struct OpResult {
     dc: DcAnalysisResult,
+    /// Digital net values at the solved point (0/1, NaN for X/Z) — read by
+    /// `.v(bit_net)` so pure-digital designs need no analog readback stage.
+    digital: std::collections::HashMap<String, f64>,
     info: Rc<CircuitBuildInfo>,
 }
 
@@ -145,8 +148,12 @@ impl std::fmt::Debug for OpResult {
 }
 
 impl OpResult {
-    pub fn new(dc: DcAnalysisResult, info: Rc<CircuitBuildInfo>) -> Self {
-        Self { dc, info }
+    pub fn new(
+        dc: DcAnalysisResult,
+        digital: std::collections::HashMap<String, f64>,
+        info: Rc<CircuitBuildInfo>,
+    ) -> Self {
+        Self { dc, digital, info }
     }
 
     fn resolve_node(&self, arg: &Value) -> Result<NodeIdentifier, EvalError> {
@@ -170,6 +177,14 @@ impl OpResult {
     }
 
     fn v(&self, args: &[Value]) -> Result<Value, EvalError> {
+        // A digital `Bit`/`Logic` net reads its logic value (0/1) directly.
+        if args.len() == 1
+            && let Value::Object(obj) = &args[0]
+            && let Some(net) = obj.as_any().downcast_ref::<NetRef>()
+            && let Some(v) = self.digital.get(&net.name)
+        {
+            return Ok(Value::Real(*v));
+        }
         let a = self.resolve_node(args.first().ok_or_else(|| EvalError::TypeMismatch("v() needs at least 1 argument".into()))?)?;
         let va = if a == NodeIdentifier::Gnd { 0.0 } else { self.dc.get_node(&a).unwrap_or(0.0) };
         let vb = match args.get(1) {
@@ -229,6 +244,25 @@ impl Object for OpResult {
     }
     fn as_any(&self) -> &dyn Any {
         self
+    }
+    fn render(&self) -> String {
+        let mut nets: Vec<_> = self.info.nets.iter().collect();
+        nets.sort_by(|a, b| a.0.cmp(b.0));
+        let mut out = format!("\n{:>12}  {:>16}\n", "net", "V");
+        for (name, node) in nets {
+            let v = if *node == NodeIdentifier::Gnd {
+                0.0
+            } else {
+                self.dc.get_node(node).unwrap_or(0.0)
+            };
+            out.push_str(&format!("{:>12}  {:>16.6e}\n", name, v));
+        }
+        let mut digital: Vec<_> = self.digital.iter().collect();
+        digital.sort_by(|a, b| a.0.cmp(b.0));
+        for (name, v) in digital {
+            out.push_str(&format!("{:>12}  {:>16}\n", name, v));
+        }
+        out
     }
     fn call_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
         match name {

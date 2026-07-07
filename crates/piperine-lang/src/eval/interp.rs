@@ -28,6 +28,16 @@ pub enum Callable {
         defaults: Vec<Option<Expr>>,
         body: Vec<Stmt>,
     },
+    /// A sibling `bench` fn (bench spec §2 "fn helper(x: T) -> U") — runs
+    /// in the effectful bench context, so it may call analyses and stage
+    /// overrides, unlike the pure [`Callable::Function`].
+    BenchFn {
+        params: Vec<String>,
+        defaults: Vec<Option<Expr>>,
+        body: Vec<Stmt>,
+        /// The block's trailing expression, if any (`fn f() -> Real { x * 2 }`).
+        tail: Option<Expr>,
+    },
 }
 
 /// The host-specific half of evaluation: name resolution, system-task
@@ -53,6 +63,14 @@ pub trait Host {
     /// Consulted between `resolve_callable` and the built-in math fallback;
     /// returns `None` to let the interpreter fall back.
     fn call_host_fn(&mut self, _name: &str, _args: &[Value]) -> Option<Result<Value, EvalError>> {
+        None
+    }
+
+    /// Resolve `recv.method(...)` on a bundle-literal `Record` of type `ty`
+    /// to its `impl` method (SPEC §6.5/§6.6). The interpreter binds `self`
+    /// to the receiver and runs the body as a pure fn. `None` = no such
+    /// method — the call fails loud as `Undefined`.
+    fn resolve_method(&mut self, _ty: &str, _method: &str) -> Option<Callable> {
         None
     }
 
@@ -164,6 +182,28 @@ impl<'h, H: Host> Interpreter<'h, H> {
         result.map(Flow::into_value)
     }
 
+    /// Call a sibling `bench` fn: same binding as [`Self::call_pom_fn`] but
+    /// in the *effectful* context (no `pure_depth` guard) — a bench helper
+    /// may run analyses and stage overrides (bench spec §2).
+    pub fn call_bench_fn(
+        &mut self,
+        params: &[String],
+        defaults: &[Option<Expr>],
+        body: &[Stmt],
+        tail: Option<&Expr>,
+        mut args: Vec<Value>,
+    ) -> Result<Value, EvalError> {
+        let paired: Vec<(&str, Option<&Expr>)> = params
+            .iter()
+            .zip(defaults.iter())
+            .map(|(n, d)| (n.as_str(), d.as_ref()))
+            .collect();
+        self.fill_defaults(&paired, &mut args)?;
+        let names: Vec<&str> = params.iter().map(String::as_str).collect();
+        self.call_with_params(&names, &args, |me| me.exec_stmts_and_tail(body, tail))
+            .map(Flow::into_value)
+    }
+
     fn call_with_params(
         &mut self,
         params: &[&str],
@@ -266,10 +306,19 @@ impl<'h, H: Host> Interpreter<'h, H> {
 
     fn exec_stmt(&mut self, stmt: &Stmt) -> Result<Flow, EvalError> {
         match stmt {
-            Stmt::VarDecl { name, default, .. } => {
+            Stmt::VarDecl { name, ty, default } => {
                 let value = match default {
                     Some(e) => self.eval_expr(e)?,
                     None => Value::Unit,
+                };
+                // Coerce a plain value into `Some` when the binding is optional
+                // (`var b : Real? = 2.5`); `none` already evaluates to
+                // `Option(None)`, and an existing `Option` passes through.
+                let value = match ty {
+                    Some(t) if t.optional && !matches!(value, Value::Option(_)) => {
+                        Value::Option(Some(Box::new(value)))
+                    }
+                    _ => value,
                 };
                 self.define(name, value);
                 Ok(Flow::Normal(Value::Unit))
@@ -486,6 +535,28 @@ impl<'h, H: Host> Interpreter<'h, H> {
                 let mut invoke = |c: &Closure, args: Vec<Value>| self.call_closure(c, args);
                 return obj.call_method_with(method, arg_values, &mut invoke);
             }
+            // `impl` method dispatch on a bundle value: `card.norm()` binds
+            // `self` to the receiver and runs the method body (pure).
+            if let Value::Record { ty, .. } = &recv_value {
+                let ty = ty.clone();
+                if let Some(callable) = self.host.resolve_method(&ty, method) {
+                    return match callable {
+                        Callable::Closure(c) => self.call_closure(&c, arg_values),
+                        Callable::BenchFn { .. } => Err(EvalError::TypeMismatch(
+                            "a bench fn is not an impl method".into(),
+                        )),
+                        Callable::Function { params, defaults, body } => {
+                            let mut names = vec!["self".to_string()];
+                            names.extend(params);
+                            let mut all_defaults = vec![None];
+                            all_defaults.extend(defaults);
+                            let mut all_args = vec![recv_value.clone()];
+                            all_args.extend(arg_values);
+                            self.call_pom_fn(&names, &all_defaults, &body, all_args)
+                        }
+                    };
+                }
+            }
             return recv_value.call_builtin_method(method, arg_values);
         }
 
@@ -499,6 +570,15 @@ impl<'h, H: Host> Interpreter<'h, H> {
                     Callable::Function { params, defaults, body } => {
                         self.call_pom_fn(&params, &defaults, &body, arg_values)
                     }
+                    Callable::BenchFn { params, defaults, body, tail } => {
+                        if self.pure_depth > 0 {
+                            return Err(EvalError::TaskUnavailable {
+                                name: name.clone(),
+                                context: "a pure fn/method",
+                            });
+                        }
+                        self.call_bench_fn(&params, &defaults, &body, tail.as_ref(), arg_values)
+                    }
                 };
             }
             // Host-intercepted plain-name call (e.g. `select("...")`).
@@ -507,7 +587,7 @@ impl<'h, H: Host> Interpreter<'h, H> {
             }
             let floats: Result<Vec<f64>, EvalError> = arg_values.iter().map(as_real).collect();
             if let Ok(floats) = floats
-                && let Some(result) = piperine_ir::math::eval_const_math(name, &floats) {
+                && let Some(result) = crate::math::eval_const_math(name, &floats) {
                 return Ok(Value::Real(result));
                 }
             return Err(EvalError::Undefined(name.clone()));
@@ -531,7 +611,7 @@ impl<'h, H: Host> Interpreter<'h, H> {
                     .cloned()
                     .ok_or_else(|| EvalError::TypeMismatch(format!("tuple index {idx} out of range")))
             }
-            Value::Record(fields) => fields
+            Value::Record { fields, .. } => fields
                 .borrow()
                 .get(field)
                 .cloned()
@@ -574,12 +654,15 @@ impl<'h, H: Host> Interpreter<'h, H> {
             values.insert(name.clone(), self.eval_expr(expr)?);
         }
         if let Some(decl) = self.host.lookup(&format!("bundle:{}", ty.name))
-            && let Value::Record(defaults) = decl {
+            && let Value::Record { fields: defaults, .. } = decl {
                 for (name, default) in defaults.borrow().iter() {
                     values.entry(name.clone()).or_insert_with(|| default.clone());
                 }
             }
-        Ok(Value::Record(Rc::new(std::cell::RefCell::new(values))))
+        Ok(Value::Record {
+            ty: ty.name.clone(),
+            fields: Rc::new(std::cell::RefCell::new(values)),
+        })
     }
 }
 
@@ -599,6 +682,8 @@ fn eval_literal(lit: &Literal) -> Value {
         Literal::Bool(b) => Value::Bool(*b),
         Literal::String(s) => Value::Str(s.clone()),
         Literal::Quad(q) => Value::Str(format!("0q{q}")),
+        // `none` — the absent optional value.
+        Literal::None => Value::Option(None),
     }
 }
 

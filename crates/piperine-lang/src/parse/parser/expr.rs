@@ -118,6 +118,9 @@ impl<'a> Parser<'a> {
             Some(Tok::Ident(s)) => {
                 if s == "if" {
                     self.parse_if_expr()?
+                } else if s == "none" {
+                    self.pos += 1;
+                    Expr::Literal(Literal::None)
                 } else {
                     let id = s.clone();
                     self.pos += 1;
@@ -232,8 +235,15 @@ impl<'a> Parser<'a> {
                     expr = Expr::Index(Box::new(expr), Box::new(idx));
                 }
             } else if self.eat(&Tok::Dot) {
-                let field = self.parse_ident()?;
-                expr = Expr::Field(Box::new(expr), field);
+                // Tuple index `t.0` (SPEC §6.1) or a named field access.
+                if let Some(Tok::Int(n)) = self.peek() {
+                    let index = n.to_string();
+                    self.pos += 1;
+                    expr = Expr::Field(Box::new(expr), index);
+                } else {
+                    let field = self.parse_ident()?;
+                    expr = Expr::Field(Box::new(expr), field);
+                }
             } else if self.eat(&Tok::DoubleColon) {
                 let seg = self.parse_ident()?;
                 expr = match expr {
@@ -311,7 +321,7 @@ impl<'a> Parser<'a> {
                     Expr::Path(p) => p.segments.last().unwrap().clone(),
                     _ => return Err("Invalid type in bundle literal".into()),
                 };
-                expr = Expr::BundleLit { ty: Type { name: type_name, args: vec![], dimensions: dims }, fields };
+                expr = Expr::BundleLit { ty: Type { name: type_name, args: vec![], dimensions: dims, optional: false }, fields };
             }
 
         Ok(expr)

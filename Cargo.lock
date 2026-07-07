@@ -1699,16 +1699,13 @@ dependencies = [
  "cranelift-frontend",
  "cranelift-jit",
  "cranelift-module",
+ "ndarray",
  "num-complex",
- "piperine-ir",
+ "piperine-lang",
  "piperine-solver",
  "tempfile",
  "thiserror 2.0.18",
 ]
-
-[[package]]
-name = "piperine-ir"
-version = "0.1.1"
 
 [[package]]
 name = "piperine-lang"
@@ -1717,7 +1714,6 @@ dependencies = [
  "miette",
  "num-complex",
  "piperine-codegen",
- "piperine-ir",
  "piperine-solver",
  "tempfile",
  "thiserror 2.0.18",

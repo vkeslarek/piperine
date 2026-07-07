@@ -23,13 +23,15 @@ use piperine_solver::analysis::ac::AcAnalysisContext;
 use piperine_solver::analysis::dc::{DcAnalysisResult, DcAnalysisState};
 use piperine_solver::analysis::noise::Noise;
 use piperine_solver::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
-use piperine_solver::device::Device;
-use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
+use piperine_solver::core::device::{AnalogDevice, Device, DigitalDevice};
+use piperine_solver::digital::DigitalEvent;
+use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};
 use piperine_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_solver::math::linear::Stamp;
 use piperine_solver::solver::Context;
 
-use crate::ir::{Analysis, IrModule, NodeId};
+use crate::ir::{Analysis, NodeId};
+use crate::lower::pom::LoweredBody;
 use crate::jit::analog::AnalogKernel;
 use crate::jit::digital::DigitalKernel;
 use crate::jit::CodegenError;
@@ -49,10 +51,12 @@ pub struct CompiledModule {
 
 impl CompiledModule {
     /// Validate and compile every behavior body of `module`.
-    pub fn compile(module: &IrModule) -> Result<Self, CodegenError> {
-        module
-            .validated()
-            .map_err(|d| CodegenError::Invalid(format!("{}: {}", module.name, d.message)))?;
+    pub fn compile(module: &LoweredBody) -> Result<Self, CodegenError> {
+        for d in module.validate() {
+            if d.kind == crate::ir::DiagnosticKind::Error {
+                return Err(CodegenError::Invalid(format!("{}: {}", module.name, d.message)));
+            }
+        }
         let analog = module
             .analog
             .as_ref()
@@ -140,8 +144,18 @@ impl Device for PiperineDevice {
     fn device_name(&self) -> &str {
         &self.label
     }
+    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> { Some(self) }
+    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> { Some(self) }
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
+}
 
-    // ── Analog ──
+impl AnalogDevice for PiperineDevice {
+    fn limiting_active(&self) -> bool {
+        self.analog
+            .as_ref()
+            .is_some_and(AnalogInstance::limiting_active)
+    }
 
     fn bound_step_hint(&self) -> f64 {
         self.analog
@@ -184,13 +198,17 @@ impl Device for PiperineDevice {
         }
     }
 
-    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, ctx: &Context) {
+    fn accept_timestep(
+        &mut self,
+        state: &CircularArrayBuffer2<f64>,
+        ctx: &Context,
+        nets: &[piperine_solver::digital::LogicValue],
+        event_queue: &mut std::collections::BinaryHeap<std::cmp::Reverse<piperine_solver::digital::DigitalEvent>>,
+    ) {
         if let Some(analog) = &mut self.analog {
             analog.accept_timestep(state, ctx);
         }
-        // For digital-only devices with analog inputs: cache the analog
-        // terminal voltages so `eval_discrete` can pass them to the digital
-        // kernel (A2D bridge).
+        
         if self.analog.is_none() && !self.analog_terminal_refs.is_empty() {
             let latest = state.latest();
             for (i, opt_ref) in self.analog_terminal_refs.iter().enumerate() {
@@ -200,6 +218,13 @@ impl Device for PiperineDevice {
                     .and_then(|idx| latest.map(|s| s[idx]))
                     .unwrap_or(0.0);
             }
+        }
+        
+        if self.digital.as_ref().map_or(false, |d| d.kernel().layout().num_analog() > 0) {
+            let eval_ctx = EvalCtx { time: ctx.time, nets, analog: &[] };
+            let mut seq = 0u64;
+            let mut sink = QueueSink::new(event_queue, ctx.time, 0, &mut seq);
+            self.evaluate(&eval_ctx, &mut sink);
         }
     }
 
@@ -213,100 +238,109 @@ impl Device for PiperineDevice {
             None => Vec::new(),
         }
     }
+}
 
-    // ── Digital ──
-
-    fn samples_analog(&self) -> bool {
-        self.digital
-            .as_ref()
-            .is_some_and(|d| d.kernel().layout().num_analog() > 0)
-    }
-
-    fn digital_input_nets(&self) -> &[DigitalNet] {
-        self.digital
-            .as_ref()
-            .map_or(&[], DigitalInstance::input_nets)
-    }
-
-    fn digital_output_nets(&self) -> &[DigitalNet] {
-        self.digital
-            .as_ref()
-            .map_or(&[], DigitalInstance::output_nets)
-    }
-
-    fn digital_init(&mut self, event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>) {
-        if let Some(digital) = &mut self.digital {
-            digital.init(event_queue);
+impl DigitalDevice for PiperineDevice {
+    fn boundary(&self) -> DigitalPorts<'_> {
+        match &self.digital {
+            Some(d) => DigitalPorts {
+                inputs: d.input_nets(),
+                outputs: d.output_nets(),
+            },
+            None => DigitalPorts { inputs: &[], outputs: &[] },
         }
     }
 
-    fn eval_discrete(
-        &mut self,
-        t: f64,
-        nets: &[LogicValue],
-        analog_voltages: &[f64],
-        event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
-    ) {
-        let (digital, analog) = match (&mut self.digital, &self.analog) {
-            (Some(d), Some(a)) => (d, a),
-            (Some(d), None) => {
-                // Digital-only device with possible analog inputs.
-                // Collect analog voltages from the cached terminal voltages
-                // (updated by `accept_timestep`).
-                let av: Vec<f64> = if !analog_voltages.is_empty() {
-                    analog_voltages.to_vec()
-                } else if !self.last_analog_voltages.is_empty() {
-                    // Map from terminal order to the digital layout's
-                    // compact analog_index order.
-                    let num_analog = d.kernel().layout().num_analog();
-                    let mut compact = vec![0.0; num_analog];
-                    for (term_idx, &node_id) in self.analog_terminal_node_ids.iter().enumerate() {
-                        if let Some(compact_idx) = d.kernel().layout().analog_index(node_id)
-                            && compact_idx < compact.len() && term_idx < self.last_analog_voltages.len() {
-                                compact[compact_idx] = self.last_analog_voltages[term_idx];
-                            }
-                    }
-                    compact
-                } else {
-                    Vec::new()
-                };
-                d.eval(t, nets, &av, event_queue);
-                return;
+    fn init(&mut self, sink: &mut dyn EventSink) {
+        if let Some(digital) = &mut self.digital {
+            let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
+            digital.init(&mut q);
+            for Reverse(ev) in q.into_sorted_vec() {
+                sink.emit(ev.net, ev.value, ev.time);
             }
-            (None, _) => return,
-        };
+        }
+    }
 
-        // A2D bridge: if the solver didn't provide analog voltages (the
-        // common case — topology.rs passes `&[]`), collect them from the
-        // analog instance's last accepted terminal voltages. Map from
-        // terminal order to the compact analog_index order the digital
-        // kernel expects.
-        let av: Vec<f64>;
-        let av_ref: &[f64] = if !analog_voltages.is_empty() {
-            analog_voltages
-        } else {
-            let terminal_ids = analog.terminal_node_ids();
-            let last_volts = analog.last_volts();
-            let num_analog = digital.kernel().layout().num_analog();
-            let mut compact = vec![0.0; num_analog];
-            for (term_idx, &node_id) in terminal_ids.iter().enumerate() {
-                if let Some(compact_idx) = digital.kernel().layout().analog_index(node_id)
-                    && compact_idx < compact.len() && term_idx < last_volts.len() {
-                        compact[compact_idx] = last_volts[term_idx];
-                    }
-            }
-            av = compact;
-            &av
-        };
+    fn seq_phase(&mut self, ctx: &EvalCtx<'_>) -> bool {
+        let Some(digital) = &mut self.digital else { return false };
+        let av = Self::analog_voltages_for(
+            digital.kernel().layout(),
+            self.analog.as_ref(),
+            &self.analog_terminal_node_ids,
+            &self.last_analog_voltages,
+            ctx.analog,
+        );
+        digital.eval_seq_phase(ctx.time, ctx.nets, &av)
+    }
 
-        digital.eval(t, nets, av_ref, event_queue);
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+        let Some(digital) = &mut self.digital else { return };
+        let av = Self::analog_voltages_for(
+            digital.kernel().layout(),
+            self.analog.as_ref(),
+            &self.analog_terminal_node_ids,
+            &self.last_analog_voltages,
+            ctx.analog,
+        );
+        let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
+        digital.eval_comb_phase(ctx.time, ctx.nets, &av, &mut q);
+        for Reverse(ev) in q.into_sorted_vec() {
+            sink.emit(ev.net, ev.value, ev.time - ctx.time);
+        }
 
-        // D2A bridge: sync digital register values into the analog vars
-        // bank so the analog body sees the latest digital state.
         if let Some(analog) = &mut self.analog {
             let vars = digital.export_vars();
             analog.sync_vars(&vars);
         }
+    }
+
+    fn samples_analog(&self) -> bool {
+        self.digital
+            .as_ref()
+            .map_or(false, |d| d.kernel().layout().num_analog() > 0)
+    }
+}
+
+impl PiperineDevice {
+    /// A2D bridge: resolve the analog voltages a digital kernel should see
+    /// this evaluation. Prefers voltages the solver passed explicitly;
+    /// otherwise reads the device's own analog instance (mixed device) or
+    /// its cached terminal voltages (digital-only device with analog input
+    /// ports), remapped from terminal order into the kernel's compact
+    /// `analog_index` order.
+    fn analog_voltages_for(
+        layout: &crate::jit::digital::DigitalLayout,
+        analog: Option<&AnalogInstance>,
+        terminal_node_ids: &[NodeId],
+        last_analog_voltages: &[f64],
+        provided: &[f64],
+    ) -> Vec<f64> {
+        if !provided.is_empty() {
+            return provided.to_vec();
+        }
+        let num_analog = layout.num_analog();
+        let mut compact = vec![0.0; num_analog];
+        match analog {
+            Some(analog) => {
+                let terminal_ids = analog.terminal_node_ids();
+                let last_volts = analog.last_volts();
+                for (term_idx, &node_id) in terminal_ids.iter().enumerate() {
+                    if let Some(compact_idx) = layout.analog_index(node_id)
+                        && compact_idx < compact.len() && term_idx < last_volts.len() {
+                            compact[compact_idx] = last_volts[term_idx];
+                        }
+                }
+            }
+            None => {
+                for (term_idx, &node_id) in terminal_node_ids.iter().enumerate() {
+                    if let Some(compact_idx) = layout.analog_index(node_id)
+                        && compact_idx < compact.len() && term_idx < last_analog_voltages.len() {
+                            compact[compact_idx] = last_analog_voltages[term_idx];
+                        }
+                }
+            }
+        }
+        compact
     }
 }
 

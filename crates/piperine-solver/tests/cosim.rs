@@ -9,13 +9,11 @@
 //! 6. Combinational chain zero-delay (DAG inline propagation)
 //! 7. Multi-device topo order validation
 
-use std::collections::BinaryHeap;
-use std::cmp::Reverse;
 use std::path::PathBuf;
 
 use piperine_solver::osdi::model::AnalogModel;
 use piperine_solver::analog::{GND, Netlist};
-use piperine_solver::circuit::CircuitInstance;
+use piperine_solver::core::circuit::CircuitInstance;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -44,13 +42,14 @@ impl Circuit {
 }
 use piperine_solver::osdi::OsdiDevice;
 
-use piperine_solver::device::Device;
-use piperine_solver::topology::{DigitalState, DigitalTopology};
+use piperine_solver::core::device::{Device, DigitalDevice};
+use piperine_solver::digital::scheduler::{DigitalState, DigitalTopology};
 
 #[path = "helpers/mod.rs"]
 mod helpers;
 use helpers::{A2DState, D2ADevice};
 use piperine_solver::digital::{LogicValue, DigitalNet, DigitalEvent};
+use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink};
 use piperine_solver::analysis::transient::TransientAnalysisOptions;
 use piperine_solver::solver::Context;
 
@@ -58,6 +57,7 @@ use piperine_solver::solver::Context;
 // Pure Rust device implementations for testing
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 struct Inverter {
     input: DigitalNet,
     output: DigitalNet,
@@ -67,17 +67,28 @@ struct Inverter {
 
 impl Device for Inverter {
     fn device_name(&self) -> &str { "inverter" }
-    fn digital_input_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.input) }
-    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
-    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: &[f64], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
-        let out = match nets[self.input.0] {
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
+}
+
+impl DigitalDevice for Inverter {
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: std::slice::from_ref(&self.input), outputs: std::slice::from_ref(&self.output) }
+    }
+
+    fn init(&mut self, _sink: &mut dyn EventSink) {}
+
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+        let out = match ctx.nets[self.input.0] {
             LogicValue::Zero => LogicValue::One,
             LogicValue::One  => LogicValue::Zero,
             _                => LogicValue::X,
         };
-        q.push(Reverse(DigitalEvent { time: t + self.delay, net: self.output, value: out, source: self.id, seq: 0 }));
+        sink.emit(self.output, out, self.delay);
     }
 }
+
+
 
 #[allow(dead_code)]
 struct DFF {
@@ -97,17 +108,28 @@ impl DFF {
 
 impl Device for DFF {
     fn device_name(&self) -> &str { "dff" }
-    fn digital_input_nets(&self) -> &[DigitalNet] { &self.inputs }
-    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.q) }
-    fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: &[f64], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
-        let clk = nets[self.inputs[0].0];
-        let d   = nets[self.inputs[1].0];
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
+}
+
+impl DigitalDevice for DFF {
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: &self.inputs, outputs: std::slice::from_ref(&self.q) }
+    }
+
+    fn init(&mut self, _sink: &mut dyn EventSink) {}
+
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+        let clk = ctx.nets[self.inputs[0].0];
+        let d   = ctx.nets[self.inputs[1].0];
         if self.last_clk == LogicValue::Zero && clk == LogicValue::One {
-            q.push(Reverse(DigitalEvent { time: t + self.clk_to_q, net: self.q, value: d, source: self.id, seq: 0 }));
+            sink.emit(self.q, d, self.clk_to_q);
         }
         self.last_clk = clk;
     }
 }
+
+
 
 // ---------------------------------------------------------------------------
 // Helpers — compile Verilog-A models

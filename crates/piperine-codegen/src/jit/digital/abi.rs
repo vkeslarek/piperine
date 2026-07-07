@@ -1,4 +1,4 @@
-//! Digital kernel compilation: an [`crate::ir::IrDigitalBody`] to native
+//! Digital kernel compilation: an [`crate::ir::DigitalBody`] to native
 //! code. There is no digital interpreter — combinational logic, register
 //! updates, and event watching all compile through Cranelift.
 //!
@@ -30,7 +30,7 @@ use crate::jit::digital::compile::DigitalCompiler;
 use cranelift_jit::JITModule;
 
 use crate::ir::{
-    EdgeKind, IrExpr, IrModule,
+    EdgeKind, LoweredBody, ParamId,
     NodeId, VarId,
 };
 
@@ -95,11 +95,12 @@ pub struct ClockedSpec {
 }
 
 /// A register power-on value: variable plus its init expression (evaluated
-/// with instance parameters).
+/// with instance parameters). Kept as the POM `Expr` — evaluated at runtime
+/// via `codegen::eval_const`.
 #[derive(Debug, Clone)]
 pub struct RegInit {
     pub var: VarId,
-    pub init: IrExpr,
+    pub init: piperine_lang::parse::ast::Expr,
 }
 
 /// A compiled digital kernel.
@@ -111,6 +112,9 @@ pub struct DigitalKernel {
     pub(crate) clocked_blocks: Vec<ClockedSpec>,
     pub(crate) num_watch_terms: usize,
     pub(crate) reg_inits: Vec<RegInit>,
+    /// Param name → ParamId, used to evaluate `RegInit.init` POM expressions
+    /// against the instance's parameter bank at power-on.
+    pub(crate) param_index: std::collections::HashMap<String, ParamId>,
     pub(crate) comb: DigitalFn,
     pub(crate) seq: Option<DigitalFn>,
     pub(crate) watch: Option<WatchFn>,
@@ -121,7 +125,7 @@ unsafe impl Send for DigitalKernel {}
 unsafe impl Sync for DigitalKernel {}
 
 impl DigitalKernel {
-    pub fn compile(module: &IrModule) -> Result<Self, CodegenError> {
+    pub fn compile(module: &LoweredBody) -> Result<Self, CodegenError> {
         DigitalCompiler::new(module)?.compile()
     }
 

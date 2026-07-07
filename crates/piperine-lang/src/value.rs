@@ -43,7 +43,12 @@ pub enum Value {
     /// A bundle-literal instance (config bundles included). Field lookup
     /// falls back to the bundle's declared `FieldDecl.default` at
     /// construction time — there is no lazy default resolution here.
-    Record(Rc<RefCell<HashMap<String, Value>>>),
+    Record {
+        /// The bundle type this literal instantiates (`"DiodeModel"`) —
+        /// what `impl` method dispatch resolves against.
+        ty: String,
+        fields: Rc<RefCell<HashMap<String, Value>>>,
+    },
     /// A `Map<K, V>` association list (piperine-bench/docs/SPEC.md §5.1 — `ic`/`nodeset`
     /// per-node hints). Backed by a `Vec<(Value, Value)>`, not a `HashMap`:
     /// `Value` keys aren't `Hash`/`Eq`-clean, and N is tiny. Shared/mutable
@@ -78,6 +83,14 @@ pub trait Object: fmt::Debug {
     fn as_any(&self) -> &dyn Any;
     /// Dispatch a method call `recv.name(args)`.
     fn call_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError>;
+
+    /// Human-readable rendering for `$display` — result objects override
+    /// this to print a table (a `Waveform` prints its samples, an
+    /// `OpResult` its node voltages). The default is the diagnostic
+    /// placeholder `<TypeName>`.
+    fn render(&self) -> String {
+        format!("<{}>", self.type_name())
+    }
 
     /// Value-based equality for [`Value::PartialEq`] — returns true when two
     /// objects' data compares equal (e.g. two `NetRef`s with the same name).
@@ -122,7 +135,7 @@ impl Value {
             Self::EnumVariant(..) => "EnumVariant",
             Self::Tuple(_) => "Tuple",
             Self::List(_) => "List",
-            Self::Record(_) => "Record",
+            Self::Record { .. } => "Record",
             Self::Map(_) => "Map",
             Self::Option(_) => "Option",
             Self::Closure(_) => "Closure",
@@ -157,13 +170,15 @@ impl Value {
                 let idx = as_index(&i)?;
                 Ok(Value::Option(items.borrow().get(idx).cloned().map(Box::new)))
             }
-            (Value::Option(inner), "is_some") => Ok(Value::Bool(inner.is_some())),
+            // `is_present`/`get_or` are the optional-param sugars (SPEC §…);
+            // `is_some`/`is_none`/`unwrap`/`unwrap_or` are the value-layer aliases.
+            (Value::Option(inner), "is_some" | "is_present") => Ok(Value::Bool(inner.is_some())),
             (Value::Option(inner), "is_none") => Ok(Value::Bool(inner.is_none())),
             (Value::Option(inner), "unwrap") => inner
                 .clone()
                 .map(|v| *v)
                 .ok_or_else(|| EvalError::Host("unwrap of an empty Option".into())),
-            (Value::Option(inner), "unwrap_or") => {
+            (Value::Option(inner), "unwrap_or" | "get_or") => {
                 let [default] = take1(args)?;
                 Ok(inner.clone().map(|v| *v).unwrap_or(default))
             }
@@ -213,17 +228,22 @@ impl Value {
     /// `ConstVal` could hold). Const-eval call sites that must reject
     /// collections/closures narrow with this.
     pub fn is_const_scalar(&self) -> bool {
-        matches!(
-            self,
+        match self {
             Value::Int(_)
-                | Value::Nat(_)
-                | Value::Real(_)
-                | Value::Bool(_)
-                | Value::Str(_)
-                | Value::Complex(..)
-                | Value::Quad(_)
-                | Value::EnumVariant(..)
-        )
+            | Value::Nat(_)
+            | Value::Real(_)
+            | Value::Bool(_)
+            | Value::Str(_)
+            | Value::Complex(..)
+            | Value::Quad(_)
+            | Value::EnumVariant(..) => true,
+            // An optional is a compile-time constant iff absent (`none`) or
+            // wrapping a constant scalar — this lets `param x : Real? = none`
+            // and `param x : Real? = 1.2` be elaboration constants.
+            Value::Option(None) => true,
+            Value::Option(Some(inner)) => inner.is_const_scalar(),
+            _ => false,
+        }
     }
 
     /// Extract the inner `f64` if this is a `Real`.
@@ -272,7 +292,9 @@ impl PartialEq for Value {
             (Value::EnumVariant(ae, av), Value::EnumVariant(be, bv)) => ae == be && av == bv,
             (Value::Tuple(a), Value::Tuple(b)) => a == b,
             (Value::List(a), Value::List(b)) => *a.borrow() == *b.borrow(),
-            (Value::Record(a), Value::Record(b)) => *a.borrow() == *b.borrow(),
+            (Value::Record { fields: a, .. }, Value::Record { fields: b, .. }) => {
+                *a.borrow() == *b.borrow()
+            }
             (Value::Map(a), Value::Map(b)) => *a.borrow() == *b.borrow(),
             (Value::Option(a), Value::Option(b)) => a == b,
             (Value::Object(a), Value::Object(b)) => a.equals(b.as_any()),

@@ -33,11 +33,11 @@ fn test_all_examples_compile() {
         let body = fs::read_to_string(&file).unwrap();
         match piperine_lang::parse_and_elaborate(&body, &piperine_lang::SourceMap::dummy()) {
             Ok(elab) => {
-                // Lower to IR
-                let ir = piperine_lang::ppr_to_ir(&elab).expect("lowering failed");
-                
+                // Lower every module to its resolved body.
+                let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+
                 // For every module, compile it down to executable JIT/Interpreter code
-                for module in &ir.modules {
+                for module in bodies.values() {
                     // Try to compile it
                     match piperine_codegen::CompiledModule::compile(module) {
                         Ok(compiled) => {

@@ -15,6 +15,7 @@ pub enum SymbolKind {
     Enum,
     Bundle,
     Discipline,
+    Capability,
 }
 
 #[derive(Debug, Clone)]
@@ -147,6 +148,30 @@ pub fn resolve_at(design: &Design, source: &str, byte_offset: usize) -> Option<R
                 decl_span: d.span,
                 type_info: None,
             });
+        }
+    }
+
+    for (name, c) in design.capabilities() {
+        if *name == word {
+            return Some(Resolution {
+                kind: SymbolKind::Capability,
+                name: name.clone(),
+                decl_span: c.span,
+                type_info: None,
+            });
+        }
+    }
+
+    for i in design.impls() {
+        for m in &i.methods {
+            if m.name == word {
+                return Some(Resolution {
+                    kind: SymbolKind::Function,
+                    name: format!("{}::{}", i.ty, m.name),
+                    decl_span: m.span,
+                    type_info: Some(format!("impl method for {}", i.ty)),
+                });
+            }
         }
     }
 

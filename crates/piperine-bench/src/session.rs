@@ -79,15 +79,15 @@ impl SimSession {
     }
 
     /// Run a DC operating-point analysis (`$op`, piperine-bench/docs/SPEC.md §5): apply
-    /// staged overrides, re-elaborate to IR, build the circuit, and solve.
+    /// staged overrides, lower to resolved bodies, build the circuit, and solve.
     /// Every analysis is a pure function of (design + staged overrides +
     /// config) — nothing here is remembered between calls. `nodeset`
     /// (piperine-bench/docs/SPEC.md §5.1 `OpConfig.nodeset`) seeds the Newton initial
     /// guess.
     pub fn run_op(&self, config: &SolverConfig, nodeset: &Value) -> Result<OpResult, BenchError> {
         let applied = self.design.with_overrides_applied(&self.module)?;
-        let ir = piperine_lang::ppr_to_ir(&applied)?;
-        let mut compiler = CircuitCompiler::new(&ir);
+        let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
+        let mut compiler = CircuitCompiler::new(&applied, &bodies);
         let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
         circuit.init_digital();
         circuit.rebuild_digital_topology();
@@ -95,10 +95,34 @@ impl SimSession {
         let mut dc = circuit.dc(config.to_context())?;
         dc.apply_initial_conditions(ivs);
         let result = dc.solve()?;
-        Ok(OpResult::new(result, Rc::new(info)))
+        drop(dc);
+        // Digital nets settle inside the DC mixed-signal loop — snapshot
+        // them so `r.v(bit_net)` reads logic values off the result.
+        let digital = Self::snapshot_digital(&info, &circuit);
+        Ok(OpResult::new(result, digital, Rc::new(info)))
     }
 
-    /// Run a transient analysis (`$tran`, piperine-bench/docs/SPEC.md §5): same
+    /// The top module's digital net values as reals (0/1; X/Z read as NaN so
+/// an assertion on an undriven net fails loud, never silently passes).
+fn snapshot_digital(
+        info: &piperine_codegen::device::CircuitBuildInfo,
+    circuit: &piperine_solver::core::circuit::CircuitInstance,
+) -> std::collections::HashMap<String, f64> {
+    use piperine_solver::digital::LogicValue;
+    info.digital_nets
+        .iter()
+        .map(|(name, &idx)| {
+            let v = match circuit.digital_state.nets.get(idx) {
+                Some(LogicValue::Zero) => 0.0,
+                Some(LogicValue::One) => 1.0,
+                _ => f64::NAN,
+            };
+            (name.clone(), v)
+        })
+        .collect()
+}
+
+/// Run a transient analysis (`$tran`, piperine-bench/docs/SPEC.md §5): same
     /// elaborate-and-solve recipe as [`Self::run_op`], through
     /// `CircuitInstance::transient` instead of `::dc`. `step: None` (the
     /// config bundle's `step = 0.0` "auto") selects the adaptive stepper.
@@ -115,8 +139,8 @@ impl SimSession {
         ic: &Value,
     ) -> Result<Trace, BenchError> {
         let applied = self.design.with_overrides_applied(&self.module)?;
-        let ir = piperine_lang::ppr_to_ir(&applied)?;
-        let mut compiler = CircuitCompiler::new(&ir);
+        let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
+        let mut compiler = CircuitCompiler::new(&applied, &bodies);
         let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
         circuit.init_digital();
         circuit.rebuild_digital_topology();
@@ -143,8 +167,8 @@ impl SimSession {
         config: &SolverConfig,
     ) -> Result<AcTrace, BenchError> {
         let applied = self.design.with_overrides_applied(&self.module)?;
-        let ir = piperine_lang::ppr_to_ir(&applied)?;
-        let mut compiler = CircuitCompiler::new(&ir);
+        let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
+        let mut compiler = CircuitCompiler::new(&applied, &bodies);
         let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
         circuit.init_digital();
         circuit.rebuild_digital_topology();
@@ -172,8 +196,8 @@ impl SimSession {
         config: &SolverConfig,
     ) -> Result<NoiseTrace, BenchError> {
         let applied = self.design.with_overrides_applied(&self.module)?;
-        let ir = piperine_lang::ppr_to_ir(&applied)?;
-        let mut compiler = CircuitCompiler::new(&ir);
+        let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
+        let mut compiler = CircuitCompiler::new(&applied, &bodies);
         let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
         circuit.init_digital();
         circuit.rebuild_digital_topology();

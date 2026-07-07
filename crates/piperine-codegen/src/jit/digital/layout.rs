@@ -1,4 +1,4 @@
-//! Digital kernel compilation: an [`crate::ir::IrDigitalBody`] to native
+//! Digital kernel compilation: an [`crate::ir::DigitalBody`] to native
 //! code. There is no digital interpreter — combinational logic, register
 //! updates, and event watching all compile through Cranelift.
 //!
@@ -27,13 +27,13 @@ use std::collections::HashMap;
 
 
 use crate::ir::{
-    Domain, IrDigitalBody, IrModule, IrType,
+    Domain, DigitalBody, LoweredBody, Type,
     NodeId, VarId,
 };
 
 
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct DigitalLayout {
     pub(crate) input_index: HashMap<NodeId, usize>,
     pub(crate) output_index: HashMap<NodeId, usize>,
@@ -49,7 +49,7 @@ pub struct DigitalLayout {
 }
 
 impl DigitalLayout {
-    pub(crate) fn build(module: &IrModule, body: &IrDigitalBody) -> Self {
+    pub(crate) fn build(module: &LoweredBody, body: &DigitalBody) -> Self {
         let mut layout = Self::default();
         for (i, &node) in body.inputs.iter().enumerate() {
             layout.input_index.insert(node, i);
@@ -59,11 +59,11 @@ impl DigitalLayout {
         }
         for (id, info) in module.symbols.vars() {
             match info.ty {
-                IrType::Real => {
+                Type::Real => {
                     layout.real_slot.insert(id, layout.num_real);
                     layout.num_real += 1;
                 }
-                IrType::Integer | IrType::Bool | IrType::Quad => {
+                Type::Integer | Type::Bool | Type::Quad => {
                     layout.int_slot.insert(id, layout.num_int);
                     layout.num_int += 1;
                 }

@@ -215,6 +215,10 @@ pub struct Type {
     pub args: Vec<Type>,
     /// Array dimensions, e.g. `[8]` in `Bit[8]`. May be non-literal expressions.
     pub dimensions: Vec<Expr>,
+    /// Trailing `?`: an optional value that may be absent (`none`). A `param`
+    /// or binding of an optional type must be read through `.is_present()` /
+    /// `.get_or(default)`; `none` inhabits any optional type.
+    pub optional: bool,
 }
 
 // ─────────────────────────────── Disciplines ─────────────────────────────────
@@ -896,6 +900,9 @@ pub enum Literal {
     Quad(String),
     /// Double-quoted string literal.
     String(String),
+    /// `none` — the absent value of any optional type (`Real?`). Read through
+    /// `.is_present()` / `.get_or(default)`.
+    None,
 }
 
 #[derive(Debug, Clone, PartialEq)]

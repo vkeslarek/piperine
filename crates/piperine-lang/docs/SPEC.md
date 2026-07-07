@@ -149,6 +149,13 @@ lowered for `analog`/`digital`):
   fixed-size elaboration-constant `Array` in a `mod`/`analog`/`digital` context (§7) — which form
   applies follows from context, as with every other dual-position construct in this grammar.
 - `Option<T>` — `.is_some()`, `.is_none()`, `.unwrap()`, `.unwrap_or(default)`.
+- **Optional types `T?`** — a trailing `?` marks a value that may be absent; `none` is the
+  absent value and inhabits any `T?`. Read through `.is_present()` / `.get_or(default)`
+  (aliases of `.is_some()` / `.unwrap_or()`). The intended use is optional **parameters**:
+  `param rmodel : Real? = none;` then `rmodel.get_or(rfixed)` in the body. On a scalar param
+  this lowers onto parameter-presence (`is_present` ≡ `$param_given`, `get_or(d)` ≡
+  `param_given ? p : d`), so the choice is per-instance — supplying `.rmodel = 500.0` at an
+  instance makes it present. Prefer `T?` over a sentinel default (`1e99`, `0`) + `$param_given`.
 
 - `Map<K, V>` — an association literal `Map { key: value, … }` (`Map {}` is empty), value-layer,
   with `.insert(k, v)`, `.get(k) -> Option<V>`, `.len()`; structural equality. Keys compare by

@@ -5,8 +5,11 @@
 //! This matches `lowering/expr.rs`'s `Expr::Field` arm, which already turns
 //! `model.rsh` into `IrExpr::Param("model_rsh")`.
 
-use piperine_lang::{parse_str, parse_and_elaborate, ppr_to_ir};
-use piperine_codegen::ir::IrExpr;
+use piperine_lang::{parse_str, parse_and_elaborate};
+
+fn ppr_to_ir(design: &piperine_lang::Design) -> Result<std::collections::HashMap<String, piperine_codegen::ir::LoweredBody>, piperine_codegen::ir::LowerErrors> {
+    piperine_codegen::ir::lower_bodies(design)
+}
 
 const DISCIPLINE: &str = "
 discipline Electrical { potential v : Real; flow i : Real; }
@@ -37,9 +40,9 @@ fn bundle_param_default_flattens_to_scalar_params() {
     );
     let prog = parse_and_elaborate(&s, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog).expect("lowering failed");
-    let m = ir.modules.iter().find(|m| m.name == "R").expect("module");
+    let m = ir.get("R").expect("module");
     let rsh = m.symbols.params().map(|(_, p)| p).find(|p| p.name == "model_rsh").expect("model_rsh param");
-    assert_eq!(rsh.default, Some(IrExpr::Real(100.0)));
+    assert!(matches!(rsh.default, Some(piperine_lang::parse::ast::Expr::Literal(piperine_lang::parse::ast::Literal::Real(v))) if v == 100.0));
     assert!(m.symbols.params().map(|(_, p)| p).any(|p| p.name == "model_kf"));
 }
 
@@ -52,12 +55,12 @@ fn bundle_param_partial_literal_overrides_one_field() {
     );
     let prog = parse_and_elaborate(&s, &piperine_lang::SourceMap::dummy()).expect("elab");
     let ir = ppr_to_ir(&prog).expect("lowering failed");
-    let m = ir.modules.iter().find(|m| m.name == "R").expect("module");
+    let m = ir.get("R").expect("module");
     let rsh = m.symbols.params().map(|(_, p)| p).find(|p| p.name == "model_rsh").expect("model_rsh param");
-    assert_eq!(rsh.default, Some(IrExpr::Real(5.0)));
+    assert!(matches!(rsh.default, Some(piperine_lang::parse::ast::Expr::Literal(piperine_lang::parse::ast::Literal::Real(v))) if v == 5.0));
     // Untouched field keeps the bundle's own default.
     let kf = m.symbols.params().map(|(_, p)| p).find(|p| p.name == "model_kf").expect("model_kf param");
-    assert_eq!(kf.default, Some(IrExpr::Real(0.0)));
+    assert!(matches!(kf.default, Some(piperine_lang::parse::ast::Expr::Literal(piperine_lang::parse::ast::Literal::Real(v))) if v == 0.0));
 }
 
 #[test]

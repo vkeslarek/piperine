@@ -1,24 +1,25 @@
-//! Mixed-signal integration tests.
-//!
-//! Tests the boundary between the analog (Newton-Raphson MNA) and digital
-//! (event-driven) simulation domains through:
-//!
-//! - **A→D**: Analog voltage drives digital output (comparators, ADCs).
-//! - **D→A**: Digital event changes analog stamp (switches, DACs, current sources).
-//! - **Loop**: Complete A→D→A feedback paths.
-//! - **Edge cases**: X-state propagation, simultaneous crossings, hysteresis.
+// Mixed-signal integration tests.
+//
+// Tests the boundary between the analog (Newton-Raphson MNA) and digital
+// (event-driven) simulation domains through:
+//
+// - **A→D**: Analog voltage drives digital output (comparators, ADCs).
+// - **D→A**: Digital event changes analog stamp (switches, DACs, current sources).
+// - **Loop**: Complete A→D→A feedback paths.
+// - **Edge cases**: X-state propagation, simultaneous crossings, hysteresis.
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
 use piperine_solver::analog::{AnalogReference, Netlist, NodeIdentifier};
 use piperine_solver::analysis::dc::DcAnalysisState;
-use piperine_solver::device::Device;
+use piperine_solver::core::device::{Device, AnalogDevice, DigitalDevice};
+use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};
 use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
 use piperine_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_solver::math::linear::Stamp;
 use piperine_solver::solver::Context;
-use piperine_solver::topology::DigitalState;
+use piperine_solver::digital::scheduler::DigitalState;
 
 // ─────────────────────────────── Helpers ─────────────────────────────────────
 
@@ -38,7 +39,8 @@ fn dc_state_from_voltages(voltages: &[f64]) -> DcAnalysisState {
 /// Voltage comparator: reads av[vp] - av[vn], drives digital output.
 ///
 /// Called from the mixed-signal simulation loop on any potential analog crossing
-/// (the simulator calls `eval_discrete` with the current analog solution).
+/// (the simulator calls `comb_phase` with the current analog solution).
+#[allow(dead_code)]
 struct Comparator {
     vp_idx: usize,
     vn_idx: usize,
@@ -56,23 +58,44 @@ impl Comparator {
 
 impl Device for Comparator {
     fn device_name(&self) -> &str { "comparator" }
-    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.out_net) }
+    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> { Some(self) }
+    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> { Some(self) }
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
+}
 
-    fn eval_discrete(
-        &mut self, t: f64, _nets: &[LogicValue], av: &[f64],
-        q: &mut BinaryHeap<Reverse<DigitalEvent>>,
-    ) {
-        let vdiff = av.get(self.vp_idx).copied().unwrap_or(0.0)
-            - av.get(self.vn_idx).copied().unwrap_or(0.0);
+impl AnalogDevice for Comparator {
+    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, ctx: &Context, nets: &[LogicValue], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+        let latest = state.latest().unwrap();
+        let eval_ctx = EvalCtx { time: ctx.time, nets, analog: latest.as_slice().unwrap() };
+        let mut seq = 0u64;
+        let mut sink = QueueSink::new(q, ctx.time, 0, &mut seq);
+        self.comb_phase(&eval_ctx, &mut sink);
+    }
+}
+
+impl DigitalDevice for Comparator {
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out_net) }
+    }
+
+    fn init(&mut self, _sink: &mut dyn EventSink) {}
+
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+        let vdiff = ctx.analog.get(self.vp_idx).copied().unwrap_or(0.0)
+            - ctx.analog.get(self.vn_idx).copied().unwrap_or(0.0);
         let out = if vdiff > self.threshold { LogicValue::One } else { LogicValue::Zero };
         if out != self.last_out {
             self.last_out = out;
-            q.push(Reverse(DigitalEvent { time: t, net: self.out_net, value: out, source: self.id, seq: 0 }));
+            sink.emit(self.out_net, out, 0.0);
         }
     }
 }
 
+
+
 /// Schmitt trigger (hysteresis comparator).
+#[allow(dead_code)]
 struct SchmittTrigger {
     v_idx: usize,
     out_net: DigitalNet,
@@ -90,22 +113,42 @@ impl SchmittTrigger {
 
 impl Device for SchmittTrigger {
     fn device_name(&self) -> &str { "schmitt" }
-    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.out_net) }
+    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> { Some(self) }
+    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> { Some(self) }
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
+}
 
-    fn eval_discrete(
-        &mut self, t: f64, _nets: &[LogicValue], av: &[f64],
-        q: &mut BinaryHeap<Reverse<DigitalEvent>>,
-    ) {
-        let v = av.get(self.v_idx).copied().unwrap_or(0.0);
+impl AnalogDevice for SchmittTrigger {
+    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, ctx: &Context, nets: &[LogicValue], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+        let latest = state.latest().unwrap();
+        let eval_ctx = EvalCtx { time: ctx.time, nets, analog: latest.as_slice().unwrap() };
+        let mut seq = 0u64;
+        let mut sink = QueueSink::new(q, ctx.time, 0, &mut seq);
+        self.comb_phase(&eval_ctx, &mut sink);
+    }
+}
+
+impl DigitalDevice for SchmittTrigger {
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out_net) }
+    }
+
+    fn init(&mut self, _sink: &mut dyn EventSink) {}
+
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+        let v = ctx.analog.get(self.v_idx).copied().unwrap_or(0.0);
         let new_state = match self.state {
             LogicValue::Zero if v >= self.thresh_high => LogicValue::One,
             LogicValue::One  if v <= self.thresh_low  => LogicValue::Zero,
             _ => return,
         };
         self.state = new_state;
-        q.push(Reverse(DigitalEvent { time: t, net: self.out_net, value: new_state, source: self.id, seq: 0 }));
+        sink.emit(self.out_net, new_state, 0.0);
     }
 }
+
+
 
 /// Analog switch: digital control input gates conductance between two analog nodes.
 struct AnalogSwitch {
@@ -124,27 +167,40 @@ impl AnalogSwitch {
 
 impl Device for AnalogSwitch {
     fn device_name(&self) -> &str { "analog_switch" }
-    fn digital_input_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.ctrl_net) }
+    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> { Some(self) }
+    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> { Some(self) }
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
+}
 
-    fn eval_discrete(
-        &mut self, _t: f64, nets: &[LogicValue], _av: &[f64],
-        _q: &mut BinaryHeap<Reverse<DigitalEvent>>,
-    ) {
-        self.closed = nets[self.ctrl_net.0] == LogicValue::One;
+impl AnalogDevice for AnalogSwitch {
+    fn load_dc(&mut self, _s: &DcAnalysisState, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
+            if !self.closed { return Vec::new(); }
+            let g = self.conductance;
+            let (Some(a), Some(b)) = (self.node_a.clone(), self.node_b.clone()) else { return Vec::new(); };
+            vec![
+                Stamp::Matrix(a.clone(), a.clone(),  g),
+                Stamp::Matrix(a.clone(), b.clone(), -g),
+                Stamp::Matrix(b.clone(), a.clone(), -g),
+                Stamp::Matrix(b.clone(), b.clone(),  g),
+            ]
+        }
+
+}
+
+impl DigitalDevice for AnalogSwitch {
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: std::slice::from_ref(&self.ctrl_net), outputs: &[] }
     }
 
-    fn load_dc(&mut self, _s: &DcAnalysisState, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        if !self.closed { return Vec::new(); }
-        let g = self.conductance;
-        let (Some(a), Some(b)) = (self.node_a.clone(), self.node_b.clone()) else { return Vec::new(); };
-        vec![
-            Stamp::Matrix(a.clone(), a.clone(),  g),
-            Stamp::Matrix(a.clone(), b.clone(), -g),
-            Stamp::Matrix(b.clone(), a.clone(), -g),
-            Stamp::Matrix(b.clone(), b.clone(),  g),
-        ]
+    fn init(&mut self, _sink: &mut dyn EventSink) {}
+
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, _sink: &mut dyn EventSink) {
+        self.closed = ctx.nets[self.ctrl_net.0] == LogicValue::One;
     }
 }
+
+
 
 /// Digitally-gated current source: when enabled, injects Ibias into node_p / out of node_n.
 struct GatedCurrentSource {
@@ -163,23 +219,36 @@ impl GatedCurrentSource {
 
 impl Device for GatedCurrentSource {
     fn device_name(&self) -> &str { "gated_isrc" }
-    fn digital_input_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.enable_net) }
+    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> { Some(self) }
+    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> { Some(self) }
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
+}
 
-    fn eval_discrete(
-        &mut self, _t: f64, nets: &[LogicValue], _av: &[f64],
-        _q: &mut BinaryHeap<Reverse<DigitalEvent>>,
-    ) {
-        self.enabled = nets[self.enable_net.0] == LogicValue::One;
+impl AnalogDevice for GatedCurrentSource {
+    fn load_dc(&mut self, _s: &DcAnalysisState, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
+            if !self.enabled { return Vec::new(); }
+            let mut stamps = Vec::new();
+            if let Some(p) = &self.node_p { stamps.push(Stamp::Rhs(p.clone(),  self.ibias)); }
+            if let Some(n) = &self.node_n { stamps.push(Stamp::Rhs(n.clone(), -self.ibias)); }
+            stamps
+        }
+
+}
+
+impl DigitalDevice for GatedCurrentSource {
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: std::slice::from_ref(&self.enable_net), outputs: &[] }
     }
 
-    fn load_dc(&mut self, _s: &DcAnalysisState, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        if !self.enabled { return Vec::new(); }
-        let mut stamps = Vec::new();
-        if let Some(p) = &self.node_p { stamps.push(Stamp::Rhs(p.clone(),  self.ibias)); }
-        if let Some(n) = &self.node_n { stamps.push(Stamp::Rhs(n.clone(), -self.ibias)); }
-        stamps
+    fn init(&mut self, _sink: &mut dyn EventSink) {}
+
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, _sink: &mut dyn EventSink) {
+        self.enabled = ctx.nets[self.enable_net.0] == LogicValue::One;
     }
 }
+
+
 
 /// Level-sensitive analog sample-and-hold. On posedge(clk), captures av[sample_idx].
 #[allow(dead_code)]
@@ -200,32 +269,48 @@ impl SampleAndHold {
 
 impl Device for SampleAndHold {
     fn device_name(&self) -> &str { "sah" }
-    fn digital_input_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.clk_net) }
+    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> { Some(self) }
+    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> { Some(self) }
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
+}
 
-    fn eval_discrete(
-        &mut self, _t: f64, nets: &[LogicValue], av: &[f64],
-        _q: &mut BinaryHeap<Reverse<DigitalEvent>>,
-    ) {
-        let clk = nets[self.clk_net.0];
+impl AnalogDevice for SampleAndHold {
+    fn load_dc(&mut self, _s: &DcAnalysisState, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
+            if let Some(r) = &self.out_ref {
+                vec![Stamp::Rhs(r.clone(), self.held_value)]
+            } else {
+                Vec::new()
+            }
+        }
+
+}
+
+impl DigitalDevice for SampleAndHold {
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: std::slice::from_ref(&self.clk_net), outputs: &[] }
+    }
+
+    fn init(&mut self, _sink: &mut dyn EventSink) {}
+
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, _sink: &mut dyn EventSink) {
+        let clk = ctx.nets[self.clk_net.0];
         let posedge = self.last_clk != LogicValue::One && clk == LogicValue::One;
         self.last_clk = clk;
         if posedge {
-            self.held_value = av.get(self.sample_idx).copied().unwrap_or(0.0);
+            self.held_value = ctx.analog.get(self.sample_idx).copied().unwrap_or(0.0);
         }
     }
 
-    // Drives a Thevenin source (v_held with 0Ω) — simplified: just RHS stamp.
-    fn load_dc(&mut self, _s: &DcAnalysisState, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        if let Some(r) = &self.out_ref {
-            vec![Stamp::Rhs(r.clone(), self.held_value)]
-        } else {
-            Vec::new()
-        }
-    }
+        // Drives a Thevenin source (v_held with 0Ω) — simplified: just RHS stamp.
+
 }
+
+
 
 /// Comparator with memory: drives output only when it changes.
 /// Tracks `last_trigger_time` to test glitch suppression.
+#[allow(dead_code)]
 struct GlitchTestDevice {
     v_idx: usize,
     out_net: DigitalNet,
@@ -243,21 +328,29 @@ impl GlitchTestDevice {
 
 impl Device for GlitchTestDevice {
     fn device_name(&self) -> &str { "glitch_test" }
-    fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.out_net) }
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
+}
 
-    fn eval_discrete(
-        &mut self, t: f64, _nets: &[LogicValue], av: &[f64],
-        q: &mut BinaryHeap<Reverse<DigitalEvent>>,
-    ) {
-        let v = av.get(self.v_idx).copied().unwrap_or(0.0);
+impl DigitalDevice for GlitchTestDevice {
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out_net) }
+    }
+
+    fn init(&mut self, _sink: &mut dyn EventSink) {}
+
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+        let v = ctx.analog.get(self.v_idx).copied().unwrap_or(0.0);
         let out = if v > self.threshold { LogicValue::One } else { LogicValue::Zero };
         if out != self.last_out {
             self.last_out = out;
             self.event_count += 1;
-            q.push(Reverse(DigitalEvent { time: t, net: self.out_net, value: out, source: self.id, seq: 0 }));
+            sink.emit(self.out_net, out, 0.0);
         }
     }
 }
+
+
 
 // ─────────────────────────────── Context stub ─────────────────────────────────
 
@@ -271,7 +364,10 @@ fn test_a2d_comparator_above_threshold() {
     let mut cmp = Comparator::new(0, 0, 1, DigitalNet(10), 0.5);
     let mut q = empty_queue();
     // vp=0.8, vn=0.0 → diff=0.8 > 0.5 → One
-    cmp.eval_discrete(0.0, &[], &[0.8, 0.0], &mut q);
+    let ctx = EvalCtx { time: 0.0, nets: &[], analog: &[0.8, 0.0] };
+    let mut seq = 0u64;
+    let mut sink = QueueSink::new(&mut q, 0.0, 0, &mut seq);
+    cmp.comb_phase(&ctx, &mut sink);
     assert_eq!(q.len(), 1);
     let Reverse(ev) = q.pop().unwrap();
     assert_eq!(ev.value, LogicValue::One);
@@ -284,12 +380,17 @@ fn test_a2d_comparator_below_threshold() {
     let mut cmp = Comparator::new(0, 0, 1, DigitalNet(10), 0.5);
     let mut q = empty_queue();
     // First call: X → Zero (initial state transition)
-    cmp.eval_discrete(0.0, &[], &[0.3, 0.0], &mut q);
+    let ctx = EvalCtx { time: 0.0, nets: &[], analog: &[0.3, 0.0] };
+    let mut seq = 0u64;
+    let mut sink = QueueSink::new(&mut q, 0.0, 0, &mut seq);
+    cmp.comb_phase(&ctx, &mut sink);
     assert_eq!(q.len(), 1, "initial X→Zero fires one event");
     let Reverse(ev) = q.pop().unwrap();
     assert_eq!(ev.value, LogicValue::Zero);
     // Second call: same voltage — no new event (Zero stays Zero)
-    cmp.eval_discrete(1e-9, &[], &[0.3, 0.0], &mut q);
+    let ctx = EvalCtx { time: 1e-9, nets: &[], analog: &[0.3, 0.0] };
+    let mut sink = QueueSink::new(&mut q, 1e-9, 0, &mut seq);
+    cmp.comb_phase(&ctx, &mut sink);
     assert!(q.is_empty(), "no event when voltage stays below threshold");
 }
 
@@ -299,10 +400,15 @@ fn test_a2d_comparator_hysteresis_less_crossing() {
     let mut cmp = Comparator::new(0, 0, 1, DigitalNet(10), 0.5);
     let mut q = empty_queue();
     // Rising: fires One
-    cmp.eval_discrete(1e-9, &[], &[0.8, 0.0], &mut q);
+    let ctx = EvalCtx { time: 1e-9, nets: &[], analog: &[0.8, 0.0] };
+    let mut seq = 0u64;
+    let mut sink = QueueSink::new(&mut q, 1e-9, 0, &mut seq);
+    cmp.comb_phase(&ctx, &mut sink);
     assert_eq!(q.pop().map(|Reverse(e)| e.value), Some(LogicValue::One));
     // Falling: fires Zero
-    cmp.eval_discrete(2e-9, &[], &[0.2, 0.0], &mut q);
+    let ctx = EvalCtx { time: 2e-9, nets: &[], analog: &[0.2, 0.0] };
+    let mut sink = QueueSink::new(&mut q, 2e-9, 0, &mut seq);
+    cmp.comb_phase(&ctx, &mut sink);
     assert_eq!(q.pop().map(|Reverse(e)| e.value), Some(LogicValue::Zero));
 }
 
@@ -311,10 +417,15 @@ fn test_a2d_comparator_hysteresis_less_crossing() {
 fn test_a2d_comparator_no_repeat_fire() {
     let mut cmp = Comparator::new(0, 0, 1, DigitalNet(10), 0.5);
     let mut q = empty_queue();
-    cmp.eval_discrete(1e-9, &[], &[0.9, 0.0], &mut q);
+    let ctx = EvalCtx { time: 1e-9, nets: &[], analog: &[0.9, 0.0] };
+    let mut seq = 0u64;
+    let mut sink = QueueSink::new(&mut q, 1e-9, 0, &mut seq);
+    cmp.comb_phase(&ctx, &mut sink);
     assert_eq!(q.len(), 1); q.clear();
     // Same voltage, second call — no new event
-    cmp.eval_discrete(2e-9, &[], &[0.9, 0.0], &mut q);
+    let ctx = EvalCtx { time: 2e-9, nets: &[], analog: &[0.9, 0.0] };
+    let mut sink = QueueSink::new(&mut q, 2e-9, 0, &mut seq);
+    cmp.comb_phase(&ctx, &mut sink);
     assert!(q.is_empty(), "should not fire again at same level");
 }
 
@@ -323,11 +434,16 @@ fn test_a2d_comparator_no_repeat_fire() {
 fn test_schmitt_rising_fires_above_high() {
     let mut st = SchmittTrigger::new(0, 0, DigitalNet(5), 0.3, 0.7);
     let mut q = empty_queue();
+    let mut seq = 0u64;
     // V=0.5: between thresholds → no fire (starting at Zero)
-    st.eval_discrete(0.0, &[], &[0.5], &mut q);
+    let ctx = EvalCtx { time: 0.0, nets: &[], analog: &[0.5] };
+    let mut sink = QueueSink::new(&mut q, 0.0, 0, &mut seq);
+    st.comb_phase(&ctx, &mut sink);
     assert!(q.is_empty(), "0.5 < 0.7, no rising edge");
     // V=0.8: above thresh_high → fire One
-    st.eval_discrete(1e-9, &[], &[0.8], &mut q);
+    let ctx = EvalCtx { time: 1e-9, nets: &[], analog: &[0.8] };
+    let mut sink = QueueSink::new(&mut q, 1e-9, 0, &mut seq);
+    st.comb_phase(&ctx, &mut sink);
     assert_eq!(q.len(), 1);
     let Reverse(ev) = q.pop().unwrap();
     assert_eq!(ev.value, LogicValue::One);
@@ -338,10 +454,15 @@ fn test_schmitt_rising_fires_above_high() {
 fn test_schmitt_hysteresis_suppresses_glitch() {
     let mut st = SchmittTrigger::new(0, 0, DigitalNet(5), 0.3, 0.7);
     let mut q = empty_queue();
+    let mut seq = 0u64;
     // Assert high
-    st.eval_discrete(0.0, &[], &[0.9], &mut q); q.clear();
+    let ctx = EvalCtx { time: 0.0, nets: &[], analog: &[0.9] };
+    let mut sink = QueueSink::new(&mut q, 0.0, 0, &mut seq);
+    st.comb_phase(&ctx, &mut sink); q.clear();
     // Voltage dips into band (below high, above low) — should NOT fire
-    st.eval_discrete(1e-9, &[], &[0.5], &mut q);
+    let ctx = EvalCtx { time: 1e-9, nets: &[], analog: &[0.5] };
+    let mut sink = QueueSink::new(&mut q, 1e-9, 0, &mut seq);
+    st.comb_phase(&ctx, &mut sink);
     assert!(q.is_empty(), "in hysteresis band — no output change");
 }
 
@@ -350,10 +471,15 @@ fn test_schmitt_hysteresis_suppresses_glitch() {
 fn test_schmitt_falling_fires_below_low() {
     let mut st = SchmittTrigger::new(0, 0, DigitalNet(5), 0.3, 0.7);
     let mut q = empty_queue();
+    let mut seq = 0u64;
     // Set high first
-    st.eval_discrete(0.0, &[], &[0.9], &mut q); q.clear();
+    let ctx = EvalCtx { time: 0.0, nets: &[], analog: &[0.9] };
+    let mut sink = QueueSink::new(&mut q, 0.0, 0, &mut seq);
+    st.comb_phase(&ctx, &mut sink); q.clear();
     // Voltage at 0.2 < 0.3 → fire Zero
-    st.eval_discrete(1e-9, &[], &[0.2], &mut q);
+    let ctx = EvalCtx { time: 1e-9, nets: &[], analog: &[0.2] };
+    let mut sink = QueueSink::new(&mut q, 1e-9, 0, &mut seq);
+    st.comb_phase(&ctx, &mut sink);
     assert_eq!(q.len(), 1);
     let Reverse(ev) = q.pop().unwrap();
     assert_eq!(ev.value, LogicValue::Zero);
@@ -365,15 +491,20 @@ fn test_schmitt_falling_fires_below_low() {
 fn test_a2d_differential_input() {
     let mut cmp = Comparator::new(0, 0, 1, DigitalNet(10), 0.0);
     let mut q = empty_queue();
+    let mut seq = 0u64;
 
     // vp=0.3, vn=0.8 → diff=-0.5 < 0 → Zero (from X, so fires)
-    cmp.eval_discrete(0.0, &[], &[0.3, 0.8], &mut q);
+    let ctx = EvalCtx { time: 0.0, nets: &[], analog: &[0.3, 0.8] };
+    let mut sink = QueueSink::new(&mut q, 0.0, 0, &mut seq);
+    cmp.comb_phase(&ctx, &mut sink);
     assert_eq!(q.len(), 1);
     let Reverse(ev) = q.pop().unwrap();
     assert_eq!(ev.value, LogicValue::Zero, "negative diff → Zero");
 
     // vp=1.2, vn=0.4 → diff=0.8 > 0 → One
-    cmp.eval_discrete(1e-9, &[], &[1.2, 0.4], &mut q);
+    let ctx = EvalCtx { time: 1e-9, nets: &[], analog: &[1.2, 0.4] };
+    let mut sink = QueueSink::new(&mut q, 1e-9, 0, &mut seq);
+    cmp.comb_phase(&ctx, &mut sink);
     assert_eq!(q.len(), 1);
     let Reverse(ev) = q.pop().unwrap();
     assert_eq!(ev.value, LogicValue::One, "positive diff → One");
@@ -385,7 +516,10 @@ fn test_a2d_comparator_exact_threshold() {
     let mut cmp = Comparator::new(0, 0, 1, DigitalNet(10), 0.5);
     let mut q = empty_queue();
     // Exactly at threshold — 0.5 > 0.5 is false → Zero
-    cmp.eval_discrete(0.0, &[], &[0.5, 0.0], &mut q);
+    let ctx = EvalCtx { time: 0.0, nets: &[], analog: &[0.5, 0.0] };
+    let mut seq = 0u64;
+    let mut sink = QueueSink::new(&mut q, 0.0, 0, &mut seq);
+    cmp.comb_phase(&ctx, &mut sink);
     // X → Zero: should fire
     assert_eq!(q.len(), 1);
     let Reverse(ev) = q.pop().unwrap();
@@ -399,8 +533,11 @@ fn test_a2d_multiple_comparators_simultaneous() {
     let mut c2 = Comparator::new(2, 0, 1, DigitalNet(11), 0.8);
     let mut q = empty_queue();
     let av = [1.0_f64, 0.0]; // diff = 1.0
-    c1.eval_discrete(5e-9, &[], &av, &mut q);
-    c2.eval_discrete(5e-9, &[], &av, &mut q);
+    let ctx = EvalCtx { time: 5e-9, nets: &[], analog: &av };
+    let mut seq = 0u64;
+    let mut sink = QueueSink::new(&mut q, 5e-9, 0, &mut seq);
+    c1.comb_phase(&ctx, &mut sink);
+    c2.comb_phase(&ctx, &mut sink);
     assert_eq!(q.len(), 2);
     // Both should output One (1.0 > 0.2 and 1.0 > 0.8)
     let events: Vec<_> = q.into_iter().map(|Reverse(e)| e.value).collect();
@@ -427,9 +564,13 @@ fn test_d2a_switch_closed_stamps_conductance() {
 
     let mut sw = AnalogSwitch::new(DigitalNet(0), Some(a), Some(b), 1e3);
 
-    // Force switch closed via eval_discrete
+    // Force switch closed via comb_phase
     let nets = [LogicValue::One];
-    sw.eval_discrete(0.0, &nets, &[], &mut empty_queue());
+    let mut eq = empty_queue();
+    let ctx = EvalCtx { time: 0.0, nets: &nets, analog: &[] };
+    let mut seq = 0u64;
+    let mut sink = QueueSink::new(&mut eq, 0.0, 0, &mut seq);
+    sw.comb_phase(&ctx, &mut sink);
 
     let state = dc_state_from_voltages(&[1.0, 0.0]);
     let stamps = sw.load_dc(&state, &dummy_context());
@@ -461,12 +602,21 @@ fn test_d2a_switch_toggle_stamps() {
     // Open → no stamps
     assert!(sw.load_dc(&state, &dummy_context()).is_empty());
 
+    let mut eq = empty_queue();
+    let mut seq = 0u64;
+
     // Close
-    sw.eval_discrete(0.0, &[LogicValue::One], &[], &mut empty_queue());
+    let nets = [LogicValue::One];
+    let ctx = EvalCtx { time: 0.0, nets: &nets, analog: &[] };
+    let mut sink = QueueSink::new(&mut eq, 0.0, 0, &mut seq);
+    sw.comb_phase(&ctx, &mut sink);
     assert_eq!(sw.load_dc(&state, &dummy_context()).len(), 4);
 
     // Re-open
-    sw.eval_discrete(1e-9, &[LogicValue::Zero], &[], &mut empty_queue());
+    let nets = [LogicValue::Zero];
+    let ctx = EvalCtx { time: 1e-9, nets: &nets, analog: &[] };
+    let mut sink = QueueSink::new(&mut eq, 1e-9, 0, &mut seq);
+    sw.comb_phase(&ctx, &mut sink);
     assert!(sw.load_dc(&state, &dummy_context()).is_empty());
 }
 
@@ -488,7 +638,12 @@ fn test_d2a_gated_isrc_enabled_stamps() {
     let mut src = GatedCurrentSource::new(DigitalNet(0), Some(p.clone()), Some(n.clone()), ibias);
 
     // Enable
-    src.eval_discrete(0.0, &[LogicValue::One], &[], &mut empty_queue());
+    let nets = [LogicValue::One];
+    let mut eq = empty_queue();
+    let ctx = EvalCtx { time: 0.0, nets: &nets, analog: &[] };
+    let mut seq = 0u64;
+    let mut sink = QueueSink::new(&mut eq, 0.0, 0, &mut seq);
+    src.comb_phase(&ctx, &mut sink);
 
     let state = dc_state_from_voltages(&[0.0, 0.0]);
     let stamps = src.load_dc(&state, &dummy_context());
@@ -509,7 +664,12 @@ fn test_d2a_switch_x_state_stays_open() {
     let mut sw = AnalogSwitch::new(DigitalNet(0), Some(a), Some(b), 100.0);
 
     // X input — switch should remain open (conservative)
-    sw.eval_discrete(0.0, &[LogicValue::X], &[], &mut empty_queue());
+    let nets = [LogicValue::X];
+    let mut eq = empty_queue();
+    let ctx = EvalCtx { time: 0.0, nets: &nets, analog: &[] };
+    let mut seq = 0u64;
+    let mut sink = QueueSink::new(&mut eq, 0.0, 0, &mut seq);
+    sw.comb_phase(&ctx, &mut sink);
     let state = dc_state_from_voltages(&[1.0, 0.0]);
     assert!(sw.load_dc(&state, &dummy_context()).is_empty(), "X state → open switch (safe)");
 }
@@ -522,7 +682,12 @@ fn test_d2a_switch_z_state_stays_open() {
     let b = netlist.connect_node(NodeIdentifier::Anonymous(33));
     let mut sw = AnalogSwitch::new(DigitalNet(0), Some(a), Some(b), 100.0);
 
-    sw.eval_discrete(0.0, &[LogicValue::Z], &[], &mut empty_queue());
+    let nets = [LogicValue::Z];
+    let mut eq = empty_queue();
+    let ctx = EvalCtx { time: 0.0, nets: &nets, analog: &[] };
+    let mut seq = 0u64;
+    let mut sink = QueueSink::new(&mut eq, 0.0, 0, &mut seq);
+    sw.comb_phase(&ctx, &mut sink);
     let state = dc_state_from_voltages(&[1.0, 0.0]);
     assert!(sw.load_dc(&state, &dummy_context()).is_empty(), "Z state → open switch (safe)");
 }
@@ -541,7 +706,10 @@ fn test_sah_captures_on_posedge() {
     // clk 0→1, analog[2] = 1.23 V
     let nets = [LogicValue::One];
     let av   = [0.0, 0.0, 1.23];
-    sah.eval_discrete(1e-9, &nets, &av, &mut q);
+    let ctx = EvalCtx { time: 1e-9, nets: &nets, analog: &av };
+    let mut seq = 0u64;
+    let mut sink = QueueSink::new(&mut q, 1e-9, 0, &mut seq);
+    sah.comb_phase(&ctx, &mut sink);
 
     // Held value should be 1.23
     assert!((sah.held_value - 1.23).abs() < 1e-12);
@@ -562,16 +730,26 @@ fn test_sah_holds_when_clock_low() {
     let mut sah = SampleAndHold::new(0, DigitalNet(0), 0, Some(out));
 
     let mut q = empty_queue();
+    let mut seq = 0u64;
     // Capture 2.5 V on posedge
-    sah.eval_discrete(1e-9, &[LogicValue::One], &[2.5], &mut q);
+    let nets = [LogicValue::One];
+    let ctx = EvalCtx { time: 1e-9, nets: &nets, analog: &[2.5] };
+    let mut sink = QueueSink::new(&mut q, 1e-9, 0, &mut seq);
+    sah.comb_phase(&ctx, &mut sink);
     assert!((sah.held_value - 2.5).abs() < 1e-12);
 
     // Clock goes low, analog changes — hold should not update
-    sah.eval_discrete(2e-9, &[LogicValue::Zero], &[9.9], &mut q);
+    let nets = [LogicValue::Zero];
+    let ctx = EvalCtx { time: 2e-9, nets: &nets, analog: &[9.9] };
+    let mut sink = QueueSink::new(&mut q, 2e-9, 0, &mut seq);
+    sah.comb_phase(&ctx, &mut sink);
     assert!((sah.held_value - 2.5).abs() < 1e-12, "hold unchanged while clk=0");
 
     // Clock stays high (level, not edge) — no second posedge
-    sah.eval_discrete(3e-9, &[LogicValue::One], &[9.9], &mut q);
+    let nets = [LogicValue::One];
+    let ctx = EvalCtx { time: 3e-9, nets: &nets, analog: &[9.9] };
+    let mut sink = QueueSink::new(&mut q, 3e-9, 0, &mut seq);
+    sah.comb_phase(&ctx, &mut sink);
     // last_clk was Zero (from prev call), so this IS a posedge — now captures 9.9
     assert!((sah.held_value - 9.9).abs() < 1e-12, "posedge again captures new value");
 }
@@ -581,11 +759,19 @@ fn test_sah_holds_when_clock_low() {
 fn test_sah_sequential_samples() {
     let mut sah = SampleAndHold::new(0, DigitalNet(0), 0, None);
     let mut q = empty_queue();
+    let mut seq = 0u64;
     let voltages = [0.1, 0.5, 0.9, 1.3, 1.7];
 
     for &v in &voltages {
-        sah.eval_discrete(0.0, &[LogicValue::Zero], &[v], &mut q);  // low — no sample
-        sah.eval_discrete(0.0, &[LogicValue::One],  &[v], &mut q);  // posedge — sample
+        let av = [v];
+        let nets_lo = [LogicValue::Zero];
+        let ctx = EvalCtx { time: 0.0, nets: &nets_lo, analog: &av };
+        let mut sink = QueueSink::new(&mut q, 0.0, 0, &mut seq);
+        sah.comb_phase(&ctx, &mut sink);  // low — no sample
+        let nets_hi = [LogicValue::One];
+        let ctx = EvalCtx { time: 0.0, nets: &nets_hi, analog: &av };
+        let mut sink = QueueSink::new(&mut q, 0.0, 0, &mut seq);
+        sah.comb_phase(&ctx, &mut sink);  // posedge — sample
         assert!((sah.held_value - v).abs() < 1e-12, "captured {}", v);
     }
 }
@@ -611,14 +797,20 @@ fn test_loop_comparator_closes_switch() {
     // Analog: vp=0.8, vn=0.0 → diff > threshold
     let av = [0.8_f64, 0.0];
     let mut q = empty_queue();
-    cmp.eval_discrete(1e-9, &[], &av, &mut q);
+    let ctx = EvalCtx { time: 1e-9, nets: &[], analog: &av };
+    let mut seq = 0u64;
+    let mut sink = QueueSink::new(&mut q, 1e-9, 0, &mut seq);
+    cmp.comb_phase(&ctx, &mut sink);
 
     // Dequeue event, apply to digital state, forward to switch
     let Reverse(ev) = q.pop().unwrap();
     assert_eq!(ev.value, LogicValue::One);
 
     let nets = [ev.value];
-    sw.eval_discrete(1e-9, &nets, &[], &mut empty_queue());
+    let mut eq = empty_queue();
+    let ctx = EvalCtx { time: 1e-9, nets: &nets, analog: &[] };
+    let mut sink = QueueSink::new(&mut eq, 1e-9, 0, &mut seq);
+    sw.comb_phase(&ctx, &mut sink);
 
     // Verify switch now contributes analog stamps
     let state = dc_state_from_voltages(&[0.8, 0.0]);
@@ -637,19 +829,32 @@ fn test_loop_comparator_opens_switch() {
     let mut cmp = Comparator::new(0, 0, 1, ctrl_net, 0.5);
     let mut sw  = AnalogSwitch::new(ctrl_net, Some(a), Some(b), 100.0);
 
-    // First: raise voltage → close switch
     let mut q = empty_queue();
-    cmp.eval_discrete(1e-9, &[], &[0.9, 0.0], &mut q);
+    let mut eq = empty_queue();
+    let mut seq = 0u64;
+
+    // First: raise voltage → close switch
+    let ctx = EvalCtx { time: 1e-9, nets: &[], analog: &[0.9, 0.0] };
+    let mut sink = QueueSink::new(&mut q, 1e-9, 0, &mut seq);
+    cmp.comb_phase(&ctx, &mut sink);
     let Reverse(e1) = q.pop().unwrap();
-    sw.eval_discrete(1e-9, &[e1.value], &[], &mut empty_queue());
+    let nets1 = [e1.value];
+    let ctx = EvalCtx { time: 1e-9, nets: &nets1, analog: &[] };
+    let mut sink = QueueSink::new(&mut eq, 1e-9, 0, &mut seq);
+    sw.comb_phase(&ctx, &mut sink);
     let state = dc_state_from_voltages(&[0.9, 0.0]);
     assert_eq!(sw.load_dc(&state, &dummy_context()).len(), 4);
 
     // Then: lower voltage → open switch
-    cmp.eval_discrete(2e-9, &[], &[0.1, 0.0], &mut q);
+    let ctx = EvalCtx { time: 2e-9, nets: &[], analog: &[0.1, 0.0] };
+    let mut sink = QueueSink::new(&mut q, 2e-9, 0, &mut seq);
+    cmp.comb_phase(&ctx, &mut sink);
     let Reverse(e2) = q.pop().unwrap();
     assert_eq!(e2.value, LogicValue::Zero);
-    sw.eval_discrete(2e-9, &[e2.value], &[], &mut empty_queue());
+    let nets2 = [e2.value];
+    let ctx = EvalCtx { time: 2e-9, nets: &nets2, analog: &[] };
+    let mut sink = QueueSink::new(&mut eq, 2e-9, 0, &mut seq);
+    sw.comb_phase(&ctx, &mut sink);
     assert!(sw.load_dc(&state, &dummy_context()).is_empty(), "switch re-opened");
 }
 
@@ -658,11 +863,15 @@ fn test_loop_comparator_opens_switch() {
 fn test_glitch_suppression_rapid_transitions() {
     let mut dev = GlitchTestDevice::new(0, 0, DigitalNet(5), 0.5);
     let mut q = empty_queue();
+    let mut seq = 0u64;
 
     // Sequence: 0.8 → 0.3 → 0.9 → 0.2 → 0.7 (5 samples, 4 threshold crossings)
     let voltages = [0.8, 0.3, 0.9, 0.2, 0.7];
     for &v in &voltages {
-        dev.eval_discrete(0.0, &[], &[v], &mut q);
+        let av = [v];
+        let ctx = EvalCtx { time: 0.0, nets: &[], analog: &av };
+        let mut sink = QueueSink::new(&mut q, 0.0, 0, &mut seq);
+        dev.comb_phase(&ctx, &mut sink);
     }
 
     // Events: X→1, 1→0, 0→1, 1→0, 0→1 = 5 crossings (including initial X→)
@@ -678,23 +887,36 @@ fn test_a2d_drives_digital_chain() {
     // Inverter inverts net 0 → net 1.
     // Verify net 1 becomes Zero after propagation.
 
+    #[allow(dead_code)]
     struct SimpleInverter { input: DigitalNet, output: DigitalNet, id: usize }
     impl Device for SimpleInverter {
-        fn device_name(&self) -> &str { "inv" }
-        fn digital_input_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.input) }
-        fn digital_output_nets(&self) -> &[DigitalNet] { std::slice::from_ref(&self.output) }
-        fn eval_discrete(&mut self, t: f64, nets: &[LogicValue], _av: &[f64], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
-            let out = match nets[self.input.0] {
-                LogicValue::One  => LogicValue::Zero,
-                LogicValue::Zero => LogicValue::One,
-                _                => LogicValue::X,
-            };
-            q.push(Reverse(DigitalEvent { time: t, net: self.output, value: out, source: self.id, seq: 0 }));
-        }
+    fn device_name(&self) -> &str { "inv" }
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
+}
+
+impl DigitalDevice for SimpleInverter {
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: std::slice::from_ref(&self.input), outputs: std::slice::from_ref(&self.output) }
     }
 
+    fn init(&mut self, _sink: &mut dyn EventSink) {}
+
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+                let out = match ctx.nets[self.input.0] {
+                    LogicValue::One  => LogicValue::Zero,
+                    LogicValue::Zero => LogicValue::One,
+                    _                => LogicValue::X,
+                };
+                sink.emit(self.output, out, 0.0);
+            }
+
+}
+
+
+
     // Comparator fires via analog: schedule its output event manually
-    // (simulating what the simulator does after eval_discrete with av)
+    // (simulating what the simulator does after comb_phase with av)
     let mut state = DigitalState::new(2);
 
     // Inject comparator result: net 0 = One at t=1ns
@@ -723,9 +945,20 @@ fn test_d2a_selective_current_sources() {
     let state = dc_state_from_voltages(&[0.0]);
 
     // Enable only src0 and src2
-    src0.eval_discrete(0.0, &[LogicValue::One,  LogicValue::X, LogicValue::X], &[], &mut empty_queue());
-    src1.eval_discrete(0.0, &[LogicValue::X, LogicValue::Zero, LogicValue::X], &[], &mut empty_queue());
-    src2.eval_discrete(0.0, &[LogicValue::X,  LogicValue::X, LogicValue::One], &[], &mut empty_queue());
+    let mut eq = empty_queue();
+    let mut seq = 0u64;
+    let nets0 = [LogicValue::One,  LogicValue::X, LogicValue::X];
+    let ctx = EvalCtx { time: 0.0, nets: &nets0, analog: &[] };
+    let mut sink = QueueSink::new(&mut eq, 0.0, 0, &mut seq);
+    src0.comb_phase(&ctx, &mut sink);
+    let nets1 = [LogicValue::X, LogicValue::Zero, LogicValue::X];
+    let ctx = EvalCtx { time: 0.0, nets: &nets1, analog: &[] };
+    let mut sink = QueueSink::new(&mut eq, 0.0, 0, &mut seq);
+    src1.comb_phase(&ctx, &mut sink);
+    let nets2 = [LogicValue::X,  LogicValue::X, LogicValue::One];
+    let ctx = EvalCtx { time: 0.0, nets: &nets2, analog: &[] };
+    let mut sink = QueueSink::new(&mut eq, 0.0, 0, &mut seq);
+    src2.comb_phase(&ctx, &mut sink);
 
     let total_stamps = src0.load_dc(&state, &dummy_context()).len()
         + src1.load_dc(&state, &dummy_context()).len()

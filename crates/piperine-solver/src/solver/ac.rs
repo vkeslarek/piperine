@@ -2,7 +2,7 @@ use crate::analysis::ac::{
     AcAnalysisContext, AcAnalysisResult, AcAnalysisStep, AcSweepAnalysisOptions,
 };
 use crate::analysis::dc::DcAnalysisResult;
-use crate::circuit::CircuitInstance;
+use crate::core::circuit::CircuitInstance;
 use crate::analog::AnalogReference;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
@@ -46,8 +46,10 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for AcSystem<'a> {
 
         // AC analysis is linear - no need to update runtimes
         // We use the DC operating point that was already computed
-        for ac in self.circuit.all_devices_mut() {
-            all_stamps.extend(ac.load_ac(&self.dc_point, &ac_ctx, &self.context));
+        for ac in &mut self.circuit.devices {
+            if let Some(a) = ac.as_analog() {
+                all_stamps.extend(a.load_ac(&self.dc_point, &ac_ctx, &self.context));
+            }
         }
         Ok(all_stamps)
     }

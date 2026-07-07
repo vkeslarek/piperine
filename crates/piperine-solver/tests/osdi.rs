@@ -13,9 +13,9 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use piperine_solver::analog::{NodeIdentifier, Netlist};
-use piperine_solver::circuit::CircuitInstance;
+use piperine_solver::core::circuit::CircuitInstance;
 use piperine_solver::osdi::OsdiDevice;
-use piperine_solver::device::Device;
+use piperine_solver::core::device::{Device, AnalogDevice};
 
 pub struct Circuit {
     pub title: String,
@@ -343,7 +343,7 @@ fn test_opvar_readout_doesnt_crash() {
     let _dc = inst.dc(Context::default()).unwrap().solve().unwrap();
 
     for (i, rt) in inst.all_devices().iter().enumerate() {
-        let opvars = rt.read_opvars();
+        let opvars = rt.as_analog_ref().unwrap().read_opvars();
         println!("  Runtime {i}: {} opvars", opvars.len());
         for (name, val) in &opvars {
             println!("    {name} = {val}");
@@ -371,7 +371,7 @@ fn test_noisy_resistor_opvars() {
 
     // Find the noisy resistor runtime and check opvars
     for rt in inst.all_devices() {
-        let opvars = rt.read_opvars();
+        let opvars = rt.as_analog_ref().unwrap().read_opvars();
         if !opvars.is_empty() {
             println!("Opvars: {:?}", opvars);
             // Check that at least some opvar values are reasonable
@@ -407,7 +407,7 @@ fn test_noisy_resistor_has_noise_sources() {
     let ac_ctx = AcAnalysisContext { frequency: 1e3 };
     let mut total_noise = 0;
     for rt in inst.all_devices_mut() {
-        let noises = rt.noise_current_psd(&dc, &ac_ctx);
+        let noises = rt.as_analog().unwrap().noise_current_psd(&dc, &ac_ctx);
         total_noise += noises.len();
         for n in &noises {
             assert!(n.value >= 0.0, "PSD must be non-negative");
@@ -440,7 +440,7 @@ fn test_noise_psd_thermal_value() {
     let ac_ctx = AcAnalysisContext { frequency: 1e3 };
     let mut total_psd = 0.0;
     for rt in inst.all_devices_mut() {
-        for n in rt.noise_current_psd(&dc, &ac_ctx) {
+        for n in rt.as_analog().unwrap().noise_current_psd(&dc, &ac_ctx) {
             total_psd += n.value;
         }
     }
@@ -482,7 +482,7 @@ fn test_noise_psd_scales_with_resistance() {
 
         let mut total = 0.0;
         for rt in inst.all_devices_mut() {
-            for n in rt.noise_current_psd(&dc, &ac_ctx) {
+            for n in rt.as_analog().unwrap().noise_current_psd(&dc, &ac_ctx) {
                 total += n.value;
             }
         }
@@ -527,7 +527,7 @@ fn test_noise_zero_for_non_noisy_device() {
     let ac_ctx = AcAnalysisContext { frequency: 1e3 };
     let mut total = 0;
     for rt in inst.all_devices_mut() {
-        total += rt.noise_current_psd(&dc, &ac_ctx).len();
+        total += rt.as_analog().unwrap().noise_current_psd(&dc, &ac_ctx).len();
     }
     // Plain resistor model has no noise sources
     // (isource also has none)
@@ -556,7 +556,7 @@ fn test_set_temperature_doesnt_crash() {
     // Set various temperatures — should not crash
     for temp in [200.0, 300.0, 400.0, 500.0] {
         for rt in inst.all_devices_mut() {
-            rt.set_temperature(temp);
+            rt.as_analog().unwrap().set_temperature(temp);
         }
     }
 }
@@ -574,7 +574,7 @@ fn test_temperature_small_change_no_rerun() {
     let mut inst = circuit.instantiate();
     for rt in inst.all_devices_mut() {
         // Default is 300.15K. Setting to 300.155 (0.005K diff) should be no-op.
-        rt.set_temperature(300.155);
+        rt.as_analog().unwrap().set_temperature(300.155);
     }
     // Just check it doesn't crash.
 }
@@ -598,7 +598,7 @@ fn test_dc_at_different_temperatures() {
 
         let mut inst = circuit.instantiate();
         for rt in inst.all_devices_mut() {
-            rt.set_temperature(temp);
+            rt.as_analog().unwrap().set_temperature(temp);
         }
 
         let ctx = Context { temperature: temp, ..Context::default() };
@@ -649,7 +649,7 @@ fn test_noise_at_different_temperatures() {
 
         let mut inst = circuit.instantiate();
         for rt in inst.all_devices_mut() {
-            rt.set_temperature(temp);
+            rt.as_analog().unwrap().set_temperature(temp);
         }
 
         let ctx = Context { temperature: temp, ..Context::default() };
@@ -657,7 +657,7 @@ fn test_noise_at_different_temperatures() {
 
         let mut total = 0.0;
         for rt in inst.all_devices_mut() {
-            for n in rt.noise_current_psd(&dc, &ac_ctx) {
+            for n in rt.as_analog().unwrap().noise_current_psd(&dc, &ac_ctx) {
                 total += n.value;
             }
         }
@@ -726,7 +726,7 @@ fn test_bound_step_hint_default() {
 
     let inst = circuit.instantiate();
     for rt in inst.all_devices() {
-        assert!(rt.bound_step_hint().is_infinite());
+        assert!(rt.as_analog_ref().unwrap().bound_step_hint().is_infinite());
     }
 }
 

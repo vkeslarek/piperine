@@ -1,0 +1,84 @@
+// Pure digital priority encoder (the heart of an interrupt controller):
+// four request lines, the highest-numbered active one wins, encoded as a
+// 2-bit code plus a valid flag. The bench reads the output Bit nets
+// straight off `$op` results — no analog readback stage.
+
+discipline Bit {
+    storage Boolean;
+}
+
+mod BitDriver(output q : Bit) {
+    param level : Real = 0.0;
+    var b : Bit = 0;
+}
+
+digital BitDriver {
+    b = level > 0.5;
+    q <- b;
+}
+
+mod PriorityEncoder(input r0 : Bit, input r1 : Bit, input r2 : Bit, input r3 : Bit, output y1 : Bit, output y0 : Bit, output valid : Bit) {
+    var o1 : Bit = 0;
+    var o0 : Bit = 0;
+    var ok : Bit = 0;
+}
+
+digital PriorityEncoder {
+    if (r3 == 1) {
+        o1 = 1; o0 = 1; ok = 1;
+    } else {
+        if (r2 == 1) {
+            o1 = 1; o0 = 0; ok = 1;
+        } else {
+            if (r1 == 1) {
+                o1 = 0; o0 = 1; ok = 1;
+            } else {
+                if (r0 == 1) {
+                    o1 = 0; o0 = 0; ok = 1;
+                } else {
+                    o1 = 0; o0 = 0; ok = 0;
+                }
+            }
+        }
+    }
+    y1 <- o1;
+    y0 <- o0;
+    valid <- ok;
+}
+
+mod IrqBoard() {
+    wire n0 : Bit;
+    wire n1 : Bit;
+    wire n2 : Bit;
+    wire n3 : Bit;
+    wire y1 : Bit;
+    wire y0 : Bit;
+    wire ok : Bit;
+    d0 : BitDriver(.q = n0);
+    d1 : BitDriver(.q = n1);
+    d2 : BitDriver(.q = n2);
+    d3 : BitDriver(.q = n3);
+    enc : PriorityEncoder(.r0 = n0, .r1 = n1, .r2 = n2, .r3 = n3, .y1 = y1, .y0 = y0, .valid = ok);
+}
+
+bench IrqBoard {
+
+    fn read_code() -> Real {
+        var r = $op();
+        return 2.0 * r.v(y1) + r.v(y0) + 4.0 * r.v(ok);
+    }
+
+    fn test_idle_reports_invalid() {
+        $assert(abs(read_code()) < 1e-9, "no request: invalid, code 0");
+    }
+
+    fn test_highest_request_wins() {
+        d1.level = 1.0;
+        $assert(abs(read_code() - 5.0) < 1e-9, "r1 alone: code 1 + valid");
+        d3.level = 1.0;
+        $assert(abs(read_code() - 7.0) < 1e-9, "r3 outranks r1: code 3 + valid");
+        d3.level = 0.0;
+        d2.level = 1.0;
+        $assert(abs(read_code() - 6.0) < 1e-9, "r2 outranks r1: code 2 + valid");
+    }
+}

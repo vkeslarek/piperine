@@ -1,0 +1,51 @@
+// Diode clipper: a series resistor into an exponential-law diode pins the
+// output near one forward drop. Exercises the Newton solve of a stiff
+// nonlinearity and staged-override re-runs.
+
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+mod VoltageSource(inout p : Electrical, inout n : Electrical) {
+    param voltage : Real = 5.0;
+}
+
+analog VoltageSource {
+    V(p, n) <- voltage;
+}
+
+mod Clipper() {
+    param r : Real = 1e3;
+    param isat : Real = 1e-14;
+    param vt : Real = 0.02585;
+    wire gnd : Electrical;
+    wire drive : Electrical;
+    wire out : Electrical;
+    source : VoltageSource(.p = drive, .n = gnd) { .voltage = 5.0 };
+}
+
+analog Clipper {
+    I(drive, out) <+ V(drive, out) / r;
+    I(out, gnd) <+ isat * (exp(V(out, gnd) / vt) - 1.0);
+}
+
+bench Clipper {
+
+    fn test_clamps_to_forward_drop() {
+        var r = $op();
+        var vd = r.v(out, gnd);
+        $display("clipped level:", vd, "V");
+        $assert(vd > 0.6 && vd < 0.75, "output pins near one diode drop");
+    }
+
+    fn test_clip_level_barely_moves_with_drive() {
+        var r1 = $op();
+        var v1 = r1.v(out, gnd);
+        source.voltage = 10.0;
+        var r2 = $op();
+        var v2 = r2.v(out, gnd);
+        $assert(v2 > v1, "harder drive pushes the diode slightly further");
+        $assert(v2 - v1 < 0.05, "doubling the drive moves the clamp by millivolts only");
+    }
+}

@@ -7,8 +7,9 @@ use std::collections::BinaryHeap;
 use std::sync::Arc;
 
 use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
+use piperine_solver::digital::interface::{DigitalDevice, DigitalPorts, EvalCtx, EventSink};
 
-use crate::ir::{EdgeKind, IrType};
+use crate::ir::{EdgeKind, Type};
 use crate::jit::digital::{DigitalAbi, DigitalKernel};
 use crate::jit::{CodegenError, SimCtx};
 
@@ -29,6 +30,41 @@ impl Quad {
             3 => LogicValue::Z,
             _ => LogicValue::X,
         }
+    }
+}
+
+/// Evaluate a POM `Expr` as a compile-time/param constant. `param_lookup`
+/// resolves parameter names to their instance values. Returns `None` for
+/// anything that isn't a literal, a param reference, or simple arithmetic
+/// over those — matching the register-init use case (SPEC §9 power-on).
+fn eval_const_expr(
+    expr: &piperine_lang::parse::ast::Expr,
+    param_lookup: &impl Fn(&str) -> Option<f64>,
+) -> Option<f64> {
+    use piperine_lang::parse::ast::{BinaryOp, Expr, Literal, UnaryOp};
+    match expr {
+        Expr::Literal(Literal::Real(v)) => Some(*v),
+        Expr::Literal(Literal::Int(v)) => Some(*v as f64),
+        Expr::Literal(Literal::Bool(b)) => Some(if *b { 1.0 } else { 0.0 }),
+        Expr::Literal(Literal::Quad(s)) => match s.as_str() {
+            "0" => Some(0.0),
+            "1" => Some(1.0),
+            _ => Some(2.0),
+        },
+        Expr::Ident(name) => param_lookup(name),
+        Expr::Binary(lhs, op, rhs) => {
+            let l = eval_const_expr(lhs, param_lookup)?;
+            let r = eval_const_expr(rhs, param_lookup)?;
+            Some(match op {
+                BinaryOp::Add => l + r,
+                BinaryOp::Sub => l - r,
+                BinaryOp::Mul => l * r,
+                BinaryOp::Div => l / r,
+                _ => return None,
+            })
+        }
+        Expr::Unary(UnaryOp::Neg, x) => Some(-eval_const_expr(x, param_lookup)?),
+        _ => None,
     }
 }
 
@@ -122,16 +158,23 @@ impl DigitalInstance {
     pub fn init(&mut self, event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>) {
         // Integer-bank slots default to X only where the variable is
         // 4-state; two-state integers start at 0.
-        let inits: Vec<(crate::ir::VarId, crate::ir::IrExpr)> = self
+        let param_index = &self.kernel.param_index;
+        let params = &self.params;
+        let reg_values: Vec<(crate::ir::VarId, f64)> = self
             .kernel
             .reg_inits()
             .iter()
-            .map(|r| (r.var, r.init.clone()))
-            .collect();
-        for (var, init) in inits {
-            let value = init
-                .eval_const(&|id| self.params.get(id.0 as usize).copied())
+            .map(|r| {
+                let value = eval_const_expr(&r.init, &|name| {
+                    param_index
+                        .get(name)
+                        .and_then(|&id| params.get(id.0 as usize).copied())
+                })
                 .unwrap_or(0.0);
+                (r.var, value)
+            })
+            .collect();
+        for (var, value) in reg_values {
             self.write_var(var, value);
         }
 
@@ -208,6 +251,108 @@ impl DigitalInstance {
         self.scratch = s;
     }
 
+    /// Phase 1 of a two-phase delta cycle: detect clock edges and, if any
+    /// clocked block fires, commit register writes using the pre-settle
+    /// `nets` snapshot. Never writes output nets — see
+    /// `Device::digital_seq_phase`.
+    pub fn eval_seq_phase(&mut self, t: f64, nets: &[LogicValue], analog_voltages: &[f64]) -> bool {
+        self.sim.abstime = t;
+        let mut s = std::mem::take(&mut self.scratch);
+
+        s.inputs.clear();
+        s.inputs
+            .extend(self.in_nets.iter().map(|n| Quad::from_logic(nets[n.0])));
+        s.prev_outputs.clear();
+        s.prev_outputs
+            .extend(self.out_nets.iter().map(|n| Quad::from_logic(nets[n.0])));
+        s.outputs.clear();
+        s.outputs.extend_from_slice(&s.prev_outputs);
+
+        self.watch_values(&mut s, analog_voltages);
+        s.fired.clear();
+        s.fired.extend(self.kernel.clocked_blocks().iter().map(|block| {
+            let fired = block.terms.iter().any(|&(term, edge)| {
+                let (prev, cur) = (self.prev_watch[term], s.watch[term]);
+                match edge {
+                    EdgeKind::Rising => prev != 1 && cur == 1,
+                    EdgeKind::Falling => prev != 0 && cur == 0,
+                    EdgeKind::Any => prev != cur,
+                }
+            });
+            i64::from(fired)
+        }));
+        self.prev_watch.copy_from_slice(&s.watch);
+
+        let any_fired = s.fired.iter().any(|&f| f != 0);
+        if any_fired {
+            s.vars_int_old.clear();
+            s.vars_int_old.extend_from_slice(&self.vars_int);
+            s.vars_real_old.clear();
+            s.vars_real_old.extend_from_slice(&self.vars_real);
+            let abi = DigitalAbi {
+                inputs: s.inputs.as_ptr(),
+                outputs: s.outputs.as_mut_ptr(),
+                vars_int_old: s.vars_int_old.as_ptr(),
+                vars_real_old: s.vars_real_old.as_ptr(),
+                vars_int: self.vars_int.as_mut_ptr(),
+                vars_real: self.vars_real.as_mut_ptr(),
+                params: self.params.as_ptr(),
+                fired: s.fired.as_ptr(),
+                sim: &self.sim as *const SimCtx,
+                analog_voltages: analog_voltages.as_ptr(),
+            };
+            self.kernel.eval_seq(&abi);
+        }
+        self.scratch = s;
+        any_fired
+    }
+
+    /// Phase 2: recompute combinational outputs from live `nets` and the
+    /// (possibly just-committed) register banks, emitting change events.
+    /// Does not redo edge detection or register writes — see
+    /// `Device::digital_comb_phase`.
+    pub fn eval_comb_phase(
+        &mut self,
+        t: f64,
+        nets: &[LogicValue],
+        analog_voltages: &[f64],
+        event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>,
+    ) {
+        self.sim.abstime = t;
+        let mut s = std::mem::take(&mut self.scratch);
+
+        s.inputs.clear();
+        s.inputs
+            .extend(self.in_nets.iter().map(|n| Quad::from_logic(nets[n.0])));
+        s.prev_outputs.clear();
+        s.prev_outputs
+            .extend(self.out_nets.iter().map(|n| Quad::from_logic(nets[n.0])));
+        s.outputs.clear();
+        s.outputs.extend_from_slice(&s.prev_outputs);
+
+        let abi = DigitalAbi {
+            inputs: s.inputs.as_ptr(),
+            outputs: s.outputs.as_mut_ptr(),
+            vars_int_old: self.vars_int.as_ptr(),
+            vars_real_old: self.vars_real.as_ptr(),
+            vars_int: self.vars_int.as_mut_ptr(),
+            vars_real: self.vars_real.as_mut_ptr(),
+            params: self.params.as_ptr(),
+            fired: s.fired.as_ptr(),
+            sim: &self.sim as *const SimCtx,
+            analog_voltages: analog_voltages.as_ptr(),
+        };
+        self.kernel.eval_comb(&abi);
+
+        for i in 0..self.out_nets.len() {
+            let (net, new) = (self.out_nets[i], s.outputs[i]);
+            if new != s.prev_outputs[i] {
+                self.push_event(event_queue, t, net, new);
+            }
+        }
+        self.scratch = s;
+    }
+
     /// Run `seq` (with pre-edge bank copies) then `comb`. The pre-edge
     /// copies are made only when a clocked block fired — only `seq` reads
     /// them.
@@ -273,7 +418,7 @@ impl DigitalInstance {
         } else if let Some(slot) = layout.int_slot(var) {
             self.vars_int[slot] = value as i64;
         }
-        let _ = IrType::Real; // conversions are slot-driven
+        let _ = Type::Real; // conversions are slot-driven
     }
 
     fn push_event(
@@ -291,5 +436,45 @@ impl DigitalInstance {
             seq: self.seq,
         }));
         self.seq += 1;
+    }
+}
+
+/// `DigitalInstance` satisfies the stable digital device contract
+/// ([`DigitalDevice`], the "OSDI for digital"). This is the seam the
+/// scheduler drives: today it calls `seq_phase`/`comb_phase` over a raw
+/// queue; the contract lets a fused JIT network
+/// (`jit/digital/network.rs`) or an external co-sim take the same slot.
+///
+/// Transitional adapter: `comb_phase` runs the existing native path into a
+/// scratch queue and forwards each event through the [`EventSink`], preserving
+/// wire semantics (net/value/relative delay). The follow-up refactors the
+/// native path to emit through the sink directly, dropping the scratch hop.
+impl DigitalDevice for DigitalInstance {
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: &self.in_nets, outputs: &self.out_nets }
+    }
+
+    fn init(&mut self, sink: &mut dyn EventSink) {
+        let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
+        DigitalInstance::init(self, &mut q);
+        for Reverse(ev) in q.into_sorted_vec() {
+            sink.emit(ev.net, ev.value, ev.time);
+        }
+    }
+
+    fn seq_phase(&mut self, ctx: &EvalCtx<'_>) -> bool {
+        DigitalInstance::eval_seq_phase(self, ctx.time, ctx.nets, ctx.analog)
+    }
+
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+        let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
+        DigitalInstance::eval_comb_phase(self, ctx.time, ctx.nets, ctx.analog, &mut q);
+        for Reverse(ev) in q.into_sorted_vec() {
+            sink.emit(ev.net, ev.value, ev.time - ctx.time);
+        }
+    }
+
+    fn samples_analog(&self) -> bool {
+        self.kernel.layout().num_analog() > 0
     }
 }

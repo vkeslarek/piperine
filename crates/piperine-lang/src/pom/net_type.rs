@@ -64,6 +64,9 @@ impl NetType {
 pub enum ValueType {
     Real, Natural, Integer, Complex, Boolean, Quad, Str,
     Enum(String),
+    /// A value bundle (`param model : DiodeModel`, `fn f(m : DiodeModel)`).
+    /// Consumers flatten it per-field; a context that cannot fails loud.
+    Bundle(String),
     Array(Box<ValueType>, u64),
     FnPtr(Vec<TypeRef>, Box<TypeRef>),
 }

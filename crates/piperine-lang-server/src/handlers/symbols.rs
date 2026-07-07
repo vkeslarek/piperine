@@ -169,6 +169,54 @@ fn extract_symbols(design: &piperine_lang::Design, source: &str) -> Vec<Document
         }
     }
 
+    for (name, c) in design.capabilities() {
+        if let Some(range) = span_to_range(source, c.span) {
+            symbols.push(DocumentSymbol {
+                name: name.clone(),
+                detail: Some("capability".into()),
+                kind: SymbolKind::INTERFACE,
+                range,
+                selection_range: range,
+                children: None,
+                tags: None,
+                #[allow(deprecated)]
+                deprecated: None
+            });
+        }
+    }
+
+    for i in design.impls() {
+        let mut children = Vec::new();
+        for m in &i.methods {
+            if let Some(range) = span_to_range(source, m.span) {
+                children.push(DocumentSymbol {
+                    name: m.name.clone(),
+                    detail: Some("method".into()),
+                    kind: SymbolKind::METHOD,
+                    range,
+                    selection_range: range,
+                    children: None,
+                    tags: None,
+                    #[allow(deprecated)]
+                    deprecated: None
+                });
+            }
+        }
+        if let Some(range) = span_to_range(source, i.span) {
+            symbols.push(DocumentSymbol {
+                name: format!("impl {} for {}", i.capability.as_deref().unwrap_or(""), i.ty),
+                detail: Some("impl".into()),
+                kind: SymbolKind::CLASS,
+                range,
+                selection_range: range,
+                children: Some(children),
+                tags: None,
+                #[allow(deprecated)]
+                deprecated: None
+            });
+        }
+    }
+
     symbols
 }
 

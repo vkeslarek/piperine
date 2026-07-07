@@ -6,6 +6,7 @@ use super::{Parse, Parser};
 impl Parse for ImplDecl {
     /// Parses an impl block: `impl [Capability for] Type[CONST]<TYPE> { fn ... }`.
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
+        let start = parser.current_span_start();
         let attrs = parser.parse_attributes()?;
         let is_pub = parser.eat_ident("pub");
         parser.expect_ident_str("impl")?;
@@ -42,6 +43,8 @@ impl Parse for ImplDecl {
                 }
             return Err(format!("Expected `fn`, found {:?}", parser.peek()).into());
         }
-        Ok(ImplDecl { span: None, attrs, is_pub, capability, ty: ident1, const_args, type_args, methods })
+        let end = parser.previous_span_end();
+        let span = Some((start, end - start).into());
+        Ok(ImplDecl { span, attrs, is_pub, capability, ty: ident1, const_args, type_args, methods })
     }
 }

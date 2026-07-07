@@ -1,0 +1,88 @@
+// Multi-module SEQUENTIAL logic verified over TIME with `$tran` (an `$op`
+// operating point is stateless — it cannot clock a register). An analog clock
+// source crosses a comparator (the A2D bridge) into a digital clock, which
+// drives a 4-stage shift register built from four separate D-flip-flop modules.
+// With a constant `1` on the serial input, the register fills from q0 upward —
+// one stage per rising edge — proving register state and clocking propagate
+// correctly across module boundaries in real time.
+//
+// The transient records a digital snapshot per step, so `tr.v(bit_net)` returns
+// the logic value (0/1) as a waveform; `.at(t)` samples it.
+
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+discipline Bit {
+    storage Boolean;
+}
+
+// Analog square-wave clock: low in the first half of each period, high in the
+// second. Period defaults to 1 µs (rising edges at 0.5, 1.5, 2.5, … µs).
+mod ClockSrc(inout clk_a : Electrical, inout gnd : Electrical) {
+    param period : Real = 1.0e-6;
+}
+analog ClockSrc {
+    var ph : Real = $abstime - period * floor($abstime / period);
+    V(clk_a, gnd) <- if (ph > period * 0.5) { 1.0 } else { 0.0 };
+}
+
+// Constant logic-1 driver (a fixed analog level through a comparator).
+mod HighSrc(inout h_a : Electrical, inout gnd : Electrical) { }
+analog HighSrc { V(h_a, gnd) <- 1.0; }
+
+// A2D comparator: analog level → Bit.
+mod Comparator(input a : Electrical, input n : Electrical, output y : Bit) { }
+digital Comparator { y <- V(a, n) > 0.5; }
+
+// Rising-edge D flip-flop.
+mod Dff(input clk : Bit, input d : Bit, output q : Bit) {
+    var st : Bit = 0;
+}
+digital Dff {
+    q <- st;
+    @ (posedge(clk)) { st = d; }
+}
+
+mod ShiftTran() {
+    wire gnd : Electrical;
+    wire clk_a : Electrical;   // analog clock rail
+    wire high_a : Electrical;  // analog logic-1 rail
+    wire clk : Bit;            // digital clock
+    wire din : Bit;            // digital serial-in (constant 1)
+    wire q0 : Bit; wire q1 : Bit; wire q2 : Bit; wire q3 : Bit;
+
+    clkgen : ClockSrc(.clk_a = clk_a, .gnd = gnd) { .period = 1.0e-6 };
+    highgen : HighSrc(.h_a = high_a, .gnd = gnd);
+    ccmp : Comparator(.a = clk_a, .n = gnd, .y = clk);
+    dcmp : Comparator(.a = high_a, .n = gnd, .y = din);
+
+    f0 : Dff(.clk = clk, .d = din, .q = q0);
+    f1 : Dff(.clk = clk, .d = q0,  .q = q1);
+    f2 : Dff(.clk = clk, .d = q1,  .q = q2);
+    f3 : Dff(.clk = clk, .d = q2,  .q = q3);
+}
+
+bench ShiftTran {
+
+    fn test_register_fills_over_time() {
+        // Run 5 clock periods; rising edges at 0.5, 1.5, 2.5, 3.5, 4.5 µs.
+        var tr = $tran(TranConfig { .stop = 5.0e-6, .step = 20.0e-9 });
+
+        // Sample each Q shortly after a rising edge. The 1 walks q0 → q3.
+        var w0 = tr.v(q0);
+        var w1 = tr.v(q1);
+        var w2 = tr.v(q2);
+        var w3 = tr.v(q3);
+
+        // After edge 1 (~0.7 µs): q0 = 1, rest 0.
+        $assert(abs(w0.at(0.7e-6) - 1.0) < 0.5, "after 1 clock: q0 = 1");
+        $assert(abs(w1.at(0.7e-6) - 0.0) < 0.5, "q1 still 0");
+        // After edge 2 (~1.7 µs): q1 = 1.
+        $assert(abs(w1.at(1.7e-6) - 1.0) < 0.5, "after 2 clocks: q1 = 1");
+        // After edge 3 (~2.7 µs): q2 = 1.
+        $assert(abs(w2.at(2.7e-6) - 1.0) < 0.5, "after 3 clocks: q2 = 1");
+        // After edge 4 (~3.7 µs): q3 = 1 — the 1 reached the last stage.
+        $assert(abs(w3.at(3.7e-6) - 1.0) < 0.5, "after 4 clocks: q3 = 1");
+    }
+}

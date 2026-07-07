@@ -1,0 +1,67 @@
+// 2-bit flash ADC: three analog comparators (digital block reading node
+// voltages through the A2D bridge), thermometer-to-binary logic, and an
+// analog reconstruction DAC so the bench can verify the transfer staircase
+// end-to-end. Thresholds at 1 V / 2 V / 3 V.
+
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+discipline Bit {
+    storage Boolean;
+}
+
+mod VoltageSource(inout p : Electrical, inout n : Electrical) {
+    param voltage : Real = 0.0;
+}
+
+analog VoltageSource {
+    V(p, n) <- voltage;
+}
+
+mod FlashAdc(input vin : Electrical, inout gnd : Electrical, inout rec : Electrical) {
+    var q1 : Bit = 0;
+    var q0 : Bit = 0;
+}
+
+digital FlashAdc {
+    q1 = V(vin, gnd) > 2.0;
+    q0 = (V(vin, gnd) > 3.0) || ((V(vin, gnd) > 1.0) && !(V(vin, gnd) > 2.0));
+}
+
+analog FlashAdc {
+    var code : Real = 0.0;
+    if (q1 == 1) {
+        code = code + 2.0;
+    }
+    if (q0 == 1) {
+        code = code + 1.0;
+    }
+    V(rec, gnd) <- code;
+}
+
+mod AdcBoard() {
+    wire gnd : Electrical;
+    wire vin : Electrical;
+    wire rec : Electrical;
+    src : VoltageSource(.p = vin, .n = gnd) { .voltage = 0.5 };
+    adc : FlashAdc(.vin = vin, .gnd = gnd, .rec = rec);
+}
+
+bench AdcBoard {
+
+    fn test_transfer_staircase() {
+        for level in [0.5, 1.5, 2.5, 3.5] {
+            src.voltage = level;
+            // Comparators evaluate once per accepted transient step (A2D),
+            // and the reconstruction picks the new code up on the next
+            // step — a short settle run reads the final code.
+            var t = $tran(TranConfig { .stop = 1e-5, .step = 1e-6 });
+            var code = t.v(rec, gnd).at(1e-5);
+            var expected = level - 0.5;     // floor(level) for these levels
+            $display("vin =", level, "-> code =", code);
+            $assert(abs(code - expected) < 1e-6, "quantizer picks the right code");
+        }
+    }
+}

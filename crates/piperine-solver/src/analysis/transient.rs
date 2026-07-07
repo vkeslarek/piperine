@@ -152,11 +152,27 @@ impl TransientAnalysisResult {
 pub struct TransientStep {
     time: f64,
     values: HashMap<Arc<AnalogVariable>, f64>,
+    /// Snapshot of every digital net's logic value at this step, indexed by
+    /// `DigitalNet` id. Lets a transient trace read sequential logic over time
+    /// (`Trace.v(bit_net)` → 0/1/NaN), which `$op` cannot express (it is a
+    /// stateless operating point).
+    digital: Vec<crate::digital::LogicValue>,
 }
 
 impl TransientStep {
     pub fn new(time: f64, values: HashMap<Arc<AnalogVariable>, f64>) -> Self {
-        Self { time, values }
+        Self { time, values, digital: Vec::new() }
+    }
+
+    /// Attach a digital-net snapshot (by `DigitalNet` id).
+    pub fn with_digital(mut self, digital: Vec<crate::digital::LogicValue>) -> Self {
+        self.digital = digital;
+        self
+    }
+
+    /// This step's logic value for digital net `idx`, or `None` if unrecorded.
+    pub fn digital(&self, idx: usize) -> Option<crate::digital::LogicValue> {
+        self.digital.get(idx).copied()
     }
 
     pub fn get(&self, variable: impl Into<Arc<AnalogVariable>>) -> Option<f64> {

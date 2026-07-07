@@ -20,6 +20,42 @@ pub struct Waveform {
     points: Vec<(f64, f64)>,
 }
 
+/// Fixed-width sample table for `$display` (`Object::render`): a header,
+/// one row per sample, long series elided in the middle. Shared by
+/// [`Waveform`] and [`ComplexWaveform`].
+pub(crate) struct SampleTable {
+    header: [&'static str; 2],
+    rows: Vec<(f64, String)>,
+}
+
+impl SampleTable {
+    const HEAD: usize = 12;
+    const TAIL: usize = 4;
+
+    pub(crate) fn new(header: [&'static str; 2], rows: Vec<(f64, String)>) -> Self {
+        Self { header, rows }
+    }
+
+    pub(crate) fn render(&self) -> String {
+        let mut out = format!("\n{:>16}  {:>16}\n", self.header[0], self.header[1]);
+        let elide = self.rows.len() > Self::HEAD + Self::TAIL + 1;
+        for (i, (x, v)) in self.rows.iter().enumerate() {
+            if elide && i == Self::HEAD {
+                out.push_str(&format!(
+                    "{:>16}  {:>16}\n",
+                    "...",
+                    format!("({} rows)", self.rows.len() - Self::HEAD - Self::TAIL)
+                ));
+            }
+            if elide && i >= Self::HEAD && i < self.rows.len() - Self::TAIL {
+                continue;
+            }
+            out.push_str(&format!("{:>16.6e}  {:>16}\n", x, v));
+        }
+        out
+    }
+}
+
 impl Waveform {
     pub fn new(points: Vec<(f64, f64)>) -> Self {
         Self { points }
@@ -141,6 +177,14 @@ impl Object for Waveform {
     }
     fn as_any(&self) -> &dyn Any {
         self
+    }
+    fn render(&self) -> String {
+        let rows = self
+            .points
+            .iter()
+            .map(|&(x, v)| (x, format!("{v:.6e}")))
+            .collect();
+        SampleTable::new(["axis", "value"], rows).render()
     }
     fn call_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
         match name {
@@ -286,8 +330,38 @@ impl Trace {
         }
     }
 
+    /// The raw net name from a `NetRef` argument, if any.
+    fn net_name(arg: &Value) -> Option<String> {
+        match arg {
+            Value::Object(obj) => obj.as_any().downcast_ref::<NetRef>().map(|n| n.name.clone()),
+            _ => None,
+        }
+    }
+
     fn v(&self, args: &[Value]) -> Result<Value, EvalError> {
-        let a = self.resolve_node(args.first().ok_or_else(|| EvalError::TypeMismatch("v() needs at least 1 argument".into()))?)?;
+        let first = args.first().ok_or_else(|| EvalError::TypeMismatch("v() needs at least 1 argument".into()))?;
+        // Digital net: read its logic value (0/1, NaN for X/Z) over time — the
+        // transient records a digital snapshot per step (SPEC §…), so sequential
+        // logic is observable through `$tran` where `$op` (stateless) cannot.
+        if let Some(name) = Self::net_name(first)
+            && let Some(&idx) = self.info.digital_nets.get(&name)
+        {
+            use piperine_solver::digital::LogicValue;
+            let points = self
+                .result
+                .iter()
+                .map(|step| {
+                    let v = match step.digital(idx) {
+                        Some(LogicValue::Zero) => 0.0,
+                        Some(LogicValue::One) => 1.0,
+                        _ => f64::NAN,
+                    };
+                    (step.time(), v)
+                })
+                .collect();
+            return Ok(Value::Object(Rc::new(Waveform::new(points))));
+        }
+        let a = self.resolve_node(first)?;
         let b = match args.get(1) {
             Some(v) => Some(self.resolve_node(v)?),
             None => None,
@@ -441,6 +515,14 @@ impl Object for ComplexWaveform {
     }
     fn as_any(&self) -> &dyn Any {
         self
+    }
+    fn render(&self) -> String {
+        let rows = self
+            .points
+            .iter()
+            .map(|&(x, c)| (x, format!("{:.6e} {:+.6e}j", c.re, c.im)))
+            .collect();
+        SampleTable::new(["axis", "value"], rows).render()
     }
     fn call_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
         match name {

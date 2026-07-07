@@ -17,8 +17,6 @@ async function startClient(context) {
 
     if (!path.isAbsolute(serverPath)) {
         const candidates = [
-            // Embedded binary inside the extension itself
-            path.join(context.extensionPath, "bin", serverPath),
             // Workspace target directories
             ...(vscode.workspace.workspaceFolders || []).map(
                 (f) => path.join(f.uri.fsPath, "target", "release", serverPath),
@@ -26,6 +24,8 @@ async function startClient(context) {
             ...(vscode.workspace.workspaceFolders || []).map(
                 (f) => path.join(f.uri.fsPath, "target", "debug", serverPath),
             ),
+            // Embedded binary inside the extension itself
+            path.join(context.extensionPath, "bin", serverPath),
             // Cargo global install
             path.join(process.env.HOME || process.env.USERPROFILE || "", ".cargo", "bin", serverPath),
         ];
@@ -78,8 +78,6 @@ function getPiperineCliPath(context) {
 
     if (!path.isAbsolute(cliPath)) {
         const candidates = [
-            // Embedded binary inside the extension itself
-            path.join(context.extensionPath, "bin", cliPath),
             // Workspace target directories
             ...(vscode.workspace.workspaceFolders || []).map(
                 (f) => path.join(f.uri.fsPath, "target", "release", cliPath),
@@ -87,6 +85,8 @@ function getPiperineCliPath(context) {
             ...(vscode.workspace.workspaceFolders || []).map(
                 (f) => path.join(f.uri.fsPath, "target", "debug", cliPath),
             ),
+            // Embedded binary inside the extension itself
+            path.join(context.extensionPath, "bin", cliPath),
             // Cargo global install
             path.join(process.env.HOME || process.env.USERPROFILE || "", ".cargo", "bin", cliPath),
         ];

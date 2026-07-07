@@ -867,3 +867,244 @@ fn display_prints_values_without_failing() {
         other => panic!("expected Passed, got {other:?}"),
     }
 }
+
+#[test]
+fn impl_method_dispatch_in_bench_and_analog() {
+    // SPEC §6.5/§6.6: an `impl` method is callable on a bundle value in a
+    // bench (interpreter dispatch via Host::resolve_method) and inside an
+    // analog body (lowered as the flattened `Bundle::method` IR fn).
+    let src = "
+        discipline Electrical { potential v : Real; flow i : Real; }
+        capability Conductive { fn conductance(self) -> Real; }
+        bundle ResModel { rsh : Real = 1e3, }
+        impl Conductive for ResModel {
+            fn conductance(self) -> Real { return 1.0 / self.rsh; }
+        }
+        mod R(inout p : Electrical, inout n : Electrical) {
+            param model : ResModel = ResModel {};
+        }
+        analog R { I(p, n) <+ V(p, n) * model.conductance(); }
+        mod VSrc(inout p : Electrical, inout n : Electrical) { param voltage : Real = 5.0; }
+        analog VSrc { V(p, n) <- voltage; }
+        mod Divider() {
+            wire gnd : Electrical; wire vin : Electrical; wire mid : Electrical;
+            src : VSrc(.p = vin, .n = gnd);
+            r1 : R(.p = vin, .n = mid);
+            r2 : R(.p = mid, .n = gnd);
+        }
+        bench Divider {
+            fn test_method_everywhere() {
+                var r = $op();
+                $assert(abs(r.v(mid, gnd) - 2.5) < 1e-6, \"analog method call divides\");
+                var card = ResModel { .rsh = 2e3 };
+                $assert(abs(card.conductance() - 5e-4) < 1e-12, \"bench method call computes\");
+            }
+        }";
+    let design = elab(src);
+    match BenchRunner::new(&design).run_entry("Divider", "test_method_everywhere") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn bench_fn_calls_a_sibling_bench_fn() {
+    // Bench spec §2 "fn helper(x: T) -> U — reusable": helpers run in the
+    // effectful context, so they may run analyses.
+    let src = format!(
+        "{CIRCUIT}
+        bench SwitchOpenTest {{
+            fn source_voltage(scale : Real) -> Real {{
+                var r = $op();
+                return r.v(vsrc, gnd) * scale;
+            }}
+            fn test_helper_call() {{
+                $assert(abs(source_voltage(2.0) - 10.0) < 1e-6, \"helper ran the op and scaled\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_helper_call") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn tuple_index_and_for_over_tuples() {
+    // SPEC §6.1: `.0`/`.1` index a tuple.
+    let src = format!(
+        "{CIRCUIT}
+        bench SwitchOpenTest {{
+            fn test_tuple_index() {{
+                var pair = (3.0, 4.0);
+                $assert(abs(pair.0 - 3.0) < 1e-12, \"first element\");
+                $assert(abs(pair.1 - 4.0) < 1e-12, \"second element\");
+                var total = 0.0;
+                for case in [(1.0, 10.0), (2.0, 20.0)] {{
+                    total = total + case.0 + case.1;
+                }}
+                $assert(abs(total - 33.0) < 1e-12, \"tuple fields readable in a loop\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_tuple_index") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn bundle_typed_fn_param_lowers_and_interprets() {
+    // A free fn with a bundle-typed param works from a bench (interpreter)
+    // and inside an analog contribution (flattened per-field in the IR).
+    let src = "
+        discipline Electrical { potential v : Real; flow i : Real; }
+        bundle Gain { k : Real = 2.0, }
+        fn apply(g : Gain, x : Real) -> Real { return g.k * x; }
+        mod Amp(inout p : Electrical, inout n : Electrical) {
+            param g : Gain = Gain {};
+        }
+        analog Amp { I(p, n) <+ apply(g, V(p, n)) / 1e3; }
+        mod VSrc(inout p : Electrical, inout n : Electrical) { param voltage : Real = 5.0; }
+        analog VSrc { V(p, n) <- voltage; }
+        mod Cell() {
+            wire gnd : Electrical; wire vin : Electrical; wire mid : Electrical;
+            src : VSrc(.p = vin, .n = gnd);
+            a1 : Amp(.p = vin, .n = mid);
+            a2 : Amp(.p = mid, .n = gnd);
+        }
+        bench Cell {
+            fn test_bundle_fn() {
+                var r = $op();
+                $assert(abs(r.v(mid, gnd) - 2.5) < 1e-6, \"bundle-arg fn in analog\");
+                var g = Gain { .k = 3.0 };
+                $assert(abs(apply(g, 2.0) - 6.0) < 1e-12, \"bundle-arg fn in bench\");
+            }
+        }";
+    let design = elab(src);
+    match BenchRunner::new(&design).run_entry("Cell", "test_bundle_fn") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn op_result_reads_digital_nets_directly() {
+    // Digital-bench QoL: `r.v(bit_net)` returns the logic value (0/1) off
+    // the DC mixed-signal solve — no analog readback stage needed.
+    let src = "
+        discipline Bit { storage Boolean; }
+        mod BitDriver(output q : Bit) {
+            param level : Real = 0.0;
+            var b : Bit = 0;
+        }
+        digital BitDriver { b = level > 0.5; q <- b; }
+        mod Not1(input a : Bit, output y : Bit) { var r : Bit = 0; }
+        digital Not1 { r = !a; y <- r; }
+        mod Board() {
+            wire na : Bit; wire ny : Bit;
+            d : BitDriver(.q = na);
+            g : Not1(.a = na, .y = ny);
+        }
+        bench Board {
+            fn test_read_bits() {
+                var r = $op();
+                $assert(abs(r.v(na)) < 1e-9, \"driver low\");
+                $assert(abs(r.v(ny) - 1.0) < 1e-9, \"inverter high\");
+                d.level = 1.0;
+                var r2 = $op();
+                $assert(abs(r2.v(ny)) < 1e-9, \"inverter follows the staged input\");
+            }
+        }";
+    let design = elab(src);
+    match BenchRunner::new(&design).run_entry("Board", "test_read_bits") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn capability_typed_param_resolves_through_its_default() {
+    // `param model : Junction = DiodeModel {}` — the capability is the
+    // declared type; the concrete bundle comes from the default and must
+    // implement it. Methods dispatch against the concrete impl.
+    let src = "
+        discipline Electrical { potential v : Real; flow i : Real; }
+        capability Conductive { fn conductance(self) -> Real; }
+        bundle ResModel { rsh : Real = 1e3, }
+        impl Conductive for ResModel {
+            fn conductance(self) -> Real { return 1.0 / self.rsh; }
+        }
+        mod R(inout p : Electrical, inout n : Electrical) {
+            param model : Conductive = ResModel {};
+        }
+        analog R { I(p, n) <+ V(p, n) * model.conductance(); }
+        mod VSrc(inout p : Electrical, inout n : Electrical) { param voltage : Real = 5.0; }
+        analog VSrc { V(p, n) <- voltage; }
+        mod Divider() {
+            wire gnd : Electrical; wire vin : Electrical; wire mid : Electrical;
+            src : VSrc(.p = vin, .n = gnd);
+            r1 : R(.p = vin, .n = mid);
+            r2 : R(.p = mid, .n = gnd);
+        }
+        bench Divider {
+            fn test_capability_param() {
+                var r = $op();
+                $assert(abs(r.v(mid, gnd) - 2.5) < 1e-6, \"capability-typed model card works\");
+            }
+        }";
+    let design = elab(src);
+    match BenchRunner::new(&design).run_entry("Divider", "test_capability_param") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn capability_typed_param_rejects_a_non_implementing_bundle() {
+    // Fail-loud half: a default whose bundle does not `impl` the declared
+    // capability is an elaboration error, not a silent acceptance.
+    let src = "
+        discipline Electrical { potential v : Real; flow i : Real; }
+        capability Conductive { fn conductance(self) -> Real; }
+        bundle Other { x : Real = 1.0, }
+        mod R(inout p : Electrical, inout n : Electrical) {
+            param model : Conductive = Other {};
+        }
+        analog R { I(p, n) <+ V(p, n); }";
+    let err = piperine_lang::parse_str(src)
+        .expect("parse failed")
+        .elaborate(&SourceMap::dummy())
+        .expect_err("elaboration must reject the non-implementing bundle");
+    assert!(
+        err.to_string().contains("does not implement"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn optional_value_none_is_present_and_get_or() {
+    // Value-layer optionals (`T?` + `none`) in a bench: `none` is absent,
+    // `.is_present()` is false, `.get_or(d)` yields the default; a supplied
+    // optional is present and `.get_or` yields its value.
+    let src = format!(
+        "{CIRCUIT}
+        bench SwitchOpenTest {{
+            fn test_optionals() {{
+                var a : Real? = none;
+                $assert(!a.is_present(), \"none is absent\");
+                $assert(abs(a.get_or(7.0) - 7.0) < 1e-12, \"get_or returns the default\");
+                var b : Real? = 2.5;
+                $assert(b.is_present(), \"a supplied optional is present\");
+                $assert(abs(b.get_or(7.0) - 2.5) < 1e-12, \"get_or returns the value\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_optionals") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}

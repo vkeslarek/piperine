@@ -2,7 +2,7 @@
 //!
 //! Every test is grounded in a PHDL source excerpt from
 //! `crates/piperine-lang/docs/SPEC.md` (Appendix A / B, §10). The pipeline is
-//! `parse_and_elaborate → ppr_to_ir → CompiledModule::compile`, then the
+//! `parse_and_elaborate → lower_bodies → CompiledModule::compile`, then the
 //! compiled kernels are driven numerically to verify the simulation dynamics
 //! the SPEC prescribes — analog residuals, digital register pipelines,
 //! mixed-signal A2D/D2A bridges, switch branches, and structural circuits.
@@ -10,33 +10,40 @@
 use piperine_codegen::ir::*;
 use piperine_codegen::device::DigitalInstance;
 use piperine_codegen::{CircuitCompiler, CompiledModule, SimCtx};
-use piperine_lang::{parse_and_elaborate, ppr_to_ir};
+use piperine_lang::parse_and_elaborate;
 use piperine_solver::analog::NodeIdentifier;
 use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
 use piperine_solver::solver::Context;
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::collections::HashMap;
 
 // ═════════════════════════════ Helpers ═══════════════════════════════════════
 
-/// Compile a PHDL source string and return the IR program. Panics on any
-/// elaboration or lowering error with the full diagnostic.
-fn compile(src: &str) -> IrProgram {
+/// Compile a PHDL source string and return every module's resolved lowering.
+/// Panics on any elaboration or lowering error with the full diagnostic.
+fn compile(src: &str) -> HashMap<String, LoweredBody> {
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
-    ppr_to_ir(&elab).expect("lowering failed")
+    piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed")
 }
 
-/// Find a module by name in an IR program. Panics if absent.
-fn module<'p>(prog: &'p IrProgram, name: &str) -> &'p IrModule {
-    prog.modules
-        .iter()
-        .find(|m| m.name == name)
-        .unwrap_or_else(|| panic!("module `{name}` not in IR"))
+/// Like [`compile`], but also keeps the elaborated `Design` alive — needed
+/// by `CircuitCompiler::new`, which reads instance structure from the POM
+/// directly (there is no `IrProgram` structural twin to carry both).
+fn elaborate_and_lower(src: &str) -> (piperine_lang::Design, HashMap<String, LoweredBody>) {
+    let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
+    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("lowering failed");
+    (design, bodies)
+}
+
+/// Find a module's resolved body by name. Panics if absent.
+fn module<'p>(prog: &'p HashMap<String, LoweredBody>, name: &str) -> &'p LoweredBody {
+    prog.get(name).unwrap_or_else(|| panic!("module `{name}` not in IR"))
 }
 
 /// Compile a single module to a `CompiledModule`, asserting success.
-fn compiled(prog: &IrProgram, name: &str) -> CompiledModule {
+fn compiled(prog: &HashMap<String, LoweredBody>, name: &str) -> CompiledModule {
     CompiledModule::compile(module(prog, name)).expect("compile {name}")
 }
 
@@ -570,10 +577,10 @@ fn spec_parametric_module_monomorphizes() {
 
 // ═════════════ Section Sim — DC operating point with sources ══════════════════
 
-/// Build an IR program from source + a structural top, compile, and solve DC.
-fn dc_solve(src: &str, top: &str) -> (IrProgram, piperine_solver::circuit::CircuitInstance, piperine_solver::analysis::dc::DcAnalysisResult) {
-    let prog = compile(src);
-    let mut compiler = CircuitCompiler::new(&prog);
+/// Build a resolved lowering from source + a structural top, compile, and solve DC.
+fn dc_solve(src: &str, top: &str) -> (HashMap<String, LoweredBody>, piperine_solver::core::circuit::CircuitInstance, piperine_solver::analysis::dc::DcAnalysisResult) {
+    let (design, prog) = elaborate_and_lower(src);
+    let mut compiler = CircuitCompiler::new(&design, &prog);
     let mut circuit = compiler.build_circuit(top).expect("build circuit");
     circuit.init_digital();
     circuit.rebuild_digital_topology();
@@ -665,6 +672,73 @@ fn sim_dc_diode_operating_point() {
     assert!((i_r - i_d).abs() < i_r * 1e-3, "KCL: I_R={i_r} vs I_D={i_d}");
 }
 
+/// Optional parameters (`T?` + `none`): `p.get_or(default)` reads an absent
+/// optional as its fallback and a supplied one as its value, per instance —
+/// lowered onto the parameter-presence mechanism (`$param_given`). Two
+/// resistors share a module; one leaves `rmodel` absent (→ 2.2 kΩ), the other
+/// supplies it (→ 500 Ω), forming a divider.
+#[test]
+fn sim_dc_optional_param_get_or() {
+    let (_prog, _circuit, result) = dc_solve("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
+        analog VSource { V(p, n) <- dc; }
+        mod R ( inout p : Electrical, inout n : Electrical ) {
+            param rmodel : Real? = none;
+            param rfixed : Real = 1k;
+        }
+        analog R { I(p, n) <+ V(p, n) / rmodel.get_or(rfixed); }
+        mod Top ( inout vin : Electrical, inout mid : Electrical ) {
+            v1 : VSource ( vin, gnd ) { .dc = 10.0 };
+            r1 : R ( vin, mid ) { .rfixed = 2200.0 };
+            r2 : R ( mid, gnd ) { .rmodel = 500.0 };
+        }
+    ", "Top");
+
+    let v_mid = result.get(piperine_solver::analog::AnalogVariable::Node(
+        NodeIdentifier::Anonymous(2)
+    )).expect("V(mid)");
+    // 10 V · 500 / (2200 + 500) = 1.852 V
+    assert!((v_mid - 1.85185).abs() < 1e-3, "optional-param divider V(mid) = {v_mid}");
+}
+
+/// `$limit("pnjlim", …)` voltage limiting: a diode that overflows a plain
+/// `exp` from the 0 V start converges through pnjlim to the same operating
+/// point. Exercises the JIT `$limit` lowering, the vold state bank, the vcrit
+/// seed, the limited-Norton linearization point, and the convergence veto.
+#[test]
+fn sim_dc_diode_pnjlim_converges() {
+    let (_prog, _circuit, result) = dc_solve("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
+        analog VSource { V(p, n) <- dc; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Diode ( inout a : Electrical, inout c : Electrical ) {
+            param is_sat : Real = 1e-14; param vte : Real = 0.02585; param vcrit : Real = 0.7;
+        }
+        analog Diode {
+            var vd : Real = $limit(\"pnjlim\", V(a, c), 0.0, vte, vcrit);
+            I(a, c) <+ is_sat * (limexp(vd / vte) - 1.0);
+        }
+        mod Top ( inout vin : Electrical, inout vd : Electrical ) {
+            v1 : VSource ( vin, gnd ) { .dc = 5.0 };
+            r1 : Resistor ( vin, vd );
+            d1 : Diode ( vd, gnd );
+        }
+    ", "Top");
+
+    let v_d = result.get(piperine_solver::analog::AnalogVariable::Node(
+        NodeIdentifier::Anonymous(2)
+    )).expect("V(d)");
+    // KCL: (5 − Vd)/1k == Is·(exp(Vd/Vt) − 1); the limiter must not shift it.
+    let vt = 0.02585;
+    let i_r = (5.0 - v_d) / 1000.0;
+    let i_d = 1e-14 * ((v_d / vt).exp() - 1.0);
+    assert!(v_d > 0.5 && v_d < 0.9, "pnjlim diode drop {v_d}");
+    assert!((i_r - i_d).abs() < i_r * 1e-3, "KCL: I_R={i_r} vs I_D={i_d}");
+}
+
 // ═════════════ Section Sim — Transient with time-varying source ═══════════════
 
 /// SPEC — RC charging: 5V step into R=1k C=1µF (τ=1ms), simulate 5ms.
@@ -673,7 +747,7 @@ fn sim_dc_diode_operating_point() {
 fn sim_tran_rc_charging() {
     use piperine_solver::analysis::transient::TransientAnalysisOptions;
 
-    let prog = compile("
+    let (design, prog) = elaborate_and_lower("
         discipline Electrical { potential v : Real; flow i : Real; }
         mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
         analog VSource { V(p, n) <- dc; }
@@ -687,7 +761,7 @@ fn sim_tran_rc_charging() {
             c1 : Capacitor ( out, gnd );
         }
     ");
-    let mut compiler = CircuitCompiler::new(&prog);
+    let mut compiler = CircuitCompiler::new(&design, &prog);
     let mut circuit = compiler.build_circuit("Top").expect("build circuit");
     circuit.init_digital();
     circuit.rebuild_digital_topology();
@@ -709,7 +783,7 @@ fn sim_tran_rc_charging() {
 /// pass the analog voltage to the digital evaluator.
 #[test]
 fn sim_dc_comparator_a2d_bridge() {
-    let prog = compile("
+    let (design, prog) = elaborate_and_lower("
         discipline Electrical { potential v : Real; flow i : Real; }
         discipline Bit { storage Boolean; }
         mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
@@ -724,7 +798,7 @@ fn sim_dc_comparator_a2d_bridge() {
             cmp : Comparator ( vp, vn, gnd );
         }
     ");
-    let mut compiler = CircuitCompiler::new(&prog);
+    let mut compiler = CircuitCompiler::new(&design, &prog);
     let mut circuit = compiler.build_circuit("Top").expect("build circuit");
     circuit.init_digital();
     circuit.rebuild_digital_topology();
@@ -828,7 +902,7 @@ fn spec_parent_contribution_with_behavioral_for_and_indexed_ports() {
 fn sim_tran_above_event_toggles_switch_state() {
     use piperine_solver::analysis::transient::TransientAnalysisOptions;
 
-    let prog = compile("
+    let (design, prog) = elaborate_and_lower("
         discipline Electrical { potential v : Real; flow i : Real; }
         mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
         analog VSource { V(p, n) <- dc; }
@@ -854,7 +928,7 @@ fn sim_tran_above_event_toggles_switch_state() {
             vc : Ramp ( ctl, gnd ) { .slope = 1.0e4 };
         }
     ");
-    let mut compiler = CircuitCompiler::new(&prog);
+    let mut compiler = CircuitCompiler::new(&design, &prog);
     let mut circuit = compiler.build_circuit("Top").expect("build circuit");
     circuit.init_digital();
     circuit.rebuild_digital_topology();
@@ -871,4 +945,87 @@ fn sim_tran_above_event_toggles_switch_state() {
     let late = result.last().expect("final step");
     assert!(v_mid(early) > 4.5, "switch open before crossing: V(mid) = {}", v_mid(early));
     assert!(v_mid(late) < 0.1, "switch closed after crossing: V(mid) = {}", v_mid(late));
+}
+
+/// Fused digital-network JIT: two combinational inverters chained into one
+/// Cranelift cone. `in → inv → mid → inv → out`; the fused kernel settles the
+/// whole chain in one rank-ordered pass and emits mid/out as boundary events.
+#[test]
+fn digital_network_fuses_combinational_chain() {
+    use piperine_codegen::jit::digital::network::{DigitalNetwork, NetworkMember};
+    use piperine_solver::digital::interface::{DigitalDevice, EvalCtx, EventSink};
+    use std::sync::Arc;
+
+    let prog = compile(format!("{CORE_LIB}
+        mod Inv ( input a : Bit, output y : Bit ) {{ }}
+        digital Inv {{ y <- !a; }}
+    ").as_str());
+    let inv = Arc::new(module(&prog, "Inv").clone());
+
+    let (i, mid, o) = (DigitalNet(0), DigitalNet(1), DigitalNet(2));
+    let members = vec![
+        NetworkMember { module: inv.clone(), in_nets: vec![i], out_nets: vec![mid], params: vec![], int_base: 0, real_base: 0, param_base: 0 },
+        NetworkMember { module: inv.clone(), in_nets: vec![mid], out_nets: vec![o], params: vec![], int_base: 0, real_base: 0, param_base: 0 },
+    ];
+    let mut net = DigitalNetwork::build(members, 3, 0).expect("build fused network");
+
+    struct Collect(Vec<(DigitalNet, LogicValue)>);
+    impl EventSink for Collect {
+        fn emit(&mut self, net: DigitalNet, value: LogicValue, _delay: f64) { self.0.push((net, value)); }
+    }
+    let nets = [LogicValue::Zero, LogicValue::X, LogicValue::X];
+    let mut sink = Collect(Vec::new());
+    net.evaluate(&EvalCtx { time: 0.0, nets: &nets, analog: &[] }, &mut sink);
+
+    let mid_v = sink.0.iter().find(|(n, _)| *n == mid).map(|(_, v)| *v);
+    let out_v = sink.0.iter().find(|(n, _)| *n == o).map(|(_, v)| *v);
+    assert_eq!(mid_v, Some(LogicValue::One), "mid = ~0 = 1");
+    assert_eq!(out_v, Some(LogicValue::Zero), "out = ~1 = 0 (settled in one fused pass)");
+}
+
+/// Cross-module NBA semantics: two D flip-flops in SEPARATE instances, chained
+/// f0.q → f1.d. On a clock edge both must sample simultaneously — f1 captures
+/// f0's PRE-edge output. Driven directly (no `$op`) to isolate the digital
+/// scheduler from the mixed-signal loop.
+#[test]
+fn digital_cross_module_flops_sample_simultaneously() {
+    let prog = compile(format!("{CORE_LIB}
+        mod Dff ( input clk : Bit, input d : Bit, output q : Bit ) {{ var st : Bit = 0; }}
+        digital Dff {{ q <- st; @ (posedge(clk)) {{ st = d; }} }}
+    ").as_str());
+    let cm = compiled(&prog, "Dff");
+    let kernel = cm.digital().expect("dff kernel");
+
+    let (clk, din, q0, q1) = (DigitalNet(0), DigitalNet(1), DigitalNet(2), DigitalNet(3));
+    let mut f0 = DigitalInstance::new(kernel.clone(), 0, vec![clk, din], vec![q0], vec![]).unwrap();
+    let mut f1 = DigitalInstance::new(kernel.clone(), 1, vec![clk, q0], vec![q1], vec![]).unwrap();
+
+    let mut nets = vec![LogicValue::X; 4];
+    let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
+    f0.init(&mut q);
+    f1.init(&mut q);
+    while let Some(Reverse(e)) = q.pop() { nets[e.net.0] = e.value; }
+
+    // One clock pulse: both flops eval against the SAME frozen `nets`, outputs
+    // deferred through the queue, then applied — proper NBA.
+    let pulse = |nets: &mut Vec<LogicValue>, f0: &mut DigitalInstance, f1: &mut DigitalInstance, t: f64| {
+        nets[clk.0] = LogicValue::Zero;
+        let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
+        f0.eval(t, nets, &[], &mut q); f1.eval(t, nets, &[], &mut q);
+        while let Some(Reverse(e)) = q.pop() { nets[e.net.0] = e.value; }
+        nets[clk.0] = LogicValue::One;
+        let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
+        f0.eval(t + 0.5, nets, &[], &mut q); f1.eval(t + 0.5, nets, &[], &mut q);
+        while let Some(Reverse(e)) = q.pop() { nets[e.net.0] = e.value; }
+    };
+
+    nets[din.0] = LogicValue::One;
+    pulse(&mut nets, &mut f0, &mut f1, 1.0);
+    assert_eq!(nets[q0.0], LogicValue::One, "q0 loaded 1");
+    assert_eq!(nets[q1.0], LogicValue::Zero, "q1 still 0");
+
+    nets[din.0] = LogicValue::Zero;
+    pulse(&mut nets, &mut f0, &mut f1, 2.0);
+    assert_eq!(nets[q0.0], LogicValue::Zero, "q0 now 0");
+    assert_eq!(nets[q1.0], LogicValue::One, "q1 captured q0's pre-edge 1 (NBA)");
 }

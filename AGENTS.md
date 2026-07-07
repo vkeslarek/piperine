@@ -71,7 +71,7 @@ crates/
 | What | Where |
 |------|-------|
 | bench e2e behavior | `piperine-bench/tests/bench.rs` (`elab` helper + `CIRCUIT` fixture) |
-| example gallery | `piperine-bench/tests/run_examples.rs` (all 21 `examples/*.phdl` stay green) |
+| example gallery | `piperine-bench/tests/run_examples.rs` (every `examples/*.phdl` stays green) |
 | syntax/elaboration gates | `piperine-lang/tests/{parse_elab,bench}.rs` |
 | POM → IR | `piperine-lang/tests/{ppr_ir,codegen_ir}.rs` |
 | JIT kernels | `piperine-codegen/tests/{analog_jit,digital_jit}.rs` |

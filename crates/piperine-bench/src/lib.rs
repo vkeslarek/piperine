@@ -10,7 +10,7 @@
 //!                          piperine_lang::eval::Interpreter ◀────────┘
 //!                                     │ syscalls ($op, $assert, ...)
 //!                                     ▼
-//!                          SimSession ──▶ ppr_to_ir ──▶ CircuitCompiler ──▶ solver
+//!                          SimSession ──▶ lower_bodies ──▶ CircuitCompiler ──▶ solver
 //! ```
 //!
 //! [`eval::Interpreter`]: piperine_lang::eval::Interpreter

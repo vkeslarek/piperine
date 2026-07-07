@@ -93,6 +93,7 @@ impl Elaborator {
                 name: format!("{pname}_{}", field.name),
                 ty: vt,
                 default: Some(val),
+                bundle_origin: Some((pname.to_string(), bundle_name.to_string())),
             }));
         }
         Ok(())
@@ -217,6 +218,35 @@ impl Elaborator {
                     return Ok(());
                 }
 
+                // Capability-typed param (`param model : Junction =
+                // DiodeModel {};`) — bounded polymorphism resolved at
+                // elaboration: the default's bundle literal names the
+                // concrete type, which must `impl` the capability; the
+                // param then flattens exactly like a bundle-typed one.
+                if ty.dimensions.is_empty() && self.capability_decls.contains_key(&ty.name) {
+                    let Some(crate::parse::ast::Expr::BundleLit { ty: lit_ty, .. }) = default
+                    else {
+                        return Err(ElabError::from(ElabErrorKind::BundleParamDefault {
+                            param: name.to_owned(),
+                            expected: format!("a bundle literal implementing `{}`", ty.name),
+                            found: "no bundle-literal default (the concrete type comes from it)"
+                                .to_owned(),
+                        }));
+                    };
+                    let implements = self.impl_decls.iter().any(|i| {
+                        i.capability.as_deref() == Some(ty.name.as_str()) && i.ty == lit_ty.name
+                    });
+                    if !implements {
+                        return Err(ElabError::from(ElabErrorKind::UndefinedType(format!(
+                            "`{}` does not implement capability `{}` (param `{}`)",
+                            lit_ty.name, ty.name, name
+                        ))));
+                    }
+                    let concrete = lit_ty.name.clone();
+                    self.flatten_bundle_param(name, &concrete, default.as_ref(), env, out)?;
+                    return Ok(());
+                }
+
                 let vt = self.resolve_value_type(ty, env)?;
                 let def = if let Some(e) = default {
                     Some(env.eval(e).map_err(|e| ElabErrorKind::ConstEval {
@@ -230,6 +260,7 @@ impl Elaborator {
                     name: name.clone(),
                     ty: vt,
                     default: def,
+                    bundle_origin: None,
                 }));
             }
 
@@ -415,7 +446,30 @@ impl Elaborator {
                 let mut resolved_params: Vec<(String, Value)> = Vec::new();
                 for pa in params {
                     match &pa.expr {
-                        Expr::BundleLit { fields, .. } => {
+                        Expr::BundleLit { ty: lit_ty, fields, .. } => {
+                            if let Some(child_decl) = self.module_decls.get(module) {
+                                let param_decl = child_decl.body.iter().find_map(|stmt| {
+                                    if let ModuleStatement::ParamDecl { name, ty, .. } = stmt {
+                                        if name == &pa.name {
+                                            return Some(ty);
+                                        }
+                                    }
+                                    None
+                                });
+                                if let Some(ty) = param_decl {
+                                    if self.capability_decls.contains_key(&ty.name) {
+                                        let implements = self.impl_decls.iter().any(|i| {
+                                            i.capability.as_deref() == Some(ty.name.as_str()) && i.ty == lit_ty.name
+                                        });
+                                        if !implements {
+                                            return Err(ElabError::from(ElabErrorKind::UndefinedType(format!(
+                                                "`{}` does not implement capability `{}` (param `{}`)",
+                                                lit_ty.name, ty.name, pa.name
+                                            ))));
+                                        }
+                                    }
+                                }
+                            }
                             resolved_params.extend(self.flatten_bundle_param_override(
                                 &pa.name, fields, env,
                             )?);

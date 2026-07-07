@@ -1,0 +1,62 @@
+// Pure digital combinational logic: a 1-bit full adder — no analog anywhere.
+// The bench stages the input drivers, runs `$op` (the DC mixed-signal loop
+// settles combinational logic), and reads the output Bit nets directly:
+// `r.v(sum)` returns the logic value as 0/1.
+
+discipline Bit {
+    storage Boolean;
+}
+
+// Drives a Bit net from a stageable Real parameter.
+mod BitDriver(output q : Bit) {
+    param level : Real = 0.0;
+    var b : Bit = 0;
+}
+
+digital BitDriver {
+    b = level > 0.5;
+    q <- b;
+}
+
+mod FullAdder(input a : Bit, input b : Bit, input cin : Bit, output sum : Bit, output cout : Bit) {
+    var s : Bit = 0;
+    var c : Bit = 0;
+}
+
+digital FullAdder {
+    s = (a != b) != cin;
+    c = (a && b) || (cin && (a != b));
+    sum <- s;
+    cout <- c;
+}
+
+mod AdderBoard() {
+    wire na : Bit;
+    wire nb : Bit;
+    wire nc : Bit;
+    wire nsum : Bit;
+    wire ncout : Bit;
+    da : BitDriver(.q = na);
+    db : BitDriver(.q = nb);
+    dc : BitDriver(.q = nc);
+    fa : FullAdder(.a = na, .b = nb, .cin = nc, .sum = nsum, .cout = ncout);
+}
+
+bench AdderBoard {
+
+    fn test_truth_table() {
+        for a in [0.0, 1.0] {
+            for b in [0.0, 1.0] {
+                for cin in [0.0, 1.0] {
+                    da.level = a;
+                    db.level = b;
+                    dc.level = cin;
+                    var r = $op();
+                    var total = r.v(nsum) + 2.0 * r.v(ncout);
+                    $display(a, "+", b, "+", cin, "=", total);
+                    $assert(abs(total - (a + b + cin)) < 1e-9, "sum + 2*carry counts the ones");
+                }
+            }
+        }
+    }
+}

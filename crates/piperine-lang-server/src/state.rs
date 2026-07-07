@@ -58,6 +58,10 @@ impl DocumentState {
 
     /// Run the full lexer+parser+elaborator pipeline over the current
     /// source, refreshing `design`, `ast`, and `errors` in place.
+    ///
+    /// On elaboration failure the **previous** design is kept so that
+    /// hover, goto-definition and outline continue working on the last
+    /// valid snapshot instead of going completely dark.
     pub fn analyze(&mut self, source_map: &piperine_lang::SourceMap) {
         self.errors.clear();
         let (source_file, parse_errors) =
@@ -67,11 +71,16 @@ impl DocumentState {
             self.errors.push(ParseError { message: e.to_string(), span: e.span() });
         }
 
-        self.design = match source_file.clone().elaborate(source_map) {
-            Ok(d) => Some(d),
+        match source_file.clone().elaborate(source_map) {
+            Ok(d) => {
+                // Update to the new valid design.
+                self.design = Some(d);
+            }
             Err(e) => {
+                // Record the error but keep the previous design alive so
+                // language features (hover, go-to-def, outline) keep working.
                 self.errors.push(ParseError { message: e.to_string(), span: e.span });
-                None
+                // `self.design` intentionally left unchanged (stale-but-valid).
             }
         };
         self.ast = Some(source_file);

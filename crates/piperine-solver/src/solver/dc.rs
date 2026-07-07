@@ -1,5 +1,5 @@
 use crate::analysis::dc::DcAnalysisResult;
-use crate::circuit::CircuitInstance;
+use crate::core::circuit::CircuitInstance;
 use crate::analog::AnalogReference;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
@@ -34,8 +34,10 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         let mut all_stamps = Vec::new();
 
         self.circuit.update_all(state, &self.context);
-        for dc in self.circuit.all_devices_mut() {
-            all_stamps.extend(dc.load_dc(state, &self.context));
+        for dc in &mut self.circuit.devices {
+            if let Some(a) = dc.as_analog() {
+                all_stamps.extend(a.load_dc(state, &self.context));
+            }
         }
 
         Ok(all_stamps)
@@ -46,10 +48,12 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
     /// Compares the current guess against the previous state using tolerance
     /// criteria defined in the solver context.
     fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
-        for device in self.circuit.all_devices() {
-            if device.limiting_active() {
-                debug!("Device {} requested limiting reiteration", device.device_name());
-                return false;
+        for device in &self.circuit.devices {
+            if let Some(a) = device.as_analog_ref() {
+                if a.limiting_active() {
+                    debug!("Device {} requested limiting reiteration", device.device_name());
+                    return false;
+                }
             }
         }
         let netlist = self.circuit.netlist();

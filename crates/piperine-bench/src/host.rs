@@ -77,7 +77,7 @@ impl SimHost {
             let Some(default) = &field.default else { continue };
             let value = match default {
                 Expr::BundleLit { ty, fields: overrides } => {
-                    let Some(Value::Record(inner)) = self.bundle_defaults(&ty.name) else {
+                    let Some(Value::Record { fields: inner, .. }) = self.bundle_defaults(&ty.name) else {
                         continue;
                     };
                     for (name, expr) in overrides {
@@ -85,7 +85,7 @@ impl SimHost {
                             inner.borrow_mut().insert(name.clone(), v);
                         }
                     }
-                    Value::Record(inner)
+                    Value::Record { ty: ty.name.clone(), fields: inner }
                 }
                 other => match other {
                     // `Map {}` default — the empty map is a compile-time
@@ -102,7 +102,10 @@ impl SimHost {
             };
             fields.insert(field.name.clone(), value);
         }
-        Some(Value::Record(Rc::new(std::cell::RefCell::new(fields))))
+        Some(Value::Record {
+            ty: bundle.to_string(),
+            fields: Rc::new(std::cell::RefCell::new(fields)),
+        })
     }
 }
 
@@ -148,11 +151,48 @@ impl Host for SimHost {
     }
 
     fn resolve_callable(&mut self, name: &str) -> Option<Callable> {
+        // Sibling bench fns first (bench spec §2 "fn helper(x: T) -> U") —
+        // effectful, so a helper may run analyses and stage overrides.
+        if let Some(bench) = self.session.design().bench(self.session.module())
+            && let Some(f) = bench.fn_by_name(name)
+        {
+            use piperine_lang::parse::ast::FnParam;
+            let mut params = Vec::new();
+            let mut defaults = Vec::new();
+            for p in &f.sig.params {
+                if let FnParam::Typed { name, default, .. } = p {
+                    params.push(name.clone());
+                    defaults.push(default.clone());
+                }
+            }
+            return Some(Callable::BenchFn {
+                params,
+                defaults,
+                body: f.body.stmts.clone(),
+                tail: f.body.expr.as_deref().cloned(),
+            });
+        }
         let f = self.session.design().function(name)?;
         Some(Callable::Function {
             params: f.params().iter().map(|(n, _)| n.clone()).collect(),
             defaults: f.defaults().to_vec(),
             body: f.body().to_vec(),
+        })
+    }
+
+    fn resolve_method(&mut self, ty: &str, method: &str) -> Option<Callable> {
+        let m = self
+            .session
+            .design()
+            .impls()
+            .iter()
+            .filter(|i| i.ty == ty)
+            .flat_map(|i| i.methods.iter())
+            .find(|m| m.name == method)?;
+        Some(Callable::Function {
+            params: m.params.iter().map(|(n, _)| n.clone()).collect(),
+            defaults: m.defaults.clone(),
+            body: m.body.to_vec(),
         })
     }
 

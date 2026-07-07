@@ -28,7 +28,7 @@ impl Elaborator {
 
         if !ty.dimensions.is_empty() {
             let inner_ty =
-                Type { name: ty.name.clone(), args: ty.args.clone(), dimensions: vec![] };
+                Type { name: ty.name.clone(), args: ty.args.clone(), dimensions: vec![], optional: ty.optional };
             let inner = self.resolve_type(&inner_ty, env, type_subst)?;
             let mut result = inner;
             for dim_expr in &ty.dimensions {
@@ -46,14 +46,13 @@ impl Elaborator {
 
         if let Some(def) = self.ctx.types.lookup(name) {
             if def.as_bundle().is_some() {
-                if self.is_net_capable_bundle(name) {
-                    return Ok(TypeRef::Net(NetType::Discipline(name.to_owned())));
+                return if self.is_net_capable_bundle(name) {
+                    Ok(TypeRef::Net(NetType::Discipline(name.to_owned())))
                 } else {
-                    return Err(ElabError::from(ElabErrorKind::UndefinedType(format!(
-                        "`{}` is a value bundle — use field access, not as a bare type",
-                        name
-                    ))));
-                }
+                    // A value bundle used as a type (fn param, method self,
+                    // …) — the consumer flattens it per-field or fails loud.
+                    Ok(TypeRef::Value(ValueType::Bundle(name.to_owned())))
+                };
             }
             return def.resolve(ty, env, type_subst);
         }

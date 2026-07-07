@@ -168,7 +168,9 @@ piperine add <git-url>           # add a dependency (resolved via git)
 piperine tree                    # show the dependency tree
 ```
 
-The `examples/` directory holds 21 self-contained `.phdl` designs with benches — all of
+The `examples/` directory holds a gallery of self-contained real-world designs with numerically
+validated benches — voltage dividers, RC filters, diode clippers, DACs, a flash ADC, a bang-bang
+thermostat, Johnson noise, a coulomb counter, PWM, an op-amp follower — all of
 them run green in CI via `piperine-bench/tests/run_examples.rs`.
 
 ## IDE support

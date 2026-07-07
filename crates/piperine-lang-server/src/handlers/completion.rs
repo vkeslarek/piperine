@@ -135,6 +135,30 @@ fn add_top_level_completions(items: &mut Vec<CompletionItem>) {
         insert_text_format: Some(InsertTextFormat::SNIPPET),
         ..Default::default()
     });
+    items.push(CompletionItem {
+        label: "bundle".into(),
+        kind: Some(CompletionItemKind::SNIPPET),
+        detail: Some("Bundle snippet".into()),
+        insert_text: Some("bundle ${1:Name} {\n\t$0\n}".into()),
+        insert_text_format: Some(InsertTextFormat::SNIPPET),
+        ..Default::default()
+    });
+    items.push(CompletionItem {
+        label: "capability".into(),
+        kind: Some(CompletionItemKind::SNIPPET),
+        detail: Some("Capability snippet".into()),
+        insert_text: Some("capability ${1:Name} {\n\tfn ${2:method}(self, ${3:args}) -> ${4:RetType};\n}".into()),
+        insert_text_format: Some(InsertTextFormat::SNIPPET),
+        ..Default::default()
+    });
+    items.push(CompletionItem {
+        label: "impl".into(),
+        kind: Some(CompletionItemKind::SNIPPET),
+        detail: Some("Impl snippet".into()),
+        insert_text: Some("impl ${1:Capability} for ${2:Type} {\n\tfn ${3:method}(self, ${4:args}) -> ${5:RetType} {\n\t\t$0\n\t}\n}".into()),
+        insert_text_format: Some(InsertTextFormat::SNIPPET),
+        ..Default::default()
+    });
 }
 
 fn add_behavior_completions(items: &mut Vec<CompletionItem>) {

@@ -22,14 +22,16 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
-use crate::ir::{CrossDir, Domain, IrExpr, IrModule, IrStateKind, NodeId, StateId, VarId};
+use crate::codegen::{Builder, Resolver};
+use crate::ir::{CrossDir, Domain, LoweredBody, StateKind, NodeId, StateId, VarId};
 
-use super::emit::AnalogEmitter;
 use super::flatten::{
-    AnalogFlattener, FlatAnalog, FlatContrib, FlatDiagnostic, FlatEvent, FlatEventTrigger,
+    AnalogFlattener, FlatAnalog, FlatContrib, FlatDiagnostic, FlatEventTrigger,
     FlatForce,
 };
 use super::{math, CodegenError, SimCtx};
+
+use piperine_lang::parse::ast::Expr as PomExpr;
 
 /// The uniform analog JIT function type.
 ///
@@ -49,13 +51,13 @@ type AnalogFn = unsafe extern "C" fn(*const f64, *const f64, *const f64, *const 
 /// state-input function each accepted timestep.
 #[derive(Debug, Clone)]
 pub enum RuntimeState {
-    Delay { delay: IrExpr },
-    Slew { rise: IrExpr, fall: IrExpr },
+    Delay { delay: PomExpr },
+    Slew { rise: PomExpr, fall: PomExpr },
     /// `idt`/`idtmod` accumulator: `state[id]` holds the integral up to the
     /// last accepted step (starting at `ic`); the kernel reads it as
     /// `state + dt·x` (implicit Euler). `modulus` wraps the accumulator
     /// (`idtmod`).
-    Integrator { ic: IrExpr, modulus: Option<IrExpr> },
+    Integrator { ic: PomExpr, modulus: Option<PomExpr> },
 }
 
 /// One runtime state slot: which `StateId` it services and how.
@@ -74,7 +76,7 @@ pub enum CompiledTrigger {
     Cross(CrossDir),
     Above,
     /// Fires every `period` seconds (parameter-constant).
-    Timer { period: IrExpr },
+    Timer { period: PomExpr },
 }
 
 /// A compiled runtime analog event: its trigger plus the vars-bank slots its
@@ -105,9 +107,29 @@ pub struct AnalogKernel {
     /// the eval-time bounds contract, distinct from the symbol-table
     /// counts used for bank *allocation*.
     read_bounds: (usize, usize, usize),
+    /// Parameter names in `ParamId` order, for const-evaluating runtime
+    /// state expressions (delay, slew, ic, …) at device creation.
+    param_names: Vec<String>,
     num_ports: usize,
     num_params: usize,
     num_state_slots: usize,
+    /// Number of `$limit` vold slots (appended to the state bank after the
+    /// module's runtime-state slots).
+    num_limits: usize,
+    /// Per-`$limit` updated value `vlim` (one row per slot); `None` without
+    /// any `$limit`. The device stores these back into the state bank.
+    limit_update: Option<AnalogFn>,
+    /// Per-`$limit` seed value `vcrit` (one row per slot); `None` without any
+    /// `$limit`. Used to initialize the vold slots at device creation.
+    limit_seed: Option<AnalogFn>,
+    /// Per-`$limit` raw (unlimited) `vnew` value (one row per slot); `None`
+    /// without any `$limit`. Used with `limit_branches` to detect the branch
+    /// polarity when building the limited Norton linearization point.
+    limit_vnew: Option<AnalogFn>,
+    /// Per-`$limit` junction branch as terminal slot indices `(plus, minus)`
+    /// (`None` slot = ground); the outer `None` means the branch was not
+    /// uniquely identifiable and the raw voltage is used.
+    limit_branches: Vec<Option<(Option<usize>, Option<usize>)>>,
     /// Number of module-level persistent variable slots (the vars bank).
     num_vars: usize,
     num_forces: usize,
@@ -136,6 +158,10 @@ pub struct AnalogKernel {
     /// row-major); `None` without forces.
     force: Option<AnalogFn>,
     force_jacobian: Option<AnalogFn>,
+    /// Per-force AC stimulus magnitude/phase rows (one entry per force; 0 for
+    /// forces without an `ac_stim`). `None` when no force carries a stimulus.
+    force_ac_mag: Option<AnalogFn>,
+    force_ac_phase: Option<AnalogFn>,
     /// Noise PSD per source; `None` without noise.
     noise: Option<AnalogFn>,
     /// `ac_stim` magnitude and phase rows (one per source); `None` without
@@ -161,7 +187,7 @@ unsafe impl Sync for AnalogKernel {}
 
 impl AnalogKernel {
     /// Flatten and compile `module`'s analog body.
-    pub fn compile(module: &IrModule) -> Result<Self, CodegenError> {
+    pub fn compile(module: &LoweredBody) -> Result<Self, CodegenError> {
         let flat = AnalogFlattener::new(module).flatten()?;
         AnalogCompiler::new(module, flat)?.compile()
     }
@@ -194,12 +220,60 @@ impl AnalogKernel {
         self.num_params
     }
 
+    /// Parameter names in `ParamId` order.
+    pub fn param_names(&self) -> &[String] {
+        &self.param_names
+    }
+
     pub fn num_forces(&self) -> usize {
         self.num_forces
     }
 
     pub fn num_noise(&self) -> usize {
         self.num_noise
+    }
+
+    /// Number of `$limit` vold slots. They occupy state-bank slots
+    /// `[num_state_slots − num_limits, num_state_slots)`.
+    pub fn num_limits(&self) -> usize {
+        self.num_limits
+    }
+
+    /// State-bank slot index of the first `$limit` vold slot.
+    pub fn limit_base(&self) -> usize {
+        self.num_state_slots - self.num_limits
+    }
+
+    /// Compute each `$limit`'s updated value `vlim` at `volts` (using the
+    /// current vold stored in `state`). The device writes these back into the
+    /// state bank to seed the next Newton iteration.
+    pub fn eval_limit_update(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.limit_update {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(f, volts, params, state, vars, sim, out);
+        }
+    }
+
+    /// Initial `vold` per `$limit` slot (`vcrit`), for seeding the state bank
+    /// at device creation (ngspice MODEINITJCT).
+    pub fn eval_limit_seed(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.limit_seed {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(f, volts, params, state, vars, sim, out);
+        }
+    }
+
+    /// Raw (unlimited) `vnew` per `$limit` slot.
+    pub fn eval_limit_vnew(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.limit_vnew {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(f, volts, params, state, vars, sim, out);
+        }
+    }
+
+    /// Junction branch (terminal slots) per `$limit`.
+    pub fn limit_branches(&self) -> &[Option<(Option<usize>, Option<usize>)>] {
+        &self.limit_branches
     }
 
     /// Branch terminals `(plus, minus)` per force row.
@@ -365,6 +439,21 @@ impl AnalogKernel {
         }
     }
 
+    /// True when at least one force branch carries an AC stimulus.
+    pub fn has_force_ac_stim(&self) -> bool {
+        self.force_ac_mag.is_some()
+    }
+
+    /// Write each force branch's AC stimulus magnitude and phase (radians) to
+    /// `mags`/`phases` (`num_forces` each; 0 for branches without a stimulus).
+    pub fn eval_force_ac_stim(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, mags: &mut [f64], phases: &mut [f64]) {
+        if let (Some(m), Some(p)) = (self.force_ac_mag, self.force_ac_phase) {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(m, volts, params, state, vars, sim, mags);
+            Self::call(p, volts, params, state, vars, sim, phases);
+        }
+    }
+
     /// Write each noise source's PSD at `sim.frequency` to
     /// `out[0..num_noise]`: the source's PSD expression, scaled by
     /// `(1 / f)^exponent` for flicker sources.
@@ -422,11 +511,72 @@ impl AnalogKernel {
     }
 }
 
+/// Collect the unique `$limit` expressions across every flattened expression,
+/// in a stable order. Each becomes a `vold` slot appended to the state bank.
+fn collect_limits(flat: &FlatAnalog) -> Vec<PomExpr> {
+    let mut limits: Vec<PomExpr> = Vec::new();
+    let mut scan = |e: &PomExpr| {
+        use piperine_lang::parse::ast::Walk;
+        e.walk(&mut |node| {
+            if let PomExpr::SysCall(name, _) = node {
+                if name.trim_start_matches('$') == "limit" && !limits.iter().any(|l| expr_eq(l, node)) {
+                    limits.push(node.clone());
+                }
+            }
+            Walk::Continue
+        });
+    };
+    for c in &flat.resistive { scan(&c.expr); }
+    for c in &flat.charge { scan(&c.expr); }
+    for f in &flat.forces { scan(&f.expr); }
+    limits
+}
+
+/// The junction branch `(plus, minus)` a `$limit` acts on.
+fn limit_branch(limit: &PomExpr, module: &LoweredBody) -> Option<(NodeId, NodeId)> {
+    let PomExpr::SysCall(name, args) = limit else { return None };
+    if name.trim_start_matches('$') != "limit" { return None; }
+    let vnew = args.get(1)?;
+    let resolve = |n: &str| -> NodeId {
+        const GROUND: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
+        if GROUND.contains(&n) { return NodeId::GROUND; }
+        module.symbols.nodes().find(|(_, info)| info.name == n).map(|(id, _)| id).unwrap_or(NodeId::GROUND)
+    };
+    let mut found: Option<(NodeId, NodeId)> = None;
+    let mut count = 0usize;
+    use piperine_lang::parse::ast::Walk;
+    vnew.walk(&mut |node| {
+        if let PomExpr::Call(func, call_args) = node {
+            if let PomExpr::Ident(fname) = func.as_ref() {
+                if fname == "V" || fname == "I" {
+                    count += 1;
+                    if count == 1 {
+                        let plus_name = call_args.first().and_then(|e| {
+                            if let PomExpr::Ident(s) = e { Some(s.clone()) } else { None }
+                        }).unwrap_or_default();
+                        let minus_name = call_args.get(1).and_then(|e| {
+                            if let PomExpr::Ident(s) = e { Some(s.clone()) } else { None }
+                        }).unwrap_or_else(|| "0".into());
+                        found = Some((resolve(&plus_name), resolve(&minus_name)));
+                    }
+                }
+            }
+        }
+        Walk::Continue
+    });
+    if count == 1 { found } else { None }
+}
+
+/// Structural equality for POM `Expr`.
+fn expr_eq(a: &PomExpr, b: &PomExpr) -> bool {
+    crate::codegen::expr_structural_eq(a, b)
+}
+
 // ─── Compiler ─────────────────────────────────────────────────────────────────
 
 /// Builds every kernel function inside one Cranelift JIT module.
 struct AnalogCompiler<'m> {
-    module: &'m IrModule,
+    module: &'m LoweredBody,
     flat: FlatAnalog,
     terminals: Vec<NodeId>,
     num_ports: usize,
@@ -434,10 +584,14 @@ struct AnalogCompiler<'m> {
     jit: JITModule,
     math_ids: HashMap<&'static str, FuncId>,
     fb_ctx: FunctionBuilderContext,
+    /// Unique `$limit` expressions, in slot order.
+    limits: Vec<PomExpr>,
+    /// State-bank slot where `$limit` vold slots begin (= module state count).
+    limit_base: usize,
 }
 
 impl<'m> AnalogCompiler<'m> {
-    fn new(module: &'m IrModule, flat: FlatAnalog) -> Result<Self, CodegenError> {
+    fn new(module: &'m LoweredBody, flat: FlatAnalog) -> Result<Self, CodegenError> {
         let mut jit_builder = JITBuilder::new(cranelift_module::default_libcall_names())
             .map_err(|e| CodegenError::Module(e.to_string()))?;
         for f in math::MATH_FNS {
@@ -465,6 +619,9 @@ impl<'m> AnalogCompiler<'m> {
             .map(|(i, &n)| (n, i))
             .collect();
 
+        let limits = collect_limits(&flat);
+        let limit_base = module.symbols.num_states();
+
         Ok(Self {
             module,
             flat,
@@ -474,12 +631,14 @@ impl<'m> AnalogCompiler<'m> {
             jit,
             math_ids,
             fb_ctx: FunctionBuilderContext::new(),
+            limits,
+            limit_base,
         })
     }
 
     /// Ports in declaration order, then every non-ground internal node the
     /// flattened body touches.
-    fn terminal_order(module: &IrModule, flat: &FlatAnalog) -> (Vec<NodeId>, usize) {
+    fn terminal_order(module: &LoweredBody, flat: &FlatAnalog) -> (Vec<NodeId>, usize) {
         let mut terminals: Vec<NodeId> = module.ports.iter().map(|p| p.node).collect();
         let num_ports = terminals.len();
         let mut add = |node: NodeId| {
@@ -488,8 +647,13 @@ impl<'m> AnalogCompiler<'m> {
             }
         };
         let mut pairs = Vec::new();
+        let resolve_node = |name: &str| -> Option<NodeId> {
+            const GROUND: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
+            if GROUND.contains(&name) { return Some(NodeId::GROUND); }
+            module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
+        };
         for expr in flat.exprs() {
-            expr.collect_branches(&mut pairs);
+            crate::lower::diff::collect_branches(expr, &mut pairs, &resolve_node);
         }
         for contrib in flat.resistive.iter().chain(&flat.charge) {
             pairs.push((contrib.plus, contrib.minus));
@@ -509,7 +673,7 @@ impl<'m> AnalogCompiler<'m> {
     }
 
     fn compile(mut self) -> Result<AnalogKernel, CodegenError> {
-        let read_bounds = self.flat.read_bounds();
+        let read_bounds = self.flat.read_bounds(self.module);
         let resistive = std::mem::take(&mut self.flat.resistive);
         let charge = std::mem::take(&mut self.flat.charge);
         let forces = std::mem::take(&mut self.flat.forces);
@@ -538,18 +702,92 @@ impl<'m> AnalogCompiler<'m> {
             )
         };
 
+        // AC drive attached to force branches (ideal AC voltage stimulus). One
+        // row per force; branches without a stimulus contribute 0. Compiled
+        // only when at least one force carries an `ac_stim`.
+        let (force_ac_mag_id, force_ac_phase_id) = if forces.iter().any(|f| f.ac_stim.is_some()) {
+            let mags: Vec<PomExpr> = forces
+                .iter()
+                .map(|f| f.ac_stim.as_ref().map_or(PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0)), |(m, _)| m.clone()))
+                .collect();
+            let phases: Vec<PomExpr> = forces
+                .iter()
+                .map(|f| f.ac_stim.as_ref().map_or(PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0)), |(_, p)| p.clone()))
+                .collect();
+            (
+                Some(self.compile_rows("force_ac_mag", &mags)?),
+                Some(self.compile_rows("force_ac_phase", &phases)?),
+            )
+        } else {
+            (None, None)
+        };
+
         let noise_id = if noise.is_empty() {
             None
         } else {
-            let psds: Vec<IrExpr> = noise.iter().map(|(_, _, psd, _)| psd.clone()).collect();
+            let psds: Vec<PomExpr> = noise.iter().map(|(_, _, psd, _)| psd.clone()).collect();
             Some(self.compile_rows("noise", &psds)?)
         };
+        // `$limit` update: one row per slot yielding the limited value `vlim`,
+        // which the device writes back into the state bank each Newton
+        // iteration to become the next iteration's `vold`.
+        let limit_update_id = if self.limits.is_empty() {
+            None
+        } else {
+            let rows = self.limits.clone();
+            Some(self.compile_rows("limit_update", &rows)?)
+        };
+        // `$limit` seed: the critical voltage `vcrit` (arg 3) per slot. Junctions
+        // start limiting from vcrit — ngspice's MODEINITJCT — so a diode begins
+        // near turn-on instead of at 0 V (which floats the node to the supply
+        // and makes vold crawl up chasing a runaway node).
+        let limit_seed_id = if self.limits.is_empty() {
+            None
+        } else {
+            let seeds: Vec<PomExpr> = self
+                .limits
+                .iter()
+                .map(|l| match l {
+                    PomExpr::SysCall(name, args) if name == "$limit" && args.len() >= 5 => {
+                        args[4].clone()
+                    }
+                    _ => PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0)),
+                })
+                .collect();
+            Some(self.compile_rows("limit_seed", &seeds)?)
+        };
+        // Raw `vnew` (arg 0) per slot, for branch-polarity detection.
+        let limit_vnew_id = if self.limits.is_empty() {
+            None
+        } else {
+            let vnews: Vec<PomExpr> = self
+                .limits
+                .iter()
+                .map(|l| match l {
+                    PomExpr::SysCall(name, args) if name == "$limit" && !args.is_empty() => {
+                        args[1].clone()
+                    }
+                    _ => PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0)),
+                })
+                .collect();
+            Some(self.compile_rows("limit_vnew", &vnews)?)
+        };
+        // Junction branch (as terminal slots) per limit.
+        let limit_branches: Vec<Option<(Option<usize>, Option<usize>)>> = self
+            .limits
+            .iter()
+            .map(|l| {
+                limit_branch(l, self.module).map(|(p, m)| {
+                    (self.slot.get(&p).copied(), self.slot.get(&m).copied())
+                })
+            })
+            .collect();
         let ac_stims = std::mem::take(&mut self.flat.ac_stims);
         let (ac_stim_mag_id, ac_stim_phase_id) = if ac_stims.is_empty() {
             (None, None)
         } else {
-            let mags: Vec<IrExpr> = ac_stims.iter().map(|s| s.mag.clone()).collect();
-            let phases: Vec<IrExpr> = ac_stims.iter().map(|s| s.phase.clone()).collect();
+            let mags: Vec<PomExpr> = ac_stims.iter().map(|s| s.mag.clone()).collect();
+            let phases: Vec<PomExpr> = ac_stims.iter().map(|s| s.phase.clone()).collect();
             (
                 Some(self.compile_rows("ac_stim_mag", &mags)?),
                 Some(self.compile_rows("ac_stim_phase", &phases)?),
@@ -558,9 +796,9 @@ impl<'m> AnalogCompiler<'m> {
         // Flicker exponent rows (0 for white sources) — only compiled when
         // at least one source is flicker.
         let noise_exp_id = if noise.iter().any(|(_, _, _, exp)| exp.is_some()) {
-            let rows: Vec<IrExpr> = noise
+            let rows: Vec<PomExpr> = noise
                 .iter()
-                .map(|(_, _, _, exp)| exp.clone().unwrap_or(IrExpr::Real(0.0)))
+                .map(|(_, _, _, exp)| exp.clone().unwrap_or(PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0))))
                 .collect();
             Some(self.compile_rows("noise_exponents", &rows)?)
         } else {
@@ -571,7 +809,7 @@ impl<'m> AnalogCompiler<'m> {
             None
         } else {
             // One row per state *slot*; slots without a runtime input write 0.
-            let mut rows = vec![IrExpr::Real(0.0); self.module.symbols.num_states()];
+            let mut rows = vec![PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0)); self.module.symbols.num_states()];
             for (id, input) in &runtime_inputs {
                 rows[id.0 as usize] = input.clone();
             }
@@ -584,16 +822,16 @@ impl<'m> AnalogCompiler<'m> {
         } else {
             // Trigger rows: the watched expression (0 for initial/timer —
             // those fire on lifecycle/clock, not on a value transition).
-            let trigger_rows: Vec<IrExpr> = events
+            let trigger_rows: Vec<PomExpr> = events
                 .iter()
                 .map(|e| match &e.trigger {
                     FlatEventTrigger::Cross { expr, .. } | FlatEventTrigger::Above { expr } => {
                         expr.clone()
                     }
-                    FlatEventTrigger::Initial | FlatEventTrigger::Timer { .. } => IrExpr::Real(0.0),
+                    FlatEventTrigger::Initial | FlatEventTrigger::Timer { .. } => PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0)),
                 })
                 .collect();
-            let action_rows: Vec<IrExpr> = events
+            let action_rows: Vec<PomExpr> = events
                 .iter()
                 .flat_map(|e| e.actions.iter().map(|a| a.value.clone()))
                 .collect();
@@ -625,7 +863,7 @@ impl<'m> AnalogCompiler<'m> {
         } else {
             let min = bound_steps
                 .into_iter()
-                .reduce(|a, b| IrExpr::MathCall("min".into(), vec![a, b]))
+                .reduce(|a, b| PomExpr::Call(Box::new(PomExpr::Ident("min".to_string())), vec![a, b]))
                 .expect("non-empty");
             Some(self.compile_rows("bound_step", &[min])?)
         };
@@ -644,14 +882,14 @@ impl<'m> AnalogCompiler<'m> {
             .iter()
             .map(|(id, _)| {
                 let kind = match &self.module.symbols.state(*id).kind {
-                    IrStateKind::Delay { delay } => RuntimeState::Delay { delay: delay.clone() },
-                    IrStateKind::Slew { rise, fall } => {
+                    StateKind::Delay { delay } => RuntimeState::Delay { delay: delay.clone() },
+                    StateKind::Slew { rise, fall } => {
                         RuntimeState::Slew { rise: rise.clone(), fall: fall.clone() }
                     }
-                    IrStateKind::Idt { ic } => {
+                    StateKind::Idt { ic } => {
                         RuntimeState::Integrator { ic: ic.clone(), modulus: None }
                     }
-                    IrStateKind::IdtMod { ic, modulus } => RuntimeState::Integrator {
+                    StateKind::IdtMod { ic, modulus } => RuntimeState::Integrator {
                         ic: ic.clone(),
                         modulus: Some(modulus.clone()),
                     },
@@ -670,7 +908,12 @@ impl<'m> AnalogCompiler<'m> {
             name: self.module.name.clone(),
             num_ports: self.num_ports,
             num_params: self.module.symbols.num_params(),
-            num_state_slots: self.module.symbols.num_states(),
+            num_state_slots: self.module.symbols.num_states() + self.limits.len(),
+            num_limits: self.limits.len(),
+            limit_update: limit_update_id.map(|id| get(&self.jit, id)),
+            limit_seed: limit_seed_id.map(|id| get(&self.jit, id)),
+            limit_vnew: limit_vnew_id.map(|id| get(&self.jit, id)),
+            limit_branches,
             num_vars: self.module.symbols.vars().count(),
             num_forces: forces.len(),
             num_noise: noise.len(),
@@ -689,6 +932,8 @@ impl<'m> AnalogCompiler<'m> {
             charge_jacobian: charge_jac_id.map(|id| get(&self.jit, id)),
             force: force_id.map(|id| get(&self.jit, id)),
             force_jacobian: force_jac_id.map(|id| get(&self.jit, id)),
+            force_ac_mag: force_ac_mag_id.map(|id| get(&self.jit, id)),
+            force_ac_phase: force_ac_phase_id.map(|id| get(&self.jit, id)),
             noise: noise_id.map(|id| get(&self.jit, id)),
             ac_stim_mag: ac_stim_mag_id.map(|id| get(&self.jit, id)),
             ac_stim_phase: ac_stim_phase_id.map(|id| get(&self.jit, id)),
@@ -702,6 +947,7 @@ impl<'m> AnalogCompiler<'m> {
                 .map(|&id| self.module.symbols.node(id).domain == Domain::Digital)
                 .collect(),
             read_bounds,
+            param_names: self.module.symbols.params().map(|(_, p)| p.name.clone()).collect(),
             terminals: std::mem::take(&mut self.terminals),
             _jit: self.jit,
         })
@@ -711,16 +957,16 @@ impl<'m> AnalogCompiler<'m> {
 
     /// Residual shape: `out[plus] += expr; out[minus] -= expr` per contribution.
     fn compile_residual(&mut self, name: &str, contribs: &[FlatContrib]) -> Result<FuncId, CodegenError> {
-        let exprs: Vec<&IrExpr> = contribs.iter().map(|c| &c.expr).collect();
-        self.build_fn(name, &exprs, |emitter, slot, out_ptr| {
+        let exprs: Vec<&PomExpr> = contribs.iter().map(|c| &c.expr).collect();
+        self.build_fn(name, &exprs, |b, slot, out_ptr| {
             for contrib in contribs {
-                let current = emitter.emit(&contrib.expr)?;
+                let current = b.emit_analog(&contrib.expr)?;
                 if let Some(&p) = slot.get(&contrib.plus) {
-                    emitter.accumulate_f64(current, out_ptr, p);
+                    b.accumulate_f64(current, out_ptr, p);
                 }
                 if let Some(&m) = slot.get(&contrib.minus) {
-                    let negated = emitter.builder.ins().fneg(current);
-                    emitter.accumulate_f64(negated, out_ptr, m);
+                    let negated = b.builder.ins().fneg(current);
+                    b.accumulate_f64(negated, out_ptr, m);
                 }
             }
             Ok(())
@@ -730,30 +976,34 @@ impl<'m> AnalogCompiler<'m> {
     /// Jacobian shape: `out[row·n + col] += ∂I/∂V` stamps per contribution.
     fn compile_jacobian(&mut self, name: &str, contribs: &[FlatContrib]) -> Result<FuncId, CodegenError> {
         let n = self.terminals.len();
-        let exprs: Vec<&IrExpr> = contribs.iter().map(|c| &c.expr).collect();
-        // Derivatives may reference branches beyond the primal expression's
-        // (they don't today, but keep the precomputed set complete).
-        self.build_fn(name, &exprs, |emitter, slot, out_ptr| {
+        let exprs: Vec<&PomExpr> = contribs.iter().map(|c| &c.expr).collect();
+        let module = self.module;
+        let resolve_node = |name: &str| -> Option<NodeId> {
+            const GROUND: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
+            if GROUND.contains(&name) { return Some(NodeId::GROUND); }
+            module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
+        };
+        self.build_fn(name, &exprs, |b, slot, out_ptr| {
             for contrib in contribs {
                 let mut pairs = Vec::new();
-                contrib.expr.collect_branches(&mut pairs);
+                crate::lower::diff::collect_branches(&contrib.expr, &mut pairs, &resolve_node);
                 let plus = slot.get(&contrib.plus).copied();
                 let minus = slot.get(&contrib.minus).copied();
-                for (a, b) in pairs {
-                    let derivative = contrib.expr.d_dv(a, b);
-                    let g = emitter.emit(&derivative)?;
+                for (a, bb) in pairs {
+                    let derivative = crate::lower::diff::d_dv(&contrib.expr, a, bb, &resolve_node);
+                    let g = b.emit_analog(&derivative)?;
                     let col_a = slot.get(&a).copied();
-                    let col_b = slot.get(&b).copied();
-                    let stamp = |emitter: &mut AnalogEmitter, row: Option<usize>, col: Option<usize>, negate: bool| {
+                    let col_b = slot.get(&bb).copied();
+                    let stamp = |b: &mut Builder, row: Option<usize>, col: Option<usize>, negate: bool| {
                         if let (Some(r), Some(c)) = (row, col) {
-                            let v = if negate { emitter.builder.ins().fneg(g) } else { g };
-                            emitter.accumulate_f64(v, out_ptr, r * n + c);
+                            let v = if negate { b.builder.ins().fneg(g) } else { g };
+                            b.accumulate_f64(v, out_ptr, r * n + c);
                         }
                     };
-                    stamp(emitter, plus, col_a, false);
-                    stamp(emitter, plus, col_b, true);
-                    stamp(emitter, minus, col_a, true);
-                    stamp(emitter, minus, col_b, false);
+                    stamp(b, plus, col_a, false);
+                    stamp(b, plus, col_b, true);
+                    stamp(b, minus, col_a, true);
+                    stamp(b, minus, col_b, false);
                 }
             }
             Ok(())
@@ -761,12 +1011,12 @@ impl<'m> AnalogCompiler<'m> {
     }
 
     /// Row shape: `out[i] = expr_i`.
-    fn compile_rows(&mut self, name: &str, rows: &[IrExpr]) -> Result<FuncId, CodegenError> {
-        let exprs: Vec<&IrExpr> = rows.iter().collect();
-        self.build_fn(name, &exprs, |emitter, _slot, out_ptr| {
+    fn compile_rows(&mut self, name: &str, rows: &[PomExpr]) -> Result<FuncId, CodegenError> {
+        let exprs: Vec<&PomExpr> = rows.iter().collect();
+        self.build_fn(name, &exprs, |b, _slot, out_ptr| {
             for (i, row) in rows.iter().enumerate() {
-                let value = emitter.emit(row)?;
-                emitter.store_f64(value, out_ptr, i);
+                let value = b.emit_analog(row)?;
+                b.store_f64(value, out_ptr, i);
             }
             Ok(())
         })
@@ -776,20 +1026,26 @@ impl<'m> AnalogCompiler<'m> {
     /// terminal column.
     fn compile_force_jacobian(&mut self, name: &str, forces: &[FlatForce]) -> Result<FuncId, CodegenError> {
         let n = self.terminals.len();
-        let exprs: Vec<&IrExpr> = forces.iter().map(|f| &f.expr).collect();
-        self.build_fn(name, &exprs, |emitter, slot, out_ptr| {
+        let exprs: Vec<&PomExpr> = forces.iter().map(|f| &f.expr).collect();
+        let module = self.module;
+        let resolve_node = |name: &str| -> Option<NodeId> {
+            const GROUND: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
+            if GROUND.contains(&name) { return Some(NodeId::GROUND); }
+            module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
+        };
+        self.build_fn(name, &exprs, |b, slot, out_ptr| {
             for (i, force) in forces.iter().enumerate() {
                 let mut pairs = Vec::new();
-                force.expr.collect_branches(&mut pairs);
-                for (a, b) in pairs {
-                    let derivative = force.expr.d_dv(a, b);
-                    let g = emitter.emit(&derivative)?;
+                crate::lower::diff::collect_branches(&force.expr, &mut pairs, &resolve_node);
+                for (a, bb) in pairs {
+                    let derivative = crate::lower::diff::d_dv(&force.expr, a, bb, &resolve_node);
+                    let g = b.emit_analog(&derivative)?;
                     if let Some(&col) = slot.get(&a) {
-                        emitter.accumulate_f64(g, out_ptr, i * n + col);
+                        b.accumulate_f64(g, out_ptr, i * n + col);
                     }
-                    if let Some(&col) = slot.get(&b) {
-                        let neg = emitter.builder.ins().fneg(g);
-                        emitter.accumulate_f64(neg, out_ptr, i * n + col);
+                    if let Some(&col) = slot.get(&bb) {
+                        let neg = b.builder.ins().fneg(g);
+                        b.accumulate_f64(neg, out_ptr, i * n + col);
                     }
                 }
             }
@@ -802,8 +1058,8 @@ impl<'m> AnalogCompiler<'m> {
     fn build_fn(
         &mut self,
         name: &str,
-        exprs: &[&IrExpr],
-        body: impl FnOnce(&mut AnalogEmitter, &HashMap<NodeId, usize>, Value) -> Result<(), CodegenError>,
+        exprs: &[&PomExpr],
+        body: impl FnOnce(&mut Builder, &HashMap<NodeId, usize>, Value) -> Result<(), CodegenError>,
     ) -> Result<FuncId, CodegenError> {
         let ptr_ty = self.jit.target_config().pointer_type();
         let mut sig = Signature::new(self.jit.isa().default_call_conv());
@@ -847,11 +1103,16 @@ impl<'m> AnalogCompiler<'m> {
             })
             .collect();
 
-        // Branch voltages for every pair read by any expression (including
-        // through derivatives, whose branches are a subset of the primal's).
+        // Branch voltages for every pair read by any expression.
+        let module = self.module;
+        let resolve_node = |name: &str| -> Option<NodeId> {
+            const GROUND: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
+            if GROUND.contains(&name) { return Some(NodeId::GROUND); }
+            module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
+        };
         let mut pairs = Vec::new();
         for expr in exprs {
-            expr.collect_branches(&mut pairs);
+            crate::lower::diff::collect_branches(expr, &mut pairs, &resolve_node);
         }
         let mut branch_voltages = HashMap::new();
         for (plus, minus) in pairs {
@@ -861,7 +1122,7 @@ impl<'m> AnalogCompiler<'m> {
                         .ins()
                         .load(types::F64, MemFlags::trusted(), volts_ptr, (i * 8) as i32)
                 }
-                None => builder.ins().f64const(0.0), // ground
+                None => builder.ins().f64const(0.0),
             };
             let vp = load(&mut builder, plus);
             let vm = load(&mut builder, minus);
@@ -869,16 +1130,21 @@ impl<'m> AnalogCompiler<'m> {
             branch_voltages.insert((plus, minus), v);
         }
 
-        let mut emitter = AnalogEmitter {
-            builder: &mut builder,
-            branch_voltages: &branch_voltages,
-            params: &params,
+        let resolver = Resolver::from_symbols(&self.module.symbols);
+        let mut b = Builder::new_analog(
+            &mut builder,
+            self.module,
+            &resolver,
+            &math,
+            branch_voltages,
+            params,
             state_ptr,
             vars_ptr,
             sim_ptr,
-            math: &math,
-        };
-        body(&mut emitter, &self.slot, out_ptr)?;
+            self.limits.clone(),
+            self.limit_base,
+        );
+        body(&mut b, &self.slot, out_ptr)?;
 
         builder.ins().return_(&[]);
         builder.finalize();
@@ -887,40 +1153,5 @@ impl<'m> AnalogCompiler<'m> {
             .define_function(func_id, &mut ctx)
             .map_err(|e| CodegenError::Module(e.to_string()))?;
         Ok(func_id)
-    }
-}
-
-impl FlatAnalog {
-    /// Every expression in the flattened body (for terminal discovery).
-    fn exprs(&self) -> impl Iterator<Item = &IrExpr> {
-        self.resistive
-            .iter()
-            .chain(&self.charge)
-            .map(|c| &c.expr)
-            .chain(self.forces.iter().map(|f| &f.expr))
-            .chain(self.ac_stims.iter().flat_map(|s| [&s.mag, &s.phase]))
-            .chain(self.bound_steps.iter())
-            .chain(self.noise.iter().map(|(_, _, psd, _)| psd))
-            .chain(self.runtime_states.iter().map(|(_, input)| input))
-            .chain(self.events.iter().flat_map(FlatEvent::exprs))
-    }
-
-    /// How far into the `params`/`state`/`vars` banks the compiled code
-    /// actually reads: `(params, state, vars)` as exclusive upper bounds
-    /// (max referenced id + 1). The symbol-table counts overcount — a
-    /// behavior-local `var` is inlined away and a `ddt` state is
-    /// substituted out of the residual — so the eval-time bounds contract
-    /// ([`AnalogKernel::check_input_lens`]) uses these instead.
-    fn read_bounds(&self) -> (usize, usize, usize) {
-        let (mut params, mut state, mut vars) = (0usize, 0usize, 0usize);
-        for expr in self.exprs() {
-            expr.visit(&mut |e| match e {
-                IrExpr::Param(id) => params = params.max(id.0 as usize + 1),
-                IrExpr::State(id) => state = state.max(id.0 as usize + 1),
-                IrExpr::Var(id) => vars = vars.max(id.0 as usize + 1),
-                _ => {}
-            });
-        }
-        (params, state, vars)
     }
 }

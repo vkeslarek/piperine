@@ -107,6 +107,7 @@ fn display(v: &Value) -> String {
         }
         Value::Option(None) => "None".into(),
         Value::Option(Some(x)) => format!("Some({})", display(x)),
+        Value::Object(o) => o.render(),
         other => format!("<{}>", other.type_name()),
     }
 }
@@ -133,14 +134,14 @@ impl TaskRegistry {
 }
 
 /// Try the shared pure registry, then the bare-name math catalog
-/// (`piperine_ir::math`) called with a `$`-prefix (e.g. `$sqrt`).
+/// (`crate::math`) called with a `$`-prefix (e.g. `$sqrt`).
 /// Returns `None` for anything neither recognizes, letting a `Host` report
 /// `TaskUnavailable`.
 pub fn dispatch_pure(registry: &TaskRegistry, name: &str, args: Vec<Value>) -> Option<Result<Value, EvalError>> {
     if let Some(task) = registry.lookup(name) {
         return Some(task.eval(args));
     }
-    if piperine_ir::math::math_fn(name).is_some() {
+    if crate::math::math_fn(name).is_some() {
         let floats: Result<Vec<f64>, EvalError> = args
             .iter()
             .map(|v| match v {
@@ -151,7 +152,7 @@ pub fn dispatch_pure(registry: &TaskRegistry, name: &str, args: Vec<Value>) -> O
             })
             .collect();
         return Some(floats.and_then(|floats| {
-            piperine_ir::math::eval_const_math(name, &floats)
+            crate::math::eval_const_math(name, &floats)
                 .map(Value::Real)
                 .ok_or_else(|| EvalError::TypeMismatch(format!("bad arguments to ${name}")))
         }));

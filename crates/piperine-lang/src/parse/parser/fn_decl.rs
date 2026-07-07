@@ -64,7 +64,7 @@ impl Parse for FnSig {
         let ret = if parser.eat(&Tok::Arrow) {
             Type::parse(parser)?
         } else {
-            Type { name: "Unit".into(), args: Vec::new(), dimensions: Vec::new() }
+            Type { name: "Unit".into(), args: Vec::new(), dimensions: Vec::new(), optional: false }
         };
         Ok(FnSig { name, type_params, params, ret })
     }

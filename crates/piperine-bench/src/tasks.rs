@@ -26,7 +26,7 @@ pub trait SimTask {
 /// A field of a config `Record`, or `None` when absent.
 fn field(rec: &Value, name: &str) -> Option<Value> {
     match rec {
-        Value::Record(fields) => fields.borrow().get(name).cloned(),
+        Value::Record { fields, .. } => fields.borrow().get(name).cloned(),
         _ => None,
     }
 }
@@ -116,7 +116,7 @@ impl SimTask for Tran {
         // `$tran(TranConfig { .stop = …, [.step], [.start], [.solver] })`, or
         // the positional convenience `$tran(stop, step)`.
         let (stop, step, start, cfg) = match args.first() {
-            Some(rec @ Value::Record(_)) => {
+            Some(rec @ Value::Record { .. }) => {
                 let stop = required_real(rec, "TranConfig", "stop")?;
                 let step = match real_field(rec, "step")? {
                     Some(s) if s > 0.0 => Some(s),
@@ -173,13 +173,13 @@ impl SimTask for Noise {
         // `(Net, Net)` pair means `(plus, minus)`. The deprecated positional
         // alias `$noise(out, cfg)` is kept for one release.
         let (cfg, out_value) = match args.as_slice() {
-            [rec @ Value::Record(_)] => {
+            [rec @ Value::Record { .. }] => {
                 let out = field(rec, "out").ok_or_else(|| {
                     EvalError::TypeMismatch("NoiseConfig needs `.out = Net | (Net, Net)`".into())
                 })?;
                 (rec, out)
             }
-            [Value::Object(obj), cfg @ Value::Record(_)]
+            [Value::Object(obj), cfg @ Value::Record { .. }]
                 if obj.as_any().downcast_ref::<NetRef>().is_some() =>
             {
                 let out_name = obj.as_any().downcast_ref::<NetRef>().unwrap().name.clone();

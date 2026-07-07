@@ -59,6 +59,10 @@ pub struct Param {
     pub name: String,
     pub ty: ValueType,
     pub default: Option<Value>,
+    /// For a scalar flattened out of a bundle-typed param (GAPS §I.14):
+    /// `(logical param name, bundle type)` — e.g. `model_rsh` carries
+    /// `("model", "ResModel")`. Lets the lowering resolve `model.method()`.
+    pub bundle_origin: Option<(String, String)>,
 }
 
 impl Param {
