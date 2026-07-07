@@ -1,0 +1,77 @@
+name: Release PHDL Specification
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - 'feature/*'
+    paths:
+      - 'docs/spec/**'
+      - 'mkdocs-spec.yml'
+      - 'mkdocs.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'PHDL Specification Version (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install MkDocs and Plugins
+        run: |
+          pip install mkdocs-material mkdocs-with-pdf mkdocs-macros-plugin
+          # Note: mkdocs-with-pdf depends on weasyprint which requires some system libraries.
+          # Ubuntu-latest usually has them, but just in case:
+          sudo apt-get update && sudo apt-get install -y pango1.0-tools
+
+      - name: Build MkDocs Site and PDF
+        run: |
+          # Build only the spec config so the PDF doesn't include the manual pages
+          mkdocs build -f mkdocs-spec.yml
+
+      - name: Determine Version
+        id: vars
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            RAW_VERSION="${{ github.event.inputs.version }}"
+          else
+            # Extract version directly from mkdocs.yml
+            RAW_VERSION=$(grep 'phdl_version:' mkdocs.yml | awk -F '"' '{print $2}')
+          fi
+          
+          echo "VERSION=${RAW_VERSION}" >> $GITHUB_ENV
+          echo "RELEASE_NAME=PHDL Specification v${RAW_VERSION}" >> $GITHUB_ENV
+          echo "TAG_NAME=phdl-v${RAW_VERSION}" >> $GITHUB_ENV
+
+      - name: Rename Generated PDF
+        run: |
+          mv site/pdf/piperine-spec.pdf site/pdf/piperine_hdl_v${{ env.VERSION }}.pdf
+
+      - name: Upload PDF Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: piperine_hdl_v${{ env.VERSION }}
+          path: site/pdf/piperine_hdl_v${{ env.VERSION }}.pdf
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: ${{ env.RELEASE_NAME }}
+          files: site/pdf/piperine_hdl_v${{ env.VERSION }}.pdf
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
