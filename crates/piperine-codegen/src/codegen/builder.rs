@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
-use cranelift_codegen::ir::{types, FuncRef, InstBuilder, MemFlags, Value};
+use cranelift_codegen::ir::{types, FuncRef, InstBuilder, MemFlags, TrapCode, Value};
 use cranelift_frontend::FunctionBuilder;
 
 use piperine_lang::parse::ast::{BindOp, BinaryOp, Expr, Literal, Pattern, Stmt, UnaryOp};
@@ -589,8 +589,8 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             [arm, rest @ ..] => {
                 let flag = self.pattern_flag(scrutinee, &arm.pat)?;
                 let then_block = self.builder.create_block();
-                let else_block = self.builder.create_block();
                 let merge_block = self.builder.create_block();
+                let else_block = self.builder.create_block();
                 self.builder.ins().brif(flag, then_block, &[], else_block, &[]);
 
                 self.builder.switch_to_block(then_block);
@@ -602,8 +602,15 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
 
                 self.builder.switch_to_block(else_block);
                 self.builder.seal_block(else_block);
-                self.emit_match(scrutinee, rest)?;
-                self.builder.ins().jump(merge_block, &[]);
+                if rest.is_empty() {
+                    // Exhaustiveness is checked at elaboration time. If we
+                    // reach here at runtime (e.g. an X/Z 4-state value not
+                    // covered), trap loudly rather than silently falling through.
+                    self.builder.ins().trap(TrapCode::unwrap_user(5));
+                } else {
+                    self.emit_match(scrutinee, rest)?;
+                    self.builder.ins().jump(merge_block, &[]);
+                }
 
                 self.builder.switch_to_block(merge_block);
                 self.builder.seal_block(merge_block);
@@ -1142,7 +1149,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             }
             Expr::Path(_) => Err(CodegenError::unsupported("path in an analog expression")),
             Expr::Index(_, _) | Expr::Slice(_, _) | Expr::Array(_) | Expr::Tuple(_)
-            | Expr::BundleLit { .. } | Expr::MapLit(_) | Expr::Lambda { .. } => {
+            | Expr::BundleLit { .. } | Expr::MapLit(_) | Expr::SetLit(_) | Expr::Lambda { .. } => {
                 Err(CodegenError::unsupported("vector/value-layer expression in an analog contribution"))
             }
         }

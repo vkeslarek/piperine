@@ -110,6 +110,28 @@ impl Object for SelectionRef {
             "labels" => Ok(Value::List(Rc::new(std::cell::RefCell::new(
                 self.labels.iter().map(|s| Value::Str(s.clone())).collect(),
             )))),
+            "one" => match self.labels.len() {
+                1 => {
+                    let label = Value::Str(self.labels[0].clone());
+                    let params = self.params[0].clone();
+                    Ok(Value::Result(Ok(Box::new(Value::Tuple(vec![
+                        label,
+                        Value::Map(Rc::new(std::cell::RefCell::new(
+                            params
+                                .into_iter()
+                                .map(|(k, v)| (Value::Str(k), v))
+                                .collect(),
+                        ))),
+                    ])))))
+                }
+                0 => Ok(Value::Result(Err(Box::new(Value::Str(
+                    "selection is empty".into(),
+                ))))),
+                _ => Ok(Value::Result(Err(Box::new(Value::Str(format!(
+                    "selection has {} matches, expected one",
+                    self.labels.len()
+                )))))),
+            },
             // A field-read (`s.resistance`, no parens) → snapshot per
             // instance, as a List (always a List, even for a singleton).
             _ => {

@@ -291,11 +291,8 @@ impl SimHost {
                 params.push(snap);
             }
         }
-        if labels.is_empty() {
-            return Err(EvalError::Host(format!(
-                "select(\"{path}\") matched no instances"
-            )));
-        }
+        // An empty selection is valid (not an error) — the spec says results
+        // may be empty; callers use `.len()` or `.one()` to handle it.
         Ok(Value::Object(Rc::new(SelectionRef::new(labels, params))))
     }
 

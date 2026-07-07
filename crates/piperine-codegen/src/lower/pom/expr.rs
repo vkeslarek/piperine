@@ -224,10 +224,10 @@ pub(crate) fn resolve_expr(expr: &Expr, ctx: &mut LowerCtx) -> Expr {
             });
             Expr::Literal(Literal::Real(0.0))
         }
-        Expr::Lambda { .. } | Expr::Tuple(_) | Expr::MapLit(_) => {
+        Expr::Lambda { .. } | Expr::Tuple(_) | Expr::MapLit(_) | Expr::SetLit(_) => {
             ctx.errors.push(super::LowerError {
                 module: ctx.module_name.clone(),
-                what: "value-layer expression (lambda/tuple/map)",
+                what: "value-layer expression (lambda/tuple/map/set)",
                 name: expr_to_name(expr),
             });
             Expr::Literal(Literal::Real(0.0))

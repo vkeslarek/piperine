@@ -29,6 +29,7 @@ mod mono;
 mod passes;
 mod register;
 mod resolve;
+pub(crate) mod attrs;
 
 pub struct Elaborator {
     disciplines: HashMap<String, DisciplineDecl>,

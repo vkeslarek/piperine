@@ -151,6 +151,22 @@ Still open:
 - Error-accumulating elaboration (first `ElabError` stops analysis) — the editor shows one
   elaboration error at a time.
 
+## Spec / implementation divergences (2026-07-07 spec audit)
+
+Cases where the formal specification (`docs/new-spec/`) describes intended behavior the
+compiler does not yet enforce. The spec is the contract; these are bugs/gaps to close.
+
+- **`white_noise` / `flicker_noise` return `0.0` placeholder.** Spec (Part V §2):
+  inject a noise spectral density into the contribution RHS. Code
+  (`lower/pom/analog_ops.rs:204-209`) returns `0.0` — a silent stub that violates the
+  no-silent-`0.0` rule (AGENTS.md). Either lower the noise stamp or make it fail-loud.
+- **Keyword reservation is parser-level, not lexical.** The lexer
+  (`parse/lexer.rs:14-17`) emits every keyword as `Tok::Ident(String)`; reservation is a
+  parser concern. Documented as the current design in Part I §4.2; a future lexer
+  refactor could tokenize keywords for robustness.
+
+---
+
 ## Extension / packaging (user-owned, deliberately out of agent scope)
 
 VS Code extension productization, marketplace packaging, grammar/registry sync tests,

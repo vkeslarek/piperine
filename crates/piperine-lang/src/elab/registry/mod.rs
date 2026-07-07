@@ -2,10 +2,12 @@ pub mod types;
 pub mod components;
 pub mod callables;
 pub mod impls;
+pub mod schemas;
 
 pub use types::{TypeRegistry, TypeDef};
 pub use components::{ComponentRegistry, ComponentDef};
 pub use callables::{CallableRegistry, CallableDef};
+pub use schemas::SchemaRegistry;
 
 use crate::elab::event::EventRegistry;
 
@@ -14,6 +16,7 @@ pub struct ElabContext {
     pub components: ComponentRegistry,
     pub callables: CallableRegistry,
     pub events: EventRegistry,
+    pub schemas: SchemaRegistry,
 }
 
 impl Default for ElabContext {
@@ -45,6 +48,7 @@ impl ElabContext {
             components: ComponentRegistry::new(),
             callables: CallableRegistry::new(),
             events: EventRegistry::with_builtins(),
+            schemas: SchemaRegistry::new(),
         }
     }
 }

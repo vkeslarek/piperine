@@ -286,6 +286,28 @@ impl<'a> Parser<'a> {
             }
         }
 
+        // Set literal: `Set { a, b, c }` or `Set {}` (empty set).
+        // Disambiguated from a bundle literal by the `Set` type name and the
+        // absence of `.field = ...` syntax (bundle lits require dotted field
+        // inits; Set items are bare expressions).
+        if let Expr::Ident(name) = &expr {
+            if name == "Set" && self.peek() == Some(&Tok::LBrace) {
+                self.eat(&Tok::LBrace);
+                let mut items = Vec::new();
+                if !self.eat(&Tok::RBrace) {
+                    items.push(self.parse_expr()?);
+                    while self.eat(&Tok::Comma) {
+                        if self.peek() == Some(&Tok::RBrace) {
+                            break;
+                        }
+                        items.push(self.parse_expr()?);
+                    }
+                    self.expect(&Tok::RBrace)?;
+                }
+                expr = Expr::SetLit(items);
+            }
+        }
+
         // BundleLit: `TypeRef { .field = expr, ... }` — look-ahead on `{ .` or `{ }`.
         if self.peek() == Some(&Tok::LBrace)
             && (self.peek_at(1) == Some(&Tok::Dot) || self.peek_at(1) == Some(&Tok::RBrace)) {

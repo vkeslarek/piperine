@@ -376,7 +376,7 @@ fn test_use_resolution_file_based() {
     let lib_path = dir.path().join("mylib.phdl");
     std::fs::write(
         &lib_path,
-        "discipline MyNet { potential v: Real; flow i: Real; }",
+        "pub discipline MyNet { potential v: Real; flow i: Real; }",
     )
     .unwrap();
 
@@ -409,7 +409,7 @@ fn test_use_transitive() {
     // a.phdl uses b.phdl
     std::fs::write(
         dir.path().join("b.phdl"),
-        "discipline NetB { potential v: Real; flow i: Real; }",
+        "pub discipline NetB { potential v: Real; flow i: Real; }",
     )
     .unwrap();
     std::fs::write(dir.path().join("a.phdl"), "use b;").unwrap();
@@ -459,4 +459,275 @@ fn test_global_const_evaluated() {
     let prog = result.expect("parse_and_elaborate failed");
     assert_eq!(prog.const_("MY_CONST").unwrap().as_natural().unwrap(), 42);
     assert_eq!(prog.const_("ANOTHER").unwrap().as_natural().unwrap(), 43);
+}
+
+// ──────────────────────────── pub visibility ────────────────────────────────
+
+#[test]
+fn test_pub_item_accessible_from_other_package() {
+    use std::path::PathBuf;
+    // Set up a temp package with public exports.
+    let tmp = std::env::temp_dir().join("piperine_pubtest_pub");
+    let lib_dir = tmp.join("lib");
+    std::fs::create_dir_all(&lib_dir).unwrap();
+    std::fs::write(lib_dir.join("devices.phdl"), "
+        pub discipline Electrical { potential v: Real; flow i: Real; }
+        pub mod Resistor ( inout p : Electrical, inout n : Electrical ) {
+            param r : Real = 1e3;
+        }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+    ").unwrap();
+    std::fs::write(tmp.join("top.phdl"), "
+        use lib::devices;
+        mod Top ( inout a : Electrical, inout b : Electrical ) {
+            r1 : Resistor ( .p = a, .n = b );
+        }
+    ").unwrap();
+
+    let mut sm = piperine_lang::SourceMap::new(tmp.clone());
+    sm.add_namespace("piperine", PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("headers"));
+    sm.add_namespace("lib", lib_dir);
+
+    let src = std::fs::read_to_string(tmp.join("top.phdl")).unwrap();
+    let result = parse_and_elaborate(&src, &sm);
+    let prog = result.expect("pub items should be accessible");
+    assert!(prog.module("Top").is_some());
+    assert!(prog.module("Resistor").is_some());
+}
+
+#[test]
+fn test_private_item_not_accessible_from_other_package() {
+    use std::path::PathBuf;
+    let tmp = std::env::temp_dir().join("piperine_pubtest_priv");
+    let lib_dir = tmp.join("lib");
+    std::fs::create_dir_all(&lib_dir).unwrap();
+    std::fs::write(lib_dir.join("devices.phdl"), "
+        pub discipline Electrical { potential v: Real; flow i: Real; }
+        mod SecretHelper ( inout p : Electrical, inout n : Electrical ) {
+            param gain : Real = 2.0;
+        }
+        analog SecretHelper { I(p, n) <+ gain * V(p, n); }
+    ").unwrap();
+    std::fs::write(tmp.join("top.phdl"), "
+        use lib::devices;
+        mod Top ( inout a : Electrical, inout b : Electrical ) {
+            r1 : SecretHelper ( .p = a, .n = b );
+        }
+    ").unwrap();
+
+    let mut sm = piperine_lang::SourceMap::new(tmp.clone());
+    sm.add_namespace("piperine", PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("headers"));
+    sm.add_namespace("lib", lib_dir);
+
+    let src = std::fs::read_to_string(tmp.join("top.phdl")).unwrap();
+    let result = parse_and_elaborate(&src, &sm);
+    // SecretHelper is private — should not be accessible from top.phdl.
+    assert!(result.is_err(), "private module should not be accessible");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("SecretHelper") || err.contains("Undefined") || err.contains("not found"),
+        "expected an error about SecretHelper, got: {err}"
+    );
+}
+
+#[test]
+fn test_private_item_accessible_within_same_file() {
+    // Within the same file, both pub and non-pub items are accessible.
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod Helper ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1e3; }
+        analog Helper { I(p, n) <+ V(p, n) / r; }
+        mod Top ( inout a : Electrical, inout b : Electrical ) {
+            r1 : Helper ( .p = a, .n = b );
+        }
+    ";
+    let prog = elab(src);
+    assert!(prog.module("Helper").is_some());
+    assert!(prog.module("Top").is_some());
+}
+
+// ──────────────────────────── attribute schemas ─────────────────────────────
+
+#[test]
+fn test_registered_schema_attribute_passes() {
+    let src = "
+        @attribute(schema = \"Layout\")
+        bundle Layout { min_width : Real = 0.0, layer : String }
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod M ( inout p : Electrical ) {
+            @Layout(layer = \"m3\") wire clk : Electrical;
+        }
+    ";
+    let prog = elab(src);
+    let m = prog.module("M").expect("M not found");
+    let clk = m.wires().iter().find(|w| w.name == "clk").expect("clk wire not found");
+    assert_eq!(clk.attributes().len(), 1);
+    assert_eq!(clk.attributes()[0].schema(), "Layout");
+    assert_eq!(clk.attributes()[0].field("layer"), Some(&piperine_lang::value::Value::Str("m3".into())));
+    assert_eq!(clk.attributes()[0].field("min_width"), Some(&piperine_lang::value::Value::Real(0.0)));
+}
+
+#[test]
+fn test_unknown_schema_attribute_fails() {
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod M ( inout p : Electrical ) {
+            @UnknownSchema(foo = 1) wire clk : Electrical;
+        }
+    ";
+    let err = elab_err(src);
+    assert!(err.contains("UnknownSchema"), "expected unknown schema error, got: {err}");
+}
+
+#[test]
+fn test_schema_missing_required_field_fails() {
+    let src = "
+        @attribute(schema = \"Layout\")
+        bundle Layout { min_width : Real, layer : String }
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod M ( inout p : Electrical ) {
+            @Layout(layer = \"m3\") wire clk : Electrical;
+        }
+    ";
+    let err = elab_err(src);
+    assert!(err.contains("min_width"), "expected missing field error, got: {err}");
+    assert!(err.contains("required"), "got: {err}");
+}
+
+#[test]
+fn test_schema_unknown_field_fails() {
+    let src = "
+        @attribute(schema = \"Layout\")
+        bundle Layout { layer : String }
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod M ( inout p : Electrical ) {
+            @Layout(layer = \"m3\", bogus = 42) wire clk : Electrical;
+        }
+    ";
+    let err = elab_err(src);
+    assert!(err.contains("bogus"), "expected unknown field error, got: {err}");
+}
+
+#[test]
+fn test_schema_attribute_on_module() {
+    let src = "
+        @attribute(schema = \"Floorplan\")
+        bundle Floorplan { x : Real = 0.0, y : Real = 0.0 }
+        discipline Electrical { potential v: Real; flow i: Real; }
+        @Floorplan(x = 10.0, y = 20.0)
+        mod M ( inout p : Electrical ) { }
+    ";
+    let prog = elab(src);
+    let m = prog.module("M").expect("M not found");
+    assert_eq!(m.attributes().len(), 1);
+    assert_eq!(m.attributes()[0].schema(), "Floorplan");
+    assert_eq!(m.attributes()[0].field("x"), Some(&piperine_lang::value::Value::Real(10.0)));
+    assert_eq!(m.attributes()[0].field("y"), Some(&piperine_lang::value::Value::Real(20.0)));
+}
+
+// ──────────────────────────── match exhaustiveness ───────────────────────────
+
+#[test]
+fn test_exhaustive_enum_match_passes() {
+    let src = "
+        enum S { A, B, C }
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod M ( inout p : Electrical ) { var x : S = A; }
+        digital M {
+            match x {
+                A => { }
+                B => { }
+                C => { }
+            }
+        }
+    ";
+    let prog = elab(src);
+    assert!(prog.module("M").is_some());
+}
+
+#[test]
+fn test_exhaustive_enum_match_with_wildcard_passes() {
+    let src = "
+        enum S { A, B, C }
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod M ( inout p : Electrical ) { var x : S = A; }
+        digital M {
+            match x {
+                A => { }
+                _ => { }
+            }
+        }
+    ";
+    let prog = elab(src);
+    assert!(prog.module("M").is_some());
+}
+
+#[test]
+fn test_non_exhaustive_enum_match_fails() {
+    let src = "
+        enum S { A, B, C }
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod M ( inout p : Electrical ) { var x : S = A; }
+        digital M {
+            match x {
+                A => { }
+                B => { }
+            }
+        }
+    ";
+    let err = elab_err(src);
+    assert!(err.contains("non-exhaustive"), "expected non-exhaustive error, got: {err}");
+    assert!(err.contains("C"), "error should name the missing variant C, got: {err}");
+}
+
+#[test]
+fn test_non_exhaustive_enum_match_multiple_missing() {
+    let src = "
+        enum S { A, B, C, D }
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod M ( inout p : Electrical ) { var x : S = A; }
+        digital M {
+            match x {
+                A => { }
+            }
+        }
+    ";
+    let err = elab_err(src);
+    assert!(err.contains("non-exhaustive"), "got: {err}");
+    assert!(err.contains("B"), "missing B: {err}");
+    assert!(err.contains("C"), "missing C: {err}");
+    assert!(err.contains("D"), "missing D: {err}");
+}
+
+#[test]
+fn test_bit_pattern_match_without_wildcard_fails() {
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod M ( inout p : Electrical ) { var x : Integer = 0; }
+        digital M {
+            match x {
+                0 => { }
+                1 => { }
+            }
+        }
+    ";
+    let err = elab_err(src);
+    assert!(err.contains("non-exhaustive"), "literal without wildcard should fail: {err}");
+    assert!(err.contains("wildcard"), "should mention wildcard requirement: {err}");
+}
+
+#[test]
+fn test_bit_pattern_match_with_wildcard_passes() {
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod M ( inout p : Electrical ) { var x : Integer = 0; }
+        digital M {
+            match x {
+                1 => { }
+                _ => { }
+            }
+        }
+    ";
+    let prog = elab(src);
+    assert!(prog.module("M").is_some());
 }

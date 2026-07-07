@@ -105,6 +105,12 @@ fn display(v: &Value) -> String {
                 .join(", ");
             format!("Map {{ {body} }}")
         }
+        Value::Set(items) => {
+            let body = items.borrow().iter().map(display).collect::<Vec<_>>().join(", ");
+            format!("Set {{ {body} }}")
+        }
+        Value::Result(Ok(v)) => format!("Ok({})", display(v)),
+        Value::Result(Err(e)) => format!("Err({})", display(e)),
         Value::Option(None) => "None".into(),
         Value::Option(Some(x)) => format!("Some({})", display(x)),
         Value::Object(o) => o.render(),

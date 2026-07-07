@@ -18,28 +18,12 @@ nav:
   - Home: index.md
   - Specification (PHDL):
       - Intro: spec/index.md
-      - Language (PHDL):
-          - Introduction: spec/language/00_intro.md
-          - Language Specification: spec/language/01_language_specification.md
-          - Elaboration Phase: spec/language/02_elaboration_phase.md
-          - Grammar (EBNF): spec/language/03_grammar_ebnf.md
-          - Reflection API: spec/language/04_reflection_api_object_model.md
-          - Selector: spec/language/05_selector.md
-          - Builtins Reference: spec/language/06_builtins_reference.md
-          - Bench Specification Intro: spec/language/07_bench_intro.md
-          - Position and principles: spec/language/08_position_and_principles.md
-          - The bench block: spec/language/09_the_bench_block.md
-          - Module context and name resolution: spec/language/10_module_context_and_name_resolution.md
-          - Measurement is through the result object: spec/language/11_measurement_is_through_the_result_object.md
-          - Analyses: spec/language/12_analyses_configuration_is_an_argument_not_state.md
-          - Result and waveform types: spec/language/13_result_and_waveform_types.md
-          - Adjustment through reflection: spec/language/14_adjustment_through_reflection.md
-          - The uniform API: spec/language/15_the_uniform_api_hostneutral.md
-          - Determinism and isolation: spec/language/16_determinism_and_isolation.md
-          - Language extensions: spec/language/17_language_extensions__moved_to_part_i.md
-          - System-task availability: spec/language/18_systemtask_availability.md
-          - Worked examples: spec/language/19_worked_examples.md
-          - Relationship to companion specifications: spec/language/20_relationship_to_the_companion_specifications.md
-          - Open questions: spec/language/21_open_questions.md
+      - Language: spec/part_i_language.md
+      - Elaboration: spec/part_ii_elaboration.md
+      - Interpreted Context (Bench): spec/part_iii_interpreted_context.md
+      - Reflection & Selector: spec/part_iv_reflection_selector.md
+      - Builtins Reference: spec/part_v_builtins.md
+      - Worked Examples: spec/appendix_a_worked_examples.md
+      - Complete Grammar (EBNF): spec/appendix_b_grammar.md
   - Library & Manual:
       - Usage: manual/index.md

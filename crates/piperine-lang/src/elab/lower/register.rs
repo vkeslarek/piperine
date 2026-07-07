@@ -29,6 +29,23 @@ impl Elaborator {
                 Item::BundleDecl(b) => {
                     self.bundles.insert(b.name.clone(), b.clone());
                     self.ctx.types.register(b.clone());
+                    // Register as an attribute schema if marked
+                    // `@attribute(schema = "BundleName")`.
+                    if let Some(schema_name) = b.attrs.iter().find_map(|a| {
+                        if a.name == "attribute" {
+                            a.args.iter().find(|arg| arg.name == "schema").and_then(|arg| {
+                                if let crate::parse::ast::Expr::Literal(crate::parse::ast::Literal::String(s)) = &arg.expr {
+                                    Some(s.clone())
+                                } else {
+                                    None
+                                }
+                            })
+                        } else {
+                            None
+                        }
+                    }) {
+                        self.ctx.schemas.register(&schema_name);
+                    }
                 }
                 Item::EnumDecl(e) => {
                     self.enums.insert(e.name.clone(), e.clone());

@@ -96,6 +96,7 @@ impl Codegen for Expr {
             | Expr::Tuple(_)
             | Expr::BundleLit { .. }
             | Expr::MapLit(_)
+            | Expr::SetLit(_)
             | Expr::Lambda { .. }
             | Expr::Path(_)
             | Expr::Block(_) => Err(CodegenError::unsupported(format!(

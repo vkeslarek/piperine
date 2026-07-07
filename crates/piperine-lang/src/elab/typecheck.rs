@@ -467,18 +467,22 @@ fn check_behavior(
     for (name, net_ty) in nets {
         locals.insert(name.clone(), discipline_value_type(net_ty.discipline_name(), design));
     }
+    // Module-level vars carry their resolved value type.
+    for v in &module.vars {
+        locals.insert(v.name.clone(), v.ty.clone());
+    }
     
     // Check each root statement, then recurse into its children via walk_stmts.
     for stmt in &behavior.body {
         // `walk_stmts` is pre-order and includes the root.
-        let mut err: Option<ElabError> = None;
-        stmt.walk_stmts(&mut |s| {
-            if err.is_none() {
-                if let Err(e) = check_one_stmt(s, module, behavior, &mut locals) {
-                    err = Some(e);
+            let mut err: Option<ElabError> = None;
+            stmt.walk_stmts(&mut |s| {
+                if err.is_none() {
+                    if let Err(e) = check_one_stmt(s, module, behavior, &mut locals, design) {
+                        err = Some(e);
+                    }
                 }
-            }
-        });
+            });
         if let Some(e) = err { return Err(e); }
     }
     Ok(())
@@ -489,8 +493,10 @@ fn check_one_stmt(
     stmt: &BehaviorStmt,
     module: &DesignModule,
     behavior: &Behavior,
-    locals: &mut std::collections::HashMap<String, ValueType>,
+    locals: &mut HashMap<String, ValueType>,
+    design: &crate::pom::Design,
 ) -> Result<(), ElabError> {
+    use crate::parse::ast::Stmt;
     match stmt {
         BehaviorStmt::VarDecl { name, .. } => {
             // Resolved type lives in the behavior's side table
@@ -526,8 +532,82 @@ fn check_one_stmt(
                     }
                 }
         }
+        Stmt::Match { expr, arms } => {
+            check_match_exhaustive(expr, arms, module, locals, design)?;
+        }
         _ => {}
     }
+    Ok(())
+}
+
+/// Check that a `match` covers every variant of the scrutinee's enum type,
+/// or has a wildcard arm. Bit-pattern and literal-only matches must include
+/// a wildcard (full bit-space coverage analysis is out of scope).
+fn check_match_exhaustive(
+    scrutinee: &Expr,
+    arms: &[crate::parse::ast::StmtMatchArm],
+    module: &DesignModule,
+    locals: &HashMap<String, ValueType>,
+    design: &crate::pom::Design,
+) -> Result<(), ElabError> {
+    use crate::parse::ast::Pattern;
+
+    // If any arm is a wildcard, the match is always exhaustive.
+    let has_wildcard = arms.iter().any(|a| matches!(a.pat, Pattern::Wildcard));
+    if has_wildcard {
+        return Ok(());
+    }
+
+    // Collect which kinds of patterns are present.
+    let mut covered_variants: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut has_bit_pattern = false;
+    let mut has_literal = false;
+    for arm in arms {
+        match &arm.pat {
+            Pattern::Wildcard => return Ok(()),
+            Pattern::Path(p) => {
+                // The variant name is the last segment (handles both
+                // `Idle` and `SarState::Idle`).
+                if let Some(name) = p.segments.last() {
+                    covered_variants.insert(name.clone());
+                }
+            }
+            Pattern::BitPattern(_) => { has_bit_pattern = true; }
+            Pattern::Literal(_) => { has_literal = true; }
+        }
+    }
+
+    // Bit-pattern or literal matches without a wildcard are non-exhaustive
+    // (proving full bit-space coverage is out of scope — require wildcard).
+    if has_bit_pattern || has_literal {
+        return Err(ElabError::from(ElabErrorKind::NonExhaustiveMatch {
+            module: module.name().to_string(),
+            missing: "a wildcard arm is required for bit-pattern or literal matches".into(),
+        }));
+    }
+
+    // For enum matches, verify every variant is covered.
+    if let Some(ValueType::Enum(enum_name)) = type_of_expr(scrutinee, locals) {
+        if let Some(enum_decl) = design.enums.get(&enum_name) {
+            let all_variants: Vec<&str> = enum_decl.variants.iter().map(|v| v.name.as_str()).collect();
+            let missing: Vec<&str> = all_variants
+                .iter()
+                .filter(|v| !covered_variants.contains(**v))
+                .copied()
+                .collect();
+            if !missing.is_empty() {
+                return Err(ElabError::from(ElabErrorKind::NonExhaustiveMatch {
+                    module: module.name().to_string(),
+                    missing: format!("missing variants: {}", missing.join(", ")),
+                }));
+            }
+        }
+    }
+
+    // If the scrutinee type is unknown (not an enum, no bit/literal patterns),
+    // we can't check — only Path arms on an unknown type. Skip silently
+    // (the match either has a wildcard or only covers specific paths; if
+    // the scrutinee is not an enum this is likely a comparison-style match).
     Ok(())
 }
 

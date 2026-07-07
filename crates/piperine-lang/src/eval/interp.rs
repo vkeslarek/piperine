@@ -499,6 +499,14 @@ impl<'h, H: Host> Interpreter<'h, H> {
                 Ok(Value::Map(Rc::new(std::cell::RefCell::new(pairs))))
             }
 
+            Expr::SetLit(items) => {
+                let values = items
+                    .iter()
+                    .map(|e| self.eval_expr(e))
+                    .collect::<Result<Vec<_>, EvalError>>()?;
+                Ok(Value::Set(Rc::new(std::cell::RefCell::new(values))))
+            }
+
             Expr::Lambda { params, body } => {
                 let captured = self.scopes.iter().flat_map(|s| s.clone()).collect::<HashMap<_, _>>();
                 Ok(Value::Closure(Rc::new(Closure {

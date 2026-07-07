@@ -54,6 +54,13 @@ pub enum Value {
     /// `Value` keys aren't `Hash`/`Eq`-clean, and N is tiny. Shared/mutable
     /// so `.insert(...)` is visible through every alias, like `List`.
     Map(Rc<RefCell<Vec<(Value, Value)>>>),
+    /// A `Set<T>` — unique-element collection backed by a `Vec` (`Value` isn't
+    /// `Hash`/`Eq`-clean, N is tiny). Shared/mutable like `List`/`Map`.
+    /// Literal: `Set { a, b, c }`.
+    Set(Rc<RefCell<Vec<Value>>>),
+    /// A `Result<T, E>` — `Ok(T)` or `Err(E)`. Produced by fallible operations
+    /// (`Selection.one()`, `Param.set()`). No literal syntax.
+    Result(std::result::Result<Box<Value>, Box<Value>>),
     Option(Option<Box<Value>>),
     Closure(Rc<Closure>),
     /// A host-defined object (e.g. `OpResult`, `NetRef`). Method calls on it
@@ -137,6 +144,8 @@ impl Value {
             Self::List(_) => "List",
             Self::Record { .. } => "Record",
             Self::Map(_) => "Map",
+            Self::Set(_) => "Set",
+            Self::Result(_) => "Result",
             Self::Option(_) => "Option",
             Self::Closure(_) => "Closure",
             Self::Object(o) => o.type_name(),
@@ -200,6 +209,50 @@ impl Value {
                 Ok(Value::Option(found.map(Box::new)))
             }
             (Value::Map(entries), "len") => Ok(Value::Nat(entries.borrow().len() as u64)),
+            // ── Set methods ──
+            (Value::Set(items), "insert" | "add") => {
+                let [v] = take1(args)?;
+                let mut e = items.borrow_mut();
+                if !e.iter().any(|x| x == &v) {
+                    e.push(v);
+                }
+                Ok(Value::Unit)
+            }
+            (Value::Set(items), "contains") => {
+                let [v] = take1(args)?;
+                Ok(Value::Bool(items.borrow().iter().any(|x| x == &v)))
+            }
+            (Value::Set(items), "len") => Ok(Value::Nat(items.borrow().len() as u64)),
+            (Value::Set(items), "remove") => {
+                let [v] = take1(args)?;
+                let mut e = items.borrow_mut();
+                if let Some(pos) = e.iter().position(|x| x == &v) {
+                    e.remove(pos);
+                }
+                Ok(Value::Unit)
+            }
+            // ── Result methods ──
+            (Value::Result(Ok(_)), "is_ok") => Ok(Value::Bool(true)),
+            (Value::Result(Ok(_)), "is_err") => Ok(Value::Bool(false)),
+            (Value::Result(Err(_)), "is_ok") => Ok(Value::Bool(false)),
+            (Value::Result(Err(_)), "is_err") => Ok(Value::Bool(true)),
+            (Value::Result(Ok(v)), "unwrap") => Ok((**v).clone()),
+            (Value::Result(Err(_)), "unwrap") => {
+                Err(EvalError::Host("unwrap of an Err Result".into()))
+            }
+            (Value::Result(Ok(v)), "unwrap_or") => {
+                let [default] = take1(args)?;
+                let _ = default;
+                Ok((**v).clone())
+            }
+            (Value::Result(Err(_)), "unwrap_or") => {
+                let [default] = take1(args)?;
+                Ok(default)
+            }
+            (Value::Result(Ok(v)), "ok") => Ok(Value::Option(Some(v.clone()))),
+            (Value::Result(Err(_)), "ok") => Ok(Value::Option(None)),
+            (Value::Result(Ok(_)), "err") => Ok(Value::Option(None)),
+            (Value::Result(Err(e)), "err") => Ok(Value::Option(Some(e.clone()))),
             (Value::Object(obj), _) => obj.call_method(name, args),
             (recv, other) => {
                 Err(EvalError::Undefined(format!("method `{other}` on {}", recv.type_name())))
@@ -296,6 +349,13 @@ impl PartialEq for Value {
                 *a.borrow() == *b.borrow()
             }
             (Value::Map(a), Value::Map(b)) => *a.borrow() == *b.borrow(),
+            (Value::Set(a), Value::Set(b)) => {
+                let a = a.borrow();
+                let b = b.borrow();
+                a.len() == b.len() && a.iter().all(|x| b.iter().any(|y| x == y))
+            }
+            (Value::Result(Ok(a)), Value::Result(Ok(b))) => **a == **b,
+            (Value::Result(Err(a)), Value::Result(Err(b))) => **a == **b,
             (Value::Option(a), Value::Option(b)) => a == b,
             (Value::Object(a), Value::Object(b)) => a.equals(b.as_any()),
             _ => false,
@@ -385,5 +445,90 @@ mod tests {
         assert_eq!(Value::Nat(0).type_name(), "Natural");
         assert_eq!(Value::Bool(false).type_name(), "Boolean");
         assert_eq!(Value::Str("".into()).type_name(), "String");
+    }
+
+    #[test]
+    fn set_construction_and_methods() {
+        let s = Value::Set(Rc::new(RefCell::new(vec![Value::Nat(1), Value::Nat(2)])));
+        assert_eq!(s.type_name(), "Set");
+        assert_eq!(s.call_builtin_method("len", vec![]).unwrap(), Value::Nat(2));
+        assert_eq!(
+            s.call_builtin_method("contains", vec![Value::Nat(1)]).unwrap(),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            s.call_builtin_method("contains", vec![Value::Nat(3)]).unwrap(),
+            Value::Bool(false)
+        );
+        s.call_builtin_method("insert", vec![Value::Nat(3)]).unwrap();
+        assert_eq!(s.call_builtin_method("len", vec![]).unwrap(), Value::Nat(3));
+        // Duplicate insert doesn't add
+        s.call_builtin_method("insert", vec![Value::Nat(1)]).unwrap();
+        assert_eq!(s.call_builtin_method("len", vec![]).unwrap(), Value::Nat(3));
+        // Remove
+        s.call_builtin_method("remove", vec![Value::Nat(2)]).unwrap();
+        assert_eq!(s.call_builtin_method("len", vec![]).unwrap(), Value::Nat(2));
+        assert_eq!(
+            s.call_builtin_method("contains", vec![Value::Nat(2)]).unwrap(),
+            Value::Bool(false)
+        );
+    }
+
+    #[test]
+    fn set_equality() {
+        let s1 = Value::Set(Rc::new(RefCell::new(vec![Value::Nat(1), Value::Nat(2)])));
+        let s2 = Value::Set(Rc::new(RefCell::new(vec![Value::Nat(2), Value::Nat(1)])));
+        assert_eq!(s1, s2, "order-independent equality");
+        let s3 = Value::Set(Rc::new(RefCell::new(vec![Value::Nat(1)])));
+        assert_ne!(s1, s3, "different sizes are unequal");
+    }
+
+    #[test]
+    fn result_ok_methods() {
+        let ok = Value::Result(Ok(Box::new(Value::Nat(42))));
+        assert_eq!(ok.type_name(), "Result");
+        assert_eq!(ok.call_builtin_method("is_ok", vec![]).unwrap(), Value::Bool(true));
+        assert_eq!(ok.call_builtin_method("is_err", vec![]).unwrap(), Value::Bool(false));
+        assert_eq!(ok.call_builtin_method("unwrap", vec![]).unwrap(), Value::Nat(42));
+        assert_eq!(
+            ok.call_builtin_method("unwrap_or", vec![Value::Nat(0)]).unwrap(),
+            Value::Nat(42)
+        );
+        assert_eq!(
+            ok.call_builtin_method("ok", vec![]).unwrap(),
+            Value::Option(Some(Box::new(Value::Nat(42))))
+        );
+        assert_eq!(
+            ok.call_builtin_method("err", vec![]).unwrap(),
+            Value::Option(None)
+        );
+    }
+
+    #[test]
+    fn result_err_methods() {
+        let err = Value::Result(Err(Box::new(Value::Str("oops".into()))));
+        assert_eq!(err.call_builtin_method("is_ok", vec![]).unwrap(), Value::Bool(false));
+        assert_eq!(err.call_builtin_method("is_err", vec![]).unwrap(), Value::Bool(true));
+        assert_eq!(
+            err.call_builtin_method("unwrap_or", vec![Value::Nat(0)]).unwrap(),
+            Value::Nat(0)
+        );
+        assert!(err.call_builtin_method("unwrap", vec![]).is_err());
+        assert_eq!(err.call_builtin_method("ok", vec![]).unwrap(), Value::Option(None));
+        assert_eq!(
+            err.call_builtin_method("err", vec![]).unwrap(),
+            Value::Option(Some(Box::new(Value::Str("oops".into()))))
+        );
+    }
+
+    #[test]
+    fn result_equality() {
+        let ok1 = Value::Result(Ok(Box::new(Value::Nat(1))));
+        let ok2 = Value::Result(Ok(Box::new(Value::Nat(1))));
+        let ok3 = Value::Result(Ok(Box::new(Value::Nat(2))));
+        let err1 = Value::Result(Err(Box::new(Value::Str("e".into()))));
+        assert_eq!(ok1, ok2);
+        assert_ne!(ok1, ok3);
+        assert_ne!(ok1, err1);
     }
 }

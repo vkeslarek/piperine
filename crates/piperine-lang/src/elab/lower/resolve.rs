@@ -215,12 +215,13 @@ impl Elaborator {
             if !self.is_net_capable_bundle(resolved_name) {
                 return Err(ElabError::from(ElabErrorKind::NotNetCapable(resolved_name.to_owned())));
             }
+            let port_attrs = super::attrs::convert_attributes(&port.attrs, &self.ctx.schemas, &self.bundles)?;
             let mut out = Vec::new();
             for field in &bundle.fields {
                 let field_ty = self.resolve_net_type(&field.ty, env, type_subst)?;
                 out.push(Port {
                     span: None,
-                    attributes: Vec::new(),
+                    attributes: port_attrs.clone(),
                     direction: port.direction.clone(),
                     name: format!("{}_{}", port.name, field.name),
                     ty: field_ty,
@@ -232,7 +233,7 @@ impl Elaborator {
         let net_ty = self.resolve_net_type(&port.ty, env, type_subst)?;
         Ok(vec![Port {
             span: None,
-            attributes: Vec::new(),
+            attributes: super::attrs::convert_attributes(&port.attrs, &self.ctx.schemas, &self.bundles)?,
             direction: port.direction.clone(),
             name: port.name.clone(),
             ty: net_ty,

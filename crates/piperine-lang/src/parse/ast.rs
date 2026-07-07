@@ -50,6 +50,26 @@ pub enum Item {
     BenchDecl(BenchDecl),
 }
 
+impl Item {
+    /// Whether this item is declared `pub` (public, visible from other
+    /// packages via `use`). `UseDecl` itself has no visibility.
+    pub fn is_pub(&self) -> bool {
+        match self {
+            Item::UseDecl(_) => true,
+            Item::ModuleDeclaration(m) => m.is_pub,
+            Item::BehaviorDecl(b) => b.is_pub,
+            Item::DisciplineDecl(d) => d.is_pub,
+            Item::BundleDecl(b) => b.is_pub,
+            Item::EnumDecl(e) => e.is_pub,
+            Item::CapabilityDecl(c) => c.is_pub,
+            Item::ImplDecl(i) => i.is_pub,
+            Item::FnDecl(f) => f.is_pub,
+            Item::ConstDecl(c) => c.is_pub,
+            Item::BenchDecl(b) => b.is_pub,
+        }
+    }
+}
+
 /// `bench ModName { fn ... }` — the effectful post-elaboration scripting
 /// layer attached to a module by name (piperine-bench/docs/SPEC.md §2), the same way
 /// `analog`/`digital` attach via [`BehaviorDecl`]. Bodies use the ordinary
@@ -727,6 +747,8 @@ pub enum Expr {
     /// A `Map { k: v, ... }` literal (piperine-bench/docs/SPEC.md §5.1 — `Map<K, V>`,
     /// used for `ic`/`nodeset` per-node hints). `Map {}` is the empty map.
     MapLit(Vec<(Expr, Expr)>),
+    /// A `Set { a, b, c }` literal. `Set {}` is the empty set.
+    SetLit(Vec<Expr>),
     Lambda { params: Vec<String>, body: Box<Expr> },
 }
 
@@ -786,6 +808,7 @@ impl Expr {
                 k.walk(f);
                 v.walk(f);
             }),
+            Expr::SetLit(items) => items.iter().for_each(|e| e.walk(f)),
         }
     }
 
@@ -838,6 +861,7 @@ impl Expr {
                 k.walk_mut(f);
                 v.walk_mut(f);
             }),
+            Expr::SetLit(items) => items.iter_mut().for_each(|e| e.walk_mut(f)),
         }
     }
 

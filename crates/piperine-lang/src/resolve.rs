@@ -113,30 +113,48 @@ impl<'a> Resolver<'a> {
     /// item list with no `UseDecl` items.
     ///
     /// Diamond dependencies are handled via `seen` deduplication.
+    ///
+    /// **Privacy:** items from the root source are always included.
+    /// Items from `use`d files are only included if declared `pub`.
+    /// The prelude (injected via [`prelude_items`](Self::prelude_items))
+    /// is always fully included — it is compiler-injected, not user-imported.
     pub fn expand(&mut self, source: SourceFile) -> Result<Vec<ast::Item>, ResolveError> {
         let mut seen: HashSet<Vec<String>> = HashSet::new();
-        self.expand_inner(source, &mut seen)
+        self.expand_inner(source, &mut seen, false)
     }
 
     /// Recursively expand `use` declarations in a source file, tracking
     /// already-visited paths in `seen` to break diamond dependencies.
+    ///
+    /// `is_used`: true when this source was loaded via a `use` declaration
+    /// (non-root). Non-`pub` items from used sources are filtered out —
+    /// except for the `piperine::` namespace (the standard library), whose
+    /// items are always exported.
     fn expand_inner(
         &mut self,
         source: SourceFile,
         seen: &mut HashSet<Vec<String>>,
+        is_used: bool,
     ) -> Result<Vec<ast::Item>, ResolveError> {
         let mut result = Vec::new();
         for item in source.items {
             match item {
                 ast::Item::UseDecl(path) => {
                     if seen.contains(&path.segments) {
-                        continue; // already expanded; skip (diamond dependency)
+                        continue;
                     }
+                    let is_stdlib = path.segments.first().is_some_and(|s| s == "piperine");
                     seen.insert(path.segments.clone());
                     let resolved = self.load_source(&path.segments)?.clone();
-                    result.extend(self.expand_inner(resolved, seen)?);
+                    // stdlib items are always exported; user items require `pub`.
+                    result.extend(self.expand_inner(resolved, seen, !is_stdlib)?);
                 }
-                other => result.push(other),
+                other => {
+                    if is_used && !other.is_pub() {
+                        continue;
+                    }
+                    result.push(other);
+                }
             }
         }
         Ok(result)
