@@ -5,6 +5,9 @@ on:
     branches:
       - 'release/v*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build on ${{ matrix.os }}
@@ -53,8 +56,6 @@ jobs:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -76,3 +77,4 @@ jobs:
           name: Release ${{ env.VERSION }}
           target_commitish: ${{ github.sha }}
           files: artifacts/**/*
+          token: ${{ secrets.GITHUB_TOKEN }}
