@@ -259,6 +259,44 @@ never tested and does not parse.
 a `Tuple(Vec<ValueType>)` variant to `ValueType`, and tuple type resolution. This
 enables `fn foo() -> (Real, Natural)`, `var x : (Real, String)`, `Vec<(Real, Real)>`.
 
+### Function references — passing named functions as arguments
+
+**Spec (Part I §9.2):** "A function is a value: type `fn(T, U) -> R`."
+
+**Today:** the `fn(T) -> R` type annotation **parses and resolves** — the grammar and
+`ValueType::FnPtr` handle it. But the interpreter cannot **pass a named function** as an
+argument. Writing `apply_op(my_func, 5.0)` where `my_func` is a top-level `fn` fails:
+the interpreter resolves identifiers to values (`Value::Int`, `Value::Real`, etc.) but a
+bare function name is not a `Value::Closure` — it's a `Callable::Function` that lives in
+the registry, not in the value layer. Only lambdas (`|x| x * 2.0`) can be passed today,
+because they evaluate to `Value::Closure` directly.
+
+**Goal:** when an identifier resolves to a top-level `fn`, produce a `Value::Closure`
+(or a dedicated `Value::Function(FnId)`) so named functions can be passed as `fn(T) -> R`
+arguments. The interpreter's `eval_expr` for `Expr::Ident` should check the callable
+registry when local-scope lookup fails, and wrap the result as a callable value.
+
+### Type inference for `var` — less verbosity
+
+**Spec (Part III §1):** "`var name = expr;` may omit its type, inferred at interpretation
+time — only valid in the interpreted context (bench)."
+
+**Today:** in compiled contexts (`analog`/`digital`), a `var` requires an explicit type:
+`var acc : Real = 0.0;`. Omitting the type is a hard error outside bench
+(`behavior.rs:60-64`). In bench, the type is accepted but **ignored** — it's decorative,
+not checked. There is no actual inference: the interpreter treats every value by its
+runtime shape, and the typechecker doesn't infer from initializers.
+
+**Goal:** proper type inference for initialized `var` declarations everywhere:
+- `var x = 0.1;` → `Real` (literal inference)
+- `var x = some_fn();` → return type of `some_fn` (call-site inference)
+- `var x = a + b;` → type of `a` (binary-op inference)
+- `var x = [1, 2, 3];` → `Vec<Natural>` (literal + element inference)
+
+This eliminates the most common verbosity in PHDL without sacrificing type safety —
+the type is still known at compile time, just not written by hand. `param`, ports, and
+fields still require explicit types (their defaults/initializers may be absent).
+
 ---
 
 ## `extern` declarations — explicit builtin contracts
