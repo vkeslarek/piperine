@@ -598,10 +598,12 @@ load : Capacitor ( out, gnd ) { .c = 1p };
 analog Tile { I(load.p, gnd) <+ cpar * ddt(V(load.p, gnd)); }
 ```
 
-A `for` instance is an array `name[i]`; `name[i].port` reaches each replica. After
-behavioral `for` unrolling (§10), `name[i].port` becomes `name_0.port`, `name_1.port`,
-etc. — the loop variable is substituted by its concrete value, same as `if` const-
-folding.
+Inside a `for i in lo..hi` (§7.4), a named instance becomes an **instance array**:
+`name[i] : Module(...)`. Each iteration creates one replica accessible as `name[i]`,
+and `name[i].port` reaches the port of the i-th replica. The loop variable `i` is the
+address — it appears in both the instance name and any expressions (port connections,
+param overrides) that use it. Anonymous instances (no name) inside a `for` cannot be
+addressed afterward.
 
 **Validation.** E2011 (`MissingConstParam` — wrong const-arg count); E2013
 (`WidthMismatch` — net width mismatch on connection); E2014 (`DisciplineCrossing` —
@@ -635,8 +637,8 @@ layout intent, routing constraints, floorplan placement, matching requirements.
 Attributes are stackable:
 
 ```phdl
-@Layout(min_width = 2u, layer = "m3") @Route(priority = 1) wire clk : Electrical;
-@Floorplan(x = 0, y = 0) mod Cpu ( ... ) { ... }
+@layout(min_width = 2u, layer = "m3") @route(priority = 1) wire clk : Electrical;
+@fp(x = 0, y = 0) mod Cpu ( ... ) { ... }
 ```
 
 ```
@@ -658,18 +660,22 @@ Three governing rules govern every attribute. Violation of any is a defect:
 
 ### Schema registration
 
-A bundle becomes an attribute schema by marking it with
-`@attribute(schema = "BundleName")`:
+A bundle becomes an attribute schema by prefixing its declaration with
+`@attribute(schema = "name")`. The schema name is an **alias** — decoupled from the
+bundle name. Once registered, `@name(...)` is usable on any declaration.
 
 ```phdl
+@attribute(schema = "layout")
 bundle Layout { min_width : Real = 0.0, layer : String, spacing : Real = 0.0 }
-@attribute(schema = "Layout")
+
+// Usage uses the schema name, not the bundle name:
+@layout(layer = "m3") wire clk : Electrical;       // min_width and spacing get defaults
+@layout(min_width = 5u, layer = "m2") wire data : Electrical;
 ```
 
-Once registered, `@Layout(...)` is usable on any declaration. The arguments are
-type-checked against the bundle's fields: provided values must match declared types,
-required fields (no default) must be supplied, and omitted fields with defaults are
-filled in automatically.
+The arguments are type-checked against the bundle's fields: provided values must match
+declared types, required fields (no default) must be supplied, and omitted fields with
+defaults are filled in automatically.
 
 **Two entry paths, one store.** Attributes enter through two paths but live in one
 metadata store:
@@ -781,8 +787,9 @@ different engines under one statement grammar:
 A leaf device has one behavior block. A boundary device takes the block of the domain it
 *drives*: a `Comparator` is `digital` (samples `V`, drives `Bit`); a 1-bit DAC is
 `analog` (reads `Bit`, forces `V`). A behavioral `for` is unrolled — the bound must be
-an elaboration constant. After unrolling, `rseg[i].n` becomes `rseg_0.n`, `rseg_1.n`,
-etc. Behavior may branch on `$analysis` (§11), specialized per analysis at compile time.
+an elaboration constant. Inside the loop body, instance array references like
+`rseg[i].port` are resolved per iteration. Behavior may branch on `$analysis` (§11),
+specialized per analysis at compile time.
 
 ```
 BehaviorDecl ::= ("analog"|"digital") Ident "{" { BehaviorStmt } "}"
@@ -1020,6 +1027,16 @@ Use the finite-parameter idiom instead — a large-but-finite gain VCVS.
 `interface` — a construct that blurs the line between "shape with identity and
 behavior" (a module) and "valued aggregate" (a bundle). They are distinct concepts in
 PHDL; their field syntax rhymes, and that suffices.
+
+**First-class type values (`Value::Type`).** Rejected because types are an elaboration
+concept and values are a runtime concept — PHDL is explicit about this boundary (§2.5).
+Generic type parameters (`<T: Add + Net>`) already provide "referencing a type" at the
+elaboration level, resolved before any current flows. Carrying a type as a runtime value
+would blur the elaboration/solve boundary, open the door to dynamic type dispatch (which
+the No-Magic rule, §1, forbids), and add complexity without real power: reflection over
+the POM already answers "what type is this port/param/net?" without needing a value-level
+type. If you need type-dependent behavior, write two generic instantiations or two `impl`
+blocks — the type system resolves which applies at elaboration, not at runtime.
 
 ---
 

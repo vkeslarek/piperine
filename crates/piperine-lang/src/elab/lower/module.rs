@@ -383,7 +383,7 @@ impl Elaborator {
                             context: format!("instance array index for `{}`", n),
                             source: e,
                         })?;
-                        Some(format!("{}_{}", n, idx))
+                        Some(format!("{}[{}]", n, idx))
                     } else {
                         Some(n.clone())
                     }

@@ -242,7 +242,7 @@ impl<'a> LowerCtx<'a> {
         if GROUND_NAMES.contains(&name) {
             return Some(NodeId::GROUND);
         }
-        // Check instance port map first (e.g. "load.p" or "rseg_0.n").
+        // Check instance port map first (e.g. "load.p" or "rseg[0].n").
         if let Some(id) = self.instance_ports.get(name) {
             return Some(*id);
         }

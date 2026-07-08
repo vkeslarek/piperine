@@ -150,6 +150,15 @@ Still open:
   today's tests exercise helpers only.
 - Error-accumulating elaboration (first `ElabError` stops analysis) — the editor shows one
   elaboration error at a time.
+- **Attribute schema support.** `@schema_name(field = value, ...)` attributes are now
+  validated and populated into the POM, but the LSP and VS Code extension don't yet:
+  - Show `@schema_name` in completion (autocomplete registered schema names).
+  - Validate attribute arguments in-editor (red squiggles on unknown fields, wrong
+    types, missing required fields).
+  - Hover on `@schema_name` → show the backing bundle's fields and types.
+  - Goto-definition on `@schema_name` → jump to the `@attribute(schema = "...")`
+    declaration on the bundle.
+  - Show `@attribute(schema = "...")` bundles in the symbol outline.
 
 ## Spec / implementation divergences (2026-07-07 spec audit)
 
@@ -296,6 +305,39 @@ runtime shape, and the typechecker doesn't infer from initializers.
 This eliminates the most common verbosity in PHDL without sacrificing type safety —
 the type is still known at compile time, just not written by hand. `param`, ports, and
 fields still require explicit types (their defaults/initializers may be absent).
+
+**Lambda parameter Types.** Once type inference exists, lambda parameters should be
+inferrable too: `|x| x * 2.0` should infer `x : Real` from the body, instead of
+requiring the user to annotate every lambda parameter (today lambda params are
+untyped and the interpreter handles them dynamically). This pairs with the function-
+reference work above — when a lambda is passed as a `fn(T) -> U` argument, the
+expected parameter types from the signature can drive inference.
+
+### Discipline nature access by declared name
+
+**Spec (Part I §10.1):** "the declared nature names are also available: `Temp(th)`,
+`Pwr(th)`, etc."
+
+**Today:** NOT properly implemented. The flattener (`jit/flatten.rs:472-475`)
+hardcodes `"V"` as the only potential access and treats **everything else** as
+`NatureKind::Flow`:
+
+```rust
+let nature_kind = match name.as_str() {
+    "V" => NatureKind::Potential,
+    _ => NatureKind::Flow,
+};
+```
+
+So `Temp(th)` (a potential) is compiled as if it were a flow — silently wrong. `Pwr(th)`
+(a flow) works by accident. The access name is never resolved against the discipline's
+declared natures (`potential temp : Real; flow pwr : Real;`).
+
+**Goal:** resolve the access name against the discipline's natures at lowering time.
+When the flattener sees `Temp(th)`, it should look up `Temp` in `Thermal`'s declared
+natures, find it's a `Potential`, and use `NatureKind::Potential`. This connects to the
+`extern` declarations roadmap item — the accessors `V`, `I`, `Temp`, `Pwr` should be
+declared as `extern fn` with signatures tied to their discipline, not hardcoded.
 
 ---
 

@@ -1,28 +1,28 @@
-//! Attribute schema registry — which bundle names are registered as
-//! attribute schemas via `@attribute(schema = "BundleName")`.
+//! Attribute schema registry — maps schema names to the bundle declarations
+//! that back them, registered via `@attribute(schema = "name")` on a bundle.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
-/// Tracks which bundle names have been registered as attribute schemas.
-/// A bundle registered as a schema may be used as `@BundleName(field = value, ...)`
-/// on any declaration; the arguments are validated against the bundle's fields.
+/// Tracks which schema names are registered and which bundle each maps to.
+/// A bundle registered as a schema via `@attribute(schema = "foo")` may be
+/// used as `@foo(field = value, ...)` on any declaration.
 pub struct SchemaRegistry {
-    schemas: HashSet<String>,
+    schemas: HashMap<String, String>,
 }
 
 impl SchemaRegistry {
     pub fn new() -> Self {
-        Self { schemas: HashSet::new() }
+        Self { schemas: HashMap::new() }
     }
 
-    /// Register a bundle name as an attribute schema.
-    pub fn register(&mut self, name: &str) {
-        self.schemas.insert(name.to_string());
+    /// Register a schema name, backed by the named bundle's fields.
+    pub fn register(&mut self, schema_name: &str, bundle_name: &str) {
+        self.schemas.insert(schema_name.to_string(), bundle_name.to_string());
     }
 
-    /// Check if a name is a registered attribute schema.
-    pub fn contains(&self, name: &str) -> bool {
-        self.schemas.contains(name)
+    /// Look up the bundle name backing a schema, if registered.
+    pub fn lookup(&self, schema_name: &str) -> Option<&str> {
+        self.schemas.get(schema_name).map(|s| s.as_str())
     }
 }
 

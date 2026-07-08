@@ -23,6 +23,7 @@ nav:
       - Interpreted Context (Bench): spec/part_iii_interpreted_context.md
       - Reflection & Selector: spec/part_iv_reflection_selector.md
       - Builtins Reference: spec/part_v_builtins.md
+      - Plugins: spec/part_vi_plugins.md
       - Worked Examples: spec/appendix_a_worked_examples.md
       - Complete Grammar (EBNF): spec/appendix_b_grammar.md
   - Library & Manual:

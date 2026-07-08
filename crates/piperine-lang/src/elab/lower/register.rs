@@ -30,21 +30,19 @@ impl Elaborator {
                     self.bundles.insert(b.name.clone(), b.clone());
                     self.ctx.types.register(b.clone());
                     // Register as an attribute schema if marked
-                    // `@attribute(schema = "BundleName")`.
-                    if let Some(schema_name) = b.attrs.iter().find_map(|a| {
-                        if a.name == "attribute" {
-                            a.args.iter().find(|arg| arg.name == "schema").and_then(|arg| {
-                                if let crate::parse::ast::Expr::Literal(crate::parse::ast::Literal::String(s)) = &arg.expr {
-                                    Some(s.clone())
-                                } else {
-                                    None
+                    // `@attribute(schema = "name")`. The schema name is an
+                    // alias — `@name(...)` is used in source, not the bundle
+                    // name directly.
+                    for attr in &b.attrs {
+                        if attr.name == "attribute" {
+                            for arg in &attr.args {
+                                if arg.name == "schema" {
+                                    if let crate::parse::ast::Expr::Literal(crate::parse::ast::Literal::String(s)) = &arg.expr {
+                                        self.ctx.schemas.register(s, &b.name);
+                                    }
                                 }
-                            })
-                        } else {
-                            None
+                            }
                         }
-                    }) {
-                        self.ctx.schemas.register(&schema_name);
                     }
                 }
                 Item::EnumDecl(e) => {

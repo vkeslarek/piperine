@@ -33,6 +33,7 @@ syscall set. Part III covers it as such.
 | **III** | [Interpreted Context (Bench)](part_iii_interpreted_context.md) | The interpreted face of PHDL: execution model, name resolution, analyses, results, sweeps, host-neutral API, bench system tasks |
 | **IV** | [Reflection & Selector](part_iv_reflection_selector.md) | The Piperine Object Model (POM) and the selector query language |
 | **V** | [Builtins Reference](part_v_builtins.md) | Math, analog operators, `$`-syscalls, `@`-events, diagnostics, prelude/stdlib, system-task availability matrix |
+| **VI** | [Plugins](part_vi_plugins.md) | Plugin extensibility model: devices, lifecycle hooks, custom scripts, attribute schemas, security model |
 | **App. A** | [Worked Examples](appendix_a_worked_examples.md) | End-to-end architectures spanning analog, digital, interpreted, and mixed-signal |
 | **App. B** | [Complete Grammar (EBNF)](appendix_b_grammar.md) | Consolidated LL(1) grammar for the whole language |
 

@@ -41,7 +41,7 @@ pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
                 Expr::Index(inner, idx) => {
                     if let Expr::Ident(base_name) = inner.as_ref()
                         && let Expr::Literal(Literal::Int(i)) = idx.as_ref() {
-                            return Some(format!("{base_name}_{i}.{field}"));
+                            return Some(format!("{base_name}[{i}].{field}"));
                         }
                     None
                 }
@@ -190,7 +190,7 @@ pub(crate) fn resolve_expr(expr: &Expr, ctx: &mut LowerCtx) -> Expr {
                     if let (Expr::Ident(base_name), Expr::Literal(Literal::Int(i))) =
                         (inner.as_ref(), idx.as_ref())
                     {
-                        format!("{base_name}_{i}.{field}")
+                        format!("{base_name}[{i}].{field}")
                     } else {
                         let base_name = expr_to_name(base);
                         format!("{base_name}_{field}")

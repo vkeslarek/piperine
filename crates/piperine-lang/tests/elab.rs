@@ -551,18 +551,18 @@ fn test_private_item_accessible_within_same_file() {
 #[test]
 fn test_registered_schema_attribute_passes() {
     let src = "
-        @attribute(schema = \"Layout\")
+        @attribute(schema = \"layout\")
         bundle Layout { min_width : Real = 0.0, layer : String }
         discipline Electrical { potential v: Real; flow i: Real; }
         mod M ( inout p : Electrical ) {
-            @Layout(layer = \"m3\") wire clk : Electrical;
+            @layout(layer = \"m3\") wire clk : Electrical;
         }
     ";
     let prog = elab(src);
     let m = prog.module("M").expect("M not found");
     let clk = m.wires().iter().find(|w| w.name == "clk").expect("clk wire not found");
     assert_eq!(clk.attributes().len(), 1);
-    assert_eq!(clk.attributes()[0].schema(), "Layout");
+    assert_eq!(clk.attributes()[0].schema(), "layout");
     assert_eq!(clk.attributes()[0].field("layer"), Some(&piperine_lang::value::Value::Str("m3".into())));
     assert_eq!(clk.attributes()[0].field("min_width"), Some(&piperine_lang::value::Value::Real(0.0)));
 }
@@ -582,11 +582,11 @@ fn test_unknown_schema_attribute_fails() {
 #[test]
 fn test_schema_missing_required_field_fails() {
     let src = "
-        @attribute(schema = \"Layout\")
+        @attribute(schema = \"layout\")
         bundle Layout { min_width : Real, layer : String }
         discipline Electrical { potential v: Real; flow i: Real; }
         mod M ( inout p : Electrical ) {
-            @Layout(layer = \"m3\") wire clk : Electrical;
+            @layout(layer = \"m3\") wire clk : Electrical;
         }
     ";
     let err = elab_err(src);
@@ -597,11 +597,11 @@ fn test_schema_missing_required_field_fails() {
 #[test]
 fn test_schema_unknown_field_fails() {
     let src = "
-        @attribute(schema = \"Layout\")
+        @attribute(schema = \"layout\")
         bundle Layout { layer : String }
         discipline Electrical { potential v: Real; flow i: Real; }
         mod M ( inout p : Electrical ) {
-            @Layout(layer = \"m3\", bogus = 42) wire clk : Electrical;
+            @layout(layer = \"m3\", bogus = 42) wire clk : Electrical;
         }
     ";
     let err = elab_err(src);
@@ -611,16 +611,16 @@ fn test_schema_unknown_field_fails() {
 #[test]
 fn test_schema_attribute_on_module() {
     let src = "
-        @attribute(schema = \"Floorplan\")
+        @attribute(schema = \"fp\")
         bundle Floorplan { x : Real = 0.0, y : Real = 0.0 }
         discipline Electrical { potential v: Real; flow i: Real; }
-        @Floorplan(x = 10.0, y = 20.0)
+        @fp(x = 10.0, y = 20.0)
         mod M ( inout p : Electrical ) { }
     ";
     let prog = elab(src);
     let m = prog.module("M").expect("M not found");
     assert_eq!(m.attributes().len(), 1);
-    assert_eq!(m.attributes()[0].schema(), "Floorplan");
+    assert_eq!(m.attributes()[0].schema(), "fp");
     assert_eq!(m.attributes()[0].field("x"), Some(&piperine_lang::value::Value::Real(10.0)));
     assert_eq!(m.attributes()[0].field("y"), Some(&piperine_lang::value::Value::Real(20.0)));
 }

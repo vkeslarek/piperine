@@ -16,10 +16,10 @@ pub(crate) fn convert_attribute(
     schemas: &SchemaRegistry,
     bundles: &HashMap<String, crate::parse::ast::BundleDecl>,
 ) -> Result<crate::pom::module::Attribute, ElabError> {
-    if !schemas.contains(&attr.name) {
-        return Err(ElabError::from(ElabErrorKind::UnknownAttrSchema(attr.name.clone())));
-    }
-    let bundle = bundles.get(&attr.name).ok_or_else(|| {
+    let bundle_name = schemas.lookup(&attr.name).ok_or_else(|| {
+        ElabError::from(ElabErrorKind::UnknownAttrSchema(attr.name.clone()))
+    })?;
+    let bundle = bundles.get(bundle_name).ok_or_else(|| {
         ElabError::from(ElabErrorKind::UnknownAttrSchema(attr.name.clone()))
     })?;
     let mut data: HashMap<String, Value> = HashMap::new();
