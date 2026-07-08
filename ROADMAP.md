@@ -164,6 +164,83 @@ compiler does not yet enforce. The spec is the contract; these are bugs/gaps to 
   (`parse/lexer.rs:14-17`) emits every keyword as `Tok::Ident(String)`; reservation is a
   parser concern. Documented as the current design in Part I §4.2; a future lexer
   refactor could tokenize keywords for robustness.
+- **`piperine::` stdlib exemption from `pub` filtering.** Currently the resolver
+  (`resolve.rs`) skips privacy filtering for `use piperine::...` — stdlib items are
+  always exported regardless of `pub`. This is because the frozen header files
+  (`headers/*.phdl`) don't declare their items `pub`. Fix: add `pub` to all header
+  declarations and remove the exemption so the stdlib follows the same visibility rules
+  as user packages.
+
+---
+
+## Type system explicitness — make implicit rules visible via capabilities
+
+Several type-system rules are currently hardcoded in the compiler (typechecker widening
+table, interpreter truthiness, intrinsic capability satisfaction). Expressing them as
+explicit capabilities — the same mechanism already used for `Add`, `Eq`, `Ord`, etc. —
+would make the rules visible, extensible, and self-documenting in the prelude.
+
+### Conversion / widening capabilities (`From<T>`)
+
+**Spec (Part I §6.1):** "`Boolean` widens to `Quad` implicitly; other casts are explicit
+(`real(x)`, `int(x)`, `bit(x)`)."
+
+**Today:** the widening table is hardcoded in `typecheck.rs:518-526` — a `matches!` block
+listing six allowed pairs: `(Quad ← Boolean)`, `(Boolean ← Integer)`, `(Quad ← Integer)`,
+`(Natural ← Integer)`, `(Boolean ← Natural)`, `(Quad ← Natural)`. Adding a new widening
+requires editing the compiler; the rule is invisible to users reading the prelude.
+
+**Goal:** express widening as a capability in the prelude so the relationship is explicit
+and extensible:
+
+```phdl
+capability From<T> { fn from(v: T) -> Self; }
+impl From<Boolean> for Quad { fn from(v: Boolean) -> Self { ... } }
+impl From<Integer> for Natural { fn from(v: Integer) -> Self { ... } }
+```
+
+The typechecker would check a `From` bound instead of a hardcoded table. New conversions
+(e.g. a future `SInt` → `Real`) would be a prelude `impl`, not a compiler change.
+
+### Intrinsic capability satisfaction — make it explicit
+
+**Spec (Part I §6.6):** "Primitives satisfy the relevant [operator] capabilities
+intrinsically."
+
+**Today:** `Real`, `Natural`, `Integer`, `Boolean`, `Quad` satisfy `Add`, `Sub`, `Mul`,
+`Div`, `Eq`, `Ord`, `BitAnd`, `BitOr`, `BitXor`, `Not` — but there are no `impl` blocks
+for this. It's hardcoded in the operator-desugar pass. A user reading the prelude sees
+`capability Add { fn add(self, o: Self) -> Self; }` but never sees *who* satisfies it.
+
+**Goal:** add explicit `impl Add for Real`, `impl Eq for Boolean`, etc. to the prelude
+(or to a generated intrinsic-impls table). This makes the capability graph complete and
+discoverable, and opens the door for user-defined numeric types that satisfy the same
+capabilities.
+
+### `Iterable<T>` capability
+
+**Spec (Part III §12):** "A `for x in <expr>` is only valid in the interpreted context."
+
+**Today:** the interpreter (`interp.rs:399-404`) hardcodes iteration over `Value::List`
+and elaboration-time `Range`. A `Map<K,V>` or a user-defined collection cannot be iterated
+even though it logically could be.
+
+**Goal:** an `Iterable<T>` capability with a `fn next(self) -> Option<T>` method (or a
+`fn iter(self) -> Iterator<T>`). The `for` loop would check `Iterable` instead of
+hardcoding `Value::List`.
+
+### Literal coercion rules
+
+**Spec (Part I §6.1):** integer literals `0`/`1` serve as `Boolean`/`Quad`/`Natural`
+depending on context.
+
+**Today:** this is implicit in the typechecker widening table (same hardcoded `matches!`
+block). The spec documents it but the compiler doesn't have a named mechanism for it.
+
+**Goal:** express via the `From<T>` capability (above) or a dedicated `FromLiteral`
+capability that documents which literal types coerce to which value types. This would
+replace the ad-hoc integer-literal-as-Boolean rule with an explicit `impl
+FromLiteral<Integer> for Boolean` in the prelude.
 
 ---
 
