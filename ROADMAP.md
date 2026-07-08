@@ -456,6 +456,47 @@ free-function forms could remain as sugar.
 
 ---
 
+## POM project model — prerequisite for Part VI (Plugins)
+
+**Spec (Part VI):** plugins discover, load, and wire through a project model —
+`Piperine.toml`, `Piperine.lock`, the resolver, plugin manifests, capability
+enforcement. Today this lives entirely in `piperine-project` (a separate crate)
+and the POM (`piperine-lang::pom::Design`) has no notion of a "project."
+
+**Today:** the POM is a flat `Design` — modules, disciplines, bundles, enums,
+capabilities, functions, instances. There is no concept of:
+- Which file/package each item came from (erased by the resolver's text inlining).
+- Project metadata (name, version, dependencies, plugins).
+- The dependency graph (which package depends on which).
+- Source provenance for diagnostics (which file/line produced this POM node).
+
+**Problem:** Part VI (plugins) requires the host to know the project structure
+to resolve plugin sources, apply TOFU, enforce capabilities, and wire
+`@device` attributes to the right plugin. Without a project model in the POM,
+the plugin system has no anchor point.
+
+**Goal:** model the project in the POM. Two options:
+
+1. **POM gains a `Project` node** — carries name, version, dependencies, plugin
+   sources, lockfile state. Each item in the `Design` carries its source
+   package. This makes the POM self-describing: a tool or plugin can reflect
+   over the design AND the project in one graph.
+
+2. **Merge `piperine-project` into `piperine-lang`** — the project crate is
+   small (manifest parsing, git resolver, lockfile). Folding it into the lang
+   crate eliminates a crate boundary and makes the project model available
+   everywhere the POM is. The resolver becomes a module, not a separate crate.
+
+Either way, the result is: every POM node knows where it came from, and the
+project structure is queryable through the same reflection surface (Part IV)
+that already serves the design.
+
+**This is a hard prerequisite for Part VI (Plugins).** The plugin system
+cannot be implemented without a project model to anchor plugin discovery,
+TOFU, and capability enforcement.
+
+---
+
 ## Extension / packaging (user-owned, deliberately out of agent scope)
 
 VS Code extension productization, marketplace packaging, grammar/registry sync tests,

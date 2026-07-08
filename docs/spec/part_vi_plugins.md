@@ -47,6 +47,11 @@ is never exposed.
 
 ## §1 Goals and non-goals
 
+> **Prerequisite:** this Part requires a project model in the POM (see
+> ROADMAP — "POM project model"). Plugins need to know the project structure
+> to resolve sources, apply TOFU, enforce capabilities, and wire attributes.
+> Without it, the plugin system has no anchor point.
+
 **Goals**
 
 - Make devices, hooks, and scripts first-class extension points reachable
@@ -73,6 +78,7 @@ is never exposed.
 |-----------|---------|
 | **Security-first, capability-based** | A plugin declares permissions in its manifest; the host denies by default. Missing permission = no effect, not a crash. |
 | **Fail loud** | A plugin that requests a nonexistent hook, references an unregistered device, or uses an attribute with no schema raises a typed `PluginError` — never a silent `0.0` or no-op. |
+| **No netlist magic** | Every element a plugin injects — instance, connection, param override — must reference a type that was declared in PHDL source or marked `extern`. A plugin cannot invent a type that was never declared. If a plugin needs a device type not in the user's source, that type must be declared `extern` in the project (Part I §15 roadmap). |
 | **Two ABIs, one SDK** | WASM (safe by default, sandboxed) and native `.cdylib` (power, explicit opt-in) share the same `Plugin` trait and hooks. |
 | **The POM is the reflection contract** | The POM is public and stable; the codegen IR stays closed. Plugins reflect through the POM. |
 | **No macro magic** | Registration via `Plugin::register(&mut Registrar)` — plain trait methods. Proc-macros are opt-in sugar, never required. |
@@ -139,47 +145,35 @@ reproducibility**. Real isolation comes from the out-of-process backend
 ## §4 Plugin manifest
 
 The manifest (`piperine-plugin.toml`) lives at the root of the plugin
-repository. It declares the plugin's identity, ABI, permissions, attribute
-schemas, device registrations, and custom scripts.
+repository. It is intentionally minimal — just identity, artifact location,
+and permissions. Device registrations, attribute schemas, and script
+handlers are all declared in code via `Plugin::register()`, not duplicated
+in the manifest.
 
 ```toml
 [plugin]
 name        = "avr-cosim"
-version     = "0.1.0"
 abi         = "wasm"              # "wasm" | "native" | "process"
 entry       = "avr_cosim.wasm"    # .wasm | .cdylib/.dll/.so | runner binary path
-description = "Co-simulation bridge for AVR microcontrollers"
 
 [permissions]
-design         = "read-write"     # "none" | "read" | "read-write"
 filesystem     = ["read *.cir", "write *.ppr"]
 network        = false
 process_spawn  = ["simavr", "avr-objcopy"]   # whitelist of executables
 timeout_ms     = 5000             # per WASM hook invocation
-
-[attributes."device"]
-fields = { plugin = "String", type = "String", params = "Map<String,Value>" }
-applies_to = ["module", "instance"]
-
-[attributes."port"]
-fields   = { name = "String", kind = "String" }
-applies_to = ["port"]
-
-[devices."Arduino::UnoR3"]
-factory   = "uno_r3"
-kind      = "digital"             # "digital" | "analog" | "mixed"
-boundary  = ["A0","A1","A2","A3","D0","D1","D2","D3"]
-
-[scripts.spice]
-entry    = "import_spice"
-summary  = "Import a SPICE netlist (.cir) into a .ppr file"
-args     = [
-  { name = "INPUT",   required = true,  kind = "path" },
-  { name = "--output", short = "-o", required = true, kind = "path" },
-]
 ```
 
-The manifest is parsed once at load time; capability fields become a
+| Field | Purpose |
+|-------|---------|
+| `name` | Plugin identity (used in `Piperine.toml`, lockfile, TOFU prompt) |
+| `abi` | Backend: `wasm` (default, sandboxed), `native` (shared lib, TOFU required), `process` (out-of-process JSON-RPC) |
+| `entry` | Path to the artifact relative to the plugin root |
+| `permissions.filesystem` | Glob patterns the plugin may read/write, relative to project root |
+| `permissions.network` | `false` by default; `true` requires TOFU approval |
+| `permissions.process_spawn` | Whitelist of executables the plugin may spawn; empty/absent = none |
+| `permissions.timeout_ms` | Per-hook-invocation timeout for WASM |
+
+The manifest is parsed once at load time. Capability fields become a
 `Permissions` struct the host carries for the plugin's lifetime.
 
 **Validation.** An invalid manifest (missing required fields, unknown ABI,
@@ -409,9 +403,18 @@ A plugin `rc-parasitics`:
 2. `after_elaborate` reads `@extract_rc` on instances, computes R/C from
    geometric attributes — read-only; records an internal to-do list.
 3. `transform_design` walks the to-do list and calls
-   `staging.add_instance(parent, Resistor{…})` plus
-   `staging.add_connection(…)`. The result is an applied `Design` carrying
-   the parasitics before lowering runs.
+   `staging.add_instance(parent, "Resistor", …)` plus
+   `staging.add_connection(…)`. The `Resistor` type must be declared in the
+   project's PHDL source (or marked `extern`) — a plugin cannot inject an
+   instance of a type that was never declared (§2: no netlist magic). The
+   result is an applied `Design` carrying the parasitics before lowering
+   runs.
+
+**Validation.** A plugin that calls `staging.add_instance` with a type name
+not present in the elaborated design (and not declared `extern`) is
+`PluginError::HookFailed` with a "type not declared" message. The staging
+layer validates every injected instance against the design's module table
+before applying it.
 
 ### 8.4 Ordering
 
