@@ -242,6 +242,138 @@ capability that documents which literal types coerce to which value types. This 
 replace the ad-hoc integer-literal-as-Boolean rule with an explicit `impl
 FromLiteral<Integer> for Boolean` in the prelude.
 
+### Tuple types
+
+**Spec (Part I §6.1):** tuples are listed as a value-layer collection — `(a, b, ...)`
+with `.0`/`.1`/... indexing. Tuple **values** and indexing work; tuple **type
+annotations** do not.
+
+**Today:** the parser (`types.rs:10`) requires an identifier as the first token of a
+type. Writing `(Real, Natural)` as a type annotation is a parse error (`Expected
+identifier, found LParen`). The `ValueType` enum (`net_type.rs:64-72`) has no `Tuple`
+variant — even if parsing were added, the type system cannot represent a tuple type.
+The frozen docs reference `Vec<(Real, Real)>` (bench spec §12.4 sweep) but this was
+never tested and does not parse.
+
+**Goal:** add tuple type syntax to the grammar (`Type ::= ... | "(" Type {"," Type} ")"`),
+a `Tuple(Vec<ValueType>)` variant to `ValueType`, and tuple type resolution. This
+enables `fn foo() -> (Real, Natural)`, `var x : (Real, String)`, `Vec<(Real, Real)>`.
+
+---
+
+## `extern` declarations — explicit builtin contracts
+
+### The problem
+
+Today the compiler has three classes of builtins that are **invisible in source**:
+
+1. **Intrinsic type+capability satisfaction.** `Real` satisfies `Add`, `Eq`, `Ord`,
+   etc. — but there are no `impl` blocks. The satisfaction is hardcoded in the operator
+   desugar pass. A user (or the IDE) reading the prelude sees `capability Add { fn
+   add(self, o: Self) -> Self; }` but never sees *who implements it* or *what the
+   contract guarantees*.
+
+2. **Injected prelude items.** The prelude headers (`headers/*.phdl`) declare
+   disciplines, bundles, enums, capabilities, and constants. But the compiler also
+   injects intrinsic knowledge that lives **nowhere in source** — the math function
+   table (`math.rs:46-72`, 25 fns), the analog operator registry (`analog_ops.rs`,
+   21 operators), the `$`-syscall registry (`syscalls.rs`, 13 syscalls), the event
+   registry (`event.rs`, 6 events). These are all implicit — a user has no way to
+   discover their signatures, argument types, or semantics from PHDL source.
+
+3. **Net type accessors.** `V(a,b)`, `I(a,b)`, `Temp(th)`, `Pwr(th)` — these are
+   access functions tied to discipline natures, but their signatures are not declared
+   anywhere in PHDL. The compiler generates them implicitly from the `potential`/`flow`
+   declarations.
+
+### The `extern` keyword
+
+Introduce `extern` as a declaration modifier that tells the resolver: "the body of this
+item is provided by the compiler; don't look for a source-level definition — but the
+**signature is a real, checkable contract**."
+
+```phdl
+// The prelude declares the contract; the compiler provides the body.
+extern fn sqrt(x: Real) -> Real;
+extern fn ddt(x: Real) -> Real;
+extern fn exp(x: Real) -> Real;
+extern fn temperature() -> Real;       // $temperature without the $
+
+// Intrinsic capability impls become visible:
+extern impl Add for Real { fn add(self, o: Real) -> Real; }
+extern impl Eq for Boolean { fn eq(self, o: Boolean) -> Boolean; }
+
+// Discipline accessors are declared, not magic:
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+extern fn V(a: Electrical, b: Electrical) -> Real;   // potential difference
+extern fn I(a: Electrical, b: Electrical) -> Real;   // branch flow
+```
+
+### Benefits
+
+- **IDE visibility.** Hovering `sqrt` in an editor shows the signature and doc comment
+  from the `extern fn` declaration — today it shows nothing because the function isn't
+  in any `.phdl` file.
+- **Contract checking.** The type checker validates calls against the declared
+  signature even for builtins. Today, a wrong-arity call to `ddt` might not be caught
+  until codegen.
+- **Discoverability.** `extern` declarations in the prelude serve as a living catalog
+  of what the compiler provides. No need to cross-reference ROADMAP or code comments.
+- **Extensibility.** Plugins register new `extern` items the same way — their
+  signatures live in source, their bodies in the plugin.
+
+### What this does NOT change
+
+The `extern` keyword is purely a **declaration vs. definition** marker — like C's
+`extern` or Rust's `extern "C"`. The runtime behavior of builtins is unchanged; the
+compiler still dispatches to the same Rust implementations. `extern` just makes the
+*contract* visible and checkable.
+
+### Work
+
+1. **Grammar:** `Item ::= ... | "extern" ExternItem` where `ExternItem` covers
+   `FnDecl`, `ImplDecl`, and optionally `ModDecl` (for OSDI device-model stubs).
+2. **Parser:** accept `extern` before `fn`/`impl`; the body is optional (signature-only).
+3. **Elaborator:** register `extern fn` signatures in the callable registry; reject
+   if a source-level body is also present (extern means "body is compiler-provided").
+4. **Prelude migration:** move the math table, analog operators, syscalls, and events
+   into `extern` declarations in the prelude headers. The compiler's internal tables
+   cross-check against the declared signatures.
+5. **LSP:** `extern` items are first-class symbols — goto-definition, hover, completion
+   all work on them.
+
+### Related: discipline accessors
+
+The access functions `V(a,b)`, `I(a,b)`, and named natures (`Temp(th)`, `Pwr(th)`)
+are currently compiler magic — generated from the `potential`/`flow`/`storage`
+declarations. With `extern`, these could be declared explicitly:
+
+```phdl
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+// The compiler generates these from the nature declarations above:
+extern fn V(a: Electrical, b: Electrical) -> Real;
+extern fn I(a: Electrical, b: Electrical) -> Real;
+```
+
+Or better: the accessors could be **methods on the discipline** via an `impl`:
+
+```phdl
+impl Electrical {
+    fn v(self, other: Electrical) -> Real;   // potential difference
+    fn i(self, other: Electrical) -> Real;   // branch flow
+}
+```
+
+This would replace the current free-function `V(a,b)`/`I(a,b)` with method syntax
+`a.v(b)` / `a.i(b)`, and make the accessor signatures visible and checkable. The
+free-function forms could remain as sugar.
+
 ---
 
 ## Extension / packaging (user-owned, deliberately out of agent scope)
