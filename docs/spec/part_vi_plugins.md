@@ -6,69 +6,51 @@ breaking "fail loud", without coupling the solver to codegen, and without
 compromising security.
 
 A plugin is a loadable artifact (WASM module, native shared library, or
-external process) that registers contributions through a single `Plugin`
-trait. It is declared in `Piperine.toml`, resolved through the existing
-dependency resolver, and admitted through a trust-on-first-use (TOFU)
-approval flow. The POM is the reflection contract; the codegen-private IR
-is never exposed.
+external process) that registers contributions through a single contract.
+It is declared in `Piperine.toml`, resolved through the existing dependency
+resolver, and admitted through a trust-on-first-use (TOFU) approval flow.
+The POM is the reflection contract; the codegen-private IR is never exposed.
 
 ## Contents
 
-- §1 Goals and non-goals
+- §1 Position
 - §2 Design principles
 - §3 Security model
-  - §3.1 Threats and countermeasures
-  - §3.2 Trust on first use (TOFU)
-  - §3.3 Capability enforcement
 - §4 Plugin manifest
 - §5 Discovery and resolution
-  - §5.1 Project configuration
-  - §5.2 Lockfile
 - §6 ABI tiers
-  - §6.1 The Plugin trait
-  - §6.2 WASM backend
-  - §6.3 Native backend
-  - §6.4 Out-of-process backend
 - §7 Device loading
-  - §7.1 Binding flow
-  - §7.2 Declarative binding (`@device` / `@port`)
-  - §7.3 The DeviceFactory bridge
 - §8 Lifecycle hooks
-  - §8.1 Hook points
-  - §8.2 Mutation through DesignStaging
-  - §8.3 Parasitics reference case
-  - §8.4 Ordering
 - §9 Custom scripts
 - §10 Attribute schema registration
 - §11 Error catalog
-- §12 Scope tiers
+- §12 Validation rules (consolidated)
 
 ---
 
-## §1 Goals and non-goals
+## §1 Position
 
-> **Prerequisite:** this Part requires a project model in the POM (see
-> ROADMAP — "POM project model"). Plugins need to know the project structure
-> to resolve sources, apply TOFU, enforce capabilities, and wire attributes.
-> Without it, the plugin system has no anchor point.
+Plugins are the layer-4 extension mechanism (Part I §14). They open four
+extension surfaces without breaking the core pipeline's invariants:
 
-**Goals**
+1. **Devices** — custom analog or digital devices loaded through the
+   existing `Device` traits. The solver sees them as any other device.
+2. **Hooks** — lifecycle points that read (and in one case, mutate) the
+   POM at specific stages of the compilation pipeline.
+3. **Scripts** — custom CLI subcommands (Cargo-style) for importers,
+   exporters, and tooling.
+4. **Attribute schemas** — plugin-registered schemas that validate
+   `@schema_name(...)` attributes in source (Part I §8).
 
-- Make devices, hooks, and scripts first-class extension points reachable
-  from project imports (git or path), with one SDK and a stable contract.
-- Treat the POM as the reflection ABI and the existing `Device` traits as
-  the solver ABI. The codegen-private IR stays closed.
-- Define a threat model and a permission system that makes "install a plugin
-  from a git URL" a safe operation by default.
+**What stays closed.** Plugins cannot extend the parser grammar, the IR
+types, or the solver's math core. They reflect through the POM and
+contribute behavior; they do not modify the compiler's internals. The
+codegen-private IR is never exposed to plugins — the POM is the only
+reflection surface.
 
-**Non-goals**
-
-- A public plugin registry / package index (revisit later).
-- Reinventing the existing resolver — plugins reuse `piperine-project`'s
-  git/path dependency resolution.
-- Letting plugins extend the parser grammar, the IR types, or the solver's
-  math core. Those stay closed; plugins reflect through the POM and
-  contribute behavior.
+**What stays independent.** `piperine-solver` still does not depend on
+`piperine-codegen`. Plugins talk to the solver only through the existing
+`Device` traits, exactly as OSDI device models do today.
 
 ---
 
@@ -78,11 +60,10 @@ is never exposed.
 |-----------|---------|
 | **Security-first, capability-based** | A plugin declares permissions in its manifest; the host denies by default. Missing permission = no effect, not a crash. |
 | **Fail loud** | A plugin that requests a nonexistent hook, references an unregistered device, or uses an attribute with no schema raises a typed `PluginError` — never a silent `0.0` or no-op. |
-| **No netlist magic** | Every element a plugin injects — instance, connection, param override — must reference a type that was declared in PHDL source or marked `extern`. A plugin cannot invent a type that was never declared. If a plugin needs a device type not in the user's source, that type must be declared `extern` in the project (Part I §15 roadmap). |
-| **Two ABIs, one SDK** | WASM (safe by default, sandboxed) and native `.cdylib` (power, explicit opt-in) share the same `Plugin` trait and hooks. |
+| **No netlist magic** | Every element a plugin injects — instance, connection, param override — must reference a type that was declared in PHDL source or marked `extern`. A plugin cannot invent a type that was never declared. |
+| **Two ABIs, one SDK** | WASM (safe by default, sandboxed) and native shared library (power, explicit opt-in) share the same contract and hooks. |
 | **The POM is the reflection contract** | The POM is public and stable; the codegen IR stays closed. Plugins reflect through the POM. |
-| **No macro magic** | Registration via `Plugin::register(&mut Registrar)` — plain trait methods. Proc-macros are opt-in sugar, never required. |
-| **Do not surprise the solver** | `piperine-solver` still does not depend on `piperine-codegen`. Plugins talk to the solver only through the existing `Device` traits. |
+| **No macro magic** | Registration is plain trait-method calls. Proc-macros are opt-in sugar, never required. |
 
 ---
 
@@ -92,53 +73,38 @@ is never exposed.
 
 | Threat | Countermeasure |
 |--------|----------------|
-| Malicious git repo carrying a payload in the build script or shared library | WASM sandbox by default. Native requires explicit opt-in + TOFU approval + content hash in the lockfile. Pinned revision is mandatory for native. |
+| Malicious payload in a shared library or build script | WASM sandbox by default. Native requires explicit opt-in + TOFU approval + content hash in the lockfile. Pinned revision is mandatory for native. |
 | Plugin reads sensitive files or writes outside the project | Capability-based filesystem: plugin may only access paths declared in the manifest, resolved relative to the project root. |
 | Plugin exfiltrates over the network | `network = false` by default. WASM has no sockets. Native with `network = true` requires interactive approval on first load. |
 | Plugin spawns a process | `process_spawn = false` by default. WASM never. Native needs the capability and logs every spawn. |
 | Silent binary swap via a git push | `Piperine.lock` stores the content hash of the loaded artifact. A hash change forces re-approval. |
-| Native plugin crashes the host | Loaded in-process (same model as OSDI). For strong isolation, an out-of-process runner is offered via stdio JSON-RPC (§6.4). |
+| Native plugin crashes the host | Loaded in-process (same model as OSDI). For strong isolation, an out-of-process backend is offered (§6). |
 | DoS via an infinite loop in a hook | WASM hooks have a per-invocation timeout (default 5 s). Native hooks have none — native is full trust. |
 
 ### 3.2 Trust on first use (TOFU)
 
-On the first load of a plugin (or whenever the artifact hash changes) the
-CLI blocks and presents:
-
-```
-$ piperine run sim.phdl
-
-  Plugin 'avr-cosim' (native) loaded from:
-    https://github.com/acme/piperine-avr @ abc1234
-  Requested permissions:
-    design        : read-write
-    load_device   : Arduino::UnoR3 (digital)
-    filesystem    : write *.ppr, read *.cir
-    process_spawn : simavr, avr-objcopy
-  Artifact hash: sha256:9f3a…b21c
-
-  Trust and save to Piperine.lock? [y/N/details]
-```
-
-- `y` writes the hash to `Piperine.lock`. Never asks again while the hash
-  is unchanged.
-- `N` aborts with `PluginError::Untrusted`.
-- `details` shows the manifest diff and the files that would be accessed.
+On the first load of a plugin (or whenever the artifact hash changes), the
+CLI blocks and presents the plugin's identity, source, requested
+permissions, and artifact hash. The user approves or rejects. Approval is
+persisted to `Piperine.lock` keyed by the content hash — the user is never
+asked again while the hash is unchanged. Rejection aborts with
+`PluginError::Untrusted`.
 
 CI modes: `--trust <file>` reads decisions from a checked-in trust file;
-`--no-trust` silently rejects native plugins (read-only sandbox mode).
+`--no-trust` silently rejects native plugins (read-only sandbox mode for
+suspicious CI).
 
 ### 3.3 Capability enforcement
 
-The host exposes a facade (`HostCtx`) to the plugin. Every side-effecting
-call (filesystem, process spawn, network) goes through it and is checked
-against the manifest capabilities. In WASM this is natural (host imports);
-in native, the SDK offers the same entry points and the publisher is
-expected to call them rather than the OS directly (documented contract;
-best-effort). This is **not** a cryptographic sandbox for native —
-in-process sandboxing is impossible. It is **audit + opt-in +
+The host exposes a facade to every plugin. All side-effecting calls
+(filesystem, process spawn, network) go through this facade and are checked
+against the manifest capabilities. In WASM this is enforced by the sandbox
+(host imports); in native, the SDK offers the same entry points and the
+publisher is expected to call them rather than the OS directly (documented
+contract; best-effort). This is **not** a cryptographic sandbox for native
+— in-process sandboxing is impossible. It is **audit + opt-in +
 reproducibility**. Real isolation comes from the out-of-process backend
-(§6.4).
+(§6).
 
 ---
 
@@ -147,20 +113,20 @@ reproducibility**. Real isolation comes from the out-of-process backend
 The manifest (`piperine-plugin.toml`) lives at the root of the plugin
 repository. It is intentionally minimal — just identity, artifact location,
 and permissions. Device registrations, attribute schemas, and script
-handlers are all declared in code via `Plugin::register()`, not duplicated
-in the manifest.
+handlers are all declared in code at registration time, not duplicated in
+the manifest.
 
 ```toml
 [plugin]
 name        = "avr-cosim"
 abi         = "wasm"              # "wasm" | "native" | "process"
-entry       = "avr_cosim.wasm"    # .wasm | .cdylib/.dll/.so | runner binary path
+entry       = "avr_cosm.wasm"     # .wasm | .cdylib/.dll/.so | runner binary path
 
 [permissions]
 filesystem     = ["read *.cir", "write *.ppr"]
 network        = false
 process_spawn  = ["simavr", "avr-objcopy"]   # whitelist of executables
-timeout_ms     = 5000             # per WASM hook invocation
+timeout_ms     = 5000              # per WASM hook invocation
 ```
 
 | Field | Purpose |
@@ -174,11 +140,11 @@ timeout_ms     = 5000             # per WASM hook invocation
 | `permissions.timeout_ms` | Per-hook-invocation timeout for WASM |
 
 The manifest is parsed once at load time. Capability fields become a
-`Permissions` struct the host carries for the plugin's lifetime.
+permissions struct the host carries for the plugin's lifetime.
 
 **Validation.** An invalid manifest (missing required fields, unknown ABI,
-malformed permissions) is `PluginError::BadManifest` at load time, before
-any hook runs.
+malformed permissions) is `PluginError::BadManifest` (P0006) at load time,
+before any hook runs.
 
 ---
 
@@ -216,74 +182,54 @@ Any hash change forces re-approval. Plugins resolve into
 `target/plugins/<name>/` — separated from PHDL library deps.
 
 **Validation.** A plugin whose lockfile hash does not match the loaded
-artifact is `PluginError::HashMismatch` — the run aborts before any code
-executes.
+artifact is `PluginError::HashMismatch` (P0007) — the run aborts before
+any code executes.
 
 ---
 
 ## §6 ABI tiers
 
-### 6.1 The Plugin trait
+Three backends share one contract. The contract defines a `Plugin` with a
+`manifest()` accessor, a `register()` method for contributing devices,
+schemas, tasks, and scripts, and seven lifecycle hooks (§8) that default
+to no-op. Every contribution is optional — a plugin that registers nothing
+but hooks is valid.
 
-One trait, valid for all backends:
+The registration surface offers four contribution types:
 
-```rust
-pub trait Plugin: Send + Sync {
-    fn manifest(&self) -> &Manifest;
-    fn register(&self, r: &mut Registrar) { let _ = r; }
+| Contribution | Method | What it provides |
+|--------------|--------|------------------|
+| Device | `device(type_id, factory)` | A `DeviceFactory` that constructs a solver `Device` for a given type ID |
+| Attribute schema | `attr_schema(name, shape)` | Registers a schema name, validated against source `@name(...)` attributes |
+| Bench task | `bench_task(task)` | A custom `SimTask` callable from bench fns via `$name(...)` |
+| Script | `script(name, handler)` | A custom CLI subcommand |
 
-    // Lifecycle hooks (§8). All default to no-op.
-    fn after_parse(&self, _ctx: &mut HostCtx, _src: &SourceFileView) -> Result<()> { Ok(()) }
-    fn after_elaborate(&self, _ctx: &mut HostCtx, _design: &DesignView) -> Result<()> { Ok(()) }
-    fn transform_design(&self, _ctx: &mut HostCtx, _staging: &mut DesignStaging) -> Result<()> { Ok(()) }
-    fn before_lower(&self, _ctx: &mut HostCtx, _design: &DesignView) -> Result<()> { Ok(()) }
-    fn after_lower(&self, _ctx: &mut HostCtx, _bodies: &mut LoweredBodiesView) -> Result<()> { Ok(()) }
-    fn before_solve(&self, _ctx: &mut HostCtx, _circuit: &CircuitHandle) -> Result<()> { Ok(()) }
-    fn after_solve(&self, _ctx: &mut HostCtx, _result: &SolveResult) -> Result<()> { Ok(()) }
-}
-```
+### 6.1 WASM backend (default, sandboxed)
 
-`Registrar` is the builder plugins use to contribute devices, attribute
-schemas, bench tasks, and scripts — all optional:
+The default ABI. The plugin is a WASM module loaded via `wasmtime`. Types
+cross the boundary as serialized snapshots of POM views — a plugin never
+receives a raw pointer into the host's `Design`; it receives a serializable
+view and returns a patch that the host validates and applies. This copy
+per hook invocation is acceptable because hooks run a handful of times per
+simulation, not in the Newton inner loop. Hard caps via wasmtime fuel +
+per-invocation timeout.
 
-```rust
-impl Registrar<'_> {
-    pub fn device(&mut self, type_id: &str, factory: Box<dyn DeviceFactory>);
-    pub fn attr_schema(&mut self, schema: &str, shape: AttrShape);
-    pub fn bench_task(&mut self, task: Box<dyn SimTaskPlugin>);
-    pub fn script(&mut self, name: &str, handler: Box<dyn ScriptHandler>);
-}
-```
+### 6.2 Native backend (`abi = "native"`)
 
-### 6.2 WASM backend (default, sandboxed)
+The plugin is a shared library (`.cdylib` / `.dll` / `.so`) loaded in-process,
+the same model as OSDI device-model loading. The library exports a single C
+entry point returning a `Plugin`. No real sandbox; trust derives from TOFU +
+content hash + declared capabilities (audit, not isolation). Useful for heavy
+external bridges (simavr, Verilator). Host symbols (math functions) are
+exported to the loaded library, same mechanism as OSDI.
 
-- Runtime: `wasmtime` with WIT (WebAssembly Interface Types) for declarative
-  typed interfaces.
-- Types cross the boundary as serialized snapshots of POM views. A plugin
-  never receives a raw `&Design` pointer; it receives a `DesignView` (a
-  serializable struct) and returns a `DesignPatch` that the host validates
-  and applies.
-- Cost: a copy per hook invocation. Acceptable — hooks run a handful of
-  times per simulation, not in the Newton inner loop.
-- Hard caps via wasmtime fuel + per-invocation timeout.
-
-### 6.3 Native backend (`abi = "native"`)
-
-- Same traits, loaded as a shared library (`.cdylib` / `.dll` / `.so`).
-  The library exports a single C entry point returning a `*mut dyn Plugin`.
-- No real sandbox; trust derives from TOFU + content hash + declared
-  capabilities (audit, not isolation). Useful for heavy external bridges
-  (simavr, Verilator).
-- Host symbols (math functions) are exported to the loaded library, same
-  mechanism as OSDI device-model loading.
-
-### 6.4 Out-of-process backend (`abi = "process"`)
+### 6.3 Out-of-process backend (`abi = "process"`)
 
 The plugin is an executable speaking JSON-RPC 2.0 over stdio. The host
-spawns it via `std::process`. Real isolation: a plugin crash cannot take
-down the host; the process can be containerized. Trade-off: per-call
-latency in the millisecond range. Ideal for heavyweight bridges (QEMU,
-ModelSim).
+spawns it as a child process. Real isolation: a plugin crash cannot take
+down the host; the process can be containerized. Trade-off: per-call latency
+in the millisecond range. Ideal for heavyweight bridges (QEMU, ModelSim).
+Lowest priority tier.
 
 ---
 
@@ -297,22 +243,18 @@ ModelSim).
    unknown schema or unregistered device type is an error.
 2. **Pre-lowering.** The circuit compiler detects the `@device` attribute.
    Instead of compiling the module from PHDL source, it delegates to the
-   plugin's `DeviceFactory`.
-3. **Construction.** The host locates the `DeviceFactory` registered for
-   the type ID, calls `instantiate(spec)`, receives a `Box<dyn Device>`,
-   and injects it into the circuit.
+   plugin's device factory.
+3. **Construction.** The host locates the factory registered for the type
+   ID, calls it with the device spec (attributes, port bindings, params),
+   and receives a `Device` that it injects into the circuit.
 4. **Port mapping.** The plugin reads the port bindings (derived from
-   `@port(name = …)` attributes) to know which `NetRef` resolves to each
-   logical port name.
+   `@port(name = …)` attributes) to know which net resolves to each logical
+   port name.
 
 The solver sees the plugin-provided device as **just another `Device`** —
 the solver never learns it came from a plugin.
 
 ### 7.2 Declarative binding (`@device` / `@port`)
-
-```
-Attribute ::= "@" Ident "(" [ AttrArg { "," AttrArg } ] ")"
-```
 
 A module annotated with `@device(plugin = "name", type = "TypeId")` declares
 that its behavior is provided by a plugin device, not by PHDL `analog`/
@@ -329,29 +271,27 @@ module ArduinoUno {
 }
 ```
 
-### 7.3 The DeviceFactory bridge
+### 7.3 The device factory contract
 
-```rust
-pub trait DeviceFactory: Send + Sync {
-    fn kind(&self) -> DeviceKind;          // Digital | Analog | Mixed
-    fn instantiate(&self, spec: &DeviceSpec) -> Result<Box<dyn Device>>;
-}
+A device factory is a callable that receives a device spec (type ID,
+attributes, resolved port bindings, params) and returns a `Device`
+implementing the solver's `AnalogDevice` or `DigitalDevice` trait. The
+solver schedules it like any other device — the factory is the bridge
+between the plugin world and the solver world.
 
-pub struct DeviceSpec<'a> {
-    pub type_id: String,                   // "Arduino::UnoR3"
-    pub attributes: &'a [Attribute],
-    pub port_bindings: Vec<PortBinding>,   // name -> resolved NetRef
-    pub params: Vec<(String, Value)>,
-}
-```
+The device spec carries:
 
-The resulting `Box<dyn Device>` implements the solver's `AnalogDevice` or
-`DigitalDevice` trait. The solver schedules it like any other device.
+| Field | Content |
+|-------|---------|
+| `type_id` | The type name from `@device(type = …)` |
+| `attributes` | The validated `@device` and `@port` attribute data |
+| `port_bindings` | Each port name → resolved `NetRef` (the net it connects to) |
+| `params` | Instance params from `{ .name = value }` |
 
 **Validation.** A `@device` attribute referencing a type not registered by
-any loaded plugin is `PluginError::DeviceNotRegistered`. A port listed in
-`@port` that does not match the device's declared boundary is an error at
-circuit-build time.
+any loaded plugin is `PluginError::DeviceNotRegistered` (P0004). A port
+listed in `@port` that does not match the device's declared boundary is an
+error at circuit-build time.
 
 ---
 
@@ -363,109 +303,103 @@ Seven hook points aligned with the compilation pipeline:
 
 | # | Hook | When | Input | Mutable? | Use case |
 |---|------|------|-------|----------|----------|
-| 1 | `after_parse` | after parser, before elaboration | `SourceFileView` | no | custom lint, metrics |
-| 2 | `after_elaborate` | once `Design` is ready | `DesignView` | no | reporting, external validation |
-| 3 | `transform_design` | before lowering | `DesignStaging` | yes (via staging overrides) | set params, inject parasitic instances |
-| 4 | `before_lower` | just before body lowering | `DesignView` | no | final POM audit |
-| 5 | `after_lower` | after body lowering | `LoweredBodiesView` | yes (rare; requires `lowered = "read-write"` capability) | inject stamps / parasitics directly |
-| 6 | `before_solve` | after circuit compilation | `CircuitHandle` | no | instrument, log |
-| 7 | `after_solve` | after an analysis | `SolveResult` | no | extract metrics, custom reports |
+| 1 | `after_parse` | after parser, before elaboration | source file view | no | custom lint, metrics |
+| 2 | `after_elaborate` | once `Design` is ready | design view | no | reporting, external validation |
+| 3 | `transform_design` | before lowering | design staging | yes (via staging) | set params, inject parasitic instances |
+| 4 | `before_lower` | just before body lowering | design view | no | final POM audit |
+| 5 | `after_lower` | after body lowering | lowered bodies view | yes (rare; requires elevated capability) | inject stamps / parasitics directly |
+| 6 | `before_solve` | after circuit compilation | circuit handle | no | instrument, log |
+| 7 | `after_solve` | after an analysis | solve result | no | extract metrics, custom reports |
 
 Bench hooks are delivered through plugin-registered `SimTask` entries,
 dispatched by the bench interpreter's syscall path. This is the path for
 `extract` / `.attach` / `.meta` (Part III §9).
 
-### 8.2 Mutation through DesignStaging
+### 8.2 Mutation through design staging
 
 `Design` is immutable after elaboration by design — the only mutation
 surface is the staging overrides (the same mechanism bench fns use to stage
-param changes). Plugins respect that:
+param changes, Part III §9). Plugins respect that: the `transform_design`
+hook receives a staging handle, not a mutable design pointer. The staging
+handle offers:
 
-```rust
-pub struct DesignStaging<'a> { /* borrows Design + OverrideMap */ }
-
-impl DesignStaging<'_> {
-    pub fn set_param(&self, path: &str, value: Value);
-    pub fn add_instance(&self, parent: &str, inst: InstanceSpec);
-    pub fn add_connection(&self, parent: &str, conn: ConnectionSpec);
-    pub fn attributes_on(&self, path: &str) -> Result<&[Attribute]>;
-}
-```
+- `set_param(path, value)` — stage a param override (same as bench `inst.r = …`).
+- `add_instance(parent, type_name, spec)` — inject an instance of a declared
+  type into a parent module.
+- `add_connection(parent, connection)` — inject a net connection.
+- `attributes_on(path)` — read attributes on a node.
 
 Mutation through staging preserves the "staging → fork → applied" model.
-A plugin never receives `&mut Design`.
+A plugin never receives a mutable design.
 
 ### 8.3 Parasitics reference case
 
 A plugin `rc-parasitics`:
 
-1. `register()` declares the `@extract_rc` attribute schema.
-2. `after_elaborate` reads `@extract_rc` on instances, computes R/C from
-   geometric attributes — read-only; records an internal to-do list.
-3. `transform_design` walks the to-do list and calls
-   `staging.add_instance(parent, "Resistor", …)` plus
-   `staging.add_connection(…)`. The `Resistor` type must be declared in the
-   project's PHDL source (or marked `extern`) — a plugin cannot inject an
-   instance of a type that was never declared (§2: no netlist magic). The
-   result is an applied `Design` carrying the parasitics before lowering
-   runs.
+1. At registration, declares the `@extract_rc` attribute schema.
+2. In `after_elaborate`, reads `@extract_rc` on instances and computes R/C
+   from geometric attributes — read-only; records an internal to-do list.
+3. In `transform_design`, walks the to-do list and calls
+   `add_instance(parent, "Resistor", …)` plus `add_connection(…)`. The
+   `Resistor` type must be declared in the project's PHDL source (or marked
+   `extern`) — a plugin cannot inject an instance of a type that was never
+   declared (§2: no netlist magic). The result is an applied `Design`
+   carrying the parasitics before lowering runs.
 
-**Validation.** A plugin that calls `staging.add_instance` with a type name
-not present in the elaborated design (and not declared `extern`) is
-`PluginError::HookFailed` with a "type not declared" message. The staging
-layer validates every injected instance against the design's module table
-before applying it.
+**Validation.** A plugin that calls `add_instance` with a type name not
+present in the elaborated design (and not declared `extern`) is
+`PluginError::HookFailed` (P0005) with a "type not declared" message. The
+staging layer validates every injected instance against the design's module
+table before applying it.
 
 ### 8.4 Ordering
 
 Plugins run in **alphabetical order by name** within each hook
 (deterministic, easy to reason about). Conflicts (two plugins mutating the
 same path) are detected by the staging layer and surface as
-`PluginError::StagingConflict`.
+`PluginError::StagingConflict` (P0008).
 
 ---
 
 ## §9 Custom scripts
 
-A plugin may register custom CLI commands (Cargo-style subcommands). The
-manifest declares the script name, arguments, and summary; the plugin
-provides the handler.
+A plugin may register custom CLI subcommands (Cargo-style). The CLI
+dispatcher checks registered scripts before treating an unknown subcommand
+as an error:
 
 ```
 $ piperine spice rectifier.cir -o rectifier.ppr
 ```
 
-The CLI dispatcher checks registered scripts before treating an unknown
-subcommand as an error. Scripts receive a `HostCtx` with explicit APIs:
+Scripts receive a host context with explicit, capability-gated APIs:
 
-- `ctx.fs()` — filesystem restricted to the manifest globs, relative to
-  the project root.
-- `ctx.project()` — access to `Piperine.toml`, the loaded `Design`, the
-  target directory.
-- `ctx.spawn(exe, args)` — only if `process_spawn` is granted and `exe`
-  is whitelisted; stdout/stderr captured and logged.
-- `ctx.log(level, msg)` — routes to the host logger.
+| API | Capability required | Purpose |
+|-----|---------------------|---------|
+| `fs()` | `filesystem` | Read/write files restricted to manifest globs, relative to project root |
+| `project()` | — (always available) | Access to `Piperine.toml`, the loaded `Design`, the target directory |
+| `spawn(exe, args)` | `process_spawn` | Run a whitelisted executable; stdout/stderr captured and logged |
+| `log(level, msg)` | — (always available) | Route to the host logger |
 
-There is no `ctx.system()` and no `ctx.network()` unless the capability is
-granted.
+There is no `system()` and no `network()` unless the capability is granted.
 
 `piperine plugin list` shows loaded plugins and available scripts;
 `piperine help` merges builtin help with script help.
+
+**Validation.** A CLI subcommand not registered by any loaded plugin is
+`PluginError::UnknownScript` (P0009).
 
 ---
 
 ## §10 Attribute schema registration
 
-Plugins register attribute schemas through `Registrar::attr_schema`. This
-closes the loop with Part I §8: a plugin that declares
-`[attributes."device"]` in its manifest causes the schema name `"device"`
-to be registered during the elaborator's registration pass. Any
-`@device(...)` attribute in source is then validated against the plugin's
-declared shape.
+Plugins register attribute schemas through the registration surface. This
+closes the loop with Part I §8: a plugin that registers the schema name
+`"device"` causes any `@device(...)` attribute in source to be validated
+against the plugin's declared shape during the elaboration pass.
 
 If two plugins register the same schema name, the host raises
-`PluginError::SchemaConflict` at load time. Plugins may namespace their
-schemas to avoid collisions (e.g., `@avr-cosim:device`).
+`PluginError::SchemaConflict` (P0003) at load time. Plugins may namespace
+their schemas to avoid collisions (e.g., `@avr-cosim:device`).
 
 ---
 
@@ -476,28 +410,30 @@ elaboration (`E2xxx`), and reflection (`E3xxx`).
 
 | Code | Variant | Trigger |
 |------|---------|---------|
-| P0001 | `Untrusted(String)` | TOFU pending — plugin not approved |
-| P0002 | `UndeclaredCapability(String, String)` | plugin used a capability not in its manifest |
-| P0003 | `SchemaConflict(String, String)` | two plugins registered the same schema name |
-| P0004 | `DeviceNotRegistered(String)` | `@device` references a type no plugin provides |
-| P0005 | `HookFailed(&'static str, String, String)` | a hook returned an error (hook name, plugin, message) |
-| P0006 | `BadManifest(String)` | manifest is missing required fields or malformed |
-| P0007 | `HashMismatch(String)` | lockfile content hash does not match the loaded artifact |
-| P0008 | `StagingConflict(String)` | two plugins mutated the same staging path |
-| P0009 | `UnknownScript(String)` | CLI subcommand not registered by any plugin |
-| P0099 | `Other(String)` | catch-all |
+| P0001 | `Untrusted` | TOFU pending — plugin not approved |
+| P0002 | `UndeclaredCapability` | plugin used a capability not in its manifest |
+| P0003 | `SchemaConflict` | two plugins registered the same schema name |
+| P0004 | `DeviceNotRegistered` | `@device` references a type no plugin provides |
+| P0005 | `HookFailed` | a hook returned an error (hook name, plugin, message) |
+| P0006 | `BadManifest` | manifest is missing required fields or malformed |
+| P0007 | `HashMismatch` | lockfile content hash does not match the loaded artifact |
+| P0008 | `StagingConflict` | two plugins mutated the same staging path |
+| P0009 | `UnknownScript` | CLI subcommand not registered by any plugin |
+| P0099 | `Other` | catch-all |
 
 ---
 
-## §12 Scope tiers
+## §12 Validation rules (consolidated)
 
-The contract is specified as a whole; delivery is gated by tier so each
-tier is independently useful and testable.
-
-| Tier | Scope | Gate |
-|------|-------|------|
-| **0** | Skeleton: `Plugin` / `Registrar` / `Manifest` / `PluginError` / `HostCtx` stubs. `[plugins]` in `Piperine.toml`. Lockfile entries. | Manifest parsing, capability validation, lockfile round-trip. |
-| **1** | Native backend + devices. `DeviceFactory` injected into the circuit compiler. Attribute schema registry on `ElabContext`. TOFU + content hash. | An `avr-cosim` sample plugin loads, `Arduino::UnoR3` shows up as a `DigitalDevice`, co-sim bench runs end-to-end. |
-| **2** | Hooks + scripts. `DesignStaging` with `add_instance` / `add_connection`. Hooks `after_elaborate` / `transform_design` / `before_lower` / `after_solve`. CLI script dispatch. | An `rc-parasitics` plugin injects resistors in a bench; `piperine spice foo.cir -o foo.ppr` works. |
-| **3** | WASM backend. Serializable `DesignView` / `DesignPatch`. Hooks and scripts via WASM. WASM devices experimental. | The `rc-parasitics` plugin re-implemented in WASM-Rust runs the same bench without recompiling the host. |
-| **4** | Maturation. `extract` / `.attach` / `.meta` via bench-task plugins. Out-of-process backend. LSP integration. Optional public registry. | — |
+| Section | Rule | Error |
+|---------|------|-------|
+| §4 | manifest missing required fields or malformed | P0006 `BadManifest` |
+| §5.2 | lockfile hash does not match loaded artifact | P0007 `HashMismatch` |
+| §3.2 | plugin not approved (TOFU pending) | P0001 `Untrusted` |
+| §3.3 | plugin used a capability not declared in manifest | P0002 `UndeclaredCapability` |
+| §7.3 | `@device` references unregistered type | P0004 `DeviceNotRegistered` |
+| §7.3 | `@port` name does not match device boundary | P0005 `HookFailed` |
+| §8.3 | `add_instance` with undeclared type | P0005 `HookFailed` ("type not declared") |
+| §8.4 | two plugins mutate same staging path | P0008 `StagingConflict` |
+| §9 | CLI subcommand not registered by any plugin | P0009 `UnknownScript` |
+| §10 | two plugins register same schema name | P0003 `SchemaConflict` |
