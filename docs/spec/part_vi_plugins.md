@@ -50,7 +50,16 @@ reflection surface.
 
 **What stays independent.** `piperine-solver` still does not depend on
 `piperine-codegen`. Plugins talk to the solver only through the existing
-`Device` traits, exactly as OSDI device models do today.
+`Device` traits.
+
+**The ABI is Piperine's own.** The plugin device contract is the native
+`AnalogDevice` / `DigitalDevice` trait pair — designed for mixed-signal
+simulation and Piperine semantics (two-phase digital evaluation, limited-Newton
+analog loading, the event-sink boundary). It is **not** OSDI and does not track
+any external model ABI. OSDI compatibility is itself a candidate *plugin*: the
+current in-core OSDI loader is slated to move out of `piperine-solver` into an
+`osdi-compat` plugin whose device factory wraps compiled OSDI models behind the
+native traits.
 
 ---
 
@@ -78,7 +87,7 @@ reflection surface.
 | Plugin exfiltrates over the network | `network = false` by default. WASM has no sockets. Native with `network = true` requires interactive approval on first load. |
 | Plugin spawns a process | `process_spawn = false` by default. WASM never. Native needs the capability and logs every spawn. |
 | Silent binary swap via a git push | `Piperine.lock` stores the content hash of the loaded artifact. A hash change forces re-approval. |
-| Native plugin crashes the host | Loaded in-process (same model as OSDI). For strong isolation, an out-of-process backend is offered (§6). |
+| Native plugin crashes the host | Loaded in-process (dlopen). For strong isolation, an out-of-process backend is offered (§6). |
 | DoS via an infinite loop in a hook | WASM hooks have a per-invocation timeout (default 5 s). Native hooks have none — native is full trust. |
 
 ### 3.2 Trust on first use (TOFU)
@@ -216,12 +225,12 @@ per-invocation timeout.
 
 ### 6.2 Native backend (`abi = "native"`)
 
-The plugin is a shared library (`.cdylib` / `.dll` / `.so`) loaded in-process,
-the same model as OSDI device-model loading. The library exports a single C
-entry point returning a `Plugin`. No real sandbox; trust derives from TOFU +
-content hash + declared capabilities (audit, not isolation). Useful for heavy
-external bridges (simavr, Verilator). Host symbols (math functions) are
-exported to the loaded library, same mechanism as OSDI.
+The plugin is a shared library (`.cdylib` / `.dll` / `.so`) loaded in-process.
+The library exports a single C entry point returning a `Plugin` — the contract
+is Piperine's own (§1); dlopen is only the loading mechanism. No real sandbox;
+trust derives from TOFU + content hash + declared capabilities (audit, not
+isolation). Useful for heavy external bridges (simavr, Verilator). The host
+exports its math-function symbols to the loaded library.
 
 ### 6.3 Out-of-process backend (`abi = "process"`)
 

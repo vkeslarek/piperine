@@ -499,9 +499,10 @@ Suggested order (each independently shippable, spec section in parens):
    lockfile; `--trust <file>` / `--no-trust` CI modes. Error: P0001 `Untrusted`.
 4. **Registration contract (§6).** The `Plugin` trait: `manifest()`, `register()`
    (devices, attr schemas, bench tasks, scripts), seven no-op-default hooks. Start
-   with the **native** backend (same dlopen model as the OSDI loader — least new
+   with the **native** backend (plain dlopen + one entry symbol — least new
    machinery), WASM (`wasmtime` + serialized POM views) second, out-of-process
-   JSON-RPC last.
+   JSON-RPC last. The device ABI is Piperine's own `AnalogDevice`/`DigitalDevice`
+   traits — never OSDI or any external model ABI (Plugin plan D13).
 5. **Attribute schemas from plugins (§10).** Plugin-registered schemas join the
    `@attribute(schema=...)` registry; collision → P0003 `SchemaConflict`.
 6. **Bench tasks from plugins (§6).** Plugin `SimTask`s extend the
@@ -518,6 +519,14 @@ Suggested order (each independently shippable, spec section in parens):
 9. **Custom scripts (§9).** CLI dispatcher falls through to plugin-registered
    subcommands; capability-gated host context (`fs()`, `project()`, `spawn()`,
    `log()`); `piperine plugin list`. Error: P0009 `UnknownScript`.
+10. **OSDI extraction (Plugin plan D13).** Move `solver/src/osdi/` out of the
+    core into an `osdi-compat` plugin: its `DeviceFactory` loads a compiled OSDI
+    v0.4 `.so` and adapts it behind the native `AnalogDevice` trait. The solver
+    core drops the `osdi` module and its `libloading` dependency; the OSDI test
+    corpus becomes the plugin's suite. Gate: every current OSDI test passes
+    through the plugin path with the in-core module deleted. Also update the
+    CLAUDE.md/architecture wording ("Verilog-A models load as compiled OSDI
+    shared libraries" moves from core description to plugin description).
 
 ---
 

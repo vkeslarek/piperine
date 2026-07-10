@@ -56,8 +56,8 @@ or the solver's math core — those stay closed. Reinventing resolution —
 
 - `piperine-solver` never depends on `piperine-codegen`. Plugins reach the solver
   only through `Device` / `AnalogDevice` / `DigitalDevice`
-  (`solver/src/core/device.rs`, `solver/src/digital/interface.rs`) — the same
-  boundary OSDI models use.
+  (`solver/src/core/device.rs`, `solver/src/digital/interface.rs`) — Piperine's
+  own mixed-signal ABI, never an external model ABI (D13).
 - The POM is the only reflection surface. `DesignView`/`DesignPatch` serialize POM
   shapes; nothing from `codegen/src/lower/` crosses the plugin boundary except
   behind the elevated `after_lower` capability.
@@ -163,15 +163,15 @@ plugin provides it. Rationale: fail-loud is preserved, the static builtin list
 stays the fast path, and `piperine-lang` never learns about plugins.
 
 **D7 — Native backend first, WASM second, process last.** Native is ~200 lines
-on top of the exact `OsdiLib` precedent
-(`solver/src/osdi/loader.rs:35` — `libloading::Library::new` + a single C entry
-symbol; `solver/build.rs` already exports host symbols to loaded libraries).
-WASM needs serialized POM views + wasmtime plumbing; process needs a JSON-RPC
-loop. Security posture is unchanged from Part VI (WASM is the *default ABI* for
-plugin authors; native demands TOFU + pinned rev + hash) — this decision is only
-about implementation order, because native exercises the entire contract with
-the least new machinery, and every contract test written for it re-runs against
-the other backends later.
+of dlopen plumbing (`libloading::Library::new` + a single C entry symbol; the
+in-core OSDI loader at `solver/src/osdi/loader.rs:35` is the *mechanical*
+precedent for the loading step only — see D13; `solver/build.rs` already exports
+host symbols to loaded libraries). WASM needs serialized POM views + wasmtime
+plumbing; process needs a JSON-RPC loop. Security posture is unchanged from
+Part VI (WASM is the *default backend* for plugin authors; native demands TOFU +
+pinned rev + hash) — this decision is only about implementation order, because
+native exercises the entire contract with the least new machinery, and every
+contract test written for it re-runs against the other backends later.
 
 **D8 — Hook inputs are views, not references, on every backend.** Even the
 native backend receives `DesignView` (a serializable snapshot) rather than
@@ -205,6 +205,21 @@ contract is complete) but the host rejects manifests requesting the `lowered`
 capability with `PluginError::Other("after_lower not yet enabled")` until a
 real consumer exists. Rationale: it is the only surface that exposes
 codegen-private shapes; do not open it speculatively.
+
+**D13 — The ABI is Piperine's own; OSDI is a consumer, not the model.** The
+plugin device contract is exactly the native `AnalogDevice` / `DigitalDevice`
+trait pair — designed for mixed-signal simulation and Piperine semantics
+(two-phase digital evaluation with NBA ordering, limited-Newton analog loading,
+`EventSink` as the scheduler boundary, `accept_timestep` for cross-domain
+coupling). It does **not** track OSDI or any external model ABI; OSDI's only
+role in this plan is as the mechanical precedent for dlopen loading (D7).
+Consequence: the in-core OSDI support (`solver/src/osdi/` — loader, descriptor
+walk, `OsdiDevice`) is slated to move *out* of `piperine-solver` into an
+`osdi-compat` plugin whose `DeviceFactory` wraps compiled OSDI v0.4 models
+behind the native traits. The solver core then drops the `osdi` module and its
+`libloading` dependency; Verilog-A models keep working through the plugin.
+Scheduled as a Phase 5 deliverable — it is also the best possible validation of
+the device ABI (if OSDI fits behind `DeviceFactory`, any vendor model does).
 
 ---
 
@@ -409,8 +424,8 @@ a project without `[plugins]` behaves byte-identically (inert-host fast path).
 
 ### Phase 1 — Native backend + TOFU
 
-`backend/native.rs` (libloading, `piperine_plugin_entry` C symbol — same shape
-as `OsdiLib::load`), sha256 hashing, TOFU prompt + `--trust`/`--no-trust`,
+`backend/native.rs` (libloading + the `piperine_plugin_entry` C symbol — dlopen
+mechanics only, D13), sha256 hashing, TOFU prompt + `--trust`/`--no-trust`,
 `trust.rs` lockfile round-trip. A `tests/fixtures/hello-plugin` cdylib crate
 compiled by the test harness. **Gate:** `native_smoke.rs` — load, register, fire
 every hook, deny an undeclared `fs()` call (P0002), reject a tampered artifact
@@ -453,8 +468,14 @@ unmodified; an infinite-loop hook is killed by the timeout.
 Out-of-process backend (JSON-RPC over stdio; same view/patch language).
 `extract` / `.attach` / `.meta` shipped as plugin bench tasks (closes ROADMAP
 G13; `.attach` = a bench-side wrapper that stages `add_instance` +
-`add_connection`, `.meta` = staged overlay attributes per Part I §8). LSP
-surface (plugins contributing diagnostics) — design note only until requested.
+`add_connection`, `.meta` = staged overlay attributes per Part I §8).
+**OSDI extraction (D13):** move `solver/src/osdi/` into an `osdi-compat`
+plugin — its `DeviceFactory` loads a compiled OSDI `.so` and adapts it behind
+`AnalogDevice`; the solver core drops the `osdi` module and the `libloading`
+dependency; the existing OSDI test corpus becomes the plugin's test suite.
+**Gate:** every current OSDI solver test passes through the plugin path with
+the in-core module deleted. LSP surface (plugins contributing diagnostics) —
+design note only until requested.
 
 ---
 
