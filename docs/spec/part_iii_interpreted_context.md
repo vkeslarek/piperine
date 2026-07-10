@@ -63,7 +63,7 @@ mod SwitchOpenTest () {
 bench SwitchOpenTest {
     fn test_open_circuit() {
         var r = $op();
-        $assert(r.v(vsrc, gnd) != 0, "source must be active");
+        $assert(r.v(source.p, gnd) != 0, "source must be active");
     }
 }
 ```
@@ -160,10 +160,15 @@ allowlist contains 11 task names:
 
 A `$`-task not in this list, called from a bench fn, is an **elaboration error** — it
 fails before any analysis ever runs, never silently no-ops. This is the fail-loud
-contract: an unimplemented task is a named error, not a stub.
+contract: an unimplemented task is a named error, not a stub. (`$plot` is specified in
+Part V §3.3 but is allowlist-gated until its `SimTask` lands — calling it today is the
+elaboration error above, by design.)
 
 Adding a new bench task requires three changes in the same commit: the allowlist entry,
 the `SimTask` implementation, and this spec's availability matrix (Part V §7).
+Plugin-registered bench tasks (Part VI §6) extend the allowlist at plugin-load time —
+a loaded plugin's `bench_task` contributions are callable as `$name(...)` exactly like
+builtins.
 
 ---
 
@@ -227,9 +232,13 @@ bundle TranConfig  { stop : Real, step : Real = 0.0, start : Real = 0.0,
                      solver : Solver = Solver {}, ic : Map<String, Real> = Map {} }
 bundle AcConfig    { fstart : Real, fstop : Real, points : Natural,
                      scale : Scale = Dec, solver : Solver = Solver {} }
-bundle NoiseConfig { out : ???, fstart : Real, fstop : Real, points : Natural,
+bundle NoiseConfig { out : NetRef, fstart : Real, fstop : Real, points : Natural,
                      scale : Scale = Dec, solver : Solver = Solver {} }
 ```
+
+`NetRef` is the host-side net-reference type: in a bench, naming a net or an instance
+port (`vout`, `amp.out`) evaluates to a `NetRef`, so `.out` is written as a bare net
+name. Two `NetRef`s compare equal when they refer to the same net.
 
 `step = 0.0` in `TranConfig` means adaptive timestep selection (the solver picks). The
 `scale` field controls the frequency sweep spacing: linear (`Lin`), logarithmic per
@@ -351,7 +360,7 @@ Rust     :  load("chip.ppr")?.module("Amp")?.op(OpConfig { solver: Solver { temp
 
 Each returns the identical `OpResult` interface; `r.v(out)` reads the same value
 everywhere. The result types, config bundles, and reflection surface are the one
-contract serialized over the ABI (Part IV §7). Each host presents it idiomotatically —
+contract serialized over the ABI (Part IV §7). Each host presents it idiomatically —
 property sugar in Piperine/Python, explicit `..default()` in Rust — but never a
 different shape.
 

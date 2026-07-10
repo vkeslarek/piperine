@@ -100,8 +100,15 @@ Range     ::= Expr (".."|"..=") Expr
 ## B.5 Types
 
 ```
-Type ::= Ident [TypeArgs] { Indexer }
+Type      ::= TupleType | FnType | NamedType
+NamedType ::= Ident [TypeArgs] { Indexer } [ "?" ]
+FnType    ::= "fn" "(" [ Type {"," Type} [","] ] ")" [ "->" Type ] [ "?" ]
+TupleType ::= "(" Type "," Type {"," Type} [","] ")" [ "?" ]
 ```
+
+A trailing `?` marks an optional type (`Real?`, Part I §6.1). `fn(T, U) -> R` is a
+function type (Part I §9.2). `(T, U)` is a tuple type; a single parenthesized type is
+not a 1-tuple.
 
 ### B.5.1 Disciplines
 

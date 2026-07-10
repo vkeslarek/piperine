@@ -46,5 +46,5 @@ syscall set. Part III covers it as such.
   are cataloged).
 - Code blocks tagged `phdl` illustrate the surface syntax; blocks tagged `ebnf` are
   grammar productions.
-- Error codes follow the pattern `ENNNT` where `N` is the catalog (E2xxx elaboration,
-  E3xxx reflection); see Part II §11.
+- Error codes follow the pattern `ENNNN` / `PNNNN`, grouped by catalog: E2xxx
+  elaboration, E3xxx reflection (see Part II §11), P0xxx plugins (see Part VI §11).

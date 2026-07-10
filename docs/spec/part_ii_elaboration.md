@@ -309,7 +309,8 @@ to `0.0` or a no-op. This is the fail-loud contract.
 A `bench` fn may call only tasks in the `bench_task_implemented` allowlist; otherwise
 the call is an elaboration error before any analysis runs. The allowlist contains:
 `assert`, `info`, `warn`, `error`, `fatal`, `display`, `op`, `tran`, `ac`, `noise`,
-`write`. (Covered in Part III §5.)
+`write`. Plugin-registered bench tasks (Part VI §6) extend the allowlist at load time.
+(Covered in Part III §5.)
 
 ## §12 Diagnostics
 

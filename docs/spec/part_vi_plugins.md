@@ -263,13 +263,17 @@ map logical port names to the plugin's boundary.
 
 ```phdl
 @device(plugin = "avr-cosim", type = "Arduino::UnoR3")
-module ArduinoUno {
-    @port(name = "A0", kind = "analog")  port a0;
-    @port(name = "A1", kind = "analog")  port a1;
-    @port(name = "D0", kind = "digital") port d0;
-    @port(name = "D1", kind = "digital") port d1;
-}
+mod ArduinoUno (
+    @port(name = "A0", kind = "analog")  inout a0 : Electrical,
+    @port(name = "A1", kind = "analog")  inout a1 : Electrical,
+    @port(name = "D0", kind = "digital") inout d0 : Logic,
+    @port(name = "D1", kind = "digital") inout d1 : Logic,
+);
 ```
+
+The module declares no `analog`/`digital` block and no body — its behavior is the
+plugin device. The port declarations are ordinary PHDL ports (Part I §7.1); the
+`@port` attribute only maps each port to the plugin's logical boundary name.
 
 ### 7.3 The device factory contract
 

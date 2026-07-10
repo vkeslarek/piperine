@@ -90,8 +90,9 @@ physical meaning. Value types live in:
 
 The primitive value types are `Real`, `Natural` (indices, widths, counts), `Integer`,
 `Boolean` (2-state), `Quad` (4-state: `0`/`1`/`X`/`Z`), and `String` (diagnostics).
-Composite value types — tuples, lists (`Vec<T>`), maps (`Map<K,V>`), options (`T?`) —
-exist in the value layer for interpreted computation (Part III) and const evaluation.
+Composite value types — tuples, lists (`Vec<T>`), maps (`Map<K,V>`), sets (`Set<T>`),
+options (`T?`), and results (`Result<T,E>`) — exist in the value layer for interpreted
+computation (Part III) and const evaluation (the full catalog is §6.1).
 `UInt[N]`, `SInt[N]`, and `Complex` are standard-library bundles (§6.5), not primitives.
 
 A value can be stored, indexed, mapped, reduced — all the ordinary operations of a
@@ -143,11 +144,14 @@ is net/net, and that is where No-Magic (§13) applies.
 
 ### 2.4 Construct kinds
 
-PHDL has seven construct kinds, each with a distinct role:
+PHDL's construct kinds, each with a distinct role (the full top-level item list is
+§5.2):
 
 | Construct | Role |
 |-----------|------|
 | `mod` | Module shape: identity, ports, parameters, instances, structural body. The unit of hierarchy. |
+| `discipline` | A net type: storage + resolution (§6.2). The vocabulary of what a signal *is*. |
+| `enum` | An enumerated value over a digital representation (§6.4). |
 | `bundle` | An aggregate of named fields, each of value or net type. May be net-capable (if all fields are net types) and type a port, or value-only and type a `param`/`var`. |
 | `fn` | A pure value computation. Inlines at the call site; serves every context uniformly (elaboration, analog, digital, interpreted). |
 | `capability` | A named contract of function signatures. Operators desugar to capabilities. Satisfied via `impl Cap for T`. |
@@ -226,14 +230,15 @@ The following identifiers are reserved at the parser level — they cannot be us
 variable, field, or type names because the parser interprets them as keywords in the
 positions where they are expected:
 
-`above`, `and`, `analog`, `bundle`, `capability`, `change`, `const`, `cross`,
+`above`, `analog`, `bench`, `bundle`, `capability`, `change`, `const`, `cross`,
 `digital`, `discipline`, `else`, `enum`, `final`, `flow`, `fn`, `for`, `if`, `impl`,
-`in`, `initial`, `inout`, `input`, `mod`, `negedge`, `none`, `or`, `output`, `param`,
-`posedge`, `potential`, `pub`, `resolve`, `return`, `self`, `Self`, `storage`, `tri`,
-`use`, `var`, `when`, `wire`, `bench`.
+`in`, `initial`, `inout`, `input`, `match`, `mod`, `negedge`, `none`, `output`,
+`param`, `posedge`, `potential`, `pub`, `resolve`, `return`, `self`, `Self`,
+`storage`, `use`, `var`, `when`, `wire`.
 
-Contextual keywords (reserved only inside a `discipline` body): the resolve kinds `tri`,
-`or`, `and`, `sum`, `avg`, `max`, `min`.
+Contextual keywords (reserved only where the grammar expects them): the resolve kinds
+`tri`, `or`, `and`, `sum`, `avg`, `max`, `min` (inside a `discipline` body); `and` /
+`or` / `not` inside selector predicates and const boolean expressions.
 
 Lexer-level sigils: `$`, `@`, `<+` (contribution), `<-` (force), `?` (optional type;
 pattern wildcard), `..` / `..=` (ranges), `::` (path), `=>` (match arm), `->` (fn
@@ -334,6 +339,23 @@ The primitive value types:
 primitives — they are built from the same `bundle` + `capability` + `impl` machinery
 available to any user. Primitives carry built-in operators via the capability system
 (§6.6).
+
+**Implicit widening.** A small closed set of widenings is implicit; everything else is
+an explicit cast (`real(x)`, `int(x)`, `bit(x)`):
+
+| From | To | Rationale |
+|------|----|-----------|
+| `Boolean` | `Quad` | a 2-state value is a special case of 4-state |
+| `Natural` | `Boolean`, `Quad` | the literals `0`/`1` serve as logic values in context |
+| `Integer` | `Boolean`, `Quad` | same literal rule for signed positions |
+| `Integer` | `Natural` | a const-position integer known non-negative |
+
+The literal-coercion consequence: `code = 0;` on a `Bit[N]` var, `if (start == 1)` on
+a `Bit`, and `param w : Natural = 4` all type-check without casts. There is no implicit
+narrowing and no implicit `Integer`/`Natural` → `Real` — write `real(x)`.
+
+*Note (roadmap):* the widening table is intended to become explicit `impl From<T>`
+capability declarations in the prelude, replacing the compiler-internal table.
 
 **Collections and composites** (interpreted `fn`-body grammar — bench and const-eval):
 
@@ -485,8 +507,14 @@ operator capabilities are:
 | `&` `\|` `^` | `BitAnd` `BitOr` `BitXor` | `bitand` `bitor` `bitxor` |
 | `!` | `Not` | `not` |
 
+`Ord` declares only `lt`; the remaining comparisons derive from it and `Eq`:
+`a <= b` ≡ `a.lt(b) or a.eq(b)`, `a > b` ≡ `b.lt(a)`, `a >= b` ≡ `b.lt(a) or a.eq(b)`,
+and `a != b` ≡ `!a.eq(b)`.
+
 `Number : Add+Sub+Mul` is a convenience capability with a default `double` method.
-Primitive types satisfy the relevant capabilities intrinsically.
+Primitive types satisfy the relevant capabilities intrinsically (*roadmap:* these
+intrinsic satisfactions are intended to become visible `extern impl` declarations in
+the prelude).
 
 **Generics.** Type parameters appear in `<>`, const parameters (of type `Natural`) in
 `[]`. A bound is a `+`-separated set of capabilities. `Type` and `Net` are root
@@ -646,7 +674,7 @@ Attribute ::= "@" Ident "(" [ AttrArg { "," AttrArg } ] ")"
 AttrArg   ::= Ident "=" Expr
 ```
 
-Three governing rules govern every attribute. Violation of any is a defect:
+Three rules govern every attribute. Violation of any is a defect:
 
 1. **Inert.** The core compiler never reads attribute content for semantics. It
    validates against the schema and attaches. Attributes do not affect elaboration or
@@ -1049,7 +1077,7 @@ with error codes is Part II §11.
 |---------|------|-------|
 | §2 | value type used as net | E2004 `NotNetCapable` |
 | §2 | `<+` / `<-` in a `mod` body | E2006 / E2007 |
-| §5.3 | accessing a non-`pub` item from outside its package | E2021 `PrivateItem` |
+| §5.3 | accessing a non-`pub` item from outside its package | E2021 `PrivateItem` (surfaces today as E2002/E2003 — the item is filtered out of scope during `use` resolution) |
 | §6.1 | collection literal in unlowered context | fail-loud at device-compile |
 | §6.2 | multiple drivers on single-driver storage | E2020 `MultipleDrivers` |
 | §6.5 | bundle type/field errors | E2015–E2019 |

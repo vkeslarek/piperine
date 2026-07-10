@@ -44,7 +44,7 @@ Callable bare-name (`sqrt(x)`) or `$`-prefixed (`$sqrt(x)`) in any context.
 | `asinh` / `acosh` / `atanh` | 1 | inverse hyperbolic | `u'/√(1+u²)` / `u'/√(u²-1)` / `u'/(1-u²)` |
 | `pow` | 2 | aᵇ | `b·pow(a,b-1)·a'` (b const) |
 | `hypot` | 2 | √(a²+b²) | piecewise |
-| `min` / `max` | 2 | min / max | 0 |
+| `min` / `max` | 2 | min / max | piecewise: `u'` or `v'` of the selected branch |
 | `floor` / `ceil` | 1 | round down / up | 0 |
 | `limexp` | 1 | `exp(min(x,80))` (SPICE overflow clamp) | `exp(u)·u'` |
 
@@ -136,6 +136,7 @@ These require the Host and are unavailable elsewhere:
 | `$ac(cfg)` | AC sweep → `Trace` (complex) |
 | `$noise(cfg)` | noise → `NoiseTrace` |
 | `$write(path, data)` | write `data` as CSV to `path` |
+| `$plot(waveform, title)` | render `waveform` as an SVG line-chart artifact named after `title` |
 
 Config bundles and result types are defined in Part III §7–§8.
 
@@ -249,7 +250,7 @@ marked "—" in a column is an elaboration error if used there.
 | `$display` / `$write(args...)` | ✓ | ✓ | ✓ |
 | `$finish` | ✓ | ✓ | — |
 | `$op` / `$tran` / `$ac` / `$noise` | — | — | ✓ |
-| `$write(path, data)` | — | — | ✓ |
+| `$write(path, data)` / `$plot` | — | — | ✓ |
 | `select(...)` | — | — | ✓ |
 | `V(a,b)` / `I(a,b)` | ✓ | ✓ *(read only)* | — *(use result object)* |
 | `<+` (contribution) | ✓ | — | — |

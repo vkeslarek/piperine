@@ -107,7 +107,7 @@ mod LcTank ( inout p : Electrical, inout n : Electrical ) {
 }
 analog LcTank {
     I(p, n) <+ c * ddt(V(p, n)) + idt(V(p, n)) / l;
-    @ initial { V(p, n) = 1.0; }
+    @ initial { V(p, n) <- 1.0; }
 }
 ```
 
@@ -255,7 +255,7 @@ mod SwitchOpenTest() {
 bench SwitchOpenTest {
     fn test_open_circuit() {
         var r = $op();
-        $assert(r.v(vsrc, gnd) > 4.9, "source must be near 5V");
+        $assert(r.v(source.p, gnd) > 4.9, "source must be near 5V");
         $assert(r.i(resistor.p, resistor.n) < 1e-8, "open switch => ~0 current");
     }
     fn test_closed_circuit() {
