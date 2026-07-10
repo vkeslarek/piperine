@@ -37,8 +37,8 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
                         _ => None,
                     };
                     
-                    if let Some(s) = span {
-                        if offset >= s.offset() && offset <= s.offset() + s.len() {
+                    if let Some(s) = span
+                        && offset >= s.offset() && offset <= s.offset() + s.len() {
                             parent = Some(Box::new(SelectionRange {
                                 range: crate::text_pos::byte_range(&doc.source, s.offset(), s.offset() + s.len()),
                                 parent,
@@ -46,18 +46,16 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
                             
                             if let Item::ModuleDeclaration(m) = item {
                                 for stmt in &m.body {
-                                    if let Some(ss) = stmt.span() {
-                                        if offset >= ss.offset() && offset <= ss.offset() + ss.len() {
+                                    if let Some(ss) = stmt.span()
+                                        && offset >= ss.offset() && offset <= ss.offset() + ss.len() {
                                             parent = Some(Box::new(SelectionRange {
                                                 range: crate::text_pos::byte_range(&doc.source, ss.offset(), ss.offset() + ss.len()),
                                                 parent,
                                             }));
                                         }
-                                    }
                                 }
                             }
                         }
-                    }
                 }
             }
             

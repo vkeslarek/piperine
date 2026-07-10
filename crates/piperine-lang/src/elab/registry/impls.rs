@@ -1,55 +1,17 @@
-use crate::parse::ast::{DisciplineDecl, EnumDecl, BundleDecl, ModuleDeclaration, FnDecl, Type as AstType};
-use crate::pom::{TypeRef, NetType, ValueType, ElabError, ElabErrorKind};
-use crate::elab::const_eval::ConstEnv;
-use super::types::TypeDef;
+use crate::parse::ast::{ModuleDeclaration, FnDecl};
 use super::components::ComponentDef;
 use super::callables::CallableDef;
+use crate::pom::{Module, ElabError};
+use crate::elab::const_eval::ConstEnv;
 use std::collections::HashMap;
-
-// Primitive Type Def
-pub struct PrimitiveTypeDef {
-    pub name: String,
-    pub val_type: ValueType,
-}
-
-impl TypeDef for PrimitiveTypeDef {
-    fn name(&self) -> &str { &self.name }
-    fn resolve(&self, _ty: &AstType, _env: &ConstEnv, _type_subst: &HashMap<String, String>) -> Result<TypeRef, ElabError> {
-        Ok(TypeRef::Value(self.val_type.clone()))
-    }
-}
-
-impl TypeDef for DisciplineDecl {
-    fn name(&self) -> &str { &self.name }
-    fn as_discipline(&self) -> Option<&DisciplineDecl> { Some(self) }
-    fn resolve(&self, _ty: &AstType, _env: &ConstEnv, _type_subst: &HashMap<String, String>) -> Result<TypeRef, ElabError> {
-        Ok(TypeRef::Net(NetType::Discipline(self.name.clone())))
-    }
-}
-
-impl TypeDef for EnumDecl {
-    fn name(&self) -> &str { &self.name }
-    fn as_enum(&self) -> Option<&EnumDecl> { Some(self) }
-    fn resolve(&self, _ty: &AstType, _env: &ConstEnv, _type_subst: &HashMap<String, String>) -> Result<TypeRef, ElabError> {
-        Ok(TypeRef::Value(ValueType::Enum(self.name.clone())))
-    }
-}
-
-impl TypeDef for BundleDecl {
-    fn name(&self) -> &str { &self.name }
-    fn as_bundle(&self) -> Option<&BundleDecl> { Some(self) }
-    fn resolve(&self, _ty: &AstType, _env: &ConstEnv, _type_subst: &HashMap<String, String>) -> Result<TypeRef, ElabError> {
-        Err(ElabError::from(ElabErrorKind::Other("Bundles are flattened and do not resolve to a simple TypeRef".into())))
-    }
-}
 
 // Module Def
 impl ComponentDef for ModuleDeclaration {
     fn name(&self) -> &str { &self.name }
     fn is_generic(&self) -> bool { !self.const_params.is_empty() || !self.type_params.is_empty() }
-    fn instantiate(&self, instantiator: &mut dyn crate::elab::registry::components::Instantiator, const_args: &[u64], _env: &mut ConstEnv, type_subst: &HashMap<String, String>) -> Result<crate::pom::Module, ElabError> {
+    fn instantiate(&self, instantiator: &mut dyn crate::elab::registry::components::Instantiator, const_args: &[u64], _env: &mut ConstEnv, type_subst: &HashMap<String, String>) -> Result<Module, ElabError> {
         if self.const_params.len() != const_args.len() {
-            return Err(ElabError::from(ElabErrorKind::Other(format!(
+            return Err(ElabError::from(crate::pom::ElabErrorKind::Other(format!(
                 "module `{}` expects {} const params, got {}",
                 self.name,
                 self.const_params.len(),

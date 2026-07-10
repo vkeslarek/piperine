@@ -90,6 +90,10 @@ impl AcAnalysisResult {
         self.values.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
     pub fn get(&self, index: usize) -> Option<&AcAnalysisStep> {
         assert!(index < self.values.len());
 

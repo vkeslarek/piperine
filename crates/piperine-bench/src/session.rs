@@ -84,20 +84,23 @@ impl SimSession {
     /// config) — nothing here is remembered between calls. `nodeset`
     /// (piperine-bench/docs/SPEC.md §5.1 `OpConfig.nodeset`) seeds the Newton initial
     /// guess.
-    pub fn run_op(&self, config: &SolverConfig, nodeset: &Value) -> Result<OpResult, BenchError> {
+    fn build_circuit(&self) -> Result<(piperine_solver::core::circuit::CircuitInstance, piperine_codegen::device::CircuitBuildInfo), BenchError> {
         let applied = self.design.with_overrides_applied(&self.module)?;
         let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
         let mut compiler = CircuitCompiler::new(&applied, &bodies);
         let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
         circuit.init_digital();
         circuit.rebuild_digital_topology();
+        Ok((circuit, info))
+    }
+
+    pub fn run_op(&self, config: &SolverConfig, nodeset: &Value) -> Result<OpResult, BenchError> {
+        let (mut circuit, info) = self.build_circuit()?;
         let ivs = build_ivs(&info, nodeset, circuit.netlist())?;
         let mut dc = circuit.dc(config.to_context())?;
         dc.apply_initial_conditions(ivs);
         let result = dc.solve()?;
         drop(dc);
-        // Digital nets settle inside the DC mixed-signal loop — snapshot
-        // them so `r.v(bit_net)` reads logic values off the result.
         let digital = Self::snapshot_digital(&info, &circuit);
         Ok(OpResult::new(result, digital, Rc::new(info)))
     }
@@ -138,12 +141,7 @@ fn snapshot_digital(
         config: &SolverConfig,
         ic: &Value,
     ) -> Result<Trace, BenchError> {
-        let applied = self.design.with_overrides_applied(&self.module)?;
-        let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
-        let mut compiler = CircuitCompiler::new(&applied, &bodies);
-        let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
-        circuit.init_digital();
-        circuit.rebuild_digital_topology();
+        let (mut circuit, info) = self.build_circuit()?;
         let ivs = build_ivs(&info, ic, circuit.netlist())?;
         let opts = match step {
             Some(dt) => piperine_solver::analysis::transient::TransientAnalysisOptions::new(stop, dt),
@@ -166,12 +164,7 @@ fn snapshot_digital(
         logarithmic: bool,
         config: &SolverConfig,
     ) -> Result<AcTrace, BenchError> {
-        let applied = self.design.with_overrides_applied(&self.module)?;
-        let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
-        let mut compiler = CircuitCompiler::new(&applied, &bodies);
-        let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
-        circuit.init_digital();
-        circuit.rebuild_digital_topology();
+        let (mut circuit, info) = self.build_circuit()?;
         let opts = piperine_solver::analysis::ac::AcSweepAnalysisOptions {
             start_frequency: fstart,
             stop_frequency: fstop,
@@ -195,12 +188,7 @@ fn snapshot_digital(
         logarithmic: bool,
         config: &SolverConfig,
     ) -> Result<NoiseTrace, BenchError> {
-        let applied = self.design.with_overrides_applied(&self.module)?;
-        let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
-        let mut compiler = CircuitCompiler::new(&applied, &bodies);
-        let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
-        circuit.init_digital();
-        circuit.rebuild_digital_topology();
+        let (mut circuit, info) = self.build_circuit()?;
         let out = resolve_net(&info, out)?;
         let reference = resolve_net(&info, reference)?;
         let opts = piperine_solver::analysis::noise::NoiseAnalysisOptions {
@@ -219,19 +207,15 @@ fn snapshot_digital(
     }
 }
 
-/// Resolve a bench-visible net name to a solver node identifier. Ground
-/// names (`gnd`/`GND`/`vss`/`VSS`) map to the reference node; anything else
-/// is looked up in the built circuit's net map.
+/// Resolve a bench-visible net name to a solver node identifier
+/// ([`NetLookup`] with this crate's measurement error).
 fn resolve_net(
     info: &piperine_codegen::device::CircuitBuildInfo,
     name: &str,
 ) -> Result<piperine_solver::analog::NodeIdentifier, BenchError> {
-    if matches!(name, "gnd" | "GND" | "vss" | "VSS") {
-        return Ok(piperine_solver::analog::NodeIdentifier::Gnd);
-    }
-    info.nets.get(name).cloned().ok_or_else(|| {
-        BenchError::Measurement(format!("net `{name}` is not addressable"))
-    })
+    use crate::objects::NetLookup;
+    info.net_node(name)
+        .ok_or_else(|| BenchError::Measurement(format!("net `{name}` is not addressable")))
 }
 
 /// Build solver initial-value hints from an `ic`/`nodeset` `Map<Net, Real>`
@@ -248,24 +232,14 @@ fn build_ivs(
     let mut ivs = Vec::new();
     if let Value::Map(entries) = map {
         for (k, v) in entries.borrow().iter() {
-            let net_name = match k {
-                Value::Object(obj) => obj
-                    .as_any()
-                    .downcast_ref::<crate::objects::NetRef>()
-                    .map(|n| n.name.clone())
-                    .ok_or_else(|| {
-                        BenchError::Measurement(format!(
-                            "ic/nodeset keys must be Nets, got {}",
-                            k.type_name()
-                        ))
-                    })?,
-                other => {
-                    return Err(BenchError::Measurement(format!(
+            let net_name = crate::objects::NetRef::from_value(k)
+                .map(|n| n.name.clone())
+                .ok_or_else(|| {
+                    BenchError::Measurement(format!(
                         "ic/nodeset keys must be Nets, got {}",
-                        other.type_name()
-                    )))
-                }
-            };
+                        k.type_name()
+                    ))
+                })?;
             let node = resolve_net(info, &net_name)?;
             let value = match v {
                 Value::Real(r) => *r,

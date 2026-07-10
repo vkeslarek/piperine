@@ -325,8 +325,7 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 Some(c) if radix != 10 => {
-                    if c.is_ascii_hexdigit() { num.push(self.advance().unwrap()); }
-                    else if c == '?' && radix == 2 { num.push(self.advance().unwrap()); }
+                    if c.is_ascii_hexdigit() || (c == '?' && radix == 2) { num.push(self.advance().unwrap()); }
                     else if c == '_' { self.advance(); }
                     else { break; }
                 }

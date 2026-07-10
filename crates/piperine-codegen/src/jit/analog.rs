@@ -518,11 +518,10 @@ fn collect_limits(flat: &FlatAnalog) -> Vec<PomExpr> {
     let mut scan = |e: &PomExpr| {
         use piperine_lang::parse::ast::Walk;
         e.walk(&mut |node| {
-            if let PomExpr::SysCall(name, _) = node {
-                if name.trim_start_matches('$') == "limit" && !limits.iter().any(|l| expr_eq(l, node)) {
+            if let PomExpr::SysCall(name, _) = node
+                && name.trim_start_matches('$') == "limit" && !limits.iter().any(|l| expr_eq(l, node)) {
                     limits.push(node.clone());
                 }
-            }
             Walk::Continue
         });
     };
@@ -538,17 +537,16 @@ fn limit_branch(limit: &PomExpr, module: &LoweredBody) -> Option<(NodeId, NodeId
     if name.trim_start_matches('$') != "limit" { return None; }
     let vnew = args.get(1)?;
     let resolve = |n: &str| -> NodeId {
-        const GROUND: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
-        if GROUND.contains(&n) { return NodeId::GROUND; }
+        if piperine_lang::pom::is_ground(n) { return NodeId::GROUND; }
         module.symbols.nodes().find(|(_, info)| info.name == n).map(|(id, _)| id).unwrap_or(NodeId::GROUND)
     };
     let mut found: Option<(NodeId, NodeId)> = None;
     let mut count = 0usize;
     use piperine_lang::parse::ast::Walk;
     vnew.walk(&mut |node| {
-        if let PomExpr::Call(func, call_args) = node {
-            if let PomExpr::Ident(fname) = func.as_ref() {
-                if fname == "V" || fname == "I" {
+        if let PomExpr::Call(func, call_args) = node
+            && let PomExpr::Ident(fname) = func.as_ref()
+                && (fname == "V" || fname == "I") {
                     count += 1;
                     if count == 1 {
                         let plus_name = call_args.first().and_then(|e| {
@@ -560,8 +558,6 @@ fn limit_branch(limit: &PomExpr, module: &LoweredBody) -> Option<(NodeId, NodeId
                         found = Some((resolve(&plus_name), resolve(&minus_name)));
                     }
                 }
-            }
-        }
         Walk::Continue
     });
     if count == 1 { found } else { None }
@@ -648,8 +644,7 @@ impl<'m> AnalogCompiler<'m> {
         };
         let mut pairs = Vec::new();
         let resolve_node = |name: &str| -> Option<NodeId> {
-            const GROUND: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
-            if GROUND.contains(&name) { return Some(NodeId::GROUND); }
+            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
         for expr in flat.exprs() {
@@ -748,7 +743,7 @@ impl<'m> AnalogCompiler<'m> {
                 .limits
                 .iter()
                 .map(|l| match l {
-                    PomExpr::SysCall(name, args) if name == "$limit" && args.len() >= 5 => {
+                    PomExpr::SysCall(name, args) if name.trim_start_matches('$') == "limit" && args.len() >= 5 => {
                         args[4].clone()
                     }
                     _ => PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0)),
@@ -764,7 +759,7 @@ impl<'m> AnalogCompiler<'m> {
                 .limits
                 .iter()
                 .map(|l| match l {
-                    PomExpr::SysCall(name, args) if name == "$limit" && !args.is_empty() => {
+                    PomExpr::SysCall(name, args) if name.trim_start_matches('$') == "limit" && args.len() >= 2 => {
                         args[1].clone()
                     }
                     _ => PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(0.0)),
@@ -979,8 +974,7 @@ impl<'m> AnalogCompiler<'m> {
         let exprs: Vec<&PomExpr> = contribs.iter().map(|c| &c.expr).collect();
         let module = self.module;
         let resolve_node = |name: &str| -> Option<NodeId> {
-            const GROUND: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
-            if GROUND.contains(&name) { return Some(NodeId::GROUND); }
+            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
         self.build_fn(name, &exprs, |b, slot, out_ptr| {
@@ -1029,8 +1023,7 @@ impl<'m> AnalogCompiler<'m> {
         let exprs: Vec<&PomExpr> = forces.iter().map(|f| &f.expr).collect();
         let module = self.module;
         let resolve_node = |name: &str| -> Option<NodeId> {
-            const GROUND: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
-            if GROUND.contains(&name) { return Some(NodeId::GROUND); }
+            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
         self.build_fn(name, &exprs, |b, slot, out_ptr| {
@@ -1106,8 +1099,7 @@ impl<'m> AnalogCompiler<'m> {
         // Branch voltages for every pair read by any expression.
         let module = self.module;
         let resolve_node = |name: &str| -> Option<NodeId> {
-            const GROUND: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
-            if GROUND.contains(&name) { return Some(NodeId::GROUND); }
+            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
         let mut pairs = Vec::new();

@@ -525,7 +525,7 @@ impl crate::core::device::AnalogDevice for OsdiDevice {
         }
     }
 
-    fn accept_timestep(&mut self, _state: &CircularArrayBuffer2<f64>, _ctx: &Context, _nets: &[LogicValue], _event_queue: &mut std::collections::BinaryHeap<std::cmp::Reverse<crate::digital::DigitalEvent>>) {
+    fn accept_timestep(&mut self, _state: &CircularArrayBuffer2<f64>, _ctx: &Context, _nets: &[LogicValue], _sink: &mut dyn crate::digital::interface::EventSink) {
         let mut rhs = [0.0f64; SCRATCH];
         if let Some(f) = self.desc().load_residual_react {
             unsafe { f(self.inst_data.as_ptr() as *mut c_void, self.model_data.as_ptr() as *mut c_void, rhs.as_mut_ptr()); }

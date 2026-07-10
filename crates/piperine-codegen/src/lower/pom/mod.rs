@@ -11,11 +11,9 @@ use piperine_lang::pom::Design;
 use crate::lower::*;
 
 pub mod analog_ops;
-pub mod event;
 pub mod expr;
 pub mod stmt;
 pub mod structure;
-pub mod syscalls;
 
 use piperine_lang::parse::ast::{BindOp, Expr as PomExpr, Stmt as PomStmt};
 use structure::{build_symbols_and_ports, convert_fn, value_to_pom_expr};
@@ -136,9 +134,6 @@ pub(crate) struct LowerCtx<'a> {
     pub digital_shadows: Vec<(NodeId, VarId)>,
 }
 
-/// The ground-node aliases every net namespace accepts (SPEC: gnd-family).
-pub(crate) const GROUND_NAMES: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
-
 impl<'a> LowerCtx<'a> {
     /// Create a fresh lowering context. Snapshots the symbol table's
     /// name → id maps once — every later lookup is a hash probe, not a
@@ -239,7 +234,7 @@ impl<'a> LowerCtx<'a> {
     /// port accesses (`load.p` → the parent NodeId the port connects to,
     /// SPEC §7.3).
     pub fn lookup_node(&self, name: &str) -> Option<NodeId> {
-        if GROUND_NAMES.contains(&name) {
+        if piperine_lang::pom::is_ground(name) {
             return Some(NodeId::GROUND);
         }
         // Check instance port map first (e.g. "load.p" or "rseg[0].n").
@@ -376,7 +371,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                             continue;
                         };
                         let name = net_ref.net();
-                        let parent_node = if GROUND_NAMES.contains(&name) {
+                        let parent_node = if piperine_lang::pom::is_ground(name) {
                             NodeId::GROUND
                         } else if let Some(&id) = node_by_name.get(name) {
                             id

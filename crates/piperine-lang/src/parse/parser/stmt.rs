@@ -227,11 +227,10 @@ impl<'a> Parser<'a> {
     pub(crate) fn parse_behavior_stmt(&mut self) -> Result<Stmt, crate::parse::error::ParseError> {
         if self.eat_ident("var") {
             let name = self.parse_ident()?;
-            self.expect(&Tok::Colon)?;
-            let ty = self.parse_type()?;
+            let ty = if self.eat(&Tok::Colon) { Some(self.parse_type()?) } else { None };
             let default = if self.eat(&Tok::Assign) { Some(self.parse_expr()?) } else { None };
             self.expect(&Tok::Semi)?;
-            return Ok(Stmt::VarDecl { name, ty: Some(ty), default });
+            return Ok(Stmt::VarDecl { name, ty, default });
         }
         if self.eat_ident("if") {
             self.expect(&Tok::LParen)?;

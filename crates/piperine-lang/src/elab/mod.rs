@@ -62,6 +62,8 @@ impl SourceFile {
             .map_err(|e| ElabError::from(ElabErrorKind::Other(e.to_string())))?;
         items.extend(expanded);
         let augmented = SourceFile { items };
-        Elaborator::new().elaborate(augmented)
+        let mut design = Elaborator::new().elaborate(augmented)?;
+        design.set_origins(resolver.take_origins());
+        Ok(design)
     }
 }

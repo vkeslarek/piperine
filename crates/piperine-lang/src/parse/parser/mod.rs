@@ -168,9 +168,7 @@ impl<'a> Parser<'a> {
 
     // ─────────────────────────── §2  Compilation unit ────────────────────────
 
-    /// Parses the entire token stream into a `SourceFile` AST.
-    /// Dispatches to sub-parsers based on leading keywords (`mod`, `fn`, `use`, etc.).
-
+    /// Skip tokens until `predicate` matches — parser error recovery.
     pub(crate) fn sync_until(&mut self, predicate: impl Fn(&Tok) -> bool) {
         while let Some(t) = self.peek() {
             if predicate(t) {

@@ -26,9 +26,6 @@ use crate::jit::CodegenError;
 
 use super::{AnalogInstance, CompiledModule, DigitalInstance, PiperineDevice};
 
-/// The ground-node aliases every net namespace accepts (SPEC: gnd-family).
-const GROUND_NAMES: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
-
 /// Everything a caller outside the solver needs to *address* a built
 /// circuit by name — the top module's net names, and each instance's
 /// compiled kernel/params/terminals for reading a device-internal quantity
@@ -174,7 +171,7 @@ impl<'p> CircuitCompiler<'p> {
     /// the same resolution `lower_bodies` used to do for the (now deleted)
     /// `IrInstance.connections` structural twin.
     fn resolve_node(body: &LoweredBody, name: &str) -> Option<NodeId> {
-        if GROUND_NAMES.contains(&name) {
+        if piperine_lang::pom::is_ground(name) {
             return Some(NodeId::GROUND);
         }
         body.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)

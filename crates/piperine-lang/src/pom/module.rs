@@ -190,13 +190,11 @@ pub struct Module {
     pub ports: Vec<Port>,
     pub params: Vec<Param>,
     pub wires: Vec<Wire>,
-    /// Module-level persistent variables (GAPS §I.15). Empty unless the
-    /// `mod` body declares `var`s directly (as opposed to `var`s inside an
-    /// `analog`/`digital` block, which are local and inlined at lowering).
     pub vars: Vec<Var>,
     pub instances: Vec<Instance>,
     pub connections: Vec<Connection>,
     pub behaviors: Vec<Behavior>,
+    pub origin: Option<String>,
 }
 
 impl Module {
@@ -214,7 +212,7 @@ impl Module {
         connections: Vec<Connection>,
         behaviors: Vec<Behavior>,
     ) -> Self {
-        Self { span: None, attributes: Vec::new(), name, ports, params, wires, vars: Vec::new(), instances, connections, behaviors }
+        Self { span: None, attributes: Vec::new(), name, ports, params, wires, vars: Vec::new(), instances, connections, behaviors, origin: None }
     }
 
     /// The module's name.

@@ -65,12 +65,10 @@ impl Device for Comparator {
 }
 
 impl AnalogDevice for Comparator {
-    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, ctx: &Context, nets: &[LogicValue], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, ctx: &Context, nets: &[LogicValue], sink: &mut dyn EventSink) {
         let latest = state.latest().unwrap();
         let eval_ctx = EvalCtx { time: ctx.time, nets, analog: latest.as_slice().unwrap() };
-        let mut seq = 0u64;
-        let mut sink = QueueSink::new(q, ctx.time, 0, &mut seq);
-        self.comb_phase(&eval_ctx, &mut sink);
+        self.comb_phase(&eval_ctx, sink);
     }
 }
 
@@ -120,12 +118,10 @@ impl Device for SchmittTrigger {
 }
 
 impl AnalogDevice for SchmittTrigger {
-    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, ctx: &Context, nets: &[LogicValue], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, ctx: &Context, nets: &[LogicValue], sink: &mut dyn EventSink) {
         let latest = state.latest().unwrap();
         let eval_ctx = EvalCtx { time: ctx.time, nets, analog: latest.as_slice().unwrap() };
-        let mut seq = 0u64;
-        let mut sink = QueueSink::new(q, ctx.time, 0, &mut seq);
-        self.comb_phase(&eval_ctx, &mut sink);
+        self.comb_phase(&eval_ctx, sink);
     }
 }
 

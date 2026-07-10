@@ -262,8 +262,8 @@ impl<'a> Parser<'a> {
         // Map literal: `Map { k: v, ... }` or `Map {}` (piperine-bench/docs/SPEC.md §5.1).
         // Disambiguated from a bundle literal by the `Map` type name and the
         // `k: v` (colon) entry syntax.
-        if let Expr::Ident(name) = &expr {
-            if name == "Map" && self.peek() == Some(&Tok::LBrace) {
+        if let Expr::Ident(name) = &expr
+            && name == "Map" && self.peek() == Some(&Tok::LBrace) {
                 self.eat(&Tok::LBrace);
                 let mut entries = Vec::new();
                 if !self.eat(&Tok::RBrace) {
@@ -284,14 +284,13 @@ impl<'a> Parser<'a> {
                 }
                 expr = Expr::MapLit(entries);
             }
-        }
 
         // Set literal: `Set { a, b, c }` or `Set {}` (empty set).
         // Disambiguated from a bundle literal by the `Set` type name and the
         // absence of `.field = ...` syntax (bundle lits require dotted field
         // inits; Set items are bare expressions).
-        if let Expr::Ident(name) = &expr {
-            if name == "Set" && self.peek() == Some(&Tok::LBrace) {
+        if let Expr::Ident(name) = &expr
+            && name == "Set" && self.peek() == Some(&Tok::LBrace) {
                 self.eat(&Tok::LBrace);
                 let mut items = Vec::new();
                 if !self.eat(&Tok::RBrace) {
@@ -306,7 +305,6 @@ impl<'a> Parser<'a> {
                 }
                 expr = Expr::SetLit(items);
             }
-        }
 
         // BundleLit: `TypeRef { .field = expr, ... }` — look-ahead on `{ .` or `{ }`.
         if self.peek() == Some(&Tok::LBrace)

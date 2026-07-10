@@ -41,31 +41,29 @@ pub fn position_to_byte(source: &str, position: Position) -> usize {
     // NOT part of this line (column counter resets).
     let mut col16 = 0u32;
     let mut byte = line_start;
-    while byte < source.len() {
-        // Stop before advancing past a newline — the request line ends.
-        let next_newline = source[byte..].bytes().position(|b| b == b'\n').unwrap_or(source.len() - byte);
-        let line_end = byte + next_newline;
-        while byte < line_end && col16 < position.character {
-            let c = source[byte..].chars().next().unwrap();
-            let step = utf16_len(c) as u32;
-            // Don't overshoot — if this char would exceed the target col,
-            // snap to the byte of the previous char.
-            if col16 + step > position.character {
-                // Snap back to the start of this char.
-                // No col16 update; break out via `col16 == target` next.
-                return byte;
-            }
-            col16 += step;
-            byte += c.len_utf8();
-        }
-        if col16 >= position.character {
+    if byte >= source.len() {
+        return source.len();
+    }
+    // The newline that ends the line is not part of it — the walk stops there.
+    let next_newline = source[byte..].bytes().position(|b| b == b'\n').unwrap_or(source.len() - byte);
+    let line_end = byte + next_newline;
+    while byte < line_end && col16 < position.character {
+        let c = source[byte..].chars().next().unwrap();
+        let step = c.len_utf16() as u32;
+        // Don't overshoot — if this char would exceed the target col, snap
+        // to the byte where it starts.
+        if col16 + step > position.character {
             return byte;
         }
-        // Reached end of line without hitting the target col — clamp to
-        // end-of-line (byte before the newline, or the line-end itself).
-        return line_end.min(source.len());
+        col16 += step;
+        byte += c.len_utf8();
     }
-    source.len()
+    if col16 >= position.character {
+        return byte;
+    }
+    // Reached end of line without hitting the target col — clamp to
+    // end-of-line (the byte before the newline).
+    line_end.min(source.len())
 }
 
 /// Inverse of `position_to_byte`: UTF-8 byte offset → UTF-16 `(line,
@@ -77,7 +75,7 @@ pub fn byte_to_position(source: &str, byte_offset: usize) -> Position {
     let line_start = prefix.rfind('\n').map(|i| i + 1).unwrap_or(0);
     let col16 = source[line_start..offset]
         .chars()
-        .map(|c| utf16_len(c) as u32)
+        .map(|c| c.len_utf16() as u32)
         .sum();
     Position::new(line, col16)
 }
@@ -167,11 +165,6 @@ fn prev_char_offset(source: &str, i: usize) -> usize {
         j -= 1;
     }
     j
-}
-
-/// UTF-16 code-unit length of a char (1 or 2).
-fn utf16_len(c: char) -> usize {
-    c.len_utf16()
 }
 
 #[cfg(test)]

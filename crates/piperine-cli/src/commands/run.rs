@@ -4,7 +4,7 @@ use std::path::PathBuf;
 pub fn execute(entry: Option<String>, file: Option<String>) {
     crate::commands::build::execute(file.clone());
 
-    let (source_map, _project_root) = super::utils::build_source_map();
+    let (source_map, project_root) = super::utils::build_source_map();
 
     let path = if let Some(f) = file {
         PathBuf::from(f)
@@ -25,13 +25,14 @@ pub fn execute(entry: Option<String>, file: Option<String>) {
         }
     };
 
-    let design = match piperine_lang::parse_and_elaborate(&body, &source_map) {
+    let mut design = match piperine_lang::parse_and_elaborate(&body, &source_map) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("Error elaborating {}:\n{:?}", path.display(), e);
             std::process::exit(1);
         }
     };
+    super::utils::stamp_project_meta(&mut design, &project_root);
 
     let runner = BenchRunner::new(&design);
 

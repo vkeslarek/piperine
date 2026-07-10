@@ -1,7 +1,8 @@
 use crate::analog::Netlist;
+use crate::core::device::Device;
 use crate::math::unit::{Ohm, Siemens, UnitExt};
 use faer::{Par, set_global_parallelism};
-use ndarray::ArrayView1;
+use ndarray::{ArrayView1, ArrayViewMut1};
 use std::num::NonZeroUsize;
 use std::sync::Once;
 
@@ -12,6 +13,43 @@ pub mod tf;
 pub mod transient;
 
 static INIT: Once = Once::new();
+
+pub(crate) fn check_convergence(
+    devices: &[Box<dyn Device>],
+    state: &crate::math::circular_array::CircularArrayBuffer2<f64>,
+    new_guess: &ArrayView1<f64>,
+    context: &Context,
+    netlist: &Netlist,
+) -> bool {
+    for device in devices {
+        if let Some(a) = device.as_analog_ref()
+            && a.limiting_active() {
+                return false;
+            }
+    }
+    context.has_converged(state.view(0), new_guess, netlist)
+}
+
+pub(crate) fn apply_damping(
+    state: &crate::math::circular_array::CircularArrayBuffer2<f64>,
+    mut current_guess: ArrayViewMut1<f64>,
+    dc_damp_tolerance: f64,
+) {
+    let last_guess = match state.latest() {
+        Some(guess) => guess,
+        None => return,
+    };
+    let diff_norm_sq: f64 = current_guess
+        .iter()
+        .zip(last_guess.iter())
+        .fold(0.0, |acc, (curr, prev)| acc + (curr - prev).powi(2));
+    let diff_norm = diff_norm_sq.sqrt();
+    if diff_norm >= dc_damp_tolerance {
+        for (curr, prev) in current_guess.iter_mut().zip(last_guess.iter()) {
+            *curr = (*curr + *prev) * 0.5;
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Context {

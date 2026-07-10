@@ -1200,3 +1200,28 @@ fn result_err_methods() {
         other => panic!("expected Passed, got {other:?}"),
     }
 }
+
+#[test]
+fn function_reference_as_argument() {
+    // A named function can be passed as a fn(T)->R argument.
+    let src = format!(
+        "{CIRCUIT}
+        fn double(x: Real) -> Real {{
+            return x * 2.0;
+        }}
+        fn apply_op(f: fn(Real) -> Real, x: Real) -> Real {{
+            return f(x);
+        }}
+        bench SwitchOpenTest {{
+            fn test_fn_ref() {{
+                var result = apply_op(double, 5.0);
+                $assert(abs(result - 10.0) < 1e-12, \"named fn passed as argument\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_fn_ref") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}

@@ -63,6 +63,10 @@ pub enum Value {
     Result(std::result::Result<Box<Value>, Box<Value>>),
     Option(Option<Box<Value>>),
     Closure(Rc<Closure>),
+    /// A named-function reference — produced when a bare `fn` name is used
+    /// as a value (e.g. passed as a `fn(T) -> R` argument). Carries the
+    /// function name; the interpreter resolves and calls it on invocation.
+    FnRef(String),
     /// A host-defined object (e.g. `OpResult`, `NetRef`). Method calls on it
     /// are dispatched through [`Object::call_method`].
     Object(Rc<dyn Object>),
@@ -81,6 +85,10 @@ pub struct Closure {
 /// Lets host crates (e.g. `piperine-bench`) hand PHDL-callable handles
 /// (`OpResult`, `NetRef`, `InstanceRef`, ...) into the interpreter without
 /// this crate knowing their concrete types.
+/// Interpreter re-entry used by closure-taking object methods
+/// ([`Object::call_method_with`]): invokes a bench `Closure` with arguments.
+pub type InvokeClosure<'a> = dyn FnMut(&Closure, Vec<Value>) -> Result<Value, EvalError> + 'a;
+
 pub trait Object: fmt::Debug {
     /// The type name as it should appear in diagnostics (e.g. `"OpResult"`).
     fn type_name(&self) -> &str;
@@ -121,7 +129,7 @@ pub trait Object: fmt::Debug {
         &self,
         name: &str,
         args: Vec<Value>,
-        _invoke: &mut dyn FnMut(&Closure, Vec<Value>) -> Result<Value, EvalError>,
+        _invoke: &mut InvokeClosure<'_>,
     ) -> Result<Value, EvalError> {
         self.call_method(name, args)
     }
@@ -148,6 +156,7 @@ impl Value {
             Self::Result(_) => "Result",
             Self::Option(_) => "Option",
             Self::Closure(_) => "Closure",
+            Self::FnRef(_) => "FnRef",
             Self::Object(o) => o.type_name(),
         }
     }
@@ -164,34 +173,58 @@ impl Value {
         }
     }
 
-    /// Built-in methods shared by every value (list/option/tuple ops). Not
-    /// dispatched for `Object` — those go through [`Object::call_method`].
+    /// Built-in methods shared by every value. Dispatches by Value variant
+    /// to a focused sub-method — adding a new collection type adds one
+    /// arm here and one sub-method, without touching the others.
     pub fn call_builtin_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
-        match (self, name) {
-            (Value::List(items), "push") => {
+        match self {
+            Value::List(_) => self.list_method(name, args),
+            Value::Map(_) => self.map_method(name, args),
+            Value::Set(_) => self.set_method(name, args),
+            Value::Option(_) => self.option_method(name, args),
+            Value::Result(_) => self.result_method(name, args),
+            Value::Object(obj) => obj.call_method(name, args),
+            recv => Err(EvalError::Undefined(format!("method `{name}` on {}", recv.type_name()))),
+        }
+    }
+
+    fn list_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
+        let Value::List(items) = self else { unreachable!() };
+        match name {
+            "push" => {
                 let [v] = take1(args)?;
                 items.borrow_mut().push(v);
                 Ok(Value::Unit)
             }
-            (Value::List(items), "len") => Ok(Value::Nat(items.borrow().len() as u64)),
-            (Value::List(items), "get") => {
+            "len" => Ok(Value::Nat(items.borrow().len() as u64)),
+            "get" => {
                 let [i] = take1(args)?;
                 let idx = as_index(&i)?;
                 Ok(Value::Option(items.borrow().get(idx).cloned().map(Box::new)))
             }
-            // `is_present`/`get_or` are the optional-param sugars (SPEC §…);
-            // `is_some`/`is_none`/`unwrap`/`unwrap_or` are the value-layer aliases.
-            (Value::Option(inner), "is_some" | "is_present") => Ok(Value::Bool(inner.is_some())),
-            (Value::Option(inner), "is_none") => Ok(Value::Bool(inner.is_none())),
-            (Value::Option(inner), "unwrap") => inner
-                .clone()
-                .map(|v| *v)
+            other => Err(EvalError::Undefined(format!("method `{other}` on List"))),
+        }
+    }
+
+    fn option_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
+        let Value::Option(inner) = self else { unreachable!() };
+        match name {
+            "is_some" | "is_present" => Ok(Value::Bool(inner.is_some())),
+            "is_none" => Ok(Value::Bool(inner.is_none())),
+            "unwrap" => inner.clone().map(|v| *v)
                 .ok_or_else(|| EvalError::Host("unwrap of an empty Option".into())),
-            (Value::Option(inner), "unwrap_or" | "get_or") => {
+            "unwrap_or" | "get_or" => {
                 let [default] = take1(args)?;
                 Ok(inner.clone().map(|v| *v).unwrap_or(default))
             }
-            (Value::Map(entries), "insert") => {
+            other => Err(EvalError::Undefined(format!("method `{other}` on Option"))),
+        }
+    }
+
+    fn map_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
+        let Value::Map(entries) = self else { unreachable!() };
+        match name {
+            "insert" => {
                 let mut it = args.into_iter();
                 let k = it.next().ok_or_else(|| EvalError::TypeMismatch("insert needs 2 arguments".into()))?;
                 let v = it.next().ok_or_else(|| EvalError::TypeMismatch("insert needs 2 arguments".into()))?;
@@ -203,14 +236,20 @@ impl Value {
                 }
                 Ok(Value::Unit)
             }
-            (Value::Map(entries), "get") => {
+            "get" => {
                 let [k] = take1(args)?;
                 let found = entries.borrow().iter().find(|(ek, _)| ek == &k).map(|(_, v)| v.clone());
                 Ok(Value::Option(found.map(Box::new)))
             }
-            (Value::Map(entries), "len") => Ok(Value::Nat(entries.borrow().len() as u64)),
-            // ── Set methods ──
-            (Value::Set(items), "insert" | "add") => {
+            "len" => Ok(Value::Nat(entries.borrow().len() as u64)),
+            other => Err(EvalError::Undefined(format!("method `{other}` on Map"))),
+        }
+    }
+
+    fn set_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
+        let Value::Set(items) = self else { unreachable!() };
+        match name {
+            "insert" | "add" => {
                 let [v] = take1(args)?;
                 let mut e = items.borrow_mut();
                 if !e.iter().any(|x| x == &v) {
@@ -218,12 +257,12 @@ impl Value {
                 }
                 Ok(Value::Unit)
             }
-            (Value::Set(items), "contains") => {
+            "contains" => {
                 let [v] = take1(args)?;
                 Ok(Value::Bool(items.borrow().iter().any(|x| x == &v)))
             }
-            (Value::Set(items), "len") => Ok(Value::Nat(items.borrow().len() as u64)),
-            (Value::Set(items), "remove") => {
+            "len" => Ok(Value::Nat(items.borrow().len() as u64)),
+            "remove" => {
                 let [v] = take1(args)?;
                 let mut e = items.borrow_mut();
                 if let Some(pos) = e.iter().position(|x| x == &v) {
@@ -231,32 +270,26 @@ impl Value {
                 }
                 Ok(Value::Unit)
             }
-            // ── Result methods ──
-            (Value::Result(Ok(_)), "is_ok") => Ok(Value::Bool(true)),
-            (Value::Result(Ok(_)), "is_err") => Ok(Value::Bool(false)),
-            (Value::Result(Err(_)), "is_ok") => Ok(Value::Bool(false)),
-            (Value::Result(Err(_)), "is_err") => Ok(Value::Bool(true)),
-            (Value::Result(Ok(v)), "unwrap") => Ok((**v).clone()),
-            (Value::Result(Err(_)), "unwrap") => {
-                Err(EvalError::Host("unwrap of an Err Result".into()))
-            }
-            (Value::Result(Ok(v)), "unwrap_or") => {
-                let [default] = take1(args)?;
-                let _ = default;
-                Ok((**v).clone())
-            }
-            (Value::Result(Err(_)), "unwrap_or") => {
-                let [default] = take1(args)?;
-                Ok(default)
-            }
-            (Value::Result(Ok(v)), "ok") => Ok(Value::Option(Some(v.clone()))),
-            (Value::Result(Err(_)), "ok") => Ok(Value::Option(None)),
-            (Value::Result(Ok(_)), "err") => Ok(Value::Option(None)),
-            (Value::Result(Err(e)), "err") => Ok(Value::Option(Some(e.clone()))),
-            (Value::Object(obj), _) => obj.call_method(name, args),
-            (recv, other) => {
-                Err(EvalError::Undefined(format!("method `{other}` on {}", recv.type_name())))
-            }
+            other => Err(EvalError::Undefined(format!("method `{other}` on Set"))),
+        }
+    }
+
+    fn result_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
+        let Value::Result(r) = self else { unreachable!() };
+        match (r, name) {
+            (Ok(_), "is_ok") => Ok(Value::Bool(true)),
+            (Ok(_), "is_err") => Ok(Value::Bool(false)),
+            (Err(_), "is_ok") => Ok(Value::Bool(false)),
+            (Err(_), "is_err") => Ok(Value::Bool(true)),
+            (Ok(v), "unwrap") => Ok((**v).clone()),
+            (Err(_), "unwrap") => Err(EvalError::Host("unwrap of an Err Result".into())),
+            (Ok(v), "unwrap_or") => { let [default] = take1(args)?; let _ = default; Ok((**v).clone()) }
+            (Err(_), "unwrap_or") => { let [default] = take1(args)?; Ok(default) }
+            (Ok(v), "ok") => Ok(Value::Option(Some(v.clone()))),
+            (Err(_), "ok") => Ok(Value::Option(None)),
+            (Ok(_), "err") => Ok(Value::Option(None)),
+            (Err(e), "err") => Ok(Value::Option(Some(e.clone()))),
+            (_, other) => Err(EvalError::Undefined(format!("method `{other}` on Result"))),
         }
     }
 }
@@ -303,6 +336,18 @@ impl Value {
     pub fn as_real(&self) -> Option<f64> {
         match self { Self::Real(v) => Some(*v), _ => None }
     }
+
+    /// Coerce to `f64` if this is a `Real`, `Nat`, or `Integer`. Used by
+    /// config-bundle field extraction and analysis argument parsing.
+    pub fn coerce_real(&self) -> Result<f64, EvalError> {
+        match self {
+            Value::Real(r) => Ok(*r),
+            Value::Nat(n) => Ok(*n as f64),
+            Value::Int(n) => Ok(*n as f64),
+            other => Err(EvalError::TypeMismatch(format!("expected Real, got {}", other.type_name()))),
+        }
+    }
+
     /// Extract the inner `u64` if this is a `Natural`.
     pub fn as_natural(&self) -> Option<u64> {
         match self { Self::Nat(v) => Some(*v), _ => None }
@@ -357,6 +402,8 @@ impl PartialEq for Value {
             (Value::Result(Ok(a)), Value::Result(Ok(b))) => **a == **b,
             (Value::Result(Err(a)), Value::Result(Err(b))) => **a == **b,
             (Value::Option(a), Value::Option(b)) => a == b,
+            (Value::Closure(_), Value::Closure(_)) => false,
+            (Value::FnRef(a), Value::FnRef(b)) => a == b,
             (Value::Object(a), Value::Object(b)) => a.equals(b.as_any()),
             _ => false,
         }

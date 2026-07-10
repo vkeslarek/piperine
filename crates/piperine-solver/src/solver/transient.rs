@@ -47,40 +47,16 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
     }
 
     fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
-        for device in &self.circuit.devices {
-            if let Some(a) = device.as_analog_ref() {
-                if a.limiting_active() {
-                    return false;
-                }
-            }
-        }
         let netlist = self.circuit.netlist();
-        self.context
-            .has_converged(state.view(0), new_guess, netlist)
+        super::check_convergence(&self.circuit.devices, state, new_guess, &self.context, netlist)
     }
 
     fn apply_limit(
         &mut self,
         state: &CircularArrayBuffer2<f64>,
-        mut current_guess: ArrayViewMut1<f64>,
+        current_guess: ArrayViewMut1<f64>,
     ) {
-        let last_guess = match state.latest() {
-            Some(guess) => guess,
-            None => return,
-        };
-
-        let diff_norm_sq: f64 = current_guess
-            .iter()
-            .zip(last_guess.iter())
-            .fold(0.0, |acc, (curr, prev)| acc + (curr - prev).powi(2));
-
-        let diff_norm = diff_norm_sq.sqrt();
-
-        if diff_norm >= self.context.dc_damp_tolerance {
-            for (curr, prev) in current_guess.iter_mut().zip(last_guess.iter()) {
-                *curr = (*curr + *prev) * 0.5;
-            }
-        }
+        super::apply_damping(state, current_guess, self.context.dc_damp_tolerance);
     }
 
     fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<f64>) {}
@@ -181,12 +157,7 @@ impl<'a> TransientSolver<'a> {
         let max_iter = self.system.context.max_iter;
         let result = self.solver.solve(&mut self.system, 1.0 / dt, max_iter);
 
-        if result.is_ok() {
-            let snapshot = self.snapshot(current_time);
-            Ok(Some(snapshot))
-        } else {
-            Err(result.unwrap_err())
-        }
+        result.map(|_| Some(self.snapshot(current_time)))
     }
 
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
@@ -253,8 +224,8 @@ impl<'a> TransientSolver<'a> {
                 // Scale from dt_proposed as well
                 dt = f64::max(dt_proposed * 0.5, min_step);
                 
-                if dt <= min_step && analog_result.is_err() {
-                    return Err(analog_result.unwrap_err());
+                if dt <= min_step && let Err(e) = analog_result {
+                    return Err(e);
                 }
                 continue;
             }

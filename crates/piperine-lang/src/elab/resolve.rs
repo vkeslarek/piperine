@@ -7,7 +7,7 @@ pub fn resolve_calls(design: &mut crate::pom::Design) -> Result<(), ElabError> {
     for module in design.modules_map_mut().values_mut() {
         for behavior in &mut module.behaviors {
             for stmt in &mut behavior.body {
-                resolve_calls_in_stmt(stmt, &module.name, &behavior.name)?;
+                resolve_calls_in_stmt(stmt, &module.name)?;
             }
         }
     }
@@ -17,7 +17,6 @@ pub fn resolve_calls(design: &mut crate::pom::Design) -> Result<(), ElabError> {
 fn resolve_calls_in_stmt(
     stmt: &mut BehaviorStmt,
     module_name: &str,
-    behavior_name: &str,
 ) -> Result<(), ElabError> {
     // First resolve any BehaviorStmt-specific logic (Diagnostic validation),
     // then delegate expression traversal to walk_exprs_mut + resolve_calls_in_expr.
@@ -38,24 +37,24 @@ fn resolve_calls_in_stmt(
     match stmt {
         BehaviorStmt::If { then_body, else_body, .. } => {
             for s in &mut then_body.stmts {
-                resolve_calls_in_stmt(s, module_name, behavior_name)?;
+                resolve_calls_in_stmt(s, module_name)?;
             }
             if let Some(eb) = else_body {
                 for s in &mut eb.stmts {
-                    resolve_calls_in_stmt(s, module_name, behavior_name)?;
+                    resolve_calls_in_stmt(s, module_name)?;
                 }
             }
         }
         BehaviorStmt::Match { arms, .. } => {
             for arm in arms {
                 for s in &mut arm.body.stmts {
-                    resolve_calls_in_stmt(s, module_name, behavior_name)?;
+                    resolve_calls_in_stmt(s, module_name)?;
                 }
             }
         }
         BehaviorStmt::Event { body, .. } => {
             for s in &mut body.stmts {
-                resolve_calls_in_stmt(s, module_name, behavior_name)?;
+                resolve_calls_in_stmt(s, module_name)?;
             }
         }
         _ => {}
@@ -81,9 +80,9 @@ fn resolve_calls_in_stmt(
 /// current `Expr` node — the child recursion is done by the caller via
 /// `walk_exprs_mut`. It only needs to handle the `Call` variant.
 fn resolve_calls_in_expr(expr: &mut Expr) -> Result<(), ElabError> {
-    if let Expr::Call(callee, args) = expr {
-        if let Expr::Ident(name) = &**callee {
-            if matches!(name.as_str(), "real" | "int" | "bit" | "Boolean" | "Quad") {
+    if let Expr::Call(callee, args) = expr
+        && let Expr::Ident(name) = &**callee
+            && matches!(name.as_str(), "real" | "int" | "bit" | "Boolean" | "Quad") {
                 if args.len() != 1 {
                     return Err(ElabError::from(ElabErrorKind::Other(format!(
                         "Cast to `{}` expects exactly 1 argument, got {}",
@@ -94,7 +93,5 @@ fn resolve_calls_in_expr(expr: &mut Expr) -> Result<(), ElabError> {
                 let cast_name = name.clone();
                 *expr = Expr::Cast(cast_name, Box::new(arg));
             }
-        }
-    }
     Ok(())
 }

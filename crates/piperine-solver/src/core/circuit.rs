@@ -126,10 +126,13 @@ impl CircuitInstance {
 
         let before = self.digital_state.nets.clone();
         let mut seed_queue = std::collections::BinaryHeap::new();
+        let mut seq = 0u64;
 
-        for device in &mut self.devices {
+        for (i, device) in self.devices.iter_mut().enumerate() {
             if let Some(a) = device.as_analog() {
-                a.accept_timestep(&state, ctx, &before, &mut seed_queue);
+                let mut sink =
+                    crate::digital::interface::QueueSink::new(&mut seed_queue, ctx.time, i, &mut seq);
+                a.accept_timestep(&state, ctx, &before, &mut sink);
             }
         }
         

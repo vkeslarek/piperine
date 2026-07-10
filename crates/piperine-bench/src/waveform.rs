@@ -10,14 +10,75 @@ use piperine_lang::eval::{Closure, EvalError, Object, Value};
 use piperine_solver::analog::{BranchIdentifier, NodeIdentifier};
 use piperine_solver::analysis::transient::TransientAnalysisResult;
 
-use crate::objects::NetRef;
+use crate::objects::{NetLookup, NetRef};
 
-/// A series of `(axis, value)` samples — one measured quantity over time
-/// (piperine-bench/docs/SPEC.md §6.1). Points are assumed sorted by axis (true for every
-/// analysis this crate runs).
+/// A series of `(axis, value)` samples — one measured quantity over an
+/// analysis axis (piperine-bench/docs/SPEC.md §6.1). Points are assumed sorted by axis
+/// (true for every analysis this crate runs). `Waveform` (= `Waveform<f64>`)
+/// is the `$tran` real surface; [`ComplexWaveform`] (= `Waveform<Complex64>`)
+/// is the `$ac` surface — one struct, two instantiations.
 #[derive(Debug, Clone)]
-pub struct Waveform {
-    points: Vec<(f64, f64)>,
+pub struct Waveform<T = f64> {
+    points: Vec<(f64, T)>,
+}
+
+/// `Waveform<Complex>` (bench spec §6): the `$ac` result samples. Scalar
+/// reductions live on the `Real` projections returned by `mag`/`phase`/`db`.
+pub type ComplexWaveform = Waveform<num_complex::Complex64>;
+
+impl<T: Copy> Waveform<T> {
+    pub fn new(points: Vec<(f64, T)>) -> Self {
+        Self { points }
+    }
+
+    /// `points()` as a bench `List` of `(axis, value)` tuples.
+    fn points_value(&self, to_value: impl Fn(T) -> Value) -> Value {
+        Value::List(Rc::new(std::cell::RefCell::new(
+            self.points
+                .iter()
+                .map(|&(x, v)| Value::Tuple(vec![Value::Real(x), to_value(v)]))
+                .collect(),
+        )))
+    }
+
+    /// `map(f)` (bench spec §6): apply `f` to each value, keeping the axis.
+    /// An all-`Real` result is a `Waveform`; any `Complex` result widens the
+    /// whole series to a `ComplexWaveform`. Shared by both instantiations —
+    /// only the argument conversion (`to_value`) differs.
+    fn map_with(
+        &self,
+        to_value: impl Fn(T) -> Value,
+        invoke: &mut piperine_lang::eval::InvokeClosure<'_>,
+        args: Vec<Value>,
+    ) -> Result<Value, EvalError> {
+        let f = args.only_closure()?;
+        let mut reals = Vec::with_capacity(self.points.len());
+        let mut complex = Vec::with_capacity(self.points.len());
+        let mut all_real = true;
+        for &(x, v) in &self.points {
+            match invoke(&f, vec![to_value(v)])? {
+                Value::Real(r) => {
+                    reals.push((x, r));
+                    complex.push((x, num_complex::Complex64::new(r, 0.0)));
+                }
+                Value::Complex(re, im) => {
+                    all_real = false;
+                    complex.push((x, num_complex::Complex64::new(re, im)));
+                }
+                other => {
+                    return Err(EvalError::TypeMismatch(format!(
+                        "Waveform.map: closure must return Real or Complex, got {}",
+                        other.type_name()
+                    )));
+                }
+            }
+        }
+        if all_real {
+            Ok(Value::Object(Rc::new(Waveform::new(reals))))
+        } else {
+            Ok(Value::Object(Rc::new(ComplexWaveform::new(complex))))
+        }
+    }
 }
 
 /// Fixed-width sample table for `$display` (`Object::render`): a header,
@@ -57,10 +118,6 @@ impl SampleTable {
 }
 
 impl Waveform {
-    pub fn new(points: Vec<(f64, f64)>) -> Self {
-        Self { points }
-    }
-
     /// Linear interpolation at `x`; clamps to the first/last sample outside
     /// the recorded range.
     fn at(&self, x: f64) -> f64 {
@@ -188,29 +245,27 @@ impl Object for Waveform {
     }
     fn call_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
         match name {
-            "at" => Ok(Value::Real(self.at(as_real(args.first())?))),
+            "at" => Ok(Value::Real(self.at(args.real(0)?))),
             "min" => Ok(Value::Real(self.min())),
             "max" => Ok(Value::Real(self.max())),
             "mean" => Ok(Value::Real(self.mean())),
             "rms" => Ok(Value::Real(self.rms())),
             "peak_to_peak" => Ok(Value::Real(self.peak_to_peak())),
             "len" => Ok(Value::Nat(self.points.len() as u64)),
-            "points" => Ok(Value::List(Rc::new(std::cell::RefCell::new(
-                self.points.iter().map(|(t, v)| Value::Tuple(vec![Value::Real(*t), Value::Real(*v)])).collect(),
-            )))),
+            "points" => Ok(self.points_value(Value::Real)),
             "fft" => Ok(Value::Object(Rc::new(self.fft()))),
             "rise_time" => {
-                let lo = as_real(args.first())?;
-                let hi = as_real(args.get(1))?;
+                let lo = args.real(0)?;
+                let hi = args.real(1)?;
                 Ok(Value::Option(self.rise_time(lo, hi).map(|t| Box::new(Value::Real(t)))))
             }
             "fall_time" => {
-                let hi = as_real(args.first())?;
-                let lo = as_real(args.get(1))?;
+                let hi = args.real(0)?;
+                let lo = args.real(1)?;
                 Ok(Value::Option(self.fall_time(hi, lo).map(|t| Box::new(Value::Real(t)))))
             }
             "cross" => {
-                let level = as_real(args.first())?;
+                let level = args.real(0)?;
                 let dir = match args.get(1) {
                     Some(Value::EnumVariant(_, variant)) => variant.clone(),
                     Some(Value::Str(s)) => s.clone(),
@@ -226,69 +281,43 @@ impl Object for Waveform {
         &self,
         name: &str,
         args: Vec<Value>,
-        invoke: &mut dyn FnMut(&Closure, Vec<Value>) -> Result<Value, EvalError>,
+        invoke: &mut piperine_lang::eval::InvokeClosure<'_>,
     ) -> Result<Value, EvalError> {
         match name {
-            // `Waveform<Real>::map(f: fn(Real) -> U) -> Waveform<U>` (piperine-bench/docs/SPEC.md
-            // §6): apply `f` to each value, keeping the axis. A Real result
-            // stays a `Waveform`; a Complex result widens to `ComplexWaveform`.
-            "map" => {
-                let f = one_closure(args)?;
-                let mut reals = Vec::with_capacity(self.points.len());
-                let mut complex = Vec::with_capacity(self.points.len());
-                let mut all_real = true;
-                for (t, v) in &self.points {
-                    match invoke(&f, vec![Value::Real(*v)])? {
-                        Value::Real(r) => {
-                            reals.push((*t, r));
-                            complex.push((*t, num_complex::Complex64::new(r, 0.0)));
-                        }
-                        Value::Complex(re, im) => {
-                            all_real = false;
-                            complex.push((*t, num_complex::Complex64::new(re, im)));
-                        }
-                        other => {
-                            return Err(EvalError::TypeMismatch(format!(
-                                "Waveform.map: closure must return Real or Complex, got {}",
-                                other.type_name()
-                            )));
-                        }
-                    }
-                }
-                if all_real {
-                    Ok(Value::Object(Rc::new(Waveform::new(reals))))
-                } else {
-                    Ok(Value::Object(Rc::new(ComplexWaveform::new(complex))))
-                }
-            }
+            "map" => self.map_with(Value::Real, invoke, args),
             _ => self.call_method(name, args),
         }
     }
 }
 
-/// Extract the single closure argument of a callback-taking method.
-fn one_closure(mut args: Vec<Value>) -> Result<Rc<Closure>, EvalError> {
-    if args.len() != 1 {
-        return Err(EvalError::TypeMismatch(format!(
-            "expected 1 argument, got {}",
-            args.len()
-        )));
-    }
-    match args.remove(0) {
-        Value::Closure(c) => Ok(c),
-        other => Err(EvalError::TypeMismatch(format!(
-            "expected a closure, got {}",
-            other.type_name()
-        ))),
-    }
+/// Argument-list accessors shared by the `call_method` impls in this module
+/// — the owner of what were loose `as_real`/`one_closure` helpers.
+trait ValueArgs {
+    /// The `i`-th argument coerced to `Real`.
+    fn real(&self, i: usize) -> Result<f64, EvalError>;
+    /// Exactly one argument, which must be a closure.
+    fn only_closure(&self) -> Result<Rc<Closure>, EvalError>;
 }
 
-fn as_real(v: Option<&Value>) -> Result<f64, EvalError> {
-    match v {
-        Some(Value::Real(r)) => Ok(*r),
-        Some(Value::Nat(n)) => Ok(*n as f64),
-        Some(Value::Int(n)) => Ok(*n as f64),
-        _ => Err(EvalError::TypeMismatch("expected a Real argument".into())),
+impl ValueArgs for [Value] {
+    fn real(&self, i: usize) -> Result<f64, EvalError> {
+        self.get(i)
+            .ok_or_else(|| EvalError::TypeMismatch("expected a Real argument".into()))?
+            .coerce_real()
+    }
+
+    fn only_closure(&self) -> Result<Rc<Closure>, EvalError> {
+        match self {
+            [Value::Closure(c)] => Ok(c.clone()),
+            [other] => Err(EvalError::TypeMismatch(format!(
+                "expected a closure, got {}",
+                other.type_name()
+            ))),
+            _ => Err(EvalError::TypeMismatch(format!(
+                "expected 1 argument, got {}",
+                self.len()
+            ))),
+        }
     }
 }
 
@@ -311,31 +340,7 @@ impl Trace {
     }
 
     fn resolve_node(&self, arg: &Value) -> Result<NodeIdentifier, EvalError> {
-        match arg {
-            Value::Object(obj) => {
-                let net = obj
-                    .as_any()
-                    .downcast_ref::<NetRef>()
-                    .ok_or_else(|| EvalError::TypeMismatch(format!("expected a Net, got {}", obj.type_name())))?;
-                if net.name == "gnd" || net.name == "GND" || net.name == "vss" || net.name == "VSS" {
-                    return Ok(NodeIdentifier::Gnd);
-                }
-                self.info
-                    .nets
-                    .get(&net.name)
-                    .cloned()
-                    .ok_or_else(|| EvalError::Undefined(format!("net `{}` is not addressable", net.name)))
-            }
-            other => Err(EvalError::TypeMismatch(format!("expected a Net, got {}", other.type_name()))),
-        }
-    }
-
-    /// The raw net name from a `NetRef` argument, if any.
-    fn net_name(arg: &Value) -> Option<String> {
-        match arg {
-            Value::Object(obj) => obj.as_any().downcast_ref::<NetRef>().map(|n| n.name.clone()),
-            _ => None,
-        }
+        self.info.node_arg(arg)
     }
 
     fn v(&self, args: &[Value]) -> Result<Value, EvalError> {
@@ -343,8 +348,8 @@ impl Trace {
         // Digital net: read its logic value (0/1, NaN for X/Z) over time — the
         // transient records a digital snapshot per step (SPEC §…), so sequential
         // logic is observable through `$tran` where `$op` (stateless) cannot.
-        if let Some(name) = Self::net_name(first)
-            && let Some(&idx) = self.info.digital_nets.get(&name)
+        if let Some(net) = NetRef::from_value(first)
+            && let Some(&idx) = self.info.digital_nets.get(&net.name)
         {
             use piperine_solver::digital::LogicValue;
             let points = self
@@ -491,19 +496,7 @@ impl Object for Trace {
 
 // ─── AC: complex waveforms ─────────────────────────────────────────────────────
 
-/// A series of `(frequency, Complex)` samples — bench spec §6
-/// `Waveform<Complex>`. Scalar reductions live on the `Real` projections
-/// returned by [`mag`](Self)/[`phase`](Self)/[`db`](Self).
-#[derive(Debug, Clone)]
-pub struct ComplexWaveform {
-    points: Vec<(f64, num_complex::Complex64)>,
-}
-
 impl ComplexWaveform {
-    pub fn new(points: Vec<(f64, num_complex::Complex64)>) -> Self {
-        Self { points }
-    }
-
     fn project(&self, f: impl Fn(&num_complex::Complex64) -> f64) -> Waveform {
         Waveform::new(self.points.iter().map(|(x, c)| (*x, f(c))).collect())
     }
@@ -533,7 +526,7 @@ impl Object for ComplexWaveform {
             "at" => {
                 // Nearest sample (no complex interpolation): SPEC §6 `at`
                 // on a Complex waveform.
-                let x = as_real(args.first())?;
+                let x = args.real(0)?;
                 let c = self
                     .points
                     .iter()
@@ -542,12 +535,7 @@ impl Object for ComplexWaveform {
                     .unwrap_or_default();
                 Ok(Value::Complex(c.re, c.im))
             }
-            "points" => Ok(Value::List(Rc::new(std::cell::RefCell::new(
-                self.points
-                    .iter()
-                    .map(|(x, c)| Value::Tuple(vec![Value::Real(*x), Value::Complex(c.re, c.im)]))
-                    .collect(),
-            )))),
+            "points" => Ok(self.points_value(|c| Value::Complex(c.re, c.im))),
             other => Err(EvalError::Undefined(format!("method `{other}` on Waveform<Complex>"))),
         }
     }
@@ -556,42 +544,10 @@ impl Object for ComplexWaveform {
         &self,
         name: &str,
         args: Vec<Value>,
-        invoke: &mut dyn FnMut(&Closure, Vec<Value>) -> Result<Value, EvalError>,
+        invoke: &mut piperine_lang::eval::InvokeClosure<'_>,
     ) -> Result<Value, EvalError> {
         match name {
-            // `Waveform<Complex>::map(f: fn(Complex) -> U) -> Waveform<U>`
-            // (piperine-bench/docs/SPEC.md §6): apply `f` to each complex value, keeping
-            // the axis. A Real result projects to a `Waveform`; a Complex
-            // result stays a `ComplexWaveform`.
-            "map" => {
-                let f = one_closure(args)?;
-                let mut reals = Vec::with_capacity(self.points.len());
-                let mut complex = Vec::with_capacity(self.points.len());
-                let mut all_real = true;
-                for (t, c) in &self.points {
-                    match invoke(&f, vec![Value::Complex(c.re, c.im)])? {
-                        Value::Real(r) => {
-                            reals.push((*t, r));
-                            complex.push((*t, num_complex::Complex64::new(r, 0.0)));
-                        }
-                        Value::Complex(re, im) => {
-                            all_real = false;
-                            complex.push((*t, num_complex::Complex64::new(re, im)));
-                        }
-                        other => {
-                            return Err(EvalError::TypeMismatch(format!(
-                                "Waveform.map: closure must return Real or Complex, got {}",
-                                other.type_name()
-                            )));
-                        }
-                    }
-                }
-                if all_real {
-                    Ok(Value::Object(Rc::new(Waveform::new(reals))))
-                } else {
-                    Ok(Value::Object(Rc::new(ComplexWaveform::new(complex))))
-                }
-            }
+            "map" => self.map_with(|c| Value::Complex(c.re, c.im), invoke, args),
             _ => self.call_method(name, args),
         }
     }
@@ -616,23 +572,7 @@ impl AcTrace {
     }
 
     fn resolve_node(&self, arg: &Value) -> Result<NodeIdentifier, EvalError> {
-        match arg {
-            Value::Object(obj) => {
-                let net = obj
-                    .as_any()
-                    .downcast_ref::<NetRef>()
-                    .ok_or_else(|| EvalError::TypeMismatch(format!("expected a Net, got {}", obj.type_name())))?;
-                if net.name == "gnd" {
-                    return Ok(NodeIdentifier::Gnd);
-                }
-                self.info
-                    .nets
-                    .get(&net.name)
-                    .cloned()
-                    .ok_or_else(|| EvalError::Undefined(format!("net `{}` is not addressable", net.name)))
-            }
-            other => Err(EvalError::TypeMismatch(format!("expected a Net, got {}", other.type_name()))),
-        }
+        self.info.node_arg(arg)
     }
 
     fn v(&self, args: &[Value]) -> Result<Value, EvalError> {

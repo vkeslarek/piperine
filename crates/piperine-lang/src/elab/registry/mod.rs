@@ -4,7 +4,7 @@ pub mod callables;
 pub mod impls;
 pub mod schemas;
 
-pub use types::{TypeRegistry, TypeDef};
+pub use types::{TypeRegistry, TypeDefKind};
 pub use components::{ComponentRegistry, ComponentDef};
 pub use callables::{CallableRegistry, CallableDef};
 pub use schemas::SchemaRegistry;
@@ -29,7 +29,7 @@ impl ElabContext {
     pub fn new() -> Self {
         let mut types = TypeRegistry::new();
         use crate::pom::ValueType;
-        use impls::PrimitiveTypeDef;
+        use self::types::TypeDefKind;
         let prims = vec![
             ("Real", ValueType::Real),
             ("Natural", ValueType::Natural),
@@ -40,7 +40,7 @@ impl ElabContext {
             ("String", ValueType::Str),
         ];
         for (name, val_type) in prims {
-            types.register(PrimitiveTypeDef { name: name.to_string(), val_type });
+            types.register(TypeDefKind::Primitive { name: name.to_string(), val_type });
         }
 
         Self {

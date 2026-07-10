@@ -44,17 +44,23 @@ impl Elaborator {
             return Ok(result);
         }
 
-        if let Some(def) = self.ctx.types.lookup(name) {
-            if def.as_bundle().is_some() {
+        if name.starts_with('(') {
+            // Tuple type: args are the element types.
+            let elems = ty.args.iter()
+                .map(|a| self.resolve_value_type(a, env))
+                .collect::<Result<Vec<_>, ElabError>>()?;
+            return Ok(TypeRef::Value(ValueType::Tuple(elems)));
+        }
+
+        if let Some(kind) = self.ctx.types.lookup(name) {
+            if matches!(kind, crate::elab::registry::TypeDefKind::Bundle(_)) {
                 return if self.is_net_capable_bundle(name) {
                     Ok(TypeRef::Net(NetType::Discipline(name.to_owned())))
                 } else {
-                    // A value bundle used as a type (fn param, method self,
-                    // …) — the consumer flattens it per-field or fails loud.
                     Ok(TypeRef::Value(ValueType::Bundle(name.to_owned())))
                 };
             }
-            return def.resolve(ty, env, type_subst);
+            return kind.resolve(ty, env, type_subst);
         }
 
         if name == "fn" {
@@ -119,14 +125,14 @@ impl Elaborator {
     /// making the bundle itself suitable as a net type (i.e. a bundle of
     /// disciplines or net-capable sub-bundles).
     pub(crate) fn is_net_capable_bundle(&self, name: &str) -> bool {
-        let Some(bundle) = self.bundles.get(name) else { return false };
+        let Some(bundle) = self.syms.bundles.get(name) else { return false };
         bundle.fields.iter().all(|f| self.is_net_type_name(&f.ty.name))
     }
 
     /// Returns `true` if the name refers to a known discipline or a
     /// net-capable bundle, i.e. the name denotes a net type.
     pub(crate) fn is_net_type_name(&self, name: &str) -> bool {
-        self.disciplines.contains_key(name) || self.is_net_capable_bundle(name)
+        self.syms.disciplines.contains_key(name) || self.is_net_capable_bundle(name)
     }
 
     /// Returns the storage value type of a named storage discipline, or
@@ -138,7 +144,7 @@ impl Elaborator {
         &self,
         discipline_name: &str,
     ) -> Result<Option<ValueType>, ElabError> {
-        let Some(decl) = self.disciplines.get(discipline_name) else {
+        let Some(decl) = self.syms.disciplines.get(discipline_name) else {
             return Ok(None);
         };
         for item in &decl.items {
@@ -211,11 +217,11 @@ impl Elaborator {
         let resolved_name =
             type_subst.get(&port.ty.name).map(|s| s.as_str()).unwrap_or(&port.ty.name);
 
-        if let Some(bundle) = self.bundles.get(resolved_name).cloned() {
+        if let Some(bundle) = self.syms.bundles.get(resolved_name).cloned() {
             if !self.is_net_capable_bundle(resolved_name) {
                 return Err(ElabError::from(ElabErrorKind::NotNetCapable(resolved_name.to_owned())));
             }
-            let port_attrs = super::attrs::convert_attributes(&port.attrs, &self.ctx.schemas, &self.bundles)?;
+            let port_attrs = super::attrs::convert_attributes(&port.attrs, &self.ctx.schemas, &self.syms.bundles)?;
             let mut out = Vec::new();
             for field in &bundle.fields {
                 let field_ty = self.resolve_net_type(&field.ty, env, type_subst)?;
@@ -233,7 +239,7 @@ impl Elaborator {
         let net_ty = self.resolve_net_type(&port.ty, env, type_subst)?;
         Ok(vec![Port {
             span: None,
-            attributes: super::attrs::convert_attributes(&port.attrs, &self.ctx.schemas, &self.bundles)?,
+            attributes: super::attrs::convert_attributes(&port.attrs, &self.ctx.schemas, &self.syms.bundles)?,
             direction: port.direction.clone(),
             name: port.name.clone(),
             ty: net_ty,

@@ -21,4 +21,4 @@ pub use crate::value;
 pub use error::EvalError;
 pub use interp::{Callable, Flow, Host, Interpreter};
 pub use tasks::{Task, TaskRegistry};
-pub use value::{Closure, Object, Value};
+pub use value::{Closure, InvokeClosure, Object, Value};

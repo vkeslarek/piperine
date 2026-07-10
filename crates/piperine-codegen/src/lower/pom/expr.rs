@@ -55,8 +55,8 @@ pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
 pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut LowerCtx) {
     use piperine_lang::parse::ast::Walk;
     expr.walk(&mut |e| {
-        if let Expr::Call(func, args) = e {
-            if let Expr::Ident(name) = func.as_ref() {
+        if let Expr::Call(func, args) = e
+            && let Expr::Ident(name) = func.as_ref() {
                 match name.as_str() {
                     "white_noise" => {
                         let psd = args.first()
@@ -94,7 +94,6 @@ pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut Low
                     _ => {}
                 }
             }
-        }
         Walk::Continue
     });
 }
@@ -370,9 +369,9 @@ fn resolve_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
     if let Expr::Field(recv, method) = func {
         // Optional-param sugar: `rmodel.get_or(default)` →
         // `if $param_given("rmodel") { rmodel } else { default }`
-        if method == "get_or" {
-            if let Expr::Ident(name) = recv.as_ref() {
-                if ctx.params.contains_key(name) {
+        if method == "get_or"
+            && let Expr::Ident(name) = recv.as_ref()
+                && ctx.params.contains_key(name) {
                     use piperine_lang::parse::ast::{Block, Expr as E, Literal};
                     let param_given = E::SysCall(
                         "$param_given".into(),
@@ -385,19 +384,15 @@ fn resolve_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
                         else_body: Block { stmts: vec![], expr: Some(Box::new(default)) },
                     };
                 }
-            }
-        }
         // `is_present()` on an optional param → `$param_given("name")`
-        if method == "is_present" && args.is_empty() {
-            if let Expr::Ident(name) = recv.as_ref() {
-                if ctx.params.contains_key(name) {
+        if method == "is_present" && args.is_empty()
+            && let Expr::Ident(name) = recv.as_ref()
+                && ctx.params.contains_key(name) {
                     return Expr::SysCall(
                         "$param_given".into(),
                         vec![Expr::Literal(Literal::String(name.clone()))],
                     );
                 }
-            }
-        }
 
         // Bundle method call: receiver must be a bundle-typed binding.
         let recv_bundle = match recv.as_ref() {

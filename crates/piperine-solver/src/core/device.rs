@@ -1,6 +1,3 @@
-use std::collections::BinaryHeap;
-use std::cmp::Reverse;
-
 use num_complex::Complex64;
 
 use crate::analysis::ac::AcAnalysisContext;
@@ -9,7 +6,8 @@ use crate::analysis::dc::DcAnalysisState;
 use crate::analysis::noise::Noise;
 use crate::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
 use crate::analog::AnalogReference;
-use crate::digital::{DigitalEvent, LogicValue};
+use crate::digital::LogicValue;
+use crate::digital::interface::EventSink;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::linear::Stamp;
 use crate::solver::Context;
@@ -22,7 +20,12 @@ pub trait AnalogDevice: Send + Sync {
     fn read_opvars(&self) -> Vec<(String, f64)> { Vec::new() }
     fn set_temperature(&mut self, _t: f64) {}
     fn update(&mut self, _state: &CircularArrayBuffer2<f64>, _ctx: &Context) {}
-    fn accept_timestep(&mut self, _state: &CircularArrayBuffer2<f64>, _ctx: &Context, _nets: &[LogicValue], _event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>) {}
+    /// Called after each accepted solution point. Devices that couple into
+    /// the digital world (A2D bridges, analog event detectors) emit their
+    /// value-changes through `sink` — the same write-only façade digital
+    /// devices use — so the analog contract never names the scheduler's
+    /// concrete queue type.
+    fn accept_timestep(&mut self, _state: &CircularArrayBuffer2<f64>, _ctx: &Context, _nets: &[LogicValue], _sink: &mut dyn EventSink) {}
 
     // ── Analog loading ────────────────────────────────────────────────────────
     fn load_dc(

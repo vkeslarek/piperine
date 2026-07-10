@@ -121,6 +121,7 @@ pub(crate) fn elab_value_type_to_ir(ty: &ValueType) -> Type {
         ValueType::Bundle(_) => Type::Real,
         ValueType::Array(inner, _) => elab_value_type_to_ir(inner),
         ValueType::FnPtr(_, _) => Type::Real,
+        ValueType::Tuple(_) => Type::Real, // Tuples are value-layer only
     }
 }
 

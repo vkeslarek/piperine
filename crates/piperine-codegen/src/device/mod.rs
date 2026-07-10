@@ -25,7 +25,7 @@ use piperine_solver::analysis::noise::Noise;
 use piperine_solver::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
 use piperine_solver::core::device::{AnalogDevice, Device, DigitalDevice};
 use piperine_solver::digital::DigitalEvent;
-use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};
+use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink};
 use piperine_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_solver::math::linear::Stamp;
 use piperine_solver::solver::Context;
@@ -50,13 +50,8 @@ pub struct CompiledModule {
 }
 
 impl CompiledModule {
-    /// Validate and compile every behavior body of `module`.
+    /// Compile every behavior body of `module`.
     pub fn compile(module: &LoweredBody) -> Result<Self, CodegenError> {
-        for d in module.validate() {
-            if d.kind == crate::ir::DiagnosticKind::Error {
-                return Err(CodegenError::Invalid(format!("{}: {}", module.name, d.message)));
-            }
-        }
         let analog = module
             .analog
             .as_ref()
@@ -144,10 +139,29 @@ impl Device for PiperineDevice {
     fn device_name(&self) -> &str {
         &self.label
     }
-    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> { Some(self) }
-    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> { Some(self) }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
+    // A digital-only device with analog input terminals (the A2D bridge)
+    // still participates in the analog lifecycle: `accept_timestep` caches
+    // its terminal voltages after every accepted solution.
+    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> {
+        if self.analog.is_some() || !self.analog_terminal_refs.is_empty() {
+            Some(self)
+        } else {
+            None
+        }
+    }
+    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> {
+        if self.analog.is_some() || !self.analog_terminal_refs.is_empty() {
+            Some(self)
+        } else {
+            None
+        }
+    }
+    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> {
+        if self.digital.is_some() { Some(self) } else { None }
+    }
+    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> {
+        if self.digital.is_some() { Some(self) } else { None }
+    }
 }
 
 impl AnalogDevice for PiperineDevice {
@@ -203,12 +217,12 @@ impl AnalogDevice for PiperineDevice {
         state: &CircularArrayBuffer2<f64>,
         ctx: &Context,
         nets: &[piperine_solver::digital::LogicValue],
-        event_queue: &mut std::collections::BinaryHeap<std::cmp::Reverse<piperine_solver::digital::DigitalEvent>>,
+        sink: &mut dyn EventSink,
     ) {
         if let Some(analog) = &mut self.analog {
             analog.accept_timestep(state, ctx);
         }
-        
+
         if self.analog.is_none() && !self.analog_terminal_refs.is_empty() {
             let latest = state.latest();
             for (i, opt_ref) in self.analog_terminal_refs.iter().enumerate() {
@@ -219,12 +233,10 @@ impl AnalogDevice for PiperineDevice {
                     .unwrap_or(0.0);
             }
         }
-        
-        if self.digital.as_ref().map_or(false, |d| d.kernel().layout().num_analog() > 0) {
+
+        if self.digital.as_ref().is_some_and(|d| d.kernel().layout().num_analog() > 0) {
             let eval_ctx = EvalCtx { time: ctx.time, nets, analog: &[] };
-            let mut seq = 0u64;
-            let mut sink = QueueSink::new(event_queue, ctx.time, 0, &mut seq);
-            self.evaluate(&eval_ctx, &mut sink);
+            self.evaluate(&eval_ctx, sink);
         }
     }
 
@@ -297,7 +309,7 @@ impl DigitalDevice for PiperineDevice {
     fn samples_analog(&self) -> bool {
         self.digital
             .as_ref()
-            .map_or(false, |d| d.kernel().layout().num_analog() > 0)
+            .is_some_and(|d| d.kernel().layout().num_analog() > 0)
     }
 }
 

@@ -68,6 +68,23 @@ impl Item {
             Item::BenchDecl(b) => b.is_pub,
         }
     }
+
+    /// The declared name of this item, if it has one (`use` and `impl`
+    /// declarations don't). A behavior/bench names the module it attaches to.
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Item::UseDecl(_) | Item::ImplDecl(_) => None,
+            Item::ModuleDeclaration(m) => Some(&m.name),
+            Item::BehaviorDecl(b) => Some(&b.name),
+            Item::DisciplineDecl(d) => Some(&d.name),
+            Item::BundleDecl(b) => Some(&b.name),
+            Item::EnumDecl(e) => Some(&e.name),
+            Item::CapabilityDecl(c) => Some(&c.name),
+            Item::FnDecl(f) => Some(&f.sig.name),
+            Item::ConstDecl(c) => Some(&c.name),
+            Item::BenchDecl(b) => Some(&b.name),
+        }
+    }
 }
 
 /// `bench ModName { fn ... }` — the effectful post-elaboration scripting
@@ -394,6 +411,9 @@ pub struct FnDecl {
     pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
+    /// Whether this is an `extern fn` — signature-only, body provided by
+    /// the compiler or a plugin (SPEC Part I §8, ROADMAP "extern").
+    pub is_extern: bool,
     pub sig: FnSig,
     pub body: Block,
 }

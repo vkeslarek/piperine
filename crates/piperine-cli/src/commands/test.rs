@@ -45,7 +45,7 @@ fn source_map() -> piperine_lang::SourceMap {
 }
 
 pub fn execute(list: bool, file: Option<String>) {
-    let _project_root = piperine_project::get_current_project_root()
+    let project_root = piperine_project::get_current_project_root()
         .unwrap_or_else(|| std::env::current_dir().unwrap());
     let source_map = source_map();
 
@@ -60,7 +60,7 @@ pub fn execute(list: bool, file: Option<String>) {
                 continue;
             }
         };
-        let design = match piperine_lang::parse_and_elaborate(&body, &source_map) {
+        let mut design = match piperine_lang::parse_and_elaborate(&body, &source_map) {
             Ok(d) => d,
             Err(e) => {
                 eprintln!("Error elaborating {}:\n{:?}", path.display(), e);
@@ -68,6 +68,7 @@ pub fn execute(list: bool, file: Option<String>) {
                 continue;
             }
         };
+        super::utils::stamp_project_meta(&mut design, &project_root);
 
         if list {
             for bench in design.benches() {

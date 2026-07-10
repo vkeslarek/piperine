@@ -8,6 +8,9 @@ use std::collections::HashMap;
 pub mod git;
 pub mod lockfile;
 pub mod resolver;
+pub mod source_map;
+
+pub use source_map::project_source_map;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PiperineToml {

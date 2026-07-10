@@ -6,6 +6,14 @@
 
 // ─────────────────────────────── Net reference ───────────────────────────────
 
+/// Names that refer to the ground (reference) node.
+pub const GROUND_NAMES: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
+
+/// Whether a name refers to the ground (reference) node.
+pub fn is_ground(name: &str) -> bool {
+    GROUND_NAMES.contains(&name)
+}
+
 /// A reference to a net, optionally indexed into a bus — `node[i]`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NetRef {
@@ -67,6 +75,8 @@ pub enum ValueType {
     /// A value bundle (`param model : DiodeModel`, `fn f(m : DiodeModel)`).
     /// Consumers flatten it per-field; a context that cannot fails loud.
     Bundle(String),
+    /// A tuple type `(T, U, ...)`.
+    Tuple(Vec<ValueType>),
     Array(Box<ValueType>, u64),
     FnPtr(Vec<TypeRef>, Box<TypeRef>),
 }

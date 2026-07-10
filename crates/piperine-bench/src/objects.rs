@@ -18,6 +18,16 @@ pub struct NetRef {
     pub name: String,
 }
 
+impl NetRef {
+    /// The `NetRef` behind a bench `Net` argument, if the value is one.
+    pub(crate) fn from_value(v: &Value) -> Option<&NetRef> {
+        match v {
+            Value::Object(obj) => obj.as_any().downcast_ref::<NetRef>(),
+            _ => None,
+        }
+    }
+}
+
 impl Object for NetRef {
     fn type_name(&self) -> &str {
         "Net"
@@ -179,30 +189,13 @@ impl OpResult {
     }
 
     fn resolve_node(&self, arg: &Value) -> Result<NodeIdentifier, EvalError> {
-        match arg {
-            Value::Object(obj) => {
-                let net = obj
-                    .as_any()
-                    .downcast_ref::<NetRef>()
-                    .ok_or_else(|| EvalError::TypeMismatch(format!("expected a Net, got {}", obj.type_name())))?;
-                if net.name == "gnd" || net.name == "GND" || net.name == "vss" || net.name == "VSS" {
-                    return Ok(NodeIdentifier::Gnd);
-                }
-                self.info
-                    .nets
-                    .get(&net.name)
-                    .cloned()
-                    .ok_or_else(|| EvalError::Undefined(format!("net `{}` is not addressable", net.name)))
-            }
-            other => Err(EvalError::TypeMismatch(format!("expected a Net, got {}", other.type_name()))),
-        }
+        self.info.node_arg(arg)
     }
 
     fn v(&self, args: &[Value]) -> Result<Value, EvalError> {
         // A digital `Bit`/`Logic` net reads its logic value (0/1) directly.
         if args.len() == 1
-            && let Value::Object(obj) = &args[0]
-            && let Some(net) = obj.as_any().downcast_ref::<NetRef>()
+            && let Some(net) = NetRef::from_value(&args[0])
             && let Some(v) = self.digital.get(&net.name)
         {
             return Ok(Value::Real(*v));
@@ -292,6 +285,35 @@ impl Object for OpResult {
             "i" => self.i(&args),
             other => Err(EvalError::Undefined(format!("method `{other}` on OpResult"))),
         }
+    }
+}
+
+/// Net resolution over the built circuit — the one place bench-visible net
+/// names map to solver nodes. Ground-family names (`gnd`/`GND`/`vss`/`VSS`)
+/// resolve to the reference node; everything else through the net map.
+/// Shared by every result object and the session's noise setup.
+pub(crate) trait NetLookup {
+    /// Resolve a net *name*; `None` when the net is not addressable.
+    fn net_node(&self, name: &str) -> Option<NodeIdentifier>;
+
+    /// Resolve a bench `Net` argument (a [`NetRef`] value).
+    fn node_arg(&self, arg: &Value) -> Result<NodeIdentifier, EvalError>;
+}
+
+impl NetLookup for CircuitBuildInfo {
+    fn net_node(&self, name: &str) -> Option<NodeIdentifier> {
+        if piperine_lang::pom::is_ground(name) {
+            return Some(NodeIdentifier::Gnd);
+        }
+        self.nets.get(name).cloned()
+    }
+
+    fn node_arg(&self, arg: &Value) -> Result<NodeIdentifier, EvalError> {
+        let net = NetRef::from_value(arg).ok_or_else(|| {
+            EvalError::TypeMismatch(format!("expected a Net, got {}", arg.type_name()))
+        })?;
+        self.net_node(&net.name)
+            .ok_or_else(|| EvalError::Undefined(format!("net `{}` is not addressable", net.name)))
     }
 }
 

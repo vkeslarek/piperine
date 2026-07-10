@@ -13,7 +13,6 @@ mod expr;
 mod stmt;
 mod symbols;
 pub mod diff;
-mod validate;
 
 pub mod pom;
 
@@ -28,7 +27,6 @@ pub use symbols::{
     LaplaceKind, NatureId, NatureInfo, NatureKind, NodeId, NodeInfo, ParamId, ParamInfo, StateId,
     SymbolTable, TableRef, VarId, VarInfo, ZKind,
 };
-pub use validate::{Diagnostic, DiagnosticKind};
 pub use pom::{lower_bodies, LowerError, LowerErrors, LoweredBody};
 
 // ─── Types ────────────────────────────────────────────────────────────────────

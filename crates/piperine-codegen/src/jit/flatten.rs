@@ -143,24 +143,20 @@ impl FlatAnalog {
         let (mut params, mut state, mut vars) = (0usize, 0usize, 0usize);
         for expr in self.exprs() {
             visit_all(expr, &mut |e| {
-                if let PomExpr::Call(func, args) = e {
-                    if let PomExpr::Ident(name) = func.as_ref() {
-                        if name == "__state_load" {
-                            if let Some(PomExpr::Literal(Literal::Int(id))) = args.first() {
+                if let PomExpr::Call(func, args) = e
+                    && let PomExpr::Ident(name) = func.as_ref()
+                        && name == "__state_load"
+                            && let Some(PomExpr::Literal(Literal::Int(id))) = args.first() {
                                 state = state.max(*id as usize + 1);
                             }
-                        }
-                    }
-                }
                 if let PomExpr::Ident(name) = e {
                     if let Some(id) = module_param_id(module, name) {
                         params = params.max(id.0 as usize + 1);
                     }
-                    if let Some(id) = module_var_id(module, name) {
-                        if !fn_param_ids.contains(&id) {
+                    if let Some(id) = module_var_id(module, name)
+                        && !fn_param_ids.contains(&id) {
                             vars = vars.max(id.0 as usize + 1);
                         }
-                    }
                 }
             });
         }
@@ -301,12 +297,13 @@ impl<'m> AnalogFlattener<'m> {
                 PomStmt::Bind { dest, op: BindOp::Force, src } => {
                     self.add_force(dest, src, guard)?;
                 }
-                PomStmt::Bind { dest, op: BindOp::Assign, src } => {
-                    if let PomExpr::Ident(name) = dest {
-                        let value = self.subst(src)?;
-                        self.scope.assign(name.clone(), value, guard);
-                    }
+                PomStmt::Bind { dest: PomExpr::Ident(name), op: BindOp::Assign, src } => {
+                    let value = self.subst(src)?;
+                    self.scope.assign(name.clone(), value, guard);
                 }
+                // A non-identifier assign target has no meaning in a
+                // flattened analog body — nothing to record.
+                PomStmt::Bind { op: BindOp::Assign, .. } => {}
                 PomStmt::VarDecl { name, default, .. } => {
                     let init = match default {
                         Some(e) => Some(self.subst(e)?),
@@ -336,38 +333,37 @@ impl<'m> AnalogFlattener<'m> {
                         });
                     }
                 }
-                PomStmt::Expr(e) => {
-                    if let PomExpr::SysCall(name, args) = e {
-                        match name.trim_start_matches('$') {
-                            "bound_step" => {
-                                let val = args.first().map(|a| self.subst(a))
-                                    .unwrap_or(Ok(lit(0.0)))?;
-                                let finished = self.finish_expr(val)?;
-                                self.out.bound_steps.push(finished);
-                            }
-                            "finish" | "stop" => {
-                                return Err(CodegenError::unsupported("$finish in an analog body"));
-                            }
-                            "discontinuity" => {}
-                            n if matches!(n, "display" | "write" | "strobe" | "monitor"
-                                | "warning" | "warn" | "error" | "fatal" | "info") =>
-                            {
-                                let severity = match n {
-                                    "warning" | "warn" => crate::ir::Severity::Warn,
-                                    "error" => crate::ir::Severity::Error,
-                                    "fatal" => crate::ir::Severity::Fatal,
-                                    _ => crate::ir::Severity::Info,
-                                };
-                                let fmt = match args.first() {
-                                    Some(PomExpr::Literal(Literal::String(s))) => s.clone(),
-                                    _ => String::new(),
-                                };
-                                self.out.diagnostics.push(FlatDiagnostic { severity, format: fmt });
-                            }
-                            _ => {}
+                PomStmt::Expr(PomExpr::SysCall(name, args)) => {
+                    match name.trim_start_matches('$') {
+                        "bound_step" => {
+                            let val = args.first().map(|a| self.subst(a))
+                                .unwrap_or(Ok(lit(0.0)))?;
+                            let finished = self.finish_expr(val)?;
+                            self.out.bound_steps.push(finished);
                         }
+                        "finish" | "stop" => {
+                            return Err(CodegenError::unsupported("$finish in an analog body"));
+                        }
+                        "discontinuity" => {}
+                        n @ ("display" | "write" | "strobe" | "monitor"
+                            | "warning" | "warn" | "error" | "fatal" | "info") =>
+                        {
+                            let severity = match n {
+                                "warning" | "warn" => crate::ir::Severity::Warn,
+                                "error" => crate::ir::Severity::Error,
+                                "fatal" => crate::ir::Severity::Fatal,
+                                _ => crate::ir::Severity::Info,
+                            };
+                            let fmt = match args.first() {
+                                Some(PomExpr::Literal(Literal::String(s))) => s.clone(),
+                                _ => String::new(),
+                            };
+                            self.out.diagnostics.push(FlatDiagnostic { severity, format: fmt });
+                        }
+                        _ => {}
                     }
                 }
+                PomStmt::Expr(_) => {}
                 PomStmt::Diagnostic { sys, .. } => {
                     let bare = sys.trim_start_matches('$');
                     let severity = match bare {
@@ -483,8 +479,7 @@ impl<'m> AnalogFlattener<'m> {
     }
 
     fn resolve_node(&self, name: &str) -> NodeId {
-        const GROUND: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
-        if GROUND.contains(&name) {
+        if piperine_lang::pom::is_ground(name) {
             return NodeId::GROUND;
         }
         self.module.symbols.nodes()
@@ -526,8 +521,8 @@ impl<'m> AnalogFlattener<'m> {
     fn finish_expr(&mut self, expr: PomExpr) -> Result<PomExpr, CodegenError> {
         let error: Option<CodegenError> = None;
         let out = rewrite_expr(&expr, &mut |e| {
-            if let PomExpr::Call(func, args) = e {
-                if let PomExpr::Ident(name) = func.as_ref() {
+            if let PomExpr::Call(func, args) = e
+                && let PomExpr::Ident(name) = func.as_ref() {
                     match name.as_str() {
                         "__ddx" => {
                             // __ddx(id, x, node_id) → d_dnode(x, node)
@@ -586,7 +581,6 @@ impl<'m> AnalogFlattener<'m> {
                         _ => {}
                     }
                 }
-            }
             e.clone()
         });
         match error {
@@ -635,8 +629,8 @@ impl<'m> AnalogFlattener<'m> {
         for stmt in stmts {
             match stmt {
                 PomStmt::Bind { dest, op: BindOp::Assign, src } => {
-                    if let PomExpr::Ident(name) = dest {
-                        if let Some(var_id) = self.module.symbols.vars()
+                    if let PomExpr::Ident(name) = dest
+                        && let Some(var_id) = self.module.symbols.vars()
                             .find(|(_, v)| &v.name == name).map(|(id, _)| id)
                         {
                             let value = self.finish_expr(self.subst(src)?)?;
@@ -647,7 +641,6 @@ impl<'m> AnalogFlattener<'m> {
                             };
                             actions.push(FlatEventAction { var: var_id, value });
                         }
-                    }
                 }
                 PomStmt::If { cond, then_body, else_body } => {
                     let cond = self.subst(cond)?;
@@ -730,14 +723,12 @@ fn has_marker(expr: &PomExpr, names: &[&str]) -> bool {
     use piperine_lang::parse::ast::Walk;
     let mut found = false;
     expr.walk(&mut |e| {
-        if let PomExpr::Call(func, _) = e {
-            if let PomExpr::Ident(name) = func.as_ref() {
-                if names.contains(&name.as_str()) {
+        if let PomExpr::Call(func, _) = e
+            && let PomExpr::Ident(name) = func.as_ref()
+                && names.contains(&name.as_str()) {
                     found = true;
                     return Walk::SkipChildren;
                 }
-            }
-        }
         Walk::Continue
     });
     found
@@ -746,17 +737,15 @@ fn has_marker(expr: &PomExpr, names: &[&str]) -> bool {
 /// Replace marker calls: `__ddt(id, x)` → `x` (with_arg=true) or `0.0` (false).
 fn substitute_marker(expr: &PomExpr, names: &[&str], with_arg: bool) -> Result<PomExpr, CodegenError> {
     Ok(rewrite_expr(expr, &mut |e| {
-        if let PomExpr::Call(func, args) = e {
-            if let PomExpr::Ident(name) = func.as_ref() {
-                if names.contains(&name.as_str()) {
+        if let PomExpr::Call(func, args) = e
+            && let PomExpr::Ident(name) = func.as_ref()
+                && names.contains(&name.as_str()) {
                     if with_arg {
                         return args.get(1).cloned().unwrap_or(lit(0.0));
                     } else {
                         return lit(0.0);
                     }
                 }
-            }
-        }
         e.clone()
     }))
 }
@@ -824,7 +813,7 @@ fn pattern_cond(scrutinee: &PomExpr, pattern: &piperine_lang::parse::ast::Patter
     match pattern {
         P::Wildcard => lit(1.0),
         P::Literal(lit_v) => binary(BinaryOp::Eq, scrutinee.clone(),
-            PomExpr::Literal(Literal::Int(*lit_v as u64))),
+            PomExpr::Literal(Literal::Int(*lit_v))),
         P::Path(p) => {
             let name = p.segments.join("::");
             binary(BinaryOp::Eq, scrutinee.clone(), PomExpr::Ident(name))
@@ -863,12 +852,11 @@ fn split_ac_stim(expr: PomExpr) -> Result<(PomExpr, Option<(PomExpr, PomExpr)>),
     let mut count = 0usize;
     let mut phase_expr = None;
     visit_all(&expr, &mut |e| {
-        if let PomExpr::SysCall(name, args) = e {
-            if name == "$ac_stim" {
+        if let PomExpr::SysCall(name, args) = e
+            && name == "$ac_stim" {
                 count += 1;
                 phase_expr = args.get(1).cloned();
             }
-        }
     });
     if count == 0 {
         return Ok((expr, None));
@@ -877,19 +865,17 @@ fn split_ac_stim(expr: PomExpr) -> Result<(PomExpr, Option<(PomExpr, PomExpr)>),
         return Err(CodegenError::unsupported("multiple `ac_stim` calls in one contribution"));
     }
     let with_mag = rewrite_expr(&expr, &mut |e| {
-        if let PomExpr::SysCall(name, args) = e {
-            if name == "$ac_stim" {
+        if let PomExpr::SysCall(name, args) = e
+            && name == "$ac_stim" {
                 return args.first().cloned().unwrap_or(lit(1.0));
             }
-        }
         e.clone()
     });
     let without = rewrite_expr(&expr, &mut |e| {
-        if let PomExpr::SysCall(name, _) = e {
-            if name == "$ac_stim" {
+        if let PomExpr::SysCall(name, _) = e
+            && name == "$ac_stim" {
                 return lit(0.0);
             }
-        }
         e.clone()
     });
     let mag = binary(BinaryOp::Sub, with_mag, without.clone());

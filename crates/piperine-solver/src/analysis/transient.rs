@@ -133,6 +133,10 @@ impl TransientAnalysisResult {
         self.values.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
     pub fn get(&self, index: usize) -> Option<&TransientStep> {
         assert!(index < self.values.len());
 

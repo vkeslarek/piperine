@@ -39,17 +39,8 @@ fn field_opt_map(cfg: Option<&Value>, name: &str) -> Value {
         .unwrap_or_else(|| Value::Map(std::rc::Rc::new(std::cell::RefCell::new(vec![]))))
 }
 
-fn as_real(v: &Value) -> Result<f64, EvalError> {
-    match v {
-        Value::Real(r) => Ok(*r),
-        Value::Nat(n) => Ok(*n as f64),
-        Value::Int(n) => Ok(*n as f64),
-        other => Err(EvalError::TypeMismatch(format!("expected a Real, got {}", other.type_name()))),
-    }
-}
-
 fn real_field(rec: &Value, name: &str) -> Result<Option<f64>, EvalError> {
-    field(rec, name).map(|v| as_real(&v)).transpose()
+    field(rec, name).map(|v| v.coerce_real()).transpose()
 }
 
 /// A required config field — absence is a fail-loud error naming it.
@@ -126,12 +117,12 @@ impl SimTask for Tran {
                 (stop, step, start, solver_config(args.first())?)
             }
             _ => {
-                let stop = as_real(args.first().ok_or_else(|| {
+                let stop = args.first().ok_or_else(|| {
                     EvalError::TypeMismatch("$tran needs a TranConfig or (stop, step)".into())
-                })?)?;
-                let step = as_real(args.get(1).ok_or_else(|| {
+                })?.coerce_real()?;
+                let step = args.get(1).ok_or_else(|| {
                     EvalError::TypeMismatch("positional $tran needs (stop, step)".into())
-                })?)?;
+                })?.coerce_real()?;
                 (stop, Some(step), 0.0, SolverConfig::default())
             }
         };

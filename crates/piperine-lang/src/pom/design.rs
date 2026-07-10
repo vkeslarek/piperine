@@ -7,6 +7,38 @@ use std::rc::Rc;
 use crate::parse::ast::{BundleDecl, CapabilityDecl, DisciplineDecl, EnumDecl};
 use crate::pom::{BenchBlock, ElabError, ElabErrorKind, Function, ImplBlock, Module, OverrideMap, Value};
 
+/// Project-level metadata carried by the POM. Item provenance (`origins`)
+/// is recorded by the `use` resolver during elaboration; the name/version/
+/// dependency fields are stamped by whoever knows the `Piperine.toml`
+/// (the CLI, the language server) via [`Design::set_project_meta`].
+/// Queryable through reflection — the anchor point for the plugin system
+/// (spec Part VI).
+#[derive(Debug, Clone, Default)]
+pub struct Project {
+    /// The project name from `Piperine.toml`, if available.
+    pub name: Option<String>,
+    /// The project version from `Piperine.toml`, if available.
+    pub version: Option<String>,
+    /// Dependency names (from `Piperine.toml [dependencies]`), if available.
+    pub dependencies: Vec<String>,
+    /// Item provenance: declared item name → the package it was imported
+    /// from. Items declared in the project itself are absent.
+    pub origins: HashMap<String, String>,
+}
+
+impl Project {
+    /// The package `name` was imported from, `None` for a project-local
+    /// item. Monomorphized names (`Dac__8`) resolve through their base
+    /// (`Dac`).
+    pub fn origin_of(&self, name: &str) -> Option<&str> {
+        if let Some(pkg) = self.origins.get(name) {
+            return Some(pkg);
+        }
+        let base = name.split("__").next()?;
+        self.origins.get(base).map(String::as_str)
+    }
+}
+
 /// The complete output of elaboration — the POM root.
 ///
 /// Fields are `pub(crate)`; external consumers use the public accessor
@@ -23,6 +55,8 @@ pub struct Design {
     pub(crate) impls: Vec<ImplBlock>,
     pub(crate) consts: HashMap<String, Value>,
     pub(crate) benches: Vec<BenchBlock>,
+    /// Project metadata (name, version, dependencies).
+    pub(crate) project: Project,
     /// Staged parameter overrides — the single mutation surface in POM.
     /// Writing via `set_param()` stages here; re-elaboration consumes.
     pub(crate) overrides: Rc<RefCell<OverrideMap>>,
@@ -42,12 +76,38 @@ impl Design {
             impls: Vec::new(),
             consts: HashMap::new(),
             benches: Vec::new(),
+            project: Project::default(),
             overrides: Rc::new(RefCell::new(OverrideMap::new())),
             top_module: None,
         }
     }
 
     // ── POM navigation ────────────────────────────────────────────────────
+
+    /// Project metadata (name, version, dependencies, item provenance).
+    pub fn project(&self) -> &Project {
+        &self.project
+    }
+
+    /// Stamp `Piperine.toml`-level metadata onto the design. Called by the
+    /// host that knows the project (CLI, language server) — `piperine-lang`
+    /// itself never reads the manifest.
+    pub fn set_project_meta(
+        &mut self,
+        name: impl Into<String>,
+        version: impl Into<String>,
+        dependencies: Vec<String>,
+    ) {
+        self.project.name = Some(name.into());
+        self.project.version = Some(version.into());
+        self.project.dependencies = dependencies;
+    }
+
+    /// Record item provenance (item name → source package) — called once by
+    /// elaboration with the resolver's record.
+    pub(crate) fn set_origins(&mut self, origins: HashMap<String, String>) {
+        self.project.origins = origins;
+    }
 
     /// The elaborated top module, if set.
     pub fn top(&self) -> Option<&Module> {

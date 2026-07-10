@@ -32,7 +32,7 @@ impl Parse for CapabilityDecl {
                     let body = parser.parse_block()?;
                     let fn_end = parser.previous_span_end();
                     let fn_span = Some((fn_start, fn_end - fn_start).into());
-                    items.push(CapItem::FnDecl(FnDecl { span: fn_span, attrs: parser.parse_attributes()?, is_pub: false, sig, body }));
+                    items.push(CapItem::FnDecl(FnDecl { span: fn_span, attrs: parser.parse_attributes()?, is_pub: false, is_extern: false, sig, body }));
                 }
             } else {
                 return Err("Expected `fn` inside capability".into());

@@ -18,13 +18,11 @@ pub fn execute(name: String) {
         .expect("Failed to parse Piperine.toml");
 
     let mut removed = false;
-    if let Some(deps) = doc.get_mut("dependencies") {
-        if let Some(deps_table) = deps.as_table_mut() {
-            if deps_table.remove(&name).is_some() {
+    if let Some(deps) = doc.get_mut("dependencies")
+        && let Some(deps_table) = deps.as_table_mut()
+            && deps_table.remove(&name).is_some() {
                 removed = true;
             }
-        }
-    }
 
     if !removed {
         eprintln!("Error: Dependency '{}' not found in Piperine.toml.", name);

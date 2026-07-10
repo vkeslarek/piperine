@@ -14,7 +14,6 @@ use crate::objects::{InstanceRef, NetRef, SelectionRef};
 use crate::session::SimSession;
 use crate::tasks::SimTaskRegistry;
 
-const GROUND_NAMES: &[&str] = &["gnd", "GND", "vss", "VSS"];
 
 pub struct SimHost {
     session: SimSession,
@@ -121,7 +120,7 @@ impl Host for SimHost {
         if let Some(bundle_name) = name.strip_prefix("bundle:") {
             return self.bundle_defaults(bundle_name);
         }
-        if GROUND_NAMES.contains(&name) {
+        if piperine_lang::pom::is_ground(name) {
             return Some(Value::Object(Rc::new(NetRef { name: "gnd".to_string() })));
         }
         let module = self.session.design().module(self.session.module())?;

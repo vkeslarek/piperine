@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 git2 = "0.21.0"
+piperine-lang = { version = "0.1.0", path = "../piperine-lang" }
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 toml = "1.1.2"

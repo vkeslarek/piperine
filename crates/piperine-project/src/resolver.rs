@@ -66,11 +66,10 @@ impl Resolver {
         }
 
         let lock_path = self.project_root.join("Piperine.lock");
-        if !self.update_mode {
-            if let Some(existing_lock) = PiperineLock::load(&lock_path)? {
+        if !self.update_mode
+            && let Some(existing_lock) = PiperineLock::load(&lock_path)? {
                 self.lockfile = existing_lock;
             }
-        }
 
         self.resolve_deps(&root_manifest.dependencies)?;
 

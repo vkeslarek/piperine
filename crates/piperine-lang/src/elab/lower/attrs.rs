@@ -62,8 +62,8 @@ pub(crate) fn convert_attribute(
     }
     // Fill in defaults for omitted fields that have a default.
     for field in &bundle.fields {
-        if !data.contains_key(&field.name) {
-            if let Some(default_expr) = &field.default {
+        if !data.contains_key(&field.name)
+            && let Some(default_expr) = &field.default {
                 let value = eval_attr_value(default_expr).map_err(|reason| {
                     ElabError::from(ElabErrorKind::AttrSchemaField {
                         schema: attr.name.clone(),
@@ -73,7 +73,6 @@ pub(crate) fn convert_attribute(
                 })?;
                 data.insert(field.name.clone(), value);
             }
-        }
     }
     Ok(crate::pom::module::Attribute { schema: attr.name.clone(), data })
 }

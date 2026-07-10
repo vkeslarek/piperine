@@ -38,11 +38,10 @@ impl DigitalTopology {
         for (j, dev) in devices.iter().enumerate() {
             if let Some(d) = dev.as_digital_ref() {
                 for &net in d.boundary().inputs {
-                    if let Some(&i) = output_to_dev.get(&net) {
-                        if i != j && !adj[i].contains(&j) {
+                    if let Some(&i) = output_to_dev.get(&net)
+                        && i != j && !adj[i].contains(&j) {
                             adj[i].push(j);
                         }
-                    }
                 }
             }
         }
@@ -166,19 +165,17 @@ impl DigitalState {
             let ctx = EvalCtx { time: t, nets: &self.nets, analog: &[] };
             let mut fired = vec![false; devices.len()];
             for (i, device) in devices.iter_mut().enumerate() {
-                if let Some(d) = device.as_digital() {
-                    if d.has_input_on(&changed) {
+                if let Some(d) = device.as_digital()
+                    && d.has_input_on(&changed) {
                         fired[i] = d.seq_phase(&ctx);
                     }
-                }
             }
             for (i, device) in devices.iter_mut().enumerate() {
-                if let Some(d) = device.as_digital() {
-                    if fired[i] || d.has_input_on(&changed) {
+                if let Some(d) = device.as_digital()
+                    && (fired[i] || d.has_input_on(&changed)) {
                         let mut sink = QueueSink::new(&mut self.event_queue, t, i, &mut seq);
                         d.comb_phase(&ctx, &mut sink);
                     }
-                }
             }
 
             delta_count += 1;
@@ -236,11 +233,10 @@ impl DigitalState {
             let ctx = EvalCtx { time: t, nets: &self.nets, analog: &[] };
             for &dev_idx in &topology.topo_order {
                 let device = &mut devices[dev_idx];
-                if let Some(d) = device.as_digital() {
-                    if d.has_input_on(&all_changed) {
+                if let Some(d) = device.as_digital()
+                    && d.has_input_on(&all_changed) {
                         seq_fired[dev_idx] = d.seq_phase(&ctx);
                     }
-                }
             }
         }
 

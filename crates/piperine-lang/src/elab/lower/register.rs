@@ -23,12 +23,12 @@ impl Elaborator {
         for item in items {
             match item {
                 Item::DisciplineDecl(d) => {
-                    self.disciplines.insert(d.name.clone(), d.clone());
-                    self.ctx.types.register(d.clone());
+                    self.syms.disciplines.insert(d.name.clone(), d.clone());
+                    self.ctx.types.register(crate::elab::registry::TypeDefKind::Discipline(d.clone()));
                 }
                 Item::BundleDecl(b) => {
-                    self.bundles.insert(b.name.clone(), b.clone());
-                    self.ctx.types.register(b.clone());
+                    self.syms.bundles.insert(b.name.clone(), b.clone());
+                    self.ctx.types.register(crate::elab::registry::TypeDefKind::Bundle(b.clone()));
                     // Register as an attribute schema if marked
                     // `@attribute(schema = "name")`. The schema name is an
                     // alias — `@name(...)` is used in source, not the bundle
@@ -36,41 +36,40 @@ impl Elaborator {
                     for attr in &b.attrs {
                         if attr.name == "attribute" {
                             for arg in &attr.args {
-                                if arg.name == "schema" {
-                                    if let crate::parse::ast::Expr::Literal(crate::parse::ast::Literal::String(s)) = &arg.expr {
+                                if arg.name == "schema"
+                                    && let crate::parse::ast::Expr::Literal(crate::parse::ast::Literal::String(s)) = &arg.expr {
                                         self.ctx.schemas.register(s, &b.name);
                                     }
-                                }
                             }
                         }
                     }
                 }
                 Item::EnumDecl(e) => {
-                    self.enums.insert(e.name.clone(), e.clone());
-                    self.ctx.types.register(e.clone());
+                    self.syms.enums.insert(e.name.clone(), e.clone());
+                    self.ctx.types.register(crate::elab::registry::TypeDefKind::Enum(e.clone()));
                 }
                 Item::ModuleDeclaration(m) => {
-                    self.module_decls.insert(m.name.clone(), m.clone());
+                    self.syms.module_decls.insert(m.name.clone(), m.clone());
                     self.ctx.components.register(m.clone());
                 }
                 Item::BehaviorDecl(b) => {
-                    self.behavior_decls.push(b.clone());
+                    self.syms.behavior_decls.push(b.clone());
                 }
                 Item::BenchDecl(b) => {
-                    self.bench_decls.push(b.clone());
+                    self.syms.bench_decls.push(b.clone());
                 }
                 Item::FnDecl(f) => {
-                    self.fn_decls.insert(f.sig.name.clone(), f.clone());
+                    self.syms.fn_decls.insert(f.sig.name.clone(), f.clone());
                     self.ctx.callables.register(f.clone());
                 }
                 Item::CapabilityDecl(c) => {
-                    self.capability_decls.insert(c.name.clone(), c.clone());
+                    self.syms.capability_decls.insert(c.name.clone(), c.clone());
                 }
                 Item::ImplDecl(i) => {
-                    self.impl_decls.push(i.clone());
+                    self.syms.impl_decls.push(i.clone());
                 }
                 Item::ConstDecl(c) => {
-                    self.const_decls.insert(c.name.clone(), c.clone());
+                    self.syms.const_decls.insert(c.name.clone(), c.clone());
                 }
                 Item::UseDecl(_) => {} // already expanded by Resolver
             }

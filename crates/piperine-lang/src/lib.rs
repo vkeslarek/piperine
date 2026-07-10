@@ -54,7 +54,7 @@ pub mod math;
 pub use pom::{
     ElabError,
     Behavior, BehaviorStmt, BenchBlock, Connection, Design, Function, ImplBlock,
-    Instance, MatchArm, Module, NetRef, NetType, Param, Port, TypeRef,
+    Instance, MatchArm, Module, NetRef, NetType, Param, Port, Project, TypeRef,
     ValueType, Wire,
     Id, Kind, Kinded, Named, NetTyped, OverrideMap, ReflectError, Selection, Value,
 };

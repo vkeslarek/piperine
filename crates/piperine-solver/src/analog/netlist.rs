@@ -12,10 +12,7 @@ pub enum NodeIdentifier {
 
 impl NodeIdentifier {
     pub fn is_ground(&self) -> bool {
-        match self {
-            NodeIdentifier::Gnd => true,
-            _ => false,
-        }
+        matches!(self, NodeIdentifier::Gnd)
     }
 }
 
@@ -89,17 +86,11 @@ impl AnalogVariable {
     }
 
     pub fn is_branch(&self) -> bool {
-        match self {
-            AnalogVariable::Branch(_) => true,
-            _ => false,
-        }
+        matches!(self, AnalogVariable::Branch(_))
     }
 
     pub fn is_node(&self) -> bool {
-        match self {
-            AnalogVariable::Node(_) => true,
-            _ => false,
-        }
+        matches!(self, AnalogVariable::Node(_))
     }
 }
 

@@ -17,10 +17,10 @@ pub use crate::value;
 
 pub use behavior::{Behavior, BehaviorStmt, Function, ImplBlock, MatchArm};
 pub use bench::BenchBlock;
-pub use design::Design;
+pub use design::{Design, Project};
 pub use error::{ElabError, ElabErrorKind, ReflectError};
 pub use module::{Connection, Instance, Module, Param, Port, Var, Wire};
-pub use net_type::{NetRef, NetType, TypeRef, ValueType};
+pub use net_type::{is_ground, GROUND_NAMES, NetRef, NetType, TypeRef, ValueType};
 pub use node::{Id, Kind};
 pub use selection::Selection;
 pub use staging::OverrideMap;
