@@ -36,8 +36,10 @@ the Rust surface settles. The §8 identical-shape rule is the review gate for ev
 
 ### `extract` / `.attach` / `.meta` (was G13)
 
-Blocked on writing the extensibility spec (plugin model). Do not implement ahead of it; the
-only prep is keeping `Attribute` surfaces public on POM nodes (they are).
+The extensibility spec is now written — `docs/spec/part_vi_plugins.md` (Part VI). These
+land as plugin-registered `SimTask`s / staging calls once the plugin system below exists.
+Do not implement ahead of it; the only prep is keeping `Attribute` surfaces public on POM
+nodes (they are).
 
 ---
 
@@ -45,6 +47,11 @@ only prep is keeping `Attribute` surfaces public on POM nodes (they are).
 
 - `transition`, `laplace_*`, `zi_*` analog operators — recognized in the IR, fail loud at
   codegen. Each is its own companion-model follow-up.
+- **`table(x, xs, ys, mode)` operator (spec Part V §2) — not registered at all.** The
+  resolved form has a `Table` symbol (`lower/symbols.rs`) but `lower/pom/analog_ops.rs`
+  never registers a `"table"` operator, so a PHDL `table(...)` call doesn't even reach the
+  fail-loud codegen path — it resolves as an unknown function. Register it (fail-loud until
+  the interpolation companion model exists), then implement 1-D lookup + interpolation.
 - **`ac_stim` in *potential* contributions — DONE (2026-07-04).** A `V(p,n) <+ … + ac_stim(mag,phase)`
   now attaches the AC drive to the force branch: `FlatForce.ac_stim`, compiled to
   `force_ac_mag`/`force_ac_phase` rows in `jit/analog.rs`, stamped onto the branch-equation
@@ -173,6 +180,15 @@ compiler does not yet enforce. The spec is the contract; these are bugs/gaps to 
   (`parse/lexer.rs:14-17`) emits every keyword as `Tok::Ident(String)`; reservation is a
   parser concern. Documented as the current design in Part I §4.2; a future lexer
   refactor could tokenize keywords for robustness.
+- **E2021 `PrivateItem` is defined but never raised.** The error variant exists
+  (`pom/error.rs`), but privacy is enforced by *filtering* during `use` resolution, so an
+  access to a private item surfaces as E2002/E2003 ("not in scope") — a worse diagnostic
+  than "item exists but is private". Wire the resolver to remember filtered-out names and
+  raise E2021 when one is referenced. (Part I §16 documents the current behavior.)
+- **Selector axes `driver::`, `load::`, `parent::`, `ancestor::` — `AxisNotImplemented`.**
+  Spec Part IV §10 defines all ten axes; `pom/selector/eval.rs` fails loud on these four
+  (structural connectivity + parent chain). `driver::`/`load::` need per-net driver/load
+  tracking on the POM `Net`; `parent::`/`ancestor::` need a child→parent instance link.
 - **`piperine::` stdlib exemption from `pub` filtering.** Currently the resolver
   (`resolve.rs`) skips privacy filtering for `use piperine::...` — stdlib items are
   always exported regardless of `pub`. This is because the frozen header files
@@ -257,16 +273,14 @@ FromLiteral<Integer> for Boolean` in the prelude.
 with `.0`/`.1`/... indexing. Tuple **values** and indexing work; tuple **type
 annotations** do not.
 
-**Today:** the parser (`types.rs:10`) requires an identifier as the first token of a
-type. Writing `(Real, Natural)` as a type annotation is a parse error (`Expected
-identifier, found LParen`). The `ValueType` enum (`net_type.rs:64-72`) has no `Tuple`
-variant — even if parsing were added, the type system cannot represent a tuple type.
-The frozen docs reference `Vec<(Real, Real)>` (bench spec §12.4 sweep) but this was
-never tested and does not parse.
+**Progress (2026-07-09, plugin-architecture branch):** the parser now parses tuple
+types (`parse_type` has a `(` branch) and `ValueType::Tuple(Vec<ValueType>)` exists
+(`net_type.rs`).
 
-**Goal:** add tuple type syntax to the grammar (`Type ::= ... | "(" Type {"," Type} ")"`),
-a `Tuple(Vec<ValueType>)` variant to `ValueType`, and tuple type resolution. This
-enables `fn foo() -> (Real, Natural)`, `var x : (Real, String)`, `Vec<(Real, Real)>`.
+**Still open:** tuple type *resolution* — `resolve_type`/the typechecker have no
+`Tuple` handling, so an annotation parses but is not checked against the value. Wire
+resolution + checking, then test `fn foo() -> (Real, Natural)`, `var x : (Real, String)`,
+`Vec<(Real, Real)>` (the bench-spec §12.4 sweep shape).
 
 ### Function references — passing named functions as arguments
 
@@ -280,10 +294,12 @@ bare function name is not a `Value::Closure` — it's a `Callable::Function` tha
 the registry, not in the value layer. Only lambdas (`|x| x * 2.0`) can be passed today,
 because they evaluate to `Value::Closure` directly.
 
-**Goal:** when an identifier resolves to a top-level `fn`, produce a `Value::Closure`
-(or a dedicated `Value::Function(FnId)`) so named functions can be passed as `fn(T) -> R`
-arguments. The interpreter's `eval_expr` for `Expr::Ident` should check the callable
-registry when local-scope lookup fails, and wrap the result as a callable value.
+**Progress (2026-07-09, plugin-architecture branch):** landed as `Value::FnRef(String)` —
+`eval_expr` on a bare `Expr::Ident` that resolves to a registered callable produces a
+`FnRef`, and call sites (`interp.rs`) dispatch a local holding a `FnRef`/`Closure`
+through the callable registry. **Still open:** confirm with a gate test
+(`apply_op(my_func, 5.0)` end-to-end) and typecheck `FnRef` against the declared
+`fn(T) -> R` annotation.
 
 ### Type inference for `var` — less verbosity
 
@@ -416,9 +432,13 @@ compiler still dispatches to the same Rust implementations. `extern` just makes 
 
 1. **Grammar:** `Item ::= ... | "extern" ExternItem` where `ExternItem` covers
    `FnDecl`, `ImplDecl`, and optionally `ModDecl` (for OSDI device-model stubs).
+   **DONE for `fn` (2026-07-09, plugin-architecture branch).**
 2. **Parser:** accept `extern` before `fn`/`impl`; the body is optional (signature-only).
+   **DONE for `fn`** — `item.rs` eats `extern`, `FnDecl::parse_with_extern`, AST carries
+   `is_extern`. `extern impl` still open.
 3. **Elaborator:** register `extern fn` signatures in the callable registry; reject
    if a source-level body is also present (extern means "body is compiler-provided").
+   **Still open** — nothing in `elab/` consults `is_extern` yet.
 4. **Prelude migration:** move the math table, analog operators, syscalls, and events
    into `extern` declarations in the prelude headers. The compiler's internal tables
    cross-check against the declared signatures.
@@ -453,6 +473,51 @@ impl Electrical {
 This would replace the current free-function `V(a,b)`/`I(a,b)` with method syntax
 `a.v(b)` / `a.i(b)`, and make the accessor signatures visible and checkable. The
 free-function forms could remain as sugar.
+
+---
+
+## Plugin system — implement Part VI (spec written, zero implementation)
+
+**Spec:** `docs/spec/part_vi_plugins.md` (Part VI, complete as of 2026-07-07).
+**Implementation plan:** `Plugin plan.md` (expanded 2026-07-09 — design decisions
+D1–D12, per-crate integration surface, phased delivery with gates; supersedes the
+step list below where they differ).
+**Today:** nothing exists — no plugin crate, no `[plugins]` parsing in
+`piperine-project`, no lockfile plugin entries, no TOFU flow, no `PluginError`/P0xxx
+catalog, no wasmtime dependency, no `@device`/`@port` handling in `CircuitCompiler`,
+no CLI script dispatch. The only prep in place: attribute schemas are validated and
+populated into the POM (Part I §8), and `Attribute` surfaces are public.
+
+Suggested order (each independently shippable, spec section in parens):
+
+1. **POM project model** — hard prerequisite, see the section below.
+2. **Manifest + discovery (§4, §5).** Parse `piperine-plugin.toml` into a permissions
+   struct; `[plugins]` section in `Piperine.toml`; resolve into `target/plugins/<name>/`
+   via the existing git/path resolver; `Piperine.lock` plugin entries with
+   `manifest_hash`/`content_hash`. Errors: P0006 `BadManifest`, P0007 `HashMismatch`.
+3. **TOFU (§3.2).** CLI approval prompt keyed by content hash, persisted to the
+   lockfile; `--trust <file>` / `--no-trust` CI modes. Error: P0001 `Untrusted`.
+4. **Registration contract (§6).** The `Plugin` trait: `manifest()`, `register()`
+   (devices, attr schemas, bench tasks, scripts), seven no-op-default hooks. Start
+   with the **native** backend (same dlopen model as the OSDI loader — least new
+   machinery), WASM (`wasmtime` + serialized POM views) second, out-of-process
+   JSON-RPC last.
+5. **Attribute schemas from plugins (§10).** Plugin-registered schemas join the
+   `@attribute(schema=...)` registry; collision → P0003 `SchemaConflict`.
+6. **Bench tasks from plugins (§6).** Plugin `SimTask`s extend the
+   `bench_task_implemented` allowlist at load time — this is the landing path for
+   `extract`/`.attach`/`.meta` (G13 above).
+7. **Device loading (§7).** `@device(plugin=…, type=…)` + `@port(name=…)` binding:
+   `CircuitCompiler` detects the attribute, skips PHDL lowering, calls the plugin's
+   `DeviceFactory` with the device spec (type id, attrs, port `NetRef` bindings,
+   params). Solver sees a plain `Device`. Errors: P0004 `DeviceNotRegistered`.
+8. **Lifecycle hooks (§8).** The seven hook points; `transform_design` mutates only
+   through the staging handle (`set_param`/`add_instance`/`add_connection`), validated
+   against the module table (no-netlist-magic). Alphabetical plugin order; conflicts →
+   P0008 `StagingConflict`.
+9. **Custom scripts (§9).** CLI dispatcher falls through to plugin-registered
+   subcommands; capability-gated host context (`fs()`, `project()`, `spawn()`,
+   `log()`); `piperine plugin list`. Error: P0009 `UnknownScript`.
 
 ---
 
