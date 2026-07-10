@@ -71,7 +71,7 @@ pub struct Elaborator {
     pub syms: SymbolTable,
     /// Items handed to `elaborate`, consumed by the `Register` pass.
     pending_items: Vec<crate::parse::ast::Item>,
-    ctx: crate::elab::registry::ElabContext,
+    pub(crate) ctx: crate::elab::registry::ElabContext,
 }
 
 impl Elaborator {

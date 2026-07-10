@@ -56,13 +56,27 @@ impl SourceFile {
 
     /// Elaborate this source file using the supplied [`Resolver`].
     pub fn elaborate_with(self, resolver: &mut Resolver) -> Result<Design, ElabError> {
+        self.elaborate_seeded(resolver, |_| {})
+    }
+
+    /// Like [`elaborate_with`](Self::elaborate_with), but lets the caller
+    /// seed the [`ElabContext`] registries before elaboration runs — the
+    /// entry point plugin hosts use to contribute attribute schemas
+    /// (SPEC Part VI §10) without `piperine-lang` knowing about plugins.
+    pub fn elaborate_seeded(
+        self,
+        resolver: &mut Resolver,
+        seed: impl FnOnce(&mut crate::elab::registry::ElabContext),
+    ) -> Result<Design, ElabError> {
         let mut items = resolver.prelude_items();
         let expanded = resolver
             .expand(self)
             .map_err(|e| ElabError::from(ElabErrorKind::Other(e.to_string())))?;
         items.extend(expanded);
         let augmented = SourceFile { items };
-        let mut design = Elaborator::new().elaborate(augmented)?;
+        let mut elaborator = Elaborator::new();
+        seed(&mut elaborator.ctx);
+        let mut design = elaborator.elaborate(augmented)?;
         design.set_origins(resolver.take_origins());
         Ok(design)
     }

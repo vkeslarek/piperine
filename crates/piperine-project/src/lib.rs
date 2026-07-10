@@ -17,6 +17,10 @@ pub struct PiperineToml {
     pub project: Project,
     #[serde(default)]
     pub dependencies: HashMap<String, DependencySource>,
+    /// Plugin sources (`[plugins]`) — separate from `[dependencies]`;
+    /// plugins are loadable artifacts, not PHDL libraries (SPEC Part VI §5).
+    #[serde(default)]
+    pub plugins: HashMap<String, DependencySource>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -91,6 +95,7 @@ impl PiperineToml {
                 edition: "2024".to_string(),
             },
             dependencies: HashMap::new(),
+            plugins: HashMap::new(),
         }
     }
 

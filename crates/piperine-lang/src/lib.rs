@@ -64,6 +64,20 @@ pub use source_map::SourceMap;
 
 /// Parse a PHDL source string and run the full elaboration pipeline.
 pub fn parse_and_elaborate(input: &str, source_map: &SourceMap) -> Result<Design, miette::Report> {
+    parse_and_elaborate_seeded(input, source_map, |_| {})
+}
+
+/// Like [`parse_and_elaborate`], but seeds the elaboration registries first —
+/// the hook plugin hosts use to contribute attribute schemas before the
+/// design elaborates (SPEC Part VI §10).
+pub fn parse_and_elaborate_seeded(
+    input: &str,
+    source_map: &SourceMap,
+    seed: impl FnOnce(&mut elab::registry::ElabContext),
+) -> Result<Design, miette::Report> {
     let source = parse_str(input).map_err(|e| miette::miette!("{}", e).with_source_code(input.to_string()))?;
-    source.elaborate(source_map).map_err(|e| miette::Report::from(e).with_source_code(input.to_string()))
+    let mut resolver = Resolver::new(source_map);
+    source
+        .elaborate_seeded(&mut resolver, seed)
+        .map_err(|e| miette::Report::from(e).with_source_code(input.to_string()))
 }

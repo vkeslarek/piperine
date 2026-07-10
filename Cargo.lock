@@ -1685,6 +1685,7 @@ dependencies = [
  "piperine-bench",
  "piperine-codegen",
  "piperine-lang",
+ "piperine-plugin",
  "piperine-project",
  "tempfile",
  "thiserror 2.0.18",
@@ -1732,6 +1733,33 @@ dependencies = [
  "serde",
  "serde_json",
  "url",
+]
+
+[[package]]
+name = "piperine-plugin"
+version = "0.1.1"
+dependencies = [
+ "libloading",
+ "miette",
+ "piperine-bench",
+ "piperine-codegen",
+ "piperine-lang",
+ "piperine-plugin-fixture",
+ "piperine-project",
+ "piperine-solver",
+ "serde",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml",
+]
+
+[[package]]
+name = "piperine-plugin-fixture"
+version = "0.1.1"
+dependencies = [
+ "piperine-plugin",
+ "piperine-solver",
 ]
 
 [[package]]

@@ -7,6 +7,21 @@
 > the earlier draft of this file (which predated Part VI; where the two diverged,
 > Part VI won — the deltas are recorded in §2).
 >
+> **Delivery status (2026-07-10): Phases 0–2 are implemented and green.**
+> `crates/piperine-plugin` (manifest/P0xxx errors/Registrar/host/TOFU/native
+> dlopen backend), `piperine-plugin-fixture` (analog resistor + digital
+> inverter through the native ABI), the `DeviceProvider` seam + `@device`
+> branch in `CircuitCompiler`, `SchemaShape` + seeded elaboration, and the
+> bench/CLI wiring. Gates: `piperine-plugin/tests/{manifest,trust,e2e,
+> native_smoke}.rs` (16 tests). Two implementation deltas vs. this plan:
+> the SDK crate *does* depend on `piperine-codegen` (for the public
+> `PluginDeviceSpec` — one spec type instead of a duplicate; D4's direction
+> constraint, codegen-never-depends-on-plugin, holds), and the host itself
+> registers the builtin `@device`/`@port` schemas (they belong to the plugin
+> *system*; two device plugins must not collide on them). `piperine-spice`
+> carries the first real plugin face (`plugin/` + `piperine-plugin.toml`).
+> Next: Phase 3 (hooks, staging mutation, bench tasks, scripts).
+>
 > Prerequisite status: the **POM project model landed 2026-07-09** —
 > `Design::project()` carries name/version/dependencies and per-item provenance
 > (`Project::origins`, stamped by the `use` resolver). Attribute schemas are

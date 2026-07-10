@@ -56,11 +56,21 @@ impl SolverConfig {
 pub struct SimSession {
     design: Design,
     module: String,
+    /// Builds `@device`-annotated instances (SPEC Part VI §7).
+    provider: Option<std::rc::Rc<dyn piperine_codegen::device::DeviceProvider>>,
 }
 
 impl SimSession {
     pub fn new(design: Design, module: String) -> Self {
-        Self { design, module }
+        Self { design, module, provider: None }
+    }
+
+    /// Wire a plugin host as the device provider for this session's builds.
+    pub fn set_device_provider(
+        &mut self,
+        provider: std::rc::Rc<dyn piperine_codegen::device::DeviceProvider>,
+    ) {
+        self.provider = Some(provider);
     }
 
     pub fn design(&self) -> &Design {
@@ -88,6 +98,9 @@ impl SimSession {
         let applied = self.design.with_overrides_applied(&self.module)?;
         let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
         let mut compiler = CircuitCompiler::new(&applied, &bodies);
+        if let Some(provider) = &self.provider {
+            compiler = compiler.with_device_provider(provider.as_ref());
+        }
         let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
         circuit.init_digital();
         circuit.rebuild_digital_topology();

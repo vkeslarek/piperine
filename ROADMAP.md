@@ -480,8 +480,10 @@ free-function forms could remain as sugar.
 
 **Spec:** `docs/spec/part_vi_plugins.md` (Part VI, complete as of 2026-07-07).
 **Implementation plan:** `Plugin plan.md` (expanded 2026-07-09 — design decisions
-D1–D12, per-crate integration surface, phased delivery with gates; supersedes the
-step list below where they differ).
+D1–D13, per-crate integration surface, phased delivery with gates; supersedes the
+step list below where they differ). **Phases 0–2 landed 2026-07-10** — steps 2, 3,
+4 (native backend), 5, and 7 below are done; open: hooks/staging (8), bench tasks
+(6), scripts (9), WASM/process backends, OSDI extraction (10).
 **Today:** nothing exists — no plugin crate, no `[plugins]` parsing in
 `piperine-project`, no lockfile plugin entries, no TOFU flow, no `PluginError`/P0xxx
 catalog, no wasmtime dependency, no `@device`/`@port` handling in `CircuitCompiler`,

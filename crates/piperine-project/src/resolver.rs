@@ -60,6 +60,45 @@ impl Resolver {
         }
     }
 
+    /// Resolve the `[plugins]` sources of `root_manifest` into local paths.
+    /// Path sources resolve relative to the project root; git sources sync
+    /// into `target/plugins/<name>/`. Plugins have no transitive PHDL
+    /// dependencies — no recursive walk (SPEC Part VI §5).
+    pub fn resolve_plugins(
+        &mut self,
+        root_manifest: &PiperineToml,
+    ) -> Result<ResolvedMap, ResolverError> {
+        let plugins_dir = self.project_root.join("target").join("plugins");
+        if !root_manifest.plugins.is_empty() {
+            std::fs::create_dir_all(&plugins_dir).ok();
+        }
+        let mut resolved = ResolvedMap::new();
+        for (name, source) in &root_manifest.plugins {
+            match source {
+                DependencySource::Path(path_dep) => {
+                    let path = PathBuf::from(&path_dep.path);
+                    let path = if path.is_absolute() { path } else { self.project_root.join(path) };
+                    resolved.insert(name.clone(), path);
+                }
+                DependencySource::Git(git_dep) => {
+                    let req = git_dep.requirement();
+                    let target_dir = plugins_dir.join(name);
+                    let target_str = match req {
+                        GitRequirement::Version(ref v) => format!("release/v{}", v),
+                        GitRequirement::Branch(ref b) => b.clone(),
+                        GitRequirement::Rev(ref r) => r.clone(),
+                        GitRequirement::Latest => "latest".to_string(),
+                    };
+                    sync_and_checkout(&git_dep.git, &target_dir, &target_str).map_err(|e| {
+                        ResolverError::Git { package: name.clone(), source: e }
+                    })?;
+                    resolved.insert(name.clone(), target_dir);
+                }
+            }
+        }
+        Ok(resolved)
+    }
+
     pub fn resolve(&mut self, root_manifest: &PiperineToml) -> Result<ResolvedMap, ResolverError> {
         if !self.deps_dir.exists() {
             std::fs::create_dir_all(&self.deps_dir).ok();
@@ -151,11 +190,11 @@ impl Resolver {
 
                     if locked_hash.is_none() {
                         // Update lockfile with the new hash
-                        self.lockfile.package.push(LockEntry {
-                            name: pkg_name.clone(),
-                            source: git_dep.git.clone(),
-                            hash: commit_hash,
-                        });
+                        self.lockfile.package.push(LockEntry::dependency(
+                            pkg_name.clone(),
+                            git_dep.git.clone(),
+                            commit_hash,
+                        ));
                     }
 
                     self.resolved_paths

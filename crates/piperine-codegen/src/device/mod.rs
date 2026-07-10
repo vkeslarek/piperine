@@ -11,6 +11,7 @@
 mod analog;
 mod circuit;
 mod digital;
+mod provider;
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -38,6 +39,7 @@ use crate::jit::CodegenError;
 
 pub use analog::AnalogInstance;
 pub use circuit::{BuiltInstanceInfo, CircuitBuildInfo, CircuitCompiler};
+pub use provider::{DeviceProvider, PluginDeviceSpec, PluginPort, PortBinding};
 pub use digital::DigitalInstance;
 
 /// The compiled artifact for one module: the JIT kernels, shared (`Arc`)

@@ -7,6 +7,8 @@ members = [
     "crates/piperine-project",
     "crates/piperine-lang-server",
     "crates/piperine-solver",
+    "crates/piperine-plugin",
+    "crates/piperine-plugin-fixture",
 ]
 
 [workspace.package]

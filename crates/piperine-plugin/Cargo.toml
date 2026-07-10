@@ -1,0 +1,22 @@
+[package]
+name = "piperine-plugin"
+version.workspace = true
+edition.workspace = true
+description = "Piperine plugin SDK + host: manifest, TOFU trust, native backend, device factories"
+
+[dependencies]
+piperine-lang = { version = "0.1.0", path = "../piperine-lang" }
+piperine-codegen = { version = "0.1.0", path = "../piperine-codegen" }
+piperine-solver = { version = "0.1.0", path = "../piperine-solver" }
+piperine-project = { version = "0.1.0", path = "../piperine-project" }
+thiserror.workspace = true
+miette = { version = "7", features = ["fancy"] }
+serde.workspace = true
+toml = "1.1.2"
+sha2 = "0.10"
+libloading.workspace = true
+
+[dev-dependencies]
+piperine-bench = { version = "0.1.1", path = "../piperine-bench" }
+piperine-plugin-fixture = { path = "../piperine-plugin-fixture" }
+tempfile.workspace = true

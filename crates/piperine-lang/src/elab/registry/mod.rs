@@ -7,7 +7,7 @@ pub mod schemas;
 pub use types::{TypeRegistry, TypeDefKind};
 pub use components::{ComponentRegistry, ComponentDef};
 pub use callables::{CallableRegistry, CallableDef};
-pub use schemas::SchemaRegistry;
+pub use schemas::{AttrField, SchemaRegistry, SchemaShape};
 
 use crate::elab::event::EventRegistry;
 
