@@ -211,6 +211,13 @@ impl Netlist {
         self.circuit_map.left_values().collect()
     }
 
+    /// Every analog variable as a unified [`Net`](crate::core::net::Net) — the
+    /// public naming layer for result mapping, queries, and diagnostics. Digital
+    /// nets convert through `Net::from(DigitalNet)` at the scheduler boundary.
+    pub fn nets(&self) -> Vec<crate::core::net::Net> {
+        self.circuit_map.left_values().map(Into::into).collect()
+    }
+
     pub fn reference_for(&self, variable: &AnalogVariable) -> Option<&AnalogReference> {
         self.circuit_map.get_by_right(variable)
     }

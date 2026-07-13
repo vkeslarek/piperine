@@ -50,6 +50,18 @@ impl CircuitInstance {
 
     pub fn netlist(&self) -> &Netlist { &self.netlist }
 
+    /// Every solved signal in the circuit — analog nodes, analog branch
+    /// currents, and digital nets — as one unified [`Net`] list. This is the
+    /// symmetric naming layer a host, result mapper, or diagnostic uses instead
+    /// of walking the analog netlist and the digital net array separately.
+    pub fn nets(&self) -> Vec<crate::core::net::Net> {
+        use crate::core::net::Net;
+        use crate::digital::DigitalNet;
+        let mut nets = self.netlist.nets();
+        nets.extend((0..self.digital_state.nets.len()).map(|i| Net::from(DigitalNet(i))));
+        nets
+    }
+
     /// Union of every element's declared [`ElementCapabilities`] — what this
     /// whole circuit participates in. Drivers plan against this (e.g. a
     /// pure-analog circuit skips the mixed-signal loop) instead of scanning the

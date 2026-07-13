@@ -66,14 +66,17 @@ Cross-validation against ngspice lives in
   nets. Remaining nicety: unify the three views under one `SolveCtx` — deferred,
   not required for correctness.
 
-- [ ] **Uniform analog/digital naming and node designation — MISSING.**
-  Analog has `NodeIdentifier`, `BranchIdentifier`, `AnalogVariable`, and dense
-  `AnalogReference` indexing. Digital only has `DigitalNet(usize)` at the solver
-  boundary, so diagnostics, queries, plugin/device factories, and result mapping
-  are not symmetric. Add a unified naming layer for all solver variables:
-  `SolverName` / `SignalIdentifier` / `TerminalIdentifier` that can name analog
-  nodes, analog branches, digital nets, pseudo variables, and device-local
-  operating variables.
+- [~] **Uniform analog/digital naming and node designation — PARTIAL
+  (2026-07-13).** `core/net.rs::Net` is the unified public identity of any
+  solved signal: a dense index paired with a `NetKind` (`Node`/`Branch`/
+  `Digital`/`Pseudo`) and a stable label. `From<&AnalogReference>` and
+  `From<DigitalNet>` convert both fast-path types in; ground is a `Pseudo` net
+  with no index. `Netlist::nets()` and `CircuitInstance::nets()` enumerate every
+  analog and digital signal symmetrically as `Net`, and it is exported in the
+  prelude. Still to do: attach hierarchical source labels for digital nets (the
+  circuit builder owns them — solver falls back to `d{n}`), and route solver
+  diagnostics/result mapping through `Net` (currently additive alongside the
+  existing `AnalogReference`/`DigitalNet` fast paths, not a replacement).
 
   Proposed shape: keep dense indices for fast solve, but pair them with stable
   labels. Analog labels stay node/branch based; digital labels should carry the

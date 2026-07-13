@@ -14,6 +14,7 @@
 pub use crate::analog::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
 pub use crate::core::circuit::CircuitInstance;
 pub use crate::core::element::{Element, ElementCapabilities};
+pub use crate::core::net::{Net, NetKind};
 pub use crate::digital::{DigitalNet, LogicValue};
 
 // ── Run configuration ──────────────────────────────────────────────────────

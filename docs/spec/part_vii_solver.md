@@ -300,6 +300,16 @@ allocation capability.
 
 ## §6 Analog variable and node labels
 
+The analog namespace (§6) and the digital namespace (§7) are named uniformly at
+the public boundary by one identity, the **net**. A net pairs the fast dense
+solve index with a kind — analog node, analog branch current, digital net, or a
+pseudo signal with no unknown (ground) — and a stable label. The domain-specific
+fast-path types (`AnalogReference` over an `AnalogVariable`, and `DigitalNet`)
+remain for the hot loops and both convert into a net, so diagnostics, queries,
+and result mapping treat `v(out)`, `i(vsrc)`, a digital net, and `GND`
+symmetrically. Enumerating every solved signal of a circuit as nets is a single
+operation over both domains.
+
 The analog namespace contains node variables, branch-current variables, and
 analysis pseudo-variables.
 
@@ -350,7 +360,9 @@ The four logic values are:
 
 Result objects that expose digital traces read values by digital-net index.
 Mapping those indices back to source names is a reflection/result-layer
-responsibility, not part of the solver's numerical contract.
+responsibility, not part of the solver's numerical contract; a digital net
+converts into the unified net identity of §6 with an anonymous label until the
+circuit builder attaches the hierarchical source name it owns.
 
 ---
 
