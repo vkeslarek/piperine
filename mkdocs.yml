@@ -5,7 +5,7 @@ site_description: Piperine PHDL Simulator and Language Specification
 # Change this field when the PHDL language version evolves.
 # Independent of the Rust simulator codebase version.
 extra:
-  phdl_version: "0.1.0"
+  phdl_version: "0.1.1"
 # ===================================
 theme:
   name: material
@@ -24,6 +24,7 @@ nav:
       - Reflection & Selector: spec/part_iv_reflection_selector.md
       - Builtins Reference: spec/part_v_builtins.md
       - Plugins: spec/part_vi_plugins.md
+      - Solver: spec/part_vii_solver.md
       - Worked Examples: spec/appendix_a_worked_examples.md
       - Complete Grammar (EBNF): spec/appendix_b_grammar.md
   - Library & Manual:
