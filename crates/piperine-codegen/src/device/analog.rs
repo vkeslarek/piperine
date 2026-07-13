@@ -805,7 +805,7 @@ impl AnalogInstance {
             .zip(&q_prev)
             .map(|(&n, &p)| n.abs().max(p.abs()))
             .fold(0.0_f64, f64::max);
-        let tol = context.trtol * context.chgtol + context.reltol * q_mag + context.abstol;
+        let tol = context.tolerances.trtol * context.tolerances.chgtol + context.tolerances.reltol * q_mag + context.tolerances.abstol;
 
         if lte <= 0.0 || tol <= 0.0 {
             return None;
@@ -1111,8 +1111,8 @@ impl AnalogInstance {
     }
 
     fn sync_sim(&mut self, context: &Context, analysis: Analysis) {
-        self.sim.temperature = context.temperature;
-        self.sim.gmin = context.gmin;
+        self.sim.temperature = context.tolerances.temperature;
+        self.sim.gmin = context.tolerances.gmin;
         self.sim.current_analysis = super::analysis_code(analysis);
         // Outside transient there is no integration step; companion terms
         // that scale with `sim.step` (the `idt` in-step coupling) vanish.

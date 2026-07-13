@@ -112,3 +112,17 @@ impl DcAnalysisResult {
         self.values.get(var).copied()
     }
 }
+
+/// Per-analysis config for DC. Carries what used to be on the global
+/// `Context`: max_iter and dc_damp_tolerance.
+#[derive(Debug, Clone)]
+pub struct DcContext {
+    pub max_iter: usize,
+    pub dc_damp_tolerance: f64,
+}
+
+impl Default for DcContext {
+    fn default() -> Self {
+        Self { max_iter: 500, dc_damp_tolerance: 0.5 }
+    }
+}

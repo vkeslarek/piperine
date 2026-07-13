@@ -15,7 +15,10 @@
 //! the solver's hidden constants.
 
 use ndarray::Array1;
-
+use ndarray::{ArrayView1, ArrayViewMut1};
+use crate::analog::Netlist;
+use crate::math::circular_array::CircularArrayBuffer2;
+use crate::solver::{Policy, Tolerances};
 use crate::result::Result;
 
 /// Numerical caps honored across drivers. Replaces the literals that used to
@@ -39,6 +42,183 @@ impl Default for PlanLimits {
             max_delta_cycles: 1000,
             digital_time_epsilon: 1e-12,
         }
+    }
+}
+
+// ── NewtonStrategy ─────────────────────────────────────────────────────────
+
+/// Newton iteration policy: damping, convergence test, iteration cap.
+/// The [`ConvergencePlan`] owns one; [`NewtonRaphsonSolver`] consults it
+/// instead of calling `NonLinearSystem::apply_limit`/`converged`/
+/// `residual_converged` directly (MD-05, MD-13 rule 2).
+pub trait NewtonStrategy: Send + Sync {
+    /// Damp the Newton update in-place before the convergence test.
+    /// `policy.dc_damp_tolerance` controls the threshold.
+    fn damp_update(
+        &self,
+        prev: ArrayView1<f64>,
+        update: ArrayViewMut1<f64>,
+        policy: &Policy,
+    );
+
+    /// Converged if: update test passes AND residual test passes.
+    /// Device limiting (`limiting_active()`) is NOT checked here — the driver
+    /// gates on it separately after solve returns. This keeps the strategy
+    /// borrowing only the netlist, not the device vector.
+    fn is_converged(
+        &self,
+        state: &CircularArrayBuffer2<f64>,
+        guess: &ArrayView1<f64>,
+        residual: &[f64],
+        scale: &[f64],
+        netlist: &Netlist,
+        tolerances: &Tolerances,
+    ) -> bool;
+
+    /// Maximum Newton iterations.
+    fn max_iter(&self, policy: &Policy) -> usize;
+}
+
+/// Default Newton strategy: midpoint damping + voltage-step + residual
+/// convergence. Body is the exact logic from today's free fns
+/// `check_convergence`, `residual_converged`, `apply_damping` in
+/// `solver/mod.rs`, just moved into a trait impl.
+pub struct DampedNewton;
+
+impl NewtonStrategy for DampedNewton {
+    fn damp_update(
+        &self,
+        prev: ArrayView1<f64>,
+        mut update: ArrayViewMut1<f64>,
+        policy: &Policy,
+    ) {
+        let last_guess = prev;
+        let diff_norm_sq: f64 = update
+            .iter()
+            .zip(last_guess.iter())
+            .fold(0.0, |acc, (curr, prev)| acc + (curr - prev).powi(2));
+        let diff_norm = diff_norm_sq.sqrt();
+        if diff_norm >= policy.dc_damp_tolerance {
+            for (curr, prev) in update.iter_mut().zip(last_guess.iter()) {
+                *curr = (*curr + *prev) * 0.5;
+            }
+        }
+    }
+
+    fn is_converged(
+        &self,
+        state: &CircularArrayBuffer2<f64>,
+        guess: &ArrayView1<f64>,
+        residual: &[f64],
+        scale: &[f64],
+        netlist: &Netlist,
+        tolerances: &Tolerances,
+    ) -> bool {
+        // 1. Update convergence test
+        if !tolerances.has_converged(state.view(0), guess, netlist) {
+            return false;
+        }
+        // 2. Residual convergence test (ngspice NIconvTest)
+        use crate::math::linear::AsIndex;
+        for r in netlist.all_references() {
+            let Some(i) = r.as_index() else { continue };
+            if i >= residual.len() {
+                continue;
+            }
+            let abs_limit = if r.variable().is_branch() {
+                tolerances.abstol
+            } else {
+                tolerances.vntol
+            };
+            let tol = abs_limit + tolerances.reltol * scale[i];
+            if residual[i].abs() > tol {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn max_iter(&self, policy: &Policy) -> usize {
+        policy.max_iter
+    }
+}
+
+// ── StepperStrategy ────────────────────────────────────────────────────────
+
+/// Transient timestep policy: propose the next `dt` after a successful step,
+/// and return a reduced `dt` after a rejection.
+pub trait StepperStrategy: Send + Sync {
+    /// Propose the next timestep after an accepted step.
+    /// `dt_actual` is the dt used for this step; `dt_proposed` is what was
+    /// requested before event/stop-time clamping (for growth).
+    fn propose_dt(
+        &self,
+        current_time: f64,
+        dt_actual: f64,
+        dt_proposed: f64,
+        dt_prev: f64,
+        circuit: &crate::core::circuit::CircuitInstance,
+        solver_state: &CircularArrayBuffer2<f64>,
+        tolerances: &Tolerances,
+        tran_opts: &crate::analysis::transient::TransientAnalysisOptions,
+    ) -> f64;
+
+    /// Reduced timestep after a failed (rejected) step.
+    fn reject_dt(
+        &self,
+        failed_dt: f64,
+        tran_opts: &crate::analysis::transient::TransientAnalysisOptions,
+    ) -> f64;
+}
+
+/// Default stepper: LTE-driven with 2× growth fallback and 0.5× on reject.
+pub struct LteStepper;
+
+impl StepperStrategy for LteStepper {
+    fn propose_dt(
+        &self,
+        _current_time: f64,
+        dt_actual: f64,
+        dt_proposed: f64,
+        dt_prev: f64,
+        circuit: &crate::core::circuit::CircuitInstance,
+        solver_state: &CircularArrayBuffer2<f64>,
+        tolerances: &Tolerances,
+        tran_opts: &crate::analysis::transient::TransientAnalysisOptions,
+    ) -> f64 {
+        use crate::analysis::transient::TransientAnalysisState;
+        let method = tolerances.integration;
+        let time_history = [dt_actual, dt_prev];
+        let tran_state = TransientAnalysisState::new(solver_state, &[]);
+        let mut lte_dt = tran_opts.dt_max;
+        let mut any_lte = false;
+        let ctx = crate::solver::Context { tolerances: *tolerances, ..Default::default() };
+        for dev in &circuit.devices {
+            if let Some(sug) = dev.suggest_transient_step(
+                &tran_state,
+                &time_history,
+                method,
+                &ctx,
+            ) {
+                if sug > 0.0 && sug < lte_dt {
+                    lte_dt = sug;
+                    any_lte = true;
+                }
+            }
+        }
+        if any_lte {
+            lte_dt.clamp(tran_opts.dt_min, tran_opts.dt_max)
+        } else {
+            (dt_proposed * 2.0).clamp(tran_opts.dt_min, tran_opts.dt_max)
+        }
+    }
+
+    fn reject_dt(
+        &self,
+        failed_dt: f64,
+        tran_opts: &crate::analysis::transient::TransientAnalysisOptions,
+    ) -> f64 {
+        (failed_dt * 0.5).max(tran_opts.dt_min)
     }
 }
 
@@ -77,6 +257,7 @@ pub trait HomotopyStrategy: Send + Sync {
 /// converges. Replaces the hand-inlined homotopy cascade in the DC driver, and
 /// is the seam where an analysis or host selects a different escalation.
 pub struct ConvergencePlan {
+    newton: Box<dyn NewtonStrategy>,
     strategies: Vec<Box<dyn HomotopyStrategy>>,
     limits: PlanLimits,
 }
@@ -87,6 +268,7 @@ impl Default for ConvergencePlan {
     /// can settle on the wrong one — BJT/MOS amplifiers).
     fn default() -> Self {
         Self {
+            newton: Box::new(DampedNewton),
             strategies: vec![Box::new(GminStepping), Box::new(SourceStepping)],
             limits: PlanLimits::default(),
         }
@@ -97,15 +279,27 @@ impl ConvergencePlan {
     /// Build a plan from an explicit strategy list (escalation order preserved).
     pub fn new(strategies: Vec<Box<dyn HomotopyStrategy>>) -> Self {
         Self {
+            newton: Box::new(DampedNewton),
             strategies,
             limits: PlanLimits::default(),
         }
+    }
+
+    /// Override the Newton strategy.
+    pub fn with_newton(mut self, newton: Box<dyn NewtonStrategy>) -> Self {
+        self.newton = newton;
+        self
     }
 
     /// Override the numerical limits honored across drivers.
     pub fn with_limits(mut self, limits: PlanLimits) -> Self {
         self.limits = limits;
         self
+    }
+
+    /// The Newton iteration policy.
+    pub fn newton(&self) -> &dyn NewtonStrategy {
+        self.newton.as_ref()
     }
 
     /// Numerical caps every driver should honor.

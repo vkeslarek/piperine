@@ -74,7 +74,10 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
     /// criteria defined in the solver context.
     fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
         let netlist = self.circuit.netlist();
-        super::check_convergence(&self.circuit.devices, state, new_guess, &self.context, netlist)
+        if self.circuit.devices.iter().any(|d| d.limiting_active()) {
+            return false;
+        }
+        self.context.tolerances.has_converged(state.view(0), new_guess, netlist)
     }
 
     /// ngspice `NIconvTest`: every node's current imbalance (and every branch
@@ -83,7 +86,11 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
     /// both get the relative term `reltol · scale`. This is the half of the
     /// convergence test the voltage-step check misses on stiff devices.
     fn residual_converged(&self, residual: &[f64], scale: &[f64]) -> bool {
-        super::residual_converged(self.circuit.netlist(), &self.context, residual, scale)
+        self.context.tolerances.residual_test(self.circuit.netlist(), residual, scale)
+    }
+
+    fn any_limiting(&self) -> bool {
+        self.circuit.devices.iter().any(|d| d.limiting_active())
     }
 
     fn apply_limit(
@@ -91,7 +98,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         state: &CircularArrayBuffer2<f64>,
         current_guess: ArrayViewMut1<f64>,
     ) {
-        super::apply_damping(state, current_guess, self.context.dc_damp_tolerance);
+        crate::solver::Policy::default().damp_update(state, current_guess);
     }
 
     /// Called after successful convergence to check for Safe Operating Area violations.
@@ -140,8 +147,6 @@ impl<'a> DcSolver<'a> {
     }
 
     pub fn solve(&mut self) -> crate::result::Result<DcAnalysisResult> {
-        let max_iter = self.system.context.max_iter;
-
         let plan = ConvergencePlan::default();
         let max_ms_iter = plan.limits().max_mixed_signal_iter;
         let raw_solution = {
@@ -176,7 +181,18 @@ impl<'a> DcSolver<'a> {
                         break;
                     }
                     // Digital changed — re-solve analog with updated D2A state.
-                    sol = self.solver.solve(&mut self.system, 0.0, max_iter)?;
+                    let strategy = crate::solver::convergence::DampedNewton;
+                    let policy = crate::solver::Policy::default();
+                    let tolerances = self.system.context.tolerances;
+                    let netlist = self.system.circuit.netlist() as *const crate::analog::Netlist;
+                    let netlist: &crate::analog::Netlist = unsafe { &*netlist };
+                    sol = self.solver.solve_with_strategy(
+                        &mut self.system,
+                        &strategy,
+                        &tolerances,
+                        &policy,
+                        netlist,
+                    )?;
                 }
             }
             sol
@@ -202,8 +218,21 @@ impl<'a> DcSolver<'a> {
 
 impl HomotopyDriver for DcSolver<'_> {
     fn newton(&mut self) -> crate::result::Result<ndarray::Array1<f64>> {
-        let max_iter = self.system.context.max_iter;
-        self.solver.solve(&mut self.system, 0.0, max_iter)
+        let strategy = crate::solver::convergence::DampedNewton;
+        let policy = crate::solver::Policy::default();
+        let tolerances = self.system.context.tolerances;
+        // Extract netlist ref before &mut self.system — Netlist is not Clone.
+        // SAFETY: the netlist is structurally stable during Newton iteration
+        // (devices stamp into it, but they don't create/destroy unknowns).
+        let netlist = self.system.circuit.netlist() as *const crate::analog::Netlist;
+        let netlist: &crate::analog::Netlist = unsafe { &*netlist };
+        self.solver.solve_with_strategy(
+            &mut self.system,
+            &strategy,
+            &tolerances,
+            &policy,
+            netlist,
+        )
     }
 
     fn set_gmin_extra(&mut self, g: f64) {
@@ -215,6 +244,6 @@ impl HomotopyDriver for DcSolver<'_> {
     }
 
     fn gmin_floor(&self) -> f64 {
-        self.system.context.gmin.max(1e-12)
+        self.system.context.tolerances.gmin.max(1e-12)
     }
 }

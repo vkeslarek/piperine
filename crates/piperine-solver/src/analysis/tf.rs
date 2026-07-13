@@ -91,3 +91,9 @@ impl std::fmt::Display for TransferType {
         }
     }
 }
+
+/// Per-analysis config for TF. Thin wrapper over the analysis options.
+#[derive(Debug, Clone)]
+pub struct TfContext {
+    pub options: TransferFunctionAnalysisOptions,
+}

@@ -23,17 +23,21 @@ pub struct SolverConfig {
     pub abstol: f64,
     pub gmin: f64,
     pub max_iter: usize,
+    pub dc_damp_tolerance: f64,
+    pub time: f64,
 }
 
 impl Default for SolverConfig {
     fn default() -> Self {
         let ctx = Context::default();
         Self {
-            temperature: ctx.temperature,
-            reltol: ctx.reltol,
-            abstol: ctx.abstol,
-            gmin: ctx.gmin,
+            temperature: ctx.tolerances.temperature,
+            reltol: ctx.tolerances.reltol,
+            abstol: ctx.tolerances.abstol,
+            gmin: ctx.tolerances.gmin,
             max_iter: ctx.max_iter,
+            dc_damp_tolerance: ctx.dc_damp_tolerance,
+            time: ctx.time,
         }
     }
 }
@@ -41,12 +45,16 @@ impl Default for SolverConfig {
 impl SolverConfig {
     fn to_context(&self) -> Context {
         Context {
-            temperature: self.temperature,
-            reltol: self.reltol,
-            abstol: self.abstol,
-            gmin: self.gmin,
+            tolerances: piperine_solver::solver::Tolerances {
+                temperature: self.temperature,
+                reltol: self.reltol,
+                abstol: self.abstol,
+                gmin: self.gmin,
+                ..Default::default()
+            },
             max_iter: self.max_iter,
-            ..Context::default()
+            dc_damp_tolerance: self.dc_damp_tolerance,
+            time: self.time,
         }
     }
 }

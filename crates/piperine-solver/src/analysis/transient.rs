@@ -109,6 +109,32 @@ impl TransientAnalysisOptions {
     }
 }
 
+/// Per-analysis config for transient. Built from
+/// [`TransientAnalysisOptions`] via `From`. Carries the tunables that
+/// used to be on the global `Context` (MD-03).
+#[derive(Debug, Clone)]
+pub struct TransientContext {
+    pub dt: f64,
+    pub dt_min: f64,
+    pub dt_max: f64,
+    pub adaptive: bool,
+    pub record_from: f64,
+    pub stop_time: f64,
+}
+
+impl From<TransientAnalysisOptions> for TransientContext {
+    fn from(opts: TransientAnalysisOptions) -> Self {
+        Self {
+            dt: opts.dt,
+            dt_min: opts.dt_min,
+            dt_max: opts.dt_max,
+            adaptive: opts.adaptive,
+            record_from: opts.record_from,
+            stop_time: opts.stop_time,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct TransientAnalysisContext {
     pub time: Second,

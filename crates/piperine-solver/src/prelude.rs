@@ -28,9 +28,12 @@ pub use crate::analysis::tf::TransferFunctionAnalysisOptions;
 pub use crate::analysis::transient::TransientAnalysisOptions;
 pub use crate::math::integration::IntegrationMethod;
 pub use crate::solver::Context;
+pub use crate::solver::{Policy, Tolerances};
 
 // ── Convergence policy (opt-in customization) ──────────────────────────────
-pub use crate::solver::convergence::{ConvergencePlan, HomotopyStrategy};
+pub use crate::solver::convergence::{
+    ConvergencePlan, DampedNewton, HomotopyStrategy, LteStepper, NewtonStrategy, StepperStrategy,
+};
 
 // ── Results ────────────────────────────────────────────────────────────────
 pub use crate::analysis::ac::{AcAnalysisResult, AcAnalysisStep};

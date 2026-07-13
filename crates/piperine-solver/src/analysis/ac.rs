@@ -134,3 +134,9 @@ impl AcAnalysisStep {
         self.values.get(var)
     }
 }
+
+/// Per-analysis config for AC. Thin wrapper over the sweep options.
+#[derive(Debug, Clone)]
+pub struct AcContext {
+    pub sweep: AcSweepAnalysisOptions,
+}

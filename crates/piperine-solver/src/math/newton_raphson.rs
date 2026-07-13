@@ -3,6 +3,8 @@ use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::{InitialValue, InitialValueApplyExt};
 use crate::math::linear::{AsIndex, Stamp, SymbolicLinearSystem, SymbolicMatrix};
 use crate::math::num::Scalar;
+use crate::solver::convergence::NewtonStrategy;
+use crate::solver::{Policy, Tolerances};
 use ndarray::{Array1, ArrayView1, ArrayViewMut1};
 use tracing::debug;
 
@@ -51,6 +53,12 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
         _state: &CircularArrayBuffer2<E>,
         _converged_guess: &ArrayView1<E>,
     ) {
+    }
+
+    /// Whether any device in this system reports active limiting. The
+    /// Newton strategy calls this each iteration as part of convergence.
+    fn any_limiting(&self) -> bool {
+        false
     }
 }
 
@@ -194,5 +202,116 @@ where
 
     pub fn state(&self) -> &CircularArrayBuffer2<E> {
         &self.state
+    }
+}
+
+// ── f64-only path: NewtonStrategy integration ──────────────────────────────
+
+impl<A, L> NewtonRaphsonSolver<A, f64, L>
+where
+    A: AsIndex,
+    L: SymbolicLinearSystem<f64>,
+{
+    /// Newton solve with damping and convergence delegated to a
+    /// [`NewtonStrategy`]. The DC and transient drivers call this; AC/Noise/TF
+    /// (Complex) continue to use the generic [`solve`] path.
+    pub fn solve_with_strategy(
+        &mut self,
+        system: &mut dyn NonLinearSystem<A, f64>,
+        strategy: &dyn NewtonStrategy,
+        tolerances: &Tolerances,
+        policy: &Policy,
+        netlist: &crate::analog::Netlist,
+    ) -> crate::result::Result<Array1<f64>> {
+        let guess = if let Some(prev) = self.state.latest() {
+            prev.to_owned()
+        } else {
+            Array1::zeros(self.state.size())
+        };
+        self.state.push(&guess.view());
+
+        system.update_sources(&mut self.state);
+
+        let max_iter = strategy.max_iter(policy);
+
+        for iter in 0..max_iter {
+            system.before_iter_callback(&self.state, iter);
+            debug!("Newton Iteration {}", iter + 1);
+
+            let stamps = system.assemble(&self.state, 0.0)?;
+
+            let size = self.symbolic.size();
+            let mut residual = vec![0.0_f64; size];
+            let mut scale = vec![0.0_f64; size];
+            if let Some(v_old) = self.state.latest() {
+                for stamp in &stamps {
+                    match stamp {
+                        Stamp::Matrix(r, c, g) => {
+                            if let (Some(ri), Some(ci)) = (r.as_index(), c.as_index()) {
+                                let term = *g * v_old[ci];
+                                residual[ri] += term;
+                                scale[ri] += term.abs();
+                            }
+                        }
+                        Stamp::Rhs(r, val) => {
+                            if let Some(ri) = r.as_index() {
+                                residual[ri] -= *val;
+                                scale[ri] += val.abs();
+                            }
+                        }
+                    }
+                }
+            }
+
+            self.linear_system = L::new(self.symbolic.size());
+            self.linear_system.apply_stamps(stamps);
+            let mut current_guess = self.linear_system.solve_with_backend(&self.symbolic)?;
+
+            if current_guess.iter().any(|x| !x.is_finite()) {
+                system.convergence_failed_callback(&self.state, iter, &current_guess.view());
+                return Err(Error::simple(
+                    crate::error::SolverDomain::Newton,
+                    "Linear solver returned NaN/Inf",
+                ));
+            }
+
+            debug!("New guess: {:?}", current_guess);
+
+            // Damping via strategy (replaces system.apply_limit)
+            if let Some(prev) = self.state.latest() {
+                strategy.damp_update(prev, current_guess.view_mut(), policy);
+            }
+
+            // Device limiting gate: the strategy checks update+residual;
+            // limiting_active is a system-level check done per iteration.
+            if !system.any_limiting()
+                && strategy.is_converged(
+                    &self.state,
+                    &current_guess.view(),
+                    &residual,
+                    &scale,
+                    netlist,
+                    tolerances,
+                ) {
+                self.state
+                    .latest_mut()
+                    .unwrap()
+                    .assign(&current_guess.view());
+                system.convergence_success_callback(&self.state, &current_guess.view());
+                debug!("Converged in {} iterations", iter + 1);
+                return Ok(current_guess);
+            }
+
+            self.state
+                .latest_mut()
+                .unwrap()
+                .assign(&current_guess.view());
+        }
+
+        system.convergence_failed_callback(&self.state, max_iter, &self.state.latest().unwrap());
+        Err(Error::simple(
+            crate::error::SolverDomain::Newton,
+            format!("Failed to converge after {} iterations", max_iter),
+        ))
     }
 }

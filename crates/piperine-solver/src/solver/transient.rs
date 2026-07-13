@@ -9,6 +9,7 @@ use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::iv::InitialValue;
 use crate::math::linear::{AsIndex, Stamp};
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
+use crate::solver::convergence::StepperStrategy;
 use crate::solver::dc::DcSolver;
 use crate::solver::Context;
 use log::debug;
@@ -36,8 +37,8 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         // Gear ramps order 1 → 2 as history accumulates: the first accepted
         // step has no `t_{n-2}` for BDF2, so it uses backward-Euler. Trapezoidal
         // is order-2 always and ignores `dt_prev` (its formula is two-point).
-        let nominal_order = self.context.integration.order();
-        let order = match self.context.integration {
+        let nominal_order = self.context.tolerances.integration.order();
+        let order = match self.context.tolerances.integration {
             crate::math::integration::IntegrationMethod::Trapezoidal => 2,
             crate::math::integration::IntegrationMethod::Gear { order: go } => {
                 if self.step_index >= 2 && self.dt_prev > 0.0 {
@@ -53,7 +54,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
             tfinal: self.tfinal,
             dt_prev: self.dt_prev,
             order,
-            integration: self.context.integration,
+            integration: self.context.tolerances.integration,
         };
 
         let mut all_stamps = Vec::new();
@@ -70,11 +71,15 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
 
     fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
         let netlist = self.circuit.netlist();
-        super::check_convergence(&self.circuit.devices, state, new_guess, &self.context, netlist)
+        { if self.circuit.devices.iter().any(|d| d.limiting_active()) { return false; } self.context.tolerances.has_converged(state.view(0), new_guess, netlist) }
     }
 
     fn residual_converged(&self, residual: &[f64], scale: &[f64]) -> bool {
-        super::residual_converged(self.circuit.netlist(), &self.context, residual, scale)
+        self.context.tolerances.residual_test(self.circuit.netlist(), residual, scale)
+    }
+
+    fn any_limiting(&self) -> bool {
+        self.circuit.devices.iter().any(|d| d.limiting_active())
     }
 
     fn apply_limit(
@@ -82,7 +87,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         state: &CircularArrayBuffer2<f64>,
         current_guess: ArrayViewMut1<f64>,
     ) {
-        super::apply_damping(state, current_guess, self.context.dc_damp_tolerance);
+        crate::solver::Policy::default().damp_update(state, current_guess);
     }
 
     fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<f64>) {}
@@ -202,8 +207,18 @@ impl<'a> TransientSolver<'a> {
             current_time, dt
         );
 
-        let max_iter = self.system.context.max_iter;
-        let result = self.solver.solve(&mut self.system, 1.0 / dt, max_iter);
+        let strategy = crate::solver::convergence::DampedNewton;
+        let policy = crate::solver::Policy::default();
+        let tolerances = self.system.context.tolerances;
+        let netlist = self.system.circuit.netlist() as *const crate::analog::Netlist;
+        let netlist: &crate::analog::Netlist = unsafe { &*netlist };
+        let result = self.solver.solve_with_strategy(
+            &mut self.system,
+            &strategy,
+            &tolerances,
+            &policy,
+            netlist,
+        );
 
         result.map(|_| Some(self.snapshot(current_time)))
     }
@@ -213,7 +228,6 @@ impl<'a> TransientSolver<'a> {
         let record_from: f64 = self.options.record_from;
         let mut dt: f64 = self.options.dt;
         let dt_min = self.options.dt_min;
-        let dt_max = self.options.dt_max;
 
         let initial_snapshot = self.compute_initial_conditions()?;
         let mut steps = Vec::new();
@@ -267,39 +281,23 @@ impl<'a> TransientSolver<'a> {
                 self.system.step_index += 1;
                 current_time = t_next;
 
-                // LTE-driven timestep selection. After each accepted step,
-                // ask every reactive element for an LTE-based maximum dt and
-                // take the strictest. If no element contributes, grow 2×.
-                // The solver's state buffer is reused directly — no allocation
-                // on this hot path (the buffer is already sized for the circuit).
-                let method = self.system.context.integration;
-                let time_history = [dt_actual, self.system.dt_prev];
-                let tran_state = TransientAnalysisState::new(self.solver.state(), &[]);
-                let mut lte_dt = dt_max;
-                let mut any_lte = false;
-                for dev in &self.system.circuit.devices {
-                    if let Some(sug) = dev.suggest_transient_step(
-                        &tran_state,
-                        &time_history,
-                        method,
-                        &self.system.context,
-                    ) {
-                        if sug > 0.0 && sug < lte_dt {
-                            lte_dt = sug;
-                            any_lte = true;
-                        }
-                    }
-                }
-                if any_lte {
-                    dt = lte_dt.clamp(dt_min, dt_max);
-                } else {
-                    // No LTE hooks — fall back to the classic 2× growth.
-                    dt = (dt_proposed * 2.0).clamp(dt_min, dt_max);
-                }
+                // LTE-driven timestep via StepperStrategy (MD-05).
+                let stepper = crate::solver::convergence::LteStepper;
+                dt = stepper.propose_dt(
+                    current_time,
+                    dt_actual,
+                    dt_proposed,
+                    self.system.dt_prev,
+                    &self.system.circuit,
+                    self.solver.state(),
+                    &self.system.context.tolerances,
+                    &self.options,
+                );
             } else {
                 // Rollback and retry with smaller step
                 self.system.circuit.digital_state.rollback();
-                dt = (dt_proposed * 0.5).max(dt_min);
+                let stepper = crate::solver::convergence::LteStepper;
+                dt = stepper.reject_dt(dt_proposed, &self.options);
                 
                 if dt <= dt_min && let Err(e) = analog_result {
                     return Err(e);
