@@ -45,6 +45,51 @@ nodes (they are).
 
 ## Codegen / solver
 
+### Epic: TR-BDF2 Transient Integration Engine with PI Timestep Controller
+
+**Architecture:** TR-BDF2 (Trapezoidal Rule / Backward Differentiation Formula 2) with a
+Proportional-Integral (PI) timestep controller.
+
+**Goal:** Guarantee unbreakable convergence on stiff non-linear circuits and switched
+circuits, without backtracking or complex integration-method switching heuristics.
+
+**Why this architecture:**
+
+- **Trapezoidal ringing immunity.** The BDF-2 stage at the end of every step acts as a
+  native low-pass filter, guaranteeing $L$-stability. The simulator cannot produce false
+  numerical ringing on fast digital nodes.
+- **Goodbye "timestep too small".** PI controller damping avoids the reactive behaviour of
+  classic SPICE, keeping $\Delta t$ fluid and maximizing step size.
+- **Zero backtracking.** Problems are solved by moving forward. This drastically reduces
+  Rust borrow-checker complexity since there is no need to restore past matrix state.
+
+**Execution pipeline (main loop):**
+
+1. **Phase 1 — Trapezoidal (TR).** The simulator advances time by $\gamma \cdot h$ (where
+   $\gamma = 2 - \sqrt{2}$). The engine evaluates stamps (LHS and RHS), faer performs LU
+   factorization, and Newton-Raphson solves for the intermediate point $x_{n+\gamma}$.
+2. **Phase 2 — BDF-2 (Gear).** Advance the remaining time $(1 - \gamma) \cdot h$. The LHS
+   is filtered/reused from the previous phase. The RHS history is updated using $x_n$ and
+   $x_{n+\gamma}$. Newton-Raphson solves for the final timestep state $x_{n+1}$.
+3. **LTE computation.** Milne's device is used. The Local Truncation Error is obtained by
+   subtracting the final state $x_{n+1}$ from a simple predictor (extrapolation of $x_n$
+   and $x_{n+\gamma}$). Computational cost is near-zero.
+4. **PI controller (next step).** The error is normalized by tolerance (RELTOL). The
+   algorithm applies integral and proportional gains based on the current error and the
+   past error to compute the next timestep smoothly, without aggressive jumps.
+
+**Deliverables:**
+- `math/integration.rs`: TR-BDF2 companion-coefficient formula alongside the existing
+  Trapezoidal and Gear/BDF variants.
+- `solver/transient.rs`: two-phase step with intermediate point, Milne LTE estimate, and
+  PI controller replacing the current LTE stepper.
+- `codegen/device/analog.rs`: kernel evaluation for both TR and BDF-2 phases (LHS reuse
+  across phases).
+- Tests: stiff ODE validation case (e.g., van der Pol oscillator), switched-circuit case
+  (PWM + RC filter), comparison of PI vs current LTE stepper on step-count.
+
+
+
 - **Newton convergence checks only the voltage step, not the current residual — HIGH
   PRIORITY (found 2026-07-12 by the ngspice cross-validation harness).**
   `Context::has_converged` (`piperine-solver/src/solver/mod.rs`) accepts convergence when
