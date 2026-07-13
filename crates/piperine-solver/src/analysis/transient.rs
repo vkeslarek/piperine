@@ -1,16 +1,44 @@
 use crate::analog::{
     BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier,
 };
+use crate::core::net::Net;
+use crate::digital::LogicValue;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::InitialValue;
 use crate::math::linear::Stamp;
 use crate::math::unit::Second;
 use crate::solver::Context;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::slice::Iter;
 use std::sync::Arc;
 
-pub type TransientAnalysisState = CircularArrayBuffer2<f64>;
+/// The read-only state an element sees while stamping the transient system: the
+/// analog solution history **and** the digital net snapshot it may read (D2A,
+/// no device-side cache). Derefs to the analog history buffer.
+pub struct TransientAnalysisState<'a> {
+    history: &'a CircularArrayBuffer2<f64>,
+    /// Every digital net's logic value for this step, indexed by `DigitalNet`.
+    pub digital: &'a [LogicValue],
+}
+
+impl<'a> TransientAnalysisState<'a> {
+    pub fn new(history: &'a CircularArrayBuffer2<f64>, digital: &'a [LogicValue]) -> Self {
+        Self { history, digital }
+    }
+
+    /// The analog solution history buffer.
+    pub fn history(&self) -> &CircularArrayBuffer2<f64> {
+        self.history
+    }
+}
+
+impl Deref for TransientAnalysisState<'_> {
+    type Target = CircularArrayBuffer2<f64>;
+    fn deref(&self) -> &Self::Target {
+        self.history
+    }
+}
 
 #[derive(Clone)]
 pub struct TransientAnalysisOptions {
@@ -81,24 +109,61 @@ impl TransientAnalysisOptions {
     }
 }
 
-#[derive(Clone)]
+/// Per-analysis config for transient. Built from
+/// [`TransientAnalysisOptions`] via `From`. Carries the tunables that
+/// used to be on the global `Context` (MD-03).
+#[derive(Debug, Clone)]
+pub struct TransientContext {
+    pub dt: f64,
+    pub dt_min: f64,
+    pub dt_max: f64,
+    pub adaptive: bool,
+    pub record_from: f64,
+    pub stop_time: f64,
+}
+
+impl From<TransientAnalysisOptions> for TransientContext {
+    fn from(opts: TransientAnalysisOptions) -> Self {
+        Self {
+            dt: opts.dt,
+            dt_min: opts.dt_min,
+            dt_max: opts.dt_max,
+            adaptive: opts.adaptive,
+            record_from: opts.record_from,
+            stop_time: opts.stop_time,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct TransientAnalysisContext {
     pub time: Second,
     pub dt: Second,
     pub tfinal: Second,
+    /// Previous accepted step size (`t_{n-1} − t_{n-2}`), for the non-uniform
+    /// BDF2 (Gear) coefficients. 0 on the first step.
+    pub dt_prev: Second,
+    /// Integration order actually usable this step: 1 until enough history has
+    /// accumulated (first step), then the method's order.
+    pub order: usize,
+    /// Integration method in use (Trapezoidal or Gear `{ order }`). The
+    /// kernel calls [`IntegrationMethod::coeffs`] to obtain `(c0, c1, c2)`
+    /// for the reactive companion; this field is the single source of truth
+    /// instead of a hard-coded BDF formula.
+    pub integration: crate::math::integration::IntegrationMethod,
 }
 
 pub trait TransientAnalysis {
     fn load_transient(
         &mut self,
-        circuit_states: &TransientAnalysisState,
+        circuit_states: &TransientAnalysisState<'_>,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>>;
 
     fn load_transient_dynamic(
         &mut self,
-        _circuit_states: &TransientAnalysisState,
+        _circuit_states: &TransientAnalysisState<'_>,
         _transient_analysis_context: &TransientAnalysisContext,
         _context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
@@ -131,6 +196,10 @@ impl TransientAnalysisResult {
 
     pub fn len(&self) -> usize {
         self.values.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
     }
 
     pub fn get(&self, index: usize) -> Option<&TransientStep> {
@@ -187,11 +256,57 @@ impl TransientStep {
         self.get(AnalogVariable::Branch(branch_identifier.into()))
     }
 
+    /// Read the analog value by [`Net`] (the unified naming layer). Returns
+    /// `None` for digital and pseudo nets.
+    pub fn get_net(&self, net: &Net) -> Option<f64> {
+        let var = net.analog_variable()?;
+        self.values.get(var).copied()
+    }
+
+    /// Read the digital logic value by [`Net`]. Returns `None` for analog
+    /// and pseudo nets, or for digital nets that were not recorded this
+    /// step.
+    pub fn digital_net(&self, net: &Net) -> Option<LogicValue> {
+        if !matches!(net.kind(), crate::core::net::NetKind::Digital) {
+            return None;
+        }
+        let idx = net.dense()?;
+        self.digital.get(idx).copied()
+    }
+
     pub fn values(&self) -> &HashMap<Arc<AnalogVariable>, f64> {
         &self.values
     }
 
     pub fn time(&self) -> f64 {
         self.time
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
+    use std::sync::Arc;
+
+    #[test]
+    fn transient_step_lookup_by_net_returns_analog_and_digital_values() {
+        let var: Arc<AnalogVariable> = Arc::new(AnalogVariable::Node(NodeIdentifier::Anonymous(0)));
+        let mut values = HashMap::new();
+        values.insert(var.clone(), 1.25);
+        let step = TransientStep::new(0.0, values).with_digital(vec![LogicValue::One, LogicValue::Zero]);
+
+        let analog_net: Net = (&AnalogReference::new(var.clone(), 0)).into();
+        assert_eq!(step.get_net(&analog_net), Some(1.25));
+
+        let digital_net = Net::digital(1, "top.clk");
+        assert_eq!(step.digital_net(&digital_net), Some(LogicValue::Zero));
+        assert_eq!(step.digital_net(&Net::digital(0, "d0")), Some(LogicValue::One));
+
+        // Wrong kind returns None — analog_net is not a digital net.
+        assert_eq!(step.digital_net(&analog_net), None);
+
+        // Digital net past the recorded snapshot returns None.
+        assert_eq!(step.digital_net(&Net::digital(99, "x")), None);
     }
 }

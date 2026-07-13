@@ -41,7 +41,7 @@ pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
                 Expr::Index(inner, idx) => {
                     if let Expr::Ident(base_name) = inner.as_ref()
                         && let Expr::Literal(Literal::Int(i)) = idx.as_ref() {
-                            return Some(format!("{base_name}_{i}.{field}"));
+                            return Some(format!("{base_name}[{i}].{field}"));
                         }
                     None
                 }
@@ -55,8 +55,8 @@ pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
 pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut LowerCtx) {
     use piperine_lang::parse::ast::Walk;
     expr.walk(&mut |e| {
-        if let Expr::Call(func, args) = e {
-            if let Expr::Ident(name) = func.as_ref() {
+        if let Expr::Call(func, args) = e
+            && let Expr::Ident(name) = func.as_ref() {
                 match name.as_str() {
                     "white_noise" => {
                         let psd = args.first()
@@ -94,7 +94,6 @@ pub(crate) fn scan_noise(expr: &Expr, plus: NodeId, minus: NodeId, ctx: &mut Low
                     _ => {}
                 }
             }
-        }
         Walk::Continue
     });
 }
@@ -190,7 +189,7 @@ pub(crate) fn resolve_expr(expr: &Expr, ctx: &mut LowerCtx) -> Expr {
                     if let (Expr::Ident(base_name), Expr::Literal(Literal::Int(i))) =
                         (inner.as_ref(), idx.as_ref())
                     {
-                        format!("{base_name}_{i}.{field}")
+                        format!("{base_name}[{i}].{field}")
                     } else {
                         let base_name = expr_to_name(base);
                         format!("{base_name}_{field}")
@@ -224,10 +223,10 @@ pub(crate) fn resolve_expr(expr: &Expr, ctx: &mut LowerCtx) -> Expr {
             });
             Expr::Literal(Literal::Real(0.0))
         }
-        Expr::Lambda { .. } | Expr::Tuple(_) | Expr::MapLit(_) => {
+        Expr::Lambda { .. } | Expr::Tuple(_) | Expr::MapLit(_) | Expr::SetLit(_) => {
             ctx.errors.push(super::LowerError {
                 module: ctx.module_name.clone(),
-                what: "value-layer expression (lambda/tuple/map)",
+                what: "value-layer expression (lambda/tuple/map/set)",
                 name: expr_to_name(expr),
             });
             Expr::Literal(Literal::Real(0.0))
@@ -365,38 +364,77 @@ fn resolve_event_spec(spec: &piperine_lang::parse::ast::EventSpec, ctx: &mut Low
     }
 }
 
+/// Resolve an optional-typed receiver to `(presence param, value expr)`:
+/// a plain optional param, a flattened optional bundle field, or a
+/// `.map(|v| …)` chain over either (the lambda body substitutes the inner
+/// value; presence is untouched — `none.map(f)` is still `none`).
+fn optional_receiver(recv: &Expr, ctx: &mut LowerCtx) -> Option<(String, Expr)> {
+    match recv {
+        Expr::Ident(n) if ctx.params.contains_key(n) => Some((n.clone(), recv.clone())),
+        Expr::Field(base, field) => match base.as_ref() {
+            Expr::Ident(b) => {
+                let flat = format!("{b}_{field}");
+                ctx.params
+                    .contains_key(&flat)
+                    .then(|| (flat.clone(), Expr::Ident(flat)))
+            }
+            _ => None,
+        },
+        Expr::Call(f, args) => match f.as_ref() {
+            Expr::Field(inner, method) if method == "map" && args.len() == 1 => {
+                let Expr::Lambda { params, body } = &args[0] else { return None };
+                if params.len() != 1 {
+                    return None;
+                }
+                let (name, value) = optional_receiver(inner, ctx)?;
+                let mut subst = std::collections::HashMap::new();
+                subst.insert(params[0].clone(), value);
+                Some((name, subst_expr(body, &subst)))
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn resolve_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
     // Method call: recv.method(args)
     if let Expr::Field(recv, method) = func {
-        // Optional-param sugar: `rmodel.get_or(default)` →
-        // `if $param_given("rmodel") { rmodel } else { default }`
-        if method == "get_or" {
-            if let Expr::Ident(name) = recv.as_ref() {
-                if ctx.params.contains_key(name) {
-                    use piperine_lang::parse::ast::{Block, Expr as E, Literal};
-                    let param_given = E::SysCall(
-                        "$param_given".into(),
-                        vec![E::Literal(Literal::String(name.clone()))],
-                    );
-                    let default = resolve_expr(&args[0], ctx);
-                    return E::If {
-                        cond: Box::new(param_given),
-                        then_body: Block { stmts: vec![], expr: Some(Box::new(E::Ident(name.clone()))) },
-                        else_body: Block { stmts: vec![], expr: Some(Box::new(default)) },
-                    };
-                }
-            }
+        // Optional-param sugar (`T?`, SPEC Part I §6.1). The receiver is a
+        // plain param (`rmodel`), a bundle field (`model.rbm` — flattened to
+        // the synthetic param `model_rbm`), or a `.map(|v| …)` chain over
+        // either. Aliases: `is_some`/`unwrap_or` are the prelude names for
+        // the same fold.
+        let optional_recv = optional_receiver(recv, ctx);
+        // `x.get_or(default)` / `x.map(f).get_or(default)` →
+        // `if $param_given("x") { value } else { default }`
+        if (method == "get_or" || method == "unwrap_or")
+            && args.len() == 1
+            && let Some((name, value)) = optional_recv.clone()
+        {
+            use piperine_lang::parse::ast::{Block, Expr as E, Literal};
+            let param_given = E::SysCall(
+                "$param_given".into(),
+                vec![E::Literal(Literal::String(name))],
+            );
+            let value = resolve_expr(&value, ctx);
+            let default = resolve_expr(&args[0], ctx);
+            return E::If {
+                cond: Box::new(param_given),
+                then_body: Block { stmts: vec![], expr: Some(Box::new(value)) },
+                else_body: Block { stmts: vec![], expr: Some(Box::new(default)) },
+            };
         }
-        // `is_present()` on an optional param → `$param_given("name")`
-        if method == "is_present" && args.is_empty() {
-            if let Expr::Ident(name) = recv.as_ref() {
-                if ctx.params.contains_key(name) {
-                    return Expr::SysCall(
-                        "$param_given".into(),
-                        vec![Expr::Literal(Literal::String(name.clone()))],
-                    );
-                }
-            }
+        // `is_present()` on an optional (mapping never changes presence) →
+        // `$param_given("name")`
+        if (method == "is_present" || method == "is_some")
+            && args.is_empty()
+            && let Some((name, _)) = optional_recv
+        {
+            return Expr::SysCall(
+                "$param_given".into(),
+                vec![Expr::Literal(Literal::String(name))],
+            );
         }
 
         // Bundle method call: receiver must be a bundle-typed binding.
@@ -431,8 +469,8 @@ fn resolve_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
             // Skip the `self` position (index 0) which we already filled.
             let sig_i = i + 1;
             match sig.as_ref().and_then(|s| s.get(sig_i)).and_then(|p| p.as_ref()) {
-                Some((_b, flds)) => {
-                    if !lower_bundle_arg(a, flds, &mut full_args, ctx) {
+                Some(flds) => {
+                    if !lower_bundle_arg(a, &flds.fields, &mut full_args, ctx) {
                         ctx.errors.push(super::LowerError {
                             module: ctx.module_name.clone(),
                             what: "bundle-typed argument",
@@ -533,8 +571,8 @@ fn inline_user_fn(fn_id: FnId, name: &str, args: &[Expr], ctx: &mut LowerCtx, al
         let mut collected: Vec<Expr> = Vec::new();
         for (i, arg) in args.iter().enumerate() {
             match sig.as_ref().and_then(|s| s.get(i)).and_then(|p| p.as_ref()) {
-                Some((_bundle, fields)) => {
-                    if !lower_bundle_arg(arg, fields, &mut collected, ctx) {
+                Some(flds) => {
+                    if !lower_bundle_arg(arg, &flds.fields, &mut collected, ctx) {
                         ctx.errors.push(super::LowerError {
                             module: ctx.module_name.clone(),
                             what: "bundle-typed argument",

@@ -30,7 +30,7 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
                                 kind = Some((7, 0)); // TYPE
                             } else if design.function(word).is_some() {
                                 kind = Some((4, 0)); // FUNCTION
-                            } else if let Some(_) = design.enum_value_map().get(word) {
+                            } else if design.enum_value_map().contains_key(word) {
                                 kind = Some((6, 0)); // ENUM_MEMBER
                             } else {
                                 // Global search

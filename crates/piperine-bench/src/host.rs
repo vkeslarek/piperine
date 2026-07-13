@@ -12,19 +12,18 @@ use piperine_lang::parse::ast::Expr;
 
 use crate::objects::{InstanceRef, NetRef, SelectionRef};
 use crate::session::SimSession;
-use crate::tasks::SimTaskRegistry;
+use crate::tasks::{BenchCtx, BenchTaskRegistry};
 
-const GROUND_NAMES: &[&str] = &["gnd", "GND", "vss", "VSS"];
 
 pub struct SimHost {
     session: SimSession,
     tasks: TaskRegistry,
-    sim_tasks: SimTaskRegistry,
+    bench_tasks: BenchTaskRegistry,
 }
 
 impl SimHost {
     pub fn new(session: SimSession) -> Self {
-        Self { session, tasks: TaskRegistry::with_builtins(), sim_tasks: SimTaskRegistry::with_builtins() }
+        Self { session, tasks: TaskRegistry::with_builtins(), bench_tasks: BenchTaskRegistry::with_builtins() }
     }
 
     pub fn session(&self) -> &SimSession {
@@ -121,7 +120,7 @@ impl Host for SimHost {
         if let Some(bundle_name) = name.strip_prefix("bundle:") {
             return self.bundle_defaults(bundle_name);
         }
-        if GROUND_NAMES.contains(&name) {
+        if piperine_lang::pom::is_ground(name) {
             return Some(Value::Object(Rc::new(NetRef { name: "gnd".to_string() })));
         }
         let module = self.session.design().module(self.session.module())?;
@@ -205,8 +204,13 @@ impl Host for SimHost {
     }
 
     fn syscall(&mut self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
-        if let Some(task) = self.sim_tasks.lookup(name) {
-            return task.run(args, &self.session);
+        if let Some(task) = self.bench_tasks.lookup(name) {
+            return task.run(args, &mut BenchCtx::new(&self.session));
+        }
+        // Plugin-contributed bench tasks (SPEC Part VI §6) — the elaboration
+        // gate already vetted the name against the host's contributions.
+        if let Some(result) = self.session.plugin_task(name, args.clone()) {
+            return result;
         }
         dispatch_pure(&self.tasks, name, args)
             .unwrap_or_else(|| Err(EvalError::TaskUnavailable { name: name.to_string(), context: self.context_name() }))
@@ -291,11 +295,8 @@ impl SimHost {
                 params.push(snap);
             }
         }
-        if labels.is_empty() {
-            return Err(EvalError::Host(format!(
-                "select(\"{path}\") matched no instances"
-            )));
-        }
+        // An empty selection is valid (not an error) — the spec says results
+        // may be empty; callers use `.len()` or `.one()` to handle it.
         Ok(Value::Object(Rc::new(SelectionRef::new(labels, params))))
     }
 

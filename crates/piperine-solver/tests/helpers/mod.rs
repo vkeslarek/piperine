@@ -1,4 +1,4 @@
-use piperine_solver::core::device::{Device, DigitalDevice};
+use piperine_solver::core::element::{Element, ElementCapabilities};
 use piperine_solver::digital::{LogicValue, DigitalNet};
 use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink};
 
@@ -55,13 +55,9 @@ impl D2ADevice {
     }
 }
 
-impl Device for D2ADevice {
-    fn device_name(&self) -> &str { "d2a" }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
-}
-
-impl DigitalDevice for D2ADevice {
+impl Element for D2ADevice {
+    fn name(&self) -> &str { "d2a" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts {
             inputs: std::slice::from_ref(&self.input_net),

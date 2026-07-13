@@ -18,6 +18,7 @@
 pub mod error;
 pub mod host;
 pub mod objects;
+pub mod plugins;
 pub mod runner;
 pub mod session;
 pub mod tasks;
@@ -25,6 +26,7 @@ pub mod waveform;
 
 pub use error::BenchError;
 pub use objects::{InstanceRef, NetRef, OpResult};
+pub use plugins::BenchPlugins;
 pub use runner::{BenchOutcome, BenchReport, BenchResult, BenchRunner};
 pub use session::{SimSession, SolverConfig};
 pub use waveform::{AcTrace, ComplexWaveform, NoiseTrace, Trace, Waveform};

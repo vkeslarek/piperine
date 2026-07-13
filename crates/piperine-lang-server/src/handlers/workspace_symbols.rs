@@ -28,8 +28,8 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
                     _ => continue,
                 };
 
-                if query.is_empty() || name.to_lowercase().contains(&query) {
-                    if let Some(span) = span {
+                if (query.is_empty() || name.to_lowercase().contains(&query))
+                    && let Some(span) = span {
                         result.push(SymbolInformation {
                             name: name.clone(),
                             kind,
@@ -42,7 +42,6 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
                             container_name: None,
                         });
                     }
-                }
             }
         }
     }

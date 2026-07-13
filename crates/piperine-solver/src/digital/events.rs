@@ -77,8 +77,8 @@ impl Ord for DigitalEvent {
 mod tests {
     use super::*;
     use crate::digital::scheduler::DigitalState;
-    use crate::digital::interface::{DigitalDevice, DigitalPorts, EvalCtx, EventSink};
-    use crate::core::device::Device;
+    use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink};
+    use crate::core::element::{Element, ElementCapabilities};
     use std::cmp::Reverse;
 
     #[allow(dead_code)]
@@ -89,13 +89,10 @@ mod tests {
         delay: f64,
     }
 
-    impl Device for MockInverter {
-        fn device_name(&self) -> &str { "mock_inverter" }
-        fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
-        fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
-    }
+    impl Element for MockInverter {
+        fn name(&self) -> &str { "mock_inverter" }
+        fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
 
-    impl DigitalDevice for MockInverter {
         fn boundary(&self) -> DigitalPorts<'_> {
             DigitalPorts {
                 inputs: std::slice::from_ref(&self.input),
@@ -137,12 +134,12 @@ mod tests {
             seq: 0,
         });
 
-        let mut devices: Vec<Box<dyn Device>> = vec![
+        let mut devices: Vec<Box<dyn Element>> = vec![
             Box::new(MockInverter { id: 0, input: DigitalNet(0), output: DigitalNet(1), delay: 0.0 }),
             Box::new(MockInverter { id: 1, input: DigitalNet(1), output: DigitalNet(2), delay: 0.0 }),
             Box::new(MockInverter { id: 2, input: DigitalNet(2), output: DigitalNet(3), delay: 0.0 }),
         ];
-        state.evaluate_until_stable(1.0, &mut devices);
+        state.evaluate_until_stable(1.0, &mut devices, Default::default(), &[]).unwrap();
 
         assert_eq!(state.nets[0], LogicValue::Zero);
         assert_eq!(state.nets[1], LogicValue::One);
@@ -193,5 +190,25 @@ mod tests {
             (5.0, LogicValue::Z),
             (5.0, LogicValue::One),
         ]);
+    }
+
+    #[test]
+    fn digital_state_carries_source_labels_or_anonymous_fallback() {
+        let mut state = DigitalState::new(3);
+
+        // No labels attached — defaults to d{idx}.
+        assert_eq!(state.label_or_default(DigitalNet(0)), "d0");
+        assert_eq!(state.label_or_default(DigitalNet(2)), "d2");
+
+        // Attach a hierarchical source label and verify it survives a checkpoint
+        // round-trip — used by result mappers and diagnostics.
+        state.set_label(DigitalNet(1), "top.u1.clk");
+        assert_eq!(state.label_or_default(DigitalNet(1)), "top.u1.clk");
+
+        state.checkpoint();
+        state.set_label(DigitalNet(1), "scratch");
+        assert_eq!(state.label_or_default(DigitalNet(1)), "scratch");
+        state.rollback();
+        assert_eq!(state.label_or_default(DigitalNet(1)), "top.u1.clk");
     }
 }

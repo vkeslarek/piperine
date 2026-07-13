@@ -7,11 +7,43 @@
 use std::collections::HashMap;
 
 use crate::elab::const_eval::ConstEnv;
-use crate::parse::ast::{BehaviorDecl, BehaviorKind, ForIter, Stmt};
+use crate::parse::ast::{BehaviorDecl, BehaviorKind, Expr, ForIter, Literal, Stmt};
 use crate::pom::{Behavior, ElabError, ElabErrorKind, ValueType};
 use crate::value::Value;
 
 use super::Elaborator;
+
+/// Infer a `ValueType` from an initializer expression. Supports literals
+/// (Real, Int, Bool, Quad) and identifier references (looks up the
+/// already-resolved `var_types` from preceding declarations).
+fn infer_value_type(expr: &Expr, var_types: &HashMap<String, ValueType>) -> Option<ValueType> {
+    match expr {
+        Expr::Literal(Literal::Real(_)) => Some(ValueType::Real),
+        Expr::Literal(Literal::Int(_)) => Some(ValueType::Natural),
+        Expr::Literal(Literal::Bool(_)) => Some(ValueType::Boolean),
+        Expr::Literal(Literal::Quad(_)) => Some(ValueType::Quad),
+        Expr::Literal(Literal::String(_)) => Some(ValueType::Str),
+        Expr::Ident(name) => var_types.get(name).cloned(),
+        Expr::Cast(target, _) => match target.as_str() {
+            "real" => Some(ValueType::Real),
+            "int" => Some(ValueType::Integer),
+            "bit" | "Quad" => Some(ValueType::Quad),
+            _ => None,
+        },
+        // Binary arithmetic: result type follows the left operand.
+        Expr::Binary(lhs, op, _) => {
+            use crate::parse::ast::BinaryOp::*;
+            if matches!(op, Add | Sub | Mul | Div | Rem) {
+                infer_value_type(lhs, var_types)
+            } else {
+                // Comparisons and logic produce Boolean.
+                Some(ValueType::Boolean)
+            }
+        }
+        Expr::Unary(_, inner) => infer_value_type(inner, var_types),
+        _ => None,
+    }
+}
 
 impl Elaborator {
     // ────────────────────────── Behavior elaboration ──────────────────────────
@@ -53,16 +85,25 @@ impl Elaborator {
         var_types: &mut HashMap<String, ValueType>,
     ) -> Result<Vec<Stmt>, ElabError> {
         match stmt {
-            Stmt::VarDecl { name, ty, .. } => {
-                // Type inference (an omitted `ty`) is only valid in an
-                // interpreted `bench` body, which never reaches this
-                // statically-elaborated path (SPEC Part I §9).
-                let ty = ty.as_ref().ok_or_else(|| {
-                    ElabError::from(ElabErrorKind::Other(format!(
-                        "`var {name}` needs an explicit type outside a bench (type inference is bench-only)"
-                    )))
-                })?;
-                let vt = self.resolve_value_type(ty, env)?;
+            Stmt::VarDecl { name, ty, default, .. } => {
+                // Type inference: if `ty` is omitted, infer from the
+                // initializer expression. Supports literal inference
+                // (`var x = 0.0;` → Real) and identifier inference
+                // (`var x = other_var;` → type of other_var from
+                // already-resolved var_types).
+                let vt = if let Some(ty) = ty.as_ref() {
+                    self.resolve_value_type(ty, env)?
+                } else if let Some(init) = default.as_ref() {
+                    infer_value_type(init, var_types).ok_or_else(|| ElabError::from(
+                        ElabErrorKind::Other(format!(
+                            "cannot infer type of `var {name}` from initializer — add an explicit type annotation"
+                        ))
+                    ))?
+                } else {
+                    return Err(ElabError::from(ElabErrorKind::Other(format!(
+                        "`var {name}` needs either an explicit type or an initializer to infer from"
+                    ))));
+                };
                 var_types.insert(name.clone(), vt);
                 Ok(vec![stmt.clone()])
             }
@@ -121,17 +162,9 @@ impl Elaborator {
                         .into());
                     }
                 };
-                let start = env.eval_nat(&range.start).map_err(|e| ElabErrorKind::ConstEval {
-                    context: format!("behavioral for-loop start (var `{var}`)"),
-                    source: e,
-                })?;
-                let end_val = env.eval_nat(&range.end).map_err(|e| ElabErrorKind::ConstEval {
-                    context: format!("behavioral for-loop end (var `{var}`)"),
-                    source: e,
-                })?;
-                let end = if range.inclusive { end_val + 1 } else { end_val };
+                let iter = super::eval_range(range, env, &format!("behavioral for-loop (var `{var}`)"))?;
                 let mut out = Vec::new();
-                for i in start..end {
+                for i in iter {
                     env.push();
                     env.define(var.clone(), Value::Nat(i));
                     // Unroll with the loop variable substituted by its

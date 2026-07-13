@@ -1,0 +1,15 @@
+[package]
+name = "piperine-plugin-wasm"
+version.workspace = true
+edition.workspace = true
+description = "Guest-side SDK for Piperine WASM plugins: a thin re-export of piperine_lang::pom::wire"
+
+[dependencies]
+piperine-lang = { version = "0.1.0", path = "../piperine-lang" }
+
+# The rc-parasitics gate plugin (Plugin plan Phase 4), built with
+# `cargo build -p piperine-plugin-wasm --example wasm_parasitics
+#  --target wasm32-unknown-unknown`.
+[[example]]
+name = "wasm_parasitics"
+crate-type = ["cdylib"]

@@ -121,3 +121,19 @@ fn c5_disciplines_are_resolvable() {
     assert!(prog.discipline("Kinematic").is_some());
     assert!(prog.discipline("Thermal").is_some());
 }
+
+// ── POM project node: item provenance (REFACTOR_PLAN Phase 6) ────────────────
+
+#[test]
+fn project_origins_track_item_packages() {
+    let src = r#"
+        use piperine::disciplines;
+        mod Top () { wire n1 : Electrical; }
+    "#;
+    let prog = elab(src).expect("elaborate");
+    // A `use`d stdlib item carries its package; a root item carries none.
+    assert_eq!(prog.project().origin_of("Electrical"), Some("piperine"));
+    assert_eq!(prog.project().origin_of("Top"), None);
+    // Monomorphized names resolve through their base name.
+    assert_eq!(prog.project().origin_of("Top__8"), None);
+}

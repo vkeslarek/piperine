@@ -10,7 +10,7 @@ use crate::pom::{Behavior, ValueType};
 
 // ─────────────────────────────── Attribute ───────────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Attribute {
     pub schema: String,
     pub data: std::collections::HashMap<String, Value>,
@@ -27,8 +27,9 @@ impl Kinded for Attribute { fn kind(&self) -> Kind { Kind::Attribute } }
 // ─────────────────────────────── Port ────────────────────────────────────────
 
 /// A module port — direction, name, and net type.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Port {
+    #[serde(skip)]
     pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
     pub direction: crate::parse::ast::Direction,
@@ -52,8 +53,9 @@ impl Kinded for Port { fn kind(&self) -> Kind { Kind::Port } }
 
 // ─────────────────────────────── Param ───────────────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Param {
+    #[serde(skip)]
     pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
     pub name: String,
@@ -85,8 +87,9 @@ impl Kinded for Param { fn kind(&self) -> Kind { Kind::Param } }
 // ─────────────────────────────── Wire ────────────────────────────────────────
 
 /// A named wire with a net type.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Wire {
+    #[serde(skip)]
     pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
     pub name: String,
@@ -108,8 +111,9 @@ impl Kinded for Wire { fn kind(&self) -> Kind { Kind::Wire } }
 // ─────────────────────────────── Instance ────────────────────────────────────
 
 /// A submodule instance — label, module name, port bindings, and params.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Instance {
+    #[serde(skip)]
     pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
     pub label: Option<String>,
@@ -144,8 +148,9 @@ impl Kinded for Instance { fn kind(&self) -> Kind { Kind::Instance } }
 /// `analog`/`digital` block (which is inlined at lowering time), a
 /// module-level `var` survives across evaluations — it is the PHDL
 /// equivalent of a C `static` local, used for things like hysteresis state.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Var {
+    #[serde(skip)]
     pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
     pub name: String,
@@ -166,8 +171,9 @@ impl Kinded for Var { fn kind(&self) -> Kind { Kind::Var } }
 // ─────────────────────────────── Connection ──────────────────────────────────
 
 /// A named connection between two net references.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Connection {
+    #[serde(skip)]
     pub span: Option<miette::SourceSpan>,
     pub lhs: NetRef,
     pub rhs: NetRef,
@@ -182,21 +188,23 @@ impl Connection {
 
 // ─────────────────────────────── Module ──────────────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Module {
+    #[serde(skip)]
     pub span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
     pub name: String,
     pub ports: Vec<Port>,
     pub params: Vec<Param>,
     pub wires: Vec<Wire>,
-    /// Module-level persistent variables (GAPS §I.15). Empty unless the
-    /// `mod` body declares `var`s directly (as opposed to `var`s inside an
-    /// `analog`/`digital` block, which are local and inlined at lowering).
     pub vars: Vec<Var>,
     pub instances: Vec<Instance>,
     pub connections: Vec<Connection>,
+    /// Behavior bodies are compiled ASTs, not reflection data — they
+    /// do not cross a serialization boundary (SPEC Part IV §7).
+    #[serde(skip)]
     pub behaviors: Vec<Behavior>,
+    pub origin: Option<String>,
 }
 
 impl Module {
@@ -214,7 +222,7 @@ impl Module {
         connections: Vec<Connection>,
         behaviors: Vec<Behavior>,
     ) -> Self {
-        Self { span: None, attributes: Vec::new(), name, ports, params, wires, vars: Vec::new(), instances, connections, behaviors }
+        Self { span: None, attributes: Vec::new(), name, ports, params, wires, vars: Vec::new(), instances, connections, behaviors, origin: None }
     }
 
     /// The module's name.

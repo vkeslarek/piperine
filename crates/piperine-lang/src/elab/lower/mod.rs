@@ -29,30 +29,28 @@ mod mono;
 mod passes;
 mod register;
 mod resolve;
+pub(crate) mod attrs;
 
-pub struct Elaborator {
-    disciplines: HashMap<String, DisciplineDecl>,
-    bundles: HashMap<String, crate::parse::ast::BundleDecl>,
-    enums: HashMap<String, EnumDecl>,
-    module_decls: HashMap<String, ModuleDeclaration>,
-    behavior_decls: Vec<BehaviorDecl>,
-    bench_decls: Vec<BenchDecl>,
-    fn_decls: HashMap<String, FnDecl>,
-    capability_decls: HashMap<String, crate::parse::ast::CapabilityDecl>,
-    impl_decls: Vec<ImplDecl>,
-    const_decls: HashMap<String, crate::parse::ast::ConstDecl>,
-    /// Items handed to `elaborate`, consumed by the `Register` pass.
-    pending_items: Vec<crate::parse::ast::Item>,
-    /// Folded global constants (enum variants + `const` decls), produced
-    /// by the `FoldGlobals` pass and read by `ElabModules`.
-    globals: HashMap<String, crate::value::Value>,
-    ctx: crate::elab::registry::ElabContext,
+/// The symbol table: all registered top-level declarations. Populated by
+/// the `Register` pass, read by every subsequent pass. Separated from the
+/// pipeline state (`items`) and the registries (`ctx`) for clarity.
+pub struct SymbolTable {
+    pub disciplines: HashMap<String, DisciplineDecl>,
+    pub bundles: HashMap<String, crate::parse::ast::BundleDecl>,
+    pub enums: HashMap<String, EnumDecl>,
+    pub module_decls: HashMap<String, ModuleDeclaration>,
+    pub behavior_decls: Vec<BehaviorDecl>,
+    pub bench_decls: Vec<BenchDecl>,
+    pub fn_decls: HashMap<String, FnDecl>,
+    pub capability_decls: HashMap<String, crate::parse::ast::CapabilityDecl>,
+    pub impl_decls: Vec<ImplDecl>,
+    pub const_decls: HashMap<String, crate::parse::ast::ConstDecl>,
+    /// Folded global constants (enum variants + `const` decls).
+    pub globals: HashMap<String, crate::value::Value>,
 }
 
-impl Elaborator {
-    /// Creates a new `Elaborator` with empty symbol tables and a
-    /// default `EventRegistry` pre-populated with built-in events.
-    pub fn new() -> Self {
+impl SymbolTable {
+    fn new() -> Self {
         Self {
             disciplines: HashMap::new(),
             bundles: HashMap::new(),
@@ -64,8 +62,25 @@ impl Elaborator {
             capability_decls: HashMap::new(),
             impl_decls: Vec::new(),
             const_decls: HashMap::new(),
-            pending_items: Vec::new(),
             globals: HashMap::new(),
+        }
+    }
+}
+
+pub struct Elaborator {
+    pub syms: SymbolTable,
+    /// Items handed to `elaborate`, consumed by the `Register` pass.
+    pending_items: Vec<crate::parse::ast::Item>,
+    pub(crate) ctx: crate::elab::registry::ElabContext,
+}
+
+impl Elaborator {
+    /// Creates a new `Elaborator` with empty symbol tables and a
+    /// default `EventRegistry` pre-populated with built-in events.
+    pub fn new() -> Self {
+        Self {
+            syms: SymbolTable::new(),
+            pending_items: Vec::new(),
             ctx: crate::elab::registry::ElabContext::new(),
         }
     }
@@ -75,7 +90,7 @@ impl Elaborator {
     /// zero, continuing after an explicit discriminant (SPEC §6.4).
     fn enum_variant_globals(&self) -> Result<HashMap<String, Value>, ElabError> {
         let mut globals = HashMap::new();
-        for (enum_name, decl) in &self.enums {
+        for (enum_name, decl) in &self.syms.enums {
             let mut next: i64 = 0;
             for variant in &decl.variants {
                 let value = match &variant.value {
@@ -140,5 +155,35 @@ impl crate::elab::registry::components::Instantiator for Elaborator {
 impl Default for Elaborator {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+/// Evaluate a `Range` to a concrete `Range<u64>` at elaboration time.
+pub(crate) fn eval_range(
+    range: &crate::parse::ast::Range,
+    env: &ConstEnv,
+    context: &str,
+) -> Result<std::ops::Range<u64>, ElabError> {
+    let start = env.eval_nat(&range.start).map_err(|e| ElabErrorKind::ConstEval {
+        context: format!("{} start", context),
+        source: e,
+    })?;
+    let end_val = env.eval_nat(&range.end).map_err(|e| ElabErrorKind::ConstEval {
+        context: format!("{} end", context),
+        source: e,
+    })?;
+    let end = if range.inclusive { end_val + 1 } else { end_val };
+    Ok(start..end)
+}
+
+/// Mangle a module name with const args: `Dac` + `[8, 4]` → `Dac__8_4`.
+pub(crate) fn mono_name(base: &str, args: &[u64]) -> String {
+    if args.is_empty() {
+        base.to_string()
+    } else {
+        let suffix: Vec<String> = args.iter().map(|n| n.to_string()).collect();
+        format!("{}__{}", base, suffix.join("_"))
     }
 }

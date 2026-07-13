@@ -12,10 +12,7 @@ pub enum NodeIdentifier {
 
 impl NodeIdentifier {
     pub fn is_ground(&self) -> bool {
-        match self {
-            NodeIdentifier::Gnd => true,
-            _ => false,
-        }
+        matches!(self, NodeIdentifier::Gnd)
     }
 }
 
@@ -89,17 +86,11 @@ impl AnalogVariable {
     }
 
     pub fn is_branch(&self) -> bool {
-        match self {
-            AnalogVariable::Branch(_) => true,
-            _ => false,
-        }
+        matches!(self, AnalogVariable::Branch(_))
     }
 
     pub fn is_node(&self) -> bool {
-        match self {
-            AnalogVariable::Node(_) => true,
-            _ => false,
-        }
+        matches!(self, AnalogVariable::Node(_))
     }
 }
 
@@ -218,6 +209,13 @@ impl Netlist {
 
     pub fn all_references(&self) -> Vec<&AnalogReference> {
         self.circuit_map.left_values().collect()
+    }
+
+    /// Every analog variable as a unified [`Net`](crate::core::net::Net) — the
+    /// public naming layer for result mapping, queries, and diagnostics. Digital
+    /// nets convert through `Net::from(DigitalNet)` at the scheduler boundary.
+    pub fn nets(&self) -> Vec<crate::core::net::Net> {
+        self.circuit_map.left_values().map(Into::into).collect()
     }
 
     pub fn reference_for(&self, variable: &AnalogVariable) -> Option<&AnalogReference> {

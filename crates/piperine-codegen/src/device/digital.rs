@@ -7,7 +7,6 @@ use std::collections::BinaryHeap;
 use std::sync::Arc;
 
 use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
-use piperine_solver::digital::interface::{DigitalDevice, DigitalPorts, EvalCtx, EventSink};
 
 use crate::ir::{EdgeKind, Type};
 use crate::jit::digital::{DigitalAbi, DigitalKernel};
@@ -254,7 +253,7 @@ impl DigitalInstance {
     /// Phase 1 of a two-phase delta cycle: detect clock edges and, if any
     /// clocked block fires, commit register writes using the pre-settle
     /// `nets` snapshot. Never writes output nets — see
-    /// `Device::digital_seq_phase`.
+    /// `Element::digital_seq_phase`.
     pub fn eval_seq_phase(&mut self, t: f64, nets: &[LogicValue], analog_voltages: &[f64]) -> bool {
         self.sim.abstime = t;
         let mut s = std::mem::take(&mut self.scratch);
@@ -310,7 +309,7 @@ impl DigitalInstance {
     /// Phase 2: recompute combinational outputs from live `nets` and the
     /// (possibly just-committed) register banks, emitting change events.
     /// Does not redo edge detection or register writes — see
-    /// `Device::digital_comb_phase`.
+    /// `Element::digital_comb_phase`.
     pub fn eval_comb_phase(
         &mut self,
         t: f64,
@@ -439,42 +438,7 @@ impl DigitalInstance {
     }
 }
 
-/// `DigitalInstance` satisfies the stable digital device contract
-/// ([`DigitalDevice`], the "OSDI for digital"). This is the seam the
-/// scheduler drives: today it calls `seq_phase`/`comb_phase` over a raw
-/// queue; the contract lets a fused JIT network
-/// (`jit/digital/network.rs`) or an external co-sim take the same slot.
-///
-/// Transitional adapter: `comb_phase` runs the existing native path into a
-/// scratch queue and forwards each event through the [`EventSink`], preserving
-/// wire semantics (net/value/relative delay). The follow-up refactors the
-/// native path to emit through the sink directly, dropping the scratch hop.
-impl DigitalDevice for DigitalInstance {
-    fn boundary(&self) -> DigitalPorts<'_> {
-        DigitalPorts { inputs: &self.in_nets, outputs: &self.out_nets }
-    }
-
-    fn init(&mut self, sink: &mut dyn EventSink) {
-        let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
-        DigitalInstance::init(self, &mut q);
-        for Reverse(ev) in q.into_sorted_vec() {
-            sink.emit(ev.net, ev.value, ev.time);
-        }
-    }
-
-    fn seq_phase(&mut self, ctx: &EvalCtx<'_>) -> bool {
-        DigitalInstance::eval_seq_phase(self, ctx.time, ctx.nets, ctx.analog)
-    }
-
-    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
-        let mut q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
-        DigitalInstance::eval_comb_phase(self, ctx.time, ctx.nets, ctx.analog, &mut q);
-        for Reverse(ev) in q.into_sorted_vec() {
-            sink.emit(ev.net, ev.value, ev.time - ctx.time);
-        }
-    }
-
-    fn samples_analog(&self) -> bool {
-        self.kernel.layout().num_analog() > 0
-    }
-}
+// `DigitalInstance` is driven through its inherent `init`/`eval_seq_phase`/
+// `eval_comb_phase` methods by the composite [`PiperineDevice`], which is the
+// `Element` the solver sees. There is no separate digital-device trait: the
+// unified `Element` contract carries digital evaluation directly.

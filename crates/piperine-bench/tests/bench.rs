@@ -1108,3 +1108,120 @@ fn optional_value_none_is_present_and_get_or() {
         other => panic!("expected Passed, got {other:?}"),
     }
 }
+
+#[test]
+fn set_literal_and_methods() {
+    // Value-layer Set: `Set { ... }` literal (empty and with entries),
+    // `.insert(x)`, `.contains(x)`, `.len()`, `.remove(x)`.
+    let src = format!(
+        "{CIRCUIT}
+        bench SwitchOpenTest {{
+            fn test_set() {{
+                var s = Set {{ 1, 2, 3 }};
+                $assert(s.len() == 3, \"set has 3 elements\");
+                $assert(s.contains(2), \"set contains 2\");
+                $assert(!s.contains(5), \"set does not contain 5\");
+
+                s.insert(5);
+                $assert(s.len() == 4, \"len after insert\");
+                $assert(s.contains(5), \"5 is now present\");
+
+                s.insert(1);
+                $assert(s.len() == 4, \"duplicate insert doesn't grow\");
+
+                s.remove(2);
+                $assert(s.len() == 3, \"len after remove\");
+                $assert(!s.contains(2), \"2 was removed\");
+
+                var empty = Set {{}};
+                $assert(empty.len() == 0, \"empty set\");
+                $assert(!empty.contains(1), \"empty set has nothing\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_set") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn result_from_selection_one() {
+    // `Selection.one()` returns a Result — Ok when exactly one match, Err
+    // when empty or ambiguous.
+    let src = format!(
+        "{CIRCUIT}
+        bench SwitchOpenTest {{
+            fn test_result() {{
+                var r1 = select(\"//Resistor\").one();
+                $assert(r1.is_ok(), \"one resistor found\");
+
+                var r2 = select(\"//Nonexistent\").one();
+                $assert(r2.is_err(), \"no match is an error\");
+
+                var r3 = select(\"//Resistor\").one();
+                $assert(r3.is_ok(), \"one resistor via one()\");
+
+                var none = r3.err();
+                $assert(none.is_none(), \"err() of Ok is none\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_result") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn result_err_methods() {
+    // Result Err methods: is_err, err(), ok().
+    let src = format!(
+        "{CIRCUIT}
+        bench SwitchOpenTest {{
+            fn test_result_err() {{
+                var r = select(\"//Nonexistent\").one();
+                $assert(r.is_err(), \"empty selection is err\");
+                $assert(!r.is_ok(), \"is_ok is false\");
+
+                var e = r.err();
+                $assert(e.is_some(), \"err() of Err is some\");
+
+                var o = r.ok();
+                $assert(o.is_none(), \"ok() of Err is none\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_result_err") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}
+
+#[test]
+fn function_reference_as_argument() {
+    // A named function can be passed as a fn(T)->R argument.
+    let src = format!(
+        "{CIRCUIT}
+        fn double(x: Real) -> Real {{
+            return x * 2.0;
+        }}
+        fn apply_op(f: fn(Real) -> Real, x: Real) -> Real {{
+            return f(x);
+        }}
+        bench SwitchOpenTest {{
+            fn test_fn_ref() {{
+                var result = apply_op(double, 5.0);
+                $assert(abs(result - 10.0) < 1e-12, \"named fn passed as argument\");
+            }}
+        }}"
+    );
+    let design = elab(&src);
+    match BenchRunner::new(&design).run_entry("SwitchOpenTest", "test_fn_ref") {
+        BenchOutcome::Passed => {}
+        other => panic!("expected Passed, got {other:?}"),
+    }
+}

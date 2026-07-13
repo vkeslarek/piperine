@@ -18,9 +18,9 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
             match &lexed.tok {
                 // `var x = …` — inferred type after the variable name.
                 Tok::Ident(kw) if kw == "var" => {
-                    if let Some(name_tok) = tokens.get(i + 1) {
-                        if matches!(&name_tok.tok, Tok::Ident(_)) {
-                            if let Some(ty) = doc
+                    if let Some(name_tok) = tokens.get(i + 1)
+                        && matches!(&name_tok.tok, Tok::Ident(_))
+                            && let Some(ty) = doc
                                 .resolve_at(name_tok.start)
                                 .and_then(|res| res.type_info)
                             {
@@ -35,8 +35,6 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
                                     data: None,
                                 });
                             }
-                        }
-                    }
                 }
                 // SI-suffixed literals (`1k`, `2.2u`, `10M`) — the lexer
                 // already folded the suffix into the value; show it when the

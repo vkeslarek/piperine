@@ -67,6 +67,11 @@ pub struct Resolver<'a> {
     source_map: &'a SourceMap,
     /// Parsed and cached source files, keyed by path segments.
     cache: HashMap<Vec<String>, SourceFile>,
+    /// Item provenance recorded during expansion: declared item name → the
+    /// package it came from (the first `use`-path segment). Root-source
+    /// items are not recorded — absence means "this project". Consumed by
+    /// [`crate::pom::Project::origins`] after elaboration.
+    origins: HashMap<String, String>,
 }
 
 impl<'a> Resolver<'a> {
@@ -75,7 +80,14 @@ impl<'a> Resolver<'a> {
         Self {
             source_map,
             cache: HashMap::new(),
+            origins: HashMap::new(),
         }
+    }
+
+    /// The item-name → package provenance recorded by [`expand`](Self::expand)
+    /// (and by the prelude, recorded as `piperine`).
+    pub fn take_origins(&mut self) -> HashMap<String, String> {
+        std::mem::take(&mut self.origins)
     }
 
     /// Items always in scope, loaded from prelude_path if provided.
@@ -106,6 +118,12 @@ impl<'a> Resolver<'a> {
                     items.extend(source.items);
                 }
         }
+        // Everything the prelude injects belongs to the `piperine` package.
+        for item in &items {
+            if let Some(name) = item.name() {
+                self.origins.insert(name.to_string(), "piperine".to_string());
+            }
+        }
         items
     }
 
@@ -113,30 +131,56 @@ impl<'a> Resolver<'a> {
     /// item list with no `UseDecl` items.
     ///
     /// Diamond dependencies are handled via `seen` deduplication.
+    ///
+    /// **Privacy:** items from the root source are always included.
+    /// Items from `use`d files are only included if declared `pub`.
+    /// The prelude (injected via [`prelude_items`](Self::prelude_items))
+    /// is always fully included — it is compiler-injected, not user-imported.
     pub fn expand(&mut self, source: SourceFile) -> Result<Vec<ast::Item>, ResolveError> {
         let mut seen: HashSet<Vec<String>> = HashSet::new();
-        self.expand_inner(source, &mut seen)
+        self.expand_inner(source, &mut seen, None)
     }
 
     /// Recursively expand `use` declarations in a source file, tracking
     /// already-visited paths in `seen` to break diamond dependencies.
+    ///
+    /// `package`: the first `use`-path segment this source was loaded under,
+    /// `None` for the root source. Non-`pub` items from used sources are
+    /// filtered out — except for the `piperine` package (the standard
+    /// library), whose items are always exported. Kept items from a used
+    /// source are recorded in [`Self::origins`] under their package.
     fn expand_inner(
         &mut self,
         source: SourceFile,
         seen: &mut HashSet<Vec<String>>,
+        package: Option<&str>,
     ) -> Result<Vec<ast::Item>, ResolveError> {
         let mut result = Vec::new();
         for item in source.items {
             match item {
                 ast::Item::UseDecl(path) => {
                     if seen.contains(&path.segments) {
-                        continue; // already expanded; skip (diamond dependency)
+                        continue;
                     }
                     seen.insert(path.segments.clone());
                     let resolved = self.load_source(&path.segments)?.clone();
-                    result.extend(self.expand_inner(resolved, seen)?);
+                    let used_package = path.segments.first().cloned().unwrap_or_default();
+                    result.extend(self.expand_inner(resolved, seen, Some(&used_package))?);
                 }
-                other => result.push(other),
+                other => {
+                    // stdlib items are always exported; user items require `pub`.
+                    let is_stdlib = package == Some("piperine");
+                    if std::env::var("PIPERINE_DEBUG_FNS").is_ok() {
+                        eprintln!("DBG expand pkg={package:?} item={:?} pub={}", other.name(), other.is_pub());
+                    }
+                    if package.is_some() && !is_stdlib && !other.is_pub() {
+                        continue;
+                    }
+                    if let (Some(pkg), Some(name)) = (package, other.name()) {
+                        self.origins.insert(name.to_string(), pkg.to_string());
+                    }
+                    result.push(other);
+                }
             }
         }
         Ok(result)

@@ -7,6 +7,8 @@ members = [
     "crates/piperine-project",
     "crates/piperine-lang-server",
     "crates/piperine-solver",
+    "crates/piperine-plugin",
+    "crates/piperine-plugin-wasm",
 ]
 
 [workspace.package]
@@ -60,3 +62,28 @@ rand_distr = "0.5.1"
 paste = "1.0.15"
 libloading = "0.8"
 tempfile = "3"
+
+[workspace.lints.clippy]
+# ── Deny: mechanical, no reason to ignore ──
+collapsible_if                  = "deny"
+doc_overindented_list_items     = "deny"
+excessive_precision             = "deny"
+io_other_error                  = "deny"
+manual_div_ceil                 = "deny"
+manual_is_multiple_of           = "deny"
+needless_borrow                 = "deny"
+needless_range_loop             = "deny"
+ptr_arg                         = "deny"
+redundant_closure               = "deny"
+slow_vector_initialization      = "deny"
+unnecessary_cast                = "deny"
+unnecessary_map_or              = "deny"
+# ── Warn ──
+question_mark                   = "warn"
+# ── Allow ──
+module_inception                = "allow"
+new_without_default             = "allow"
+too_many_arguments              = "allow"
+type_complexity                 = "allow"
+large_enum_variant              = "allow"
+mutable_key_type                = "allow"

@@ -48,13 +48,13 @@ impl ElabPass for Register {
 struct ValidateEvents;
 impl ElabPass for ValidateEvents {
     fn run(&self, elab: &mut Elaborator, _design: &mut Design) -> Result<(), ElabError> {
-        let mod_decls: Vec<_> = elab.module_decls.values().cloned().collect();
+        let mod_decls: Vec<_> = elab.syms.module_decls.values().cloned().collect();
         for decl in &mod_decls {
             if decl.const_params.is_empty() && decl.type_params.is_empty() {
                 elab.ctx.events.validate_mod_body(&decl.body)?;
             }
         }
-        let beh_decls: Vec<_> = elab.behavior_decls.clone();
+        let beh_decls: Vec<_> = elab.syms.behavior_decls.clone();
         for beh in &beh_decls {
             elab.ctx.events.validate_behavior(beh.kind.clone(), &beh.body)?;
         }
@@ -70,13 +70,13 @@ impl ElabPass for ValidateEvents {
 struct FoldGlobals;
 impl ElabPass for FoldGlobals {
     fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
-        *design.disciplines_map_mut() = elab.disciplines.clone();
-        *design.bundles_map_mut() = elab.bundles.clone();
-        *design.enums_map_mut() = elab.enums.clone();
-        *design.capabilities_map_mut() = elab.capability_decls.clone();
+        *design.disciplines_map_mut() = elab.syms.disciplines.clone();
+        *design.bundles_map_mut() = elab.syms.bundles.clone();
+        *design.enums_map_mut() = elab.syms.enums.clone();
+        *design.capabilities_map_mut() = elab.syms.capability_decls.clone();
 
         let mut globals = elab.enum_variant_globals()?;
-        let mut pending: HashMap<String, crate::parse::ast::ConstDecl> = elab.const_decls.clone();
+        let mut pending: HashMap<String, crate::parse::ast::ConstDecl> = elab.syms.const_decls.clone();
         let mut last_len = pending.len() + 1;
         while pending.len() < last_len {
             last_len = pending.len();
@@ -98,7 +98,7 @@ impl ElabPass for FoldGlobals {
                 "could not resolve one or more global constants".into(),
             )));
         }
-        elab.globals = globals;
+        elab.syms.globals = globals;
         Ok(())
     }
 }
@@ -107,11 +107,11 @@ impl ElabPass for FoldGlobals {
 struct ElabFns;
 impl ElabPass for ElabFns {
     fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
-        for impl_decl in &elab.impl_decls.clone() {
+        for impl_decl in &elab.syms.impl_decls.clone() {
             let block = elab.elab_impl(impl_decl)?;
             design.impls_vec_mut().push(block);
         }
-        for fn_decl in elab.fn_decls.values().cloned().collect::<Vec<_>>() {
+        for fn_decl in elab.syms.fn_decls.values().cloned().collect::<Vec<_>>() {
             let f = elab.elab_fn(&fn_decl)?;
             design.functions_map_mut().insert(f.name.clone(), f);
         }
@@ -125,11 +125,11 @@ impl ElabPass for ElabFns {
 struct ElabModules;
 impl ElabPass for ElabModules {
     fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
-        let mod_names: Vec<String> = elab.module_decls.keys().cloned().collect();
+        let mod_names: Vec<String> = elab.syms.module_decls.keys().cloned().collect();
         for name in &mod_names {
-            let decl = elab.module_decls[name].clone();
+            let decl = elab.syms.module_decls[name].clone();
             if decl.const_params.is_empty() && decl.type_params.is_empty() {
-                let mut env = ConstEnv::with_globals(elab.globals.clone());
+                let mut env = ConstEnv::with_globals(elab.syms.globals.clone());
                 let elab_mod = elab.elab_mod_inner(&decl, &mut env, &HashMap::new())?;
                 design.modules_map_mut().insert(name.clone(), elab_mod);
             }
@@ -145,7 +145,7 @@ impl ElabPass for ElabModules {
 struct AttachBehaviors;
 impl ElabPass for AttachBehaviors {
     fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
-        for beh in &elab.behavior_decls.clone() {
+        for beh in &elab.syms.behavior_decls.clone() {
             let behavior = elab.elab_behavior(beh)?;
             if let Some(module) = design.modules_map_mut().get_mut(&behavior.name) {
                 module.behaviors.push(behavior);
@@ -158,7 +158,7 @@ impl ElabPass for AttachBehaviors {
             design.modules_map_mut().entry(name).or_insert(elab_mod);
         }
 
-        for beh in &elab.behavior_decls.clone() {
+        for beh in &elab.syms.behavior_decls.clone() {
             let behavior = elab.elab_behavior(beh)?;
             let base = &behavior.name;
             for (name, module) in design.modules_map_mut().iter_mut() {
@@ -191,12 +191,14 @@ impl ElabPass for AttachBehaviors {
 struct AttachBenches;
 impl ElabPass for AttachBenches {
     fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
-        for bench in &elab.bench_decls.clone() {
+        for bench in &elab.syms.bench_decls.clone() {
             for f in &bench.fns {
                 let mut syscalls = Vec::new();
                 f.body.collect_syscalls(&mut syscalls);
                 for name in syscalls {
-                    if !crate::eval::tasks::bench_task_implemented(&name) {
+                    if !crate::eval::tasks::bench_task_implemented(&name)
+                        && !elab.ctx.bench_tasks.contains(&name)
+                    {
                         return Err(ElabError::from(ElabErrorKind::Other(format!(
                             "`${name}` is not yet implemented in a bench (piperine-bench/docs/SPEC.md §7/§11)"
                         ))));

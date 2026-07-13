@@ -440,10 +440,19 @@ impl<'h, H: Host> Interpreter<'h, H> {
         match expr {
             Expr::Literal(lit) => Ok(eval_literal(lit)),
 
-            Expr::Ident(name) => self
-                .lookup_local(name)
-                .or_else(|| self.host.lookup(name))
-                .ok_or_else(|| EvalError::Undefined(name.clone())),
+            Expr::Ident(name) => {
+                // 1. Check local scopes, then host lookup.
+                if let Some(v) = self.lookup_local(name).or_else(|| self.host.lookup(name)) {
+                    return Ok(v);
+                }
+                // 2. If the name resolves to a callable (top-level fn,
+                //    bench fn), produce a function-reference value so it
+                //    can be passed as a `fn(T) -> R` argument.
+                if self.host.resolve_callable(name).is_some() {
+                    return Ok(Value::FnRef(name.clone()));
+                }
+                Err(EvalError::Undefined(name.clone()))
+            }
 
             Expr::Path(path) if path.segments.len() == 2 => {
                 Ok(Value::EnumVariant(path.segments[0].clone(), path.segments[1].clone()))
@@ -499,6 +508,14 @@ impl<'h, H: Host> Interpreter<'h, H> {
                 Ok(Value::Map(Rc::new(std::cell::RefCell::new(pairs))))
             }
 
+            Expr::SetLit(items) => {
+                let values = items
+                    .iter()
+                    .map(|e| self.eval_expr(e))
+                    .collect::<Result<Vec<_>, EvalError>>()?;
+                Ok(Value::Set(Rc::new(std::cell::RefCell::new(values))))
+            }
+
             Expr::Lambda { params, body } => {
                 let captured = self.scopes.iter().flat_map(|s| s.clone()).collect::<HashMap<_, _>>();
                 Ok(Value::Closure(Rc::new(Closure {
@@ -535,6 +552,39 @@ impl<'h, H: Host> Interpreter<'h, H> {
                 let mut invoke = |c: &Closure, args: Vec<Value>| self.call_closure(c, args);
                 return obj.call_method_with(method, arg_values, &mut invoke);
             }
+            // `Option.map(f)`: apply `f` inside the option (needs the
+            // interpreter to invoke the function value; the other Option
+            // methods are pure builtins on `Value`).
+            if let Value::Option(inner) = &recv_value
+                && method == "map"
+            {
+                let inner = inner.clone();
+                let f = arg_values.into_iter().next().ok_or_else(|| {
+                    EvalError::TypeMismatch("Option.map needs a function argument".into())
+                })?;
+                return match inner {
+                    None => Ok(Value::Option(None)),
+                    Some(v) => {
+                        let mapped = match f {
+                            Value::Closure(c) => self.call_closure(&c, vec![*v])?,
+                            Value::FnRef(name) => {
+                                let callable =
+                                    self.host.resolve_callable(&name).ok_or_else(|| {
+                                        EvalError::Undefined(name.clone())
+                                    })?;
+                                self.call_callable(&name, callable, vec![*v])?
+                            }
+                            other => {
+                                return Err(EvalError::TypeMismatch(format!(
+                                    "Option.map needs a function, got {}",
+                                    other.type_name()
+                                )));
+                            }
+                        };
+                        Ok(Value::Option(Some(Box::new(mapped))))
+                    }
+                };
+            }
             // `impl` method dispatch on a bundle value: `card.norm()` binds
             // `self` to the receiver and runs the method body (pure).
             if let Value::Record { ty, .. } = &recv_value {
@@ -561,31 +611,23 @@ impl<'h, H: Host> Interpreter<'h, H> {
         }
 
         if let Expr::Ident(name) = callee {
+            // A local variable holding a function reference (e.g. a `fn`
+            // parameter) — resolve the referenced function and call it.
+            if let Some(Value::FnRef(fn_name)) = self.lookup_local(name)
+                && let Some(callable) = self.host.resolve_callable(&fn_name) {
+                    return self.call_callable(name, callable, arg_values);
+                }
             if let Some(Value::Closure(c)) = self.lookup_local(name) {
                 return self.call_closure(&c, arg_values);
             }
             if let Some(callable) = self.host.resolve_callable(name) {
-                return match callable {
-                    Callable::Closure(c) => self.call_closure(&c, arg_values),
-                    Callable::Function { params, defaults, body } => {
-                        self.call_pom_fn(&params, &defaults, &body, arg_values)
-                    }
-                    Callable::BenchFn { params, defaults, body, tail } => {
-                        if self.pure_depth > 0 {
-                            return Err(EvalError::TaskUnavailable {
-                                name: name.clone(),
-                                context: "a pure fn/method",
-                            });
-                        }
-                        self.call_bench_fn(&params, &defaults, &body, tail.as_ref(), arg_values)
-                    }
-                };
+                return self.call_callable(name, callable, arg_values);
             }
             // Host-intercepted plain-name call (e.g. `select("...")`).
             if let Some(result) = self.host.call_host_fn(name, &arg_values) {
                 return result;
             }
-            let floats: Result<Vec<f64>, EvalError> = arg_values.iter().map(as_real).collect();
+            let floats: Result<Vec<f64>, EvalError> = arg_values.iter().map(|v| v.coerce_real()).collect();
             if let Ok(floats) = floats
                 && let Some(result) = crate::math::eval_const_math(name, &floats) {
                 return Ok(Value::Real(result));
@@ -595,7 +637,31 @@ impl<'h, H: Host> Interpreter<'h, H> {
 
         match self.eval_expr(callee)? {
             Value::Closure(c) => self.call_closure(&c, arg_values),
+            Value::FnRef(name) => {
+                let callable = self.host.resolve_callable(&name)
+                    .ok_or_else(|| EvalError::Undefined(name.clone()))?;
+                self.call_callable(&name, callable, arg_values)
+            }
             other => Err(EvalError::TypeMismatch(format!("{} is not callable", other.type_name()))),
+        }
+    }
+
+    /// Dispatch a `Callable` resolved from a function name or FnRef.
+    fn call_callable(&mut self, name: &str, callable: Callable, arg_values: Vec<Value>) -> Result<Value, EvalError> {
+        match callable {
+            Callable::Closure(c) => self.call_closure(&c, arg_values),
+            Callable::Function { params, defaults, body } => {
+                self.call_pom_fn(&params, &defaults, &body, arg_values)
+            }
+            Callable::BenchFn { params, defaults, body, tail } => {
+                if self.pure_depth > 0 {
+                    return Err(EvalError::TaskUnavailable {
+                        name: name.to_string(),
+                        context: "a pure fn/method",
+                    });
+                }
+                self.call_bench_fn(&params, &defaults, &body, tail.as_ref(), arg_values)
+            }
         }
     }
 
@@ -666,15 +732,6 @@ impl<'h, H: Host> Interpreter<'h, H> {
     }
 }
 
-fn as_real(v: &Value) -> Result<f64, EvalError> {
-    match v {
-        Value::Real(r) => Ok(*r),
-        Value::Nat(n) => Ok(*n as f64),
-        Value::Int(n) => Ok(*n as f64),
-        other => Err(EvalError::TypeMismatch(format!("expected a Real, got {}", other.type_name()))),
-    }
-}
-
 fn eval_literal(lit: &Literal) -> Value {
     match lit {
         Literal::Int(n) => Value::Nat(*n),
@@ -698,13 +755,22 @@ fn eval_unary(op: &UnaryOp, v: Value) -> Result<Value, EvalError> {
     }
 }
 
-/// Ported verbatim (semantics-preserving) from the legacy
-/// `ConstEnv::eval_binary` — `Nat` arithmetic wraps, mixed `Nat`/`Int`
-/// widens to `Int`, comparisons are same-type-only.
+/// Evaluate a binary operation. Dispatches by operator category to
+/// focused sub-functions — adding a new type touches only the relevant
+/// category, not a 40-arm match.
 fn eval_binary(op: &BinaryOp, l: Value, r: Value) -> Result<Value, EvalError> {
     use BinaryOp::*;
-    use Value::*;
+    match op {
+        Add | Sub | Mul | Div | Rem => eval_arith(op, l, r),
+        Eq | Neq | Lt | Le | Gt | Ge => eval_compare(op, l, r),
+        BitAnd | BitOr | BitXor => eval_bitwise(op, l, r),
+        And | Or => eval_logic(op, l, r),
+    }
+}
 
+fn eval_arith(op: &BinaryOp, l: Value, r: Value) -> Result<Value, EvalError> {
+    use BinaryOp::*;
+    use Value::*;
     match (op, l, r) {
         (Add, Nat(a), Nat(b)) => Ok(Nat(a.wrapping_add(b))),
         (Sub, Nat(a), Nat(b)) => Ok(Nat(a.wrapping_sub(b))),
@@ -734,50 +800,77 @@ fn eval_binary(op: &BinaryOp, l: Value, r: Value) -> Result<Value, EvalError> {
         (Mul, Real(a), Real(b)) => Ok(Real(a * b)),
         (Div, Real(a), Real(b)) => Ok(Real(a / b)),
 
-        (Eq, Nat(a), Nat(b)) => Ok(Bool(a == b)),
-        (Neq, Nat(a), Nat(b)) => Ok(Bool(a != b)),
-        (Lt, Nat(a), Nat(b)) => Ok(Bool(a < b)),
-        (Le, Nat(a), Nat(b)) => Ok(Bool(a <= b)),
-        (Gt, Nat(a), Nat(b)) => Ok(Bool(a > b)),
-        (Ge, Nat(a), Nat(b)) => Ok(Bool(a >= b)),
+        (op, l, r) => Err(EvalError::TypeMismatch(format!(
+            "cannot apply {op:?} to {} and {}", l.type_name(), r.type_name()
+        ))),
+    }
+}
 
-        (Eq, Int(a), Int(b)) => Ok(Bool(a == b)),
-        (Neq, Int(a), Int(b)) => Ok(Bool(a != b)),
-        (Lt, Int(a), Int(b)) => Ok(Bool(a < b)),
-        (Le, Int(a), Int(b)) => Ok(Bool(a <= b)),
-        (Gt, Int(a), Int(b)) => Ok(Bool(a > b)),
-        (Ge, Int(a), Int(b)) => Ok(Bool(a >= b)),
+fn eval_compare(op: &BinaryOp, l: Value, r: Value) -> Result<Value, EvalError> {
+    use BinaryOp::*;
+    use Value::*;
+    let b = match (op, &l, &r) {
+        (Eq, Nat(a), Nat(b)) => a == b,
+        (Neq, Nat(a), Nat(b)) => a != b,
+        (Lt, Nat(a), Nat(b)) => a < b,
+        (Le, Nat(a), Nat(b)) => a <= b,
+        (Gt, Nat(a), Nat(b)) => a > b,
+        (Ge, Nat(a), Nat(b)) => a >= b,
 
-        (Eq, Real(a), Real(b)) => Ok(Bool(a == b)),
-        (Neq, Real(a), Real(b)) => Ok(Bool(a != b)),
-        (Lt, Real(a), Real(b)) => Ok(Bool(a < b)),
-        (Le, Real(a), Real(b)) => Ok(Bool(a <= b)),
-        (Gt, Real(a), Real(b)) => Ok(Bool(a > b)),
-        (Ge, Real(a), Real(b)) => Ok(Bool(a >= b)),
+        (Eq, Int(a), Int(b)) => a == b,
+        (Neq, Int(a), Int(b)) => a != b,
+        (Lt, Int(a), Int(b)) => a < b,
+        (Le, Int(a), Int(b)) => a <= b,
+        (Gt, Int(a), Int(b)) => a > b,
+        (Ge, Int(a), Int(b)) => a >= b,
 
-        (Eq, Bool(a), Bool(b)) => Ok(Bool(a == b)),
-        (Neq, Bool(a), Bool(b)) => Ok(Bool(a != b)),
+        (Eq, Real(a), Real(b)) => a == b,
+        (Neq, Real(a), Real(b)) => a != b,
+        (Lt, Real(a), Real(b)) => a < b,
+        (Le, Real(a), Real(b)) => a <= b,
+        (Gt, Real(a), Real(b)) => a > b,
+        (Ge, Real(a), Real(b)) => a >= b,
 
-        (Eq, Str(a), Str(b)) => Ok(Bool(a == b)),
-        (Neq, Str(a), Str(b)) => Ok(Bool(a != b)),
+        (Eq, Bool(a), Bool(b)) => a == b,
+        (Neq, Bool(a), Bool(b)) => a != b,
 
-        (Eq, EnumVariant(e1, v1), EnumVariant(e2, v2)) => Ok(Bool(e1 == e2 && v1 == v2)),
-        (Neq, EnumVariant(e1, v1), EnumVariant(e2, v2)) => Ok(Bool(e1 != e2 || v1 != v2)),
+        (Eq, Str(a), Str(b)) => a == b,
+        (Neq, Str(a), Str(b)) => a != b,
 
+        (Eq, EnumVariant(e1, v1), EnumVariant(e2, v2)) => e1 == e2 && v1 == v2,
+        (Neq, EnumVariant(e1, v1), EnumVariant(e2, v2)) => e1 != e2 || v1 != v2,
+
+        _ => return Err(EvalError::TypeMismatch(format!(
+            "cannot apply {op:?} to {} and {}", l.type_name(), r.type_name()
+        ))),
+    };
+    Ok(Bool(b))
+}
+
+fn eval_bitwise(op: &BinaryOp, l: Value, r: Value) -> Result<Value, EvalError> {
+    use BinaryOp::*;
+    use Value::*;
+    match (op, l, r) {
         (BitAnd, Nat(a), Nat(b)) => Ok(Nat(a & b)),
         (BitOr, Nat(a), Nat(b)) => Ok(Nat(a | b)),
         (BitXor, Nat(a), Nat(b)) => Ok(Nat(a ^ b)),
         (BitAnd, Bool(a), Bool(b)) => Ok(Bool(a & b)),
         (BitOr, Bool(a), Bool(b)) => Ok(Bool(a | b)),
         (BitXor, Bool(a), Bool(b)) => Ok(Bool(a ^ b)),
+        (op, l, r) => Err(EvalError::TypeMismatch(format!(
+            "cannot apply {op:?} to {} and {}", l.type_name(), r.type_name()
+        ))),
+    }
+}
 
+fn eval_logic(op: &BinaryOp, l: Value, r: Value) -> Result<Value, EvalError> {
+    use BinaryOp::*;
+    use Value::*;
+    match (op, l, r) {
         (And, Bool(a), Bool(b)) => Ok(Bool(a && b)),
         (Or, Bool(a), Bool(b)) => Ok(Bool(a || b)),
-
         (op, l, r) => Err(EvalError::TypeMismatch(format!(
-            "cannot apply {op:?} to {} and {}",
-            l.type_name(),
-            r.type_name()
+            "cannot apply {op:?} to {} and {}", l.type_name(), r.type_name()
         ))),
     }
 }

@@ -9,13 +9,12 @@ use std::collections::{HashMap, HashSet};
 use piperine_lang::pom::Design;
 
 use crate::lower::*;
+use self::structure::FnSigParams;
 
 pub mod analog_ops;
-pub mod event;
 pub mod expr;
 pub mod stmt;
 pub mod structure;
-pub mod syscalls;
 
 use piperine_lang::parse::ast::{BindOp, Expr as PomExpr, Stmt as PomStmt};
 use structure::{build_symbols_and_ports, convert_fn, value_to_pom_expr};
@@ -124,7 +123,7 @@ pub(crate) struct LowerCtx<'a> {
     /// Per-fn bundle-typed parameter positions (fn name → one entry per
     /// declared param, `Some((bundle, fields))` for bundle-typed ones) —
     /// call sites expand a bundle argument into its per-field scalars.
-    pub fn_bundle_sigs: HashMap<String, Vec<Option<(String, Vec<String>)>>>,
+    pub fn_bundle_sigs: HashMap<String, FnSigParams>,
     /// Digital-domain nodes read from *this* analog body (a port or wire
     /// whose value comes from the digital side, referenced by bare name —
     /// not through `V`/`I`), bridged through a synthetic module-level
@@ -135,9 +134,6 @@ pub(crate) struct LowerCtx<'a> {
     /// every behavior is lowered.
     pub digital_shadows: Vec<(NodeId, VarId)>,
 }
-
-/// The ground-node aliases every net namespace accepts (SPEC: gnd-family).
-pub(crate) const GROUND_NAMES: &[&str] = &["gnd", "GND", "vss", "VSS", "0"];
 
 impl<'a> LowerCtx<'a> {
     /// Create a fresh lowering context. Snapshots the symbol table's
@@ -190,6 +186,9 @@ impl<'a> LowerCtx<'a> {
         if let (Some((_, &id)), None) = (matches.next(), matches.next()) {
             return id;
         }
+        if std::env::var("PIPERINE_DEBUG_FNS").is_ok() {
+            eprintln!("DBG param_given `{name}` params: {:?}", self.params.keys().collect::<Vec<_>>());
+        }
         self.errors.push(LowerError {
             module: self.module_name.clone(),
             what: "parameter ($param_given)",
@@ -239,10 +238,10 @@ impl<'a> LowerCtx<'a> {
     /// port accesses (`load.p` → the parent NodeId the port connects to,
     /// SPEC §7.3).
     pub fn lookup_node(&self, name: &str) -> Option<NodeId> {
-        if GROUND_NAMES.contains(&name) {
+        if piperine_lang::pom::is_ground(name) {
             return Some(NodeId::GROUND);
         }
-        // Check instance port map first (e.g. "load.p" or "rseg_0.n").
+        // Check instance port map first (e.g. "load.p" or "rseg[0].n").
         if let Some(id) = self.instance_ports.get(name) {
             return Some(*id);
         }
@@ -329,6 +328,9 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
     // adding their unresolved bodies would produce dangling references.
     for body in &mut bodies {
         for f in prog.functions() {
+            if std::env::var("PIPERINE_DEBUG_FNS").is_ok() {
+                eprintln!("DBG fn: {} generic={}", f.name(), f.is_generic());
+            }
             if f.is_generic() {
                 continue;
             }
@@ -376,7 +378,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                             continue;
                         };
                         let name = net_ref.net();
-                        let parent_node = if GROUND_NAMES.contains(&name) {
+                        let parent_node = if piperine_lang::pom::is_ground(name) {
                             NodeId::GROUND
                         } else if let Some(&id) = node_by_name.get(name) {
                             id

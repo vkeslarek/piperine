@@ -46,7 +46,7 @@ fn differentiate(
 ) -> Expr {
     match expr {
         // $limit is transparent to differentiation: d(vnew)/dV.
-        Expr::SysCall(name, args) if name == "$limit" => {
+        Expr::SysCall(name, args) if name.trim_start_matches('$') == "limit" => {
             args.get(1).map(|vnew| differentiate(vnew, seed, resolve_node)).unwrap_or_else(|| lit(0.0))
         }
 
@@ -67,6 +67,18 @@ fn differentiate(
                     let p = resolve_node(&plus_name).unwrap_or(NodeId::GROUND);
                     let m = resolve_node(&minus_name).unwrap_or(NodeId::GROUND);
                     return seed(p, m);
+                }
+                // A value-tape temp: its derivative is the matching entry of
+                // the derivative tape (`d(temps[id])/dV`), referenced as a
+                // `__dtemp(id)` leaf and emitted once per branch.
+                if name == "__temp" {
+                    if let Some(Expr::Literal(Literal::Int(id))) = args.first() {
+                        return Expr::Call(
+                            Box::new(Expr::Ident("__dtemp".into())),
+                            vec![Expr::Literal(Literal::Int(*id))],
+                        );
+                    }
+                    return lit(0.0);
                 }
                 // __state_load, __ddt, __idt, __delay, __slew, etc. — constants
                 // within a Newton iteration.
@@ -232,9 +244,9 @@ fn d_math(
 pub fn collect_branches(expr: &Expr, out: &mut Vec<(NodeId, NodeId)>, resolve_node: &impl Fn(&str) -> Option<NodeId>) {
     use piperine_lang::parse::ast::Walk;
     expr.walk(&mut |e| {
-        if let Expr::Call(func, args) = e {
-            if let Expr::Ident(name) = func.as_ref() {
-                if name == "V" || name == "I" {
+        if let Expr::Call(func, args) = e
+            && let Expr::Ident(name) = func.as_ref()
+                && (name == "V" || name == "I") {
                     let plus_name = ident_str(args.first()).unwrap_or_else(|| "0".into());
                     let minus_name = ident_str(args.get(1)).unwrap_or_else(|| "0".into());
                     let p = resolve_node(&plus_name).unwrap_or(NodeId::GROUND);
@@ -245,8 +257,6 @@ pub fn collect_branches(expr: &Expr, out: &mut Vec<(NodeId, NodeId)>, resolve_no
                     }
                     return Walk::SkipChildren;
                 }
-            }
-        }
         Walk::Continue
     });
 }

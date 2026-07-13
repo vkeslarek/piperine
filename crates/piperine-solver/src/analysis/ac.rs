@@ -2,6 +2,7 @@ use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
 use crate::analog::{
     BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier,
 };
+use crate::core::net::Net;
 use crate::math::linear::Stamp;
 use crate::math::unit::Hertz;
 use crate::solver::Context;
@@ -21,10 +22,6 @@ pub trait AcAnalysis: DcAnalysis {
         ac_analysis_context: &AcAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, Complex<f64>>>;
-}
-
-pub struct AcFrequencyAnalysisOptions {
-    pub frequency: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -90,6 +87,10 @@ impl AcAnalysisResult {
         self.values.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
     pub fn get(&self, index: usize) -> Option<&AcAnalysisStep> {
         assert!(index < self.values.len());
 
@@ -125,18 +126,17 @@ impl AcAnalysisStep {
     pub fn get_node(&self, node_identifier: &NodeIdentifier) -> Option<&Complex<f64>> {
         self.get(&AnalogVariable::Node(node_identifier.clone()))
     }
+
+    /// Read the small-signal value by [`Net`]. Returns `None` for digital
+    /// and pseudo nets — those have no AC representation here.
+    pub fn get_net(&self, net: &Net) -> Option<&Complex<f64>> {
+        let var = net.analog_variable()?;
+        self.values.get(var)
+    }
 }
 
-pub trait AcAnalysisSolver {
-    fn solve_frequency_ac_analysis(
-        &self,
-        options: AcFrequencyAnalysisOptions,
-        context: Context,
-    ) -> crate::result::Result<AcAnalysisResult>;
-
-    fn solve_sweep_ac_analysis(
-        &self,
-        options: AcSweepAnalysisOptions,
-        context: Context,
-    ) -> crate::result::Result<AcAnalysisResult>;
+/// Per-analysis config for AC. Thin wrapper over the sweep options.
+#[derive(Debug, Clone)]
+pub struct AcContext {
+    pub sweep: AcSweepAnalysisOptions,
 }

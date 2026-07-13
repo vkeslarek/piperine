@@ -45,9 +45,10 @@ fn source_map() -> piperine_lang::SourceMap {
 }
 
 pub fn execute(list: bool, file: Option<String>) {
-    let _project_root = piperine_project::get_current_project_root()
+    let project_root = piperine_project::get_current_project_root()
         .unwrap_or_else(|| std::env::current_dir().unwrap());
     let source_map = source_map();
+    let plugin_host = super::utils::load_plugin_host(&project_root);
 
     let mut had_failure = false;
     let mut ran_any = false;
@@ -60,7 +61,14 @@ pub fn execute(list: bool, file: Option<String>) {
                 continue;
             }
         };
-        let design = match piperine_lang::parse_and_elaborate(&body, &source_map) {
+        if let Err(e) = plugin_host.fire_after_parse(&body) {
+            eprintln!("Plugin error: {e}");
+            had_failure = true;
+            continue;
+        }
+        let mut design = match piperine_lang::parse_and_elaborate_seeded(&body, &source_map, |ctx| {
+            plugin_host.seed_schemas(ctx);
+        }) {
             Ok(d) => d,
             Err(e) => {
                 eprintln!("Error elaborating {}:\n{:?}", path.display(), e);
@@ -68,6 +76,12 @@ pub fn execute(list: bool, file: Option<String>) {
                 continue;
             }
         };
+        super::utils::stamp_project_meta(&mut design, &project_root);
+        if let Err(e) = plugin_host.fire_after_elaborate(&design) {
+            eprintln!("Plugin error: {e}");
+            had_failure = true;
+            continue;
+        }
 
         if list {
             for bench in design.benches() {
@@ -79,7 +93,13 @@ pub fn execute(list: bool, file: Option<String>) {
             continue;
         }
 
-        let report = BenchRunner::new(&design).run_all();
+        let mut runner = BenchRunner::new(&design);
+        if !plugin_host.is_empty() {
+            runner = runner
+                .with_device_provider(plugin_host.clone())
+                .with_plugins(plugin_host.clone());
+        }
+        let report = runner.run_all();
         for result in &report.results {
             ran_any = true;
             match &result.outcome {

@@ -216,8 +216,6 @@ impl LanguageServer {
                                     let _ = self.request_tx.send(RequestMsg::Notification(not));
                                     self.pending_analysis.insert(uri, Instant::now() + Duration::from_millis(10));
                                 }
-                            } else if not.method == "workspace/didChangeWatchedFiles" {
-                                let _ = self.request_tx.send(RequestMsg::Notification(not));
                             } else {
                                 let _ = self.request_tx.send(RequestMsg::Notification(not));
                             }

@@ -8,6 +8,8 @@
 //! high-level methods (arithmetic, quad logic, name resolution, control
 //! flow) that the trait impls call.
 
+#[allow(unused_imports)]
+pub mod analog_emit;
 pub mod builder;
 pub mod trait_;
 

@@ -121,6 +121,7 @@ pub struct StateVar {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum StateKind {
     /// `ddt(x)` — time derivative (reactive).
     Ddt,

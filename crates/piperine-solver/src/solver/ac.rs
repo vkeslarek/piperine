@@ -8,7 +8,6 @@ use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
-use crate::math::unit::UnitExt;
 use crate::solver::dc::DcSolver;
 use crate::solver::Context;
 use num_complex::Complex;
@@ -39,7 +38,7 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for AcSystem<'a> {
         _alpha: Complex<f64>,
     ) -> crate::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
         let ac_ctx = AcAnalysisContext {
-            frequency: self.frequency.Hz(),
+            frequency: self.frequency,
         };
 
         let mut all_stamps = Vec::new();
@@ -47,9 +46,7 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for AcSystem<'a> {
         // AC analysis is linear - no need to update runtimes
         // We use the DC operating point that was already computed
         for ac in &mut self.circuit.devices {
-            if let Some(a) = ac.as_analog() {
-                all_stamps.extend(a.load_ac(&self.dc_point, &ac_ctx, &self.context));
-            }
+            all_stamps.extend(ac.load_ac(&self.dc_point, &ac_ctx, &self.context));
         }
         Ok(all_stamps)
     }

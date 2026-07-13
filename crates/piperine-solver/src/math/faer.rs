@@ -1,18 +1,18 @@
 use crate::error::Error;
 use crate::math::linear::{
-    AsIndex, LinearSystem, NoSymbolic, Stamp, SymbolicLinearSystem, SymbolicMatrix,
+    AsIndex, LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix,
 };
 use crate::math::num::Scalar;
 use faer::prelude::{Solve, SparseColMat};
 use faer::sparse::Triplet;
 use faer::sparse::linalg::solvers::SymbolicLu;
-use faer::{Col, Mat};
+use faer::Col;
 use ndarray::Array1;
 
 #[derive(Clone)]
 pub struct FaerSymbolicMatrix {
-    pub size: usize,
-    pub pattern: SymbolicLu<usize>,
+    size: usize,
+    pattern: SymbolicLu<usize>,
 }
 
 impl SymbolicMatrix for FaerSymbolicMatrix {
@@ -35,7 +35,7 @@ impl SymbolicMatrix for FaerSymbolicMatrix {
 
         let mat = SparseColMat::try_new_from_triplets(size, size, &triplets).map_err(|err| {
             Error::cause(
-                "Problem assembling the space matrix",
+                crate::error::SolverDomain::SpaceMatrix,
                 "The library threw an error while trying to create the symbolic matrix",
                 Box::new(err),
             )
@@ -43,7 +43,7 @@ impl SymbolicMatrix for FaerSymbolicMatrix {
 
         let pattern = SymbolicLu::try_new(mat.symbolic()).map_err(|err| {
             Error::cause(
-                "Problem assembling the space matrix",
+                crate::error::SolverDomain::SpaceMatrix,
                 "The library threw an error while trying to create the symbolic matrix",
                 Box::new(err),
             )
@@ -85,33 +85,6 @@ impl<E: 'static + Scalar> LinearSystem<E> for FaerSparseLinearSystem<E> {
         }
     }
 
-    fn solve(&self) -> crate::result::Result<Array1<E>> {
-        let a = SparseColMat::try_new_from_triplets(self.size, self.size, &self.triplets).map_err(
-            |err| Error::cause("Problem assembling the space matrix", "The library threw an error while trying to create the LHS of the sparse matrix", Box::new(err))
-        )?;
-
-        let b = Col::from_fn(self.size, |i| self.b_vec[i]);
-
-        let symbolic_pattern = SymbolicLu::try_new(a.symbolic()).map_err(|err| {
-            Error::cause(
-                "Linear Solve Error",
-                "Symbolic analysis (LU) failed",
-                Box::new(err),
-            )
-        })?;
-
-        let lu =
-            faer::sparse::linalg::solvers::Lu::try_new_with_symbolic(symbolic_pattern, a.as_ref())
-                .map_err(|err| {
-                    Error::cause(
-                        "Linear Solve Error",
-                        "LU Factorization failed",
-                        Box::new(err),
-                    )
-                })?;
-
-        Ok(lu.solve(&b).to_ndarray())
-    }
 }
 
 impl<E: Scalar + 'static> SymbolicLinearSystem<E> for FaerSparseLinearSystem<E> {
@@ -122,7 +95,7 @@ impl<E: Scalar + 'static> SymbolicLinearSystem<E> for FaerSparseLinearSystem<E> 
         symbolic: &Self::SymbolicType,
     ) -> crate::result::Result<Array1<E>> {
         let a = SparseColMat::try_new_from_triplets(self.size, self.size, &self.triplets).map_err(
-            |err| Error::cause("Problem assembling the space matrix",
+            |err| Error::cause(crate::error::SolverDomain::SpaceMatrix,
                                "The library threw an error while trying to create the LHS of the sparse matrix", Box::new(err))
         )?;
 
@@ -135,7 +108,7 @@ impl<E: Scalar + 'static> SymbolicLinearSystem<E> for FaerSparseLinearSystem<E> 
         )
         .map_err(|err| {
             Error::cause(
-                "Problem assembling the space matrix",
+                crate::error::SolverDomain::SpaceMatrix,
                 "The library threw an error while trying to create the RHS of the sparse matrix",
                 Box::new(err),
             )
@@ -152,62 +125,5 @@ pub trait FaerToNdarray<E> {
 impl<E: Clone + 'static> FaerToNdarray<E> for Col<E> {
     fn to_ndarray(&self) -> Array1<E> {
         self.as_ref().iter().cloned().collect()
-    }
-}
-
-pub struct FaerDenseLinearSystem<E: Scalar> {
-    pub matrix: Mat<E>,
-    pub rhs: Col<E>,
-    pub size: usize,
-}
-
-impl<E: 'static + Scalar> LinearSystem<E> for FaerDenseLinearSystem<E> {
-    fn new(size: usize) -> Self {
-        Self {
-            matrix: Mat::zeros(size, size),
-            rhs: Col::zeros(size),
-            size,
-        }
-    }
-
-    fn apply_stamps<A: AsIndex>(&mut self, stamps: Vec<Stamp<A, E>>) {
-        for stamp in stamps {
-            match stamp {
-                Stamp::Matrix(r, c, val) => {
-                    if let (Some(ri), Some(ci)) = (r.as_index(), c.as_index()) {
-                        self.matrix[(ri, ci)] += val;
-                    }
-                }
-                Stamp::Rhs(r, val) => {
-                    if let Some(ri) = r.as_index() {
-                        self.rhs[ri] += val;
-                    }
-                }
-            }
-        }
-    }
-
-    fn solve(&self) -> crate::result::Result<Array1<E>> {
-        let lu = self.matrix.partial_piv_lu();
-
-        let solution = lu.solve(&self.rhs);
-
-        let mut out = Array1::zeros(self.size);
-        for i in 0..self.size {
-            out[i] = solution[i];
-        }
-
-        Ok(out)
-    }
-}
-
-impl<E: Scalar + 'static> SymbolicLinearSystem<E> for FaerDenseLinearSystem<E> {
-    type SymbolicType = NoSymbolic;
-
-    fn solve_with_backend(
-        &self,
-        _symbolic: &Self::SymbolicType,
-    ) -> crate::result::Result<Array1<E>> {
-        self.solve()
     }
 }

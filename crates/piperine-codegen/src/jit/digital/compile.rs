@@ -100,12 +100,11 @@ impl<'m> DigitalCompiler<'m> {
                 Stmt::Event { spec, guard: _, body } => clocked.push((spec, &body.stmts)),
                 Stmt::VarDecl { name, default: Some(init), .. } => {
                     // Register power-on init: the var must be in `regs`.
-                    if let Some(&var) = self.resolver.vars.get(name) {
-                        if self.body.regs.contains(&var) {
+                    if let Some(&var) = self.resolver.vars.get(name)
+                        && self.body.regs.contains(&var) {
                             reg_inits.push(RegInit { var, init: init.clone() });
                             continue;
                         }
-                    }
                     comb_stmts.push(stmt);
                 }
                 other => comb_stmts.push(other),
@@ -123,7 +122,7 @@ impl<'m> DigitalCompiler<'m> {
             let mut event_terms = Vec::new();
             extract_event_terms(spec, &mut event_terms);
             for (edge_name, arg) in event_terms {
-                let index = match watch_terms.iter().position(|t| exprs_equal(t, &arg)) {
+                let index = match watch_terms.iter().position(|t| crate::codegen::expr_structural_eq(t, &arg)) {
                     Some(i) => i,
                     None => {
                         watch_terms.push(arg.clone());
@@ -336,41 +335,6 @@ fn is_initial_spec(spec: &EventSpec) -> bool {
     match spec {
         EventSpec::Initial => true,
         EventSpec::Or(specs) => specs.iter().any(is_initial_spec),
-        _ => false,
-    }
-}
-
-/// Structural equality for `Expr` (which doesn't derive `PartialEq`).
-/// Used to deduplicate watch terms across clocked blocks.
-fn exprs_equal(a: &Expr, b: &Expr) -> bool {
-    use piperine_lang::parse::ast::Literal;
-    match (a, b) {
-        (Expr::Literal(la), Expr::Literal(lb)) => match (la, lb) {
-            (Literal::Real(x), Literal::Real(y)) => x == y,
-            (Literal::Int(x), Literal::Int(y)) => x == y,
-            (Literal::Bool(x), Literal::Bool(y)) => x == y,
-            (Literal::Quad(x), Literal::Quad(y)) => x == y,
-            (Literal::String(x), Literal::String(y)) => x == y,
-            (Literal::None, Literal::None) => true,
-            _ => false,
-        },
-        (Expr::Ident(x), Expr::Ident(y)) => x == y,
-        (Expr::Path(x), Expr::Path(y)) => x.segments == y.segments,
-        (Expr::Unary(op_a, x), Expr::Unary(op_b, y)) => op_a == op_b && exprs_equal(x, y),
-        (Expr::Binary(la, op_a, ra), Expr::Binary(lb, op_b, rb)) => {
-            op_a == op_b && exprs_equal(la, lb) && exprs_equal(ra, rb)
-        }
-        (Expr::Call(fa, aa), Expr::Call(fb, ab)) => {
-            exprs_equal(fa, fb) && aa.len() == ab.len()
-                && aa.iter().zip(ab).all(|(x, y)| exprs_equal(x, y))
-        }
-        (Expr::SysCall(na, aa), Expr::SysCall(nb, ab)) => {
-            na == nb && aa.len() == ab.len()
-                && aa.iter().zip(ab).all(|(x, y)| exprs_equal(x, y))
-        }
-        (Expr::Cast(ta, xa), Expr::Cast(tb, xb)) => ta == tb && exprs_equal(xa, xb),
-        (Expr::Field(ba, fa), Expr::Field(bb, fb)) => exprs_equal(ba, bb) && fa == fb,
-        (Expr::Index(ba, ia), Expr::Index(bb, ib)) => exprs_equal(ba, bb) && exprs_equal(ia, ib),
         _ => false,
     }
 }

@@ -40,11 +40,36 @@ impl BenchReport {
 
 pub struct BenchRunner<'d> {
     design: &'d Design,
+    /// Builds `@device`-annotated instances (SPEC Part VI §7); `None`
+    /// without a plugin host.
+    provider: Option<std::rc::Rc<dyn piperine_codegen::device::DeviceProvider>>,
+    /// Lifecycle hooks + plugin bench tasks (SPEC Part VI §8/§6).
+    plugins: Option<std::rc::Rc<dyn crate::plugins::BenchPlugins>>,
 }
 
 impl<'d> BenchRunner<'d> {
     pub fn new(design: &'d Design) -> Self {
-        Self { design }
+        Self { design, provider: None, plugins: None }
+    }
+
+    /// Wire a plugin host's hooks and bench tasks into every session this
+    /// runner spawns.
+    pub fn with_plugins(
+        mut self,
+        plugins: std::rc::Rc<dyn crate::plugins::BenchPlugins>,
+    ) -> Self {
+        self.plugins = Some(plugins);
+        self
+    }
+
+    /// Wire a plugin host as the device provider for every session this
+    /// runner spawns.
+    pub fn with_device_provider(
+        mut self,
+        provider: std::rc::Rc<dyn piperine_codegen::device::DeviceProvider>,
+    ) -> Self {
+        self.provider = Some(provider);
+        self
     }
 
     /// Run every entry point in every `bench` block.
@@ -69,7 +94,13 @@ impl<'d> BenchRunner<'d> {
             return BenchOutcome::Error(format!("bench `{module}` has no fn `{entry}`"));
         };
 
-        let session = SimSession::new(self.design.fork(), module.to_string());
+        let mut session = SimSession::new(self.design.fork(), module.to_string());
+        if let Some(provider) = &self.provider {
+            session.set_device_provider(provider.clone());
+        }
+        if let Some(plugins) = &self.plugins {
+            session.set_plugins(plugins.clone());
+        }
         let mut host = SimHost::new(session);
         let mut interp = Interpreter::new(&mut host);
         match interp.call_fn_decl(f, vec![]) {

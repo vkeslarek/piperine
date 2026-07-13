@@ -38,8 +38,8 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
                     }
 
                     for f in &bench.fns {
-                        if f.sig.params.is_empty() {
-                            if let Some(span) = f.span {
+                        if f.sig.params.is_empty()
+                            && let Some(span) = f.span {
                                 let range = Range {
                                     start: byte_to_position(&doc.source, span.offset()),
                                     end: byte_to_position(
@@ -59,7 +59,6 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
                                     data: None,
                                 });
                             }
-                        }
                     }
                 }
             }

@@ -13,7 +13,7 @@ use std::collections::BinaryHeap;
 
 use piperine_solver::analog::{AnalogReference, Netlist, NodeIdentifier};
 use piperine_solver::analysis::dc::DcAnalysisState;
-use piperine_solver::core::device::{Device, AnalogDevice, DigitalDevice};
+use piperine_solver::core::element::{Element, ElementCapabilities};
 use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};
 use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
 use piperine_solver::math::circular_array::CircularArrayBuffer2;
@@ -25,8 +25,9 @@ use piperine_solver::digital::scheduler::DigitalState;
 
 fn empty_queue() -> BinaryHeap<Reverse<DigitalEvent>> { BinaryHeap::new() }
 
-/// Build a one-row `DcAnalysisState` from a flat voltage vector.
-fn dc_state_from_voltages(voltages: &[f64]) -> DcAnalysisState {
+/// Build a one-row analog history buffer from a flat voltage vector. Pair with
+/// [`DcAnalysisState::new`] (with an empty digital snapshot) at the call site.
+fn dc_history_from_voltages(voltages: &[f64]) -> CircularArrayBuffer2<f64> {
     use ndarray::Array1;
     let mut st = CircularArrayBuffer2::new(1, voltages.len());
     let row = Array1::from_vec(voltages.to_vec());
@@ -34,7 +35,7 @@ fn dc_state_from_voltages(voltages: &[f64]) -> DcAnalysisState {
     st
 }
 
-// ─────────────────────────────── Device definitions ──────────────────────────
+// ─────────────────────────────── Element definitions ──────────────────────────
 
 /// Voltage comparator: reads av[vp] - av[vn], drives digital output.
 ///
@@ -56,25 +57,14 @@ impl Comparator {
     }
 }
 
-impl Device for Comparator {
-    fn device_name(&self) -> &str { "comparator" }
-    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> { Some(self) }
-    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> { Some(self) }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
-}
-
-impl AnalogDevice for Comparator {
-    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, ctx: &Context, nets: &[LogicValue], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+impl Element for Comparator {
+    fn name(&self) -> &str { "comparator" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
+    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, ctx: &Context, nets: &[LogicValue], sink: &mut dyn EventSink) {
         let latest = state.latest().unwrap();
         let eval_ctx = EvalCtx { time: ctx.time, nets, analog: latest.as_slice().unwrap() };
-        let mut seq = 0u64;
-        let mut sink = QueueSink::new(q, ctx.time, 0, &mut seq);
-        self.comb_phase(&eval_ctx, &mut sink);
+        self.comb_phase(&eval_ctx, sink);
     }
-}
-
-impl DigitalDevice for Comparator {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out_net) }
     }
@@ -111,25 +101,14 @@ impl SchmittTrigger {
     }
 }
 
-impl Device for SchmittTrigger {
-    fn device_name(&self) -> &str { "schmitt" }
-    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> { Some(self) }
-    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> { Some(self) }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
-}
-
-impl AnalogDevice for SchmittTrigger {
-    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, ctx: &Context, nets: &[LogicValue], q: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+impl Element for SchmittTrigger {
+    fn name(&self) -> &str { "schmitt" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
+    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, ctx: &Context, nets: &[LogicValue], sink: &mut dyn EventSink) {
         let latest = state.latest().unwrap();
         let eval_ctx = EvalCtx { time: ctx.time, nets, analog: latest.as_slice().unwrap() };
-        let mut seq = 0u64;
-        let mut sink = QueueSink::new(q, ctx.time, 0, &mut seq);
-        self.comb_phase(&eval_ctx, &mut sink);
+        self.comb_phase(&eval_ctx, sink);
     }
-}
-
-impl DigitalDevice for SchmittTrigger {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out_net) }
     }
@@ -165,16 +144,10 @@ impl AnalogSwitch {
     }
 }
 
-impl Device for AnalogSwitch {
-    fn device_name(&self) -> &str { "analog_switch" }
-    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> { Some(self) }
-    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> { Some(self) }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
-}
-
-impl AnalogDevice for AnalogSwitch {
-    fn load_dc(&mut self, _s: &DcAnalysisState, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
+impl Element for AnalogSwitch {
+    fn name(&self) -> &str { "analog_switch" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
+    fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
             if !self.closed { return Vec::new(); }
             let g = self.conductance;
             let (Some(a), Some(b)) = (self.node_a.clone(), self.node_b.clone()) else { return Vec::new(); };
@@ -186,9 +159,6 @@ impl AnalogDevice for AnalogSwitch {
             ]
         }
 
-}
-
-impl DigitalDevice for AnalogSwitch {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: std::slice::from_ref(&self.ctrl_net), outputs: &[] }
     }
@@ -217,16 +187,10 @@ impl GatedCurrentSource {
     }
 }
 
-impl Device for GatedCurrentSource {
-    fn device_name(&self) -> &str { "gated_isrc" }
-    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> { Some(self) }
-    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> { Some(self) }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
-}
-
-impl AnalogDevice for GatedCurrentSource {
-    fn load_dc(&mut self, _s: &DcAnalysisState, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
+impl Element for GatedCurrentSource {
+    fn name(&self) -> &str { "gated_isrc" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
+    fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
             if !self.enabled { return Vec::new(); }
             let mut stamps = Vec::new();
             if let Some(p) = &self.node_p { stamps.push(Stamp::Rhs(p.clone(),  self.ibias)); }
@@ -234,9 +198,6 @@ impl AnalogDevice for GatedCurrentSource {
             stamps
         }
 
-}
-
-impl DigitalDevice for GatedCurrentSource {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: std::slice::from_ref(&self.enable_net), outputs: &[] }
     }
@@ -267,16 +228,10 @@ impl SampleAndHold {
     }
 }
 
-impl Device for SampleAndHold {
-    fn device_name(&self) -> &str { "sah" }
-    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> { Some(self) }
-    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> { Some(self) }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
-}
-
-impl AnalogDevice for SampleAndHold {
-    fn load_dc(&mut self, _s: &DcAnalysisState, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
+impl Element for SampleAndHold {
+    fn name(&self) -> &str { "sah" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
+    fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
             if let Some(r) = &self.out_ref {
                 vec![Stamp::Rhs(r.clone(), self.held_value)]
             } else {
@@ -284,9 +239,6 @@ impl AnalogDevice for SampleAndHold {
             }
         }
 
-}
-
-impl DigitalDevice for SampleAndHold {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: std::slice::from_ref(&self.clk_net), outputs: &[] }
     }
@@ -326,13 +278,9 @@ impl GlitchTestDevice {
     }
 }
 
-impl Device for GlitchTestDevice {
-    fn device_name(&self) -> &str { "glitch_test" }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
-}
-
-impl DigitalDevice for GlitchTestDevice {
+impl Element for GlitchTestDevice {
+    fn name(&self) -> &str { "glitch_test" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out_net) }
     }
@@ -550,7 +498,8 @@ fn test_a2d_multiple_comparators_simultaneous() {
 #[test]
 fn test_d2a_switch_open_no_stamps() {
     let mut sw = AnalogSwitch::new(DigitalNet(0), None, None, 0.1);
-    let state = dc_state_from_voltages(&[0.0]);
+    let __hist = dc_history_from_voltages(&[0.0]);
+    let state = DcAnalysisState::new(&__hist, &[], 1.0);
     let stamps = sw.load_dc(&state, &dummy_context());
     assert!(stamps.is_empty(), "open switch: no stamps");
 }
@@ -572,7 +521,8 @@ fn test_d2a_switch_closed_stamps_conductance() {
     let mut sink = QueueSink::new(&mut eq, 0.0, 0, &mut seq);
     sw.comb_phase(&ctx, &mut sink);
 
-    let state = dc_state_from_voltages(&[1.0, 0.0]);
+    let __hist = dc_history_from_voltages(&[1.0, 0.0]);
+    let state = DcAnalysisState::new(&__hist, &[], 1.0);
     let stamps = sw.load_dc(&state, &dummy_context());
 
     assert_eq!(stamps.len(), 4, "closed switch: 4 matrix stamps");
@@ -597,7 +547,8 @@ fn test_d2a_switch_toggle_stamps() {
     let a = netlist.connect_node(NodeIdentifier::Anonymous(10));
     let b = netlist.connect_node(NodeIdentifier::Anonymous(11));
     let mut sw = AnalogSwitch::new(DigitalNet(0), Some(a), Some(b), 100.0);
-    let state = dc_state_from_voltages(&[5.0, 0.0]);
+    let __hist = dc_history_from_voltages(&[5.0, 0.0]);
+    let state = DcAnalysisState::new(&__hist, &[], 1.0);
 
     // Open → no stamps
     assert!(sw.load_dc(&state, &dummy_context()).is_empty());
@@ -624,7 +575,8 @@ fn test_d2a_switch_toggle_stamps() {
 #[test]
 fn test_d2a_gated_isrc_disabled_no_stamps() {
     let mut src = GatedCurrentSource::new(DigitalNet(0), None, None, 1e-3);
-    let state = dc_state_from_voltages(&[]);
+    let __hist = dc_history_from_voltages(&[]);
+    let state = DcAnalysisState::new(&__hist, &[], 1.0);
     assert!(src.load_dc(&state, &dummy_context()).is_empty());
 }
 
@@ -645,7 +597,8 @@ fn test_d2a_gated_isrc_enabled_stamps() {
     let mut sink = QueueSink::new(&mut eq, 0.0, 0, &mut seq);
     src.comb_phase(&ctx, &mut sink);
 
-    let state = dc_state_from_voltages(&[0.0, 0.0]);
+    let __hist = dc_history_from_voltages(&[0.0, 0.0]);
+    let state = DcAnalysisState::new(&__hist, &[], 1.0);
     let stamps = src.load_dc(&state, &dummy_context());
     assert_eq!(stamps.len(), 2);
 
@@ -670,7 +623,8 @@ fn test_d2a_switch_x_state_stays_open() {
     let mut seq = 0u64;
     let mut sink = QueueSink::new(&mut eq, 0.0, 0, &mut seq);
     sw.comb_phase(&ctx, &mut sink);
-    let state = dc_state_from_voltages(&[1.0, 0.0]);
+    let __hist = dc_history_from_voltages(&[1.0, 0.0]);
+    let state = DcAnalysisState::new(&__hist, &[], 1.0);
     assert!(sw.load_dc(&state, &dummy_context()).is_empty(), "X state → open switch (safe)");
 }
 
@@ -688,7 +642,8 @@ fn test_d2a_switch_z_state_stays_open() {
     let mut seq = 0u64;
     let mut sink = QueueSink::new(&mut eq, 0.0, 0, &mut seq);
     sw.comb_phase(&ctx, &mut sink);
-    let state = dc_state_from_voltages(&[1.0, 0.0]);
+    let __hist = dc_history_from_voltages(&[1.0, 0.0]);
+    let state = DcAnalysisState::new(&__hist, &[], 1.0);
     assert!(sw.load_dc(&state, &dummy_context()).is_empty(), "Z state → open switch (safe)");
 }
 
@@ -714,7 +669,8 @@ fn test_sah_captures_on_posedge() {
     // Held value should be 1.23
     assert!((sah.held_value - 1.23).abs() < 1e-12);
 
-    let state = dc_state_from_voltages(&[0.0, 0.0, 1.23]);
+    let __hist = dc_history_from_voltages(&[0.0, 0.0, 1.23]);
+    let state = DcAnalysisState::new(&__hist, &[], 1.0);
     let stamps = sah.load_dc(&state, &dummy_context());
     assert_eq!(stamps.len(), 1);
     if let Stamp::Rhs(_, v) = &stamps[0] {
@@ -813,7 +769,8 @@ fn test_loop_comparator_closes_switch() {
     sw.comb_phase(&ctx, &mut sink);
 
     // Verify switch now contributes analog stamps
-    let state = dc_state_from_voltages(&[0.8, 0.0]);
+    let __hist = dc_history_from_voltages(&[0.8, 0.0]);
+    let state = DcAnalysisState::new(&__hist, &[], 1.0);
     let stamps = sw.load_dc(&state, &dummy_context());
     assert_eq!(stamps.len(), 4, "feedback: switch closed, analog path active");
 }
@@ -842,7 +799,8 @@ fn test_loop_comparator_opens_switch() {
     let ctx = EvalCtx { time: 1e-9, nets: &nets1, analog: &[] };
     let mut sink = QueueSink::new(&mut eq, 1e-9, 0, &mut seq);
     sw.comb_phase(&ctx, &mut sink);
-    let state = dc_state_from_voltages(&[0.9, 0.0]);
+    let __hist = dc_history_from_voltages(&[0.9, 0.0]);
+    let state = DcAnalysisState::new(&__hist, &[], 1.0);
     assert_eq!(sw.load_dc(&state, &dummy_context()).len(), 4);
 
     // Then: lower voltage → open switch
@@ -889,13 +847,9 @@ fn test_a2d_drives_digital_chain() {
 
     #[allow(dead_code)]
     struct SimpleInverter { input: DigitalNet, output: DigitalNet, id: usize }
-    impl Device for SimpleInverter {
-    fn device_name(&self) -> &str { "inv" }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
-}
-
-impl DigitalDevice for SimpleInverter {
+    impl Element for SimpleInverter {
+    fn name(&self) -> &str { "inv" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: std::slice::from_ref(&self.input), outputs: std::slice::from_ref(&self.output) }
     }
@@ -922,11 +876,11 @@ impl DigitalDevice for SimpleInverter {
     // Inject comparator result: net 0 = One at t=1ns
     state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0 });
 
-    let mut devices: Vec<Box<dyn Device>> = vec![
+    let mut devices: Vec<Box<dyn Element>> = vec![
         Box::new(SimpleInverter { input: DigitalNet(0), output: DigitalNet(1), id: 0 }),
     ];
 
-    state.evaluate_until_stable(1e-9, &mut devices);
+    state.evaluate_until_stable(1e-9, &mut devices, Default::default(), &[]).unwrap();
 
     assert_eq!(state.nets[0], LogicValue::One,  "comparator output = 1");
     assert_eq!(state.nets[1], LogicValue::Zero, "inverter output = 0");
@@ -942,7 +896,8 @@ fn test_d2a_selective_current_sources() {
     let mut src1 = GatedCurrentSource::new(DigitalNet(1), Some(node.clone()), None, 2e-3);
     let mut src2 = GatedCurrentSource::new(DigitalNet(2), Some(node.clone()), None, 4e-3);
 
-    let state = dc_state_from_voltages(&[0.0]);
+    let __hist = dc_history_from_voltages(&[0.0]);
+    let state = DcAnalysisState::new(&__hist, &[], 1.0);
 
     // Enable only src0 and src2
     let mut eq = empty_queue();

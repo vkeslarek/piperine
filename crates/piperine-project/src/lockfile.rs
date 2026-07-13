@@ -8,11 +8,44 @@ pub struct PiperineLock {
     pub package: Vec<LockEntry>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum EntryKind {
+    #[default]
+    Dependency,
+    Plugin,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockEntry {
     pub name: String,
     pub source: String,
     pub hash: String,
+    /// Discriminates PHDL library deps from plugin artifacts. Defaults to
+    /// `Dependency` so pre-plugin lockfiles parse unchanged.
+    #[serde(default, skip_serializing_if = "is_dependency")]
+    pub kind: EntryKind,
+    /// Plugin-only: sha256 of the loaded artifact. A change forces TOFU
+    /// re-approval (SPEC Part VI §5.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_hash: Option<String>,
+    /// Plugin-only: the manifest-declared ABI at trust time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abi: Option<String>,
+    /// Plugin-only: RFC3339 timestamp of the TOFU approval.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trusted_at: Option<String>,
+}
+
+fn is_dependency(kind: &EntryKind) -> bool {
+    *kind == EntryKind::Dependency
+}
+
+impl LockEntry {
+    /// A plain dependency entry (the pre-plugin shape).
+    pub fn dependency(name: String, source: String, hash: String) -> Self {
+        Self { name, source, hash, kind: EntryKind::Dependency, content_hash: None, abi: None, trusted_at: None }
+    }
 }
 
 #[derive(Error, Debug)]
@@ -53,7 +86,18 @@ impl PiperineLock {
     pub fn get_hash(&self, name: &str) -> Option<String> {
         self.package
             .iter()
-            .find(|p| p.name == name)
+            .find(|p| p.name == name && p.kind == EntryKind::Dependency)
             .map(|p| p.hash.clone())
+    }
+
+    /// The trusted plugin entry for `name`, if one was recorded.
+    pub fn plugin_entry(&self, name: &str) -> Option<&LockEntry> {
+        self.package.iter().find(|p| p.name == name && p.kind == EntryKind::Plugin)
+    }
+
+    /// Record (or replace) a plugin trust decision.
+    pub fn record_plugin(&mut self, entry: LockEntry) {
+        self.package.retain(|p| !(p.kind == EntryKind::Plugin && p.name == entry.name));
+        self.package.push(entry);
     }
 }

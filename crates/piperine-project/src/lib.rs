@@ -8,12 +8,19 @@ use std::collections::HashMap;
 pub mod git;
 pub mod lockfile;
 pub mod resolver;
+pub mod source_map;
+
+pub use source_map::project_source_map;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PiperineToml {
     pub project: Project,
     #[serde(default)]
     pub dependencies: HashMap<String, DependencySource>,
+    /// Plugin sources (`[plugins]`) — separate from `[dependencies]`;
+    /// plugins are loadable artifacts, not PHDL libraries (SPEC Part VI §5).
+    #[serde(default)]
+    pub plugins: HashMap<String, DependencySource>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -34,6 +41,12 @@ pub struct GitDependency {
     pub version: Option<String>,
     pub branch: Option<String>,
     pub rev: Option<String>,
+    /// Directory inside the repository holding the package/plugin — the
+    /// official-plugins monorepo case (`git = ".../plugins", subdir =
+    /// "piperine-spice"`). Resolution checks out the whole repository and
+    /// points the resolved path at `<checkout>/<subdir>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subdir: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -88,6 +101,7 @@ impl PiperineToml {
                 edition: "2024".to_string(),
             },
             dependencies: HashMap::new(),
+            plugins: HashMap::new(),
         }
     }
 

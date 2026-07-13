@@ -52,6 +52,39 @@ fn from_ir_ppr_resistor_yields_circuit() {
 }
 
 #[test]
+fn jit_device_exposes_params_through_introspection() {
+    use piperine_solver::core::element::Element;
+    use piperine_solver::core::introspect::{Invalidation, ParamError, Value};
+
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod R (inout p: Electrical, inout n: Electrical) { param r: Real = 1.0e3; }
+        analog R { I(p, n) <+ V(p, n) / r; }
+        mod Top ( inout a: Electrical, inout b: Electrical ) { R(a, b); }
+    ";
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("parse+elab");
+    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering");
+    let mut ci = from_ir(&elab, &bodies, "Top").expect("from_ir compiles Top");
+
+    let dev = &mut ci.all_devices_mut()[0];
+
+    // The JIT device advertises its `r` parameter through the introspection ABI.
+    assert!(dev.list_params().iter().any(|p| p.name == "r"), "`r` should be listed");
+    assert_eq!(dev.get_param("r"), Some(Value::Real(1000.0)));
+
+    // A runtime write restamps (no rebuild) and is read back.
+    assert_eq!(dev.set_param("r", Value::Real(2000.0)), Ok(Invalidation::Restamp));
+    assert_eq!(dev.get_param("r"), Some(Value::Real(2000.0)));
+
+    // Unknown parameters and non-real values are rejected loud.
+    assert!(matches!(dev.set_param("nope", Value::Real(1.0)), Err(ParamError::Unknown(_))));
+    assert!(matches!(
+        dev.set_param("r", Value::Boolean(true)),
+        Err(ParamError::TypeMismatch { .. })
+    ));
+}
+
+#[test]
 fn from_ir_unknown_top_returns_err() {
     let src = "
         discipline Electrical { potential v: Real; flow i: Real; }
@@ -72,3 +105,4 @@ fn ir_analog_to_device(
     let compiled = piperine_codegen::CompiledModule::compile(body)?;
     compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).map(|a| a.clone())
 }
+

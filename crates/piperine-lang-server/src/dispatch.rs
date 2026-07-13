@@ -111,11 +111,10 @@ pub fn handle_notification(state: &mut ServerState, not: Notification, conn_send
         DidSaveTextDocument::METHOD => {
             if let Ok(params) = serde_json::from_value::<lsp_types::DidSaveTextDocumentParams>(not.params) {
                 let uri = params.text_document.uri;
-                if let Some(text) = params.text {
-                    if let Some(doc) = state.documents.get_mut(&uri) {
+                if let Some(text) = params.text
+                    && let Some(doc) = state.documents.get_mut(&uri) {
                         doc.source = text;
                     }
-                }
             }
         }
         DidCloseTextDocument::METHOD => {

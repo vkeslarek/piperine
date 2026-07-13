@@ -82,12 +82,10 @@ pub(crate) enum AbiField {
 pub(crate) type DigitalFn = unsafe extern "C" fn(*const DigitalAbi);
 pub(crate) type WatchFn = unsafe extern "C" fn(*const DigitalAbi, *mut i64);
 
-/// Where each symbol lives at runtime.
-/// on a signal edge.
-
 /// One clocked block's edge sensitivity: indices into the watch-term array
 /// plus the polarity that fires the block. `is_initial` marks a block that
 /// fires once during `init` (from `@ initial` in a digital body) rather than
+/// on a signal edge.
 #[derive(Debug, Clone)]
 pub struct ClockedSpec {
     pub terms: Vec<(usize, EdgeKind)>,

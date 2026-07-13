@@ -142,6 +142,35 @@ pub enum ElabErrorKind {
         net: String,
         discipline: String,
     },
+    /// A `match` does not cover every possible value of the scrutinee.
+    #[error("non-exhaustive match in module `{module}`: {missing}")]
+    #[diagnostic(code(E2024))]
+    NonExhaustiveMatch {
+        module: String,
+        /// What is missing — either variant names or a note about wildcard.
+        missing: String,
+    },
+    /// An `@schema(...)` attribute references a schema name not registered
+    /// by any bundle via `@attribute(schema = "...")`.
+    #[error("unknown attribute schema `{0}` — not registered by any bundle")]
+    #[diagnostic(code(E2022))]
+    UnknownAttrSchema(String),
+    /// An item is accessed from outside its declaring package without being
+    /// declared `pub`.
+    #[error("item `{item}` is private to package `{owner_pkg}`")]
+    #[diagnostic(code(E2021))]
+    PrivateItem {
+        item: String,
+        owner_pkg: String,
+    },
+    /// An attribute argument does not match the schema's bundle field.
+    #[error("attribute schema `{schema}` field `{field}`: {reason}")]
+    #[diagnostic(code(E2023))]
+    AttrSchemaField {
+        schema: String,
+        field: String,
+        reason: String,
+    },
     /// A catch-all for other elaboration errors.
     #[error("{0}")]
     #[diagnostic(code(E2999))]

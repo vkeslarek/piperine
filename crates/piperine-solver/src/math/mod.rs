@@ -1,6 +1,7 @@
 pub mod circular_array;
 pub mod constant;
 pub mod faer;
+pub mod integration;
 pub mod iv;
 pub mod linear;
 pub mod newton_raphson;

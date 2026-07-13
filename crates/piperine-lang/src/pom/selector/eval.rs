@@ -266,7 +266,7 @@ impl<'a> Evaluator<'a> {
             }
             Axis::Driver | Axis::Load | Axis::Parent | Axis::Ancestor => {
                 // To be implemented: structural connectivity and parent axes
-                return Err(crate::pom::error::SelectorError::AxisNotImplemented(axis.clone()));
+                return Err(crate::pom::error::SelectorError::AxisNotImplemented(*axis));
             }
 
         }

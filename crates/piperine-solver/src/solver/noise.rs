@@ -5,7 +5,6 @@ use crate::core::circuit::CircuitInstance;
 use crate::analog::{AnalogReference, AnalogVariable};
 use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
 use crate::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
-use crate::math::unit::UnitExt;
 use crate::solver::dc::DcSolver;
 use crate::solver::Context;
 use ndarray::Array1;
@@ -96,30 +95,28 @@ impl<'a> NoiseSolver<'a> {
         let mut out_noise_sq = Vec::with_capacity(frequencies.len());
 
         for &f in &frequencies {
-            let ac_ctx = AcAnalysisContext { frequency: f.Hz() };
+            let ac_ctx = AcAnalysisContext { frequency: f };
 
             let stamps = Self::assemble_linearized(self.circuit, &self.dc_point, f, &self.context)?;
             let adjoint_sol = self.solve_adjoint_system(stamps)?;
 
             let mut step_density = 0.0;
             for source in &mut self.circuit.devices {
-                if let Some(a) = source.as_analog() {
-                    let noises = a.noise_current_psd(&self.dc_point, &ac_ctx);
-                    for n in noises {
-                        let z_p = self
-                            .out_ref
-                            .idx()
-                            .map(|i| adjoint_sol[i])
-                            .unwrap_or_default();
-                        let z_n = self
-                            .ref_ref
-                            .idx()
-                            .map(|i| adjoint_sol[i])
-                            .unwrap_or_default();
-                        let gain_sq = (z_p - z_n).norm_sqr();
+                let noises = source.noise_current_psd(&self.dc_point, &ac_ctx);
+                for n in noises {
+                    let z_p = self
+                        .out_ref
+                        .idx()
+                        .map(|i| adjoint_sol[i])
+                        .unwrap_or_default();
+                    let z_n = self
+                        .ref_ref
+                        .idx()
+                        .map(|i| adjoint_sol[i])
+                        .unwrap_or_default();
+                    let gain_sq = (z_p - z_n).norm_sqr();
 
-                        step_density += gain_sq * n.value;
-                    }
+                    step_density += gain_sq * n.value;
                 }
             }
             out_noise_sq.push(step_density);
@@ -191,13 +188,11 @@ impl<'a> NoiseSolver<'a> {
         context: &Context,
     ) -> crate::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
         let ac_ctx = AcAnalysisContext {
-            frequency: f_hz.Hz(),
+            frequency: f_hz,
         };
         let mut all_stamps = Vec::new();
         for ac in &mut circuit.devices {
-            if let Some(a) = ac.as_analog() {
-                all_stamps.extend(a.load_ac(dc_point, &ac_ctx, context));
-            }
+            all_stamps.extend(ac.load_ac(dc_point, &ac_ctx, context));
         }
         Ok(all_stamps)
     }
@@ -220,10 +215,14 @@ impl<'a> NoiseSolver<'a> {
         let net = circuit.netlist();
         let out = net
             .reference_for(&AnalogVariable::Node(opt.output_node.clone()))
-            .ok_or_else(|| crate::error::Error::simple("Noise", "Output node not found"))?;
+            .ok_or_else(|| {
+                crate::error::Error::simple(crate::error::SolverDomain::Noise, "Output node not found")
+            })?;
         let ref_ = net
             .reference_for(&AnalogVariable::Node(opt.reference_node.clone()))
-            .ok_or_else(|| crate::error::Error::simple("Noise", "Reference node not found"))?;
+            .ok_or_else(|| {
+                crate::error::Error::simple(crate::error::SolverDomain::Noise, "Reference node not found")
+            })?;
         Ok((out.clone(), ref_.clone()))
     }
 

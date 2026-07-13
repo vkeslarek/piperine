@@ -42,7 +42,7 @@ impl Elaborator {
         out: &mut Vec<ModBodyItem>,
     ) -> Result<(), ElabError> {
         let bundle = self
-            .bundles
+            .syms.bundles
             .get(bundle_name)
             .cloned()
             .ok_or_else(|| ElabError::from(ElabErrorKind::UnknownBundle(bundle_name.to_owned())))?;
@@ -168,7 +168,7 @@ impl Elaborator {
             }
         }
 
-        Ok(Module { span: decl.span, attributes: Vec::new(), name: decl.name.clone(), ports, params, wires, vars, instances, connections, behaviors: vec![] })
+        Ok(Module { span: decl.span, attributes: super::attrs::convert_attributes(&decl.attrs, &self.ctx.schemas, &self.syms.bundles)?, name: decl.name.clone(), ports, params, wires, vars, instances, connections, behaviors: vec![], origin: None })
     }
 
     /// Lowers a slice of `ModuleStatement`s, appending the resulting
@@ -204,14 +204,14 @@ impl Elaborator {
         out: &mut Vec<ModBodyItem>,
     ) -> Result<(), ElabError> {
         match stmt {
-            ModuleStatement::ParamDecl { name, ty, default, span, .. } => {
+            ModuleStatement::ParamDecl { name, ty, default, span, attrs, .. } => {
                 // GAPS §I.14 — a bundle-typed param (`param model : DioModel
                 // = DioModel {};`) is flattened here into one scalar param
                 // per bundle field, named `{name}_{field}`. This matches
                 // the lowering side, which already turns `model.rsh` field
                 // access into `IrExpr::Param("model_rsh")` — see
                 // `lowering/expr.rs`'s `Expr::Field` arm.
-                if ty.dimensions.is_empty() && self.bundles.contains_key(&ty.name)
+                if ty.dimensions.is_empty() && self.syms.bundles.contains_key(&ty.name)
                     && !self.is_net_capable_bundle(&ty.name)
                 {
                     self.flatten_bundle_param(name, &ty.name, default.as_ref(), env, out)?;
@@ -223,7 +223,7 @@ impl Elaborator {
                 // elaboration: the default's bundle literal names the
                 // concrete type, which must `impl` the capability; the
                 // param then flattens exactly like a bundle-typed one.
-                if ty.dimensions.is_empty() && self.capability_decls.contains_key(&ty.name) {
+                if ty.dimensions.is_empty() && self.syms.capability_decls.contains_key(&ty.name) {
                     let Some(crate::parse::ast::Expr::BundleLit { ty: lit_ty, .. }) = default
                     else {
                         return Err(ElabError::from(ElabErrorKind::BundleParamDefault {
@@ -233,7 +233,7 @@ impl Elaborator {
                                 .to_owned(),
                         }));
                     };
-                    let implements = self.impl_decls.iter().any(|i| {
+                    let implements = self.syms.impl_decls.iter().any(|i| {
                         i.capability.as_deref() == Some(ty.name.as_str()) && i.ty == lit_ty.name
                     });
                     if !implements {
@@ -256,7 +256,7 @@ impl Elaborator {
                 } else {
                     None
                 };
-                out.push(ModBodyItem::Param(Param { span: *span, attributes: Vec::new(),
+                out.push(ModBodyItem::Param(Param { span: *span, attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?,
                     name: name.clone(),
                     ty: vt,
                     default: def,
@@ -264,13 +264,14 @@ impl Elaborator {
                 }));
             }
 
-            ModuleStatement::WireDecl { name, ty, span, .. } => {
+            ModuleStatement::WireDecl { name, ty, span, attrs, .. } => {
                 let resolved_name = type_subst.get(&ty.name).map(|s| s.as_str()).unwrap_or(&ty.name);
-                if let Some(bundle) = self.bundles.get(resolved_name).cloned()
+                if let Some(bundle) = self.syms.bundles.get(resolved_name).cloned()
                     && self.is_net_capable_bundle(resolved_name) {
+                        let wire_attrs = super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?;
                         for field in &bundle.fields {
                             let field_ty = self.resolve_net_type(&field.ty, env, type_subst)?;
-                            out.push(ModBodyItem::Wire(Wire { span: *span, attributes: Vec::new(),
+                            out.push(ModBodyItem::Wire(Wire { span: *span, attributes: wire_attrs.clone(),
                                 name: format!("{}_{}", name, field.name),
                                 ty: field_ty,
                             }));
@@ -278,10 +279,10 @@ impl Elaborator {
                         return Ok(());
                     }
                 let nt = self.resolve_net_type(ty, env, type_subst)?;
-                out.push(ModBodyItem::Wire(Wire { span: *span, attributes: Vec::new(), name: name.clone(), ty: nt }));
+                out.push(ModBodyItem::Wire(Wire { span: *span, attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?, name: name.clone(), ty: nt }));
             }
 
-            ModuleStatement::VarDecl { name, ty, default, span, .. } => {
+            ModuleStatement::VarDecl { name, ty, default, span, attrs, .. } => {
                 // §7.2 + §I.15 — a `var` declared directly in a `mod` body
                 // (as opposed to inside `analog`/`digital`) is persistent
                 // module-level state, e.g. `var sw_state : Real = 0.0;` in
@@ -325,7 +326,7 @@ impl Elaborator {
                     .transpose()?;
                 out.push(ModBodyItem::ModVar(Var {
                     span: *span,
-                    attributes: Vec::new(),
+                    attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?,
                     name: name.clone(),
                     ty: vt,
                     init,
@@ -333,16 +334,8 @@ impl Elaborator {
             }
 
             ModuleStatement::StructuralFor { var, range, body, attrs: _, span: _ } => {
-                let start = env.eval_nat(&range.start).map_err(|e| ElabErrorKind::ConstEval {
-                    context: "for-loop start in module body".to_owned(),
-                    source: e,
-                })?;
-                let end_val = env.eval_nat(&range.end).map_err(|e| ElabErrorKind::ConstEval {
-                    context: "for-loop end in module body".to_owned(),
-                    source: e,
-                })?;
-                let end = if range.inclusive { end_val + 1 } else { end_val };
-                for i in start..end {
+                let iter = super::eval_range(range, env, "for-loop in module body")?;
+                for i in iter {
                     env.push();
                     env.define(var.clone(), Value::Nat(i));
                     let body = body.clone();
@@ -365,138 +358,15 @@ impl Elaborator {
                 self.lower_mod_stmts(&taken, env, type_subst, local_types, out)?;
             }
 
-            ModuleStatement::Instance {
-                name,
-                array_index,
-                module,
-                const_args,
-                type_args: _,
-                ports,
-                params,
-                span,
-                ..
-            } => {
-                let label = if let Some(n) = name {
-                    if let Some(idx_expr) = array_index {
-                        let idx = env.eval_nat(idx_expr).map_err(|e| ElabErrorKind::ConstEval {
-                            context: format!("instance array index for `{}`", n),
-                            source: e,
-                        })?;
-                        Some(format!("{}_{}", n, idx))
-                    } else {
-                        Some(n.clone())
-                    }
-                } else {
-                    None
-                };
-
-                // Resolve const args to concrete values.
-                let mut resolved_const_args: Vec<u64> = Vec::new();
-                for ce in const_args {
-                    let v = env.eval_nat(ce).map_err(|e| ElabErrorKind::ConstEval {
-                        context: format!("const arg for module `{}`", module),
-                        source: e,
-                    })?;
-                    resolved_const_args.push(v);
-                }
-
-                // Mangle module name with const args.
-                let mono_name = if resolved_const_args.is_empty() {
-                    module.clone()
-                } else {
-                    let suffix: Vec<String> =
-                        resolved_const_args.iter().map(|n| n.to_string()).collect();
-                    format!("{}__{}", module, suffix.join("_"))
-                };
-
-                // Trigger on-demand monomorphization so the module exists in the program.
-                if !resolved_const_args.is_empty() {
-                    self.monomorphize(module, &resolved_const_args)?;
-                }
-
-                // Named port connections (`.p = a`) reorder to the child
-                // module's declared port order; positional arguments fill
-                // the remaining ports in declaration order (SPEC §7.3).
-                let ports = self.order_port_conns(module, ports)?;
-
-                // Resolve port connections to concrete net references.
-                let mut elab_ports = Vec::new();
-                for p in &ports {
-                    let mut expanded = false;
-                    if let crate::parse::ast::Expr::Ident(p_name) = p
-                        && let Some(ty_name) = local_types.get(p_name)
-                            && let Some(bundle) = self.bundles.get(ty_name).cloned()
-                                && self.is_net_capable_bundle(ty_name) {
-                                    expanded = true;
-                                    for field in &bundle.fields {
-                                        elab_ports.push(crate::pom::net_type::NetRef::simple(format!("{}_{}", p_name, field.name)));
-                                    }
-                                }
-                    if !expanded {
-                        elab_ports.push(self.eval_net_ref(p, env)?);
-                    }
-                }
-
-                // Resolve param overrides. A `BundleLit` override (GAPS
-                // §I.14, e.g. `.model = ResModel { .rsh = 50.0 }`) flattens
-                // to one `(param_field, value)` pair per named field,
-                // matching the bundle-param flattening done for `param`
-                // declarations above — fields the literal omits are left
-                // to the child module's own flattened defaults.
-                let mut resolved_params: Vec<(String, Value)> = Vec::new();
-                for pa in params {
-                    match &pa.expr {
-                        Expr::BundleLit { ty: lit_ty, fields, .. } => {
-                            if let Some(child_decl) = self.module_decls.get(module) {
-                                let param_decl = child_decl.body.iter().find_map(|stmt| {
-                                    if let ModuleStatement::ParamDecl { name, ty, .. } = stmt {
-                                        if name == &pa.name {
-                                            return Some(ty);
-                                        }
-                                    }
-                                    None
-                                });
-                                if let Some(ty) = param_decl {
-                                    if self.capability_decls.contains_key(&ty.name) {
-                                        let implements = self.impl_decls.iter().any(|i| {
-                                            i.capability.as_deref() == Some(ty.name.as_str()) && i.ty == lit_ty.name
-                                        });
-                                        if !implements {
-                                            return Err(ElabError::from(ElabErrorKind::UndefinedType(format!(
-                                                "`{}` does not implement capability `{}` (param `{}`)",
-                                                lit_ty.name, ty.name, pa.name
-                                            ))));
-                                        }
-                                    }
-                                }
-                            }
-                            resolved_params.extend(self.flatten_bundle_param_override(
-                                &pa.name, fields, env,
-                            )?);
-                        }
-                        other => {
-                            let v = env.eval(other).map_err(|e| ElabErrorKind::ConstEval {
-                                context: format!("param `{}` of instance `{}`", pa.name, module),
-                                source: e,
-                            })?;
-                            resolved_params.push((pa.name.clone(), v));
-                        }
-                    }
-                }
-
-                out.push(ModBodyItem::Inst(Instance { span: *span, attributes: Vec::new(),
-                    label,
-                    module: mono_name,
-                    ports: elab_ports,
-                    params: resolved_params,
-                }));
+            ModuleStatement::Instance { .. } => {
+                self.lower_instance(stmt, env, local_types, out)?;
             }
 
             ModuleStatement::Connection { lhs, rhs, span, .. } => {
                 let mut is_bundle_conn = false;
                 if let (crate::parse::ast::Expr::Ident(l_name), crate::parse::ast::Expr::Ident(r_name)) = (lhs, rhs)
                     && let Some(l_ty_name) = local_types.get(l_name)
-                        && let Some(bundle) = self.bundles.get(l_ty_name).cloned()
+                        && let Some(bundle) = self.syms.bundles.get(l_ty_name).cloned()
                             && self.is_net_capable_bundle(l_ty_name) {
                                 is_bundle_conn = true;
                                 for field in &bundle.fields {
@@ -542,6 +412,120 @@ impl Elaborator {
         Ok(())
     }
 
+    /// Lower a single `ModuleStatement::Instance` into an `Instance` POM
+    /// node. Handles label/array-index, const-arg evaluation, monomorphization,
+    /// port ordering + bundle expansion, and param-override resolution.
+    fn lower_instance(
+        &mut self,
+        stmt: &ModuleStatement,
+        env: &mut ConstEnv,
+        local_types: &HashMap<String, String>,
+        out: &mut Vec<ModBodyItem>,
+    ) -> Result<(), ElabError> {
+        let ModuleStatement::Instance {
+            name, array_index, module, const_args, ports, params, span, attrs, ..
+        } = stmt else {
+            unreachable!("lower_instance called on a non-Instance statement");
+        };
+        let span = *span;
+        let label = if let Some(n) = name {
+            if let Some(idx_expr) = array_index {
+                let idx = env.eval_nat(idx_expr).map_err(|e| ElabErrorKind::ConstEval {
+                    context: format!("instance array index for `{}`", n),
+                    source: e,
+                })?;
+                Some(format!("{}[{}]", n, idx))
+            } else {
+                Some(n.clone())
+            }
+        } else {
+            None
+        };
+
+        let mut resolved_const_args: Vec<u64> = Vec::new();
+        for ce in const_args {
+            let v = env.eval_nat(ce).map_err(|e| ElabErrorKind::ConstEval {
+                context: format!("const arg for module `{}`", module),
+                source: e,
+            })?;
+            resolved_const_args.push(v);
+        }
+
+        let mono_name = super::mono_name(module, &resolved_const_args);
+
+        if !resolved_const_args.is_empty() {
+            self.monomorphize(module, &resolved_const_args)?;
+        }
+
+        let ports = self.order_port_conns(module, ports)?;
+
+        let mut elab_ports = Vec::new();
+        for p in &ports {
+            let mut expanded = false;
+            if let crate::parse::ast::Expr::Ident(p_name) = p
+                && let Some(ty_name) = local_types.get(p_name)
+                    && let Some(bundle) = self.syms.bundles.get(ty_name).cloned()
+                        && self.is_net_capable_bundle(ty_name) {
+                            expanded = true;
+                            for field in &bundle.fields {
+                                elab_ports.push(crate::pom::net_type::NetRef::simple(format!("{}_{}", p_name, field.name)));
+                            }
+                        }
+            if !expanded {
+                elab_ports.push(self.eval_net_ref(p, env)?);
+            }
+        }
+
+        let mut resolved_params: Vec<(String, Value)> = Vec::new();
+        for pa in params {
+            match &pa.expr {
+                Expr::BundleLit { ty: lit_ty, fields, .. } => {
+                    if let Some(child_decl) = self.syms.module_decls.get(module) {
+                        let param_decl = child_decl.body.iter().find_map(|stmt| {
+                            if let ModuleStatement::ParamDecl { name, ty, .. } = stmt
+                                && name == &pa.name {
+                                    return Some(ty);
+                                }
+                            None
+                        });
+                        if let Some(ty) = param_decl
+                            && self.syms.capability_decls.contains_key(&ty.name) {
+                                let implements = self.syms.impl_decls.iter().any(|i| {
+                                    i.capability.as_deref() == Some(ty.name.as_str()) && i.ty == lit_ty.name
+                                });
+                                if !implements {
+                                    return Err(ElabError::from(ElabErrorKind::UndefinedType(format!(
+                                        "`{}` does not implement capability `{}` (param `{}`)",
+                                        lit_ty.name, ty.name, pa.name
+                                    ))));
+                                }
+                            }
+                    }
+                    resolved_params.extend(self.flatten_bundle_param_override(
+                        &pa.name, fields, env,
+                    )?);
+                }
+                other => {
+                    let v = env.eval(other).map_err(|e| ElabErrorKind::ConstEval {
+                        context: format!("param `{}` of instance `{}`", pa.name, module),
+                        source: e,
+                    })?;
+                    resolved_params.push((pa.name.clone(), v));
+                }
+            }
+        }
+
+        out.push(ModBodyItem::Inst(Instance {
+            span,
+            attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?,
+            label,
+            module: mono_name,
+            ports: elab_ports,
+            params: resolved_params,
+        }));
+        Ok(())
+    }
+
     /// Resolve an instance's port-connection list to positional order
     /// (SPEC §7.3): named arguments (`.p = a`) bind to the child module's
     /// declared port of that name; positional arguments fill the remaining
@@ -562,7 +546,7 @@ impl Elaborator {
                 .collect());
         }
         let decl = self
-            .module_decls
+            .syms.module_decls
             .get(module)
             .ok_or_else(|| ElabError::from(ElabErrorKind::UndefinedModule(module.to_string())))?;
         let mut named: HashMap<&str, &Expr> = HashMap::new();

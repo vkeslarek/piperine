@@ -28,3 +28,10 @@ pub struct NoiseAnalysisResult {
     pub out_noise_sq: Vec<f64>,
     pub integrated_noise: f64,
 }
+
+/// Per-analysis config for noise. Carries the sweep, output/reference nodes,
+/// and optional input source name.
+#[derive(Debug, Clone)]
+pub struct NoiseContext {
+    pub options: NoiseAnalysisOptions,
+}

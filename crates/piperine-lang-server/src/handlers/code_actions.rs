@@ -14,8 +14,8 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
 
     if state.documents.contains_key(&params.text_document.uri) {
         for diag in &params.context.diagnostics {
-            if diag.message.contains("unresolved") || diag.message.contains("not found") {
-                if let Some(name) = quoted_name(&diag.message) {
+            if (diag.message.contains("unresolved") || diag.message.contains("not found"))
+                && let Some(name) = quoted_name(&diag.message) {
                     let edit = TextEdit {
                         range: lsp_types::Range::default(),
                         new_text: format!("\nmod {name} {{\n}}\n"),
@@ -41,7 +41,6 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
                     };
                     result.push(lsp_types::CodeActionOrCommand::CodeAction(action));
                 }
-            }
         }
     }
 

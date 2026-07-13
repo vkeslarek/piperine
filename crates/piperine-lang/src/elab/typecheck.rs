@@ -36,15 +36,12 @@ pub fn typecheck_program(
     Ok(())
 }
 
-/// Check a single module. Errors are returned on the first violation.
+/// Check a single module. Delegates to focused sub-checks.
 fn check_module(
     module: &DesignModule,
     design: &crate::pom::Design,
 ) -> Result<(), ElabError> {
-    // Build a name → (NetType, declared-index-width) table from the
-    // module's ports and wires. We resolve instance port-of-port names
-    // (`u1.p`) on demand below using the `port_map` of referenced
-    // modules (the elaboration is hierarchical).
+    // Build a name → NetType table from ports and wires.
     let mut locals: HashMap<String, NetType> = HashMap::new();
     for p in module.ports() {
         locals.insert(p.name().to_string(), p.net_type().clone());
@@ -53,14 +50,29 @@ fn check_module(
         locals.insert(w.name().to_string(), w.net_type().clone());
     }
 
-    // Check every connection.
+    check_connections(module, &locals)?;
+    
+    for behavior in &module.behaviors {
+        check_behavior(module, behavior, &locals, design)?;
+    }
+
+    check_drivers(module, &locals, design)?;
+
+    Ok(())
+}
+
+/// §B.1 — width mismatches and §B.2 — discipline crossings on connections.
+fn check_connections(
+    module: &DesignModule,
+    locals: &HashMap<String, NetType>,
+) -> Result<(), ElabError> {
     for conn in module.connections() {
-        let l_ty = resolve_connection_end(conn.lhs(), module, &locals)
+        let l_ty = resolve_connection_end(conn.lhs(), module, locals)
             .ok_or_else(|| ElabErrorKind::Other(format!(
                 "typecheck ({}): cannot resolve lhs net `{}`",
                 module.name(), conn.lhs()
             )))?;
-        let r_ty = resolve_connection_end(conn.rhs(), module, &locals)
+        let r_ty = resolve_connection_end(conn.rhs(), module, locals)
             .ok_or_else(|| ElabErrorKind::Other(format!(
                 "typecheck ({}): cannot resolve rhs net `{}`",
                 module.name(), conn.rhs()
@@ -87,43 +99,55 @@ fn check_module(
                 module: module.name().to_string(),
                 lhs: l_d,
                 rhs: r_d,
-            } ));
+            }));
         }
     }
-    
-    // Check behaviors (GAPS §B.5)
-    for behavior in &module.behaviors {
-        check_behavior(module, behavior, &locals, design)?;
+    Ok(())
+}
+
+/// A simple union-find for tracking connected nets.
+struct UnionFind {
+    parent: HashMap<String, String>,
+}
+
+impl UnionFind {
+    fn new() -> Self {
+        Self { parent: HashMap::new() }
     }
 
-    // Check every instance port binding.
-    // TODO (GAPS §B + §I.14): validate each `inst.ports[i]` against
-    // the child module's `port(name).ty`. Deferred until I.14
-    // (hierarchical ports / bundle-aware expansion) lands.
-
-    // B.4 - Driver counting
-    // Union-find for connected nets
-    let mut parent: HashMap<String, String> = HashMap::new();
-
-    fn find(parent: &HashMap<String, String>, mut x: String) -> String {
-        while let Some(p) = parent.get(&x) {
+    fn find(&self, mut x: String) -> String {
+        while let Some(p) = self.parent.get(&x) {
             if p == &x { break; }
             x = p.clone();
         }
         x
     }
 
-    for conn in module.connections() {
-        let root_x = find(&parent, conn.lhs().to_string());
-        let root_y = find(&parent, conn.rhs().to_string());
+    fn union(&mut self, x: String, y: String) {
+        let root_x = self.find(x);
+        let root_y = self.find(y);
         if root_x != root_y {
-            parent.insert(root_x, root_y);
+            self.parent.insert(root_x, root_y);
         }
+    }
+}
+
+/// §B.4 — driver counting: a net with multiple drivers must have a
+/// resolve clause or be a conservative discipline (KCL).
+fn check_drivers(
+    module: &DesignModule,
+    locals: &HashMap<String, NetType>,
+    design: &crate::pom::Design,
+) -> Result<(), ElabError> {
+    let mut uf = UnionFind::new();
+
+    for conn in module.connections() {
+        uf.union(conn.lhs().to_string(), conn.rhs().to_string());
     }
 
     let mut drivers: HashMap<String, u64> = HashMap::new();
     let mut add_driver = |net: String| {
-        let root = find(&parent, net);
+        let root = uf.find(net);
         *drivers.entry(root).or_insert(0) += 1;
     };
 
@@ -150,14 +174,12 @@ fn check_module(
     use crate::pom::behavior::BehaviorStmt;
     for behavior in module.behaviors() {
         let mut visit = |stmt: &BehaviorStmt| {
-            if let BehaviorStmt::Bind { dest, op, .. } = stmt {
-                if op == &crate::parse::ast::BindOp::Force || op == &crate::parse::ast::BindOp::Assign {
-                    // Extract base name from Expr if possible
+            if let BehaviorStmt::Bind { dest, op, .. } = stmt
+                && (op == &crate::parse::ast::BindOp::Force || op == &crate::parse::ast::BindOp::Assign) {
                     if let crate::parse::ast::Expr::Ident(name) = dest {
                         add_driver(name.clone());
                     } else if let crate::parse::ast::Expr::Index(base, _) = dest {
                         if let crate::parse::ast::Expr::Ident(name) = &**base {
-                            // We simplify and just use the base name for now, or we could try to format it
                             add_driver(name.clone());
                         }
                     } else if let crate::parse::ast::Expr::Field(base, field) = dest
@@ -165,10 +187,7 @@ fn check_module(
                             add_driver(format!("{}_{}", name, field));
                         }
                 }
-            }
         };
-        // `walk_stmts` is pre-order and includes the root — no separate
-        // root visit, or every driver double-counts.
         for stmt in behavior.body() {
             stmt.walk_stmts(&mut visit);
         }
@@ -176,12 +195,9 @@ fn check_module(
 
     for (root, count) in drivers {
         if count > 1 {
-            // It has multiple drivers. Check if discipline resolves.
-            // But we need the discipline of `root`.
             let mut resolved_type = None;
-            // Let's find any net in the module that belongs to this root to get its type
-            for (name, ty) in &locals {
-                if find(&parent, name.clone()) == root {
+            for (name, ty) in locals {
+                if uf.find(name.clone()) == root {
                     resolved_type = Some(ty.clone());
                     break;
                 }
@@ -205,7 +221,7 @@ fn check_module(
                         module: module.name().to_string(),
                         net: root,
                         discipline: d_name.to_string(),
-                    } ));
+                    }));
                 }
             }
         }
@@ -467,18 +483,21 @@ fn check_behavior(
     for (name, net_ty) in nets {
         locals.insert(name.clone(), discipline_value_type(net_ty.discipline_name(), design));
     }
+    // Module-level vars carry their resolved value type.
+    for v in &module.vars {
+        locals.insert(v.name.clone(), v.ty.clone());
+    }
     
     // Check each root statement, then recurse into its children via walk_stmts.
     for stmt in &behavior.body {
         // `walk_stmts` is pre-order and includes the root.
-        let mut err: Option<ElabError> = None;
-        stmt.walk_stmts(&mut |s| {
-            if err.is_none() {
-                if let Err(e) = check_one_stmt(s, module, behavior, &mut locals) {
-                    err = Some(e);
-                }
-            }
-        });
+            let mut err: Option<ElabError> = None;
+            stmt.walk_stmts(&mut |s| {
+                if err.is_none()
+                    && let Err(e) = check_one_stmt(s, module, behavior, &mut locals, design) {
+                        err = Some(e);
+                    }
+            });
         if let Some(e) = err { return Err(e); }
     }
     Ok(())
@@ -489,8 +508,10 @@ fn check_one_stmt(
     stmt: &BehaviorStmt,
     module: &DesignModule,
     behavior: &Behavior,
-    locals: &mut std::collections::HashMap<String, ValueType>,
+    locals: &mut HashMap<String, ValueType>,
+    design: &crate::pom::Design,
 ) -> Result<(), ElabError> {
+    use crate::parse::ast::Stmt;
     match stmt {
         BehaviorStmt::VarDecl { name, .. } => {
             // Resolved type lives in the behavior's side table
@@ -526,8 +547,81 @@ fn check_one_stmt(
                     }
                 }
         }
+        Stmt::Match { expr, arms } => {
+            check_match_exhaustive(expr, arms, module, locals, design)?;
+        }
         _ => {}
     }
+    Ok(())
+}
+
+/// Check that a `match` covers every variant of the scrutinee's enum type,
+/// or has a wildcard arm. Bit-pattern and literal-only matches must include
+/// a wildcard (full bit-space coverage analysis is out of scope).
+fn check_match_exhaustive(
+    scrutinee: &Expr,
+    arms: &[crate::parse::ast::StmtMatchArm],
+    module: &DesignModule,
+    locals: &HashMap<String, ValueType>,
+    design: &crate::pom::Design,
+) -> Result<(), ElabError> {
+    use crate::parse::ast::Pattern;
+
+    // If any arm is a wildcard, the match is always exhaustive.
+    let has_wildcard = arms.iter().any(|a| matches!(a.pat, Pattern::Wildcard));
+    if has_wildcard {
+        return Ok(());
+    }
+
+    // Collect which kinds of patterns are present.
+    let mut covered_variants: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut has_bit_pattern = false;
+    let mut has_literal = false;
+    for arm in arms {
+        match &arm.pat {
+            Pattern::Wildcard => return Ok(()),
+            Pattern::Path(p) => {
+                // The variant name is the last segment (handles both
+                // `Idle` and `SarState::Idle`).
+                if let Some(name) = p.segments.last() {
+                    covered_variants.insert(name.clone());
+                }
+            }
+            Pattern::BitPattern(_) => { has_bit_pattern = true; }
+            Pattern::Literal(_) => { has_literal = true; }
+        }
+    }
+
+    // Bit-pattern or literal matches without a wildcard are non-exhaustive
+    // (proving full bit-space coverage is out of scope — require wildcard).
+    if has_bit_pattern || has_literal {
+        return Err(ElabError::from(ElabErrorKind::NonExhaustiveMatch {
+            module: module.name().to_string(),
+            missing: "a wildcard arm is required for bit-pattern or literal matches".into(),
+        }));
+    }
+
+    // For enum matches, verify every variant is covered.
+    if let Some(ValueType::Enum(enum_name)) = type_of_expr(scrutinee, locals)
+        && let Some(enum_decl) = design.enums.get(&enum_name) {
+            let all_variants: Vec<&str> = enum_decl.variants.iter().map(|v| v.name.as_str()).collect();
+            let missing: Vec<&str> = all_variants
+                .iter()
+                .filter(|v| !covered_variants.contains(**v))
+                .copied()
+                .collect();
+            if !missing.is_empty() {
+                return Err(ElabError::from(ElabErrorKind::NonExhaustiveMatch {
+                    module: module.name().to_string(),
+                    missing: format!("missing variants: {}", missing.join(", ")),
+                }));
+            }
+        }
+
+    // If the scrutinee type is unknown (not an enum, no bit/literal patterns),
+    // we can't check — only Path arms on an unknown type. Skip silently
+    // (the match either has a wildcard or only covers specific paths; if
+    // the scrutinee is not an enum this is likely a comparison-style match).
     Ok(())
 }
 

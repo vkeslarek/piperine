@@ -2,10 +2,12 @@ pub mod types;
 pub mod components;
 pub mod callables;
 pub mod impls;
+pub mod schemas;
 
-pub use types::{TypeRegistry, TypeDef};
+pub use types::{TypeRegistry, TypeDefKind};
 pub use components::{ComponentRegistry, ComponentDef};
 pub use callables::{CallableRegistry, CallableDef};
+pub use schemas::{AttrField, SchemaRegistry, SchemaShape};
 
 use crate::elab::event::EventRegistry;
 
@@ -14,6 +16,10 @@ pub struct ElabContext {
     pub components: ComponentRegistry,
     pub callables: CallableRegistry,
     pub events: EventRegistry,
+    pub schemas: SchemaRegistry,
+    /// Extra bench task names contributed by plugins (SPEC Part VI §6) —
+    /// consulted by the bench allowlist gate alongside the builtin set.
+    pub bench_tasks: std::collections::HashSet<String>,
 }
 
 impl Default for ElabContext {
@@ -26,7 +32,7 @@ impl ElabContext {
     pub fn new() -> Self {
         let mut types = TypeRegistry::new();
         use crate::pom::ValueType;
-        use impls::PrimitiveTypeDef;
+        use self::types::TypeDefKind;
         let prims = vec![
             ("Real", ValueType::Real),
             ("Natural", ValueType::Natural),
@@ -37,7 +43,7 @@ impl ElabContext {
             ("String", ValueType::Str),
         ];
         for (name, val_type) in prims {
-            types.register(PrimitiveTypeDef { name: name.to_string(), val_type });
+            types.register(TypeDefKind::Primitive { name: name.to_string(), val_type });
         }
 
         Self {
@@ -45,6 +51,8 @@ impl ElabContext {
             components: ComponentRegistry::new(),
             callables: CallableRegistry::new(),
             events: EventRegistry::with_builtins(),
+            schemas: SchemaRegistry::new(),
+            bench_tasks: std::collections::HashSet::new(),
         }
     }
 }

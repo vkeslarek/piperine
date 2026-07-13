@@ -1,7 +1,11 @@
 //! Bench-only system tasks: effectful, need a [`SimSession`] to run. Each
-//! is a unit struct implementing [`SimTask`] — the bench-side counterpart
-//! to [`piperine_lang::eval::Task`] (the shared pure registry, consulted as
-//! a fallback by [`crate::host::SimHost::syscall`]).
+//! is a unit struct implementing [`BenchTask`] — the same
+//! `run(args, cx)` shape a plugin's bench task has (SPEC Part VI §6,
+//! `PluginBenchTask`), with a different capability: a builtin's
+//! [`BenchCtx`] hands it the full session, a plugin's `HostCtx` is
+//! permission-gated. The shared pure registry
+//! ([`piperine_lang::eval::Task`]) stays the fallback consulted by
+//! [`crate::host::SimHost::syscall`].
 //!
 //! Analyses take a **config bundle** (piperine-bench/docs/SPEC.md §5.1, `Value::Record`
 //! built from the prelude's `OpConfig`/`TranConfig`/`AcConfig`/
@@ -16,9 +20,27 @@ use crate::objects::NetRef;
 use crate::session::{SimSession, SolverConfig};
 
 /// A bench-only system task (`$op`, `$tran`, `$ac`, `$noise`, `$write`).
-pub trait SimTask {
+/// Same shape as a plugin bench task — implement it, register it, call it
+/// as `$name(...)`.
+pub trait BenchTask {
     fn name(&self) -> &'static str;
-    fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError>;
+    fn run(&self, args: Vec<Value>, cx: &mut BenchCtx) -> Result<Value, EvalError>;
+}
+
+/// What a builtin task runs against — the internal capability: the whole
+/// [`SimSession`]. (Plugin tasks get a permission-gated `HostCtx` instead.)
+pub struct BenchCtx<'a> {
+    session: &'a SimSession,
+}
+
+impl<'a> BenchCtx<'a> {
+    pub fn new(session: &'a SimSession) -> Self {
+        Self { session }
+    }
+
+    pub fn session(&self) -> &SimSession {
+        self.session
+    }
 }
 
 // ─── Config-bundle field access ───────────────────────────────────────────────
@@ -39,17 +61,8 @@ fn field_opt_map(cfg: Option<&Value>, name: &str) -> Value {
         .unwrap_or_else(|| Value::Map(std::rc::Rc::new(std::cell::RefCell::new(vec![]))))
 }
 
-fn as_real(v: &Value) -> Result<f64, EvalError> {
-    match v {
-        Value::Real(r) => Ok(*r),
-        Value::Nat(n) => Ok(*n as f64),
-        Value::Int(n) => Ok(*n as f64),
-        other => Err(EvalError::TypeMismatch(format!("expected a Real, got {}", other.type_name()))),
-    }
-}
-
 fn real_field(rec: &Value, name: &str) -> Result<Option<f64>, EvalError> {
-    field(rec, name).map(|v| as_real(&v)).transpose()
+    field(rec, name).map(|v| v.coerce_real()).transpose()
 }
 
 /// A required config field — absence is a fail-loud error naming it.
@@ -93,26 +106,26 @@ fn is_log_scale(cfg: &Value) -> bool {
 // ─── Analyses ─────────────────────────────────────────────────────────────────
 
 struct Op;
-impl SimTask for Op {
+impl BenchTask for Op {
     fn name(&self) -> &'static str {
         "op"
     }
-    fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError> {
+    fn run(&self, args: Vec<Value>, cx: &mut BenchCtx) -> Result<Value, EvalError> {
         // `$op()` or `$op(OpConfig { .solver = …, .nodeset = Map { … } })`.
         let cfg = args.first();
         let nodeset = field_opt_map(cfg, "nodeset");
         let sc = solver_config(cfg)?;
-        let result = session.run_op(&sc, &nodeset).map_err(EvalError::from)?;
+        let result = cx.session().run_op(&sc, &nodeset).map_err(EvalError::from)?;
         Ok(Value::Object(std::rc::Rc::new(result)))
     }
 }
 
 struct Tran;
-impl SimTask for Tran {
+impl BenchTask for Tran {
     fn name(&self) -> &'static str {
         "tran"
     }
-    fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError> {
+    fn run(&self, args: Vec<Value>, cx: &mut BenchCtx) -> Result<Value, EvalError> {
         // `$tran(TranConfig { .stop = …, [.step], [.start], [.solver] })`, or
         // the positional convenience `$tran(stop, step)`.
         let (stop, step, start, cfg) = match args.first() {
@@ -126,27 +139,27 @@ impl SimTask for Tran {
                 (stop, step, start, solver_config(args.first())?)
             }
             _ => {
-                let stop = as_real(args.first().ok_or_else(|| {
+                let stop = args.first().ok_or_else(|| {
                     EvalError::TypeMismatch("$tran needs a TranConfig or (stop, step)".into())
-                })?)?;
-                let step = as_real(args.get(1).ok_or_else(|| {
+                })?.coerce_real()?;
+                let step = args.get(1).ok_or_else(|| {
                     EvalError::TypeMismatch("positional $tran needs (stop, step)".into())
-                })?)?;
+                })?.coerce_real()?;
                 (stop, Some(step), 0.0, SolverConfig::default())
             }
         };
         let ic = field_opt_map(args.first(), "ic");
-        let trace = session.run_tran(stop, step, start, &cfg, &ic).map_err(EvalError::from)?;
+        let trace = cx.session().run_tran(stop, step, start, &cfg, &ic).map_err(EvalError::from)?;
         Ok(Value::Object(std::rc::Rc::new(trace)))
     }
 }
 
 struct Ac;
-impl SimTask for Ac {
+impl BenchTask for Ac {
     fn name(&self) -> &'static str {
         "ac"
     }
-    fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError> {
+    fn run(&self, args: Vec<Value>, cx: &mut BenchCtx) -> Result<Value, EvalError> {
         // `$ac(AcConfig { .fstart = …, .fstop = …, [.points, .scale, .solver] })`.
         let cfg = args.first().ok_or_else(|| {
             EvalError::TypeMismatch("$ac needs an AcConfig { .fstart, .fstop, … }".into())
@@ -154,7 +167,7 @@ impl SimTask for Ac {
         let fstart = required_real(cfg, "AcConfig", "fstart")?;
         let fstop = required_real(cfg, "AcConfig", "fstop")?;
         let points = real_field(cfg, "points")?.unwrap_or(100.0) as usize;
-        let trace = session
+        let trace = cx.session()
             .run_ac(fstart, fstop, points, is_log_scale(cfg), &solver_config(Some(cfg))?)
             .map_err(EvalError::from)?;
         Ok(Value::Object(std::rc::Rc::new(trace)))
@@ -162,11 +175,11 @@ impl SimTask for Ac {
 }
 
 struct Noise;
-impl SimTask for Noise {
+impl BenchTask for Noise {
     fn name(&self) -> &'static str {
         "noise"
     }
-    fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError> {
+    fn run(&self, args: Vec<Value>, cx: &mut BenchCtx) -> Result<Value, EvalError> {
         // `$noise(NoiseConfig { .out = Net | (Net, Net), .fstart = …, .fstop
         // = …, … })`. The spec's `out : Branch` config field (piperine-bench/docs/SPEC.md
         // §5.1) is the output branch: a bare `Net` means `(net, gnd)`, a
@@ -193,7 +206,7 @@ impl SimTask for Noise {
         let fstart = required_real(cfg, "NoiseConfig", "fstart")?;
         let fstop = required_real(cfg, "NoiseConfig", "fstop")?;
         let points = real_field(cfg, "points")?.unwrap_or(100.0) as usize;
-        let trace = session
+        let trace = cx.session()
             .run_noise(&out, &reference, fstart, fstop, points, is_log_scale(cfg), &solver_config(Some(cfg))?)
             .map_err(EvalError::from)?;
         Ok(Value::Object(std::rc::Rc::new(trace)))
@@ -232,12 +245,11 @@ fn branch_nets(v: &Value) -> Result<(String, String), EvalError> {
 // ─── Artifacts ────────────────────────────────────────────────────────────────
 
 struct Write;
-impl SimTask for Write {
+impl BenchTask for Write {
     fn name(&self) -> &'static str {
         "write"
     }
-    fn run(&self, args: Vec<Value>, session: &SimSession) -> Result<Value, EvalError> {
-        let _ = session;
+    fn run(&self, args: Vec<Value>, _cx: &mut BenchCtx) -> Result<Value, EvalError> {
         let Some(Value::Str(path)) = args.first() else {
             return Err(EvalError::TypeMismatch("$write needs (path, value)".into()));
         };
@@ -281,16 +293,16 @@ fn csv_of(v: &Value) -> String {
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
 /// The bench-only task registry.
-pub struct SimTaskRegistry(HashMap<&'static str, Box<dyn SimTask>>);
+pub struct BenchTaskRegistry(HashMap<&'static str, Box<dyn BenchTask>>);
 
-impl SimTaskRegistry {
+impl BenchTaskRegistry {
     pub fn with_builtins() -> Self {
-        let tasks: Vec<Box<dyn SimTask>> =
+        let tasks: Vec<Box<dyn BenchTask>> =
             vec![Box::new(Op), Box::new(Tran), Box::new(Ac), Box::new(Noise), Box::new(Write)];
         Self(tasks.into_iter().map(|t| (t.name(), t)).collect())
     }
 
-    pub fn lookup(&self, name: &str) -> Option<&dyn SimTask> {
+    pub fn lookup(&self, name: &str) -> Option<&dyn BenchTask> {
         self.0.get(name).map(|b| b.as_ref())
     }
 }

@@ -39,7 +39,7 @@ pub fn check_file(
         FileFormat::Ppr => {
             let body = std::fs::read_to_string(path)?;
             let elab = piperine_lang::parse_and_elaborate(&body, source_map)
-                .map_err(|e| CheckError::ElabReport(e))?;
+                .map_err(CheckError::ElabReport)?;
             let module_names: Vec<String> = elab.modules().map(|m| m.name().to_string()).collect();
             println!("  PHDL modules: {}", module_names.len());
             for name in &module_names {

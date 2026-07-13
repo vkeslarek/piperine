@@ -50,6 +50,43 @@ pub enum Item {
     BenchDecl(BenchDecl),
 }
 
+impl Item {
+    /// Whether this item is declared `pub` (public, visible from other
+    /// packages via `use`). `UseDecl` itself has no visibility.
+    pub fn is_pub(&self) -> bool {
+        match self {
+            Item::UseDecl(_) => true,
+            Item::ModuleDeclaration(m) => m.is_pub,
+            Item::BehaviorDecl(b) => b.is_pub,
+            Item::DisciplineDecl(d) => d.is_pub,
+            Item::BundleDecl(b) => b.is_pub,
+            Item::EnumDecl(e) => e.is_pub,
+            Item::CapabilityDecl(c) => c.is_pub,
+            Item::ImplDecl(i) => i.is_pub,
+            Item::FnDecl(f) => f.is_pub,
+            Item::ConstDecl(c) => c.is_pub,
+            Item::BenchDecl(b) => b.is_pub,
+        }
+    }
+
+    /// The declared name of this item, if it has one (`use` and `impl`
+    /// declarations don't). A behavior/bench names the module it attaches to.
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Item::UseDecl(_) | Item::ImplDecl(_) => None,
+            Item::ModuleDeclaration(m) => Some(&m.name),
+            Item::BehaviorDecl(b) => Some(&b.name),
+            Item::DisciplineDecl(d) => Some(&d.name),
+            Item::BundleDecl(b) => Some(&b.name),
+            Item::EnumDecl(e) => Some(&e.name),
+            Item::CapabilityDecl(c) => Some(&c.name),
+            Item::FnDecl(f) => Some(&f.sig.name),
+            Item::ConstDecl(c) => Some(&c.name),
+            Item::BenchDecl(b) => Some(&b.name),
+        }
+    }
+}
+
 /// `bench ModName { fn ... }` — the effectful post-elaboration scripting
 /// layer attached to a module by name (piperine-bench/docs/SPEC.md §2), the same way
 /// `analog`/`digital` attach via [`BehaviorDecl`]. Bodies use the ordinary
@@ -123,7 +160,7 @@ pub struct Port {
 }
 
 /// Port direction.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Direction {
     /// Signal that flows into the module.
     Input,
@@ -374,11 +411,15 @@ pub struct FnDecl {
     pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
+    /// Whether this is an `extern fn` — signature-only, body provided by
+    /// the compiler or a plugin (SPEC Part I §8, ROADMAP "extern").
+    pub is_extern: bool,
     pub sig: FnSig,
     pub body: Block,
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum FnParam {
     SelfParam,
     /// A typed parameter, optionally with a default value (the language spec Part I §9.1
@@ -727,6 +768,8 @@ pub enum Expr {
     /// A `Map { k: v, ... }` literal (piperine-bench/docs/SPEC.md §5.1 — `Map<K, V>`,
     /// used for `ic`/`nodeset` per-node hints). `Map {}` is the empty map.
     MapLit(Vec<(Expr, Expr)>),
+    /// A `Set { a, b, c }` literal. `Set {}` is the empty set.
+    SetLit(Vec<Expr>),
     Lambda { params: Vec<String>, body: Box<Expr> },
 }
 
@@ -786,6 +829,7 @@ impl Expr {
                 k.walk(f);
                 v.walk(f);
             }),
+            Expr::SetLit(items) => items.iter().for_each(|e| e.walk(f)),
         }
     }
 
@@ -838,6 +882,7 @@ impl Expr {
                 k.walk_mut(f);
                 v.walk_mut(f);
             }),
+            Expr::SetLit(items) => items.iter_mut().for_each(|e| e.walk_mut(f)),
         }
     }
 

@@ -73,11 +73,32 @@ impl Parse for FnSig {
 impl Parse for FnDecl {
     /// Parses a full function declaration: `fn name<TYPE>(params) -> RetType { body }`.
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
+        Self::parse_with_extern(parser, false, false)
+    }
+}
+
+impl FnDecl {
+    /// Parse a fn declaration. When `is_extern` is true, the body is
+    /// optional — `extern fn sqrt(x: Real) -> Real;` is a signature-only
+    /// declaration whose body is provided by the compiler.
+    pub(crate) fn parse_with_extern(
+        parser: &mut Parser,
+        is_pub: bool,
+        is_extern: bool,
+    ) -> Result<Self, crate::parse::error::ParseError> {
         let attrs = parser.parse_attributes()?;
-        let is_pub = parser.eat_ident("pub");
+        // `pub`/`extern` may have been consumed by the item dispatcher
+        // already; tolerate them here too for direct callers.
+        let is_pub = parser.eat_ident("pub") || is_pub;
+        parser.eat_ident("extern");
         parser.expect_ident_str("fn")?;
         let sig = FnSig::parse(parser)?;
-        let body = parser.parse_block()?;
-        Ok(FnDecl { span: None, attrs, is_pub, sig, body })
+        let body = if is_extern && parser.eat(&Tok::Semi) {
+            // Extern fn without body: `extern fn sqrt(x: Real) -> Real;`
+            Block { stmts: Vec::new(), expr: None }
+        } else {
+            parser.parse_block()?
+        };
+        Ok(FnDecl { span: None, attrs, is_pub, is_extern, sig, body })
     }
 }

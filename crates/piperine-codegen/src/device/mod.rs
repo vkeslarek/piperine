@@ -1,9 +1,9 @@
-//! The solver boundary: compiled kernels wrapped as [`piperine_solver::device::Device`]s.
+//! The solver boundary: compiled kernels wrapped as [`piperine_solver::core::element::Element`]s.
 //!
 //! - [`CompiledModule`] — the per-module compilation artifact (analog and/or
 //!   digital kernel), shared across instances.
 //! - [`PiperineDevice`] — one instance: parameter values, operator state,
-//!   register banks, netlist references. Implements the solver `Device`
+//!   register banks, netlist references. Implements the solver `Element`
 //!   trait for both domains.
 //! - [`CircuitCompiler`] — walks an [`crate::ir::IrProgram`]'s top module and
 //!   builds a ready-to-simulate `CircuitInstance`.
@@ -11,6 +11,7 @@
 mod analog;
 mod circuit;
 mod digital;
+mod provider;
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -23,9 +24,12 @@ use piperine_solver::analysis::ac::AcAnalysisContext;
 use piperine_solver::analysis::dc::{DcAnalysisResult, DcAnalysisState};
 use piperine_solver::analysis::noise::Noise;
 use piperine_solver::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
-use piperine_solver::core::device::{AnalogDevice, Device, DigitalDevice};
+use piperine_solver::core::element::{Element, ElementCapabilities};
+use piperine_solver::core::introspect::{
+    Bounds, Invalidation, ParamDescriptor, ParamError, ParamScope, Value, ValueKind,
+};
 use piperine_solver::digital::DigitalEvent;
-use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};
+use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink};
 use piperine_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_solver::math::linear::Stamp;
 use piperine_solver::solver::Context;
@@ -38,6 +42,7 @@ use crate::jit::CodegenError;
 
 pub use analog::AnalogInstance;
 pub use circuit::{BuiltInstanceInfo, CircuitBuildInfo, CircuitCompiler};
+pub use provider::{DeviceProvider, PluginDeviceSpec, PluginPort, PortBinding};
 pub use digital::DigitalInstance;
 
 /// The compiled artifact for one module: the JIT kernels, shared (`Arc`)
@@ -50,13 +55,8 @@ pub struct CompiledModule {
 }
 
 impl CompiledModule {
-    /// Validate and compile every behavior body of `module`.
+    /// Compile every behavior body of `module`.
     pub fn compile(module: &LoweredBody) -> Result<Self, CodegenError> {
-        for d in module.validate() {
-            if d.kind == crate::ir::DiagnosticKind::Error {
-                return Err(CodegenError::Invalid(format!("{}: {}", module.name, d.message)));
-            }
-        }
         let analog = module
             .analog
             .as_ref()
@@ -83,7 +83,7 @@ impl CompiledModule {
     }
 }
 
-/// One device instance: the mixed-signal `Device` the solver drives.
+/// One device instance: the mixed-signal `Element` the solver drives.
 pub struct PiperineDevice {
     label: String,
     analog: Option<AnalogInstance>,
@@ -140,17 +140,28 @@ impl PiperineDevice {
     }
 }
 
-impl Device for PiperineDevice {
-    fn device_name(&self) -> &str {
+impl Element for PiperineDevice {
+    fn name(&self) -> &str {
         &self.label
     }
-    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> { Some(self) }
-    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> { Some(self) }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
-}
 
-impl AnalogDevice for PiperineDevice {
+    fn capabilities(&self) -> ElementCapabilities {
+        let mut caps = ElementCapabilities::empty();
+        // A digital-only device with analog input terminals (the A2D bridge)
+        // still participates in the analog lifecycle: `accept_timestep` caches
+        // its terminal voltages after every accepted solution.
+        if self.analog.is_some() || !self.analog_terminal_refs.is_empty() {
+            caps |= ElementCapabilities::ANALOG;
+        }
+        if let Some(digital) = &self.digital {
+            caps |= ElementCapabilities::DIGITAL;
+            if digital.kernel().layout().num_analog() > 0 {
+                caps |= ElementCapabilities::SAMPLES_ANALOG;
+            }
+        }
+        caps
+    }
+
     fn limiting_active(&self) -> bool {
         self.analog
             .as_ref()
@@ -163,9 +174,52 @@ impl AnalogDevice for PiperineDevice {
             .map_or(f64::INFINITY, AnalogInstance::bound_step_hint)
     }
 
+    fn initial_conditions(&self) -> Vec<(Option<AnalogReference>, Option<AnalogReference>, f64)> {
+        self.analog
+            .as_ref()
+            .map_or_else(Vec::new, AnalogInstance::initial_conditions)
+    }
+
+    fn list_params(&self) -> Vec<ParamDescriptor> {
+        let Some(analog) = &self.analog else { return Vec::new() };
+        analog
+            .param_names()
+            .iter()
+            .filter_map(|name| {
+                analog.param(name).map(|value| ParamDescriptor {
+                    name: name.clone(),
+                    kind: ValueKind::Real,
+                    // The JIT bakes elaborated defaults into the value; the
+                    // model default is not carried separately, so the current
+                    // value stands in.
+                    default: Value::Real(value),
+                    unit: None,
+                    bounds: Bounds::UNBOUNDED,
+                    scope: ParamScope::Instance,
+                    invalidation: Invalidation::Restamp,
+                })
+            })
+            .collect()
+    }
+
+    fn get_param(&self, name: &str) -> Option<Value> {
+        self.analog.as_ref().and_then(|a| a.param(name)).map(Value::Real)
+    }
+
+    fn set_param(&mut self, name: &str, value: Value) -> Result<Invalidation, ParamError> {
+        let Some(v) = value.as_real() else {
+            return Err(ParamError::TypeMismatch { name: name.into(), expected: ValueKind::Real });
+        };
+        if self.analog.as_mut().is_some_and(|a| a.set_param(name, v)) {
+            Ok(Invalidation::Restamp)
+        } else {
+            Err(ParamError::Unknown(name.to_string()))
+        }
+    }
+
     fn load_dc(
         &mut self,
-        state: &DcAnalysisState,
+        state: &DcAnalysisState<'_>,
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
         match &mut self.analog {
@@ -188,7 +242,7 @@ impl AnalogDevice for PiperineDevice {
 
     fn load_transient(
         &mut self,
-        states: &TransientAnalysisState,
+        states: &TransientAnalysisState<'_>,
         tran_ctx: &TransientAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
@@ -198,17 +252,29 @@ impl AnalogDevice for PiperineDevice {
         }
     }
 
+    fn suggest_transient_step(
+        &self,
+        state: &TransientAnalysisState<'_>,
+        time_history: &[f64],
+        method: piperine_solver::math::integration::IntegrationMethod,
+        context: &Context,
+    ) -> Option<f64> {
+        self.analog
+            .as_ref()
+            .and_then(|a| a.suggest_transient_step(state, time_history, method, context))
+    }
+
     fn accept_timestep(
         &mut self,
         state: &CircularArrayBuffer2<f64>,
         ctx: &Context,
         nets: &[piperine_solver::digital::LogicValue],
-        event_queue: &mut std::collections::BinaryHeap<std::cmp::Reverse<piperine_solver::digital::DigitalEvent>>,
+        sink: &mut dyn EventSink,
     ) {
         if let Some(analog) = &mut self.analog {
             analog.accept_timestep(state, ctx);
         }
-        
+
         if self.analog.is_none() && !self.analog_terminal_refs.is_empty() {
             let latest = state.latest();
             for (i, opt_ref) in self.analog_terminal_refs.iter().enumerate() {
@@ -219,12 +285,10 @@ impl AnalogDevice for PiperineDevice {
                     .unwrap_or(0.0);
             }
         }
-        
-        if self.digital.as_ref().map_or(false, |d| d.kernel().layout().num_analog() > 0) {
+
+        if self.digital.as_ref().is_some_and(|d| d.kernel().layout().num_analog() > 0) {
             let eval_ctx = EvalCtx { time: ctx.time, nets, analog: &[] };
-            let mut seq = 0u64;
-            let mut sink = QueueSink::new(event_queue, ctx.time, 0, &mut seq);
-            self.evaluate(&eval_ctx, &mut sink);
+            self.evaluate(&eval_ctx, sink);
         }
     }
 
@@ -238,9 +302,7 @@ impl AnalogDevice for PiperineDevice {
             None => Vec::new(),
         }
     }
-}
 
-impl DigitalDevice for PiperineDevice {
     fn boundary(&self) -> DigitalPorts<'_> {
         match &self.digital {
             Some(d) => DigitalPorts {
@@ -292,12 +354,6 @@ impl DigitalDevice for PiperineDevice {
             let vars = digital.export_vars();
             analog.sync_vars(&vars);
         }
-    }
-
-    fn samples_analog(&self) -> bool {
-        self.digital
-            .as_ref()
-            .map_or(false, |d| d.kernel().layout().num_analog() > 0)
     }
 }
 

@@ -45,14 +45,12 @@ pub(crate) fn has_ddt_marker(expr: &Expr) -> bool {
     use piperine_lang::parse::ast::Walk;
     let mut found = false;
     expr.walk(&mut |e| {
-        if let Expr::Call(func, _) = e {
-            if let Expr::Ident(name) = func.as_ref() {
-                if name == "__ddt" || name == "__laplace" || name == "__ztransform" {
+        if let Expr::Call(func, _) = e
+            && let Expr::Ident(name) = func.as_ref()
+                && (name == "__ddt" || name == "__laplace" || name == "__ztransform") {
                     found = true;
                     return Walk::SkipChildren;
                 }
-            }
-        }
         Walk::Continue
     });
     found
