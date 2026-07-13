@@ -1,8 +1,7 @@
-use lsp_server::{Connection, Message, Request, RequestId, Response, Notification};
+use lsp_server::{Connection, Message, Request, RequestId, Notification};
 use lsp_types::{
     Position, Uri, HoverParams, TextDocumentPositionParams, TextDocumentIdentifier,
-    DidOpenTextDocumentParams, TextDocumentItem, DidChangeTextDocumentParams,
-    VersionedTextDocumentIdentifier, TextDocumentContentChangeEvent,
+    DidOpenTextDocumentParams, TextDocumentItem,
 };
 use lsp_types::notification::Notification as _;
 use lsp_types::request::Request as _;

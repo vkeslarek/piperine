@@ -582,7 +582,7 @@ fn dc_solve(src: &str, top: &str) -> (HashMap<String, LoweredBody>, piperine_sol
     let (design, prog) = elaborate_and_lower(src);
     let mut compiler = CircuitCompiler::new(&design, &prog);
     let mut circuit = compiler.build_circuit(top).expect("build circuit");
-    circuit.init_digital();
+    circuit.init_digital().unwrap();
     circuit.rebuild_digital_topology();
     let result = circuit.dc(Context::default()).unwrap().solve().unwrap();
     (prog, circuit, result)
@@ -809,7 +809,7 @@ fn sim_tran_rc_charging() {
     ");
     let mut compiler = CircuitCompiler::new(&design, &prog);
     let mut circuit = compiler.build_circuit("Top").expect("build circuit");
-    circuit.init_digital();
+    circuit.init_digital().unwrap();
     circuit.rebuild_digital_topology();
 
     let options = TransientAnalysisOptions::new(5e-3.into(), 1e-5.into());
@@ -846,7 +846,7 @@ fn sim_dc_comparator_a2d_bridge() {
     ");
     let mut compiler = CircuitCompiler::new(&design, &prog);
     let mut circuit = compiler.build_circuit("Top").expect("build circuit");
-    circuit.init_digital();
+    circuit.init_digital().unwrap();
     circuit.rebuild_digital_topology();
 
     // Solve DC — the comparator should see V(vp)=3.0 > V(vn)=1.5.
@@ -976,7 +976,7 @@ fn sim_tran_above_event_toggles_switch_state() {
     ");
     let mut compiler = CircuitCompiler::new(&design, &prog);
     let mut circuit = compiler.build_circuit("Top").expect("build circuit");
-    circuit.init_digital();
+    circuit.init_digital().unwrap();
     circuit.rebuild_digital_topology();
 
     // Control ramps 0→10V over 1ms, crossing vt=1V at t=0.1ms.

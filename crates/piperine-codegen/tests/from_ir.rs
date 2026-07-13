@@ -53,7 +53,6 @@ fn from_ir_ppr_resistor_yields_circuit() {
 
 #[test]
 fn jit_device_exposes_params_through_introspection() {
-    use piperine_solver::core::element::Element;
     use piperine_solver::core::introspect::{Invalidation, ParamError, Value};
 
     let src = "
