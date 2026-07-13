@@ -1,5 +1,8 @@
 use crate::analysis::dc::DcAnalysisResult;
 use crate::core::circuit::CircuitInstance;
+use crate::core::element::ElementCapabilities;
+use crate::analysis::dc::DcAnalysisState;
+use crate::solver::convergence::{ConvergencePlan, HomotopyDriver};
 use crate::analog::AnalogReference;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
@@ -19,6 +22,15 @@ use std::collections::HashMap;
 pub struct DcSystem<'a> {
     pub circuit: &'a mut CircuitInstance,
     pub context: Context,
+    /// Extra node-to-ground conductance for **gmin stepping** (SPICE homotopy):
+    /// 0 in normal operation, ramped large → 0 by [`DcSolver::solve_gmin_stepping`]
+    /// so each intermediate problem is diagonally dominant. Owned here, not in
+    /// the shared immutable `Context`.
+    pub gmin_extra: f64,
+    /// Forced-source scale for **source stepping** (SPICE homotopy): 1.0 in
+    /// normal operation, ramped 0 → 1 by [`DcSolver::solve_source_stepping`].
+    /// Passed to elements through [`DcAnalysisState::src_scale`].
+    pub src_scale: f64,
 }
 
 impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
@@ -34,17 +46,18 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         let mut all_stamps = Vec::new();
 
         self.circuit.update_all(state, &self.context);
-        for dc in &mut self.circuit.devices {
-            if let Some(a) = dc.as_analog() {
-                all_stamps.extend(a.load_dc(state, &self.context));
-            }
+        let src_scale = self.src_scale;
+        let CircuitInstance { devices, digital_state, .. } = &mut *self.circuit;
+        let dc_state = DcAnalysisState::new(state, &digital_state.nets, src_scale);
+        for dc in devices.iter_mut() {
+            all_stamps.extend(dc.load_dc(&dc_state, &self.context));
         }
 
         // gmin stepping: a node-to-ground conductance on every voltage node,
         // ramped to 0 by the outer stepping loop. Never applied to branch
         // (current) unknowns.
-        if self.context.gmin_extra > 0.0 {
-            let g = self.context.gmin_extra;
+        if self.gmin_extra > 0.0 {
+            let g = self.gmin_extra;
             for r in self.circuit.netlist().all_references() {
                 if r.variable().is_node() && !r.variable().is_ground() {
                     all_stamps.push(Stamp::Matrix(r.clone(), r.clone(), g));
@@ -107,6 +120,8 @@ impl<'a> DcSolver<'a> {
         let mut system = DcSystem {
             circuit,
             context,
+            gmin_extra: 0.0,
+            src_scale: 1.0,
         };
 
         let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
@@ -127,39 +142,41 @@ impl<'a> DcSolver<'a> {
     pub fn solve(&mut self) -> crate::result::Result<DcAnalysisResult> {
         let max_iter = self.system.context.max_iter;
 
-        // Mixed-signal convergence loop: alternate between analog
-        // Newton-Raphson and digital evaluation until both settle. The
-        // A2D bridge (digital reads analog voltages) and D2A bridge
-        // (digital vars change analog stamps) require this outer loop.
+        // Maximum analog↔digital alternations before the mixed-signal loop
+        // is declared non-converging.
         const MAX_MS_ITER: usize = 20;
         let raw_solution = {
-            let mut prev_digital = self.system.circuit.digital_state.nets.clone();
-            let mut sol = match self.solver.solve(&mut self.system, 0.0, max_iter) {
-                Ok(sol) => sol,
-                // Plain Newton stalled (stiff coupled junctions — BJT/MOS).
-                // Two SPICE homotopies in turn: gmin stepping, then source
-                // stepping (which finds the correct solution branch where gmin
-                // stepping can settle on the wrong one — BJT/MOS amplifiers).
-                Err(_) => match self.solve_gmin_stepping(max_iter) {
-                    Ok(sol) => sol,
-                    Err(_) => self.solve_source_stepping(max_iter)?,
-                },
-            };
-            for _ in 0..MAX_MS_ITER {
-                let solution_slice = sol.as_slice().ok_or_else(|| {
-                    crate::error::Error::simple("DC", "solution not contiguous")
-                })?;
-                let changed = self.system.circuit.accept_and_run_digital(
-                    solution_slice,
-                    &self.system.context,
-                    0.0,
-                );
-                if !changed {
-                    break;
+            // Plain Newton, escalating through the homotopy plan (gmin stepping,
+            // then source stepping) if it stalls on stiff coupled junctions.
+            let plan = ConvergencePlan::default();
+            let mut sol = plan.solve(self)?;
+
+            // Mixed-signal convergence loop: alternate between the analog
+            // Newton-Raphson solve and digital evaluation until both settle —
+            // the A2D bridge (digital reads analog voltages) and D2A bridge
+            // (digital vars change analog stamps) couple in both directions. A
+            // pure-analog circuit declares no digital capability and skips it.
+            if self
+                .system
+                .circuit
+                .capabilities()
+                .contains(ElementCapabilities::DIGITAL)
+            {
+                for _ in 0..MAX_MS_ITER {
+                    let solution_slice = sol.as_slice().ok_or_else(|| {
+                        crate::error::Error::simple("DC", "solution not contiguous")
+                    })?;
+                    let changed = self.system.circuit.accept_and_run_digital(
+                        solution_slice,
+                        &self.system.context,
+                        0.0,
+                    );
+                    if !changed {
+                        break;
+                    }
+                    // Digital changed — re-solve analog with updated D2A state.
+                    sol = self.solver.solve(&mut self.system, 0.0, max_iter)?;
                 }
-                // Digital changed — re-solve analog with updated D2A state.
-                sol = self.solver.solve(&mut self.system, 0.0, max_iter)?;
-                let _ = &mut prev_digital;
             }
             sol
         };
@@ -180,129 +197,23 @@ impl<'a> DcSolver<'a> {
             values,
         ))
     }
+}
 
-    /// SPICE gmin stepping: converge an easy, diagonally-dominant version of
-    /// the circuit (large node-to-ground `gmin_extra`), then ramp that
-    /// conductance to 0, warm-starting each step from the last solution. The
-    /// standard homotopy for stiff coupled-junction operating points that
-    /// plain Newton oscillates on. On any step that still won't converge,
-    /// gives up and reports the failure.
-    /// SPICE source stepping: ramp the independent-source scale from 0 → 1,
-    /// warm-starting each step. At scale 0 every source is off and the circuit
-    /// converges trivially; raising it tracks the solution continuously to the
-    /// true operating point. Finds the correct branch (e.g. a saturated BJT)
-    /// where gmin stepping can converge to the wrong one. Only forced-voltage
-    /// sources ramp (see `force_stamps`); current-source-only circuits are
-    /// unaffected.
-    fn solve_source_stepping(
-        &mut self,
-        max_iter: usize,
-    ) -> crate::result::Result<ndarray::Array1<f64>> {
-        let trace = std::env::var("PIPERINE_TRACE_SRC").is_ok();
-        // A real shunt conductance (1 µS) conditions the exponential turn-on
-        // knee where source stepping alone stalls (the BJT/MOS threshold).
-        // Held through the source ramp, then itself ramped to 0 (a nested gmin
-        // step) so the final answer is exact.
-        let knee_gmin = 1e-6_f64;
-        let mut scale = 0.0_f64;
-        let mut step = 0.1_f64;
-        let mut iters = 0;
-        let mut last_ok = 0.0_f64;
-        self.system.context.src_scale = 0.0;
-        self.system.context.gmin_extra = knee_gmin;
-        // Solve the fully-off circuit first (trivial).
-        let mut sol = self.solver.solve(&mut self.system, 0.0, max_iter);
-        while iters < 300 {
-            iters += 1;
-            if sol.is_ok() {
-                last_ok = scale;
-                if scale >= 1.0 {
-                    break;
-                }
-                step = (step * 1.5).min(0.25);
-                scale = (last_ok + step).min(1.0);
-            } else {
-                // Back off toward the last converged scale.
-                step *= 0.5;
-                if step < 1e-6 {
-                    self.system.context.src_scale = 1.0;
-                    self.system.context.gmin_extra = 0.0;
-                    return sol; // give up with the failure
-                }
-                scale = last_ok + step;
-            }
-            self.system.context.src_scale = scale;
-            if trace {
-                eprintln!("SRC step scale={scale:.4} step={step:.4}");
-            }
-            sol = self.solver.solve(&mut self.system, 0.0, max_iter);
-        }
-        // Full source strength reached with the knee shunt still in. Now ramp
-        // the shunt out (a nested gmin step, warm-started) so the final answer
-        // is exact.
-        self.system.context.src_scale = 1.0;
-        let mut g = knee_gmin;
-        while g > self.system.context.gmin.max(1e-12) * 10.0 {
-            g *= 0.1;
-            self.system.context.gmin_extra = g;
-            if self.solver.solve(&mut self.system, 0.0, max_iter).is_err() {
-                break;
-            }
-        }
-        self.system.context.gmin_extra = 0.0;
+impl HomotopyDriver for DcSolver<'_> {
+    fn newton(&mut self) -> crate::result::Result<ndarray::Array1<f64>> {
+        let max_iter = self.system.context.max_iter;
         self.solver.solve(&mut self.system, 0.0, max_iter)
     }
 
-    fn solve_gmin_stepping(
-        &mut self,
-        max_iter: usize,
-    ) -> crate::result::Result<ndarray::Array1<f64>> {
-        // Start very easy (100 mS to ground) and drop a decade per step until
-        // the extra conductance is negligible next to the real gmin.
-        let trace = std::env::var("PIPERINE_TRACE_GMIN").is_ok();
-        let floor = self.system.context.gmin.max(1e-12) * 10.0;
-        // Geometric ramp with adaptive back-off: on a step that won't
-        // converge, raise the conductance again (smaller decrements) instead
-        // of giving up. Bounded total steps so a truly non-convergent circuit
-        // still terminates.
-        let mut g = 0.1_f64;
-        let mut factor = 0.1_f64;
-        let mut steps = 0;
-        let mut converged_any = false;
-        while steps < 200 {
-            steps += 1;
-            self.system.context.gmin_extra = g;
-            let r = self.solver.solve(&mut self.system, 0.0, max_iter);
-            if trace {
-                eprintln!("GMIN step g={g:.3e} -> {}", if r.is_ok() { "ok" } else { "fail" });
-            }
-            match r {
-                Ok(_) => {
-                    converged_any = true;
-                    if g <= floor {
-                        break;
-                    }
-                    factor = (factor * 1.3).min(0.5); // relax faster once it's easy
-                    g *= factor;
-                }
-                Err(e) => {
-                    if !converged_any {
-                        // Couldn't even converge the easiest problem — give up.
-                        self.system.context.gmin_extra = 0.0;
-                        return Err(e);
-                    }
-                    // Back off: raise conductance, shrink the step.
-                    factor = (factor * 3.0).min(0.7);
-                    g /= factor;
-                }
-            }
-        }
-        // Final solve with the extra conductance removed — the true operating
-        // point, warm-started from the last stepped solution.
-        self.system.context.gmin_extra = 0.0;
-        if trace {
-            eprintln!("GMIN final solve at gmin_extra=0");
-        }
-        self.solver.solve(&mut self.system, 0.0, max_iter)
+    fn set_gmin_extra(&mut self, g: f64) {
+        self.system.gmin_extra = g;
+    }
+
+    fn set_src_scale(&mut self, s: f64) {
+        self.system.src_scale = s;
+    }
+
+    fn gmin_floor(&self) -> f64 {
+        self.system.context.gmin.max(1e-12)
     }
 }

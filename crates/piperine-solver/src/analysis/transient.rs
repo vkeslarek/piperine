@@ -1,16 +1,43 @@
 use crate::analog::{
     BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier,
 };
+use crate::digital::LogicValue;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::InitialValue;
 use crate::math::linear::Stamp;
 use crate::math::unit::Second;
 use crate::solver::Context;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::slice::Iter;
 use std::sync::Arc;
 
-pub type TransientAnalysisState = CircularArrayBuffer2<f64>;
+/// The read-only state an element sees while stamping the transient system: the
+/// analog solution history **and** the digital net snapshot it may read (D2A,
+/// no device-side cache). Derefs to the analog history buffer.
+pub struct TransientAnalysisState<'a> {
+    history: &'a CircularArrayBuffer2<f64>,
+    /// Every digital net's logic value for this step, indexed by `DigitalNet`.
+    pub digital: &'a [LogicValue],
+}
+
+impl<'a> TransientAnalysisState<'a> {
+    pub fn new(history: &'a CircularArrayBuffer2<f64>, digital: &'a [LogicValue]) -> Self {
+        Self { history, digital }
+    }
+
+    /// The analog solution history buffer.
+    pub fn history(&self) -> &CircularArrayBuffer2<f64> {
+        self.history
+    }
+}
+
+impl Deref for TransientAnalysisState<'_> {
+    type Target = CircularArrayBuffer2<f64>;
+    fn deref(&self) -> &Self::Target {
+        self.history
+    }
+}
 
 #[derive(Clone)]
 pub struct TransientAnalysisOptions {
@@ -97,14 +124,14 @@ pub struct TransientAnalysisContext {
 pub trait TransientAnalysis {
     fn load_transient(
         &mut self,
-        circuit_states: &TransientAnalysisState,
+        circuit_states: &TransientAnalysisState<'_>,
         transient_analysis_context: &TransientAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>>;
 
     fn load_transient_dynamic(
         &mut self,
-        _circuit_states: &TransientAnalysisState,
+        _circuit_states: &TransientAnalysisState<'_>,
         _transient_analysis_context: &TransientAnalysisContext,
         _context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {

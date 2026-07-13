@@ -10,7 +10,6 @@ num-complex.workspace = true
 num-traits.workspace = true
 faer.workspace = true
 rand_distr.workspace = true
-paste.workspace = true
 ndarray.workspace = true
 bimap.workspace = true
 log = "0.4"

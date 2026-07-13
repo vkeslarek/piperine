@@ -9,8 +9,9 @@
 //! pipeline's queries: schema seeding at elaboration, device construction
 //! at circuit build.
 //!
-//! The device ABI is Piperine's own `AnalogDevice`/`DigitalDevice` trait
-//! pair — never OSDI or any external model ABI (Plugin plan D13).
+//! The device ABI is Piperine's own unified `Element` trait — one contract that
+//! declares analog and/or digital capabilities — never OSDI or any external
+//! model ABI (Plugin plan D13).
 
 mod backend;
 mod capability;

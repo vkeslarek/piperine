@@ -1,12 +1,13 @@
 use crate::analog::Netlist;
-use crate::core::device::Device;
-use crate::math::unit::{Ohm, Siemens, UnitExt};
+use crate::core::element::Element;
+use crate::math::unit::{Ohm, Siemens};
 use faer::{Par, set_global_parallelism};
 use ndarray::{ArrayView1, ArrayViewMut1};
 use std::num::NonZeroUsize;
 use std::sync::Once;
 
 pub mod ac;
+pub mod convergence;
 pub mod dc;
 pub mod noise;
 pub mod tf;
@@ -15,17 +16,16 @@ pub mod transient;
 static INIT: Once = Once::new();
 
 pub(crate) fn check_convergence(
-    devices: &[Box<dyn Device>],
+    devices: &[Box<dyn Element>],
     state: &crate::math::circular_array::CircularArrayBuffer2<f64>,
     new_guess: &ArrayView1<f64>,
     context: &Context,
     netlist: &Netlist,
 ) -> bool {
     for device in devices {
-        if let Some(a) = device.as_analog_ref()
-            && a.limiting_active() {
-                return false;
-            }
+        if device.limiting_active() {
+            return false;
+        }
     }
     context.has_converged(state.view(0), new_guess, netlist)
 }
@@ -92,18 +92,6 @@ pub struct Context {
     pub chgtol: f64,
     pub temperature: f64,
     pub tnom: f64,
-    /// Extra node-to-ground conductance injected during **gmin stepping**
-    /// (SPICE homotopy for hard junction circuits). 0 in normal operation;
-    /// the DC solver ramps it from large → 0 when plain Newton fails to
-    /// converge, so each intermediate problem is diagonally dominant and
-    /// easy, warm-starting the next. See `DcAnalysis::solve`.
-    pub gmin_extra: f64,
-    /// Independent-source scale for **source stepping** (SPICE homotopy):
-    /// every forced source value is multiplied by this. 1.0 in normal
-    /// operation; the DC solver ramps it 0 → 1 when gmin stepping fails, so a
-    /// circuit that only converges near its off state (BJT/MOS amplifiers)
-    /// can be tracked to the true operating point. See `DcAnalysis::solve`.
-    pub src_scale: f64,
     /// Transient integration method for the reactive companion model. Default
     /// **Gear order 2** (BDF2): 2nd-order accurate *and* strongly stable —
     /// it damps the numerical ringing that trapezoidal shows on stiff/LC
@@ -115,7 +103,7 @@ pub struct Context {
 impl Default for Context {
     fn default() -> Self {
         Self {
-            gmin: 1.0.pS(),
+            gmin: 1e-12,
             reltol: 1e-3,
             vntol: 1e-6,
             abstol: 1e-12,
@@ -127,8 +115,6 @@ impl Default for Context {
             chgtol: 1e-14,
             temperature: 300.15,
             tnom: 300.15,
-            gmin_extra: 0.0,
-            src_scale: 1.0,
             integration: crate::analysis::truncation::IntegrationMethod::Gear { order: 2 },
         }
     }

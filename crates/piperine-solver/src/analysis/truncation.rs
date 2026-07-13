@@ -7,7 +7,7 @@
 //!
 //! # Algorithm Overview
 //!
-//! 1. **Device-level error estimation**: Each reactive device (C/L) calculates its
+//! 1. **Element-level error estimation**: Each reactive device (C/L) calculates its
 //!    local truncation error using divided differences of state history (charge for
 //!    capacitors, flux for inductors).
 //!
@@ -126,7 +126,7 @@ pub trait TruncationError {
     /// - `None`: Unable to estimate (e.g., first few steps, no state change)
     fn suggest_timestep(
         &self,
-        state_history: &TransientAnalysisState,
+        state_history: &TransientAnalysisState<'_>,
         time_history: &[f64],
         method: IntegrationMethod,
         context: &Context,

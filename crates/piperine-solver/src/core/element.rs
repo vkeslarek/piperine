@@ -1,0 +1,187 @@
+use num_complex::Complex64;
+use std::collections::HashSet;
+
+use crate::analysis::ac::AcAnalysisContext;
+use crate::analysis::dc::DcAnalysisResult;
+use crate::analysis::dc::DcAnalysisState;
+use crate::analysis::noise::Noise;
+use crate::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
+use crate::analog::AnalogReference;
+use crate::digital::{DigitalNet, LogicValue};
+use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink};
+use crate::math::circular_array::CircularArrayBuffer2;
+use crate::math::linear::Stamp;
+use crate::solver::Context;
+
+bitflags::bitflags! {
+    /// What an [`Element`] participates in, declared up front. The solver and
+    /// scheduler build their plans from this descriptor instead of discovering
+    /// behavior by trial downcast — a JIT-compiled PHDL block, a Rust plugin,
+    /// and a future co-sim peripheral all advertise through the same table.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct ElementCapabilities: u32 {
+        /// Contributes to the analog system (MNA stamps in DC/AC/transient/noise).
+        const ANALOG = 1 << 0;
+        /// Participates in the digital scheduler (drives/reads logic nets).
+        const DIGITAL = 1 << 1;
+        /// Its digital logic samples analog node voltages (A2D), so it must be
+        /// evaluated on every analog solve even without a pending digital event.
+        const SAMPLES_ANALOG = 1 << 2;
+    }
+}
+
+/// A single thing the solver simulates — the one contract over every
+/// participant, analog or digital or both.
+///
+/// There is no separate "analog device" or "digital device" type and no
+/// downcast: an element implements exactly the operations it needs and declares
+/// them through [`capabilities`]. A pure resistor stamps the analog system and
+/// leaves the digital methods at their defaults; a logic gate does the reverse;
+/// a comparator or DAC does both over one shared object, so mixed-signal
+/// coupling (analog load reading digital state, digital events reading analog
+/// history) is native rather than bridged.
+///
+/// The analog methods ([`load_dc`], [`load_ac`], [`load_transient`],
+/// [`noise_current_psd`], plus the lifecycle hooks) default to no-ops that
+/// contribute nothing. The digital methods ([`boundary`], [`init`],
+/// [`seq_phase`], [`comb_phase`]) default to an element that drives no nets.
+/// Every element still declares [`capabilities`] so the solver never guesses.
+///
+/// [`capabilities`]: Element::capabilities
+/// [`load_dc`]: Element::load_dc
+/// [`load_ac`]: Element::load_ac
+/// [`load_transient`]: Element::load_transient
+/// [`noise_current_psd`]: Element::noise_current_psd
+/// [`boundary`]: Element::boundary
+/// [`init`]: Element::init
+/// [`seq_phase`]: Element::seq_phase
+/// [`comb_phase`]: Element::comb_phase
+pub trait Element: Send + Sync {
+    // ── Identity & capabilities ───────────────────────────────────────────────
+
+    /// Source-level identity, for diagnostics and result mapping.
+    fn name(&self) -> &str;
+
+    /// Which of the operations below this element actually implements. Required
+    /// — an element must declare itself so the solver and scheduler can plan
+    /// without probing. Forgetting a flag is a visible bug, not a silent no-op.
+    fn capabilities(&self) -> ElementCapabilities;
+
+    // ── Analog lifecycle ──────────────────────────────────────────────────────
+
+    /// Whether a device limiter is currently clamping (pnjlim/fetlim). While
+    /// active the global Newton loop must not declare convergence.
+    fn limiting_active(&self) -> bool { false }
+
+    /// Largest timestep the element can tolerate from here (`$bound_step`).
+    fn bound_step_hint(&self) -> f64 { f64::INFINITY }
+
+    /// `@initial` UIC seeds: the branch `(plus, minus)` and the voltage the
+    /// device wants across it at t=0 (SPICE `.ic`). Ground terminals are
+    /// `None`. Empty for devices without an initial-condition force. The
+    /// transient analysis seeds these into the t=0 state.
+    fn initial_conditions(
+        &self,
+    ) -> Vec<(Option<AnalogReference>, Option<AnalogReference>, f64)> {
+        Vec::new()
+    }
+
+    /// Operating-point variables (`gm`, `vbe`, …) for result queries.
+    fn read_opvars(&self) -> Vec<(String, f64)> { Vec::new() }
+
+    /// Set the instance temperature; recompute temperature-dependent constants.
+    fn set_temperature(&mut self, _t: f64) {}
+
+    /// Refresh cached state from the current solution before stamping.
+    fn update(&mut self, _state: &CircularArrayBuffer2<f64>, _ctx: &Context) {}
+
+    /// Called after each accepted solution point. Elements that couple into the
+    /// digital world (A2D bridges, analog event detectors) emit their net
+    /// value-changes through `sink` — the same write-only façade digital
+    /// evaluation uses — so the analog side never names the scheduler's queue.
+    fn accept_timestep(
+        &mut self,
+        _state: &CircularArrayBuffer2<f64>,
+        _ctx: &Context,
+        _nets: &[LogicValue],
+        _sink: &mut dyn EventSink,
+    ) {
+    }
+
+    // ── Analog loading ────────────────────────────────────────────────────────
+
+    fn load_dc(
+        &mut self,
+        _state: &DcAnalysisState<'_>,
+        _context: &Context,
+    ) -> Vec<Stamp<AnalogReference, f64>> {
+        Vec::new()
+    }
+
+    fn load_ac(
+        &mut self,
+        _dc_op: &DcAnalysisResult,
+        _ac_ctx: &AcAnalysisContext,
+        _context: &Context,
+    ) -> Vec<Stamp<AnalogReference, Complex64>> {
+        Vec::new()
+    }
+
+    fn load_transient(
+        &mut self,
+        _states: &TransientAnalysisState<'_>,
+        _tran_ctx: &TransientAnalysisContext,
+        _context: &Context,
+    ) -> Vec<Stamp<AnalogReference, f64>> {
+        Vec::new()
+    }
+
+    fn noise_current_psd(
+        &mut self,
+        _dc_point: &DcAnalysisResult,
+        _ac_context: &AcAnalysisContext,
+    ) -> Vec<Noise> {
+        Vec::new()
+    }
+
+    // ── Digital evaluation ────────────────────────────────────────────────────
+    //
+    // The delta cycle is two-phase to preserve non-blocking (NBA) semantics
+    // across register chains (SPEC §9): the scheduler calls `seq_phase` on every
+    // woken element first, then `comb_phase` on every woken element, so a
+    // register samples the pre-edge net snapshot instead of racing ahead.
+
+    /// Boundary wiring: the nets this element reads (its sensitivity list) and
+    /// the nets it drives. Defaults to driving/reading nothing.
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: &[], outputs: &[] }
+    }
+
+    /// Power-on: apply register initial values and emit initial output events
+    /// (typically at `t = 0`). No-op for elements with no digital state.
+    fn init(&mut self, _sink: &mut dyn EventSink) {}
+
+    /// Phase 1 (register commit): detect clock edges against the previous
+    /// evaluation and commit register writes from the pre-settle net snapshot.
+    /// Returns whether any clocked block fired. **Must not** emit output events
+    /// — those happen in [`comb_phase`](Element::comb_phase).
+    fn seq_phase(&mut self, _ctx: &EvalCtx<'_>) -> bool { false }
+
+    /// Phase 2 (combinational): recompute outputs from live `ctx.nets` and the
+    /// (possibly just-committed) register banks, emitting change events into
+    /// `sink`.
+    fn comb_phase(&mut self, _ctx: &EvalCtx<'_>, _sink: &mut dyn EventSink) {}
+
+    /// Fused one-shot evaluation: [`seq_phase`](Element::seq_phase) then
+    /// [`comb_phase`](Element::comb_phase) in a single call. Used by external
+    /// co-simulators that don't participate in the scheduler's two-phase cycle.
+    fn evaluate(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+        self.seq_phase(ctx);
+        self.comb_phase(ctx, sink);
+    }
+
+    /// Convenience: true if any of the element's input nets is in `changed`.
+    fn has_input_on(&self, changed: &HashSet<DigitalNet>) -> bool {
+        self.boundary().inputs.iter().any(|n| changed.contains(n))
+    }
+}

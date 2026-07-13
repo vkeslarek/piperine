@@ -2,9 +2,8 @@
 //! (Plugin plan §6 validation matrix) —
 //!
 //! - `Fixture::Resistor` — an analog two-terminal resistor (param `r`,
-//!   default 100 Ω) stamped through `AnalogDevice::load_dc/load_transient`.
-//! - `Fixture::Inverter` — a digital inverter through
-//!   `DigitalDevice::comb_phase`.
+//!   default 100 Ω) stamped through `Element::load_dc`/`load_transient`.
+//! - `Fixture::Inverter` — a digital inverter through `Element::comb_phase`.
 //!
 //! Lives as a crate example: `cargo build --example fixture_plugin` builds
 //! the cdylib the native smoke test dlopens; the e2e tests compile this
@@ -17,7 +16,7 @@ use piperine_plugin::{
 use piperine_solver::analog::AnalogReference;
 use piperine_solver::analysis::dc::DcAnalysisState;
 use piperine_solver::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
-use piperine_solver::core::device::{AnalogDevice, Device, DigitalDevice};
+use piperine_solver::core::element::{Element, ElementCapabilities};
 use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink};
 use piperine_solver::digital::{DigitalNet, LogicValue};
 use piperine_solver::math::linear::Stamp;
@@ -79,7 +78,7 @@ impl DeviceFactory for ResistorFactory {
         DeviceKind::Analog
     }
 
-    fn instantiate(&self, spec: &PluginDeviceSpec) -> Result<Box<dyn Device>, String> {
+    fn instantiate(&self, spec: &PluginDeviceSpec) -> Result<Box<dyn Element>, String> {
         let refs: Vec<AnalogReference> = spec
             .ports
             .iter()
@@ -130,22 +129,18 @@ impl PluginResistor {
     }
 }
 
-impl Device for PluginResistor {
-    fn device_name(&self) -> &str {
+impl Element for PluginResistor {
+    fn name(&self) -> &str {
         &self.label
     }
-    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> {
-        Some(self)
-    }
-    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> {
-        Some(self)
-    }
-}
 
-impl AnalogDevice for PluginResistor {
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG
+    }
+
     fn load_dc(
         &mut self,
-        _state: &DcAnalysisState,
+        _state: &DcAnalysisState<'_>,
         _context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
         self.stamps()
@@ -153,7 +148,7 @@ impl AnalogDevice for PluginResistor {
 
     fn load_transient(
         &mut self,
-        _states: &TransientAnalysisState,
+        _states: &TransientAnalysisState<'_>,
         _tran_ctx: &TransientAnalysisContext,
         _context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
@@ -170,7 +165,7 @@ impl DeviceFactory for InverterFactory {
         DeviceKind::Digital
     }
 
-    fn instantiate(&self, spec: &PluginDeviceSpec) -> Result<Box<dyn Device>, String> {
+    fn instantiate(&self, spec: &PluginDeviceSpec) -> Result<Box<dyn Element>, String> {
         let digital = |p: &PluginPort| match &p.binding {
             PortBinding::Digital(net) => Ok(*net),
             PortBinding::Analog(_) => Err(format!("port `{}` must be digital", p.logical)),
@@ -192,19 +187,15 @@ struct PluginInverter {
     output: DigitalNet,
 }
 
-impl Device for PluginInverter {
-    fn device_name(&self) -> &str {
+impl Element for PluginInverter {
+    fn name(&self) -> &str {
         &self.label
     }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> {
-        Some(self)
-    }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> {
-        Some(self)
-    }
-}
 
-impl DigitalDevice for PluginInverter {
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::DIGITAL
+    }
+
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts {
             inputs: std::slice::from_ref(&self.input),

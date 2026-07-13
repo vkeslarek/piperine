@@ -1,23 +1,23 @@
 # Part VII — Solver Specification
 
-This Part defines the solver contract: the device ABI consumed by analyses, the
+This Part defines the solver contract: the element ABI consumed by analyses, the
 analog and digital variable namespaces, the numerical algorithms for DC, AC,
 transient, noise, and transfer-function analysis, and the convergence aids that
 make mixed-signal simulation deterministic.
 
 The solver is below elaboration and device construction. It receives a fixed set
-of devices, a fixed analog variable map, and a fixed digital net namespace. It
+of elements, a fixed analog variable map, and a fixed digital net namespace. It
 does not know source syntax or elaboration internals. A compiled PHDL module, a
-plugin device, and an external model are equivalent once they present the device
-ABI defined here.
+plugin device, and an external model are equivalent once they present the one
+`Element` ABI defined here.
 
 ## Contents
 
 - §1 Position and governing rules
 - §2 Circuit instance
-- §3 Analog device ABI
-- §4 Digital device ABI
-- §5 Device loading and external models
+- §3 Element ABI — analog operations
+- §4 Element ABI — digital operations
+- §5 Element loading and external models
 - §6 Analog variable and node labels
 - §7 Digital net labels and logic values
 - §8 Stamping and MNA
@@ -40,8 +40,8 @@ not create or delete devices, nodes, branches, or digital nets.
 
 Three rules govern this Part.
 
-**Device ABI only.** The solver communicates with every model through the
-`Device` boundary and its analog and digital facets. A model's origin is not
+**Element ABI only.** The solver communicates with every model through the one
+`Element` contract and its declared capabilities. A model's origin is not
 observable by the solver.
 
 **Fail loud.** A model or analysis that cannot produce a faithful stamp or event
@@ -76,12 +76,37 @@ consume the same device set and analog/digital namespaces.
 
 ---
 
-## §3 Analog device ABI
+## §3 Element ABI — analog operations
 
-An analog device participates in modified nodal analysis (MNA). It contributes
-matrix and right-hand-side stamps for one or more analyses, may expose operating
-variables, may emit noise sources, and may request convergence or timestep
-controls.
+There is **one** solver-facing contract, the **element**. It replaces the older
+split of a `Device` wrapper over separate analog and digital device traits:
+every participant — a pure resistor, a logic gate, a comparator, a JIT-compiled
+PHDL block, a plugin, a wrapped external model — implements the same `Element`
+trait and implements only the operations it needs. There is no downcast.
+
+Every element declares two things:
+
+| Method | Contract |
+|--------|----------|
+| `name()` | Source-level identity, for diagnostics and result mapping. |
+| `capabilities()` | Required. A capability descriptor (`ElementCapabilities`) declaring what the element participates in, so the solver and scheduler plan without probing. |
+
+`ElementCapabilities` is a bit set. The normative flags are `ANALOG` (contributes
+MNA stamps), `DIGITAL` (participates in the digital scheduler), and
+`SAMPLES_ANALOG` (its digital logic reads analog node voltages, so it must be
+evaluated on every accepted analog solve even without a pending digital event).
+An element must declare its capabilities accurately; the solver gates analysis
+and scheduling on this descriptor rather than on which methods are overridden.
+
+The analog operations in this section and the digital operations in §4 are all
+methods of the one `Element` trait. Analog methods default to contributing no
+stamps; digital methods default to an element that drives no nets. A pure-analog
+element leaves the digital methods at their defaults and vice versa.
+
+An element that contributes to MNA declares `ANALOG` and implements the analog
+methods below: it contributes matrix and right-hand-side stamps for one or more
+analyses, may expose operating variables, may emit noise sources, and may request
+convergence or timestep controls.
 
 ### 3.1 Analog lifecycle methods
 
@@ -95,10 +120,10 @@ controls.
 | `limiting_active()` | Report that device-side limiting is still active; convergence must not be accepted while true. |
 | `bound_step_hint()` | Return the maximum desirable next timestep. Infinity means no bound. |
 
-`state` is the analog solution history. Row 0 is the current/latest solution;
-additional rows are previous accepted solutions when the analysis requires
-history. `context` carries tolerances, time, temperature, homotopy parameters,
-and the integration method.
+`context` carries tolerances, time, temperature, and the integration method. It
+carries **no** mutable homotopy state — the source-stepping scale reaches an
+element through the analysis state (below), and the gmin-stepping conductance is
+owned by the DC driver (§15).
 
 ### 3.2 Analog loading methods
 
@@ -109,10 +134,17 @@ and the integration method.
 | `load_ac(dc_point, ac_context, context)` | Small-signal AC/noise | Complex MNA stamps linearized about the DC operating point. |
 | `noise_current_psd(dc_point, ac_context)` | Noise | Current-noise sources as terminal pairs plus one-sided PSD values. |
 
-An analog device that does not participate in an analysis may return an empty
-stamp list only when the physical model genuinely has no contribution in that
-analysis. An unsupported construct must fail before this ABI is reached or must
-raise a loud device-construction/load error.
+The DC and transient `state` is **bidirectional**: it is the analog solution
+history *and* the digital net snapshot being solved against. A mixed-signal
+element whose analog stamps depend on digital logic (D2A) reads the exact digital
+state here, with no device-side cache. Symmetrically, the digital evaluation
+context (§4) carries the sampled analog voltages (A2D). Mixed-signal coupling is
+thus native in both directions rather than routed through side state.
+
+An element that does not participate in an analysis may return an empty stamp
+list only when the physical model genuinely has no contribution in that analysis.
+An unsupported construct must fail before this ABI is reached or must raise a loud
+element-construction/load error.
 
 ### 3.3 Analog ABI types
 
@@ -121,17 +153,20 @@ raise a loud device-construction/load error.
 | `AnalogReference` | Reference to one analog variable. Ground has no MNA index; every other solved variable has one dense index. |
 | `Stamp<Ref, Scalar>` | Either `Matrix(row, col, value)` or `Rhs(row, value)`. The scalar is real for DC/transient and complex for AC/noise. |
 | `Noise` | A current-noise source between two analog references with PSD in A²/Hz. |
-| `Context` | Solver tolerances, temperature, time, homotopy state, and integration controls. |
+| `Context` | Solver tolerances, temperature, time, and integration controls. Immutable for a run; carries no per-solve homotopy or convergence state. |
+| `DcAnalysisState` | The DC loading state: the analog solution history (row 0 latest), the digital net snapshot (D2A), and the source-stepping scale. Derefs to the history. |
+| `TransientAnalysisState` | The transient loading state: the analog solution history and the digital net snapshot. Derefs to the history. |
 | `TransientAnalysisContext` | Current time, current timestep, final time, previous timestep, and active integration order. |
 | `AcAnalysisContext` | Current frequency. |
 
 ---
 
-## §4 Digital device ABI
+## §4 Element ABI — digital operations
 
-A digital device participates in event-driven simulation. It declares the nets it
-reads and drives, initializes its outputs, and evaluates in two phases so
-register chains have non-blocking semantics.
+An element that declares `DIGITAL` participates in event-driven simulation. It
+declares the nets it reads and drives, initializes its outputs, and evaluates in
+two phases so register chains have non-blocking semantics. These are methods of
+the same `Element` trait as §3; there is no separate digital device type.
 
 ### 4.1 Digital boundary
 
@@ -157,8 +192,11 @@ other conflicts produce `X`.
 | `seq_phase(ctx)` | Phase 1: detect clock/event edges against internal prior state and commit register banks from the pre-settle snapshot. It returns whether a clocked block fired. It must not emit output events. |
 | `comb_phase(ctx, sink)` | Phase 2: recompute driven outputs from current nets and internal state, emitting value-change events. |
 | `evaluate(ctx, sink)` | Fused one-shot evaluation for models that do not participate in the scheduler's two-phase protocol. It is equivalent to `seq_phase` followed by `comb_phase`. |
-| `samples_analog()` | True when the model must be evaluated after an accepted analog solve even if no digital input net changed. |
 | `has_input_on(changed)` | Convenience sensitivity test: true when any input net is in the changed set. |
+
+An element whose logic samples analog voltages declares the `SAMPLES_ANALOG`
+capability (§3) rather than a separate predicate method; the scheduler evaluates
+such elements after an accepted analog solve even when no digital input changed.
 
 The two-phase protocol is normative. All woken sequential phases observe the
 same pre-settle net snapshot before any combinational output is recomputed.
@@ -173,32 +211,33 @@ iteration.
 
 ---
 
-## §5 Device loading and external models
+## §5 Element loading and external models
 
-Device loading is outside the numerical algorithms but inside the solver ABI
-contract. A loader constructs values that implement the `Device` boundary:
+Element loading is outside the numerical algorithms but inside the solver ABI
+contract. A loader constructs values that implement the `Element` trait, each
+declaring its `ElementCapabilities`:
 
-| Device kind | Required facets |
-|-------------|-----------------|
-| Pure analog | `Device` + analog facet. |
-| Pure digital | `Device` + digital facet. |
-| Mixed signal | `Device` + both analog and digital facets. |
+| Element kind | Declared capabilities |
+|--------------|-----------------------|
+| Pure analog | `ANALOG`. |
+| Pure digital | `DIGITAL`. |
+| Mixed signal | `ANALOG | DIGITAL` (plus `SAMPLES_ANALOG` if it reads analog voltages). |
 
-A device loader receives already-resolved terminal bindings: analog terminals as
-analog references and digital terminals as digital nets. Parameter values are
-already elaborated. The loader must either construct a faithful device or fail
-loud with a diagnostic naming the model and missing capability.
+A loader receives already-resolved terminal bindings: analog terminals as analog
+references and digital terminals as digital nets. Parameter values are already
+elaborated. The loader must either construct a faithful element or fail loud with
+a diagnostic naming the model and missing capability.
 
-Native PHDL-compiled devices, native plugin devices, and wrapped external model
-ABIs all lower into this same boundary. An OSDI v0.4 model is not a solver-native
-object; an OSDI loader must parse the model descriptor, bind its terminals and
-parameters, and wrap the compiled model as an analog device. The solver core
-does not require an OSDI loader to exist, and an unavailable OSDI feature is a
-plugin/device load error rather than a silent solver behavior.
+Native PHDL-compiled elements, native plugin elements, and wrapped external model
+ABIs all lower into this same one `Element` boundary. An OSDI v0.4 model is not a
+solver-native object; an OSDI loader must parse the model descriptor, bind its
+terminals and parameters, and wrap the compiled model as an element declaring
+`ANALOG`. The solver core does not require an OSDI loader to exist, and an
+unavailable OSDI feature is a plugin/device load error rather than a silent
+solver behavior.
 
-The `Device` boundary is a downcastable capability set. A model that returns both
-facets is mixed-signal; a model that returns neither facet is invalid for solve
-and must not be admitted into a circuit instance.
+An element that declares no capability is invalid for solve and must not be
+admitted into a circuit instance.
 
 ### 5.1 Device specification
 
@@ -220,9 +259,10 @@ Each terminal binding is one of:
 | Digital net | A storage digital terminal that participates in the event scheduler. |
 | Unconnected optional terminal | Permitted only when the declared port/loader contract says the terminal is optional. |
 
-The factory must declare whether the produced device is analog, digital, or
-mixed-signal. The returned device must expose the corresponding facets described
-in §3 and §4.
+The factory must declare whether the produced element is analog, digital, or
+mixed-signal. The returned element must declare the corresponding
+`ElementCapabilities` and implement the matching operations described in §3
+and §4.
 
 The language and elaboration layers own the surface syntax and rules that decide
 which module or instance requests an external factory. The solver ABI begins only
@@ -253,7 +293,7 @@ allocation capability.
 | Required terminal is unbound | Device-construction error. |
 | Terminal domain does not match the factory's declared binding | Device-construction error. |
 | Required parameter is absent or has an unsupported value | Device-construction error. |
-| Factory returns a device with no analog or digital facet | Device-construction error. |
+| Factory returns an element that declares no capability | Device-construction error. |
 | Factory needs internal analog variables but no allocation seam is available | Device-construction error. |
 
 ---
@@ -353,9 +393,9 @@ The DC algorithm is:
 2. Seed the Newton state from explicit node-set or initial-condition hints when
    supplied; otherwise start from zero or the previous accepted state.
 3. For each Newton iteration:
-   - Ask devices to update from the current state.
-   - Collect DC stamps from all analog facets.
-   - Add any active homotopy conductances (§15.4).
+   - Ask elements to update from the current state.
+   - Collect DC stamps from every element's `load_dc`.
+   - Add any active homotopy conductances (§15.5).
    - Solve the linearized system.
    - Apply solver-side damping/limiting (§15.2).
    - Accept convergence only if both the update test and residual test pass and
@@ -527,9 +567,10 @@ physically correct result of the solved linear system.
 
 ## §14 Mixed-signal execution
 
-Mixed-signal behavior is expressed by devices that implement both analog and
-digital facets, or by paired devices that communicate through explicit analog
-and digital nets. There is no implicit converter insertion.
+Mixed-signal behavior is expressed by an element that declares both `ANALOG` and
+`DIGITAL` and implements both sets of operations, or by paired elements that
+communicate through explicit analog and digital nets. There is no implicit
+converter insertion.
 
 ### 14.1 DC mixed-signal settle loop
 
@@ -621,32 +662,42 @@ or MOS operating-region transitions. A limited device must report active
 limiting until the limited quantities are consistent with the converged solution.
 The solver must not accept convergence while any device reports active limiting.
 
-### 15.4 Gmin and gmin stepping
+### 15.4 Convergence plan
+
+Homotopy escalation is **solver policy**, expressed as a composable convergence
+plan rather than inline branches in the DC driver. The plan runs plain Newton,
+then falls through an ordered list of homotopy strategies until one converges,
+returning the first converged solution or the last failure. The default plan is
+gmin stepping followed by source stepping. Each strategy is stateless: it drives
+the plain-Newton solve and sets the homotopy scales through a driver interface,
+and never reaches into the solver's internals. This is the seam at which an
+analysis or host selects a different escalation.
+
+### 15.5 Gmin and gmin stepping
 
 The solver context contains a normal `gmin`, used by device models for weak
-conductance stabilization, and an extra homotopy conductance `gmin_extra`.
+conductance stabilization. Gmin stepping adds an extra homotopy conductance,
+owned by the DC driver (not the shared context).
 
 During gmin stepping, every non-ground node receives an added conductance to
-ground. The solver starts from an easy, strongly shunted problem and reduces the
-extra conductance toward zero, warm-starting each step from the previous
-solution. The final accepted operating point is always solved with
-`gmin_extra = 0`.
+ground. The strategy starts from an easy, strongly shunted problem and reduces
+the extra conductance toward zero, warm-starting each step from the previous
+solution. The final accepted operating point is always solved with the extra
+conductance at zero. The extra conductance is applied only to node-voltage
+unknowns, never to branch current unknowns.
 
-The extra conductance is applied only to node-voltage unknowns, never to branch
-current unknowns.
-
-### 15.5 Source stepping
+### 15.6 Source stepping
 
 Source stepping scales independent forced source values from zero to full
-strength. It is attempted after plain Newton and gmin stepping fail. Each scale
-point warm-starts from the previous point. A temporary shunt may be held during
-the source ramp and then ramped out so the final solve is exact.
+strength. It runs after plain Newton and gmin stepping fail. Each scale point
+warm-starts from the previous point. A temporary shunt may be held during the
+source ramp and then ramped out so the final solve is exact.
 
-A model whose source value is affected by source stepping must multiply that
-source by the context's source scale. Models that do not represent independent
-sources ignore the scale.
+An element whose source value is affected by source stepping multiplies that
+source by the source-stepping scale carried in `DcAnalysisState`. Elements that
+do not represent independent sources ignore it.
 
-### 15.6 Initial guesses, node sets, and device initial conditions
+### 15.7 Initial guesses, node sets, and device initial conditions
 
 Node-set values and user initial conditions seed Newton history; they are not
 themselves constraints. Device initial conditions seed transient history and may
@@ -655,14 +706,14 @@ become constraints only when the device stamps a constraint.
 The solver may push the same initial condition into multiple history rows when a
 multistep integration method needs a consistent starting history.
 
-### 15.7 Timestep rejection and rollback
+### 15.8 Timestep rejection and rollback
 
 Transient convergence failure rejects the candidate step. Rejection restores the
 digital state to the checkpoint taken before the candidate endpoint, reduces the
 timestep, and retries. A step is committed only after the analog solve succeeds
 and same-time digital acceptance has run.
 
-### 15.8 Timestep bounds and breakpoints
+### 15.9 Timestep bounds and breakpoints
 
 Devices may request a maximum timestep, and sources may expose breakpoints where
 the solver should land exactly. A timestep controller that supports these hooks
@@ -670,7 +721,7 @@ must take the minimum positive bound that does not overshoot the stop time or th
 next digital event. If no hook is available, the solver still must honor digital
 event times and the global minimum/maximum timestep limits.
 
-### 15.9 Linear-solver safety
+### 15.10 Linear-solver safety
 
 If the linear solve returns a non-finite value, the nonlinear solve fails loud.
 The solver must not continue from NaN or infinity.
@@ -685,7 +736,7 @@ device construction.
 
 | Section | Rule | Failure |
 |---------|------|---------|
-| §2 | Circuit contains a device with neither analog nor digital facet | Device-load error. |
+| §2 | Circuit contains an element that declares no capability | Device-load error. |
 | §3 | Unsupported analog behavior reaches the ABI | Device-load or analysis error; never an empty fake stamp. |
 | §4 | Digital boundary changes during an analysis | Analysis error. |
 | §4 | Digital event targets a nonexistent net | Analysis error. |

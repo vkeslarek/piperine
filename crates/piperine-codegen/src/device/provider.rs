@@ -1,6 +1,6 @@
 //! The plugin-device seam (Plugin plan D4): `CircuitCompiler` delegates
 //! `@device`-annotated instances to a [`DeviceProvider`] instead of compiling
-//! them from PHDL. The provider (a plugin host) returns a solver `Device`;
+//! them from PHDL. The provider (a plugin host) returns a solver `Element`;
 //! the solver never learns it came from a plugin (SPEC Part VI §7).
 //!
 //! Dependency direction: this trait lives in codegen so codegen never
@@ -10,7 +10,7 @@ use piperine_lang::parse::ast::Direction;
 use piperine_lang::pom::module::Attribute;
 use piperine_lang::Value;
 use piperine_solver::analog::AnalogReference;
-use piperine_solver::core::device::Device;
+use piperine_solver::core::element::Element;
 use piperine_solver::digital::DigitalNet;
 
 /// How one port of a `@device` module binds into the built circuit.
@@ -55,5 +55,5 @@ pub struct PluginDeviceSpec {
 /// The bridge between the plugin world and the circuit builder. Errors are
 /// plain strings; the compiler wraps them as fail-loud `CodegenError`s.
 pub trait DeviceProvider {
-    fn build(&self, spec: PluginDeviceSpec) -> Result<Box<dyn Device>, String>;
+    fn build(&self, spec: PluginDeviceSpec) -> Result<Box<dyn Element>, String>;
 }

@@ -1,9 +1,9 @@
-//! The solver boundary: compiled kernels wrapped as [`piperine_solver::device::Device`]s.
+//! The solver boundary: compiled kernels wrapped as [`piperine_solver::core::element::Element`]s.
 //!
 //! - [`CompiledModule`] — the per-module compilation artifact (analog and/or
 //!   digital kernel), shared across instances.
 //! - [`PiperineDevice`] — one instance: parameter values, operator state,
-//!   register banks, netlist references. Implements the solver `Device`
+//!   register banks, netlist references. Implements the solver `Element`
 //!   trait for both domains.
 //! - [`CircuitCompiler`] — walks an [`crate::ir::IrProgram`]'s top module and
 //!   builds a ready-to-simulate `CircuitInstance`.
@@ -24,7 +24,7 @@ use piperine_solver::analysis::ac::AcAnalysisContext;
 use piperine_solver::analysis::dc::{DcAnalysisResult, DcAnalysisState};
 use piperine_solver::analysis::noise::Noise;
 use piperine_solver::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
-use piperine_solver::core::device::{AnalogDevice, Device, DigitalDevice};
+use piperine_solver::core::element::{Element, ElementCapabilities};
 use piperine_solver::digital::DigitalEvent;
 use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink};
 use piperine_solver::math::circular_array::CircularArrayBuffer2;
@@ -80,7 +80,7 @@ impl CompiledModule {
     }
 }
 
-/// One device instance: the mixed-signal `Device` the solver drives.
+/// One device instance: the mixed-signal `Element` the solver drives.
 pub struct PiperineDevice {
     label: String,
     analog: Option<AnalogInstance>,
@@ -137,36 +137,28 @@ impl PiperineDevice {
     }
 }
 
-impl Device for PiperineDevice {
-    fn device_name(&self) -> &str {
+impl Element for PiperineDevice {
+    fn name(&self) -> &str {
         &self.label
     }
-    // A digital-only device with analog input terminals (the A2D bridge)
-    // still participates in the analog lifecycle: `accept_timestep` caches
-    // its terminal voltages after every accepted solution.
-    fn as_analog(&mut self) -> Option<&mut dyn AnalogDevice> {
-        if self.analog.is_some() || !self.analog_terminal_refs.is_empty() {
-            Some(self)
-        } else {
-            None
-        }
-    }
-    fn as_analog_ref(&self) -> Option<&dyn AnalogDevice> {
-        if self.analog.is_some() || !self.analog_terminal_refs.is_empty() {
-            Some(self)
-        } else {
-            None
-        }
-    }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> {
-        if self.digital.is_some() { Some(self) } else { None }
-    }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> {
-        if self.digital.is_some() { Some(self) } else { None }
-    }
-}
 
-impl AnalogDevice for PiperineDevice {
+    fn capabilities(&self) -> ElementCapabilities {
+        let mut caps = ElementCapabilities::empty();
+        // A digital-only device with analog input terminals (the A2D bridge)
+        // still participates in the analog lifecycle: `accept_timestep` caches
+        // its terminal voltages after every accepted solution.
+        if self.analog.is_some() || !self.analog_terminal_refs.is_empty() {
+            caps |= ElementCapabilities::ANALOG;
+        }
+        if let Some(digital) = &self.digital {
+            caps |= ElementCapabilities::DIGITAL;
+            if digital.kernel().layout().num_analog() > 0 {
+                caps |= ElementCapabilities::SAMPLES_ANALOG;
+            }
+        }
+        caps
+    }
+
     fn limiting_active(&self) -> bool {
         self.analog
             .as_ref()
@@ -187,7 +179,7 @@ impl AnalogDevice for PiperineDevice {
 
     fn load_dc(
         &mut self,
-        state: &DcAnalysisState,
+        state: &DcAnalysisState<'_>,
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
         match &mut self.analog {
@@ -210,7 +202,7 @@ impl AnalogDevice for PiperineDevice {
 
     fn load_transient(
         &mut self,
-        states: &TransientAnalysisState,
+        states: &TransientAnalysisState<'_>,
         tran_ctx: &TransientAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
@@ -258,9 +250,7 @@ impl AnalogDevice for PiperineDevice {
             None => Vec::new(),
         }
     }
-}
 
-impl DigitalDevice for PiperineDevice {
     fn boundary(&self) -> DigitalPorts<'_> {
         match &self.digital {
             Some(d) => DigitalPorts {
@@ -312,12 +302,6 @@ impl DigitalDevice for PiperineDevice {
             let vars = digital.export_vars();
             analog.sync_vars(&vars);
         }
-    }
-
-    fn samples_analog(&self) -> bool {
-        self.digital
-            .as_ref()
-            .is_some_and(|d| d.kernel().layout().num_analog() > 0)
     }
 }
 

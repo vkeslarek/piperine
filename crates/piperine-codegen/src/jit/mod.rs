@@ -54,7 +54,7 @@ pub struct SimCtx {
     pub temperature: f64,
     /// Absolute simulation time in seconds (`$abstime`).
     pub abstime: f64,
-    /// Device multiplicity (`$mfactor`).
+    /// Element multiplicity (`$mfactor`).
     pub mfactor: f64,
     /// Matrix-regularisation conductance (`$simparam("gmin")`).
     pub gmin: f64,

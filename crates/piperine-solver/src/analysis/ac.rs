@@ -23,10 +23,6 @@ pub trait AcAnalysis: DcAnalysis {
     ) -> Vec<Stamp<AnalogReference, Complex<f64>>>;
 }
 
-pub struct AcFrequencyAnalysisOptions {
-    pub frequency: f64,
-}
-
 #[derive(Clone, Debug)]
 pub struct AcSweepAnalysisOptions {
     pub start_frequency: f64,
@@ -129,18 +125,4 @@ impl AcAnalysisStep {
     pub fn get_node(&self, node_identifier: &NodeIdentifier) -> Option<&Complex<f64>> {
         self.get(&AnalogVariable::Node(node_identifier.clone()))
     }
-}
-
-pub trait AcAnalysisSolver {
-    fn solve_frequency_ac_analysis(
-        &self,
-        options: AcFrequencyAnalysisOptions,
-        context: Context,
-    ) -> crate::result::Result<AcAnalysisResult>;
-
-    fn solve_sweep_ac_analysis(
-        &self,
-        options: AcSweepAnalysisOptions,
-        context: Context,
-    ) -> crate::result::Result<AcAnalysisResult>;
 }

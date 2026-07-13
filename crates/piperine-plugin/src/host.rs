@@ -11,7 +11,7 @@ use piperine_lang::eval::{EvalError, Value};
 use piperine_lang::Design;
 use piperine_project::resolver::Resolver;
 use piperine_project::PiperineToml;
-use piperine_solver::core::device::Device;
+use piperine_solver::core::element::Element;
 
 use crate::backend::native::{self, NativePlugin};
 use crate::capability::HostCtx;
@@ -336,9 +336,9 @@ impl BenchPlugins for PluginHost {
 
 /// The codegen seam (Plugin plan D4): `CircuitCompiler` hands
 /// `@device`-annotated instances here; the registered factory constructs
-/// the solver `Device`.
+/// the solver `Element`.
 impl DeviceProvider for PluginHost {
-    fn build(&self, spec: PluginDeviceSpec) -> Result<Box<dyn Device>, String> {
+    fn build(&self, spec: PluginDeviceSpec) -> Result<Box<dyn Element>, String> {
         let (owner, factory) = self
             .contributions
             .devices

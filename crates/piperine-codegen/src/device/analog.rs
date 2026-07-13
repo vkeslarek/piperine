@@ -509,7 +509,7 @@ impl AnalogInstance {
 
     pub fn load_dc(
         &mut self,
-        state: &DcAnalysisState,
+        state: &DcAnalysisState<'_>,
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
         self.sync_sim(context, Analysis::Dc);
@@ -524,7 +524,7 @@ impl AnalogInstance {
         let veff = self.limited_volts(&volts);
         let rhs = self.norton_rhs(&veff, &res, &jac);
         let mut stamps = self.nodal_stamps(&rhs, &jac);
-        stamps.extend(self.force_stamps(&volts, context.src_scale));
+        stamps.extend(self.force_stamps(&volts, state.src_scale));
         self.update_limits(&volts);
         stamps
     }
@@ -654,7 +654,7 @@ impl AnalogInstance {
 
     pub fn load_transient(
         &mut self,
-        states: &TransientAnalysisState,
+        states: &TransientAnalysisState<'_>,
         tran_ctx: &TransientAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
@@ -709,7 +709,8 @@ impl AnalogInstance {
             }
         }
         let mut stamps = self.nodal_stamps(&rhs, &jac);
-        stamps.extend(self.force_stamps(&volts, context.src_scale));
+        // Transient never source-steps (that homotopy is DC-only) → full scale.
+        stamps.extend(self.force_stamps(&volts, 1.0));
         // Inductor flux companion `V(p,n) = dΦ/dt`, Φ = L·ib, on the force
         // branch's own current unknown. DC uses no flux (dt = 0 → the
         // inductor is a short, already forced to 0 V by `force_stamps`).
@@ -728,7 +729,7 @@ impl AnalogInstance {
     fn force_flux_stamps(
         &self,
         volts: &[f64],
-        states: &TransientAnalysisState,
+        states: &TransientAnalysisState<'_>,
         c0: f64,
         c1: f64,
         c2: f64,

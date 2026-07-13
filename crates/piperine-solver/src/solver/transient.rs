@@ -1,5 +1,6 @@
 use crate::analysis::transient::{
-    TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisResult, TransientStep,
+    TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisResult,
+    TransientAnalysisState, TransientStep,
 };
 use crate::core::circuit::CircuitInstance;
 use crate::analog::AnalogReference;
@@ -51,10 +52,10 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
 
         self.context.time = self.time;
         self.circuit.update_all(state, &self.context);
-        for tran in &mut self.circuit.devices {
-            if let Some(a) = tran.as_analog() {
-                all_stamps.extend(a.load_transient(state, &tran_ctx, &self.context));
-            }
+        let CircuitInstance { devices, digital_state, .. } = &mut *self.circuit;
+        let tran_state = TransientAnalysisState::new(state, &digital_state.nets);
+        for tran in devices.iter_mut() {
+            all_stamps.extend(tran.load_transient(&tran_state, &tran_ctx, &self.context));
         }
         Ok(all_stamps)
     }
@@ -146,21 +147,19 @@ impl<'a> TransientSolver<'a> {
         let netlist = self.system.circuit.netlist();
         let iv_dc = dc_result.as_iv(netlist);
 
-        // Device `@initial { V(p,n) <- ic }` UIC seeds: set the t=0 branch
+        // Element `@initial { V(p,n) <- ic }` UIC seeds: set the t=0 branch
         // voltage `v(plus) = v(minus) + ic` (cap/ind/dio initial condition,
         // SPICE `.ic`). Overlaid on the DC point so unconstrained nodes keep
         // their operating-point values.
         let mut device_ic: Vec<InitialValue<AnalogReference, f64>> = Vec::new();
         for dev in &self.system.circuit.devices {
-            if let Some(a) = dev.as_analog_ref() {
-                for (plus, minus, ic) in a.initial_conditions() {
-                    let Some(plus_ref) = plus else { continue };
-                    let v_minus = minus
-                        .as_ref()
-                        .and_then(|m| m.as_index())
-                        .map_or(0.0, |i| iv_dc.iter().find(|iv| iv.reference.as_index() == Some(i)).map_or(0.0, |iv| iv.value));
-                    device_ic.push(InitialValue { reference: plus_ref, value: v_minus + ic });
-                }
+            for (plus, minus, ic) in dev.initial_conditions() {
+                let Some(plus_ref) = plus else { continue };
+                let v_minus = minus
+                    .as_ref()
+                    .and_then(|m| m.as_index())
+                    .map_or(0.0, |i| iv_dc.iter().find(|iv| iv.reference.as_index() == Some(i)).map_or(0.0, |iv| iv.value));
+                device_ic.push(InitialValue { reference: plus_ref, value: v_minus + ic });
             }
         }
 

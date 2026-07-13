@@ -1,4 +1,4 @@
-use crate::analysis::dc::DcAnalysisResult;
+use crate::analysis::dc::{DcAnalysisResult, DcAnalysisState};
 use crate::analysis::tf::{
     TransferFunctionAnalysisOptions, TransferFunctionAnalysisResult, TransferType,
 };
@@ -189,10 +189,10 @@ impl<'a> TransferFunctionSolver<'a> {
 
         // Collect DC stamps (these are linearized around DC point)
         let mut all_stamps = Vec::new();
-        for dc in &mut circuit.devices {
-            if let Some(a) = dc.as_analog() {
-                all_stamps.extend(a.load_dc(&state, context));
-            }
+        let CircuitInstance { devices, digital_state, .. } = &mut *circuit;
+        let dc_state = DcAnalysisState::new(&state, &digital_state.nets, 1.0);
+        for dc in devices.iter_mut() {
+            all_stamps.extend(dc.load_dc(&dc_state, context));
         }
 
         Ok(all_stamps)

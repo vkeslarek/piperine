@@ -1,4 +1,4 @@
 pub mod circuit;
-pub mod device;
+pub mod element;
 pub use circuit::*;
-pub use device::*;
+pub use element::*;

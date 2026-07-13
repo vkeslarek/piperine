@@ -2143,7 +2143,6 @@ dependencies = [
  "ndarray",
  "num-complex",
  "num-traits",
- "paste",
  "rand_distr",
  "rayon",
  "tempfile",

@@ -10,7 +10,7 @@ use piperine_solver::core::circuit::CircuitInstance;
 fn make_instance(title: &str) -> CircuitInstance {
     CircuitInstance::from_devices_and_netlist(title, vec![], piperine_solver::analog::Netlist::new())
 }
-use piperine_solver::core::device::{Device, AnalogDevice, DigitalDevice};
+use piperine_solver::core::element::{Element, ElementCapabilities};
 use piperine_solver::digital::{LogicValue, DigitalNet, DigitalEvent};
 use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};
 use piperine_solver::digital::scheduler::{DigitalState, DigitalTopology};
@@ -27,13 +27,9 @@ use helpers::{A2DState, D2ADevice};
 
 struct Inverter { input: DigitalNet, output: DigitalNet, delay: f64, id: usize }
 
-impl Device for Inverter {
-    fn device_name(&self) -> &str { "inverter" }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
-}
-
-impl DigitalDevice for Inverter {
+impl Element for Inverter {
+    fn name(&self) -> &str { "inverter" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: std::slice::from_ref(&self.input), outputs: std::slice::from_ref(&self.output) }
     }
@@ -55,13 +51,9 @@ impl DigitalDevice for Inverter {
 
 struct NorGate { inputs: [DigitalNet; 2], output: DigitalNet, delay: f64, id: usize }
 
-impl Device for NorGate {
-    fn device_name(&self) -> &str { "nor_gate" }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
-}
-
-impl DigitalDevice for NorGate {
+impl Element for NorGate {
+    fn name(&self) -> &str { "nor_gate" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &self.inputs, outputs: std::slice::from_ref(&self.output) }
     }
@@ -79,13 +71,9 @@ impl DigitalDevice for NorGate {
 
 struct AndGate { inputs: [DigitalNet; 2], output: DigitalNet, delay: f64, id: usize }
 
-impl Device for AndGate {
-    fn device_name(&self) -> &str { "and_gate" }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
-}
-
-impl DigitalDevice for AndGate {
+impl Element for AndGate {
+    fn name(&self) -> &str { "and_gate" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &self.inputs, outputs: std::slice::from_ref(&self.output) }
     }
@@ -115,13 +103,9 @@ impl DFF {
     }
 }
 
-impl Device for DFF {
-    fn device_name(&self) -> &str { "dff" }
-    fn as_digital(&mut self) -> Option<&mut dyn DigitalDevice> { Some(self) }
-    fn as_digital_ref(&self) -> Option<&dyn DigitalDevice> { Some(self) }
-}
-
-impl DigitalDevice for DFF {
+impl Element for DFF {
+    fn name(&self) -> &str { "dff" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &self.inputs, outputs: std::slice::from_ref(&self.q) }
     }
@@ -147,7 +131,7 @@ impl DigitalDevice for DFF {
 
 #[test]
 fn test_topology_empty() {
-    let devices: Vec<Box<dyn Device>> = vec![];
+    let devices: Vec<Box<dyn Element>> = vec![];
     let topo = DigitalTopology::build(&devices);
     assert!(topo.topo_order.is_empty());
     assert!(topo.back_edges.is_empty());
@@ -155,7 +139,7 @@ fn test_topology_empty() {
 
 #[test]
 fn test_topology_single_device() {
-    let devices: Vec<Box<dyn Device>> = vec![
+    let devices: Vec<Box<dyn Element>> = vec![
         Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 1e-9, id: 0 }),
     ];
     let topo = DigitalTopology::build(&devices);
@@ -166,7 +150,7 @@ fn test_topology_single_device() {
 #[test]
 fn test_topology_linear_chain() {
     // INV0→INV1→INV2→INV3
-    let devices: Vec<Box<dyn Device>> = (0..4).map(|i| -> Box<dyn Device> {
+    let devices: Vec<Box<dyn Element>> = (0..4).map(|i| -> Box<dyn Element> {
         Box::new(Inverter { input: DigitalNet(i), output: DigitalNet(i + 1), delay: 1e-9, id: i })
     }).collect();
     let topo = DigitalTopology::build(&devices);
@@ -182,7 +166,7 @@ fn test_topology_linear_chain() {
 #[test]
 fn test_topology_diamond() {
     // n0→INV0→n1→{INV1→n2, INV2→n3}; AND(n2,n3)→n4
-    let devices: Vec<Box<dyn Device>> = vec![
+    let devices: Vec<Box<dyn Element>> = vec![
         Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(3), delay: 0.0, id: 2 }),
@@ -205,7 +189,7 @@ fn test_topology_diamond() {
 #[test]
 fn test_topology_ring_has_back_edge() {
     // 3-inverter ring: INV0→INV1→INV2→INV0
-    let devices: Vec<Box<dyn Device>> = (0..3usize).map(|i| -> Box<dyn Device> {
+    let devices: Vec<Box<dyn Element>> = (0..3usize).map(|i| -> Box<dyn Element> {
         Box::new(Inverter { input: DigitalNet(i), output: DigitalNet((i + 1) % 3), delay: 1e-9, id: i })
     }).collect();
     let topo = DigitalTopology::build(&devices);
@@ -216,7 +200,7 @@ fn test_topology_ring_has_back_edge() {
 #[test]
 fn test_topology_disconnected_subgraphs() {
     // Chain A: INV0→INV1; Chain B: INV2→INV3 (no shared nets)
-    let devices: Vec<Box<dyn Device>> = vec![
+    let devices: Vec<Box<dyn Element>> = vec![
         Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
         Box::new(Inverter { input: DigitalNet(3), output: DigitalNet(4), delay: 0.0, id: 2 }),
@@ -245,7 +229,7 @@ fn test_zero_delay_chain_propagates_in_one_pass() {
     state.nets[0] = LogicValue::One;
     state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 99, seq: 0 });
 
-    let mut devices: Vec<Box<dyn Device>> = vec![
+    let mut devices: Vec<Box<dyn Element>> = vec![
         Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
     ];
@@ -265,7 +249,7 @@ fn test_fan_out_topology() {
     state.nets[0] = LogicValue::Zero;
     state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0 });
 
-    let mut devices: Vec<Box<dyn Device>> = vec![
+    let mut devices: Vec<Box<dyn Element>> = vec![
         Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(3), delay: 0.0, id: 2 }),
@@ -287,7 +271,7 @@ fn test_diamond_propagation() {
     state.nets[0] = LogicValue::One;
     state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 99, seq: 0 });
 
-    let mut devices: Vec<Box<dyn Device>> = vec![
+    let mut devices: Vec<Box<dyn Element>> = vec![
         Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(3), delay: 0.0, id: 2 }),
@@ -620,7 +604,7 @@ fn test_cosim_d2a_event_at_correct_time() {
 
     let mut d2a = Box::new(D2ADevice::new(DigitalNet(0)));
     let d2a_ptr: *mut D2ADevice = &mut *d2a;
-    instance.devices.push(d2a as Box<dyn Device>);
+    instance.devices.push(d2a as Box<dyn Element>);
     instance.digital_state = state;
     instance.rebuild_digital_topology();
 
@@ -648,7 +632,7 @@ fn test_cosim_d2a_multiple_events() {
 
     let mut d2a = Box::new(D2ADevice::new(DigitalNet(0)));
     let d2a_ptr: *mut D2ADevice = &mut *d2a;
-    instance.devices.push(d2a as Box<dyn Device>);
+    instance.devices.push(d2a as Box<dyn Element>);
     instance.digital_state = state;
     instance.rebuild_digital_topology();
 

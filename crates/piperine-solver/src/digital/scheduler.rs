@@ -2,14 +2,14 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Reverse;
 use crate::digital::{LogicValue, DigitalNet, DigitalEvent};
 use crate::digital::interface::{EvalCtx, QueueSink};
-use crate::core::device::Device;
+use crate::core::element::{Element, ElementCapabilities};
 
 // ---------------------------------------------------------------------------
 // DigitalTopology — DAG order + back edges for a fixed set of devices
 // ---------------------------------------------------------------------------
 
 pub struct DigitalTopology {
-    /// Device indices (into the original `digital_runtimes` vec) in topological order.
+    /// Element indices (into the original `digital_runtimes` vec) in topological order.
     pub topo_order: Vec<usize>,
     /// Back edges as (src_topo_pos, dst_topo_pos) where src > dst.
     /// When the device at src_topo_pos changes its outputs, restart from dst_topo_pos.
@@ -17,32 +17,29 @@ pub struct DigitalTopology {
 }
 
 impl DigitalTopology {
-    pub fn build(devices: &[Box<dyn Device>]) -> Self {
+    pub fn build(devices: &[Box<dyn Element>]) -> Self {
         let n = devices.len();
         if n == 0 {
             return Self { topo_order: Vec::new(), back_edges: Vec::new() };
         }
 
-        // net → device index that produces it
+        // net → element index that produces it. A pure-analog element drives no
+        // nets (its `boundary()` is empty), so it never appears here.
         let mut output_to_dev: HashMap<DigitalNet, usize> = HashMap::new();
         for (i, dev) in devices.iter().enumerate() {
-            if let Some(d) = dev.as_digital_ref() {
-                for &net in d.boundary().outputs {
-                    output_to_dev.insert(net, i);
-                }
+            for &net in dev.boundary().outputs {
+                output_to_dev.insert(net, i);
             }
         }
 
-        // adj[i] = devices that consume at least one of device i's outputs
+        // adj[i] = elements that consume at least one of element i's outputs
         let mut adj: Vec<Vec<usize>> = vec![vec![]; n];
         for (j, dev) in devices.iter().enumerate() {
-            if let Some(d) = dev.as_digital_ref() {
-                for &net in d.boundary().inputs {
-                    if let Some(&i) = output_to_dev.get(&net)
-                        && i != j && !adj[i].contains(&j) {
-                            adj[i].push(j);
-                        }
-                }
+            for &net in dev.boundary().inputs {
+                if let Some(&i) = output_to_dev.get(&net)
+                    && i != j && !adj[i].contains(&j) {
+                        adj[i].push(j);
+                    }
             }
         }
 
@@ -132,7 +129,7 @@ impl DigitalState {
     }
 
     /// Simple fixed-point evaluation (fallback, no topology required).
-    pub fn evaluate_until_stable(&mut self, t: f64, devices: &mut [Box<dyn Device>]) {
+    pub fn evaluate_until_stable(&mut self, t: f64, devices: &mut [Box<dyn Element>]) {
         let epsilon = 1e-12;
         let max_delta_cycles = 1000;
         let mut delta_count = 0;
@@ -165,17 +162,15 @@ impl DigitalState {
             let ctx = EvalCtx { time: t, nets: &self.nets, analog: &[] };
             let mut fired = vec![false; devices.len()];
             for (i, device) in devices.iter_mut().enumerate() {
-                if let Some(d) = device.as_digital()
-                    && d.has_input_on(&changed) {
-                        fired[i] = d.seq_phase(&ctx);
-                    }
+                if device.has_input_on(&changed) {
+                    fired[i] = device.seq_phase(&ctx);
+                }
             }
             for (i, device) in devices.iter_mut().enumerate() {
-                if let Some(d) = device.as_digital()
-                    && (fired[i] || d.has_input_on(&changed)) {
-                        let mut sink = QueueSink::new(&mut self.event_queue, t, i, &mut seq);
-                        d.comb_phase(&ctx, &mut sink);
-                    }
+                if fired[i] || device.has_input_on(&changed) {
+                    let mut sink = QueueSink::new(&mut self.event_queue, t, i, &mut seq);
+                    device.comb_phase(&ctx, &mut sink);
+                }
             }
 
             delta_count += 1;
@@ -196,7 +191,7 @@ impl DigitalState {
     pub fn evaluate_dag_ordered(
         &mut self,
         t: f64,
-        devices: &mut [Box<dyn Device>],
+        devices: &mut [Box<dyn Element>],
         topology: &DigitalTopology,
     ) {
         let epsilon = 1e-12;
@@ -233,10 +228,9 @@ impl DigitalState {
             let ctx = EvalCtx { time: t, nets: &self.nets, analog: &[] };
             for &dev_idx in &topology.topo_order {
                 let device = &mut devices[dev_idx];
-                if let Some(d) = device.as_digital()
-                    && d.has_input_on(&all_changed) {
-                        seq_fired[dev_idx] = d.seq_phase(&ctx);
-                    }
+                if device.has_input_on(&all_changed) {
+                    seq_fired[dev_idx] = device.seq_phase(&ctx);
+                }
             }
         }
 
@@ -256,44 +250,45 @@ impl DigitalState {
                 let topo_pos = restart_from + offset;
                 let device = &mut devices[dev_idx];
 
-                if let Some(d) = device.as_digital() {
-                    if !d.has_input_on(&all_changed) && !seq_fired[dev_idx] {
-                        continue;
-                    }
-
-                    prev_outs.clear();
-                    prev_outs.extend(d.boundary().outputs.iter().map(|n| self.nets[n.0]));
-
-                    local_q.clear();
-                    {
-                        // Scope ctx so the immutable borrow of self.nets ends
-                        // before we mutate it below when draining local_q.
-                        let ctx = EvalCtx { time: t, nets: &self.nets, analog: &[] };
-                        let mut sink = QueueSink::new(&mut local_q, t, dev_idx, &mut seq);
-                        d.comb_phase(&ctx, &mut sink);
-                    }
-
-                    while let Some(Reverse(ev)) = local_q.pop() {
-                        if ev.time <= t + epsilon {
-                            if self.nets[ev.net.0] != ev.value {
-                                self.nets[ev.net.0] = ev.value;
-                                all_changed.insert(ev.net);
-                            }
-                        } else {
-                            self.event_queue.push(Reverse(ev));
-                        }
-                    }
-
-                    let outputs = d.boundary().outputs;
-                    let outputs_changed = if outputs.is_empty() {
-                        true
-                    } else {
-                        outputs.iter().enumerate().any(|(i, n)| {
-                            prev_outs.get(i).is_some_and(|&old| self.nets[n.0] != old)
-                        })
-                    };
-                    output_changed_at[topo_pos] = outputs_changed;
+                if !device.capabilities().contains(ElementCapabilities::DIGITAL) {
+                    continue;
                 }
+                if !device.has_input_on(&all_changed) && !seq_fired[dev_idx] {
+                    continue;
+                }
+
+                prev_outs.clear();
+                prev_outs.extend(device.boundary().outputs.iter().map(|n| self.nets[n.0]));
+
+                local_q.clear();
+                {
+                    // Scope ctx so the immutable borrow of self.nets ends
+                    // before we mutate it below when draining local_q.
+                    let ctx = EvalCtx { time: t, nets: &self.nets, analog: &[] };
+                    let mut sink = QueueSink::new(&mut local_q, t, dev_idx, &mut seq);
+                    device.comb_phase(&ctx, &mut sink);
+                }
+
+                while let Some(Reverse(ev)) = local_q.pop() {
+                    if ev.time <= t + epsilon {
+                        if self.nets[ev.net.0] != ev.value {
+                            self.nets[ev.net.0] = ev.value;
+                            all_changed.insert(ev.net);
+                        }
+                    } else {
+                        self.event_queue.push(Reverse(ev));
+                    }
+                }
+
+                let outputs = device.boundary().outputs;
+                let outputs_changed = if outputs.is_empty() {
+                    true
+                } else {
+                    outputs.iter().enumerate().any(|(i, n)| {
+                        prev_outs.get(i).is_some_and(|&old| self.nets[n.0] != old)
+                    })
+                };
+                output_changed_at[topo_pos] = outputs_changed;
             }
 
             let mut next_restart: Option<usize> = None;

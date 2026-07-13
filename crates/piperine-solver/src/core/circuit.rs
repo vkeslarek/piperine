@@ -2,7 +2,7 @@ use crate::analysis::noise::NoiseAnalysisOptions;
 use crate::analysis::tf::TransferFunctionAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
 use crate::analog::Netlist;
-use crate::core::device::Device;
+use crate::core::element::{Element, ElementCapabilities};
 use crate::digital::{DigitalState, DigitalTopology};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::solver::Context;
@@ -20,8 +20,8 @@ use crate::solver::transient::TransientSolver;
 pub struct CircuitInstance {
     pub title: String,
     /// All devices — both analog and digital. Each device may implement either
-    /// or both sides; the `Device` trait default impls handle the no-op cases.
-    pub devices: Vec<Box<dyn Device>>,
+    /// or both sides; the `Element` trait default impls handle the no-op cases.
+    pub devices: Vec<Box<dyn Element>>,
     pub digital_topology: Option<DigitalTopology>,
     pub digital_state: DigitalState,
     pub netlist: Netlist,
@@ -32,7 +32,7 @@ impl CircuitInstance {
     /// PHDL modules into devices before handing them to the solver.
     pub fn from_devices_and_netlist(
         title: impl Into<String>,
-        devices: Vec<Box<dyn Device>>,
+        devices: Vec<Box<dyn Element>>,
         netlist: Netlist,
     ) -> Self {
         Self {
@@ -45,14 +45,20 @@ impl CircuitInstance {
     }
 
     pub fn update_all(&mut self, state: &CircularArrayBuffer2<f64>, context: &Context) {
-        self.devices.iter_mut().for_each(|d| {
-            if let Some(a) = d.as_analog() {
-                a.update(state, context);
-            }
-        });
+        self.devices.iter_mut().for_each(|d| d.update(state, context));
     }
 
     pub fn netlist(&self) -> &Netlist { &self.netlist }
+
+    /// Union of every element's declared [`ElementCapabilities`] — what this
+    /// whole circuit participates in. Drivers plan against this (e.g. a
+    /// pure-analog circuit skips the mixed-signal loop) instead of scanning the
+    /// element list by trial downcast.
+    pub fn capabilities(&self) -> ElementCapabilities {
+        self.devices
+            .iter()
+            .fold(ElementCapabilities::empty(), |acc, d| acc | d.capabilities())
+    }
 
     pub fn ac(&mut self, context: Context) -> crate::result::Result<AcSolver<'_>> {
         AcSolver::new(self, context)
@@ -86,8 +92,8 @@ impl CircuitInstance {
         TransientSolver::new(self, transient_options, context)
     }
 
-    pub fn all_devices(&self) -> &[Box<dyn Device>] { &self.devices }
-    pub fn all_devices_mut(&mut self) -> &mut [Box<dyn Device>] { &mut self.devices }
+    pub fn all_devices(&self) -> &[Box<dyn Element>] { &self.devices }
+    pub fn all_devices_mut(&mut self) -> &mut [Box<dyn Element>] { &mut self.devices }
 
     pub fn rebuild_digital_topology(&mut self) {
         self.digital_topology = Some(DigitalTopology::build(&self.devices));
@@ -129,11 +135,9 @@ impl CircuitInstance {
         let mut seq = 0u64;
 
         for (i, device) in self.devices.iter_mut().enumerate() {
-            if let Some(a) = device.as_analog() {
-                let mut sink =
-                    crate::digital::interface::QueueSink::new(&mut seed_queue, ctx.time, i, &mut seq);
-                a.accept_timestep(&state, ctx, &before, &mut sink);
-            }
+            let mut sink =
+                crate::digital::interface::QueueSink::new(&mut seed_queue, ctx.time, i, &mut seq);
+            device.accept_timestep(&state, ctx, &before, &mut sink);
         }
         
         for Reverse(event) in seed_queue {
@@ -159,9 +163,9 @@ impl CircuitInstance {
         let mut seed_queue = std::collections::BinaryHeap::<Reverse<DigitalEvent>>::new();
         let mut seq: u64 = 0;
         for (i, device) in self.devices.iter_mut().enumerate() {
-            if let Some(d) = device.as_digital() {
+            if device.capabilities().contains(ElementCapabilities::DIGITAL) {
                 let mut sink = QueueSink::new(&mut seed_queue, 0.0, i, &mut seq);
-                d.init(&mut sink);
+                device.init(&mut sink);
             }
         }
         for Reverse(event) in seed_queue {

@@ -13,9 +13,24 @@ Cross-validation against ngspice lives in
 
 ## 1. Solver/device ABI refactor
 
-- [ ] **Uniform simulation element ABI — MISSING / high-priority refactor.**
-  The current split (`Device` as a wrapper plus separate analog and digital
-  facets) makes mixed-signal models feel bolted together instead of native.
+- [x] **Uniform simulation element ABI — DONE (2026-07-13).** The `Device`
+  downcast wrapper and the separate `AnalogDevice`/`DigitalDevice` facet traits
+  are gone. There is now **one** solver-facing contract, `Element`
+  (`core/element.rs`): identity (`name`), a required `capabilities()`
+  descriptor (`ElementCapabilities` bitflags), and every operation — analog
+  load (`load_dc`/`load_ac`/`load_transient`/`noise_current_psd`), analog
+  lifecycle (`limiting_active`/`bound_step_hint`/`initial_conditions`/`update`/
+  `accept_timestep`), and digital evaluation (`boundary`/`init`/`seq_phase`/
+  `comb_phase`/`evaluate`) — as methods with defaults. A resistor implements
+  the analog subset, a gate the digital subset, a comparator both, over one
+  object; there is no downcast. `AnalogInstance`/`DigitalInstance` are driven
+  by the composite `PiperineDevice` (which delegates), and `DigitalNetwork` is
+  itself a degenerate digital `Element`. Consumers (DC/AC/transient/noise/TF
+  drivers, the scheduler) call the methods directly and gate on
+  `capabilities()`. Everything below in this bullet is the original rationale.
+
+  The old split (`Device` as a wrapper plus separate analog and digital
+  facets) made mixed-signal models feel bolted together instead of native.
   A real mixed-signal element needs one coherent evaluation boundary: analog
   loading may depend on digital state, and digital event generation may depend
   on analog state/history. Today those data paths exist in ad-hoc places
@@ -41,20 +56,15 @@ Cross-validation against ngspice lives in
   net snapshot. The ABI should make these dependencies explicit so device
   authors do not hide them in side caches.
 
-- [ ] **Bidirectional mixed-signal state in every relevant callback — MISSING.**
-  Analog callbacks need access to digital state, not only during accept. Digital
-  callbacks need access to analog state history, not just a flat optional analog
-  slice. Replace narrow per-domain contexts with one context family:
-  `AnalogLoadCtx { analysis, analog_history, digital_state, params, query, ... }`,
-  `DigitalEvalCtx { time, digital_state, analog_history, event_sink, params,
-  query, ... }`, or a single shared `SolveCtx` view with borrow-safe facets.
-
-  Required behavior: D2A state changes must be visible before analog stamping;
-  A2D event decisions must see the accepted analog state; digital models that
-  implement analog-triggered behavior must be able to inspect recent analog
-  history/crossing state; analog models controlled by digital nets must read the
-  exact digital snapshot being solved against. This should be ABI-level, not an
-  implementation convention.
+- [x] **Bidirectional mixed-signal state in every relevant callback — DONE
+  (2026-07-13).** Analog stamping now sees the digital snapshot and digital
+  evaluation sees the analog solution, both at the ABI level — no device-side
+  cache. `DcAnalysisState`/`TransientAnalysisState` carry `digital:
+  &[LogicValue]` (they deref to the analog history), so `load_dc`/`load_transient`
+  read the exact digital state being solved against; `EvalCtx` already carries
+  `analog: &[f64]` for A2D. `accept_timestep` still takes the accepted digital
+  nets. Remaining nicety: unify the three views under one `SolveCtx` — deferred,
+  not required for correctness.
 
 - [ ] **Uniform analog/digital naming and node designation — MISSING.**
   Analog has `NodeIdentifier`, `BranchIdentifier`, `AnalogVariable`, and dense
@@ -223,10 +233,13 @@ Cross-validation against ngspice lives in
     drives checkpoint/rollback/commit on that vector; the element just declares
     its size and owns the bytes. This unifies how internal state is restored on
     rejected steps.
-  - **Convergence plan as explicit solver policy. (solver policy)** gmin
-    stepping, source stepping, damping, limiting, step rejection — these are
-    solver policy, not ABI. They should be expressed as a composable plan that
-    analyses select, instead of inline branches inside the DC/transient drivers.
+  - **Convergence plan as explicit solver policy. (solver policy)** *Homotopy
+    part DONE (2026-07-13):* gmin stepping and source stepping are now
+    `HomotopyStrategy` implementations composed by a `ConvergencePlan`
+    (`solver/convergence.rs`) that the DC driver runs via a `HomotopyDriver`
+    it implements — the inline `match … Err => match …` cascade is gone.
+    Still to fold in: Newton damping/limiting and transient step rejection as
+    their own strategies (`NewtonStrategy`/`StepperStrategy`).
   - **Diagnostic verbosity hooks. (solver policy)** Tracing/debug options per
     analysis, per element, per homotopy phase. Today these are ad-hoc
     environment variables; the solver policy should formalize them so plugins,
@@ -237,13 +250,17 @@ Cross-validation against ngspice lives in
   device convergence tests stay in the ABI because the element must volunteer
   them, but the solver still gates the outer loop on global convergence.
 
-- [ ] **Capability discovery instead of downcast discovery — MISSING.**
-  The current interface discovers behavior by asking for analog or digital
-  facets. Replace that with explicit capability flags/descriptors: `loads_dc`,
-  `loads_tran`, `loads_ac`, `emits_noise`, `evaluates_digital`, `samples_analog`,
+- [~] **Capability discovery instead of downcast discovery — PARTIAL
+  (2026-07-13).** The `Device` downcast wrapper is now `Element`
+  (`core/element.rs`), and `ElementCapabilities` (bitflags: `ANALOG`,
+  `DIGITAL`, `SAMPLES_ANALOG`) is a first-class descriptor returned by
+  `Element::capabilities()` — default-derived from the live facets so existing
+  impls stay green, overridable for finer detail. First real consumer:
+  `CircuitInstance::capabilities()` (union over elements) gates the DC
+  mixed-signal loop, so a pure-analog circuit no longer probes for digital
+  work. Still to add: finer flags (`loads_dc/ac/tran`, `emits_noise`,
   `depends_on_digital`, `has_internal_unknowns`, `supports_rollback`,
-  `supports_queries`, etc. The scheduler/solver can then build correct plans
-  without guessing from trait presence.
+  `supports_queries`) and routing the scheduler/other analyses through them.
 
   Design rule: capabilities describe what the element *does*, not where it came
   from. A JIT-compiled PHDL block, a Rust plugin, an OSDI wrapper, and a future
@@ -383,54 +400,53 @@ every API is a contract or a capability, the code reads at a glance).
 
 ### 7.1 Dead code to delete
 
-- `math/faer.rs::FaerDenseLinearSystem` — never instantiated in production
-  (DC, AC, transient, noise, TF all use `FaerSparseLinearSystem`). Delete the
-  type, the `LinearSystem` impl, and the `SymbolicLinearSystem` impl.
-- `math/faer.rs::FaerToNdarray` — a one-method trait. Replace with
-  `impl<E: Clone> From<Col<E>> for Array1<E>` (or `TryFrom` if fallibility is
-  needed) and delete the trait.
-- `math/linear.rs::NoSymbolic` — only used by the dead `FaerDenseLinearSystem`.
-  Delete.
-- `analysis/ac.rs::AcAnalysisSolver` — declared but no implementor exists.
-  Delete.
-- `analysis/ac.rs::AcFrequencyAnalysisOptions` — single-point AC option. No
-  caller. Delete.
-- `analysis/truncation.rs::TruncationError` and `BreakpointProvider` traits —
+- [x] `math/faer.rs::FaerDenseLinearSystem` — **DONE (2026-07-13).** Deleted the
+  type and both trait impls; production only ever used `FaerSparseLinearSystem`.
+- [x] `math/faer.rs::FaerToNdarray` — **KEEP.** The extension trait (owned by
+  `Col`) is the idiomatic form; both `Col` and `Array1` are foreign so a `From`
+  impl is impossible (orphan rule). Resolved, no action.
+- [x] `math/linear.rs::NoSymbolic` — **DONE (2026-07-13).** Deleted with
+  `FaerDenseLinearSystem`, its only user.
+- [x] `analysis/ac.rs::AcAnalysisSolver` — **DONE (2026-07-13).** Deleted; no
+  implementor existed.
+- [x] `analysis/ac.rs::AcFrequencyAnalysisOptions` — **DONE (2026-07-13).**
+  Deleted; no caller.
+- [ ] `analysis/truncation.rs::TruncationError` and `BreakpointProvider` traits —
   declared but never called. Either wire them into the transient stepper in
-  §1 phase 4, or delete the file.
+  §1 phase 4, or delete the file. (Deferred: decide alongside the stepper.)
 
 ### 7.2 Math layer simplifications
 
-- `math/linear.rs::AsIndexGetExt` — a one-method trait on `ArrayView1`. Delete
-  the trait and call `array.get(idx)` directly.
-- `math/faer.rs::FaerSparseLinearSystem::solve` — the no-symbolic path. The
-  symbolic path is the correct one for the Newton loop. Keep only
-  `solve_with_backend`. Remove the orphan `solve` method.
-- `math/linear.rs::SymbolicMatrix` — `size` is a method on the trait, but
+- [x] `math/linear.rs::AsIndexGetExt` — **DONE (2026-07-13).** Deleted; it had
+  no callers at all.
+- [x] `math/faer.rs::FaerSparseLinearSystem::solve` — **DONE (2026-07-13).**
+  Removed the orphan `solve` (no non-backend callers) and dropped `solve` from
+  the `LinearSystem` trait; only `solve_with_backend` remains.
+- [ ] `math/linear.rs::SymbolicMatrix` — `size` is a method on the trait, but
   `FaerSymbolicMatrix` also exposes `pub size: usize`. Make the field private;
-  keep the method.
-- `math/num.rs::Scalar` — re-encodes a lot of `num_traits` (`Zero`, `One`,
-  `ComplexField`, arithmetic ops, `abs`, `is_finite`). Replace with a
-  `pub trait Scalar: num_traits::Float + num_traits::NumAssign` (or just use
-  `f64`/`Complex<f64>` directly through the sparse linear system). Delete
-  the manual impls.
-- `math/unit.rs` and `math/constant.rs::UnitExt` — SI unit helpers generated
-  with `paste!`. PHDL delivers SI from the compiler; the solver receives raw
-  `f64`/`Complex<f64>`. Delete `math/unit.rs` and any imports of `UnitExt`
-  from the solver.
+  keep the method. (Pending.)
+- [x] `math/num.rs::Scalar` — **KEEP.** `Scalar` is implemented for both `f64`
+  and `Complex<f64>` and carries `faer::ComplexField`; a `num_traits::Float`
+  bound would exclude `Complex`. The trait is correct as written. Resolved.
+- [x] `math/unit.rs` `UnitExt` — **DONE (2026-07-13).** Deleted the
+  `paste!`-generated `UnitExt` trait and dropped the `paste` dependency; the 4
+  call sites (`.pS()`, `.Hz()`) were inlined to literals. **Deviation:** kept
+  the plain `pub type` SI aliases (`Ohm`, `Siemens`, `Second`, …) — they are
+  not macro magic and they keep solver signatures readable at a glance
+  (rule 4). Inlining ~100 alias sites to bare `f64` is pure churn deferred
+  to Phase 5. `constant.rs` never used `UnitExt`, only the aliases.
 
 ### 7.3 Solver policy struct (`Context` split)
 
-- `solver/mod.rs::Context` mixes immutable tolerances with mutable homotopy
-  policy. Split into:
-  - `Context { tolerances: Tolerances, integration: IntegrationMethod,
-    temperature: Temperature, verbosity: Verbosity }` — what every analysis
-    sees.
-  - `Policy` — owned by the active `ConvergencePlan` / strategies. Carries
-    `gmin_extra`, `src_scale`, retry counters, step bounds, transient history
-    metadata. Not a field on `Context`.
-- `Context::default` does not call `init_global`. `Solver::build` does, and
-  that is documented. The first call to `init_global` runs the `Once`.
+- [x] **Homotopy state out of `Context` — DONE (2026-07-13).** `gmin_extra` and
+  `src_scale` no longer live on the shared `Context`. `gmin_extra` is a field of
+  `DcSystem` (the gmin-stepping homotopy owns it); `src_scale` travels to
+  elements through `DcAnalysisState::src_scale`. `Context` now carries only
+  immutable per-run settings (tolerances, temperature, integration method,
+  `time`). Full `Tolerances`/`Policy` sub-structs land with the strategy FSM
+  (§1 phase 4), which becomes the owner of retry counters and step bounds.
+- `Context::default` does not call `init_global`. `Solver::build` does. (Pending
+  the public API in §1 phase 5.)
 
 ### 7.4 Magic numbers and shared tunables
 
@@ -464,9 +480,13 @@ every API is a contract or a capability, the code reads at a glance).
   or expand.
 - `port.rs` (top-level) should live in `core/port.rs` until the naming layer
   absorbs it.
-- `lib.rs` should export a `prelude` module: `Circuit`, `Solver`,
-  `Analysis`, the result types, `Net` (alias only), and the user-facing
-  configuration types. Everything else stays crate-private.
+- [x] `lib.rs` exports a **`prelude`** module — **DONE (2026-07-13).**
+  `src/prelude.rs` re-exports the host-facing surface: `CircuitInstance`,
+  `Context`, `Element`/`ElementCapabilities`, the option and result types, the
+  naming types (`AnalogReference`/`Netlist`/`DigitalNet`/`LogicValue`),
+  `ConvergencePlan`/`HomotopyStrategy`, and `Error`/`Result`. Additive (existing
+  paths still work); removing the glob re-exports and making internals private
+  is the remaining Phase-5 step.
 
 ### 7.6 Error model
 
@@ -475,8 +495,8 @@ every API is a contract or a capability, the code reads at a glance).
   (`Dc`, `Ac`, `Transient`, `Noise`, `Tf`, `Digital`, `Bridge`, `Linear`,
   `Newton`, `Stepper`) and use it as the title type. Typos become compile
   errors.
-- `crate::result::Result` is the alias. Some modules mix
-  `std::result::Result`. Pick one and ban the other in CI.
+- `crate::result::Result` is the alias; prefer it consistently over
+  `std::result::Result` in solver modules.
 
 ### 7.7 Result and analysis layering
 

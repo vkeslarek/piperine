@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use piperine_codegen::device::PluginDeviceSpec;
 use piperine_lang::elab::registry::AttrField;
 use piperine_lang::Value;
-use piperine_solver::core::device::Device;
+use piperine_solver::core::element::Element;
 
 use crate::capability::HostCtx;
 use crate::error::PluginError;
@@ -21,13 +21,13 @@ pub enum DeviceKind {
     Mixed,
 }
 
-/// Constructs one solver [`Device`] per `@device`-annotated instance
-/// (SPEC Part VI §7.3). The returned device implements Piperine's own
-/// mixed-signal ABI — `AnalogDevice` and/or `DigitalDevice` — never an
-/// external model ABI (Plugin plan D13).
+/// Constructs one solver [`Element`] per `@device`-annotated instance
+/// (SPEC Part VI §7.3). The returned element implements Piperine's own unified
+/// mixed-signal ABI — the single `Element` contract, declaring analog and/or
+/// digital capabilities — never an external model ABI (Plugin plan D13).
 pub trait DeviceFactory: Send + Sync {
     fn kind(&self) -> DeviceKind;
-    fn instantiate(&self, spec: &PluginDeviceSpec) -> Result<Box<dyn Device>, String>;
+    fn instantiate(&self, spec: &PluginDeviceSpec) -> Result<Box<dyn Element>, String>;
 }
 
 /// A plugin-contributed bench task (`$name(...)`, SPEC Part VI §6).

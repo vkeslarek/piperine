@@ -16,7 +16,7 @@ use piperine_lang::pom::{Design, Instance, Module};
 
 use piperine_solver::analog::{Netlist, NodeIdentifier};
 use piperine_solver::core::circuit::CircuitInstance;
-use piperine_solver::core::device::Device;
+use piperine_solver::core::element::Element;
 use piperine_solver::digital::DigitalNet;
 use piperine_solver::digital::scheduler::DigitalState;
 
@@ -195,7 +195,7 @@ struct InstanceBuilder<'c, 'p> {
     top_body: &'p LoweredBody,
     top_params: Vec<f64>,
     netlist: Netlist,
-    devices: Vec<Box<dyn Device>>,
+    devices: Vec<Box<dyn Element>>,
     digital_nets: HashMap<NodeId, DigitalNet>,
     /// Fresh ids for module-internal analog nodes (top node ids come first).
     next_anon: usize,
@@ -451,7 +451,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
     /// [`DeviceProvider`](super::provider::DeviceProvider) (SPEC Part VI §7):
     /// resolve each port into an analog netlist reference or a digital
     /// scheduler net (per its `@port(kind = …)` or its discipline), hand the
-    /// spec to the provider, and inject the returned `Device` as-is.
+    /// spec to the provider, and inject the returned `Element` as-is.
     fn add_plugin_instance(
         &mut self,
         instance: &Instance,
