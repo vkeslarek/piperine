@@ -91,24 +91,28 @@ Cross-validation against ngspice lives in
   diagnostic; it should be able to name the source-level signal just like an
   analog KCL row can name `GND`, `n12`, or a branch.
 
-- [ ] **Parameter and query ABI comparable to OSDI — MISSING.**
-  OSDI-style models expose useful metadata and runtime hooks: parameter
-  descriptors, defaults, units, bounds, aliases, operating variables, noise
-  names, terminal descriptors, model/instance separation, and query APIs. The
-  native solver ABI currently treats parameters as already-consumed construction
-  data and has only a small opvar path. That is too weak for plugins, external
-  model wrappers, diagnostics, sweeps, and UI tooling.
+- [~] **Parameter and query ABI comparable to OSDI — PARTIAL (2026-07-13).**
+  `core/introspect.rs` adds the OSDI-style metadata/query contract, exposed as
+  optional (defaulted) `Element` methods:
+  - **parameter descriptor** — `ParamDescriptor { name, kind, default, unit,
+    bounds, scope (Model/Instance), invalidation }`; `Invalidation` is
+    `None`/`Restamp`/`Temperature`/`OperatingPoint`/`Rebuild` so sweeps recompute
+    the minimum correct amount;
+  - **query descriptor** — `QueryDescriptor { name, kind, unit, description }`
+    with `QueryKind` (operating variable, terminal voltage/current, internal
+    state, event counter, limiting state);
+  - **terminal descriptor** — `TerminalDescriptor { name, domain, direction,
+    required }`;
+  - **runtime access** — `list_params`/`get_param`/`set_param` (typed
+    `ParamError`), `list_queries`/`query` (default-derived from `read_opvars` so
+    any element with opvars is queryable), `list_terminals`; `Value` is
+    real/integer/boolean/text.
 
-  Add a solver-level **model metadata/query contract**:
-  - model descriptor: type id, version, domains supported, required terminals,
-    optional terminals, internal unknown requirements;
-  - parameter descriptor: name, type, default, unit, allowed range, whether it is
-    model-level or instance-level, whether changing it requires rebuild or only
-    restamp;
-  - query descriptor: operating variables, terminal currents/voltages, internal
-    states, noise contributors, event counters, convergence/limiting state;
-  - runtime access: `get_param`, `set_param` where legal, `query(name)`,
-    `list_queries`, `list_params`, `list_terminals`.
+  A reference `Element` (resistor with param `r` + opvar `g`) tests the contract
+  end-to-end. Still to do: model descriptor (type id/version), noise-source
+  metadata, and wiring codegen's `PiperineDevice` to expose its real device
+  params/opvars/terminals (today the ABI is present and functional via the
+  opvar-derived defaults; the JIT device does not yet populate rich metadata).
 
   Why it matters: bench sweeps, plugin UIs, OSDI wrappers, and debugging should
   not special-case every device family. A BJT should expose `gm`, `gpi`, `vbe`,

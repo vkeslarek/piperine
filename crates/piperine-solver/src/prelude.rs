@@ -14,6 +14,10 @@
 pub use crate::analog::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
 pub use crate::core::circuit::CircuitInstance;
 pub use crate::core::element::{Element, ElementCapabilities};
+pub use crate::core::introspect::{
+    Bounds, Direction, Domain, Invalidation, ParamDescriptor, ParamError, ParamScope,
+    QueryDescriptor, QueryKind, TerminalDescriptor, Value, ValueKind,
+};
 pub use crate::core::net::{Net, NetKind};
 pub use crate::digital::{DigitalNet, LogicValue};
 

@@ -159,6 +159,44 @@ element-construction/load error.
 | `TransientAnalysisContext` | Current time, current timestep, final time, previous timestep, and active integration order. |
 | `AcAnalysisContext` | Current frequency. |
 
+### 3.4 Introspection: parameters, queries, terminals
+
+An element may expose OSDI-style metadata so hosts — bench sweeps, optimization
+loops, plugins, CLI/UI — discover and poke a model without knowing its family.
+Every method here is optional; an element exposes as much or as little as it has.
+
+**Parameters.**
+
+| Method | Contract |
+|--------|----------|
+| `list_params()` | Declared parameters as descriptors: name, value kind, default, unit, bounds, model-vs-instance scope, and the invalidation a write forces. |
+| `get_param(name)` | Current value, or none if there is no such parameter. |
+| `set_param(name, value)` | Write a parameter. On success, return the invalidation the change forces; on failure, a typed error (unknown, read-only, out of range, type mismatch). |
+
+The **invalidation** a parameter write reports is normative for sweep/optimization
+correctness. It is one of: none (metadata only), restamp (numeric only),
+temperature (recompute temperature-dependent constants), operating-point
+(restart the DC solve), or rebuild (matrix structure / element reconstruction).
+A caller recomputes exactly as much as the reported invalidation requires.
+
+**Queries.**
+
+| Method | Contract |
+|--------|----------|
+| `list_queries()` | Declared queries as descriptors: name, kind, unit, description. |
+| `query(name)` | Read one query value, or none. |
+
+A query kind is one of: operating variable, terminal voltage, terminal current,
+internal state, event counter, or limiting/convergence state. The default
+`list_queries`/`query` expose each `read_opvars` entry as an operating variable,
+so any element with operating variables is queryable without extra code.
+
+**Terminals.** `list_terminals()` returns terminal descriptors (name, domain,
+direction, required) for diagnostics, current queries, and external-model
+wrapping.
+
+Values carried by parameters and queries are real, integer, boolean, or text.
+
 ---
 
 ## §4 Element ABI — digital operations
