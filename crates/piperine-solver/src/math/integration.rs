@@ -270,4 +270,62 @@ mod tests {
         assert!((c1 + sum / (dt0 * dt1)).abs() < 1e-9);
         assert!((c2 - dt0 / (dt1 * sum)).abs() < 1e-9);
     }
+
+    /// Mock element that returns a fixed timestep, used to verify the
+    /// stepper loop consults elements for LTE via `Element::suggest_transient_step`.
+    #[test]
+    fn lte_default_element_returns_none() {
+        use crate::analysis::transient::TransientAnalysisState;
+        use crate::core::element::{Element, ElementCapabilities};
+        use crate::math::circular_array::CircularArrayBuffer2;
+        use crate::solver::Context;
+
+        struct PlainElement;
+        impl Element for PlainElement {
+            fn name(&self) -> &str { "plain" }
+            fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG }
+        }
+
+        let buf = CircularArrayBuffer2::new(1, 2);
+        let state = TransientAnalysisState::new(&buf, &[]);
+        let ctx = Context::default();
+        let method = IntegrationMethod::Gear { order: 2 };
+
+        let el = PlainElement;
+        assert!(el.suggest_transient_step(&state, &[1e-6], method, &ctx).is_none());
+    }
+
+    /// Mini element that always returns a fixed dt of 10 μs, confirming the
+    /// stepper can consume the suggestion through the trait.
+    #[test]
+    fn lte_element_override_returns_custom_dt() {
+        use crate::analysis::transient::TransientAnalysisState;
+        use crate::core::element::{Element, ElementCapabilities};
+        use crate::math::circular_array::CircularArrayBuffer2;
+        use crate::solver::Context;
+
+        struct FixedLte(f64);
+        impl Element for FixedLte {
+            fn name(&self) -> &str { "fixed_lte" }
+            fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG }
+            fn suggest_transient_step(
+                &self,
+                _state: &TransientAnalysisState<'_>,
+                _time_history: &[f64],
+                _method: IntegrationMethod,
+                _context: &Context,
+            ) -> Option<f64> {
+                Some(self.0)
+            }
+        }
+
+        let buf = CircularArrayBuffer2::new(1, 2);
+        let state = TransientAnalysisState::new(&buf, &[]);
+        let ctx = Context::default();
+        let method = IntegrationMethod::Trapezoidal;
+
+        let el = FixedLte(10e-6);
+        let sug = el.suggest_transient_step(&state, &[1e-6], method, &ctx);
+        assert_eq!(sug, Some(10e-6));
+    }
 }

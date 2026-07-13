@@ -252,6 +252,18 @@ impl Element for PiperineDevice {
         }
     }
 
+    fn suggest_transient_step(
+        &self,
+        state: &TransientAnalysisState<'_>,
+        time_history: &[f64],
+        method: piperine_solver::math::integration::IntegrationMethod,
+        context: &Context,
+    ) -> Option<f64> {
+        self.analog
+            .as_ref()
+            .and_then(|a| a.suggest_transient_step(state, time_history, method, context))
+    }
+
     fn accept_timestep(
         &mut self,
         state: &CircularArrayBuffer2<f64>,

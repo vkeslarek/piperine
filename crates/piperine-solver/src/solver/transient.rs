@@ -212,7 +212,8 @@ impl<'a> TransientSolver<'a> {
         let stop_time: f64 = self.options.stop_time;
         let record_from: f64 = self.options.record_from;
         let mut dt: f64 = self.options.dt;
-        let max_step: f64 = dt;
+        let dt_min = self.options.dt_min;
+        let dt_max = self.options.dt_max;
 
         let initial_snapshot = self.compute_initial_conditions()?;
         let mut steps = Vec::new();
@@ -224,10 +225,9 @@ impl<'a> TransientSolver<'a> {
         }
 
         let mut current_time = 0.0;
-        let min_step = 1e-15;
 
         while current_time < stop_time {
-            let dt_proposed = dt; // Stepper logic normally here
+            let dt_proposed = dt;
             
             let t_next_event = self.system.circuit.digital_state.peek_next_event_time();
             let mut t_next = (current_time + dt_proposed).min(stop_time);
@@ -248,9 +248,7 @@ impl<'a> TransientSolver<'a> {
 
             if let Ok(Some(snapshot)) = analog_result {
                 // Post-convergence: run digital with the updated analog
-                // voltages (A2D bridge). If digital outputs changed, the
-                // D2A bridge may require re-solving, but for now we accept
-                // the digital state as-is (one evaluation per timestep).
+                // voltages (A2D bridge).
                 let solution = self.solver.current_guess().unwrap().to_owned();
                 let _changed = self.system.circuit.accept_and_run_digital(
                     solution.as_slice().unwrap(),
@@ -268,15 +266,42 @@ impl<'a> TransientSolver<'a> {
                 self.system.dt_prev = dt_actual;
                 self.system.step_index += 1;
                 current_time = t_next;
-                // Use dt_proposed for growth so an event-clamped step doesn't shrink dt permanently
-                dt = f64::min(f64::max(dt_proposed * 2.0, min_step), max_step);
+
+                // LTE-driven timestep selection. After each accepted step,
+                // ask every reactive element for an LTE-based maximum dt and
+                // take the strictest. If no element contributes, grow 2×.
+                // The solver's state buffer is reused directly — no allocation
+                // on this hot path (the buffer is already sized for the circuit).
+                let method = self.system.context.integration;
+                let time_history = [dt_actual, self.system.dt_prev];
+                let tran_state = TransientAnalysisState::new(self.solver.state(), &[]);
+                let mut lte_dt = dt_max;
+                let mut any_lte = false;
+                for dev in &self.system.circuit.devices {
+                    if let Some(sug) = dev.suggest_transient_step(
+                        &tran_state,
+                        &time_history,
+                        method,
+                        &self.system.context,
+                    ) {
+                        if sug > 0.0 && sug < lte_dt {
+                            lte_dt = sug;
+                            any_lte = true;
+                        }
+                    }
+                }
+                if any_lte {
+                    dt = lte_dt.clamp(dt_min, dt_max);
+                } else {
+                    // No LTE hooks — fall back to the classic 2× growth.
+                    dt = (dt_proposed * 2.0).clamp(dt_min, dt_max);
+                }
             } else {
                 // Rollback and retry with smaller step
                 self.system.circuit.digital_state.rollback();
-                // Scale from dt_proposed as well
-                dt = f64::max(dt_proposed * 0.5, min_step);
+                dt = (dt_proposed * 0.5).max(dt_min);
                 
-                if dt <= min_step && let Err(e) = analog_result {
+                if dt <= dt_min && let Err(e) = analog_result {
                     return Err(e);
                 }
                 continue;

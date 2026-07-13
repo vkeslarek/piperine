@@ -634,11 +634,20 @@ every API is a contract or a capability, the code reads at a glance).
   non-uniform paths are unchanged. A user can still choose
   `IntegrationMethod::Gear { order: 2 }` (the default).
 
-- [ ] **Local truncation error timestep control — PARTIAL.** `math/integration.rs`
-  contains the `TruncationError` trait and `IntegrationMethod` with its LTE
-  coefficient; verify it uses the charge/LTE estimate ngspice does (`trtol`,
-  `chgtol`) and that it interacts correctly once trapezoidal lands (trap needs
-  the DD2 estimate, Euler a different one).
+- [x] **Local truncation error timestep control — DONE (2026-07-13).**
+  `math/integration.rs` carries `IntegrationMethod` with its `truncation_coefficient()`,
+  the `TruncationError` trait, and the `BreakpointProvider` trait.
+  **Stepper wired:** `TransientSolver::solve` iterates elements calling
+  `Element::suggest_transient_step(state, &[dt, dt_prev], method, ctx)` after
+  each accepted step; takes the minimum suggestion and clamps to `[dt_min,
+  dt_max]` (which now come from `TransientAnalysisOptions` instead of the old
+  `1e-15`/`dt` literals). Pure-resistive circuits fall back to 2× growth.
+  **Kernel wired:** `AnalogInstance::suggest_transient_step` evaluates charge
+  at `t_n`, `t_{n-1}`, and `t_{n-2}`, computes the (order+1)-th divided
+  difference, and returns `dt · (safety·tol / LTE)^(1/(order+1))`. Non-reactive
+  kernels return `None`. Gear-1 uses 1st-order DD; Gear-2 and Trapezoidal use
+  2nd-order DD. **Allocations:** the stepper reuses the solver's
+  `CircularArrayBuffer2` directly — no new history buffer per step.
 
 - [ ] **Breakpoints — MISSING.** ngspice forces a timepoint exactly at every
   source discontinuity (pulse edges, PWL corners) so the integrator never

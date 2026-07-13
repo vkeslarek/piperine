@@ -271,4 +271,28 @@ pub trait Element: Send + Sync {
     fn has_input_on(&self, changed: &HashSet<DigitalNet>) -> bool {
         self.boundary().inputs.iter().any(|n| changed.contains(n))
     }
+
+    // ── Numerical integration feedback ────────────────────────────────────────
+
+    /// LTE-driven timestep suggestion, called by the transient stepper after
+    /// an accepted step. Reactive devices override this to report the
+    /// maximum timestep they can tolerate; elements without charge/flux
+    /// history (pure resistors, pure digital) leave this at the default
+    /// `None`.
+    ///
+    /// - `state`: the accepted analog solution history at `t_n`, `t_{n-1}`,
+    ///   `t_{n-2}`, …
+    /// - `time_history`: the accepted step sizes `[dt_n, dt_{n-1}, …]`.
+    /// - `method`: integration method in use (Trapezoidal, Gear, …).
+    /// - `context`: solver tolerances (`trtol`, `chgtol`, `reltol`,
+    ///   `abstol`).
+    fn suggest_transient_step(
+        &self,
+        _state: &TransientAnalysisState<'_>,
+        _time_history: &[f64],
+        _method: crate::math::integration::IntegrationMethod,
+        _context: &Context,
+    ) -> Option<f64> {
+        None
+    }
 }

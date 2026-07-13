@@ -750,6 +750,88 @@ impl AnalogInstance {
         stamps
     }
 
+    /// LTE-driven timestep suggestion for the transient stepper. Evaluates
+    /// the charge at `t_n` and `t_{n-1}` (plus `t_{n-2}` for order ≥ 2),
+    /// computes the (order+1)-th divided difference, and returns the
+    /// largest dt the model can tolerate given `trtol·chgtol`.
+    ///
+    /// Returns `None` when the kernel has no reactive ports, when history is
+    /// too short, or when the charge has not meaningfully changed.
+    pub fn suggest_transient_step(
+        &self,
+        state_history: &TransientAnalysisState<'_>,
+        time_history: &[f64],
+        method: piperine_solver::math::integration::IntegrationMethod,
+        context: &Context,
+    ) -> Option<f64> {
+        if !self.kernel.has_reactive() || time_history.is_empty() {
+            return None;
+        }
+        let dt = time_history[0];
+        if dt <= 0.0 {
+            return None;
+        }
+        let order = method.order();
+        let trunc = method.truncation_coefficient();
+
+        let q_now = self.charge_at(state_history, 0);
+        let q_prev = self.charge_at(state_history, 1);
+        // charge_at(2) is only needed for order ≥ 2; compute lazily.
+        let order_gte_2 = order >= 2;
+        let q_prev2 = if order_gte_2 { self.charge_at(state_history, 2) } else { Vec::new() };
+
+        let ddiv_mag = match order {
+            1 => q_now.iter()
+                .zip(&q_prev)
+                .map(|(&n, &p)| (n - p).abs())
+                .fold(0.0_f64, f64::max),
+            _ => {
+                let p2 = if q_prev2.is_empty() { &q_prev } else { &q_prev2 };
+                q_now.iter()
+                    .zip(&q_prev)
+                    .zip(p2)
+                    .map(|((&n, &p1), &p2)| (n - 2.0 * p1 + p2).abs())
+                    .fold(0.0_f64, f64::max)
+            }
+        };
+
+        if ddiv_mag == 0.0 {
+            return None;
+        }
+
+        let lte = trunc * ddiv_mag;
+
+        let q_mag = q_now.iter()
+            .zip(&q_prev)
+            .map(|(&n, &p)| n.abs().max(p.abs()))
+            .fold(0.0_f64, f64::max);
+        let tol = context.trtol * context.chgtol + context.reltol * q_mag + context.abstol;
+
+        if lte <= 0.0 || tol <= 0.0 {
+            return None;
+        }
+
+        let power = 1.0 / ((order + 1) as f64);
+        let safety = 0.9_f64;
+        let suggested = dt * (safety * tol / lte).powf(power);
+        if suggested.is_finite() && suggested > 0.0 {
+            Some(suggested)
+        } else {
+            None
+        }
+    }
+
+    /// Evaluate the charge vector at the `lookback`-th history point.
+    fn charge_at(&self, state_history: &TransientAnalysisState<'_>, lookback: usize) -> Vec<f64> {
+        let n = self.num_terminals();
+        let volts = self.collect_volts(&|k| {
+            state_history.view(lookback).and_then(|s| s.get(k).copied()).unwrap_or(0.0)
+        });
+        let mut q = vec![0.0; n];
+        self.kernel.eval_charge(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut q);
+        q
+    }
+
     /// Inductor flux companion stamps for reactive force branches: the branch
     /// equation `V(p,n) = dΦ/dt` with `Φ = L·ib` becomes `… − c0·L·ib =
     /// history`, where `history = L·(c1·ib_{n-1} + c2·ib_{n-2})` reads the

@@ -5,10 +5,9 @@
 Piperine is a PHDL (`.phdl`/`.ppr`) hardware-description language compiled straight into a
 **native in-house circuit solver** (Cranelift-JIT analog devices + an event-driven digital
 interpreter). No external SPICE dependency. Verilog-A device models load as compiled OSDI
-(v0.4) shared libraries through the **`piperine-osdi` plugin** (`~/Git/piperine-osdi` —
-extracted from the solver core 2026-07-10; the core has no OSDI/libloading dependency).
-Verilog-AMS has been dropped entirely — PHDL is the only frontend.
-Rust workspace, edition 2024.
+(v0.4) shared libraries through the **`piperine-osdi` plugin** (external repo — the solver
+core has no OSDI/libloading dependency). Verilog-AMS has been dropped entirely — PHDL is
+the only frontend. Rust workspace, edition 2024.
 
 ## Pipeline (the spine)
 
@@ -46,9 +45,9 @@ silently emit `0.0`. Same rule in the bench: an unimplemented task is an elabora
 ## Build and test
 
 ```sh
-cargo build --workspace           # build all crates
-cargo test  --workspace           # the whole suite — 45 green targets, zero warnings
-cargo test -p piperine-codegen    # one crate
+cargo build --workspace           # build all crates — zero warnings is the bar
+cargo test  --workspace           # the whole suite — 51 green targets
+cargo test -p piperine-solver     # one crate
 cargo test <name>                 # one test
 cargo test -- --nocapture         # see solver output
 ```
@@ -60,13 +59,14 @@ both a package and the workspace) — always pass `--workspace`.
 
 | Crate | Role |
 |-------|------|
-| `piperine-lang` | PHDL frontend: lexer/parser (`parse/`), elaboration → POM `Design` (`elab/`, `pom/`), bench/const interpreter (`eval/`: `Interpreter`, `Host` trait, task allowlist in `eval/tasks.rs`) — walks the POM/AST directly, no IR. `parse_and_elaborate` is the entry point. Depends only on `piperine-math`; its dev-dep on `piperine-codegen` (for integration tests) does not create a real cycle — `piperine-codegen` depends on `piperine-lang` for POM types. |
-| `piperine-codegen` | POM → devices. `lower/` (codegen-private, formerly `piperine-ir` + `piperine-lang::lowering`): `expr.rs`/`stmt.rs`/`symbols.rs` (resolved form), `diff.rs` (symbolic differentiation), `validate.rs` (SPEC §11), `pom/` (`lower_bodies`: POM `Module` → `LoweredBody`). `jit/`: `flatten.rs` (contribution splitting: resistive/charge/`ac_stim`, fn inlining), `analog.rs` (`AnalogKernel` — Cranelift residual/Jacobian/charge/force/noise rows), `emit.rs` (resolved expr → Cranelift), `digital/`. `device/`: `AnalogInstance` (MNA stamping, runtime operators, events), `DigitalInstance`, `CircuitCompiler` (walks POM `Design`/`Module`/`Instance` directly) → `PiperineDevice`. |
-| `piperine-math` | Leaf crate: the builtin math name→fn-pointer dispatch table + compile-time evaluator, shared by the interpreter (`piperine-lang`) and the JIT/const-eval (`piperine-codegen`) so `$sqrt`-style builtins agree bit-for-bit. Not an IR — inert data, no expression/statement duplication. |
-| `piperine-solver` | Native solver: DC/AC/transient/noise/TF (`analysis/`), MNA/linear algebra (`math/`, faer), `Device` trait, digital topology. Does **not** depend on codegen. OSDI lives in the external `piperine-osdi` plugin. |
-| `piperine-bench` | Bench runtime: `SimHost` (`host.rs`), `BenchTask`s (`tasks.rs`), result objects (`objects.rs`, `waveform.rs`), solve plumbing (`session.rs`: `lower_bodies` + `CircuitCompiler::new(&design, &bodies)`), `BenchRunner` (`runner.rs`). |
-| `piperine-cli` | `piperine` CLI: `check`, `build`, `run`, `fmt`, `new`, `test`, `clean`, `add`, `remove`, `tree`. |
-| `piperine-project` | `Piperine.toml` discovery, git dependency resolver. |
+| `piperine-lang` | PHDL frontend: lexer/parser (`parse/`), elaboration → POM `Design` (`elab/`, `pom/`), bench/const interpreter (`eval/`: `Interpreter`, `Host` trait, task allowlist in `eval/tasks.rs`) — walks the POM/AST directly, no IR. `parse_and_elaborate` is the entry point. |
+| `piperine-codegen` | POM → devices. `lower/` (codegen-private resolved form: `expr.rs`/`stmt.rs`/`symbols.rs`, `diff.rs` symbolic differentiation, `pom/` `lower_bodies`). `jit/`: `flatten.rs`, `analog.rs` (`AnalogKernel`), `emit.rs`, `digital/`. `device/`: `AnalogInstance`, `DigitalInstance`, `CircuitCompiler` → `PiperineDevice` (implements `Element`). |
+| `piperine-solver` | Native solver: DC/AC/transient/noise/TF (`solver/`), MNA/linear algebra (`math/`, faer), `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming layer (`core/net.rs`), OSDI-style introspection (`core/introspect.rs`), `ConvergencePlan` + `HomotopyStrategy` (`solver/convergence.rs`), `IntegrationMethod` + LTE (`math/integration.rs`), `prelude.rs`. Does **not** depend on codegen. OSDI is an external plugin. |
+| `piperine-bench` | Bench runtime: `SimHost` (`host.rs`), `BenchTask`s (`tasks.rs`), result objects (`objects.rs`, `waveform.rs`), solve plumbing (`session.rs`), `BenchRunner` (`runner.rs`). |
+| `piperine-plugin` | Plugin SDK + host: native/WASM/process backends, TOFU trust, `@device` loading, attribute schemas, bench tasks, CLI scripts. |
+| `piperine-plugin-wasm` | WASM guest SDK (re-exports `pom::wire` for `wasm32-unknown-unknown`). |
+| `piperine-cli` | `piperine` CLI: `check`, `build`, `run`, `fmt`, `new`, `test`, `clean`, `add`, `remove`, `tree`, `plugin`. |
+| `piperine-project` | `Piperine.toml` discovery, git dependency resolver, plugin lockfile. |
 | `piperine-lang-server` | LSP server. Handlers share `RequestExt::parse`/`ConnectionExt::respond` (every request id gets a response), `DocumentState::{analyze,resolve_at,word_occurrences}`, `ProjectContext::discover`. |
 
 ## The analog device path
@@ -75,33 +75,49 @@ both a package and the workspace) — always pass `--workspace`.
   contributions split into resistive + charge `Q(V)` (`ddt` companion model) + `ac_stim`
   stimulus rows; the Jacobian is **symbolic differentiation** (`codegen/src/lower/diff.rs`),
   emitted like any other expression.
-- `AnalogInstance` stamps MNA: `load_dc`/`load_transient` (Norton companion, `alpha·dQ/dV`),
-  `load_ac` (`jω·dQ/dV`, force branch rows, `ac_stim` RHS `mag·e^{jφ}`),
-  `noise_current_psd` (white + flicker `(1/f)^exp`), runtime operators (`delay`/`slew`/
-  `idt`) and analog events serviced per accepted step.
-- The OSDI device (`piperine-osdi/src/device.rs`, external repo) is the reference for
-  reactive/noise stamping.
+- `AnalogInstance` stamps MNA via `Element::load_dc`/`load_transient` (Norton companion,
+  coefficients from `IntegrationMethod::coeffs`), `load_ac` (`jω·dQ/dV`, force branch rows,
+  `ac_stim` RHS), `noise_current_psd` (white + flicker), runtime operators (`delay`/`slew`/
+  `idt`), analog events, and `suggest_transient_step` (LTE). Implements `Element` through
+  `PiperineDevice`.
+- The OSDI device (external `piperine-osdi` repo) wraps compiled OSDI v0.4 models as
+  `Element` implementations.
 
-## Known gaps (all fail loud — see ROADMAP.md)
+## Solver architecture (current state)
+
+- **One ABI:** `Element` trait (`core/element.rs`) with `ElementCapabilities` bitflags
+  (`ANALOG`, `DIGITAL`, `SAMPLES_ANALOG`, `LOADS_DC/AC/TRAN`, `EMITS_NOISE`,
+  `DEPENDS_ON_DIGITAL`, `HAS_INTERNAL_UNKNOWNS`, `SUPPORTS_ROLLBACK`, `SUPPORTS_QUERIES`).
+  No `Device` wrapper, no downcast.
+- **Naming:** `Net` (`core/net.rs`) unifies analog nodes, branch currents, digital nets,
+  and pseudo variables under one public identity with stable labels.
+- **Convergence:** `ConvergencePlan` (`solver/convergence.rs`) composes `HomotopyStrategy`
+  (gmin stepping, source stepping) and `PlanLimits` (caps extracted from magic numbers).
+  `NewtonStrategy`/`StepperStrategy` are the next phase (see `.specs/`).
+- **Integration:** `IntegrationMethod` (`math/integration.rs`) — Trapezoidal and Gear/BDF
+  with unified `coeffs(dt, dt_prev, order)`. LTE-driven timestep via
+  `Element::suggest_transient_step`.
+- **Errors:** `SolverDomain` enum — typed domains, no free strings.
+- **Scheduler:** Returns `Result<(), Error>` instead of `log::warn!`.
+- **Prelude:** `prelude.rs` exports the host-facing surface.
+
+## Known gaps (all fail loud — see `SOLVER_GAPS.md` and `ROADMAP.md`)
 
 - `transition`, `laplace_*`, `zi_*` — recognised in the resolved form, no companion model yet.
-- `ac_stim` in potential contributions is now supported (force-branch AC drive → voltage
-  sources do AC); multiple `ac_stim` per contribution is still fail-loud.
+- `ac_stim` in potential contributions is now supported; multiple `ac_stim` per contribution
+  is still fail-loud.
 - `$limit` (pnjlim/fetlim) is not lowered in the JIT — blocks junction devices from
-  compiling through `CircuitCompiler` (works in the bench interpreter). See ROADMAP.
-- `@initial` cannot force a branch (`V<-ic`). See ROADMAP. (Large analog bodies no longer
-  blow up — the flattener uses a shared-temporary tape, `jit/flatten.rs`; `dio` compiles and
-  converges, `bjt`/`mos1` compile pending `$limit` multi-junction convergence.)
+  compiling through `CircuitCompiler` (works in the bench interpreter).
 - `idt` contributes 0 in AC (no `1/jω` stamp).
 - `$plot`, `extract`/`.attach`/`.meta` — bench tasks not yet implemented (allowlist-gated).
+- Solver ABI refactor in progress — see `.specs/STATE.md` for macro decisions and
+  `.specs/features/` for feature specs.
 
 ## Naming & conventions
 
 - Ground net → MNA reference; gnd-family names: `gnd/GND/vss/VSS`.
 - PHDL pre-folds param defaults during elaboration; `fn` default parameters are elaboration
   constants honored by both the interpreter and codegen's fn inliner (`jit/flatten.rs`).
-- No macro magic — data tables + plain helpers. Every helper method has an owner (struct
-  method or extension trait), not loose module-level fns.
 
 ## Files not to edit casually
 
@@ -114,22 +130,19 @@ both a package and the workspace) — always pass `--workspace`.
 
 ## Tests of record
 
-- `piperine-codegen/tests/analog_jit.rs`, `digital_jit.rs` — kernel-level JIT behavior;
-  `ppr_ir.rs`, `codegen_ir.rs`, `codegen_api.rs`, `from_ir.rs`, `silent_bugs.rs` — POM→resolved
-  lowering and the `CircuitCompiler` structural path (moved here from `piperine-lang` when
-  the IR crate was removed — codegen depends on `piperine-lang` now, not the reverse).
-- `piperine-lang/tests/` — parse/elab (`parse_elab.rs`), end-to-end sim (`spec_simulation.rs`),
-  bench gating (`bench.rs`), ngspice headers (`ngspice_*.rs`).
-- `piperine-bench/tests/bench.rs` — bench e2e (has the `elab` helper + `CIRCUIT` fixture);
-  `run_examples.rs` — every `examples/*.phdl` bench must stay green.
-- `piperine-solver/tests/` — solver-level analyses, mixed-signal, OSDI, cosim.
+- `piperine-codegen/tests/`: `analog_jit.rs`, `digital_jit.rs` (kernel-level JIT);
+  `codegen_ir.rs`, `codegen_api.rs`, `from_ir.rs`, `silent_bugs.rs` (POM→resolved + circuit).
+- `piperine-lang/tests/`: `parse_elab.rs`, `spec_simulation.rs`, `bench.rs`, `elab.rs`,
+  `bundle_param.rs`, `bundle_connections.rs`, `prelude.rs`, `type_casts.rs`, `pom_serde.rs`.
+- `piperine-bench/tests/`: `bench.rs` (e2e with `elab` helper + `CIRCUIT` fixture);
+  `run_examples.rs` (every `examples/*.phdl` must stay green).
+- `piperine-solver/tests/`: `digital_topology.rs`, `mixed_signal.rs`.
+- `piperine-plugin/tests/`: `e2e.rs`, `native_smoke.rs`, `phase3.rs`, `process_smoke.rs`,
+  `wasm_smoke.rs`, `trust.rs`, `manifest.rs`.
 
 ## Documentation
 
-- Language spec: `crates/piperine-lang/docs/SPEC.md` (Parts I–VI)
-- Bench spec: `crates/piperine-bench/docs/SPEC.md` (update §11 status rows when closing gaps)
-- Resolved-form spec: `crates/piperine-codegen/docs/SPEC.md`
-- Digital network JIT + event interface: `crates/piperine-codegen/docs/DIGITAL_JIT.md`
-  (the stable `DigitalEventModel` boundary in `solver/src/digital_interface.rs`; the fused
-  Verilator-style cone compiler scaffold in `codegen/src/jit/digital/network.rs`)
+- Formal spec: `docs/spec/` (Parts I–VII + appendices A/B)
+- Solver gaps + ABI refactor plan: `SOLVER_GAPS.md`
+- Spec-driven feature tracking: `.specs/STATE.md` + `.specs/features/`
 - Open items: `ROADMAP.md`

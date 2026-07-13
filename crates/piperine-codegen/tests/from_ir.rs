@@ -105,3 +105,4 @@ fn ir_analog_to_device(
     let compiled = piperine_codegen::CompiledModule::compile(body)?;
     compiled.analog().ok_or_else(|| piperine_codegen::CodegenError::Invalid("no analog body".into())).map(|a| a.clone())
 }
+
