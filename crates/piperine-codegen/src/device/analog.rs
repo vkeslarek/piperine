@@ -613,6 +613,34 @@ impl AnalogInstance {
         self.limiting_active
     }
 
+    /// Instance parameter names, in kernel order (aligned with the values).
+    pub fn param_names(&self) -> &[String] {
+        self.kernel.param_names()
+    }
+
+    /// Current value of parameter `name`, or `None` if the kernel has no such
+    /// parameter.
+    pub fn param(&self, name: &str) -> Option<f64> {
+        self.param_index(name).map(|i| self.params[i])
+    }
+
+    /// Overwrite parameter `name` with `value`, taking effect on the next load.
+    /// Returns `false` when there is no such parameter. The matrix structure is
+    /// unchanged, so this needs only a restamp — never a rebuild.
+    pub fn set_param(&mut self, name: &str, value: f64) -> bool {
+        match self.param_index(name) {
+            Some(i) => {
+                self.params[i] = value;
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn param_index(&self, name: &str) -> Option<usize> {
+        self.kernel.param_names().iter().position(|n| n == name)
+    }
+
     /// Seed each `$limit` vold slot with its critical voltage `vcrit`, so a
     /// junction starts limiting near turn-on (ngspice MODEINITJCT) rather than
     /// from 0 V. `vcrit` depends only on params/temperature, not node voltages.

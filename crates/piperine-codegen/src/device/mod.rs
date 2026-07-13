@@ -25,6 +25,9 @@ use piperine_solver::analysis::dc::{DcAnalysisResult, DcAnalysisState};
 use piperine_solver::analysis::noise::Noise;
 use piperine_solver::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
 use piperine_solver::core::element::{Element, ElementCapabilities};
+use piperine_solver::core::introspect::{
+    Bounds, Invalidation, ParamDescriptor, ParamError, ParamScope, Value, ValueKind,
+};
 use piperine_solver::digital::DigitalEvent;
 use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink};
 use piperine_solver::math::circular_array::CircularArrayBuffer2;
@@ -175,6 +178,43 @@ impl Element for PiperineDevice {
         self.analog
             .as_ref()
             .map_or_else(Vec::new, AnalogInstance::initial_conditions)
+    }
+
+    fn list_params(&self) -> Vec<ParamDescriptor> {
+        let Some(analog) = &self.analog else { return Vec::new() };
+        analog
+            .param_names()
+            .iter()
+            .filter_map(|name| {
+                analog.param(name).map(|value| ParamDescriptor {
+                    name: name.clone(),
+                    kind: ValueKind::Real,
+                    // The JIT bakes elaborated defaults into the value; the
+                    // model default is not carried separately, so the current
+                    // value stands in.
+                    default: Value::Real(value),
+                    unit: None,
+                    bounds: Bounds::UNBOUNDED,
+                    scope: ParamScope::Instance,
+                    invalidation: Invalidation::Restamp,
+                })
+            })
+            .collect()
+    }
+
+    fn get_param(&self, name: &str) -> Option<Value> {
+        self.analog.as_ref().and_then(|a| a.param(name)).map(Value::Real)
+    }
+
+    fn set_param(&mut self, name: &str, value: Value) -> Result<Invalidation, ParamError> {
+        let Some(v) = value.as_real() else {
+            return Err(ParamError::TypeMismatch { name: name.into(), expected: ValueKind::Real });
+        };
+        if self.analog.as_mut().is_some_and(|a| a.set_param(name, v)) {
+            Ok(Invalidation::Restamp)
+        } else {
+            Err(ParamError::Unknown(name.to_string()))
+        }
     }
 
     fn load_dc(

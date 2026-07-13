@@ -109,10 +109,14 @@ Cross-validation against ngspice lives in
     real/integer/boolean/text.
 
   A reference `Element` (resistor with param `r` + opvar `g`) tests the contract
-  end-to-end. Still to do: model descriptor (type id/version), noise-source
-  metadata, and wiring codegen's `PiperineDevice` to expose its real device
-  params/opvars/terminals (today the ABI is present and functional via the
-  opvar-derived defaults; the JIT device does not yet populate rich metadata).
+  end-to-end, and codegen's `PiperineDevice` now exposes its **real** JIT
+  parameters: `list_params`/`get_param`/`set_param` delegate to `AnalogInstance`
+  (param names from the kernel, values from the instance), so a bench/host reads
+  and writes a compiled device's params at run time — a write restamps, no
+  rebuild. Tested against a compiled PHDL resistor (`from_ir.rs`). Still to do:
+  model descriptor (type id/version), noise-source metadata, real opvar/terminal
+  catalogs from the kernel (the kernel exposes param and terminal *indices* but
+  not opvar names yet).
 
   Why it matters: bench sweeps, plugin UIs, OSDI wrappers, and debugging should
   not special-case every device family. A BJT should expose `gm`, `gpi`, `vbe`,
