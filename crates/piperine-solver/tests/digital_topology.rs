@@ -25,7 +25,7 @@ use helpers::{A2DState, D2ADevice};
 // Pure Rust device implementations
 // ===================================================================
 
-struct Inverter { input: DigitalNet, output: DigitalNet, delay: f64, id: usize }
+struct Inverter { input: DigitalNet, output: DigitalNet, delay: f64, _id: usize }
 
 impl Element for Inverter {
     fn name(&self) -> &str { "inverter" }
@@ -49,7 +49,7 @@ impl Element for Inverter {
 
 
 
-struct NorGate { inputs: [DigitalNet; 2], output: DigitalNet, delay: f64, id: usize }
+struct NorGate { inputs: [DigitalNet; 2], output: DigitalNet, delay: f64, _id: usize }
 
 impl Element for NorGate {
     fn name(&self) -> &str { "nor_gate" }
@@ -69,7 +69,7 @@ impl Element for NorGate {
 
 
 
-struct AndGate { inputs: [DigitalNet; 2], output: DigitalNet, delay: f64, id: usize }
+struct AndGate { inputs: [DigitalNet; 2], output: DigitalNet, delay: f64, _id: usize }
 
 impl Element for AndGate {
     fn name(&self) -> &str { "and_gate" }
@@ -94,12 +94,12 @@ struct DFF {
     q: DigitalNet,
     last_clk: LogicValue,
     clk_to_q: f64,
-    id: usize,
+    _id: usize,
 }
 
 impl DFF {
-    fn new(id: usize, clk: DigitalNet, d: DigitalNet, q: DigitalNet, clk_to_q: f64) -> Self {
-        Self { inputs: [clk, d], q, last_clk: LogicValue::Zero, clk_to_q, id }
+    fn new(_id: usize, clk: DigitalNet, d: DigitalNet, q: DigitalNet, clk_to_q: f64) -> Self {
+        Self { inputs: [clk, d], q, last_clk: LogicValue::Zero, clk_to_q, _id: _id }
     }
 }
 
@@ -140,7 +140,7 @@ fn test_topology_empty() {
 #[test]
 fn test_topology_single_device() {
     let devices: Vec<Box<dyn Element>> = vec![
-        Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 1e-9, id: 0 }),
+        Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 1e-9, _id: 0 }),
     ];
     let topo = DigitalTopology::build(&devices);
     assert_eq!(topo.topo_order, vec![0]);
@@ -151,7 +151,7 @@ fn test_topology_single_device() {
 fn test_topology_linear_chain() {
     // INV0→INV1→INV2→INV3
     let devices: Vec<Box<dyn Element>> = (0..4).map(|i| -> Box<dyn Element> {
-        Box::new(Inverter { input: DigitalNet(i), output: DigitalNet(i + 1), delay: 1e-9, id: i })
+        Box::new(Inverter { input: DigitalNet(i), output: DigitalNet(i + 1), delay: 1e-9, _id: i })
     }).collect();
     let topo = DigitalTopology::build(&devices);
     assert_eq!(topo.topo_order.len(), 4);
@@ -167,10 +167,10 @@ fn test_topology_linear_chain() {
 fn test_topology_diamond() {
     // n0→INV0→n1→{INV1→n2, INV2→n3}; AND(n2,n3)→n4
     let devices: Vec<Box<dyn Element>> = vec![
-        Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }),
-        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
-        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(3), delay: 0.0, id: 2 }),
-        Box::new(AndGate  { inputs: [DigitalNet(2), DigitalNet(3)], output: DigitalNet(4), delay: 0.0, id: 3 }),
+        Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, _id: 0 }),
+        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, _id: 1 }),
+        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(3), delay: 0.0, _id: 2 }),
+        Box::new(AndGate  { inputs: [DigitalNet(2), DigitalNet(3)], output: DigitalNet(4), delay: 0.0, _id: 3 }),
     ];
     let topo = DigitalTopology::build(&devices);
     assert_eq!(topo.topo_order.len(), 4);
@@ -190,7 +190,7 @@ fn test_topology_diamond() {
 fn test_topology_ring_has_back_edge() {
     // 3-inverter ring: INV0→INV1→INV2→INV0
     let devices: Vec<Box<dyn Element>> = (0..3usize).map(|i| -> Box<dyn Element> {
-        Box::new(Inverter { input: DigitalNet(i), output: DigitalNet((i + 1) % 3), delay: 1e-9, id: i })
+        Box::new(Inverter { input: DigitalNet(i), output: DigitalNet((i + 1) % 3), delay: 1e-9, _id: i })
     }).collect();
     let topo = DigitalTopology::build(&devices);
     assert_eq!(topo.topo_order.len(), 3);
@@ -201,10 +201,10 @@ fn test_topology_ring_has_back_edge() {
 fn test_topology_disconnected_subgraphs() {
     // Chain A: INV0→INV1; Chain B: INV2→INV3 (no shared nets)
     let devices: Vec<Box<dyn Element>> = vec![
-        Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }),
-        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
-        Box::new(Inverter { input: DigitalNet(3), output: DigitalNet(4), delay: 0.0, id: 2 }),
-        Box::new(Inverter { input: DigitalNet(4), output: DigitalNet(5), delay: 0.0, id: 3 }),
+        Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, _id: 0 }),
+        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, _id: 1 }),
+        Box::new(Inverter { input: DigitalNet(3), output: DigitalNet(4), delay: 0.0, _id: 2 }),
+        Box::new(Inverter { input: DigitalNet(4), output: DigitalNet(5), delay: 0.0, _id: 3 }),
     ];
     let topo = DigitalTopology::build(&devices);
     assert_eq!(topo.topo_order.len(), 4);
@@ -230,8 +230,8 @@ fn test_zero_delay_chain_propagates_in_one_pass() {
     state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 99, seq: 0 });
 
     let mut devices: Vec<Box<dyn Element>> = vec![
-        Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }),
-        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
+        Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, _id: 0 }),
+        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, _id: 1 }),
     ];
     let topo = DigitalTopology::build(&devices);
     state.evaluate_dag_ordered(1e-9, &mut devices, &topo, Default::default(), &[]).unwrap();
@@ -250,9 +250,9 @@ fn test_fan_out_topology() {
     state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::One, source: 99, seq: 0 });
 
     let mut devices: Vec<Box<dyn Element>> = vec![
-        Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }),
-        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
-        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(3), delay: 0.0, id: 2 }),
+        Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, _id: 0 }),
+        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, _id: 1 }),
+        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(3), delay: 0.0, _id: 2 }),
     ];
     let topo = DigitalTopology::build(&devices);
     state.evaluate_dag_ordered(1e-9, &mut devices, &topo, Default::default(), &[]).unwrap();
@@ -272,10 +272,10 @@ fn test_diamond_propagation() {
     state.schedule(DigitalEvent { time: 1e-9, net: DigitalNet(0), value: LogicValue::Zero, source: 99, seq: 0 });
 
     let mut devices: Vec<Box<dyn Element>> = vec![
-        Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, id: 0 }),
-        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
-        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(3), delay: 0.0, id: 2 }),
-        Box::new(AndGate  { inputs: [DigitalNet(2), DigitalNet(3)], output: DigitalNet(4), delay: 0.0, id: 3 }),
+        Box::new(Inverter { input: DigitalNet(0), output: DigitalNet(1), delay: 0.0, _id: 0 }),
+        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, _id: 1 }),
+        Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(3), delay: 0.0, _id: 2 }),
+        Box::new(AndGate  { inputs: [DigitalNet(2), DigitalNet(3)], output: DigitalNet(4), delay: 0.0, _id: 3 }),
     ];
     let topo = DigitalTopology::build(&devices);
     state.evaluate_dag_ordered(1e-9, &mut devices, &topo, Default::default(), &[]).unwrap();
@@ -304,8 +304,8 @@ fn make_rs_latch_instance(title: &str, r_val: LogicValue, s_val: LogicValue, q_v
 
     let mut instance = make_instance(title);
     instance.digital_state = state;
-    instance.devices.push(Box::new(NorGate { inputs: [DigitalNet(0), DigitalNet(3)], output: DigitalNet(2), delay: 1e-10, id: 0 }));
-    instance.devices.push(Box::new(NorGate { inputs: [DigitalNet(1), DigitalNet(2)], output: DigitalNet(3), delay: 1e-10, id: 1 }));
+    instance.devices.push(Box::new(NorGate { inputs: [DigitalNet(0), DigitalNet(3)], output: DigitalNet(2), delay: 1e-10, _id: 0 }));
+    instance.devices.push(Box::new(NorGate { inputs: [DigitalNet(1), DigitalNet(2)], output: DigitalNet(3), delay: 1e-10, _id: 1 }));
     instance.rebuild_digital_topology();
     instance
 }
@@ -447,7 +447,7 @@ fn test_ring_oscillator_five_inv() {
     let mut instance = make_instance("RingOsc5");
     for i in 0..5usize {
         instance.devices.push(Box::new(Inverter {
-            input: DigitalNet(i), output: DigitalNet((i + 1) % 5), delay: 1e-9, id: i,
+            input: DigitalNet(i), output: DigitalNet((i + 1) % 5), delay: 1e-9, _id: i,
         }));
     }
     instance.digital_state = state;
