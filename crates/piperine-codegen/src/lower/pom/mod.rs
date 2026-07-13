@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use piperine_lang::pom::Design;
 
 use crate::lower::*;
+use self::structure::FnSigParams;
 
 pub mod analog_ops;
 pub mod expr;
@@ -122,7 +123,7 @@ pub(crate) struct LowerCtx<'a> {
     /// Per-fn bundle-typed parameter positions (fn name → one entry per
     /// declared param, `Some((bundle, fields))` for bundle-typed ones) —
     /// call sites expand a bundle argument into its per-field scalars.
-    pub fn_bundle_sigs: HashMap<String, Vec<Option<(String, Vec<String>)>>>,
+    pub fn_bundle_sigs: HashMap<String, FnSigParams>,
     /// Digital-domain nodes read from *this* analog body (a port or wire
     /// whose value comes from the digital side, referenced by bare name —
     /// not through `V`/`I`), bridged through a synthetic module-level

@@ -147,6 +147,7 @@ impl NewtonStrategy for DampedNewton {
 
 /// Transient timestep policy: propose the next `dt` after a successful step,
 /// and return a reduced `dt` after a rejection.
+#[allow(clippy::too_many_arguments)]
 pub trait StepperStrategy: Send + Sync {
     /// Propose the next timestep after an accepted step.
     /// `dt_actual` is the dt used for this step; `dt_proposed` is what was
@@ -199,11 +200,12 @@ impl StepperStrategy for LteStepper {
                 &time_history,
                 method,
                 &ctx,
-            ) {
-                if sug > 0.0 && sug < lte_dt {
-                    lte_dt = sug;
-                    any_lte = true;
-                }
+            )
+                && sug > 0.0
+                && sug < lte_dt
+            {
+                lte_dt = sug;
+                any_lte = true;
             }
         }
         if any_lte {

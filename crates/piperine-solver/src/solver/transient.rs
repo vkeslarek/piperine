@@ -288,7 +288,7 @@ impl<'a> TransientSolver<'a> {
                     dt_actual,
                     dt_proposed,
                     self.system.dt_prev,
-                    &self.system.circuit,
+                    self.system.circuit,
                     self.solver.state(),
                     &self.system.context.tolerances,
                     &self.options,

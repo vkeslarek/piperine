@@ -8,6 +8,17 @@ use super::stmt::resolve_stmts;
 use super::LowerCtx;
 use std::collections::HashSet;
 
+/// A bundle parameter's field names, for call-site expansion.
+#[derive(Clone, Debug)]
+pub(crate) struct BundleParamFields {
+    pub(crate) bundle_name: String,
+    pub(crate) fields: Vec<String>,
+}
+
+/// One function's parameter signatures: `None` = scalar param,
+/// `Some(bundle, fields)` = bundle param.
+pub(crate) type FnSigParams = Vec<Option<BundleParamFields>>;
+
 // ─── Module conversion ───────────────────────────────────────────────────────
 
 /// Determine the IR domain of a net type by inspecting its discipline.
@@ -216,13 +227,16 @@ pub(crate) fn bundle_field_names(prog: &Design, bundle: &str) -> Vec<String> {
 /// position) — what call-site expansion consults.
 pub(crate) fn fn_bundle_signatures(
     prog: &Design,
-) -> std::collections::HashMap<String, Vec<Option<(String, Vec<String>)>>> {
+) -> std::collections::HashMap<String, FnSigParams> {
     let sig_of = |params: &[(String, piperine_lang::pom::TypeRef)]| {
         params
             .iter()
             .map(|(_, ty)| match ty.as_value() {
                 Some(piperine_lang::pom::ValueType::Bundle(b)) => {
-                    Some((b.clone(), bundle_field_names(prog, b)))
+                    Some(BundleParamFields {
+                        bundle_name: b.clone(),
+                        fields: bundle_field_names(prog, b),
+                    })
                 }
                 _ => None,
             })
@@ -236,7 +250,10 @@ pub(crate) fn fn_bundle_signatures(
     }
     for ib in prog.impls() {
         for m in &ib.methods {
-            let mut sig = vec![Some((ib.ty.clone(), bundle_field_names(prog, &ib.ty)))];
+            let mut sig = vec![Some(BundleParamFields {
+                bundle_name: ib.ty.clone(),
+                fields: bundle_field_names(prog, &ib.ty),
+            })];
             sig.extend(sig_of(&m.params));
             out.insert(format!("{}::{}", ib.ty, m.name), sig);
         }

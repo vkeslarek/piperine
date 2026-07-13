@@ -205,6 +205,7 @@ pub struct Builder<'a, 'f, 'm> {
 
 impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
     /// Construct a digital-context builder (quad logic, ABI pointers).
+    #[allow(clippy::too_many_arguments)]
     pub fn new_digital(
         builder: &'a mut FunctionBuilder<'f>,
         module: &'m LoweredBody,

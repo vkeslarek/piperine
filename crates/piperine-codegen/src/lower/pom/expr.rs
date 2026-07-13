@@ -469,8 +469,8 @@ fn resolve_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
             // Skip the `self` position (index 0) which we already filled.
             let sig_i = i + 1;
             match sig.as_ref().and_then(|s| s.get(sig_i)).and_then(|p| p.as_ref()) {
-                Some((_b, flds)) => {
-                    if !lower_bundle_arg(a, flds, &mut full_args, ctx) {
+                Some(flds) => {
+                    if !lower_bundle_arg(a, &flds.fields, &mut full_args, ctx) {
                         ctx.errors.push(super::LowerError {
                             module: ctx.module_name.clone(),
                             what: "bundle-typed argument",
@@ -571,8 +571,8 @@ fn inline_user_fn(fn_id: FnId, name: &str, args: &[Expr], ctx: &mut LowerCtx, al
         let mut collected: Vec<Expr> = Vec::new();
         for (i, arg) in args.iter().enumerate() {
             match sig.as_ref().and_then(|s| s.get(i)).and_then(|p| p.as_ref()) {
-                Some((_bundle, fields)) => {
-                    if !lower_bundle_arg(arg, fields, &mut collected, ctx) {
+                Some(flds) => {
+                    if !lower_bundle_arg(arg, &flds.fields, &mut collected, ctx) {
                         ctx.errors.push(super::LowerError {
                             module: ctx.module_name.clone(),
                             what: "bundle-typed argument",

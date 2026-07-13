@@ -419,6 +419,7 @@ pub struct FnDecl {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum FnParam {
     SelfParam,
     /// A typed parameter, optionally with a default value (the language spec Part I §9.1

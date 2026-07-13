@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use super::{ConnectionExt, RequestExt};
 use crate::state::ServerState;
 
+#[allow(clippy::mutable_key_type)]
 pub fn handle_rename(state: &mut ServerState, req: Request, connection: &Connection) {
     let Some((id, params)) = req.parse::<RenameParams>(connection) else { return };
 

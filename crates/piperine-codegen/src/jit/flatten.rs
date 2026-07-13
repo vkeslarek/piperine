@@ -502,6 +502,7 @@ impl<'m> AnalogFlattener<'m> {
     /// returned as `flux_coeff` and the branch equation gains `dΦ/dt`.
     /// `ddt` of a *different* branch's current (mutual inductance) or a
     /// nonlinear flux is a loud error for now.
+    #[allow(clippy::type_complexity)]
     fn split_flux(
         &mut self,
         value: PomExpr,

@@ -251,6 +251,7 @@ fn snapshot_digital(
     /// Run an output-referred noise analysis (`$noise`, piperine-bench/docs/SPEC.md §5).
     /// `out` and `reference` are net names resolved against the built
     /// circuit's net map (ground names map to the reference node).
+    #[allow(clippy::too_many_arguments)]
     pub fn run_noise(
         &self,
         out: &str,

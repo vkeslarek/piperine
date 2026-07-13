@@ -476,6 +476,7 @@ impl AnalogKernel {
 
     /// Write each `ac_stim` source's magnitude and phase (radians) to
     /// `mags`/`phases` (`num_ac_stims` each).
+    #[allow(clippy::too_many_arguments)]
     pub fn eval_ac_stim(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, mags: &mut [f64], phases: &mut [f64]) {
         if let (Some(m), Some(p)) = (self.ac_stim_mag, self.ac_stim_phase) {
             self.check_input_lens(volts, params, state, vars);
@@ -490,6 +491,7 @@ impl AnalogKernel {
     }
 
     /// Write each force branch's AC stimulus magnitude and phase (radians) to
+    #[allow(clippy::too_many_arguments)]
     /// `mags`/`phases` (`num_forces` each; 0 for branches without a stimulus).
     pub fn eval_force_ac_stim(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, mags: &mut [f64], phases: &mut [f64]) {
         if let (Some(m), Some(p)) = (self.force_ac_mag, self.force_ac_phase) {

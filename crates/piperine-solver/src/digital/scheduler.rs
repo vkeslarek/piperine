@@ -4,6 +4,14 @@ use crate::digital::{LogicValue, DigitalNet, DigitalEvent};
 use crate::digital::interface::{EvalCtx, QueueSink};
 use crate::core::element::{Element, ElementCapabilities};
 
+/// Frozen scheduler snapshot for checkpoint/rollback.
+#[derive(Clone)]
+struct Checkpoint {
+    nets: Vec<LogicValue>,
+    queue: BinaryHeap<Reverse<DigitalEvent>>,
+    labels: Vec<String>,
+}
+
 // ---------------------------------------------------------------------------
 // DigitalTopology — DAG order + back edges for a fixed set of devices
 // ---------------------------------------------------------------------------
@@ -97,7 +105,7 @@ pub struct DigitalState {
     /// Empty when the circuit builder does not attach labels — the public
     /// lookup then falls back to the anonymous `d{idx}` form.
     labels: Vec<String>,
-    checkpoint: Option<(Vec<LogicValue>, BinaryHeap<Reverse<DigitalEvent>>, Vec<String>)>,
+    checkpoint: Option<Checkpoint>,
 }
 
 impl DigitalState {
@@ -154,18 +162,18 @@ impl DigitalState {
     }
 
     pub fn checkpoint(&mut self) {
-        self.checkpoint = Some((
-            self.nets.clone(),
-            self.event_queue.clone(),
-            self.labels.clone(),
-        ));
+        self.checkpoint = Some(Checkpoint {
+            nets: self.nets.clone(),
+            queue: self.event_queue.clone(),
+            labels: self.labels.clone(),
+        });
     }
 
     pub fn rollback(&mut self) {
-        if let Some((nets, queue, labels)) = self.checkpoint.take() {
-            self.nets = nets;
-            self.event_queue = queue;
-            self.labels = labels;
+        if let Some(chk) = self.checkpoint.take() {
+            self.nets = chk.nets;
+            self.event_queue = chk.queue;
+            self.labels = chk.labels;
         }
     }
 
