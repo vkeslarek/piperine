@@ -97,7 +97,7 @@ pub struct Context {
     /// it damps the numerical ringing that trapezoidal shows on stiff/LC
     /// circuits, at the cost of a little extra artificial damping. Order ramps
     /// 1 → 2 over the first steps.
-    pub integration: crate::analysis::truncation::IntegrationMethod,
+    pub integration: crate::math::integration::IntegrationMethod,
 }
 
 impl Default for Context {
@@ -115,7 +115,7 @@ impl Default for Context {
             chgtol: 1e-14,
             temperature: 300.15,
             tnom: 300.15,
-            integration: crate::analysis::truncation::IntegrationMethod::Gear { order: 2 },
+            integration: crate::math::integration::IntegrationMethod::Gear { order: 2 },
         }
     }
 }

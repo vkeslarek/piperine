@@ -54,12 +54,26 @@ impl CircuitInstance {
     /// currents, and digital nets — as one unified [`Net`] list. This is the
     /// symmetric naming layer a host, result mapper, or diagnostic uses instead
     /// of walking the analog netlist and the digital net array separately.
+    ///
+    /// Digital nets carry the label the circuit builder attached via
+    /// [`DigitalState::set_label`], or the anonymous `d{idx}` form when none
+    /// was provided.
     pub fn nets(&self) -> Vec<crate::core::net::Net> {
         use crate::core::net::Net;
         use crate::digital::DigitalNet;
         let mut nets = self.netlist.nets();
-        nets.extend((0..self.digital_state.nets.len()).map(|i| Net::from(DigitalNet(i))));
+        nets.extend(
+            (0..self.digital_state.nets.len())
+                .map(|i| Net::digital(i, self.digital_state.label_or_default(DigitalNet(i)))),
+        );
         nets
+    }
+
+    /// Look up the digital net's stable source-level label, defaulting to
+    /// `d{idx}` when no label was attached. Convenience for diagnostics and
+    /// result mapping that don't want to construct a full [`Net`].
+    pub fn digital_label(&self, net: crate::digital::DigitalNet) -> String {
+        self.digital_state.label_or_default(net)
     }
 
     /// Union of every element's declared [`ElementCapabilities`] — what this
@@ -120,10 +134,34 @@ impl CircuitInstance {
     /// `DigitalEventModel` over the whole combinational cone — that replaces the
     /// per-device loop with one native call, the scheduler unchanged (it still
     /// only sees the event boundary).
-    pub fn run_digital_at(&mut self, t: f64) {
+    pub fn run_digital_at(&mut self, t: f64) -> crate::result::Result<()> {
+        self.run_digital_at_with_analog(t, &[])
+    }
+
+    /// Run digital evaluation at time `t`, supplying the latest analog
+    /// solution to elements that declared [`ElementCapabilities::SAMPLES_ANALOG`].
+    /// Pass `&[]` when no element in the circuit samples analog (the common
+    /// case for pure-digital circuits).
+    pub fn run_digital_at_with_analog(
+        &mut self,
+        t: f64,
+        analog_slice: &[f64],
+    ) -> crate::result::Result<()> {
+        let limits = crate::solver::convergence::PlanLimits::default();
         match &self.digital_topology {
-            Some(topo) => self.digital_state.evaluate_dag_ordered(t, &mut self.devices, topo),
-            None => self.digital_state.evaluate_until_stable(t, &mut self.devices),
+            Some(topo) => self.digital_state.evaluate_dag_ordered(
+                t,
+                &mut self.devices,
+                topo,
+                limits,
+                analog_slice,
+            ),
+            None => self.digital_state.evaluate_until_stable(
+                t,
+                &mut self.devices,
+                limits,
+                analog_slice,
+            ),
         }
     }
 
@@ -134,7 +172,7 @@ impl CircuitInstance {
     /// register updates need to propagate back (D2A bridge).
     ///
     /// Returns `true` if any digital output net changed value.
-    pub fn accept_and_run_digital(&mut self, solution: &[f64], ctx: &Context, t: f64) -> bool {
+    pub fn accept_and_run_digital(&mut self, solution: &[f64], ctx: &Context, t: f64) -> crate::result::Result<bool> {
         use std::cmp::Reverse;
         use ndarray::Array1;
         
@@ -156,9 +194,9 @@ impl CircuitInstance {
             self.digital_state.schedule(event);
         }
 
-        self.run_digital_at(t);
+        self.run_digital_at_with_analog(t, solution)?;
         let after = &self.digital_state.nets;
-        before != *after
+        Ok(before != *after)
     }
 
     /// Initialize all digital devices and seed the `DigitalState` with t=0 events.
@@ -167,7 +205,7 @@ impl CircuitInstance {
     /// initial events from every device's `init`, schedules them into
     /// `digital_state`, then runs propagation at t=0 so all downstream logic
     /// reflects its power-on state.
-    pub fn init_digital(&mut self) {
+    pub fn init_digital(&mut self) -> crate::result::Result<()> {
         use std::cmp::Reverse;
         use crate::digital::DigitalEvent;
         use crate::digital::interface::QueueSink;
@@ -183,6 +221,6 @@ impl CircuitInstance {
         for Reverse(event) in seed_queue {
             self.digital_state.schedule(event);
         }
-        self.run_digital_at(0.0);
+        self.run_digital_at(0.0)
     }
 }

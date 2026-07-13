@@ -9,6 +9,7 @@
 //! digital net, and `GND` symmetrically.
 
 use std::fmt;
+use std::sync::Arc;
 
 use crate::analog::{AnalogReference, AnalogVariable};
 use crate::digital::DigitalNet;
@@ -27,13 +28,20 @@ pub enum NetKind {
 }
 
 /// The unified identity of a solved signal. Pairs the fast dense index with a
-/// [`NetKind`] and a stable label. `dense == usize::MAX` means the signal has no
-/// solved unknown (a pseudo net such as ground, or an as-yet-unmapped variable).
+/// [`NetKind`] and a stable label. For analog nets, also retains the
+/// originating [`AnalogVariable`] so result types can look up the solved
+/// value by `Net` without an extra map. `dense == usize::MAX` means the signal
+/// has no solved unknown (a pseudo net such as ground, or an as-yet-unmapped
+/// variable).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Net {
     dense: usize,
     kind: NetKind,
     label: String,
+    /// Set when the net originated from an [`AnalogVariable`] (the typical
+    /// case for solver results); `None` for digital and pseudo nets where the
+    /// dense index already identifies the signal.
+    analog: Option<Arc<AnalogVariable>>,
 }
 
 impl Net {
@@ -41,22 +49,42 @@ impl Net {
 
     /// An analog node voltage at dense index `dense`.
     pub fn node(dense: usize, label: impl Into<String>) -> Self {
-        Self { dense, kind: NetKind::Node, label: label.into() }
+        Self {
+            dense,
+            kind: NetKind::Node,
+            label: label.into(),
+            analog: None,
+        }
     }
 
     /// An analog branch current at dense index `dense`.
     pub fn branch(dense: usize, label: impl Into<String>) -> Self {
-        Self { dense, kind: NetKind::Branch, label: label.into() }
+        Self {
+            dense,
+            kind: NetKind::Branch,
+            label: label.into(),
+            analog: None,
+        }
     }
 
     /// A digital net at dense index `dense`.
     pub fn digital(dense: usize, label: impl Into<String>) -> Self {
-        Self { dense, kind: NetKind::Digital, label: label.into() }
+        Self {
+            dense,
+            kind: NetKind::Digital,
+            label: label.into(),
+            analog: None,
+        }
     }
 
     /// The ground pseudo net: no solved unknown, canonical label `GND`.
     pub fn ground() -> Self {
-        Self { dense: Self::NONE, kind: NetKind::Pseudo, label: "GND".into() }
+        Self {
+            dense: Self::NONE,
+            kind: NetKind::Pseudo,
+            label: "GND".into(),
+            analog: None,
+        }
     }
 
     /// The dense solve index, or `None` for a pseudo/unmapped net.
@@ -75,6 +103,12 @@ impl Net {
 
     pub fn is_ground(&self) -> bool {
         self.kind == NetKind::Pseudo && self.dense == Self::NONE
+    }
+
+    /// The originating [`AnalogVariable`] if this is an analog net. `None` for
+    /// digital and pseudo nets.
+    pub fn analog_variable(&self) -> Option<&Arc<AnalogVariable>> {
+        self.analog.as_ref()
     }
 }
 
@@ -102,10 +136,17 @@ impl From<&AnalogReference> for Net {
     fn from(reference: &AnalogReference) -> Self {
         let label = analog_label(reference.variable());
         let dense = reference.idx().unwrap_or(Net::NONE);
-        match reference.variable().as_ref() {
-            AnalogVariable::Node(node) if node.is_ground() => Net::ground(),
-            AnalogVariable::Branch(_) => Net { dense, kind: NetKind::Branch, label },
-            _ => Net { dense, kind: NetKind::Node, label },
+        let variable: Arc<AnalogVariable> = reference.variable().clone();
+        let kind = match reference.variable().as_ref() {
+            AnalogVariable::Node(node) if node.is_ground() => return Net::ground(),
+            AnalogVariable::Branch(_) => NetKind::Branch,
+            _ => NetKind::Node,
+        };
+        Net {
+            dense,
+            kind,
+            label,
+            analog: Some(variable),
         }
     }
 }
@@ -162,5 +203,25 @@ mod tests {
         assert_eq!(net.kind(), NetKind::Digital);
         assert_eq!(net.dense(), Some(7));
         assert_eq!(net.label(), "d7");
+    }
+
+    #[test]
+    fn analog_net_carries_its_variable_for_lookup() {
+        let node = AnalogReference::new(
+            Arc::new(AnalogVariable::Node(NodeIdentifier::Anonymous(0))),
+            0,
+        );
+        let net: Net = (&node).into();
+        let var = net.analog_variable().expect("analog net must carry its variable");
+        assert_eq!(var.as_ref(), &AnalogVariable::Node(NodeIdentifier::Anonymous(0)));
+    }
+
+    #[test]
+    fn digital_and_pseudo_nets_have_no_analog_variable() {
+        let digital: Net = DigitalNet(3).into();
+        assert!(digital.analog_variable().is_none());
+
+        let ground = Net::ground();
+        assert!(ground.analog_variable().is_none());
     }
 }

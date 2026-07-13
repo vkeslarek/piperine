@@ -1,4 +1,5 @@
-//! The DC convergence plan: a composable escalation of homotopy strategies.
+//! The DC convergence plan: a composable escalation of homotopy strategies, and
+//! the shared numerical limits every driver honors.
 //!
 //! Plain Newton converges most circuits. Stiff coupled-junction operating
 //! points (BJT/MOS) need a homotopy — reshape the problem into an easy one and
@@ -7,10 +8,39 @@
 //! [`HomotopyStrategy`] the driver falls through in order. Each strategy is
 //! stateless; every piece of mutable solve state lives behind the
 //! [`HomotopyDriver`] the plan drives.
+//!
+//! [`PlanLimits`] is the home for numerical caps that used to live as literals
+//! inside drivers (mixed-signal DC settle cap, digital delta-cycle cap,
+//! scheduler time-equality epsilon). One knob for hosts; one place to look for
+//! the solver's hidden constants.
 
 use ndarray::Array1;
 
 use crate::result::Result;
+
+/// Numerical caps honored across drivers. Replaces the literals that used to
+/// live inline in DC and the digital scheduler.
+#[derive(Debug, Clone, Copy)]
+pub struct PlanLimits {
+    /// Maximum number of (Newton + digital settle) alternations in DC before
+    /// reporting that the mixed-signal loop did not stabilize.
+    pub max_mixed_signal_iter: usize,
+    /// Maximum delta cycles in a single digital evaluation time. Above this,
+    /// the scheduler reports a combinational loop instead of warning.
+    pub max_delta_cycles: usize,
+    /// Absolute time equality tolerance when comparing two event times.
+    pub digital_time_epsilon: f64,
+}
+
+impl Default for PlanLimits {
+    fn default() -> Self {
+        Self {
+            max_mixed_signal_iter: 20,
+            max_delta_cycles: 1000,
+            digital_time_epsilon: 1e-12,
+        }
+    }
+}
 
 /// What a [`HomotopyStrategy`] drives: the plain-Newton solve and the two SPICE
 /// homotopy scales it ramps. The DC solver implements this; a strategy never
@@ -48,6 +78,7 @@ pub trait HomotopyStrategy: Send + Sync {
 /// is the seam where an analysis or host selects a different escalation.
 pub struct ConvergencePlan {
     strategies: Vec<Box<dyn HomotopyStrategy>>,
+    limits: PlanLimits,
 }
 
 impl Default for ConvergencePlan {
@@ -57,6 +88,7 @@ impl Default for ConvergencePlan {
     fn default() -> Self {
         Self {
             strategies: vec![Box::new(GminStepping), Box::new(SourceStepping)],
+            limits: PlanLimits::default(),
         }
     }
 }
@@ -64,7 +96,21 @@ impl Default for ConvergencePlan {
 impl ConvergencePlan {
     /// Build a plan from an explicit strategy list (escalation order preserved).
     pub fn new(strategies: Vec<Box<dyn HomotopyStrategy>>) -> Self {
-        Self { strategies }
+        Self {
+            strategies,
+            limits: PlanLimits::default(),
+        }
+    }
+
+    /// Override the numerical limits honored across drivers.
+    pub fn with_limits(mut self, limits: PlanLimits) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// Numerical caps every driver should honor.
+    pub fn limits(&self) -> PlanLimits {
+        self.limits
     }
 
     /// Run the plan: plain Newton, then each homotopy in order. Returns the

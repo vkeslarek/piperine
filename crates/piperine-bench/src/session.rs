@@ -139,7 +139,7 @@ impl SimSession {
             compiler = compiler.with_device_provider(provider.as_ref());
         }
         let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
-        circuit.init_digital();
+        circuit.init_digital()?;
         circuit.rebuild_digital_topology();
         Ok((circuit, info))
     }

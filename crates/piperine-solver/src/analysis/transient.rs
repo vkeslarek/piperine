@@ -1,6 +1,7 @@
 use crate::analog::{
     BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier,
 };
+use crate::core::net::Net;
 use crate::digital::LogicValue;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::InitialValue;
@@ -108,7 +109,7 @@ impl TransientAnalysisOptions {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct TransientAnalysisContext {
     pub time: Second,
     pub dt: Second,
@@ -119,6 +120,11 @@ pub struct TransientAnalysisContext {
     /// Integration order actually usable this step: 1 until enough history has
     /// accumulated (first step), then the method's order.
     pub order: usize,
+    /// Integration method in use (Trapezoidal or Gear `{ order }`). The
+    /// kernel calls [`IntegrationMethod::coeffs`] to obtain `(c0, c1, c2)`
+    /// for the reactive companion; this field is the single source of truth
+    /// instead of a hard-coded BDF formula.
+    pub integration: crate::math::integration::IntegrationMethod,
 }
 
 pub trait TransientAnalysis {
@@ -224,11 +230,57 @@ impl TransientStep {
         self.get(AnalogVariable::Branch(branch_identifier.into()))
     }
 
+    /// Read the analog value by [`Net`] (the unified naming layer). Returns
+    /// `None` for digital and pseudo nets.
+    pub fn get_net(&self, net: &Net) -> Option<f64> {
+        let var = net.analog_variable()?;
+        self.values.get(var).copied()
+    }
+
+    /// Read the digital logic value by [`Net`]. Returns `None` for analog
+    /// and pseudo nets, or for digital nets that were not recorded this
+    /// step.
+    pub fn digital_net(&self, net: &Net) -> Option<LogicValue> {
+        if !matches!(net.kind(), crate::core::net::NetKind::Digital) {
+            return None;
+        }
+        let idx = net.dense()?;
+        self.digital.get(idx).copied()
+    }
+
     pub fn values(&self) -> &HashMap<Arc<AnalogVariable>, f64> {
         &self.values
     }
 
     pub fn time(&self) -> f64 {
         self.time
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
+    use std::sync::Arc;
+
+    #[test]
+    fn transient_step_lookup_by_net_returns_analog_and_digital_values() {
+        let var: Arc<AnalogVariable> = Arc::new(AnalogVariable::Node(NodeIdentifier::Anonymous(0)));
+        let mut values = HashMap::new();
+        values.insert(var.clone(), 1.25);
+        let step = TransientStep::new(0.0, values).with_digital(vec![LogicValue::One, LogicValue::Zero]);
+
+        let analog_net: Net = (&AnalogReference::new(var.clone(), 0)).into();
+        assert_eq!(step.get_net(&analog_net), Some(1.25));
+
+        let digital_net = Net::digital(1, "top.clk");
+        assert_eq!(step.digital_net(&digital_net), Some(LogicValue::Zero));
+        assert_eq!(step.digital_net(&Net::digital(0, "d0")), Some(LogicValue::One));
+
+        // Wrong kind returns None — analog_net is not a digital net.
+        assert_eq!(step.digital_net(&analog_net), None);
+
+        // Digital net past the recorded snapshot returns None.
+        assert_eq!(step.digital_net(&Net::digital(99, "x")), None);
     }
 }

@@ -1,6 +1,7 @@
 use crate::analog::{
     BranchIdentifier, AnalogReference, AnalogVariable, Netlist, NodeIdentifier,
 };
+use crate::core::net::Net;
 use crate::digital::LogicValue;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::InitialValue;
@@ -100,5 +101,14 @@ impl DcAnalysisResult {
         }
 
         initial_values
+    }
+
+    /// Read the solved value by [`Net`] — the unified naming layer used by
+    /// hosts, diagnostics, and result mappers. Returns `None` for any net
+    /// the result does not cover (pseudo nets like ground, or unmapped
+    /// digital nets — those live on a separate path).
+    pub fn get_net(&self, net: &Net) -> Option<f64> {
+        let var = net.analog_variable()?;
+        self.values.get(var).copied()
     }
 }

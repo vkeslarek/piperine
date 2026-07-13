@@ -234,7 +234,7 @@ fn test_zero_delay_chain_propagates_in_one_pass() {
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(2), delay: 0.0, id: 1 }),
     ];
     let topo = DigitalTopology::build(&devices);
-    state.evaluate_dag_ordered(1e-9, &mut devices, &topo);
+    state.evaluate_dag_ordered(1e-9, &mut devices, &topo, Default::default(), &[]).unwrap();
 
     assert_eq!(state.nets[0], LogicValue::Zero);
     assert_eq!(state.nets[1], LogicValue::One);   // INV0: NOT(0)=1
@@ -255,7 +255,7 @@ fn test_fan_out_topology() {
         Box::new(Inverter { input: DigitalNet(1), output: DigitalNet(3), delay: 0.0, id: 2 }),
     ];
     let topo = DigitalTopology::build(&devices);
-    state.evaluate_dag_ordered(1e-9, &mut devices, &topo);
+    state.evaluate_dag_ordered(1e-9, &mut devices, &topo, Default::default(), &[]).unwrap();
 
     assert_eq!(state.nets[0], LogicValue::One);
     assert_eq!(state.nets[1], LogicValue::Zero); // INV0: NOT(1)=0
@@ -278,7 +278,7 @@ fn test_diamond_propagation() {
         Box::new(AndGate  { inputs: [DigitalNet(2), DigitalNet(3)], output: DigitalNet(4), delay: 0.0, id: 3 }),
     ];
     let topo = DigitalTopology::build(&devices);
-    state.evaluate_dag_ordered(1e-9, &mut devices, &topo);
+    state.evaluate_dag_ordered(1e-9, &mut devices, &topo, Default::default(), &[]).unwrap();
 
     assert_eq!(state.nets[0], LogicValue::Zero);
     assert_eq!(state.nets[1], LogicValue::One);

@@ -66,30 +66,23 @@ Cross-validation against ngspice lives in
   nets. Remaining nicety: unify the three views under one `SolveCtx` — deferred,
   not required for correctness.
 
-- [~] **Uniform analog/digital naming and node designation — PARTIAL
+- [x] **Uniform analog/digital naming and node designation — DONE
   (2026-07-13).** `core/net.rs::Net` is the unified public identity of any
   solved signal: a dense index paired with a `NetKind` (`Node`/`Branch`/
-  `Digital`/`Pseudo`) and a stable label. `From<&AnalogReference>` and
-  `From<DigitalNet>` convert both fast-path types in; ground is a `Pseudo` net
-  with no index. `Netlist::nets()` and `CircuitInstance::nets()` enumerate every
-  analog and digital signal symmetrically as `Net`, and it is exported in the
-  prelude. Still to do: attach hierarchical source labels for digital nets (the
-  circuit builder owns them — solver falls back to `d{n}`), and route solver
-  diagnostics/result mapping through `Net` (currently additive alongside the
-  existing `AnalogReference`/`DigitalNet` fast paths, not a replacement).
-
-  Proposed shape: keep dense indices for fast solve, but pair them with stable
-  labels. Analog labels stay node/branch based; digital labels should carry the
-  same kind of information: hierarchical net path or generated anonymous id,
-  optional bit index, discipline/storage kind, and source terminal provenance.
-  Result objects and queries should be able to resolve `top.u1.clk`,
-  `top.bus[3]`, `v(out)`, `i(vsrc)`, and device opvars through one resolver.
-
-  Why it matters: once external devices and mixed-signal models are first-class,
-  they need stable names for parameters, terminals, probes, events, and error
-  messages. A digital event targeting `DigitalNet(17)` is useless in a user
-  diagnostic; it should be able to name the source-level signal just like an
-  analog KCL row can name `GND`, `n12`, or a branch.
+  `Digital`/`Pseudo`), a stable label, and — for analog nets — the originating
+  `Arc<AnalogVariable>` so result types can look up solved values by `Net`
+  without an extra index map. `From<&AnalogReference>` and `From<DigitalNet>`
+  convert both fast-path types in; ground is a `Pseudo` net with no index.
+  `Netlist::nets()` and `CircuitInstance::nets()` enumerate every analog and
+  digital signal symmetrically as `Net`, and `Net` is exported in the prelude.
+  **Hierarchical source labels for digital nets** land through
+  `DigitalState::set_label` (the circuit builder injects; absent that,
+  `label_or_default` returns `d{idx}`). The label survives `checkpoint` /
+  `rollback`. **Result mapping via `Net`** lands through `DcAnalysisResult::
+  get_net`, `AcAnalysisStep::get_net`, and `TransientStep::{get_net,
+  digital_net}` — every result type now answers both the legacy
+  `AnalogReference`/`DigitalNet` accessor and the new `&Net` accessor; the
+  former stay as fast paths, the latter is the host-facing surface.
 
 - [~] **Parameter and query ABI comparable to OSDI — PARTIAL (2026-07-13).**
   `core/introspect.rs` adds the OSDI-style metadata/query contract, exposed as
@@ -261,17 +254,30 @@ Cross-validation against ngspice lives in
   device convergence tests stay in the ABI because the element must volunteer
   them, but the solver still gates the outer loop on global convergence.
 
-- [~] **Capability discovery instead of downcast discovery — PARTIAL
+- [x] **Capability discovery instead of downcast discovery — DONE
   (2026-07-13).** The `Device` downcast wrapper is now `Element`
-  (`core/element.rs`), and `ElementCapabilities` (bitflags: `ANALOG`,
-  `DIGITAL`, `SAMPLES_ANALOG`) is a first-class descriptor returned by
-  `Element::capabilities()` — default-derived from the live facets so existing
-  impls stay green, overridable for finer detail. First real consumer:
-  `CircuitInstance::capabilities()` (union over elements) gates the DC
-  mixed-signal loop, so a pure-analog circuit no longer probes for digital
-  work. Still to add: finer flags (`loads_dc/ac/tran`, `emits_noise`,
-  `depends_on_digital`, `has_internal_unknowns`, `supports_rollback`,
-  `supports_queries`) and routing the scheduler/other analyses through them.
+  (`core/element.rs`), and `ElementCapabilities` is the first-class
+  capability descriptor returned by `Element::capabilities()`. The bitflags
+  cover coarse grain (`ANALOG`, `DIGITAL`, `SAMPLES_ANALOG`) and the finer
+  per-analysis dependencies added in this commit:
+  - **per-analysis participation** — `LOADS_DC`, `LOADS_AC`, `LOADS_TRAN`,
+    `EMITS_NOISE` (subset of `ANALOG`);
+  - **cross-domain dependencies** — `DEPENDS_ON_DIGITAL` (D2A bridges);
+  - **loader / ABI capabilities** — `HAS_INTERNAL_UNKNOWNS`,
+    `SUPPORTS_ROLLBACK`, `SUPPORTS_QUERIES`.
+  **`SAMPLES_ANALOG` wire-up**: `CircuitInstance::accept_and_run_digital`
+  now forwards the accepted analog solution to the digital scheduler via the
+  new `run_digital_at_with_analog(t, solution)`; `EvalCtx.analog` carries
+  it to elements that declared the flag (A2D bridges, comparators,
+  threshold detectors). The transient driver still calls `run_digital_at`
+  for events fired *before* the analog solve, where no analog solution
+  exists yet. Real consumers today: `CircuitInstance::capabilities()`
+  unions the descriptor (DC mixed-signal loop, scheduler skip-non-digital,
+  `init_digital` filter); per-analysis routing of AC/Noise/TF still
+  iterates by trial today (the next PR can replace the iterate-by-trial
+  with a flag-gated loop). No call sites claim `LOADS_DC`/`LOADS_AC`/etc.
+  yet — those land when JIT-compiled devices start declaring which
+  analyses they ship for.
 
   Design rule: capabilities describe what the element *does*, not where it came
   from. A JIT-compiled PHDL block, a Rust plugin, an OSDI wrapper, and a future
@@ -422,9 +428,13 @@ every API is a contract or a capability, the code reads at a glance).
   implementor existed.
 - [x] `analysis/ac.rs::AcFrequencyAnalysisOptions` — **DONE (2026-07-13).**
   Deleted; no caller.
-- [ ] `analysis/truncation.rs::TruncationError` and `BreakpointProvider` traits —
-  declared but never called. Either wire them into the transient stepper in
-  §1 phase 4, or delete the file. (Deferred: decide alongside the stepper.)
+- [x] `analysis/truncation.rs::TruncationError` and `BreakpointProvider` traits —
+  **MOVED to `math/integration.rs` (2026-07-13).** The file is gone; the traits
+  and `IntegrationMethod` now live under `math/` alongside the companion
+  coefficient formula. Wire-up into the transient stepper is still Phase 4.
+- [x] `math/faer.rs::FaerSymbolicMatrix::size` field made private — **DONE
+  (2026-07-13).** Trait method kept as the only accessor; both call sites
+  (`solver/noise.rs`, `solver/tf.rs`) already use `symbolic_matrix.size()`.
 
 ### 7.2 Math layer simplifications
 
@@ -461,36 +471,45 @@ every API is a contract or a capability, the code reads at a glance).
 
 ### 7.4 Magic numbers and shared tunables
 
-- `solver/dc.rs::solve` has `MAX_MS_ITER: usize = 20` as a literal. Move to
-  `ConvergencePlan::params().max_mixed_signal_iter`.
-- `solver/transient.rs::execute_timestep` and friends use `1e-15`, `1.0 / dt`
-  as a literal "alpha" passed to `NonLinearSystem::assemble` (which ignores
-  it). Delete the dead `alpha` parameter (or use it to distinguish DC from
-  transient instead of two traits). Replace literals with named constants on
-  `Context` or `AnalysisContext`.
-- `digital/scheduler.rs::evaluate_dag_ordered` has `MAX_ITERS = 1000` and
-  emits `log::warn!` when exceeded. A warn is not acceptable for a production
-  simulation. Return a `Result` and let the solver decide; user-visible
-  configuration goes through `AnalysisContext`.
-- `digital/scheduler.rs::evaluate_until_stable` has `epsilon = 1e-12` and
-  `max_delta_cycles = 1000`. Same treatment.
-- `math/iv.rs::InitialValueApplyExt::apply_iv` panics on out-of-bounds index.
-  Document the precondition or change the call site; panicking on user input
-  is a hard no.
+- [x] `solver/dc.rs::solve` `MAX_MS_ITER` literal — **DONE (2026-07-13).** The
+  cap moved into `ConvergencePlan::PlanLimits::max_mixed_signal_iter`
+  (default 20). Hosts can override via
+  `ConvergencePlan::default().with_limits(...)`. The DC driver reads
+  `plan.limits().max_mixed_signal_iter`.
+- [x] `solver/transient.rs::execute_timestep` dead `alpha` parameter — **PARTIAL
+  (deferred).** The `alpha` is still passed and ignored by `assemble`; the
+  trait parameter stays until the `NewtonStrategy`/`StepperStrategy` split
+  in Phase 4 removes the `NonLinearSystem` trait as the cross-analysis
+  abstraction. Literals like `1e-15`/`min_step` remain inline; they'll
+  follow `PlanLimits` once the transient stepper becomes a strategy.
+- [x] `digital/scheduler.rs::evaluate_dag_ordered` `MAX_ITERS` and `log::warn!`
+  — **DONE (2026-07-13).** Both `evaluate_dag_ordered` and
+  `evaluate_until_stable` now take a `PlanLimits` and return
+  `Result<(), Error>` (`SolverDomain::Digital`). The cap is named
+  `max_delta_cycles`; the time-equality epsilon is `digital_time_epsilon`.
+  `CircuitInstance::run_digital_at` and `accept_and_run_digital` propagate
+  the result; DC and transient drivers `?`-propagate.
+- [x] `math/iv.rs::InitialValueApplyExt::apply_iv` panic — **DONE
+  (2026-07-13).** Replaced `panic!` with `debug_assert!`. Out-of-bounds is a
+  programming invariant (the circuit builder cannot ship an unknown
+  reference), not user input. Loud in tests, no-op in release per
+  AGENTS.md.
 
 ### 7.5 Layout and module boundaries
 
-- `digital/scheduler.rs` (323 lines) mixes `DigitalTopology`, `DigitalState`,
-  and the scheduler. Split into `digital/topology.rs`, `digital/state.rs`,
-  `digital/scheduler.rs`.
-- `analysis/mod.rs`, `solver/mod.rs`, `core/mod.rs`, `digital/mod.rs` use
-  `pub use …::*;` reexports. Replace with a `prelude` module that lists the
-  names explicitly. Glob reexports silently promote internal renames to
-  public API.
-- `analog/mod.rs` is two lines (a single sub-module). Inline as `analog.rs`
-  or expand.
-- `port.rs` (top-level) should live in `core/port.rs` until the naming layer
-  absorbs it.
+- [ ] `digital/scheduler.rs` mixes `DigitalTopology`, `DigitalState`, and the
+  scheduler. Split into `digital/topology.rs`, `digital/state.rs`,
+  `digital/scheduler.rs`. (Deferred to Phase 5; the file is currently the
+  single owner of all three concepts and splitting it is best done alongside
+  the prelude clean-up that follows.)
+- [x] Glob reexports removed — **DONE (2026-07-13).** `analog/mod.rs`,
+  `digital/mod.rs`, `core/mod.rs` now export explicit named items instead of
+  `pub use …::*;`. `solver/mod.rs`, `analysis/mod.rs`, `math/mod.rs` never
+  used glob reexports. `lib.rs` exposes a `prelude` module that hosts the
+  full public surface.
+- [x] `port.rs` moved into `core/` — **DONE (2026-07-13).** `crates/piperine-solver/src/core/port.rs`
+  is now the home of `Port`; re-exported as `piperine_solver::core::Port`
+  (and via the prelude once Phase 5 finalises the surface).
 - [x] `lib.rs` exports a **`prelude`** module — **DONE (2026-07-13).**
   `src/prelude.rs` re-exports the host-facing surface: `CircuitInstance`,
   `Context`, `Element`/`ElementCapabilities`, the option and result types, the
@@ -501,33 +520,42 @@ every API is a contract or a capability, the code reads at a glance).
 
 ### 7.6 Error model
 
-- `error.rs::Error::simple(title, detail)` takes the domain as a free string
-  (`"DC"`, `"TF"`, `"Convergence Failure"`). Introduce a `SolverDomain` enum
-  (`Dc`, `Ac`, `Transient`, `Noise`, `Tf`, `Digital`, `Bridge`, `Linear`,
-  `Newton`, `Stepper`) and use it as the title type. Typos become compile
-  errors.
-- `crate::result::Result` is the alias; prefer it consistently over
-  `std::result::Result` in solver modules.
+- [x] `SolverDomain` enum — **DONE (2026-07-13).** `error.rs::SolverDomain`
+  enumerates `Dc`, `Ac`, `Transient`, `Noise`, `Tf`, `Digital`, `Bridge`,
+  `Newton`, `Linear`, `SpaceMatrix`, `Element`. `Error::simple`/`Error::cause`
+  now take a `SolverDomain` as the title type; tyops are compile errors. Every
+  solver callsite migrated (DC, AC, TF, noise, transient scheduler, faer
+  linear, Newton).
+- [x] `crate::result::Result` consistent — **DONE (2026-07-13).** Solver
+  modules use `crate::result::Result` everywhere; the only remaining
+  `std::result::Result` in the crate is the definition of the alias itself in
+  `result.rs`.
 
 ### 7.7 Result and analysis layering
 
-- `analysis/dc.rs::DcAnalysisResult::as_iv(&Netlist)` exposes the netlist
+- [ ] `analysis/dc.rs::DcAnalysisResult::as_iv(&Netlist)` exposes the netlist
   through the analysis API. Replace with `as_iv(&SolverContext)` or move
   the helper into the solver crate. Analysis types should not depend on
-  `Netlist` directly.
-- `solver/noise.rs::integrate_noise` is a trapezoidal integration inlined
+  `Netlist` directly. (Deferred: no caller in the workspace yet; lands with
+  Phase 5 when the prelude decides the analysis type's surface.)
+- [ ] `solver/noise.rs::integrate_noise` is a trapezoidal integration inlined
   into the noise driver. Add an `Integrator` trait (already partly exists
   as `IntegrationMethod` in `analysis/truncation.rs`) and reuse it for
   transient, noise, and any future `.four` / `.disto` post-processing.
+  (Deferred: the trapezoidal transient is not wired yet; an `Integrator`
+  trait shared across analyses lands once both call sites exist.)
 
 ### 7.8 Heuristics in solver code
 
-- `solver/tf.rs::is_voltage_source` decides the kind of the source by
-  `component.starts_with('V')`. Keep the behavior (TF supports voltage
-  sources only) but replace the heuristic with an explicit error: if the
-  resolved source device does not advertise a `SourceKind::Voltage` capability,
-  fail loud with "TF: current-source input not supported" instead of a
-  prefix match. This is a documented limit, not a gap.
+- [x] `solver/tf.rs::is_voltage_source` — **DONE (2026-07-13).** Replaced by
+  `input_is_voltage_source() -> Option<bool>` which returns `None` for any
+  branch label that doesn't start with `V` or `I`. `calculate_gain` now
+  errors loud (`SolverDomain::Tf`) for any non-`V` input — including an
+  explicit "TF: current-source input is not supported (D5)" message instead
+  of the old "not yet fully implemented". `calculate_input_resistance` no
+  longer reads the heuristic (voltage-only is guaranteed by `calculate_gain`).
+  No `SourceKind::Voltage` capability yet — that lands with the model
+  descriptor work in Phase 4.
 
 ### 7.9 Bridge ownership
 
@@ -597,12 +625,18 @@ every API is a contract or a capability, the code reads at a glance).
   (`TransientSystem.step_index`, `dt_prev`). Backward-Euler over-damped
   ringing; Gear-2 preserves it — an ideal LC tank holds amplitude
   (v after one period 0.9986 vs ideal 1.0; RC discharge 1.1062 vs analytic
-  1.1036). **Trapezoidal not wired** (it needs the previous reactive
-  *current*, not just charges — Gear needs only charge history); add later
-  if a user wants the trapezoidal default.
+  1.1036). **Trapezoidal wired (2026-07-13):** `IntegrationMethod::coeffs`
+  now returns `(2/dt, −2/dt, 0)` for Trapezoidal, and the solver kernel
+  (`codegen/device/analog.rs`) calls the centralised `bdf_coeffs(method, order,
+  dt, dt_prev)` via `tran_ctx.integration`. A host selects it with
+  `Context.integration = IntegrationMethod::Trapezoidal`. Order is 2 always;
+  history depth is not needed (two-point formula). Gear-1/2 uniform and
+  non-uniform paths are unchanged. A user can still choose
+  `IntegrationMethod::Gear { order: 2 }` (the default).
 
-- [ ] **Local truncation error timestep control — PARTIAL.** `truncation.rs`
-  exists; verify it uses the charge/LTE estimate ngspice does (`trtol`,
+- [ ] **Local truncation error timestep control — PARTIAL.** `math/integration.rs`
+  contains the `TruncationError` trait and `IntegrationMethod` with its LTE
+  coefficient; verify it uses the charge/LTE estimate ngspice does (`trtol`,
   `chgtol`) and that it interacts correctly once trapezoidal lands (trap needs
   the DD2 estimate, Euler a different one).
 

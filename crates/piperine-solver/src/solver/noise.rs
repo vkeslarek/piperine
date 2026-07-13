@@ -215,10 +215,14 @@ impl<'a> NoiseSolver<'a> {
         let net = circuit.netlist();
         let out = net
             .reference_for(&AnalogVariable::Node(opt.output_node.clone()))
-            .ok_or_else(|| crate::error::Error::simple("Noise", "Output node not found"))?;
+            .ok_or_else(|| {
+                crate::error::Error::simple(crate::error::SolverDomain::Noise, "Output node not found")
+            })?;
         let ref_ = net
             .reference_for(&AnalogVariable::Node(opt.reference_node.clone()))
-            .ok_or_else(|| crate::error::Error::simple("Noise", "Reference node not found"))?;
+            .ok_or_else(|| {
+                crate::error::Error::simple(crate::error::SolverDomain::Noise, "Reference node not found")
+            })?;
         Ok((out.clone(), ref_.clone()))
     }
 

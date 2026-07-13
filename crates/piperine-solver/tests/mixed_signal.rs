@@ -880,7 +880,7 @@ fn test_a2d_drives_digital_chain() {
         Box::new(SimpleInverter { input: DigitalNet(0), output: DigitalNet(1), id: 0 }),
     ];
 
-    state.evaluate_until_stable(1e-9, &mut devices);
+    state.evaluate_until_stable(1e-9, &mut devices, Default::default(), &[]).unwrap();
 
     assert_eq!(state.nets[0], LogicValue::One,  "comparator output = 1");
     assert_eq!(state.nets[1], LogicValue::Zero, "inverter output = 0");

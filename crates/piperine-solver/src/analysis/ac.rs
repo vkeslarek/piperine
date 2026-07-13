@@ -2,6 +2,7 @@ use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
 use crate::analog::{
     BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier,
 };
+use crate::core::net::Net;
 use crate::math::linear::Stamp;
 use crate::math::unit::Hertz;
 use crate::solver::Context;
@@ -124,5 +125,12 @@ impl AcAnalysisStep {
 
     pub fn get_node(&self, node_identifier: &NodeIdentifier) -> Option<&Complex<f64>> {
         self.get(&AnalogVariable::Node(node_identifier.clone()))
+    }
+
+    /// Read the small-signal value by [`Net`]. Returns `None` for digital
+    /// and pseudo nets — those have no AC representation here.
+    pub fn get_net(&self, net: &Net) -> Option<&Complex<f64>> {
+        let var = net.analog_variable()?;
+        self.values.get(var)
     }
 }

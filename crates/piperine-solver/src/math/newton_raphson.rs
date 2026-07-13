@@ -151,7 +151,7 @@ where
                 system.convergence_failed_callback(&self.state, iter, &current_guess.view());
 
                 return Err(Error::simple(
-                    "Convergence Failure",
+                    crate::error::SolverDomain::Newton,
                     "Linear solver returned NaN/Inf",
                 ));
             }
@@ -183,7 +183,7 @@ where
 
         system.convergence_failed_callback(&self.state, max_iter, &self.state.latest().unwrap());
         Err(Error::simple(
-            "Convergence Failure",
+            crate::error::SolverDomain::Newton,
             format!("Failed to converge after {} iterations", max_iter),
         ))
     }

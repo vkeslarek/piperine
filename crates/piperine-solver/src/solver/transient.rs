@@ -34,11 +34,18 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         _alpha_hint: f64,
     ) -> crate::result::Result<Vec<Stamp<AnalogReference, f64>>> {
         // Gear ramps order 1 → 2 as history accumulates: the first accepted
-        // step has no `t_{n-2}` for BDF2, so it uses backward-Euler.
-        let order = if self.step_index >= 2 && self.dt_prev > 0.0 {
-            self.context.integration.order().min(2)
-        } else {
-            1
+        // step has no `t_{n-2}` for BDF2, so it uses backward-Euler. Trapezoidal
+        // is order-2 always and ignores `dt_prev` (its formula is two-point).
+        let nominal_order = self.context.integration.order();
+        let order = match self.context.integration {
+            crate::math::integration::IntegrationMethod::Trapezoidal => 2,
+            crate::math::integration::IntegrationMethod::Gear { order: go } => {
+                if self.step_index >= 2 && self.dt_prev > 0.0 {
+                    nominal_order.min(go).max(1)
+                } else {
+                    1
+                }
+            }
         };
         let tran_ctx = TransientAnalysisContext {
             time: self.time,
@@ -46,6 +53,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
             tfinal: self.tfinal,
             dt_prev: self.dt_prev,
             order,
+            integration: self.context.integration,
         };
 
         let mut all_stamps = Vec::new();
@@ -108,7 +116,7 @@ impl<'a> TransientSolver<'a> {
 
         // Build DAG topology once before simulation begins
         circuit.rebuild_digital_topology();
-        circuit.init_digital();
+        circuit.init_digital()?;
 
         let size = circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
 
@@ -233,7 +241,7 @@ impl<'a> TransientSolver<'a> {
             self.system.circuit.digital_state.checkpoint();
 
             // Process digital events EXACTLY at t_next BEFORE analog solve.
-            self.system.circuit.run_digital_at(t_next);
+            self.system.circuit.run_digital_at(t_next)?;
 
             // Solve analog timestep [current_time, t_next]
             let analog_result = self.execute_timestep(t_next, dt_actual);
@@ -248,7 +256,7 @@ impl<'a> TransientSolver<'a> {
                     solution.as_slice().unwrap(),
                     &self.system.context,
                     t_next,
-                );
+                )?;
                 self.system.circuit.digital_state.commit();
                 // A delayed-start transient still solves every step (state
                 // evolution matters); only the recording is gated.

@@ -26,7 +26,7 @@ pub use crate::analysis::ac::AcSweepAnalysisOptions;
 pub use crate::analysis::noise::NoiseAnalysisOptions;
 pub use crate::analysis::tf::TransferFunctionAnalysisOptions;
 pub use crate::analysis::transient::TransientAnalysisOptions;
-pub use crate::analysis::truncation::IntegrationMethod;
+pub use crate::math::integration::IntegrationMethod;
 pub use crate::solver::Context;
 
 // ── Convergence policy (opt-in customization) ──────────────────────────────

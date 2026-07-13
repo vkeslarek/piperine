@@ -142,13 +142,11 @@ impl<'a> DcSolver<'a> {
     pub fn solve(&mut self) -> crate::result::Result<DcAnalysisResult> {
         let max_iter = self.system.context.max_iter;
 
-        // Maximum analog↔digital alternations before the mixed-signal loop
-        // is declared non-converging.
-        const MAX_MS_ITER: usize = 20;
+        let plan = ConvergencePlan::default();
+        let max_ms_iter = plan.limits().max_mixed_signal_iter;
         let raw_solution = {
             // Plain Newton, escalating through the homotopy plan (gmin stepping,
             // then source stepping) if it stalls on stiff coupled junctions.
-            let plan = ConvergencePlan::default();
             let mut sol = plan.solve(self)?;
 
             // Mixed-signal convergence loop: alternate between the analog
@@ -162,15 +160,18 @@ impl<'a> DcSolver<'a> {
                 .capabilities()
                 .contains(ElementCapabilities::DIGITAL)
             {
-                for _ in 0..MAX_MS_ITER {
+                for _ in 0..max_ms_iter {
                     let solution_slice = sol.as_slice().ok_or_else(|| {
-                        crate::error::Error::simple("DC", "solution not contiguous")
+                        crate::error::Error::simple(
+                            crate::error::SolverDomain::Dc,
+                            "solution not contiguous",
+                        )
                     })?;
                     let changed = self.system.circuit.accept_and_run_digital(
                         solution_slice,
                         &self.system.context,
                         0.0,
-                    );
+                    )?;
                     if !changed {
                         break;
                     }

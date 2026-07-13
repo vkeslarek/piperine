@@ -707,7 +707,7 @@ impl AnalogInstance {
         let veff = self.limited_volts(&volts);
         let mut rhs = self.norton_rhs(&veff, &res, &jac);
         if self.kernel.has_reactive() && dt > 0.0 {
-            let (c0, c1, c2) = bdf_coeffs(tran_ctx.order, dt, tran_ctx.dt_prev);
+            let (c0, c1, c2) = bdf_coeffs(tran_ctx.integration, tran_ctx.order, dt, tran_ctx.dt_prev);
             let n = self.num_terminals();
             let mut qjac = vec![0.0; n * n];
             self.kernel
@@ -743,7 +743,7 @@ impl AnalogInstance {
         // branch's own current unknown. DC uses no flux (dt = 0 → the
         // inductor is a short, already forced to 0 V by `force_stamps`).
         if self.kernel.has_force_flux() && dt > 0.0 {
-            let (c0, c1, c2) = bdf_coeffs(tran_ctx.order, dt, tran_ctx.dt_prev);
+            let (c0, c1, c2) = bdf_coeffs(tran_ctx.integration, tran_ctx.order, dt, tran_ctx.dt_prev);
             stamps.extend(self.force_flux_stamps(&volts, states, c0, c1, c2));
         }
         self.update_limits(&volts);
@@ -1050,15 +1050,7 @@ fn dc_op_voltage(reference: &AnalogReference, dc_point: &DcAnalysisResult) -> Op
 /// Order 1 is backward-Euler (`c2 = 0`); order 2 is BDF2 (uniform-step limit
 /// `1.5/dt, -2/dt, 0.5/dt`). Falls back to order 1 when there is no valid
 /// previous step.
-fn bdf_coeffs(order: usize, dt0: f64, dt1: f64) -> (f64, f64, f64) {
-    if order >= 2 && dt1 > 0.0 {
-        let sum = dt0 + dt1;
-        let c0 = (2.0 * dt0 + dt1) / (dt0 * sum);
-        let c1 = -sum / (dt0 * dt1);
-        let c2 = dt0 / (dt1 * sum);
-        (c0, c1, c2)
-    } else {
-        let a = 1.0 / dt0;
-        (a, -a, 0.0)
-    }
+#[inline]
+fn bdf_coeffs(method: piperine_solver::math::integration::IntegrationMethod, order: usize, dt0: f64, dt1: f64) -> (f64, f64, f64) {
+    method.coeffs(dt0, dt1, order)
 }

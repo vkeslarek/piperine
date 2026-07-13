@@ -73,7 +73,7 @@ impl<'a> TransferFunctionSolver<'a> {
             .reference_for(&input_branch_var)
             .ok_or_else(|| {
                 crate::error::Error::simple(
-                    "TF",
+                    crate::error::SolverDomain::Tf,
                     format!(
                         "Input source branch '{}' not found",
                         options.input_source.component
@@ -87,7 +87,10 @@ impl<'a> TransferFunctionSolver<'a> {
             .netlist()
             .reference_for(&options.output)
             .ok_or_else(|| {
-                crate::error::Error::simple("TF", "Output variable not found in circuit")
+                crate::error::Error::simple(
+                    crate::error::SolverDomain::Tf,
+                    "Output variable not found in circuit",
+                )
             })?
             .clone();
 
@@ -100,7 +103,7 @@ impl<'a> TransferFunctionSolver<'a> {
                     .reference_for(&ref_var)
                     .ok_or_else(|| {
                         crate::error::Error::simple(
-                            "TF",
+                            crate::error::SolverDomain::Tf,
                             "Output reference node not found in circuit",
                         )
                     })?
@@ -200,9 +203,12 @@ impl<'a> TransferFunctionSolver<'a> {
 
     /// Determines the type of transfer function based on input/output variables.
     fn determine_tf_type(&self) -> TransferType {
-        let input_is_voltage = self.is_voltage_source();
+        // TF only supports voltage-source inputs today (D5). The branch's
+        // component name carries the convention; anything else is rejected
+        // with a loud error in `new` / `calculate_gain`. We still call this
+        // helper to classify the four transfer kinds for the result.
         let output_is_voltage = self.options.output.is_node();
-
+        let input_is_voltage = self.input_is_voltage_source().unwrap_or(false);
         match (input_is_voltage, output_is_voltage) {
             (true, true) => TransferType::VoltageGain,
             (true, false) => TransferType::Transconductance,
@@ -211,10 +217,19 @@ impl<'a> TransferFunctionSolver<'a> {
         }
     }
 
-    /// Checks if input source is a voltage source (by branch naming convention).
-    fn is_voltage_source(&self) -> bool {
-        // Simplified: check if branch name starts with "V"
-        self.options.input_source.component.starts_with('V')
+    /// Heuristic: a branch whose component label starts with `V` is a
+    /// voltage source. Replaced by an explicit error when the user supplies
+    /// any other kind; ngspice accepts current sources via the same `.tf`
+    /// syntax but Piperine has not lowered the path yet (D5).
+    fn input_is_voltage_source(&self) -> Option<bool> {
+        let c = &self.options.input_source.component;
+        if c.starts_with('V') {
+            Some(true)
+        } else if c.starts_with('I') {
+            Some(false)
+        } else {
+            None
+        }
     }
 
     /// Calculates transfer function gain.
@@ -242,16 +257,24 @@ impl<'a> TransferFunctionSolver<'a> {
         let mut system = FaerSparseLinearSystem::new(self.symbolic_matrix.size());
         system.apply_stamps(matrix_only_stamps);
 
-        // Now apply ONLY the unit excitation at input
-        let input_is_voltage = self.is_voltage_source();
+        // Now apply ONLY the unit excitation at input.
+        let input_is_voltage = self.input_is_voltage_source().ok_or_else(|| {
+            crate::error::Error::simple(
+                crate::error::SolverDomain::Tf,
+                format!(
+                    "TF: input source branch '{}' is not a recognised voltage/current source label",
+                    self.options.input_source.component
+                ),
+            )
+        })?;
 
         if input_is_voltage {
             // Voltage source: apply 1V by setting RHS[branch] = 1.0
             system.apply_stamps(vec![Stamp::Rhs(self.input_branch_ref.clone(), 1.0)]);
         } else {
             return Err(crate::error::Error::simple(
-                "TransferFunction",
-                "Current source input not yet fully implemented",
+                crate::error::SolverDomain::Tf,
+                "TF: current-source input is not supported (D5)",
             ));
         }
 
@@ -298,7 +321,9 @@ impl<'a> TransferFunctionSolver<'a> {
     /// For voltage source: R_in = V_source / I_source = 1V / I_branch
     /// For current source: R_in = V_across / I_source
     fn calculate_input_resistance(&self, solution: &Array1<f64>) -> crate::result::Result<f64> {
-        let input_is_voltage = self.is_voltage_source();
+        // `calculate_gain` already rejected anything that is not a voltage
+        // source; if we got here the input is a `V…` branch by construction.
+        let input_is_voltage = true;
 
         if input_is_voltage {
             // Voltage source: R_in = -1.0 / I_branch

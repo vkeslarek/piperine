@@ -11,8 +11,8 @@ use ndarray::Array1;
 
 #[derive(Clone)]
 pub struct FaerSymbolicMatrix {
-    pub size: usize,
-    pub pattern: SymbolicLu<usize>,
+    size: usize,
+    pattern: SymbolicLu<usize>,
 }
 
 impl SymbolicMatrix for FaerSymbolicMatrix {
@@ -35,7 +35,7 @@ impl SymbolicMatrix for FaerSymbolicMatrix {
 
         let mat = SparseColMat::try_new_from_triplets(size, size, &triplets).map_err(|err| {
             Error::cause(
-                "Problem assembling the space matrix",
+                crate::error::SolverDomain::SpaceMatrix,
                 "The library threw an error while trying to create the symbolic matrix",
                 Box::new(err),
             )
@@ -43,7 +43,7 @@ impl SymbolicMatrix for FaerSymbolicMatrix {
 
         let pattern = SymbolicLu::try_new(mat.symbolic()).map_err(|err| {
             Error::cause(
-                "Problem assembling the space matrix",
+                crate::error::SolverDomain::SpaceMatrix,
                 "The library threw an error while trying to create the symbolic matrix",
                 Box::new(err),
             )
@@ -95,7 +95,7 @@ impl<E: Scalar + 'static> SymbolicLinearSystem<E> for FaerSparseLinearSystem<E> 
         symbolic: &Self::SymbolicType,
     ) -> crate::result::Result<Array1<E>> {
         let a = SparseColMat::try_new_from_triplets(self.size, self.size, &self.triplets).map_err(
-            |err| Error::cause("Problem assembling the space matrix",
+            |err| Error::cause(crate::error::SolverDomain::SpaceMatrix,
                                "The library threw an error while trying to create the LHS of the sparse matrix", Box::new(err))
         )?;
 
@@ -108,7 +108,7 @@ impl<E: Scalar + 'static> SymbolicLinearSystem<E> for FaerSparseLinearSystem<E> 
         )
         .map_err(|err| {
             Error::cause(
-                "Problem assembling the space matrix",
+                crate::error::SolverDomain::SpaceMatrix,
                 "The library threw an error while trying to create the RHS of the sparse matrix",
                 Box::new(err),
             )

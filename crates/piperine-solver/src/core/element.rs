@@ -21,6 +21,11 @@ bitflags::bitflags! {
     /// scheduler build their plans from this descriptor instead of discovering
     /// behavior by trial downcast — a JIT-compiled PHDL block, a Rust plugin,
     /// and a future co-sim peripheral all advertise through the same table.
+    ///
+    /// Coarse grain (`ANALOG`/`DIGITAL`) describes which engines a model can
+    /// participate in. The finer flags describe which **analyses** the analog
+    /// path contributes to and which **dependencies** the model has, so the
+    /// solver can skip work it cannot affect.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct ElementCapabilities: u32 {
         /// Contributes to the analog system (MNA stamps in DC/AC/transient/noise).
@@ -30,6 +35,38 @@ bitflags::bitflags! {
         /// Its digital logic samples analog node voltages (A2D), so it must be
         /// evaluated on every analog solve even without a pending digital event.
         const SAMPLES_ANALOG = 1 << 2;
+
+        // ── Per-analysis participation (subset of `ANALOG`) ──────────────────
+        /// `load_dc` contributes to the DC operating point.
+        const LOADS_DC = 1 << 3;
+        /// `load_ac` contributes to the small-signal AC sweep.
+        const LOADS_AC = 1 << 4;
+        /// `load_transient` contributes to time-domain integration.
+        const LOADS_TRAN = 1 << 5;
+        /// `noise_current_psd` returns non-empty sources.
+        const EMITS_NOISE = 1 << 6;
+
+        // ── Cross-domain dependencies ────────────────────────────────────────
+        /// Analog load reads the digital net snapshot (D2A bridge). Implies
+        /// `ANALOG`. The DC and transient drivers must order the digital settle
+        /// before stamping this element.
+        const DEPENDS_ON_DIGITAL = 1 << 7;
+
+        // ── Loader/ABI capabilities ──────────────────────────────────────────
+        /// The model allocated internal MNA unknowns (auxiliary branch currents,
+        /// hidden states) during circuit construction. The matrix shape is fixed
+        /// before analysis, but the loader needs this flag to know the element
+        /// took the allocation seam.
+        const HAS_INTERNAL_UNKNOWNS = 1 << 8;
+        /// The model owns hidden state with non-trivial checkpoint/rollback
+        /// (delayed outputs, latches, A2D detector state). The transient solver
+        /// must drive `Element::checkpoint_state`/`rollback_state`/`commit_state`
+        /// around candidate timesteps. (Hooks land with Phase 4.)
+        const SUPPORTS_ROLLBACK = 1 << 9;
+        /// The model overrides `list_queries`/`query` with typed metadata
+        /// beyond the `read_opvars` default. Hosts can rely on this flag to skip
+        /// the default scan.
+        const SUPPORTS_QUERIES = 1 << 10;
     }
 }
 

@@ -139,7 +139,7 @@ mod tests {
             Box::new(MockInverter { id: 1, input: DigitalNet(1), output: DigitalNet(2), delay: 0.0 }),
             Box::new(MockInverter { id: 2, input: DigitalNet(2), output: DigitalNet(3), delay: 0.0 }),
         ];
-        state.evaluate_until_stable(1.0, &mut devices);
+        state.evaluate_until_stable(1.0, &mut devices, Default::default(), &[]).unwrap();
 
         assert_eq!(state.nets[0], LogicValue::Zero);
         assert_eq!(state.nets[1], LogicValue::One);
@@ -190,5 +190,25 @@ mod tests {
             (5.0, LogicValue::Z),
             (5.0, LogicValue::One),
         ]);
+    }
+
+    #[test]
+    fn digital_state_carries_source_labels_or_anonymous_fallback() {
+        let mut state = DigitalState::new(3);
+
+        // No labels attached — defaults to d{idx}.
+        assert_eq!(state.label_or_default(DigitalNet(0)), "d0");
+        assert_eq!(state.label_or_default(DigitalNet(2)), "d2");
+
+        // Attach a hierarchical source label and verify it survives a checkpoint
+        // round-trip — used by result mappers and diagnostics.
+        state.set_label(DigitalNet(1), "top.u1.clk");
+        assert_eq!(state.label_or_default(DigitalNet(1)), "top.u1.clk");
+
+        state.checkpoint();
+        state.set_label(DigitalNet(1), "scratch");
+        assert_eq!(state.label_or_default(DigitalNet(1)), "scratch");
+        state.rollback();
+        assert_eq!(state.label_or_default(DigitalNet(1)), "top.u1.clk");
     }
 }

@@ -93,7 +93,11 @@ impl DigitalTopology {
 pub struct DigitalState {
     pub nets: Vec<LogicValue>,
     pub event_queue: BinaryHeap<Reverse<DigitalEvent>>,
-    checkpoint: Option<(Vec<LogicValue>, BinaryHeap<Reverse<DigitalEvent>>)>,
+    /// Stable source-level labels for each digital net, parallel to `nets`.
+    /// Empty when the circuit builder does not attach labels — the public
+    /// lookup then falls back to the anonymous `d{idx}` form.
+    labels: Vec<String>,
+    checkpoint: Option<(Vec<LogicValue>, BinaryHeap<Reverse<DigitalEvent>>, Vec<String>)>,
 }
 
 impl DigitalState {
@@ -101,7 +105,43 @@ impl DigitalState {
         Self {
             nets: vec![LogicValue::X; num_nets],
             event_queue: BinaryHeap::new(),
+            labels: Vec::new(),
             checkpoint: None,
+        }
+    }
+
+    /// Build with explicit labels (one per net, in dense order).
+    pub fn with_labels(num_nets: usize, labels: Vec<String>) -> Self {
+        assert_eq!(
+            labels.len(),
+            num_nets,
+            "with_labels: label count must match net count"
+        );
+        Self {
+            nets: vec![LogicValue::X; num_nets],
+            event_queue: BinaryHeap::new(),
+            labels,
+            checkpoint: None,
+        }
+    }
+
+    /// Attach a label to a single digital net. Existing nets beyond the
+    /// supplied index keep their labels (or `d{i}` if none was set).
+    pub fn set_label(&mut self, net: DigitalNet, label: impl Into<String>) {
+        let idx = net.0;
+        if self.labels.len() <= idx {
+            self.labels
+                .resize(idx + 1, format!("d{}", self.labels.len()));
+        }
+        self.labels[idx] = label.into();
+    }
+
+    /// Look up the stable label for a digital net. Returns the anonymous
+    /// `d{idx}` form when no source-level label was attached.
+    pub fn label_or_default(&self, net: DigitalNet) -> String {
+        match self.labels.get(net.0) {
+            Some(s) if !s.is_empty() => s.clone(),
+            _ => format!("d{}", net.0),
         }
     }
 
@@ -114,13 +154,18 @@ impl DigitalState {
     }
 
     pub fn checkpoint(&mut self) {
-        self.checkpoint = Some((self.nets.clone(), self.event_queue.clone()));
+        self.checkpoint = Some((
+            self.nets.clone(),
+            self.event_queue.clone(),
+            self.labels.clone(),
+        ));
     }
 
     pub fn rollback(&mut self) {
-        if let Some((nets, queue)) = self.checkpoint.take() {
+        if let Some((nets, queue, labels)) = self.checkpoint.take() {
             self.nets = nets;
             self.event_queue = queue;
+            self.labels = labels;
         }
     }
 
@@ -129,9 +174,24 @@ impl DigitalState {
     }
 
     /// Simple fixed-point evaluation (fallback, no topology required).
-    pub fn evaluate_until_stable(&mut self, t: f64, devices: &mut [Box<dyn Element>]) {
-        let epsilon = 1e-12;
-        let max_delta_cycles = 1000;
+    ///
+    /// `limits` controls the delta-cycle cap and the time-equality epsilon.
+    /// `analog_slice` is the latest analog solution handed to elements that
+    /// declared [`ElementCapabilities::SAMPLES_ANALOG`]; pass `&[]` when no
+    /// element in the circuit samples analog voltages (the common case for
+    /// pure-digital circuits).
+    /// Returns `Err` if the cap is reached — the scheduler used to log a
+    /// warning and continue; that is no longer acceptable for a production
+    /// simulation. A successful run leaves the network settled at `t`.
+    pub fn evaluate_until_stable(
+        &mut self,
+        t: f64,
+        devices: &mut [Box<dyn Element>],
+        limits: crate::solver::convergence::PlanLimits,
+        analog_slice: &[f64],
+    ) -> crate::result::Result<()> {
+        let epsilon = limits.digital_time_epsilon;
+        let max_delta_cycles = limits.max_delta_cycles;
         let mut delta_count = 0;
         let mut seq: u64 = 0;
 
@@ -159,7 +219,7 @@ impl DigitalState {
             // device's register writes from the pre-settle net snapshot
             // before any device's comb output is recomputed, so a register
             // chain samples the same pre-edge values instead of racing.
-            let ctx = EvalCtx { time: t, nets: &self.nets, analog: &[] };
+            let ctx = EvalCtx { time: t, nets: &self.nets, analog: analog_slice };
             let mut fired = vec![false; devices.len()];
             for (i, device) in devices.iter_mut().enumerate() {
                 if device.has_input_on(&changed) {
@@ -175,8 +235,13 @@ impl DigitalState {
 
             delta_count += 1;
             if delta_count >= max_delta_cycles {
-                log::warn!("Delta cycle limit ({}) exceeded at t={}. Possible combinational loop.", max_delta_cycles, t);
-                break;
+                return Err(crate::error::Error::simple(
+                    crate::error::SolverDomain::Digital,
+                    format!(
+                        "Delta cycle limit ({}) exceeded at t={}. Possible combinational loop.",
+                        max_delta_cycles, t
+                    ),
+                ));
             }
 
             let has_more_at_t = self.event_queue.peek()
@@ -185,18 +250,27 @@ impl DigitalState {
 
             if !has_more_at_t { break; }
         }
+        Ok(())
     }
 
     /// DAG-ordered evaluation (Verilator-style).
+    ///
+    /// `analog_slice` is forwarded to elements that declared
+    /// [`ElementCapabilities::SAMPLES_ANALOG`] via `EvalCtx.analog`.
+    /// Returns `Err` if the iteration cap is reached instead of warning; the
+    /// cap is shared with [`evaluate_until_stable`] through `limits`.
     pub fn evaluate_dag_ordered(
         &mut self,
         t: f64,
         devices: &mut [Box<dyn Element>],
         topology: &DigitalTopology,
-    ) {
-        let epsilon = 1e-12;
+        limits: crate::solver::convergence::PlanLimits,
+        analog_slice: &[f64],
+    ) -> crate::result::Result<()> {
+        let epsilon = limits.digital_time_epsilon;
+        let max_iters = limits.max_delta_cycles;
         let n = topology.topo_order.len();
-        if n == 0 { return; }
+        if n == 0 { return Ok(()); }
 
         // Drain events at t into initial changed set
         let mut all_changed: HashSet<DigitalNet> = HashSet::new();
@@ -212,7 +286,7 @@ impl DigitalState {
                 _ => break,
             }
         }
-        if all_changed.is_empty() { return; }
+        if all_changed.is_empty() { return Ok(()); }
 
         // Phase 1 of the delta cycle (Verilator-style two-phase register
         // commit): every device samples the same pre-settle net snapshot and
@@ -225,7 +299,7 @@ impl DigitalState {
         let mut seq: u64 = 0;
         let mut seq_fired = vec![false; devices.len()];
         {
-            let ctx = EvalCtx { time: t, nets: &self.nets, analog: &[] };
+            let ctx = EvalCtx { time: t, nets: &self.nets, analog: analog_slice };
             for &dev_idx in &topology.topo_order {
                 let device = &mut devices[dev_idx];
                 if device.has_input_on(&all_changed) {
@@ -234,7 +308,6 @@ impl DigitalState {
             }
         }
 
-        const MAX_ITERS: usize = 1000;
         let mut restart_from: usize = 0;
 
         // Reused across devices — allocating these per device per delta
@@ -243,7 +316,7 @@ impl DigitalState {
         let mut prev_outs: Vec<LogicValue> = Vec::new();
         let mut local_q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
 
-        'outer: for iter in 0..MAX_ITERS {
+        'outer: for iter in 0..max_iters {
             output_changed_at.iter_mut().for_each(|c| *c = false);
 
             for (offset, &dev_idx) in topology.topo_order[restart_from..].iter().enumerate() {
@@ -264,7 +337,7 @@ impl DigitalState {
                 {
                     // Scope ctx so the immutable borrow of self.nets ends
                     // before we mutate it below when draining local_q.
-                    let ctx = EvalCtx { time: t, nets: &self.nets, analog: &[] };
+                    let ctx = EvalCtx { time: t, nets: &self.nets, analog: analog_slice };
                     let mut sink = QueueSink::new(&mut local_q, t, dev_idx, &mut seq);
                     device.comb_phase(&ctx, &mut sink);
                 }
@@ -305,14 +378,18 @@ impl DigitalState {
                 None => break 'outer,
                 Some(pos) => {
                     restart_from = pos;
-                    if iter + 1 == MAX_ITERS {
-                        log::warn!(
-                            "DAG digital eval: back-edge loop did not converge in {} iters at t={}",
-                            MAX_ITERS, t
-                        );
+                    if iter + 1 == max_iters {
+                        return Err(crate::error::Error::simple(
+                            crate::error::SolverDomain::Digital,
+                            format!(
+                                "DAG digital eval: back-edge loop did not converge in {} iters at t={}",
+                                max_iters, t
+                            ),
+                        ));
                     }
                 }
             }
         }
+        Ok(())
     }
 }
