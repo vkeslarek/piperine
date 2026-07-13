@@ -44,7 +44,7 @@ crates/
 │                           and device/ (AnalogInstance stamping, CircuitCompiler)
 ├── piperine-solver/        Newton-Raphson MNA, analysis/ (dc, ac, transient, noise, tf),
 │                           math/ (faer), osdi/ loader
-├── piperine-bench/         bench runtime: SimHost, SimTasks, result objects, BenchRunner
+├── piperine-bench/         bench runtime: SimHost, BenchTasks, result objects, BenchRunner
 ├── piperine-cli/           `piperine` CLI (check, fmt, run, test, new, add, remove, tree)
 ├── piperine-project/       Piperine.toml + git dependency resolver
 └── piperine-lang-server/   LSP server (editors/vscode/ is the extension)
@@ -55,7 +55,7 @@ crates/
 - **Fail loud.** Unlowered IR constructs return `CodegenError::Unsupported`; unimplemented
   bench tasks are elaboration errors via the `bench_task_implemented` allowlist
   (`piperine-lang/src/eval/tasks.rs`). Never emit a silent `0.0` or a no-op.
-- **Allowlist discipline.** A new bench task needs the allowlist entry *and* a `SimTask`
+- **Allowlist discipline.** A new bench task needs the allowlist entry *and* a `BenchTask`
   impl (`piperine-bench/src/tasks.rs`) in the same change, plus the bench spec §11 row
   (`crates/piperine-bench/docs/SPEC.md`).
 - **No macro magic.** Data tables + plain helpers. Every helper has an owner (struct

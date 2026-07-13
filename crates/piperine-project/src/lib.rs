@@ -41,6 +41,12 @@ pub struct GitDependency {
     pub version: Option<String>,
     pub branch: Option<String>,
     pub rev: Option<String>,
+    /// Directory inside the repository holding the package/plugin — the
+    /// official-plugins monorepo case (`git = ".../plugins", subdir =
+    /// "piperine-spice"`). Resolution checks out the whole repository and
+    /// points the resolved path at `<checkout>/<subdir>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subdir: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

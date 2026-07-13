@@ -196,7 +196,9 @@ impl ElabPass for AttachBenches {
                 let mut syscalls = Vec::new();
                 f.body.collect_syscalls(&mut syscalls);
                 for name in syscalls {
-                    if !crate::eval::tasks::bench_task_implemented(&name) {
+                    if !crate::eval::tasks::bench_task_implemented(&name)
+                        && !elab.ctx.bench_tasks.contains(&name)
+                    {
                         return Err(ElabError::from(ElabErrorKind::Other(format!(
                             "`${name}` is not yet implemented in a bench (piperine-bench/docs/SPEC.md §7/§11)"
                         ))));

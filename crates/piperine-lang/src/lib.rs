@@ -69,7 +69,7 @@ pub fn parse_and_elaborate(input: &str, source_map: &SourceMap) -> Result<Design
 
 /// Like [`parse_and_elaborate`], but seeds the elaboration registries first —
 /// the hook plugin hosts use to contribute attribute schemas before the
-/// design elaborates (SPEC Part VI §10).
+/// design elaborates (SPEC Part VI §11).
 pub fn parse_and_elaborate_seeded(
     input: &str,
     source_map: &SourceMap,

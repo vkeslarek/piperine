@@ -7,23 +7,23 @@ use std::path::PathBuf;
 
 use piperine_plugin::{PluginError, PluginHost, TrustMode};
 
-/// Build the fixture cdylib and return its path. `cargo test` does not
-/// necessarily build sibling cdylib targets, so build it explicitly.
+/// Build the fixture example cdylib and return its path. `cargo test` does
+/// not build example targets, so build it explicitly.
 fn fixture_cdylib() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace = manifest_dir.parent().unwrap().parent().unwrap();
     let status = std::process::Command::new(env!("CARGO"))
-        .args(["build", "-p", "piperine-plugin-fixture"])
+        .args(["build", "-p", "piperine-plugin", "--example", "fixture_plugin"])
         .current_dir(workspace)
         .status()
-        .expect("cargo build fixture");
+        .expect("cargo build fixture example");
     assert!(status.success(), "fixture build failed");
     let lib = format!(
-        "{}piperine_plugin_fixture{}",
+        "{}fixture_plugin{}",
         std::env::consts::DLL_PREFIX,
         std::env::consts::DLL_SUFFIX
     );
-    workspace.join("target").join("debug").join(lib)
+    workspace.join("target").join("debug").join("examples").join(lib)
 }
 
 /// A throwaway project whose `[plugins]` names the fixture by path.

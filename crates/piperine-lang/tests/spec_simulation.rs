@@ -739,6 +739,52 @@ fn sim_dc_diode_pnjlim_converges() {
     assert!((i_r - i_d).abs() < i_r * 1e-3, "KCL: I_R={i_r} vs I_D={i_d}");
 }
 
+/// Regression: a `var` reassigned under a guard and reused many times, plus a
+/// param-only reassignment chain, used to expand the flattener's `PomExpr`
+/// tree **multiplicatively** and OOM the compiler (the diode did exactly
+/// this). The shared-temporary tape (`jit/flatten.rs`) keeps it linear —
+/// this must compile in well under a second and converge, not blow up.
+#[test]
+fn analog_var_reuse_does_not_explode() {
+    let (_prog, _circuit, result) = dc_solve("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
+        analog VSource { V(p, n) <- dc; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Diode ( inout a : Electrical, inout c : Electrical ) {
+            param is_sat : Real = 1e-14; param vte : Real = 0.02585; param vcrit : Real = 0.7;
+        }
+        analog Diode {
+            // Param-only reassignment chain (like ngspice's 25-step tBrkdwnV
+            // fixed point) — pure inlining would make this exponential.
+            var k : Real = vte;
+            k = k + vte * 0.0; k = k + vte * 0.0; k = k + vte * 0.0;
+            k = k + vte * 0.0; k = k + vte * 0.0; k = k + vte * 0.0;
+            k = k + vte * 0.0; k = k + vte * 0.0; k = k + vte * 0.0; k = k + vte * 0.0;
+            // Guarded reassignment of a voltage-dependent var, reused many
+            // times downstream (this is the multiplicative-blowup pattern).
+            var vd : Real = $limit(\"pnjlim\", V(a, c), 0.0, k, vcrit);
+            if (vd > 100.0) { vd = 100.0; }
+            var e : Real = limexp(vd / k);
+            var acc : Real = e + e + e + e + e + e + e + e + e + e
+                           + e + e + e + e + e + e + e + e + e + e;
+            I(a, c) <+ is_sat * (acc / 20.0 - 1.0);
+        }
+        mod Top ( inout vin : Electrical, inout vd : Electrical ) {
+            v1 : VSource ( vin, gnd ) { .dc = 5.0 };
+            r1 : Resistor ( vin, vd );
+            d1 : Diode ( vd, gnd );
+        }
+    ", "Top");
+
+    let v_d = result.get(piperine_solver::analog::AnalogVariable::Node(
+        NodeIdentifier::Anonymous(2)
+    )).expect("V(d)");
+    // acc/20 == e, so the device is the same Shockley diode: ~0.69 V drop.
+    assert!(v_d > 0.5 && v_d < 0.9, "reused-var diode drop {v_d}");
+}
+
 // ═════════════ Section Sim — Transient with time-varying source ═══════════════
 
 /// SPEC — RC charging: 5V step into R=1k C=1µF (τ=1ms), simulate 5ms.

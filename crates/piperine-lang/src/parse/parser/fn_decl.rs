@@ -73,7 +73,7 @@ impl Parse for FnSig {
 impl Parse for FnDecl {
     /// Parses a full function declaration: `fn name<TYPE>(params) -> RetType { body }`.
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
-        Self::parse_with_extern(parser, false)
+        Self::parse_with_extern(parser, false, false)
     }
 }
 
@@ -83,10 +83,13 @@ impl FnDecl {
     /// declaration whose body is provided by the compiler.
     pub(crate) fn parse_with_extern(
         parser: &mut Parser,
+        is_pub: bool,
         is_extern: bool,
     ) -> Result<Self, crate::parse::error::ParseError> {
         let attrs = parser.parse_attributes()?;
-        let is_pub = parser.eat_ident("pub");
+        // `pub`/`extern` may have been consumed by the item dispatcher
+        // already; tolerate them here too for direct callers.
+        let is_pub = parser.eat_ident("pub") || is_pub;
         parser.eat_ident("extern");
         parser.expect_ident_str("fn")?;
         let sig = FnSig::parse(parser)?;

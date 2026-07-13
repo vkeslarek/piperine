@@ -2,3 +2,6 @@
 //! first delivery (Plugin plan D7); WASM and process land as later phases.
 
 pub mod native;
+pub mod process;
+pub mod wasm;
+pub mod wire_hosted;

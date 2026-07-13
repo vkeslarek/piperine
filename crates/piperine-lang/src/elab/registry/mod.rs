@@ -17,6 +17,9 @@ pub struct ElabContext {
     pub callables: CallableRegistry,
     pub events: EventRegistry,
     pub schemas: SchemaRegistry,
+    /// Extra bench task names contributed by plugins (SPEC Part VI §6) —
+    /// consulted by the bench allowlist gate alongside the builtin set.
+    pub bench_tasks: std::collections::HashSet<String>,
 }
 
 impl Default for ElabContext {
@@ -49,6 +52,7 @@ impl ElabContext {
             callables: CallableRegistry::new(),
             events: EventRegistry::with_builtins(),
             schemas: SchemaRegistry::new(),
+            bench_tasks: std::collections::HashSet::new(),
         }
     }
 }

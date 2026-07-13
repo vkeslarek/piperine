@@ -31,6 +31,41 @@ pub enum ResolverError {
     },
     #[error("Failed to process Piperine.lock: {0}")]
     LockfileError(#[from] LockError),
+    #[error(
+        "Bad `subdir` for package '{package}': {reason} (subdir = {subdir:?})"
+    )]
+    Subdir {
+        package: String,
+        subdir: String,
+        reason: String,
+    },
+}
+
+/// Resolve a git dependency's `subdir` inside its checkout: relative,
+/// no `..`, and the directory must exist — anything else fails loud.
+fn apply_subdir(
+    package: &str,
+    checkout: &Path,
+    subdir: Option<&str>,
+) -> Result<PathBuf, ResolverError> {
+    let Some(subdir) = subdir else { return Ok(checkout.to_path_buf()) };
+    let bad = |reason: &str| ResolverError::Subdir {
+        package: package.to_string(),
+        subdir: subdir.to_string(),
+        reason: reason.to_string(),
+    };
+    let rel = Path::new(subdir);
+    if rel.is_absolute() {
+        return Err(bad("must be a relative path inside the repository"));
+    }
+    if rel.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        return Err(bad("must not contain `..`"));
+    }
+    let dir = checkout.join(rel);
+    if !dir.is_dir() {
+        return Err(bad("no such directory in the checked-out repository"));
+    }
+    Ok(dir)
 }
 
 /// A fully resolved dependency map, mapping package names to their local on-disk paths.
@@ -92,7 +127,8 @@ impl Resolver {
                     sync_and_checkout(&git_dep.git, &target_dir, &target_str).map_err(|e| {
                         ResolverError::Git { package: name.clone(), source: e }
                     })?;
-                    resolved.insert(name.clone(), target_dir);
+                    let dir = apply_subdir(name, &target_dir, git_dep.subdir.as_deref())?;
+                    resolved.insert(name.clone(), dir);
                 }
             }
         }
@@ -197,11 +233,12 @@ impl Resolver {
                         ));
                     }
 
-                    self.resolved_paths
-                        .insert(pkg_name.clone(), target_dir.clone());
+                    let pkg_dir =
+                        apply_subdir(&pkg_name, &target_dir, git_dep.subdir.as_deref())?;
+                    self.resolved_paths.insert(pkg_name.clone(), pkg_dir.clone());
 
                     // Recursively resolve
-                    let manifest_path = target_dir.join("Piperine.toml");
+                    let manifest_path = pkg_dir.join("Piperine.toml");
                     if manifest_path.exists() {
                         let manifest = PiperineToml::load(&manifest_path).map_err(|e| {
                             ResolverError::ManifestLoad {
@@ -216,5 +253,52 @@ impl Resolver {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn subdir_none_is_the_checkout_itself() {
+        let dir = std::env::temp_dir();
+        assert_eq!(apply_subdir("p", &dir, None).unwrap(), dir);
+    }
+
+    #[test]
+    fn subdir_resolves_inside_the_checkout() {
+        let root = std::env::temp_dir().join("piperine-subdir-test");
+        let inner = root.join("piperine-spice");
+        std::fs::create_dir_all(&inner).unwrap();
+        assert_eq!(apply_subdir("spice", &root, Some("piperine-spice")).unwrap(), inner);
+    }
+
+    #[test]
+    fn subdir_escapes_fail_loud() {
+        let root = std::env::temp_dir();
+        apply_subdir("p", &root, Some("../outside")).unwrap_err();
+        apply_subdir("p", &root, Some("/etc")).unwrap_err();
+        apply_subdir("p", &root, Some("no-such-dir-here")).unwrap_err();
+    }
+
+    #[test]
+    fn subdir_parses_from_toml() {
+        let toml = r#"
+[project]
+name = "demo"
+version = "0.1.0"
+authors = []
+edition = "2024"
+
+[plugins.spice]
+git = "https://example.com/plugins"
+subdir = "piperine-spice"
+"#;
+        let manifest: crate::PiperineToml = toml::from_str(toml).unwrap();
+        let crate::DependencySource::Git(dep) = &manifest.plugins["spice"] else {
+            panic!("expected a git source");
+        };
+        assert_eq!(dep.subdir.as_deref(), Some("piperine-spice"));
     }
 }

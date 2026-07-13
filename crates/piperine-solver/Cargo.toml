@@ -1,6 +1,5 @@
 [package]
 name = "piperine-solver"
-build = "build.rs"
 version.workspace = true
 edition.workspace = true
 
@@ -16,7 +15,6 @@ ndarray.workspace = true
 bimap.workspace = true
 log = "0.4"
 rayon.workspace = true
-libloading.workspace = true
 bitflags = "2.6"
 thiserror.workspace = true
 

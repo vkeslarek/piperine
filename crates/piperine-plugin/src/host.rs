@@ -2,27 +2,39 @@
 //! register → dispatch. An empty `[plugins]` section yields an inert host;
 //! the zero-plugin path costs one `is_empty` check.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use piperine_bench::plugins::BenchPlugins;
 use piperine_codegen::device::{DeviceProvider, PluginDeviceSpec};
 use piperine_lang::elab::registry::{AttrField, ElabContext};
+use piperine_lang::eval::{EvalError, Value};
+use piperine_lang::Design;
 use piperine_project::resolver::Resolver;
 use piperine_project::PiperineToml;
 use piperine_solver::core::device::Device;
 
 use crate::backend::native::{self, NativePlugin};
+use crate::capability::HostCtx;
 use crate::contributions::{Contributions, Registrar};
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::{Abi, Manifest};
 use crate::trust::{artifact_hash, ensure_trusted, TrustMode};
+use crate::view::{DesignStaging, SolveResultView};
 use crate::Plugin;
 
 /// One loaded plugin: its manifest plus the (backend-owning) instance.
 struct LoadedPlugin {
     manifest: Manifest,
-    /// Keeps the plugin (and, for native, its library) alive. In-process
-    /// plugins (tests, builtin hosts) have no library to hold.
-    _instance: PluginInstance,
+    instance: PluginInstance,
+}
+
+impl LoadedPlugin {
+    fn plugin(&self) -> &dyn Plugin {
+        match &self.instance {
+            PluginInstance::Native(n) => n.plugin.as_ref(),
+            PluginInstance::InProcess(p) => p.as_ref(),
+        }
+    }
 }
 
 enum PluginInstance {
@@ -35,12 +47,19 @@ enum PluginInstance {
 pub struct PluginHost {
     plugins: Vec<LoadedPlugin>,
     contributions: Contributions,
+    /// Where `Piperine.toml` lives — every capability-gated path resolves
+    /// against this.
+    project_root: PathBuf,
 }
 
 impl PluginHost {
     /// An inert host — no plugins, every dispatch a no-op.
     pub fn empty() -> Self {
-        Self { plugins: Vec::new(), contributions: Contributions::default() }
+        Self {
+            plugins: Vec::new(),
+            contributions: Contributions::default(),
+            project_root: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -50,6 +69,12 @@ impl PluginHost {
     /// Loaded plugin names, alphabetical.
     pub fn plugin_names(&self) -> Vec<&str> {
         self.plugins.iter().map(|p| p.manifest.name.as_str()).collect()
+    }
+
+    /// Rebase capability-gated paths onto `root` (tests, embedded hosts).
+    pub fn with_project_root(mut self, root: &Path) -> Self {
+        self.project_root = root.to_path_buf();
+        self
     }
 
     /// Build a host from in-process plugin instances — the test/builtin
@@ -84,7 +109,8 @@ impl PluginHost {
         })?;
 
         let mut host = Self::empty();
-        // Deterministic load order (SPEC Part VI §8.4).
+        host.project_root = root.to_path_buf();
+        // Deterministic load order (SPEC Part VI §8.1).
         let mut names: Vec<&String> = resolved.keys().collect();
         names.sort();
         for name in names {
@@ -100,11 +126,11 @@ impl PluginHost {
             ensure_trusted(root, &manifest, &source, &hash, trust)?;
             let instance = match manifest.abi {
                 Abi::Native => PluginInstance::Native(native::load(&manifest.name, &artifact)?),
-                Abi::Wasm | Abi::Process => {
-                    return Err(PluginError::Other {
-                        plugin: manifest.name.clone(),
-                        message: format!("`{}` backend is not implemented yet", manifest.abi.as_str()),
-                    });
+                Abi::Wasm => {
+                    PluginInstance::InProcess(crate::backend::wasm::load(&manifest, &artifact)?)
+                }
+                Abi::Process => {
+                    PluginInstance::InProcess(crate::backend::process::load(&manifest, &artifact)?)
                 }
             };
             host.register_one(&manifest.name.clone(), instance, manifest)?;
@@ -134,8 +160,87 @@ impl PluginHost {
         if let Some(err) = errors.into_iter().next() {
             return Err(err);
         }
-        self.plugins.push(LoadedPlugin { manifest, _instance: instance });
+        self.plugins.push(LoadedPlugin { manifest, instance });
         Ok(())
+    }
+
+    /// A capability facade for `plugin`, from its manifest permissions.
+    fn ctx_for(&self, plugin: &LoadedPlugin) -> HostCtx {
+        HostCtx::new(&plugin.manifest.name, &self.project_root, plugin.manifest.permissions.clone())
+    }
+
+    /// Fire one hook on every plugin, alphabetically; the first failure
+    /// aborts the run as P0005 (fail loud — a failed hook is never skipped).
+    fn fire(
+        &self,
+        hook: &'static str,
+        mut f: impl FnMut(&dyn Plugin, &mut HostCtx) -> PluginResult<()>,
+    ) -> Result<(), String> {
+        for loaded in &self.plugins {
+            let mut cx = self.ctx_for(loaded);
+            f(loaded.plugin(), &mut cx).map_err(|e| {
+                PluginError::HookFailed {
+                    hook,
+                    plugin: loaded.manifest.name.clone(),
+                    message: e.to_string(),
+                }
+                .to_string()
+            })?;
+        }
+        Ok(())
+    }
+
+    /// Hook 1 — fired by whoever drives parsing (CLI), on the raw source.
+    pub fn fire_after_parse(&self, source: &str) -> Result<(), String> {
+        self.fire("after_parse", |p, cx| p.after_parse(cx, source))
+    }
+
+    /// Hook 2 — fired once the design elaborates. Native/in-process
+    /// plugins see the real `&Design`; nothing is snapshotted for them.
+    pub fn fire_after_elaborate(&self, design: &Design) -> Result<(), String> {
+        if self.is_empty() {
+            return Ok(());
+        }
+        self.fire("after_elaborate", |p, cx| p.after_elaborate(cx, design))
+    }
+
+    /// The plugin system's own `piperine plugin list` view: name, abi,
+    /// and contribution counts.
+    pub fn describe(&self) -> Vec<String> {
+        self.plugins
+            .iter()
+            .map(|l| {
+                let name = &l.manifest.name;
+                let devices = self.contributions.devices.values().filter(|(o, _)| o == name).count();
+                let schemas = self.contributions.schemas.values().filter(|(o, _)| o == name).count();
+                let tasks = self.contributions.bench_tasks.values().filter(|(o, _)| o == name).count();
+                let scripts: Vec<&str> = self
+                    .contributions
+                    .scripts
+                    .iter()
+                    .filter(|(_, (o, _))| o == name)
+                    .map(|(n, _)| n.as_str())
+                    .collect();
+                format!(
+                    "{name} ({}): {devices} device(s), {schemas} schema(s), {tasks} bench task(s), scripts: [{}]",
+                    l.manifest.abi.as_str(),
+                    scripts.join(", ")
+                )
+            })
+            .collect()
+    }
+
+    /// Run a plugin-contributed CLI script (SPEC Part VI §10). `None` when
+    /// no loaded plugin registered `name`.
+    pub fn run_script(&self, name: &str, args: &[String]) -> Option<Result<i32, PluginError>> {
+        let (owner, handler) = self.contributions.scripts.get(name)?;
+        let loaded = self.plugins.iter().find(|l| &l.manifest.name == owner)?;
+        let mut cx = self.ctx_for(loaded);
+        Some(handler.invoke(args, &mut cx).map_err(|e| PluginError::HookFailed {
+            hook: "script",
+            plugin: owner.clone(),
+            message: e,
+        }))
     }
 
     /// Seed the elaboration registries (Plugin plan D2): the plugin
@@ -165,6 +270,67 @@ impl PluginHost {
         for (name, (_owner, fields)) in &self.contributions.schemas {
             ctx.schemas.register_declared(name, fields.clone());
         }
+        // Plugin bench tasks join the allowlist gate (SPEC Part VI §6).
+        for name in self.contributions.bench_tasks.keys() {
+            ctx.bench_tasks.insert(name.clone());
+        }
+    }
+}
+
+/// The bench seam (Plugin plan Phase 3): `SimSession` fires the per-analysis
+/// hooks and dispatches plugin bench tasks through this.
+impl BenchPlugins for PluginHost {
+    fn transform_design(&self, design: &Design) -> Result<(), String> {
+        if self.is_empty() {
+            return Ok(());
+        }
+        // Per-plugin staging handles: each carries its writer name so a
+        // collision surfaces as a typed P0008 naming both parties.
+        for loaded in &self.plugins {
+            let staging = DesignStaging::new(design, &loaded.manifest.name);
+            let mut cx = self.ctx_for(loaded);
+            loaded
+                .plugin()
+                .transform_design(&mut cx, &staging)
+                .map_err(|e| match e {
+                    conflict @ PluginError::StagingConflict { .. } => conflict.to_string(),
+                    other => PluginError::HookFailed {
+                        hook: "transform_design",
+                        plugin: loaded.manifest.name.clone(),
+                        message: other.to_string(),
+                    }
+                    .to_string(),
+                })?;
+        }
+        Ok(())
+    }
+
+    fn before_lower(&self, design: &Design) -> Result<(), String> {
+        if self.is_empty() {
+            return Ok(());
+        }
+        self.fire("before_lower", |p, cx| p.before_lower(cx, design))
+    }
+
+    fn after_solve(&self, analysis: &str, node_voltages: &[(String, f64)]) -> Result<(), String> {
+        if self.is_empty() {
+            return Ok(());
+        }
+        let result = SolveResultView {
+            analysis: analysis.to_string(),
+            node_voltages: node_voltages.to_vec(),
+        };
+        self.fire("after_solve", |p, cx| p.after_solve(cx, &result))
+    }
+
+    fn run_bench_task(&self, name: &str, args: Vec<Value>) -> Option<Result<Value, EvalError>> {
+        let (owner, task) = self.contributions.bench_tasks.get(name)?;
+        let loaded = self.plugins.iter().find(|l| &l.manifest.name == owner)?;
+        let mut cx = self.ctx_for(loaded);
+        Some(
+            task.run(args, &mut cx)
+                .map_err(|e| EvalError::Host(format!("plugin bench task `${name}`: {e}"))),
+        )
     }
 }
 

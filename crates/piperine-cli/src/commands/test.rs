@@ -61,6 +61,11 @@ pub fn execute(list: bool, file: Option<String>) {
                 continue;
             }
         };
+        if let Err(e) = plugin_host.fire_after_parse(&body) {
+            eprintln!("Plugin error: {e}");
+            had_failure = true;
+            continue;
+        }
         let mut design = match piperine_lang::parse_and_elaborate_seeded(&body, &source_map, |ctx| {
             plugin_host.seed_schemas(ctx);
         }) {
@@ -72,6 +77,11 @@ pub fn execute(list: bool, file: Option<String>) {
             }
         };
         super::utils::stamp_project_meta(&mut design, &project_root);
+        if let Err(e) = plugin_host.fire_after_elaborate(&design) {
+            eprintln!("Plugin error: {e}");
+            had_failure = true;
+            continue;
+        }
 
         if list {
             for bench in design.benches() {
@@ -85,7 +95,9 @@ pub fn execute(list: bool, file: Option<String>) {
 
         let mut runner = BenchRunner::new(&design);
         if !plugin_host.is_empty() {
-            runner = runner.with_device_provider(plugin_host.clone());
+            runner = runner
+                .with_device_provider(plugin_host.clone())
+                .with_plugins(plugin_host.clone());
         }
         let report = runner.run_all();
         for result in &report.results {

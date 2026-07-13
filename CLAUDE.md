@@ -4,8 +4,10 @@
 
 Piperine is a PHDL (`.phdl`/`.ppr`) hardware-description language compiled straight into a
 **native in-house circuit solver** (Cranelift-JIT analog devices + an event-driven digital
-interpreter). No external SPICE dependency; Verilog-A device models load as compiled OSDI
-(v0.4) shared libraries. Verilog-AMS has been dropped entirely — PHDL is the only frontend.
+interpreter). No external SPICE dependency. Verilog-A device models load as compiled OSDI
+(v0.4) shared libraries through the **`piperine-osdi` plugin** (`~/Git/piperine-osdi` —
+extracted from the solver core 2026-07-10; the core has no OSDI/libloading dependency).
+Verilog-AMS has been dropped entirely — PHDL is the only frontend.
 Rust workspace, edition 2024.
 
 ## Pipeline (the spine)
@@ -61,8 +63,8 @@ both a package and the workspace) — always pass `--workspace`.
 | `piperine-lang` | PHDL frontend: lexer/parser (`parse/`), elaboration → POM `Design` (`elab/`, `pom/`), bench/const interpreter (`eval/`: `Interpreter`, `Host` trait, task allowlist in `eval/tasks.rs`) — walks the POM/AST directly, no IR. `parse_and_elaborate` is the entry point. Depends only on `piperine-math`; its dev-dep on `piperine-codegen` (for integration tests) does not create a real cycle — `piperine-codegen` depends on `piperine-lang` for POM types. |
 | `piperine-codegen` | POM → devices. `lower/` (codegen-private, formerly `piperine-ir` + `piperine-lang::lowering`): `expr.rs`/`stmt.rs`/`symbols.rs` (resolved form), `diff.rs` (symbolic differentiation), `validate.rs` (SPEC §11), `pom/` (`lower_bodies`: POM `Module` → `LoweredBody`). `jit/`: `flatten.rs` (contribution splitting: resistive/charge/`ac_stim`, fn inlining), `analog.rs` (`AnalogKernel` — Cranelift residual/Jacobian/charge/force/noise rows), `emit.rs` (resolved expr → Cranelift), `digital/`. `device/`: `AnalogInstance` (MNA stamping, runtime operators, events), `DigitalInstance`, `CircuitCompiler` (walks POM `Design`/`Module`/`Instance` directly) → `PiperineDevice`. |
 | `piperine-math` | Leaf crate: the builtin math name→fn-pointer dispatch table + compile-time evaluator, shared by the interpreter (`piperine-lang`) and the JIT/const-eval (`piperine-codegen`) so `$sqrt`-style builtins agree bit-for-bit. Not an IR — inert data, no expression/statement duplication. |
-| `piperine-solver` | Native solver: DC/AC/transient/noise/TF (`analysis/`), MNA/linear algebra (`math/`, faer), `Device` trait, OSDI loader (`osdi/`), digital topology. Does **not** depend on codegen. |
-| `piperine-bench` | Bench runtime: `SimHost` (`host.rs`), `SimTask`s (`tasks.rs`), result objects (`objects.rs`, `waveform.rs`), solve plumbing (`session.rs`: `lower_bodies` + `CircuitCompiler::new(&design, &bodies)`), `BenchRunner` (`runner.rs`). |
+| `piperine-solver` | Native solver: DC/AC/transient/noise/TF (`analysis/`), MNA/linear algebra (`math/`, faer), `Device` trait, digital topology. Does **not** depend on codegen. OSDI lives in the external `piperine-osdi` plugin. |
+| `piperine-bench` | Bench runtime: `SimHost` (`host.rs`), `BenchTask`s (`tasks.rs`), result objects (`objects.rs`, `waveform.rs`), solve plumbing (`session.rs`: `lower_bodies` + `CircuitCompiler::new(&design, &bodies)`), `BenchRunner` (`runner.rs`). |
 | `piperine-cli` | `piperine` CLI: `check`, `build`, `run`, `fmt`, `new`, `test`, `clean`, `add`, `remove`, `tree`. |
 | `piperine-project` | `Piperine.toml` discovery, git dependency resolver. |
 | `piperine-lang-server` | LSP server. Handlers share `RequestExt::parse`/`ConnectionExt::respond` (every request id gets a response), `DocumentState::{analyze,resolve_at,word_occurrences}`, `ProjectContext::discover`. |
@@ -77,7 +79,8 @@ both a package and the workspace) — always pass `--workspace`.
   `load_ac` (`jω·dQ/dV`, force branch rows, `ac_stim` RHS `mag·e^{jφ}`),
   `noise_current_psd` (white + flicker `(1/f)^exp`), runtime operators (`delay`/`slew`/
   `idt`) and analog events serviced per accepted step.
-- The OSDI device (`solver/src/osdi/device.rs`) is the reference for reactive/noise stamping.
+- The OSDI device (`piperine-osdi/src/device.rs`, external repo) is the reference for
+  reactive/noise stamping.
 
 ## Known gaps (all fail loud — see ROADMAP.md)
 
@@ -86,8 +89,9 @@ both a package and the workspace) — always pass `--workspace`.
   sources do AC); multiple `ac_stim` per contribution is still fail-loud.
 - `$limit` (pnjlim/fetlim) is not lowered in the JIT — blocks junction devices from
   compiling through `CircuitCompiler` (works in the bench interpreter). See ROADMAP.
-- `@initial` cannot force a branch (`V<-ic`); large analog bodies (mos1) exceed Cranelift's
-  function-size limit; `Option<T>` is not a valid `param` type. See ROADMAP.
+- `@initial` cannot force a branch (`V<-ic`). See ROADMAP. (Large analog bodies no longer
+  blow up — the flattener uses a shared-temporary tape, `jit/flatten.rs`; `dio` compiles and
+  converges, `bjt`/`mos1` compile pending `$limit` multi-junction convergence.)
 - `idt` contributes 0 in AC (no `1/jω` stamp).
 - `$plot`, `extract`/`.attach`/`.meta` — bench tasks not yet implemented (allowlist-gated).
 

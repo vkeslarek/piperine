@@ -15,6 +15,8 @@ pub enum BenchError {
     Solver(#[from] piperine_solver::error::Error),
     #[error("{0}")]
     Measurement(String),
+    #[error("plugin: {0}")]
+    Plugin(String),
     #[error("evaluation error: {0}")]
     Eval(#[from] piperine_lang::eval::EvalError),
 }

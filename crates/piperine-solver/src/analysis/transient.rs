@@ -86,6 +86,12 @@ pub struct TransientAnalysisContext {
     pub time: Second,
     pub dt: Second,
     pub tfinal: Second,
+    /// Previous accepted step size (`t_{n-1} − t_{n-2}`), for the non-uniform
+    /// BDF2 (Gear) coefficients. 0 on the first step.
+    pub dt_prev: Second,
+    /// Integration order actually usable this step: 1 until enough history has
+    /// accumulated (first step), then the method's order.
+    pub order: usize,
 }
 
 pub trait TransientAnalysis {

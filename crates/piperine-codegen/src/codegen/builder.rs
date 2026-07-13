@@ -108,6 +108,22 @@ impl Resolver {
             fns: symbols.fns().map(|(id, f)| (f.name.clone(), id)).collect(),
         }
     }
+
+    /// `$param_given("name")` resolution: exact param name first, then a
+    /// unique flattened bundle field (`narrow` → `model_narrow`) — the
+    /// syscall's argument predates bundle flattening. Mirrors
+    /// `LowerCtx::require_param_given`; keep the two in sync.
+    pub fn param_given(&self, name: &str) -> Option<ParamId> {
+        if let Some(&id) = self.params.get(name) {
+            return Some(id);
+        }
+        let suffix = format!("_{name}");
+        let mut matches = self.params.iter().filter(|(n, _)| n.ends_with(&suffix));
+        match (matches.next(), matches.next()) {
+            (Some((_, &id)), None) => Some(id),
+            _ => None,
+        }
+    }
 }
 
 // ─── Typed values ─────────────────────────────────────────────────────────────
@@ -176,6 +192,15 @@ pub struct Builder<'a, 'f, 'm> {
     pub limit_base: usize,
     /// Common-subexpression cache for analog emission.
     pub cse: Option<HashMap<CseKey, Value>>,
+    /// Value tape: `var` definitions (`__temp(id)` leaves reference these).
+    /// Evaluated once each, memoized in `temp_values`.
+    pub temps: Vec<Expr>,
+    temp_values: Vec<Option<Value>>,
+    /// Derivative tape for the current Jacobian branch: `d(temps[id])/dV`.
+    /// Set per branch via [`Builder::set_deriv_tape`]; `__dtemp(id)` leaves
+    /// reference these. Memoized in `dtemp_values`.
+    dtemps: Vec<Expr>,
+    dtemp_values: Vec<Option<Value>>,
 }
 
 impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
@@ -207,6 +232,10 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             limits: None,
             limit_base: 0,
             cse: None,
+            temps: Vec::new(),
+            temp_values: Vec::new(),
+            dtemps: Vec::new(),
+            dtemp_values: Vec::new(),
         }
     }
 
@@ -244,6 +273,10 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             limits: Some(limits),
             limit_base,
             cse: Some(HashMap::new()),
+            temps: Vec::new(),
+            temp_values: Vec::new(),
+            dtemps: Vec::new(),
+            dtemp_values: Vec::new(),
         }
     }
 
@@ -272,6 +305,48 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
     }
     pub(crate) fn sim_ptr(&self) -> Value {
         self.sim_ptr.expect("analog context")
+    }
+
+    /// Install the value tape (`var` definitions). Call once per function
+    /// before emitting contributions.
+    pub(crate) fn set_value_tape(&mut self, temps: Vec<Expr>) {
+        self.temp_values = vec![None; temps.len()];
+        self.temps = temps;
+    }
+
+    /// Install the derivative tape for the current Jacobian branch and clear
+    /// its memo cache. Call once per branch.
+    pub(crate) fn set_deriv_tape(&mut self, dtemps: Vec<Expr>) {
+        self.dtemp_values = vec![None; dtemps.len()];
+        self.dtemps = dtemps;
+    }
+
+    /// Emit `__temp(id)`: the value of temporary `id`, evaluated once and
+    /// memoized. Temps only reference earlier temps, so no cycle.
+    pub(crate) fn emit_temp(&mut self, id: usize) -> Result<Value, CodegenError> {
+        if let Some(Some(v)) = self.temp_values.get(id) {
+            return Ok(*v);
+        }
+        let expr = self.temps.get(id)
+            .ok_or_else(|| CodegenError::Invalid(format!("__temp({id}) out of range")))?
+            .clone();
+        let v = self.emit_analog(&expr)?;
+        self.temp_values[id] = Some(v);
+        Ok(v)
+    }
+
+    /// Emit `__dtemp(id)`: the derivative of temporary `id` for the current
+    /// branch, evaluated once and memoized.
+    pub(crate) fn emit_dtemp(&mut self, id: usize) -> Result<Value, CodegenError> {
+        if let Some(Some(v)) = self.dtemp_values.get(id) {
+            return Ok(*v);
+        }
+        let expr = self.dtemps.get(id)
+            .ok_or_else(|| CodegenError::Invalid(format!("__dtemp({id}) out of range")))?
+            .clone();
+        let v = self.emit_analog(&expr)?;
+        self.dtemp_values[id] = Some(v);
+        Ok(v)
     }
 
     // ── Name resolution & POM dispatch ──

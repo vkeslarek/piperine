@@ -8,7 +8,10 @@ use std::rc::Rc;
 use piperine_bench::{BenchOutcome, BenchRunner};
 use piperine_lang::SourceMap;
 use piperine_plugin::PluginHost;
-use piperine_plugin_fixture::FixturePlugin;
+
+#[path = "../examples/fixture_plugin.rs"]
+mod fixture_plugin;
+use fixture_plugin::FixturePlugin;
 
 fn host() -> Rc<PluginHost> {
     Rc::new(PluginHost::from_plugins(vec![Box::new(FixturePlugin::new())]).expect("host"))

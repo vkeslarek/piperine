@@ -364,35 +364,78 @@ fn resolve_event_spec(spec: &piperine_lang::parse::ast::EventSpec, ctx: &mut Low
     }
 }
 
+/// Resolve an optional-typed receiver to `(presence param, value expr)`:
+/// a plain optional param, a flattened optional bundle field, or a
+/// `.map(|v| …)` chain over either (the lambda body substitutes the inner
+/// value; presence is untouched — `none.map(f)` is still `none`).
+fn optional_receiver(recv: &Expr, ctx: &mut LowerCtx) -> Option<(String, Expr)> {
+    match recv {
+        Expr::Ident(n) if ctx.params.contains_key(n) => Some((n.clone(), recv.clone())),
+        Expr::Field(base, field) => match base.as_ref() {
+            Expr::Ident(b) => {
+                let flat = format!("{b}_{field}");
+                ctx.params
+                    .contains_key(&flat)
+                    .then(|| (flat.clone(), Expr::Ident(flat)))
+            }
+            _ => None,
+        },
+        Expr::Call(f, args) => match f.as_ref() {
+            Expr::Field(inner, method) if method == "map" && args.len() == 1 => {
+                let Expr::Lambda { params, body } = &args[0] else { return None };
+                if params.len() != 1 {
+                    return None;
+                }
+                let (name, value) = optional_receiver(inner, ctx)?;
+                let mut subst = std::collections::HashMap::new();
+                subst.insert(params[0].clone(), value);
+                Some((name, subst_expr(body, &subst)))
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn resolve_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
     // Method call: recv.method(args)
     if let Expr::Field(recv, method) = func {
-        // Optional-param sugar: `rmodel.get_or(default)` →
-        // `if $param_given("rmodel") { rmodel } else { default }`
-        if method == "get_or"
-            && let Expr::Ident(name) = recv.as_ref()
-                && ctx.params.contains_key(name) {
-                    use piperine_lang::parse::ast::{Block, Expr as E, Literal};
-                    let param_given = E::SysCall(
-                        "$param_given".into(),
-                        vec![E::Literal(Literal::String(name.clone()))],
-                    );
-                    let default = resolve_expr(&args[0], ctx);
-                    return E::If {
-                        cond: Box::new(param_given),
-                        then_body: Block { stmts: vec![], expr: Some(Box::new(E::Ident(name.clone()))) },
-                        else_body: Block { stmts: vec![], expr: Some(Box::new(default)) },
-                    };
-                }
-        // `is_present()` on an optional param → `$param_given("name")`
-        if method == "is_present" && args.is_empty()
-            && let Expr::Ident(name) = recv.as_ref()
-                && ctx.params.contains_key(name) {
-                    return Expr::SysCall(
-                        "$param_given".into(),
-                        vec![Expr::Literal(Literal::String(name.clone()))],
-                    );
-                }
+        // Optional-param sugar (`T?`, SPEC Part I §6.1). The receiver is a
+        // plain param (`rmodel`), a bundle field (`model.rbm` — flattened to
+        // the synthetic param `model_rbm`), or a `.map(|v| …)` chain over
+        // either. Aliases: `is_some`/`unwrap_or` are the prelude names for
+        // the same fold.
+        let optional_recv = optional_receiver(recv, ctx);
+        // `x.get_or(default)` / `x.map(f).get_or(default)` →
+        // `if $param_given("x") { value } else { default }`
+        if (method == "get_or" || method == "unwrap_or")
+            && args.len() == 1
+            && let Some((name, value)) = optional_recv.clone()
+        {
+            use piperine_lang::parse::ast::{Block, Expr as E, Literal};
+            let param_given = E::SysCall(
+                "$param_given".into(),
+                vec![E::Literal(Literal::String(name))],
+            );
+            let value = resolve_expr(&value, ctx);
+            let default = resolve_expr(&args[0], ctx);
+            return E::If {
+                cond: Box::new(param_given),
+                then_body: Block { stmts: vec![], expr: Some(Box::new(value)) },
+                else_body: Block { stmts: vec![], expr: Some(Box::new(default)) },
+            };
+        }
+        // `is_present()` on an optional (mapping never changes presence) →
+        // `$param_given("name")`
+        if (method == "is_present" || method == "is_some")
+            && args.is_empty()
+            && let Some((name, _)) = optional_recv
+        {
+            return Expr::SysCall(
+                "$param_given".into(),
+                vec![Expr::Literal(Literal::String(name))],
+            );
+        }
 
         // Bundle method call: receiver must be a bundle-typed binding.
         let recv_bundle = match recv.as_ref() {

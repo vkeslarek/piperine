@@ -7,20 +7,71 @@
 > the earlier draft of this file (which predated Part VI; where the two diverged,
 > Part VI won — the deltas are recorded in §2).
 >
-> **Delivery status (2026-07-10): Phases 0–2 are implemented and green.**
-> `crates/piperine-plugin` (manifest/P0xxx errors/Registrar/host/TOFU/native
-> dlopen backend), `piperine-plugin-fixture` (analog resistor + digital
-> inverter through the native ABI), the `DeviceProvider` seam + `@device`
-> branch in `CircuitCompiler`, `SchemaShape` + seeded elaboration, and the
-> bench/CLI wiring. Gates: `piperine-plugin/tests/{manifest,trust,e2e,
-> native_smoke}.rs` (16 tests). Two implementation deltas vs. this plan:
-> the SDK crate *does* depend on `piperine-codegen` (for the public
-> `PluginDeviceSpec` — one spec type instead of a duplicate; D4's direction
-> constraint, codegen-never-depends-on-plugin, holds), and the host itself
-> registers the builtin `@device`/`@port` schemas (they belong to the plugin
-> *system*; two device plugins must not collide on them). `piperine-spice`
-> carries the first real plugin face (`plugin/` + `piperine-plugin.toml`).
-> Next: Phase 3 (hooks, staging mutation, bench tasks, scripts).
+> **Delivery status (2026-07-10): Phases 0–4 and most of Phase 5 are
+> implemented and green.**
+> Phase 5: the **process backend** (line-delimited JSON-RPC over stdio;
+> `piperine_plugin_wire::serve_stdio` is the whole guest main; the shared
+> `WireHosted` adapter means WASM and process guests are indistinguishable
+> above the transport; a dead/silent guest is a loud load error — no per-call
+> timeout yet, the tier's story is the crash boundary). **Typed P0008**:
+> staging carries writer provenance (`StagedInstance.staged_by`), a conflict
+> names both plugins and the path. **OSDI extraction (D13)**: `solver/src/
+> osdi/` moved to the external `~/Git/piperine-osdi` repo (34 tests green
+> there); the solver core dropped the osdi module, build.rs, and libloading.
+> Open from Phase 5: `extract`/`.attach`/`.meta` (needs its own design pass —
+> selector→staging + overlay attributes), the DeviceProvider netlist seam
+> for OSDI's internal nodes, WASM/process scripts (capability imports), and
+> artifact distribution (deferred by decision).
+>
+> Phase 4 (WASM backend): the wire protocol (`piperine_lang::pom::wire` —
+> see **D14** below, corrected from an earlier satellite-crate draft) —
+> `Design`/`Module`/`Instance`/`Attribute` snapshots in, `Action` patches
+> out, packed-i64 returns; `piperine-plugin-wasm` (guest SDK: implement
+> `WasmPlugin`, export five thin symbols — no macros); `backend/wasm.rs` in
+> the host (wasmtime, fuel cap = manifest `timeout_ms` × 1e6 per guest call,
+> wire-ABI version handshake, the shared `WireHosted` adapter presenting a
+> guest as an ordinary `Plugin`). Guest patches apply through the same
+> staging surface as in-process plugins — same no-netlist-magic validation;
+> read-only hooks returning actions fail loud. WASM scripts are a load-time
+> error until capability-gated fs imports land; devices stay native/process
+> (D9). Gate (`tests/wasm_smoke.rs`): the rc-parasitics guest compiled to
+> wasm32-unknown-unknown passes the Phase-3 divider gate unmodified, guest
+> bench tasks dispatch through `pp_task`, and an infinite-loop guest traps
+> on the fuel cap. `piperine-lang` (miette + fancy included) compiles clean
+> to `wasm32-unknown-unknown` — no feature-gating needed.
+>
+> Phases 0–2: `crates/piperine-plugin` (manifest/P0xxx errors/Registrar/host/
+> TOFU/native dlopen backend), the fixture plugin (analog resistor + digital
+> inverter through the native ABI — lives as `examples/fixture_plugin.rs`),
+> the `DeviceProvider` seam + `@device` branch in `CircuitCompiler`,
+> `SchemaShape` + seeded elaboration, and the bench/CLI wiring.
+> Phase 3: lifecycle hooks (`after_parse`/`after_elaborate`/
+> `transform_design`/`before_lower`/`after_solve`; `after_lower` stays off
+> per D12) with view snapshots; staging mutation (`OverrideMap` gains
+> idempotent `add_instance`/`add_connection`, applied by
+> `with_overrides_applied` with the no-netlist-magic check); plugin bench
+> tasks (allowlist gate consults `ElabContext.bench_tasks`, `SimHost::syscall`
+> falls through to the host); scripts (`ScriptHandler` + capability-gated
+> `HostCtx::fs_read/fs_write` under manifest globs + the CLI external-
+> subcommand catch-all + `piperine plugin list`). The bench seam is
+> `piperine_bench::plugins::BenchPlugins` — same inversion pattern as D4,
+> implemented by `PluginHost`.
+> Gates: `piperine-plugin/tests/{manifest,trust,e2e,native_smoke,phase3,
+> process_smoke,wasm_smoke}.rs` (30 tests) + `piperine-plugin-wasm`.
+> Implementation deltas vs. this plan: the SDK crate depends on
+> `piperine-codegen` and `piperine-bench` (one public spec type + the bench
+> seam impl; the D4 direction constraints — codegen/bench never depend on
+> the plugin crate... bench *defines* the seam trait it consumes — hold);
+> the host itself registers the builtin `@device`/`@port` schemas (they
+> belong to the plugin *system*). Staging conflicts are now **typed**
+> (§Phase-5 P0008 above), not the loud-string placeholder this line used to
+> describe.
+> `piperine-spice` carries the first real plugin face (`plugin/` +
+> `piperine-plugin.toml`), including the registered-but-fail-loud
+> `piperine spice` transcriber script.
+> Next: Phase 5 (process backend, extract/.attach/.meta, OSDI extraction);
+> artifact distribution (prebuilt binaries from git releases) is a
+> deliberate open question — the host never builds plugin sources.
 >
 > Prerequisite status: the **POM project model landed 2026-07-09** —
 > `Design::project()` carries name/version/dependencies and per-item provenance
@@ -49,7 +100,7 @@ Piperine.toml ──[piperine-project]──► SourceMap ─┐
       solver
         │
         ▼            ⑨ after_solve
-   bench results     ⑩ plugin SimTasks ($extract, …) via SimHost::syscall
+   bench results     ⑩ plugin BenchTasks ($extract, …) via SimHost::syscall
                      ⑪ plugin scripts via the CLI catch-all
 ```
 
@@ -73,9 +124,11 @@ or the solver's math core — those stay closed. Reinventing resolution —
   only through `Device` / `AnalogDevice` / `DigitalDevice`
   (`solver/src/core/device.rs`, `solver/src/digital/interface.rs`) — Piperine's
   own mixed-signal ABI, never an external model ABI (D13).
-- The POM is the only reflection surface. `DesignView`/`DesignPatch` serialize POM
-  shapes; nothing from `codegen/src/lower/` crosses the plugin boundary except
-  behind the elevated `after_lower` capability.
+- The POM is the only reflection surface (D8, D14). Native/in-process plugins reflect
+  over the real `Design`; only WASM/process guests see the same `Design` serialized
+  (`piperine_lang::pom::wire`, owned by the POM crate — not a second model).
+  Nothing from `codegen/src/lower/` crosses the plugin boundary except behind the
+  elevated `after_lower` capability.
 - Fail loud: every unimplemented or denied path is a typed `PluginError` (P0xxx),
   never a silent no-op.
 - No netlist magic: everything a plugin injects must reference a type declared in
@@ -169,9 +222,9 @@ hands out `&mut Design`.
 `bench_task_implemented` (`piperine-lang/src/eval/tasks.rs:32`) is a static
 allowlist consulted at bench validation. Plugin tasks can't be listed statically,
 so the gate becomes two-stage: static list first, then a host callback —
-`SimHost` owns the `SimTaskRegistry` (`piperine-bench/src/tasks.rs:275`) and the
+`SimHost` owns the `BenchTaskRegistry` (`piperine-bench/src/tasks.rs:275`) and the
 registry gains `with_plugins(&PluginHost)`, which wraps each plugin
-`bench_task` in an adapter implementing `SimTask`. The elaboration-time gate in
+`bench_task` in an adapter implementing `BenchTask`. The elaboration-time gate in
 `piperine-lang` accepts an optional `extra: &dyn Fn(&str) -> bool` (threaded from
 the host) so an unknown `$name` is still a *loud* elaboration error when no
 plugin provides it. Rationale: fail-loud is preserved, the static builtin list
@@ -188,13 +241,18 @@ pinned rev + hash) — this decision is only about implementation order, because
 native exercises the entire contract with the least new machinery, and every
 contract test written for it re-runs against the other backends later.
 
-**D8 — Hook inputs are views, not references, on every backend.** Even the
-native backend receives `DesignView` (a serializable snapshot) rather than
-`&Design`, except for `transform_design` which receives the `DesignStaging`
-handle. Rationale: one contract across backends (a native plugin recompiled as
-WASM must not change semantics), and it prevents native plugins from growing
-accidental dependencies on POM internals. Cost is a copy per hook — hooks run a
-handful of times per run, never in the Newton loop.
+**D8 — Native/in-process hooks receive the real POM; only out-of-host tiers
+receive a serialized snapshot.** *(Revised 2026-07-10 — see D14; the original
+version of this decision proposed a `DesignView` snapshot for every backend,
+including native, and was rejected during implementation review as an
+unnecessary parallel model.)* A native or in-process plugin's read-only hooks
+(`after_parse`, `after_elaborate`, `before_lower`, `after_solve`) take
+`&Design` — the real POM, the one reflection surface (SPEC Part IV). Only
+WASM and process guests, which cannot hold a pointer into host memory,
+receive the serialized `Design` itself. `transform_design` always goes through
+`DesignStaging`, on every backend — that handle wraps `&Design` directly for
+native plugins and is the thing a WASM/process guest's patch gets replayed
+into.
 
 **D9 — Devices are native/process-only in the first delivery.** A device sits in
 the Newton inner loop or the delta-cycle loop; snapshot-per-call WASM is
@@ -235,6 +293,47 @@ behind the native traits. The solver core then drops the `osdi` module and its
 `libloading` dependency; Verilog-A models keep working through the plugin.
 Scheduled as a Phase 5 deliverable — it is also the best possible validation of
 the device ABI (if OSDI fits behind `DeviceFactory`, any vendor model does).
+**Status: done** (2026-07-10) — see `~/Git/piperine-osdi`.
+
+**D14 — The wire protocol lives *inside* `piperine-lang::pom::wire`, never
+in a satellite crate.** *(Correction, 2026-07-10.)* The first Phase-4 pass
+created a standalone `piperine-plugin-wire`/`piperine-pom-wire` crate to hold
+the WASM/process serialization shapes — reasoned as "a leaf crate guest SDKs
+can compile to `wasm32-unknown-unknown` without dragging in the parser." That
+reasoning missed the actual complaint: **the POM is the one reflection
+contract (SPEC Part IV); a second crate defining `Design`/`Module`/
+`Instance`/`Attribute` types is a second structural model**, exactly the
+thing Part IV §7 says never to build ("every host rebuilds the same typed
+objects from this one ABI" — there is one ABI, not two). Splitting the crate
+didn't change what it *was*, just where it lived.
+
+The fix (completed 2026-07-11): there are **no wire model types at all**.
+The real POM types carry serde derives — `Design`, `Module`, `Instance`,
+`Attribute`, `Port`, `Param`, `NetRef`, and `Value` serialize as
+themselves; runtime fields (spans, compiled ASTs, `behaviors`,
+`Value::Closure`/`Object`) are `#[serde(skip)]`, and skipped runtime
+handles fail loud if serialized (`serde` "rc" feature for the `Rc`
+interiors). `crates/piperine-lang/src/pom/wire.rs` keeps only *protocol*:
+`Registration`/`Hook*`/`Action`/`Task*`/`WirePlugin`/`serve_stdio`/RPC
+framing/WASM glue, all carrying the real `Design`/`Value`. There is no
+`wire_snapshot()`, no `to_wire`/`from_wire` — the host `clone()`s the
+`Design` into the hook envelope and serde does the rest. A guest
+deserializes the same type with the same accessors an in-process plugin
+reflects over. Round-trip pinned by `piperine-lang/tests/pom_serde.rs`. The leaf-crate
+concern turned out to be moot: `piperine-lang` (miette + "fancy" included)
+compiles cleanly to `wasm32-unknown-unknown` as-is — verified by building
+`piperine-plugin-wasm`'s example guest for that target. No feature-gating
+needed.
+
+Consequence for in-process plugins (D8): since the wire module is just
+POM-adjacent code in `piperine-lang`, there was no longer any reason for
+*native* plugins to go through a serialized view at all — they get `&Design`
+directly. The only remaining serialization boundary is the one that's
+structurally unavoidable: a WASM sandbox or a child process cannot hold a
+pointer into host memory, so *those* tiers, and only those, receive the
+`Design` serialized (as itself). `piperine-plugin-wasm` (the guest SDK) now depends on
+`piperine-lang` directly and re-exports `pom::wire`; `piperine-plugin`
+(the host) does the same. Zero satellite crates for this concern.
 
 ---
 
@@ -252,7 +351,7 @@ crates/piperine-plugin/
 ├── src/
 │   ├── lib.rs            # re-exports; the Plugin trait
 │   ├── manifest.rs       # Manifest + Permissions (D1, Part VI §4)
-│   ├── error.rs          # PluginError, P0xxx codes (Part VI §11)
+│   ├── error.rs          # PluginError, P0xxx codes (Part VI §12)
 │   ├── contributions.rs  # Registrar + Contributions snapshot (D2)
 │   ├── host.rs           # PluginHost: discover → verify → load → register → dispatch
 │   ├── trust.rs          # TOFU prompt, lockfile round-trip (D10)
@@ -304,7 +403,7 @@ pub trait DeviceFactory: Send + Sync {
 }
 
 pub trait PluginBenchTask: Send + Sync {
-    /// Mirrors `piperine_bench::tasks::SimTask::run`, but host-context-aware
+    /// Mirrors `piperine_bench::tasks::BenchTask::run`, but host-context-aware
     /// (capability-gated I/O) and without depending on piperine-bench.
     fn run(&self, args: Vec<Value>, cx: &mut HostCtx) -> Result<Value, String>;
 }
@@ -314,15 +413,32 @@ pub trait ScriptHandler: Send + Sync {
 }
 ```
 
-`PluginError` carries the P0001–P0009 + P0099 catalog exactly as Part VI §11,
+`PluginError` carries the P0001–P0009 + P0099 catalog exactly as Part VI §12,
 `thiserror` + `miette::Diagnostic` with `code(P000N)` like the rest of the
 workspace.
+
+> **As implemented (2026-07-10), corrected per D14:** there is no `view/`
+> directory and no `DesignView`/`SourceView`/`LoweredView`/`CircuitView`
+> types. `after_parse` takes `&str` (the raw source); `after_elaborate` and
+> `before_lower` take `&piperine_lang::pom::Design` directly (native/
+> in-process) — WASM/process guests get the same information via
+> the serde-serialized `Design` inside the shared `WireHosted` adapter, invisible
+> to plugin authors. `transform_design` takes `&DesignStaging` (an immutable
+> reference wrapping `&Design`, not `&mut`, since staging itself is the
+> mutation channel). `before_solve`/`after_lower`/`CircuitView`/`LoweredView`
+> were never built — `after_lower` stays off per D12, `before_solve` wasn't
+> needed by any Phase 0–5 consumer. `ScriptHandler::invoke` takes
+> `&[String]` and returns `Result<i32, String>`, not `ScriptArgs`/`ExitCode`.
+> The crate tree above is the *design* sketch; see `src/` for the real
+> layout (`view.rs` holds only `DesignStaging` + `SolveResultView` now —
+> singular file, no submodule, because there's no snapshot type left to
+> shard out).
 
 ### 3.2 `PluginHost` — the one orchestrator
 
 ```rust
 pub struct PluginHost {
-    plugins: Vec<LoadedPlugin>,        // sorted by name (Part VI §8.4 ordering)
+    plugins: Vec<LoadedPlugin>,        // sorted by name (Part VI §8.1 ordering)
     contributions: Contributions,      // merged, collision-checked
     permissions: HashMap<String, Permissions>,
 }
@@ -409,7 +525,7 @@ facade offers nothing to call, which is the strongest possible enforcement.
 
 | Where | Logic |
 |---|---|
-| `src/tasks.rs:275` | `SimTaskRegistry::with_plugins(self, host: &Rc<PluginHost>) -> Self` — wraps each plugin task in an adapter `struct PluginTask(Rc<PluginHost>, &'static str)` implementing `SimTask` (drops the `SimSession` arg; plugin tasks see the design through `HostCtx`, not the session). |
+| `src/tasks.rs:275` | `BenchTaskRegistry::with_plugins(self, host: &Rc<PluginHost>) -> Self` — wraps each plugin task in an adapter `struct PluginTask(Rc<PluginHost>, &'static str)` implementing `BenchTask` (drops the `SimSession` arg; plugin tasks see the design through `HostCtx`, not the session). |
 | `src/host.rs:206` (`SimHost::syscall`) | Registry lookup already dispatches by name; nothing changes here beyond the registry containing plugin entries. The allowlist predicate passed to bench validation becomes `|n| bench_task_implemented(n) || host.has_bench_task(n)` (D6). |
 | `src/session.rs` / `src/runner.rs` | `BenchRunner`/`SimSession` gain an optional `Rc<PluginHost>`. `SimSession::build_circuit` (session.rs:88) chains `.with_device_provider(host)` and fires `before_lower` / `after_lower`(gated) / `before_solve`; each `run_*` fires `after_solve` with a result view. `transform_design` fires once per analysis, right before `with_overrides_applied` — its staged mutations ride the same apply. |
 
@@ -460,7 +576,7 @@ P0004/`Unsupported`.
 ### Phase 3 — Hooks + staging mutation + bench tasks + scripts
 
 `DesignStaging` over the extended `OverrideMap` (D5) with the no-netlist-magic
-validation; hook firing points in CLI + `SimSession`; `SimTaskRegistry::
+validation; hook firing points in CLI + `SimSession`; `BenchTaskRegistry::
 with_plugins` + the two-stage allowlist (D6); CLI script catch-all + `piperine
 plugin list`. Sample plugin `rc-parasitics` (native): `@extract_rc` schema,
 `after_elaborate` collects, `transform_design` injects `Resistor` instances.
@@ -517,8 +633,8 @@ Become integration tests as their phase lands:
 | Native plugin crashes the host | Documented full-trust tier; `process` backend is the isolation answer (Phase 5). |
 | Staged `add_instance` breaks POM invariants | Single mutation point + re-running module validation inside `with_overrides_applied` (E2013/E2014/E2020 fire on bad injections). |
 | Schema collision plugin×bundle | One registry (D3) makes the collision *detectable*; P0003 at load; `@plugin-name:schema` namespacing as escape hatch. |
-| View snapshots drift from POM shapes | Views live in one module (`view/`), built from POM accessors only; a golden serialization test pins the wire shape per contract version. |
-| wasmtime / WIT churn | Views are plain serde structs over postcard — no WIT dependency in the contract; WIT can be layered later without changing the patch language. |
+| Wire snapshot drifts from POM shapes | Closed structurally, not by test discipline (D14): the serialized form *is* the POM (serde on the real types) — there is no second definition anywhere that could drift. |
+| wasmtime / WIT churn | The wire shapes are plain serde structs over JSON (`piperine_lang::pom::wire`) — no WIT dependency in the contract; WIT can be layered later without changing the patch language. |
 | Allowlist bypass via plugin task names shadowing builtins | `Registrar::bench_task` rejects names already in the static list (P0003-class error). |
 
 ---
@@ -529,7 +645,7 @@ Become integration tests as their phase lands:
   `[devices.*]`, `[scripts.*]` TOML tables deleted — contributions in code.
 - The **no-netlist-magic** principle added (Part VI §2) → the staging validation
   in D5 is now normative, not defensive.
-- Error catalog frozen as P0001–P0009 + P0099 (Part VI §11); the draft's
+- Error catalog frozen as P0001–P0009 + P0099 (Part VI §12); the draft's
   transparent `From<libloading::Error>`-style variants fold into P0099 `Other`
   with source attached.
 - `@device` example corrected to real PHDL port syntax (Part VI §7.2).

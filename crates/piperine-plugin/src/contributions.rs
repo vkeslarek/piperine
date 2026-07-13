@@ -7,8 +7,10 @@ use std::collections::HashMap;
 
 use piperine_codegen::device::PluginDeviceSpec;
 use piperine_lang::elab::registry::AttrField;
+use piperine_lang::Value;
 use piperine_solver::core::device::Device;
 
+use crate::capability::HostCtx;
 use crate::error::PluginError;
 
 /// What kind of device a factory produces.
@@ -28,6 +30,20 @@ pub trait DeviceFactory: Send + Sync {
     fn instantiate(&self, spec: &PluginDeviceSpec) -> Result<Box<dyn Device>, String>;
 }
 
+/// A plugin-contributed bench task (`$name(...)`, SPEC Part VI §6).
+/// Same `run(args, cx)` shape as the builtin `BenchTask`, but capability-gated through
+/// [`HostCtx`] instead of holding the session.
+pub trait PluginBenchTask: Send + Sync {
+    fn run(&self, args: Vec<Value>, cx: &mut HostCtx) -> Result<Value, String>;
+}
+
+/// A plugin-contributed CLI subcommand (SPEC Part VI §10).
+pub trait ScriptHandler: Send + Sync {
+    /// Run the script with its CLI arguments; the return value becomes the
+    /// process exit code.
+    fn invoke(&self, args: &[String], cx: &mut HostCtx) -> Result<i32, String>;
+}
+
 /// The merged, collision-checked snapshot of everything loaded plugins
 /// contribute. Owned by the host; queried at pipeline boundaries.
 #[derive(Default)]
@@ -36,6 +52,10 @@ pub struct Contributions {
     pub schemas: HashMap<String, (String, Vec<AttrField>)>,
     /// device type id → (owning plugin, factory).
     pub devices: HashMap<String, (String, Box<dyn DeviceFactory>)>,
+    /// bench task name (no `$`) → (owning plugin, task).
+    pub bench_tasks: HashMap<String, (String, Box<dyn PluginBenchTask>)>,
+    /// script (CLI subcommand) name → (owning plugin, handler).
+    pub scripts: HashMap<String, (String, Box<dyn ScriptHandler>)>,
 }
 
 /// The builder a plugin's `register()` receives. Records contributions under
@@ -57,7 +77,7 @@ impl<'a> Registrar<'a> {
         Self { plugin: plugin.to_string(), contributions, errors }
     }
 
-    /// Contribute an attribute schema (SPEC Part VI §10). The name joins the
+    /// Contribute an attribute schema (SPEC Part VI §11). The name joins the
     /// same registry `@attribute(schema = …)` bundles use; a collision with
     /// another plugin (or the builtin `device`/`port` schemas) is P0003.
     pub fn attr_schema(&mut self, name: &str, fields: Vec<AttrField>) {
@@ -70,6 +90,42 @@ impl<'a> Registrar<'a> {
             return;
         }
         self.contributions.schemas.insert(name.to_string(), (self.plugin.clone(), fields));
+    }
+
+    /// Contribute a bench task callable as `$name(...)` from bench fns
+    /// (SPEC Part VI §6). Builtin task names cannot be shadowed.
+    pub fn bench_task(&mut self, name: &str, task: Box<dyn PluginBenchTask>) {
+        if piperine_lang::eval::tasks::bench_task_implemented(name) {
+            self.errors.push(PluginError::SchemaConflict {
+                schema: format!("bench task `${name}`"),
+                existing: "the builtin task set".into(),
+                plugin: self.plugin.clone(),
+            });
+            return;
+        }
+        if let Some((existing, _)) = self.contributions.bench_tasks.get(name) {
+            self.errors.push(PluginError::SchemaConflict {
+                schema: format!("bench task `${name}`"),
+                existing: existing.clone(),
+                plugin: self.plugin.clone(),
+            });
+            return;
+        }
+        self.contributions.bench_tasks.insert(name.to_string(), (self.plugin.clone(), task));
+    }
+
+    /// Contribute a CLI subcommand (SPEC Part VI §10): `piperine <name> …`
+    /// dispatches to `handler` when no builtin command matches.
+    pub fn script(&mut self, name: &str, handler: Box<dyn ScriptHandler>) {
+        if let Some((existing, _)) = self.contributions.scripts.get(name) {
+            self.errors.push(PluginError::SchemaConflict {
+                schema: format!("script `{name}`"),
+                existing: existing.clone(),
+                plugin: self.plugin.clone(),
+            });
+            return;
+        }
+        self.contributions.scripts.insert(name.to_string(), (self.plugin.clone(), handler));
     }
 
     /// Contribute a device factory for a `@device(type = …)` type id

@@ -179,6 +179,12 @@ impl AnalogDevice for PiperineDevice {
             .map_or(f64::INFINITY, AnalogInstance::bound_step_hint)
     }
 
+    fn initial_conditions(&self) -> Vec<(Option<AnalogReference>, Option<AnalogReference>, f64)> {
+        self.analog
+            .as_ref()
+            .map_or_else(Vec::new, AnalogInstance::initial_conditions)
+    }
+
     fn load_dc(
         &mut self,
         state: &DcAnalysisState,

@@ -15,12 +15,12 @@ spec §11 row (`crates/piperine-bench/docs/SPEC.md`) in the same change.
 
 **Spec:** bench spec §8 table row, §11 — "emit artifacts".
 **Today:** elaboration-rejected (not in `bench_task_implemented`). `$write` (CSV) is the
-reference `SimTask` to copy.
+reference `BenchTask` to copy.
 
 Sketch:
 1. Artifact format: hand-rolled SVG line chart (~100 lines, zero deps, viewable anywhere).
    Axis autoscale from `Waveform.points`, polyline, title text.
-2. New `Plot` struct in `piperine-bench/src/tasks.rs` implementing `SimTask`; accepts
+2. New `Plot` struct in `piperine-bench/src/tasks.rs` implementing `BenchTask`; accepts
    `(Value::Object(Waveform | ComplexWaveform), Value::Str(title))`; downcast via
    `Object::as_any` exactly like `$noise` does for `NetRef`.
 3. Output path: `<title>.svg` in the CWD (same convention as `$write`); sanitize the title
@@ -37,7 +37,7 @@ the Rust surface settles. The §8 identical-shape rule is the review gate for ev
 ### `extract` / `.attach` / `.meta` (was G13)
 
 The extensibility spec is now written — `docs/spec/part_vi_plugins.md` (Part VI). These
-land as plugin-registered `SimTask`s / staging calls once the plugin system below exists.
+land as plugin-registered `BenchTask`s / staging calls once the plugin system below exists.
 Do not implement ahead of it; the only prep is keeping `Attribute` surfaces public on POM
 nodes (they are).
 
@@ -45,6 +45,20 @@ nodes (they are).
 
 ## Codegen / solver
 
+- **Newton convergence checks only the voltage step, not the current residual — HIGH
+  PRIORITY (found 2026-07-12 by the ngspice cross-validation harness).**
+  `Context::has_converged` (`piperine-solver/src/solver/mod.rs`) accepts convergence when
+  `|Δv| ≤ reltol·|v| + vntol` for every node and checks **no KCL/current residual**. For a
+  stiff exponential device the damped Newton step goes small while the current imbalance is
+  still large (a big residual maps through the large device conductance to a tiny `Δv`), so
+  the solver stops at a **non-solution**. This is why the BJT settles in the active region
+  where ngspice saturates (its reported Vbe violates base-node KCL), and why the MOS1 drain
+  current is ~1.5× off. Fix: add the current-residual half of the test (ngspice `NIconvTest`:
+  per node, `|i − i_linear| ≤ reltol·max(|i|,|i_linear|) + abstol`) — re-evaluate the device
+  currents at the candidate solution and require the node imbalance below tolerance, ANDed
+  with the existing voltage-step check. Validate with
+  `~/Git/plugins/piperine-spice/validation/` (diode/passives already match; the transistor
+  circuits are the regression targets). This is the gate for transistor ngspice parity.
 - `transition`, `laplace_*`, `zi_*` analog operators — recognized in the IR, fail loud at
   codegen. Each is its own companion-model follow-up.
 - **`table(x, xs, ys, mode)` operator (spec Part V §2) — not registered at all.** The
@@ -67,19 +81,27 @@ nodes (they are).
   ngspice `Check==1`/`noncon`). `diff.rs` treats the limiter as transparent (`d/dV =
   d(vnew)/dV`). A stiff diode (5 V → 1 kΩ → 1e-14 A) now converges to its physical operating
   point — see `spec_simulation::sim_dc_diode_pnjlim_converges`.
-  **Still open:** multi-junction convergence. `bjt` (coupled B-E/B-C/substrate junctions,
-  base resistance) hits NaN and `mos1` (mode/vdsat discontinuities; uses gmin not `$limit`)
-  stalls. Needs per-junction limited-Norton handling for shared nodes and mode-switch
-  damping. `fetlim` is stubbed to identity (no current device needs it).
+  **Multi-junction convergence — DONE (2026-07-11) via gmin stepping.** `bjt` (coupled
+  B-E/B-C), `mos1`, and `jfet` all converge (spice `tests/junction.phdl` green). The fix was
+  SPICE **gmin stepping** homotopy in the DC solver (`solver/dc.rs::solve_gmin_stepping`): on
+  plain-Newton failure, ramp a node-to-ground conductance from 0.1 S → 0, warm-starting each
+  step. Two bugs fixed en route: `emit_analog_binary` treats the `BitXor` pow-carrier as
+  `pow` (BJT `qb` Jacobian), and a `var`/node name clash (`mos1` `var s` vs source node `s`)
+  now resolves to the node. `fetlim`/`DEVlimvds` still identity (not needed for convergence;
+  may matter for exact ngspice parity, which hasn't been diff'd against a built ngspice). See
+  ROADMAP_REFINEMENT.md B5.
 - **`@initial` cannot force a branch.** `@ initial { V(p,n) <- ic; }` (the SPICE `.ic`/UIC
   seed used by `dio`/`cap`/`ind`) fails loud: "statement Force … in an analog event body".
   Event bodies only support variable assignments today; an initial-condition force needs the
   solver to accept a branch constraint for the first timepoint.
-- **Large analog bodies exceeding Cranelift's function-size limit — DONE (2026-07-05).**
-  The residual is one straight-line block (control flow folded to branchless `select`s), so
-  the emitter now does exact common-subexpression elimination keyed by `(op-tag, child Value
-  ids)` — `jit/emit.rs` `CseKey`/`cse_*`. Fully-inlined `var`/helper-`fn` bodies stop
-  exploding; `dio` and `mos1` compile. Also a large speedup (shared subexpressions emit once).
+- **Large analog bodies exceeding Cranelift's function-size limit — DONE (2026-07-05, emit CSE)
+  + shared-temporary flattening (2026-07-11).** Two layers: (1) the emitter does exact
+  common-subexpression elimination keyed by `(op-tag, child Value ids)` (`CseKey`/`cse_*`);
+  (2) the flattener no longer inlines `var`s at all — each becomes a `__temp(id)` leaf on a
+  value tape, differentiated once via a per-branch derivative tape (`__dtemp`), so the
+  residual/Jacobian trees stay linear instead of exploding multiplicatively (a var reassigned
+  under a guard and reused many times used to OOM). `dio` compiles and converges; `bjt`/`mos1`
+  compile (convergence is the separate `$limit` item). See ROADMAP_REFINEMENT.md B0.
 - `idt` AC small-signal `1/jω` admittance not stamped (contributes 0 in AC).
 - `Trace.i` over time on devices with runtime state/vars — fails loud (per-step var/state
   banks are not recorded in `TransientAnalysisResult`).
@@ -172,10 +194,13 @@ Still open:
 Cases where the formal specification (`docs/new-spec/`) describes intended behavior the
 compiler does not yet enforce. The spec is the contract; these are bugs/gaps to close.
 
-- **`white_noise` / `flicker_noise` return `0.0` placeholder.** Spec (Part V §2):
-  inject a noise spectral density into the contribution RHS. Code
-  (`lower/pom/analog_ops.rs:204-209`) returns `0.0` — a silent stub that violates the
-  no-silent-`0.0` rule (AGENTS.md). Either lower the noise stamp or make it fail-loud.
+- **`white_noise` / `flicker_noise` — RESOLVED as correct-by-design (2026-07-11 audit).**
+  The `0.0` in `lower/pom/analog_ops.rs` is the *residual* value — a noise source has
+  zero mean current, so contributing 0 to DC/transient is the right semantics, not a
+  silent stub. The PSD is extracted separately: `jit/flatten.rs` collects noise sources
+  into dedicated rows (`FlatBody.noise`), `jit/analog.rs` compiles per-source PSD +
+  flicker-exponent functions, and `device/analog.rs::noise_current_psd` evaluates them
+  for `$noise`. No action needed; documented here so the audit doesn't re-flag it.
 - **Keyword reservation is parser-level, not lexical.** The lexer
   (`parse/lexer.rs:14-17`) emits every keyword as `Tok::Ident(String)`; reservation is a
   parser concern. Documented as the current design in Part I §4.2; a future lexer
@@ -476,21 +501,30 @@ free-function forms could remain as sugar.
 
 ---
 
-## Plugin system — implement Part VI (spec written, zero implementation)
+## Plugin system — Part VI IMPLEMENTED (phases 0–5, 2026-07-10/11)
 
-**Spec:** `docs/spec/part_vi_plugins.md` (Part VI, complete as of 2026-07-07).
-**Implementation plan:** `Plugin plan.md` (expanded 2026-07-09 — design decisions
-D1–D13, per-crate integration surface, phased delivery with gates; supersedes the
-step list below where they differ). **Phases 0–2 landed 2026-07-10** — steps 2, 3,
-4 (native backend), 5, and 7 below are done; open: hooks/staging (8), bench tasks
-(6), scripts (9), WASM/process backends, OSDI extraction (10).
-**Today:** nothing exists — no plugin crate, no `[plugins]` parsing in
-`piperine-project`, no lockfile plugin entries, no TOFU flow, no `PluginError`/P0xxx
-catalog, no wasmtime dependency, no `@device`/`@port` handling in `CircuitCompiler`,
-no CLI script dispatch. The only prep in place: attribute schemas are validated and
-populated into the POM (Part I §8), and `Attribute` surfaces are public.
+**Spec:** `docs/spec/part_vi_plugins.md` (Part VI, rewritten current 2026-07-11).
+**Implementation plan:** `Plugin plan.md` (D1–D14 + delivery status).
+All three backends (native dlopen, WASM/wasmtime, process JSON-RPC) share one
+contract; the wire form **is the POM itself** (serde on the real
+`Design`/`Value`, `pom/wire.rs` is protocol-only — D14, revised 2026-07-11);
+staging conflicts are typed P0008; plugins live in the official monorepo
+`~/Git/plugins` referenced via git deps with `subdir`. Builtin bench tasks
+share the plugin task shape (`BenchTask::run(args, cx)`, `tasks.rs`).
 
-Suggested order (each independently shippable, spec section in parens):
+**Still open:**
+- **Artifact distribution** — prebuilt plugin binaries fetched from git
+  releases per target triple (the host never builds plugin sources). Today a
+  path/git plugin must have its `entry` artifact already built.
+- **Wire-tier scripts** — capability-gated fs imports for WASM/process guests
+  (declaring a script on those tiers is a loud load error today).
+- **OSDI DeviceProvider netlist seam** — internal-node allocation for
+  `@device(plugin = "osdi", …)` (see item 10 below).
+- **`extract`/`.attach`/`.meta`** as spice-plugin bench tasks (G13).
+- **`HookInput.solve` for swept analyses** — only `$op` carries node voltages;
+  `$tran`/`$ac`/`$noise` hand plugins the analysis kind only.
+
+Historical order (steps kept for reference; all but the noted leftovers done):
 
 1. **POM project model** — hard prerequisite, see the section below.
 2. **Manifest + discovery (§4, §5).** Parse `piperine-plugin.toml` into a permissions
@@ -507,7 +541,7 @@ Suggested order (each independently shippable, spec section in parens):
    traits — never OSDI or any external model ABI (Plugin plan D13).
 5. **Attribute schemas from plugins (§10).** Plugin-registered schemas join the
    `@attribute(schema=...)` registry; collision → P0003 `SchemaConflict`.
-6. **Bench tasks from plugins (§6).** Plugin `SimTask`s extend the
+6. **Bench tasks from plugins (§6).** Plugin `BenchTask`s extend the
    `bench_task_implemented` allowlist at load time — this is the landing path for
    `extract`/`.attach`/`.meta` (G13 above).
 7. **Device loading (§7).** `@device(plugin=…, type=…)` + `@port(name=…)` binding:
@@ -521,18 +555,36 @@ Suggested order (each independently shippable, spec section in parens):
 9. **Custom scripts (§9).** CLI dispatcher falls through to plugin-registered
    subcommands; capability-gated host context (`fs()`, `project()`, `spawn()`,
    `log()`); `piperine plugin list`. Error: P0009 `UnknownScript`.
-10. **OSDI extraction (Plugin plan D13).** Move `solver/src/osdi/` out of the
-    core into an `osdi-compat` plugin: its `DeviceFactory` loads a compiled OSDI
-    v0.4 `.so` and adapts it behind the native `AnalogDevice` trait. The solver
-    core drops the `osdi` module and its `libloading` dependency; the OSDI test
-    corpus becomes the plugin's suite. Gate: every current OSDI test passes
-    through the plugin path with the in-core module deleted. Also update the
-    CLAUDE.md/architecture wording ("Verilog-A models load as compiled OSDI
-    shared libraries" moves from core description to plugin description).
+10. **OSDI extraction (Plugin plan D13) — DONE (2026-07-10).** `solver/src/osdi/`
+    moved to the external `~/Git/piperine-osdi` repo (loader/ffi/device/model +
+    the openvaf-downloading build.rs + the full OSDI/cosim test corpus, 34
+    tests green). The solver core dropped the `osdi` module, `build.rs`, and
+    the `libloading` dependency; CLAUDE.md wording updated. `OsdiPlugin`
+    registers the `@osdi` schema and an `Osdi::Device` factory.
+    **Still open — DeviceProvider netlist seam:** OSDI setup allocates
+    *internal* MNA nodes, but `PluginDeviceSpec` hands over already-connected
+    terminal references only, so the `@device(plugin = "osdi", …)` PHDL
+    binding fails loud (factory error explains). Extend the spec with a
+    netlist handle (fresh-node allocation) to wire it; the `piperine_osdi`
+    Rust API is fully functional meanwhile.
 
 ---
 
-## POM project model — prerequisite for Part VI (Plugins)
+## POM project model — DONE (2026-07-10/11)
+
+The POM carries a `Project` node (`pom/design.rs::Project` — name, version,
+plugin names) populated during elaboration; `Design.project` is part of the
+serialized surface. `piperine-project` resolves `[plugins]`
+(path + git + `subdir` for the official monorepo) into local paths, the
+lockfile records plugin entries with content hashes and TOFU trust, and
+`PluginHost::load_for_project` anchors discovery/capabilities on the project
+root. Remaining provenance ideas (per-item source package, dependency graph
+reflection) folded into the section below as nice-to-haves — no longer
+blocking anything.
+
+<details><summary>Original text (for the provenance follow-ups)</summary>
+
+## POM project model — prerequisite for Part VI (Plugins) [historical]
 
 **Spec (Part VI):** plugins discover, load, and wire through a project model —
 `Piperine.toml`, `Piperine.lock`, the resolver, plugin manifests, capability
@@ -570,6 +622,8 @@ that already serves the design.
 **This is a hard prerequisite for Part VI (Plugins).** The plugin system
 cannot be implemented without a project model to anchor plugin discovery,
 TOFU, and capability enforcement.
+
+</details>
 
 ---
 

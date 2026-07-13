@@ -43,11 +43,23 @@ pub struct BenchRunner<'d> {
     /// Builds `@device`-annotated instances (SPEC Part VI §7); `None`
     /// without a plugin host.
     provider: Option<std::rc::Rc<dyn piperine_codegen::device::DeviceProvider>>,
+    /// Lifecycle hooks + plugin bench tasks (SPEC Part VI §8/§6).
+    plugins: Option<std::rc::Rc<dyn crate::plugins::BenchPlugins>>,
 }
 
 impl<'d> BenchRunner<'d> {
     pub fn new(design: &'d Design) -> Self {
-        Self { design, provider: None }
+        Self { design, provider: None, plugins: None }
+    }
+
+    /// Wire a plugin host's hooks and bench tasks into every session this
+    /// runner spawns.
+    pub fn with_plugins(
+        mut self,
+        plugins: std::rc::Rc<dyn crate::plugins::BenchPlugins>,
+    ) -> Self {
+        self.plugins = Some(plugins);
+        self
     }
 
     /// Wire a plugin host as the device provider for every session this
@@ -85,6 +97,9 @@ impl<'d> BenchRunner<'d> {
         let mut session = SimSession::new(self.design.fork(), module.to_string());
         if let Some(provider) = &self.provider {
             session.set_device_provider(provider.clone());
+        }
+        if let Some(plugins) = &self.plugins {
+            session.set_plugins(plugins.clone());
         }
         let mut host = SimHost::new(session);
         let mut interp = Interpreter::new(&mut host);

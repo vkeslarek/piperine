@@ -4,6 +4,7 @@ pub mod check;
 pub mod clean;
 pub mod fmt;
 pub mod new;
+pub mod plugin;
 pub mod remove;
 pub mod run;
 pub mod test;

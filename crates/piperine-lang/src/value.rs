@@ -23,7 +23,15 @@ use crate::parse::ast::Expr;
 use crate::eval::error::EvalError;
 
 /// A runtime value.
-#[derive(Debug, Clone)]
+///
+/// **Serialization (SPEC Part IV §7):** `Value` is the POM's own value
+/// layer, and it serializes as itself — every *data* variant round-trips
+/// (scalars, `Complex`, `Quad`, enums, tuples, lists, records, maps, sets,
+/// options, results, fn references). The two *runtime-handle* variants —
+/// [`Value::Closure`] (a live lambda over captured scope) and
+/// [`Value::Object`] (a host handle like `OpResult`) — are not data and
+/// fail loud on serialization instead of degrading silently.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Value {
     Unit,
     Int(i64),
@@ -62,6 +70,7 @@ pub enum Value {
     /// (`Selection.one()`, `Param.set()`). No literal syntax.
     Result(std::result::Result<Box<Value>, Box<Value>>),
     Option(Option<Box<Value>>),
+    #[serde(skip)]
     Closure(Rc<Closure>),
     /// A named-function reference — produced when a bare `fn` name is used
     /// as a value (e.g. passed as a `fn(T) -> R` argument). Carries the
@@ -69,6 +78,7 @@ pub enum Value {
     FnRef(String),
     /// A host-defined object (e.g. `OpResult`, `NetRef`). Method calls on it
     /// are dispatched through [`Object::call_method`].
+    #[serde(skip)]
     Object(Rc<dyn Object>),
 }
 

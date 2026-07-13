@@ -3,7 +3,7 @@
 //! the bare-name math catalog.
 //!
 //! Bench-only tasks (`$op`, ...) live in `piperine-bench`, implementing
-//! their own `SimTask` trait and falling back to [`dispatch_pure`] for
+//! their own `BenchTask` trait and falling back to [`dispatch_pure`] for
 //! anything not effectful.
 
 use std::collections::HashMap;

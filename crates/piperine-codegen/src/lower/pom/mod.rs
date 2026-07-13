@@ -185,6 +185,9 @@ impl<'a> LowerCtx<'a> {
         if let (Some((_, &id)), None) = (matches.next(), matches.next()) {
             return id;
         }
+        if std::env::var("PIPERINE_DEBUG_FNS").is_ok() {
+            eprintln!("DBG param_given `{name}` params: {:?}", self.params.keys().collect::<Vec<_>>());
+        }
         self.errors.push(LowerError {
             module: self.module_name.clone(),
             what: "parameter ($param_given)",
@@ -324,6 +327,9 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
     // adding their unresolved bodies would produce dangling references.
     for body in &mut bodies {
         for f in prog.functions() {
+            if std::env::var("PIPERINE_DEBUG_FNS").is_ok() {
+                eprintln!("DBG fn: {} generic={}", f.name(), f.is_generic());
+            }
             if f.is_generic() {
                 continue;
             }

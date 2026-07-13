@@ -6,8 +6,9 @@
 //! - `Fixture::Inverter` — a digital inverter through
 //!   `DigitalDevice::comb_phase`.
 //!
-//! Built as a `cdylib` (native dlopen smoke test) *and* an `rlib`
-//! (in-process e2e tests).
+//! Lives as a crate example: `cargo build --example fixture_plugin` builds
+//! the cdylib the native smoke test dlopens; the e2e tests compile this
+//! source in-process via `#[path]`.
 
 use piperine_plugin::{
     entry, Abi, DeviceFactory, DeviceKind, Manifest, Permissions, Plugin, PluginDeviceSpec,

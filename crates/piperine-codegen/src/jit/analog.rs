@@ -162,6 +162,12 @@ pub struct AnalogKernel {
     /// forces without an `ac_stim`). `None` when no force carries a stimulus.
     force_ac_mag: Option<AnalogFn>,
     force_ac_phase: Option<AnalogFn>,
+    /// Inductor flux coefficient rows (one per flux term); `None` when no
+    /// force is reactive. Drives the transient flux companion.
+    force_flux: Option<AnalogFn>,
+    /// Per flux term: `(force_idx, target_plus, target_minus)` — which force
+    /// branch equation gains the term and which branch current it couples to.
+    flux_meta: Vec<(usize, NodeId, NodeId)>,
     /// Noise PSD per source; `None` without noise.
     noise: Option<AnalogFn>,
     /// `ac_stim` magnitude and phase rows (one per source); `None` without
@@ -177,6 +183,9 @@ pub struct AnalogKernel {
     event_actions: Option<AnalogFn>,
     /// Minimum `$bound_step` expression; `None` without bound steps.
     bound_step: Option<AnalogFn>,
+    /// `@initial` UIC seed terminal pairs and their (param-only) value rows.
+    initial_condition_terminals: Vec<(NodeId, NodeId)>,
+    initial_conditions: Option<AnalogFn>,
     _jit: JITModule,
 }
 
@@ -279,6 +288,42 @@ impl AnalogKernel {
     /// Branch terminals `(plus, minus)` per force row.
     pub fn force_terminals(&self) -> &[(NodeId, NodeId)] {
         &self.force_terminals
+    }
+
+    /// Whether any force carries an inductor flux companion.
+    pub fn has_force_flux(&self) -> bool {
+        self.force_flux.is_some()
+    }
+
+    /// Per flux term: `(force_idx, target_plus, target_minus)`.
+    pub fn flux_terms(&self) -> &[(usize, NodeId, NodeId)] {
+        &self.flux_meta
+    }
+
+    /// Flux coefficients, one per term (in `flux_terms` order).
+    pub fn eval_force_flux(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.force_flux {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(f, volts, params, state, vars, sim, out);
+        }
+    }
+
+    /// Number of `@initial` UIC seeds.
+    pub fn num_initial_conditions(&self) -> usize {
+        self.initial_condition_terminals.len()
+    }
+
+    /// Branch terminals `(plus, minus)` per `@initial` seed.
+    pub fn initial_condition_terminals(&self) -> &[(NodeId, NodeId)] {
+        &self.initial_condition_terminals
+    }
+
+    /// Evaluate the `@initial` seed values (param-only) into `out`.
+    pub fn eval_initial_conditions(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.initial_conditions {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(f, volts, params, state, vars, sim, out);
+        }
     }
 
     /// Terminals `(plus, minus)` per noise source.
@@ -528,11 +573,15 @@ fn collect_limits(flat: &FlatAnalog) -> Vec<PomExpr> {
     for c in &flat.resistive { scan(&c.expr); }
     for c in &flat.charge { scan(&c.expr); }
     for f in &flat.forces { scan(&f.expr); }
+    // `$limit` most often lives inside a `var` (e.g. `vd = $limit(…)`), so
+    // scan the temp tape too.
+    for t in &flat.temps { scan(t); }
     limits
 }
 
+
 /// The junction branch `(plus, minus)` a `$limit` acts on.
-fn limit_branch(limit: &PomExpr, module: &LoweredBody) -> Option<(NodeId, NodeId)> {
+fn limit_branch(limit: &PomExpr, module: &LoweredBody, temps: &[PomExpr]) -> Option<(NodeId, NodeId)> {
     let PomExpr::SysCall(name, args) = limit else { return None };
     if name.trim_start_matches('$') != "limit" { return None; }
     let vnew = args.get(1)?;
@@ -540,27 +589,55 @@ fn limit_branch(limit: &PomExpr, module: &LoweredBody) -> Option<(NodeId, NodeId
         if piperine_lang::pom::is_ground(n) { return NodeId::GROUND; }
         module.symbols.nodes().find(|(_, info)| info.name == n).map(|(id, _)| id).unwrap_or(NodeId::GROUND)
     };
-    let mut found: Option<(NodeId, NodeId)> = None;
-    let mut count = 0usize;
-    use piperine_lang::parse::ast::Walk;
-    vnew.walk(&mut |node| {
+    // Collect the unique `V`/`I` branch the limited voltage acts on, walking
+    // `__temp` leaves through the tape by *id* (memoized) — never rebuilding
+    // the inlined tree, which would re-expand param-only chains (`tBrkdwnV`)
+    // exponentially.
+    let mut branches: Vec<(NodeId, NodeId)> = Vec::new();
+    let mut seen_temps = std::collections::HashSet::new();
+    limit_branches_into(vnew, temps, &resolve, &mut seen_temps, &mut branches);
+    if branches.len() == 1 { Some(branches[0]) } else { None }
+}
+
+fn limit_branches_into(
+    expr: &PomExpr,
+    temps: &[PomExpr],
+    resolve: &impl Fn(&str) -> NodeId,
+    seen_temps: &mut std::collections::HashSet<u64>,
+    out: &mut Vec<(NodeId, NodeId)>,
+) {
+    use piperine_lang::parse::ast::{Literal, Walk};
+    expr.walk(&mut |node| {
         if let PomExpr::Call(func, call_args) = node
             && let PomExpr::Ident(fname) = func.as_ref()
-                && (fname == "V" || fname == "I") {
-                    count += 1;
-                    if count == 1 {
-                        let plus_name = call_args.first().and_then(|e| {
-                            if let PomExpr::Ident(s) = e { Some(s.clone()) } else { None }
-                        }).unwrap_or_default();
-                        let minus_name = call_args.get(1).and_then(|e| {
-                            if let PomExpr::Ident(s) = e { Some(s.clone()) } else { None }
-                        }).unwrap_or_else(|| "0".into());
-                        found = Some((resolve(&plus_name), resolve(&minus_name)));
-                    }
+        {
+            if fname == "V" || fname == "I" {
+                let plus = ident_of(call_args.first()).unwrap_or_default();
+                let minus = ident_of(call_args.get(1)).unwrap_or_else(|| "0".into());
+                let branch = (resolve(&plus), resolve(&minus));
+                if !out.contains(&branch) {
+                    out.push(branch);
                 }
+                return Walk::SkipChildren;
+            }
+            if fname == "__temp"
+                && let Some(PomExpr::Literal(Literal::Int(id))) = call_args.first()
+            {
+                if seen_temps.insert(*id) {
+                    limit_branches_into(&temps[*id as usize], temps, resolve, seen_temps, out);
+                }
+                return Walk::SkipChildren;
+            }
+        }
         Walk::Continue
     });
-    if count == 1 { found } else { None }
+}
+
+fn ident_of(e: Option<&PomExpr>) -> Option<String> {
+    match e {
+        Some(PomExpr::Ident(s)) => Some(s.clone()),
+        _ => None,
+    }
 }
 
 /// Structural equality for POM `Expr`.
@@ -664,6 +741,10 @@ impl<'m> AnalogCompiler<'m> {
             add(plus);
             add(minus);
         }
+        for &(plus, minus, _) in &flat.initial_conditions {
+            add(plus);
+            add(minus);
+        }
         (terminals, num_ports)
     }
 
@@ -675,9 +756,21 @@ impl<'m> AnalogCompiler<'m> {
         let noise = std::mem::take(&mut self.flat.noise);
         let bound_steps = std::mem::take(&mut self.flat.bound_steps);
         let runtime_inputs = self.flat.runtime_states.clone();
+        let initial_conditions = std::mem::take(&mut self.flat.initial_conditions);
 
         let residual_id = self.compile_residual("residual", &resistive)?;
         let jacobian_id = self.compile_jacobian("jacobian", &resistive)?;
+
+        // `@initial` UIC seeds: one param-only row per condition (its value),
+        // plus the terminal pair it seeds.
+        let ic_terminals: Vec<(NodeId, NodeId)> =
+            initial_conditions.iter().map(|(p, m, _)| (*p, *m)).collect();
+        let ic_values_id = if initial_conditions.is_empty() {
+            None
+        } else {
+            let vals: Vec<PomExpr> = initial_conditions.iter().map(|(_, _, v)| v.clone()).collect();
+            Some(self.compile_rows("initial_conditions", &vals)?)
+        };
 
         let (charge_id, charge_jac_id) = if charge.is_empty() {
             (None, None)
@@ -695,6 +788,25 @@ impl<'m> AnalogCompiler<'m> {
                 Some(self.compile_rows("force", &forces.iter().map(|f| f.expr.clone()).collect::<Vec<_>>())?),
                 Some(self.compile_force_jacobian("force_jacobian", &forces)?),
             )
+        };
+
+        // Inductor flux terms flattened across forces: each is
+        // `(force_idx, target_plus, target_minus)` + a coefficient row. The
+        // transient companion adds `dΦ/dt` (`Φ = Σ coeff·I(target)`) onto
+        // force `force_idx`'s branch equation, coupling to `target`'s current.
+        let flux_meta: Vec<(usize, NodeId, NodeId)> = forces
+            .iter()
+            .enumerate()
+            .flat_map(|(i, f)| f.flux_terms.iter().map(move |(tp, tm, _)| (i, *tp, *tm)))
+            .collect();
+        let force_flux_id = if flux_meta.is_empty() {
+            None
+        } else {
+            let coeffs: Vec<PomExpr> = forces
+                .iter()
+                .flat_map(|f| f.flux_terms.iter().map(|(_, _, c)| c.clone()))
+                .collect();
+            Some(self.compile_rows("force_flux", &coeffs)?)
         };
 
         // AC drive attached to force branches (ideal AC voltage stimulus). One
@@ -772,7 +884,9 @@ impl<'m> AnalogCompiler<'m> {
             .limits
             .iter()
             .map(|l| {
-                limit_branch(l, self.module).map(|(p, m)| {
+                // The $limit's `vnew` is a `__temp` leaf; `limit_branch`
+                // searches the tape by id to find the `V`/`I` branch it acts on.
+                limit_branch(l, self.module, &self.flat.temps).map(|(p, m)| {
                     (self.slot.get(&p).copied(), self.slot.get(&m).copied())
                 })
             })
@@ -929,6 +1043,8 @@ impl<'m> AnalogCompiler<'m> {
             force_jacobian: force_jac_id.map(|id| get(&self.jit, id)),
             force_ac_mag: force_ac_mag_id.map(|id| get(&self.jit, id)),
             force_ac_phase: force_ac_phase_id.map(|id| get(&self.jit, id)),
+            force_flux: force_flux_id.map(|id| get(&self.jit, id)),
+            flux_meta,
             noise: noise_id.map(|id| get(&self.jit, id)),
             ac_stim_mag: ac_stim_mag_id.map(|id| get(&self.jit, id)),
             ac_stim_phase: ac_stim_phase_id.map(|id| get(&self.jit, id)),
@@ -936,6 +1052,8 @@ impl<'m> AnalogCompiler<'m> {
             event_triggers: event_triggers_id.map(|id| get(&self.jit, id)),
             event_actions: event_actions_id.map(|id| get(&self.jit, id)),
             bound_step: bound_step_id.map(|id| get(&self.jit, id)),
+            initial_condition_terminals: ic_terminals,
+            initial_conditions: ic_values_id.map(|id| get(&self.jit, id)),
             digital_terminals: self
                 .terminals
                 .iter()
@@ -969,6 +1087,13 @@ impl<'m> AnalogCompiler<'m> {
     }
 
     /// Jacobian shape: `out[row·n + col] += ∂I/∂V` stamps per contribution.
+    ///
+    /// Contributions hold only `__temp` leaves, so the voltage dependence
+    /// lives in the temp tape. For each voltage branch `(a,b)` we build the
+    /// derivative tape `dtemps[k] = d(temps[k])/dV(a,b)` once, then each
+    /// contribution's derivative — which references `__dtemp` leaves — is
+    /// emitted against it. Every temp/dtemp is emitted once per branch,
+    /// keeping the Jacobian linear in body size.
     fn compile_jacobian(&mut self, name: &str, contribs: &[FlatContrib]) -> Result<FuncId, CodegenError> {
         let n = self.terminals.len();
         let exprs: Vec<&PomExpr> = contribs.iter().map(|c| &c.expr).collect();
@@ -977,17 +1102,37 @@ impl<'m> AnalogCompiler<'m> {
             if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
-        self.build_fn(name, &exprs, |b, slot, out_ptr| {
-            for contrib in contribs {
-                let mut pairs = Vec::new();
-                crate::lower::diff::collect_branches(&contrib.expr, &mut pairs, &resolve_node);
-                let plus = slot.get(&contrib.plus).copied();
-                let minus = slot.get(&contrib.minus).copied();
-                for (a, bb) in pairs {
+        let temps = self.flat.temps.clone();
+        // Global branch set: every V/I branch read anywhere in the body
+        // (contributions carry none directly — they're inside the temps).
+        let mut seen = std::collections::HashSet::new();
+        let mut branches: Vec<(NodeId, NodeId)> = Vec::new();
+        let mut collect = |e: &PomExpr| {
+            let mut pairs = Vec::new();
+            crate::lower::diff::collect_branches(e, &mut pairs, &resolve_node);
+            for pair in pairs {
+                if seen.insert(pair) {
+                    branches.push(pair);
+                }
+            }
+        };
+        for c in contribs { collect(&c.expr); }
+        for t in &temps { collect(t); }
+        self.build_fn(name, &exprs, move |b, slot, out_ptr| {
+            for (a, bb) in branches {
+                // Derivative tape for this branch.
+                let dtemps: Vec<PomExpr> = temps
+                    .iter()
+                    .map(|t| crate::lower::diff::d_dv(t, a, bb, &resolve_node))
+                    .collect();
+                b.set_deriv_tape(dtemps);
+                let col_a = slot.get(&a).copied();
+                let col_b = slot.get(&bb).copied();
+                for contrib in contribs {
                     let derivative = crate::lower::diff::d_dv(&contrib.expr, a, bb, &resolve_node);
                     let g = b.emit_analog(&derivative)?;
-                    let col_a = slot.get(&a).copied();
-                    let col_b = slot.get(&bb).copied();
+                    let plus = slot.get(&contrib.plus).copied();
+                    let minus = slot.get(&contrib.minus).copied();
                     let stamp = |b: &mut Builder, row: Option<usize>, col: Option<usize>, negate: bool| {
                         if let (Some(r), Some(c)) = (row, col) {
                             let v = if negate { b.builder.ins().fneg(g) } else { g };
@@ -1026,11 +1171,28 @@ impl<'m> AnalogCompiler<'m> {
             if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
-        self.build_fn(name, &exprs, |b, slot, out_ptr| {
-            for (i, force) in forces.iter().enumerate() {
-                let mut pairs = Vec::new();
-                crate::lower::diff::collect_branches(&force.expr, &mut pairs, &resolve_node);
-                for (a, bb) in pairs {
+        let temps = self.flat.temps.clone();
+        let mut seen = std::collections::HashSet::new();
+        let mut branches: Vec<(NodeId, NodeId)> = Vec::new();
+        let mut collect = |e: &PomExpr| {
+            let mut pairs = Vec::new();
+            crate::lower::diff::collect_branches(e, &mut pairs, &resolve_node);
+            for pair in pairs {
+                if seen.insert(pair) {
+                    branches.push(pair);
+                }
+            }
+        };
+        for f in forces { collect(&f.expr); }
+        for t in &temps { collect(t); }
+        self.build_fn(name, &exprs, move |b, slot, out_ptr| {
+            for (a, bb) in branches {
+                let dtemps: Vec<PomExpr> = temps
+                    .iter()
+                    .map(|t| crate::lower::diff::d_dv(t, a, bb, &resolve_node))
+                    .collect();
+                b.set_deriv_tape(dtemps);
+                for (i, force) in forces.iter().enumerate() {
                     let derivative = crate::lower::diff::d_dv(&force.expr, a, bb, &resolve_node);
                     let g = b.emit_analog(&derivative)?;
                     if let Some(&col) = slot.get(&a) {
@@ -1102,9 +1264,15 @@ impl<'m> AnalogCompiler<'m> {
             if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
+        // Branches now live inside the temp tape (contributions hold only
+        // `__temp` leaves), so scan both.
+        let temps = self.flat.temps.clone();
         let mut pairs = Vec::new();
         for expr in exprs {
             crate::lower::diff::collect_branches(expr, &mut pairs, &resolve_node);
+        }
+        for temp in &temps {
+            crate::lower::diff::collect_branches(temp, &mut pairs, &resolve_node);
         }
         let mut branch_voltages = HashMap::new();
         for (plus, minus) in pairs {
@@ -1136,6 +1304,7 @@ impl<'m> AnalogCompiler<'m> {
             self.limits.clone(),
             self.limit_base,
         );
+        b.set_value_tape(temps);
         body(&mut b, &self.slot, out_ptr)?;
 
         builder.ins().return_(&[]);

@@ -160,7 +160,7 @@ pub struct Port {
 }
 
 /// Port direction.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Direction {
     /// Signal that flows into the module.
     Input,

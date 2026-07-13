@@ -12,6 +12,7 @@ pub mod node;
 pub mod selection;
 pub mod selector;
 pub mod staging;
+pub mod wire;
 pub mod traits;
 pub use crate::value;
 

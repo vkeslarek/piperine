@@ -58,11 +58,13 @@ pub struct SimSession {
     module: String,
     /// Builds `@device`-annotated instances (SPEC Part VI §7).
     provider: Option<std::rc::Rc<dyn piperine_codegen::device::DeviceProvider>>,
+    /// Lifecycle hooks + plugin bench tasks (SPEC Part VI §8/§6).
+    plugins: Option<std::rc::Rc<dyn crate::plugins::BenchPlugins>>,
 }
 
 impl SimSession {
     pub fn new(design: Design, module: String) -> Self {
-        Self { design, module, provider: None }
+        Self { design, module, provider: None, plugins: None }
     }
 
     /// Wire a plugin host as the device provider for this session's builds.
@@ -71,6 +73,32 @@ impl SimSession {
         provider: std::rc::Rc<dyn piperine_codegen::device::DeviceProvider>,
     ) {
         self.provider = Some(provider);
+    }
+
+    /// Wire a plugin host's hooks and bench tasks into this session.
+    pub fn set_plugins(&mut self, plugins: std::rc::Rc<dyn crate::plugins::BenchPlugins>) {
+        self.plugins = Some(plugins);
+    }
+
+    /// Plugin bench-task dispatch, for [`crate::host::SimHost::syscall`].
+    pub(crate) fn plugin_task(
+        &self,
+        name: &str,
+        args: Vec<piperine_lang::eval::Value>,
+    ) -> Option<Result<piperine_lang::eval::Value, piperine_lang::eval::EvalError>> {
+        self.plugins.as_ref()?.run_bench_task(name, args)
+    }
+
+    /// Fire `after_solve` (hook 7).
+    fn fire_after_solve(
+        &self,
+        analysis: &str,
+        node_voltages: &[(String, f64)],
+    ) -> Result<(), BenchError> {
+        if let Some(p) = &self.plugins {
+            p.after_solve(analysis, node_voltages).map_err(BenchError::Plugin)?;
+        }
+        Ok(())
     }
 
     pub fn design(&self) -> &Design {
@@ -95,7 +123,16 @@ impl SimSession {
     /// (piperine-bench/docs/SPEC.md §5.1 `OpConfig.nodeset`) seeds the Newton initial
     /// guess.
     fn build_circuit(&self) -> Result<(piperine_solver::core::circuit::CircuitInstance, piperine_codegen::device::CircuitBuildInfo), BenchError> {
+        // Hook 3 (`transform_design`): plugins stage their mutations, then
+        // the pure re-elaboration below consumes them like any bench write.
+        if let Some(p) = &self.plugins {
+            p.transform_design(&self.design).map_err(BenchError::Plugin)?;
+        }
         let applied = self.design.with_overrides_applied(&self.module)?;
+        // Hook 4 (`before_lower`): read-only view of the applied design.
+        if let Some(p) = &self.plugins {
+            p.before_lower(&applied).map_err(BenchError::Plugin)?;
+        }
         let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
         let mut compiler = CircuitCompiler::new(&applied, &bodies);
         if let Some(provider) = &self.provider {
@@ -115,6 +152,19 @@ impl SimSession {
         let result = dc.solve()?;
         drop(dc);
         let digital = Self::snapshot_digital(&info, &circuit);
+        let voltages: Vec<(String, f64)> = info
+            .nets
+            .iter()
+            .map(|(name, node)| {
+                let v = if *node == piperine_solver::analog::NodeIdentifier::Gnd {
+                    0.0
+                } else {
+                    result.get_node(node).unwrap_or(0.0)
+                };
+                (name.clone(), v)
+            })
+            .collect();
+        self.fire_after_solve("op", &voltages)?;
         Ok(OpResult::new(result, digital, Rc::new(info)))
     }
 
@@ -164,6 +214,7 @@ fn snapshot_digital(
         let mut solver = circuit.transient(opts, config.to_context())?;
         solver.apply_initial_conditions(ivs);
         let result = solver.solve()?;
+        self.fire_after_solve("tran", &[])?;
         Ok(Trace::new(result, Rc::new(info)))
     }
 
@@ -185,6 +236,7 @@ fn snapshot_digital(
             logarithmic,
         };
         let result = circuit.ac(config.to_context())?.solve_sweep(opts)?;
+        self.fire_after_solve("ac", &[])?;
         Ok(AcTrace::new(result, Rc::new(info)))
     }
 
@@ -216,6 +268,7 @@ fn snapshot_digital(
             input_source_name: None,
         };
         let result = circuit.noise(opts, config.to_context())?.solve()?;
+        self.fire_after_solve("noise", &[])?;
         Ok(NoiseTrace::new(result))
     }
 }

@@ -30,6 +30,31 @@ pub(crate) fn check_convergence(
     context.has_converged(state.view(0), new_guess, netlist)
 }
 
+/// ngspice `NIconvTest`: every node's current imbalance (and every branch
+/// row's equation residual) must be within tolerance. Node rows use the
+/// current tolerance `abstol`, branch rows the voltage tolerance `vntol`;
+/// both add the relative term `reltol · scale`. Shared by DC and transient.
+pub(crate) fn residual_converged(
+    netlist: &Netlist,
+    context: &Context,
+    residual: &[f64],
+    scale: &[f64],
+) -> bool {
+    use crate::math::linear::AsIndex;
+    for r in netlist.all_references() {
+        let Some(i) = r.as_index() else { continue };
+        if i >= residual.len() {
+            continue;
+        }
+        let abs_limit = if r.variable().is_branch() { context.vntol } else { context.abstol };
+        let tol = abs_limit + context.reltol * scale[i];
+        if residual[i].abs() > tol {
+            return false;
+        }
+    }
+    true
+}
+
 pub(crate) fn apply_damping(
     state: &crate::math::circular_array::CircularArrayBuffer2<f64>,
     mut current_guess: ArrayViewMut1<f64>,
@@ -67,6 +92,24 @@ pub struct Context {
     pub chgtol: f64,
     pub temperature: f64,
     pub tnom: f64,
+    /// Extra node-to-ground conductance injected during **gmin stepping**
+    /// (SPICE homotopy for hard junction circuits). 0 in normal operation;
+    /// the DC solver ramps it from large → 0 when plain Newton fails to
+    /// converge, so each intermediate problem is diagonally dominant and
+    /// easy, warm-starting the next. See `DcAnalysis::solve`.
+    pub gmin_extra: f64,
+    /// Independent-source scale for **source stepping** (SPICE homotopy):
+    /// every forced source value is multiplied by this. 1.0 in normal
+    /// operation; the DC solver ramps it 0 → 1 when gmin stepping fails, so a
+    /// circuit that only converges near its off state (BJT/MOS amplifiers)
+    /// can be tracked to the true operating point. See `DcAnalysis::solve`.
+    pub src_scale: f64,
+    /// Transient integration method for the reactive companion model. Default
+    /// **Gear order 2** (BDF2): 2nd-order accurate *and* strongly stable —
+    /// it damps the numerical ringing that trapezoidal shows on stiff/LC
+    /// circuits, at the cost of a little extra artificial damping. Order ramps
+    /// 1 → 2 over the first steps.
+    pub integration: crate::analysis::truncation::IntegrationMethod,
 }
 
 impl Default for Context {
@@ -84,6 +127,9 @@ impl Default for Context {
             chgtol: 1e-14,
             temperature: 300.15,
             tnom: 300.15,
+            gmin_extra: 0.0,
+            src_scale: 1.0,
+            integration: crate::analysis::truncation::IntegrationMethod::Gear { order: 2 },
         }
     }
 }

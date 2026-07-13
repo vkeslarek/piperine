@@ -552,6 +552,39 @@ impl<'h, H: Host> Interpreter<'h, H> {
                 let mut invoke = |c: &Closure, args: Vec<Value>| self.call_closure(c, args);
                 return obj.call_method_with(method, arg_values, &mut invoke);
             }
+            // `Option.map(f)`: apply `f` inside the option (needs the
+            // interpreter to invoke the function value; the other Option
+            // methods are pure builtins on `Value`).
+            if let Value::Option(inner) = &recv_value
+                && method == "map"
+            {
+                let inner = inner.clone();
+                let f = arg_values.into_iter().next().ok_or_else(|| {
+                    EvalError::TypeMismatch("Option.map needs a function argument".into())
+                })?;
+                return match inner {
+                    None => Ok(Value::Option(None)),
+                    Some(v) => {
+                        let mapped = match f {
+                            Value::Closure(c) => self.call_closure(&c, vec![*v])?,
+                            Value::FnRef(name) => {
+                                let callable =
+                                    self.host.resolve_callable(&name).ok_or_else(|| {
+                                        EvalError::Undefined(name.clone())
+                                    })?;
+                                self.call_callable(&name, callable, vec![*v])?
+                            }
+                            other => {
+                                return Err(EvalError::TypeMismatch(format!(
+                                    "Option.map needs a function, got {}",
+                                    other.type_name()
+                                )));
+                            }
+                        };
+                        Ok(Value::Option(Some(Box::new(mapped))))
+                    }
+                };
+            }
             // `impl` method dispatch on a bundle value: `card.norm()` binds
             // `self` to the receiver and runs the method body (pure).
             if let Value::Record { ty, .. } = &recv_value {

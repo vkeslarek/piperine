@@ -15,7 +15,7 @@ pub fn is_ground(name: &str) -> bool {
 }
 
 /// A reference to a net, optionally indexed into a bus — `node[i]`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NetRef {
     pub net: String,
     pub index: Option<u64>,
@@ -48,7 +48,7 @@ impl std::fmt::Display for NetRef {
 // ─────────────────────────────── Net types ───────────────────────────────────
 
 /// A port/wire type — a discipline, or a fixed-size array of one.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum NetType {
     Discipline(String),
     Array(Box<NetType>, u64),
@@ -68,7 +68,7 @@ impl NetType {
 // ─────────────────────────────── Value types ─────────────────────────────────
 
 /// A param/var/function type — a primitive, enum, array, or function pointer.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ValueType {
     Real, Natural, Integer, Complex, Boolean, Quad, Str,
     Enum(String),
@@ -83,7 +83,7 @@ pub enum ValueType {
 
 /// Either half of the value/net split — whatever a `Param`, function
 /// argument, or return type resolves to.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum TypeRef {
     Net(NetType),
     Value(ValueType),

@@ -68,6 +68,18 @@ fn differentiate(
                     let m = resolve_node(&minus_name).unwrap_or(NodeId::GROUND);
                     return seed(p, m);
                 }
+                // A value-tape temp: its derivative is the matching entry of
+                // the derivative tape (`d(temps[id])/dV`), referenced as a
+                // `__dtemp(id)` leaf and emitted once per branch.
+                if name == "__temp" {
+                    if let Some(Expr::Literal(Literal::Int(id))) = args.first() {
+                        return Expr::Call(
+                            Box::new(Expr::Ident("__dtemp".into())),
+                            vec![Expr::Literal(Literal::Int(*id))],
+                        );
+                    }
+                    return lit(0.0);
+                }
                 // __state_load, __ddt, __idt, __delay, __slew, etc. — constants
                 // within a Newton iteration.
                 if name.starts_with("__") {

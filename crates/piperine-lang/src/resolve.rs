@@ -170,6 +170,9 @@ impl<'a> Resolver<'a> {
                 other => {
                     // stdlib items are always exported; user items require `pub`.
                     let is_stdlib = package == Some("piperine");
+                    if std::env::var("PIPERINE_DEBUG_FNS").is_ok() {
+                        eprintln!("DBG expand pkg={package:?} item={:?} pub={}", other.name(), other.is_pub());
+                    }
                     if package.is_some() && !is_stdlib && !other.is_pub() {
                         continue;
                     }

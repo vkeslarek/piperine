@@ -17,6 +17,11 @@ pub trait AnalogDevice: Send + Sync {
     // ── Analog lifecycle ──────────────────────────────────────────────────────
     fn limiting_active(&self) -> bool { false }
     fn bound_step_hint(&self) -> f64 { f64::INFINITY }
+    /// `@initial` UIC seeds: the branch `(plus, minus)` and the voltage the
+    /// device wants across it at t=0 (SPICE `.ic`). Ground terminals are
+    /// `None`. Empty for devices without an initial-condition force. The
+    /// transient analysis seeds these into the t=0 state.
+    fn initial_conditions(&self) -> Vec<(Option<AnalogReference>, Option<AnalogReference>, f64)> { Vec::new() }
     fn read_opvars(&self) -> Vec<(String, f64)> { Vec::new() }
     fn set_temperature(&mut self, _t: f64) {}
     fn update(&mut self, _state: &CircularArrayBuffer2<f64>, _ctx: &Context) {}

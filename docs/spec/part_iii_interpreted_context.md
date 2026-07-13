@@ -127,7 +127,7 @@ The interpreted context sees **three layered registries**, tried in order:
    `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`,
    `asinh`, `acosh`, `atanh`, `exp`, `limexp`, `ln`, `log10`, `sqrt`, `pow`, `hypot`,
    `abs`, `min`, `max`, `floor`, `ceil` (25 functions; `log` is an alias of `ln`).
-3. **SimTasks** — **bench-only**: `$op`, `$tran`, `$ac`, `$noise`, `$write`. These
+3. **BenchTasks** — **bench-only**: `$op`, `$tran`, `$ac`, `$noise`, `$write`. These
    require the Host and are unavailable in pure contexts.
 
 Additionally, the `select(...)` host function is available for querying and staging
@@ -161,12 +161,12 @@ allowlist contains 11 task names:
 A `$`-task not in this list, called from a bench fn, is an **elaboration error** — it
 fails before any analysis ever runs, never silently no-ops. This is the fail-loud
 contract: an unimplemented task is a named error, not a stub. (`$plot` is specified in
-Part V §3.3 but is allowlist-gated until its `SimTask` lands — calling it today is the
+Part V §3.3 but is allowlist-gated until its `BenchTask` lands — calling it today is the
 elaboration error above, by design.)
 
 Adding a new bench task requires three changes in the same commit: the allowlist entry,
-the `SimTask` implementation, and this spec's availability matrix (Part V §7).
-Plugin-registered bench tasks (Part VI §6) extend the allowlist at plugin-load time —
+the `BenchTask` implementation, and this spec's availability matrix (Part V §7).
+Plugin-registered bench tasks (Part VI §9) extend the allowlist at plugin-load time —
 a loaded plugin's `bench_task` contributions are callable as `$name(...)` exactly like
 builtins.
 

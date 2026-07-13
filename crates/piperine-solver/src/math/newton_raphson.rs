@@ -17,6 +17,22 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
         true
     }
 
+    /// Current/branch-residual convergence test (ngspice `NIconvTest`), ANDed
+    /// with [`converged`](Self::converged). `residual[i]` is the row-`i`
+    /// imbalance `(A·v − b)[i]` of the just-assembled system at the current
+    /// point (for a node row: the KCL current mismatch; for a branch row: the
+    /// branch-equation residual). `scale[i]` is the sum of the absolute
+    /// contributions into that row (the local current/voltage magnitude). A
+    /// system applies its own per-row tolerances. Default: no residual gate.
+    ///
+    /// This is why stiff exponential devices need it: the damped Newton
+    /// *step* can go small while this residual is still large (a big residual
+    /// divided by a large device conductance is a tiny `Δv`), so the step
+    /// test alone accepts non-solutions.
+    fn residual_converged(&self, _residual: &[E], _scale: &[f64]) -> bool {
+        true
+    }
+
     fn apply_limit(&mut self, _state: &CircularArrayBuffer2<E>, _current_guess: ArrayViewMut1<E>) {}
     fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<E>) {}
     fn before_iter_callback(&mut self, _state: &CircularArrayBuffer2<E>, _iteration_number: usize) {
@@ -99,6 +115,34 @@ where
 
             let stamps = system.assemble(&self.state, alpha)?;
 
+            // Nonlinear residual at the assembled point v_old: for a companion
+            // (Norton) stamp set, `(A·v_old − b)[r]` equals the node's current
+            // imbalance `I_r(v_old)` (or a branch row's equation residual).
+            // `scale[r]` accumulates the absolute contributions for the
+            // relative tolerance. Computed before the stamps are consumed.
+            let size = self.symbolic.size();
+            let mut residual = vec![E::zero(); size];
+            let mut scale = vec![0.0_f64; size];
+            if let Some(v_old) = self.state.latest() {
+                for stamp in &stamps {
+                    match stamp {
+                        Stamp::Matrix(r, c, g) => {
+                            if let (Some(ri), Some(ci)) = (r.as_index(), c.as_index()) {
+                                let term = *g * v_old[ci];
+                                residual[ri] += term;
+                                scale[ri] += term.abs();
+                            }
+                        }
+                        Stamp::Rhs(r, val) => {
+                            if let Some(ri) = r.as_index() {
+                                residual[ri] -= *val;
+                                scale[ri] += val.abs();
+                            }
+                        }
+                    }
+                }
+            }
+
             self.linear_system = L::new(self.symbolic.size());
             self.linear_system.apply_stamps(stamps);
             let mut current_guess = self.linear_system.solve_with_backend(&self.symbolic)?;
@@ -116,7 +160,9 @@ where
 
             system.apply_limit(&self.state, current_guess.view_mut());
 
-            if system.converged(&self.state, &current_guess.view()) {
+            if system.converged(&self.state, &current_guess.view())
+                && system.residual_converged(&residual, &scale)
+            {
                 // Commit the converged solution — the buffer's latest row is
                 // what snapshots read and what the next timestep's companion
                 // models treat as the accepted point.

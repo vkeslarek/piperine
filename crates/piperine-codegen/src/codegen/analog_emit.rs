@@ -48,6 +48,18 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                     match name.as_str() {
                         "V" | "I" => return self.emit_analog_branch(args),
                         "__state_load" => return self.emit_state_load(args),
+                        "__temp" | "__dtemp" => {
+                            let id = match args.first() {
+                                Some(Expr::Literal(Literal::Int(n))) => *n as usize,
+                                _ => return Err(CodegenError::Invalid(
+                                    format!("{name} needs an integer id"))),
+                            };
+                            return if name == "__temp" {
+                                self.emit_temp(id)
+                            } else {
+                                self.emit_dtemp(id)
+                            };
+                        }
                         _ => {}
                     }
                     // Math builtins (exp, ln, sqrt, sin, …)
@@ -220,7 +232,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                     Some(Expr::Literal(Literal::String(s))) => s.clone(),
                     _ => "?".into(),
                 };
-                let id = *self.resolver.params.get(&pname).ok_or_else(|| {
+                let id = self.resolver.param_given(&pname).ok_or_else(|| {
                     CodegenError::Invalid(format!("$param_given: unresolved param `{pname}`"))
                 })?;
                 let sim_ptr = self.sim_ptr();
@@ -365,7 +377,12 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
 
     fn emit_analog_binary(&mut self, op: BinaryOp, a: &Expr, b: &Expr) -> Result<Value, CodegenError> {
         let ir_op = lower_binop_pom(op);
-        if ir_op == crate::ir::BinOp::Pow {
+        // POM `BinaryOp` has no `Pow` variant, so the resolved/differentiated
+        // form carries exponentiation as `BitXor` (see `lower/expr.rs`
+        // `to_pom`; `d_math("pow")` and `d_via_pow` produce it). In an analog
+        // expression a real bitwise xor is meaningless, so `BitXor` is always
+        // that pow carrier.
+        if ir_op == crate::ir::BinOp::Pow || ir_op == crate::ir::BinOp::BitXor {
             let lhs = self.emit_analog(a)?;
             let rhs = self.emit_analog(b)?;
             return self.analog_call_math("pow", &[lhs, rhs]);

@@ -62,7 +62,7 @@ impl SourceFile {
     /// Like [`elaborate_with`](Self::elaborate_with), but lets the caller
     /// seed the [`ElabContext`] registries before elaboration runs — the
     /// entry point plugin hosts use to contribute attribute schemas
-    /// (SPEC Part VI §10) without `piperine-lang` knowing about plugins.
+    /// (SPEC Part VI §11) without `piperine-lang` knowing about plugins.
     pub fn elaborate_seeded(
         self,
         resolver: &mut Resolver,

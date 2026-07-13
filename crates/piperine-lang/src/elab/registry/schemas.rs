@@ -1,6 +1,6 @@
 //! Attribute schema registry — maps schema names to the shape attribute
 //! arguments are validated against. Two registration paths, one store
-//! (SPEC Part I §8, Part VI §10):
+//! (SPEC Part I §8, Part VI §11):
 //!
 //! - **Bundle-backed** — `@attribute(schema = "name")` on a PHDL bundle;
 //!   fields come from the bundle declaration.

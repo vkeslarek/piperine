@@ -34,6 +34,7 @@ syscall set. Part III covers it as such.
 | **IV** | [Reflection & Selector](part_iv_reflection_selector.md) | The Piperine Object Model (POM) and the selector query language |
 | **V** | [Builtins Reference](part_v_builtins.md) | Math, analog operators, `$`-syscalls, `@`-events, diagnostics, prelude/stdlib, system-task availability matrix |
 | **VI** | [Plugins](part_vi_plugins.md) | Plugin extensibility model: devices, lifecycle hooks, custom scripts, attribute schemas, security model |
+| **VII** | [Solver](part_vii_solver.md) | Device ABI, analog/digital namespaces, MNA stamping, analyses, mixed-signal execution, convergence aids |
 | **App. A** | [Worked Examples](appendix_a_worked_examples.md) | End-to-end architectures spanning analog, digital, interpreted, and mixed-signal |
 | **App. B** | [Complete Grammar (EBNF)](appendix_b_grammar.md) | Consolidated LL(1) grammar for the whole language |
 
@@ -47,4 +48,4 @@ syscall set. Part III covers it as such.
 - Code blocks tagged `phdl` illustrate the surface syntax; blocks tagged `ebnf` are
   grammar productions.
 - Error codes follow the pattern `ENNNN` / `PNNNN`, grouped by catalog: E2xxx
-  elaboration, E3xxx reflection (see Part II §11), P0xxx plugins (see Part VI §11).
+  elaboration, E3xxx reflection (see Part II §11), P0xxx plugins (see Part VI §12).

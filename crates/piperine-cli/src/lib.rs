@@ -78,6 +78,21 @@ pub enum Commands {
     },
     /// Display dependency tree
     Tree,
+    /// Inspect loaded plugins (SPEC Part VI)
+    Plugin {
+        #[command(subcommand)]
+        cmd: PluginCmd,
+    },
+    /// A plugin-contributed script: `piperine <script> [args...]`
+    /// (SPEC Part VI §10) — dispatched when no builtin command matches.
+    #[command(external_subcommand)]
+    External(Vec<String>),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PluginCmd {
+    /// List loaded plugins and their contributions
+    List,
 }
 
 pub fn execute() {
@@ -120,6 +135,12 @@ pub fn execute() {
         }
         Commands::Tree => {
             commands::tree::execute();
+        }
+        Commands::Plugin { cmd } => match cmd {
+            PluginCmd::List => commands::plugin::list(),
+        },
+        Commands::External(args) => {
+            commands::plugin::script(args);
         }
     }
 }

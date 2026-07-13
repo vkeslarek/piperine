@@ -13,7 +13,7 @@ use piperine_solver::analysis::dc::{DcAnalysisResult, DcAnalysisState};
 use piperine_solver::analysis::noise::Noise;
 use piperine_solver::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
 use piperine_solver::math::circular_array::CircularArrayBuffer2;
-use piperine_solver::math::linear::Stamp;
+use piperine_solver::math::linear::{AsIndex, Stamp};
 use piperine_solver::solver::Context;
 
 use crate::ir::{Analysis, CrossDir};
@@ -436,7 +436,7 @@ impl AnalogInstance {
     /// Ideal-source rows: per force `i`, a branch-current unknown `ib_i`,
     /// KCL coupling at its terminals, and the branch equation
     /// `V(p) − V(m) − E_i(V) = 0`, Newton-linearised.
-    fn force_stamps(&self, volts: &[f64]) -> Vec<Stamp<AnalogReference, f64>> {
+    fn force_stamps(&self, volts: &[f64], src_scale: f64) -> Vec<Stamp<AnalogReference, f64>> {
         let nf = self.kernel.num_forces();
         if nf == 0 {
             return Vec::new();
@@ -448,6 +448,18 @@ impl AnalogInstance {
             .eval_force(volts, &self.params, &self.state, &self.vars, &self.sim, &mut e);
         self.kernel
             .eval_force_jacobian(volts, &self.params, &self.state, &self.vars, &self.sim, &mut de);
+        // Source stepping: scale the forced value (and its bias dependence) by
+        // the independent-source factor. Internal-node-collapse forces
+        // (`V(c,cp) <- 0`) have `e = 0`, so they are untouched; only real
+        // driven voltages ramp. `1.0` in normal operation.
+        if src_scale != 1.0 {
+            for v in &mut e {
+                *v *= src_scale;
+            }
+            for v in &mut de {
+                *v *= src_scale;
+            }
+        }
 
         let mut stamps = Vec::new();
         for (i, (branch, &(plus, minus))) in self
@@ -512,7 +524,7 @@ impl AnalogInstance {
         let veff = self.limited_volts(&volts);
         let rhs = self.norton_rhs(&veff, &res, &jac);
         let mut stamps = self.nodal_stamps(&rhs, &jac);
-        stamps.extend(self.force_stamps(&volts));
+        stamps.extend(self.force_stamps(&volts, context.src_scale));
         self.update_limits(&volts);
         stamps
     }
@@ -620,6 +632,26 @@ impl AnalogInstance {
         self.limit_seeds = seeds;
     }
 
+    /// `@initial` UIC seeds: `(plus, minus, value)` in netlist references —
+    /// the branch voltage `V(plus,minus)` the device wants at t=0 (SPICE
+    /// `.ic`). Values are instance-constant. Ground terminals are `None`.
+    pub fn initial_conditions(&self) -> Vec<(Option<AnalogReference>, Option<AnalogReference>, f64)> {
+        let nic = self.kernel.num_initial_conditions();
+        if nic == 0 {
+            return Vec::new();
+        }
+        let zeros = vec![0.0; self.num_terminals()];
+        let mut vals = vec![0.0; nic];
+        self.kernel
+            .eval_initial_conditions(&zeros, &self.params, &self.state, &self.vars, &self.sim, &mut vals);
+        self.kernel
+            .initial_condition_terminals()
+            .iter()
+            .zip(vals)
+            .map(|(&(p, m), v)| (self.terminal_ref(p), self.terminal_ref(m), v))
+            .collect()
+    }
+
     pub fn load_transient(
         &mut self,
         states: &TransientAnalysisState,
@@ -627,7 +659,6 @@ impl AnalogInstance {
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
         let dt: f64 = tran_ctx.dt;
-        let alpha = if dt > 0.0 { 1.0 / dt } else { 0.0 };
         self.sim.abstime = tran_ctx.time;
         self.sim.step = dt;
         self.sim.tfinal = tran_ctx.tfinal;
@@ -637,48 +668,102 @@ impl AnalogInstance {
             states.latest().and_then(|s| s.get(k).copied()).unwrap_or(0.0)
         });
         let (res, mut jac) = self.eval_rhs_jac(&volts);
-        // Backward-Euler companion: `alpha·dQ/dV` on the Jacobian plus the
-        // explicit history source `alpha·(Q(v_prev) − Q(v_guess))`. The
-        // linearisation point is the *current Newton guess* (the buffer's
-        // latest row is rewritten every iteration), so the history term
-        // must reference the previously accepted solution explicitly —
-        // folding it into the Norton transform would cancel the reactive
-        // current at convergence and collapse every step to the DC point.
+        // Reactive companion via a BDF (Gear) integration formula:
+        //   i_C = c0·Q(v) + c1·Q(v_{n-1}) + c2·Q(v_{n-2})
+        // Order 1 (`c2 = 0`) is backward-Euler; order 2 is Gear/BDF2 (2nd
+        // order, strongly stable — damps the ringing trapezoidal shows). The
+        // Jacobian carries `c0·dQ/dV`; the history charges enter the RHS
+        // explicitly (the linearisation point is the current Newton guess, so
+        // folding them into the Norton transform would cancel the reactive
+        // current at convergence and collapse every step to DC).
         let veff = self.limited_volts(&volts);
         let mut rhs = self.norton_rhs(&veff, &res, &jac);
-        if self.kernel.has_reactive() {
+        if self.kernel.has_reactive() && dt > 0.0 {
+            let (c0, c1, c2) = bdf_coeffs(tran_ctx.order, dt, tran_ctx.dt_prev);
             let n = self.num_terminals();
             let mut qjac = vec![0.0; n * n];
             self.kernel
                 .eval_charge_jacobian(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut qjac);
             for (j, q) in jac.iter_mut().zip(&qjac) {
-                *j += alpha * q;
+                *j += c0 * q;
             }
-            if alpha > 0.0 {
-                let prev_volts = self.collect_volts(&|k| {
-                    states.view(1).and_then(|s| s.get(k).copied()).unwrap_or(0.0)
-                });
-                let mut q_now = vec![0.0; n];
-                let mut q_prev = vec![0.0; n];
-                self.kernel
-                    .eval_charge(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut q_now);
-                self.kernel
-                    .eval_charge(&prev_volts, &self.params, &self.state, &self.vars, &self.sim, &mut q_prev);
-                for (r, (qp, qn)) in rhs.iter_mut().zip(q_prev.iter().zip(&q_now)) {
-                    *r += alpha * (qp - qn);
-                }
-                // `alpha·dQ/dV·v_guess` entered `rhs` through `norton_rhs`
-                // only if the Jacobian already carried it — it did not (the
-                // reactive part was added after), so add it here.
-                for i in 0..n {
-                    let coupling: f64 = (0..n).map(|jx| qjac[i * n + jx] * volts[jx]).sum();
-                    rhs[i] += alpha * coupling;
-                }
+            let prev_volts = self.collect_volts(&|k| {
+                states.view(1).and_then(|s| s.get(k).copied()).unwrap_or(0.0)
+            });
+            let prev2_volts = self.collect_volts(&|k| {
+                states.view(2).and_then(|s| s.get(k).copied()).unwrap_or(0.0)
+            });
+            let mut q_now = vec![0.0; n];
+            let mut q_prev = vec![0.0; n];
+            let mut q_prev2 = vec![0.0; n];
+            self.kernel.eval_charge(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut q_now);
+            self.kernel.eval_charge(&prev_volts, &self.params, &self.state, &self.vars, &self.sim, &mut q_prev);
+            if c2 != 0.0 {
+                self.kernel.eval_charge(&prev2_volts, &self.params, &self.state, &self.vars, &self.sim, &mut q_prev2);
+            }
+            for i in 0..n {
+                // RHS equivalent source: `c0·(dQ/dV·v_guess) − i_C(v_guess)`.
+                let coupling: f64 = (0..n).map(|jx| qjac[i * n + jx] * volts[jx]).sum();
+                let i_c = c0 * q_now[i] + c1 * q_prev[i] + c2 * q_prev2[i];
+                rhs[i] += c0 * coupling - i_c;
             }
         }
         let mut stamps = self.nodal_stamps(&rhs, &jac);
-        stamps.extend(self.force_stamps(&volts));
+        stamps.extend(self.force_stamps(&volts, context.src_scale));
+        // Inductor flux companion `V(p,n) = dΦ/dt`, Φ = L·ib, on the force
+        // branch's own current unknown. DC uses no flux (dt = 0 → the
+        // inductor is a short, already forced to 0 V by `force_stamps`).
+        if self.kernel.has_force_flux() && dt > 0.0 {
+            let (c0, c1, c2) = bdf_coeffs(tran_ctx.order, dt, tran_ctx.dt_prev);
+            stamps.extend(self.force_flux_stamps(&volts, states, c0, c1, c2));
+        }
         self.update_limits(&volts);
+        stamps
+    }
+
+    /// Inductor flux companion stamps for reactive force branches: the branch
+    /// equation `V(p,n) = dΦ/dt` with `Φ = L·ib` becomes `… − c0·L·ib =
+    /// history`, where `history = L·(c1·ib_{n-1} + c2·ib_{n-2})` reads the
+    /// branch-current unknown's own past values.
+    fn force_flux_stamps(
+        &self,
+        volts: &[f64],
+        states: &TransientAnalysisState,
+        c0: f64,
+        c1: f64,
+        c2: f64,
+    ) -> Vec<Stamp<AnalogReference, f64>> {
+        let terms = self.kernel.flux_terms();
+        let mut coeffs = vec![0.0; terms.len()];
+        self.kernel
+            .eval_force_flux(volts, &self.params, &self.state, &self.vars, &self.sim, &mut coeffs);
+        let force_terminals = self.kernel.force_terminals();
+        let mut stamps = Vec::new();
+        for (&(force_idx, tp, tm), &l) in terms.iter().zip(&coeffs) {
+            if l == 0.0 {
+                continue;
+            }
+            let this_branch = &self.force_refs[force_idx];
+            // The branch current the flux integrates: the force branch whose
+            // terminals are `(tp, tm)` (self = this force; else a mutual
+            // partner). Orientation flips the sign if terminals are reversed.
+            let (target_idx, sign) = force_terminals
+                .iter()
+                .position(|&(p, m)| p == tp && m == tm)
+                .map(|k| (Some(k), 1.0))
+                .or_else(|| force_terminals.iter().position(|&(p, m)| p == tm && m == tp).map(|k| (Some(k), -1.0)))
+                .unwrap_or((None, 1.0));
+            let Some(target_idx) = target_idx else { continue };
+            let target_branch = &self.force_refs[target_idx];
+            let bi = target_branch.as_index();
+            let ib_prev = bi.and_then(|k| states.view(1).and_then(|s| s.get(k).copied())).unwrap_or(0.0);
+            let ib_prev2 = bi.and_then(|k| states.view(2).and_then(|s| s.get(k).copied())).unwrap_or(0.0);
+            let coeff = l * sign;
+            // Branch `force_idx` equation gains `−c0·coeff·ib_target`; the flux
+            // history goes to its RHS.
+            stamps.push(Stamp::Matrix(this_branch.clone(), target_branch.clone(), -c0 * coeff));
+            stamps.push(Stamp::Rhs(this_branch.clone(), coeff * (c1 * ib_prev + c2 * ib_prev2)));
+        }
         stamps
     }
 
@@ -747,6 +832,34 @@ impl AnalogInstance {
             if let Some(m) = self.terminal_ref(minus) {
                 stamps.push(Stamp::Matrix(m.clone(), branch.clone(), Complex64::new(-1.0, 0.0)));
                 stamps.push(Stamp::Matrix(branch.clone(), m, Complex64::new(-1.0, 0.0)));
+            }
+        }
+        // Inductor flux admittance in small-signal: `V(p,n) = jω·Φ`, Φ = Σ
+        // L·I(branch), so the branch equation gains `−jω·L·ib` on its own (and
+        // mutual partner) branch-current unknown. Mirrors the transient
+        // companion with `jω` in place of the BDF coefficient.
+        if self.kernel.has_force_flux() {
+            let terms = self.kernel.flux_terms();
+            let mut coeffs = vec![0.0; terms.len()];
+            self.kernel
+                .eval_force_flux(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut coeffs);
+            let force_terminals = self.kernel.force_terminals();
+            for (&(force_idx, tp, tm), &l) in terms.iter().zip(&coeffs) {
+                if l == 0.0 {
+                    continue;
+                }
+                let (target_idx, sign) = force_terminals
+                    .iter()
+                    .position(|&(p, m)| p == tp && m == tm)
+                    .map(|k| (Some(k), 1.0))
+                    .or_else(|| force_terminals.iter().position(|&(p, m)| p == tm && m == tp).map(|k| (Some(k), -1.0)))
+                    .unwrap_or((None, 1.0));
+                let Some(target_idx) = target_idx else { continue };
+                stamps.push(Stamp::Matrix(
+                    self.force_refs[force_idx].clone(),
+                    self.force_refs[target_idx].clone(),
+                    Complex64::new(0.0, -omega * l * sign),
+                ));
             }
         }
         // Ideal AC voltage stimulus attached to a force branch: the branch
@@ -900,4 +1013,23 @@ impl AnalogInstance {
 
 fn dc_op_voltage(reference: &AnalogReference, dc_point: &DcAnalysisResult) -> Option<f64> {
     dc_point.get(reference.variable().clone())
+}
+
+/// BDF (Gear) integration coefficients `(c0, c1, c2)` for
+/// `dQ/dt ≈ c0·Q_n + c1·Q_{n-1} + c2·Q_{n-2}` at the current timepoint, for a
+/// possibly non-uniform step history (`dt0` = current step, `dt1` = previous).
+/// Order 1 is backward-Euler (`c2 = 0`); order 2 is BDF2 (uniform-step limit
+/// `1.5/dt, -2/dt, 0.5/dt`). Falls back to order 1 when there is no valid
+/// previous step.
+fn bdf_coeffs(order: usize, dt0: f64, dt1: f64) -> (f64, f64, f64) {
+    if order >= 2 && dt1 > 0.0 {
+        let sum = dt0 + dt1;
+        let c0 = (2.0 * dt0 + dt1) / (dt0 * sum);
+        let c1 = -sum / (dt0 * dt1);
+        let c2 = dt0 / (dt1 * sum);
+        (c0, c1, c2)
+    } else {
+        let a = 1.0 / dt0;
+        (a, -a, 0.0)
+    }
 }

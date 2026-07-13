@@ -1,4 +1,4 @@
-//! [`PluginError`] — the P0xxx catalog (SPEC Part VI §11). Every failed or
+//! [`PluginError`] — the P0xxx catalog (SPEC Part VI §12). Every failed or
 //! denied plugin path is one of these; nothing plugin-related fails silently.
 
 /// Plugin errors, code range P0xxx (distinct from parse E1xxx, elaboration

@@ -36,9 +36,9 @@ impl Parse for Item {
             "fn" => {
                 // Consume `pub` / `extern` in the real parser, then parse the fn.
                 parser.parse_attributes()?;
-                parser.eat_ident("pub");
+                let is_pub = parser.eat_ident("pub");
                 let is_extern = parser.eat_ident("extern");
-                Ok(Item::FnDecl(FnDecl::parse_with_extern(parser, is_extern)?))
+                Ok(Item::FnDecl(FnDecl::parse_with_extern(parser, is_pub, is_extern)?))
             }
             "const" => Ok(Item::ConstDecl(ConstDecl::parse(parser)?)),
             "bench" => Ok(Item::BenchDecl(BenchDecl::parse(parser)?)),

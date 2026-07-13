@@ -7,13 +7,37 @@ use std::rc::Rc;
 use crate::parse::ast::{BundleDecl, CapabilityDecl, DisciplineDecl, EnumDecl};
 use crate::pom::{BenchBlock, ElabError, ElabErrorKind, Function, ImplBlock, Module, OverrideMap, Value};
 
+/// A typed staging failure (SPEC Part VI §8.2–§8.4): the plugin layer maps
+/// `UndeclaredType` to P0005 ("type not declared") and `Conflict` to P0008.
+#[derive(Debug, Clone)]
+pub enum StageError {
+    /// No-netlist-magic violation: the staged module type was never declared.
+    UndeclaredType { label: String, module: String },
+    /// Two writers staged different specs under one `(parent, label)`.
+    Conflict(crate::pom::staging::StagingConflict),
+    Other(String),
+}
+
+impl std::fmt::Display for StageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UndeclaredType { label, module } => write!(
+                f,
+                "staged instance `{label}`: type `{module}` not declared in the design"
+            ),
+            Self::Conflict(c) => c.fmt(f),
+            Self::Other(msg) => msg.fmt(f),
+        }
+    }
+}
+
 /// Project-level metadata carried by the POM. Item provenance (`origins`)
 /// is recorded by the `use` resolver during elaboration; the name/version/
 /// dependency fields are stamped by whoever knows the `Piperine.toml`
 /// (the CLI, the language server) via [`Design::set_project_meta`].
 /// Queryable through reflection — the anchor point for the plugin system
 /// (spec Part VI).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Project {
     /// The project name from `Piperine.toml`, if available.
     pub name: Option<String>,
@@ -44,21 +68,39 @@ impl Project {
 /// Fields are `pub(crate)`; external consumers use the public accessor
 /// methods that implement the POM reflection interface
 /// (`docs/reflection_api.md`).
-#[derive(Debug, Clone)]
+/// **Serialization (SPEC Part IV §7).** `Design` serializes as itself —
+/// there is no separate wire model. The serialized surface is the
+/// reflection surface: `modules` (with their ports, params, wires,
+/// instances, connections, attributes), `consts`, `project`, and
+/// `top_module`. Fields that are compiled ASTs (declarations, functions,
+/// behaviors, benches) or live host state (the staging area) are skipped —
+/// they are not reflection data and a deserialized `Design` carries their
+/// empty defaults. If the reflection surface cannot express something the
+/// language has, the POM is incomplete and gets extended — never shadowed.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct Design {
     pub(crate) modules: HashMap<String, Module>,
+    #[serde(skip)]
     pub(crate) disciplines: HashMap<String, DisciplineDecl>,
+    #[serde(skip)]
     pub(crate) bundles: HashMap<String, BundleDecl>,
+    #[serde(skip)]
     pub(crate) enums: HashMap<String, EnumDecl>,
+    #[serde(skip)]
     pub(crate) capabilities: HashMap<String, CapabilityDecl>,
+    #[serde(skip)]
     pub(crate) functions: HashMap<String, Function>,
+    #[serde(skip)]
     pub(crate) impls: Vec<ImplBlock>,
     pub(crate) consts: HashMap<String, Value>,
+    #[serde(skip)]
     pub(crate) benches: Vec<BenchBlock>,
     /// Project metadata (name, version, dependencies).
     pub(crate) project: Project,
     /// Staged parameter overrides — the single mutation surface in POM.
     /// Writing via `set_param()` stages here; re-elaboration consumes.
+    #[serde(skip)]
     pub(crate) overrides: Rc<RefCell<OverrideMap>>,
     /// The top module name, if set by the user or inferred.
     pub(crate) top_module: Option<String>,
@@ -272,6 +314,61 @@ impl Design {
         self.overrides.borrow_mut().clear();
     }
 
+    /// Stage an instance injection into `parent` (SPEC Part VI §8.2). The
+    /// spec's module must be a type declared in this design — a plugin (or
+    /// bench) cannot invent a type that was never declared (no-netlist-magic,
+    /// Part VI §2). A duplicate label with a different spec is a typed
+    /// [`StageError::Conflict`] naming both writers; `staged_by` identifies
+    /// this writer (a plugin name, or `"bench"`).
+    pub fn stage_instance(
+        &self,
+        parent: &str,
+        spec: crate::pom::staging::InstanceSpec,
+        staged_by: &str,
+    ) -> Result<(), StageError> {
+        let child = self
+            .modules
+            .get(&spec.module)
+            .ok_or_else(|| StageError::UndeclaredType {
+                label: spec.label.clone(),
+                module: spec.module.clone(),
+            })?;
+        if spec.ports.len() != child.ports.len() {
+            return Err(StageError::Other(format!(
+                "staged instance `{}` connects {} nets, module `{}` has {} ports",
+                spec.label,
+                spec.ports.len(),
+                spec.module,
+                child.ports.len()
+            )));
+        }
+        if !self.modules.contains_key(parent) {
+            return Err(StageError::Other(format!(
+                "staged instance `{}`: parent module `{parent}` not found",
+                spec.label
+            )));
+        }
+        self.overrides
+            .borrow_mut()
+            .add_instance(parent, spec, staged_by)
+            .map_err(StageError::Conflict)
+    }
+
+    /// Stage a net connection into `parent` (SPEC Part VI §8.2).
+    pub fn stage_connection(
+        &self,
+        parent: &str,
+        spec: crate::pom::staging::ConnectionSpec,
+    ) -> Result<(), StageError> {
+        if !self.modules.contains_key(parent) {
+            return Err(StageError::Other(format!(
+                "staged connection: parent module `{parent}` not found"
+            )));
+        }
+        self.overrides.borrow_mut().add_connection(parent, spec);
+        Ok(())
+    }
+
     /// An independent copy with its own, empty staging area — every other
     /// field is a cheap structural clone. Used to give each `bench` entry
     /// point a fresh view (piperine-bench/docs/SPEC.md §9: staged overrides never leak
@@ -326,6 +423,48 @@ impl Design {
                 Some((_, v)) => *v = const_val,
                 None => instance.params.push((param, const_val)),
             }
+        }
+        // Apply staged instance/connection injections (SPEC Part VI §8.2).
+        // The type/arity checks ran at staging time; here the specs become
+        // ordinary POM nodes on the parent module.
+        let staged_instances: Vec<crate::pom::staging::StagedInstance> =
+            self.overrides.borrow().added_instances().to_vec();
+        let staged_connections: Vec<(String, crate::pom::staging::ConnectionSpec)> =
+            self.overrides.borrow().added_connections().to_vec();
+        for staged in staged_instances {
+            let (parent, spec) = (staged.parent, staged.spec);
+            let module = design.modules.get_mut(&parent).ok_or_else(|| {
+                ElabError::from(ElabErrorKind::Other(format!(
+                    "staged instance `{}`: parent module `{parent}` not found",
+                    spec.label
+                )))
+            })?;
+            if module.instances.iter().any(|i| i.name() == spec.label) {
+                return Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "staging conflict: `{parent}` already has an instance `{}`",
+                    spec.label
+                ))));
+            }
+            module.instances.push(crate::pom::module::Instance {
+                span: None,
+                attributes: Vec::new(),
+                label: Some(spec.label),
+                module: spec.module,
+                ports: spec.ports.iter().map(|n| crate::pom::net_type::NetRef::simple(n.clone())).collect(),
+                params: spec.params,
+            });
+        }
+        for (parent, spec) in staged_connections {
+            let module = design.modules.get_mut(&parent).ok_or_else(|| {
+                ElabError::from(ElabErrorKind::Other(format!(
+                    "staged connection: parent module `{parent}` not found"
+                )))
+            })?;
+            module.connections.push(crate::pom::module::Connection {
+                span: None,
+                lhs: crate::pom::net_type::NetRef::simple(spec.lhs),
+                rhs: crate::pom::net_type::NetRef::simple(spec.rhs),
+            });
         }
         Ok(design)
     }
