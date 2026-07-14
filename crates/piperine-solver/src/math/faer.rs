@@ -59,6 +59,20 @@ pub struct FaerSparseLinearSystem<E: Scalar> {
     pub size: usize,
 }
 
+impl<E: Scalar> FaerSparseLinearSystem<E> {
+    /// Clear the stamped triplets and the RHS vector in-place, without
+    /// reallocating, so the buffer is reused across Newton iterations.
+    ///
+    /// The symbolic LU (`SymbolicLu`) is already reused for a whole run; this
+    /// closes the other half of per-iteration allocation cost — the `Vec`
+    /// rebuild that `LinearSystem::new` would do. Call this instead of
+    /// reconstructing the system each iteration.
+    pub fn reset(&mut self) {
+        self.triplets.clear();
+        self.b_vec.fill(E::zero());
+    }
+}
+
 impl<E: 'static + Scalar> LinearSystem<E> for FaerSparseLinearSystem<E> {
     fn new(size: usize) -> Self {
         Self {
@@ -125,5 +139,44 @@ pub trait FaerToNdarray<E> {
 impl<E: Clone + 'static> FaerToNdarray<E> for Col<E> {
     fn to_ndarray(&self) -> Array1<E> {
         self.as_ref().iter().cloned().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reset_clears_stamps_without_reallocating() {
+        use crate::math::linear::{AsIndex, Stamp};
+
+        #[derive(Clone, Copy)]
+        struct Idx(usize);
+        impl AsIndex for Idx {
+            fn as_index(&self) -> Option<usize> { Some(self.0) }
+        }
+
+        let mut sys: FaerSparseLinearSystem<f64> = LinearSystem::new(4);
+        // Stamp a matrix entry and an RHS entry.
+        sys.apply_stamps(vec![
+            Stamp::Matrix(Idx(0), Idx(1), 3.0),
+            Stamp::Rhs(Idx(2), -7.0),
+        ]);
+        assert_eq!(sys.triplets.len(), 1);
+        assert_eq!(sys.b_vec[2], -7.0);
+        let cap_before = sys.triplets.capacity();
+
+        sys.reset();
+
+        // Cleared: no triplets, RHS back to zero.
+        assert!(sys.triplets.is_empty(), "triplets not cleared");
+        for v in &sys.b_vec {
+            assert_eq!(*v, 0.0, "b_vec not zeroed");
+        }
+        // Capacity retained (no reallocation) — the whole point of reset().
+        assert!(
+            sys.triplets.capacity() >= cap_before,
+            "capacity dropped: {} < {}", sys.triplets.capacity(), cap_before
+        );
     }
 }
