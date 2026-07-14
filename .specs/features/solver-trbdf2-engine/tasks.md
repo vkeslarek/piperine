@@ -40,6 +40,17 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 ## Execution Plan
 
+> **Plan revision (2026-07-14, from T5 implementation attempt):** two changes.
+> (1) The original T5 (context phase) and T6 (two-phase driver) **merge** — there
+> is no coherent single-solve interim (the TR phase advances `γh`, not `h`); the
+> kernel switch and the driver go two-phase in one commit. (2) A **new T5a** is
+> inserted before the merged driver task: the kernel's reactive companion is
+> pure-derivative (BDF style); the TR stage needs a trapezoidal companion that
+> tracks the **previous capacitor current** per reactive port. Without T5a the
+> TR stage silently degrades to backward-Euler-over-half-step (measured
+> `τ_eff ≈ 1.55τ`). See `design.md` § "Design Discovery". T1–T4 are DONE and
+> committed (`6fd9ed3` … `7d3cb6c`).
+
 Phases are ordered and run sequentially — each phase completes before the next begins, and tasks within a phase execute in order.
 
 ```
@@ -158,9 +169,29 @@ T14 → T15 → T16
 
 ---
 
-### T5: TransientAnalysisContext carries phase; kernel calls TrBdf2::phase_coeffs
+### T5a: Kernel trapezoidal companion (previous-current tracking) — NEW PREREQUISITE
 
-**What**: Replace `TransientAnalysisContext.{integration, order, dt_prev}` with `{phase: TrBdf2Phase, h: f64}`. The kernel (`device/analog.rs::load_transient` + `force_flux_stamps`) calls `TrBdf2::phase_coeffs(ctx.phase, ctx.h)` instead of `bdf_coeffs(...)`. Driver still does ONE solve (phase=Trap) — keeps existing tests green.
+**What**: The TR stage of TR-BDF2 needs the trapezoidal companion `i_{C,n+1} = (2C/s)(V_{n+1}−V_n) − i_{C,n}`, which requires the **previous capacitor current** `i_{C,n}` per reactive port. Add a previous-current state bank to the analog device state, populated after each accepted step and applied during the TR phase. The BDF2 phase keeps the existing pure-derivative companion. (Discovered in the T5 attempt — without this, the TR stage silently degrades to BE-over-half-step.)
+**Where**: `crates/piperine-codegen/src/device/analog.rs` (state + companion), `crates/piperine-codegen/src/jit/` (state bank), `crates/piperine-solver/src/analysis/transient.rs` (context signals TR phase)
+**Depends on**: T1, T2
+**Reuses**: the existing charge-history plumbing (`eval_charge`); mirrors how `vold`/limit state banks are threaded
+**Requirement**: TRB-01 (the TR phase must actually be 2nd-order trapezoidal)
+
+**Tools**: NONE
+**Done when**:
+- [ ] A per-reactive-port previous-current value is stored in device state and checkpointed/committed with the step
+- [ ] During the TR phase the companion includes `−i_{C,n}`; during BDF2 it does not
+- [ ] Integration test: RC discharge (τ=RC), fixed small dt, `V(τ)` within 1% of `e⁻¹` (the case that returned 0.524 before)
+- [ ] Full gate green
+**Tests**: integration (codegen)
+**Gate**: codegen + full
+**Commit**: `feat(codegen): trapezoidal companion for the TR-BDF2 TR stage`
+
+---
+
+### T5: TransientAnalysisContext carries phase; kernel calls TrBdf2::phase_coeffs (MERGED into T6)
+
+**What**: Replace `TransientAnalysisContext.{integration, order, dt_prev}` with `{phase: TrBdf2Phase, h: f64}`. The kernel calls `TrBdf2::phase_coeffs(ctx.phase, ctx.h)`. **Merged with T6** — there is no coherent single-solve interim; this lands together with the two-phase driver.
 **Where**: `crates/piperine-solver/src/analysis/transient.rs`, `crates/piperine-codegen/src/device/analog.rs`
 **Depends on**: T1
 **Reuses**: existing `bdf_coeffs` call sites (swap to `TrBdf2::phase_coeffs`)

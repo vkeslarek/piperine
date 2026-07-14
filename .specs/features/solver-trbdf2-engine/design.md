@@ -38,6 +38,38 @@ distinguished, within ~500 accepted steps, matching ngspice within `reltol`.
 
 ---
 
+## Design Discovery (T5 implementation attempt, 2026-07-14) — CRITICAL
+
+The first two-phase driver implementation revealed a **kernel limitation**
+that reshapes the plan. The reactive companion in `device/analog.rs::load_transient`
+is `i_C = c0·Q(V) + c1·Q(V_prev) + c2·Q(V_prev2)` — a **pure-derivative**
+form (BDF/Gear style). This is correct for BDF but **wrong for trapezoidal**:
+the trapezoidal companion is
+
+```
+i_{C,n+1} = (2C/s)·(V_{n+1} − V_n) − i_{C,n}
+```
+
+which needs the **previous capacitor current** `i_{C,n}` as extra state. The
+kernel does not track per-port previous current, so feeding the trapezoidal
+coeffs `(2/(γh), −2/(γh), 0)` through the existing companion silently degrades
+the TR stage to backward-Euler-over-half-step (`τ_eff ≈ 1.55τ` instead of `τ`
+— measured on the RC discharge: `V(τ) = 0.524` vs `e⁻¹ = 0.368`). The BDF2
+stage (phase 2) is fine — its pure-derivative companion is correct.
+
+**Consequence:** TR-BDF2's TR stage requires a **kernel enhancement** — a
+previous-current state bank per reactive port, applied only during the TR
+phase — before the two-phase driver can produce correct results. This is a
+new prerequisite task (T5a below). The BDF2 phase uses the existing
+companion unchanged. (Pre-existing note: the opt-in `Trapezoidal` method
+suffered the same silent 1st-order degradation; removing it in T13 retires
+that latent bug.)
+
+This is exactly the kind of finding the discrimination baseline was meant to
+surface — and it did, on the very first integrated circuit.
+
+---
+
 ## Architecture Overview
 
 The transient engine becomes a single driver loop that consults a **unified
