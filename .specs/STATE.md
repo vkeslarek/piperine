@@ -144,29 +144,28 @@ in `docs/spec/` (Parts I–VII). Solver gaps and feature tracking live in
 
 ## Handoff Snapshot
 
+**Feature:** `solver-trbdf2-engine` (TR-BDF2 sole integration scheme + PI controller + unified breakpoints + factorization reuse). Spec/context/design/tasks in `.specs/features/solver-trbdf2-engine/`.
 **Branch:** `feature/plugin-architecture`
-**Last commit:** `f02dd4a`
-**Uncommitted:** LTE + minor refactors + doc cleanup + .specs initialization
+**Last commit:** `175bbf6`
+**Working tree:** clean (T5 attempt reverted to green T4 state).
 
 ### Completed
-- Phase 0: Decisions locked (MD-01 through MD-16)
-- Phase 1: Minor refactors (dead code, math layer, error model, layout, magic numbers)
-- Phase 2: Naming layer (`Net`, labels, result mapping)
-- Phase 3: `Element` ABI (unified trait, capabilities, SAMPLES_ANALOG, trapezoidal, LTE)
-- Doc cleanup: crate-level docs removed, CLAUDE.md/AGENTS.md updated, .specs/ initialized
+- Specify + Design + Tasks phases done; committed (`17c0865`, `0b78b55`, `175bbf6`).
+- TRB-20 baseline recorded (design.md): narrow-pulse charge pump under the 500-step budget — current arch gives `1ns≡10ns` (identical, wrong) + non-monotonic + 5–7× budget blowup. Pure-PHDL `Pulse` source written (100% PHDL, `if/else` on `$abstime`).
+- **Phase 1 (seams) — T1–T4 DONE & committed:** `6fd9ed3` (TrBdf2 math), `4abf75b` (Element::next_breakpoints), `ea87b24` (BYPASS_OK), `7d3cb6c` (FaerSparseLinearSystem::reset). All additive, build zero warnings, 34+ lib tests green.
 
-### Remaining (mapped to feature specs in `.specs/features/`)
-| Feature | Decisions | Priority |
-|---------|-----------|----------|
-| `solver-strategy-composition` | MD-03, MD-04, MD-05 | High |
-| `solver-library-abi` | MD-06, MD-13 | High |
-| `solver-osdi-abi-completion` | MD-11, MD-12 | Medium |
-| `solver-commit-rollback` | MD-12 | Medium |
-| `solver-unified-events` | MD-12 | Medium |
-| `solver-breakpoints` | MD-07, MD-08 | Medium |
-| `solver-convergence-aids` | — | Low |
-| `solver-performance` | — | Low |
+### In progress / blocked
+- **T5 (two-phase driver) reverted — design discovery:** the kernel's reactive companion (`device/analog.rs::load_transient`) is pure-derivative `i_C = c0·Q+c1·Q_prev+c2·Q_prev2` (BDF style). The TR stage needs the trapezoidal companion `i_C = (2C/s)(V−V_n) − i_{C,n}` which tracks the **previous capacitor current** per reactive port — state the kernel does not hold. Without it the TR stage degrades to BE-over-half-step (measured `τ_eff≈1.55τ`). **New prerequisite task T5a** (kernel previous-current bank) inserted into tasks.md; must land before the merged T5/T6 two-phase driver.
+
+### Next step
+- Implement **T5a** (kernel trapezoidal companion support: per-reactive-port previous-current state bank, applied only in the TR phase; BDF2 phase unchanged). Verify with the RC-discharge case (`V(τ)` within 1% of `e⁻¹`). Then proceed to the merged T5+T6 (context phase + two-phase driver).
+
+### Blockers
+- None — the path is clear (T5a → T5/T6 merged → T7 PI → T8–T16). The kernel-enhancement scope of T5a is the only addition vs the original plan.
+
+### Uncommitted files
+- None.
 
 ### Test baseline
 - `cargo build --workspace` — zero warnings.
-- `cargo test --workspace` — 51 targets, all green.
+- `cargo test --workspace` — green at T4 (Phase 1 complete). The two transient examples (`02_rc_lowpass` discharge, `12_opamp_follower` settle) currently pass on Gear-2; they will migrate to TR-BDF2 outcomes once the engine activates (after T5a+T5/T6).
