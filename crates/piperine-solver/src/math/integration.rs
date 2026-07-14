@@ -130,6 +130,92 @@ fn bdf2_coeffs(dt0: f64, dt1: f64) -> (f64, f64, f64) {
     (c0, c1, c2)
 }
 
+// ── TR-BDF2 (sole transient integration scheme) ────────────────────────────
+//
+// TR-BDF2 (Hosea & Shampine, 1996) advances `[t_n, t_{n+1}]` in two stages
+// with the damping parameter γ = 2 − √2: a Trapezoidal stage over `γh` to the
+// intermediate point `x_{n+γ}`, then a BDF2 stage over the remaining `(1−γ)h`
+// to `x_{n+1}` using `x_{n+γ}` and `x_n` as history. The BDF2 stage is a
+// native low-pass filter, giving L-stability (no trapezoidal ringing on
+// stiff/LC circuits). This is the only transient scheme — there is no
+// method-selection surface.
+
+/// Which sub-step of a TR-BDF2 step the kernel is stamping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrBdf2Phase {
+    /// Trapezoidal stage over `γh` → solves for the intermediate `x_{n+γ}`.
+    Trapezoidal,
+    /// BDF2 stage over `(1−γ)h` → solves for `x_{n+1}` from `x_{n+γ}` and `x_n`.
+    Bdf2,
+}
+
+/// TR-BDF2 — the sole transient integration scheme. Owns the per-phase
+/// companion coefficients and the Milne-device LTE estimate.
+pub struct TrBdf2;
+
+impl TrBdf2 {
+    /// The damping parameter γ = 2 − √2 (Hosea & Shampine). With this value
+    /// both stages share equal weight and the method is L-stable. Pre-computed
+    /// because `f64::sqrt` is not `const` on stable Rust.
+    pub const GAMMA: f64 = 0.5857864376269049; // = 2.0 − 1.4142135623730951
+
+    /// Companion coefficients `(c0, c1, c2)` for
+    /// `i_C = c0·Q + c1·Q_hist1 + c2·Q_hist2` at the given phase and step `h`.
+    ///
+    /// - [`Trapezoidal`](TrBdf2Phase::Trapezoidal) over the sub-step `γh`:
+    ///   `(2/(γh), −2/(γh), 0)` — the unknown is `Q_{n+γ}`, history is `Q_n`.
+    /// - [`Bdf2`](TrBdf2Phase::Bdf2) over the sub-step `(1−γ)h`: the non-uniform
+    ///   BDF2 coefficients with previous sub-step `γh` — the unknown is
+    ///   `Q_{n+1}`, history is `Q_{n+γ}` then `Q_n`.
+    pub fn phase_coeffs(phase: TrBdf2Phase, h: f64) -> (f64, f64, f64) {
+        match phase {
+            TrBdf2Phase::Trapezoidal => {
+                let sub = Self::GAMMA * h;
+                (2.0 / sub, -2.0 / sub, 0.0)
+            }
+            // The BDF2 stage reuses the existing non-uniform formula with the
+            // current sub-step `(1−γ)h` and the previous sub-step `γh`.
+            TrBdf2Phase::Bdf2 => bdf2_coeffs((1.0 - Self::GAMMA) * h, Self::GAMMA * h),
+        }
+    }
+
+    /// Global local-truncation-error estimate via Milne's device. A linear
+    /// extrapolation of `Q_n` and `Q_{n+γ}` to `t_{n+1}` is differenced from
+    /// the BDF2 solution `Q_{n+1}`, normalized per component by
+    /// `reltol·|Q_{n+1}| + chgtol`; the worst component is returned.
+    ///
+    /// Returns `0.0` for collinear/constant charge (linear extrapolation is
+    /// exact) and positive for curvature. The linear predictor is O(h²), a
+    /// conservative over-estimate of TR-BDF2's true O(h³) LTE — safe for
+    /// timestep control; the residual scale is absorbed by the PI gains
+    /// (`kp`/`ki`).
+    pub fn milne_lte(
+        q_n: &[f64],
+        q_n_gamma: &[f64],
+        q_n1: &[f64],
+        reltol: f64,
+        chgtol: f64,
+    ) -> f64 {
+        // Linear extrapolation slope from [t_n, t_{n+γ}] extended to t_{n+1}:
+        // Q_pred = Q_{n+γ} + ((1−γ)/γ)·(Q_{n+γ} − Q_n).
+        let slope_scale = (1.0 - Self::GAMMA) / Self::GAMMA;
+        let mut worst = 0.0_f64;
+        let n = q_n1.len().min(q_n.len()).min(q_n_gamma.len());
+        for i in 0..n {
+            let q_pred = q_n_gamma[i] + slope_scale * (q_n_gamma[i] - q_n[i]);
+            let err = (q_n1[i] - q_pred).abs();
+            let scale = reltol * q_n1[i].abs() + chgtol;
+            if scale > 0.0 {
+                let normalized = err / scale;
+                if normalized > worst {
+                    worst = normalized;
+                }
+            }
+        }
+        worst
+    }
+}
+
 /// Trait for devices that contribute to truncation error estimation.
 ///
 /// Reactive devices (capacitors, inductors) implement this trait to report
@@ -327,5 +413,98 @@ mod tests {
         let el = FixedLte(10e-6);
         let sug = el.suggest_transient_step(&state, &[1e-6], method, &ctx);
         assert_eq!(sug, Some(10e-6));
+    }
+
+    // ── TR-BDF2 ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn trbdf2_gamma_is_two_minus_sqrt2() {
+        // γ = 2 − √2 ≈ 0.5857864376269049.
+        assert!((TrBdf2::GAMMA - (2.0 - 2.0_f64.sqrt())).abs() < 1e-12);
+        assert!((TrBdf2::GAMMA - 0.5857864376269049).abs() < 1e-9);
+        // Equal-weight stages: γ and (1−γ) both positive.
+        assert!(TrBdf2::GAMMA > 0.0 && TrBdf2::GAMMA < 1.0);
+        // Sanity: γ + (1−γ) = 1, and 1−γ = √2 − 1.
+        assert!(((1.0 - TrBdf2::GAMMA) - (2.0_f64.sqrt() - 1.0)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn trbdf2_trapezoidal_phase_coeffs_match_formula() {
+        // TR phase over γh: i_C = (2/(γh))·Q_{n+γ} − (2/(γh))·Q_n, c2 = 0.
+        let h = 1e-3;
+        let sub = TrBdf2::GAMMA * h;
+        let (c0, c1, c2) = TrBdf2::phase_coeffs(TrBdf2Phase::Trapezoidal, h);
+        assert!((c0 - 2.0 / sub).abs() < 1e-6 * (2.0 / sub).abs(), "c0 = {c0}");
+        assert!((c1 + 2.0 / sub).abs() < 1e-6 * (2.0 / sub).abs(), "c1 = {c1}");
+        assert_eq!(c2, 0.0);
+    }
+
+    #[test]
+    fn trbdf2_bdf2_phase_coeffs_match_nonuniform_formula() {
+        // BDF2 phase over (1−γ)h with previous sub-step γh must equal the
+        // existing non-uniform bdf2_coeffs(dt0=(1−γ)h, dt1=γh) — the kernel
+        // delegates to that single source of truth.
+        let h = 1e-3;
+        let dt0 = (1.0 - TrBdf2::GAMMA) * h;
+        let dt1 = TrBdf2::GAMMA * h;
+        let expected = bdf2_coeffs(dt0, dt1);
+        let got = TrBdf2::phase_coeffs(TrBdf2Phase::Bdf2, h);
+        assert!((got.0 - expected.0).abs() < 1e-6 * expected.0.abs(), "c0 {} vs {}", got.0, expected.0);
+        assert!((got.1 - expected.1).abs() < 1e-6 * expected.1.abs(), "c1 {} vs {}", got.1, expected.1);
+        assert!((got.2 - expected.2).abs() < 1e-6 * expected.2.abs(), "c2 {} vs {}", got.2, expected.2);
+    }
+
+    #[test]
+    fn trbdf2_bdf2_phase_coeffs_hand_computed() {
+        // Hand-computed for h = 1e-3, γ = 2−√2 ≈ 0.5857864:
+        //   dt0 = (1−γ)h ≈ 4.14214e-4, dt1 = γh ≈ 5.85786e-4, sum = h = 1e-3
+        //   c0 = (2·dt0+dt1)/(dt0·sum) ≈ 3414.21
+        //   c1 = −sum/(dt0·dt1)        ≈ −4121.32
+        //   c2 = dt0/(dt1·sum)         ≈ 707.107
+        let h = 1e-3;
+        let (c0, c1, c2) = TrBdf2::phase_coeffs(TrBdf2Phase::Bdf2, h);
+        let dt0 = (1.0 - TrBdf2::GAMMA) * h;
+        let dt1 = TrBdf2::GAMMA * h;
+        let sum = dt0 + dt1;
+        assert!((c0 - (2.0 * dt0 + dt1) / (dt0 * sum)).abs() < 1e-3);
+        assert!((c1 - (-sum / (dt0 * dt1))).abs() < 1e-3);
+        assert!((c2 - dt0 / (dt1 * sum)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn milne_lte_is_zero_for_constant_charge() {
+        // Constant charge (no dynamics) → linear extrapolation exact → 0.
+        let q = [1e-9, 1e-9, 1e-9];
+        let e = TrBdf2::milne_lte(&q, &q, &q, 1e-3, 1e-14);
+        assert!(e < 1e-15, "constant charge LTE = {e}");
+    }
+
+    #[test]
+    fn milne_lte_is_zero_for_linear_charge() {
+        // Linearly varying charge: Q_n=0, Q_{n+γ}=γ, Q_{n+1}=1 → predictor
+        // extrapolates linearly and hits Q_{n+1} exactly → 0.
+        let g = TrBdf2::GAMMA;
+        let q_n = [0.0_f64, 0.0];
+        let q_ng = [g, 2.0 * g];
+        let q_n1 = [1.0_f64, 2.0];
+        let e = TrBdf2::milne_lte(&q_n, &q_ng, &q_n1, 1e-3, 1e-14);
+        assert!(e < 1e-9, "linear charge LTE = {e}");
+    }
+
+    #[test]
+    fn milne_lte_is_positive_for_curvature() {
+        // Quadratic charge: Q_n=0, Q_{n+γ}=γ², Q_{n+1}=1. The linear
+        // predictor misses the curvature → positive normalized error.
+        let g = TrBdf2::GAMMA;
+        let q_n = [0.0_f64];
+        let q_ng = [g * g];
+        let q_n1 = [1.0_f64];
+        let e = TrBdf2::milne_lte(&q_n, &q_ng, &q_n1, 1e-3, 1e-14);
+        assert!(e > 0.0, "quadratic charge LTE should be positive, got {e}");
+        // Predictor = γ² + ((1−γ)/γ)·(γ²−0) = γ² + γ(1−γ) = γ. Actual = 1.
+        // err = |1 − γ|, scale = reltol·1 + chgtol.
+        let pred = g * g + ((1.0 - g) / g) * (g * g - 0.0);
+        let expected_err = (1.0 - pred).abs() / (1e-3 * 1.0 + 1e-14);
+        assert!((e - expected_err).abs() < 1e-9 * expected_err.abs(), "e={e} expected={expected_err}");
     }
 }
