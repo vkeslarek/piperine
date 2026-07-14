@@ -14,6 +14,7 @@ use crate::digital::{DigitalNet, LogicValue};
 use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::linear::Stamp;
+use crate::math::unit::Second;
 use crate::solver::Context;
 
 bitflags::bitflags! {
@@ -115,6 +116,17 @@ pub trait Element: Send + Sync {
 
     /// Largest timestep the element can tolerate from here (`$bound_step`).
     fn bound_step_hint(&self) -> f64 { f64::INFINITY }
+
+    /// Absolute landing points this element requires the integrator to hit
+    /// within `(from, from + horizon]`. Time-varying source models (pulse
+    /// edges, PWL corners) and digital switching times declare their
+    /// discontinuities here so the stepper never steps over a kink. The
+    /// default is empty — elements without discontinuities need not override.
+    ///
+    /// Returning a borrowed slice lets a model cache its schedule; the solver
+    /// reads it each step and dedups against the digital event queue. The
+    /// times are absolute (not relative), so they survive step rollback.
+    fn next_breakpoints(&self, _from: Second, _horizon: Second) -> &[Second] { &[] }
 
     /// `@initial` UIC seeds: the branch `(plus, minus)` and the voltage the
     /// device wants across it at t=0 (SPICE `.ic`). Ground terminals are

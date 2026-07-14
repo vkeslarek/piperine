@@ -10,10 +10,11 @@
 //!    kernel does not need to know which family of integration formula is in
 //!    use.
 //!
-//! The [`TruncationError`] and [`BreakpointProvider`] traits live here too —
-//!    they describe numerical-integration concerns (LTE-driven timestep and
-//!    integration-error forcing breakpoints) rather than analysis structure.
-//!    A future stepper strategy will consume them.
+//! The [`TruncationError`] trait lives here too — it describes a
+//!    numerical-integration concern (per-element LTE-driven timestep
+//!    suggestion) rather than analysis structure. A stepper strategy
+//!    consumes it. (Breakpoint forcing is now an [`Element`][crate::core::element::Element]
+//!    ABI method, `next_breakpoints`, not a separate trait.)
 
 use crate::analysis::transient::TransientAnalysisState;
 use crate::math::unit::Second;
@@ -239,24 +240,6 @@ pub trait TruncationError {
         method: IntegrationMethod,
         context: &Context,
     ) -> Option<Second>;
-}
-
-/// Trait for devices/sources that provide time breakpoints.
-///
-/// Sources with time-varying waveforms (Pulse, Step, PWL, etc.) need the
-/// solver to land exactly on critical transition points so it does not step
-/// over fast edges.
-///
-/// # Example
-///
-/// A pulse source with rise time `1ns` at `t=10ns` and fall time `1ns` at
-/// `t=20ns` should provide breakpoints at `[10ns, 11ns, 20ns, 21ns]` so
-/// the integrator captures the transitions with at least three points
-/// (before, during, after).
-pub trait BreakpointProvider {
-    /// Absolute times (not relative to current time) where the solver must
-    /// land exactly or take smaller steps to avoid overshooting.
-    fn get_breakpoints(&self, start_time: Second, stop_time: Second) -> Vec<Second>;
 }
 
 #[cfg(test)]
