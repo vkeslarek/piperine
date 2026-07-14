@@ -68,6 +68,14 @@ bitflags::bitflags! {
         /// beyond the `read_opvars` default. Hosts can rely on this flag to skip
         /// the default scan.
         const SUPPORTS_QUERIES = 1 << 10;
+        /// The model is eligible for stamp bypass: when its terminal voltages
+        /// are unchanged within tolerance since the last evaluation, the
+        /// solver may skip re-evaluating and re-stamping it for that Newton
+        /// iteration (reusing its previous contribution). Suppressed globally
+        /// while any element reports `limiting_active()`. Opt-in — a model
+        /// only sets this when its stamps are a pure function of terminal
+        /// voltages (linear devices, settled logic).
+        const BYPASS_OK = 1 << 11;
     }
 }
 
