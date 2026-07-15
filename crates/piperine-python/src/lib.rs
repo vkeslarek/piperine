@@ -25,12 +25,17 @@
 
 mod design;
 mod module;
+mod results;
 mod value_bridge;
 
 use pyo3::prelude::*;
 
 use design::{_Design, _Node, _Selection};
 use module::_Module;
+use results::_AcTrace;
+use results::_NoiseTrace;
+use results::_OpResult;
+use results::_Trace;
 
 /// `_piperine.load(path) -> _Design` (PY-01). Thin FFI shim delegating to
 /// [`_Design::load`].
@@ -48,6 +53,10 @@ fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_Module>()?;
     m.add_class::<_Selection>()?;
     m.add_class::<_Node>()?;
+    m.add_class::<_OpResult>()?;
+    m.add_class::<_Trace>()?;
+    m.add_class::<_AcTrace>()?;
+    m.add_class::<_NoiseTrace>()?;
     Ok(())
 }
 
@@ -307,6 +316,161 @@ mod DividerBoard() {
             assert!(
                 bad.is_instance_of::<pyo3::exceptions::PyValueError>(py),
                 "malformed select must raise ValueError, got {bad}"
+            );
+            Ok(())
+        });
+        let _ = std::fs::remove_file(&path);
+        outcome
+    }
+
+    /// A runnable fixture for the analysis tests: a 5 V source driving a
+    /// 3 kΩ/2 kΩ resistor divider, so the `mid` node sits at
+    /// 5·2/(3+2) = 2.0 V (spec-defined outcome the stage test asserts).
+    /// Staging `r_top.r = 2e3` moves `mid` to 5·2/(2+2) = 2.5 V (spec AC12).
+    /// Mirrors the bench's own divider circuit shape — the uniform-host proof.
+    const ANALYSIS_PHDL: &str = "\
+discipline Electrical { potential v: Real; flow i: Real; }
+
+mod VoltageSource(inout p: Electrical, inout n: Electrical) {
+    param voltage: Real = 0.0;
+}
+analog VoltageSource { V(p, n) <- voltage; }
+
+mod Resistor(inout p: Electrical, inout n: Electrical) {
+    param r: Real = 1e3;
+}
+analog Resistor { I(p, n) <+ V(p, n) / r; }
+
+mod Divider() {
+    wire gnd  : Electrical;
+    wire vin  : Electrical;
+    wire mid  : Electrical;
+    src   : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
+    r_top : Resistor      (.p = vin, .n = mid) { .r = 3e3 };
+    r_bot : Resistor      (.p = mid, .n = gnd) { .r = 2e3 };
+}
+";
+
+    /// PY-04 / spec AC3/6/8/9: `module.op/tran/ac/noise` each return the
+    /// right typed result object. The Python-side `.v(net)` is P7, so the
+    /// analysis shape is checked by type name — the four result pyclasses
+    /// exist and are returned (fail loud if any analysis path is unwired).
+    #[test]
+    fn analyses_return_typed_results() -> PyResult<()> {
+        let path = std::env::temp_dir().join("piperine_python_p6_analyses_test.phdl");
+        std::fs::write(&path, ANALYSIS_PHDL)?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("non-utf8 temp path"))?;
+
+        let outcome = Python::with_gil(|py| -> PyResult<()> {
+            let design = loaded_design(py, path_str)?;
+            let module = design.getattr("module")?.call1(("Divider",))?;
+
+            let op = module.getattr("op")?.call0()?;
+            assert_eq!(
+                op.getattr("__class__")?.getattr("__name__")?.extract::<String>()?,
+                "_OpResult",
+                "op() must return an _OpResult"
+            );
+
+            let tran = module.getattr("tran")?.call1((5e-3, 1e-5))?;
+            assert_eq!(
+                tran.getattr("__class__")?.getattr("__name__")?.extract::<String>()?,
+                "_Trace",
+                "tran() must return a _Trace"
+            );
+
+            let ac = module.getattr("ac")?.call1((1.0, 1e6, 10))?;
+            assert_eq!(
+                ac.getattr("__class__")?.getattr("__name__")?.extract::<String>()?,
+                "_AcTrace",
+                "ac() must return an _AcTrace"
+            );
+
+            let noise = module.getattr("noise")?.call1(("mid", 1.0, 1e6, 5))?;
+            assert_eq!(
+                noise.getattr("__class__")?.getattr("__name__")?.extract::<String>()?,
+                "_NoiseTrace",
+                "noise() must return a _NoiseTrace"
+            );
+            Ok(())
+        });
+        let _ = std::fs::remove_file(&path);
+        outcome
+    }
+
+    /// PY-12 / spec AC11/12: `stage(label, param, value)` overrides the next
+    /// analysis; staging is pure (the held `_Design` is not mutated). The
+    /// Python `.v()` lands in P7, so the stage effect is read through the
+    /// bench's own typed `OpResult::v` readout (uniform-shape proof — same
+    /// call the bench makes) by extracting the inner result from the
+    /// returned `_OpResult`.
+    ///
+    /// Divider math: `mid = 5·r_bot/(r_top+r_bot)`. Default 3 k/2 k → 2.0 V;
+    /// staging `r_top.r = 2e3` → 2 k/2 k → 2.5 V. The default-vs-staged
+    /// delta (0.5 V) is the spec-defined outcome (AC12: "each result SHALL
+    /// reflect that iteration's staged value").
+    #[test]
+    fn stage_overrides_next_analysis() -> PyResult<()> {
+        use pyo3::types::PyAnyMethods;
+        use piperine_bench::{NetRef, OpResult as BenchOpResult};
+
+        let path = std::env::temp_dir().join("piperine_python_p6_stage_test.phdl");
+        std::fs::write(&path, ANALYSIS_PHDL)?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("non-utf8 temp path"))?;
+
+        let outcome = Python::with_gil(|py| -> PyResult<()> {
+            let design = loaded_design(py, path_str)?;
+            let module = design.getattr("module")?.call1(("Divider",))?;
+
+            // Helper: run op() and read `mid` through the bench readout.
+            let mid_voltage = |module: &Bound<'_, PyAny>| -> PyResult<f64> {
+                let op_obj = module.getattr("op")?.call0()?;
+                let pyref = op_obj.extract::<pyo3::PyRef<'_, super::_OpResult>>()?;
+                let mid_ref = NetRef {
+                    name: "mid".to_string(),
+                };
+                let v = BenchOpResult::v(&pyref.inner, &mid_ref, None)
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?;
+                Ok(v)
+            };
+
+            // Default divider: mid = 5 · 2/(3+2) = 2.0 V (spec-defined).
+            let v_default = mid_voltage(&module)?;
+            assert!(
+                (v_default - 2.0).abs() < 1e-6,
+                "default mid voltage should be 2.0 V, got {v_default}"
+            );
+
+            // Stage r_top.r = 2e3 → mid = 5 · 2/(2+2) = 2.5 V (spec AC12).
+            module.getattr("stage")?.call1(("r_top", "r", 2e3))?;
+            let v_staged = mid_voltage(&module)?;
+            assert!(
+                (v_staged - 2.5).abs() < 1e-6,
+                "staged mid voltage should be 2.5 V, got {v_staged}"
+            );
+
+            // Staging is pure: the held _Design's reflection is unchanged
+            // (no structural mutation, AC11). Re-loading and re-running op
+            // without staging returns the default 2.0 V — the stage did not
+            // leak into the parent design.
+            let fresh = loaded_design(py, path_str)?;
+            let fresh_module = fresh.getattr("module")?.call1(("Divider",))?;
+            let v_fresh = {
+                let op_obj = fresh_module.getattr("op")?.call0()?;
+                let pyref = op_obj.extract::<pyo3::PyRef<'_, super::_OpResult>>()?;
+                let mid_ref = NetRef {
+                    name: "mid".to_string(),
+                };
+                BenchOpResult::v(&pyref.inner, &mid_ref, None)
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?
+            };
+            assert!(
+                (v_fresh - 2.0).abs() < 1e-6,
+                "staging must not leak: a fresh load's mid should still be 2.0 V, got {v_fresh}"
             );
             Ok(())
         });

@@ -1,14 +1,23 @@
 //! `_Module` and its reflected children — read-only views over one POM
-//! module's ports/nets/instances/params/behaviors (PY-03).
+//! module's ports/nets/instances/params/behaviors (PY-03), plus the four
+//! analyses (`op/tran/ac/noise`, PY-04) and `stage` (PY-12) that turn a
+//! reflected module into a runnable one.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
+use piperine_bench::{SimSession, SolverConfig};
 use piperine_lang::parse::ast::{BehaviorKind, Direction};
-use piperine_lang::{Behavior, Design, Instance, Module, Param, Port, ValueType, Wire};
+use piperine_lang::{Behavior, Design, Instance, Module, Param, Port, Value, ValueType, Wire};
 
+use crate::results::_AcTrace;
+use crate::results::_NoiseTrace;
+use crate::results::_OpResult;
+use crate::results::_Trace;
 use crate::value_bridge::PyValue;
 
 /// `_Module` — a reflected view of a named module in a shared [`Design`].
@@ -16,17 +25,32 @@ use crate::value_bridge::PyValue;
 /// GIL-bound lifetime never fights the POM borrow (design
 /// `python-bindings/design.md` — POM borrow-lifetime risk).
 ///
+/// Staged overrides (`stage`, PY-12) are held in an isolated map and applied
+/// to a fresh [`Design::fork`] per analysis call — the held parent `Design`
+/// is never mutated (spec AC11), and each analysis is a pure function of the
+/// design + currently-staged overrides + config (piperine-bench/docs/SPEC.md
+/// §9 isolation). A re-stage of the same `(label, param)` overwrites the
+/// previous value, matching the bench's last-write-wins staging semantics.
+///
 /// `unsendable`: shares an `Rc<Design>` whose interior is not `Sync` (see
 /// [`crate::_Design`]); single-interpreter use only.
 #[pyclass(module = "piperine", unsendable)]
 pub struct _Module {
     design: Rc<Design>,
     name: String,
+    /// `(instance label, param name) → staged value`. Isolated from the
+    /// parent design so the user's `_Design` is untouched (AC11). Applied to
+    /// each analysis's fork before solving.
+    staged: RefCell<HashMap<(String, String), Value>>,
 }
 
 impl _Module {
     pub(crate) fn new(design: Rc<Design>, name: String) -> Self {
-        Self { design, name }
+        Self {
+            design,
+            name,
+            staged: RefCell::new(HashMap::new()),
+        }
     }
 
     /// Re-resolve the live module from the shared POM.
@@ -34,6 +58,32 @@ impl _Module {
         self.design.module(&self.name).ok_or_else(|| {
             PyValueError::new_err(format!("module `{}` is no longer present", self.name))
         })
+    }
+
+    /// Build a fresh [`SimSession`] for one analysis: fork the parent design,
+    /// replay every staged override onto the fork (the fork clears the
+    /// parent's override layer by construction — see [`Design::fork`]), then
+    /// hand the forked design to a new session. Each analysis call gets its
+    /// own session + fork, so results never leak between calls (spec §9).
+    fn session(&self) -> PyResult<SimSession> {
+        let forked = self.design.fork();
+        for ((label, param), value) in self.staged.borrow().iter() {
+            forked.set_param(label, param, value.clone());
+        }
+        Ok(SimSession::new(forked, self.name.clone()))
+    }
+
+    /// Surface a bench analysis error as the right Python exception:
+    /// net-not-addressable reads as `KeyError` (spec edge case — fail loud,
+    /// never a silent NaN); everything else as `RuntimeError` carrying the
+    /// diagnostic. Both error types implement `Display` via `thiserror`.
+    fn analysis_err<E: std::fmt::Display>(e: E) -> PyErr {
+        let msg = format!("{e}");
+        if msg.contains("is not addressable") {
+            PyKeyError::new_err(msg)
+        } else {
+            PyRuntimeError::new_err(msg)
+        }
     }
 }
 
@@ -68,6 +118,86 @@ impl _Module {
     /// The module's `analog`/`digital` behavior blocks (PY-03 / spec AC14).
     fn behaviors(&self) -> PyResult<Vec<_Behavior>> {
         Ok(self.module()?.behaviors().iter().map(_Behavior::of).collect())
+    }
+
+    // ── analyses (PY-04) + staging (PY-12) ─────────────────────────────────
+    //
+    // Each analysis builds a fresh `SimSession` over a forked design with the
+    // staged overrides replayed (see [`_Module::session`]); solver config
+    // defaults to [`SolverConfig::default`]. The signatures mirror
+    // `SimSession::run_*` positionally — the facade (P10) wraps these with
+    // typed dataclasses (`OpConfig`/`TranConfig`/...).
+
+    /// Run a DC operating-point analysis (PY-04 / spec AC3). Returns the
+    /// solved node voltages + branch currents as an [`_OpResult`].
+    fn op(&self) -> PyResult<_OpResult> {
+        let session = self.session()?;
+        let result = session
+            .run_op(&SolverConfig::default(), &Value::Unit)
+            .map_err(Self::analysis_err)?;
+        Ok(_OpResult::new(result))
+    }
+
+    /// Run a transient analysis (PY-04 / spec AC6). `step = None` (or `0.0`)
+    /// selects the adaptive stepper; `start` is the earliest recorded time
+    /// (piperine-bench/docs/SPEC.md §5.1 `TranConfig.start`).
+    #[pyo3(signature = (stop, step=None, start=0.0))]
+    fn tran(&self, stop: f64, step: Option<f64>, start: f64) -> PyResult<_Trace> {
+        let session = self.session()?;
+        let result = session
+            .run_tran(stop, step, start, &SolverConfig::default(), &Value::Unit)
+            .map_err(Self::analysis_err)?;
+        Ok(_Trace::new(result))
+    }
+
+    /// Run an AC small-signal sweep (PY-04 / spec AC8). `logarithmic` defaults
+    /// to `true` (matches the prelude's `Scale::Dec` default).
+    #[pyo3(signature = (fstart, fstop, points=100, logarithmic=true))]
+    fn ac(&self, fstart: f64, fstop: f64, points: usize, logarithmic: bool) -> PyResult<_AcTrace> {
+        let session = self.session()?;
+        let result = session
+            .run_ac(fstart, fstop, points, logarithmic, &SolverConfig::default())
+            .map_err(Self::analysis_err)?;
+        Ok(_AcTrace::new(result))
+    }
+
+    /// Run an output-referred noise analysis (PY-04 / spec AC9). `reference`
+    /// defaults to `"gnd"` (the single-net `NoiseConfig.out` form).
+    #[pyo3(signature = (out, fstart, fstop, points=100, reference="gnd", logarithmic=true))]
+    fn noise(
+        &self,
+        out: &str,
+        fstart: f64,
+        fstop: f64,
+        points: usize,
+        reference: &str,
+        logarithmic: bool,
+    ) -> PyResult<_NoiseTrace> {
+        let session = self.session()?;
+        let result = session
+            .run_noise(
+                out,
+                reference,
+                fstart,
+                fstop,
+                points,
+                logarithmic,
+                &SolverConfig::default(),
+            )
+            .map_err(Self::analysis_err)?;
+        Ok(_NoiseTrace::new(result))
+    }
+
+    /// Stage a parameter override on `label`'s `param` (PY-12 / spec AC11):
+    /// the next analysis on this module uses `value`. Staging is pure — the
+    /// held [`crate::design::_Design`] is never mutated; overrides live in an
+    /// isolated map and replay onto each analysis's fork. A re-stage of the
+    /// same `(label, param)` overwrites. Sweeps are native Python `for` loops
+    /// (spec AC12).
+    fn stage(&self, label: &str, param: &str, value: f64) {
+        self.staged
+            .borrow_mut()
+            .insert((label.to_string(), param.to_string()), Value::Real(value));
     }
 }
 
