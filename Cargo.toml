@@ -9,6 +9,7 @@ members = [
     "crates/piperine-solver",
     "crates/piperine-plugin",
     "crates/piperine-plugin-wasm",
+    "crates/piperine-python",
 ]
 
 [workspace.package]
