@@ -343,17 +343,23 @@ impl _ComplexWaveform {
     }
 
     /// Magnitude projection `|c|` per sample — uniform-shape (bench
-    /// `ComplexWaveform::mag`). Returns a real `_Waveform`.
+    /// `ComplexWaveform::mag`). Returns a real `_Waveform`. Exposed as a
+    /// property to match spec AC8 (`.mag` not `.mag()`).
+    #[getter]
     fn mag(&self) -> _Waveform {
         _Waveform::new(self.inner.mag())
     }
 
-    /// Phase projection `arg(c)` (radians) per sample — uniform-shape.
+    /// Phase projection `arg(c)` (radians) per sample — uniform-shape. Property
+    /// per spec AC8.
+    #[getter]
     fn phase(&self) -> _Waveform {
         _Waveform::new(self.inner.phase())
     }
 
-    /// Decibel projection `20·log10|c|` per sample — uniform-shape.
+    /// Decibel projection `20·log10|c|` per sample — uniform-shape. Property
+    /// per spec AC8.
+    #[getter]
     fn db(&self) -> _Waveform {
         _Waveform::new(self.inner.db())
     }

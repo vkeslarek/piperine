@@ -967,19 +967,19 @@ mod AcTest() {
                 );
             }
 
-            // AC8: .mag/.phase/.db return real _Waveforms.
+            // AC8: .mag/.phase/.db return real _Waveforms (properties per spec).
             for proj in ["mag", "phase", "db"] {
-                let w = cw.getattr(proj)?.call0()?;
+                let w = cw.getattr(proj)?;
                 assert_eq!(
                     w.getattr("__class__")?.getattr("__name__")?.extract::<String>()?,
                     "_Waveform",
-                    "{proj}() must return a _Waveform"
+                    "{proj} must return a _Waveform"
                 );
                 let w_vals = w.getattr("values")?.extract::<numpy::PyReadonlyArray1<'_, f64>>()?;
                 assert_eq!(w_vals.as_array().len(), 10, "{proj} length must match AC sweep");
             }
             // .mag value ≈ 1000 (matches the complex magnitude above).
-            let mag_at_first = cw.getattr("mag")?.call0()?.getattr("at")?.call1((1.0,))?.extract::<f64>()?;
+            let mag_at_first = cw.getattr("mag")?.getattr("at")?.call1((1.0,))?.extract::<f64>()?;
             assert!(
                 (mag_at_first - 1000.0).abs() < 1.0,
                 "ac.v('out').mag.at(fstart) should be ~1000, got {mag_at_first}"
