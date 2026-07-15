@@ -144,25 +144,18 @@ in `docs/spec/` (Parts I–VII). Solver gaps and feature tracking live in
 
 ## Handoff Snapshot
 
-**Feature:** `solver-trbdf2-engine` (TR-BDF2 sole integration scheme + PI controller + unified breakpoints + factorization reuse). Spec/context/design/tasks in `.specs/features/solver-trbdf2-engine/`.
-**Branch:** `feature/plugin-architecture`
-**Last commit:** `a640603`
-**Working tree:** clean.
+**Two features in flight.**
 
-### Completed
-- Specify + Design + Tasks phases done.
-- TRB-20 baseline recorded (design.md): narrow-pulse charge pump under the 500-step budget — current arch gave `1ns≡10ns` + non-monotonic + 5–7× budget blowup.
-- **Phase 1 (seams) — T1–T4:** `6fd9ed3` (TrBdf2 math), `4abf75b` (Element::next_breakpoints), `ea87b24` (BYPASS_OK), `7d3cb6c` (FaerSparseLinearSystem::reset).
-- **T5a + T5 + T6 — DONE (`a640603`):** TR-BDF2 two-phase engine is ACTIVE and correct. The kernel trapezoidal companion now re-derives the previous capacitor current (`i_{C,n}`) from the prior step's BDF2 formula (coeffs at `prev_h`, charges at view 1/2/3); the BDF2 stage stays pure-derivative. Verified on RC discharge: `V(τ)=0.3692` vs `e⁻¹=0.3679` (0.4%), `V(5τ)=0.00676` vs `e⁻⁵=0.00674`. Full workspace green, zero warnings.
+### Feature A — `solver-trbdf2-engine` (PAUSED — engine functional, cleanups deferred)
 
-### Next step
-- **T7 — PiController (StepperStrategy impl).** Replace the per-device `LteStepper` as the primary dt selector with a stateful PI controller driven by the global Milne LTE (computed from the two-phase buffer view 0/1/2 = x_{n+1}/x_{n+γ}/x_n — exactly the points Milne needs). Add the LTE-based step reject (TRB-05 other half). Per-device LTE stays as a floor (TRB-08). Note: the per-device `suggest_transient_step` reads single-phase history that no longer matches the two-phase buffer, so it's only safely usable as a loose floor until T13 drops the `IntegrationMethod` param — prioritize landing T7.
+Spec/context/design/tasks in `.specs/features/solver-trbdf2-engine/`. Last commit `165cc52`.
+**Delivered & green:** TR-BDF2 (γ=2−√2) two-phase sole scheme; trapezoidal companion fix (`i_{C,n}` re-derived from prior BDF2); **PI controller always-adaptive** (Milne LTE over node voltages, with asymmetric-difference discontinuity exclusion); **`@timer(period, phase)`** + **unified analog/digital breakpoints** (Element::next_breakpoints; driver merges with digital event queue); breakpoint discontinuity handling (skip LTE at edges, reset prev_h). `docs/spec/` Parts I/II/III/V/VII + ROADMAP updated.
+**Deferred cleanups (user said "ignore for now"):** (1) remove vestigial `IntegrationMethod` enum + `TruncationError` trait + `suggest_transient_step` (dead in production — only tests call it) + `Tolerances.integration`; (2) inductor flux TR-stage companion (dual: previous-voltage — today pure-derivative → 1st order); (3) T15/T16 permanent discrimination test + ngspice parity; (4) `bp_dt` post-breakpoint fixed step.
 
-### Open / follow-ups
-- **TRB-04 (LC L-stability test) needs spec-precision review:** an ideal undamped LC oscillator is *damped* by any L-stable method (TR-BDF2 included); "amplitude within 0.5%" may be the wrong target. The right L-stability test is a stiff *decaying* mode (where Trapezoidal would ring). Revise the AC before writing the gate test.
-- **Inductor flux companion** uses the pure-derivative form for the TR stage (dual previous-voltage tracking is a follow-up; no regression vs prior).
-- **prev_h on reject:** currently set on BDF2-phase success; when T7 adds LTE-based post-convergence reject, gate the prev_h update on LTE-accept (not just Newton-accept).
+### Feature B — `python-bindings` (ACTIVE)
+
+A Python library (PyO3) exposing everything the bench layer does, including POM access. `piperine run <script.py>` CLI. Results as a wrapper with np-array access AND name-based access (`result["buck.resistor1"]`). In Specify phase.
 
 ### Test baseline
 - `cargo build --workspace` — zero warnings.
-- `cargo test --workspace` — green. Examples (`02_rc_lowpass` discharge, `12_opamp_follower` settle) pass on TR-BDF2.
+- `cargo test --workspace` — green (TR-BDF2 active).
