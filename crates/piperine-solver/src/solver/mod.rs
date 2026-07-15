@@ -137,6 +137,18 @@ impl Default for Policy {
 }
 
 impl Policy {
+    /// Build a `Policy` from the user-facing `Context` fields. This is the
+    /// bridge that makes `Context.max_iter` / `dc_damp_tolerance` actually
+    /// reach the Newton loop — replacing the `Policy::default()` that silently
+    /// ignored every user setting (audit C1).
+    pub fn from_context(ctx: &Context) -> Self {
+        Self {
+            time: ctx.time,
+            max_iter: ctx.max_iter,
+            dc_damp_tolerance: ctx.dc_damp_tolerance,
+        }
+    }
+
     /// Damp a Newton update: halve it in-place when the vector norm exceeds
     /// `self.dc_damp_tolerance`. Body moved from the old free fn `apply_damping`.
     pub fn damp_update(

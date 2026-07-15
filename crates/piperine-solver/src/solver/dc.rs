@@ -182,7 +182,7 @@ impl<'a> DcSolver<'a> {
                     }
                     // Digital changed — re-solve analog with updated D2A state.
                     let strategy = crate::solver::convergence::DampedNewton;
-                    let policy = crate::solver::Policy::default();
+                    let policy = crate::solver::Policy::from_context(&self.system.context);
                     let tolerances = self.system.context.tolerances;
                     let netlist = self.system.circuit.netlist() as *const crate::analog::Netlist;
                     let netlist: &crate::analog::Netlist = unsafe { &*netlist };
@@ -219,7 +219,7 @@ impl<'a> DcSolver<'a> {
 impl HomotopyDriver for DcSolver<'_> {
     fn newton(&mut self) -> crate::result::Result<ndarray::Array1<f64>> {
         let strategy = crate::solver::convergence::DampedNewton;
-        let policy = crate::solver::Policy::default();
+        let policy = crate::solver::Policy::from_context(&self.system.context);
         let tolerances = self.system.context.tolerances;
         // Extract netlist ref before &mut self.system — Netlist is not Clone.
         // SAFETY: the netlist is structurally stable during Newton iteration

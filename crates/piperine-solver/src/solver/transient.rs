@@ -203,7 +203,7 @@ impl<'a> TransientSolver<'a> {
         dt: f64,
     ) -> crate::result::Result<Option<TransientStep>> {
         let strategy = crate::solver::convergence::DampedNewton;
-        let policy = crate::solver::Policy::default();
+        let policy = crate::solver::Policy::from_context(&self.system.context);
         let tolerances = self.system.context.tolerances;
         // Borrow-checker workaround: the netlist lives behind `&mut system`
         // (through `circuit`), but `solve_with_strategy` borrows the system
