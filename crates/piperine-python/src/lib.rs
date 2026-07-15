@@ -32,6 +32,7 @@ use pyo3::prelude::*;
 
 use design::{_Design, _Node, _Selection};
 use module::_Module;
+use module::{_Behavior, _Instance, _Net, _Param, _Port};
 use results::_AcTrace;
 use results::_ComplexWaveform;
 use results::_NoiseTrace;
@@ -53,6 +54,11 @@ fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(load, m)?)?;
     m.add_class::<_Design>()?;
     m.add_class::<_Module>()?;
+    m.add_class::<_Port>()?;
+    m.add_class::<_Net>()?;
+    m.add_class::<_Instance>()?;
+    m.add_class::<_Param>()?;
+    m.add_class::<_Behavior>()?;
     m.add_class::<_Selection>()?;
     m.add_class::<_Node>()?;
     m.add_class::<_OpResult>()?;
