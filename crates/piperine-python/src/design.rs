@@ -6,12 +6,11 @@ use std::rc::Rc;
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyBool;
-use pyo3::IntoPyObject;
 
-use piperine_lang::{parse_and_elaborate, Design, SourceMap, Value};
+use piperine_lang::{parse_and_elaborate, Design, SourceMap};
 
 use crate::module::_Module;
+use crate::value_bridge::PyValue;
 
 /// `_Design` — a loaded, elaborated POM design. Owns a shared (refcounted)
 /// `Design` so child `_Module` views can re-look it up on each call without
@@ -88,24 +87,9 @@ impl _Design {
     /// value kinds fall back to their string form, and an unknown name yields
     /// `None`. Read-only reflection starter (PY-02).
     fn const_(&self, py: Python<'_>, name: &str) -> PyResult<PyObject> {
-        let Some(value) = self.design.const_(name) else {
-            return Ok(py.None());
-        };
-        let obj: Bound<'_, PyAny> = match value {
-            Value::Real(v) => (*v).into_pyobject(py)?.into_any(),
-            Value::Int(v) => (*v).into_pyobject(py)?.into_any(),
-            Value::Nat(v) => (*v).into_pyobject(py)?.into_any(),
-            // Python `bool` is a singleton, so `bool.into_pyobject` yields a
-            // borrowed handle — widen via the owned `Bound::clone` before
-            // `into_any` (which consumes).
-            Value::Bool(v) => {
-                let singleton = (*v).into_pyobject(py)?;
-                <Bound<'_, PyBool> as Clone>::clone(&singleton).into_any()
-            }
-            Value::Str(v) => v.clone().into_pyobject(py)?.into_any(),
-            Value::Unit => return Ok(py.None()),
-            other => other.to_string().into_pyobject(py)?.into_any(),
-        };
-        Ok(obj.unbind())
+        match self.design.const_(name) {
+            Some(value) => PyValue(value).to_object(py),
+            None => Ok(py.None()),
+        }
     }
 }

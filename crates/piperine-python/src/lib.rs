@@ -25,6 +25,7 @@
 
 mod design;
 mod module;
+mod value_bridge;
 
 use pyo3::prelude::*;
 
@@ -55,12 +56,17 @@ mod tests {
     use pyo3::types::PyModule;
 
     /// A tiny self-contained PHDL (declares its own discipline + two modules,
-    /// no `use`/prelude dependency) — the P3 reflection fixture.
+    /// no `use`/prelude dependency) — the P3/P4 reflection fixture. Resistor
+    /// carries an `analog` body so behavior reflection is observable.
     const PHDL: &str = "\
 discipline Electrical { potential v: Real; flow i: Real; }
 
 mod Resistor(inout p: Electrical, inout n: Electrical) {
     param r: Real = 1e3;
+}
+
+analog Resistor {
+    I(p, n) <+ V(p, n) / r;
 }
 
 mod DividerBoard() {
@@ -125,6 +131,111 @@ mod DividerBoard() {
                 design.getattr("module")?.call1(("DoesNotExist",)).is_err(),
                 "looking up a missing module must raise"
             );
+            Ok(())
+        });
+        let _ = std::fs::remove_file(&path);
+        outcome
+    }
+
+    /// Build the in-process `_piperine` module under the active interpreter,
+    /// load the reflection PHDL, and return the loaded `_Design`.
+    fn loaded_design<'py>(py: Python<'py>, path_str: &str) -> PyResult<Bound<'py, PyAny>> {
+        let m = PyModule::new(py, "_piperine")?;
+        _piperine(&m)?;
+        m.getattr("load")?.call1((path_str,))
+    }
+
+    /// Sorted list of an iterable's `.name` attribute (objects expose `name`
+    /// as a `#[getter]`).
+    fn sorted_names(list: Bound<'_, PyAny>) -> PyResult<Vec<String>> {
+        let mut names: Vec<String> = list
+            .try_iter()?
+            .map(|item| {
+                let item: Bound<'_, PyAny> = item?;
+                item.getattr("name")?.extract::<String>()
+            })
+            .collect::<PyResult<Vec<String>>>()?;
+        names.sort();
+        Ok(names)
+    }
+
+    /// `(name, module)` pairs for an iterable of `_Instance`.
+    fn instance_pairs(list: Bound<'_, PyAny>) -> PyResult<Vec<(String, String)>> {
+        list.try_iter()?
+            .map(|item| {
+                let it: Bound<'_, PyAny> = item?;
+                let name = it.getattr("name")?.extract::<String>()?;
+                let module = it.getattr("module")?.extract::<String>()?;
+                Ok((name, module))
+            })
+            .collect()
+    }
+
+    /// PY-03 / spec AC14: a module reflects its ports, nets, instances,
+    /// params, and behaviors as typed lists with their attributes.
+    #[test]
+    fn module_reflects_structure() -> PyResult<()> {
+        let path = std::env::temp_dir().join("piperine_python_p4_reflect_test.phdl");
+        std::fs::write(&path, PHDL)?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("non-utf8 temp path"))?;
+
+        let outcome = Python::with_gil(|py| -> PyResult<()> {
+            let design = loaded_design(py, path_str)?;
+
+            // DividerBoard: 3 nets (gnd, vin, mid), 2 instances (r_bot, r_top),
+            // and no ports/params/behaviors of its own.
+            let board = design.getattr("module")?.call1(("DividerBoard",))?;
+            assert_eq!(
+                sorted_names(board.getattr("nets")?.call0()?)?,
+                vec!["gnd", "mid", "vin"]
+            );
+            let pairs = instance_pairs(board.getattr("instances")?.call0()?)?;
+            assert_eq!(pairs.len(), 2);
+            assert!(pairs.contains(&("r_top".into(), "Resistor".into())));
+            assert!(pairs.contains(&("r_bot".into(), "Resistor".into())));
+            assert!(board.getattr("ports")?.call0()?.try_iter()?.next().is_none());
+            assert!(board.getattr("params")?.call0()?.try_iter()?.next().is_none());
+            assert!(board.getattr("behaviors")?.call0()?.try_iter()?.next().is_none());
+
+            // Each net carries its discipline type.
+            for item in board.getattr("nets")?.call0()?.try_iter()? {
+                let net: Bound<'_, PyAny> = item?;
+                assert_eq!(net.getattr("ty")?.extract::<String>()?, "Electrical");
+            }
+
+            // Resistor: ports (n, p) both `inout : Electrical`, one param `r`
+            // (Real, default 1e3), one `analog` behavior.
+            let resistor = design.getattr("module")?.call1(("Resistor",))?;
+            assert_eq!(
+                sorted_names(resistor.getattr("ports")?.call0()?)?,
+                vec!["n", "p"]
+            );
+            for item in resistor.getattr("ports")?.call0()?.try_iter()? {
+                let port: Bound<'_, PyAny> = item?;
+                assert_eq!(port.getattr("direction")?.extract::<String>()?, "inout");
+                assert_eq!(port.getattr("ty")?.extract::<String>()?, "Electrical");
+            }
+            let params: Vec<Bound<'_, PyAny>> = resistor
+                .getattr("params")?
+                .call0()?
+                .try_iter()?
+                .map(|p| Ok::<Bound<'_, PyAny>, PyErr>(p?))
+                .collect::<PyResult<Vec<_>>>()?;
+            assert_eq!(params.len(), 1, "Resistor has one param");
+            assert_eq!(params[0].getattr("name")?.extract::<String>()?, "r");
+            assert_eq!(params[0].getattr("ty")?.extract::<String>()?, "Real");
+            assert!((params[0].getattr("default")?.extract::<f64>()? - 1e3).abs() < 1e-6);
+
+            let behaviors: Vec<Bound<'_, PyAny>> = resistor
+                .getattr("behaviors")?
+                .call0()?
+                .try_iter()?
+                .map(|b| Ok::<Bound<'_, PyAny>, PyErr>(b?))
+                .collect::<PyResult<Vec<_>>>()?;
+            assert_eq!(behaviors.len(), 1, "Resistor has one behavior");
+            assert_eq!(behaviors[0].getattr("kind")?.extract::<String>()?, "analog");
             Ok(())
         });
         let _ = std::fs::remove_file(&path);
