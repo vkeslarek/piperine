@@ -13,6 +13,7 @@ use piperine_solver::analysis::dc::{DcAnalysisResult, DcAnalysisState};
 use piperine_solver::analysis::noise::Noise;
 use piperine_solver::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
 use piperine_solver::math::circular_array::CircularArrayBuffer2;
+use piperine_solver::math::integration::{TrBdf2, TrBdf2Phase};
 use piperine_solver::math::linear::{AsIndex, Stamp};
 use piperine_solver::solver::Context;
 
@@ -686,7 +687,7 @@ impl AnalogInstance {
         tran_ctx: &TransientAnalysisContext,
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
-        let dt: f64 = tran_ctx.dt;
+        let dt: f64 = tran_ctx.h;
         self.sim.abstime = tran_ctx.time;
         self.sim.step = dt;
         self.sim.tfinal = tran_ctx.tfinal;
@@ -696,18 +697,24 @@ impl AnalogInstance {
             states.latest().and_then(|s| s.get(k).copied()).unwrap_or(0.0)
         });
         let (res, mut jac) = self.eval_rhs_jac(&volts);
-        // Reactive companion via a BDF (Gear) integration formula:
-        //   i_C = c0·Q(v) + c1·Q(v_{n-1}) + c2·Q(v_{n-2})
-        // Order 1 (`c2 = 0`) is backward-Euler; order 2 is Gear/BDF2 (2nd
-        // order, strongly stable — damps the ringing trapezoidal shows). The
-        // Jacobian carries `c0·dQ/dV`; the history charges enter the RHS
-        // explicitly (the linearisation point is the current Newton guess, so
-        // folding them into the Norton transform would cancel the reactive
-        // current at convergence and collapse every step to DC).
+        // TR-BDF2 reactive companion. The kernel stamps the per-phase
+        // companion derived from `TrBdf2::phase_coeffs` (the single source of
+        // truth, MD-07). The Jacobian carries `c0·dQ/dV`; the history charges
+        // enter the RHS explicitly (the linearisation point is the current
+        // Newton guess, so folding them into the Norton transform would cancel
+        // the reactive current at convergence and collapse every step to DC).
+        //
+        // TR stage subtlety: the trapezoidal companion is
+        //   i_{C,n+γ} = (2/(γh))(Q_{n+γ} − Q_n) − i_{C,n}
+        // which needs the *previous capacitor current* `i_{C,n}` — not a pure
+        // charge derivative. The kernel re-derives `i_{C,n}` from the prior
+        // step's BDF2 formula (coeffs at `prev_h`, charges at view 1/2/3),
+        // which is fixed across the TR Newton iteration, hence idempotent. The
+        // BDF2 stage is a pure derivative and needs no current term.
         let veff = self.limited_volts(&volts);
         let mut rhs = self.norton_rhs(&veff, &res, &jac);
         if self.kernel.has_reactive() && dt > 0.0 {
-            let (c0, c1, c2) = bdf_coeffs(tran_ctx.integration, tran_ctx.order, dt, tran_ctx.dt_prev);
+            let (c0, c1, c2) = TrBdf2::phase_coeffs(tran_ctx.phase, tran_ctx.h);
             let n = self.num_terminals();
             let mut qjac = vec![0.0; n * n];
             self.kernel
@@ -726,13 +733,31 @@ impl AnalogInstance {
             let mut q_prev2 = vec![0.0; n];
             self.kernel.eval_charge(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut q_now);
             self.kernel.eval_charge(&prev_volts, &self.params, &self.state, &self.vars, &self.sim, &mut q_prev);
-            if c2 != 0.0 {
-                self.kernel.eval_charge(&prev2_volts, &self.params, &self.state, &self.vars, &self.sim, &mut q_prev2);
+            self.kernel.eval_charge(&prev2_volts, &self.params, &self.state, &self.vars, &self.sim, &mut q_prev2);
+
+            // Trapezoidal previous-current term (TR stage only): re-derive the
+            // capacitor current at x_n (= view 1) from the prior step's BDF2.
+            let mut prev_i_c = vec![0.0; n];
+            if matches!(tran_ctx.phase, TrBdf2Phase::Trapezoidal) && tran_ctx.prev_h > 0.0 {
+                let (d0, d1, d2) = TrBdf2::phase_coeffs(TrBdf2Phase::Bdf2, tran_ctx.prev_h);
+                let prev3_volts = self.collect_volts(&|k| {
+                    states.view(3).and_then(|s| s.get(k).copied()).unwrap_or(0.0)
+                });
+                let mut q_prev3 = vec![0.0; n];
+                self.kernel.eval_charge(&prev3_volts, &self.params, &self.state, &self.vars, &self.sim, &mut q_prev3);
+                for i in 0..n {
+                    prev_i_c[i] = d0 * q_prev[i] + d1 * q_prev2[i] + d2 * q_prev3[i];
+                }
             }
+
             for i in 0..n {
                 // RHS equivalent source: `c0·(dQ/dV·v_guess) − i_C(v_guess)`.
                 let coupling: f64 = (0..n).map(|jx| qjac[i * n + jx] * volts[jx]).sum();
-                let i_c = c0 * q_now[i] + c1 * q_prev[i] + c2 * q_prev2[i];
+                let mut i_c = c0 * q_now[i] + c1 * q_prev[i] + c2 * q_prev2[i];
+                // TR stage: the trapezoidal companion subtracts i_{C,n}.
+                if matches!(tran_ctx.phase, TrBdf2Phase::Trapezoidal) {
+                    i_c -= prev_i_c[i];
+                }
                 rhs[i] += c0 * coupling - i_c;
             }
         }
@@ -743,7 +768,14 @@ impl AnalogInstance {
         // branch's own current unknown. DC uses no flux (dt = 0 → the
         // inductor is a short, already forced to 0 V by `force_stamps`).
         if self.kernel.has_force_flux() && dt > 0.0 {
-            let (c0, c1, c2) = bdf_coeffs(tran_ctx.integration, tran_ctx.order, dt, tran_ctx.dt_prev);
+            // The inductor flux companion `V = dΦ/dt` is the dual of the
+            // capacitor case: the TR stage would need the previous *voltage*
+            // (force value) for a true trapezoidal companion. That dual
+            // tracking is a follow-up; for now both phases use the pure
+            // derivative form (`TrBdf2::phase_coeffs`), matching the prior
+            // behaviour — no regression, just no TR-stage accuracy gain for
+            // inductors yet.
+            let (c0, c1, c2) = TrBdf2::phase_coeffs(tran_ctx.phase, tran_ctx.h);
             stamps.extend(self.force_flux_stamps(&volts, states, c0, c1, c2));
         }
         self.update_limits(&volts);
@@ -1124,15 +1156,4 @@ impl AnalogInstance {
 
 fn dc_op_voltage(reference: &AnalogReference, dc_point: &DcAnalysisResult) -> Option<f64> {
     dc_point.get(reference.variable().clone())
-}
-
-/// BDF (Gear) integration coefficients `(c0, c1, c2)` for
-/// `dQ/dt ≈ c0·Q_n + c1·Q_{n-1} + c2·Q_{n-2}` at the current timepoint, for a
-/// possibly non-uniform step history (`dt0` = current step, `dt1` = previous).
-/// Order 1 is backward-Euler (`c2 = 0`); order 2 is BDF2 (uniform-step limit
-/// `1.5/dt, -2/dt, 0.5/dt`). Falls back to order 1 when there is no valid
-/// previous step.
-#[inline]
-fn bdf_coeffs(method: piperine_solver::math::integration::IntegrationMethod, order: usize, dt0: f64, dt1: f64) -> (f64, f64, f64) {
-    method.coeffs(dt0, dt1, order)
 }

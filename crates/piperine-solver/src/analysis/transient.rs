@@ -135,22 +135,26 @@ impl From<TransientAnalysisOptions> for TransientContext {
     }
 }
 
+/// Per-step transient context handed to the kernel. Carries the TR-BDF2
+/// phase being stamped and the step sizes; the kernel calls
+/// `TrBdf2::phase_coeffs(phase, h)` for the reactive companion — there is no
+/// method-selection surface (TR-BDF2 is the sole integration scheme).
 #[derive(Clone, Copy)]
 pub struct TransientAnalysisContext {
     pub time: Second,
-    pub dt: Second,
     pub tfinal: Second,
-    /// Previous accepted step size (`t_{n-1} − t_{n-2}`), for the non-uniform
-    /// BDF2 (Gear) coefficients. 0 on the first step.
-    pub dt_prev: Second,
-    /// Integration order actually usable this step: 1 until enough history has
-    /// accumulated (first step), then the method's order.
-    pub order: usize,
-    /// Integration method in use (Trapezoidal or Gear `{ order }`). The
-    /// kernel calls [`IntegrationMethod::coeffs`] to obtain `(c0, c1, c2)`
-    /// for the reactive companion; this field is the single source of truth
-    /// instead of a hard-coded BDF formula.
-    pub integration: crate::math::integration::IntegrationMethod,
+    /// Which sub-step the kernel is stamping: [`Trapezoidal`][TrBdf2Phase::Trapezoidal]
+    /// over `γh` (solving for `x_{n+γ}`) or [`Bdf2`][TrBdf2Phase::Bdf2] over
+    /// `(1−γ)h` (solving for `x_{n+1}` from `x_{n+γ}` and `x_n`).
+    pub phase: crate::math::integration::TrBdf2Phase,
+    /// The full step size `h = t_{n+1} − t_n`. The companion sub-step (`γh` or
+    /// `(1−γ)h`) is derived from `phase` inside `TrBdf2::phase_coeffs`.
+    pub h: Second,
+    /// The previous accepted step size. The TR stage's trapezoidal companion
+    /// needs the capacitor current at `t_n`, which the kernel re-derives from
+    /// the prior step's BDF2 formula using this. Zero on the first step (no
+    /// history → no current, matching the DC operating point).
+    pub prev_h: Second,
 }
 
 pub trait TransientAnalysis {
