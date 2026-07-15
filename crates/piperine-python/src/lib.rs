@@ -36,6 +36,7 @@ use results::_AcTrace;
 use results::_NoiseTrace;
 use results::_OpResult;
 use results::_Trace;
+use results::_Waveform;
 
 /// `_piperine.load(path) -> _Design` (PY-01). Thin FFI shim delegating to
 /// [`_Design::load`].
@@ -55,6 +56,7 @@ fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_Node>()?;
     m.add_class::<_OpResult>()?;
     m.add_class::<_Trace>()?;
+    m.add_class::<_Waveform>()?;
     m.add_class::<_AcTrace>()?;
     m.add_class::<_NoiseTrace>()?;
     Ok(())
@@ -471,6 +473,162 @@ mod Divider() {
             assert!(
                 (v_fresh - 2.0).abs() < 1e-6,
                 "staging must not leak: a fresh load's mid should still be 2.0 V, got {v_fresh}"
+            );
+            Ok(())
+        });
+        let _ = std::fs::remove_file(&path);
+        outcome
+    }
+
+    /// PY-06 / spec AC4/5: `OpResult.v(net)` returns the node voltage as a
+    /// float; `.v(a, b)` returns the differential `a - b`; `.i(a, b)` returns
+    /// the branch current from `a` to `b`. `op["net"]` SHALL equal
+    /// `op.v("net")` (AC5). An unknown net raises `KeyError` (fail loud, spec
+    /// edge case).
+    ///
+    /// Divider math (ANALYSIS_PHDL): vin = 5 V driven through r_top = 3 kΩ
+    /// into r_bot = 2 kΩ to gnd → mid = 5·2/(3+2) = 2.0 V. So `v(mid)=2.0`,
+    /// `v(vin, mid) = 3.0` (drop across r_top), and `i(vin, mid) = 1 mA`
+    /// (current through r_top, vin→mid).
+    #[test]
+    fn op_result_reads_voltages_and_currents() -> PyResult<()> {
+        let path = std::env::temp_dir().join("piperine_python_p7_op_test.phdl");
+        std::fs::write(&path, ANALYSIS_PHDL)?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("non-utf8 temp path"))?;
+
+        let outcome = Python::with_gil(|py| -> PyResult<()> {
+            let design = loaded_design(py, path_str)?;
+            let module = design.getattr("module")?.call1(("Divider",))?;
+            let op = module.getattr("op")?.call0()?;
+
+            // AC4: .v(net) returns the node voltage (float).
+            let v_mid = op.getattr("v")?.call1(("mid",))?.extract::<f64>()?;
+            assert!(
+                (v_mid - 2.0).abs() < 1e-6,
+                "op.v(mid) should be 2.0 V, got {v_mid}"
+            );
+            let v_vin = op.getattr("v")?.call1(("vin",))?.extract::<f64>()?;
+            assert!(
+                (v_vin - 5.0).abs() < 1e-6,
+                "op.v(vin) should be 5.0 V, got {v_vin}"
+            );
+            let v_gnd = op.getattr("v")?.call1(("gnd",))?.extract::<f64>()?;
+            assert!(v_gnd.abs() < 1e-9, "op.v(gnd) should be 0.0 V, got {v_gnd}");
+
+            // AC4: .v(a, b) returns the differential a - b.
+            let v_diff = op.getattr("v")?.call1(("vin", "mid"))?.extract::<f64>()?;
+            assert!(
+                (v_diff - 3.0).abs() < 1e-6,
+                "op.v(vin, mid) should be 3.0 V, got {v_diff}"
+            );
+
+            // AC4: .i(a, b) returns the branch current from a to b.
+            let i_rtop = op.getattr("i")?.call1(("vin", "mid"))?.extract::<f64>()?;
+            assert!(
+                (i_rtop - 1e-3).abs() < 1e-9,
+                "op.i(vin, mid) should be 1 mA through r_top, got {i_rtop}"
+            );
+
+            // AC5: op["net"] == op.v("net").
+            let item_mid = op.getattr("__getitem__")?.call1(("mid",))?.extract::<f64>()?;
+            assert!(
+                (item_mid - v_mid).abs() < 1e-12,
+                "op['mid'] should equal op.v('mid'), got {item_mid} vs {v_mid}"
+            );
+
+            // Spec edge case: an unknown net raises KeyError (fail loud).
+            let miss = op.getattr("v")?.call1(("does_not_exist",)).unwrap_err();
+            assert!(
+                miss.is_instance_of::<pyo3::exceptions::PyKeyError>(py),
+                "unknown net must raise KeyError, got {miss}"
+            );
+            let miss_item = op.getattr("__getitem__")?.call1(("nope",)).unwrap_err();
+            assert!(
+                miss_item.is_instance_of::<pyo3::exceptions::PyKeyError>(py),
+                "op['nope'] must raise KeyError, got {miss_item}"
+            );
+            Ok(())
+        });
+        let _ = std::fs::remove_file(&path);
+        outcome
+    }
+
+    /// PY-07 / spec AC7/10: `Trace.v(net)` returns a Waveform over the time
+    /// axis; `Trace["net"]` SHALL return the same Waveform (AC10 — the
+    /// `.values` array equality is verified in P8 once numpy lands; here we
+    /// assert the wrapper equivalence via the inner bench waveform).
+    /// `Trace.axis()` returns the time-axis Waveform. An unknown net on `.v`
+    /// raises `KeyError` (fail loud).
+    ///
+    /// Divider mid is a DC 2.0 V, so the transient `mid` waveform is flat at
+    /// 2.0 V across the recorded time grid (spec-defined outcome derived from
+    /// the DC operating point). P7 doesn't expose `_Waveform.at/.values` to
+    /// Python yet (that's P8); the value is read through the bench `Waveform`
+    /// readout on the extracted inner — the uniform-shape check (same call
+    /// the bench makes).
+    #[test]
+    fn trace_reads_waveforms_and_axis() -> PyResult<()> {
+        let path = std::env::temp_dir().join("piperine_python_p7_trace_test.phdl");
+        std::fs::write(&path, ANALYSIS_PHDL)?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("non-utf8 temp path"))?;
+
+        let outcome = Python::with_gil(|py| -> PyResult<()> {
+            let design = loaded_design(py, path_str)?;
+            let module = design.getattr("module")?.call1(("Divider",))?;
+            let trace = module.getattr("tran")?.call1((5e-3, 1e-5))?;
+
+            // AC7: trace.v(net) returns a _Waveform.
+            let wf = trace.getattr("v")?.call1(("mid",))?;
+            assert_eq!(
+                wf.getattr("__class__")?.getattr("__name__")?.extract::<String>()?,
+                "_Waveform",
+                "trace.v(net) must return a _Waveform"
+            );
+
+            // The DC divider's mid sits at 2.0 V — the transient is flat at
+            // 2.0 V (a linear DC source + R divider has no startup
+            // dynamics). Read via the bench `Waveform::points` on the
+            // extracted inner — same data the bench exposes (uniform-shape).
+            // (`at` is ambiguous between the real + complex inherent impls;
+            // `points` is defined once on `impl<T: Copy>`.)
+            let wf_ref = wf.extract::<pyo3::PyRef<'_, super::_Waveform>>()?;
+            let pts = wf_ref.inner.points();
+            assert!(!pts.is_empty(), "tran waveform should not be empty");
+            let v_first = pts[0].1;
+            assert!(
+                (v_first - 2.0).abs() < 1e-3,
+                "trace.v(mid).points[0].1 should be ~2.0 V, got {v_first}"
+            );
+
+            // AC7: trace.axis() returns the time-axis _Waveform.
+            let axis = trace.getattr("axis")?.call0()?;
+            assert_eq!(
+                axis.getattr("__class__")?.getattr("__name__")?.extract::<String>()?,
+                "_Waveform",
+                "trace.axis() must return a _Waveform"
+            );
+
+            // AC10: trace["net"] returns the same waveform (equivalence
+            // verified through the inner bench readout — `.values` array
+            // equality is P8's numpy assertion).
+            let item_wf = trace.getattr("__getitem__")?.call1(("mid",))?;
+            let item_ref = item_wf.extract::<pyo3::PyRef<'_, super::_Waveform>>()?;
+            let item_pts = item_ref.inner.points();
+            let item_at0 = item_pts[0].1;
+            assert!(
+                (item_at0 - v_first).abs() < 1e-12,
+                "trace['mid'] should match trace.v('mid'): {item_at0} vs {v_first}"
+            );
+
+            // Spec edge case: an unknown net raises KeyError (fail loud).
+            let miss = trace.getattr("v")?.call1(("nope",)).unwrap_err();
+            assert!(
+                miss.is_instance_of::<pyo3::exceptions::PyKeyError>(py),
+                "trace.v('nope') must raise KeyError, got {miss}"
             );
             Ok(())
         });
