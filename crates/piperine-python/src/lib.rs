@@ -635,4 +635,111 @@ mod Divider() {
         let _ = std::fs::remove_file(&path);
         outcome
     }
+
+    /// PY-08 / spec AC7/edge: `_Waveform.values` and `.axis` are real
+    /// `np.ndarray`s of equal length; `.axis` is the time grid. Stats
+    /// (`.at/.rms/.mean/.min/.max/.peak_to_peak/.len`) return correct floats.
+    ///
+    /// Divider mid is DC 2.0 V — the transient is flat at 2.0 V across the
+    /// recorded grid, so `min == max == mean == rms == 2.0` and
+    /// `peak_to_peak == 0.0` (spec-defined outcome derived from the DC
+    /// operating point; uniform-shape — same reductions the bench Waveform
+    /// computes).
+    #[test]
+    fn waveform_exposes_numpy_and_stats() -> PyResult<()> {
+        let path = std::env::temp_dir().join("piperine_python_p8_waveform_test.phdl");
+        std::fs::write(&path, ANALYSIS_PHDL)?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("non-utf8 temp path"))?;
+
+        let outcome = Python::with_gil(|py| -> PyResult<()> {
+            let design = loaded_design(py, path_str)?;
+            let module = design.getattr("module")?.call1(("Divider",))?;
+            let trace = module.getattr("tran")?.call1((5e-3, 1e-5))?;
+            let wf = trace.getattr("v")?.call1(("mid",))?;
+
+            // AC7: .values is a real np.ndarray (float64, not None).
+            let values_obj = wf.getattr("values")?;
+            let np = py.import("numpy")?;
+            let ndarray_ty = np.getattr("ndarray")?;
+            assert!(
+                values_obj.is_instance(&ndarray_ty)?,
+                ".values must be a numpy.ndarray"
+            );
+            let values_dtype = values_obj.getattr("dtype")?.getattr("name")?.extract::<String>()?;
+            assert_eq!(
+                values_dtype, "float64",
+                ".values must be real (float64), got {values_dtype}"
+            );
+
+            // Extract as a typed readonly array for value/length assertions.
+            let values = values_obj.extract::<numpy::PyReadonlyArray1<'_, f64>>()?;
+            let values_slice = values.as_array();
+            assert!(
+                !values_slice.is_empty(),
+                ".values must not be empty on a non-empty tran"
+            );
+            assert!(
+                values_slice.iter().all(|v| (v - 2.0).abs() < 1e-3),
+                "flat 2.0 V transient: every sample ≈ 2.0 V, got {:?}",
+                values_slice
+            );
+
+            // AC7: .axis is the time grid, equal length to .values.
+            let axis_obj = wf.getattr("axis")?;
+            assert!(
+                axis_obj.is_instance(&ndarray_ty)?,
+                ".axis must be a numpy.ndarray"
+            );
+            let axis = axis_obj.extract::<numpy::PyReadonlyArray1<'_, f64>>()?;
+            let axis_slice = axis.as_array();
+            assert_eq!(
+                axis_slice.len(),
+                values_slice.len(),
+                ".axis and .values must be equal length"
+            );
+            assert!(
+                axis_slice.iter().all(|t| *t >= 0.0),
+                "time axis must be non-negative"
+            );
+            // The tran was run with stop=5e-3 — the recorded axis ends at
+            // (or very near) 5e-3 (piperine-bench/docs/SPEC.md §5.1).
+            let t_end = axis_slice.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            assert!(
+                (t_end - 5e-3).abs() < 1e-4,
+                "axis end should be ~5e-3 (the tran stop), got {t_end}"
+            );
+
+            // Stats — uniform-shape (PY-17): same reductions the bench
+            // Waveform computes. The flat 2.0 V transient gives every
+            // reduction the value 2.0 (mean/rms/min/max/at), peak_to_peak 0.
+            let len = wf.getattr("len")?.call0()?.extract::<usize>()?;
+            assert_eq!(len, values_slice.len(), ".len() must equal .values length");
+            let at0 = wf.getattr("at")?.call1((0.0,))?.extract::<f64>()?;
+            let at_mid = wf.getattr("at")?.call1((2.5e-3,))?.extract::<f64>()?;
+            let min = wf.getattr("min")?.call0()?.extract::<f64>()?;
+            let max = wf.getattr("max")?.call0()?.extract::<f64>()?;
+            let mean = wf.getattr("mean")?.call0()?.extract::<f64>()?;
+            let rms = wf.getattr("rms")?.call0()?.extract::<f64>()?;
+            let ptp = wf.getattr("peak_to_peak")?.call0()?.extract::<f64>()?;
+            for (label, v) in [
+                ("at(0)", at0),
+                ("at(2.5e-3)", at_mid),
+                ("min", min),
+                ("max", max),
+                ("mean", mean),
+                ("rms", rms),
+            ] {
+                assert!(
+                    (v - 2.0).abs() < 1e-3,
+                    "flat 2.0 V transient: {label} should be ~2.0, got {v}"
+                );
+            }
+            assert!(ptp.abs() < 1e-9, "flat waveform peak_to_peak should be 0, got {ptp}");
+            Ok(())
+        });
+        let _ = std::fs::remove_file(&path);
+        outcome
+    }
 }

@@ -143,24 +143,81 @@ impl _Trace {
 }
 
 /// `_Waveform` — a swept series of `(axis, value)` samples for one measured
-/// quantity over the analysis axis (PY-08). P7 introduces the wrapper as the
-/// return type of [`_Trace::v`]/`_Trace::i`/`_Trace::axis`] and `__getitem__`;
-/// P8 lands the numpy projections (`.axis`/`.values` as `np.ndarray`) and the
-/// scalar stats (`.at/.rms/.mean/...`) by delegating to the bench
-/// [`Waveform`]'s own typed methods (uniform-shape: same reductions the bench
-/// computes).
+/// quantity over the analysis axis (PY-08). `.values` and `.axis` are real
+/// `np.ndarray`s of equal length (PY-08 / spec AC7); the scalar stats
+/// (`.at/.rms/.mean/.min/.max/.peak_to_peak/.len`) delegate to the bench
+/// [`Waveform`]'s own typed reductions — uniform-shape: same values the
+/// bench computes (PY-17). P7 introduced the wrapper; P8 lands numpy + stats.
 #[pyclass(module = "piperine", unsendable)]
 pub struct _Waveform {
-    // Read by P8's `.axis/.values` (numpy) + `.at/.rms/...` (stats), and by
-    // the P7 trace test (cfg(test)) via PyRef extraction. `allow(dead_code)`
-    // keeps the non-test build warning-free until P8 lands.
-    #[allow(dead_code)]
     pub(crate) inner: Waveform,
 }
 
 impl _Waveform {
     pub(crate) fn new(inner: Waveform) -> Self {
         Self { inner }
+    }
+}
+
+#[pymethods]
+impl _Waveform {
+    /// The values as a real `np.ndarray` (PY-08 / spec AC7). Built zero-copy
+    /// via `PyArray1::from_vec` from the bench `Waveform.points()`.
+    #[getter]
+    fn values(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let vec: Vec<f64> = self.inner.points().iter().map(|&(_, v)| v).collect();
+        Ok(numpy::PyArray1::from_vec(py, vec).into_any().unbind())
+    }
+
+    /// The axis (time, for `$tran`) as a real `np.ndarray` (PY-08 / spec
+    /// AC7). Equal length to `.values`.
+    #[getter]
+    fn axis(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let vec: Vec<f64> = self.inner.points().iter().map(|&(t, _)| t).collect();
+        Ok(numpy::PyArray1::from_vec(py, vec).into_any().unbind())
+    }
+
+    /// Linear interpolation at `x` (clamps outside range) — uniform-shape
+    /// (bench `Waveform::at`).
+    fn at(&self, x: f64) -> f64 {
+        self.inner.at(x)
+    }
+
+    /// Time-weighted RMS over the recorded grid — uniform-shape (bench
+    /// `Waveform::rms`).
+    fn rms(&self) -> f64 {
+        self.inner.rms()
+    }
+
+    /// Time-weighted mean over the recorded grid — uniform-shape.
+    fn mean(&self) -> f64 {
+        self.inner.mean()
+    }
+
+    /// Minimum sample value.
+    fn min(&self) -> f64 {
+        self.inner.min()
+    }
+
+    /// Maximum sample value.
+    fn max(&self) -> f64 {
+        self.inner.max()
+    }
+
+    /// `max - min` over the recorded grid.
+    fn peak_to_peak(&self) -> f64 {
+        self.inner.peak_to_peak()
+    }
+
+    /// Number of samples — equal to `.values` length.
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// `true` when there are no samples (spec edge case: an empty waveform
+    /// exposes empty arrays, not None — `is_empty()` is the honest reflection).
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
     }
 }
 
