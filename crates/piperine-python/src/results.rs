@@ -3,11 +3,17 @@
 //! shells so [`crate::module::_Module::op`]/`tran`/`ac`/`noise` could return
 //! them; P7 adds `.v/.i/__getitem__` to `_OpResult`/`_Trace` and introduces
 //! the `_Waveform` wrapper (numpy + stats arrive in P8); P9 adds the AC/noise
-//! readouts. Each wrapper owns its bench result by value (the result is
-//! `'static`).
+//! readouts; PY-13 (Batch 3 Task A) extends `__getitem__` to route instance
+//! paths to a terminal sub-view (`_InstanceView`).
+//!
+//! `_OpResult`/`_Trace` hold their bench result behind `Rc` so a sub-view can
+//! cheaply share the parent without cloning the (potentially large) result
+//! data; the sub-view holds an `Rc::clone` of the same underlying snapshot.
 //!
 //! MD-13 note: the wrappers are pyclasses — every function is a method on
 //! the struct. No loose module-level functions.
+
+use std::rc::Rc;
 
 use pyo3::exceptions::{PyKeyError, PyRuntimeError};
 use pyo3::prelude::*;
@@ -15,12 +21,14 @@ use pyo3::prelude::*;
 use num_complex::Complex64;
 use piperine_bench::{AcTrace, ComplexWaveform, NetRef, NoiseTrace, OpResult, Trace, Waveform};
 
+use crate::instance::InstanceResolver;
+
 /// Surface a bench readout error as the right Python exception: an
 /// unaddressable net reads as `KeyError` (spec edge case — fail loud, never a
 /// silent NaN); everything else as `RuntimeError` carrying the diagnostic.
 /// Mirrors [`crate::module::_Module::analysis_err`] over the same string
 /// contract — bench errors implement `Display` via `thiserror`.
-fn readout_err<E: std::fmt::Display>(e: E) -> PyErr {
+pub(crate) fn readout_err<E: std::fmt::Display>(e: E) -> PyErr {
     let msg = format!("{e}");
     if msg.contains("is not addressable") {
         PyKeyError::new_err(msg)
@@ -30,18 +38,42 @@ fn readout_err<E: std::fmt::Display>(e: E) -> PyErr {
 }
 
 /// `_OpResult` — the typed `$op()` result (PY-06). Holds the immutable DC
-/// snapshot produced by [`piperine_bench::session::SimSession::run_op`].
-/// `.v/.i` (PY-06) and `__getitem__` (PY-11 / spec AC5) resolve nets by name
-/// through the bench's own typed readout — the same call the bench makes
-/// (uniform-shape proof).
+/// snapshot produced by [`piperine_bench::session::SimSession::run_op`] behind
+/// `Rc` so a PY-13 instance sub-view can share it cheaply. `.v/.i` (PY-06) and
+/// `__getitem__` (PY-11 / spec AC5) resolve nets by name through the bench's
+/// own typed readout — the same call the bench makes (uniform-shape proof).
+///
+/// When constructed via [`crate::module::_Module::op`], the result also
+/// carries an [`InstanceResolver`] so `__getitem__` can detect instance paths
+/// (PY-13 / spec AC13: `op["r_top"]` returns a terminal sub-view). The
+/// resolver is `None` for results built outside `_Module` (existing unit
+/// tests that wrap a bench `OpResult` directly).
 #[pyclass(module = "piperine", unsendable)]
 pub struct _OpResult {
-    pub(crate) inner: OpResult,
+    pub(crate) inner: Rc<OpResult>,
+    resolver: Option<InstanceResolver>,
 }
 
 impl _OpResult {
     pub(crate) fn new(inner: OpResult) -> Self {
-        Self { inner }
+        Self {
+            inner: Rc::new(inner),
+            resolver: None,
+        }
+    }
+
+    /// Attach the instance-path resolver (PY-13). Called by
+    /// [`crate::module::_Module::op`] after construction so `__getitem__`
+    /// can detect instance labels and route to a terminal sub-view.
+    pub(crate) fn with_resolver(mut self, resolver: InstanceResolver) -> Self {
+        self.resolver = Some(resolver);
+        self
+    }
+
+    /// A shared handle to the underlying snapshot — the sub-view clones this
+    /// `Rc` rather than copying the result data.
+    pub(crate) fn shared(&self) -> Rc<OpResult> {
+        Rc::clone(&self.inner)
     }
 
     /// Build a [`NetRef`] from a Python `str` — the typed handle every bench
@@ -76,25 +108,62 @@ impl _OpResult {
         self.inner.i(&net_a, net_b.as_ref()).map_err(readout_err)
     }
 
-    /// `op[name]` SHALL equal `op.v(name)` (spec AC5 / PY-11). Single-net
-    /// voltage; differential + branch-current reads use `.v`/`.i` explicitly.
-    fn __getitem__(&self, name: &str) -> PyResult<f64> {
-        self.v(name, None)
+    /// `op[name]` (spec AC5 / PY-11 + PY-13):
+    /// - **Net name** → `op.v(name)` (a `float`); AC5.
+    /// - **Instance path** (a `.`/`/`-separated path, or a bare label that
+    ///   matches one of the module's instances) → a terminal sub-view
+    ///   exposing that instance's terminal voltages + branch current; AC13.
+    ///
+    /// Instance-path detection lives in [`InstanceResolver::looks_like_instance`];
+    /// unresolved paths raise `KeyError` (spec edge case — fail loud).
+    fn __getitem__(&self, py: Python<'_>, name: &str) -> PyResult<PyObject> {
+        if let Some(resolver) = &self.resolver
+            && resolver.looks_like_instance(name)
+        {
+            let label = resolver.resolve_label(name)?;
+            let view = crate::instance::_InstanceView::new_op(
+                self.shared(),
+                resolver.shared(),
+                label,
+            );
+            return Ok(Py::new(py, view)?.into_any());
+        }
+        let f = self.v(name, None)?;
+        Ok(f.into_pyobject(py)?.into_any().unbind())
     }
 }
 
 /// `_Trace` — the typed `$tran(...)` result (PY-07). `.v/.i` (PY-07) read
 /// out a per-net `_Waveform` over the analysis axis (time, for `$tran`);
-/// `__getitem__` (PY-11 / spec AC10) returns the same waveform handle. `.axis`
-/// returns the time-axis waveform.
+/// `__getitem__` (PY-11 / spec AC10) returns the same waveform handle.
+/// `.axis` returns the time-axis waveform. The snapshot lives behind `Rc` so
+/// a PY-13 instance sub-view can share it (mirrors `_OpResult`).
 #[pyclass(module = "piperine", unsendable)]
 pub struct _Trace {
-    pub(crate) inner: Trace,
+    pub(crate) inner: Rc<Trace>,
+    resolver: Option<InstanceResolver>,
 }
 
 impl _Trace {
     pub(crate) fn new(inner: Trace) -> Self {
-        Self { inner }
+        Self {
+            inner: Rc::new(inner),
+            resolver: None,
+        }
+    }
+
+    /// Attach the instance-path resolver (PY-13). Called by
+    /// [`crate::module::_Module::tran`] after construction so `__getitem__`
+    /// can detect instance labels and route to a terminal sub-view.
+    pub(crate) fn with_resolver(mut self, resolver: InstanceResolver) -> Self {
+        self.resolver = Some(resolver);
+        self
+    }
+
+    /// A shared handle to the underlying trace — the sub-view clones this
+    /// `Rc` rather than copying the result data.
+    pub(crate) fn shared(&self) -> Rc<Trace> {
+        Rc::clone(&self.inner)
     }
 
     /// Build a [`NetRef`] from a Python `str` — the typed handle every bench
@@ -133,13 +202,30 @@ impl _Trace {
         _Waveform::new(self.inner.axis())
     }
 
-    /// `trace[name]` returns the same `_Waveform` as `trace.v(name)` (spec
-    /// AC10 / PY-11). The spec phrases AC10 as returning the `.values` array;
-    /// `.values` is the numpy projection (PY-08, P8) over the same waveform
-    /// this returns — `trace["mid"].values == trace.v("mid").values` is then
-    /// the full AC10 equality, verified end-to-end in P8's test.
-    fn __getitem__(&self, name: &str) -> PyResult<_Waveform> {
-        self.v(name, None)
+    /// `trace[name]` (spec AC10 / PY-11 + PY-13):
+    /// - **Net name** → `trace.v(name)` (a `_Waveform`); AC10.
+    /// - **Instance path** (a `.`/`/`-separated path, or a bare label that
+    ///   matches one of the module's instances) → a terminal sub-view whose
+    ///   `.v/.i` return `_Waveform`s of the connected nets; AC13.
+    ///
+    /// The spec phrases AC10 as returning the `.values` array; `.values` is
+    /// the numpy projection (PY-08, P8) over the same waveform this returns —
+    /// `trace["mid"].values == trace.v("mid").values` is then the full AC10
+    /// equality, verified end-to-end in P8's test.
+    fn __getitem__(&self, py: Python<'_>, name: &str) -> PyResult<PyObject> {
+        if let Some(resolver) = &self.resolver
+            && resolver.looks_like_instance(name)
+        {
+            let label = resolver.resolve_label(name)?;
+            let view = crate::instance::_InstanceView::new_trace(
+                self.shared(),
+                resolver.shared(),
+                label,
+            );
+            return Ok(Py::new(py, view)?.into_any());
+        }
+        let wf = self.v(name, None)?;
+        Ok(Py::new(py, wf)?.into_any())
     }
 }
 

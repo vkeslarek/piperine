@@ -24,6 +24,7 @@
 //! as a loose module-level function.
 
 mod design;
+mod instance;
 mod module;
 mod results;
 mod value_bridge;
@@ -31,6 +32,7 @@ mod value_bridge;
 use pyo3::prelude::*;
 
 use design::{_Design, _Node, _Selection};
+use instance::{_InstanceView, _Terminal};
 use module::_Module;
 use module::{_Behavior, _Instance, _Net, _Param, _Port};
 use results::_AcTrace;
@@ -67,6 +69,8 @@ fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_ComplexWaveform>()?;
     m.add_class::<_AcTrace>()?;
     m.add_class::<_NoiseTrace>()?;
+    m.add_class::<_InstanceView>()?;
+    m.add_class::<_Terminal>()?;
     Ok(())
 }
 
@@ -443,7 +447,8 @@ mod Divider() {
                 let mid_ref = NetRef {
                     name: "mid".to_string(),
                 };
-                let v = BenchOpResult::v(&pyref.inner, &mid_ref, None)
+                // `inner` is `Rc<OpResult>`; deref through Rc to call `v`.
+                let v = BenchOpResult::v(&*pyref.inner, &mid_ref, None)
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?;
                 Ok(v)
             };
@@ -475,7 +480,7 @@ mod Divider() {
                 let mid_ref = NetRef {
                     name: "mid".to_string(),
                 };
-                BenchOpResult::v(&pyref.inner, &mid_ref, None)
+                BenchOpResult::v(&*pyref.inner, &mid_ref, None)
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?
             };
             assert!(
@@ -556,6 +561,134 @@ mod Divider() {
             assert!(
                 miss_item.is_instance_of::<pyo3::exceptions::PyKeyError>(py),
                 "op['nope'] must raise KeyError, got {miss_item}"
+            );
+            Ok(())
+        });
+        let _ = std::fs::remove_file(&path);
+        outcome
+    }
+
+    /// PY-13 / spec AC13: `op["instance"]` (or `trace["instance"]`) returns a
+    /// terminal sub-view exposing that instance's terminal quantities —
+    /// terminal voltages via `.v(port)` and the branch current via
+    /// `.i(port_a, port_b)`, resolved through the POM hierarchy. Unresolved
+    /// instance raises `KeyError` (spec edge case — fail loud).
+    ///
+    /// Divider (ANALYSIS_PHDL): `r_top : Resistor(.p = vin, .n = mid)` with
+    /// `r = 3 kΩ`. At the DC operating point (vin = 5 V, mid = 2 V), the
+    /// terminal sub-view of `r_top` reads:
+    /// - `.v("p")` == `op.v("vin")` == 5.0 V (the connected net's voltage);
+    /// - `.v("n")` == `op.v("mid")` == 2.0 V;
+    /// - `.v("p", "n")` == `op.v("vin", "mid")` == 3.0 V (drop across r_top);
+    /// - `.i("p", "n")` == `op.i("vin", "mid")` == 1 mA (branch current).
+    /// `view["p"]` SHALL equal `view.v("p")` (uniform shape — the same
+    /// `__getitem__ → .v` mapping the parent defines for net names).
+    #[test]
+    fn instance_path_returns_terminal_subview() -> PyResult<()> {
+        let path = std::env::temp_dir().join("piperine_python_py13_instance_test.phdl");
+        std::fs::write(&path, ANALYSIS_PHDL)?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("non-utf8 temp path"))?;
+
+        let outcome = Python::with_gil(|py| -> PyResult<()> {
+            let design = loaded_design(py, path_str)?;
+            let module = design.getattr("module")?.call1(("Divider",))?;
+
+            // AC13: op["instance"] returns an _InstanceView.
+            let op = module.getattr("op")?.call0()?;
+            let view = op.getattr("__getitem__")?.call1(("r_top",))?;
+            assert_eq!(
+                view.getattr("__class__")?.getattr("__name__")?.extract::<String>()?,
+                "_InstanceView",
+                "op['r_top'] must return an _InstanceView"
+            );
+            assert_eq!(
+                view.getattr("label")?.extract::<String>()?,
+                "r_top",
+                "view.label must be the instance label"
+            );
+
+            // Terminals: Resistor declares (p, n); r_top binds p→vin, n→mid.
+            // Port-declaration order is preserved.
+            let terminals: Vec<(String, String)> = view
+                .getattr("terminals")?
+                .call0()?
+                .try_iter()?
+                .map(|t| {
+                    let t: Bound<'_, PyAny> = t?;
+                    let port = t.getattr("port")?.extract::<String>()?;
+                    let net = t.getattr("net")?.extract::<String>()?;
+                    Ok::<(String, String), PyErr>((port, net))
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+            assert_eq!(
+                terminals,
+                vec![("p".to_string(), "vin".to_string()), ("n".to_string(), "mid".to_string())],
+                "terminals must map port→connected net in declaration order"
+            );
+
+            // AC13 terminal voltages: .v(port) reads the connected net.
+            let v_p = view.getattr("v")?.call1(("p",))?.extract::<f64>()?;
+            assert!(
+                (v_p - 5.0).abs() < 1e-6,
+                "view.v('p') should be vin = 5.0 V, got {v_p}"
+            );
+            let v_n = view.getattr("v")?.call1(("n",))?.extract::<f64>()?;
+            assert!(
+                (v_n - 2.0).abs() < 1e-6,
+                "view.v('n') should be mid = 2.0 V, got {v_n}"
+            );
+            let v_diff = view.getattr("v")?.call1(("p", "n"))?.extract::<f64>()?;
+            assert!(
+                (v_diff - 3.0).abs() < 1e-6,
+                "view.v('p', 'n') should be the 3.0 V drop across r_top, got {v_diff}"
+            );
+
+            // AC13 branch current: .i(p, n) is the current through r_top.
+            let i_rtop = view.getattr("i")?.call1(("p", "n"))?.extract::<f64>()?;
+            assert!(
+                (i_rtop - 1e-3).abs() < 1e-9,
+                "view.i('p', 'n') should be 1 mA through r_top, got {i_rtop}"
+            );
+
+            // Uniform shape: view[port] == view.v(port).
+            let item_v = view.getattr("__getitem__")?.call1(("p",))?.extract::<f64>()?;
+            assert!(
+                (item_v - v_p).abs() < 1e-12,
+                "view['p'] should equal view.v('p'), got {item_v} vs {v_p}"
+            );
+
+            // Spec edge case: an unknown instance raises KeyError (fail loud).
+            let miss = op.getattr("__getitem__")?.call1(("no_such_instance",)).unwrap_err();
+            assert!(
+                miss.is_instance_of::<pyo3::exceptions::PyKeyError>(py),
+                "op['no_such_instance'] must raise KeyError, got {miss}"
+            );
+
+            // AC13 (trace variant): trace["instance"] returns an _InstanceView
+            // whose .v(port) is a _Waveform over the connected net.
+            let trace = module.getattr("tran")?.call1((5e-3, 1e-5))?;
+            let tview = trace.getattr("__getitem__")?.call1(("r_top",))?;
+            assert_eq!(
+                tview.getattr("__class__")?.getattr("__name__")?.extract::<String>()?,
+                "_InstanceView",
+                "trace['r_top'] must return an _InstanceView"
+            );
+            let twf = tview.getattr("v")?.call1(("n",))?;
+            assert_eq!(
+                twf.getattr("__class__")?.getattr("__name__")?.extract::<String>()?,
+                "_Waveform",
+                "trace['r_top'].v('n') must return a _Waveform over mid"
+            );
+            // mid is DC 2.0 V — the transient is flat at 2.0 V (spec-defined).
+            let twf_ref = twf.extract::<pyo3::PyRef<'_, super::_Waveform>>()?;
+            let pts = twf_ref.inner.points();
+            assert!(!pts.is_empty());
+            assert!(
+                (pts[0].1 - 2.0).abs() < 1e-3,
+                "trace['r_top'].v('n').points[0].1 should be ~2.0 V (mid), got {}",
+                pts[0].1
             );
             Ok(())
         });

@@ -85,6 +85,14 @@ impl _Module {
             PyRuntimeError::new_err(msg)
         }
     }
+
+    /// Build the [`InstanceResolver`] handed to result objects so they can
+    /// detect instance paths in `__getitem__` (PY-13). The resolver shares
+    /// this module's design handle — a fresh clone per call so each result
+    /// owns its own (cheap `Rc` bump).
+    fn instance_resolver(&self) -> crate::instance::InstanceResolver {
+        crate::instance::InstanceResolver::new(Rc::clone(&self.design), self.name.clone())
+    }
 }
 
 #[pymethods]
@@ -135,7 +143,7 @@ impl _Module {
         let result = session
             .run_op(&SolverConfig::default(), &Value::Unit)
             .map_err(Self::analysis_err)?;
-        Ok(_OpResult::new(result))
+        Ok(_OpResult::new(result).with_resolver(self.instance_resolver()))
     }
 
     /// Run a transient analysis (PY-04 / spec AC6). `step = None` (or `0.0`)
@@ -147,7 +155,7 @@ impl _Module {
         let result = session
             .run_tran(stop, step, start, &SolverConfig::default(), &Value::Unit)
             .map_err(Self::analysis_err)?;
-        Ok(_Trace::new(result))
+        Ok(_Trace::new(result).with_resolver(self.instance_resolver()))
     }
 
     /// Run an AC small-signal sweep (PY-04 / spec AC8). `logarithmic` defaults
