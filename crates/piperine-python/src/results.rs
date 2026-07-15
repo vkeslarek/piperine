@@ -12,7 +12,8 @@
 use pyo3::exceptions::{PyKeyError, PyRuntimeError};
 use pyo3::prelude::*;
 
-use piperine_bench::{NetRef, OpResult, Trace, Waveform};
+use num_complex::Complex64;
+use piperine_bench::{AcTrace, ComplexWaveform, NetRef, NoiseTrace, OpResult, Trace, Waveform};
 
 /// Surface a bench readout error as the right Python exception: an
 /// unaddressable net reads as `KeyError` (spec edge case — fail loud, never a
@@ -221,36 +222,140 @@ impl _Waveform {
     }
 }
 
-// `_AcTrace`/`_NoiseTrace` shells kept here — P9 lands their `.v/.axis/.psd/
-// .total` readouts. They are constructed by `_Module::ac`/`_Module::noise`
-// (P6) and registered with the module (lib.rs) so analysis-end-to-end
-// wiring is testable from P6 onward.
-
-/// `_AcTrace` — the typed `$ac(...)` result (PY-09). `.v/.axis` arrive in P9.
+/// `_ComplexWaveform` — the `$ac` sample surface (PY-09): a series of
+/// `(frequency, Complex64)` samples. `.values` is a complex `np.ndarray`
+/// (complex128); `.mag/.phase/.db` project onto real [`_Waveform`]s
+/// (uniform-shape: same projections the bench `ComplexWaveform` computes).
+/// `.axis` is the frequency grid as a real `np.ndarray` (mirrors
+/// `_Waveform.axis`).
 #[pyclass(module = "piperine", unsendable)]
-pub struct _AcTrace {
-    // Read by P9's `.v/.axis`; `allow(dead_code)` until then.
-    #[allow(dead_code)]
-    pub(crate) inner: piperine_bench::AcTrace,
+pub struct _ComplexWaveform {
+    inner: ComplexWaveform,
 }
 
-impl _AcTrace {
-    pub(crate) fn new(inner: piperine_bench::AcTrace) -> Self {
+impl _ComplexWaveform {
+    pub(crate) fn new(inner: ComplexWaveform) -> Self {
         Self { inner }
     }
 }
 
-/// `_NoiseTrace` — the typed `$noise(...)` result (PY-10). `.psd/.total`
-/// arrive in P9.
+#[pymethods]
+impl _ComplexWaveform {
+    /// The complex values as a `np.ndarray` (complex128) — PY-09 / spec AC8.
+    #[getter]
+    fn values(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let vec: Vec<Complex64> = self.inner.points().iter().map(|&(_, v)| v).collect();
+        Ok(numpy::PyArray1::from_vec(py, vec).into_any().unbind())
+    }
+
+    /// The frequency axis as a real `np.ndarray` (PY-09 / spec AC8). Equal
+    /// length to `.values`.
+    #[getter]
+    fn axis(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let vec: Vec<f64> = self.inner.points().iter().map(|&(t, _)| t).collect();
+        Ok(numpy::PyArray1::from_vec(py, vec).into_any().unbind())
+    }
+
+    /// Magnitude projection `|c|` per sample — uniform-shape (bench
+    /// `ComplexWaveform::mag`). Returns a real `_Waveform`.
+    fn mag(&self) -> _Waveform {
+        _Waveform::new(self.inner.mag())
+    }
+
+    /// Phase projection `arg(c)` (radians) per sample — uniform-shape.
+    fn phase(&self) -> _Waveform {
+        _Waveform::new(self.inner.phase())
+    }
+
+    /// Decibel projection `20·log10|c|` per sample — uniform-shape.
+    fn db(&self) -> _Waveform {
+        _Waveform::new(self.inner.db())
+    }
+
+    /// Nearest sample to `x` (no complex interpolation) — uniform-shape.
+    /// Returns a Python `complex`.
+    fn at(&self, x: f64) -> (f64, f64) {
+        let c = self.inner.at(x);
+        (c.re, c.im)
+    }
+
+    /// Number of samples — equal to `.values` length.
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// `true` when there are no samples (spec edge case: empty → empty arrays).
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+}
+
+/// `_AcTrace` — the typed `$ac(...)` result (PY-09). `.v(net)` returns a
+/// [`_ComplexWaveform`] over the AC frequency sweep; `.axis()` returns the
+/// frequency-axis real `_Waveform`. Net resolution + error handling mirror
+/// `_OpResult::v`.
+#[pyclass(module = "piperine", unsendable)]
+pub struct _AcTrace {
+    pub(crate) inner: AcTrace,
+}
+
+impl _AcTrace {
+    pub(crate) fn new(inner: AcTrace) -> Self {
+        Self { inner }
+    }
+
+    /// Build a [`NetRef`] from a Python `str` — the typed handle every bench
+    /// readout takes. Kept as a struct method (MD-13).
+    fn net(name: &str) -> NetRef {
+        NetRef {
+            name: name.to_string(),
+        }
+    }
+}
+
+#[pymethods]
+impl _AcTrace {
+    /// Net voltage `a` minus `b` (ground-referenced when `b` is omitted) over
+    /// the AC frequency sweep — spec AC8. An unaddressable net raises
+    /// `KeyError` (fail loud).
+    #[pyo3(signature = (a, b=None))]
+    fn v(&self, a: &str, b: Option<&str>) -> PyResult<_ComplexWaveform> {
+        let net_a = Self::net(a);
+        let net_b = b.map(Self::net);
+        let cw = self.inner.v(&net_a, net_b.as_ref()).map_err(readout_err)?;
+        Ok(_ComplexWaveform::new(cw))
+    }
+
+    /// The frequency-axis `_Waveform` (spec AC8 `.axis()`).
+    fn axis(&self) -> _Waveform {
+        _Waveform::new(self.inner.axis())
+    }
+}
+
+/// `_NoiseTrace` — the typed `$noise(...)` result (PY-10). `.psd()` returns
+/// the output-referred noise PSD as a real `_Waveform` (V²/Hz over
+/// frequency); `.total()` returns the integrated RMS noise as a float.
+/// Uniform-shape: same values the bench `NoiseTrace` computes.
 #[pyclass(module = "piperine", unsendable)]
 pub struct _NoiseTrace {
-    // Read by P9's `.psd/.total`; `allow(dead_code)` until then.
-    #[allow(dead_code)]
-    pub(crate) inner: piperine_bench::NoiseTrace,
+    pub(crate) inner: NoiseTrace,
 }
 
 impl _NoiseTrace {
-    pub(crate) fn new(inner: piperine_bench::NoiseTrace) -> Self {
+    pub(crate) fn new(inner: NoiseTrace) -> Self {
         Self { inner }
+    }
+}
+
+#[pymethods]
+impl _NoiseTrace {
+    /// Output-referred noise PSD as a real `_Waveform` (V²/Hz) — spec AC9.
+    fn psd(&self) -> _Waveform {
+        _Waveform::new(self.inner.psd())
+    }
+
+    /// Integrated total noise (RMS) — spec AC9.
+    fn total(&self) -> f64 {
+        self.inner.total()
     }
 }

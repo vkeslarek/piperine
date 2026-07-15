@@ -33,6 +33,7 @@ use pyo3::prelude::*;
 use design::{_Design, _Node, _Selection};
 use module::_Module;
 use results::_AcTrace;
+use results::_ComplexWaveform;
 use results::_NoiseTrace;
 use results::_OpResult;
 use results::_Trace;
@@ -57,6 +58,7 @@ fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_OpResult>()?;
     m.add_class::<_Trace>()?;
     m.add_class::<_Waveform>()?;
+    m.add_class::<_ComplexWaveform>()?;
     m.add_class::<_AcTrace>()?;
     m.add_class::<_NoiseTrace>()?;
     Ok(())
@@ -737,6 +739,188 @@ mod Divider() {
                 );
             }
             assert!(ptp.abs() < 1e-9, "flat waveform peak_to_peak should be 0, got {ptp}");
+            Ok(())
+        });
+        let _ = std::fs::remove_file(&path);
+        outcome
+    }
+
+    /// PY-09 / spec AC8: `module.ac(...)` → `_AcTrace.v(net)` returns a
+    /// `_ComplexWaveform` whose `.values` is a complex `np.ndarray`;
+    /// `.mag/.phase/.db` return real `_Waveform`s. `_AcTrace.axis()` returns
+    /// the frequency-axis `_Waveform`.
+    ///
+    /// Mirrors the bench's own `ac_stim_drives_a_low_pass_response` test
+    /// shape (piperine-bench/tests/bench.rs): 1 A of `ac_stim` current into
+    /// a 1 kΩ resistor to gnd → |V_out| = 1 A × 1 kΩ = 1000 V at every
+    /// frequency (purely resistive, flat). The spec-defined expected outcome
+    /// (PY-17 uniform-shape — same call the bench makes).
+    #[test]
+    fn ac_returns_complex_waveform_with_projections() -> PyResult<()> {
+        // Dedicated AC fixture: an `ac_stim` current source driving a 1 kΩ
+        // resistor to ground. `ac_stim(mag)` is the small-signal injection
+        // (bench spec §5); `-ac_stim(1.0)` means 1 A flows out of `p` into
+        // the source (the bench convention).
+        const AC_PHDL: &str = "\
+discipline Electrical { potential v: Real; flow i: Real; }
+
+mod AcSource(inout p: Electrical, inout n: Electrical) { }
+analog AcSource { I(p, n) <+ -ac_stim(1.0); }
+
+mod Resistor(inout p: Electrical, inout n: Electrical) {
+    param r: Real = 1e3;
+}
+analog Resistor { I(p, n) <+ V(p, n) / r; }
+
+mod AcTest() {
+    wire gnd : Electrical;
+    wire out : Electrical;
+    stim : AcSource (.p = out, .n = gnd);
+    r1   : Resistor (.p = out, .n = gnd) { .r = 1e3 };
+}
+";
+        let path = std::env::temp_dir().join("piperine_python_p9_ac_test.phdl");
+        std::fs::write(&path, AC_PHDL)?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("non-utf8 temp path"))?;
+
+        let outcome = Python::with_gil(|py| -> PyResult<()> {
+            let design = loaded_design(py, path_str)?;
+            let module = design.getattr("module")?.call1(("AcTest",))?;
+            let ac = module.getattr("ac")?.call1((1.0, 1e6, 10))?;
+
+            // AC8: ac.v(net) returns a _ComplexWaveform.
+            let cw = ac.getattr("v")?.call1(("out",))?;
+            assert_eq!(
+                cw.getattr("__class__")?.getattr("__name__")?.extract::<String>()?,
+                "_ComplexWaveform",
+                "ac.v(net) must return a _ComplexWaveform"
+            );
+
+            // AC8: .values is a complex np.ndarray (complex128).
+            let values_obj = cw.getattr("values")?;
+            let np = py.import("numpy")?;
+            let ndarray_ty = np.getattr("ndarray")?;
+            assert!(
+                values_obj.is_instance(&ndarray_ty)?,
+                ".values must be a numpy.ndarray"
+            );
+            let values_dtype = values_obj.getattr("dtype")?.getattr("name")?.extract::<String>()?;
+            assert_eq!(
+                values_dtype, "complex128",
+                ".values must be complex (complex128), got {values_dtype}"
+            );
+            let values =
+                values_obj.extract::<numpy::PyReadonlyArray1<'_, num_complex::Complex64>>()?;
+            assert_eq!(values.as_array().len(), 10, "AC sweep had 10 points");
+
+            // 1 A × 1 kΩ = 1000 V at every frequency (resistive, flat).
+            // (PY-17 uniform-shape — same magnitude the bench asserts in
+            // `ac_stim_drives_a_low_pass_response` for the passband.)
+            for (i, c) in values.as_array().iter().enumerate() {
+                assert!(
+                    (c.norm() - 1000.0).abs() < 1.0,
+                    "AC |v_out| at point {i} should be ~1000 V (1 A × 1 kΩ), got {}",
+                    c.norm()
+                );
+            }
+
+            // AC8: .mag/.phase/.db return real _Waveforms.
+            for proj in ["mag", "phase", "db"] {
+                let w = cw.getattr(proj)?.call0()?;
+                assert_eq!(
+                    w.getattr("__class__")?.getattr("__name__")?.extract::<String>()?,
+                    "_Waveform",
+                    "{proj}() must return a _Waveform"
+                );
+                let w_vals = w.getattr("values")?.extract::<numpy::PyReadonlyArray1<'_, f64>>()?;
+                assert_eq!(w_vals.as_array().len(), 10, "{proj} length must match AC sweep");
+            }
+            // .mag value ≈ 1000 (matches the complex magnitude above).
+            let mag_at_first = cw.getattr("mag")?.call0()?.getattr("at")?.call1((1.0,))?.extract::<f64>()?;
+            assert!(
+                (mag_at_first - 1000.0).abs() < 1.0,
+                "ac.v('out').mag.at(fstart) should be ~1000, got {mag_at_first}"
+            );
+
+            // AC8: ac.axis() returns the frequency-axis _Waveform.
+            let axis = ac.getattr("axis")?.call0()?;
+            assert_eq!(
+                axis.getattr("__class__")?.getattr("__name__")?.extract::<String>()?,
+                "_Waveform",
+                "ac.axis() must return a _Waveform"
+            );
+            let axis_vals = axis.getattr("values")?.extract::<numpy::PyReadonlyArray1<'_, f64>>()?;
+            assert_eq!(axis_vals.as_array().len(), 10, "axis length must match AC sweep");
+            assert!(
+                axis_vals.as_array().iter().all(|f| *f >= 1.0 && *f <= 1e6),
+                "log-sweep from 1 Hz to 1 MHz"
+            );
+            Ok(())
+        });
+        let _ = std::fs::remove_file(&path);
+        outcome
+    }
+
+    /// PY-10 / spec AC9: `module.noise(...)` → `_NoiseTrace.psd()` returns a
+    /// `_Waveform` with the configured sweep length; `.total()` returns a
+    /// non-negative float. Mirrors the bench's own noise-test fixture
+    /// (piperine-bench/tests/bench.rs `bench noise_*`): a `NoisyResistor`
+    /// with explicit `white_noise` so the PSD is non-zero and the integrated
+    /// total is observable.
+    #[test]
+    fn noise_returns_psd_waveform_and_total() -> PyResult<()> {
+        const NOISE_PHDL: &str = "\
+discipline Electrical { potential v: Real; flow i: Real; }
+
+mod NoisyResistor(inout p: Electrical, inout n: Electrical) {
+    param r: Real = 1e3;
+}
+analog NoisyResistor { I(p, n) <+ V(p, n) / r + white_noise(4 * 8.617e-5 * 300.15 / r); }
+
+mod NoiseTest() {
+    wire gnd : Electrical;
+    wire out : Electrical;
+    nr : NoisyResistor (.p = out, .n = gnd) { .r = 1e3 };
+}
+";
+        let path = std::env::temp_dir().join("piperine_python_p9_noise_test.phdl");
+        std::fs::write(&path, NOISE_PHDL)?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("non-utf8 temp path"))?;
+
+        let outcome = Python::with_gil(|py| -> PyResult<()> {
+            let design = loaded_design(py, path_str)?;
+            let module = design.getattr("module")?.call1(("NoiseTest",))?;
+            let noise = module.getattr("noise")?.call1(("out", 1.0, 1e6, 5))?;
+
+            // AC9: psd() returns a _Waveform with the configured sweep length.
+            let psd = noise.getattr("psd")?.call0()?;
+            assert_eq!(
+                psd.getattr("__class__")?.getattr("__name__")?.extract::<String>()?,
+                "_Waveform",
+                "noise.psd() must return a _Waveform"
+            );
+            let psd_vals = psd.getattr("values")?.extract::<numpy::PyReadonlyArray1<'_, f64>>()?;
+            assert_eq!(
+                psd_vals.as_array().len(),
+                5,
+                "psd length must match noise sweep points"
+            );
+            // PSD is non-negative (V²/Hz).
+            assert!(
+                psd_vals.as_array().iter().all(|v| *v >= 0.0),
+                "PSD samples must be non-negative (V²/Hz)"
+            );
+
+            // AC9: total() returns a non-negative float (integrated RMS).
+            let total = noise.getattr("total")?.call0()?.extract::<f64>()?;
+            assert!(
+                total >= 0.0,
+                "integrated noise total must be non-negative, got {total}"
+            );
             Ok(())
         });
         let _ = std::fs::remove_file(&path);
