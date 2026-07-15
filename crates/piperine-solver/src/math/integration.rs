@@ -221,6 +221,19 @@ impl TrBdf2 {
             if i >= q_n1.len() || i >= q_n.len() || i >= q_n_gamma.len() {
                 continue;
             }
+            // Skip nodes whose history spans a discontinuity — e.g. a
+            // voltage-source-forced node that jumped at a breakpoint edge.
+            // Such a node's predictor residual is the intentional jump, not
+            // truncation error; counting it would reject the step the
+            // integrator deliberately landed on. A discontinuity shows up as
+            // ASYMMETRIC consecutive differences: one side is flat (pre- or
+            // post-jump) while the other is large. Smooth curvature has
+            // comparable differences on both sides, so it is kept.
+            let d1 = (q_n_gamma[i] - q_n[i]).abs();
+            let d2 = (q_n1[i] - q_n_gamma[i]).abs();
+            if d1.max(d2) > 0.0 && d1.min(d2) < 0.1 * d1.max(d2) {
+                continue;
+            }
             let q_pred = q_n_gamma[i] + slope_scale * (q_n_gamma[i] - q_n[i]);
             let err = (q_n1[i] - q_pred).abs();
             let scale = reltol * q_n1[i].abs() + tol;

@@ -259,15 +259,24 @@ impl<'a> TransientSolver<'a> {
             // so landing here covers them — and (c) ANALOG `@timer` fires /
             // source edges declared via `Element::next_breakpoints`. Absolute
             // times → survive rollback.
+            //
+            // A step that lands on a declared discontinuity is ACCEPTED without
+            // the Milne-LTE gate: the LTE would otherwise see the intentional
+            // source jump (e.g. V(in) 0→5 at a pulse edge) as a huge error and
+            // reject, thrashing the integrator against the edge it already hit.
             let t_next_event = self.system.circuit.digital_state.peek_next_event_time();
-            let mut t_next = (current_time + dt_proposed).min(stop_time);
+            let pi_target = current_time + dt_proposed;
+            let mut t_next = pi_target.min(stop_time);
+            let mut landed_on_breakpoint = false;
             if t_next_event < t_next {
                 t_next = t_next_event;
+                landed_on_breakpoint = true;
             }
             for dev in self.system.circuit.devices.iter() {
                 for bp in dev.next_breakpoints(current_time, dt_proposed) {
                     if bp > current_time && bp < t_next {
                         t_next = bp;
+                        landed_on_breakpoint = true;
                     }
                 }
             }
@@ -312,7 +321,7 @@ impl<'a> TransientSolver<'a> {
                     ),
                     _ => 0.0,
                 };
-                if milne > tolerances.trtol {
+                if !landed_on_breakpoint && milne > tolerances.trtol {
                     // LTE too large: reject, halve dt, reset the PI memory.
                     if std::env::var("PIPERINE_TRACE_TRAN").is_ok() {
                         eprintln!("REJECT t={current_time:.3e} dt={dt_actual:.3e} milne={milne:.3e} (trtol={})", tolerances.trtol);
@@ -339,8 +348,11 @@ impl<'a> TransientSolver<'a> {
                 }
                 current_time = t_next;
                 // This step's size seeds the next step's TR-stage
-                // previous-current re-derivation.
-                self.system.prev_h = dt_actual;
+                // previous-current re-derivation — UNLESS the step landed on a
+                // declared discontinuity, in which case the history spans a
+                // jump (e.g. a source edge) and must not feed the next TR
+                // stage; reset so the next step starts clean (i_{C,n} = 0).
+                self.system.prev_h = if landed_on_breakpoint { 0.0 } else { dt_actual };
                 // Timestep policy: the PI controller grows / shrinks `dt`
                 // from the global Milne error (always adaptive — SPICE has
                 // been adaptive since v2). Output interpolation onto a fixed
