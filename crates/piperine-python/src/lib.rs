@@ -23,24 +23,13 @@
 //! every function body still delegates to a struct method so no *logic* lives
 //! as a loose module-level function.
 
-use pyo3::exceptions::PyNotImplementedError;
+mod design;
+mod module;
+
 use pyo3::prelude::*;
 
-/// `_Design` — a loaded, elaborated POM design (PY-01/02). The Python facade
-/// re-exports this as `Design`. Scaffold only for now; reflection (top/module/
-/// modules/const_) lands in P3.
-#[pyclass(module = "piperine")]
-pub struct _Design;
-
-impl _Design {
-    /// Load + elaborate `path` into a `_Design` (PY-01). Implemented in P3;
-    /// this stub fails loud so the scaffold never silently returns empty data.
-    fn load(_path: &str) -> PyResult<Self> {
-        Err(PyNotImplementedError::new_err(
-            "_piperine.load() is not implemented yet (lands in P3)",
-        ))
-    }
-}
+use design::_Design;
+use module::_Module;
 
 /// `_piperine.load(path) -> _Design` (PY-01). Thin FFI shim delegating to
 /// [`_Design::load`].
@@ -55,5 +44,90 @@ fn load(path: &str) -> PyResult<_Design> {
 fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(load, m)?)?;
     m.add_class::<_Design>()?;
+    m.add_class::<_Module>()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::_piperine;
+    use pyo3::prelude::*;
+    use pyo3::types::PyModule;
+
+    /// A tiny self-contained PHDL (declares its own discipline + two modules,
+    /// no `use`/prelude dependency) — the P3 reflection fixture.
+    const PHDL: &str = "\
+discipline Electrical { potential v: Real; flow i: Real; }
+
+mod Resistor(inout p: Electrical, inout n: Electrical) {
+    param r: Real = 1e3;
+}
+
+mod DividerBoard() {
+    wire gnd : Electrical;
+    wire vin : Electrical;
+    wire mid : Electrical;
+    r_top : Resistor(.p = vin, .n = mid) { .r = 3e3 };
+    r_bot : Resistor(.p = mid, .n = gnd) { .r = 2e3 };
+}
+";
+
+    /// PY-01/02: `load` returns a `_Design` whose `modules()` lists every
+    /// elaborated module; `module(name)` returns that module and raises when
+    /// the name is unknown.
+    #[test]
+    fn load_returns_reflected_design() -> PyResult<()> {
+        let path = std::env::temp_dir().join("piperine_python_p3_load_test.phdl");
+        std::fs::write(&path, PHDL)?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("non-utf8 temp path"))?;
+
+        let outcome = Python::with_gil(|py| -> PyResult<()> {
+            let m = PyModule::new(py, "_piperine")?;
+            _piperine(&m)?;
+
+            let design = m.getattr("load")?.call1((path_str,))?;
+
+            // Spec edge case: a nonexistent path raises (FileNotFoundError /
+            // ValueError), never a silent success.
+            assert!(
+                m.getattr("load")?
+                    .call1(("/nonexistent/piperine_missing.phdl",))
+                    .is_err(),
+                "loading a missing file must raise"
+            );
+
+            // modules() lists every elaborated module.
+            let modules = design.getattr("modules")?.call0()?;
+            let mut names: Vec<String> = modules
+                .try_iter()?
+                .map(|item| Ok::<String, PyErr>(item?.getattr("name")?.extract::<String>()?))
+                .collect::<PyResult<Vec<String>>>()?;
+            names.sort();
+            assert!(
+                names.contains(&"Resistor".to_string()),
+                "Resistor should be reflected, got {names:?}"
+            );
+            assert!(
+                names.contains(&"DividerBoard".to_string()),
+                "DividerBoard should be reflected, got {names:?}"
+            );
+
+            // module(name) returns the named module; missing → raises.
+            let r = design
+                .getattr("module")?
+                .call1(("Resistor",))?
+                .getattr("name")?
+                .extract::<String>()?;
+            assert_eq!(r, "Resistor");
+            assert!(
+                design.getattr("module")?.call1(("DoesNotExist",)).is_err(),
+                "looking up a missing module must raise"
+            );
+            Ok(())
+        });
+        let _ = std::fs::remove_file(&path);
+        outcome
+    }
 }
