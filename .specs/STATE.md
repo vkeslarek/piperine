@@ -144,26 +144,52 @@ in `docs/spec/` (Parts I–VII). Solver gaps and feature tracking live in
 
 ## Handoff Snapshot
 
-**Two features. One paused-functional, one ready-to-execute.**
+**Last updated:** 2026-07-15. Two features delivered this cycle; remaining
+solver specs are planning-only (no code yet).
 
-### Feature A — `solver-trbdf2-engine` (PAUSED — functional, cleanups deferred)
+### Feature A — `solver-trbdf2-engine` (DELIVERED — cleanups deferred)
 
-Spec/context/design/tasks in `.specs/features/solver-trbdf2-engine/`. Last commit `165cc52`.
-**Delivered & green:** TR-BDF2 (γ=2−√2) two-phase sole scheme; trapezoidal companion fix (`i_{C,n}` re-derived from prior BDF2); **PI controller always-adaptive** (Milne LTE over node voltages, with asymmetric-difference discontinuity exclusion); **`@timer(period, phase)`** + **unified analog/digital breakpoints**; breakpoint discontinuity handling (skip LTE at edges, reset prev_h). `docs/spec/` Parts I/II/III/V/VII + ROADMAP updated.
-**Deferred cleanups (user: "ignore for now"):** (1) remove vestigial `IntegrationMethod` enum + `TruncationError` trait + dead `suggest_transient_step` + `Tolerances.integration`; (2) inductor flux TR-stage companion (dual previous-voltage); (3) T15/T16 permanent discrimination test + ngspice parity; (4) `bp_dt`.
+Spec/context/design/tasks in `.specs/features/solver-trbdf2-engine/`.
+**Delivered & green:** TR-BDF2 (γ=2−√2) two-phase sole scheme; trapezoidal
+companion fix (`i_{C,n}` re-derived from prior BDF2); **PI controller
+always-adaptive** (Milne LTE over node voltages, with asymmetric-difference
+discontinuity exclusion); **`@timer(period, phase)`** + **unified
+analog/digital breakpoints**; breakpoint discontinuity handling (skip LTE at
+edges, reset prev_h). `docs/spec/` Parts I/II/III/V/VII + ROADMAP updated.
+**Subsumed:** `solver-breakpoints` and `solver-unified-events` specs deleted
+(both fully delivered by this engine).
+**Deferred cleanups (user: "ignore for now"):** (1) remove vestigial
+`IntegrationMethod` enum + `TruncationError` trait + dead
+`suggest_transient_step` + `Tolerances.integration`; (2) inductor flux
+TR-stage companion (dual previous-voltage); (3) T15/T16 permanent
+discrimination test + ngspice parity; (4) `bp_dt`.
 
-### Feature B — `python-bindings` (READY TO EXECUTE — next session)
+### Feature B — `python-bindings` (DELIVERED)
 
-**Resume here.** Planning complete; Execute from P1. Docs in `.specs/features/python-bindings/`:
-- `spec.md` — 17 requirements (PY-01..PY-17); uniform-shape mandate (spec §10).
-- `context.md` — decisions: embed CPython; `result["net"]` + `result["instance.path"]`; typed dataclasses; two-array numpy; typed pure-Python facade; read-only POM + staging.
-- `design.md` — new crate `piperine-python` (pyo3 cdylib+rlib via `extension-module` feature); `_piperine` native wrapping `SimSession`+POM+results; facade `python/piperine/__init__.py`; CLI `piperine run script.py` via `append_to_inittab`.
-- `tasks.md` — 13 tasks, 5 phases (P1 scaffold → P2 bench pub accessors → P3-5 POM/load/select → P6-9 analyses+results+numpy → P10 facade → P11-13 run+smoke+docs).
+All 17 requirements (PY-01..PY-17) verified. Spec/context/design/tasks in
+`.specs/features/python-bindings/`. **Delivered:**
+- Crate `piperine-python` (PyO3) — `_piperine` native + typed pure-Python facade.
+- `load → Design → Module → op/tran/ac/noise → results.v(net)` matching the
+  bench shape exactly (PY-17 uniform-shape proof via embedded smoke test).
+- numpy arrays (`.values`/`.axis`), `.cross()`, stats, `TranConfig.ic`.
+- `piperine run foo.py` (embedded CPython, no pip install).
+- `piperine run -i [design.phdl]` (interactive REPL with autocomplete).
+- `piperine new` creates `.venv/` with bundled `_piperine.so` + facade (IDE
+  autocomplete out of the box — no `target/` needed on the user's machine).
+- 21 Python example scripts (one per `.phdl` in `examples/`) — 21/21 pass.
 
-**Environment verified (2026-07-15):** Python 3.13.5, numpy 2.2.4, `python3-config --includes` works (`-I/usr/include/python3.13`), no pyo3 in `Cargo.lock` yet (fresh dep).
-**Execute with the `tlc-spec-driven` skill** (read its `implement.md`); start at P1, one atomic commit per task, gate = `cargo build --workspace` zero warnings + the per-task test.
-**Design risk already mitigated:** pyo3 dual-build (`extension-module` on for the wheel, off when the CLI embeds) via a Cargo feature gate.
+### Remaining solver specs (planning only — no code yet)
+
+| Feature | What | Status |
+|---------|------|--------|
+| `solver-strategy-composition` | Extract `NewtonStrategy`/`StepperStrategy` traits; `Tolerances`/`Policy` split; `SignalBridge`; MD-13 cleanup | Spec + design + tasks; partially done (homotopy + PI controller delivered) |
+| `solver-library-abi` | `Circuit` builder; `Solver::build()`; prelude-only public surface; scheduler split; `as_iv` decoupled | Spec + design + tasks |
+| `solver-osdi-abi-completion` | Lifecycle hooks; terminal descriptors; internal unknowns; noise metadata; model/instance separation | Spec only |
+| `solver-performance` | Device bypass; matrix reuse; predictor | Spec only |
+| `solver-convergence-aids` | Circuit-wide `gshunt`; `fetlim`/`limvds` | Spec only |
+| `solver-commit-rollback` | `Element::checkpoint/rollback/commit` lifecycle hooks | Spec only |
 
 ### Test baseline
 - `cargo build --workspace` — zero warnings.
-- `cargo test --workspace` — green (TR-BDF2 active; python-bindings not yet built).
+- `cargo test --workspace` — green (TR-BDF2 active, python-bindings active).
+- 21/21 `examples/*.py` scripts pass via `piperine run`.

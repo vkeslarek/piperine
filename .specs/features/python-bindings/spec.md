@@ -176,25 +176,25 @@ extends it.
 
 | ID | Story | Status |
 |----|-------|--------|
-| PY-01 | P1 load | Pending |
-| PY-02 | P1 Design reflection | Pending |
-| PY-03 | P1 Module reflection | Pending |
-| PY-04 | P1 analyses (op/tran/ac/noise) | Pending |
-| PY-05 | P1 config dataclasses | Pending |
-| PY-06 | P1 OpResult access | Pending |
-| PY-07 | P1 Trace + numpy | Pending |
-| PY-08 | P1 Waveform numpy + stats | Pending |
-| PY-09 | P1 ComplexWaveform (AC) | Pending |
-| PY-10 | P1 NoiseTrace | Pending |
-| PY-11 | P1 net-name access | Pending |
-| PY-12 | P1 param staging + sweeps | Pending |
-| PY-13 | P2 instance-name access | Pending |
-| PY-14 | P2 select(path) | Pending |
-| PY-15 | P2 piperine run script.py | Pending |
-| PY-16 | P2 IDE autocomplete (facade) | Pending |
-| PY-17 | uniform shape (§10) — binding invariant | Pending |
+| PY-01 | P1 load | ✅ Verified |
+| PY-02 | P1 Design reflection | ✅ Verified |
+| PY-03 | P1 Module reflection | ✅ Verified |
+| PY-04 | P1 analyses (op/tran/ac/noise) | ✅ Verified |
+| PY-05 | P1 config dataclasses | ✅ Verified |
+| PY-06 | P1 OpResult access | ✅ Verified |
+| PY-07 | P1 Trace + numpy | ✅ Verified |
+| PY-08 | P1 Waveform numpy + stats | ✅ Verified |
+| PY-09 | P1 ComplexWaveform (AC) | ✅ Verified |
+| PY-10 | P1 NoiseTrace | ✅ Verified |
+| PY-11 | P1 net-name access | ✅ Verified |
+| PY-12 | P1 param staging + sweeps | ✅ Verified |
+| PY-13 | P2 instance-name access | ✅ Verified |
+| PY-14 | P2 select(path) | ✅ Verified |
+| PY-15 | P2 piperine run script.py | ✅ Verified |
+| PY-16 | P2 IDE autocomplete (facade) | ✅ Verified |
+| PY-17 | uniform shape (§10) — binding invariant | ✅ Verified |
 
-**Coverage:** 17 total, 0 mapped to tasks ⚠️.
+**Coverage:** 17 total, 17 verified ✅. Smoke test proves uniform shape vs bench; 21/21 example scripts pass.
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
@@ -202,10 +202,10 @@ extends it.
 
 ## Success Criteria
 
-- [ ] A Python script: `load → module → tran → trace.v("out").values` returns
+- [x] A Python script: `load → module → tran → trace.v("out").values` returns
       a numpy array that matches the bench's `$tran` + `Trace.v(out)` for the
       same circuit (the uniform-shape proof).
-- [ ] `piperine run foo.py` executes with `import piperine`, no pip install.
-- [ ] IDE autocomplete works on the full surface (typed facade).
-- [ ] `cargo build --workspace` zero warnings; `cargo test --workspace` green;
-      a Python smoke test (pytest or embedded) exercises load+op+tran+numpy.
+- [x] `piperine run foo.py` executes with `import piperine`, no pip install.
+- [x] IDE autocomplete works on the full surface (typed facade).
+- [x] `cargo build --workspace` zero warnings; `cargo test --workspace` green;
+      a Python smoke test (embedded) exercises load+op+tran+numpy.

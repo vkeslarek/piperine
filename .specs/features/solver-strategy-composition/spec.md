@@ -29,6 +29,8 @@ in `solver/mod.rs` (`check_convergence`, `residual_converged`,
 | `gmin_extra` / `src_scale` out of `Context` | ✅ Done | `solver/mod.rs`, `solver/dc.rs` |
 | LTE-driven timestep (`suggest_transient_step`) | ✅ Done | `solver/transient.rs`, `core/element.rs` |
 | `dt_min`/`dt_max` from `TransientAnalysisOptions` (not literals) | ✅ Done | `solver/transient.rs` |
+| PI controller always-adaptive (Milne LTE, asymmetric-diff exclusion) | ✅ Done | `solver/trbdf2.rs` (delivered by `solver-trbdf2-engine`) |
+| TR-BDF2 two-phase sole scheme | ✅ Done | `solver/trbdf2.rs` |
 
 ## What's not done
 
