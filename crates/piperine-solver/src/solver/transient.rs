@@ -103,6 +103,8 @@ pub struct TransientSolver<'a> {
     /// state reflects them. Milestone-1: a seed (the companion model's
     /// first step may show a transient); full enforced-hold is deferred.
     initial_conditions: Vec<InitialValue<AnalogReference, f64>>,
+    /// Stateful PI timestep controller (TRB-07).
+    stepper: crate::solver::convergence::PiController,
 }
 
 impl<'a> TransientSolver<'a> {
@@ -136,6 +138,7 @@ impl<'a> TransientSolver<'a> {
             solver,
             options,
             initial_conditions: Vec::new(),
+            stepper: crate::solver::convergence::PiController::default(),
         })
     }
 
@@ -226,9 +229,7 @@ impl<'a> TransientSolver<'a> {
             &mut self.system, &strategy, &tolerances, &policy, netlist,
         )?;
 
-        // Step accepted: this dt becomes `prev_h` for the next step's TR-stage
-        // previous-current re-derivation.
-        self.system.prev_h = dt;
+        // `prev_h` is set by the caller once the global-LTE accept gate passes.
         Ok(Some(self.snapshot(t_next)))
     }
 
@@ -248,21 +249,18 @@ impl<'a> TransientSolver<'a> {
         }
 
         let mut current_time = 0.0;
-        // Previous accepted step size, tracked locally for the LTE stepper
-        // (TR-BDF2 has no Gear order ramp, so it no longer lives on the system).
-        let mut dt_prev = 0.0;
 
         while current_time < stop_time {
             let dt_proposed = dt;
-            
+
             let t_next_event = self.system.circuit.digital_state.peek_next_event_time();
             let mut t_next = (current_time + dt_proposed).min(stop_time);
             if t_next_event < t_next {
                 t_next = t_next_event;
             }
-            
+
             let dt_actual = t_next - current_time;
-            
+
             // Checkpoint digital state
             self.system.circuit.digital_state.checkpoint();
 
@@ -273,8 +271,49 @@ impl<'a> TransientSolver<'a> {
             let analog_result = self.execute_timestep(current_time, dt_actual);
 
             if let Ok(Some(snapshot)) = analog_result {
-                // Post-convergence: run digital with the updated analog
-                // voltages (A2D bridge).
+                // Both Newton phases converged. Global Milne-LTE accept gate
+                // (TRB-05/06): the two-phase buffer holds x_{n+1} (view 0),
+                // x_{n+γ} (view 1), x_n (view 2). The Milne predictor is
+                // evaluated only over **node-voltage** unknowns — branch
+                // currents are KCL-derived (their accuracy follows the node
+                // voltages) and the `/γ` extrapolation falsely amplifies a
+                // source branch's startup jump.
+                let tolerances = self.system.context.tolerances;
+                let node_indices: Vec<usize> = self
+                    .system
+                    .circuit
+                    .netlist()
+                    .all_references()
+                    .iter()
+                    .filter(|r| !r.is_branch())
+                    .filter_map(|r| r.idx())
+                    .collect();
+                let milne = match (self.solver.state().view(0), self.solver.state().view(1), self.solver.state().view(2)) {
+                    (Some(a), Some(b), Some(c)) => TrBdf2::milne_lte_indexed(
+                        c.as_slice().unwrap(),
+                        b.as_slice().unwrap(),
+                        a.as_slice().unwrap(),
+                        &node_indices,
+                        tolerances.reltol,
+                        tolerances.vntol,
+                    ),
+                    _ => 0.0,
+                };
+                if milne > tolerances.trtol {
+                    // LTE too large: reject, halve dt, reset the PI memory.
+                    if std::env::var("PIPERINE_TRACE_TRAN").is_ok() {
+                        eprintln!("REJECT t={current_time:.3e} dt={dt_actual:.3e} milne={milne:.3e} (trtol={})", tolerances.trtol);
+                    }
+                    self.system.circuit.digital_state.rollback();
+                    dt = self.stepper.reject_dt(dt_proposed, &self.options);
+                    if dt <= self.options.dt_min {
+                        // Can't shrink further — accept the step as-is rather
+                        // than stall, and let the PI recover.
+                    } else {
+                        continue;
+                    }
+                }
+                // Accept.
                 let solution = self.solver.current_guess().unwrap().to_owned();
                 let _changed = self.system.circuit.accept_and_run_digital(
                     solution.as_slice().unwrap(),
@@ -282,33 +321,26 @@ impl<'a> TransientSolver<'a> {
                     t_next,
                 )?;
                 self.system.circuit.digital_state.commit();
-                // A delayed-start transient still solves every step (state
-                // evolution matters); only the recording is gated.
                 if t_next >= record_from {
                     steps.push(snapshot);
                 }
                 current_time = t_next;
-
-                // LTE-driven timestep via StepperStrategy (MD-05). Per-device
-                // LTE here; the global Milne LTE + PI controller land next.
-                let stepper = crate::solver::convergence::LteStepper;
-                dt = stepper.propose_dt(
-                    current_time,
-                    dt_actual,
-                    dt_proposed,
-                    dt_prev,
-                    self.system.circuit,
-                    self.solver.state(),
-                    &self.system.context.tolerances,
-                    &self.options,
-                );
-                dt_prev = dt_actual;
+                // This step's size seeds the next step's TR-stage
+                // previous-current re-derivation.
+                self.system.prev_h = dt_actual;
+                // Timestep policy: the PI controller grows / shrinks `dt`
+                // from the global Milne error (always adaptive — SPICE has
+                // been adaptive since v2). Output interpolation onto a fixed
+                // print grid is a follow-up (ROADMAP); the recorded waveform
+                // is the adaptive time grid for now, and bench statistics
+                // weight by `dt` so they stay correct.
+                dt = self.stepper.propose_dt(milne, dt_actual, &self.options);
             } else {
-                // Rollback and retry with smaller step
+                // Either phase failed to converge — reject the whole step,
+                // halve dt, reset the PI memory (TRB-05/09).
                 self.system.circuit.digital_state.rollback();
-                let stepper = crate::solver::convergence::LteStepper;
-                dt = stepper.reject_dt(dt_proposed, &self.options);
-                
+                dt = self.stepper.reject_dt(dt_proposed, &self.options);
+
                 if dt <= dt_min && let Err(e) = analog_result {
                     return Err(e);
                 }

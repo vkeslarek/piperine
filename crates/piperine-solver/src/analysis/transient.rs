@@ -45,11 +45,10 @@ pub struct TransientAnalysisOptions {
     /// Simulation stop time
     pub stop_time: Second,
 
-    /// Fixed timestep (used when adaptive=false or as initial timestep when adaptive=true)
+    /// Initial timestep for the adaptive stepper (SPICE has been adaptive
+    /// since v2; the integrator varies `dt` from here via the PI controller).
+    /// A user-supplied `.step` becomes this initial value.
     pub dt: Second,
-
-    /// Enable adaptive timestep control (default: false for backward compatibility)
-    pub adaptive: bool,
 
     /// Minimum allowed timestep (default: 1e-15 seconds)
     pub dt_min: Second,
@@ -66,24 +65,12 @@ pub struct TransientAnalysisOptions {
 }
 
 impl TransientAnalysisOptions {
-    /// Create a new TransientAnalysisOptions with fixed timestep (backward compatible)
+    /// Create transient options. The integrator is always adaptive (PI
+    /// controller); `dt` is the initial step size, grown/shrunk from there.
     pub fn new(stop_time: Second, dt: Second) -> Self {
         Self {
             stop_time,
             dt,
-            adaptive: false,
-            dt_min: 1e-15,
-            dt_max: (stop_time / 100.0),
-            record_from: 0.0,
-        }
-    }
-
-    /// Create a new TransientAnalysisOptions with adaptive timestep control
-    pub fn new_adaptive(stop_time: Second, dt_initial: Second) -> Self {
-        Self {
-            stop_time,
-            dt: dt_initial,
-            adaptive: true,
             dt_min: 1e-15,
             dt_max: (stop_time / 100.0),
             record_from: 0.0,
@@ -117,7 +104,6 @@ pub struct TransientContext {
     pub dt: f64,
     pub dt_min: f64,
     pub dt_max: f64,
-    pub adaptive: bool,
     pub record_from: f64,
     pub stop_time: f64,
 }
@@ -128,7 +114,6 @@ impl From<TransientAnalysisOptions> for TransientContext {
             dt: opts.dt,
             dt_min: opts.dt_min,
             dt_max: opts.dt_max,
-            adaptive: opts.adaptive,
             record_from: opts.record_from,
             stop_time: opts.stop_time,
         }

@@ -215,8 +215,14 @@ fn snapshot_digital(
         let (mut circuit, info) = self.build_circuit()?;
         let ivs = build_ivs(&info, ic, circuit.netlist())?;
         let opts = match step {
-            Some(dt) => piperine_solver::analysis::transient::TransientAnalysisOptions::new(stop, dt),
-            None => piperine_solver::analysis::transient::TransientAnalysisOptions::new_adaptive(stop, stop * 1e-3),
+            // SPICE is always adaptive; `.step` is the initial dt for the
+            // PI controller. `step = 0` (the "auto" sentinel) seeds dt at
+            // stop/1000. Output interpolation onto the print grid is a
+            // follow-up (ROADMAP).
+            Some(dt) if dt > 0.0 => {
+                piperine_solver::analysis::transient::TransientAnalysisOptions::new(stop, dt)
+            }
+            _ => piperine_solver::analysis::transient::TransientAnalysisOptions::new(stop, stop * 1e-3),
         }
         .with_record_from(start);
         let mut solver = circuit.transient(opts, config.to_context())?;

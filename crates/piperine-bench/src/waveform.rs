@@ -148,16 +148,42 @@ impl Waveform {
         self.points.iter().map(|(_, v)| *v).fold(f64::NEG_INFINITY, f64::max)
     }
     fn mean(&self) -> f64 {
-        if self.points.is_empty() {
+        // Time-weighted (trapezoidal) mean over the recorded grid. The
+        // transient is always adaptively sampled, so an unweighted average of
+        // the sample values would bias toward regions where the stepper took
+        // small `dt`. ∫v dt / ∫dt, both by the trapezoidal rule.
+        let pts = &self.points;
+        if pts.is_empty() {
             return 0.0;
         }
-        self.points.iter().map(|(_, v)| *v).sum::<f64>() / self.points.len() as f64
+        if pts.len() < 2 {
+            return pts[0].1;
+        }
+        let (mut integ, mut span) = (0.0_f64, 0.0_f64);
+        for w in pts.windows(2) {
+            let dt = w[1].0 - w[0].0;
+            integ += dt * 0.5 * (w[0].1 + w[1].1);
+            span += dt;
+        }
+        if span > 0.0 { integ / span } else { pts[0].1 }
     }
     fn rms(&self) -> f64 {
-        if self.points.is_empty() {
+        // Time-weighted RMS: sqrt(∫v² dt / ∫dt), trapezoidal. See `mean` for
+        // why the weighting matters on an adaptive grid.
+        let pts = &self.points;
+        if pts.is_empty() {
             return 0.0;
         }
-        (self.points.iter().map(|(_, v)| v * v).sum::<f64>() / self.points.len() as f64).sqrt()
+        if pts.len() < 2 {
+            return pts[0].1.abs();
+        }
+        let (mut integ, mut span) = (0.0_f64, 0.0_f64);
+        for w in pts.windows(2) {
+            let dt = w[1].0 - w[0].0;
+            integ += dt * 0.5 * (w[0].1 * w[0].1 + w[1].1 * w[1].1);
+            span += dt;
+        }
+        if span > 0.0 { (integ / span).sqrt() } else { pts[0].1.abs() }
     }
     fn peak_to_peak(&self) -> f64 {
         self.max() - self.min()

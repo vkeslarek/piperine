@@ -32,7 +32,7 @@ pub use crate::solver::{Policy, Tolerances};
 
 // ── Convergence policy (opt-in customization) ──────────────────────────────
 pub use crate::solver::convergence::{
-    ConvergencePlan, DampedNewton, HomotopyStrategy, LteStepper, NewtonStrategy, StepperStrategy,
+    ConvergencePlan, DampedNewton, HomotopyStrategy, NewtonStrategy, PiController, StepperStrategy,
 };
 
 // ── Results ────────────────────────────────────────────────────────────────

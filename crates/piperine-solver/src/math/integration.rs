@@ -183,7 +183,7 @@ impl TrBdf2 {
     /// Global local-truncation-error estimate via Milne's device. A linear
     /// extrapolation of `Q_n` and `Q_{n+γ}` to `t_{n+1}` is differenced from
     /// the BDF2 solution `Q_{n+1}`, normalized per component by
-    /// `reltol·|Q_{n+1}| + chgtol`; the worst component is returned.
+    /// `reltol·|Q_{n+1}| + tol`; the worst component is returned.
     ///
     /// Returns `0.0` for collinear/constant charge (linear extrapolation is
     /// exact) and positive for curvature. The linear predictor is O(h²), a
@@ -195,17 +195,35 @@ impl TrBdf2 {
         q_n_gamma: &[f64],
         q_n1: &[f64],
         reltol: f64,
-        chgtol: f64,
+        tol: f64,
     ) -> f64 {
-        // Linear extrapolation slope from [t_n, t_{n+γ}] extended to t_{n+1}:
-        // Q_pred = Q_{n+γ} + ((1−γ)/γ)·(Q_{n+γ} − Q_n).
+        let n = q_n1.len().min(q_n.len()).min(q_n_gamma.len());
+        let indices: Vec<usize> = (0..n).collect();
+        Self::milne_lte_indexed(q_n, q_n_gamma, q_n1, &indices, reltol, tol)
+    }
+
+    /// Milne LTE restricted to `indices` — used by the driver to evaluate the
+    /// error only over **node-voltage** components. Branch currents are derived
+    /// from the node voltages (KCL), so their accuracy follows; including them
+    /// in the predictor misbehaves (the `/γ` extrapolation amplifies the
+    /// startup jump of a source's branch current, giving a false huge LTE).
+    pub fn milne_lte_indexed(
+        q_n: &[f64],
+        q_n_gamma: &[f64],
+        q_n1: &[f64],
+        indices: &[usize],
+        reltol: f64,
+        tol: f64,
+    ) -> f64 {
         let slope_scale = (1.0 - Self::GAMMA) / Self::GAMMA;
         let mut worst = 0.0_f64;
-        let n = q_n1.len().min(q_n.len()).min(q_n_gamma.len());
-        for i in 0..n {
+        for &i in indices {
+            if i >= q_n1.len() || i >= q_n.len() || i >= q_n_gamma.len() {
+                continue;
+            }
             let q_pred = q_n_gamma[i] + slope_scale * (q_n_gamma[i] - q_n[i]);
             let err = (q_n1[i] - q_pred).abs();
-            let scale = reltol * q_n1[i].abs() + chgtol;
+            let scale = reltol * q_n1[i].abs() + tol;
             if scale > 0.0 {
                 let normalized = err / scale;
                 if normalized > worst {

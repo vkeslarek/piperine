@@ -145,82 +145,99 @@ impl NewtonStrategy for DampedNewton {
 
 // ── StepperStrategy ────────────────────────────────────────────────────────
 
-/// Transient timestep policy: propose the next `dt` after a successful step,
-/// and return a reduced `dt` after a rejection.
-#[allow(clippy::too_many_arguments)]
+/// Transient timestep policy. The driver computes the global integration
+/// error after each accepted step and hands it here; the strategy proposes
+/// the next `dt` (and a reduced `dt` after a rejection). Stateful strategies
+/// (the PI controller) carry their own memory across steps.
 pub trait StepperStrategy: Send + Sync {
-    /// Propose the next timestep after an accepted step.
-    /// `dt_actual` is the dt used for this step; `dt_proposed` is what was
-    /// requested before event/stop-time clamping (for growth).
+    /// Propose the next timestep after an accepted step. `lte` is the
+    /// normalized global error from `TrBdf2::milne_lte` (~1.0 = at tolerance);
+    /// `dt_actual` is the dt this step used.
     fn propose_dt(
-        &self,
-        current_time: f64,
+        &mut self,
+        lte: f64,
         dt_actual: f64,
-        dt_proposed: f64,
-        dt_prev: f64,
-        circuit: &crate::core::circuit::CircuitInstance,
-        solver_state: &CircularArrayBuffer2<f64>,
-        tolerances: &Tolerances,
         tran_opts: &crate::analysis::transient::TransientAnalysisOptions,
     ) -> f64;
 
     /// Reduced timestep after a failed (rejected) step.
     fn reject_dt(
-        &self,
+        &mut self,
         failed_dt: f64,
         tran_opts: &crate::analysis::transient::TransientAnalysisOptions,
     ) -> f64;
 }
 
-/// Default stepper: LTE-driven with 2× growth fallback and 0.5× on reject.
-pub struct LteStepper;
+/// Proportional-Integral timestep controller — the default TR-BDF2 stepper.
+/// Replaces the reactive LTE stepper: instead of shrinking `dt` sharply when
+/// an element's local error spikes, it smooths `dt` from the **global** Milne
+/// LTE and the previous error, so `dt` does not thrash on stiff transients.
+///
+/// The law is the standard adaptive form
+/// `dt_{n+1} = dt_n · (target/lte)^p`, where the exponent `p` combines a
+/// proportional gain `kp` with an integral correction on the error history:
+/// `p = kp + ki·(lte − lte_prev)/lte`. `target = 1` (the Milne estimate is
+/// already normalized by tolerance). The result is clamped to a safe per-step
+/// range and `[dt_min, dt_max]`. A rejection resets the error memory so the
+/// retry is not biased (TRB-09).
+pub struct PiController {
+    pub kp: f64,
+    pub ki: f64,
+    prev_error: Option<f64>,
+}
 
-impl StepperStrategy for LteStepper {
+impl Default for PiController {
+    fn default() -> Self {
+        Self { kp: 0.7, ki: 0.4, prev_error: None }
+    }
+}
+
+impl PiController {
+    /// Build a controller with explicit gains (ngspice-lineage defaults are
+    /// `kp = 0.7`, `ki = 0.4`).
+    pub fn new(kp: f64, ki: f64) -> Self {
+        Self { kp, ki, prev_error: None }
+    }
+}
+
+impl StepperStrategy for PiController {
     fn propose_dt(
-        &self,
-        _current_time: f64,
+        &mut self,
+        lte: f64,
         dt_actual: f64,
-        dt_proposed: f64,
-        dt_prev: f64,
-        circuit: &crate::core::circuit::CircuitInstance,
-        solver_state: &CircularArrayBuffer2<f64>,
-        tolerances: &Tolerances,
         tran_opts: &crate::analysis::transient::TransientAnalysisOptions,
     ) -> f64 {
-        use crate::analysis::transient::TransientAnalysisState;
-        let method = tolerances.integration;
-        let time_history = [dt_actual, dt_prev];
-        let tran_state = TransientAnalysisState::new(solver_state, &[]);
-        let mut lte_dt = tran_opts.dt_max;
-        let mut any_lte = false;
-        let ctx = crate::solver::Context { tolerances: *tolerances, ..Default::default() };
-        for dev in &circuit.devices {
-            if let Some(sug) = dev.suggest_transient_step(
-                &tran_state,
-                &time_history,
-                method,
-                &ctx,
-            )
-                && sug > 0.0
-                && sug < lte_dt
-            {
-                lte_dt = sug;
-                any_lte = true;
+        // No error signal (non-reactive step, or history too short): grow dt
+        // toward dt_max without biasing the PI memory.
+        if !lte.is_finite() || lte <= 0.0 {
+            self.prev_error = None;
+            return (dt_actual * 1.5).clamp(tran_opts.dt_min, tran_opts.dt_max);
+        }
+        // Exponent: proportional gain + integral correction on error history.
+        let p = match self.prev_error {
+            Some(prev) => {
+                let de = (lte - prev) / lte.max(1e-30);
+                self.kp + self.ki * de
             }
-        }
-        if any_lte {
-            lte_dt.clamp(tran_opts.dt_min, tran_opts.dt_max)
-        } else {
-            (dt_proposed * 2.0).clamp(tran_opts.dt_min, tran_opts.dt_max)
-        }
+            None => self.kp, // first accepted step: proportional only
+        };
+        self.prev_error = Some(lte);
+        // (target/lte)^p: error above tolerance (lte > 1) shrinks dt.
+        let factor = lte.powf(-p).clamp(0.2, 1.5);
+        (dt_actual * factor).clamp(tran_opts.dt_min, tran_opts.dt_max)
     }
 
     fn reject_dt(
-        &self,
+        &mut self,
         failed_dt: f64,
         tran_opts: &crate::analysis::transient::TransientAnalysisOptions,
     ) -> f64 {
-        (failed_dt * 0.5).max(tran_opts.dt_min)
+        // Aggressive backtracking: a failed step (Newton non-convergence or
+        // LTE-reject) means the local dynamics are too fast for this dt, so
+        // cut hard — ÷8 — and let the PI regrow on the accepts that follow.
+        // ÷8 reaches a workable dt in one retry instead of the timid ÷2 cascade.
+        self.prev_error = None;
+        (failed_dt / 8.0).max(tran_opts.dt_min)
     }
 }
 
