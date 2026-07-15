@@ -63,15 +63,22 @@ pub trait DcAnalysis {
 #[derive(Debug)]
 pub struct DcAnalysisResult {
     values: HashMap<Arc<AnalogVariable>, f64>,
+    pub stats: crate::result::SolverStats,
 }
 
 impl DcAnalysisResult {
     pub fn new(
         values: HashMap<Arc<AnalogVariable>, f64>,
-        ) -> Self {
+    ) -> Self {
         Self {
             values,
+            stats: crate::result::SolverStats::default(),
         }
+    }
+
+    /// Replace the default (zeroed) stats with populated values.
+    pub fn set_stats(&mut self, stats: crate::result::SolverStats) {
+        self.stats = stats;
     }
     pub fn get(&self, variable: impl Into<Arc<AnalogVariable>>) -> Option<f64> {
         self.values.get(&variable.into()).cloned()

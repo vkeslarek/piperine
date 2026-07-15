@@ -170,13 +170,20 @@ pub trait TransientAnalysis {
 #[derive(Debug, Clone)]
 pub struct TransientAnalysisResult {
     values: Vec<TransientStep>,
+    pub stats: crate::result::SolverStats,
 }
 
 impl TransientAnalysisResult {
     pub fn new(values: Vec<TransientStep>) -> Self {
         Self {
             values,
+            stats: crate::result::SolverStats::default(),
         }
+    }
+
+    /// Replace the default (zeroed) stats with populated values.
+    pub fn set_stats(&mut self, stats: crate::result::SolverStats) {
+        self.stats = stats;
     }
 
     pub fn push(&mut self, step: TransientStep) {
