@@ -31,6 +31,22 @@ impl<T: Copy> Waveform<T> {
         Self { points }
     }
 
+    /// The raw `(axis, value)` samples — the numpy seam (PY-08): the Python
+    /// binding splits this into two `np.ndarray`s of equal length.
+    pub fn points(&self) -> &[(f64, T)] {
+        &self.points
+    }
+
+    /// Number of samples.
+    pub fn len(&self) -> usize {
+        self.points.len()
+    }
+
+    /// `true` when there are no samples.
+    pub fn is_empty(&self) -> bool {
+        self.points.is_empty()
+    }
+
     /// `points()` as a bench `List` of `(axis, value)` tuples.
     fn points_value(&self, to_value: impl Fn(T) -> Value) -> Value {
         Value::List(Rc::new(std::cell::RefCell::new(
@@ -119,8 +135,8 @@ impl SampleTable {
 
 impl Waveform {
     /// Linear interpolation at `x`; clamps to the first/last sample outside
-    /// the recorded range.
-    fn at(&self, x: f64) -> f64 {
+    /// the recorded range. Public typed seam for the Python binding (PY-08).
+    pub fn at(&self, x: f64) -> f64 {
         if self.points.is_empty() {
             return 0.0;
         }
@@ -141,13 +157,13 @@ impl Waveform {
         }
     }
 
-    fn min(&self) -> f64 {
+    pub fn min(&self) -> f64 {
         self.points.iter().map(|(_, v)| *v).fold(f64::INFINITY, f64::min)
     }
-    fn max(&self) -> f64 {
+    pub fn max(&self) -> f64 {
         self.points.iter().map(|(_, v)| *v).fold(f64::NEG_INFINITY, f64::max)
     }
-    fn mean(&self) -> f64 {
+    pub fn mean(&self) -> f64 {
         // Time-weighted (trapezoidal) mean over the recorded grid. The
         // transient is always adaptively sampled, so an unweighted average of
         // the sample values would bias toward regions where the stepper took
@@ -167,7 +183,7 @@ impl Waveform {
         }
         if span > 0.0 { integ / span } else { pts[0].1 }
     }
-    fn rms(&self) -> f64 {
+    pub fn rms(&self) -> f64 {
         // Time-weighted RMS: sqrt(∫v² dt / ∫dt), trapezoidal. See `mean` for
         // why the weighting matters on an adaptive grid.
         let pts = &self.points;
@@ -185,7 +201,7 @@ impl Waveform {
         }
         if span > 0.0 { (integ / span).sqrt() } else { pts[0].1.abs() }
     }
-    fn peak_to_peak(&self) -> f64 {
+    pub fn peak_to_peak(&self) -> f64 {
         self.max() - self.min()
     }
 
@@ -277,7 +293,7 @@ impl Object for Waveform {
             "mean" => Ok(Value::Real(self.mean())),
             "rms" => Ok(Value::Real(self.rms())),
             "peak_to_peak" => Ok(Value::Real(self.peak_to_peak())),
-            "len" => Ok(Value::Nat(self.points.len() as u64)),
+            "len" => Ok(Value::Nat(self.len() as u64)),
             "points" => Ok(self.points_value(Value::Real)),
             "fft" => Ok(Value::Object(Rc::new(self.fft()))),
             "rise_time" => {
@@ -365,18 +381,21 @@ impl Trace {
         Self { result, info }
     }
 
-    fn resolve_node(&self, arg: &Value) -> Result<NodeIdentifier, EvalError> {
-        self.info.node_arg(arg)
+    /// Resolve a bench-visible net name to a solver node — the typed form of
+    /// the value-layer `NetLookup::node_arg`.
+    fn node_or_err(&self, name: &str) -> Result<NodeIdentifier, EvalError> {
+        self.info
+            .net_node(name)
+            .ok_or_else(|| EvalError::Undefined(format!("net `{name}` is not addressable")))
     }
 
-    fn v(&self, args: &[Value]) -> Result<Value, EvalError> {
-        let first = args.first().ok_or_else(|| EvalError::TypeMismatch("v() needs at least 1 argument".into()))?;
-        // Digital net: read its logic value (0/1, NaN for X/Z) over time — the
-        // transient records a digital snapshot per step (SPEC §…), so sequential
-        // logic is observable through `$tran` where `$op` (stateless) cannot.
-        if let Some(net) = NetRef::from_value(first)
-            && let Some(&idx) = self.info.digital_nets.get(&net.name)
-        {
+    /// Net voltage `a` minus `b` (ground-referenced when `b` is `None`) over
+    /// time. A digital net read returns its logic value (0/1, NaN for X/Z) —
+    /// the transient records a digital snapshot per step, so sequential logic
+    /// is observable through `$tran` where `$op` (stateless) cannot. Public
+    /// typed seam for the Python binding (PY-07).
+    pub fn v(&self, a: &NetRef, b: Option<&NetRef>) -> Result<Waveform, EvalError> {
+        if let Some(&idx) = self.info.digital_nets.get(&a.name) {
             use piperine_solver::digital::LogicValue;
             let points = self
                 .result
@@ -390,27 +409,38 @@ impl Trace {
                     (step.time(), v)
                 })
                 .collect();
-            return Ok(Value::Object(Rc::new(Waveform::new(points))));
+            return Ok(Waveform::new(points));
         }
-        let a = self.resolve_node(first)?;
-        let b = match args.get(1) {
-            Some(v) => Some(self.resolve_node(v)?),
+        let node_a = self.node_or_err(&a.name)?;
+        let node_b = match b {
+            Some(nb) => Some(self.node_or_err(&nb.name)?),
             None => None,
         };
         let points = self
             .result
             .iter()
             .map(|step| {
-                let va = if a == NodeIdentifier::Gnd { 0.0 } else { step.get_node(&a).unwrap_or(0.0) };
-                let vb = match &b {
-                    Some(b) if *b == NodeIdentifier::Gnd => 0.0,
-                    Some(b) => step.get_node(b).unwrap_or(0.0),
+                let va = if node_a == NodeIdentifier::Gnd { 0.0 } else { step.get_node(&node_a).unwrap_or(0.0) };
+                let vb = match &node_b {
+                    Some(nb) if *nb == NodeIdentifier::Gnd => 0.0,
+                    Some(nb) => step.get_node(nb).unwrap_or(0.0),
                     None => 0.0,
                 };
                 (step.time(), va - vb)
             })
             .collect();
-        Ok(Value::Object(Rc::new(Waveform::new(points))))
+        Ok(Waveform::new(points))
+    }
+
+    /// Value-layer dispatch wrapper kept for `impl Object`.
+    fn v_value(&self, args: &[Value]) -> Result<Value, EvalError> {
+        let first = args.first().ok_or_else(|| EvalError::TypeMismatch("v() needs at least 1 argument".into()))?;
+        let a = NetRef::from_value(first).ok_or_else(|| EvalError::TypeMismatch("expected a Net".into()))?;
+        let b = match args.get(1) {
+            Some(v) => Some(NetRef::from_value(v).ok_or_else(|| EvalError::TypeMismatch("expected a Net".into()))?),
+            None => None,
+        };
+        self.v(a, b).map(|w| Value::Object(Rc::new(w)))
     }
 
     /// A branch current over time (piperine-bench/docs/SPEC.md §4/§6). Ideal sources
@@ -421,16 +451,14 @@ impl Trace {
     /// `eval_charge` (backward-Euler differentiation, consistent with the
     /// solver's own companion). Devices whose residual reads runtime
     /// state/vars (not recorded per step) fail loud (G3 milestone split).
-    fn i(&self, args: &[Value]) -> Result<Value, EvalError> {
-        if args.is_empty() || args.len() > 2 {
-            return Err(EvalError::TypeMismatch("i() takes 1 or 2 arguments".into()));
-        }
-        let a = self.resolve_node(&args[0])?;
-        let b = match args.get(1) {
-            Some(v) => self.resolve_node(v)?,
+    /// Public typed seam for the Python binding (PY-07).
+    pub fn i(&self, a: &NetRef, b: Option<&NetRef>) -> Result<Waveform, EvalError> {
+        let node_a = self.node_or_err(&a.name)?;
+        let node_b = match b {
+            Some(nb) => self.node_or_err(&nb.name)?,
             None => NodeIdentifier::Gnd,
         };
-        let instance = crate::objects::find_two_terminal_instance(&self.info, a.clone(), b.clone())?;
+        let instance = crate::objects::find_two_terminal_instance(&self.info, node_a.clone(), node_b.clone())?;
         if instance.num_forces > 0 {
             let branch = BranchIdentifier::new(instance.label.clone(), "force0".to_string());
             let points = self
@@ -438,7 +466,7 @@ impl Trace {
                 .iter()
                 .map(|step| (step.time(), step.get_branch(branch.clone()).unwrap_or(0.0)))
                 .collect();
-            return Ok(Value::Object(Rc::new(Waveform::new(points))));
+            return Ok(Waveform::new(points));
         }
         // Fail loud for devices whose residual reads runtime state/vars not
         // recorded per step (G3 milestone split). `ddt` is reactive (charge),
@@ -453,7 +481,7 @@ impl Trace {
         // Resistive current (terminal-0 reference) + terminal-0 charge, per
         // step. The reactive current a→b is `sign * dQ_0/dt`; the resistive
         // is `sign * residual[0]` (same convention as `OpResult::i`).
-        let sign = if instance.terminals[0] == a { 1.0 } else { -1.0 };
+        let sign = if instance.terminals[0] == node_a { 1.0 } else { -1.0 };
         let sim = piperine_codegen::SimCtx::default();
         let n = self.result.len();
         let mut t_series = Vec::with_capacity(n);
@@ -494,12 +522,27 @@ impl Trace {
             };
             points.push((t_series[k], sign * (i_res[k] + dq_dt)));
         }
-        Ok(Value::Object(Rc::new(Waveform::new(points))))
+        Ok(Waveform::new(points))
     }
 
-    fn axis(&self) -> Value {
+    /// Value-layer dispatch wrapper kept for `impl Object`.
+    fn i_value(&self, args: &[Value]) -> Result<Value, EvalError> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(EvalError::TypeMismatch("i() takes 1 or 2 arguments".into()));
+        }
+        let a = NetRef::from_value(&args[0]).ok_or_else(|| EvalError::TypeMismatch("expected a Net".into()))?;
+        let b = match args.get(1) {
+            Some(v) => Some(NetRef::from_value(v).ok_or_else(|| EvalError::TypeMismatch("expected a Net".into()))?),
+            None => None,
+        };
+        self.i(a, b).map(|w| Value::Object(Rc::new(w)))
+    }
+
+    /// The time axis as a real waveform (the `.axis` bench method). Public
+    /// typed seam for the Python binding (PY-07).
+    pub fn axis(&self) -> Waveform {
         let points = self.result.iter().map(|step| (step.time(), step.time())).collect();
-        Value::Object(Rc::new(Waveform::new(points)))
+        Waveform::new(points)
     }
 }
 
@@ -512,9 +555,9 @@ impl Object for Trace {
     }
     fn call_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
         match name {
-            "v" => self.v(&args),
-            "i" => self.i(&args),
-            "axis" => Ok(self.axis()),
+            "v" => self.v_value(&args),
+            "i" => self.i_value(&args),
+            "axis" => Ok(Value::Object(Rc::new(self.axis()))),
             other => Err(EvalError::Undefined(format!("method `{other}` on Trace"))),
         }
     }
@@ -525,6 +568,27 @@ impl Object for Trace {
 impl ComplexWaveform {
     fn project(&self, f: impl Fn(&num_complex::Complex64) -> f64) -> Waveform {
         Waveform::new(self.points.iter().map(|(x, c)| (*x, f(c))).collect())
+    }
+
+    /// Magnitude projection `|c|` per sample. Public typed seam (PY-09).
+    pub fn mag(&self) -> Waveform {
+        self.project(|c| c.norm())
+    }
+    /// Phase projection `arg(c)` (radians) per sample. Public typed seam (PY-09).
+    pub fn phase(&self) -> Waveform {
+        self.project(|c| c.arg())
+    }
+    /// Decibel projection `20·log10|c|` per sample. Public typed seam (PY-09).
+    pub fn db(&self) -> Waveform {
+        self.project(|c| 20.0 * c.norm().log10())
+    }
+    /// Nearest sample to `x` (no complex interpolation). Public typed seam (PY-09).
+    pub fn at(&self, x: f64) -> num_complex::Complex64 {
+        self.points
+            .iter()
+            .min_by(|a, b| (a.0 - x).abs().total_cmp(&(b.0 - x).abs()))
+            .map(|(_, c)| *c)
+            .unwrap_or_default()
     }
 }
 
@@ -545,20 +609,15 @@ impl Object for ComplexWaveform {
     }
     fn call_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
         match name {
-            "mag" => Ok(Value::Object(Rc::new(self.project(|c| c.norm())))),
-            "phase" => Ok(Value::Object(Rc::new(self.project(|c| c.arg())))),
-            "db" => Ok(Value::Object(Rc::new(self.project(|c| 20.0 * c.norm().log10())))),
-            "len" => Ok(Value::Nat(self.points.len() as u64)),
+            "mag" => Ok(Value::Object(Rc::new(self.mag()))),
+            "phase" => Ok(Value::Object(Rc::new(self.phase()))),
+            "db" => Ok(Value::Object(Rc::new(self.db()))),
+            "len" => Ok(Value::Nat(self.len() as u64)),
             "at" => {
                 // Nearest sample (no complex interpolation): SPEC §6 `at`
                 // on a Complex waveform.
                 let x = args.real(0)?;
-                let c = self
-                    .points
-                    .iter()
-                    .min_by(|a, b| (a.0 - x).abs().total_cmp(&(b.0 - x).abs()))
-                    .map(|(_, c)| *c)
-                    .unwrap_or_default();
+                let c = self.at(x);
                 Ok(Value::Complex(c.re, c.im))
             }
             "points" => Ok(self.points_value(|c| Value::Complex(c.re, c.im))),
@@ -597,16 +656,20 @@ impl AcTrace {
         Self { result, info }
     }
 
-    fn resolve_node(&self, arg: &Value) -> Result<NodeIdentifier, EvalError> {
-        self.info.node_arg(arg)
+    /// Resolve a bench-visible net name to a solver node — the typed form of
+    /// the value-layer `NetLookup::node_arg`.
+    fn node_or_err(&self, name: &str) -> Result<NodeIdentifier, EvalError> {
+        self.info
+            .net_node(name)
+            .ok_or_else(|| EvalError::Undefined(format!("net `{name}` is not addressable")))
     }
 
-    fn v(&self, args: &[Value]) -> Result<Value, EvalError> {
-        let a = self.resolve_node(
-            args.first().ok_or_else(|| EvalError::TypeMismatch("v() needs at least 1 argument".into()))?,
-        )?;
-        let b = match args.get(1) {
-            Some(v) => Some(self.resolve_node(v)?),
+    /// Net voltage `a` minus `b` (ground-referenced when `b` is `None`) over
+    /// the AC frequency sweep. Public typed seam for the Python binding (PY-09).
+    pub fn v(&self, a: &NetRef, b: Option<&NetRef>) -> Result<ComplexWaveform, EvalError> {
+        let node_a = self.node_or_err(&a.name)?;
+        let node_b = match b {
+            Some(nb) => Some(self.node_or_err(&nb.name)?),
             None => None,
         };
         let zero = num_complex::Complex64::default();
@@ -614,21 +677,33 @@ impl AcTrace {
             .result
             .iter()
             .map(|step| {
-                let va = if a == NodeIdentifier::Gnd { zero } else { step.get_node(&a).copied().unwrap_or(zero) };
-                let vb = match &b {
-                    Some(b) if *b == NodeIdentifier::Gnd => zero,
-                    Some(b) => step.get_node(b).copied().unwrap_or(zero),
+                let va = if node_a == NodeIdentifier::Gnd { zero } else { step.get_node(&node_a).copied().unwrap_or(zero) };
+                let vb = match &node_b {
+                    Some(nb) if *nb == NodeIdentifier::Gnd => zero,
+                    Some(nb) => step.get_node(nb).copied().unwrap_or(zero),
                     None => zero,
                 };
                 (step.frequency, va - vb)
             })
             .collect();
-        Ok(Value::Object(Rc::new(ComplexWaveform::new(points))))
+        Ok(ComplexWaveform::new(points))
     }
 
-    fn axis(&self) -> Value {
+    /// Value-layer dispatch wrapper kept for `impl Object`.
+    fn v_value(&self, args: &[Value]) -> Result<Value, EvalError> {
+        let first = args.first().ok_or_else(|| EvalError::TypeMismatch("v() needs at least 1 argument".into()))?;
+        let a = NetRef::from_value(first).ok_or_else(|| EvalError::TypeMismatch("expected a Net".into()))?;
+        let b = match args.get(1) {
+            Some(v) => Some(NetRef::from_value(v).ok_or_else(|| EvalError::TypeMismatch("expected a Net".into()))?),
+            None => None,
+        };
+        self.v(a, b).map(|w| Value::Object(Rc::new(w)))
+    }
+
+    /// The frequency axis as a real waveform. Public typed seam (PY-09).
+    pub fn axis(&self) -> Waveform {
         let points = self.result.iter().map(|s| (s.frequency, s.frequency)).collect();
-        Value::Object(Rc::new(Waveform::new(points)))
+        Waveform::new(points)
     }
 }
 
@@ -641,8 +716,8 @@ impl Object for AcTrace {
     }
     fn call_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
         match name {
-            "v" => self.v(&args),
-            "axis" => Ok(self.axis()),
+            "v" => self.v_value(&args),
+            "axis" => Ok(Value::Object(Rc::new(self.axis()))),
             other => Err(EvalError::Undefined(format!("method `{other}` on an AC Trace"))),
         }
     }
@@ -666,6 +741,24 @@ impl NoiseTrace {
     pub fn new(result: piperine_solver::analysis::noise::NoiseAnalysisResult) -> Self {
         Self { result }
     }
+
+    /// Output-referred noise PSD as `(frequency, v²/Hz)` samples. Public typed
+    /// seam for the Python binding (PY-10).
+    pub fn psd(&self) -> Waveform {
+        Waveform::new(
+            self.result
+                .frequencies
+                .iter()
+                .zip(&self.result.out_noise_sq)
+                .map(|(f, v)| (*f, *v))
+                .collect(),
+        )
+    }
+
+    /// The integrated total noise (RMS). Public typed seam (PY-10).
+    pub fn total(&self) -> f64 {
+        self.result.integrated_noise
+    }
 }
 
 impl Object for NoiseTrace {
@@ -677,15 +770,8 @@ impl Object for NoiseTrace {
     }
     fn call_method(&self, name: &str, _args: Vec<Value>) -> Result<Value, EvalError> {
         match name {
-            "psd" => Ok(Value::Object(Rc::new(Waveform::new(
-                self.result
-                    .frequencies
-                    .iter()
-                    .zip(&self.result.out_noise_sq)
-                    .map(|(f, v)| (*f, *v))
-                    .collect(),
-            )))),
-            "total" => Ok(Value::Real(self.result.integrated_noise)),
+            "psd" => Ok(Value::Object(Rc::new(self.psd()))),
+            "total" => Ok(Value::Real(self.total())),
             other => Err(EvalError::Undefined(format!("method `{other}` on NoiseTrace"))),
         }
     }

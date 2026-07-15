@@ -188,28 +188,46 @@ impl OpResult {
         Self { dc, digital, info }
     }
 
-    fn resolve_node(&self, arg: &Value) -> Result<NodeIdentifier, EvalError> {
-        self.info.node_arg(arg)
+    /// Resolve a bench-visible net name to a solver node — the typed form of
+    /// the value-layer `NetLookup::node_arg`.
+    fn node_or_err(&self, name: &str) -> Result<NodeIdentifier, EvalError> {
+        self.info
+            .net_node(name)
+            .ok_or_else(|| EvalError::Undefined(format!("net `{name}` is not addressable")))
     }
 
-    fn v(&self, args: &[Value]) -> Result<Value, EvalError> {
-        // A digital `Bit`/`Logic` net reads its logic value (0/1) directly.
-        if args.len() == 1
-            && let Some(net) = NetRef::from_value(&args[0])
-            && let Some(v) = self.digital.get(&net.name)
+    /// Node voltage of net `a` minus net `b` (ground-referenced when `b` is
+    /// `None`). A single-ended digital `Bit`/`Logic` net reads its logic value
+    /// (0/1; NaN for X/Z). Public typed seam for the Python binding (PY-06).
+    pub fn v(&self, a: &NetRef, b: Option<&NetRef>) -> Result<f64, EvalError> {
+        if b.is_none()
+            && let Some(v) = self.digital.get(&a.name)
         {
-            return Ok(Value::Real(*v));
+            return Ok(*v);
         }
-        let a = self.resolve_node(args.first().ok_or_else(|| EvalError::TypeMismatch("v() needs at least 1 argument".into()))?)?;
-        let va = if a == NodeIdentifier::Gnd { 0.0 } else { self.dc.get_node(&a).unwrap_or(0.0) };
-        let vb = match args.get(1) {
-            Some(b) => {
-                let b = self.resolve_node(b)?;
-                if b == NodeIdentifier::Gnd { 0.0 } else { self.dc.get_node(&b).unwrap_or(0.0) }
+        let node_a = self.node_or_err(&a.name)?;
+        let va = if node_a == NodeIdentifier::Gnd { 0.0 } else { self.dc.get_node(&node_a).unwrap_or(0.0) };
+        let vb = match b {
+            Some(nb) => {
+                let node_b = self.node_or_err(&nb.name)?;
+                if node_b == NodeIdentifier::Gnd { 0.0 } else { self.dc.get_node(&node_b).unwrap_or(0.0) }
             }
             None => 0.0,
         };
-        Ok(Value::Real(va - vb))
+        Ok(va - vb)
+    }
+
+    /// Value-layer dispatch wrapper kept for `impl Object`.
+    fn v_value(&self, args: &[Value]) -> Result<Value, EvalError> {
+        let a = NetRef::from_value(
+            args.first().ok_or_else(|| EvalError::TypeMismatch("v() needs at least 1 argument".into()))?,
+        )
+        .ok_or_else(|| EvalError::TypeMismatch("expected a Net".into()))?;
+        let b = match args.get(1) {
+            Some(v) => Some(NetRef::from_value(v).ok_or_else(|| EvalError::TypeMismatch("expected a Net".into()))?),
+            None => None,
+        };
+        self.v(a, b).map(Value::Real)
     }
 
     /// The unique two-terminal instance whose ports connect exactly to
@@ -222,20 +240,19 @@ impl OpResult {
         find_two_terminal_instance(&self.info, a, b)
     }
 
-    fn i(&self, args: &[Value]) -> Result<Value, EvalError> {
-        if args.is_empty() || args.len() > 2 {
-            return Err(EvalError::TypeMismatch("i() takes 1 or 2 arguments".into()));
-        }
-        let a = self.resolve_node(&args[0])?;
+    /// Branch current from terminal `a` to `b` (ground-referenced when `b` is
+    /// `None`). Public typed seam for the Python binding (PY-06).
+    pub fn i(&self, a: &NetRef, b: Option<&NetRef>) -> Result<f64, EvalError> {
+        let node_a = self.node_or_err(&a.name)?;
         // `i(a)` — the omitted second terminal is ground (bench spec §6).
-        let b = match args.get(1) {
-            Some(v) => self.resolve_node(v)?,
+        let node_b = match b {
+            Some(nb) => self.node_or_err(&nb.name)?,
             None => NodeIdentifier::Gnd,
         };
-        let instance = self.find_branch_instance(a.clone(), b)?;
+        let instance = self.find_branch_instance(node_a.clone(), node_b)?;
         if instance.num_forces > 0 {
             let branch = BranchIdentifier::new(instance.label.clone(), "force0".to_string());
-            return Ok(Value::Real(self.dc.get_branch(branch).unwrap_or(0.0)));
+            return Ok(self.dc.get_branch(branch).unwrap_or(0.0));
         }
         let volts: Vec<f64> = instance
             .terminals
@@ -248,8 +265,21 @@ impl OpResult {
         // Sign convention: positive current flows from terminal `a` into
         // the device; `residual[0]` is the current out of terminal 0
         // (piperine-bench/docs/SPEC.md §4 `.i(a, b)` — positive a → b).
-        let current = if instance.terminals[0] == a { residual[0] } else { -residual[0] };
-        Ok(Value::Real(current))
+        let current = if instance.terminals[0] == node_a { residual[0] } else { -residual[0] };
+        Ok(current)
+    }
+
+    /// Value-layer dispatch wrapper kept for `impl Object`.
+    fn i_value(&self, args: &[Value]) -> Result<Value, EvalError> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(EvalError::TypeMismatch("i() takes 1 or 2 arguments".into()));
+        }
+        let a = NetRef::from_value(&args[0]).ok_or_else(|| EvalError::TypeMismatch("expected a Net".into()))?;
+        let b = match args.get(1) {
+            Some(v) => Some(NetRef::from_value(v).ok_or_else(|| EvalError::TypeMismatch("expected a Net".into()))?),
+            None => None,
+        };
+        self.i(a, b).map(Value::Real)
     }
 }
 
@@ -281,8 +311,8 @@ impl Object for OpResult {
     }
     fn call_method(&self, name: &str, args: Vec<Value>) -> Result<Value, EvalError> {
         match name {
-            "v" => self.v(&args),
-            "i" => self.i(&args),
+            "v" => self.v_value(&args),
+            "i" => self.i_value(&args),
             other => Err(EvalError::Undefined(format!("method `{other}` on OpResult"))),
         }
     }
@@ -295,9 +325,6 @@ impl Object for OpResult {
 pub(crate) trait NetLookup {
     /// Resolve a net *name*; `None` when the net is not addressable.
     fn net_node(&self, name: &str) -> Option<NodeIdentifier>;
-
-    /// Resolve a bench `Net` argument (a [`NetRef`] value).
-    fn node_arg(&self, arg: &Value) -> Result<NodeIdentifier, EvalError>;
 }
 
 impl NetLookup for CircuitBuildInfo {
@@ -306,14 +333,6 @@ impl NetLookup for CircuitBuildInfo {
             return Some(NodeIdentifier::Gnd);
         }
         self.nets.get(name).cloned()
-    }
-
-    fn node_arg(&self, arg: &Value) -> Result<NodeIdentifier, EvalError> {
-        let net = NetRef::from_value(arg).ok_or_else(|| {
-            EvalError::TypeMismatch(format!("expected a Net, got {}", arg.type_name()))
-        })?;
-        self.net_node(&net.name)
-            .ok_or_else(|| EvalError::Undefined(format!("net `{}` is not addressable", net.name)))
     }
 }
 
