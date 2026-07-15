@@ -72,7 +72,7 @@ pub enum EventSource {
     FinalStep,
     Cross { expr: PomExpr, dir: CrossDir },
     Above { expr: PomExpr },
-    Timer { period: PomExpr },
+    Timer { period: PomExpr, phase: PomExpr },
 }
 
 /// An analog event: a trigger plus a statement body.

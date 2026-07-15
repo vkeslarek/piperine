@@ -88,6 +88,36 @@ circuits, without backtracking or complex integration-method switching heuristic
 - Tests: stiff ODE validation case (e.g., van der Pol oscillator), switched-circuit case
   (PWM + RC filter), comparison of PI vs current LTE stepper on step-count.
 
+**Status (2026-07-15):** the TR-BDF2 engine core is **DONE and active** — it is
+the sole integration scheme (`IntegrationMethod` removal is the last cleanup
+step). Landed: `TrBdf2` phase coefficients + Milne LTE (`math/integration.rs`),
+two-phase driver (TR → `x_{n+γ}`, BDF2 → `x_{n+1}`), the trapezoidal companion
+(re-derives the previous capacitor current from the prior BDF2 — the kernel was
+pure-derivative before), a stateful **PI timestep controller** replacing the
+reactive LTE stepper (`solver/convergence.rs::PiController`), and **always-on
+adaptive** stepping (SPICE has been adaptive since v2; `.step` is the initial
+dt). Backtracking on failure is ÷8. Bench waveform `mean`/`rms` are now
+dt-weighted (trapezoidal) so statistics stay correct on the adaptive grid.
+Spec: `.specs/features/solver-trbdf2-engine/`.
+
+**Still open under this Epic:**
+- **Breakpoints (T8-T10) — the efficiency gate for switched circuits.** Without
+  them, the LTE-reject backtracking still resolves pulse edges (the TRB-20
+  narrow-pulse probe is now monotonic and distinguishes 1 ns from 10 ns), but
+  it thrashes ~40k steps at the edges. A source-declared breakpoint schedule
+  (codegen-extracted from the periodic `floor(($abstime-td)/per)` phase trick +
+  the `if (ph < pw)` threshold, or a `$periodic_breakpoints` declaration) lands
+  the integrator on each edge in one step. Design decision pending.
+- **Output interpolation onto the `.step` print grid.** The recorded waveform is
+  currently the raw adaptive time grid (correct, but uneven). SPICE interpolates
+  the internal adaptive steps onto the user's `.tran tstep` print interval;
+  piperine should too (linear or quadratic). Until then, `Waveform::at(t)`
+  already interpolates point queries, and dt-weighted stats are correct.
+- **Inductor flux companion** uses the pure-derivative form for the TR stage
+  (the dual — previous-voltage tracking — is a follow-up; no regression).
+- Remove the vestigial `IntegrationMethod` enum + `suggest_transient_step`'s
+  `method` param; migrate the last callers.
+
 
 
 - **Newton convergence checks only the voltage step, not the current residual — HIGH

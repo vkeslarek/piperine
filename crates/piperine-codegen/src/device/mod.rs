@@ -252,6 +252,13 @@ impl Element for PiperineDevice {
         }
     }
 
+    fn next_breakpoints(&self, from: piperine_solver::math::unit::Second, horizon: piperine_solver::math::unit::Second) -> Vec<piperine_solver::math::unit::Second> {
+        match &self.analog {
+            Some(analog) => analog.next_breakpoints(from, horizon),
+            None => Vec::new(),
+        }
+    }
+
     fn suggest_transient_step(
         &self,
         state: &TransientAnalysisState<'_>,

@@ -676,7 +676,7 @@ impl EventSpec {
     /// recursively through `Or`).
     pub fn walk_exprs(&self, f: &mut impl FnMut(&Expr) -> Walk) {
         match self {
-            EventSpec::Named { arg, .. } => arg.walk(f),
+            EventSpec::Named { args, .. } => args.iter().for_each(|a| a.walk(f)),
             EventSpec::Initial | EventSpec::Final => {}
             EventSpec::Or(specs) => specs.iter().for_each(|s| s.walk_exprs(f)),
         }
@@ -686,7 +686,7 @@ impl EventSpec {
     /// recursively through `Or`).
     pub fn walk_exprs_mut(&mut self, f: &mut impl FnMut(&mut Expr) -> Walk) {
         match self {
-            EventSpec::Named { arg, .. } => arg.walk_mut(f),
+            EventSpec::Named { args, .. } => args.iter_mut().for_each(|a| a.walk_mut(f)),
             EventSpec::Initial | EventSpec::Final => {}
             EventSpec::Or(specs) => specs.iter_mut().for_each(|s| s.walk_exprs_mut(f)),
         }
@@ -725,11 +725,13 @@ pub enum Pattern {
 /// elaborator resolves `name` against the [`EventRegistry`][crate::elab::event::EventRegistry],
 /// which means new event kinds can be added at any time without changing the
 /// parser or AST. Built-in names: `posedge`, `negedge`, `change`, `cross`,
-/// `above`.
+/// `name(arg)` or `name(arg, arg, ...)` — any identifier looked up in the
+/// event registry at elaboration. Multiple arguments support events like
+/// `@timer(period, phase)`; single-arg events (`cross`, `above`) use
+/// `args[0]`.
 #[derive(Debug, Clone)]
 pub enum EventSpec {
-    /// `name(arg)` — any identifier looked up in the event registry at elaboration.
-    Named { name: String, arg: Expr },
+    Named { name: String, args: Vec<Expr> },
     /// `initial` — fires once at simulation start.
     Initial,
     /// `final` — fires once at simulation end.

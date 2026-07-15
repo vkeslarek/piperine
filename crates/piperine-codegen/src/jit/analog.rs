@@ -75,8 +75,9 @@ pub enum CompiledTrigger {
     Initial,
     Cross(CrossDir),
     Above,
-    /// Fires every `period` seconds (parameter-constant).
-    Timer { period: PomExpr },
+    /// Fires every `period` seconds, first fire at `phase` (both
+    /// parameter-constant). `phase = 0` reproduces `@timer(period)`.
+    Timer { period: PomExpr, phase: PomExpr },
 }
 
 /// A compiled runtime analog event: its trigger plus the vars-bank slots its
@@ -961,8 +962,8 @@ impl<'m> AnalogCompiler<'m> {
                     FlatEventTrigger::Initial => CompiledTrigger::Initial,
                     FlatEventTrigger::Cross { dir, .. } => CompiledTrigger::Cross(*dir),
                     FlatEventTrigger::Above { .. } => CompiledTrigger::Above,
-                    FlatEventTrigger::Timer { period } => {
-                        CompiledTrigger::Timer { period: period.clone() }
+                    FlatEventTrigger::Timer { period, phase } => {
+                        CompiledTrigger::Timer { period: period.clone(), phase: phase.clone() }
                     }
                 },
                 action_vars: e.actions.iter().map(|a| a.var).collect(),

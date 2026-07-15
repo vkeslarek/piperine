@@ -155,7 +155,7 @@ pub struct AnalogInstance {
     /// One detector per runtime event, in kernel event order. `periods[i]`
     /// is the (parameter-constant) timer period, 0 for non-timers.
     event_detectors: Vec<EventDetector>,
-    event_periods: Vec<f64>,
+    event_periods: Vec<(f64, f64)>,
     /// Module-level persistent variable values read by the kernel through
     /// the D2A bridge (`vars[VarId]`). Synced from the digital side after
     /// each `eval_discrete` call.
@@ -283,23 +283,28 @@ impl AnalogInstance {
             .events()
             .iter()
             .map(|e| match &e.trigger {
-                CompiledTrigger::Timer { period } => {
+                CompiledTrigger::Timer { period, phase } => {
                     let param_names = kernel.param_names();
                     let resolve = |name: &str| -> Option<f64> {
                         param_names.iter().position(|n| n == name)
                             .and_then(|i| params.get(i).copied())
                     };
-                    crate::ir::pom_eval_const(period, &resolve)
-                        .map_err(CodegenError::ConstEval)
+                    let p = crate::ir::pom_eval_const(period, &resolve)
+                        .map_err(CodegenError::ConstEval)?;
+                    // First fire at `phase` (a phased timer `@timer(period, phase)`),
+                    // or at `period` for the unphased `@timer(period)` (phase ≤ 0).
+                    let ph = crate::ir::pom_eval_const(phase, &resolve)
+                        .map_err(CodegenError::ConstEval)?;
+                    Ok(if ph > 0.0 { (p, ph) } else { (p, p) })
                 }
-                _ => Ok(0.0),
+                _ => Ok((0.0, 0.0)),
             })
             .collect::<Result<Vec<_>, _>>()?;
         let event_detectors = kernel
             .events()
             .iter()
             .zip(&event_periods)
-            .map(|(_, &period)| EventDetector { seeded: false, prev: 0.0, next_fire: period })
+            .map(|(_, &(_period, first_fire))| EventDetector { seeded: false, prev: 0.0, next_fire: first_fire })
             .collect();
 
         let sim = SimCtx { param_given_mask, ..Default::default() };
@@ -782,6 +787,33 @@ impl AnalogInstance {
         stamps
     }
 
+    /// Absolute landing points this instance's `@timer` events fire at within
+    /// `(from, from + horizon]`. Each timer fires every `period` (its current
+    /// `next_fire` advanced into the window); those fire times are exactly the
+    /// integrator breakpoints a periodic/switched source needs so it never
+    /// steps over a switching edge. Non-timer events (crossings) are detected
+    /// reactively and contribute no static breakpoints here.
+    pub fn next_breakpoints(&self, from: f64, horizon: f64) -> Vec<f64> {
+        let mut out = Vec::new();
+        let end = from + horizon;
+        for (det, &(period, _first_fire)) in self.event_detectors.iter().zip(&self.event_periods) {
+            if period <= 0.0 || !period.is_finite() {
+                continue;
+            }
+            // First fire strictly after `from` (next_fire may lag if the timer
+            // hasn't been advanced past the current step yet).
+            let mut t = det.next_fire;
+            while t <= from {
+                t += period;
+            }
+            while t <= end {
+                out.push(t);
+                t += period;
+            }
+        }
+        out
+    }
+
     /// LTE-driven timestep suggestion for the transient stepper. Evaluates
     /// the charge at `t_n` and `t_{n-1}` (plus `t_{n-2}` for order ≥ 2),
     /// computes the (order+1)-th divided difference, and returns the
@@ -1116,7 +1148,7 @@ impl AnalogInstance {
         let mut fired = vec![false; num_events];
         for (i, detector) in self.event_detectors.iter_mut().enumerate() {
             let trigger = &self.kernel.events()[i].trigger;
-            fired[i] = detector.fired(trigger, triggers[i], time, self.event_periods[i]);
+            fired[i] = detector.fired(trigger, triggers[i], time, self.event_periods[i].0);
         }
         if fired.iter().any(|&f| f) {
             self.apply_event_actions(&fired, volts);

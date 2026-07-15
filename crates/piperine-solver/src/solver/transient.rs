@@ -253,10 +253,23 @@ impl<'a> TransientSolver<'a> {
         while current_time < stop_time {
             let dt_proposed = dt;
 
+            // Unified breakpoint table (TRB-11): the integrator lands on the
+            // nearest of (a) the PI-proposed step, (b) the next DIGITAL event
+            // — digital-var/enum `if`s in analog bodies switch at these times,
+            // so landing here covers them — and (c) ANALOG `@timer` fires /
+            // source edges declared via `Element::next_breakpoints`. Absolute
+            // times → survive rollback.
             let t_next_event = self.system.circuit.digital_state.peek_next_event_time();
             let mut t_next = (current_time + dt_proposed).min(stop_time);
             if t_next_event < t_next {
                 t_next = t_next_event;
+            }
+            for dev in self.system.circuit.devices.iter() {
+                for bp in dev.next_breakpoints(current_time, dt_proposed) {
+                    if bp > current_time && bp < t_next {
+                        t_next = bp;
+                    }
+                }
             }
 
             let dt_actual = t_next - current_time;

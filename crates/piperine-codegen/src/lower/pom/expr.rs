@@ -352,9 +352,9 @@ pub(crate) fn resolve_stmt(stmt: &Stmt, ctx: &mut LowerCtx) -> Stmt {
 fn resolve_event_spec(spec: &piperine_lang::parse::ast::EventSpec, ctx: &mut LowerCtx) -> piperine_lang::parse::ast::EventSpec {
     use piperine_lang::parse::ast::EventSpec;
     match spec {
-        EventSpec::Named { name, arg } => EventSpec::Named {
+        EventSpec::Named { name, args } => EventSpec::Named {
             name: name.clone(),
-            arg: resolve_expr(arg, ctx),
+            args: args.iter().map(|a| resolve_expr(a, ctx)).collect(),
         },
         EventSpec::Initial => EventSpec::Initial,
         EventSpec::Final => EventSpec::Final,

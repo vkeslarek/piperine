@@ -127,14 +127,14 @@ pub trait Element: Send + Sync {
 
     /// Absolute landing points this element requires the integrator to hit
     /// within `(from, from + horizon]`. Time-varying source models (pulse
-    /// edges, PWL corners) and digital switching times declare their
-    /// discontinuities here so the stepper never steps over a kink. The
+    /// edges, PWL corners, `@timer` fires) and digital switching times declare
+    /// their discontinuities here so the stepper never steps over a kink. The
     /// default is empty — elements without discontinuities need not override.
     ///
-    /// Returning a borrowed slice lets a model cache its schedule; the solver
-    /// reads it each step and dedups against the digital event queue. The
-    /// times are absolute (not relative), so they survive step rollback.
-    fn next_breakpoints(&self, _from: Second, _horizon: Second) -> &[Second] { &[] }
+    /// The solver reads this each step and merges it with the digital event
+    /// queue. The times are absolute (not relative), so they survive step
+    /// rollback.
+    fn next_breakpoints(&self, _from: Second, _horizon: Second) -> Vec<Second> { Vec::new() }
 
     /// `@initial` UIC seeds: the branch `(plus, minus)` and the voltage the
     /// device wants across it at t=0 (SPICE `.ic`). Ground terminals are

@@ -54,7 +54,7 @@ fn dff() -> LoweredBody {
                 default: Some(Expr::Literal(Literal::Quad("0".into()))),
             },
             Stmt::Event {
-                spec: EventSpec::Named { name: "posedge".into(), arg: Expr::Ident("clk".into()) },
+                spec: EventSpec::Named { name: "posedge".into(), args: vec![Expr::Ident("clk".into())] },
                 guard: None,
                 body: Block {
                     stmts: vec![Stmt::Bind {
@@ -198,7 +198,7 @@ fn pipeline_reads_pre_edge_values() {
                 default: Some(Expr::Literal(Literal::Quad("0".into()))),
             },
             Stmt::Event {
-                spec: EventSpec::Named { name: "posedge".into(), arg: Expr::Ident("clk".into()) },
+                spec: EventSpec::Named { name: "posedge".into(), args: vec![Expr::Ident("clk".into())] },
                 guard: None,
                 body: Block {
                     stmts: vec![

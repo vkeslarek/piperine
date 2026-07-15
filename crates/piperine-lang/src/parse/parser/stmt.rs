@@ -367,9 +367,13 @@ impl<'a> Parser<'a> {
         }
         let name = self.parse_ident()?;
         self.expect(&Tok::LParen)?;
-        let arg = self.parse_expr()?;
+        // `name(arg)` or `name(arg, arg, ...)` — e.g. `@timer(period, phase)`.
+        let mut args = vec![self.parse_expr()?];
+        while self.eat(&Tok::Comma) {
+            args.push(self.parse_expr()?);
+        }
         self.expect(&Tok::RParen)?;
-        Ok(EventSpec::Named { name, arg })
+        Ok(EventSpec::Named { name, args })
     }
 
     // ─────────────────────────── §8.1  Statements ────────────────────────────

@@ -320,7 +320,12 @@ impl<'m> DigitalCompiler<'m> {
 /// `Named { name, arg }` term. `Initial`/`Final` contribute no terms.
 fn extract_event_terms(spec: &EventSpec, terms: &mut Vec<(String, Expr)>) {
     match spec {
-        EventSpec::Named { name, arg } => terms.push((name.clone(), arg.clone())),
+        EventSpec::Named { name, args } => {
+            // Digital edge events (`posedge(net)`, …) carry a single net arg.
+            if let Some(arg) = args.first() {
+                terms.push((name.clone(), arg.clone()));
+            }
+        }
         EventSpec::Initial | EventSpec::Final => {}
         EventSpec::Or(specs) => {
             for s in specs {
