@@ -2,6 +2,19 @@ use piperine_bench::BenchRunner;
 use std::path::PathBuf;
 
 pub fn execute(entry: Option<String>, file: Option<String>) {
+    // Python script path: `piperine run foo.py` embeds CPython and runs the
+    // script with `import piperine` available (PY-15 / spec AC16). Detected
+    // by `.py` suffix on the positional `entry` arg so no extra flag is
+    // needed; the bench flow below is untouched for `.phdl`/`module::fn` use.
+    if entry.as_deref().is_some_and(|e| e.ends_with(".py")) {
+        let path = entry.expect("checked above");
+        if let Err(e) = piperine_python::embed::run_script(&path) {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     crate::commands::build::execute(file.clone());
 
     let (source_map, project_root) = super::utils::build_source_map();

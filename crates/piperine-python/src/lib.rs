@@ -23,6 +23,7 @@
 //! every function body still delegates to a struct method so no *logic* lives
 //! as a loose module-level function.
 
+pub mod embed;
 mod design;
 mod instance;
 mod module;
@@ -50,9 +51,10 @@ fn load(path: &str) -> PyResult<_Design> {
 }
 
 /// The `_piperine` native extension module. Registered by the facade and, for
-/// `piperine run`, appended to the embedded interpreter's init table.
+/// `piperine run`, appended to the embedded interpreter's init table
+/// ([`embed::run_script`], PY-15).
 #[pymodule]
-fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub(crate) fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(load, m)?)?;
     m.add_class::<_Design>()?;
     m.add_class::<_Module>()?;
