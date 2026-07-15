@@ -251,7 +251,7 @@ impl Waveform {
     /// First axis value where the waveform crosses `level`, in direction
     /// `dir` (`CrossDir::Rising`/`Falling`/`Either`). `None` if it never
     /// does.
-    fn cross(&self, level: f64, dir: &str) -> Option<f64> {
+    pub fn cross(&self, level: f64, dir: &str) -> Option<f64> {
         for pair in self.points.windows(2) {
             let (t0, v0) = pair[0];
             let (t1, v1) = pair[1];

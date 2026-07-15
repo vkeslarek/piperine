@@ -296,6 +296,14 @@ impl _Waveform {
         self.inner.peak_to_peak()
     }
 
+    /// First axis value where the waveform crosses `level` in direction
+    /// `dir` (`"Rising"`/`"Falling"`/`"Either"`), or `None`. Uniform-shape
+    /// (bench `Waveform::cross`).
+    #[pyo3(signature = (level, dir="Either"))]
+    fn cross(&self, level: f64, dir: &str) -> Option<f64> {
+        self.inner.cross(level, dir)
+    }
+
     /// Number of samples — equal to `.values` length.
     fn len(&self) -> usize {
         self.inner.len()

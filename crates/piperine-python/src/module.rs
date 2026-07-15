@@ -148,12 +148,31 @@ impl _Module {
 
     /// Run a transient analysis (PY-04 / spec AC6). `step = None` (or `0.0`)
     /// selects the adaptive stepper; `start` is the earliest recorded time
-    /// (piperine-bench/docs/SPEC.md §5.1 `TranConfig.start`).
-    #[pyo3(signature = (stop, step=None, start=0.0))]
-    fn tran(&self, stop: f64, step: Option<f64>, start: f64) -> PyResult<_Trace> {
+    /// (piperine-bench/docs/SPEC.md §5.1 `TranConfig.start`). `ic` is an
+    /// optional per-node initial-condition map (spec §5.1 `TranConfig.ic`).
+    #[pyo3(signature = (stop, step=None, start=0.0, ic=None))]
+    fn tran(
+        &self,
+        stop: f64,
+        step: Option<f64>,
+        start: f64,
+        ic: Option<std::collections::HashMap<String, f64>>,
+    ) -> PyResult<_Trace> {
         let session = self.session()?;
+        let ic_value = match ic {
+            Some(map) => {
+                use std::cell::RefCell;
+                use std::rc::Rc;
+                let pairs: Vec<(Value, Value)> = map
+                    .into_iter()
+                    .map(|(k, v)| (Value::Str(k), Value::Real(v)))
+                    .collect();
+                Value::Map(Rc::new(RefCell::new(pairs)))
+            }
+            None => Value::Unit,
+        };
         let result = session
-            .run_tran(stop, step, start, &SolverConfig::default(), &Value::Unit)
+            .run_tran(stop, step, start, &SolverConfig::default(), &ic_value)
             .map_err(Self::analysis_err)?;
         Ok(_Trace::new(result).with_resolver(self.instance_resolver()))
     }

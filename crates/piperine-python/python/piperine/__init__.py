@@ -268,10 +268,12 @@ class Module:
         """Run a transient analysis (spec AC6).
 
         ``config.step = 0.0`` (the prelude default) selects the adaptive
-        stepper; a positive ``step`` seeds the initial ``dt``.
+        stepper; a positive ``step`` seeds the initial ``dt``. ``config.ic``
+        presets node voltages (spec §5.1 ``TranConfig.ic``).
         """
         step = config.step if config.step != 0.0 else None
-        return self._native.tran(config.stop, step, config.start)
+        ic = config.ic if config.ic else None
+        return self._native.tran(config.stop, step, config.start, ic)
 
     def ac(self, config: AcConfig) -> AcTrace:
         """Run an AC small-signal sweep (spec AC8).
