@@ -58,11 +58,15 @@ pub fn run_script(path: &str) -> PyResult<()> {
         let facade = PyModule::from_code(py, &facade_src, c"piperine/__init__.py", c"piperine")?;
         modules.set_item("piperine", facade)?;
 
-        // 3. Read + run the user's script. A Python exception propagates as
-        //    a `PyErr` (spec AC17 — fail loud, no silent swallow).
+        // 3. Read + run the user's script. Set `__file__` so the script can
+        //    locate sibling files (e.g. a `.phdl` fixture next to the script).
+        //    A Python exception propagates as a `PyErr` (spec AC17 — fail
+        //    loud, no silent swallow).
         let script = std::fs::read_to_string(path).map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("failed to read `{path}`: {e}"))
         })?;
+        let main = py.import("__main__")?;
+        main.setattr("__file__", path)?;
         let script_cstr = CString::new(script)
             .map_err(|_| pyo3::exceptions::PyValueError::new_err("script contains nul bytes"))?;
         py.run(&script_cstr, None, None)?;

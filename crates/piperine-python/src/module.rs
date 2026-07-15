@@ -165,7 +165,10 @@ impl _Module {
                 use std::rc::Rc;
                 let pairs: Vec<(Value, Value)> = map
                     .into_iter()
-                    .map(|(k, v)| (Value::Str(k), Value::Real(v)))
+                    .map(|(k, v)| {
+                        let netref = piperine_bench::NetRef { name: k };
+                        (Value::Object(Rc::new(netref)), Value::Real(v))
+                    })
                     .collect();
                 Value::Map(Rc::new(RefCell::new(pairs)))
             }
