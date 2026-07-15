@@ -120,7 +120,9 @@ convergence or timestep controls.
 | `limiting_active()` | Report that device-side limiting is still active; convergence must not be accepted while true. |
 | `bound_step_hint()` | Return the maximum desirable next timestep. Infinity means no bound. |
 
-`context` carries tolerances, time, temperature, and the integration method. It
+`context` carries tolerances, time, and temperature. (The transient
+integration method is fixed — TR-BDF2 is the sole scheme — so there is no
+method-selection field.) It
 carries **no** mutable homotopy state — the source-stepping scale reaches an
 element through the analysis state (below), and the gmin-stepping conductance is
 owned by the DC driver (§15).
@@ -156,7 +158,7 @@ element-construction/load error.
 | `Context` | Solver tolerances, temperature, time, and integration controls. Immutable for a run; carries no per-solve homotopy or convergence state. |
 | `DcAnalysisState` | The DC loading state: the analog solution history (row 0 latest), the digital net snapshot (D2A), and the source-stepping scale. Derefs to the history. |
 | `TransientAnalysisState` | The transient loading state: the analog solution history and the digital net snapshot. Derefs to the history. |
-| `TransientAnalysisContext` | Current time, current timestep, final time, previous timestep, and active integration order. |
+| `TransientAnalysisContext` | Current time, the TR-BDF2 phase being stamped (Trapezoidal over `γh` or BDF2 over `(1−γ)h`), the full step `h`, and the previous accepted step size (so the TR stage can re-derive the previous capacitor current). No integration-method field — TR-BDF2 is the sole scheme. |
 | `AcAnalysisContext` | Current frequency. |
 
 ### 3.4 Introspection: parameters, queries, terminals
@@ -488,35 +490,62 @@ guaranteed hold constraint unless the device model stamps such a constraint.
 
 For each step:
 
-1. Choose a proposed timestep from the current timestep controller.
-2. Clamp the target time to the analysis stop time and to the next pending
-   digital event time.
+1. Choose a proposed timestep from the current timestep controller (a PI
+   controller driven by the global truncation error — see §10.3).
+2. Clamp the target time to the analysis stop time, to the next pending
+   digital event time, and to the next declared **breakpoint** (analog
+   `@timer` fires and source edges — see §15.9). Digital-var/enum `if`s in
+   analog bodies switch at digital events, which are themselves breakpoints,
+   so landing here covers them.
 3. Checkpoint the digital state.
 4. Apply digital events exactly at the target time before the analog solve.
 5. Solve the analog implicit companion system for the interval ending at the
-   target time.
-6. If the analog solve succeeds:
+   target time — TR-BDF2 runs two Newton sub-steps (Trapezoidal → `x_{n+γ}`,
+   BDF2 → `x_{n+1}`; γ = 2−√2).
+6. If both sub-steps succeed and the global LTE is within tolerance:
    - Service analog-to-digital acceptance hooks and run digital evaluation at
      the target time.
    - Commit the digital checkpoint.
    - Record the step if it is at or after `record_from`.
-   - Advance integration history and grow the proposed timestep within bounds.
-7. If the analog solve fails:
+   - Advance integration history and let the PI controller propose the next
+     timestep from the global error.
+7. If either sub-step fails or the LTE exceeds tolerance:
    - Roll back the digital checkpoint.
-   - Reduce the proposed timestep and retry.
+   - Reduce the proposed timestep (÷8 backtracking) and reset the PI memory.
    - If the minimum timestep is reached and the solve still fails, the analysis
      fails loud.
 
+The solver is **always adaptive** (SPICE has been adaptive since v2); the
+user's `.step` is the initial timestep, grown/shrunk from there. The recorded
+waveform is the adaptive time grid; waveform statistics weight by the timestep
+so they stay correct on the uneven grid. Output interpolation onto a fixed
+print grid is a roadmap follow-up; point queries (`Waveform::at(t)`) already
+interpolate.
+
 ### 10.3 Integration method
 
-The transient companion model uses an implicit integration method selected by the
-solver context. The default method is Gear/BDF order 2. The first accepted steps
-use order 1 until sufficient history exists; then the method may use the
-configured order, capped by available history.
+The transient companion uses **TR-BDF2** (Trapezoidal Rule / Backward
+Differentiation Formula 2) as the sole integration scheme. Each step advances
+`[t_n, t_{n+1}]` in two stages with γ = 2−√2: a Trapezoidal stage over `γh`
+produces the intermediate point `x_{n+γ}`, then a BDF2 stage over `(1−γ)h`
+produces `x_{n+1}` from `x_{n+γ}` and `x_n`. The BDF2 stage is a native
+low-pass filter, giving L-stability (no trapezoidal ringing on stiff/switched
+nodes). There is no method-selection surface.
 
-Trapezoidal integration is permitted as a second-order implicit method. Gear
-orders outside the supported range clamp to a valid conservative coefficient;
-they must not panic or produce a non-finite timestep calculation.
+The Trapezoidal stage's companion carries the previous capacitor current
+`i_{C,n}` (the trapezoidal companion is `i_{C,n+γ} = (2/(γh))(Q_{n+γ}−Q_n) −
+i_{C,n}`), which the kernel re-derives from the prior step's BDF2 formula
+(coeffs at the previous step size, charges at the three history points). The
+BDF2 stage uses the pure-derivative companion.
+
+The timestep controller is a **Proportional-Integral (PI) controller**: after
+each accepted step the global local-truncation error is estimated via Milne's
+device (a linear extrapolation of the node voltages at `t_n` and `t_{n+γ}`
+differenced from `x_{n+1}`, normalized per node by `reltol·|v| + vntol`), and
+the next timestep follows `dt_{n+1} = dt_n · (target/lte)^p` with `p = kp +
+ki·(lte − lte_prev)/lte` (defaults `kp = 0.7`, `ki = 0.4`). A rejected step
+resets the PI memory. The Milne estimate is computed over node-voltage
+unknowns only (branch currents are KCL-derived).
 
 ### 10.4 Results
 
@@ -765,11 +794,22 @@ and same-time digital acceptance has run.
 
 ### 15.9 Timestep bounds and breakpoints
 
-Devices may request a maximum timestep, and sources may expose breakpoints where
-the solver should land exactly. A timestep controller that supports these hooks
-must take the minimum positive bound that does not overshoot the stop time or the
-next digital event. If no hook is available, the solver still must honor digital
-event times and the global minimum/maximum timestep limits.
+Devices may request a maximum timestep (`bound_step_hint`), and elements
+declare **breakpoints** — absolute landing times — through
+`Element::next_breakpoints(from, horizon)`. The solver's target time is the
+minimum of the PI-proposed timestep, the next declared breakpoint, the next
+pending digital event time, and the stop time. Breakpoints are absolute, so
+they survive step rollback.
+
+Breakpoints come from two unified sources: (a) **analog** — each element's
+`@timer` fires (a phased `@timer(period, phase)` lets a source declare both
+its rise and fall edges, so the integrator lands on each switching edge
+instead of stepping over it); (b) **digital** — the digital event queue's
+future value-change times, which are when digital-var/enum `if`s in analog
+bodies switch. Landing on a digital event thus covers analog contributions
+that branch on a digital variable. If no hook is available, the solver still
+must honor digital event times and the global minimum/maximum timestep
+limits.
 
 ### 15.10 Linear-solver safety
 

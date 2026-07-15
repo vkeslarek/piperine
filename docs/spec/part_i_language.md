@@ -923,7 +923,10 @@ Event sources (Part V §5 for the full table):
   crossing).
 - **Lifecycle:** `initial` (fires once at start), `final` (fires once at end;
   diagnostics only).
-- **Periodic:** `timer(period)` (analog only).
+- **Periodic:** `timer(period)` or `timer(period, phase)` (analog only). The
+  optional `phase` offsets the first fire to `phase` (fires at `phase`,
+  `phase+period`, … instead of `period`, `2·period`, …); a source declares
+  both its rise and fall edges with two phased timers.
 
 Combine events with OR via `|`: `@ (posedge(a) | posedge(b))`. The `when (cond)` clause
 gates on a level. An analog crossing may drive digital state (domain coupling — the

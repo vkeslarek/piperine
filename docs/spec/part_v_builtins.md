@@ -169,7 +169,7 @@ events. An unrecognized event name is a compile error — there is no silent fal
 | `change(sig)` | digital edge | any change of `sig` |
 | `cross(expr)` | analog crossing | zero crossing of `expr` |
 | `above(expr)` | analog crossing | one-shot level crossing of `expr` |
-| `timer(period)` | analog | periodic, every `period` seconds |
+| `timer(period)` / `timer(period, phase)` | analog | periodic, every `period` seconds; optional `phase` offsets the first fire to `phase` (fires at `phase`, `phase+period`, …) so a source can declare both its rise and fall edges with two phased timers |
 | `initial` | lifecycle | once, at the start |
 | `final` | lifecycle | once, at the end (diagnostics only) |
 | `A \| B` | composite | either `A` or `B` fires |

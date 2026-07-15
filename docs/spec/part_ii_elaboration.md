@@ -189,7 +189,7 @@ registry and validates that the event class is legal in the enclosing block's do
 | `change(sig)` | digital edge | any change of `sig` |
 | `cross(expr)` | analog crossing | zero crossing of `expr` |
 | `above(expr)` | analog crossing | one-shot level crossing |
-| `timer(period)` | analog | periodic, every `period` seconds |
+| `timer(period)` / `timer(period, phase)` | analog | periodic, every `period` seconds; optional `phase` offsets the first fire (see Part V) |
 | `initial` | lifecycle | once, at the start of the analysis |
 | `final` | lifecycle | once, at the end (diagnostics only) |
 

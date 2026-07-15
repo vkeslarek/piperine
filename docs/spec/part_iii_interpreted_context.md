@@ -240,8 +240,13 @@ bundle NoiseConfig { out : NetRef, fstart : Real, fstop : Real, points : Natural
 port (`vout`, `amp.out`) evaluates to a `NetRef`, so `.out` is written as a bare net
 name. Two `NetRef`s compare equal when they refer to the same net.
 
-`step = 0.0` in `TranConfig` means adaptive timestep selection (the solver picks). The
-`scale` field controls the frequency sweep spacing: linear (`Lin`), logarithmic per
+The transient is **always adaptive** (SPICE has been adaptive since v2): the
+`TranConfig.step` value is the *initial* timestep the PI controller grows and
+shrinks from. `step = 0.0` (the default, "auto") seeds the initial timestep at
+`stop/1000`. The recorded waveform is the adaptive time grid; waveform
+statistics (`rms`, `mean`) weight by the timestep so they stay correct on the
+uneven grid, and point queries (`Trace.at(t)`) interpolate. The `scale` field
+controls the frequency sweep spacing: linear (`Lin`), logarithmic per
 decade (`Dec`), or logarithmic per octave (`Oct`).
 
 ---
