@@ -146,26 +146,23 @@ in `docs/spec/` (Parts I–VII). Solver gaps and feature tracking live in
 
 **Feature:** `solver-trbdf2-engine` (TR-BDF2 sole integration scheme + PI controller + unified breakpoints + factorization reuse). Spec/context/design/tasks in `.specs/features/solver-trbdf2-engine/`.
 **Branch:** `feature/plugin-architecture`
-**Last commit:** `175bbf6`
-**Working tree:** clean (T5 attempt reverted to green T4 state).
+**Last commit:** `a640603`
+**Working tree:** clean.
 
 ### Completed
-- Specify + Design + Tasks phases done; committed (`17c0865`, `0b78b55`, `175bbf6`).
-- TRB-20 baseline recorded (design.md): narrow-pulse charge pump under the 500-step budget — current arch gives `1ns≡10ns` (identical, wrong) + non-monotonic + 5–7× budget blowup. Pure-PHDL `Pulse` source written (100% PHDL, `if/else` on `$abstime`).
-- **Phase 1 (seams) — T1–T4 DONE & committed:** `6fd9ed3` (TrBdf2 math), `4abf75b` (Element::next_breakpoints), `ea87b24` (BYPASS_OK), `7d3cb6c` (FaerSparseLinearSystem::reset). All additive, build zero warnings, 34+ lib tests green.
-
-### In progress / blocked
-- **T5 (two-phase driver) reverted — design discovery:** the kernel's reactive companion (`device/analog.rs::load_transient`) is pure-derivative `i_C = c0·Q+c1·Q_prev+c2·Q_prev2` (BDF style). The TR stage needs the trapezoidal companion `i_C = (2C/s)(V−V_n) − i_{C,n}` which tracks the **previous capacitor current** per reactive port — state the kernel does not hold. Without it the TR stage degrades to BE-over-half-step (measured `τ_eff≈1.55τ`). **New prerequisite task T5a** (kernel previous-current bank) inserted into tasks.md; must land before the merged T5/T6 two-phase driver.
+- Specify + Design + Tasks phases done.
+- TRB-20 baseline recorded (design.md): narrow-pulse charge pump under the 500-step budget — current arch gave `1ns≡10ns` + non-monotonic + 5–7× budget blowup.
+- **Phase 1 (seams) — T1–T4:** `6fd9ed3` (TrBdf2 math), `4abf75b` (Element::next_breakpoints), `ea87b24` (BYPASS_OK), `7d3cb6c` (FaerSparseLinearSystem::reset).
+- **T5a + T5 + T6 — DONE (`a640603`):** TR-BDF2 two-phase engine is ACTIVE and correct. The kernel trapezoidal companion now re-derives the previous capacitor current (`i_{C,n}`) from the prior step's BDF2 formula (coeffs at `prev_h`, charges at view 1/2/3); the BDF2 stage stays pure-derivative. Verified on RC discharge: `V(τ)=0.3692` vs `e⁻¹=0.3679` (0.4%), `V(5τ)=0.00676` vs `e⁻⁵=0.00674`. Full workspace green, zero warnings.
 
 ### Next step
-- Implement **T5a** (kernel trapezoidal companion support: per-reactive-port previous-current state bank, applied only in the TR phase; BDF2 phase unchanged). Verify with the RC-discharge case (`V(τ)` within 1% of `e⁻¹`). Then proceed to the merged T5+T6 (context phase + two-phase driver).
+- **T7 — PiController (StepperStrategy impl).** Replace the per-device `LteStepper` as the primary dt selector with a stateful PI controller driven by the global Milne LTE (computed from the two-phase buffer view 0/1/2 = x_{n+1}/x_{n+γ}/x_n — exactly the points Milne needs). Add the LTE-based step reject (TRB-05 other half). Per-device LTE stays as a floor (TRB-08). Note: the per-device `suggest_transient_step` reads single-phase history that no longer matches the two-phase buffer, so it's only safely usable as a loose floor until T13 drops the `IntegrationMethod` param — prioritize landing T7.
 
-### Blockers
-- None — the path is clear (T5a → T5/T6 merged → T7 PI → T8–T16). The kernel-enhancement scope of T5a is the only addition vs the original plan.
-
-### Uncommitted files
-- None.
+### Open / follow-ups
+- **TRB-04 (LC L-stability test) needs spec-precision review:** an ideal undamped LC oscillator is *damped* by any L-stable method (TR-BDF2 included); "amplitude within 0.5%" may be the wrong target. The right L-stability test is a stiff *decaying* mode (where Trapezoidal would ring). Revise the AC before writing the gate test.
+- **Inductor flux companion** uses the pure-derivative form for the TR stage (dual previous-voltage tracking is a follow-up; no regression vs prior).
+- **prev_h on reject:** currently set on BDF2-phase success; when T7 adds LTE-based post-convergence reject, gate the prev_h update on LTE-accept (not just Newton-accept).
 
 ### Test baseline
 - `cargo build --workspace` — zero warnings.
-- `cargo test --workspace` — green at T4 (Phase 1 complete). The two transient examples (`02_rc_lowpass` discharge, `12_opamp_follower` settle) currently pass on Gear-2; they will migrate to TR-BDF2 outcomes once the engine activates (after T5a+T5/T6).
+- `cargo test --workspace` — green. Examples (`02_rc_lowpass` discharge, `12_opamp_follower` settle) pass on TR-BDF2.
