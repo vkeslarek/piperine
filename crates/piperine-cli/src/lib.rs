@@ -28,13 +28,18 @@ pub enum Commands {
         /// The file to build
         file: Option<String>,
     },
-    /// Run a simulation explicitly
+    /// Run a simulation explicitly, a Python script, or an interactive REPL
     Run {
-        /// The entry point to run (e.g. `module::fn`)
+        /// The entry point to run: `module::fn` (bench), `foo.py` (Python
+        /// script), or `foo.phdl` (loaded into the interactive REPL with `-i`)
         entry: Option<String>,
         /// The file containing the entry point (defaults to src/main.phdl)
         #[arg(long, short)]
         file: Option<String>,
+        /// Start an interactive Python REPL with `import piperine` ready.
+        /// With a `.phdl` arg, pre-loads it as `design`.
+        #[arg(short = 'i', long)]
+        interactive: bool,
     },
     /// Run `bench` entry points (piperine-bench/docs/SPEC.md)
     Test {
@@ -108,8 +113,12 @@ pub fn execute() {
         Commands::Build { file } => {
             commands::build::execute(file);
         }
-        Commands::Run { entry, file } => {
-            commands::run::execute(entry, file);
+        Commands::Run {
+            entry,
+            file,
+            interactive,
+        } => {
+            commands::run::execute(entry, file, interactive);
         }
         Commands::Test { list, file } => {
             commands::test::execute(list, file);

@@ -2092,6 +2092,7 @@ dependencies = [
  "piperine-lang",
  "piperine-plugin",
  "piperine-project",
+ "piperine-python",
  "tempfile",
  "thiserror 2.0.18",
  "toml_edit",

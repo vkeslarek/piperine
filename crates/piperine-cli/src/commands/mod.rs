@@ -5,6 +5,7 @@ pub mod clean;
 pub mod fmt;
 pub mod new;
 pub mod plugin;
+pub mod python_setup;
 pub mod remove;
 pub mod run;
 pub mod test;

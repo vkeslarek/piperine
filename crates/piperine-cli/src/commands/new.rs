@@ -41,6 +41,10 @@ pub fn execute(name: Option<String>) {
 
     println!("Created piperine project `{}`", project_name);
 
-    std::env::set_current_dir(path).unwrap();
+    let abs_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    std::env::set_current_dir(&abs_path).unwrap();
     crate::commands::build::execute(None);
+
+    // Create a Python venv with `import piperine` + autocomplete (IDE-ready).
+    crate::commands::python_setup::setup(&abs_path);
 }

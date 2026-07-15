@@ -73,3 +73,53 @@ pub fn run_script(path: &str) -> PyResult<()> {
         Ok(())
     })
 }
+
+/// Interactive Python REPL with `import piperine` pre-loaded (PY-15
+/// interactive variant). Optionally pre-loads a `.phdl` design as `design`
+/// so the user can immediately explore (`design.module("X").op().v("out")`).
+///
+/// Uses Python's `code.InteractiveConsole` so readline (arrow-key history,
+/// tab-completion of `piperine.` members) works when the system Python has
+/// it. The REPL shares `__main__.__dict__` so variables persist across
+/// statements for the session.
+pub fn run_interactive(maybe_design_path: Option<&str>) -> PyResult<()> {
+    Python::with_gil(|py| {
+        // Register `_piperine` + the facade (same as run_script).
+        let native = PyModule::new(py, "_piperine")?;
+        _piperine(&native)?;
+        let modules = py.import("sys")?.getattr("modules")?;
+        modules.set_item("_piperine", &native)?;
+
+        let facade_src = CString::new(FACADE_SRC)
+            .map_err(|_| pyo3::exceptions::PyValueError::new_err("facade nul bytes"))?;
+        let facade = PyModule::from_code(py, &facade_src, c"piperine/__init__.py", c"piperine")?;
+        modules.set_item("piperine", facade)?;
+
+        // Pre-load a design if a path was given; otherwise just import piperine.
+        let banner = match maybe_design_path {
+            Some(path) => {
+                let script = format!(
+                    "import piperine\ndesign = piperine.load({path:?})\n"
+                );
+                let script_cstr = CString::new(script)
+                    .map_err(|_| pyo3::exceptions::PyValueError::new_err("nul bytes"))?;
+                py.run(&script_cstr, None, None)?;
+                format!("Piperine Python — `design` loaded from {path} (Ctrl-D to exit)")
+            }
+            None => {
+                py.run(c"import piperine", None, None)?;
+                "Piperine Python — `import piperine` ready (Ctrl-D to exit)".to_string()
+            }
+        };
+
+        // Start the interactive REPL, sharing __main__'s namespace so the
+        // pre-loaded `design` / `piperine` are visible and variables persist.
+        let repl = format!(
+            "import code, __main__\ncode.interact(banner={banner:?}, local=__main__.__dict__)\n"
+        );
+        let repl_cstr = CString::new(repl)
+            .map_err(|_| pyo3::exceptions::PyValueError::new_err("nul bytes"))?;
+        py.run(&repl_cstr, None, None)?;
+        Ok(())
+    })
+}

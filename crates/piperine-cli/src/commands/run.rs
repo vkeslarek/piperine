@@ -1,7 +1,18 @@
 use piperine_bench::BenchRunner;
 use std::path::PathBuf;
 
-pub fn execute(entry: Option<String>, file: Option<String>) {
+pub fn execute(entry: Option<String>, file: Option<String>, interactive: bool) {
+    // Interactive Python REPL: `piperine run -i [design.phdl]`.
+    // Pre-loads `import piperine`; with a `.phdl` arg, loads it as `design`.
+    if interactive {
+        let design_path = entry.as_deref().filter(|e| e.ends_with(".phdl"));
+        if let Err(e) = piperine_python::embed::run_interactive(design_path) {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     // Python script path: `piperine run foo.py` embeds CPython and runs the
     // script with `import piperine` available (PY-15 / spec AC16). Detected
     // by `.py` suffix on the positional `entry` arg so no extra flag is
