@@ -30,6 +30,8 @@ impl NgspiceHarness {
     /// ngspice's own defaults for DC node voltages (validation contract).
     const RELTOL: f64 = 1e-3;
     const ABSTOL_V: f64 = 1e-6;
+    /// Current abstol for sweep comparisons (A).
+    const ABSTOL_I: f64 = 1e-9;
 
     /// The harness for the `ngspice` binary on PATH, or `None` (skip).
     fn detect() -> Option<Self> {
@@ -161,6 +163,105 @@ impl NgspiceHarness {
         .unwrap_or_else(|e| panic!("{e}"));
         eprintln!("PASS {circuit} ({} golden nodes)", golden.len());
     }
+
+    // ── DC sweeps via `wrdata` (SPICE-08) ───────────────────────────────────
+
+    /// Golden side of a sweep: run the `.cir` (whose `.control` block does
+    /// `dc … + wrdata <circuit>_sweep …`) in a scratch directory and parse
+    /// the exported ASCII columns.
+    fn ngspice_sweep(&self, circuit: &str) -> Result<Vec<(f64, f64)>, String> {
+        let cir = Self::circuits_dir().join(format!("{circuit}.cir"));
+        let scratch = std::env::temp_dir().join(format!(
+            "piperine-ngspice-{circuit}-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&scratch)
+            .map_err(|e| format!("{circuit}: scratch dir: {e}"))?;
+        let run = std::process::Command::new(&self.exe)
+            .arg("-b")
+            .arg(&cir)
+            .current_dir(&scratch)
+            .output()
+            .map_err(|e| format!("{circuit}: failed to run ngspice: {e}"));
+        let wrdata = scratch.join(format!("{circuit}_sweep"));
+        let content = run.and_then(|_| {
+            std::fs::read_to_string(&wrdata)
+                .map_err(|e| format!("{circuit}: ngspice wrote no wrdata file {}: {e}", wrdata.display()))
+        });
+        let _ = std::fs::remove_dir_all(&scratch);
+        Self::parse_wrdata(circuit, &content?)
+    }
+
+    /// Strict `wrdata` parser: every non-empty line must be exactly
+    /// `sweep_value  value` (two floats); anything else fails loud.
+    fn parse_wrdata(circuit: &str, content: &str) -> Result<Vec<(f64, f64)>, String> {
+        let mut points = Vec::new();
+        for line in content.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            let [x, y] = cols.as_slice() else {
+                return Err(format!(
+                    "{circuit}: malformed wrdata line (expected 2 columns): `{line}`"
+                ));
+            };
+            let parse = |s: &str| {
+                s.parse::<f64>()
+                    .map_err(|e| format!("{circuit}: unparseable wrdata number `{s}`: {e}"))
+            };
+            points.push((parse(x)?, parse(y)?));
+        }
+        if points.is_empty() {
+            return Err(format!("{circuit}: empty wrdata export — contract violation"));
+        }
+        Ok(points)
+    }
+
+    /// One full sweep golden case: ngspice `.dc`+`wrdata` vs a piperine
+    /// bench-loop (stage `source`.dc per point, DC solve, read the current
+    /// through the `(branch_a, branch_b)` two-terminal instance — the swept
+    /// source's force branch, matching ngspice's `i(v1)` sign convention).
+    fn sweep_case(&self, circuit: &str, source: &str, branch_a: &str, branch_b: &str, abstol: f64) {
+        let golden = self.ngspice_sweep(circuit).unwrap_or_else(|e| panic!("{e}"));
+        assert!(
+            golden.len() >= 20,
+            "{circuit}: sweep needs ≥20 points, got {}",
+            golden.len()
+        );
+
+        let phdl = Self::circuits_dir().join(format!("{circuit}.phdl"));
+        let src = std::fs::read_to_string(&phdl)
+            .unwrap_or_else(|e| panic!("{circuit}: {}: {e}", phdl.display()));
+        let design = piperine_lang::parse_and_elaborate(&src, &Self::headers_source_map())
+            .unwrap_or_else(|e| panic!("{circuit}: elaboration failed: {e:?}"));
+        let session = SimSession::new(design, "Top".to_string());
+
+        let mut mismatches = Vec::new();
+        for (x, i_golden) in &golden {
+            session.stage(source, "dc", Value::Real(*x));
+            let op = session
+                .run_op(&SolverConfig::default(), &Value::Unit)
+                .unwrap_or_else(|e| panic!("{circuit}: piperine DC solve failed at {source}={x}: {e}"));
+            let i_piperine = op
+                .i(&NetRef { name: branch_a.to_string() }, Some(&NetRef { name: branch_b.to_string() }))
+                .unwrap_or_else(|e| panic!("{circuit}: current readback failed at {source}={x}: {e:?}"));
+            if !Self::within_tolerance(*i_golden, i_piperine, abstol) {
+                mismatches.push(format!(
+                    "    {source}={x:+.4e}: i ngspice={i_golden:+.6e}  piperine={i_piperine:+.6e}  Δ={:.3e}",
+                    (i_golden - i_piperine).abs()
+                ));
+            }
+        }
+        assert!(
+            mismatches.is_empty(),
+            "{circuit}: {}/{} sweep point(s) out of tolerance:\n{}",
+            mismatches.len(),
+            golden.len(),
+            mismatches.join("\n")
+        );
+        eprintln!("PASS {circuit} ({} sweep points)", golden.len());
+    }
 }
 
 /// Run one OP circuit against live ngspice, or skip (and pass) without it.
@@ -216,6 +317,21 @@ fn ngspice_bjt_ce() {
 #[ignore = "fixed in T7-T10 (BJT mirror DC convergence — SPICE-13)"]
 fn ngspice_bjt_mirror() {
     ngspice_op_case("bjt_mirror");
+}
+
+// ── DC sweep circuits (SPICE-08) ────────────────────────────────────────────
+
+/// Diode I–V (forward + reverse, 37 points): ngspice `.dc` + `wrdata` export
+/// vs piperine staging `v1.dc` per point — the source branch current must
+/// match within reltol 1e-3 + abstol 1e-9 A.
+#[test]
+fn ngspice_diode_iv_sweep() {
+    match NgspiceHarness::detect() {
+        Some(harness) => {
+            harness.sweep_case("diode_iv", "v1", "vin", "gnd", NgspiceHarness::ABSTOL_I)
+        }
+        None => eprintln!("SKIP diode_iv: ngspice not on PATH"),
+    }
 }
 
 // ── Harness failure modes (SPICE-06/SPICE-07) ───────────────────────────────
@@ -277,6 +393,25 @@ fn ngspice_tolerance_contract() {
     // Near zero the abstol floor governs.
     assert!(NgspiceHarness::within_tolerance(0.0, 9.9e-7, NgspiceHarness::ABSTOL_V));
     assert!(!NgspiceHarness::within_tolerance(0.0, 1.1e-6, NgspiceHarness::ABSTOL_V));
+}
+
+/// SPICE-08 edge case: the wrdata parser is strict — malformed columns,
+/// unparseable numbers and an empty export all fail loud.
+#[test]
+fn ngspice_wrdata_parsed_strictly() {
+    let ok = NgspiceHarness::parse_wrdata("s", "-1.0e0  1.0e-12\n0.5 2e-3\n").unwrap();
+    assert_eq!(ok, vec![(-1.0, 1.0e-12), (0.5, 2e-3)]);
+
+    let err = NgspiceHarness::parse_wrdata("s", "-1.0e0 1.0e-12 3.0\n")
+        .expect_err("3 columns must fail");
+    assert!(err.contains("malformed wrdata line"), "{err}");
+
+    let err = NgspiceHarness::parse_wrdata("s", "-1.0e0 bogus\n")
+        .expect_err("non-numeric must fail");
+    assert!(err.contains("unparseable wrdata number"), "{err}");
+
+    let err = NgspiceHarness::parse_wrdata("s", "\n \n").expect_err("empty must fail");
+    assert!(err.contains("empty wrdata export"), "{err}");
 }
 
 /// Regression guard for the DC device-bypass fix (runs without ngspice):
