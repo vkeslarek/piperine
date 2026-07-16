@@ -7,8 +7,8 @@ use std::rc::Rc;
 
 use piperine_codegen::device::CircuitBuildInfo;
 use piperine_lang::eval::{Closure, EvalError, Object, Value};
-use piperine_solver::analog::{BranchIdentifier, NodeIdentifier};
-use piperine_solver::analysis::transient::TransientAnalysisResult;
+use piperine_solver::prelude::{BranchIdentifier, NodeIdentifier};
+use piperine_solver::prelude::TransientAnalysisResult;
 
 use crate::objects::{NetLookup, NetRef};
 
@@ -382,7 +382,7 @@ impl Trace {
     }
 
     /// Per-analysis convergence + performance statistics.
-    pub fn stats(&self) -> &piperine_solver::result::SolverStats {
+    pub fn stats(&self) -> &piperine_solver::abi::SolverStats {
         &self.result.stats
     }
 
@@ -401,7 +401,7 @@ impl Trace {
     /// typed seam for the Python binding (PY-07).
     pub fn v(&self, a: &NetRef, b: Option<&NetRef>) -> Result<Waveform, EvalError> {
         if let Some(&idx) = self.info.digital_nets.get(&a.name) {
-            use piperine_solver::digital::LogicValue;
+            use piperine_solver::prelude::LogicValue;
             let points = self
                 .result
                 .iter()
@@ -646,7 +646,7 @@ impl Object for ComplexWaveform {
 /// The result of `$ac(cfg)` (bench spec §5/§6): a frequency sweep whose
 /// `.v`/`.i` read out complex waveforms.
 pub struct AcTrace {
-    result: piperine_solver::analysis::ac::AcAnalysisResult,
+    result: piperine_solver::prelude::AcAnalysisResult,
     info: Rc<CircuitBuildInfo>,
 }
 
@@ -657,7 +657,7 @@ impl std::fmt::Debug for AcTrace {
 }
 
 impl AcTrace {
-    pub fn new(result: piperine_solver::analysis::ac::AcAnalysisResult, info: Rc<CircuitBuildInfo>) -> Self {
+    pub fn new(result: piperine_solver::prelude::AcAnalysisResult, info: Rc<CircuitBuildInfo>) -> Self {
         Self { result, info }
     }
 
@@ -733,7 +733,7 @@ impl Object for AcTrace {
 /// The result of `$noise(out, cfg)` (bench spec §5/§6): output-referred
 /// noise PSD over frequency plus the integrated total.
 pub struct NoiseTrace {
-    result: piperine_solver::analysis::noise::NoiseAnalysisResult,
+    result: piperine_solver::prelude::NoiseAnalysisResult,
 }
 
 impl std::fmt::Debug for NoiseTrace {
@@ -743,7 +743,7 @@ impl std::fmt::Debug for NoiseTrace {
 }
 
 impl NoiseTrace {
-    pub fn new(result: piperine_solver::analysis::noise::NoiseAnalysisResult) -> Self {
+    pub fn new(result: piperine_solver::prelude::NoiseAnalysisResult) -> Self {
         Self { result }
     }
 

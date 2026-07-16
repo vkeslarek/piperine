@@ -12,7 +12,7 @@ pub enum BenchError {
     #[error("codegen error: {0}")]
     Codegen(#[from] piperine_codegen::CodegenError),
     #[error("solver error: {0}")]
-    Solver(#[from] piperine_solver::error::Error),
+    Solver(#[from] piperine_solver::prelude::Error),
     #[error("{0}")]
     Measurement(String),
     #[error("plugin: {0}")]

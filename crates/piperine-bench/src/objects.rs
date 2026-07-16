@@ -8,8 +8,8 @@ use std::rc::Rc;
 
 use piperine_codegen::device::CircuitBuildInfo;
 use piperine_lang::eval::{EvalError, Object, Value};
-use piperine_solver::analog::{BranchIdentifier, NodeIdentifier};
-use piperine_solver::analysis::dc::DcAnalysisResult;
+use piperine_solver::prelude::{BranchIdentifier, NodeIdentifier};
+use piperine_solver::prelude::DcAnalysisResult;
 
 /// A resolved top-level net (piperine-bench/docs/SPEC.md §3 bare-name resolution). The
 /// argument type `.v`/`.i` expect.
@@ -189,7 +189,7 @@ impl OpResult {
     }
 
     /// Per-analysis convergence + performance statistics.
-    pub fn stats(&self) -> &piperine_solver::result::SolverStats {
+    pub fn stats(&self) -> &piperine_solver::abi::SolverStats {
         &self.dc.stats
     }
 

@@ -8,7 +8,7 @@ use std::rc::Rc;
 use piperine_codegen::device::CircuitCompiler;
 use piperine_lang::eval::Value;
 use piperine_lang::Design;
-use piperine_solver::solver::{Context, Policy};
+use piperine_solver::prelude::{Context, Policy};
 
 use crate::error::BenchError;
 use crate::objects::OpResult;
@@ -28,7 +28,7 @@ pub struct SolverConfig {
 
 impl Default for SolverConfig {
     fn default() -> Self {
-        let tol = piperine_solver::solver::Tolerances::default();
+        let tol = piperine_solver::prelude::Tolerances::default();
         let policy = Policy::default();
         Self {
             temperature: tol.temperature,
@@ -44,7 +44,7 @@ impl Default for SolverConfig {
 impl SolverConfig {
     fn to_context(&self) -> Context {
         Context {
-            tolerances: piperine_solver::solver::Tolerances {
+            tolerances: piperine_solver::prelude::Tolerances {
                 temperature: self.temperature,
                 reltol: self.reltol,
                 abstol: self.abstol,
@@ -135,7 +135,7 @@ impl SimSession {
     /// config) — nothing here is remembered between calls. `nodeset`
     /// (piperine-bench/docs/SPEC.md §5.1 `OpConfig.nodeset`) seeds the Newton initial
     /// guess.
-    fn build_circuit(&self) -> Result<(piperine_solver::core::circuit::CircuitInstance, piperine_codegen::device::CircuitBuildInfo), BenchError> {
+    fn build_circuit(&self) -> Result<(piperine_solver::prelude::CircuitInstance, piperine_codegen::device::CircuitBuildInfo), BenchError> {
         // Hook 3 (`transform_design`): plugins stage their mutations, then
         // the pure re-elaboration below consumes them like any bench write.
         if let Some(p) = &self.plugins {
@@ -170,7 +170,7 @@ impl SimSession {
             .nets
             .iter()
             .map(|(name, node)| {
-                let v = if *node == piperine_solver::analog::NodeIdentifier::Gnd {
+                let v = if *node == piperine_solver::prelude::NodeIdentifier::Gnd {
                     0.0
                 } else {
                     result.get_node(node).unwrap_or(0.0)
@@ -186,9 +186,9 @@ impl SimSession {
 /// an assertion on an undriven net fails loud, never silently passes).
 fn snapshot_digital(
         info: &piperine_codegen::device::CircuitBuildInfo,
-    circuit: &piperine_solver::core::circuit::CircuitInstance,
+    circuit: &piperine_solver::prelude::CircuitInstance,
 ) -> std::collections::HashMap<String, f64> {
-    use piperine_solver::digital::LogicValue;
+    use piperine_solver::prelude::LogicValue;
     info.digital_nets
         .iter()
         .map(|(name, &idx)| {
@@ -226,9 +226,9 @@ fn snapshot_digital(
             // stop/1000. Output interpolation onto the print grid is a
             // follow-up (ROADMAP).
             Some(dt) if dt > 0.0 => {
-                piperine_solver::analysis::transient::TransientAnalysisOptions::new(stop, dt)
+                piperine_solver::prelude::TransientAnalysisOptions::new(stop, dt)
             }
-            _ => piperine_solver::analysis::transient::TransientAnalysisOptions::new(stop, stop * 1e-3),
+            _ => piperine_solver::prelude::TransientAnalysisOptions::new(stop, stop * 1e-3),
         }
         .with_record_from(start);
         let mut solver = circuit.transient(opts, config.to_context())?;
@@ -250,7 +250,7 @@ fn snapshot_digital(
         config: &SolverConfig,
     ) -> Result<AcTrace, BenchError> {
         let (mut circuit, info) = self.build_circuit()?;
-        let opts = piperine_solver::analysis::ac::AcSweepAnalysisOptions {
+        let opts = piperine_solver::prelude::AcSweepAnalysisOptions {
             start_frequency: fstart,
             stop_frequency: fstop,
             steps: points,
@@ -280,8 +280,8 @@ fn snapshot_digital(
         let (mut circuit, info) = self.build_circuit()?;
         let out = resolve_net(&info, out)?;
         let reference = resolve_net(&info, reference)?;
-        let opts = piperine_solver::analysis::noise::NoiseAnalysisOptions {
-            sweep_options: piperine_solver::analysis::ac::AcSweepAnalysisOptions {
+        let opts = piperine_solver::prelude::NoiseAnalysisOptions {
+            sweep_options: piperine_solver::prelude::AcSweepAnalysisOptions {
                 start_frequency: fstart,
                 stop_frequency: fstop,
                 steps: points,
@@ -302,7 +302,7 @@ fn snapshot_digital(
 fn resolve_net(
     info: &piperine_codegen::device::CircuitBuildInfo,
     name: &str,
-) -> Result<piperine_solver::analog::NodeIdentifier, BenchError> {
+) -> Result<piperine_solver::prelude::NodeIdentifier, BenchError> {
     use crate::objects::NetLookup;
     info.net_node(name)
         .ok_or_else(|| BenchError::Measurement(format!("net `{name}` is not addressable")))
@@ -315,9 +315,9 @@ fn resolve_net(
 fn build_ivs(
     info: &piperine_codegen::device::CircuitBuildInfo,
     map: &Value,
-    netlist: &piperine_solver::analog::Netlist,
-) -> Result<Vec<piperine_solver::math::iv::InitialValue<piperine_solver::analog::AnalogReference, f64>>, BenchError> {
-    use piperine_solver::analog::AnalogVariable;
+    netlist: &piperine_solver::prelude::Netlist,
+) -> Result<Vec<piperine_solver::math::iv::InitialValue<piperine_solver::abi::AnalogReference, f64>>, BenchError> {
+    use piperine_solver::abi::AnalogVariable;
     use piperine_solver::math::iv::InitialValue;
     let mut ivs = Vec::new();
     if let Value::Map(entries) = map {
