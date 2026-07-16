@@ -7,11 +7,15 @@
 //! `build.rs` + `include_bytes!`) so the end user doesn't need a `target/`
 //! dir or cargo — just `piperine new` and the venv is ready.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(bundled_python)]
+use std::path::PathBuf;
+#[cfg(bundled_python)]
 use std::process::Command;
 
 /// The typed pure-Python facade — the same source the embed path materializes
 /// (see `piperine-python/src/embed.rs`). Embedded so there's no file drift.
+#[cfg(bundled_python)]
 const FACADE_SRC: &str = include_str!("../../../piperine-python/python/piperine/__init__.py");
 
 /// The pre-built native extension, embedded at build time by `build.rs`.
@@ -30,12 +34,21 @@ pub fn setup(project_path: &Path) {
 
     #[cfg(not(bundled_python))]
     {
+        // The `.so` wasn't available when the CLI was compiled — the PHDL
+        // project is still valid without Python, so instruct and skip.
+        let _ = project_path;
         eprintln!("  ! This piperine binary was built without a bundled _piperine.so.");
         eprintln!("    Rebuild with: cargo build -p piperine-python --features extension-module");
         eprintln!("    Then rebuild the CLI. Skipping Python venv setup.");
-        return;
     }
 
+    #[cfg(bundled_python)]
+    setup_bundled(project_path);
+}
+
+/// The bundled-extension path: venv + native extension + facade.
+#[cfg(bundled_python)]
+fn setup_bundled(project_path: &Path) {
     let venv_path = project_path.join(".venv");
     let site_packages = match create_venv(project_path, &venv_path) {
         Some(sp) => sp,
@@ -63,6 +76,7 @@ pub fn setup(project_path: &Path) {
 }
 
 /// Create a `.venv/` in the project and return the path to its site-packages.
+#[cfg(bundled_python)]
 fn create_venv(project_path: &Path, venv_path: &Path) -> Option<PathBuf> {
     if venv_path.exists() {
         println!("  • .venv already exists — reusing");
@@ -94,17 +108,16 @@ fn create_venv(project_path: &Path, venv_path: &Path) -> Option<PathBuf> {
 }
 
 /// Write the bundled `.so` as `_piperine.so` into site-packages.
+#[cfg(bundled_python)]
 fn install_extension(site_packages: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(site_packages)?;
-    #[cfg(bundled_python)]
-    {
-        std::fs::write(site_packages.join("_piperine.so"), NATIVE_SO)?;
-        println!("  ✓ installed _piperine.so ({} KB)", NATIVE_SO.len() / 1024);
-    }
+    std::fs::write(site_packages.join("_piperine.so"), NATIVE_SO)?;
+    println!("  ✓ installed _piperine.so ({} KB)", NATIVE_SO.len() / 1024);
     Ok(())
 }
 
 /// Write the typed facade `piperine/__init__.py` into site-packages.
+#[cfg(bundled_python)]
 fn install_facade(site_packages: &Path) -> std::io::Result<()> {
     let pkg_dir = site_packages.join("piperine");
     std::fs::create_dir_all(&pkg_dir)?;

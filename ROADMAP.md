@@ -120,21 +120,15 @@ Spec: `.specs/features/solver-trbdf2-engine/`.
 
 
 
-- **Newton convergence checks only the voltage step, not the current residual — HIGH
-  PRIORITY (found 2026-07-12 by the ngspice cross-validation harness).**
-  `Context::has_converged` (`piperine-solver/src/solver/mod.rs`) accepts convergence when
-  `|Δv| ≤ reltol·|v| + vntol` for every node and checks **no KCL/current residual**. For a
-  stiff exponential device the damped Newton step goes small while the current imbalance is
-  still large (a big residual maps through the large device conductance to a tiny `Δv`), so
-  the solver stops at a **non-solution**. This is why the BJT settles in the active region
-  where ngspice saturates (its reported Vbe violates base-node KCL), and why the MOS1 drain
-  current is ~1.5× off. Fix: add the current-residual half of the test (ngspice `NIconvTest`:
-  per node, `|i − i_linear| ≤ reltol·max(|i|,|i_linear|) + abstol`) — re-evaluate the device
-  currents at the candidate solution and require the node imbalance below tolerance, ANDed
-  with the existing voltage-step check. Validate with
-  the in-repo ngspice harness (`cargo test -p piperine-bench ngspice`; diode/passives
-  already match; the transistor circuits are the regression targets). This is the gate for
-  transistor ngspice parity.
+- **Newton convergence checks only the voltage step, not the current residual — DONE.**
+  The current-residual half landed 2026-07-12 (`NIconvTest` — see SOLVER_GAPS §2).
+  **Transistor ngspice parity achieved 2026-07-16 (spice-stdlib T7–T10):** the remaining
+  MOS1 (~1.5× Id / NaN), JFET (~15 mV) and BJT (saturation / mirror non-convergence)
+  discrepancies were all the **conditional-force penalty pattern** in the models
+  (`V(x,xp) <- 0.0` under `if` lowered to a 1e12 penalty conductance) — fixed by exact
+  `V = R·I` series-impedance forces (`FlatForce::current_terms`, stamped on the branch
+  current column in DC/AC/tran). All 8 validation circuits plus Id–Vgs/Id–Vds sweep
+  goldens are green with zero `#[ignore]` (`cargo test -p piperine-bench ngspice`).
 - `transition`, `laplace_*`, `zi_*` analog operators — recognized in the IR, fail loud at
   codegen. Each is its own companion-model follow-up.
 - **`table(x, xs, ys, mode)` operator (spec Part V §2) — not registered at all.** The

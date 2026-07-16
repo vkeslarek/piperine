@@ -582,20 +582,21 @@ every API is a contract or a capability, the code reads at a glance).
   companion stamps and ANDs a per-row tolerance (`abstol` for node rows,
   `vntol` for branch rows, plus `reltol·scale`) into the convergence test.
 
-- [~] **Source stepping — PARTIAL (implemented 2026-07-12; BJT amplifier
-  blocked on the BJT *model*, not the homotopy).**
-  `solver/dc.rs::solve_source_stepping` ramps `Context.src_scale` 0 → 1
-  (forced-voltage values scale in `force_stamps`) with a 1 µS knee shunt that
-  is then itself ramped out — a nested source+gmin homotopy. It converges more
-  circuits, but the BJT common-emitter (`validation/bjt_ce`) still stalls at
-  the exponential turn-on knee (scale ≈ 0.375, base ≈ 0.75 V) regardless of
-  the homotopy. **Root cause is the BJT model, not the solver:** the pnjlim
-  limiter is not engaging (`vnew == vlim`, i.e. never clamps — its `vcrit`
-  seed is too high for `is=1e-16`), so the base-emitter exponential jumps
-  uncontrolled and Newton diverges through the knee. Fix belongs with the BJT
-  model work (pnjlim `vcrit` / limiting engagement) — pairs with the MOS1
-  model bug. The homotopy machinery is in place and correct; it just needs a
-  working device limiter under it.
+- [x] **Source stepping — DONE (2026-07-16, spice-stdlib T9).**
+  `SourceStepping` (`solver/convergence.rs`) ramps the forced-source scale
+  0 → 1 with back-off and a 1 µS knee shunt that is itself ramped out —
+  ngspice `cktop.c` semantics, unit-tested (ramp schedule, back-off,
+  give-up, warm-start chain). Independent **current** sources now ramp too:
+  `SimCtx.srcfact` (ngspice `CKTsrcFact`) is exposed to compiled models as
+  `$simparam("sourceScaleFactor")` and the spice `isrc` model scales its DC
+  injection by it; forced voltages scale at stamp time. The BJT circuits
+  that motivated this turned out to be blocked by the **conditional-force
+  penalty pattern** in the models (`V(x,xp) <- 0.0` under `if` → a 1e12
+  penalty stamp), not the homotopy: bjt/mos1/jfet/dio now force the exact
+  `V = R·I` series drop (series-impedance force terms,
+  `FlatForce::current_terms`) and `bjt_ce`/`bjt_mirror`/`nmos_*`/`jfet_*`
+  all match ngspice within tolerance (`ngspice_validation.rs`, zero
+  ignores).
 
 - [x] **gmin stepping — DONE (2026-07-11).** `solver/dc.rs::solve_gmin_stepping`
   — node-to-ground conductance ramped 0.1 S → 0 with adaptive back-off, on

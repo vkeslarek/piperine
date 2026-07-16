@@ -9,7 +9,33 @@ by filesystem path. If the skill cannot be activated, STOP and tell the user.
 ---
 
 **Design**: `.specs/features/spice-stdlib/design.md`
-**Status**: In Progress — Phases 1–2 (T1–T6) DONE, batch 1 (2026-07-16)
+**Status**: DONE — Phases 1–3 (T1–T12) complete, batch 2 (2026-07-16)
+
+## Batch 2 results (T7–T12)
+
+- T7 `271454b` fix(spice): mos1 drain current matches ngspice — root cause was
+  a JIT gap: bare `I(a,b)` in a force value read as a branch *voltage*, so the
+  diode-style `V = R·I` fix collapsed to a short. New series-impedance force
+  terms (`FlatForce::current_terms`, mirrors flux machinery) stamp `−R` on the
+  branch-current column in DC/AC/tran. + nmos_id_vgs/nmos_id_vds sweeps.
+- T8 `5293274` fix(spice): jfet model matches ngspice (same penalty-force
+  class; equations were already line-faithful) + jfet_id_vds sweep.
+- T9 `b4ace22` feat(solver): ngspice-style source stepping homotopy —
+  `SimCtx.srcfact`/`$simparam("sourceScaleFactor")` scales isrc DC injection
+  (cktop.c CKTsrcFact); SourceStepping unit tests (ramp/back-off/give-up/
+  warm-start). bjt_ce's actual blocker was the penalty-force pattern in
+  bjt.phdl (RC/RE/RB) — fixed there; converges to Vce ≈ 0.111 V.
+- T10 `c7b21c1` fix(solver): bjt current mirror dc convergence — un-ignore
+  only; the T9 model fix already made it converge (no homotopy composition
+  needed).
+- T12 `e70ddcb` feat(solver): compile-once parameter sweeps (restamp, no
+  re-JIT) — `CircuitInstance::set_element_param` + `SimSession::run_op_sweep`
+  + `AnalogKernel::compile_count`; harness sweeps rewired (~30 s → ~1.5 s);
+  MD-18 enforcement test in its own test binary.
+- T11: piperine-cli warnings fixed (cfg-split `python_setup.rs`); SOLVER_GAPS
+  source-stepping entry and ROADMAP convergence entry checked off; zero
+  `#[ignore]` in the harness.
+- Workspace: 445 passed, 0 failed (baseline 432); build zero warnings.
 
 ## Batch 1 results (T1–T6)
 
