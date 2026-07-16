@@ -23,7 +23,7 @@ pub use crate::digital::{DigitalNet, LogicValue};
 
 // ── Run configuration ──────────────────────────────────────────────────────
 pub use crate::analysis::ac::AcSweepAnalysisOptions;
-pub use crate::analysis::noise::NoiseAnalysisOptions;
+pub use crate::analysis::noise::{NoiseAnalysisOptions, NoiseKind};
 pub use crate::analysis::tf::TransferFunctionAnalysisOptions;
 pub use crate::analysis::transient::TransientAnalysisOptions;
 pub use crate::math::integration::IntegrationMethod;

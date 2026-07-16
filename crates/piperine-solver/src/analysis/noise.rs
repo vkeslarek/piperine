@@ -4,9 +4,23 @@ use crate::prelude::DcAnalysisResult;
 use crate::analog::{AnalogReference, NodeIdentifier};
 use crate::math::unit::AmpereSquaredSecond;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NoiseKind { Thermal, Shot, Flicker, Other }
+
 pub struct Noise {
     pub terminals: (AnalogReference, AnalogReference),
     pub value: AmpereSquaredSecond,
+    pub name: Option<String>,
+    pub kind: NoiseKind,
+}
+
+impl Noise {
+    pub fn new(terminals: (AnalogReference, AnalogReference), value: AmpereSquaredSecond) -> Self {
+        Self { terminals, value, name: None, kind: NoiseKind::Other }
+    }
+    pub fn named(mut self, name: impl Into<String>, kind: NoiseKind) -> Self {
+        self.name = Some(name.into()); self.kind = kind; self
+    }
 }
 
 pub trait NoiseSource: AcAnalysis + DcAnalysis {
@@ -31,4 +45,27 @@ pub struct NoiseAnalysisOptions {
 #[derive(Debug, Clone)]
 pub struct NoiseContext {
     pub options: NoiseAnalysisOptions,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn noise_new_defaults() {
+        let n1 = AnalogReference::ground();
+        let n2 = AnalogReference::ground();
+        let noise = Noise::new((n1.clone(), n2.clone()), 1.0);
+        assert_eq!(noise.name, None);
+        assert_eq!(noise.kind, NoiseKind::Other);
+    }
+    
+    #[test]
+    fn noise_named() {
+        let n1 = AnalogReference::ground();
+        let n2 = AnalogReference::ground();
+        let noise = Noise::new((n1.clone(), n2.clone()), 1.0).named("rn", NoiseKind::Thermal);
+        assert_eq!(noise.name, Some("rn".to_string()));
+        assert_eq!(noise.kind, NoiseKind::Thermal);
+    }
 }

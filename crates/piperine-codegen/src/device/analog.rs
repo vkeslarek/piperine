@@ -1109,10 +1109,7 @@ impl AnalogInstance {
                 // reason to drop the source (mirrors the OSDI device).
                 let plus = plus.clone().unwrap_or_else(AnalogReference::ground);
                 let minus = minus.clone().unwrap_or_else(AnalogReference::ground);
-                (value > 0.0).then_some(Noise {
-                    terminals: (plus, minus),
-                    value,
-                })
+                (value > 0.0).then_some(Noise::new((plus, minus), value))
             })
             .collect()
     }

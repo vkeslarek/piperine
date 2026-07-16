@@ -8,7 +8,6 @@ pub use crate::core::introspect::{
     Bounds, Direction, Domain, Invalidation, ParamDescriptor, ParamError,
     ParamScope, QueryDescriptor, QueryKind, TerminalDescriptor,
     Value, ValueKind, SignConvention,
-    // TODO(T11): NoiseKind
 };
 // Stamping + naming
 pub use crate::math::linear::{AsIndex, Stamp};
@@ -21,7 +20,7 @@ pub use crate::math::circular_array::CircularArrayBuffer2;
 pub use crate::analysis::ac::AcAnalysisContext;
 pub use crate::analysis::dc::DcAnalysisState;
 pub use crate::prelude::DcAnalysisResult;
-pub use crate::analysis::noise::Noise;
+pub use crate::analysis::noise::{Noise, NoiseKind};
 pub use crate::analysis::transient::{
     TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisState,
 };
