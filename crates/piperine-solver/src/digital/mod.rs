@@ -1,3 +1,7 @@
+//! The event-driven digital engine: events and logic values (`events.rs`),
+//! the two-phase delta-cycle scheduler (`scheduler.rs`), and the evaluation
+//! interface elements implement (`interface.rs`).
+
 pub mod events;
 pub mod interface;
 pub mod scheduler;

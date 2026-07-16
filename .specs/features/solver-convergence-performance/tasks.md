@@ -7,7 +7,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/solver-convergence-performance/design.md`
-**Status**: Draft
+**Status**: Delivered (13/13, 2026-07-16)
 
 ---
 

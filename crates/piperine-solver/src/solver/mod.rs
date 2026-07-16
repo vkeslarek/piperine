@@ -1,3 +1,10 @@
+//! Analysis drivers and shared run configuration. `Context` (immutable
+//! `Tolerances`) and `Policy` (per-analysis convergence tunables, MD-04)
+//! live here; one driver per analysis (`dc.rs`, `ac.rs`, `transient.rs`,
+//! `noise.rs`, `tf.rs`); the homotopy/Newton/stepper strategies compose in
+//! `convergence.rs`. The data contracts these drivers exchange with
+//! elements live in `crate::analysis`.
+
 use crate::analog::Netlist;
 use crate::math::integration::IntegrationMethod;
 use crate::math::unit::{Ohm, Siemens};

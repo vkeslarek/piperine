@@ -33,7 +33,8 @@ analysis-specific tunables (`dt_min`, `dt_max`, `adaptive`, sweep config, …).
 step bounds, retry counters) is owned by the active `ConvergencePlan` and
 its strategies — never by the shared `Context`.
 
-**Status:** Locked. Homotopy state extracted; full split pending.
+**Status:** Done (solver-convergence-performance T11). `Context` is
+tolerances-only; `Policy` lives on each analysis solver; time is explicit.
 
 ### MD-05: Strategy composition
 The analysis state machine (setup→op→resume→accepted→rejected→restart) is
@@ -189,35 +190,48 @@ All 17 requirements (PY-01..PY-17) verified. Spec/context/design/tasks in
 | `solver-convergence-aids` | Circuit-wide `gshunt`; `fetlim`/`limvds` | Spec only |
 | `solver-commit-rollback` | `Element::checkpoint/rollback/commit` lifecycle hooks | Spec only |
 
-### Feature C — `solver-convergence-performance` (IN PROGRESS — 9/13 tasks done)
+### Feature C — `solver-convergence-performance` (DELIVERED — 13/13 tasks)
 
 Spec/design/tasks in `.specs/features/solver-convergence-performance/`.
-**Delivered (P1 + P2 quick wins + P3 alpha removal):**
-- `SolverStats` struct on `DcAnalysisResult` + `TransientAnalysisResult`
-  (newton_iterations, steps_accepted/rejected, dt_min/max, bypass counters,
-  timing — CP-01..03)
-- User tolerances (`max_iter`, `dc_damp_tolerance`) reach the Newton loop via
-  `Policy::from_context` — was silently `Policy::default()` (audit C1) (CP-04,05)
-- Python `op.stats` / `trace.stats` exposure — all 13 fields (CP-09)
-- Zero-alloc matrix reuse: `LinearSystem::reset()` replaces per-iteration
-  `L::new()` (audit P1) (CP-06)
-- Dead code deleted: `apply_limit`, `Policy::damp_update` (CP-07)
-- `dt_min` floor hit surfaces `tracing::warn!` (audit C2) (CP-08)
-- `suggest_transient_step` consulted by the transient driver (audit P5) (CP-13)
-- `gshunt` circuit-wide diagonal conductance (CP-14)
-- Dead `alpha` parameter removed from `NonLinearSystem` trait (audit A3)
+**Delivered (all phases, 2026-07-16):**
+- `SolverStats` fully wired: newton_iterations (plan total incl. homotopy),
+  steps accepted/rejected, `dt_min_floor_hits`, dt range, bypass counters,
+  `homotopy_strategy`/`homotopy_levels` (via `PlanOutcome`),
+  `assembly_time_ns`/`solve_time_ns` (CP-01..03, CP-08)
+- User tolerances reach the Newton loop (CP-04,05); Python `op.stats` /
+  `trace.stats` (CP-09)
+- Zero-alloc Newton loop: `reset()` + hoisted `residual`/`scale` fields +
+  shared `compute_residual` (CP-06); Milne `node_indices` hoisted out of the
+  step loop
+- Device bypass (solution-delta stamp cache) hardened: cache invalidated on
+  gmin/src_scale changes + digital settle; suppressed while limiting;
+  build-into-cache buffer reuse (CP-11)
+- `ConvergenceHint{net, limited_value}` + `Element::convergence_hint` — the
+  solver applies structured limits to the guess pre-convergence-test (CP-12)
+- `suggest_transient_step` consulted (CP-13); `gshunt` (CP-14)
+- First-order Newton predictor: `set_predictor_ratio` one-shot seed, armed by
+  the transient driver for the TR stage, gated off after rejections and
+  breakpoint landings (CP-16)
+- Tolerances/Policy split (MD-04 **done**): `Context = {Tolerances}` only;
+  `Policy{max_iter, dc_damp_tolerance}` owned per driver (`pub policy` on
+  Dc/Transient/Ac solvers); `Context.time` removed — time is an explicit
+  argument (`accept_timestep(state, t, …)`, `accept_and_run_digital(sol, t)`)
+  (CP-17)
+- Dead code: `alpha`, `apply_limit` overrides, `Policy::damp_update`,
+  `DcContext` stub, `util.rs` (`AsAny` + `map!` macro — MD-13 rules 4+5)
+- Newton unsafe removed: `NonLinearSystem::netlist()` replaces the
+  raw-pointer aliasing workaround in dc/transient; convergence math deduped
+  onto `Tolerances::{has_converged, residual_test}`
 
-**Remaining (deferred to follow-up):**
-- T7: Device bypass (`BYPASS_OK`) — requires per-device terminal tracking
-  (multi-day). The capability is declared; the solver doesn't consult it yet.
-- T8: Convergence hint (evolve `limiting_active` → structured) — requires
-  Element trait evolution + codegen changes.
-- T11: Tolerances/Policy split (move mutable fields off Context) — P3
-  architecture, larger refactor (CP-17).
-- T12: Newton predictor (first-order extrapolation) — P3, moderate (CP-16).
+**Known perf lever (not a regression):** DC midpoint damping
+(`dc_damp_tolerance = 0.5`, global L2) costs ~4 extra Newton iterations on
+trivial linear circuits (divider converges in 6, not 2). Next candidate:
+damp only when limiting/oscillation is detected.
 
 ### Test baseline
 - `cargo build --workspace` — zero warnings.
-- `cargo test --workspace` — green.
+- `cargo test --workspace` — 391 green.
 - 21/21 `examples/*.py` pass via `piperine run`.
-- `op.stats.newton_iterations > 0` verified on the divider.
+- Stats validated on real runs: divider op ni=6 (plain Newton), clipper op
+  ni=75, clipper tran 2 iters/step (1/phase — floor), timing/homotopy fields
+  populated.

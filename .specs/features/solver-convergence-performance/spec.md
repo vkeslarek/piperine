@@ -199,28 +199,28 @@ average.
 
 | ID | Story | Status |
 |----|-------|--------|
-| CP-01 | P1 AC1 — DC SolverStats (iterations, homotopy, timing) | Pending |
-| CP-02 | P1 AC2 — Transient SolverStats (steps, rejections, dt range) | Pending |
-| CP-03 | P1 AC3 — bypass hit/miss counters | Pending |
-| CP-04 | P1 AC4 — dc_damp_tolerance reaches Newton | Pending |
-| CP-05 | P1 AC5 — max_iter reaches Newton | Pending |
-| CP-06 | P1 AC6 — zero per-iter heap allocs | Pending |
-| CP-07 | P1 AC7 — dead apply_limit deleted | Pending |
-| CP-08 | P1 AC8 — dt_min floor hit counted + warned | Pending |
-| CP-09 | P1 AC9 — Python exposes SolverStats | Pending |
-| CP-10 | P1 AC10 — tests green + identical results | Pending |
-| CP-11 | P2 AC7 — device bypass (BYPASS_OK) | Pending |
-| CP-12 | P2 AC8 — convergence_hint replaces boolean | Pending |
-| CP-13 | P2 AC9 — suggest_transient_step consulted | Pending |
-| CP-14 | P2 AC10 — gshunt diagonal | Pending |
-| CP-15 | P2 AC11 — tests green | Pending |
-| CP-16 | P3 AC12 — Newton predictor | Pending |
-| CP-17 | P3 AC13 — Tolerances/Policy split | Pending |
-| CP-18 | P3 AC14 — dead alpha removed | Pending |
-| CP-19 | P3 AC15 — no free fns (MD-13) | Pending |
-| CP-20 | P3 AC16 — tests green + identical results | Pending |
+| CP-01 | P1 AC1 — DC SolverStats (iterations, homotopy, timing) | Verified |
+| CP-02 | P1 AC2 — Transient SolverStats (steps, rejections, dt range) | Verified |
+| CP-03 | P1 AC3 — bypass hit/miss counters | Verified |
+| CP-04 | P1 AC4 — dc_damp_tolerance reaches Newton | Verified |
+| CP-05 | P1 AC5 — max_iter reaches Newton | Verified |
+| CP-06 | P1 AC6 — zero per-iter heap allocs | Verified |
+| CP-07 | P1 AC7 — dead apply_limit deleted | Verified |
+| CP-08 | P1 AC8 — dt_min floor hit counted + warned | Verified |
+| CP-09 | P1 AC9 — Python exposes SolverStats | Verified |
+| CP-10 | P1 AC10 — tests green + identical results | Verified |
+| CP-11 | P2 AC7 — device bypass (BYPASS_OK) | Verified |
+| CP-12 | P2 AC8 — convergence_hint replaces boolean | Verified |
+| CP-13 | P2 AC9 — suggest_transient_step consulted | Verified |
+| CP-14 | P2 AC10 — gshunt diagonal | Verified |
+| CP-15 | P2 AC11 — tests green | Verified |
+| CP-16 | P3 AC12 — Newton predictor | Verified |
+| CP-17 | P3 AC13 — Tolerances/Policy split | Verified |
+| CP-18 | P3 AC14 — dead alpha removed | Verified |
+| CP-19 | P3 AC15 — no free fns (MD-13) | Verified |
+| CP-20 | P3 AC16 — tests green + identical results | Verified |
 
-**Coverage:** 20 total, 0 mapped to tasks ⚠️
+**Coverage:** 20 total, 20 Verified ✅ (2026-07-16)
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
