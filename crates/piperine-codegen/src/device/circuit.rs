@@ -18,7 +18,7 @@ use piperine_solver::analog::{Netlist, NodeIdentifier};
 use piperine_solver::core::circuit::CircuitInstance;
 use piperine_solver::core::element::Element;
 use piperine_solver::digital::DigitalNet;
-use piperine_solver::digital::scheduler::DigitalState;
+use piperine_solver::digital::DigitalState;
 
 use crate::ir::{NodeId, ParamId};
 use crate::lower::pom::LoweredBody;

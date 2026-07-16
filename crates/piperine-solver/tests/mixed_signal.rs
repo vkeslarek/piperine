@@ -19,7 +19,7 @@ use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
 use piperine_solver::math::circular_array::CircularArrayBuffer2;
 use piperine_solver::math::linear::Stamp;
 use piperine_solver::solver::Context;
-use piperine_solver::digital::scheduler::DigitalState;
+use piperine_solver::digital::DigitalState;
 
 // ─────────────────────────────── Helpers ─────────────────────────────────────
 

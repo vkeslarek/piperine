@@ -76,7 +76,7 @@ impl Ord for DigitalEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::digital::scheduler::DigitalState;
+    use crate::digital::DigitalState;
     use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink};
     use crate::core::element::{Element, ElementCapabilities};
     use std::cmp::Reverse;

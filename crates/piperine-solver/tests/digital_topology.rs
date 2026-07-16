@@ -13,7 +13,7 @@ fn make_instance(title: &str) -> CircuitInstance {
 use piperine_solver::core::element::{Element, ElementCapabilities};
 use piperine_solver::digital::{LogicValue, DigitalNet, DigitalEvent};
 use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};
-use piperine_solver::digital::scheduler::{DigitalState, DigitalTopology};
+use piperine_solver::digital::{DigitalState, DigitalTopology};
 use piperine_solver::analysis::transient::TransientAnalysisOptions;
 use piperine_solver::solver::Context;
 
