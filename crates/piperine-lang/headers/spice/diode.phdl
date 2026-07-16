@@ -270,11 +270,14 @@ pub analog dio {
     // ════════════════════════════════════════════════════════════════════════
     //  §2  Series resistance  (dioload.c:422-428)
     // ════════════════════════════════════════════════════════════════════════
-    if (model.rs > 0.0) {
-        I(p, pp) <+ gspr * V(p, pp);
-    } else {
-        V(p, pp) <- 0.0;
-    }
+    // ngspice collapses the internal node when RS == 0 (diosetup.c); PHDL
+    // keeps the node and forces the series drop instead — `V = R·I` over the
+    // force's own branch is a series resistor, and R = 0 a perfect short.
+    // (A conditional `V(p,pp) <- 0` would lower to the JIT's penalty-
+    // conductance form, whose 1e12 stamp destroys current accuracy below
+    // ~1e-4 A — found by the diode_iv ngspice sweep.)
+    var rseries : Real = if (model.rs > 0.0) { 1.0 / gspr } else { 0.0 };
+    V(p, pp) <- rseries * I(p, pp);
 
     // ════════════════════════════════════════════════════════════════════════
     //  §3  Junction voltage  (dioload.c:148-191)
