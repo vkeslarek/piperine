@@ -7,15 +7,15 @@ use std::sync::Arc;
 
 use num_complex::Complex64;
 
-use piperine_solver::analog::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
-use piperine_solver::analysis::ac::AcAnalysisContext;
-use piperine_solver::analysis::dc::{DcAnalysisResult, DcAnalysisState};
-use piperine_solver::analysis::noise::Noise;
-use piperine_solver::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
-use piperine_solver::math::circular_array::CircularArrayBuffer2;
-use piperine_solver::math::integration::{TrBdf2, TrBdf2Phase};
-use piperine_solver::math::linear::{AsIndex, Stamp};
-use piperine_solver::solver::Context;
+use piperine_solver::abi::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
+use piperine_solver::abi::AcAnalysisContext;
+use piperine_solver::abi::{DcAnalysisResult, DcAnalysisState};
+use piperine_solver::abi::Noise;
+use piperine_solver::abi::{TransientAnalysisContext, TransientAnalysisState};
+use piperine_solver::abi::CircularArrayBuffer2;
+use piperine_solver::abi::{TrBdf2, TrBdf2Phase};
+use piperine_solver::abi::{AsIndex, Stamp};
+use piperine_solver::abi::Context;
 
 use crate::ir::{Analysis, CrossDir};
 use crate::jit::analog::{AnalogKernel, CompiledTrigger, RuntimeState};
@@ -825,7 +825,7 @@ impl AnalogInstance {
         &self,
         state_history: &TransientAnalysisState<'_>,
         time_history: &[f64],
-        method: piperine_solver::math::integration::IntegrationMethod,
+        method: piperine_solver::abi::IntegrationMethod,
         context: &Context,
     ) -> Option<f64> {
         if !self.kernel.has_reactive() || time_history.is_empty() {
@@ -1080,7 +1080,7 @@ impl AnalogInstance {
     pub fn noise_current_psd(
         &mut self,
         dc_point: &DcAnalysisResult,
-        ac_context: &piperine_solver::analysis::ac::AcAnalysisContext,
+        ac_context: &piperine_solver::abi::AcAnalysisContext,
     ) -> Vec<Noise> {
         let count = self.kernel.num_noise();
         if count == 0 {

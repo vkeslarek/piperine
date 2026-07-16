@@ -14,11 +14,11 @@ use std::sync::Arc;
 
 use piperine_lang::pom::{Design, Instance, Module};
 
-use piperine_solver::analog::{Netlist, NodeIdentifier};
-use piperine_solver::core::circuit::CircuitInstance;
-use piperine_solver::core::element::Element;
-use piperine_solver::digital::DigitalNet;
-use piperine_solver::digital::DigitalState;
+use piperine_solver::abi::{Netlist, NodeIdentifier};
+use piperine_solver::abi::CircuitInstance;
+use piperine_solver::abi::Element;
+use piperine_solver::abi::DigitalNet;
+use piperine_solver::abi::DigitalState;
 
 use crate::ir::{NodeId, ParamId};
 use crate::lower::pom::LoweredBody;

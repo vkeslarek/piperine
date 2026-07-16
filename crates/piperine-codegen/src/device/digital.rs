@@ -6,7 +6,7 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 
-use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
+use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue};
 
 use crate::ir::{EdgeKind, Type};
 use crate::jit::digital::{DigitalAbi, DigitalKernel};

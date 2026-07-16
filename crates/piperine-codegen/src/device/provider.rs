@@ -9,9 +9,9 @@
 use piperine_lang::parse::ast::Direction;
 use piperine_lang::pom::module::Attribute;
 use piperine_lang::Value;
-use piperine_solver::analog::AnalogReference;
-use piperine_solver::core::element::Element;
-use piperine_solver::digital::DigitalNet;
+use piperine_solver::abi::AnalogReference;
+use piperine_solver::abi::Element;
+use piperine_solver::abi::DigitalNet;
 
 /// How one port of a `@device` module binds into the built circuit.
 #[derive(Debug, Clone)]
