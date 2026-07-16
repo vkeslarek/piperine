@@ -365,6 +365,24 @@ impl<'a> TransientSolver<'a> {
                 // is the adaptive time grid for now, and bench statistics
                 // weight by `dt` so they stay correct.
                 dt = self.stepper.propose_dt(milne, dt_actual, &self.options);
+
+                // Per-device LTE floor: reactive devices can cap dt tighter
+                // than the global Milne LTE (audit P5 — this was never called).
+                let tran_state = crate::analysis::transient::TransientAnalysisState::new(
+                    self.solver.state(),
+                    &self.system.circuit.digital_state.nets,
+                );
+                let time_history = [self.system.prev_h, dt_actual];
+                for dev in &self.system.circuit.devices {
+                    if let Some(dt_floor) = dev.suggest_transient_step(
+                        &tran_state,
+                        &time_history,
+                        crate::math::integration::IntegrationMethod::Trapezoidal,
+                        &self.system.context,
+                    ) {
+                        dt = dt.min(dt_floor);
+                    }
+                }
             } else {
                 // Either phase failed to converge — reject the whole step,
                 // halve dt, reset the PI memory (TRB-05/09).
