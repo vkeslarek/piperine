@@ -141,6 +141,22 @@ in `docs/spec/` (Parts I–VII). Solver gaps and feature tracking live in
 
 **Status:** Done.
 
+### MD-17: Two-tier public surface — `prelude` + `abi`
+
+Delivered by `solver-abi` feature. Public surface of `piperine-solver` is
+exactly two modules: `prelude` (host audience: bench, python, CLI) and `abi`
+(device-author audience: codegen, plugins, test doubles). Every other module
+is `pub(crate)`. Re-exports in `prelude`/`abi` elevate item visibility without
+reopening internal module paths.
+
+- `prelude`: `CircuitBuilder`, `CircuitInstance`, `Solver`, `Context`, `Policy`,
+  `Tolerances`, analysis results + options, `Net`, `Error`, `SolverStats`, …
+- `abi`: `Element`, `ElementCapabilities`, `UnknownAllocator`, `Stamp`,
+  `AnalogReference`, `Netlist`, `Noise`, `NoiseKind`, digital interface, …
+- `lib.rs`: `pub mod abi; pub mod prelude;`, all others `pub(crate)`.
+
+**Status:** Done (2026-07-16).
+
 ---
 
 ## Handoff Snapshot
