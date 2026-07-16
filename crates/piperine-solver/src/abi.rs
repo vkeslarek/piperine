@@ -34,7 +34,7 @@ pub use crate::digital::state::DigitalState;
 pub use crate::digital::topology::DigitalTopology;
 // Run config + results device code touches
 pub use crate::solver::{Context, Policy, Tolerances};
-pub use crate::result::{Result, SolverStats};
+pub use crate::result::{NoiseContribution, Result, SolverStats};
 pub use crate::error::{Error, SolverDomain};
 // Element lifecycle allocator (ABI-09)
 // TODO(T9): pub use crate::core::builder::UnknownAllocator;

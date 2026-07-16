@@ -9,6 +9,7 @@ use num_complex::Complex;
 use std::collections::HashMap;
 use std::slice::Iter;
 use std::sync::Arc;
+use crate::analysis::noise::NoiseKind;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -274,10 +275,26 @@ impl AcAnalysisStep {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct NoiseContribution {
+    pub element: String,
+    pub source: String,
+    pub kind: NoiseKind,
+    pub integrated_sq: f64,
+    pub psd: Vec<f64>,
+}
+
 pub struct NoiseAnalysisResult {
     pub frequencies: Vec<f64>,
     pub out_noise_sq: Vec<f64>,
     pub integrated_noise: f64,
+    pub contributions: Vec<NoiseContribution>,
+}
+
+impl NoiseAnalysisResult {
+    pub fn contributions(&self) -> &[NoiseContribution] {
+        &self.contributions
+    }
 }
 
 /// Transfer Function analysis result.

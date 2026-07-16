@@ -2,6 +2,7 @@ use crate::analysis::ac::AcAnalysisContext;
 use crate::prelude::DcAnalysisResult;
 use crate::analysis::noise::NoiseAnalysisOptions;
 use crate::prelude::NoiseAnalysisResult;
+use std::collections::HashMap;
 use crate::core::circuit::CircuitInstance;
 use crate::analog::{AnalogReference, AnalogVariable};
 use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
@@ -95,8 +96,9 @@ impl<'a> NoiseSolver<'a> {
     pub fn solve(&mut self) -> crate::result::Result<NoiseAnalysisResult> {
         let frequencies = self.options.sweep_options.generate_frequencies();
         let mut out_noise_sq = Vec::with_capacity(frequencies.len());
+        let mut psd_map: HashMap<(String, String), (crate::analysis::noise::NoiseKind, Vec<f64>)> = HashMap::new();
 
-        for &f in &frequencies {
+        for (i, &f) in frequencies.iter().enumerate() {
             let ac_ctx = AcAnalysisContext { frequency: f };
 
             let stamps = Self::assemble_linearized(self.circuit, &self.dc_point, f, &self.context)?;
@@ -105,30 +107,68 @@ impl<'a> NoiseSolver<'a> {
             let mut step_density = 0.0;
             for source in &mut self.circuit.devices {
                 let noises = source.noise_current_psd(&self.dc_point, &ac_ctx);
-                for n in noises {
-                    let z_p = self
-                        .out_ref
+                for (idx, n) in noises.into_iter().enumerate() {
+                    let z_p = n.terminals.0
                         .idx()
                         .map(|i| adjoint_sol[i])
                         .unwrap_or_default();
-                    let z_n = self
-                        .ref_ref
+                    let z_n = n.terminals.1
                         .idx()
                         .map(|i| adjoint_sol[i])
                         .unwrap_or_default();
                     let gain_sq = (z_p - z_n).norm_sqr();
 
-                    step_density += gain_sq * n.value;
+                    let val = gain_sq * n.value;
+                    step_density += val;
+
+                    let key = (
+                        source.name().to_string(),
+                        n.name.clone().unwrap_or_else(|| idx.to_string())
+                    );
+                    let entry = psd_map.entry(key).or_insert_with(|| {
+                        let mut vec = Vec::with_capacity(frequencies.len());
+                        vec.resize(i, 0.0);
+                        (n.kind, vec)
+                    });
+                    while entry.1.len() < i {
+                        entry.1.push(0.0);
+                    }
+                    entry.1.push(val);
                 }
             }
             out_noise_sq.push(step_density);
+            for (_, entry) in psd_map.iter_mut() {
+                if entry.1.len() == i {
+                    entry.1.push(0.0);
+                }
+            }
         }
 
         let integrated_noise = self.integrate_noise(&frequencies, &out_noise_sq);
+
+        let mut contributions = Vec::new();
+        for ((element, source), (kind, psd)) in psd_map {
+            let mut integrated_sq = 0.0;
+            if frequencies.len() > 1 {
+                for i in 0..frequencies.len() - 1 {
+                    let df = frequencies[i + 1] - frequencies[i];
+                    integrated_sq += 0.5 * df * (psd[i] + psd[i + 1]);
+                }
+            }
+            contributions.push(crate::result::NoiseContribution {
+                element,
+                source,
+                kind,
+                integrated_sq,
+                psd,
+            });
+        }
+
         Ok(NoiseAnalysisResult {
             frequencies,
             integrated_noise,
             out_noise_sq,
+            contributions,
         })
     }
 
@@ -251,3 +291,139 @@ impl<'a> NoiseSolver<'a> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::element::{Element, ElementCapabilities};
+    use crate::analog::{AnalogReference, Netlist, NodeIdentifier};
+    use crate::math::linear::Stamp;
+    use num_complex::Complex64;
+    use crate::analysis::ac::{AcSweepAnalysisOptions, AcAnalysisContext};
+    use crate::prelude::DcAnalysisResult;
+    use crate::analysis::noise::{Noise, NoiseKind};
+    use crate::solver::Context;
+
+    struct NoisyResistor {
+        name: String,
+        r: f64,
+        n1: AnalogReference,
+        n2: AnalogReference,
+    }
+
+    impl Element for NoisyResistor {
+        fn name(&self) -> &str { &self.name }
+
+        fn capabilities(&self) -> ElementCapabilities {
+            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::LOADS_AC | ElementCapabilities::EMITS_NOISE
+        }
+
+        fn load_dc(
+            &mut self,
+            _state: &crate::abi::DcAnalysisState<'_>,
+            _ctx: &Context,
+        ) -> Vec<Stamp<AnalogReference, f64>> {
+            let g = 1.0 / self.r;
+            vec![
+                Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
+                Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
+                Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
+                Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
+            ]
+        }
+
+        fn load_ac(
+            &mut self,
+            _dc_op: &DcAnalysisResult,
+            _ac_ctx: &AcAnalysisContext,
+            _context: &Context,
+        ) -> Vec<Stamp<AnalogReference, Complex64>> {
+            let g = Complex64::new(1.0 / self.r, 0.0);
+            vec![
+                Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
+                Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
+                Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
+                Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
+            ]
+        }
+
+        fn noise_current_psd(
+            &mut self,
+            _dc_point: &DcAnalysisResult,
+            _ac_context: &AcAnalysisContext,
+        ) -> Vec<Noise> {
+            let thermal_psd = 4.0 * 1.380649e-23 * 300.0 / self.r;
+            vec![
+                Noise::new((self.n1.clone(), self.n2.clone()), thermal_psd).named("thermal", NoiseKind::Thermal),
+                Noise::new((self.n1.clone(), self.n2.clone()), 1e-24).named("flicker", NoiseKind::Flicker)
+            ]
+        }
+    }
+
+    #[test]
+    fn test_per_source_noise_reporting_and_conservation() {
+        let mut netlist = Netlist::new();
+        let top = netlist.connect_node(NodeIdentifier::Anonymous(1));
+        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
+
+        let r1 = NoisyResistor { name: "r1".to_string(), r: 1000.0, n1: top.clone(), n2: gnd.clone() };
+        let r2 = NoisyResistor { name: "r2".to_string(), r: 1000.0, n1: top.clone(), n2: gnd.clone() };
+
+        let elements: Vec<Box<dyn Element>> = vec![Box::new(r1), Box::new(r2)];
+        let mut circuit = CircuitInstance::from_devices_and_netlist("test", elements, netlist);
+
+        let ctx = Context::default();
+        let mut dc = circuit.dc(ctx).unwrap();
+        let dc_res = dc.solve().unwrap();
+
+        let sweep = AcSweepAnalysisOptions {
+            start_frequency: 1.0,
+            stop_frequency: 100.0,
+            steps: 10,
+            logarithmic: false,
+        };
+        
+        let opts = NoiseAnalysisOptions {
+            sweep_options: sweep,
+            output_node: NodeIdentifier::Anonymous(1),
+            reference_node: NodeIdentifier::Gnd,
+            input_source_name: None,
+        };
+
+        let mut solver = circuit.noise(opts, Context::default()).unwrap();
+        let res = solver.solve().unwrap();
+
+        let contribs = res.contributions();
+        assert_eq!(contribs.len(), 4);
+
+        let mut found_thermal = 0;
+        let mut found_flicker = 0;
+        for c in contribs {
+            if c.source == "thermal" && c.kind == NoiseKind::Thermal {
+                found_thermal += 1;
+                assert_eq!(c.psd.len(), 10);
+            }
+            if c.source == "flicker" && c.kind == NoiseKind::Flicker {
+                found_flicker += 1;
+                assert_eq!(c.psd.len(), 10);
+            }
+        }
+        assert_eq!(found_thermal, 2);
+        assert_eq!(found_flicker, 2);
+
+        for i in 0..res.frequencies.len() {
+            let sum_psd: f64 = contribs.iter().map(|c| c.psd[i]).sum();
+            let total = res.out_noise_sq[i];
+            
+            let err = (sum_psd - total).abs();
+            let rel_err = if total > 1e-30 { err / total } else { err };
+            assert!(rel_err < 1e-9, "freq idx {}, sum {} != total {}", i, sum_psd, total);
+        }
+        
+        let mut manual_int = 0.0;
+        for i in 0..res.frequencies.len() - 1 {
+            let df = res.frequencies[i + 1] - res.frequencies[i];
+            manual_int += 0.5 * df * (res.out_noise_sq[i] + res.out_noise_sq[i + 1]);
+        }
+        assert!((res.integrated_noise - manual_int.sqrt()).abs() < 1e-12);
+    }
+}

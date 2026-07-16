@@ -37,7 +37,7 @@ pub use crate::solver::convergence::{
 
 // ── Results ────────────────────────────────────────────────────────────────
 pub use crate::result::{
-    AcAnalysisResult, AcAnalysisStep, DcAnalysisResult, NoiseAnalysisResult,
+    AcAnalysisResult, AcAnalysisStep, DcAnalysisResult, NoiseAnalysisResult, NoiseContribution,
     TransferFunctionAnalysisResult, TransferType, TransientAnalysisResult, TransientStep,
 };
 
