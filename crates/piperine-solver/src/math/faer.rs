@@ -99,6 +99,11 @@ impl<E: 'static + Scalar> LinearSystem<E> for FaerSparseLinearSystem<E> {
         }
     }
 
+    fn reset(&mut self) {
+        self.triplets.clear();
+        self.b_vec.fill(E::zero());
+    }
+
 }
 
 impl<E: Scalar + 'static> SymbolicLinearSystem<E> for FaerSparseLinearSystem<E> {

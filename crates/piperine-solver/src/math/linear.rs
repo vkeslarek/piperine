@@ -14,6 +14,9 @@ pub enum Stamp<A: AsIndex, E: Scalar> {
 pub trait LinearSystem<E: Scalar> {
     fn new(size: usize) -> Self;
     fn apply_stamps<A: AsIndex>(&mut self, stamps: Vec<Stamp<A, E>>);
+    /// Clear stamps + RHS in-place for reuse across Newton iterations.
+    /// Call instead of `new()` to avoid per-iteration heap allocation.
+    fn reset(&mut self);
 }
 
 pub trait SymbolicMatrix {

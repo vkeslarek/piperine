@@ -155,7 +155,7 @@ where
                 }
             }
 
-            self.linear_system = L::new(self.symbolic.size());
+            self.linear_system.reset();
             self.linear_system.apply_stamps(stamps);
             let mut current_guess = self.linear_system.solve_with_backend(&self.symbolic)?;
 
@@ -288,7 +288,7 @@ where
                 }
             }
 
-            self.linear_system = L::new(self.symbolic.size());
+            self.linear_system.reset();
             self.linear_system.apply_stamps(stamps);
             let mut current_guess = self.linear_system.solve_with_backend(&self.symbolic)?;
 
