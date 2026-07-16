@@ -290,13 +290,11 @@ fn ngspice_diode_series() {
 }
 
 #[test]
-#[ignore = "fixed in T7-T10 (MOS1 DC solve NaN/Inf — SPICE-09)"]
 fn ngspice_nmos_fixed() {
     ngspice_op_case("nmos_fixed");
 }
 
 #[test]
-#[ignore = "fixed in T7-T10 (MOS1 drain current ~1.5x high — SPICE-09)"]
 fn ngspice_nmos_load() {
     ngspice_op_case("nmos_load");
 }
@@ -331,6 +329,31 @@ fn ngspice_diode_iv_sweep() {
             harness.sweep_case("diode_iv", "v1", "vin", "gnd", NgspiceHarness::ABSTOL_I)
         }
         None => eprintln!("SKIP diode_iv: ngspice not on PATH"),
+    }
+}
+
+/// NMOS Id–Vgs (21 points, vds = 2 V, bulk at −1 V): cutoff → saturation →
+/// linear with body effect — the harness stages `vg.dc` per point and reads
+/// the drain supply's branch current (SPICE-10).
+#[test]
+fn ngspice_nmos_id_vgs_sweep() {
+    match NgspiceHarness::detect() {
+        Some(harness) => {
+            harness.sweep_case("nmos_id_vgs", "vg", "d", "gnd", NgspiceHarness::ABSTOL_I)
+        }
+        None => eprintln!("SKIP nmos_id_vgs: ngspice not on PATH"),
+    }
+}
+
+/// NMOS Id–Vds (26 points, vgs = 3 V, rd/rs = 100 Ω): linear → saturation,
+/// exercising the series-resistance force branches (SPICE-10).
+#[test]
+fn ngspice_nmos_id_vds_sweep() {
+    match NgspiceHarness::detect() {
+        Some(harness) => {
+            harness.sweep_case("nmos_id_vds", "vd", "d", "gnd", NgspiceHarness::ABSTOL_I)
+        }
+        None => eprintln!("SKIP nmos_id_vds: ngspice not on PATH"),
     }
 }
 

@@ -1,0 +1,12 @@
+* NMOS Id-Vgs sweep (golden): vds = 2 V fixed, bulk at -1 V (body effect)
+* 21 points crossing cutoff -> saturation -> linear
+Vd d 0 DC 2
+Vg g 0 DC 0
+Vb b 0 DC -1
+M1 d g 0 b NMOD L=2u W=10u
+.model NMOD NMOS (level=1 vto=1 kp=2e-5 lambda=0.02 gamma=0.5 phi=0.65)
+.control
+dc Vg 0 5 0.25
+wrdata nmos_id_vgs_sweep i(vd)
+.endc
+.end

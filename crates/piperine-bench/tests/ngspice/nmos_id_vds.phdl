@@ -1,0 +1,13 @@
+// NMOS Id-Vds sweep — same circuit as nmos_id_vds.cir; the harness stages
+// vd.dc per sweep point and reads that source's own branch current.
+use piperine::disciplines;
+use spice::sources;
+use spice::mos;
+mod Top() {
+    wire gnd: Electrical; wire d: Electrical; wire g: Electrical;
+    vd: vsrc (.p=d,.n=gnd) { .dc = 0.0 };
+    vg: vsrc (.p=g,.n=gnd) { .dc = 3.0 };
+    m1: mos1 (.d=d,.g=g,.s=gnd,.b=gnd)
+        { .l = 2.0e-6, .w = 10.0e-6,
+          .model = Mos1Model { .vto = 1.0, .kp = 2.0e-5, .lambda = 0.02, .rd = 100.0, .rs = 100.0 } };
+}

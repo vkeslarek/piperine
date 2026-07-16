@@ -420,16 +420,16 @@ pub analog mos1 {
     // ════════════════════════════════════════════════════════════════════════
     //  §12  Series resistances
     // ════════════════════════════════════════════════════════════════════════
-    if (drainCond > 0.0) {
-        I(d, dp) <+ drainCond * V(d, dp);
-    } else {
-        V(d, dp) <- 0.0;
-    }
-    if (sourceCond > 0.0) {
-        I(s, sp) <+ sourceCond * V(s, sp);
-    } else {
-        V(s, sp) <- 0.0;
-    }
+    // ngspice collapses the internal nodes when RD/RS == 0 (mos1setup.c);
+    // PHDL keeps them and forces the series drop instead — `V = R·I` over the
+    // force's own branch is a series resistor, and R = 0 a perfect short.
+    // (A conditional `V <- 0` would lower to the JIT's penalty-conductance
+    // form, whose 1e12 stamp destroys current accuracy — same class of bug as
+    // the diode RS fix found by the diode_iv ngspice sweep.)
+    var rdrain : Real = if (drainCond > 0.0) { 1.0 / drainCond } else { 0.0 };
+    var rsource : Real = if (sourceCond > 0.0) { 1.0 / sourceCond } else { 0.0 };
+    V(d, dp) <- rdrain * I(d, dp);
+    V(s, sp) <- rsource * I(s, sp);
 
     // ════════════════════════════════════════════════════════════════════════
     //  §13  Noise  (mos1noi.c — 4 sources)

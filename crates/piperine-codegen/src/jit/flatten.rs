@@ -81,6 +81,14 @@ pub struct FlatForce {
     /// for a non-reactive force. The transient companion adds `dΦ/dt` on the
     /// branch equation (`force_flux_stamps`); a short in DC/AC-op (`dt = 0`).
     pub flux_terms: Vec<(NodeId, NodeId, PomExpr)>,
+    /// Series-impedance terms: each `(branch_plus, branch_minus, coeff)` is a
+    /// linear `coeff·I(branch)` piece of this force's *resistive* value —
+    /// `V(p,n) <- R·I(p,n)` is an exact series resistor over the force's own
+    /// branch (a perfect short at `R = 0`). Split out because the JIT reads a
+    /// bare `I(a,b)` in an expression as a branch *voltage*; the runtime
+    /// stamps `−coeff` on the target branch-current column instead. The
+    /// target must itself be a forced branch (its current is an MNA unknown).
+    pub current_terms: Vec<(NodeId, NodeId, PomExpr)>,
 }
 
 #[derive(Debug, Clone)]
@@ -328,12 +336,30 @@ impl<'m> AnalogFlattener<'m> {
         let potentials = std::mem::take(&mut self.potential_acc);
         for (plus, minus, expr) in potentials {
             let (without, stim) = split_ac_stim(expr)?;
-            let (expr, flux_terms) = self.split_flux(without, plus, minus)?;
+            let (expr, flux_terms, current_terms) = self.split_flux(without, plus, minus)?;
             let ac_stim = match stim {
                 Some((mag, phase)) => Some((self.finish_expr(mag)?, self.finish_expr(phase)?)),
                 None => None,
             };
-            self.out.forces.push(FlatForce { plus, minus, expr, ac_stim, flux_terms });
+            self.out.forces.push(FlatForce { plus, minus, expr, ac_stim, flux_terms, current_terms });
+        }
+
+        // A series-impedance term reads a branch current, which is an MNA
+        // unknown only for forced branches — anything else would silently
+        // stamp against a column that does not exist (fail loud, GAPS).
+        let force_branches: Vec<(NodeId, NodeId)> =
+            self.out.forces.iter().map(|f| (f.plus, f.minus)).collect();
+        for force in &self.out.forces {
+            for &(p, m, _) in &force.current_terms {
+                let is_force = force_branches
+                    .iter()
+                    .any(|&(a, b)| (a, b) == (p, m) || (a, b) == (m, p));
+                if !is_force {
+                    return Err(CodegenError::unsupported(
+                        "branch-current term in a potential force must probe a forced branch (`V(...) <- ...`)",
+                    ));
+                }
+            }
         }
 
         for source in &body.noise {
@@ -511,23 +537,32 @@ impl<'m> AnalogFlattener<'m> {
         }
     }
 
-    /// Split a potential-force value into `(resistive, flux_coeff)`. A value
-    /// with no `__ddt` is purely resistive. `… + L·ddt(I(p,n))` over the
-    /// force's *own* branch current is the inductor flux `Φ = L·I`: `L` is
-    /// returned as `flux_coeff` and the branch equation gains `dΦ/dt`.
-    /// `ddt` of a *different* branch's current (mutual inductance) or a
-    /// nonlinear flux is a loud error for now.
+    /// Split a potential-force value into `(resistive, flux_terms,
+    /// current_terms)`. `… + L·ddt(I(p,n))` over the force's *own* branch
+    /// current is the inductor flux `Φ = L·I`: `L` is returned as a flux term
+    /// and the branch equation gains `dΦ/dt`. A bare linear `R·I(branch)`
+    /// read is a series-impedance term (`FlatForce::current_terms`) — exact
+    /// `V = R·I`, never a penalty conductance. `ddt` of a *different*
+    /// branch's current (mutual inductance) stays supported; a nonlinear
+    /// flux/impedance or mixing `R·I` with `ddt` in one force is a loud
+    /// error for now.
     #[allow(clippy::type_complexity)]
     fn split_flux(
         &mut self,
         value: PomExpr,
         _plus: NodeId,
         _minus: NodeId,
-    ) -> Result<(PomExpr, Vec<(NodeId, NodeId, PomExpr)>), CodegenError> {
+    ) -> Result<(PomExpr, Vec<(NodeId, NodeId, PomExpr)>, Vec<(NodeId, NodeId, PomExpr)>), CodegenError> {
         if !has_marker(&value, &["__ddt", "__laplace", "__ztransform"]) {
-            return Ok((self.finish_expr(value)?, Vec::new()));
+            let (rest, current_terms) = self.split_current_terms(value)?;
+            return Ok((self.finish_expr(rest)?, Vec::new(), current_terms));
         }
         let resistive = substitute_marker(&value, &["__ddt"], false)?;
+        if !collect_branch_current_pairs(&resistive).is_empty() {
+            return Err(CodegenError::unsupported(
+                "a branch-current term (`R·I(...)`) combined with `ddt` in one potential force",
+            ));
+        }
         let flux = substitute_marker(&value, &["__ddt"], true)?;
         // The flux `Φ` must be linear in branch currents: `Φ = Σ coeff_k·I(k)`.
         // Extract each `coeff_k` by setting that branch's current to 1 and every
@@ -549,7 +584,38 @@ impl<'m> AnalogFlattener<'m> {
             let (pa, pb) = (self.resolve_node(a), self.resolve_node(b));
             terms.push((pa, pb, self.finish_expr(coeff)?));
         }
-        Ok((self.finish_expr(resistive)?, terms))
+        Ok((self.finish_expr(resistive)?, terms, Vec::new()))
+    }
+
+    /// Split the linear `coeff·I(branch)` (series-impedance) terms out of a
+    /// non-reactive force value. Returns the remainder (every listed branch
+    /// current set to 0) and one `(plus, minus, coeff)` term per distinct
+    /// branch, with `coeff = value@[I_k=1, others 0] − value@[all 0]` — exact
+    /// for a value affine in the branch currents; a coefficient that still
+    /// reads a branch current (nonlinear impedance) is a loud error.
+    #[allow(clippy::type_complexity)]
+    fn split_current_terms(
+        &mut self,
+        value: PomExpr,
+    ) -> Result<(PomExpr, Vec<(NodeId, NodeId, PomExpr)>), CodegenError> {
+        let pairs = collect_branch_current_pairs(&value);
+        if pairs.is_empty() {
+            return Ok((value, Vec::new()));
+        }
+        let rest = zero_branch_currents(&value, &pairs);
+        let mut terms = Vec::new();
+        for (a, b) in &pairs {
+            let at_one = isolate_branch_coeff(&value, a, b, &pairs);
+            let coeff = binary(BinaryOp::Sub, at_one, rest.clone());
+            if has_branch_current(&coeff) {
+                return Err(CodegenError::unsupported(
+                    "nonlinear branch-current impedance (I(...) inside its own coefficient) in a potential force",
+                ));
+            }
+            let (pa, pb) = (self.resolve_node(a), self.resolve_node(b));
+            terms.push((pa, pb, self.finish_expr(coeff)?));
+        }
+        Ok((rest, terms))
     }
 
     fn add_force(&mut self, dest: &PomExpr, expr: &PomExpr, guard: Option<&PomExpr>) -> Result<(), CodegenError> {
@@ -568,8 +634,8 @@ impl<'m> AnalogFlattener<'m> {
                     let switch = binary(BinaryOp::Mul, conductance, v_minus_e);
                     return self.add_flow(switch, plus, minus);
                 }
-                let (expr, flux_terms) = self.split_flux(resolved, plus, minus)?;
-                self.out.forces.push(FlatForce { plus, minus, expr, ac_stim: None, flux_terms });
+                let (expr, flux_terms, current_terms) = self.split_flux(resolved, plus, minus)?;
+                self.out.forces.push(FlatForce { plus, minus, expr, ac_stim: None, flux_terms, current_terms });
                 Ok(())
             }
             NatureKind::Flow => {
@@ -974,6 +1040,23 @@ fn isolate_branch_coeff(expr: &PomExpr, a: &str, b: &str, all: &[(String, String
             if all.iter().any(|(p, q)| (p == x && q == y) || (p == y && q == x)) {
                 return PomExpr::Literal(Literal::Real(0.0));
             }
+        }
+        e.clone()
+    })
+}
+
+/// Set every listed branch's current `I(a,b)` (either orientation) to 0 —
+/// the "remainder" of an expression affine in those branch currents.
+fn zero_branch_currents(expr: &PomExpr, all: &[(String, String)]) -> PomExpr {
+    rewrite_expr(expr, &mut |e| {
+        if let PomExpr::Call(func, args) = e
+            && let PomExpr::Ident(name) = func.as_ref()
+            && name == "I"
+            && args.len() == 2
+            && let (PomExpr::Ident(x), PomExpr::Ident(y)) = (&args[0], &args[1])
+            && all.iter().any(|(p, q)| (p == x && q == y) || (p == y && q == x))
+        {
+            return PomExpr::Literal(Literal::Real(0.0));
         }
         e.clone()
     })

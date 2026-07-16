@@ -157,6 +157,16 @@ reopening internal module paths.
 
 **Status:** Done (2026-07-16).
 
+### MD-18: Elaboration fixes devices; simulation never re-JITs
+
+Elaboration/JIT happens once per design+staging; after that, a simulation —
+including parameter sweeps — runs entirely on the solver. Re-running
+elaborate/compile inside a simulation loop (e.g. per sweep point) is an
+architecture defect, not a perf tweak. Swept parameters go through a
+solver-level restamp/staging path on the already-compiled circuit.
+
+**Status:** Locked (user, 2026-07-16). Implementation: spice-stdlib T12.
+
 ---
 
 ## Handoff Snapshot

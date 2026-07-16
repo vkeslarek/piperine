@@ -503,7 +503,46 @@ impl AnalogInstance {
             }
             stamps.push(Stamp::Rhs(branch.clone(), rhs));
         }
+        // Series-impedance terms `coeff·I(target)` split out of force values
+        // (`V(p,n) <- R·I(p,n) + …`): the branch row gains `−coeff` on the
+        // target branch-current column — an exact series resistor (perfect
+        // short at `R = 0`), linear, entirely in the matrix. Deliberately
+        // outside the `src_scale` scaling: an impedance is not a source.
+        if self.kernel.has_force_current() {
+            let terms = self.kernel.current_terms();
+            let mut coeffs = vec![0.0; terms.len()];
+            self.kernel
+                .eval_force_current(volts, &self.params, &self.state, &self.vars, &self.sim, &mut coeffs);
+            for (&(force_idx, tp, tm), &r) in terms.iter().zip(&coeffs) {
+                if r == 0.0 {
+                    continue;
+                }
+                let Some((target_idx, sign)) = self.force_branch_target(tp, tm) else { continue };
+                stamps.push(Stamp::Matrix(
+                    self.force_refs[force_idx].clone(),
+                    self.force_refs[target_idx].clone(),
+                    -r * sign,
+                ));
+            }
+        }
         stamps
+    }
+
+    /// The force branch whose terminals are `(tp, tm)`, with the sign flip
+    /// when the probe orientation is reversed — the branch-current column a
+    /// flux/impedance term couples to.
+    fn force_branch_target(&self, tp: crate::ir::NodeId, tm: crate::ir::NodeId) -> Option<(usize, f64)> {
+        let force_terminals = self.kernel.force_terminals();
+        force_terminals
+            .iter()
+            .position(|&(p, m)| p == tp && m == tm)
+            .map(|k| (k, 1.0))
+            .or_else(|| {
+                force_terminals
+                    .iter()
+                    .position(|&(p, m)| p == tm && m == tp)
+                    .map(|k| (k, -1.0))
+            })
     }
 
     /// The netlist reference for a kernel terminal node (None = ground).
@@ -1038,6 +1077,25 @@ impl AnalogInstance {
                     self.force_refs[force_idx].clone(),
                     self.force_refs[target_idx].clone(),
                     Complex64::new(0.0, -omega * l * sign),
+                ));
+            }
+        }
+        // Series-impedance terms in small-signal: the same real `−R` coupling
+        // as DC/transient (`V = R·I` holds at every frequency).
+        if self.kernel.has_force_current() {
+            let terms = self.kernel.current_terms();
+            let mut coeffs = vec![0.0; terms.len()];
+            self.kernel
+                .eval_force_current(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut coeffs);
+            for (&(force_idx, tp, tm), &r) in terms.iter().zip(&coeffs) {
+                if r == 0.0 {
+                    continue;
+                }
+                let Some((target_idx, sign)) = self.force_branch_target(tp, tm) else { continue };
+                stamps.push(Stamp::Matrix(
+                    self.force_refs[force_idx].clone(),
+                    self.force_refs[target_idx].clone(),
+                    Complex64::new(-r * sign, 0.0),
                 ));
             }
         }

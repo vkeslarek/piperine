@@ -1,0 +1,11 @@
+* NMOS Id-Vds sweep (golden): vgs = 3 V fixed, rd/rs = 100 ohm series
+* 26 points crossing linear -> saturation
+Vd d 0 DC 0
+Vg g 0 DC 3
+M1 d g 0 0 NMOD L=2u W=10u
+.model NMOD NMOS (level=1 vto=1 kp=2e-5 lambda=0.02 rd=100 rs=100)
+.control
+dc Vd 0 5 0.2
+wrdata nmos_id_vds_sweep i(vd)
+.endc
+.end

@@ -169,6 +169,14 @@ pub struct AnalogKernel {
     /// Per flux term: `(force_idx, target_plus, target_minus)` — which force
     /// branch equation gains the term and which branch current it couples to.
     flux_meta: Vec<(usize, NodeId, NodeId)>,
+    /// Series-impedance coefficient rows (one per current term); `None` when
+    /// no force value reads a branch current. `V(p,n) <- R·I(branch) + …`
+    /// stamps `−R` on the target branch-current column — exact in DC/AC/tran.
+    force_current: Option<AnalogFn>,
+    /// Per current term: `(force_idx, target_plus, target_minus)` — which
+    /// force branch equation gains the term and which branch current it
+    /// couples to.
+    current_meta: Vec<(usize, NodeId, NodeId)>,
     /// Noise PSD per source; `None` without noise.
     noise: Option<AnalogFn>,
     /// `ac_stim` magnitude and phase rows (one per source); `None` without
@@ -304,6 +312,24 @@ impl AnalogKernel {
     /// Flux coefficients, one per term (in `flux_terms` order).
     pub fn eval_force_flux(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.force_flux {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(f, volts, params, state, vars, sim, out);
+        }
+    }
+
+    /// Whether any force value carries a series-impedance (`R·I`) term.
+    pub fn has_force_current(&self) -> bool {
+        self.force_current.is_some()
+    }
+
+    /// Per series-impedance term: `(force_idx, target_plus, target_minus)`.
+    pub fn current_terms(&self) -> &[(usize, NodeId, NodeId)] {
+        &self.current_meta
+    }
+
+    /// Series-impedance coefficients, one per term (in `current_terms` order).
+    pub fn eval_force_current(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.force_current {
             self.check_input_lens(volts, params, state, vars);
             Self::call(f, volts, params, state, vars, sim, out);
         }
@@ -812,6 +838,25 @@ impl<'m> AnalogCompiler<'m> {
             Some(self.compile_rows("force_flux", &coeffs)?)
         };
 
+        // Series-impedance terms flattened across forces, mirroring the flux
+        // layout: `(force_idx, target_plus, target_minus)` + a coefficient
+        // row. The runtime stamps `−coeff` on the target branch-current
+        // column of force `force_idx`'s branch equation (DC, transient, AC).
+        let current_meta: Vec<(usize, NodeId, NodeId)> = forces
+            .iter()
+            .enumerate()
+            .flat_map(|(i, f)| f.current_terms.iter().map(move |(tp, tm, _)| (i, *tp, *tm)))
+            .collect();
+        let force_current_id = if current_meta.is_empty() {
+            None
+        } else {
+            let coeffs: Vec<PomExpr> = forces
+                .iter()
+                .flat_map(|f| f.current_terms.iter().map(|(_, _, c)| c.clone()))
+                .collect();
+            Some(self.compile_rows("force_current", &coeffs)?)
+        };
+
         // AC drive attached to force branches (ideal AC voltage stimulus). One
         // row per force; branches without a stimulus contribute 0. Compiled
         // only when at least one force carries an `ac_stim`.
@@ -1048,6 +1093,8 @@ impl<'m> AnalogCompiler<'m> {
             force_ac_phase: force_ac_phase_id.map(|id| get(&self.jit, id)),
             force_flux: force_flux_id.map(|id| get(&self.jit, id)),
             flux_meta,
+            force_current: force_current_id.map(|id| get(&self.jit, id)),
+            current_meta,
             noise: noise_id.map(|id| get(&self.jit, id)),
             ac_stim_mag: ac_stim_mag_id.map(|id| get(&self.jit, id)),
             ac_stim_phase: ac_stim_phase_id.map(|id| get(&self.jit, id)),
