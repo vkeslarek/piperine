@@ -52,7 +52,6 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
 
         let mut all_stamps = Vec::new();
 
-        self.context.time = self.time;
         self.circuit.update_all(state, &self.context);
         let CircuitInstance { devices, digital_state, .. } = &mut *self.circuit;
         let tran_state = TransientAnalysisState::new(state, &digital_state.nets);
@@ -106,6 +105,9 @@ pub struct TransientSolver<'a> {
     initial_conditions: Vec<InitialValue<AnalogReference, f64>>,
     /// Stateful PI timestep controller (TRB-07).
     stepper: crate::solver::convergence::PiController,
+    /// Convergence tunables for this analysis (MD-04). Defaults on
+    /// construction; hosts override before [`solve`](Self::solve).
+    pub policy: crate::solver::Policy,
 }
 
 impl<'a> TransientSolver<'a> {
@@ -140,6 +142,7 @@ impl<'a> TransientSolver<'a> {
             options,
             initial_conditions: Vec::new(),
             stepper: crate::solver::convergence::PiController::default(),
+            policy: crate::solver::Policy::default(),
         })
     }
 
@@ -205,7 +208,7 @@ impl<'a> TransientSolver<'a> {
         use_predictor: bool,
     ) -> crate::result::Result<Option<TransientStep>> {
         let strategy = crate::solver::convergence::DampedNewton;
-        let policy = crate::solver::Policy::from_context(&self.system.context);
+        let policy = self.policy.clone();
         let tolerances = self.system.context.tolerances;
         let t_next = t_n + dt;
 
@@ -367,11 +370,10 @@ impl<'a> TransientSolver<'a> {
                 dt_min_seen = dt_min_seen.min(dt_actual);
                 dt_max_seen = dt_max_seen.max(dt_actual);
                 let solution = self.solver.current_guess().unwrap().to_owned();
-                let _changed = self.system.circuit.accept_and_run_digital(
-                    solution.as_slice().unwrap(),
-                    &self.system.context,
-                    t_next,
-                )?;
+                let _changed = self
+                    .system
+                    .circuit
+                    .accept_and_run_digital(solution.as_slice().unwrap(), t_next)?;
                 self.system.circuit.digital_state.commit();
                 if t_next >= record_from {
                     steps.push(snapshot);

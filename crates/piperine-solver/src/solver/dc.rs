@@ -9,7 +9,7 @@ use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::iv::InitialValue;
 use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
-use crate::solver::Context;
+use crate::solver::{Context, Policy};
 
 use ndarray::ArrayView1;
 use std::collections::HashMap;
@@ -161,6 +161,9 @@ impl DcSystem<'_> {
 pub struct DcSolver<'a> {
     pub system: DcSystem<'a>,
     pub solver: NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>,
+    /// Convergence tunables for this analysis (MD-04). Defaults on
+    /// construction; hosts override before [`solve`](Self::solve).
+    pub policy: Policy,
     /// How many plain-Newton attempts the convergence plan drove (1 = no
     /// homotopy). `SolverStats::homotopy_levels` is this minus the first.
     newton_calls: usize,
@@ -186,7 +189,7 @@ impl<'a> DcSolver<'a> {
 
         let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
 
-        Ok(Self { system, solver, newton_calls: 0 })
+        Ok(Self { system, solver, policy: Policy::default(), newton_calls: 0 })
     }
 
     /// Seed the DC Newton initial guess with node-voltage hints (piperine-bench/docs/SPEC.md
@@ -229,11 +232,10 @@ impl<'a> DcSolver<'a> {
                             "solution not contiguous",
                         )
                     })?;
-                    let changed = self.system.circuit.accept_and_run_digital(
-                        solution_slice,
-                        &self.system.context,
-                        0.0,
-                    )?;
+                    let changed = self
+                        .system
+                        .circuit
+                        .accept_and_run_digital(solution_slice, 0.0)?;
                     if !changed {
                         break;
                     }
@@ -242,7 +244,7 @@ impl<'a> DcSolver<'a> {
                     // cache is stale even though the analog solution is not.
                     self.system.invalidate_bypass();
                     let strategy = crate::solver::convergence::DampedNewton;
-                    let policy = crate::solver::Policy::from_context(&self.system.context);
+                    let policy = self.policy.clone();
                     let tolerances = self.system.context.tolerances;
                     sol = self.solver.solve_with_strategy(
                         &mut self.system,
@@ -286,7 +288,7 @@ impl HomotopyDriver for DcSolver<'_> {
     fn newton(&mut self) -> crate::result::Result<ndarray::Array1<f64>> {
         self.newton_calls += 1;
         let strategy = crate::solver::convergence::DampedNewton;
-        let policy = crate::solver::Policy::from_context(&self.system.context);
+        let policy = self.policy.clone();
         let tolerances = self.system.context.tolerances;
         self.solver.solve_with_strategy(
             &mut self.system,

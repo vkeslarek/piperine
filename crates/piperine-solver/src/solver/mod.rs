@@ -121,11 +121,11 @@ impl Tolerances {
 
 // ── Policy (mutable, owned by drivers/plan) ────────────────────────────────
 
-/// Mutable per-run state that used to be flat fields on `Context`. Owned by
-/// the driver or `ConvergencePlan`, never by the shared `Context` (MD-04).
+/// Convergence tunables the Newton loop consults each solve. Owned by the
+/// driver (each analysis solver carries its own), never by the shared
+/// immutable `Context` (MD-04). Hosts configure it per analysis.
 #[derive(Debug, Clone)]
 pub struct Policy {
-    pub time: f64,
     pub max_iter: usize,
     pub dc_damp_tolerance: f64,
 }
@@ -133,51 +133,21 @@ pub struct Policy {
 impl Default for Policy {
     fn default() -> Self {
         Self {
-            time: 0.0,
             max_iter: 500,
             dc_damp_tolerance: 0.5,
-        }
-    }
-}
-
-impl Policy {
-    /// Build a `Policy` from the user-facing `Context` fields. This is the
-    /// bridge that makes `Context.max_iter` / `dc_damp_tolerance` actually
-    /// reach the Newton loop — replacing the `Policy::default()` that silently
-    /// ignored every user setting (audit C1).
-    pub fn from_context(ctx: &Context) -> Self {
-        Self {
-            time: ctx.time,
-            max_iter: ctx.max_iter,
-            dc_damp_tolerance: ctx.dc_damp_tolerance,
         }
     }
 }
 
 // ── Context (shared, immutable) ────────────────────────────────────────────
 
-/// The shared context every analysis receives. Carries only `Tolerances`.
-/// Mutable plan state lives on `Policy`, owned by the driver.
-/// `time`, `dc_damp_tolerance`, and `max_iter` are temporary — they will move
-/// to `Policy` once `NewtonStrategy` is wired and can provide them through the
-/// plan (T5).
-#[derive(Debug, Clone)]
+/// The shared context every analysis receives: only the immutable
+/// [`Tolerances`]. Mutable convergence state lives on [`Policy`], owned by
+/// the driver; simulation time reaches elements through their analysis
+/// context or as an explicit argument (MD-04).
+#[derive(Debug, Clone, Default)]
 pub struct Context {
     pub tolerances: Tolerances,
-    pub time: f64,
-    pub dc_damp_tolerance: f64,
-    pub max_iter: usize,
-}
-
-impl Default for Context {
-    fn default() -> Self {
-        Self {
-            tolerances: Tolerances::default(),
-            time: 0.0,
-            dc_damp_tolerance: 0.5,
-            max_iter: 500,
-        }
-    }
 }
 
 impl Context {

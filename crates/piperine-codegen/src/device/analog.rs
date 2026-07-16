@@ -1117,8 +1117,8 @@ impl AnalogInstance {
             .collect()
     }
 
-    /// Service runtime operators at the accepted solution point.
-    pub fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, ctx: &Context) {
+    /// Service runtime operators at the accepted solution point at time `t`.
+    pub fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, t: f64) {
         let volts = self.collect_volts(&|k| {
             state.latest().and_then(|s| s.get(k).copied()).unwrap_or(0.0)
         });
@@ -1128,10 +1128,10 @@ impl AnalogInstance {
                 .eval_state_inputs(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut inputs);
             for op in &mut self.operators {
                 let slot = op.slot();
-                self.state[slot] = op.accept(ctx.time, inputs[slot]);
+                self.state[slot] = op.accept(t, inputs[slot]);
             }
         }
-        self.detect_events(&volts, ctx.time);
+        self.detect_events(&volts, t);
         self.last_volts = volts;
     }
 

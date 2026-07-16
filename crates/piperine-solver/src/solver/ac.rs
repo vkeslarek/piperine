@@ -63,6 +63,8 @@ pub struct AcSolver<'a> {
     pub system: AcSystem<'a>,
     pub solver:
         NewtonRaphsonSolver<AnalogReference, Complex<f64>, FaerSparseLinearSystem<Complex<f64>>>,
+    /// Convergence tunables (MD-04); AC is linear, so only `max_iter` matters.
+    pub policy: crate::solver::Policy,
 }
 
 impl<'a> AcSolver<'a> {
@@ -98,7 +100,7 @@ impl<'a> AcSolver<'a> {
 
         let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
 
-        Ok(Self { system, solver })
+        Ok(Self { system, solver, policy: crate::solver::Policy::default() })
     }
 
     /// Performs AC frequency sweep analysis.
@@ -130,7 +132,7 @@ impl<'a> AcSolver<'a> {
         for &f_hz in frequencies.iter() {
             self.system.frequency = f_hz;
 
-            let max_iter = self.system.context.max_iter;
+            let max_iter = self.policy.max_iter;
             let solution = self
                 .solver
                 .solve(&mut self.system, max_iter)?;

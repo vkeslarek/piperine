@@ -8,7 +8,7 @@ use std::rc::Rc;
 use piperine_codegen::device::CircuitCompiler;
 use piperine_lang::eval::Value;
 use piperine_lang::Design;
-use piperine_solver::solver::Context;
+use piperine_solver::solver::{Context, Policy};
 
 use crate::error::BenchError;
 use crate::objects::OpResult;
@@ -24,20 +24,19 @@ pub struct SolverConfig {
     pub gmin: f64,
     pub max_iter: usize,
     pub dc_damp_tolerance: f64,
-    pub time: f64,
 }
 
 impl Default for SolverConfig {
     fn default() -> Self {
-        let ctx = Context::default();
+        let tol = piperine_solver::solver::Tolerances::default();
+        let policy = Policy::default();
         Self {
-            temperature: ctx.tolerances.temperature,
-            reltol: ctx.tolerances.reltol,
-            abstol: ctx.tolerances.abstol,
-            gmin: ctx.tolerances.gmin,
-            max_iter: ctx.max_iter,
-            dc_damp_tolerance: ctx.dc_damp_tolerance,
-            time: ctx.time,
+            temperature: tol.temperature,
+            reltol: tol.reltol,
+            abstol: tol.abstol,
+            gmin: tol.gmin,
+            max_iter: policy.max_iter,
+            dc_damp_tolerance: policy.dc_damp_tolerance,
         }
     }
 }
@@ -52,9 +51,15 @@ impl SolverConfig {
                 gmin: self.gmin,
                 ..Default::default()
             },
+        }
+    }
+
+    /// The convergence tunables (MD-04): set on each analysis solver so
+    /// user `max_iter` / `dc_damp_tolerance` reach the Newton loop.
+    fn to_policy(&self) -> Policy {
+        Policy {
             max_iter: self.max_iter,
             dc_damp_tolerance: self.dc_damp_tolerance,
-            time: self.time,
         }
     }
 }
@@ -156,6 +161,7 @@ impl SimSession {
         let (mut circuit, info) = self.build_circuit()?;
         let ivs = build_ivs(&info, nodeset, circuit.netlist())?;
         let mut dc = circuit.dc(config.to_context())?;
+        dc.policy = config.to_policy();
         dc.apply_initial_conditions(ivs);
         let result = dc.solve()?;
         drop(dc);
@@ -226,6 +232,7 @@ fn snapshot_digital(
         }
         .with_record_from(start);
         let mut solver = circuit.transient(opts, config.to_context())?;
+        solver.policy = config.to_policy();
         solver.apply_initial_conditions(ivs);
         let result = solver.solve()?;
         self.fire_after_solve("tran", &[])?;
@@ -249,7 +256,9 @@ fn snapshot_digital(
             steps: points,
             logarithmic,
         };
-        let result = circuit.ac(config.to_context())?.solve_sweep(opts)?;
+        let mut ac = circuit.ac(config.to_context())?;
+        ac.policy = config.to_policy();
+        let result = ac.solve_sweep(opts)?;
         self.fire_after_solve("ac", &[])?;
         Ok(AcTrace::new(result, Rc::new(info)))
     }

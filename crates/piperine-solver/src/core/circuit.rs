@@ -33,15 +33,14 @@ impl SignalBridge {
         state
     }
 
-    /// Run analog accept hooks and seed the digital event queue.
+    /// Run analog accept hooks at time `t` and seed the digital event queue.
     /// The caller must call `run_digital_at` afterward.
     pub fn settle(
         &mut self,
         devices: &mut [Box<dyn Element>],
         digital_state: &mut DigitalState,
         state: &CircularArrayBuffer2<f64>,
-        ctx: &Context,
-        _t: f64,
+        t: f64,
     ) {
         use std::cmp::Reverse;
         let before = digital_state.nets.clone();
@@ -49,8 +48,8 @@ impl SignalBridge {
         let mut seq = 0u64;
         for (i, device) in devices.iter_mut().enumerate() {
             let mut sink =
-                crate::digital::interface::QueueSink::new(&mut seed_queue, ctx.time, i, &mut seq);
-            device.accept_timestep(state, ctx, &before, &mut sink);
+                crate::digital::interface::QueueSink::new(&mut seed_queue, t, i, &mut seq);
+            device.accept_timestep(state, t, &before, &mut sink);
         }
         for Reverse(event) in seed_queue {
             digital_state.schedule(event);
@@ -229,18 +228,18 @@ bridge: SignalBridge {},
     }
 
     /// Update all devices' cached analog voltages from a solution vector,
-    /// then run digital evaluation. Used by the DC solver's mixed-signal
-    /// convergence loop: after the analog solve converges, the digital
-    /// devices need to see the analog voltages (A2D bridge) and their
+    /// then run digital evaluation at time `t`. Used by the DC solver's
+    /// mixed-signal convergence loop: after the analog solve converges, the
+    /// digital devices need to see the analog voltages (A2D bridge) and their
     /// register updates need to propagate back (D2A bridge).
     ///
     /// Returns `true` if any digital output net changed value.
-    pub fn accept_and_run_digital(&mut self, solution: &[f64], ctx: &Context, t: f64) -> crate::result::Result<bool> {
+    pub fn accept_and_run_digital(&mut self, solution: &[f64], t: f64) -> crate::result::Result<bool> {
         let state = self.bridge.build_accept_state(solution);
         let before = self.digital_state.nets.clone();
         {
             let CircuitInstance { devices, digital_state, bridge, .. } = self;
-            bridge.settle(devices, digital_state, &state, ctx, t);
+            bridge.settle(devices, digital_state, &state, t);
         }
         self.run_digital_at_with_analog(t, solution)?;
         Ok(before != self.digital_state.nets)

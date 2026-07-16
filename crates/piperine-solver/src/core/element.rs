@@ -223,14 +223,15 @@ pub trait Element: Send + Sync {
     /// Refresh cached state from the current solution before stamping.
     fn update(&mut self, _state: &CircularArrayBuffer2<f64>, _ctx: &Context) {}
 
-    /// Called after each accepted solution point. Elements that couple into the
-    /// digital world (A2D bridges, analog event detectors) emit their net
-    /// value-changes through `sink` — the same write-only façade digital
-    /// evaluation uses — so the analog side never names the scheduler's queue.
+    /// Called after each accepted solution point at time `t`. Elements that
+    /// couple into the digital world (A2D bridges, analog event detectors)
+    /// emit their net value-changes through `sink` — the same write-only
+    /// façade digital evaluation uses — so the analog side never names the
+    /// scheduler's queue.
     fn accept_timestep(
         &mut self,
         _state: &CircularArrayBuffer2<f64>,
-        _ctx: &Context,
+        _t: f64,
         _nets: &[LogicValue],
         _sink: &mut dyn EventSink,
     ) {

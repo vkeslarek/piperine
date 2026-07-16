@@ -60,9 +60,9 @@ impl Comparator {
 impl Element for Comparator {
     fn name(&self) -> &str { "comparator" }
     fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
-    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, ctx: &Context, nets: &[LogicValue], sink: &mut dyn EventSink) {
+    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, t: f64, nets: &[LogicValue], sink: &mut dyn EventSink) {
         let latest = state.latest().unwrap();
-        let eval_ctx = EvalCtx { time: ctx.time, nets, analog: latest.as_slice().unwrap() };
+        let eval_ctx = EvalCtx { time: t, nets, analog: latest.as_slice().unwrap() };
         self.comb_phase(&eval_ctx, sink);
     }
     fn boundary(&self) -> DigitalPorts<'_> {
@@ -104,9 +104,9 @@ impl SchmittTrigger {
 impl Element for SchmittTrigger {
     fn name(&self) -> &str { "schmitt" }
     fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
-    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, ctx: &Context, nets: &[LogicValue], sink: &mut dyn EventSink) {
+    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, t: f64, nets: &[LogicValue], sink: &mut dyn EventSink) {
         let latest = state.latest().unwrap();
-        let eval_ctx = EvalCtx { time: ctx.time, nets, analog: latest.as_slice().unwrap() };
+        let eval_ctx = EvalCtx { time: t, nets, analog: latest.as_slice().unwrap() };
         self.comb_phase(&eval_ctx, sink);
     }
     fn boundary(&self) -> DigitalPorts<'_> {
@@ -302,7 +302,7 @@ impl Element for GlitchTestDevice {
 
 // ─────────────────────────────── Context stub ─────────────────────────────────
 
-fn dummy_context() -> Context { Context { time: 0.0, ..Context::default() } }
+fn dummy_context() -> Context { Context::default() }
 
 // ─────────────────────────────── A → D Tests ─────────────────────────────────
 

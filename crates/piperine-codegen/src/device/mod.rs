@@ -274,12 +274,12 @@ impl Element for PiperineDevice {
     fn accept_timestep(
         &mut self,
         state: &CircularArrayBuffer2<f64>,
-        ctx: &Context,
+        t: f64,
         nets: &[piperine_solver::digital::LogicValue],
         sink: &mut dyn EventSink,
     ) {
         if let Some(analog) = &mut self.analog {
-            analog.accept_timestep(state, ctx);
+            analog.accept_timestep(state, t);
         }
 
         if self.analog.is_none() && !self.analog_terminal_refs.is_empty() {
@@ -294,7 +294,7 @@ impl Element for PiperineDevice {
         }
 
         if self.digital.as_ref().is_some_and(|d| d.kernel().layout().num_analog() > 0) {
-            let eval_ctx = EvalCtx { time: ctx.time, nets, analog: &[] };
+            let eval_ctx = EvalCtx { time: t, nets, analog: &[] };
             self.evaluate(&eval_ctx, sink);
         }
     }
