@@ -148,26 +148,6 @@ impl Policy {
             dc_damp_tolerance: ctx.dc_damp_tolerance,
         }
     }
-
-    /// Damp a Newton update: halve it in-place when the vector norm exceeds
-    /// `self.dc_damp_tolerance`. Body moved from the old free fn `apply_damping`.
-    pub fn damp_update(
-        &self,
-        state: &crate::math::circular_array::CircularArrayBuffer2<f64>,
-        mut current_guess: ArrayViewMut1<f64>,
-    ) {
-        let Some(last_guess) = state.latest() else { return };
-        let diff_norm_sq: f64 = current_guess
-            .iter()
-            .zip(last_guess.iter())
-            .fold(0.0, |acc, (curr, prev)| acc + (curr - prev).powi(2));
-        let diff_norm = diff_norm_sq.sqrt();
-        if diff_norm >= self.dc_damp_tolerance {
-            for (curr, prev) in current_guess.iter_mut().zip(last_guess.iter()) {
-                *curr = (*curr + *prev) * 0.5;
-            }
-        }
-    }
 }
 
 // ── Context (shared, immutable) ────────────────────────────────────────────

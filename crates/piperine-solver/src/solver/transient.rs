@@ -76,14 +76,6 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         self.circuit.devices.iter().any(|d| d.limiting_active())
     }
 
-    fn apply_limit(
-        &mut self,
-        state: &CircularArrayBuffer2<f64>,
-        current_guess: ArrayViewMut1<f64>,
-    ) {
-        crate::solver::Policy::default().damp_update(state, current_guess);
-    }
-
     fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<f64>) {}
 
     fn convergence_success_callback(
@@ -335,7 +327,12 @@ impl<'a> TransientSolver<'a> {
                     dt = self.stepper.reject_dt(dt_proposed, &self.options);
                     if dt <= self.options.dt_min {
                         // Can't shrink further — accept the step as-is rather
-                        // than stall, and let the PI recover.
+                        // than stall. Surface the accuracy concession (audit C2).
+                        tracing::warn!(
+                            "transient LTE exceeded trtol at dt_min ({:.3e}); \
+                             accepting step at t={:.3e} with reduced accuracy",
+                            dt, current_time
+                        );
                     } else {
                         continue;
                     }
