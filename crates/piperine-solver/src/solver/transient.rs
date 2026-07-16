@@ -14,7 +14,7 @@ use crate::solver::convergence::StepperStrategy;
 use crate::solver::dc::DcSolver;
 use crate::solver::Context;
 use log::debug;
-use ndarray::{ArrayView1, ArrayViewMut1};
+use ndarray::ArrayView1;
 use std::collections::HashMap;
 
 pub struct TransientSystem<'a> {
@@ -73,13 +73,8 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         Ok(all_stamps)
     }
 
-    fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
-        let netlist = self.circuit.netlist();
-        { if self.circuit.devices.iter().any(|d| d.limiting_active()) { return false; } self.context.tolerances.has_converged(state.view(0), new_guess, netlist) }
-    }
-
-    fn residual_converged(&self, residual: &[f64], scale: &[f64]) -> bool {
-        self.context.tolerances.residual_test(self.circuit.netlist(), residual, scale)
+    fn netlist(&self) -> &crate::analog::Netlist {
+        self.circuit.netlist()
     }
 
     fn any_limiting(&self) -> bool {
@@ -207,12 +202,6 @@ impl<'a> TransientSolver<'a> {
         let strategy = crate::solver::convergence::DampedNewton;
         let policy = crate::solver::Policy::from_context(&self.system.context);
         let tolerances = self.system.context.tolerances;
-        // Borrow-checker workaround: the netlist lives behind `&mut system`
-        // (through `circuit`), but `solve_with_strategy` borrows the system
-        // mutably while only reading the netlist. The raw-pointer aliasing is
-        // sound because the solve never mutates the netlist.
-        let netlist = self.system.circuit.netlist() as *const crate::analog::Netlist;
-        let netlist: &crate::analog::Netlist = unsafe { &*netlist };
         let t_next = t_n + dt;
 
         // Phase 1 — Trapezoidal over γ·dt → intermediate point x_{n+γ}.
@@ -220,7 +209,7 @@ impl<'a> TransientSolver<'a> {
         self.system.h = dt;
         self.system.time = t_n + TrBdf2::GAMMA * dt;
         self.solver.solve_with_strategy(
-            &mut self.system, &strategy, &tolerances, &policy, netlist,
+            &mut self.system, &strategy, &tolerances, &policy,
         )?;
 
         // Phase 2 — BDF2 over (1−γ)·dt → final point x_{n+1} (warm-start x_{n+γ}).
@@ -228,7 +217,7 @@ impl<'a> TransientSolver<'a> {
         self.system.h = dt;
         self.system.time = t_next;
         self.solver.solve_with_strategy(
-            &mut self.system, &strategy, &tolerances, &policy, netlist,
+            &mut self.system, &strategy, &tolerances, &policy,
         )?;
 
         // `prev_h` is set by the caller once the global-LTE accept gate passes.

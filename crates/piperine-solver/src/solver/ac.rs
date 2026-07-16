@@ -11,7 +11,6 @@ use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::solver::dc::DcSolver;
 use crate::solver::Context;
 use num_complex::Complex;
-use num_traits::Zero;
 use std::collections::HashMap;
 
 /// Linear system representation for AC small-signal analysis.
@@ -48,6 +47,10 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for AcSystem<'a> {
             all_stamps.extend(ac.load_ac(&self.dc_point, &ac_ctx, &self.context));
         }
         Ok(all_stamps)
+    }
+
+    fn netlist(&self) -> &crate::analog::Netlist {
+        self.circuit.netlist()
     }
 }
 

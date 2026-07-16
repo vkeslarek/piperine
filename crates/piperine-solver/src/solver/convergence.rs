@@ -114,28 +114,10 @@ impl NewtonStrategy for DampedNewton {
         netlist: &Netlist,
         tolerances: &Tolerances,
     ) -> bool {
-        // 1. Update convergence test
-        if !tolerances.has_converged(state.view(0), guess, netlist) {
-            return false;
-        }
-        // 2. Residual convergence test (ngspice NIconvTest)
-        use crate::math::linear::AsIndex;
-        for r in netlist.all_references() {
-            let Some(i) = r.as_index() else { continue };
-            if i >= residual.len() {
-                continue;
-            }
-            let abs_limit = if r.variable().is_branch() {
-                tolerances.abstol
-            } else {
-                tolerances.vntol
-            };
-            let tol = abs_limit + tolerances.reltol * scale[i];
-            if residual[i].abs() > tol {
-                return false;
-            }
-        }
-        true
+        // Voltage-step test AND current-residual test (ngspice NIconvTest) —
+        // both owned by `Tolerances`, the single home of the convergence math.
+        tolerances.has_converged(state.view(0), guess, netlist)
+            && tolerances.residual_test(netlist, residual, scale)
     }
 
     fn max_iter(&self, policy: &Policy) -> usize {

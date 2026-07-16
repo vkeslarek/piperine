@@ -14,6 +14,12 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
         state: &CircularArrayBuffer2<E>,
     ) -> crate::result::Result<Vec<Stamp<A, E>>>;
 
+    /// The netlist naming this system's unknowns. The strategy solve path
+    /// reads it for the per-row convergence tests; routing it through the
+    /// system (instead of a separate parameter) lets the solver reborrow it
+    /// each iteration without aliasing the `&mut system` borrow.
+    fn netlist(&self) -> &crate::analog::Netlist;
+
     fn converged(&self, _state: &CircularArrayBuffer2<E>, _delta: &ArrayView1<E>) -> bool {
         true
     }
@@ -70,6 +76,11 @@ where
     linear_system: L,
     symbolic: L::SymbolicType,
     state: CircularArrayBuffer2<E>,
+    /// Per-row nonlinear residual `(A·v − b)`, rebuilt each iteration in
+    /// place. Hoisted so the Newton inner loop allocates nothing (CP-06).
+    residual: Vec<E>,
+    /// Per-row absolute-contribution sum for the relative tolerance term.
+    scale: Vec<f64>,
     last_iterations: usize,
     total_iterations: usize,
     _marker: std::marker::PhantomData<A>,
@@ -95,10 +106,41 @@ where
             linear_system,
             symbolic,
             state,
+            residual: vec![E::zero(); size],
+            scale: vec![0.0; size],
             last_iterations: 0,
             total_iterations: 0,
             _marker: std::marker::PhantomData,
         })
+    }
+
+    /// Rebuild the nonlinear residual + scale vectors in place from the
+    /// just-assembled stamps, evaluated at the current point. For a companion
+    /// (Norton) stamp set, `(A·v_old − b)[r]` equals the node's current
+    /// imbalance `I_r(v_old)` (or a branch row's equation residual);
+    /// `scale[r]` accumulates the absolute contributions for the relative
+    /// tolerance. Must run before the stamps are consumed by the linear system.
+    fn compute_residual(&mut self, stamps: &[Stamp<A, E>]) {
+        self.residual.fill(E::zero());
+        self.scale.fill(0.0);
+        let Some(v_old) = self.state.latest() else { return };
+        for stamp in stamps {
+            match stamp {
+                Stamp::Matrix(r, c, g) => {
+                    if let (Some(ri), Some(ci)) = (r.as_index(), c.as_index()) {
+                        let term = *g * v_old[ci];
+                        self.residual[ri] += term;
+                        self.scale[ri] += term.abs();
+                    }
+                }
+                Stamp::Rhs(r, val) => {
+                    if let Some(ri) = r.as_index() {
+                        self.residual[ri] -= *val;
+                        self.scale[ri] += val.abs();
+                    }
+                }
+            }
+        }
     }
 
     pub fn push_initial_conditions(&mut self, ivs: Vec<InitialValue<A, E>>) {
@@ -124,34 +166,7 @@ where
             debug!("Newton Iteration {}", iter + 1);
 
             let stamps = system.assemble(&self.state)?;
-
-            // Nonlinear residual at the assembled point v_old: for a companion
-            // (Norton) stamp set, `(A·v_old − b)[r]` equals the node's current
-            // imbalance `I_r(v_old)` (or a branch row's equation residual).
-            // `scale[r]` accumulates the absolute contributions for the
-            // relative tolerance. Computed before the stamps are consumed.
-            let size = self.symbolic.size();
-            let mut residual = vec![E::zero(); size];
-            let mut scale = vec![0.0_f64; size];
-            if let Some(v_old) = self.state.latest() {
-                for stamp in &stamps {
-                    match stamp {
-                        Stamp::Matrix(r, c, g) => {
-                            if let (Some(ri), Some(ci)) = (r.as_index(), c.as_index()) {
-                                let term = *g * v_old[ci];
-                                residual[ri] += term;
-                                scale[ri] += term.abs();
-                            }
-                        }
-                        Stamp::Rhs(r, val) => {
-                            if let Some(ri) = r.as_index() {
-                                residual[ri] -= *val;
-                                scale[ri] += val.abs();
-                            }
-                        }
-                    }
-                }
-            }
+            self.compute_residual(&stamps);
 
             self.linear_system.reset();
             self.linear_system.apply_stamps(stamps);
@@ -171,7 +186,7 @@ where
             system.apply_limit(&self.state, current_guess.view_mut());
 
             if system.converged(&self.state, &current_guess.view())
-                && system.residual_converged(&residual, &scale)
+                && system.residual_converged(&self.residual, &self.scale)
             {
                 // Commit the converged solution — the buffer's latest row is
                 // what snapshots read and what the next timestep's companion
@@ -244,7 +259,6 @@ where
         strategy: &dyn NewtonStrategy,
         tolerances: &Tolerances,
         policy: &Policy,
-        netlist: &crate::analog::Netlist,
     ) -> crate::result::Result<Array1<f64>> {
         let guess = if let Some(prev) = self.state.latest() {
             prev.to_owned()
@@ -262,29 +276,7 @@ where
             debug!("Newton Iteration {}", iter + 1);
 
             let stamps = system.assemble(&self.state)?;
-
-            let size = self.symbolic.size();
-            let mut residual = vec![0.0_f64; size];
-            let mut scale = vec![0.0_f64; size];
-            if let Some(v_old) = self.state.latest() {
-                for stamp in &stamps {
-                    match stamp {
-                        Stamp::Matrix(r, c, g) => {
-                            if let (Some(ri), Some(ci)) = (r.as_index(), c.as_index()) {
-                                let term = *g * v_old[ci];
-                                residual[ri] += term;
-                                scale[ri] += term.abs();
-                            }
-                        }
-                        Stamp::Rhs(r, val) => {
-                            if let Some(ri) = r.as_index() {
-                                residual[ri] -= *val;
-                                scale[ri] += val.abs();
-                            }
-                        }
-                    }
-                }
-            }
+            self.compute_residual(&stamps);
 
             self.linear_system.reset();
             self.linear_system.apply_stamps(stamps);
@@ -311,9 +303,9 @@ where
                 && strategy.is_converged(
                     &self.state,
                     &current_guess.view(),
-                    &residual,
-                    &scale,
-                    netlist,
+                    &self.residual,
+                    &self.scale,
+                    system.netlist(),
                     tolerances,
                 ) {
                 self.state

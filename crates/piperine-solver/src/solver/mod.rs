@@ -2,7 +2,7 @@ use crate::analog::Netlist;
 use crate::math::integration::IntegrationMethod;
 use crate::math::unit::{Ohm, Siemens};
 use faer::{Par, set_global_parallelism};
-use ndarray::{ArrayView1, ArrayViewMut1};
+use ndarray::ArrayView1;
 use std::num::NonZeroUsize;
 use std::sync::Once;
 

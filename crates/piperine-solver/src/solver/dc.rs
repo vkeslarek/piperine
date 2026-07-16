@@ -11,7 +11,7 @@ use crate::math::linear::Stamp;
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::solver::Context;
 
-use ndarray::{ArrayView1, ArrayViewMut1};
+use ndarray::ArrayView1;
 use std::collections::HashMap;
 
 /// Non-linear system representation for DC analysis.
@@ -52,7 +52,12 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         // Device bypass: if the solution barely moved since the last
         // evaluation, reuse cached stamps instead of re-evaluating every
         // device model (audit P4 — BYPASS_OK declared but never consulted).
-        if self.cache_valid {
+        // Suppressed while any device limiter is clamping — a bypassed
+        // `load_dc` would freeze the limiter's internal state and stall the
+        // convergence gate. The cache is dropped by `invalidate_bypass`
+        // whenever the stamps depend on anything besides the solution vector
+        // (homotopy scale changes, digital settle).
+        if self.cache_valid && !self.any_limiting() {
             if let Some(curr) = state.latest() {
                 let moved = curr
                     .iter()
@@ -70,7 +75,10 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         }
         self.bypass_misses += 1;
 
-        let mut all_stamps = Vec::new();
+        // Build straight into the cache so the buffer's capacity is reused
+        // across iterations; the returned Vec is the one clone per miss.
+        self.stamp_cache.clear();
+        let all_stamps = &mut self.stamp_cache;
 
         self.circuit.update_all(state, &self.context);
         let src_scale = self.src_scale;
@@ -103,35 +111,19 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
             }
         }
 
-        // Cache stamps + solution for bypass on the next iteration.
-        self.stamp_cache = all_stamps.clone();
+        // Remember the solution this evaluation saw, so the next iteration
+        // can measure how far it moved.
         if let Some(curr) = state.latest() {
-            self.last_solution = curr.to_vec();
+            self.last_solution.clear();
+            self.last_solution.extend(curr.iter());
             self.cache_valid = true;
         }
 
-        Ok(all_stamps)
+        Ok(self.stamp_cache.clone())
     }
 
-    /// Checks if the Newton-Raphson iteration has converged.
-    ///
-    /// Compares the current guess against the previous state using tolerance
-    /// criteria defined in the solver context.
-    fn converged(&self, state: &CircularArrayBuffer2<f64>, new_guess: &ArrayView1<f64>) -> bool {
-        let netlist = self.circuit.netlist();
-        if self.circuit.devices.iter().any(|d| d.limiting_active()) {
-            return false;
-        }
-        self.context.tolerances.has_converged(state.view(0), new_guess, netlist)
-    }
-
-    /// ngspice `NIconvTest`: every node's current imbalance (and every branch
-    /// row's equation residual) must be within tolerance. Node rows use the
-    /// current tolerance `abstol`, branch rows the voltage tolerance `vntol`;
-    /// both get the relative term `reltol · scale`. This is the half of the
-    /// convergence test the voltage-step check misses on stiff devices.
-    fn residual_converged(&self, residual: &[f64], scale: &[f64]) -> bool {
-        self.context.tolerances.residual_test(self.circuit.netlist(), residual, scale)
+    fn netlist(&self) -> &crate::analog::Netlist {
+        self.circuit.netlist()
     }
 
     fn any_limiting(&self) -> bool {
@@ -147,6 +139,18 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         _state: &CircularArrayBuffer2<f64>,
         _: &ArrayView1<f64>,
     ) {
+    }
+}
+
+impl DcSystem<'_> {
+    /// Drop the bypass cache. Must be called whenever the stamps depend on
+    /// anything besides the solution vector: a homotopy scale change
+    /// (`gmin_extra` / `src_scale`) or a digital settle (the D2A bridge can
+    /// flip stamps while the analog solution stands still). Without this,
+    /// a warm-started Newton whose solution barely moved would reuse stamps
+    /// built under the old scales — silently wrong.
+    fn invalidate_bypass(&mut self) {
+        self.cache_valid = false;
     }
 }
 
@@ -223,17 +227,17 @@ impl<'a> DcSolver<'a> {
                         break;
                     }
                     // Digital changed — re-solve analog with updated D2A state.
+                    // The digital snapshot feeds the stamps, so the bypass
+                    // cache is stale even though the analog solution is not.
+                    self.system.invalidate_bypass();
                     let strategy = crate::solver::convergence::DampedNewton;
                     let policy = crate::solver::Policy::from_context(&self.system.context);
                     let tolerances = self.system.context.tolerances;
-                    let netlist = self.system.circuit.netlist() as *const crate::analog::Netlist;
-                    let netlist: &crate::analog::Netlist = unsafe { &*netlist };
                     sol = self.solver.solve_with_strategy(
                         &mut self.system,
                         &strategy,
                         &tolerances,
                         &policy,
-                        netlist,
                     )?;
                 }
             }
@@ -266,25 +270,25 @@ impl HomotopyDriver for DcSolver<'_> {
         let strategy = crate::solver::convergence::DampedNewton;
         let policy = crate::solver::Policy::from_context(&self.system.context);
         let tolerances = self.system.context.tolerances;
-        // Extract netlist ref before &mut self.system — Netlist is not Clone.
-        // SAFETY: the netlist is structurally stable during Newton iteration
-        // (devices stamp into it, but they don't create/destroy unknowns).
-        let netlist = self.system.circuit.netlist() as *const crate::analog::Netlist;
-        let netlist: &crate::analog::Netlist = unsafe { &*netlist };
         self.solver.solve_with_strategy(
             &mut self.system,
             &strategy,
             &tolerances,
             &policy,
-            netlist,
         )
     }
 
     fn set_gmin_extra(&mut self, g: f64) {
+        if self.system.gmin_extra != g {
+            self.system.invalidate_bypass();
+        }
         self.system.gmin_extra = g;
     }
 
     fn set_src_scale(&mut self, s: f64) {
+        if self.system.src_scale != s {
+            self.system.invalidate_bypass();
+        }
         self.system.src_scale = s;
     }
 
