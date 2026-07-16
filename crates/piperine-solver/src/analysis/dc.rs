@@ -1,16 +1,10 @@
-use crate::analog::{
-    BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier,
-};
-use crate::core::circuit::CircuitInstance;
-use crate::core::net::Net;
+use crate::analog::AnalogReference;
 use crate::digital::LogicValue;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::InitialValue;
 use crate::math::linear::Stamp;
 use crate::solver::Context;
-use std::collections::HashMap;
 use std::ops::Deref;
-use std::sync::Arc;
 
 /// The read-only state an element sees while stamping the DC system: the analog
 /// solution history **and** the digital net snapshot it may read (D2A — an
@@ -61,63 +55,3 @@ pub trait DcAnalysis {
     }
 }
 
-#[derive(Debug)]
-pub struct DcAnalysisResult {
-    values: HashMap<Arc<AnalogVariable>, f64>,
-    pub stats: crate::result::SolverStats,
-}
-
-impl DcAnalysisResult {
-    pub fn new(
-        values: HashMap<Arc<AnalogVariable>, f64>,
-    ) -> Self {
-        Self {
-            values,
-            stats: crate::result::SolverStats::default(),
-        }
-    }
-
-    /// Replace the default (zeroed) stats with populated values.
-    pub fn set_stats(&mut self, stats: crate::result::SolverStats) {
-        self.stats = stats;
-    }
-    pub fn get(&self, variable: impl Into<Arc<AnalogVariable>>) -> Option<f64> {
-        self.values.get(&variable.into()).cloned()
-    }
-
-    pub fn get_node(&self, node_identifier: &NodeIdentifier) -> Option<f64> {
-        self.get(AnalogVariable::Node(node_identifier.clone()))
-    }
-
-    pub fn get_branch(&self, branch_identifier: impl Into<BranchIdentifier>) -> Option<f64> {
-        self.get(AnalogVariable::Branch(branch_identifier.into()))
-    }
-
-    pub fn values(&self) -> &HashMap<Arc<AnalogVariable>, f64> {
-        &self.values
-    }
-
-    pub fn as_iv(&self, circuit: &CircuitInstance) -> Vec<InitialValue<AnalogReference, f64>> {
-        let netlist = circuit.netlist();
-        let mut initial_values = Vec::with_capacity(self.values.len());
-        for (var, value) in &self.values {
-            if let Some(reference) = netlist.reference_for(var).cloned() {
-                initial_values.push(InitialValue {
-                    reference,
-                    value: *value,
-                });
-            }
-        }
-
-        initial_values
-    }
-
-    /// Read the solved value by [`Net`] — the unified naming layer used by
-    /// hosts, diagnostics, and result mappers. Returns `None` for any net
-    /// the result does not cover (pseudo nets like ground, or unmapped
-    /// digital nets — those live on a separate path).
-    pub fn get_net(&self, net: &Net) -> Option<f64> {
-        let var = net.analog_variable()?;
-        self.values.get(var).copied()
-    }
-}

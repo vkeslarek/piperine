@@ -1,7 +1,8 @@
 use crate::analysis::ac::{
-    AcAnalysisContext, AcAnalysisResult, AcAnalysisStep, AcSweepAnalysisOptions,
+    AcAnalysisContext, AcSweepAnalysisOptions,
 };
-use crate::analysis::dc::DcAnalysisResult;
+use crate::prelude::{AcAnalysisResult, AcAnalysisStep};
+use crate::prelude::DcAnalysisResult;
 use crate::core::circuit::CircuitInstance;
 use crate::analog::AnalogReference;
 use crate::math::circular_array::CircularArrayBuffer2;

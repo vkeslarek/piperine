@@ -1,7 +1,7 @@
-use crate::analysis::dc::{DcAnalysisResult, DcAnalysisState};
-use crate::analysis::tf::{
-    TransferFunctionAnalysisOptions, TransferFunctionAnalysisResult, TransferType,
-};
+use crate::analysis::dc::DcAnalysisState;
+use crate::prelude::DcAnalysisResult;
+use crate::analysis::tf::TransferFunctionAnalysisOptions;
+use crate::prelude::{TransferFunctionAnalysisResult, TransferType};
 use crate::core::circuit::CircuitInstance;
 use crate::analog::{AnalogReference, AnalogVariable};
 use crate::math::faer::FaerSymbolicMatrix;

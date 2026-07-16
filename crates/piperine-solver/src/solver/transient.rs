@@ -1,7 +1,8 @@
 use crate::analysis::transient::{
-    TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisResult,
-    TransientAnalysisState, TransientStep,
+    TransientAnalysisContext, TransientAnalysisOptions,
+    TransientAnalysisState,
 };
+use crate::prelude::{TransientAnalysisResult, TransientStep};
 use crate::core::circuit::CircuitInstance;
 use crate::analog::AnalogReference;
 use crate::math::circular_array::CircularArrayBuffer2;
@@ -159,7 +160,7 @@ impl<'a> TransientSolver<'a> {
         let mut dc_solver = DcSolver::new(self.system.circuit, Context::default())?;
         let dc_result = dc_solver.solve()?;
 
-        let netlist = self.system.circuit.netlist();
+        let _netlist = self.system.circuit.netlist();
         let iv_dc = dc_result.as_iv(self.system.circuit);
 
         // Element `@initial { V(p,n) <- ic }` UIC seeds: set the t=0 branch

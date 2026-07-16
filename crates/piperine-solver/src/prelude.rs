@@ -36,11 +36,10 @@ pub use crate::solver::convergence::{
 };
 
 // ── Results ────────────────────────────────────────────────────────────────
-pub use crate::analysis::ac::{AcAnalysisResult, AcAnalysisStep};
-pub use crate::analysis::dc::DcAnalysisResult;
-pub use crate::analysis::noise::NoiseAnalysisResult;
-pub use crate::analysis::tf::TransferFunctionAnalysisResult;
-pub use crate::analysis::transient::{TransientAnalysisResult, TransientStep};
+pub use crate::result::{
+    AcAnalysisResult, AcAnalysisStep, DcAnalysisResult, NoiseAnalysisResult,
+    TransferFunctionAnalysisResult, TransferType, TransientAnalysisResult, TransientStep,
+};
 
 // ── Errors ─────────────────────────────────────────────────────────────────
 pub use crate::error::Error;

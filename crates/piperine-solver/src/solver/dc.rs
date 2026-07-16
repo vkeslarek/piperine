@@ -1,4 +1,4 @@
-use crate::analysis::dc::DcAnalysisResult;
+use crate::prelude::DcAnalysisResult;
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::ElementCapabilities;
 use crate::analysis::dc::DcAnalysisState;

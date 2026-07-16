@@ -1,17 +1,11 @@
-use crate::analog::{
-    BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier,
-};
-use crate::core::net::Net;
+use crate::analog::AnalogReference;
 use crate::digital::LogicValue;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::InitialValue;
 use crate::math::linear::Stamp;
 use crate::math::unit::Second;
 use crate::solver::Context;
-use std::collections::HashMap;
 use std::ops::Deref;
-use std::slice::Iter;
-use std::sync::Arc;
 
 /// The read-only state an element sees while stamping the transient system: the
 /// analog solution history **and** the digital net snapshot it may read (D2A,
@@ -167,121 +161,15 @@ pub trait TransientAnalysis {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct TransientAnalysisResult {
-    values: Vec<TransientStep>,
-    pub stats: crate::result::SolverStats,
-}
 
-impl TransientAnalysisResult {
-    pub fn new(values: Vec<TransientStep>) -> Self {
-        Self {
-            values,
-            stats: crate::result::SolverStats::default(),
-        }
-    }
-
-    /// Replace the default (zeroed) stats with populated values.
-    pub fn set_stats(&mut self, stats: crate::result::SolverStats) {
-        self.stats = stats;
-    }
-
-    pub fn push(&mut self, step: TransientStep) {
-        self.values.push(step)
-    }
-
-    pub fn len(&self) -> usize {
-        self.values.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
-    }
-
-    pub fn get(&self, index: usize) -> Option<&TransientStep> {
-        assert!(index < self.values.len());
-
-        self.values.get(index)
-    }
-
-    pub fn last(&self) -> Option<&TransientStep> {
-        self.values.last()
-    }
-
-    pub fn iter(&self) -> Iter<'_, TransientStep> {
-        self.values.iter()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct TransientStep {
-    time: f64,
-    values: HashMap<Arc<AnalogVariable>, f64>,
-    /// Snapshot of every digital net's logic value at this step, indexed by
-    /// `DigitalNet` id. Lets a transient trace read sequential logic over time
-    /// (`Trace.v(bit_net)` → 0/1/NaN), which `$op` cannot express (it is a
-    /// stateless operating point).
-    digital: Vec<crate::digital::LogicValue>,
-}
-
-impl TransientStep {
-    pub fn new(time: f64, values: HashMap<Arc<AnalogVariable>, f64>) -> Self {
-        Self { time, values, digital: Vec::new() }
-    }
-
-    /// Attach a digital-net snapshot (by `DigitalNet` id).
-    pub fn with_digital(mut self, digital: Vec<crate::digital::LogicValue>) -> Self {
-        self.digital = digital;
-        self
-    }
-
-    /// This step's logic value for digital net `idx`, or `None` if unrecorded.
-    pub fn digital(&self, idx: usize) -> Option<crate::digital::LogicValue> {
-        self.digital.get(idx).copied()
-    }
-
-    pub fn get(&self, variable: impl Into<Arc<AnalogVariable>>) -> Option<f64> {
-        self.values.get(&variable.into()).cloned()
-    }
-
-    pub fn get_node(&self, node_identifier: &NodeIdentifier) -> Option<f64> {
-        self.get(AnalogVariable::Node(node_identifier.clone()))
-    }
-
-    pub fn get_branch(&self, branch_identifier: impl Into<BranchIdentifier>) -> Option<f64> {
-        self.get(AnalogVariable::Branch(branch_identifier.into()))
-    }
-
-    /// Read the analog value by [`Net`] (the unified naming layer). Returns
-    /// `None` for digital and pseudo nets.
-    pub fn get_net(&self, net: &Net) -> Option<f64> {
-        let var = net.analog_variable()?;
-        self.values.get(var).copied()
-    }
-
-    /// Read the digital logic value by [`Net`]. Returns `None` for analog
-    /// and pseudo nets, or for digital nets that were not recorded this
-    /// step.
-    pub fn digital_net(&self, net: &Net) -> Option<LogicValue> {
-        if !matches!(net.kind(), crate::core::net::NetKind::Digital) {
-            return None;
-        }
-        let idx = net.dense()?;
-        self.digital.get(idx).copied()
-    }
-
-    pub fn values(&self) -> &HashMap<Arc<AnalogVariable>, f64> {
-        &self.values
-    }
-
-    pub fn time(&self) -> f64 {
-        self.time
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::prelude::TransientStep;
+    use crate::core::net::Net;
+    use crate::digital::LogicValue;
+    use std::collections::HashMap;
     use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
     use std::sync::Arc;
 

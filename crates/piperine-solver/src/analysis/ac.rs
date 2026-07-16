@@ -1,15 +1,10 @@
-use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
-use crate::analog::{
-    BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier,
-};
-use crate::core::net::Net;
+use crate::analysis::dc::DcAnalysis;
+use crate::prelude::DcAnalysisResult;
+use crate::analog::AnalogReference;
 use crate::math::linear::Stamp;
 use crate::math::unit::Hertz;
 use crate::solver::Context;
 use num_complex::Complex;
-use std::collections::HashMap;
-use std::slice::Iter;
-use std::sync::Arc;
 
 pub struct AcAnalysisContext {
     pub frequency: Hertz,
@@ -72,68 +67,7 @@ impl AcSweepAnalysisOptions {
     }
 }
 
-pub struct AcAnalysisResult {
-    values: Vec<AcAnalysisStep>,
-}
 
-impl AcAnalysisResult {
-    pub fn new(values: Vec<AcAnalysisStep>) -> Self {
-        Self {
-            values,
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.values.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
-    }
-
-    pub fn get(&self, index: usize) -> Option<&AcAnalysisStep> {
-        assert!(index < self.values.len());
-
-        self.values.get(index)
-    }
-
-    pub fn iter(&self) -> Iter<'_, AcAnalysisStep> {
-        self.values.iter()
-    }
-}
-
-pub struct AcAnalysisStep {
-    pub frequency: Hertz,
-    values: HashMap<Arc<AnalogVariable>, Complex<f64>>,
-}
-
-impl AcAnalysisStep {
-    pub fn new(frequency: Hertz, values: HashMap<Arc<AnalogVariable>, Complex<f64>>) -> Self {
-        Self { frequency, values }
-    }
-
-    pub fn get(&self, circuit_var: &AnalogVariable) -> Option<&Complex<f64>> {
-        self.values.get(circuit_var)
-    }
-
-    pub fn get_branch(
-        &self,
-        branch_identifier: impl Into<BranchIdentifier>,
-    ) -> Option<&Complex<f64>> {
-        self.get(&AnalogVariable::Branch(branch_identifier.into()))
-    }
-
-    pub fn get_node(&self, node_identifier: &NodeIdentifier) -> Option<&Complex<f64>> {
-        self.get(&AnalogVariable::Node(node_identifier.clone()))
-    }
-
-    /// Read the small-signal value by [`Net`]. Returns `None` for digital
-    /// and pseudo nets — those have no AC representation here.
-    pub fn get_net(&self, net: &Net) -> Option<&Complex<f64>> {
-        let var = net.analog_variable()?;
-        self.values.get(var)
-    }
-}
 
 /// Per-analysis config for AC. Thin wrapper over the sweep options.
 #[derive(Debug, Clone)]

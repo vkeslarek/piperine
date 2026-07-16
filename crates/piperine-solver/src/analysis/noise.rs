@@ -1,5 +1,6 @@
 use crate::analysis::ac::{AcAnalysis, AcAnalysisContext, AcSweepAnalysisOptions};
-use crate::analysis::dc::{DcAnalysis, DcAnalysisResult};
+use crate::analysis::dc::DcAnalysis;
+use crate::prelude::DcAnalysisResult;
 use crate::analog::{AnalogReference, NodeIdentifier};
 use crate::math::unit::AmpereSquaredSecond;
 
@@ -23,11 +24,7 @@ pub struct NoiseAnalysisOptions {
     pub input_source_name: Option<String>,
 }
 
-pub struct NoiseAnalysisResult {
-    pub frequencies: Vec<f64>,
-    pub out_noise_sq: Vec<f64>,
-    pub integrated_noise: f64,
-}
+
 
 /// Per-analysis config for noise. Carries the sweep, output/reference nodes,
 /// and optional input source name.

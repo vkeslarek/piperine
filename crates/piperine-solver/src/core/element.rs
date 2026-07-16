@@ -2,7 +2,7 @@ use num_complex::Complex64;
 use std::collections::HashSet;
 
 use crate::analysis::ac::AcAnalysisContext;
-use crate::analysis::dc::DcAnalysisResult;
+use crate::prelude::DcAnalysisResult;
 use crate::analysis::dc::DcAnalysisState;
 use crate::analysis::noise::Noise;
 use crate::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};

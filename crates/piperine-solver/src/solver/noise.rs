@@ -1,6 +1,7 @@
 use crate::analysis::ac::AcAnalysisContext;
-use crate::analysis::dc::DcAnalysisResult;
-use crate::analysis::noise::{NoiseAnalysisOptions, NoiseAnalysisResult};
+use crate::prelude::DcAnalysisResult;
+use crate::analysis::noise::NoiseAnalysisOptions;
+use crate::prelude::NoiseAnalysisResult;
 use crate::core::circuit::CircuitInstance;
 use crate::analog::{AnalogReference, AnalogVariable};
 use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
