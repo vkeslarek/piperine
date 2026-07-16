@@ -91,6 +91,11 @@ where
     assembly_ns: u64,
     /// Cumulative wall-clock time spent in the sparse LU solve (ns).
     solve_ns: u64,
+    /// One-shot predictor ratio for the next `solve_with_strategy` call
+    /// (CP-16): seed `x̂ = x₀ + (x₀ − x₁)·r` from the two newest history
+    /// rows instead of plain `x₀`. Consumed (taken) by the solve; `None`
+    /// seeds from the latest point as before.
+    predictor_ratio: Option<f64>,
     _marker: std::marker::PhantomData<A>,
 }
 
@@ -120,6 +125,7 @@ where
             total_iterations: 0,
             assembly_ns: 0,
             solve_ns: 0,
+            predictor_ratio: None,
             _marker: std::marker::PhantomData,
         })
     }
@@ -273,6 +279,15 @@ where
         self.solve_ns
     }
 
+    /// Arm the first-order predictor for the next `solve_with_strategy`
+    /// call: the Newton seed becomes `x̂ = x₀ + (x₀ − x₁)·ratio` over the two
+    /// newest history rows. One-shot — consumed by the solve. The transient
+    /// driver arms it per step with `ratio = γ·dt / ((1−γ)·prev_h)` and skips
+    /// arming after breakpoints/rejections (no valid history).
+    pub fn set_predictor_ratio(&mut self, ratio: f64) {
+        self.predictor_ratio = Some(ratio);
+    }
+
     /// Newton solve with damping and convergence delegated to a
     /// [`NewtonStrategy`]. The DC and transient drivers call this; AC/Noise/TF
     /// (Complex) continue to use the generic [`solve`] path.
@@ -283,10 +298,16 @@ where
         tolerances: &Tolerances,
         policy: &Policy,
     ) -> crate::result::Result<Array1<f64>> {
-        let guess = if let Some(prev) = self.state.latest() {
-            prev.to_owned()
-        } else {
-            Array1::zeros(self.state.size())
+        // Seed: first-order extrapolation when the driver armed the
+        // predictor and two history rows exist (CP-16); else the latest
+        // accepted point; else zeros (cold start).
+        let predictor = self.predictor_ratio.take();
+        let guess = match (predictor, self.state.view(0), self.state.view(1)) {
+            (Some(r), Some(x0), Some(x1)) if r.is_finite() => {
+                &x0 + &((&x0 - &x1) * r)
+            }
+            (_, Some(x0), _) => x0.to_owned(),
+            _ => Array1::zeros(self.state.size()),
         };
         self.state.push(&guess.view());
 

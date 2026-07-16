@@ -202,6 +202,7 @@ impl<'a> TransientSolver<'a> {
         &mut self,
         t_n: f64,
         dt: f64,
+        use_predictor: bool,
     ) -> crate::result::Result<Option<TransientStep>> {
         let strategy = crate::solver::convergence::DampedNewton;
         let policy = crate::solver::Policy::from_context(&self.system.context);
@@ -212,6 +213,15 @@ impl<'a> TransientSolver<'a> {
         self.system.phase = TrBdf2Phase::Trapezoidal;
         self.system.h = dt;
         self.system.time = t_n + TrBdf2::GAMMA * dt;
+        // First-order predictor seed (CP-16): extrapolate the two newest
+        // accepted rows — x_n at view(0), x_{n−1+γ} at view(1), separated by
+        // (1−γ)·prev_h — forward γ·dt to the TR-stage target. Only when the
+        // previous step was accepted and didn't land on a breakpoint
+        // (prev_h > 0); phase 2 warm-starts from x_{n+γ} and needs none.
+        if use_predictor && self.system.prev_h > 0.0 {
+            let r = TrBdf2::GAMMA * dt / ((1.0 - TrBdf2::GAMMA) * self.system.prev_h);
+            self.solver.set_predictor_ratio(r);
+        }
         self.solver.solve_with_strategy(
             &mut self.system, &strategy, &tolerances, &policy,
         )?;
@@ -248,6 +258,9 @@ impl<'a> TransientSolver<'a> {
         let mut steps_accepted: usize = 0;
         let mut steps_rejected: usize = 0;
         let mut dt_min_floor_hits: usize = 0;
+        // Predictor gate: extrapolation history is only valid coming off an
+        // accepted step (a rejection leaves rejected rows in the buffer).
+        let mut last_step_accepted = false;
         let mut dt_min_seen = f64::INFINITY;
         let mut dt_max_seen = 0.0_f64;
 
@@ -304,7 +317,8 @@ impl<'a> TransientSolver<'a> {
             self.system.circuit.run_digital_at(t_next)?;
 
             // Solve the TR-BDF2 step [current_time, t_next] (two phases).
-            let analog_result = self.execute_timestep(current_time, dt_actual);
+            let analog_result =
+                self.execute_timestep(current_time, dt_actual, last_step_accepted);
 
             if let Ok(Some(snapshot)) = analog_result {
                 // Both Newton phases converged. Global Milne-LTE accept gate
@@ -343,11 +357,13 @@ impl<'a> TransientSolver<'a> {
                             dt, current_time
                         );
                     } else {
+                        last_step_accepted = false;
                         continue;
                     }
                 }
                 // Accept.
                 steps_accepted += 1;
+                last_step_accepted = true;
                 dt_min_seen = dt_min_seen.min(dt_actual);
                 dt_max_seen = dt_max_seen.max(dt_actual);
                 let solution = self.solver.current_guess().unwrap().to_owned();
@@ -396,6 +412,7 @@ impl<'a> TransientSolver<'a> {
                 // Either phase failed to converge — reject the whole step,
                 // halve dt, reset the PI memory (TRB-05/09).
                 steps_rejected += 1;
+                last_step_accepted = false;
                 self.system.circuit.digital_state.rollback();
                 dt = self.stepper.reject_dt(dt_proposed, &self.options);
 
