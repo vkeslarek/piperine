@@ -1,0 +1,10 @@
+* NMOS diode-connected load
+Vdd vdd 0 DC 5
+R1 vdd d 10k
+M1 d d 0 0 NMOD L=2u W=10u
+.model NMOD NMOS (level=1 vto=1 kp=2e-5 lambda=0)
+.control
+op
+print v(d)
+.endc
+.end

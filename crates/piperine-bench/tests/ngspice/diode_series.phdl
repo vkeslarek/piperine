@@ -1,0 +1,16 @@
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::diode;
+mod Top() {
+    wire gnd: Electrical; wire vin: Electrical; wire a: Electrical; wire b: Electrical;
+    v1: vsrc (.p=vin,.n=gnd) { .dc = 5.0 };
+    r1: res  (.p=vin,.n=a) { .r = 1.0e3 };
+    d1: dio  (.p=a,.n=b) { .model = DioModel { .is = 1.0e-14, .n = 1.0, .rs = 0.0 } };
+    d2: dio  (.p=b,.n=gnd) { .model = DioModel { .is = 1.0e-14, .n = 1.0, .rs = 0.0 } };
+}
+bench Top { fn t() {
+    var r = $op();
+    $display("NODE a", r.v(a, gnd));
+    $display("NODE b", r.v(b, gnd));
+} }

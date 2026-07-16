@@ -1,0 +1,15 @@
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::jfet;
+mod Top() {
+    wire gnd: Electrical; wire vdd: Electrical; wire d: Electrical;
+    v1: vsrc (.p=vdd,.n=gnd) { .dc = 5.0 };
+    rd: res  (.p=vdd,.n=d) { .r = 1.0e3 };
+    j1: jfet (.d=d,.g=gnd,.s=gnd)
+        { .model = JfetModel { .vto = 0.0 - 2.0, .beta = 1.0e-3, .lambda = 0.0 } };
+}
+bench Top { fn t() {
+    var r = $op();
+    $display("NODE d", r.v(d, gnd));
+} }

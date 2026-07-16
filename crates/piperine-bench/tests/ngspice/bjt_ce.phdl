@@ -1,0 +1,19 @@
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::bjt;
+mod Top() {
+    wire gnd: Electrical; wire vcc: Electrical; wire vb: Electrical;
+    wire base: Electrical; wire col: Electrical;
+    vc: vsrc (.p=vcc,.n=gnd) { .dc = 5.0 };
+    vbb: vsrc (.p=vb,.n=gnd) { .dc = 2.0 };
+    rb: res (.p=vb,.n=base) { .r = 10.0e3 };
+    rc: res (.p=vcc,.n=col) { .r = 1.0e3 };
+    q1: bjt (.c=col,.b=base,.e=gnd,.sub=gnd)
+        { .model = BjtModel { .is = 1.0e-16, .bf = 100.0, .nf = 1.0, .br = 1.0, .nr = 1.0 } };
+}
+bench Top { fn t() {
+    var r = $op();
+    $display("NODE col", r.v(col, gnd));
+    $display("NODE base", r.v(base, gnd));
+} }

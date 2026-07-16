@@ -1,0 +1,12 @@
+* NPN current mirror
+Vcc vcc 0 DC 5
+Rref vcc ref 4.7k
+Rload vcc out 4.7k
+Q1 ref ref 0 0 QMOD
+Q2 out ref 0 0 QMOD
+.model QMOD NPN (is=1e-16 bf=100 nf=1 br=1 nr=1)
+.control
+op
+print v(ref) v(out)
+.endc
+.end
