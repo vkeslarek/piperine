@@ -65,6 +65,17 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
             }
         }
 
+        // gshunt: user-set circuit-wide diagonal conductance to ground on
+        // every node (ngspice parity, convergence aid for floating topologies).
+        let gshunt = self.context.tolerances.gshunt;
+        if gshunt > 0.0 {
+            for r in self.circuit.netlist().all_references() {
+                if r.variable().is_node() && !r.variable().is_ground() {
+                    all_stamps.push(Stamp::Matrix(r.clone(), r.clone(), gshunt));
+                }
+            }
+        }
+
         Ok(all_stamps)
     }
 

@@ -60,6 +60,17 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         for tran in devices.iter_mut() {
             all_stamps.extend(tran.load_transient(&tran_state, &tran_ctx, &self.context));
         }
+
+        // gshunt: user-set circuit-wide diagonal conductance on every node.
+        let gshunt = self.context.tolerances.gshunt;
+        if gshunt > 0.0 {
+            for r in self.circuit.netlist().all_references() {
+                if r.variable().is_node() && !r.variable().is_ground() {
+                    all_stamps.push(Stamp::Matrix(r.clone(), r.clone(), gshunt));
+                }
+            }
+        }
+
         Ok(all_stamps)
     }
 
