@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::analog::{BranchIdentifier, AnalogVariable, NodeIdentifier};
 
 /// Transfer Function analysis options.

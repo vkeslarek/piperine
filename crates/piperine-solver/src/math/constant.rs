@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::math::unit::{
     Celsius, Coulomb, Dimensionless, JoulePerKelvin, JouleSecond, MeterPerSecond,
 };

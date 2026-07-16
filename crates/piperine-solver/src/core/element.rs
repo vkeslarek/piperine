@@ -227,6 +227,13 @@ pub trait Element: Send + Sync {
     fn setup(&mut self, _ctx: &Context) -> crate::result::Result<()> { Ok(()) }
     fn destroy(&mut self) {}
 
+    /// Pre-freeze internal-unknown allocation. Called by [`CircuitBuilder::build`]
+    /// once per element, in insertion order, before the matrix shape freezes.
+    /// Elements that allocate internal MNA unknowns (auxiliary branch currents,
+    /// hidden states) do so here via [`UnknownAllocator::branch`] and MUST
+    /// declare [`ElementCapabilities::HAS_INTERNAL_UNKNOWNS`]. Default: no-op.
+    fn allocate_unknowns(&mut self, _alloc: &mut crate::core::builder::UnknownAllocator<'_>) {}
+
     /// Set the instance temperature; recompute temperature-dependent constants.
     fn set_temperature(&mut self, _t: f64) {}
 

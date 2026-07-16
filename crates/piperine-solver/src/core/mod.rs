@@ -3,6 +3,7 @@
 //! (`circuit.rs`), the unified `Net` naming layer (`net.rs`), typed ports
 //! (`port.rs`), and OSDI-style introspection metadata (`introspect.rs`).
 
+pub mod builder;
 pub mod circuit;
 pub mod element;
 pub mod introspect;

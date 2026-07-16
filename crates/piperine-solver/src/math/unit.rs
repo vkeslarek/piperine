@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! SI unit type aliases.
 //!
 //! These are documentation-only aliases over `f64`: they make solver

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Numerical integration for transient analysis.
 //!
 //! Two concerns live here:

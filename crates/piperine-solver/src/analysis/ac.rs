@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::analysis::dc::DcAnalysis;
 use crate::prelude::DcAnalysisResult;
 use crate::analog::AnalogReference;

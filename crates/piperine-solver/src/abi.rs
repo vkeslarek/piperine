@@ -37,4 +37,4 @@ pub use crate::solver::{Context, Policy, Tolerances};
 pub use crate::result::{NoiseContribution, Result, SolverStats};
 pub use crate::error::{Error, SolverDomain};
 // Element lifecycle allocator (ABI-09)
-// TODO(T9): pub use crate::core::builder::UnknownAllocator;
+pub use crate::core::builder::UnknownAllocator;

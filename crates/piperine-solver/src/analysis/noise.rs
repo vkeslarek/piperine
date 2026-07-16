@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::analysis::ac::{AcAnalysis, AcAnalysisContext, AcSweepAnalysisOptions};
 use crate::analysis::dc::DcAnalysis;
 use crate::prelude::DcAnalysisResult;

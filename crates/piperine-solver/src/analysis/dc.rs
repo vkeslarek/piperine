@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::analog::AnalogReference;
 use crate::digital::LogicValue;
 use crate::math::circular_array::CircularArrayBuffer2;
