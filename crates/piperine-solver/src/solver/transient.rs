@@ -81,6 +81,10 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         self.circuit.devices.iter().any(|d| d.limiting_active())
     }
 
+    fn apply_convergence_hints(&self, guess: ndarray::ArrayViewMut1<f64>) {
+        self.circuit.apply_convergence_hints(guess);
+    }
+
     fn update_sources(&mut self, _state: &mut CircularArrayBuffer2<f64>) {}
 
     fn convergence_success_callback(

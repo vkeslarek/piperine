@@ -79,6 +79,20 @@ bitflags::bitflags! {
     }
 }
 
+/// A device limiter's structured feedback: which unknown it clamped and to
+/// what value this iteration. Where `limiting_active()` only vetoes the
+/// convergence test, a hint lets the solver steer — it applies the limited
+/// value to the Newton guess before testing convergence, so the iteration
+/// continues from the clamped point instead of oscillating around it
+/// (pnjlim/fetlim lineage).
+#[derive(Debug, Clone)]
+pub struct ConvergenceHint {
+    /// The unknown the limiter clamped (node voltage or branch current).
+    pub net: AnalogReference,
+    /// The value the limiter clamped it to.
+    pub limited_value: f64,
+}
+
 /// A single thing the solver simulates — the one contract over every
 /// participant, analog or digital or both.
 ///
@@ -121,6 +135,13 @@ pub trait Element: Send + Sync {
     /// Whether a device limiter is currently clamping (pnjlim/fetlim). While
     /// active the global Newton loop must not declare convergence.
     fn limiting_active(&self) -> bool { false }
+
+    /// Structured limiting feedback: which unknown was clamped, and to what.
+    /// The solver applies the hint to the Newton guess before the convergence
+    /// test. Default `None` — a device that only knows *that* it limited
+    /// keeps reporting through [`limiting_active`](Element::limiting_active);
+    /// a device that knows *what* it limited upgrades to a hint.
+    fn convergence_hint(&self) -> Option<ConvergenceHint> { None }
 
     /// Largest timestep the element can tolerate from here (`$bound_step`).
     fn bound_step_hint(&self) -> f64 { f64::INFINITY }

@@ -95,6 +95,22 @@ bridge: SignalBridge {},
         self.devices.iter_mut().for_each(|d| d.update(state, context));
     }
 
+    /// Steer the Newton guess with every device's structured limiting
+    /// feedback ([`Element::convergence_hint`]): the clamped unknown is set
+    /// to the limited value before the convergence test. The DC and
+    /// transient systems delegate here each iteration.
+    pub fn apply_convergence_hints(&self, mut guess: ndarray::ArrayViewMut1<f64>) {
+        use crate::math::linear::AsIndex;
+        for dev in &self.devices {
+            if let Some(hint) = dev.convergence_hint()
+                && let Some(i) = hint.net.as_index()
+                && i < guess.len()
+            {
+                guess[i] = hint.limited_value;
+            }
+        }
+    }
+
     pub fn netlist(&self) -> &Netlist { &self.netlist }
 
     /// Every solved signal in the circuit — analog nodes, analog branch

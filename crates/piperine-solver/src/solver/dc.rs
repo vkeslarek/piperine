@@ -130,6 +130,10 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         self.circuit.devices.iter().any(|d| d.limiting_active())
     }
 
+    fn apply_convergence_hints(&self, guess: ndarray::ArrayViewMut1<f64>) {
+        self.circuit.apply_convergence_hints(guess);
+    }
+
     /// Called after successful convergence to check for Safe Operating Area violations.
     ///
     /// Iterates through all devices that implement SOA checking and collects any

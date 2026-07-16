@@ -65,6 +65,10 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
     fn any_limiting(&self) -> bool {
         false
     }
+
+    /// Apply device convergence hints (structured limiting) to the Newton
+    /// guess before the convergence test. Default: no hints.
+    fn apply_convergence_hints(&self, _guess: ArrayViewMut1<E>) {}
 }
 
 pub struct NewtonRaphsonSolver<A, E, L>
@@ -320,6 +324,11 @@ where
             if let Some(prev) = self.state.latest() {
                 strategy.damp_update(prev, current_guess.view_mut(), policy);
             }
+
+            // Structured limiting: devices that know *what* they clamped
+            // steer the guess to the limited value before the convergence
+            // test (CP-12) — instead of only vetoing via any_limiting.
+            system.apply_convergence_hints(current_guess.view_mut());
 
             // Device limiting gate: the strategy checks update+residual;
             // limiting_active is a system-level check done per iteration.
