@@ -182,6 +182,64 @@ impl SimSession {
         Ok(OpResult::new(result, digital, Rc::new(info)))
     }
 
+    /// Compile-once DC sweep (MD-18): elaborate/JIT the circuit **once**,
+    /// then for each value restamp `label.param` on the already-compiled
+    /// circuit through the solver's [`CircuitInstance::set_element_param`]
+    /// path and re-run the operating point. Never re-elaborates or re-JITs
+    /// per point — that is an architecture defect, not a perf tweak.
+    ///
+    /// Returns one [`OpResult`] per value, in order. Each result's build
+    /// info carries the point's parameter value so device-internal current
+    /// recomputation (`.i(a, b)` on force-less two-terminal devices) reads
+    /// the swept value, not the build-time one.
+    pub fn run_op_sweep(
+        &self,
+        label: &str,
+        param: &str,
+        values: &[f64],
+        config: &SolverConfig,
+        nodeset: &Value,
+    ) -> Result<Vec<OpResult>, BenchError> {
+        let (mut circuit, mut info) = self.build_circuit()?;
+        let mut results = Vec::with_capacity(values.len());
+        for &v in values {
+            circuit.set_element_param(
+                label,
+                param,
+                piperine_solver::abi::Value::Real(v),
+            )?;
+            // Mirror the restamp into the build info: `.i()` recomputes a
+            // force-less two-terminal current from kernel + params.
+            if let Some(inst) = info.instances.iter_mut().find(|i| i.label == label)
+                && let Some(pidx) = inst.kernel.param_names().iter().position(|n| n == param)
+            {
+                inst.params[pidx] = v;
+            }
+            let ivs = build_ivs(&info, nodeset, circuit.netlist())?;
+            let mut dc = circuit.dc(config.to_context())?;
+            dc.policy = config.to_policy();
+            dc.apply_initial_conditions(ivs);
+            let result = dc.solve()?;
+            drop(dc);
+            let digital = Self::snapshot_digital(&info, &circuit);
+            let voltages: Vec<(String, f64)> = info
+                .nets
+                .iter()
+                .map(|(name, node)| {
+                    let volt = if *node == piperine_solver::prelude::NodeIdentifier::Gnd {
+                        0.0
+                    } else {
+                        result.get_node(node).unwrap_or(0.0)
+                    };
+                    (name.clone(), volt)
+                })
+                .collect();
+            self.fire_after_solve("op", &voltages)?;
+            results.push(OpResult::new(result, digital, Rc::new(info.clone())));
+        }
+        Ok(results)
+    }
+
     /// The top module's digital net values as reals (0/1; X/Z read as NaN so
 /// an assertion on an undriven net fails loud, never silently passes).
 fn snapshot_digital(

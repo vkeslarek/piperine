@@ -219,9 +219,10 @@ impl NgspiceHarness {
     }
 
     /// One full sweep golden case: ngspice `.dc`+`wrdata` vs a piperine
-    /// bench-loop (stage `source`.dc per point, DC solve, read the current
-    /// through the `(branch_a, branch_b)` two-terminal instance — the swept
-    /// source's force branch, matching ngspice's `i(v1)` sign convention).
+    /// compile-once sweep (MD-18: elaborate/JIT once, restamp `source`.dc on
+    /// the compiled circuit per point, DC solve, read the current through
+    /// the `(branch_a, branch_b)` two-terminal instance — the swept source's
+    /// force branch, matching ngspice's `i(v1)` sign convention).
     fn sweep_case(&self, circuit: &str, source: &str, branch_a: &str, branch_b: &str, abstol: f64) {
         let golden = self.ngspice_sweep(circuit).unwrap_or_else(|e| panic!("{e}"));
         assert!(
@@ -237,12 +238,13 @@ impl NgspiceHarness {
             .unwrap_or_else(|e| panic!("{circuit}: elaboration failed: {e:?}"));
         let session = SimSession::new(design, "Top".to_string());
 
+        let values: Vec<f64> = golden.iter().map(|(x, _)| *x).collect();
+        let ops = session
+            .run_op_sweep(source, "dc", &values, &SolverConfig::default(), &Value::Unit)
+            .unwrap_or_else(|e| panic!("{circuit}: piperine DC sweep failed: {e}"));
+
         let mut mismatches = Vec::new();
-        for (x, i_golden) in &golden {
-            session.stage(source, "dc", Value::Real(*x));
-            let op = session
-                .run_op(&SolverConfig::default(), &Value::Unit)
-                .unwrap_or_else(|e| panic!("{circuit}: piperine DC solve failed at {source}={x}: {e}"));
+        for ((x, i_golden), op) in golden.iter().zip(&ops) {
             let i_piperine = op
                 .i(&NetRef { name: branch_a.to_string() }, Some(&NetRef { name: branch_b.to_string() }))
                 .unwrap_or_else(|e| panic!("{circuit}: current readback failed at {source}={x}: {e:?}"));

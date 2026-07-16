@@ -32,6 +32,7 @@ use super::{AnalogInstance, CompiledModule, DigitalInstance, PiperineDevice};
 /// (e.g. a branch current) that isn't already a solver-level result. Built
 /// alongside the circuit by [`CircuitCompiler::build_circuit_mapped`];
 /// `build_circuit` discards this and is a thin wrapper over it.
+#[derive(Clone)]
 pub struct CircuitBuildInfo {
     /// Top-module net name → solver node (`"gnd"` included, mapping to
     /// [`NodeIdentifier::Gnd`]).
@@ -49,6 +50,7 @@ pub struct CircuitBuildInfo {
 /// needs to recompute a terminal current outside the solver's own MNA
 /// stamping (used to read `.i(a, b)` on a two-terminal device with no force
 /// row).
+#[derive(Clone)]
 pub struct BuiltInstanceInfo {
     pub label: String,
     pub module: String,

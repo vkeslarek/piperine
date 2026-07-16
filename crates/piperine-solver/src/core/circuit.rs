@@ -103,6 +103,32 @@ impl CircuitInstance {
         self.devices.iter_mut().for_each(|d| d.update(state, context));
     }
 
+    /// Solver-level restamp path (MD-18): set a parameter on the built
+    /// element labeled `label` — no re-elaboration, no re-compilation. The
+    /// element reports how much solve state the change invalidates
+    /// (numeric-only changes are [`Invalidation::Restamp`]); a sweep loop
+    /// re-runs the analysis on the same compiled circuit. Unknown labels
+    /// and parameter errors are loud.
+    pub fn set_element_param(
+        &mut self,
+        label: &str,
+        param: &str,
+        value: crate::core::introspect::Value,
+    ) -> crate::result::Result<crate::core::introspect::Invalidation> {
+        let device = self.devices.iter_mut().find(|d| d.name() == label).ok_or_else(|| {
+            crate::error::Error::simple(
+                crate::error::SolverDomain::Element,
+                format!("no element labeled `{label}`"),
+            )
+        })?;
+        device.set_param(param, value).map_err(|e| {
+            crate::error::Error::simple(
+                crate::error::SolverDomain::Element,
+                format!("`{label}`: {e}"),
+            )
+        })
+    }
+
     /// Steer the Newton guess with every device's structured limiting
     /// feedback ([`Element::convergence_hint`]): the clamped unknown is set
     /// to the limited value before the convergence test. The DC and

@@ -203,11 +203,23 @@ pub struct AnalogKernel {
 unsafe impl Send for AnalogKernel {}
 unsafe impl Sync for AnalogKernel {}
 
+/// Process-wide count of analog JIT compilations, for MD-18 enforcement
+/// tests (a sweep must compile once, never once per point).
+static COMPILE_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 impl AnalogKernel {
     /// Flatten and compile `module`'s analog body.
     pub fn compile(module: &LoweredBody) -> Result<Self, CodegenError> {
+        COMPILE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let flat = AnalogFlattener::new(module).flatten()?;
         AnalogCompiler::new(module, flat)?.compile()
+    }
+
+    /// How many analog kernels this process has JIT-compiled so far.
+    /// Deltas prove (or disprove) compile-once behavior across a sweep —
+    /// meaningful only when nothing else compiles concurrently.
+    pub fn compile_count() -> usize {
+        COMPILE_COUNT.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn name(&self) -> &str {
