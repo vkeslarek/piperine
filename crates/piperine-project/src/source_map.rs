@@ -113,4 +113,23 @@ mod tests {
             .expect("use spice::diode; must elaborate through the builtin path");
         assert!(design.module("Top").is_some());
     }
+
+    /// SPICE-04: a project whose `Piperine.toml` names it `spice` shadows
+    /// the builtin — `use spice::…` resolves to the project's own `src/`.
+    #[test]
+    fn project_named_spice_shadows_builtin() {
+        let scratch = ScratchDir::new("shadow");
+        std::fs::write(
+            scratch.0.join("Piperine.toml"),
+            "[project]\nname = \"spice\"\nversion = \"0.1.0\"\nauthors = []\nedition = \"2024\"\n",
+        )
+        .unwrap();
+        let src_dir = scratch.0.join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        std::fs::write(src_dir.join("diode.phdl"), "// project-local diode\n").unwrap();
+
+        let map = project_source_map(&scratch.0);
+        let spice_dir = map.namespaces.get("spice").expect("`spice` namespace registered");
+        assert_eq!(spice_dir, &src_dir, "project `spice` package must win over the builtin headers");
+    }
 }
