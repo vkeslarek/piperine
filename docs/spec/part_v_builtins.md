@@ -226,6 +226,27 @@ file sees.
 `reduce<T>(xs: T[N], op: fn(T,T)->T) -> T`,
 `concat(...)`. The bundles `UInt[N]`, `SInt[N]`, `Complex`.
 
+### The `spice` namespace
+
+The ngspice-faithful device model library ships as builtin stdlib headers
+(`headers/spice/`), resolvable from any project without a `Piperine.toml`
+dependency:
+
+```phdl
+use spice::diode;      // dio
+use spice::bjt;        // bjt (Gummel-Poon)
+use spice::mos;        // mos1 (Shichman-Hodges)
+use spice::jfet;       // jfet
+use spice::passives;   // res, cap, ind, mut
+use spice::sources;    // vsrc, isrc
+use spice::controlled; // vcvs, vccs, ccvs, cccs
+use spice::switches;   // sw, csw
+use spice::constants;  // ngspice const.h/defines.h values
+```
+
+A project or dependency package named `spice` shadows the builtin namespace
+(project packages always win).
+
 ---
 
 ## §7 System-task availability matrix

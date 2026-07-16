@@ -70,7 +70,7 @@ metadata to results) was spec'd as plugin territory; the plugin system now
 exists, so these land as `PluginBenchTask`s in the official spice plugin.
 
 **Where.**
-- `~/Git/plugins/piperine-spice/plugin/src/lib.rs` — register the tasks.
+- the external spice plugin repo's `plugin/src/lib.rs` — register the tasks.
 - `crates/piperine-lang/src/eval/tasks.rs` — nothing to change; plugin tasks
   already extend the allowlist through `ElabContext.bench_tasks`
   (`PluginHost::seed_schemas`).
@@ -347,7 +347,7 @@ highest-value solver item on this list.**
 4. **Mode-switch damping for mos1:** ngspice recomputes mode (normal/inverse)
    from the *limited* vds. Ensure the PHDL mos1 model routes its mode
    `select` through the limited value (model-side change, in
-   `piperine-spice/src/mos.phdl`, coordinated with this item).
+   `crates/piperine-lang/headers/spice/mos.phdl`, coordinated with this item).
 
 **Rationale.** This is a straight port of ngspice's convergence machinery —
 do not innovate here; equality with ngspice iteration behavior is the

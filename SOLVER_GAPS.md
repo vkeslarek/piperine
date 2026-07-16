@@ -6,8 +6,10 @@ later. Ordered by impact. Status: **DONE** (landed), **PARTIAL** (works in
 some cases), **MISSING** (absent). Work items get checked off here as they
 land — each entry names *where* in the solver and *why it matters*.
 
-Cross-validation against ngspice lives in
-`~/Git/plugins/piperine-spice/validation/` — run it after any solver change.
+Cross-validation against ngspice lives in-repo
+(`crates/piperine-bench/tests/ngspice_validation.rs`, circuits in
+`crates/piperine-bench/tests/ngspice/`) — `cargo test -p piperine-bench ngspice`
+after any solver change.
 
 ---
 
@@ -688,7 +690,7 @@ every API is a contract or a capability, the code reads at a glance).
   couples energy correctly (coupled-LC test: secondary reaches 0.083 V from
   a primary tank). **Constraint:** the two windings must be *one* device —
   ngspice/piperine's separate `ind` + `mut` devices each force the same node
-  pair (two ideal sources on one branch → singular). The `piperine-spice`
+  pair (two ideal sources on one branch → singular). The spice-stdlib
   `mut`/`ind` models therefore need a combined transformer block to use this
   (tracked in the model gaps).
 
@@ -745,7 +747,7 @@ validation harness surfaced them):
 - [ ] **MOS1 drain current ~1.5× too high** (`validation/nmos_load`:
   ngspice v(d)=3.0 V, piperine 1.92 V). Likely the Shichman-Hodges
   `β = kp·W/L` / effective-width or the `kp` vs `u0·cox` default path in
-  `piperine-spice/src/mos.phdl`. Check against `mos1load.c`.
+  `crates/piperine-lang/headers/spice/mos.phdl`. Check against `mos1load.c`.
 - [ ] **JFET off by ~15 mV / ~1 %** (`validation/jfet_bias`: 1.382 vs
   1.397 V). Minor — a small model-detail discrepancy in `jfet.phdl`.
 

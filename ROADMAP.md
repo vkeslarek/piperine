@@ -132,8 +132,9 @@ Spec: `.specs/features/solver-trbdf2-engine/`.
   per node, `|i − i_linear| ≤ reltol·max(|i|,|i_linear|) + abstol`) — re-evaluate the device
   currents at the candidate solution and require the node imbalance below tolerance, ANDed
   with the existing voltage-step check. Validate with
-  `~/Git/plugins/piperine-spice/validation/` (diode/passives already match; the transistor
-  circuits are the regression targets). This is the gate for transistor ngspice parity.
+  the in-repo ngspice harness (`cargo test -p piperine-bench ngspice`; diode/passives
+  already match; the transistor circuits are the regression targets). This is the gate for
+  transistor ngspice parity.
 - `transition`, `laplace_*`, `zi_*` analog operators — recognized in the IR, fail loud at
   codegen. Each is its own companion-model follow-up.
 - **`table(x, xs, ys, mode)` operator (spec Part V §2) — not registered at all.** The
@@ -212,7 +213,7 @@ Spec: `.specs/features/solver-trbdf2-engine/`.
   mechanism — `is_present` ≡ `$param_given(x)`, `get_or(d)` ≡ `param_given ? x : d` — so it
   works per-instance without specializing the module. Test:
   `spec_simulation::sim_dc_optional_param_get_or`.
-  **Follow-up:** migrate the `piperine-spice` device models off their sentinel/`$param_given`
+  **Follow-up:** migrate the spice-stdlib device models (`headers/spice/`) off their sentinel/`$param_given`
   encoding (`bv = 1e99`, `rbm = 0`) onto `T?` now that it exists. Optional *bundle fields*
   (`model.rbm.get_or(…)`) still need the field-receiver lowering path (today only a direct
   `param.method()` receiver folds).

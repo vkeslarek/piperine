@@ -59,7 +59,7 @@ both a package and the workspace) — always pass `--workspace`.
 
 | Crate | Role |
 |-------|------|
-| `piperine-lang` | PHDL frontend: lexer/parser (`parse/`), elaboration → POM `Design` (`elab/`, `pom/`), bench/const interpreter (`eval/`: `Interpreter`, `Host` trait, task allowlist in `eval/tasks.rs`) — walks the POM/AST directly, no IR. `parse_and_elaborate` is the entry point. |
+| `piperine-lang` | PHDL frontend: lexer/parser (`parse/`), elaboration → POM `Design` (`elab/`, `pom/`), bench/const interpreter (`eval/`: `Interpreter`, `Host` trait, task allowlist in `eval/tasks.rs`) — walks the POM/AST directly, no IR. `parse_and_elaborate` is the entry point. Builtin stdlib headers in `headers/` (prelude, disciplines, constants) and `headers/spice/` (the ngspice-faithful device models — `use spice::<file>;` works in any project, no dependency; a project package named `spice` shadows the builtin). |
 | `piperine-codegen` | POM → devices. `lower/` (codegen-private resolved form: `expr.rs`/`stmt.rs`/`symbols.rs`, `diff.rs` symbolic differentiation, `pom/` `lower_bodies`). `jit/`: `flatten.rs`, `analog.rs` (`AnalogKernel`), `emit.rs`, `digital/`. `device/`: `AnalogInstance`, `DigitalInstance`, `CircuitCompiler` → `PiperineDevice` (implements `Element`). |
 | `piperine-solver` | Native solver: DC/AC/transient/noise/TF (`solver/`), MNA/linear algebra (`math/`, faer), `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming layer (`core/net.rs`), OSDI-style introspection (`core/introspect.rs`), `ConvergencePlan` + `HomotopyStrategy` (`solver/convergence.rs`), `IntegrationMethod` + LTE (`math/integration.rs`), `prelude.rs`. Does **not** depend on codegen. OSDI is an external plugin. |
 | `piperine-bench` | Bench runtime: `SimHost` (`host.rs`), `BenchTask`s (`tasks.rs`), result objects (`objects.rs`, `waveform.rs`), solve plumbing (`session.rs`), `BenchRunner` (`runner.rs`). |
@@ -135,7 +135,8 @@ both a package and the workspace) — always pass `--workspace`.
 - `piperine-lang/tests/`: `parse_elab.rs`, `spec_simulation.rs`, `bench.rs`, `elab.rs`,
   `bundle_param.rs`, `bundle_connections.rs`, `prelude.rs`, `type_casts.rs`, `pom_serde.rs`.
 - `piperine-bench/tests/`: `bench.rs` (e2e with `elab` helper + `CIRCUIT` fixture);
-  `run_examples.rs` (every `examples/*.phdl` must stay green).
+  `run_examples.rs` (every `examples/*.phdl` must stay green); `spice_smoke.rs`
+  (builtin `spice` stdlib smoke benches).
 - `piperine-solver/tests/`: `digital_topology.rs`, `mixed_signal.rs`.
 - `piperine-plugin/tests/`: `e2e.rs`, `native_smoke.rs`, `phase3.rs`, `process_smoke.rs`,
   `wasm_smoke.rs`, `trust.rs`, `manifest.rs`.

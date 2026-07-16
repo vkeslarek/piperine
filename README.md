@@ -46,6 +46,11 @@ PHDL (.phdl) ──► elaborated design ──► shared IR ──► Cranelift
   macro stage.
 - **No-Magic philosophy.** Type conversions and domain crossings are explicit. Anything the
   toolchain cannot compile faithfully is a *named error*, never a silent zero.
+- **Builtin SPICE device library.** `use spice::diode;` (or `bjt`, `mos`, `jfet`,
+  `passives`, `sources`, `controlled`, `switches`) works in any project with no
+  dependency — the ngspice-faithful PHDL models ship as stdlib headers
+  (`crates/piperine-lang/headers/spice/`), translated line-by-line from the
+  ngspice C sources.
 - **OSDI support.** Loads `.osdi` v0.4 compiled device models (the standard Verilog-A
   compilation target) alongside JIT-compiled PHDL devices.
 - **Tooling included.** A `piperine` CLI (project scaffolding, git dependencies, check,
