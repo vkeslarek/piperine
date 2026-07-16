@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-pyo3 = { version = "0.23", features = ["auto-initialize"] }
+pyo3 = { version = "0.23", features = ["auto-initialize", "num-complex"] }
 numpy = "0.23"
 num-complex.workspace = true
 piperine-lang = { path = "../piperine-lang" }

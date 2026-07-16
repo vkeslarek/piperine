@@ -259,30 +259,38 @@ class Module:
     # ── analyses (spec AC3/6/8/9) ──────────────────────────────────────────
 
     def op(self, config: OpConfig | None = None) -> OpResult:
-        """Run a DC operating-point analysis (spec AC3). ``config`` is
-        accepted for uniformity; its ``nodeset`` seeds the Newton initial
-        guess when provided."""
-        return self._native.op()
+        """Run a DC operating-point analysis (spec AC3).
+
+        ``config.nodeset`` seeds the Newton initial guess; ``config.solver``
+        carries the tolerances + ``max_iter`` (prelude ``bundle Solver``).
+        """
+        if config is None:
+            return self._native.op()
+        nodeset = config.nodeset if config.nodeset else None
+        return self._native.op(nodeset, config.solver)
 
     def tran(self, config: TranConfig) -> Trace:
         """Run a transient analysis (spec AC6).
 
         ``config.step = 0.0`` (the prelude default) selects the adaptive
         stepper; a positive ``step`` seeds the initial ``dt``. ``config.ic``
-        presets node voltages (spec §5.1 ``TranConfig.ic``).
+        presets node voltages (spec §5.1 ``TranConfig.ic``); ``config.solver``
+        carries the tolerances + ``max_iter``.
         """
         step = config.step if config.step != 0.0 else None
         ic = config.ic if config.ic else None
-        return self._native.tran(config.stop, step, config.start, ic)
+        return self._native.tran(config.stop, step, config.start, ic, config.solver)
 
     def ac(self, config: AcConfig) -> AcTrace:
         """Run an AC small-signal sweep (spec AC8).
 
         ``config.scale`` maps to logarithmic (``Dec``/``Oct``) or linear
-        (``Lin``).
+        (``Lin``); ``config.solver`` carries the tolerances.
         """
         logarithmic = config.scale in (Scale.Dec, Scale.Oct)
-        return self._native.ac(config.fstart, config.fstop, config.points, logarithmic)
+        return self._native.ac(
+            config.fstart, config.fstop, config.points, logarithmic, config.solver
+        )
 
     def noise(self, config: NoiseConfig) -> NoiseTrace:
         """Run an output-referred noise analysis (spec AC9)."""
@@ -294,6 +302,7 @@ class Module:
             config.points,
             "gnd",
             logarithmic,
+            config.solver,
         )
 
     # ── staging (spec AC11/12) ─────────────────────────────────────────────

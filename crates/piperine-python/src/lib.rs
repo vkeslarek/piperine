@@ -616,6 +616,50 @@ mod Divider() {
         outcome
     }
 
+    /// Solver-config threading: the facade's `Solver` dataclass reaches the
+    /// Newton loop (duck-typed attribute read — any object with the prelude
+    /// `bundle Solver` fields works). `max_iter = 1` must fail loud on a
+    /// circuit whose damped Newton needs several iterations; the defaults
+    /// must converge. Also: `op(nodeset=...)` is accepted (seeds the guess).
+    #[test]
+    fn solver_config_reaches_newton() -> PyResult<()> {
+        let path = std::env::temp_dir().join("piperine_python_solvercfg_test.phdl");
+        std::fs::write(&path, ANALYSIS_PHDL)?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("non-utf8 temp path"))?;
+
+        let outcome = Python::with_gil(|py| -> PyResult<()> {
+            let design = loaded_design(py, path_str)?;
+            let module = design.getattr("module")?.call1(("Divider",))?;
+
+            let ns = py.import("types")?.getattr("SimpleNamespace")?;
+            let kwargs = pyo3::types::PyDict::new(py);
+            kwargs.set_item("temperature", 300.15)?;
+            kwargs.set_item("reltol", 1e-3)?;
+            kwargs.set_item("abstol", 1e-12)?;
+            kwargs.set_item("gmin", 1e-12)?;
+            kwargs.set_item("max_iter", 1usize)?;
+            let starved = ns.call((), Some(&kwargs))?;
+
+            // max_iter = 1 starves Newton (and every homotopy fallback).
+            assert!(
+                module.getattr("op")?.call1((py.None(), starved)).is_err(),
+                "op with max_iter=1 must fail loud"
+            );
+
+            // Defaults (solver = None) converge; nodeset is accepted.
+            let nodeset = pyo3::types::PyDict::new(py);
+            nodeset.set_item("mid", 2.0)?;
+            let op = module.getattr("op")?.call1((nodeset, py.None()))?;
+            let v = op.getattr("v")?.call1(("mid",))?.extract::<f64>()?;
+            assert!((v - 2.0).abs() < 1e-6, "divider mid should be 2.0, got {v}");
+            Ok(())
+        });
+        let _ = std::fs::remove_file(&path);
+        outcome
+    }
+
     /// PY-13 / spec AC13: `op["instance"]` (or `trace["instance"]`) returns a
     /// terminal sub-view exposing that instance's terminal quantities —
     /// terminal voltages via `.v(port)` and the branch current via

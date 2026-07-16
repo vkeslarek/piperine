@@ -93,6 +93,40 @@ impl _Module {
     fn instance_resolver(&self) -> crate::instance::InstanceResolver {
         crate::instance::InstanceResolver::new(Rc::clone(&self.design), self.name.clone())
     }
+
+    /// Map the facade's `Solver` dataclass onto the bench [`SolverConfig`].
+    /// Duck-typed (reads the prelude `bundle Solver` fields by attribute) so
+    /// the facade needs no mirrored pyclass; `None` keeps the bench defaults.
+    /// A missing/mistyped attribute fails loud, never a silent default.
+    fn solver_config(solver: Option<&Bound<'_, PyAny>>) -> PyResult<SolverConfig> {
+        let mut sc = SolverConfig::default();
+        if let Some(obj) = solver {
+            sc.temperature = obj.getattr("temperature")?.extract()?;
+            sc.reltol = obj.getattr("reltol")?.extract()?;
+            sc.abstol = obj.getattr("abstol")?.extract()?;
+            sc.gmin = obj.getattr("gmin")?.extract()?;
+            sc.max_iter = obj.getattr("max_iter")?.extract()?;
+        }
+        Ok(sc)
+    }
+
+    /// Build the `Map<Net, Real>` bench value from a Python `{net: volts}`
+    /// dict (`OpConfig.nodeset` / `TranConfig.ic`). `None` → `Unit` (absent).
+    fn net_map(map: Option<HashMap<String, f64>>) -> Value {
+        match map {
+            Some(map) => {
+                let pairs: Vec<(Value, Value)> = map
+                    .into_iter()
+                    .map(|(k, v)| {
+                        let netref = piperine_bench::NetRef { name: k };
+                        (Value::Object(Rc::new(netref)), Value::Real(v))
+                    })
+                    .collect();
+                Value::Map(Rc::new(RefCell::new(pairs)))
+            }
+            None => Value::Unit,
+        }
+    }
 }
 
 #[pymethods]
@@ -138,10 +172,17 @@ impl _Module {
 
     /// Run a DC operating-point analysis (PY-04 / spec AC3). Returns the
     /// solved node voltages + branch currents as an [`_OpResult`].
-    fn op(&self) -> PyResult<_OpResult> {
+    /// `nodeset` seeds the Newton initial guess (spec §5.1 `OpConfig.nodeset`);
+    /// `solver` is the facade's `Solver` dataclass (tolerances + max_iter).
+    #[pyo3(signature = (nodeset=None, solver=None))]
+    fn op(
+        &self,
+        nodeset: Option<HashMap<String, f64>>,
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<_OpResult> {
         let session = self.session()?;
         let result = session
-            .run_op(&SolverConfig::default(), &Value::Unit)
+            .run_op(&Self::solver_config(solver)?, &Self::net_map(nodeset))
             .map_err(Self::analysis_err)?;
         Ok(_OpResult::new(result).with_resolver(self.instance_resolver()))
     }
@@ -150,50 +191,43 @@ impl _Module {
     /// selects the adaptive stepper; `start` is the earliest recorded time
     /// (piperine-bench/docs/SPEC.md §5.1 `TranConfig.start`). `ic` is an
     /// optional per-node initial-condition map (spec §5.1 `TranConfig.ic`).
-    #[pyo3(signature = (stop, step=None, start=0.0, ic=None))]
+    #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None))]
     fn tran(
         &self,
         stop: f64,
         step: Option<f64>,
         start: f64,
-        ic: Option<std::collections::HashMap<String, f64>>,
+        ic: Option<HashMap<String, f64>>,
+        solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<_Trace> {
         let session = self.session()?;
-        let ic_value = match ic {
-            Some(map) => {
-                use std::cell::RefCell;
-                use std::rc::Rc;
-                let pairs: Vec<(Value, Value)> = map
-                    .into_iter()
-                    .map(|(k, v)| {
-                        let netref = piperine_bench::NetRef { name: k };
-                        (Value::Object(Rc::new(netref)), Value::Real(v))
-                    })
-                    .collect();
-                Value::Map(Rc::new(RefCell::new(pairs)))
-            }
-            None => Value::Unit,
-        };
         let result = session
-            .run_tran(stop, step, start, &SolverConfig::default(), &ic_value)
+            .run_tran(stop, step, start, &Self::solver_config(solver)?, &Self::net_map(ic))
             .map_err(Self::analysis_err)?;
         Ok(_Trace::new(result).with_resolver(self.instance_resolver()))
     }
 
     /// Run an AC small-signal sweep (PY-04 / spec AC8). `logarithmic` defaults
     /// to `true` (matches the prelude's `Scale::Dec` default).
-    #[pyo3(signature = (fstart, fstop, points=100, logarithmic=true))]
-    fn ac(&self, fstart: f64, fstop: f64, points: usize, logarithmic: bool) -> PyResult<_AcTrace> {
+    #[pyo3(signature = (fstart, fstop, points=100, logarithmic=true, solver=None))]
+    fn ac(
+        &self,
+        fstart: f64,
+        fstop: f64,
+        points: usize,
+        logarithmic: bool,
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<_AcTrace> {
         let session = self.session()?;
         let result = session
-            .run_ac(fstart, fstop, points, logarithmic, &SolverConfig::default())
+            .run_ac(fstart, fstop, points, logarithmic, &Self::solver_config(solver)?)
             .map_err(Self::analysis_err)?;
         Ok(_AcTrace::new(result))
     }
 
     /// Run an output-referred noise analysis (PY-04 / spec AC9). `reference`
     /// defaults to `"gnd"` (the single-net `NoiseConfig.out` form).
-    #[pyo3(signature = (out, fstart, fstop, points=100, reference="gnd", logarithmic=true))]
+    #[pyo3(signature = (out, fstart, fstop, points=100, reference="gnd", logarithmic=true, solver=None))]
     fn noise(
         &self,
         out: &str,
@@ -202,6 +236,7 @@ impl _Module {
         points: usize,
         reference: &str,
         logarithmic: bool,
+        solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<_NoiseTrace> {
         let session = self.session()?;
         let result = session
@@ -212,7 +247,7 @@ impl _Module {
                 fstop,
                 points,
                 logarithmic,
-                &SolverConfig::default(),
+                &Self::solver_config(solver)?,
             )
             .map_err(Self::analysis_err)?;
         Ok(_NoiseTrace::new(result))

@@ -375,6 +375,11 @@ impl _Waveform {
         self.inner.len()
     }
 
+    /// Python `len(waveform)` — same as [`len`](Self::len).
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+
     /// `true` when there are no samples (spec edge case: an empty waveform
     /// exposes empty arrays, not None — `is_empty()` is the honest reflection).
     fn is_empty(&self) -> bool {
@@ -440,13 +445,17 @@ impl _ComplexWaveform {
 
     /// Nearest sample to `x` (no complex interpolation) — uniform-shape.
     /// Returns a Python `complex`.
-    fn at(&self, x: f64) -> (f64, f64) {
-        let c = self.inner.at(x);
-        (c.re, c.im)
+    fn at(&self, x: f64) -> Complex64 {
+        self.inner.at(x)
     }
 
     /// Number of samples — equal to `.values` length.
     fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Python `len(waveform)` — same as [`len`](Self::len).
+    fn __len__(&self) -> usize {
         self.inner.len()
     }
 
