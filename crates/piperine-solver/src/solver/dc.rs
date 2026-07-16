@@ -172,6 +172,7 @@ pub struct DcSolver<'a> {
 impl<'a> DcSolver<'a> {
     pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::result::Result<Self> {
         Context::init_global();
+        circuit.setup_all(&context)?;
         let netlist = circuit.netlist();
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
 

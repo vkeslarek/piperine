@@ -62,6 +62,7 @@ impl<'a> TransferFunctionSolver<'a> {
         context: Context,
     ) -> crate::result::Result<Self> {
         Context::init_global();
+        circuit.setup_all(&context)?;
 
         // Solve DC operating point
         let dc_point = DcSolver::new(circuit, context.clone())?.solve()?;

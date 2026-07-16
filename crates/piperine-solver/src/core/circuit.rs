@@ -70,6 +70,7 @@ pub struct CircuitInstance {
     pub digital_state: DigitalState,
     pub netlist: Netlist,
     bridge: SignalBridge,
+    is_set_up: bool,
 }
 
 impl CircuitInstance {
@@ -86,8 +87,16 @@ impl CircuitInstance {
             digital_topology: None,
             digital_state: DigitalState::new(0),
             netlist,
-bridge: SignalBridge {},
+            bridge: SignalBridge {},
+            is_set_up: false,
         }
+    }
+
+    pub(crate) fn setup_all(&mut self, ctx: &Context) -> crate::result::Result<()> {
+        if self.is_set_up { return Ok(()); }
+        for d in self.devices.iter_mut() { d.setup(ctx)?; }
+        self.is_set_up = true;
+        Ok(())
     }
 
     pub fn update_all(&mut self, state: &CircularArrayBuffer2<f64>, context: &Context) {
@@ -268,5 +277,11 @@ bridge: SignalBridge {},
             self.digital_state.schedule(event);
         }
         self.run_digital_at(0.0)
+    }
+}
+
+impl Drop for CircuitInstance {
+    fn drop(&mut self) {
+        for d in self.devices.iter_mut() { d.destroy(); }
     }
 }

@@ -217,6 +217,9 @@ pub trait Element: Send + Sync {
     /// element does not describe its terminals.
     fn list_terminals(&self) -> Vec<TerminalDescriptor> { Vec::new() }
 
+    fn setup(&mut self, _ctx: &Context) -> crate::result::Result<()> { Ok(()) }
+    fn destroy(&mut self) {}
+
     /// Set the instance temperature; recompute temperature-dependent constants.
     fn set_temperature(&mut self, _t: f64) {}
 

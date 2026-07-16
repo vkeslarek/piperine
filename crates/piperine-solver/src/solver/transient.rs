@@ -117,6 +117,7 @@ impl<'a> TransientSolver<'a> {
         context: Context,
     ) -> crate::result::Result<Self> {
         Context::init_global();
+        circuit.setup_all(&context)?;
 
         // Build DAG topology once before simulation begins
         circuit.rebuild_digital_topology();

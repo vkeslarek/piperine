@@ -84,6 +84,7 @@ impl<'a> AcSolver<'a> {
     /// Initialized AC solver ready for frequency sweep
     pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::result::Result<Self> {
         Context::init_global();
+        circuit.setup_all(&context)?;
 
         let mut dc_solver = DcSolver::new(circuit, context.clone())?;
         let dc_point = dc_solver.solve()?;

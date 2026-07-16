@@ -53,6 +53,7 @@ impl<'a> NoiseSolver<'a> {
         context: Context,
     ) -> crate::result::Result<Self> {
         Context::init_global();
+        circuit.setup_all(&context)?;
 
         let dc_point = DcSolver::new(circuit, context.clone())?.solve()?;
 
