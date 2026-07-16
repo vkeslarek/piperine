@@ -310,7 +310,6 @@ fn ngspice_bjt_ce() {
 }
 
 #[test]
-#[ignore = "fixed in T7-T10 (BJT mirror DC convergence — SPICE-13)"]
 fn ngspice_bjt_mirror() {
     ngspice_op_case("bjt_mirror");
 }
