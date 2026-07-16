@@ -55,7 +55,62 @@ pub fn project_source_map(project_root: &Path) -> SourceMap {
     if headers_dir.exists() {
         source_map = source_map.with_prelude(headers_dir.join("prelude.phdl"));
         source_map.add_namespace("piperine", headers_dir.clone());
+        // Builtin `spice` stdlib namespace — only if no project package or
+        // dependency already claimed the name (project packages win).
+        if !source_map.namespaces.contains_key("spice") {
+            source_map.add_namespace("spice", headers_dir.join("spice"));
+        }
     }
 
     source_map
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A unique scratch project directory (removed on drop).
+    struct ScratchDir(PathBuf);
+
+    impl ScratchDir {
+        fn new(tag: &str) -> Self {
+            let dir = std::env::temp_dir()
+                .join(format!("piperine-source-map-{tag}-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+
+    impl Drop for ScratchDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// SPICE-01: with no `Piperine.toml` at all, the builtin `spice`
+    /// namespace resolves `use spice::diode;` from `headers/spice/`.
+    #[test]
+    fn builtin_spice_namespace_without_piperine_toml() {
+        let scratch = ScratchDir::new("builtin");
+        let map = project_source_map(&scratch.0);
+
+        let spice_dir = map.namespaces.get("spice").expect("builtin `spice` namespace registered");
+        assert!(spice_dir.join("diode.phdl").exists(), "headers/spice/diode.phdl reachable at {spice_dir:?}");
+
+        let src = "
+            use piperine::disciplines;
+            use spice::sources;
+            use spice::passives;
+            use spice::diode;
+            mod Top() {
+                wire gnd: Electrical; wire vin: Electrical; wire out: Electrical;
+                v1: vsrc (.p=vin,.n=gnd) { .dc = 5.0 };
+                r1: res  (.p=vin,.n=out) { .r = 1.0e3 };
+                d1: dio  (.p=out,.n=gnd) { };
+            }
+        ";
+        let design = piperine_lang::parse_and_elaborate(src, &map)
+            .expect("use spice::diode; must elaborate through the builtin path");
+        assert!(design.module("Top").is_some());
+    }
 }
