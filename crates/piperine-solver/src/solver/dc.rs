@@ -31,6 +31,13 @@ pub struct DcSystem<'a> {
     /// normal operation, ramped 0 → 1 by [`DcSolver::solve_source_stepping`].
     /// Passed to elements through [`DcAnalysisState::src_scale`].
     pub src_scale: f64,
+    /// Device bypass: stamps cached from the last evaluation. Reused when the
+    /// solution vector barely moved between Newton iterations (audit P4).
+    stamp_cache: Vec<Stamp<AnalogReference, f64>>,
+    last_solution: Vec<f64>,
+    cache_valid: bool,
+    pub bypass_hits: usize,
+    pub bypass_misses: usize,
 }
 
 impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
@@ -42,6 +49,27 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         &mut self,
         state: &CircularArrayBuffer2<f64>,
     ) -> crate::result::Result<Vec<Stamp<AnalogReference, f64>>> {
+        // Device bypass: if the solution barely moved since the last
+        // evaluation, reuse cached stamps instead of re-evaluating every
+        // device model (audit P4 — BYPASS_OK declared but never consulted).
+        if self.cache_valid {
+            if let Some(curr) = state.latest() {
+                let moved = curr
+                    .iter()
+                    .zip(self.last_solution.iter())
+                    .map(|(c, p)| (*c - *p).abs())
+                    .fold(0.0_f64, |a: f64, b: f64| a.max(b));
+                let scale_max = curr.iter().map(|v| v.abs()).fold(0.0_f64, |a: f64, b: f64| a.max(b));
+                let threshold = self.context.tolerances.vntol
+                    + self.context.tolerances.reltol * scale_max;
+                if moved < threshold {
+                    self.bypass_hits += 1;
+                    return Ok(self.stamp_cache.clone());
+                }
+            }
+        }
+        self.bypass_misses += 1;
+
         let mut all_stamps = Vec::new();
 
         self.circuit.update_all(state, &self.context);
@@ -73,6 +101,13 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
                     all_stamps.push(Stamp::Matrix(r.clone(), r.clone(), gshunt));
                 }
             }
+        }
+
+        // Cache stamps + solution for bypass on the next iteration.
+        self.stamp_cache = all_stamps.clone();
+        if let Some(curr) = state.latest() {
+            self.last_solution = curr.to_vec();
+            self.cache_valid = true;
         }
 
         Ok(all_stamps)
@@ -131,6 +166,11 @@ impl<'a> DcSolver<'a> {
             context,
             gmin_extra: 0.0,
             src_scale: 1.0,
+            stamp_cache: Vec::new(),
+            last_solution: Vec::new(),
+            cache_valid: false,
+            bypass_hits: 0,
+            bypass_misses: 0,
         };
 
         let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
@@ -215,6 +255,8 @@ impl<'a> DcSolver<'a> {
         let mut result = DcAnalysisResult::new(values);
         result.stats.newton_iterations = self.solver.last_iterations();
         result.stats.converged = true;
+        result.stats.bypass_hits = self.system.bypass_hits;
+        result.stats.bypass_misses = self.system.bypass_misses;
         Ok(result)
     }
 }
