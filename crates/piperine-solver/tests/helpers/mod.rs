@@ -1,6 +1,6 @@
-use piperine_solver::core::element::{Element, ElementCapabilities};
-use piperine_solver::digital::{LogicValue, DigitalNet};
-use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink};
+use piperine_solver::abi::{Element, ElementCapabilities};
+use piperine_solver::abi::{LogicValue, DigitalNet};
+use piperine_solver::abi::{DigitalPorts, EvalCtx, EventSink};
 
 // ---------------------------------------------------------------------------
 // D2ADevice

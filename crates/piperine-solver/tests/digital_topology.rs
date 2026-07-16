@@ -6,16 +6,16 @@
 
 use std::collections::BinaryHeap;
 
-use piperine_solver::core::circuit::CircuitInstance;
+use piperine_solver::prelude::CircuitInstance;
 fn make_instance(title: &str) -> CircuitInstance {
-    CircuitInstance::from_devices_and_netlist(title, vec![], piperine_solver::analog::Netlist::new())
+    CircuitInstance::from_devices_and_netlist(title, vec![], piperine_solver::abi::Netlist::new())
 }
-use piperine_solver::core::element::{Element, ElementCapabilities};
-use piperine_solver::digital::{LogicValue, DigitalNet, DigitalEvent};
-use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};
-use piperine_solver::digital::{DigitalState, DigitalTopology};
-use piperine_solver::analysis::transient::TransientAnalysisOptions;
-use piperine_solver::solver::Context;
+use piperine_solver::abi::{Element, ElementCapabilities};
+use piperine_solver::abi::{LogicValue, DigitalNet, DigitalEvent};
+use piperine_solver::abi::{DigitalPorts, EvalCtx, EventSink, QueueSink};
+use piperine_solver::abi::{DigitalState, DigitalTopology};
+use piperine_solver::prelude::TransientAnalysisOptions;
+use piperine_solver::prelude::Context;
 
 #[path = "helpers/mod.rs"]
 mod helpers;

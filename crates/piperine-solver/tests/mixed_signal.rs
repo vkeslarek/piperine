@@ -11,15 +11,15 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use piperine_solver::analog::{AnalogReference, Netlist, NodeIdentifier};
-use piperine_solver::analysis::dc::DcAnalysisState;
-use piperine_solver::core::element::{Element, ElementCapabilities};
-use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};
-use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
-use piperine_solver::math::circular_array::CircularArrayBuffer2;
-use piperine_solver::math::linear::Stamp;
-use piperine_solver::solver::Context;
-use piperine_solver::digital::DigitalState;
+use piperine_solver::abi::{AnalogReference, Netlist, NodeIdentifier};
+use piperine_solver::abi::DcAnalysisState;
+use piperine_solver::abi::{Element, ElementCapabilities};
+use piperine_solver::abi::{DigitalPorts, EvalCtx, EventSink, QueueSink};
+use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue};
+use piperine_solver::abi::CircularArrayBuffer2;
+use piperine_solver::abi::Stamp;
+use piperine_solver::prelude::Context;
+use piperine_solver::abi::DigitalState;
 
 // ─────────────────────────────── Helpers ─────────────────────────────────────
 

@@ -20,7 +20,7 @@ use pyo3::prelude::*;
 
 use num_complex::Complex64;
 use piperine_bench::{AcTrace, ComplexWaveform, NetRef, NoiseTrace, OpResult, Trace, Waveform};
-use piperine_solver::result::SolverStats;
+use piperine_solver::abi::SolverStats;
 
 use crate::instance::InstanceResolver;
 
