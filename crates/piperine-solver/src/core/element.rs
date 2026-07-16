@@ -76,6 +76,13 @@ bitflags::bitflags! {
         /// only sets this when its stamps are a pure function of terminal
         /// voltages (linear devices, settled logic).
         const BYPASS_OK = 1 << 11;
+        
+        /// declaration consumed by solver-performance follow-up
+        const LINEAR = 1 << 12;
+        /// declaration consumed by solver-performance follow-up
+        const STAMPS_CHARGE = 1 << 13;
+        /// declaration consumed by solver-performance follow-up
+        const ANALYTIC_JACOBIAN = 1 << 14;
     }
 }
 

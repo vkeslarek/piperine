@@ -171,6 +171,10 @@ pub struct AnalogInstance {
 }
 
 impl AnalogInstance {
+    pub fn kernel(&self) -> &AnalogKernel {
+        &self.kernel
+    }
+
     /// Wire an instance into the netlist. `terminals` must cover every
     /// kernel terminal (ports first, then internal nodes).
     pub fn new(

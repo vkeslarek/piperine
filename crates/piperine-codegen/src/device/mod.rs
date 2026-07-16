@@ -159,6 +159,12 @@ impl Element for PiperineDevice {
                 caps |= ElementCapabilities::SAMPLES_ANALOG;
             }
         }
+        if let Some(analog) = &self.analog {
+            caps |= ElementCapabilities::ANALYTIC_JACOBIAN;
+            if analog.kernel().has_reactive() {
+                caps |= ElementCapabilities::STAMPS_CHARGE;
+            }
+        }
         caps
     }
 
