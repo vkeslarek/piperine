@@ -35,7 +35,6 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for AcSystem<'a> {
     fn assemble(
         &mut self,
         _state: &CircularArrayBuffer2<Complex<f64>>,
-        _alpha: Complex<f64>,
     ) -> crate::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
         let ac_ctx = AcAnalysisContext {
             frequency: self.frequency,
@@ -131,7 +130,7 @@ impl<'a> AcSolver<'a> {
             let max_iter = self.system.context.max_iter;
             let solution = self
                 .solver
-                .solve(&mut self.system, Complex::zero(), max_iter)?;
+                .solve(&mut self.system, max_iter)?;
 
             let mut values = HashMap::new();
             for reference in self.system.circuit.netlist().all_references() {

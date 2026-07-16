@@ -37,7 +37,6 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
     fn assemble(
         &mut self,
         state: &CircularArrayBuffer2<f64>,
-        _alpha_hint: f64,
     ) -> crate::result::Result<Vec<Stamp<AnalogReference, f64>>> {
         // TR-BDF2 is the sole integration scheme — no Gear order ramp. The
         // kernel derives the companion from `phase` + `h` via the centralised

@@ -12,7 +12,6 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
     fn assemble(
         &mut self,
         state: &CircularArrayBuffer2<E>,
-        alpha: E,
     ) -> crate::result::Result<Vec<Stamp<A, E>>>;
 
     fn converged(&self, _state: &CircularArrayBuffer2<E>, _delta: &ArrayView1<E>) -> bool {
@@ -88,7 +87,7 @@ where
         history_depth: usize,
     ) -> crate::result::Result<Self> {
         let state = CircularArrayBuffer2::new(history_depth, size);
-        let dry_run_stamps = system.assemble(&state, E::zero())?;
+        let dry_run_stamps = system.assemble(&state)?;
         let symbolic = L::SymbolicType::new(size, dry_run_stamps)?;
         let linear_system = L::new(size);
 
@@ -109,7 +108,6 @@ where
     pub fn solve(
         &mut self,
         system: &mut dyn NonLinearSystem<A, E>,
-        alpha: E,
         max_iter: usize,
     ) -> crate::result::Result<Array1<E>> {
         let guess = if let Some(prev) = self.state.latest() {
@@ -125,7 +123,7 @@ where
             system.before_iter_callback(&self.state, iter);
             debug!("Newton Iteration {}", iter + 1);
 
-            let stamps = system.assemble(&self.state, alpha)?;
+            let stamps = system.assemble(&self.state)?;
 
             // Nonlinear residual at the assembled point v_old: for a companion
             // (Norton) stamp set, `(A·v_old − b)[r]` equals the node's current
@@ -263,7 +261,7 @@ where
             system.before_iter_callback(&self.state, iter);
             debug!("Newton Iteration {}", iter + 1);
 
-            let stamps = system.assemble(&self.state, 0.0)?;
+            let stamps = system.assemble(&self.state)?;
 
             let size = self.symbolic.size();
             let mut residual = vec![0.0_f64; size];

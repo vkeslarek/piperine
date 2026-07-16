@@ -41,7 +41,6 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
     fn assemble(
         &mut self,
         state: &CircularArrayBuffer2<f64>,
-        _alpha: f64,
     ) -> crate::result::Result<Vec<Stamp<AnalogReference, f64>>> {
         let mut all_stamps = Vec::new();
 
