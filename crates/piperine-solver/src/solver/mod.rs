@@ -161,8 +161,14 @@ pub struct Context {
 impl Context {
     pub fn init_global() {
         INIT.call_once(|| {
+            // Keep piperine's own diagnostics at INFO, but silence the Cranelift
+            // JIT backend (it logs every compiled function's CL IR at INFO via
+            // the `log` crate, which drowns real output). `cranelift*=off` keeps
+            // the log-compat shim on for any other crate without the IR spam.
             tracing_subscriber::fmt()
-                .with_max_level(tracing::Level::INFO)
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::new("info,cranelift_jit=off,cranelift_codegen=off"),
+                )
                 .with_thread_ids(true)
                 .with_thread_names(true)
                 .init();
