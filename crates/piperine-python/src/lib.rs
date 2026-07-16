@@ -39,6 +39,7 @@ use module::{_Behavior, _Instance, _Net, _Param, _Port};
 use results::_AcTrace;
 use results::_ComplexWaveform;
 use results::_NoiseTrace;
+use results::_SolverStats;
 use results::_OpResult;
 use results::_Trace;
 use results::_Waveform;
@@ -71,6 +72,7 @@ pub(crate) fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_ComplexWaveform>()?;
     m.add_class::<_AcTrace>()?;
     m.add_class::<_NoiseTrace>()?;
+    m.add_class::<_SolverStats>()?;
     m.add_class::<_InstanceView>()?;
     m.add_class::<_Terminal>()?;
     Ok(())
@@ -564,6 +566,50 @@ mod Divider() {
                 miss_item.is_instance_of::<pyo3::exceptions::PyKeyError>(py),
                 "op['nope'] must raise KeyError, got {miss_item}"
             );
+            Ok(())
+        });
+        let _ = std::fs::remove_file(&path);
+        outcome
+    }
+
+    /// CP-09 / spec: SolverStats exposed via `op.stats` / `trace.stats`.
+    /// The stats carry per-analysis convergence + performance diagnostics
+    /// (Newton iterations, step counts, dt range). On the divider (3 k/2 k,
+    /// 5 V → mid = 2 V), Newton converges in ≥1 iteration, and a tran records
+    /// ≥1 accepted step with a non-zero dt_max.
+    #[test]
+    fn stats_exposed_on_results() -> PyResult<()> {
+        let path = std::env::temp_dir().join("piperine_python_stats_test.phdl");
+        std::fs::write(&path, ANALYSIS_PHDL)?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("non-utf8 temp path"))?;
+
+        let outcome = Python::with_gil(|py| -> PyResult<()> {
+            let design = loaded_design(py, path_str)?;
+            let module = design.getattr("module")?.call1(("Divider",))?;
+
+            // op.stats.newton_iterations > 0 (DC converged in ≥1 iteration).
+            let op = module.getattr("op")?.call0()?;
+            let stats = op.getattr("stats")?;
+            let newton_iters = stats.getattr("newton_iterations")?.extract::<usize>()?;
+            assert!(
+                newton_iters > 0,
+                "op.stats.newton_iterations should be > 0, got {newton_iters}"
+            );
+            let converged = stats.getattr("converged")?.extract::<bool>()?;
+            assert!(converged, "op.stats.converged should be true");
+
+            // trace.stats.steps_accepted > 0 (tran ran ≥1 step).
+            let trace = module.getattr("tran")?.call1((5e-3, 1e-5))?;
+            let tstats = trace.getattr("stats")?;
+            let steps = tstats.getattr("steps_accepted")?.extract::<usize>()?;
+            assert!(
+                steps > 0,
+                "trace.stats.steps_accepted should be > 0, got {steps}"
+            );
+            let dt_max = tstats.getattr("dt_max")?.extract::<f64>()?;
+            assert!(dt_max > 0.0, "trace.stats.dt_max should be > 0, got {dt_max}");
             Ok(())
         });
         let _ = std::fs::remove_file(&path);

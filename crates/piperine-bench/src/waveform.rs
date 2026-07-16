@@ -381,6 +381,11 @@ impl Trace {
         Self { result, info }
     }
 
+    /// Per-analysis convergence + performance statistics.
+    pub fn stats(&self) -> &piperine_solver::result::SolverStats {
+        &self.result.stats
+    }
+
     /// Resolve a bench-visible net name to a solver node — the typed form of
     /// the value-layer `NetLookup::node_arg`.
     fn node_or_err(&self, name: &str) -> Result<NodeIdentifier, EvalError> {

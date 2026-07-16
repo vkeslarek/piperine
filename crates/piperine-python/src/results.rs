@@ -20,8 +20,62 @@ use pyo3::prelude::*;
 
 use num_complex::Complex64;
 use piperine_bench::{AcTrace, ComplexWaveform, NetRef, NoiseTrace, OpResult, Trace, Waveform};
+use piperine_solver::result::SolverStats;
 
 use crate::instance::InstanceResolver;
+
+/// `_SolverStats` — per-analysis convergence + performance diagnostics
+/// (CP-09). Every field from the solver's `SolverStats` is exposed as a
+/// typed Python attribute.
+#[pyclass(module = "piperine")]
+pub struct _SolverStats {
+    #[pyo3(get)]
+    pub newton_iterations: usize,
+    #[pyo3(get)]
+    pub converged: bool,
+    #[pyo3(get)]
+    pub steps_accepted: usize,
+    #[pyo3(get)]
+    pub steps_rejected: usize,
+    #[pyo3(get)]
+    pub dt_min_floor_hits: usize,
+    #[pyo3(get)]
+    pub dt_min: f64,
+    #[pyo3(get)]
+    pub dt_max: f64,
+    #[pyo3(get)]
+    pub bypass_hits: usize,
+    #[pyo3(get)]
+    pub bypass_misses: usize,
+    #[pyo3(get)]
+    pub homotopy_strategy: Option<String>,
+    #[pyo3(get)]
+    pub homotopy_levels: usize,
+    #[pyo3(get)]
+    pub assembly_time_ns: u64,
+    #[pyo3(get)]
+    pub solve_time_ns: u64,
+}
+
+impl _SolverStats {
+    fn from_solver(s: &SolverStats) -> Self {
+        Self {
+            newton_iterations: s.newton_iterations,
+            converged: s.converged,
+            steps_accepted: s.steps_accepted,
+            steps_rejected: s.steps_rejected,
+            dt_min_floor_hits: s.dt_min_floor_hits,
+            dt_min: s.dt_min,
+            dt_max: s.dt_max,
+            bypass_hits: s.bypass_hits,
+            bypass_misses: s.bypass_misses,
+            homotopy_strategy: s.homotopy_strategy.clone(),
+            homotopy_levels: s.homotopy_levels,
+            assembly_time_ns: s.assembly_time_ns,
+            solve_time_ns: s.solve_time_ns,
+        }
+    }
+}
 
 /// Surface a bench readout error as the right Python exception: an
 /// unaddressable net reads as `KeyError` (spec edge case — fail loud, never a
@@ -106,6 +160,12 @@ impl _OpResult {
         let net_a = Self::net(a);
         let net_b = b.map(Self::net);
         self.inner.i(&net_a, net_b.as_ref()).map_err(readout_err)
+    }
+
+    /// Per-analysis convergence + performance statistics.
+    #[getter]
+    fn stats(&self) -> _SolverStats {
+        _SolverStats::from_solver(self.inner.stats())
     }
 
     /// `op[name]` (spec AC5 / PY-11 + PY-13):
@@ -200,6 +260,12 @@ impl _Trace {
     /// The time-axis `_Waveform` (spec AC7 `.axis()`).
     fn axis(&self) -> _Waveform {
         _Waveform::new(self.inner.axis())
+    }
+
+    /// Per-analysis convergence + performance statistics.
+    #[getter]
+    fn stats(&self) -> _SolverStats {
+        _SolverStats::from_solver(self.inner.stats())
     }
 
     /// `trace[name]` (spec AC10 / PY-11 + PY-13):
