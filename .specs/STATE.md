@@ -189,7 +189,35 @@ All 17 requirements (PY-01..PY-17) verified. Spec/context/design/tasks in
 | `solver-convergence-aids` | Circuit-wide `gshunt`; `fetlim`/`limvds` | Spec only |
 | `solver-commit-rollback` | `Element::checkpoint/rollback/commit` lifecycle hooks | Spec only |
 
+### Feature C — `solver-convergence-performance` (IN PROGRESS — 9/13 tasks done)
+
+Spec/design/tasks in `.specs/features/solver-convergence-performance/`.
+**Delivered (P1 + P2 quick wins + P3 alpha removal):**
+- `SolverStats` struct on `DcAnalysisResult` + `TransientAnalysisResult`
+  (newton_iterations, steps_accepted/rejected, dt_min/max, bypass counters,
+  timing — CP-01..03)
+- User tolerances (`max_iter`, `dc_damp_tolerance`) reach the Newton loop via
+  `Policy::from_context` — was silently `Policy::default()` (audit C1) (CP-04,05)
+- Python `op.stats` / `trace.stats` exposure — all 13 fields (CP-09)
+- Zero-alloc matrix reuse: `LinearSystem::reset()` replaces per-iteration
+  `L::new()` (audit P1) (CP-06)
+- Dead code deleted: `apply_limit`, `Policy::damp_update` (CP-07)
+- `dt_min` floor hit surfaces `tracing::warn!` (audit C2) (CP-08)
+- `suggest_transient_step` consulted by the transient driver (audit P5) (CP-13)
+- `gshunt` circuit-wide diagonal conductance (CP-14)
+- Dead `alpha` parameter removed from `NonLinearSystem` trait (audit A3)
+
+**Remaining (deferred to follow-up):**
+- T7: Device bypass (`BYPASS_OK`) — requires per-device terminal tracking
+  (multi-day). The capability is declared; the solver doesn't consult it yet.
+- T8: Convergence hint (evolve `limiting_active` → structured) — requires
+  Element trait evolution + codegen changes.
+- T11: Tolerances/Policy split (move mutable fields off Context) — P3
+  architecture, larger refactor (CP-17).
+- T12: Newton predictor (first-order extrapolation) — P3, moderate (CP-16).
+
 ### Test baseline
 - `cargo build --workspace` — zero warnings.
-- `cargo test --workspace` — green (TR-BDF2 active, python-bindings active).
-- 21/21 `examples/*.py` scripts pass via `piperine run`.
+- `cargo test --workspace` — green.
+- 21/21 `examples/*.py` pass via `piperine run`.
+- `op.stats.newton_iterations > 0` verified on the divider.
