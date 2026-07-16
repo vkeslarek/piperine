@@ -59,15 +59,20 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         // (homotopy scale changes, digital settle).
         if self.cache_valid && !self.any_limiting() {
             if let Some(curr) = state.latest() {
-                let moved = curr
-                    .iter()
-                    .zip(self.last_solution.iter())
-                    .map(|(c, p)| (*c - *p).abs())
-                    .fold(0.0_f64, |a: f64, b: f64| a.max(b));
-                let scale_max = curr.iter().map(|v| v.abs()).fold(0.0_f64, |a: f64, b: f64| a.max(b));
-                let threshold = self.context.tolerances.vntol
-                    + self.context.tolerances.reltol * scale_max;
-                if moved < threshold {
+                // Per-variable threshold (ngspice bypass semantics):
+                // |Δv_i| < vntol + reltol·max(|v_i|, |v_i_old|) for every
+                // unknown. A global max-|v| scale would open a millivolt
+                // freeze window at low-voltage nodes whenever any node sits
+                // at supply level — stale stamps then satisfy both
+                // convergence tests and the solve locks in the error
+                // (found by the ngspice diode_series validation circuit).
+                let unmoved = curr.len() == self.last_solution.len()
+                    && curr.iter().zip(self.last_solution.iter()).all(|(c, p)| {
+                        (*c - *p).abs()
+                            < self.context.tolerances.vntol
+                                + self.context.tolerances.reltol * c.abs().max(p.abs())
+                    });
+                if unmoved {
                     self.bypass_hits += 1;
                     return Ok(self.stamp_cache.clone());
                 }
