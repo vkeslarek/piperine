@@ -249,6 +249,11 @@ impl<'a> TransientSolver<'a> {
         }
 
         let mut current_time = 0.0;
+        self.solver.reset_iteration_counter();
+        let mut steps_accepted: usize = 0;
+        let mut steps_rejected: usize = 0;
+        let mut dt_min_seen = f64::INFINITY;
+        let mut dt_max_seen = 0.0_f64;
 
         while current_time < stop_time {
             let dt_proposed = dt;
@@ -336,6 +341,9 @@ impl<'a> TransientSolver<'a> {
                     }
                 }
                 // Accept.
+                steps_accepted += 1;
+                dt_min_seen = dt_min_seen.min(dt_actual);
+                dt_max_seen = dt_max_seen.max(dt_actual);
                 let solution = self.solver.current_guess().unwrap().to_owned();
                 let _changed = self.system.circuit.accept_and_run_digital(
                     solution.as_slice().unwrap(),
@@ -363,6 +371,7 @@ impl<'a> TransientSolver<'a> {
             } else {
                 // Either phase failed to converge — reject the whole step,
                 // halve dt, reset the PI memory (TRB-05/09).
+                steps_rejected += 1;
                 self.system.circuit.digital_state.rollback();
                 dt = self.stepper.reject_dt(dt_proposed, &self.options);
 
@@ -373,9 +382,14 @@ impl<'a> TransientSolver<'a> {
             }
         }
 
-        Ok(TransientAnalysisResult::new(
-            steps,
-        ))
+        let mut result = TransientAnalysisResult::new(steps);
+        result.stats.newton_iterations = self.solver.total_iterations();
+        result.stats.converged = true;
+        result.stats.steps_accepted = steps_accepted;
+        result.stats.steps_rejected = steps_rejected;
+        result.stats.dt_min = if dt_min_seen.is_finite() { dt_min_seen } else { 0.0 };
+        result.stats.dt_max = dt_max_seen;
+        Ok(result)
     }
 
     fn snapshot(&self, time: f64) -> TransientStep {

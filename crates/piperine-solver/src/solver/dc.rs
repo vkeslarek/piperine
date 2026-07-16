@@ -210,9 +210,10 @@ impl<'a> DcSolver<'a> {
             }
         }
 
-        Ok(DcAnalysisResult::new(
-            values,
-        ))
+        let mut result = DcAnalysisResult::new(values);
+        result.stats.newton_iterations = self.solver.last_iterations();
+        result.stats.converged = true;
+        Ok(result)
     }
 }
 

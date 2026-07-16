@@ -71,6 +71,8 @@ where
     linear_system: L,
     symbolic: L::SymbolicType,
     state: CircularArrayBuffer2<E>,
+    last_iterations: usize,
+    total_iterations: usize,
     _marker: std::marker::PhantomData<A>,
 }
 
@@ -94,6 +96,8 @@ where
             linear_system,
             symbolic,
             state,
+            last_iterations: 0,
+            total_iterations: 0,
             _marker: std::marker::PhantomData,
         })
     }
@@ -180,6 +184,8 @@ where
                     .assign(&current_guess.view());
                 system.convergence_success_callback(&self.state, &current_guess.view());
                 debug!("Converged in {} iterations", iter + 1);
+                self.last_iterations = iter + 1;
+                self.total_iterations += iter + 1;
                 return Ok(current_guess);
             }
 
@@ -189,6 +195,8 @@ where
                 .assign(&current_guess.view());
         }
 
+        self.last_iterations = max_iter;
+        self.total_iterations += max_iter;
         system.convergence_failed_callback(&self.state, max_iter, &self.state.latest().unwrap());
         Err(Error::simple(
             crate::error::SolverDomain::Newton,
@@ -212,6 +220,23 @@ where
     A: AsIndex,
     L: SymbolicLinearSystem<f64>,
 {
+    /// Iterations taken by the last `solve` / `solve_with_strategy` call.
+    /// Drivers read this to populate `SolverStats`.
+    pub fn last_iterations(&self) -> usize {
+        self.last_iterations
+    }
+
+    /// Total iterations across all solves since the last reset. Transient
+    /// drivers reset before the step loop and read the total after.
+    pub fn total_iterations(&self) -> usize {
+        self.total_iterations
+    }
+
+    /// Reset the cumulative iteration counter (call before a step loop).
+    pub fn reset_iteration_counter(&mut self) {
+        self.total_iterations = 0;
+    }
+
     /// Newton solve with damping and convergence delegated to a
     /// [`NewtonStrategy`]. The DC and transient drivers call this; AC/Noise/TF
     /// (Complex) continue to use the generic [`solve`] path.
@@ -299,6 +324,8 @@ where
                     .assign(&current_guess.view());
                 system.convergence_success_callback(&self.state, &current_guess.view());
                 debug!("Converged in {} iterations", iter + 1);
+                self.last_iterations = iter + 1;
+                self.total_iterations += iter + 1;
                 return Ok(current_guess);
             }
 
@@ -308,6 +335,8 @@ where
                 .assign(&current_guess.view());
         }
 
+        self.last_iterations = max_iter;
+        self.total_iterations += max_iter;
         system.convergence_failed_callback(&self.state, max_iter, &self.state.latest().unwrap());
         Err(Error::simple(
             crate::error::SolverDomain::Newton,
