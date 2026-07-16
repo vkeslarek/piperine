@@ -1,6 +1,7 @@
 use crate::analog::{
-    BranchIdentifier, AnalogReference, AnalogVariable, Netlist, NodeIdentifier,
+    BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier,
 };
+use crate::core::circuit::CircuitInstance;
 use crate::core::net::Net;
 use crate::digital::LogicValue;
 use crate::math::circular_array::CircularArrayBuffer2;
@@ -96,7 +97,8 @@ impl DcAnalysisResult {
         &self.values
     }
 
-    pub fn as_iv(&self, netlist: &Netlist) -> Vec<InitialValue<AnalogReference, f64>> {
+    pub fn as_iv(&self, circuit: &CircuitInstance) -> Vec<InitialValue<AnalogReference, f64>> {
+        let netlist = circuit.netlist();
         let mut initial_values = Vec::with_capacity(self.values.len());
         for (var, value) in &self.values {
             if let Some(reference) = netlist.reference_for(var).cloned() {

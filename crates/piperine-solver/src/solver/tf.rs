@@ -172,7 +172,7 @@ impl<'a> TransferFunctionSolver<'a> {
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
 
         // Get DC values and populate state array
-        let dc_values_iv = dc_point.as_iv(netlist);
+        let dc_values_iv = dc_point.as_iv(circuit);
         let mut dc_state_array = ndarray::Array1::zeros(size);
         for iv in dc_values_iv {
             if let Some(idx) = iv.reference.idx() {
