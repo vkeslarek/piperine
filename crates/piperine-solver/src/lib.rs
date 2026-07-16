@@ -4,6 +4,7 @@ pub mod core;
 pub mod digital;
 pub mod error;
 pub mod math;
+pub mod abi;
 pub mod prelude;
 pub mod result;
 pub mod solver;
