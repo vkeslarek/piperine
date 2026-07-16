@@ -13,14 +13,14 @@ use piperine_plugin::{
     entry, Abi, DeviceFactory, DeviceKind, Manifest, Permissions, Plugin, PluginDeviceSpec,
     PluginPort, PortBinding, Registrar,
 };
-use piperine_solver::analog::AnalogReference;
-use piperine_solver::analysis::dc::DcAnalysisState;
-use piperine_solver::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
-use piperine_solver::core::element::{Element, ElementCapabilities};
-use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink};
-use piperine_solver::digital::{DigitalNet, LogicValue};
-use piperine_solver::math::linear::Stamp;
-use piperine_solver::solver::Context;
+use piperine_solver::abi::AnalogReference;
+use piperine_solver::abi::DcAnalysisState;
+use piperine_solver::abi::{TransientAnalysisContext, TransientAnalysisState};
+use piperine_solver::abi::{Element, ElementCapabilities};
+use piperine_solver::abi::{DigitalPorts, EvalCtx, EventSink};
+use piperine_solver::abi::{DigitalNet, LogicValue};
+use piperine_solver::abi::Stamp;
+use piperine_solver::prelude::Context;
 
 pub struct FixturePlugin {
     manifest: Manifest,

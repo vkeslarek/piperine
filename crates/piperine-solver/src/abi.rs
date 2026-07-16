@@ -12,6 +12,7 @@ pub use crate::core::introspect::{
 };
 // Stamping + naming
 pub use crate::math::linear::{AsIndex, Stamp};
+pub use crate::math::iv::InitialValue;
 pub use crate::analog::{
     AnalogReference, AnalogVariable, BranchIdentifier, Netlist, NodeIdentifier, GND,
 };

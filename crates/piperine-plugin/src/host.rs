@@ -11,7 +11,7 @@ use piperine_lang::eval::{EvalError, Value};
 use piperine_lang::Design;
 use piperine_project::resolver::Resolver;
 use piperine_project::PiperineToml;
-use piperine_solver::core::element::Element;
+use piperine_solver::abi::Element;
 
 use crate::backend::native::{self, NativePlugin};
 use crate::capability::HostCtx;

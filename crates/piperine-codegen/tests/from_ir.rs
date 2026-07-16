@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use piperine_lang::parse_and_elaborate;
 use piperine_lang::pom::Design;
 use piperine_codegen::ir::LoweredBody;
-use piperine_solver::core::circuit::CircuitInstance;
+use piperine_solver::prelude::CircuitInstance;
 use piperine_codegen::CircuitCompiler;
 
 fn from_ir(design: &Design, bodies: &HashMap<String, LoweredBody>, top: &str) -> Result<CircuitInstance, String> {
@@ -53,7 +53,7 @@ fn from_ir_ppr_resistor_yields_circuit() {
 
 #[test]
 fn jit_device_exposes_params_through_introspection() {
-    use piperine_solver::core::introspect::{Invalidation, ParamError, Value};
+    use piperine_solver::prelude::{Invalidation, ParamError, Value};
 
     let src = "
         discipline Electrical { potential v: Real; flow i: Real; }

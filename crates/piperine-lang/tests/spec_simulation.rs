@@ -11,9 +11,9 @@ use piperine_codegen::ir::*;
 use piperine_codegen::device::DigitalInstance;
 use piperine_codegen::{CircuitCompiler, CompiledModule, SimCtx};
 use piperine_lang::parse_and_elaborate;
-use piperine_solver::analog::NodeIdentifier;
-use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
-use piperine_solver::solver::Context;
+use piperine_solver::abi::NodeIdentifier;
+use piperine_solver::abi::DigitalEvent; use piperine_solver::prelude::{DigitalNet, LogicValue};
+use piperine_solver::prelude::Context;
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -578,7 +578,7 @@ fn spec_parametric_module_monomorphizes() {
 // ═════════════ Section Sim — DC operating point with sources ══════════════════
 
 /// Build a resolved lowering from source + a structural top, compile, and solve DC.
-fn dc_solve(src: &str, top: &str) -> (HashMap<String, LoweredBody>, piperine_solver::core::circuit::CircuitInstance, piperine_solver::analysis::dc::DcAnalysisResult) {
+fn dc_solve(src: &str, top: &str) -> (HashMap<String, LoweredBody>, piperine_solver::prelude::CircuitInstance, piperine_solver::prelude::DcAnalysisResult) {
     let (design, prog) = elaborate_and_lower(src);
     let mut compiler = CircuitCompiler::new(&design, &prog);
     let mut circuit = compiler.build_circuit(top).expect("build circuit");
@@ -606,10 +606,10 @@ fn sim_dc_voltage_divider() {
     ", "Top");
 
     // V(vin) = 5V (forced), V(mid) = 2.5V (divider).
-    let v_in = result.get(piperine_solver::analog::AnalogVariable::Node(
+    let v_in = result.get(piperine_solver::abi::AnalogVariable::Node(
         NodeIdentifier::Anonymous(1)
     )).expect("V(vin)");
-    let v_mid = result.get(piperine_solver::analog::AnalogVariable::Node(
+    let v_mid = result.get(piperine_solver::abi::AnalogVariable::Node(
         NodeIdentifier::Anonymous(2)
     )).expect("V(mid)");
     assert!((v_in - 5.0).abs() < 1e-6, "V(vin) = {v_in} expected 5.0");
@@ -632,7 +632,7 @@ fn sim_dc_current_source_into_resistor() {
     ", "Top");
 
     // 1mA into 1kΩ → V(a) = 1V
-    let v = result.get(piperine_solver::analog::AnalogVariable::Node(
+    let v = result.get(piperine_solver::abi::AnalogVariable::Node(
         NodeIdentifier::Anonymous(1)
     )).expect("V(a)");
     assert!((v - 1.0).abs() < 1e-6, "V(a) = {v} expected 1.0");
@@ -660,7 +660,7 @@ fn sim_dc_diode_operating_point() {
         }
     ", "Top");
 
-    let v_d = result.get(piperine_solver::analog::AnalogVariable::Node(
+    let v_d = result.get(piperine_solver::abi::AnalogVariable::Node(
         NodeIdentifier::Anonymous(2)
     )).expect("V(d)");
     assert!(v_d > 0.5 && v_d < 0.9, "diode drop {v_d}");
@@ -695,7 +695,7 @@ fn sim_dc_optional_param_get_or() {
         }
     ", "Top");
 
-    let v_mid = result.get(piperine_solver::analog::AnalogVariable::Node(
+    let v_mid = result.get(piperine_solver::abi::AnalogVariable::Node(
         NodeIdentifier::Anonymous(2)
     )).expect("V(mid)");
     // 10 V · 500 / (2200 + 500) = 1.852 V
@@ -728,7 +728,7 @@ fn sim_dc_diode_pnjlim_converges() {
         }
     ", "Top");
 
-    let v_d = result.get(piperine_solver::analog::AnalogVariable::Node(
+    let v_d = result.get(piperine_solver::abi::AnalogVariable::Node(
         NodeIdentifier::Anonymous(2)
     )).expect("V(d)");
     // KCL: (5 − Vd)/1k == Is·(exp(Vd/Vt) − 1); the limiter must not shift it.
@@ -778,7 +778,7 @@ fn analog_var_reuse_does_not_explode() {
         }
     ", "Top");
 
-    let v_d = result.get(piperine_solver::analog::AnalogVariable::Node(
+    let v_d = result.get(piperine_solver::abi::AnalogVariable::Node(
         NodeIdentifier::Anonymous(2)
     )).expect("V(d)");
     // acc/20 == e, so the device is the same Shockley diode: ~0.69 V drop.
@@ -791,7 +791,7 @@ fn analog_var_reuse_does_not_explode() {
 /// After 5τ, V(out) ≈ 5V.
 #[test]
 fn sim_tran_rc_charging() {
-    use piperine_solver::analysis::transient::TransientAnalysisOptions;
+    use piperine_solver::prelude::TransientAnalysisOptions;
 
     let (design, prog) = elaborate_and_lower("
         discipline Electrical { potential v : Real; flow i : Real; }
@@ -946,7 +946,7 @@ fn spec_parent_contribution_with_behavioral_for_and_indexed_ports() {
 /// conductance flips and the divider output collapses.
 #[test]
 fn sim_tran_above_event_toggles_switch_state() {
-    use piperine_solver::analysis::transient::TransientAnalysisOptions;
+    use piperine_solver::prelude::TransientAnalysisOptions;
 
     let (design, prog) = elaborate_and_lower("
         discipline Electrical { potential v : Real; flow i : Real; }
@@ -984,7 +984,7 @@ fn sim_tran_above_event_toggles_switch_state() {
     let result = circuit.transient(options, Context::default())
         .unwrap().solve().unwrap();
 
-    let v_mid = |step: &piperine_solver::analysis::transient::TransientStep| {
+    let v_mid = |step: &piperine_solver::prelude::TransientStep| {
         step.get_node(&NodeIdentifier::Anonymous(2)).expect("V(mid)")
     };
     let early = result.iter().find(|s| s.time() >= 2e-5).expect("early step");
@@ -999,8 +999,8 @@ fn sim_tran_above_event_toggles_switch_state() {
 #[test]
 fn digital_network_fuses_combinational_chain() {
     use piperine_codegen::jit::digital::network::{DigitalNetwork, NetworkMember};
-    use piperine_solver::core::element::Element;
-    use piperine_solver::digital::interface::{EvalCtx, EventSink};
+    use piperine_solver::prelude::Element;
+    use piperine_solver::abi::{EvalCtx, EventSink};
     use std::sync::Arc;
 
     let prog = compile(format!("{CORE_LIB}

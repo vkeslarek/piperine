@@ -1,4 +1,4 @@
-//! The solver boundary: compiled kernels wrapped as [`piperine_solver::core::element::Element`]s.
+//! The solver boundary: compiled kernels wrapped as [`piperine_solver::prelude::Element`]s.
 //!
 //! - [`CompiledModule`] — the per-module compilation artifact (analog and/or
 //!   digital kernel), shared across instances.

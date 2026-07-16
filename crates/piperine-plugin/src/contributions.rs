@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use piperine_codegen::device::PluginDeviceSpec;
 use piperine_lang::elab::registry::AttrField;
 use piperine_lang::Value;
-use piperine_solver::core::element::Element;
+use piperine_solver::abi::Element;
 
 use crate::capability::HostCtx;
 use crate::error::PluginError;

@@ -316,9 +316,9 @@ fn build_ivs(
     info: &piperine_codegen::device::CircuitBuildInfo,
     map: &Value,
     netlist: &piperine_solver::prelude::Netlist,
-) -> Result<Vec<piperine_solver::math::iv::InitialValue<piperine_solver::abi::AnalogReference, f64>>, BenchError> {
+) -> Result<Vec<piperine_solver::abi::InitialValue<piperine_solver::abi::AnalogReference, f64>>, BenchError> {
     use piperine_solver::abi::AnalogVariable;
-    use piperine_solver::math::iv::InitialValue;
+    use piperine_solver::abi::InitialValue;
     let mut ivs = Vec::new();
     if let Value::Map(entries) = map {
         for (k, v) in entries.borrow().iter() {

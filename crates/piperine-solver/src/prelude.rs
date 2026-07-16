@@ -45,3 +45,4 @@ pub use crate::analysis::transient::{TransientAnalysisResult, TransientStep};
 // ── Errors ─────────────────────────────────────────────────────────────────
 pub use crate::error::Error;
 pub use crate::result::Result;
+pub use crate::result::SolverStats;

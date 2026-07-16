@@ -6,7 +6,7 @@
 use piperine_codegen::ir::*;
 use piperine_codegen::jit::analog::AnalogKernel;
 use piperine_codegen::{CircuitCompiler, CodegenError, SimCtx};
-use piperine_solver::solver::Context;
+use piperine_solver::prelude::Context;
 
 // ─── IR construction helpers ──────────────────────────────────────────────────
 
@@ -315,7 +315,7 @@ const CAPACITOR: &str = "mod Capacitor(inout p : Electrical, inout n : Electrica
 fn build_top(
     body: &str,
     top_src: &str,
-) -> (piperine_solver::core::circuit::CircuitInstance, piperine_codegen::CircuitBuildInfo) {
+) -> (piperine_solver::prelude::CircuitInstance, piperine_codegen::CircuitBuildInfo) {
     let src = format!("{DISCIPLINE}{body}\nmod Top() {{\n{top_src}\n}}\n");
     let design = piperine_lang::parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy())
         .expect("parse_and_elaborate");
@@ -325,13 +325,13 @@ fn build_top(
 }
 
 fn voltage(
-    result: &piperine_solver::analysis::dc::DcAnalysisResult,
+    result: &piperine_solver::prelude::DcAnalysisResult,
     info: &piperine_codegen::CircuitBuildInfo,
     net: &str,
 ) -> f64 {
     let node = info.nets.get(net).unwrap_or_else(|| panic!("no net `{net}`"));
     result
-        .get(piperine_solver::analog::AnalogVariable::Node(node.clone()))
+        .get(piperine_solver::abi::AnalogVariable::Node(node.clone()))
         .unwrap_or_else(|| panic!("no voltage for `{net}`"))
 }
 
@@ -385,7 +385,7 @@ fn dc_diode_resistor_operating_point() {
 
 #[test]
 fn transient_rc_charges_toward_source() {
-    use piperine_solver::analysis::transient::TransientAnalysisOptions;
+    use piperine_solver::prelude::TransientAnalysisOptions;
 
     // 5 V step into R = 1 kΩ, C = 1 µF (τ = 1 ms), simulate 5 ms.
     let body = format!("{VSOURCE}{RESISTOR}{CAPACITOR}");
