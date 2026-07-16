@@ -415,21 +415,19 @@ pub analog bjt {
     // ════════════════════════════════════════════════════════════════════════
     //  §8  Series resistances  (bjtload.c:525-532, 818)
     // ════════════════════════════════════════════════════════════════════════
-    // Collector resistance
-    if (model.rc > 0.0) {
-        I(c, cp) <+ m * gcpr * V(c, cp);
-    } else {
-        V(c, cp) <- 0.0;
-    }
+    // ngspice collapses the internal nodes when RC/RE/RB == 0 (bjtsetup.c);
+    // PHDL keeps them and forces the series drop instead — `V = R·I` over
+    // the force's own branch is an exact series resistor, and R = 0 a
+    // perfect short. (A conditional `V <- 0` would lower to the JIT's
+    // penalty-conductance form, whose 1e12 stamp destroys the DC solve —
+    // same bug class as the diode/mos1/jfet fixes found by the harness.)
+    var rcollector : Real = if (model.rc > 0.0) { 1.0 / (m * gcpr) } else { 0.0 };
+    var remitter   : Real = if (model.re > 0.0) { 1.0 / (m * gepr) } else { 0.0 };
 
-    // Emitter resistance
-    if (model.re > 0.0) {
-        I(e, ep) <+ m * gepr * V(e, ep);
-    } else {
-        V(e, ep) <- 0.0;
-    }
-
-    // Base resistance — current-dependent (bjtload.c:525-532)
+    // Base resistance — current/bias-dependent (bjtload.c:525-532): the
+    // effective resistance `gx` (rbpr + rbpi/qb, or the IRB tan form) is
+    // re-evaluated at each bias point and forced as V = (gx/m)·I.
+    var rbase : Real = 0.0;
     if (model.rb > 0.0) {
         var gx : Real;
         if (xjrb > 0.0) {
@@ -444,13 +442,12 @@ pub analog bjt {
             gx = rbpr + rbpi / qb;
         }
         if (gx > 0.0) {
-            I(b, bp) <+ m * V(b, bp) / gx;
-        } else {
-            V(b, bp) <- 0.0;
+            rbase = gx / m;
         }
-    } else {
-        V(b, bp) <- 0.0;
     }
+    V(c, cp) <- rcollector * I(c, cp);
+    V(e, ep) <- remitter * I(e, ep);
+    V(b, bp) <- rbase * I(b, bp);
 
     // ════════════════════════════════════════════════════════════════════════
     //  §9  Charge storage  (bjtload.c:537-645)

@@ -305,7 +305,6 @@ fn ngspice_jfet_bias() {
 }
 
 #[test]
-#[ignore = "fixed in T7-T10 (BJT saturation needs source stepping — SPICE-12)"]
 fn ngspice_bjt_ce() {
     ngspice_op_case("bjt_ce");
 }

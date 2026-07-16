@@ -224,6 +224,8 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                     "temperature" => Ok(self.load_sim_f64(SimField::TEMPERATURE)),
                     "step" => self.sim_field_or_default(SimField::STEP, default),
                     "tfinal" => self.sim_field_or_default(SimField::TFINAL, default),
+                    // ngspice CKTsrcFact: the DC source-stepping ramp scale.
+                    "sourceScaleFactor" => Ok(self.load_sim_f64(SimField::SRCFACT)),
                     _ => default.map(|d| self.emit_analog(d)).unwrap_or(Ok(self.cse_const(0.0))),
                 }
             }

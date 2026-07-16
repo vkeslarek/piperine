@@ -562,6 +562,10 @@ impl AnalogInstance {
         context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
         self.sync_sim(context, Analysis::Dc);
+        // Independent-source ramp (source stepping): current sources scale
+        // themselves through `$simparam("sourceScaleFactor")` (ngspice
+        // CKTsrcFact); forced voltages are scaled at stamp time below.
+        self.sim.srcfact = state.src_scale;
         let volts = self.collect_volts(&|k| {
             state.latest().and_then(|s| s.get(k).copied()).unwrap_or(0.0)
         });
@@ -740,6 +744,8 @@ impl AnalogInstance {
         self.sim.step = dt;
         self.sim.tfinal = tran_ctx.tfinal;
         self.sync_sim(context, Analysis::Tran);
+        // Transient never source-steps (that homotopy is DC-only).
+        self.sim.srcfact = 1.0;
 
         let volts = self.collect_volts(&|k| {
             states.latest().and_then(|s| s.get(k).copied()).unwrap_or(0.0)

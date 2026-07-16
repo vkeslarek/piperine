@@ -50,6 +50,8 @@ impl SimField {
     pub(crate) const TFINAL: i32 = 40;
     pub(crate) const PARAM_GIVEN_MASK: i32 = 48;
     pub(crate) const CURRENT_ANALYSIS: i32 = 56;
+    // FREQUENCY (offset 64) is consumed Rust-side only (noise PSD scaling).
+    pub(crate) const SRCFACT: i32 = 72;
 }
 
 // Load-bank tags.

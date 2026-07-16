@@ -459,3 +459,125 @@ impl HomotopyStrategy for SourceStepping {
         driver.newton()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::{Error, SolverDomain};
+
+    /// Scripted homotopy driver: records every `newton()` call as the
+    /// `(src_scale, gmin_extra)` it ran under — the warm-start chain — and
+    /// fails when the scripted predicate says so.
+    struct ScriptedDriver {
+        src_scale: f64,
+        gmin_extra: f64,
+        calls: Vec<(f64, f64)>,
+        fail: Box<dyn Fn(f64, usize) -> bool>,
+    }
+
+    impl ScriptedDriver {
+        fn new(fail: impl Fn(f64, usize) -> bool + 'static) -> Self {
+            Self { src_scale: 1.0, gmin_extra: 0.0, calls: Vec::new(), fail: Box::new(fail) }
+        }
+    }
+
+    impl HomotopyDriver for ScriptedDriver {
+        fn newton(&mut self) -> Result<Array1<f64>> {
+            let n = self.calls.len();
+            self.calls.push((self.src_scale, self.gmin_extra));
+            if (self.fail)(self.src_scale, n) {
+                Err(Error::simple(SolverDomain::Dc, "scripted non-convergence"))
+            } else {
+                Ok(Array1::zeros(1))
+            }
+        }
+        fn set_gmin_extra(&mut self, g: f64) {
+            self.gmin_extra = g;
+        }
+        fn set_src_scale(&mut self, s: f64) {
+            self.src_scale = s;
+        }
+        fn gmin_floor(&self) -> f64 {
+            1e-12
+        }
+    }
+
+    /// cktop.c ramp semantics: the schedule starts fully off (scale 0),
+    /// raises the scale monotonically to full strength, holds the knee shunt
+    /// through the ramp, then ramps the shunt out — the last solve is the
+    /// exact problem (scale 1, no extra conductance).
+    #[test]
+    fn source_stepping_ramp_schedule() {
+        let mut driver = ScriptedDriver::new(|_, _| false);
+        SourceStepping.converge(&mut driver).expect("all-converging driver must succeed");
+
+        let calls = &driver.calls;
+        assert_eq!(calls[0], (0.0, 1e-6), "ramp starts fully off, knee shunt in");
+        // Phase 1: the source ramp, under the constant knee shunt.
+        let ramp: Vec<f64> = calls.iter().take_while(|(_, g)| *g == 1e-6).map(|(s, _)| *s).collect();
+        assert!(ramp.windows(2).all(|w| w[0] <= w[1]), "ramp is monotone: {ramp:?}");
+        assert_eq!(*ramp.last().unwrap(), 1.0, "ramp reaches full strength");
+        // Phase 2: the knee shunt itself is ramped out at full source strength.
+        let tail = &calls[ramp.len()..];
+        assert!(
+            tail.iter().all(|&(s, g)| s == 1.0 && g < 1e-6),
+            "knee ramp-out runs at full source strength: {tail:?}"
+        );
+        assert_eq!(*calls.last().unwrap(), (1.0, 0.0), "final solve is the exact problem");
+    }
+
+    /// Back-off: a step that fails is retried closer to the last converged
+    /// scale (warm start preserved), and the ramp still reaches 1.0 once the
+    /// hard region is passable.
+    #[test]
+    fn source_stepping_backs_off_after_failure() {
+        // A transient hard region: scales above 0.55 fail for the first 6
+        // newton calls, then converge.
+        let mut driver = ScriptedDriver::new(|scale, n| scale > 0.55 && n < 6);
+        SourceStepping.converge(&mut driver).expect("transient hard region must be passable");
+
+        let calls = &driver.calls;
+        let first_fail = calls
+            .iter()
+            .position(|&(s, _)| s > 0.55)
+            .expect("the schedule must have attempted the hard region");
+        assert!(
+            calls[first_fail + 1].0 < calls[first_fail].0,
+            "a failed step must back off toward the last converged scale: {calls:?}"
+        );
+        assert_eq!(*calls.last().unwrap(), (1.0, 0.0), "still reaches the exact problem");
+    }
+
+    /// A permanently impassable region exhausts the back-off (step < 1e-6)
+    /// and gives up with the failure, leaving the driver restored to the
+    /// exact problem (scale 1, no shunt).
+    #[test]
+    fn source_stepping_gives_up_when_backoff_exhausts() {
+        let mut driver = ScriptedDriver::new(|scale, _| scale > 0.5);
+        let result = SourceStepping.converge(&mut driver);
+        assert!(result.is_err(), "impassable ramp must report non-convergence");
+        assert_eq!(driver.src_scale, 1.0, "source scale restored");
+        assert_eq!(driver.gmin_extra, 0.0, "shunt removed");
+    }
+
+    /// Warm-start reuse: every solve in the plan runs on the *same* driver
+    /// state — successful scales form one non-decreasing chain (no restart
+    /// from scratch after a converged step).
+    #[test]
+    fn source_stepping_warm_start_chain() {
+        let mut driver = ScriptedDriver::new(|scale, n| scale > 0.55 && n < 6);
+        SourceStepping.converge(&mut driver).unwrap();
+        let ramp_ok: Vec<f64> = driver
+            .calls
+            .iter()
+            .enumerate()
+            .filter(|&(n, &(s, _))| !(s > 0.55 && n < 6))
+            .take_while(|&(_, &(_, g))| g > 0.0)
+            .map(|(_, &(s, _))| s)
+            .collect();
+        assert!(
+            ramp_ok.windows(2).all(|w| w[0] <= w[1]),
+            "converged scales must form one warm-started chain: {ramp_ok:?}"
+        );
+    }
+}

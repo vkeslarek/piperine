@@ -71,6 +71,11 @@ pub struct SimCtx {
     /// outside AC analyses. Appended last so existing field offsets for
     /// the JIT-ABI struct are preserved.
     pub frequency: f64,
+    /// Independent-source scale factor for DC source stepping
+    /// (`$simparam("sourceScaleFactor")`, ngspice `CKTsrcFact`). `1.0`
+    /// everywhere except while the source-stepping homotopy ramps the DC
+    /// operating point. Appended last to preserve JIT-ABI field offsets.
+    pub srcfact: f64,
 }
 
 impl SimCtx {
@@ -96,6 +101,7 @@ impl Default for SimCtx {
             param_given_mask: 0,
             current_analysis: 0,
             frequency: 0.0,
+            srcfact: 1.0,
         }
     }
 }

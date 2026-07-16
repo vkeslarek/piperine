@@ -236,11 +236,14 @@ pub analog isrc {
         val = ng_am(t, am_va, am_vo, mf, am_fc, am_td);
     }
 
-    // Current injection (isrcload.c: RHS[p] += m*value, RHS[n] -= m*value)
+    // Current injection (isrcload.c: RHS[p] += m*value, RHS[n] -= m*value).
+    // The DC value scales with the source-stepping ramp (ngspice cktop.c:
+    // CKTsrcFact multiplies every independent source); 1.0 outside the
+    // homotopy, so normal operation is untouched.
     if ($analysis("tran")) {
         I(p, n) <+ m * val;
     } else {
-        I(p, n) <+ m * dc;
+        I(p, n) <+ m * dc * $simparam("sourceScaleFactor", 1.0);
     }
 
     // AC stimulus
