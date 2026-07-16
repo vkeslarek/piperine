@@ -83,6 +83,10 @@ where
     scale: Vec<f64>,
     last_iterations: usize,
     total_iterations: usize,
+    /// Cumulative wall-clock time spent assembling + stamping (ns).
+    assembly_ns: u64,
+    /// Cumulative wall-clock time spent in the sparse LU solve (ns).
+    solve_ns: u64,
     _marker: std::marker::PhantomData<A>,
 }
 
@@ -110,6 +114,8 @@ where
             scale: vec![0.0; size],
             last_iterations: 0,
             total_iterations: 0,
+            assembly_ns: 0,
+            solve_ns: 0,
             _marker: std::marker::PhantomData,
         })
     }
@@ -245,9 +251,22 @@ where
         self.total_iterations
     }
 
-    /// Reset the cumulative iteration counter (call before a step loop).
+    /// Reset the cumulative iteration + timing counters (call before a solve
+    /// or step loop whose stats will be reported).
     pub fn reset_iteration_counter(&mut self) {
         self.total_iterations = 0;
+        self.assembly_ns = 0;
+        self.solve_ns = 0;
+    }
+
+    /// Cumulative assembly+stamping wall time (ns) since the last reset.
+    pub fn assembly_time_ns(&self) -> u64 {
+        self.assembly_ns
+    }
+
+    /// Cumulative sparse-solve wall time (ns) since the last reset.
+    pub fn solve_time_ns(&self) -> u64 {
+        self.solve_ns
     }
 
     /// Newton solve with damping and convergence delegated to a
@@ -275,12 +294,17 @@ where
             system.before_iter_callback(&self.state, iter);
             debug!("Newton Iteration {}", iter + 1);
 
+            let t_assembly = std::time::Instant::now();
             let stamps = system.assemble(&self.state)?;
             self.compute_residual(&stamps);
 
             self.linear_system.reset();
             self.linear_system.apply_stamps(stamps);
+            self.assembly_ns += t_assembly.elapsed().as_nanos() as u64;
+
+            let t_solve = std::time::Instant::now();
             let mut current_guess = self.linear_system.solve_with_backend(&self.symbolic)?;
+            self.solve_ns += t_solve.elapsed().as_nanos() as u64;
 
             if current_guess.iter().any(|x| !x.is_finite()) {
                 system.convergence_failed_callback(&self.state, iter, &current_guess.view());

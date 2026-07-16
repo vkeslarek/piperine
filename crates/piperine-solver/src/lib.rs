@@ -7,4 +7,3 @@ pub mod math;
 pub mod prelude;
 pub mod result;
 pub mod solver;
-pub mod util;

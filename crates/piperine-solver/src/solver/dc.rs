@@ -157,6 +157,9 @@ impl DcSystem<'_> {
 pub struct DcSolver<'a> {
     pub system: DcSystem<'a>,
     pub solver: NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>,
+    /// How many plain-Newton attempts the convergence plan drove (1 = no
+    /// homotopy). `SolverStats::homotopy_levels` is this minus the first.
+    newton_calls: usize,
 }
 
 impl<'a> DcSolver<'a> {
@@ -179,7 +182,7 @@ impl<'a> DcSolver<'a> {
 
         let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
 
-        Ok(Self { system, solver })
+        Ok(Self { system, solver, newton_calls: 0 })
     }
 
     /// Seed the DC Newton initial guess with node-voltage hints (piperine-bench/docs/SPEC.md
@@ -195,10 +198,14 @@ impl<'a> DcSolver<'a> {
     pub fn solve(&mut self) -> crate::result::Result<DcAnalysisResult> {
         let plan = ConvergencePlan::default();
         let max_ms_iter = plan.limits().max_mixed_signal_iter;
-        let raw_solution = {
+        self.solver.reset_iteration_counter();
+        self.newton_calls = 0;
+        let (raw_solution, homotopy_strategy) = {
             // Plain Newton, escalating through the homotopy plan (gmin stepping,
             // then source stepping) if it stalls on stiff coupled junctions.
-            let mut sol = plan.solve(self)?;
+            let outcome = plan.solve(self)?;
+            let homotopy_strategy = outcome.strategy;
+            let mut sol = outcome.solution;
 
             // Mixed-signal convergence loop: alternate between the analog
             // Newton-Raphson solve and digital evaluation until both settle —
@@ -241,7 +248,7 @@ impl<'a> DcSolver<'a> {
                     )?;
                 }
             }
-            sol
+            (sol, homotopy_strategy)
         };
 
         let mut values = HashMap::new();
@@ -257,16 +264,23 @@ impl<'a> DcSolver<'a> {
         }
 
         let mut result = DcAnalysisResult::new(values);
-        result.stats.newton_iterations = self.solver.last_iterations();
+        // Total across the whole plan (homotopy attempts included) — the
+        // honest cost of this operating point, not just the final solve.
+        result.stats.newton_iterations = self.solver.total_iterations();
         result.stats.converged = true;
         result.stats.bypass_hits = self.system.bypass_hits;
         result.stats.bypass_misses = self.system.bypass_misses;
+        result.stats.homotopy_strategy = homotopy_strategy.map(str::to_string);
+        result.stats.homotopy_levels = self.newton_calls.saturating_sub(1);
+        result.stats.assembly_time_ns = self.solver.assembly_time_ns();
+        result.stats.solve_time_ns = self.solver.solve_time_ns();
         Ok(result)
     }
 }
 
 impl HomotopyDriver for DcSolver<'_> {
     fn newton(&mut self) -> crate::result::Result<ndarray::Array1<f64>> {
+        self.newton_calls += 1;
         let strategy = crate::solver::convergence::DampedNewton;
         let policy = crate::solver::Policy::from_context(&self.system.context);
         let tolerances = self.system.context.tolerances;

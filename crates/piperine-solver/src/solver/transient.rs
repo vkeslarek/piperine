@@ -243,8 +243,22 @@ impl<'a> TransientSolver<'a> {
         self.solver.reset_iteration_counter();
         let mut steps_accepted: usize = 0;
         let mut steps_rejected: usize = 0;
+        let mut dt_min_floor_hits: usize = 0;
         let mut dt_min_seen = f64::INFINITY;
         let mut dt_max_seen = 0.0_f64;
+
+        // The Milne accept gate reads only node-voltage unknowns; the netlist
+        // is structurally stable for the whole run, so build the index list
+        // once instead of per accepted step.
+        let node_indices: Vec<usize> = self
+            .system
+            .circuit
+            .netlist()
+            .all_references()
+            .iter()
+            .filter(|r| !r.is_branch())
+            .filter_map(|r| r.idx())
+            .collect();
 
         while current_time < stop_time {
             let dt_proposed = dt;
@@ -297,15 +311,6 @@ impl<'a> TransientSolver<'a> {
                 // voltages) and the `/γ` extrapolation falsely amplifies a
                 // source branch's startup jump.
                 let tolerances = self.system.context.tolerances;
-                let node_indices: Vec<usize> = self
-                    .system
-                    .circuit
-                    .netlist()
-                    .all_references()
-                    .iter()
-                    .filter(|r| !r.is_branch())
-                    .filter_map(|r| r.idx())
-                    .collect();
                 let milne = match (self.solver.state().view(0), self.solver.state().view(1), self.solver.state().view(2)) {
                     (Some(a), Some(b), Some(c)) => TrBdf2::milne_lte_indexed(
                         c.as_slice().unwrap(),
@@ -327,6 +332,7 @@ impl<'a> TransientSolver<'a> {
                     if dt <= self.options.dt_min {
                         // Can't shrink further — accept the step as-is rather
                         // than stall. Surface the accuracy concession (audit C2).
+                        dt_min_floor_hits += 1;
                         tracing::warn!(
                             "transient LTE exceeded trtol at dt_min ({:.3e}); \
                              accepting step at t={:.3e} with reduced accuracy",
@@ -401,8 +407,11 @@ impl<'a> TransientSolver<'a> {
         result.stats.converged = true;
         result.stats.steps_accepted = steps_accepted;
         result.stats.steps_rejected = steps_rejected;
+        result.stats.dt_min_floor_hits = dt_min_floor_hits;
         result.stats.dt_min = if dt_min_seen.is_finite() { dt_min_seen } else { 0.0 };
         result.stats.dt_max = dt_max_seen;
+        result.stats.assembly_time_ns = self.solver.assembly_time_ns();
+        result.stats.solve_time_ns = self.solver.solve_time_ns();
         Ok(result)
     }
 

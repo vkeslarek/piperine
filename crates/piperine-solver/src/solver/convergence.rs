@@ -247,7 +247,7 @@ pub trait HomotopyDriver {
 /// behind the [`HomotopyDriver`].
 pub trait HomotopyStrategy: Send + Sync {
     /// Short name for diagnostics/tracing.
-    fn name(&self) -> &str;
+    fn name(&self) -> &'static str;
 
     /// Attempt to converge to the true operating point, or fail so the plan
     /// falls through to the next strategy.
@@ -309,20 +309,31 @@ impl ConvergencePlan {
     }
 
     /// Run the plan: plain Newton, then each homotopy in order. Returns the
-    /// first converged solution, else the most recent failure.
-    pub fn solve(&self, driver: &mut dyn HomotopyDriver) -> Result<Array1<f64>> {
+    /// first converged solution (and which strategy found it), else the most
+    /// recent failure.
+    pub fn solve(&self, driver: &mut dyn HomotopyDriver) -> Result<PlanOutcome> {
         let mut last = match driver.newton() {
-            Ok(solution) => return Ok(solution),
+            Ok(solution) => return Ok(PlanOutcome { solution, strategy: None }),
             Err(err) => err,
         };
         for strategy in &self.strategies {
             match strategy.converge(driver) {
-                Ok(solution) => return Ok(solution),
+                Ok(solution) => {
+                    return Ok(PlanOutcome { solution, strategy: Some(strategy.name()) });
+                }
                 Err(err) => last = err,
             }
         }
         Err(last)
     }
+}
+
+/// What the plan converged and how — the DC driver copies the strategy name
+/// into [`SolverStats`](crate::result::SolverStats).
+pub struct PlanOutcome {
+    pub solution: Array1<f64>,
+    /// The homotopy that converged; `None` when plain Newton sufficed.
+    pub strategy: Option<&'static str>,
 }
 
 /// SPICE gmin stepping: converge an easy, diagonally-dominant version of the
@@ -332,7 +343,7 @@ impl ConvergencePlan {
 pub struct GminStepping;
 
 impl HomotopyStrategy for GminStepping {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "gmin-stepping"
     }
 
@@ -391,7 +402,7 @@ impl HomotopyStrategy for GminStepping {
 pub struct SourceStepping;
 
 impl HomotopyStrategy for SourceStepping {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "source-stepping"
     }
 
