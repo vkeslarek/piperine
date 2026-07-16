@@ -29,6 +29,7 @@ pub use crate::analysis::transient::TransientAnalysisOptions;
 pub use crate::math::integration::IntegrationMethod;
 pub use crate::solver::Context;
 pub use crate::solver::{Policy, Tolerances};
+pub use crate::solver::solve::Solver;
 
 // ── Convergence policy (opt-in customization) ──────────────────────────────
 pub use crate::solver::convergence::{

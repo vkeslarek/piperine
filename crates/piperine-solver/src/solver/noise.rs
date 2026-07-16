@@ -373,7 +373,7 @@ mod tests {
 
         let ctx = Context::default();
         let mut dc = circuit.dc(ctx).unwrap();
-        let dc_res = dc.solve().unwrap();
+        let _dc_res = dc.solve().unwrap();
 
         let sweep = AcSweepAnalysisOptions {
             start_frequency: 1.0,

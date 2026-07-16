@@ -165,6 +165,7 @@ pub trait TransientAnalysis {
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
     use crate::prelude::TransientStep;
     use crate::core::net::Net;
