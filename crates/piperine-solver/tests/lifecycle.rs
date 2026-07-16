@@ -1,7 +1,6 @@
 use piperine_solver::abi::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use piperine_solver::prelude::*;
 
 struct LifecycleTestDevice {
     setup_calls: Arc<AtomicUsize>,

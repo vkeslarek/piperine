@@ -163,6 +163,9 @@ pub enum Direction {
     Inout,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SignConvention { IntoTerminal, OutOfTerminal }
+
 /// Metadata for one declared terminal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TerminalDescriptor {
@@ -172,6 +175,17 @@ pub struct TerminalDescriptor {
     /// Whether the terminal must be connected. Optional terminals may be left
     /// unbound where the model contract allows it.
     pub required: bool,
+    pub discipline: Option<String>,
+    pub sign: SignConvention,
+}
+
+impl TerminalDescriptor {
+    pub fn new(name: impl Into<String>, domain: Domain, direction: Direction) -> Self {
+        Self {
+            name: name.into(), domain, direction,
+            required: true, discipline: None, sign: SignConvention::IntoTerminal,
+        }
+    }
 }
 
 /// Why a `set_param` was rejected.
@@ -288,5 +302,24 @@ mod tests {
         assert_eq!(r.query("g"), Some(Value::Real(1.0 / 2000.0)));
         assert_eq!(r.query("missing"), None);
     }
-}
+    #[test]
+    fn terminal_descriptor_new_sets_defaults() {
+        let desc = TerminalDescriptor::new("p", Domain::Analog, Direction::Inout);
+        assert_eq!(desc.name, "p");
+        assert_eq!(desc.domain, Domain::Analog);
+        assert_eq!(desc.direction, Direction::Inout);
+        assert!(desc.required);
+        assert_eq!(desc.discipline, None);
+        assert_eq!(desc.sign, SignConvention::IntoTerminal);
+    }
 
+    #[test]
+    fn terminal_descriptor_with_custom_values() {
+        let mut desc = TerminalDescriptor::new("n", Domain::Analog, Direction::Inout);
+        desc.discipline = Some("electrical".into());
+        desc.sign = SignConvention::OutOfTerminal;
+        
+        assert_eq!(desc.discipline, Some("electrical".into()));
+        assert_eq!(desc.sign, SignConvention::OutOfTerminal);
+    }
+}

@@ -7,8 +7,8 @@ pub use crate::core::circuit::CircuitInstance;
 pub use crate::core::introspect::{
     Bounds, Direction, Domain, Invalidation, ParamDescriptor, ParamError,
     ParamScope, QueryDescriptor, QueryKind, TerminalDescriptor,
-    Value, ValueKind,
-    // TODO(T10): SignConvention, NoiseKind
+    Value, ValueKind, SignConvention,
+    // TODO(T11): NoiseKind
 };
 // Stamping + naming
 pub use crate::math::linear::{AsIndex, Stamp};

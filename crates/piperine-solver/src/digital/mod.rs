@@ -9,6 +9,5 @@ pub mod state;
 pub mod topology;
 
 pub use events::{DigitalEvent, DigitalNet, LogicValue};
-pub use interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};
 pub use state::DigitalState;
 pub use topology::DigitalTopology;

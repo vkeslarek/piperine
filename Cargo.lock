@@ -2190,6 +2190,7 @@ dependencies = [
  "piperine-bench",
  "piperine-lang",
  "piperine-project",
+ "piperine-solver",
  "pyo3",
 ]
 
@@ -2358,6 +2359,7 @@ dependencies = [
  "indoc",
  "libc",
  "memoffset",
+ "num-complex",
  "once_cell",
  "portable-atomic",
  "pyo3-build-config",
