@@ -258,16 +258,16 @@ pub analog jfet {
     // ════════════════════════════════════════════════════════════════════════
     //  §7  Series resistances  (jfetload.c:499-528)
     // ════════════════════════════════════════════════════════════════════════
-    if (model.rd > 0.0) {
-        I(d, dp) <+ m * gdpr * V(d, dp);
-    } else {
-        V(d, dp) <- 0.0;
-    }
-    if (model.rs > 0.0) {
-        I(s, sp) <+ m * gspr * V(s, sp);
-    } else {
-        V(s, sp) <- 0.0;
-    }
+    // ngspice collapses the internal nodes when RD/RS == 0 (jfetsetup.c);
+    // PHDL keeps them and forces the series drop instead — `V = R·I` over the
+    // force's own branch is an exact series resistor, and R = 0 a perfect
+    // short. (A conditional `V <- 0` would lower to the JIT's penalty-
+    // conductance form, whose 1e12 stamp cost ~15 mV here — same class of
+    // bug as the diode/mos1 fixes found by the ngspice harness.)
+    var rdrain : Real = if (model.rd > 0.0) { 1.0 / (m * gdpr) } else { 0.0 };
+    var rsource : Real = if (model.rs > 0.0) { 1.0 / (m * gspr) } else { 0.0 };
+    V(d, dp) <- rdrain * I(d, dp);
+    V(s, sp) <- rsource * I(s, sp);
 
     // ════════════════════════════════════════════════════════════════════════
     //  §8  Noise  (jfetnoi.c — 4 sources)

@@ -300,7 +300,6 @@ fn ngspice_nmos_load() {
 }
 
 #[test]
-#[ignore = "fixed in T7-T10 (JFET bias ~15 mV off — SPICE-11)"]
 fn ngspice_jfet_bias() {
     ngspice_op_case("jfet_bias");
 }
@@ -354,6 +353,18 @@ fn ngspice_nmos_id_vds_sweep() {
             harness.sweep_case("nmos_id_vds", "vd", "d", "gnd", NgspiceHarness::ABSTOL_I)
         }
         None => eprintln!("SKIP nmos_id_vds: ngspice not on PATH"),
+    }
+}
+
+/// N-JFET Id–Vds (26 points, vgs = −0.5 V, rd/rs = 100 Ω): linear →
+/// saturation through the series-resistance force branches (SPICE-11).
+#[test]
+fn ngspice_jfet_id_vds_sweep() {
+    match NgspiceHarness::detect() {
+        Some(harness) => {
+            harness.sweep_case("jfet_id_vds", "vd", "d", "gnd", NgspiceHarness::ABSTOL_I)
+        }
+        None => eprintln!("SKIP jfet_id_vds: ngspice not on PATH"),
     }
 }
 

@@ -1,0 +1,11 @@
+* N-JFET Id-Vds sweep (golden): vgs = -0.5 V fixed, rd/rs = 100 ohm series
+* 26 points crossing linear -> saturation
+Vd d 0 DC 0
+Vg g 0 DC -0.5
+J1 d g 0 JMOD
+.model JMOD NJF (vto=-2 beta=1e-3 lambda=0.02 rd=100 rs=100)
+.control
+dc Vd 0 5 0.2
+wrdata jfet_id_vds_sweep i(vd)
+.endc
+.end

@@ -1,0 +1,12 @@
+// N-JFET Id-Vds sweep — same circuit as jfet_id_vds.cir; the harness stages
+// vd.dc per sweep point and reads that source's own branch current.
+use piperine::disciplines;
+use spice::sources;
+use spice::jfet;
+mod Top() {
+    wire gnd: Electrical; wire d: Electrical; wire g: Electrical;
+    vd: vsrc (.p=d,.n=gnd) { .dc = 0.0 };
+    vg: vsrc (.p=g,.n=gnd) { .dc = 0.0 - 0.5 };
+    j1: jfet (.d=d,.g=g,.s=gnd)
+        { .model = JfetModel { .vto = 0.0 - 2.0, .beta = 1.0e-3, .lambda = 0.02, .rd = 100.0, .rs = 100.0 } };
+}
