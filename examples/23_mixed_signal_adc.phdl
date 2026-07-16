@@ -1,0 +1,67 @@
+// Mixed-signal transient demo: a ramp voltage source drives a 3-comparator
+// level ADC. The digital block reads the analog ramp through the A2D bridge
+// and drives three top-level digital bits (d0/d1/d2 at 1 V / 2 V / 3 V); the
+// analog block reads those bits back through the D2A bridge and reconstructs
+// a monotonic staircase `rec` = count of bits high (in volts). One circuit,
+// both bridges, both characteristics.
+
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+discipline Bit {
+    storage Boolean;
+}
+
+mod RampSource(inout p : Electrical, inout n : Electrical) {
+    param slope : Real = 4.0e5;   // V/s  (0.4 V/µs → 0..4 V over 10 µs)
+}
+
+analog RampSource {
+    V(p, n) <- slope * $abstime;
+}
+
+mod LevelAdc(input vin : Electrical, inout gnd : Electrical,
+             output d2 : Bit, output d1 : Bit, output d0 : Bit,
+             inout rec : Electrical) {
+}
+
+digital LevelAdc {
+    d0 = V(vin, gnd) > 1.0;
+    d1 = V(vin, gnd) > 2.0;
+    d2 = V(vin, gnd) > 3.0;
+}
+
+analog LevelAdc {
+    var v : Real = 0.0;
+    if (d0 == 1) { v = v + 1.0; }
+    if (d1 == 1) { v = v + 1.0; }
+    if (d2 == 1) { v = v + 1.0; }
+    V(rec, gnd) <- v;
+}
+
+mod AdcDemo() {
+    wire gnd : Electrical;
+    wire vin : Electrical;
+    wire rec : Electrical;
+    wire d2 : Bit;
+    wire d1 : Bit;
+    wire d0 : Bit;
+    src : RampSource(.p = vin, .n = gnd) { .slope = 4.0e5 };
+    adc : LevelAdc(.vin = vin, .gnd = gnd, .d2 = d2, .d1 = d1, .d0 = d0, .rec = rec);
+}
+
+bench AdcDemo {
+
+    fn test_quantization_levels() {
+        // Ramp 0 → 4 V over 10 µs; reconstruction is a 0/1/2/3 V staircase.
+        var t = $tran(TranConfig { .stop = 1e-5, .step = 2e-7 });
+        var v = t.v(vin, gnd);
+        var r = t.v(rec, gnd);
+        $assert(abs(v.at(5e-6) - 2.0) < 0.1, "ramp reaches 2 V at 5 µs");
+        // Around 2 V only d0 has fired → rec = 1 V (allow the 1-step A2D lag).
+        $assert(abs(r.at(5e-6) - 1.0) < 0.3, "rec = 1 V while only d0 is high");
+        $assert(abs(r.at(9e-6) - 3.0) < 0.3, "rec = 3 V once all comparators fire");
+    }
+}

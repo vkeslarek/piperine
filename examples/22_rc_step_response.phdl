@@ -1,0 +1,56 @@
+// First-order RC step response: a 1 V source steps the input at t=0 (the
+// transient starts there), and the capacitor — forced to 0 V through
+// `TranConfig.ic` — charges through R following V_out(t) = 1 − e^(−t/τ),
+// τ = RC. The bench checks the classic 1τ / 2τ / 5τ landmarks.
+
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+mod VoltageSource(inout p : Electrical, inout n : Electrical) {
+    param voltage : Real = 1.0;
+}
+
+analog VoltageSource {
+    V(p, n) <- voltage;
+}
+
+mod Resistor(inout p : Electrical, inout n : Electrical) {
+    param r : Real = 1e3;
+}
+
+analog Resistor {
+    I(p, n) <+ V(p, n) / r;
+}
+
+mod Capacitor(inout p : Electrical, inout n : Electrical) {
+    param c : Real = 100e-9;
+}
+
+analog Capacitor {
+    I(p, n) <+ c * ddt(V(p, n));
+}
+
+mod RcStep() {
+    wire gnd : Electrical;
+    wire vin : Electrical;
+    wire out : Electrical;
+    src : VoltageSource(.p = vin, .n = gnd) { .voltage = 1.0 };
+    r1   : Resistor(.p = vin, .n = out) { .r = 1e3 };          // τ = RC = 100 µs
+    c1   : Capacitor(.p = out, .n = gnd) { .c = 100e-9 };
+}
+
+bench RcStep {
+
+    fn test_step_response_landmarks() {
+        // Capacitor starts at 0 V (UIC); the 1 V source charges it.
+        var t = $tran(TranConfig { .stop = 5e-4, .step = 2e-6, .ic = Map { out: 0.0 } });
+        var v = t.v(out, gnd);
+        $display("v(0) =", v.at(0.0), " v(tau) =", v.at(1e-4), " v(5tau) =", v.at(5e-4));
+        $assert(abs(v.at(0.0) - 0.0) < 0.01, "cap starts discharged at t=0");
+        $assert(abs(v.at(1e-4) - 0.6321) < 0.02, "one tau: 1 - 1/e = 0.6321");
+        $assert(abs(v.at(2e-4) - 0.8647) < 0.02, "two tau: 1 - e^-2 = 0.8647");
+        $assert(abs(v.at(5e-4) - 0.9933) < 0.01, "five tau: settled to 99.3%");
+    }
+}
