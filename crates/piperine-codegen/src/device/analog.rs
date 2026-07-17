@@ -823,14 +823,16 @@ impl AnalogInstance {
         // inductor is a short, already forced to 0 V by `force_stamps`).
         if self.kernel.has_force_flux() && dt > 0.0 {
             // The inductor flux companion `V = dΦ/dt` is the dual of the
-            // capacitor case: the TR stage would need the previous *voltage*
-            // (force value) for a true trapezoidal companion. That dual
-            // tracking is a follow-up; for now both phases use the pure
-            // derivative form (`TrBdf2::phase_coeffs`), matching the prior
-            // behaviour — no regression, just no TR-stage accuracy gain for
-            // inductors yet.
-            let (c0, c1, c2) = TrBdf2::phase_coeffs(tran_ctx.phase, tran_ctx.h);
-            stamps.extend(self.force_flux_stamps(&volts, states, c0, c1, c2));
+            // capacitor case. The TR stage's trapezoidal form
+            //   V_{n+γ} = (2/(γh))(Φ_{n+γ} − Φ_n) − V_n
+            // needs the previous *branch voltage* `V_n` (the dual of the
+            // capacitor's `i_{C,n}` term) — without it the TR stage
+            // systematically doubles the derivative estimate and the RL
+            // trajectory runs at the wrong time constant. `V_n` is read from
+            // the accepted history (view 1), fixed across the Newton
+            // iteration; after a discontinuity (`prev_h = 0`) it is taken as
+            // 0, mirroring the capacitor's `i_{C,n} = 0` restart convention.
+            stamps.extend(self.force_flux_stamps(&volts, states, tran_ctx));
         }
         self.update_limits(&volts);
         stamps
@@ -953,16 +955,39 @@ impl AnalogInstance {
         &self,
         volts: &[f64],
         states: &TransientAnalysisState<'_>,
-        c0: f64,
-        c1: f64,
-        c2: f64,
+        tran_ctx: &TransientAnalysisContext,
     ) -> Vec<Stamp<AnalogReference, f64>> {
+        let (c0, c1, c2) = TrBdf2::phase_coeffs(tran_ctx.phase, tran_ctx.h);
         let terms = self.kernel.flux_terms();
         let mut coeffs = vec![0.0; terms.len()];
         self.kernel
             .eval_force_flux(volts, &self.params, &self.state, &self.vars, &self.sim, &mut coeffs);
         let force_terminals = self.kernel.force_terminals();
         let mut stamps = Vec::new();
+        // TR-stage trapezoidal correction: each flux-carrying branch row
+        // subtracts its previous branch voltage `V_n` once (see the caller's
+        // companion note). Applied per branch, not per flux term — a branch
+        // with self + mutual terms still has one `V_n`.
+        if matches!(tran_ctx.phase, TrBdf2Phase::Trapezoidal) && tran_ctx.prev_h > 0.0 {
+            let mut corrected: Vec<usize> = Vec::new();
+            for (&(force_idx, _, _), &l) in terms.iter().zip(&coeffs) {
+                if l == 0.0 || corrected.contains(&force_idx) {
+                    continue;
+                }
+                corrected.push(force_idx);
+                let (plus, minus) = force_terminals[force_idx];
+                let read_prev = |node: crate::ir::NodeId| -> f64 {
+                    self.terminal_ref(node)
+                        .and_then(|r| r.idx())
+                        .and_then(|k| states.view(1).and_then(|s| s.get(k).copied()))
+                        .unwrap_or(0.0)
+                };
+                let v_prev = read_prev(plus) - read_prev(minus);
+                if v_prev != 0.0 {
+                    stamps.push(Stamp::Rhs(self.force_refs[force_idx].clone(), -v_prev));
+                }
+            }
+        }
         for (&(force_idx, tp, tm), &l) in terms.iter().zip(&coeffs) {
             if l == 0.0 {
                 continue;
