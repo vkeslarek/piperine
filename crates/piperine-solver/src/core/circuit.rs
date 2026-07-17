@@ -121,11 +121,23 @@ impl CircuitInstance {
                 format!("no element labeled `{label}`"),
             )
         })?;
-        device.set_param(param, value).map_err(|e| {
-            crate::error::Error::simple(
-                crate::error::SolverDomain::Element,
-                format!("`{label}`: {e}"),
-            )
+        let outcome = device.set_param(param, value);
+        outcome.map_err(|e| {
+            // Unknown-parameter writes list what the element does declare —
+            // the caller sees the valid names instead of a bare rejection.
+            let detail = match &e {
+                crate::core::introspect::ParamError::Unknown(_) => {
+                    let names: Vec<String> =
+                        device.list_params().into_iter().map(|p| p.name).collect();
+                    if names.is_empty() {
+                        format!("`{label}`: {e}; element declares no writable parameters")
+                    } else {
+                        format!("`{label}`: {e}; available parameters: {}", names.join(", "))
+                    }
+                }
+                _ => format!("`{label}`: {e}"),
+            };
+            crate::error::Error::simple(crate::error::SolverDomain::Element, detail)
         })
     }
 

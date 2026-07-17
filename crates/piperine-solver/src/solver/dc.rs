@@ -208,6 +208,22 @@ impl<'a> DcSolver<'a> {
         }
     }
 
+    /// Live parameter set through a held DC analysis: forwards to
+    /// [`CircuitInstance::set_element_param`] and, on success, drops the
+    /// device-bypass stamp cache — a re-solve whose solution barely moved
+    /// would otherwise reuse stamps built under the old value and silently
+    /// converge to the stale operating point (the CP-11 bypass trap).
+    pub fn set_element_param(
+        &mut self,
+        label: &str,
+        param: &str,
+        value: crate::core::introspect::Value,
+    ) -> crate::result::Result<crate::core::introspect::Invalidation> {
+        let invalidation = self.system.circuit.set_element_param(label, param, value)?;
+        self.system.invalidate_bypass();
+        Ok(invalidation)
+    }
+
     pub fn solve(&mut self) -> crate::result::Result<DcAnalysisResult> {
         let plan = ConvergencePlan::default();
         let max_ms_iter = plan.limits().max_mixed_signal_iter;
