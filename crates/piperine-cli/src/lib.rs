@@ -41,12 +41,12 @@ pub enum Commands {
         #[arg(short = 'i', long)]
         interactive: bool,
     },
-    /// Run `bench` entry points (piperine-bench/docs/SPEC.md)
+    /// Run the project's Python testbenches (`*_tb.py`)
     Test {
-        /// List all available bench entry points instead of running them
+        /// List discovered testbenches instead of running them
         #[arg(long, short)]
         list: bool,
-        /// The file to test; defaults to every `.phdl` under `src/`
+        /// A single testbench file to run; defaults to every `*_tb.py` under the project
         file: Option<String>,
     },
     /// Create a new piperine project
