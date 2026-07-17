@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "promote_threshold": 2,
+  "window_days": 45,
+  "quarantine_threshold": 2,
+  "next_id": 2,
+  "lessons": [
+    {
+      "id": "L-001",
+      "key": "surviving_mutant::numeric coefficient fixes restart discontinuity conventions need coefficient level unit tests integration level suites mask o h errors whenever restarts begin at tiny steps 1e 3 dt so assert the exact coefficient tuple",
+      "text": "Numeric-coefficient fixes (restart/discontinuity conventions) need coefficient-level unit tests: integration-level suites mask O(h) errors whenever restarts begin at tiny steps (1e-3*dt), so assert the exact coefficient tuple.",
+      "signal": "surviving_mutant",
+      "scope": "solver/math",
+      "status": "candidate",
+      "features": [
+        "solver-live-params"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "piperine-solver/src/math/integration.rs:197 stage_coeffs backward-Euler degradation (solver/math)"
+      ],
+      "created": "2026-07-17T19:20:56Z",
+      "last_seen": "2026-07-17T19:20:56Z"
+    }
+  ]
+}
