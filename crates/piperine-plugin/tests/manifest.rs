@@ -78,3 +78,26 @@ fn unknown_permission_field_is_rejected() {
     .expect_err("unknown permission must not parse");
     assert!(matches!(err, PluginError::BadManifest { .. }));
 }
+
+/// A manifest declaring `bench_tasks` fails loud with the removal notice —
+/// the in-language bench (and its plugin extension point) no longer exists;
+/// the generic "unknown field" would send authors hunting the wrong trail.
+#[test]
+fn bench_tasks_manifest_is_a_clear_removal_error() {
+    let err = Manifest::parse(
+        "x",
+        r#"
+        [plugin]
+        name = "x"
+        abi = "native"
+        entry = "x.so"
+
+        bench_tasks = ["gain"]
+        "#,
+    )
+    .expect_err("bench_tasks must be rejected");
+    let msg = err.to_string();
+    assert!(msg.contains("bench"), "names the removed surface: {msg}");
+    assert!(msg.contains("removed"), "says it is removed: {msg}");
+    assert!(msg.contains("*_tb.py"), "points at python testbenches: {msg}");
+}

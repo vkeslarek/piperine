@@ -3,6 +3,7 @@
 //! external view of the project (MD-19).
 
 pub use crate::error::Error;
+pub use crate::hooks::SimHooks;
 pub use crate::results::{NetRef, OpResult};
 pub use crate::session::{SimSession, SolverConfig};
 pub use crate::waveform::{AcTrace, ComplexWaveform, NoiseTrace, Trace, Waveform};

@@ -1,6 +1,6 @@
 //! The shared host-side adapter for wire-protocol plugin tiers (WASM,
-//! process): a [`WireTransport`] moves `HookInput`/`TaskInput` payloads to
-//! the guest and replies back; [`WireHosted`] presents the guest as an
+//! process): a [`WireTransport`] moves `HookInput` payloads to the guest
+//! and replies back; [`WireHosted`] presents the guest as an
 //! ordinary [`Plugin`]. Everything above the transport — registration,
 //! patch application, read-only enforcement — is identical across tiers.
 //!
@@ -13,10 +13,9 @@ use std::sync::Arc;
 use piperine_lang::elab::registry::AttrField;
 use piperine_lang::pom::wire;
 use piperine_lang::pom::Design;
-use piperine_lang::Value;
 
 use crate::capability::HostCtx;
-use crate::contributions::{PluginBenchTask, Registrar};
+use crate::contributions::Registrar;
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::Manifest;
 use crate::view::{DesignStaging, SolveResultView};
@@ -27,7 +26,6 @@ use crate::Plugin;
 pub trait WireTransport: Send + Sync {
     fn register(&self) -> PluginResult<wire::Registration>;
     fn hook(&self, input: &wire::HookInput) -> PluginResult<wire::HookOutput>;
-    fn task(&self, input: &wire::TaskInput) -> PluginResult<wire::TaskOutput>;
 }
 
 /// Wrap a transport as a [`Plugin`]: run the guest's registration once and
@@ -99,12 +97,6 @@ impl Plugin for WireHosted {
                         default: None,
                     })
                     .collect(),
-            );
-        }
-        for name in &self.contributions.bench_tasks {
-            r.bench_task(
-                name,
-                Box::new(WireTask { transport: self.transport.clone(), name: name.clone() }),
             );
         }
     }
@@ -190,22 +182,5 @@ impl Plugin for WireHosted {
                 }),
             },
         )
-    }
-}
-
-/// A guest bench task, dispatched through the transport.
-struct WireTask {
-    transport: Arc<dyn WireTransport>,
-    name: String,
-}
-
-impl PluginBenchTask for WireTask {
-    fn run(&self, args: Vec<Value>, _cx: &mut HostCtx) -> Result<Value, String> {
-        let input = wire::TaskInput { name: self.name.clone(), args };
-        let out = self.transport.task(&input).map_err(|e| e.to_string())?;
-        if let Some(error) = out.error {
-            return Err(error);
-        }
-        out.value.ok_or_else(|| "task returned neither value nor error".into())
     }
 }

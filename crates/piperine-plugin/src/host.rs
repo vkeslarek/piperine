@@ -4,10 +4,9 @@
 
 use std::path::{Path, PathBuf};
 
-use piperine_bench::plugins::BenchPlugins;
+use piperine::SimHooks;
 use piperine_codegen::device::{DeviceProvider, PluginDeviceSpec};
 use piperine_lang::elab::registry::{AttrField, ElabContext};
-use piperine_lang::eval::{EvalError, Value};
 use piperine_lang::Design;
 use piperine_project::resolver::Resolver;
 use piperine_project::PiperineToml;
@@ -213,7 +212,6 @@ impl PluginHost {
                 let name = &l.manifest.name;
                 let devices = self.contributions.devices.values().filter(|(o, _)| o == name).count();
                 let schemas = self.contributions.schemas.values().filter(|(o, _)| o == name).count();
-                let tasks = self.contributions.bench_tasks.values().filter(|(o, _)| o == name).count();
                 let scripts: Vec<&str> = self
                     .contributions
                     .scripts
@@ -222,7 +220,7 @@ impl PluginHost {
                     .map(|(n, _)| n.as_str())
                     .collect();
                 format!(
-                    "{name} ({}): {devices} device(s), {schemas} schema(s), {tasks} bench task(s), scripts: [{}]",
+                    "{name} ({}): {devices} device(s), {schemas} schema(s), scripts: [{}]",
                     l.manifest.abi.as_str(),
                     scripts.join(", ")
                 )
@@ -245,7 +243,7 @@ impl PluginHost {
 
     /// Seed the elaboration registries (Plugin plan D2): the plugin
     /// system's own `@device`/`@port` schemas, plus every plugin-declared
-    /// schema. Called by whoever drives elaboration (CLI, bench, tests)
+    /// schema. Called by whoever drives elaboration (CLI, hosts, tests)
     /// through `parse_and_elaborate_seeded`.
     pub fn seed_schemas(&self, ctx: &mut ElabContext) {
         if self.is_empty() {
@@ -270,16 +268,12 @@ impl PluginHost {
         for (name, (_owner, fields)) in &self.contributions.schemas {
             ctx.schemas.register_declared(name, fields.clone());
         }
-        // Plugin bench tasks join the allowlist gate (SPEC Part VI §6).
-        for name in self.contributions.bench_tasks.keys() {
-            ctx.bench_tasks.insert(name.clone());
-        }
     }
 }
 
-/// The bench seam (Plugin plan Phase 3): `SimSession` fires the per-analysis
-/// hooks and dispatches plugin bench tasks through this.
-impl BenchPlugins for PluginHost {
+/// The simulation seam (Plugin plan Phase 3): the host API's `SimSession`
+/// fires the per-analysis lifecycle hooks through this.
+impl SimHooks for PluginHost {
     fn transform_design(&self, design: &Design) -> Result<(), String> {
         if self.is_empty() {
             return Ok(());
@@ -323,15 +317,6 @@ impl BenchPlugins for PluginHost {
         self.fire("after_solve", |p, cx| p.after_solve(cx, &result))
     }
 
-    fn run_bench_task(&self, name: &str, args: Vec<Value>) -> Option<Result<Value, EvalError>> {
-        let (owner, task) = self.contributions.bench_tasks.get(name)?;
-        let loaded = self.plugins.iter().find(|l| &l.manifest.name == owner)?;
-        let mut cx = self.ctx_for(loaded);
-        Some(
-            task.run(args, &mut cx)
-                .map_err(|e| EvalError::Host(format!("plugin bench task `${name}`: {e}"))),
-        )
-    }
 }
 
 /// The codegen seam (Plugin plan D4): `CircuitCompiler` hands

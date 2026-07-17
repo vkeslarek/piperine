@@ -48,7 +48,7 @@ single Rust library face — host plumbing hides inside `piperine-bench`.
 | Examples | Strip bench blocks; keep module-only `.phdl` + `.py` twin | User choice | y (user) |
 | Grammar | Total removal (generic syntax error, no friendly migration error) | User choice | y (user) |
 | `piperine-python` dependency | Depends on root `piperine` lib (no cycle: root→cli never returns); keep the lib target lean (feature-gate cli-adjacent weight if needed) | Single library face | n (agent) |
-| Plugin bench-task extension point | Removed with the bench (plugin SDK loses `BenchTask` contribution surface); CLI-script tier unaffected | Dies with its only consumer | n (agent) |
+| Plugin bench-task extension point | Removed with the bench (plugin SDK loses `BenchTask` contribution surface); CLI-script tier unaffected. **Lifecycle hooks (`transform_design`/`before_lower`/`after_solve`) are preserved**: they move to a root `SimHooks` trait fired by the root `SimSession`; PluginHost implements it (user decision 2026-07-17, supersedes the design's "plugins.rs deleted" row) | Bench-task dies with its only consumer; hooks are Part VI §8 capability | y (user, hooks amendment) |
 | Test relocation | `piperine-bench/tests/{ngspice_validation, ngspice/, spice_smoke, spice/, compile_once_sweep, run_examples}` move to root-crate `tests/`; `bench.rs` (PHDL-bench e2e) deleted | Tests of the host API belong to the host crate | n (agent) |
 | run_examples contract | Every `.phdl` elaborates + every `.py` runs green | Keeps both artifact kinds guarded | n (agent) |
 | Python doc home | Docstrings on every public class/method + `docs/spec/` host-API part (or appendix) + README section; examples referenced | "documentá-la" | n (agent) |

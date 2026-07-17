@@ -75,11 +75,13 @@ pub struct SimSession {
     module: String,
     /// Builds `@device`-annotated instances (SPEC Part VI §7).
     provider: Option<Rc<dyn piperine_codegen::device::DeviceProvider>>,
+    /// Lifecycle hooks (SPEC Part VI §8) fired around builds and solves.
+    hooks: Option<Rc<dyn crate::hooks::SimHooks>>,
 }
 
 impl SimSession {
     pub fn new(design: Design, module: String) -> Self {
-        Self { design, module, provider: None }
+        Self { design, module, provider: None, hooks: None }
     }
 
     /// Wire a plugin host as the device provider for this session's builds.
@@ -88,6 +90,18 @@ impl SimSession {
         provider: Rc<dyn piperine_codegen::device::DeviceProvider>,
     ) {
         self.provider = Some(provider);
+    }
+
+    /// Wire the lifecycle hooks (a plugin host) into this session.
+    pub fn set_hooks(&mut self, hooks: Rc<dyn crate::hooks::SimHooks>) {
+        self.hooks = Some(hooks);
+    }
+
+    fn fire_after_solve(&self, analysis: &str, node_voltages: &[(String, f64)]) -> Result<(), Error> {
+        if let Some(h) = &self.hooks {
+            h.after_solve(analysis, node_voltages).map_err(Error::Plugin)?;
+        }
+        Ok(())
     }
 
     pub fn design(&self) -> &Design {
@@ -107,7 +121,16 @@ impl SimSession {
 
     /// Apply staged overrides, lower to resolved bodies, build the circuit.
     fn build_circuit(&self) -> Result<(piperine_solver::prelude::CircuitInstance, CircuitBuildInfo), Error> {
+        // `transform_design`: hooks stage their mutations, then the pure
+        // re-elaboration below consumes them like any staged write.
+        if let Some(h) = &self.hooks {
+            h.transform_design(&self.design).map_err(Error::Plugin)?;
+        }
         let applied = self.design.with_overrides_applied(&self.module)?;
+        // `before_lower`: read-only view of the applied design.
+        if let Some(h) = &self.hooks {
+            h.before_lower(&applied).map_err(Error::Plugin)?;
+        }
         let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
         let mut compiler = CircuitCompiler::new(&applied, &bodies);
         if let Some(provider) = &self.provider {
@@ -134,6 +157,7 @@ impl SimSession {
         let result = dc.solve()?;
         drop(dc);
         let digital = Self::snapshot_digital(&info, &circuit);
+        self.fire_after_solve("op", &node_voltages(&info, &result))?;
         Ok(OpResult::new(result, digital, Rc::new(info)))
     }
 
@@ -177,6 +201,7 @@ impl SimSession {
             let result = dc.solve()?;
             drop(dc);
             let digital = Self::snapshot_digital(&info, &circuit);
+            self.fire_after_solve("op", &node_voltages(&info, &result))?;
             results.push(OpResult::new(result, digital, Rc::new(info.clone())));
         }
         Ok(results)
@@ -235,6 +260,7 @@ impl SimSession {
         solver.policy = config.to_policy();
         solver.apply_initial_conditions(ivs);
         let result = solver.solve()?;
+        self.fire_after_solve("tran", &[])?;
         Ok(Trace::new(result, Rc::new(info)))
     }
 
@@ -257,6 +283,7 @@ impl SimSession {
         let mut ac = circuit.ac(config.to_context())?;
         ac.policy = config.to_policy();
         let result = ac.solve_sweep(opts)?;
+        self.fire_after_solve("ac", &[])?;
         Ok(AcTrace::new(result, Rc::new(info)))
     }
 
@@ -288,6 +315,7 @@ impl SimSession {
             input_source_name: None,
         };
         let result = circuit.noise(opts, config.to_context())?.solve()?;
+        self.fire_after_solve("noise", &[])?;
         Ok(NoiseTrace::new(result))
     }
 }
@@ -299,6 +327,25 @@ fn resolve_net(
 ) -> Result<piperine_solver::prelude::NodeIdentifier, Error> {
     info.net_node(name)
         .ok_or_else(|| Error::Measurement(format!("net `{name}` is not addressable")))
+}
+
+/// The solved node voltages as `(net name, volts)` pairs — the payload the
+/// `after_solve` hook observes for operating-point analyses.
+fn node_voltages(
+    info: &CircuitBuildInfo,
+    result: &piperine_solver::prelude::DcAnalysisResult,
+) -> Vec<(String, f64)> {
+    info.nets
+        .iter()
+        .map(|(name, node)| {
+            let v = if *node == piperine_solver::prelude::NodeIdentifier::Gnd {
+                0.0
+            } else {
+                result.get_node(node).unwrap_or(0.0)
+            };
+            (name.clone(), v)
+        })
+        .collect()
 }
 
 /// Build solver initial-value hints from a net-name → volts map. Keys

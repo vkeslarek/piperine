@@ -14,12 +14,14 @@
 //! ```
 
 pub mod error;
+pub mod hooks;
 pub mod prelude;
 pub mod results;
 pub mod session;
 pub mod waveform;
 
 pub use error::Error;
+pub use hooks::SimHooks;
 pub use results::{NetRef, OpResult};
 pub use session::{SimSession, SolverConfig};
 pub use waveform::{AcTrace, ComplexWaveform, NoiseTrace, Trace, Waveform};

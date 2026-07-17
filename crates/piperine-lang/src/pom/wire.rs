@@ -20,7 +20,6 @@
 //! pp_alloc(len: i32) -> i32                  // guest buffer the host writes into
 //! pp_register() -> i64                       // packed JSON Registration
 //! pp_hook(in_ptr: i32, in_len: i32) -> i64   // JSON HookInput → packed JSON HookOutput
-//! pp_task(in_ptr: i32, in_len: i32) -> i64   // JSON TaskInput → packed JSON TaskOutput
 //! ```
 //!
 //! A packed `i64` return is `(ptr << 32) | len` into guest memory. A
@@ -33,7 +32,7 @@ pub use super::design::Design;
 pub use crate::value::Value;
 
 /// Bumped on any breaking change to the shapes or the export set.
-pub const WASM_ABI_VERSION: u32 = 2;
+pub const WASM_ABI_VERSION: u32 = 3;
 
 // ─── Registration ──────────────────────────────────────────────────────────────
 
@@ -42,10 +41,6 @@ pub const WASM_ABI_VERSION: u32 = 2;
 pub struct Registration {
     #[serde(default)]
     pub schemas: Vec<Schema>,
-    /// Bench task names (callable as `$name(...)`), dispatched back through
-    /// the task entry point.
-    #[serde(default)]
-    pub bench_tasks: Vec<String>,
     /// Script names. Not yet runnable on the out-of-host tiers (the
     /// capability-gated fs imports are a follow-up) — declaring one is a
     /// load-time error.
@@ -128,22 +123,6 @@ pub enum Action {
     AddConnection { parent: String, lhs: String, rhs: String },
 }
 
-// ─── Bench tasks ───────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskInput {
-    pub name: String,
-    pub args: Vec<Value>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct TaskOutput {
-    #[serde(default)]
-    pub error: Option<String>,
-    #[serde(default)]
-    pub value: Option<Value>,
-}
-
 // ─── The guest contract ────────────────────────────────────────────────────────
 
 /// The guest-side plugin contract — one trait for both out-of-host tiers
@@ -177,11 +156,6 @@ pub trait WirePlugin {
     fn after_solve(&self, _solve: &Solve) -> Result<(), String> {
         Ok(())
     }
-
-    /// Dispatch for the plugin's registered bench tasks (`$name(...)`).
-    fn bench_task(&self, _name: &str, _args: Vec<Value>) -> Result<Value, String> {
-        Err("no bench task handler".into())
-    }
 }
 
 /// Run one hook against a [`WirePlugin`] — shared by the WASM guest's
@@ -208,14 +182,6 @@ pub fn run_hook(plugin: &impl WirePlugin, input: HookInput) -> HookOutput {
     }
 }
 
-/// Run one bench task against a [`WirePlugin`].
-pub fn run_task(plugin: &impl WirePlugin, input: TaskInput) -> TaskOutput {
-    match plugin.bench_task(&input.name, input.args) {
-        Ok(value) => TaskOutput { error: None, value: Some(value) },
-        Err(e) => TaskOutput { error: Some(e), value: None },
-    }
-}
-
 // ─── Process tier framing ──────────────────────────────────────────────────────
 
 /// One line-delimited JSON-RPC request (the process tier, SPEC Part VI §6.4).
@@ -239,7 +205,7 @@ pub struct RpcResponse {
 
 /// Serve a [`WirePlugin`] over stdin/stdout — the whole main() of a
 /// process-tier plugin executable. Methods: `abi_version`, `register`,
-/// `hook`, `task`. Returns when stdin closes (the host dropped the plugin).
+/// `hook`. Returns when stdin closes (the host dropped the plugin).
 pub fn serve_stdio(plugin: &impl WirePlugin) {
     use std::io::{BufRead, Write};
     let stdin = std::io::stdin();
@@ -261,12 +227,6 @@ pub fn serve_stdio(plugin: &impl WirePlugin) {
                         .ok_or("hook needs params".to_string())
                         .and_then(|p| serde_json::from_value::<HookInput>(p).map_err(|e| e.to_string()))
                         .map(|input| run_hook(plugin, input))
-                        .and_then(|out| serde_json::to_value(out).map_err(|e| e.to_string())),
-                    "task" => req
-                        .params
-                        .ok_or("task needs params".to_string())
-                        .and_then(|p| serde_json::from_value::<TaskInput>(p).map_err(|e| e.to_string()))
-                        .map(|input| run_task(plugin, input))
                         .and_then(|out| serde_json::to_value(out).map_err(|e| e.to_string())),
                     other => Err(format!("unknown method `{other}`")),
                 };
@@ -337,11 +297,3 @@ pub fn wasm_hook(plugin: &impl WirePlugin, ptr: i32, len: i32) -> i64 {
     wasm_reply(serde_json::to_vec(&out).expect("serialize hook output"))
 }
 
-/// `pp_task` body for a WASM guest.
-pub fn wasm_task(plugin: &impl WirePlugin, ptr: i32, len: i32) -> i64 {
-    let out = match serde_json::from_slice::<TaskInput>(wasm_input(ptr, len)) {
-        Err(e) => TaskOutput { error: Some(format!("bad task input: {e}")), value: None },
-        Ok(input) => run_task(plugin, input),
-    };
-    wasm_reply(serde_json::to_vec(&out).expect("serialize task output"))
-}

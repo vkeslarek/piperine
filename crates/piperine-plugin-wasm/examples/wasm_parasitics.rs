@@ -1,8 +1,8 @@
 //! The Phase-4 gate guest (Plugin plan): the rc-parasitics case compiled to
 //! WASM — `transform_design` returns an `AddInstance` patch staging a
-//! declared `Resistor` from `out` to `gnd`. Also registers two bench tasks:
-//! `$wgain()` (returns 42.0, proves task dispatch) and `$spin()` (loops
-//! forever, proving the host's fuel cap kills a runaway guest).
+//! declared `Resistor` from `out` to `gnd`. When the design carries a
+//! `Runaway` marker module, `before_lower` spins forever, proving the
+//! host's fuel cap kills a runaway guest mid-hook.
 //!
 //! Build: `cargo build -p piperine-plugin-wasm --example wasm_parasitics
 //!         --target wasm32-unknown-unknown`
@@ -16,7 +16,6 @@ impl sdk::WirePlugin for Parasitics {
     fn register(&self) -> Registration {
         Registration {
             schemas: Vec::new(),
-            bench_tasks: vec!["wgain".into(), "spin".into()],
             scripts: Vec::new(),
         }
     }
@@ -36,21 +35,16 @@ impl sdk::WirePlugin for Parasitics {
         }])
     }
 
-    fn bench_task(&self, name: &str, _args: Vec<Value>) -> Result<Value, String> {
-        match name {
-            "wgain" => Ok(Value::Real(42.0)),
-            "spin" => {
-                // Deliberate runaway: the host's fuel cap must kill this.
-                let mut x = 0u64;
-                loop {
-                    x = x.wrapping_add(1);
-                    if x == u64::MAX {
-                        return Ok(Value::Nat(x));
-                    }
-                }
+    fn before_lower(&self, design: &Design) -> Result<(), String> {
+        if design.module("Runaway").is_some() {
+            // Deliberate runaway: the host's fuel cap must kill this.
+            let mut x = 0u64;
+            loop {
+                x = x.wrapping_add(1);
+                std::hint::black_box(x);
             }
-            other => Err(format!("unknown task `{other}`")),
         }
+        Ok(())
     }
 }
 
@@ -72,9 +66,4 @@ pub extern "C" fn pp_register() -> i64 {
 #[unsafe(no_mangle)]
 pub extern "C" fn pp_hook(ptr: i32, len: i32) -> i64 {
     sdk::wasm_hook(&Parasitics, ptr, len)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn pp_task(ptr: i32, len: i32) -> i64 {
-    sdk::wasm_task(&Parasitics, ptr, len)
 }

@@ -1,18 +1,17 @@
 //! Phase-3 gates (Plugin plan): `transform_design` staging injection (the
-//! rc-parasitics case), no-netlist-magic and conflict failures, plugin
-//! bench tasks through the allowlist gate, scripts under capability
-//! enforcement, and the read-only hooks.
+//! rc-parasitics case), no-netlist-magic and conflict failures, scripts
+//! under capability enforcement, and the read-only hooks — all driven
+//! through the root host API (`SimSession` + `SimHooks`).
 
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use piperine_bench::{BenchOutcome, BenchRunner};
-use piperine_lang::eval::Value;
-use piperine_lang::SourceMap;
+use piperine::{NetRef, OpResult, SimSession, SolverConfig};
+use piperine_lang::{SourceMap, Value};
 use piperine_plugin::{
-    Abi, Design, DesignStaging, HostCtx, Manifest, Permissions, Plugin, PluginBenchTask,
-    PluginError, PluginHost, PluginResult, Registrar, ScriptHandler, SolveResultView,
+    Abi, Design, DesignStaging, HostCtx, Manifest, Plugin, PluginError, PluginHost, PluginResult,
+    Registrar, ScriptHandler, SolveResultView,
 };
 
 fn manifest(name: &str) -> Manifest {
@@ -21,7 +20,7 @@ fn manifest(name: &str) -> Manifest {
         abi: Abi::Native,
         entry: String::new(),
         description: None,
-        permissions: Permissions::default(),
+        permissions: Default::default(),
     }
 }
 
@@ -32,22 +31,22 @@ fn elab(src: &str, host: &PluginHost) -> piperine_lang::Design {
     .expect("elaborate")
 }
 
-fn run(src: &str, host: Rc<PluginHost>, module: &str, entry: &str) -> BenchOutcome {
+/// An operating point of `Top` through a session wired with the host's
+/// device provider + lifecycle hooks.
+fn run_top_op(host: Rc<PluginHost>, src: &str) -> Result<OpResult, piperine::Error> {
     let design = elab(src, &host);
-    BenchRunner::new(&design)
-        .with_device_provider(host.clone())
-        .with_plugins(host)
-        .run_entry(module, entry)
+    let mut session = SimSession::new(design, "Top".to_string());
+    session.set_device_provider(host.clone());
+    session.set_hooks(host);
+    session.run_op(&SolverConfig::default(), None)
 }
 
-fn assert_passed(outcome: BenchOutcome) {
-    match outcome {
-        BenchOutcome::Passed => {}
-        BenchOutcome::Failed(m) => panic!("bench assert failed: {m}"),
-        BenchOutcome::Error(m) => panic!("bench errored: {m}"),
-    }
+fn v(op: &OpResult, net: &str) -> f64 {
+    op.v(&NetRef { name: net.to_string() }, None).expect("net readable")
 }
 
+/// r1 dangles until the plugin injects `r_par` from `out` to `gnd`,
+/// turning the circuit into a divider: `out = 5 V · 1k/(1k+1k) = 2.5 V`.
 const DIVIDER: &str = "
     discipline Electrical { potential v: Real; flow i: Real; }
 
@@ -67,19 +66,6 @@ const DIVIDER: &str = "
         wire out : Electrical;
         src : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
         r1  : Resistor (.p = vin, .n = out);
-    }
-    bench Top {
-        fn divider() {
-            var r = $op();
-            $assert(r.v(out, gnd) > 2.49, \"divider low\");
-            $assert(r.v(out, gnd) < 2.51, \"divider high\");
-        }
-        fn divider_twice() {
-            var a = $op();
-            var b = $op();
-            $assert(b.v(out, gnd) > 2.49, \"second analysis identical\");
-            $assert(b.v(out, gnd) < 2.51, \"second analysis identical\");
-        }
     }
 ";
 
@@ -113,25 +99,29 @@ fn parasitics(name: &str, module: &'static str) -> Box<dyn Plugin> {
 #[test]
 fn transform_design_injects_a_declared_instance() {
     let host = Rc::new(PluginHost::from_plugins(vec![parasitics("para", "Resistor")]).unwrap());
-    assert_passed(run(DIVIDER, host, "Top", "divider"));
+    let out = v(&run_top_op(host, DIVIDER).expect("op solves"), "out");
+    assert!(out > 2.49 && out < 2.51, "divider at 2.5 V, got {out}");
 }
 
 #[test]
 fn restaging_across_analyses_is_idempotent() {
     let host = Rc::new(PluginHost::from_plugins(vec![parasitics("para", "Resistor")]).unwrap());
-    assert_passed(run(DIVIDER, host, "Top", "divider_twice"));
+    let design = elab(DIVIDER, &host);
+    let mut session = SimSession::new(design, "Top".to_string());
+    session.set_device_provider(host.clone());
+    session.set_hooks(host);
+    let first = session.run_op(&SolverConfig::default(), None).expect("first op");
+    let second = session.run_op(&SolverConfig::default(), None).expect("second op");
+    assert!((v(&first, "out") - 2.5).abs() < 0.01, "first analysis at 2.5 V");
+    assert!((v(&second, "out") - 2.5).abs() < 0.01, "second analysis identical");
 }
 
 #[test]
 fn undeclared_type_fails_loud() {
     // No-netlist-magic (SPEC Part VI §2): `Varistor` was never declared.
     let host = Rc::new(PluginHost::from_plugins(vec![parasitics("para", "Varistor")]).unwrap());
-    match run(DIVIDER, host, "Top", "divider") {
-        BenchOutcome::Error(msg) => {
-            assert!(msg.contains("not declared"), "unexpected message: {msg}");
-        }
-        other => panic!("expected loud error, got {other:?}"),
-    }
+    let msg = run_top_op(host, DIVIDER).expect_err("must fail").to_string();
+    assert!(msg.contains("not declared"), "unexpected message: {msg}");
 }
 
 #[test]
@@ -144,78 +134,12 @@ fn conflicting_specs_from_two_plugins_fail_loud() {
         PluginHost::from_plugins(vec![parasitics("aaa", "Resistor"), parasitics("bbb", "Extra")])
             .unwrap(),
     );
-    match run(&src, host, "Top", "divider") {
-        BenchOutcome::Error(msg) => {
-            // Typed P0008: names both plugins and the staging path.
-            assert!(msg.contains("aaa") && msg.contains("bbb") && msg.contains("Top.r_par"),
-                "unexpected message: {msg}");
-        }
-        other => panic!("expected loud error, got {other:?}"),
-    }
-}
-
-// ─── Plugin bench tasks ────────────────────────────────────────────────────────
-
-struct GainTask;
-impl PluginBenchTask for GainTask {
-    fn run(&self, _args: Vec<Value>, _cx: &mut HostCtx) -> Result<Value, String> {
-        Ok(Value::Real(42.0))
-    }
-}
-
-struct TaskPlugin {
-    manifest: Manifest,
-}
-impl Plugin for TaskPlugin {
-    fn manifest(&self) -> &Manifest {
-        &self.manifest
-    }
-    fn register(&self, r: &mut Registrar) {
-        r.bench_task("gain", Box::new(GainTask));
-    }
-}
-
-const TASK_BENCH: &str = "
-    mod Top() {}
-    bench Top {
-        fn uses_plugin_task() {
-            $assert($gain() == 42.0, \"plugin task value\");
-        }
-    }
-";
-
-#[test]
-fn plugin_bench_task_passes_the_allowlist_and_runs() {
-    let host =
-        Rc::new(PluginHost::from_plugins(vec![Box::new(TaskPlugin { manifest: manifest("t") })]).unwrap());
-    assert_passed(run(TASK_BENCH, host, "Top", "uses_plugin_task"));
-}
-
-#[test]
-fn unseeded_plugin_task_is_an_elaboration_error() {
-    // Without the host's seeding, `$gain` must fail the allowlist gate.
-    let err = piperine_lang::parse_and_elaborate(TASK_BENCH, &SourceMap::dummy())
-        .expect_err("gate must reject");
-    assert!(format!("{err:?}").contains("gain"), "{err:?}");
-}
-
-#[test]
-fn builtin_task_names_cannot_be_shadowed() {
-    struct Shadow {
-        manifest: Manifest,
-    }
-    impl Plugin for Shadow {
-        fn manifest(&self) -> &Manifest {
-            &self.manifest
-        }
-        fn register(&self, r: &mut Registrar) {
-            r.bench_task("op", Box::new(GainTask));
-        }
-    }
-    let err = PluginHost::from_plugins(vec![Box::new(Shadow { manifest: manifest("s") })])
-        .map(|_| ())
-        .expect_err("shadowing $op must fail");
-    assert!(matches!(err, PluginError::SchemaConflict { .. }), "{err}");
+    let msg = run_top_op(host, &src).expect_err("must fail").to_string();
+    // Typed P0008: names both plugins and the staging path.
+    assert!(
+        msg.contains("aaa") && msg.contains("bbb") && msg.contains("Top.r_par"),
+        "unexpected message: {msg}"
+    );
 }
 
 // ─── Scripts + capability enforcement ─────────────────────────────────────────
@@ -314,11 +238,35 @@ fn read_only_hooks_observe_the_pipeline() {
     );
     let design = elab(DIVIDER, &host);
     host.fire_after_elaborate(&design).expect("after_elaborate");
-    let outcome = BenchRunner::new(&design)
-        .with_device_provider(host.clone())
-        .with_plugins(host)
-        .run_entry("Top", "divider");
-    assert_passed(outcome);
+    let mut session = SimSession::new(design, "Top".to_string());
+    session.set_device_provider(host.clone());
+    session.set_hooks(host);
+    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    assert!((v(&op, "out") - 2.5).abs() < 0.01);
     assert_eq!(elaborated.load(Ordering::SeqCst), 1);
     assert_eq!(solved.load(Ordering::SeqCst), 1);
+}
+
+/// Registration-time collision surface: two plugins contributing the same
+/// schema name is P0003 (kept from the contribution registry's contract).
+#[test]
+fn schema_collisions_are_p0003() {
+    struct SchemaPlugin {
+        manifest: Manifest,
+    }
+    impl Plugin for SchemaPlugin {
+        fn manifest(&self) -> &Manifest {
+            &self.manifest
+        }
+        fn register(&self, r: &mut Registrar) {
+            r.attr_schema("dup", vec![]);
+        }
+    }
+    let err = PluginHost::from_plugins(vec![
+        Box::new(SchemaPlugin { manifest: manifest("a") }),
+        Box::new(SchemaPlugin { manifest: manifest("b") }),
+    ])
+    .map(|_| ())
+    .expect_err("duplicate schema must fail");
+    assert!(matches!(err, PluginError::SchemaConflict { .. }), "{err}");
 }

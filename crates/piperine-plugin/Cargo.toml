@@ -9,7 +9,7 @@ piperine-lang = { version = "0.1.0", path = "../piperine-lang" }
 piperine-codegen = { version = "0.1.0", path = "../piperine-codegen" }
 piperine-solver = { version = "0.1.0", path = "../piperine-solver" }
 piperine-project = { version = "0.1.0", path = "../piperine-project" }
-piperine-bench = { version = "0.1.1", path = "../piperine-bench" }
+piperine = { version = "0.1.1", path = "../.." }
 thiserror.workspace = true
 miette = { version = "7", features = ["fancy"] }
 serde.workspace = true

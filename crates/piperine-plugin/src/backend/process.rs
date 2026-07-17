@@ -95,11 +95,6 @@ impl WireTransport for ProcessCore {
         let params = serde_json::to_value(input).map_err(|e| self.err(e.to_string()))?;
         self.rpc_as("hook", Some(params))
     }
-
-    fn task(&self, input: &wire::TaskInput) -> PluginResult<wire::TaskOutput> {
-        let params = serde_json::to_value(input).map_err(|e| self.err(e.to_string()))?;
-        self.rpc_as("task", Some(params))
-    }
 }
 
 /// Spawn the guest executable, verify the wire ABI version, and wrap it as

@@ -16,4 +16,6 @@ pub enum Error {
     Solver(#[from] piperine_solver::prelude::Error),
     #[error("{0}")]
     Measurement(String),
+    #[error("plugin: {0}")]
+    Plugin(String),
 }

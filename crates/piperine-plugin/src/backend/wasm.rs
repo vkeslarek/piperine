@@ -26,7 +26,7 @@ use crate::manifest::Manifest;
 use crate::Plugin;
 
 /// One loaded guest: the wasmtime plumbing every call goes through.
-/// `Store` is single-threaded; the mutex serializes calls (hooks and tasks
+/// `Store` is single-threaded; the mutex serializes calls (hooks
 /// run a handful of times per run, never concurrently in practice).
 struct WasmCore {
     name: String,
@@ -35,7 +35,6 @@ struct WasmCore {
     alloc: TypedFunc<i32, i32>,
     register: TypedFunc<(), i64>,
     hook: TypedFunc<(i32, i32), i64>,
-    task: TypedFunc<(i32, i32), i64>,
     fuel_per_call: u64,
 }
 
@@ -90,12 +89,6 @@ impl WireTransport for WasmCore {
         let reply = self.call(&self.hook, &payload)?;
         serde_json::from_slice(&reply).map_err(|e| self.err(format!("bad hook output: {e}")))
     }
-
-    fn task(&self, input: &wire::TaskInput) -> PluginResult<wire::TaskOutput> {
-        let payload = serde_json::to_vec(input).map_err(|e| self.err(e.to_string()))?;
-        let reply = self.call(&self.task, &payload)?;
-        serde_json::from_slice(&reply).map_err(|e| self.err(format!("bad task output: {e}")))
-    }
 }
 
 /// Load a `.wasm` artifact, verify the wire ABI version, and wrap it as an
@@ -138,7 +131,6 @@ pub fn load(manifest: &Manifest, artifact: &std::path::Path) -> PluginResult<Box
     let alloc = get(&mut store, &instance, "pp_alloc")?.typed(&store).map_err(|e| err(e.to_string()))?;
     let register = get(&mut store, &instance, "pp_register")?.typed(&store).map_err(|e| err(e.to_string()))?;
     let hook = get(&mut store, &instance, "pp_hook")?.typed(&store).map_err(|e| err(e.to_string()))?;
-    let task = get(&mut store, &instance, "pp_task")?.typed(&store).map_err(|e| err(e.to_string()))?;
     let memory = instance
         .get_memory(&mut store, "memory")
         .ok_or_else(|| err("guest does not export `memory`".into()))?;
@@ -150,7 +142,6 @@ pub fn load(manifest: &Manifest, artifact: &std::path::Path) -> PluginResult<Box
         alloc,
         register,
         hook,
-        task,
         fuel_per_call,
     });
     host_wire(manifest, core)
