@@ -7,8 +7,3 @@ mod Top() {
     r1: res  (.p=vin,.n=mid) { .r = 1.0e3 };
     r2: res  (.p=mid,.n=gnd) { .r = 3.0e3 };
 }
-bench Top { fn t() {
-    var r = $op();
-    $display("NODE vin", r.v(vin, gnd));
-    $display("NODE mid", r.v(mid, gnd));
-} }

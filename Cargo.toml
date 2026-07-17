@@ -28,6 +28,11 @@ piperine-lang = { version = "0.1.0", path = "crates/piperine-lang" }
 piperine-codegen = { version = "0.1.0", path = "crates/piperine-codegen" }
 piperine-solver = { version = "0.1.0", path = "crates/piperine-solver" }
 
+# Dev-dependency cycle is cargo-legal: the tests run the .py examples through
+# the embedded-CPython host, which itself links the root lib.
+[dev-dependencies]
+piperine-python = { path = "crates/piperine-python" }
+
 [profile.dev.package.faer]
 opt-level = 3
 

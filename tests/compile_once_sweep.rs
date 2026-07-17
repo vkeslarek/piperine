@@ -5,13 +5,13 @@
 
 use std::path::PathBuf;
 
-use piperine_bench::{NetRef, SimSession, SolverConfig};
+use piperine::{NetRef, SimSession, SolverConfig};
 use piperine_codegen::AnalogKernel;
-use piperine_lang::eval::Value;
+use piperine_lang::Value;
 use piperine_lang::SourceMap;
 
 fn headers_source_map() -> SourceMap {
-    let headers = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+    let headers = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
     let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
     map.add_namespace("piperine", headers.clone());
     map.add_namespace("spice", headers.join("spice"));
@@ -36,7 +36,7 @@ fn sweep_compiles_once_and_matches_the_staged_path() {
     let (branch_a, branch_b) = ("vin", "gnd");
     let values: Vec<f64> = (0..=12).map(|i| -0.6 + 0.1 * i as f64).collect();
     let config = SolverConfig::default();
-    let read_i = |op: &piperine_bench::OpResult| {
+    let read_i = |op: &piperine::OpResult| {
         op.i(&NetRef { name: branch_a.into() }, Some(&NetRef { name: branch_b.into() }))
             .expect("current readback")
     };
@@ -46,20 +46,20 @@ fn sweep_compiles_once_and_matches_the_staged_path() {
         .iter()
         .map(|&v| {
             session.stage(source, "dc", Value::Real(v));
-            read_i(&session.run_op(&config, &Value::Unit).expect("staged op"))
+            read_i(&session.run_op(&config, None).expect("staged op"))
         })
         .collect();
 
     // One single build, for the per-build compile count.
     let before_single = AnalogKernel::compile_count();
-    session.run_op(&config, &Value::Unit).expect("single op");
+    session.run_op(&config, None).expect("single op");
     let per_build = AnalogKernel::compile_count() - before_single;
     assert!(per_build > 0, "a build must JIT at least one kernel");
 
     // The compile-once sweep.
     let before_sweep = AnalogKernel::compile_count();
     let ops = session
-        .run_op_sweep(source, "dc", &values, &config, &Value::Unit)
+        .run_op_sweep(source, "dc", &values, &config, None)
         .expect("compile-once sweep");
     let sweep_compiles = AnalogKernel::compile_count() - before_sweep;
 
@@ -83,12 +83,12 @@ fn sweep_compiles_once_and_matches_the_staged_path() {
     // body — a second `#[test]` in this file would run concurrently and
     // pollute the compile-count deltas above.)
     let err = session
-        .run_op_sweep("nope", "dc", &[0.0], &config, &Value::Unit)
+        .run_op_sweep("nope", "dc", &[0.0], &config, None)
         .expect_err("unknown label must fail");
     assert!(err.to_string().contains("nope"), "names the label: {err}");
 
     let err = session
-        .run_op_sweep("v1", "bogus_param", &[0.0], &config, &Value::Unit)
+        .run_op_sweep("v1", "bogus_param", &[0.0], &config, None)
         .expect_err("unknown param must fail");
     assert!(err.to_string().contains("bogus_param"), "names the param: {err}");
 }

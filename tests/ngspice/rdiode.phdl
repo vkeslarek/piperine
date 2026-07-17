@@ -8,8 +8,3 @@ mod Top() {
     r1: res  (.p=vin,.n=out) { .r = 1.0e3 };
     d1: dio  (.p=out,.n=gnd) { .model = DioModel { .is = 1.0e-14, .n = 1.0, .rs = 0.0 } };
 }
-bench Top { fn t() {
-    var r = $op();
-    $display("NODE out", r.v(out, gnd));
-    $display("NODE vin", r.v(vin, gnd));
-} }

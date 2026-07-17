@@ -9,7 +9,3 @@ mod Top() {
     j1: jfet (.d=d,.g=gnd,.s=gnd)
         { .model = JfetModel { .vto = 0.0 - 2.0, .beta = 1.0e-3, .lambda = 0.0 } };
 }
-bench Top { fn t() {
-    var r = $op();
-    $display("NODE d", r.v(d, gnd));
-} }

@@ -16,8 +16,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use piperine_bench::{OpResult, NetRef, SimSession, SolverConfig};
-use piperine_lang::eval::Value;
+use piperine::{NetRef, OpResult, SimSession, SolverConfig};
 use piperine_lang::SourceMap;
 
 /// The piperine-vs-ngspice comparison harness. Owns detection of the ngspice
@@ -61,7 +60,7 @@ impl NgspiceHarness {
     /// `piperine-project` builds for a project).
     fn headers_source_map() -> SourceMap {
         let headers =
-            PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../piperine-lang/headers"));
+            PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/crates/piperine-lang/headers"));
         let mut map = SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
         map.add_namespace("piperine", headers.clone());
         map.add_namespace("spice", headers.join("spice"));
@@ -115,7 +114,7 @@ impl NgspiceHarness {
             .map_err(|e| format!("{circuit}: elaboration failed: {e:?}"))?;
         let session = SimSession::new(design, "Top".to_string());
         session
-            .run_op(&SolverConfig::default(), &Value::Unit)
+            .run_op(&SolverConfig::default(), None)
             .map_err(|e| format!("{circuit}: piperine DC solve failed: {e}"))
     }
 
@@ -240,7 +239,7 @@ impl NgspiceHarness {
 
         let values: Vec<f64> = golden.iter().map(|(x, _)| *x).collect();
         let ops = session
-            .run_op_sweep(source, "dc", &values, &SolverConfig::default(), &Value::Unit)
+            .run_op_sweep(source, "dc", &values, &SolverConfig::default(), None)
             .unwrap_or_else(|e| panic!("{circuit}: piperine DC sweep failed: {e}"));
 
         let mut mismatches = Vec::new();

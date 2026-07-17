@@ -10,8 +10,3 @@ mod Top() {
     m1: mos1 (.d=d,.g=g,.s=gnd,.b=gnd)
         { .l = 2.0e-6, .w = 10.0e-6, .model = Mos1Model { .vto = 1.0, .kp = 2.0e-5, .lambda = 0.0 } };
 }
-bench Top { fn t() {
-    var r = $op();
-    $display("NODE d", r.v(d, gnd));
-    $display("NODE g", r.v(g, gnd));
-} }

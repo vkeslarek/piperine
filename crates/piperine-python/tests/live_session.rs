@@ -2,7 +2,7 @@
 //! elaborates + JITs **once**, and a `set` + `op` loop never recompiles.
 //! Lives in its own test binary so [`AnalogKernel::compile_count`] deltas
 //! are not polluted by concurrent tests in the same process (same pattern
-//! as `piperine-bench/tests/compile_once_sweep.rs`).
+//! as `tests/compile_once_sweep.rs`).
 
 use piperine_codegen::AnalogKernel;
 use piperine_python::embed::run_script;

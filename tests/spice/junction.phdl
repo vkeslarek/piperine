@@ -21,15 +21,6 @@ mod DioBias() {
     rb: res  (.p=vin,.n=out) { .r = 1.0e3 };
     d1: dio  (.p=out,.n=gnd) { };
 }
-bench DioBias {
-    fn test_forward_drop() {
-        var r = $op();
-        var vd = r.v(out, gnd);
-        $display("diode drop:", vd, " current(mA):", (5.0-vd)/1.0);
-        // 5 V through 1 kΩ into a 1e-14 A diode: vd ≈ 0.69 V, Id ≈ 4.3 mA.
-        $assert(vd > 0.55 && vd < 0.80, "Shockley forward drop, pnjlim-converged");
-    }
-}
 
 // Diode-connected NPN (base = collector): a single effective B-E junction
 // with a real KCL-consistent operating point (passes the current-residual
@@ -43,14 +34,6 @@ mod BjtDiode() {
     r1: res  (.p=vin,.n=bc) { .r = 1.0e3 };
     q1: bjt  (.c=bc,.b=bc,.e=gnd,.sub=gnd) { };
 }
-bench BjtDiode {
-    fn test_drop() {
-        var r = $op();
-        var vbe = r.v(bc, gnd);
-        $display("bjt-diode Vbe:", vbe);
-        $assert(vbe > 0.60 && vbe < 0.95, "diode-connected BJT junction drop");
-    }
-}
 
 // NMOS diode-connected (gate=drain): channel + bulk junctions.
 mod MosBias() {
@@ -59,14 +42,6 @@ mod MosBias() {
     r1: res (.p=vdd,.n=d) { .r = 10.0e3 };
     m1: mos1 (.d=d,.g=d,.s=gnd,.b=gnd) { .model = Mos1Model { .vto = 1.0, .kp = 2.0e-5 } };
 }
-bench MosBias {
-    fn test_bias() {
-        var r = $op();
-        var vds = r.v(d, gnd);
-        $display("mos1 Vds:", vds);
-        $assert(vds > 1.0 && vds < 5.0, "NMOS diode-connected above threshold");
-    }
-}
 
 // JFET: gate junction reverse-biased, channel conducts.
 mod JfetBias() {
@@ -74,12 +49,4 @@ mod JfetBias() {
     vd: vsrc (.p=vdd,.n=gnd) { .dc = 5.0 };
     r1: res (.p=vdd,.n=d) { .r = 1.0e3 };
     j1: jfet (.d=d,.g=gnd,.s=gnd) { };
-}
-bench JfetBias {
-    fn test_bias() {
-        var r = $op();
-        var vds = r.v(d, gnd);
-        $display("jfet Vds:", vds);
-        $assert(vds > 0.0 && vds < 5.0, "JFET conducts");
-    }
 }

@@ -12,8 +12,3 @@ mod Top() {
     q2: bjt (.c=out,.b=ref,.e=gnd,.sub=gnd)
         { .model = BjtModel { .is = 1.0e-16, .bf = 100.0, .nf = 1.0, .br = 1.0, .nr = 1.0 } };
 }
-bench Top { fn t() {
-    var r = $op();
-    $display("NODE ref", r.v(ref, gnd));
-    $display("NODE out", r.v(out, gnd));
-} }

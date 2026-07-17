@@ -5,10 +5,10 @@
 //! circuits (the binding invariant — PY-17 / spec §10).
 //!
 //! The divider (`vin=5 V`, `r_top=3 kΩ`, `r_bot=2 kΩ` → `mid=2.0 V`) is the
-//! same circuit the bench tests solve; the AC fixture (`ac_stim(1.0)` into
-//! `1 kΩ` → `|V_out|=1000 V`) mirrors `piperine-bench/tests/bench.rs`'s
-//! `ac_stim_drives_a_low_pass_response`. Asserting those values from Python
-//! IS the uniform-shape proof.
+//! same circuit the root host-API tests solve; the AC fixture
+//! (`ac_stim(1.0)` into `1 kΩ` → `|V_out|=1000 V`) mirrors the RC-lowpass
+//! smoke in `tests/spice_smoke.rs`. Asserting those values from Python IS
+//! the uniform-shape proof.
 //!
 //! One test function — `run_script` performs the global Python init; a single
 //! call keeps the init sequential (avoids the process-global interpreter

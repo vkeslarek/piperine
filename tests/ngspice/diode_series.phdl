@@ -9,8 +9,3 @@ mod Top() {
     d1: dio  (.p=a,.n=b) { .model = DioModel { .is = 1.0e-14, .n = 1.0, .rs = 0.0 } };
     d2: dio  (.p=b,.n=gnd) { .model = DioModel { .is = 1.0e-14, .n = 1.0, .rs = 0.0 } };
 }
-bench Top { fn t() {
-    var r = $op();
-    $display("NODE a", r.v(a, gnd));
-    $display("NODE b", r.v(b, gnd));
-} }

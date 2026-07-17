@@ -12,8 +12,3 @@ mod Top() {
     q1: bjt (.c=col,.b=base,.e=gnd,.sub=gnd)
         { .model = BjtModel { .is = 1.0e-16, .bf = 100.0, .nf = 1.0, .br = 1.0, .nr = 1.0 } };
 }
-bench Top { fn t() {
-    var r = $op();
-    $display("NODE col", r.v(col, gnd));
-    $display("NODE base", r.v(base, gnd));
-} }
