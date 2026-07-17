@@ -45,6 +45,22 @@ nodes (they are).
 
 ## Codegen / solver
 
+### Live parameter mutation — DONE (solver-live-params, 2026-07-17)
+
+Live `set` on a compiled circuit by PHDL name (POM `set_param` parity), MD-18
+proof (zero recompiles across set+solve loops), scheduled mid-transient sets on
+the unified breakpoint table (exact landing, last-write-wins, ≥OP re-solve at
+`t`), and the Python `LiveSession` (`module.compile()` → `set`/`schedule_set` +
+`op/tran/ac/noise` on one compilation; `examples/live_optimize.py`). Structural
+sets auto re-elaborate at the host layer with net-name state carry; a
+mid-transient structural set restarts the run from `t` with carried ICs and
+stitches one continuous trace. En route: TR-stage backward-Euler restart
+convention after discontinuities (`TrBdf2::stage_coeffs`) and
+`TransientAnalysisOptions::with_start` (absolute start clock). Spec: `docs/spec/`
+Part VII §10.5; feature spec `.specs/features/solver-live-params/`. Remaining
+host surface (interactive `step()`/`run_until()`, GUI/streaming delivery) is the
+future real-time feature.
+
 ### Epic: TR-BDF2 Transient Integration Engine with PI Timestep Controller
 
 **Architecture:** TR-BDF2 (Trapezoidal Rule / Backward Differentiation Formula 2) with a

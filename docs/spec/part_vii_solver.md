@@ -466,8 +466,12 @@ evaluated at the DC context defined by the source model.
 
 ## §10 Transient analysis
 
-Transient analysis integrates from `t = 0` to `stop_time` over a fixed circuit
-topology.
+Transient analysis integrates from a start time (default `t = 0`) to
+`stop_time` over a fixed circuit topology. A non-zero start time is the host
+restart form (§10.5): the integrator's clock is absolute — `$abstime`,
+breakpoints, and scheduled sets all read it — and the initial state is the
+start-time operating point overlaid with the host's carried initial
+conditions.
 
 ### 10.1 Initial state
 
@@ -538,6 +542,17 @@ i_{C,n}`), which the kernel re-derives from the prior step's BDF2 formula
 (coeffs at the previous step size, charges at the three history points). The
 BDF2 stage uses the pure-derivative companion.
 
+**Restart convention.** Across a declared discontinuity — a breakpoint edge, a
+scheduled live set, or a host restart — the previous-derivative term is
+unavailable (the history spans the jump) and the Trapezoidal stage degrades to
+backward Euler over the `γh` sub-step: `i_{C,n+γ} = (1/(γh))(Q_{n+γ}−Q_n)`,
+no previous-current term. Keeping the full trapezoid weight with an assumed
+zero previous current would double the derivative estimate for the first step,
+an O(h)·i error scaling with the post-edge current. The step after such an
+edge also restarts small (`1e-3` of the accepted step) and the PI controller
+regrows from clean error readings; the same applies to the inductor flux
+companion's previous branch voltage.
+
 The timestep controller is a **Proportional-Integral (PI) controller**: after
 each accepted step the global local-truncation error is estimated via Milne's
 device (a linear extrapolation of the node voltages at `t_n` and `t_{n+γ}`
@@ -557,8 +572,46 @@ Each recorded transient point contains:
 | analog values | Solved value of each indexed analog variable. |
 | digital snapshot | Logic value of every digital net after digital evaluation at that time. |
 
-`record_from` affects recording only. The solver still integrates from `t = 0`
-because skipped early states influence later history.
+`record_from` affects recording only. The solver still integrates from the
+start time because skipped early states influence later history.
+
+### 10.5 Live parameter sets and the host surface
+
+A host may write parameters on the **compiled** circuit — no re-elaboration,
+no re-JIT (the MD-18 boundary): elaboration fixes devices; simulation
+restamps. Addressing is the PHDL scheme — the same flat instance labels and
+flattened `{param}_{field}` bundle names the POM's `Design::set_param`
+accepts. A write routes to the element's `set_param` (§3.4) and the caller
+recomputes exactly what the reported invalidation requires; a successful
+write also invalidates the element's bypass stamp cache and marks the
+operating point dirty. Unknown labels or parameters fail loud (the parameter
+error lists the element's candidates); an out-of-bounds value is rejected
+with no partial apply.
+
+**Scheduled sets.** A write may be scheduled for a simulation time `t` on a
+running transient. Each scheduled time is a declared discontinuity: it feeds
+the unified breakpoint table, so the integrator lands exactly on `t`, applies
+the write there (scheduling order — last write wins per parameter), and the
+new value takes effect from the next accepted step under the §10.3 restart
+convention (LTE skipped at the edge, previous-derivative history discarded,
+small resume step). A write of operating-point strength or stronger re-solves
+the landing point so the recorded state at `t` is the post-set consistent
+solution. Sets scheduled at or before the start time apply before the initial
+operating point — an idle set.
+
+**Structural writes.** A write whose invalidation is *rebuild* (matrix
+structure / element reconstruction — e.g. an optional-parameter presence
+flip) is beyond the solver: it has no POM, so the solver-level call fails
+loud with the typed outcome. The **host layer** (the Python `LiveSession`:
+compile once, `set`, re-run analyses on the held circuit) re-elaborates and
+recompiles automatically, reports it visibly, and carries the solved node
+voltages by net name as the next solve's initial guess — dropped nets are
+discarded, new nets start cold. A structural set scheduled mid-transient
+splits the run at `t`: the session rebuilds there and the transient restarts
+from `t` (absolute start time, carried node state as initial conditions), and
+the recorded segments stitch into one continuous trace. A failed
+re-elaboration surfaces the error and keeps the previous compiled circuit
+usable.
 
 ---
 
