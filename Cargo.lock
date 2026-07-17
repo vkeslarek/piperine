@@ -2188,6 +2188,7 @@ dependencies = [
  "num-complex",
  "numpy",
  "piperine-bench",
+ "piperine-codegen",
  "piperine-lang",
  "piperine-project",
  "piperine-solver",
