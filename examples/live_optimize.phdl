@@ -1,0 +1,54 @@
+// Live-session optimization fixture: a 5 V source through a series resistor
+// into an exponential-law diode. The diode voltage v(out) falls
+// monotonically as r grows, so fitting r to a target v(out) is a clean
+// bisection — the LIVE-12 optimization-loop scenario (examples/live_optimize.py
+// drives it through the Python LiveSession: compile once, set + op per point).
+
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+mod Vsrc(inout p : Electrical, inout n : Electrical) {
+    param dc : Real = 5.0;
+}
+
+analog Vsrc {
+    V(p, n) <- dc;
+}
+
+mod Resistor(inout p : Electrical, inout n : Electrical) {
+    param r : Real = 1e3;
+}
+
+analog Resistor {
+    I(p, n) <+ V(p, n) / r;
+}
+
+mod Diode(inout p : Electrical, inout n : Electrical) {
+    param isat : Real = 1e-14;
+    param vt : Real = 0.02585;
+}
+
+analog Diode {
+    I(p, n) <+ isat * (exp(V(p, n) / vt) - 1.0);
+}
+
+mod Fitter() {
+    wire gnd : Electrical;
+    wire vin : Electrical;
+    wire out : Electrical;
+    v1 : Vsrc(.p = vin, .n = gnd) {};
+    r1 : Resistor(.p = vin, .n = out) {};
+    d1 : Diode(.p = out, .n = gnd) {};
+}
+
+bench Fitter {
+
+    fn test_diode_drop_at_default_r() {
+        var r = $op();
+        var vd = r.v(out, gnd);
+        $display("diode drop:", vd, "V");
+        $assert(vd > 0.6 && vd < 0.75, "out sits near one forward drop");
+    }
+}
