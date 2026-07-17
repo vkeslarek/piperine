@@ -220,7 +220,7 @@ fn module_var_id(module: &LoweredBody, name: &str) -> Option<crate::ir::VarId> {
     module.symbols.vars().find(|(_, v)| v.name == name).map(|(id, _)| id)
 }
 
-fn visit_all<F: FnMut(&PomExpr)>(expr: &PomExpr, f: &mut F) {
+pub(crate) fn visit_all<F: FnMut(&PomExpr)>(expr: &PomExpr, f: &mut F) {
     use piperine_lang::parse::ast::Walk;
     expr.walk(&mut |e| { f(e); Walk::Continue });
 }

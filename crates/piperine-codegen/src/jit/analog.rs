@@ -26,7 +26,7 @@ use crate::codegen::{Builder, Resolver};
 use crate::ir::{CrossDir, Domain, LoweredBody, StateKind, NodeId, StateId, VarId};
 
 use super::flatten::{
-    AnalogFlattener, FlatAnalog, FlatContrib, FlatDiagnostic, FlatEventTrigger,
+    visit_all, AnalogFlattener, FlatAnalog, FlatContrib, FlatDiagnostic, FlatEventTrigger,
     FlatForce,
 };
 use super::{math, CodegenError, SimCtx};
@@ -111,6 +111,12 @@ pub struct AnalogKernel {
     /// Parameter names in `ParamId` order, for const-evaluating runtime
     /// state expressions (delay, slew, ic, …) at device creation.
     param_names: Vec<String>,
+    /// Bitmask of params whose *presence* the body queries (`$param_given`
+    /// — the optional `T?` machinery), bit `id.min(63)` like the instance
+    /// given-mask. A live value write cannot flip presence, so a write to a
+    /// presence-queried, not-given param is structural
+    /// ([`Invalidation::Rebuild`](piperine_solver::abi::Invalidation)).
+    presence_mask: u64,
     num_ports: usize,
     num_params: usize,
     num_state_slots: usize,
@@ -253,6 +259,11 @@ impl AnalogKernel {
     /// Parameter names in `ParamId` order.
     pub fn param_names(&self) -> &[String] {
         &self.param_names
+    }
+
+    /// Whether the body queries param `idx`'s presence (`$param_given`).
+    pub fn presence_queried(&self, idx: usize) -> bool {
+        (self.presence_mask >> idx.min(63)) & 1 == 1
     }
 
     pub fn num_forces(&self) -> usize {
@@ -791,6 +802,44 @@ impl<'m> AnalogCompiler<'m> {
 
     fn compile(mut self) -> Result<AnalogKernel, CodegenError> {
         let read_bounds = self.flat.read_bounds(self.module);
+        // Presence-queried params (`$param_given`, the optional `T?`
+        // machinery) — collected before the flat body is drained below.
+        // Resolution mirrors the emit-time `Resolver::param_given` rule:
+        // exact param name first, then a unique flattened bundle-field
+        // suffix (`ns` → `model_ns`).
+        let mut presence_mask = 0u64;
+        {
+            let names: Vec<(&str, u32)> = self
+                .module
+                .symbols
+                .params()
+                .map(|(id, p)| (p.name.as_str(), id.0))
+                .collect();
+            let resolve = |pname: &str| -> Option<u32> {
+                if let Some(&(_, id)) = names.iter().find(|(n, _)| *n == pname) {
+                    return Some(id);
+                }
+                let suffix = format!("_{pname}");
+                let mut matches = names.iter().filter(|(n, _)| n.ends_with(&suffix));
+                match (matches.next(), matches.next()) {
+                    (Some(&(_, id)), None) => Some(id),
+                    _ => None,
+                }
+            };
+            for expr in self.flat.exprs() {
+                visit_all(expr, &mut |e| {
+                    if let PomExpr::SysCall(name, args) = e
+                        && name.trim_start_matches('$') == "param_given"
+                        && let Some(PomExpr::Literal(
+                            piperine_lang::parse::ast::Literal::String(pname),
+                        )) = args.first()
+                        && let Some(id) = resolve(pname)
+                    {
+                        presence_mask |= 1 << id.min(63);
+                    }
+                });
+            }
+        }
         let resistive = std::mem::take(&mut self.flat.resistive);
         let charge = std::mem::take(&mut self.flat.charge);
         let forces = std::mem::take(&mut self.flat.forces);
@@ -1076,6 +1125,7 @@ impl<'m> AnalogCompiler<'m> {
         Ok(AnalogKernel {
             name: self.module.name.clone(),
             num_ports: self.num_ports,
+            presence_mask,
             num_params: self.module.symbols.num_params(),
             num_state_slots: self.module.symbols.num_states() + self.limits.len(),
             num_limits: self.limits.len(),

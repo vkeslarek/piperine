@@ -134,6 +134,88 @@ fn jit_device_set_errors_are_loud_with_flattened_param_names() {
     );
 }
 
+/// LIVE-14 (solver-level half): a live write to a presence-queried optional
+/// param (`T?`) that was never given returns the typed
+/// `Invalidation::Rebuild` outcome — and does NOT apply the value (no
+/// partial apply): presence is baked into the instance at build, so the
+/// value alone cannot surface the guarded behavior. The auto re-elaboration
+/// itself lives at the host layer (the Python live session), never in the
+/// solver (MD-18 boundary).
+#[test]
+fn presence_flipping_set_returns_typed_rebuild_without_applying() {
+    const OPTIONAL: &str = r#"
+        discipline Electrical { potential v : Real; flow i : Real; }
+
+        mod G (inout p : Electrical, inout n : Electrical) {
+            param g : Real = 1.0e-3;
+            param ns : Real? = none;  // given => extra ns*1e-3 S in parallel
+        }
+        analog G { I(p, n) <+ (g + ns.get_or(0.0) * 1.0e-3) * V(p, n); }
+
+        mod Vsrc (inout p : Electrical, inout n : Electrical) {
+            param dc : Real = 10.0;
+        }
+        analog Vsrc { V(p, n) <- dc; }
+
+        mod Top () {
+            wire gnd : Electrical;
+            wire top : Electrical;
+            wire mid : Electrical;
+            v1 : Vsrc(.p = top, .n = gnd) {};
+            r1 : G(.p = top, .n = mid) {};
+            r2 : G(.p = mid, .n = gnd) {};
+        }
+    "#;
+    let design = parse_and_elaborate(OPTIONAL, &piperine_lang::SourceMap::dummy())
+        .expect("optional fixture elaborates");
+    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("optional fixture lowers");
+    let mut compiler = CircuitCompiler::new(&design, &bodies);
+    let (mut circuit, info) = compiler.build_circuit_mapped("Top").expect("circuit builds");
+    let mid = info.nets.get("mid").expect("net `mid`").clone();
+
+    // Symmetric conductance divider: mid = 5 V.
+    let base = circuit.dc(Context::default()).unwrap().solve().unwrap();
+    assert!((base.get_node(&mid).unwrap() - 5.0).abs() < 1e-9);
+
+    // Presence flip (none -> given) is the typed structural outcome.
+    let inv = circuit
+        .set_element_param("r2", "ns", Value::Real(2.0))
+        .expect("structural set returns Ok(Rebuild), not an error");
+    assert_eq!(
+        inv,
+        piperine_solver::prelude::Invalidation::Rebuild,
+        "presence-flipping write must classify as Rebuild"
+    );
+
+    // No partial apply: the circuit still solves the pre-set divider.
+    let after = circuit.dc(Context::default()).unwrap().solve().unwrap();
+    assert!(
+        (after.get_node(&mid).unwrap() - 5.0).abs() < 1e-9,
+        "Rebuild outcome must not half-apply the value"
+    );
+
+    // A *given* optional param restamps normally: rebuild the circuit with
+    // ns supplied at build, then live-set it — plain Restamp, new value in
+    // effect (g2 = 1e-3 + 3e-3 => mid = 10*g1/(g1+g2) = 2.0 V).
+    design.set_param("r2", "ns", piperine_lang::pom::Value::Real(1.0));
+    let staged = design.with_overrides_applied("Top").expect("override applies");
+    let staged_bodies = piperine_codegen::ir::lower_bodies(&staged).expect("staged lowers");
+    let mut staged_compiler = CircuitCompiler::new(&staged, &staged_bodies);
+    let (mut given_circuit, given_info) =
+        staged_compiler.build_circuit_mapped("Top").expect("staged builds");
+    let given_mid = given_info.nets.get("mid").unwrap().clone();
+    let inv = given_circuit
+        .set_element_param("r2", "ns", Value::Real(3.0))
+        .expect("given optional param is a plain value write");
+    assert_eq!(inv, piperine_solver::prelude::Invalidation::Restamp);
+    let solved = given_circuit.dc(Context::default()).unwrap().solve().unwrap();
+    assert!(
+        (solved.get_node(&given_mid).unwrap() - 2.0).abs() < 1e-9,
+        "restamped ns=3 divider: expected 2.0 V, got {}",
+        solved.get_node(&given_mid).unwrap()
+    );
+}
+
 /// LIVE-06 independent test: RC step response with a mid-transient live set
 /// of R (2k → 1k) at t = 5 µs on JIT-compiled devices. The integrator lands
 /// exactly on each scheduled set time (unified breakpoint table, LTE

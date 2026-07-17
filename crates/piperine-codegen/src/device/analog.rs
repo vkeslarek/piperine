@@ -677,6 +677,18 @@ impl AnalogInstance {
         self.param_index(name).map(|i| self.params[i])
     }
 
+    /// Whether a live write to `name` would flip optional-param presence:
+    /// the kernel branches on `$param_given(name)` and this instance was
+    /// built without the parameter given. The value alone cannot surface
+    /// the presence-guarded behavior — such a write is structural
+    /// (`Invalidation::Rebuild`; the host re-elaborates, LIVE-14).
+    pub fn set_flips_presence(&self, name: &str) -> bool {
+        self.param_index(name).is_some_and(|i| {
+            self.kernel.presence_queried(i)
+                && (self.sim.param_given_mask >> i.min(63)) & 1 == 0
+        })
+    }
+
     /// Overwrite parameter `name` with `value`, taking effect on the next load.
     /// Returns `false` when there is no such parameter. The matrix structure is
     /// unchanged, so this needs only a restamp — never a rebuild.

@@ -216,11 +216,20 @@ impl Element for PiperineDevice {
         let Some(v) = value.as_real() else {
             return Err(ParamError::TypeMismatch { name: name.into(), expected: ValueKind::Real });
         };
-        if self.analog.as_mut().is_some_and(|a| a.set_param(name, v)) {
-            Ok(Invalidation::Restamp)
-        } else {
-            Err(ParamError::Unknown(name.to_string()))
+        if let Some(analog) = self.analog.as_mut() {
+            // Writing a presence-queried, never-given optional param is
+            // structural: the given-mask is baked at build, so the value
+            // alone cannot surface the guarded behavior. Typed `Rebuild`
+            // outcome, value NOT applied (no partial apply) — the host
+            // re-elaborates and rebuilds (LIVE-14).
+            if analog.set_flips_presence(name) {
+                return Ok(Invalidation::Rebuild);
+            }
+            if analog.set_param(name, v) {
+                return Ok(Invalidation::Restamp);
+            }
         }
+        Err(ParamError::Unknown(name.to_string()))
     }
 
     fn load_dc(
