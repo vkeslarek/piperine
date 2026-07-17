@@ -121,6 +121,24 @@ impl CircuitInstance {
                 format!("no element labeled `{label}`"),
             )
         })?;
+        // Declared-bounds gate (edge case: out-of-bounds set fails loud, no
+        // partial apply): a numeric value outside the parameter's
+        // [`ParamDescriptor`](crate::core::introspect::ParamDescriptor)
+        // bounds is rejected here, before the element sees the write.
+        if let Some(desc) = device.list_params().into_iter().find(|d| d.name == param)
+            && let Some(v) = value.as_real()
+            && !desc.bounds.contains(v)
+        {
+            let lo = desc.bounds.min.map_or("-inf".to_string(), |m| m.to_string());
+            let hi = desc.bounds.max.map_or("inf".to_string(), |m| m.to_string());
+            return Err(crate::error::Error::simple(
+                crate::error::SolverDomain::Element,
+                format!(
+                    "`{label}`: value {v} is out of bounds for parameter `{param}` \
+                     (declared bounds [{lo}, {hi}])"
+                ),
+            ));
+        }
         let outcome = device.set_param(param, value);
         outcome.map_err(|e| {
             // Unknown-parameter writes list what the element does declare —

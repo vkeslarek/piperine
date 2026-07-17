@@ -201,6 +201,24 @@ fn unknown_param_on_paramless_element_says_so() {
     );
 }
 
+// ── Edge case: out-of-bounds set fails loud via ParamDescriptor bounds ──────
+
+#[test]
+fn out_of_bounds_set_fails_loud_and_leaves_value_unchanged() {
+    let mut circuit = divider(1000.0, 1000.0);
+    // 1e-12 is positive (the element itself would accept it) but below the
+    // declared bounds minimum 1e-9 — only the central ParamDescriptor
+    // bounds gate can reject it, proving no partial apply happened.
+    let err = circuit
+        .set_element_param("r1", "r", Value::Real(1e-12))
+        .expect_err("below-bounds value must fail");
+    let msg = err.to_string();
+    assert!(msg.contains("out of bounds"), "bounds rejection is explicit: {msg}");
+    assert!(msg.contains("1e-9") || msg.contains("0.000000001"), "bounds in message: {msg}");
+    let r1 = circuit.all_devices().iter().find(|d| d.name() == "r1").unwrap();
+    assert_eq!(r1.get_param("r"), Some(Value::Real(1000.0)), "value unchanged");
+}
+
 // ── LIVE-08: an idle set applies to the next analysis run ───────────────────
 
 #[test]
