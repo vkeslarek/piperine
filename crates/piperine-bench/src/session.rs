@@ -42,7 +42,10 @@ impl Default for SolverConfig {
 }
 
 impl SolverConfig {
-    fn to_context(&self) -> Context {
+    /// The shared solver [`Context`] (tolerances) this config maps to.
+    /// Public: hosts that drive `CircuitInstance` analyses directly (the
+    /// Python live session) reuse the same mapping the bench uses.
+    pub fn to_context(&self) -> Context {
         Context {
             tolerances: piperine_solver::prelude::Tolerances {
                 temperature: self.temperature,
@@ -56,7 +59,8 @@ impl SolverConfig {
 
     /// The convergence tunables (MD-04): set on each analysis solver so
     /// user `max_iter` / `dc_damp_tolerance` reach the Newton loop.
-    fn to_policy(&self) -> Policy {
+    /// Public for the same host reuse as [`Self::to_context`].
+    pub fn to_policy(&self) -> Policy {
         Policy {
             max_iter: self.max_iter,
             dc_damp_tolerance: self.dc_damp_tolerance,
@@ -242,7 +246,9 @@ impl SimSession {
 
     /// The top module's digital net values as reals (0/1; X/Z read as NaN so
 /// an assertion on an undriven net fails loud, never silently passes).
-fn snapshot_digital(
+/// Public: hosts that drive `CircuitInstance` directly (the Python live
+/// session) build the same [`OpResult`] digital snapshot the bench builds.
+pub fn snapshot_digital(
         info: &piperine_codegen::device::CircuitBuildInfo,
     circuit: &piperine_solver::prelude::CircuitInstance,
 ) -> std::collections::HashMap<String, f64> {

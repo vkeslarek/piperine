@@ -8,6 +8,7 @@ pyo3 = { version = "0.23", features = ["auto-initialize", "num-complex"] }
 numpy = "0.23"
 num-complex.workspace = true
 piperine-lang = { path = "../piperine-lang" }
+piperine-codegen = { path = "../piperine-codegen" }
 piperine-bench = { path = "../piperine-bench" }
 piperine-solver = { path = "../piperine-solver" }
 piperine-project = { path = "../piperine-project" }

@@ -26,6 +26,7 @@
 pub mod embed;
 mod design;
 mod instance;
+mod live;
 mod module;
 mod results;
 mod value_bridge;
@@ -34,6 +35,7 @@ use pyo3::prelude::*;
 
 use design::{_Design, _Node, _Selection};
 use instance::{_InstanceView, _Terminal};
+use live::_LiveSession;
 use module::_Module;
 use module::{_Behavior, _Instance, _Net, _Param, _Port};
 use results::_AcTrace;
@@ -75,6 +77,7 @@ pub(crate) fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_SolverStats>()?;
     m.add_class::<_InstanceView>()?;
     m.add_class::<_Terminal>()?;
+    m.add_class::<_LiveSession>()?;
     Ok(())
 }
 
