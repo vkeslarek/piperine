@@ -288,6 +288,22 @@ where
         self.predictor_ratio = Some(ratio);
     }
 
+    /// Snapshot the solution-history buffer before a candidate step. Each
+    /// solve pushes a row, so a rejected TR-BDF2 attempt leaves its two
+    /// rejected rows where the retry's charge-history views (`x_n`,
+    /// `x_{n−γ}`, …) expect accepted points — the companion then integrates
+    /// off the rejected trajectory. The transient driver snapshots before
+    /// each attempt and [`restore_state`](Self::restore_state)s on rejection.
+    pub fn state_snapshot(&self) -> CircularArrayBuffer2<f64> {
+        self.state.clone()
+    }
+
+    /// Unwind the solution history to a [`state_snapshot`](Self::state_snapshot)
+    /// taken before a rejected candidate step.
+    pub fn restore_state(&mut self, snapshot: CircularArrayBuffer2<f64>) {
+        self.state = snapshot;
+    }
+
     /// Newton solve with damping and convergence delegated to a
     /// [`NewtonStrategy`]. The DC and transient drivers call this; AC/Noise/TF
     /// (Complex) continue to use the generic [`solve`] path.

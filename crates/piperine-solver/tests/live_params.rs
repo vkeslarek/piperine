@@ -3,7 +3,9 @@
 //! sets applying to the next analysis run — LIVE-03/04/05/08.
 
 use piperine_solver::prelude::*;
-use piperine_solver::abi::{DcAnalysisState, Stamp};
+use piperine_solver::abi::{
+    DcAnalysisState, Stamp, TransientAnalysisContext, TransientAnalysisState,
+};
 
 /// A linear resistor with one writable parameter `r` (bounds: r > 0),
 /// declared `BYPASS_OK` so the DC device-bypass stamp cache applies to it.
@@ -20,7 +22,10 @@ impl Element for Resistor {
     }
 
     fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::BYPASS_OK
+        ElementCapabilities::ANALOG
+            | ElementCapabilities::LOADS_DC
+            | ElementCapabilities::LOADS_TRAN
+            | ElementCapabilities::BYPASS_OK
     }
 
     fn list_params(&self) -> Vec<ParamDescriptor> {
@@ -66,6 +71,15 @@ impl Element for Resistor {
             Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
         ]
     }
+
+    fn load_transient(
+        &mut self,
+        state: &TransientAnalysisState<'_>,
+        _tran_ctx: &TransientAnalysisContext,
+        ctx: &Context,
+    ) -> Vec<Stamp<AnalogReference, f64>> {
+        self.load_dc(&DcAnalysisState::new(state.history(), state.digital, 1.0), ctx)
+    }
 }
 
 /// An ideal DC voltage source; writes to `dc` invalidate the operating point.
@@ -85,6 +99,7 @@ impl Element for Vdc {
     fn capabilities(&self) -> ElementCapabilities {
         ElementCapabilities::ANALOG
             | ElementCapabilities::LOADS_DC
+            | ElementCapabilities::LOADS_TRAN
             | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
     }
 
@@ -128,6 +143,15 @@ impl Element for Vdc {
             Stamp::Matrix(branch.clone(), self.n2.clone(), -1.0),
             Stamp::Rhs(branch, self.v),
         ]
+    }
+
+    fn load_transient(
+        &mut self,
+        state: &TransientAnalysisState<'_>,
+        _tran_ctx: &TransientAnalysisContext,
+        ctx: &Context,
+    ) -> Vec<Stamp<AnalogReference, f64>> {
+        self.load_dc(&DcAnalysisState::new(state.history(), state.digital, 1.0), ctx)
     }
 }
 
@@ -284,3 +308,89 @@ fn set_through_held_dc_analysis_keeps_loud_errors() {
         .expect_err("unknown param must fail");
     assert!(err.to_string().contains("available parameters"), "{err}");
 }
+
+// ── LIVE-06/09: scheduled sets land on breakpoints mid-transient ─────────────
+
+#[test]
+fn scheduled_op_strength_set_resolves_consistently_at_the_breakpoint() {
+    let mut circuit = divider(1000.0, 1000.0);
+    let opts = TransientAnalysisOptions::new(10e-6, 0.5e-6);
+    let mut tran = circuit.transient(opts, Context::default()).unwrap();
+
+    // Source value 10 → 20 V at t = 5 µs: `dc` declares `OperatingPoint`
+    // strength, so the driver must re-solve consistently at the breakpoint —
+    // the recorded point AT 5 µs already reflects the new source.
+    tran.schedule_set(5e-6, "v1", "dc", Value::Real(20.0));
+    let result = tran.solve().unwrap();
+
+    let landing = result
+        .iter()
+        .find(|s| (s.time() - 5e-6).abs() < 1e-18)
+        .expect("a step lands exactly on the set time");
+    let v_at = landing.get_node(&NodeIdentifier::Anonymous(2)).unwrap();
+    assert!(
+        (v_at - 10.0).abs() < 1e-9,
+        "OP-strength set re-solves at t: v(mid) at 5 µs is {v_at}, want 10 (post-set)"
+    );
+
+    for step in result.iter() {
+        let v = step.get_node(&NodeIdentifier::Anonymous(2)).unwrap();
+        if step.time() < 5e-6 - 1e-18 {
+            assert!((v - 5.0).abs() < 1e-9, "pre-set point at {}: {v}", step.time());
+        } else {
+            assert!((v - 10.0).abs() < 1e-9, "post-set point at {}: {v}", step.time());
+        }
+    }
+}
+
+#[test]
+fn same_param_sets_at_one_time_apply_last_write_wins_with_one_breakpoint() {
+    let mut circuit = divider(1000.0, 1000.0);
+    let opts = TransientAnalysisOptions::new(10e-6, 0.5e-6);
+    let mut tran = circuit.transient(opts, Context::default()).unwrap();
+
+    // Two writes to the same param at the same time: application order is
+    // scheduling order, so the later call wins — one landing at 5 µs.
+    tran.schedule_set(5e-6, "r2", "r", Value::Real(9000.0));
+    tran.schedule_set(5e-6, "r2", "r", Value::Real(3000.0));
+    let result = tran.solve().unwrap();
+
+    let landings: Vec<f64> =
+        result.iter().map(|s| s.time()).filter(|t| (t - 5e-6).abs() < 1e-18).collect();
+    assert_eq!(landings.len(), 1, "exactly one recorded landing at the set time");
+
+    // Restamp strength: the value applies from the next accepted step.
+    let last = result.last().unwrap();
+    let v_end = last.get_node(&NodeIdentifier::Anonymous(2)).unwrap();
+    assert!(
+        (v_end - 7.5).abs() < 1e-9,
+        "last write wins: 10·3k/4k = 7.5 V, got {v_end} (9 V would mean first write won)"
+    );
+
+    let r2 = circuit.all_devices().iter().find(|d| d.name() == "r2").unwrap();
+    assert_eq!(r2.get_param("r"), Some(Value::Real(3000.0)));
+}
+
+#[test]
+fn scheduled_set_at_or_before_zero_applies_to_the_whole_run() {
+    let mut circuit = divider(1000.0, 1000.0);
+    let opts = TransientAnalysisOptions::new(2e-6, 0.5e-6);
+    let mut tran = circuit.transient(opts, Context::default()).unwrap();
+    tran.schedule_set(0.0, "r2", "r", Value::Real(3000.0));
+    let result = tran.solve().unwrap();
+    for step in result.iter() {
+        let v = step.get_node(&NodeIdentifier::Anonymous(2)).unwrap();
+        assert!((v - 7.5).abs() < 1e-9, "t={}: {v}", step.time());
+    }
+}
+
+#[test]
+fn scheduled_set_with_bad_addressing_fails_the_run_loud() {
+    let mut circuit = divider(1000.0, 1000.0);
+    let opts = TransientAnalysisOptions::new(2e-6, 0.5e-6);
+    let mut tran = circuit.transient(opts, Context::default()).unwrap();
+    tran.schedule_set(1e-6, "r2", "bogus", Value::Real(1.0));
+    let err = tran.solve().expect_err("bad scheduled set must fail the run");
+    assert!(err.to_string().contains("bogus"), "{err}");
+}
+

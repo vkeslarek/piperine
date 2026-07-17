@@ -64,8 +64,10 @@ pub enum ParamScope {
 }
 
 /// What recomputation a parameter change forces. Lets sweeps and optimization
-/// loops do the least work that is still correct.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// loops do the least work that is still correct. Variants are declared in
+/// escalating order, so `Ord` compares strength — a driver folding several
+/// writes takes the `max` and recomputes once at the strongest level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Invalidation {
     /// Metadata only; nothing to recompute.
     None,

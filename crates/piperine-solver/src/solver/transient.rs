@@ -95,6 +95,52 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
     }
 }
 
+/// One host-scheduled live parameter write: at simulation time `t`, set
+/// `param` on the element labeled `label` to `value`.
+#[derive(Debug, Clone)]
+pub struct ScheduledSet {
+    pub t: f64,
+    pub label: String,
+    pub param: String,
+    pub value: crate::core::introspect::Value,
+}
+
+/// Pending live sets for a running transient (LIVE-06). Entries keep their
+/// scheduling order, so applying a drained batch in order gives
+/// last-write-wins per param; every entry's `t` feeds the unified
+/// breakpoint table (TRB-11), so the integrator lands exactly on each set
+/// time with the discontinuity edge rules (skip LTE, reset `prev_h`).
+#[derive(Debug, Default)]
+struct SetQueue {
+    entries: Vec<ScheduledSet>,
+}
+
+impl SetQueue {
+    fn push(&mut self, set: ScheduledSet) {
+        self.entries.push(set);
+    }
+
+    /// The earliest pending set time strictly after `from` — the next
+    /// landing point this queue asks of the breakpoint table. Absolute
+    /// time, so it survives step rollback.
+    fn next_breakpoint(&self, from: f64) -> Option<f64> {
+        self.entries
+            .iter()
+            .map(|s| s.t)
+            .filter(|&t| t > from)
+            .min_by(f64::total_cmp)
+    }
+
+    /// Remove and return every entry due at or before `now`, preserving
+    /// scheduling order (application order = last-write-wins per param).
+    fn drain_due(&mut self, now: f64) -> Vec<ScheduledSet> {
+        let (due, pending): (Vec<_>, Vec<_>) =
+            std::mem::take(&mut self.entries).into_iter().partition(|s| s.t <= now);
+        self.entries = pending;
+        due
+    }
+}
+
 pub struct TransientSolver<'a> {
     pub system: TransientSystem<'a>,
     pub solver: NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>,
@@ -109,6 +155,8 @@ pub struct TransientSolver<'a> {
     /// Convergence tunables for this analysis (MD-04). Defaults on
     /// construction; hosts override before [`solve`](Self::solve).
     pub policy: crate::solver::Policy,
+    /// Host-scheduled live parameter writes (LIVE-06/09).
+    sets: SetQueue,
 }
 
 impl<'a> TransientSolver<'a> {
@@ -145,7 +193,26 @@ impl<'a> TransientSolver<'a> {
             initial_conditions: Vec::new(),
             stepper: crate::solver::convergence::PiController::default(),
             policy: crate::solver::Policy::default(),
+            sets: SetQueue::default(),
         })
+    }
+
+    /// Schedule a live parameter write for simulation time `t` (LIVE-06):
+    /// the integrator lands exactly on `t` (unified breakpoint table), the
+    /// write applies there, and the new value takes effect from the next
+    /// accepted step. Writes reporting ≥
+    /// [`Invalidation::Restamp`](crate::core::introspect::Invalidation)
+    /// restamp naturally; ≥ `OperatingPoint` triggers a consistent re-solve
+    /// at `t` before the run continues (LIVE-09). Several sets on the same
+    /// param apply in scheduling order — last write wins.
+    pub fn schedule_set(
+        &mut self,
+        t: f64,
+        label: impl Into<String>,
+        param: impl Into<String>,
+        value: crate::core::introspect::Value,
+    ) {
+        self.sets.push(ScheduledSet { t, label: label.into(), param: param.into(), value });
     }
 
     /// Seed the transient's t=0 state with user initial node voltages
@@ -249,6 +316,13 @@ impl<'a> TransientSolver<'a> {
         let mut dt: f64 = self.options.dt;
         let dt_min = self.options.dt_min;
 
+        // Sets scheduled at or before t=0 apply before the initial
+        // operating point — equivalent to an idle set before the run
+        // (LIVE-08); the whole run sees the new values, no breakpoint.
+        for set in self.sets.drain_due(0.0) {
+            self.system.circuit.set_element_param(&set.label, &set.param, set.value)?;
+        }
+
         let initial_snapshot = self.compute_initial_conditions()?;
         let mut steps = Vec::new();
         // The t=0 DC operating point is only part of the recorded output when
@@ -266,6 +340,12 @@ impl<'a> TransientSolver<'a> {
         // Predictor gate: extrapolation history is only valid coming off an
         // accepted step (a rejection leaves rejected rows in the buffer).
         let mut last_step_accepted = false;
+        // Live-set edge rule (LIVE-06/07): the first step after a scheduled
+        // set integrates the value jump, so its Milne window spans the
+        // discontinuity — the LTE there is not error but the jump itself.
+        // That one step is exempt from the accept gate and from the PI
+        // update (dt held), exactly like landing on a declared breakpoint.
+        let mut sets_just_applied = false;
         let mut dt_min_seen = f64::INFINITY;
         let mut dt_max_seen = 0.0_f64;
 
@@ -312,11 +392,29 @@ impl<'a> TransientSolver<'a> {
                     }
                 }
             }
+            // Scheduled live sets (LIVE-06): each pending set time is a
+            // declared discontinuity — land exactly on it so the write
+            // applies at its scheduled time with the edge rules (skip LTE,
+            // reset prev_h). The relative-epsilon snap absorbs float
+            // accumulation: a proposal one ulp shy of the set time
+            // stretches onto it instead of leaving a ~1e-22 s sliver step.
+            if let Some(ts) = self.sets.next_breakpoint(current_time) {
+                let snap = 1e-9 * ts.abs().max(f64::MIN_POSITIVE);
+                if ts <= t_next + snap {
+                    t_next = ts;
+                    landed_on_breakpoint = true;
+                }
+            }
 
             let dt_actual = t_next - current_time;
 
             // Checkpoint digital state
             self.system.circuit.digital_state.checkpoint();
+
+            // Checkpoint the analog history: a rejected attempt leaves its
+            // rows in the Newton buffer, and the retry's charge-history
+            // views would integrate off the rejected trajectory.
+            let analog_history = self.solver.state_snapshot();
 
             // Process digital events EXACTLY at t_next BEFORE analog solve.
             self.system.circuit.run_digital_at(t_next)?;
@@ -324,6 +422,10 @@ impl<'a> TransientSolver<'a> {
             // Solve the TR-BDF2 step [current_time, t_next] (two phases).
             let analog_result =
                 self.execute_timestep(current_time, dt_actual, last_step_accepted);
+
+            // Whether this step's Milne window spans a live-set value jump
+            // (consumed here; re-armed below when new sets apply).
+            let post_set_step = sets_just_applied;
 
             if let Ok(Some(snapshot)) = analog_result {
                 // Both Newton phases converged. Global Milne-LTE accept gate
@@ -345,7 +447,7 @@ impl<'a> TransientSolver<'a> {
                     ),
                     _ => 0.0,
                 };
-                if !landed_on_breakpoint && milne > tolerances.trtol {
+                if !landed_on_breakpoint && !post_set_step && milne > tolerances.trtol {
                     // LTE too large: reject, halve dt, reset the PI memory.
                     if std::env::var("PIPERINE_TRACE_TRAN").is_ok() {
                         eprintln!("REJECT t={current_time:.3e} dt={dt_actual:.3e} milne={milne:.3e} (trtol={})", tolerances.trtol);
@@ -363,6 +465,7 @@ impl<'a> TransientSolver<'a> {
                         );
                     } else {
                         last_step_accepted = false;
+                        self.solver.restore_state(analog_history);
                         continue;
                     }
                 }
@@ -381,6 +484,45 @@ impl<'a> TransientSolver<'a> {
                     steps.push(snapshot);
                 }
                 current_time = t_next;
+                // Apply scheduled live sets due at this accepted point
+                // (LIVE-06/09): scheduling order = last-write-wins per
+                // param. The new values take effect from the next accepted
+                // step; a write of ≥ OperatingPoint strength additionally
+                // re-solves the just-closed step with the new values so the
+                // point at t is the post-set consistent solution. Rebuild
+                // is beyond the solver (no POM here) — fail loud.
+                let due = self.sets.drain_due(current_time);
+                sets_just_applied = !due.is_empty();
+                if !due.is_empty() {
+                    use crate::core::introspect::Invalidation;
+                    let mut strongest = Invalidation::None;
+                    for set in due {
+                        let inv = self.system.circuit.set_element_param(
+                            &set.label, &set.param, set.value,
+                        )?;
+                        strongest = strongest.max(inv);
+                    }
+                    if strongest >= Invalidation::Rebuild {
+                        return Err(crate::error::Error::simple(
+                            crate::error::SolverDomain::Transient,
+                            format!(
+                                "scheduled set at t={current_time:.3e} needs a structural \
+                                 rebuild — re-elaborate at the host layer (MD-18)"
+                            ),
+                        ));
+                    }
+                    if strongest >= Invalidation::OperatingPoint
+                        && let Some(re) =
+                            self.execute_timestep(current_time - dt_actual, dt_actual, false)?
+                        && current_time >= record_from
+                        && let Some(last) = steps.last_mut()
+                    {
+                        *last = re;
+                    }
+                    // The value jump is a discontinuity: the next TR stage
+                    // must not re-derive a previous current across it.
+                    landed_on_breakpoint = true;
+                }
                 // This step's size seeds the next step's TR-stage
                 // previous-current re-derivation — UNLESS the step landed on a
                 // declared discontinuity, in which case the history spans a
@@ -393,7 +535,21 @@ impl<'a> TransientSolver<'a> {
                 // print grid is a follow-up (ROADMAP); the recorded waveform
                 // is the adaptive time grid for now, and bench statistics
                 // weight by `dt` so they stay correct.
-                dt = self.stepper.propose_dt(milne, dt_actual, &self.options);
+                dt = if post_set_step {
+                    // The Milne value measures the jump, not integration
+                    // error — hold dt instead of feeding the PI garbage.
+                    dt_proposed
+                } else {
+                    self.stepper.propose_dt(milne, dt_actual, &self.options)
+                };
+                if sets_just_applied {
+                    // Discontinuity restart (SPICE breakpoint convention):
+                    // the step after a live-set jump starts first-order
+                    // (prev_h = 0 discards the pre-jump current), so resume
+                    // with a small step and let the PI regrow from clean
+                    // LTE readings.
+                    dt = (1e-3 * dt_actual).max(self.options.dt_min);
+                }
 
                 // Per-device LTE floor: reactive devices can cap dt tighter
                 // than the global Milne LTE (audit P5 — this was never called).
@@ -418,6 +574,7 @@ impl<'a> TransientSolver<'a> {
                 steps_rejected += 1;
                 last_step_accepted = false;
                 self.system.circuit.digital_state.rollback();
+                self.solver.restore_state(analog_history);
                 dt = self.stepper.reject_dt(dt_proposed, &self.options);
 
                 if dt <= dt_min && let Err(e) = analog_result {
@@ -453,5 +610,51 @@ impl<'a> TransientSolver<'a> {
 
         TransientStep::new(time, values)
             .with_digital(self.system.circuit.digital_state.nets.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::introspect::Value;
+
+    fn set(t: f64, param: &str, v: f64) -> ScheduledSet {
+        ScheduledSet { t, label: "r1".into(), param: param.into(), value: Value::Real(v) }
+    }
+
+    #[test]
+    fn next_breakpoint_is_the_earliest_pending_time_strictly_after_from() {
+        let mut q = SetQueue::default();
+        q.push(set(5e-6, "r", 1.0));
+        q.push(set(3e-6, "r", 2.0));
+        q.push(set(8e-6, "r", 3.0));
+        assert_eq!(q.next_breakpoint(0.0), Some(3e-6));
+        assert_eq!(q.next_breakpoint(3e-6), Some(5e-6), "strictly after `from`");
+        assert_eq!(q.next_breakpoint(8e-6), None);
+    }
+
+    #[test]
+    fn drain_preserves_scheduling_order_for_last_write_wins() {
+        let mut q = SetQueue::default();
+        q.push(set(5e-6, "r", 3000.0));
+        q.push(set(5e-6, "r", 1000.0));
+        let due = q.drain_due(5e-6);
+        // Application order is scheduling order: the later push lands last,
+        // so the element ends at 1000 — last write wins.
+        assert_eq!(due.len(), 2);
+        assert_eq!(due[0].value, Value::Real(3000.0));
+        assert_eq!(due[1].value, Value::Real(1000.0));
+        assert!(q.next_breakpoint(0.0).is_none(), "queue drained");
+    }
+
+    #[test]
+    fn drain_takes_only_due_entries_and_keeps_the_rest_pending() {
+        let mut q = SetQueue::default();
+        q.push(set(5e-6, "r", 1.0));
+        q.push(set(2e-6, "c", 2.0));
+        q.push(set(9e-6, "r", 3.0));
+        let due = q.drain_due(5e-6);
+        assert_eq!(due.iter().map(|s| s.t).collect::<Vec<_>>(), vec![5e-6, 2e-6]);
+        assert_eq!(q.next_breakpoint(0.0), Some(9e-6), "later entry stays pending");
     }
 }

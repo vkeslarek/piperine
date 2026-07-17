@@ -133,3 +133,104 @@ fn jit_device_set_errors_are_loud_with_flattened_param_names() {
         "lists the flattened bundle params: {msg}"
     );
 }
+
+/// LIVE-06 independent test: RC step response with a mid-transient live set
+/// of R (2k → 1k) at t = 5 µs on JIT-compiled devices. The integrator lands
+/// exactly on each scheduled set time (unified breakpoint table, LTE
+/// skipped at the edge), and the waveform after the set follows the new
+/// time constant — the closed-form solution of a fresh simulation started
+/// from the pre-set state — within reltol 1e-3.
+#[test]
+fn mid_transient_r_set_switches_the_rc_time_constant_at_the_breakpoint() {
+    const RC: &str = r#"
+        discipline Electrical { potential v : Real; flow i : Real; }
+
+        mod R (inout p : Electrical, inout n : Electrical) {
+            param r : Real = 2.0e3;
+        }
+        analog R { I(p, n) <+ V(p, n) / r; }
+
+        mod C (inout p : Electrical, inout n : Electrical) {
+            param c : Real = 1.0e-9;
+        }
+        analog C { I(p, n) <+ c * ddt(V(p, n)); }
+
+        mod Vsrc (inout p : Electrical, inout n : Electrical) {
+            param dc : Real = 0.0;
+        }
+        analog Vsrc { V(p, n) <- dc; }
+
+        mod Top () {
+            wire gnd : Electrical;
+            wire vin : Electrical;
+            wire out : Electrical;
+            v1 : Vsrc(.p = vin, .n = gnd) {};
+            r1 : R(.p = vin, .n = out) {};
+            c1 : C(.p = out, .n = gnd) {};
+        }
+    "#;
+    let design = parse_and_elaborate(RC, &piperine_lang::SourceMap::dummy())
+        .expect("rc elaborates");
+    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("rc lowers");
+    let mut compiler = CircuitCompiler::new(&design, &bodies);
+    let (mut circuit, info) = compiler.build_circuit_mapped("Top").expect("rc builds");
+    let out = info.nets.get("out").expect("net `out`").clone();
+
+    let (t_on, t_sw) = (1.0e-6, 5.0e-6);
+    let (tau1, tau2) = (2.0e3 * 1.0e-9, 1.0e3 * 1.0e-9); // RC: 2 µs, then 1 µs
+    let opts = piperine_solver::prelude::TransientAnalysisOptions::new(12e-6, 0.1e-6);
+    let mut tran = circuit.transient(opts, Context::default()).unwrap();
+    // Source turns on at 1 µs (step input), R switches 2k → 1k at 5 µs.
+    tran.schedule_set(t_on, "v1", "dc", Value::Real(5.0));
+    tran.schedule_set(t_sw, "r1", "r", Value::Real(1.0e3));
+    let result = tran.solve().unwrap();
+
+    // Both scheduled times are exact landing points (TRB-11).
+    for ts in [t_on, t_sw] {
+        assert_eq!(
+            result.iter().filter(|s| (s.time() - ts).abs() < 1e-18).count(),
+            1,
+            "exactly one recorded landing at t = {ts:e}"
+        );
+    }
+
+    // Closed-form reference: charge with τ1 = RC = 2 µs from t_on, then —
+    // fresh run from the pre-set state — settle with τ2 = 1 µs from t_sw.
+    let v_sw = 5.0 * (1.0 - (-(t_sw - t_on) / tau1).exp());
+    let reference = |t: f64| -> f64 {
+        if t <= t_on {
+            0.0
+        } else if t <= t_sw {
+            5.0 * (1.0 - (-(t - t_on) / tau1).exp())
+        } else {
+            5.0 + (v_sw - 5.0) * (-(t - t_sw) / tau2).exp()
+        }
+    };
+
+    let reltol = 1e-3;
+    for step in result.iter() {
+        let t = step.time();
+        let got = step.get_node(&out).expect("v(out)");
+        let want = reference(t);
+        assert!(
+            (got - want).abs() <= reltol * 5.0 + 1e-6,
+            "t = {t:.4e}: v(out) = {got:.6} vs reference {want:.6}"
+        );
+    }
+
+    // The new time constant is actually visible after the switch (the
+    // waveform departs from the old-τ trajectory by far more than reltol).
+    let probe_t = t_sw + 1.5e-6;
+    let old_tau_value = 5.0 * (1.0 - (-(probe_t - t_on) / tau1).exp());
+    let new_tau_value = reference(probe_t);
+    assert!((old_tau_value - new_tau_value).abs() > 0.05, "trajectories separated");
+
+    // No LTE rejection storm around the edges.
+    assert!(
+        result.stats.steps_rejected <= result.stats.steps_accepted / 5 + 5,
+        "rejection storm: {} rejected vs {} accepted",
+        result.stats.steps_rejected,
+        result.stats.steps_accepted
+    );
+}
+
