@@ -28,8 +28,8 @@ use crate::value_bridge::PyValue;
 /// Staged overrides (`stage`, PY-12) are held in an isolated map and applied
 /// to a fresh [`Design::fork`] per analysis call — the held parent `Design`
 /// is never mutated (spec AC11), and each analysis is a pure function of the
-/// design + currently-staged overrides + config (piperine-bench/docs/SPEC.md
-/// §9 isolation). A re-stage of the same `(label, param)` overwrites the
+/// design + currently-staged overrides + config — every analysis is
+/// isolated (no state carries between calls). A re-stage of the same `(label, param)` overwrites the
 /// previous value, matching the bench's last-write-wins staging semantics.
 ///
 /// `unsendable`: shares an `Rc<Design>` whose interior is not `Sync` (see
@@ -172,7 +172,7 @@ impl _Module {
 
     /// Run a transient analysis (PY-04 / spec AC6). `step = None` (or `0.0`)
     /// selects the adaptive stepper; `start` is the earliest recorded time
-    /// (piperine-bench/docs/SPEC.md §5.1 `TranConfig.start`). `ic` is an
+    /// (ngspice `.tran tstart tstop` semantics). `ic` is an
     /// optional per-node initial-condition map (spec §5.1 `TranConfig.ic`).
     #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None))]
     fn tran(

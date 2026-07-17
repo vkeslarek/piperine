@@ -940,7 +940,7 @@ mod Divider() {
                 "time axis must be non-negative"
             );
             // The tran was run with stop=5e-3 — the recorded axis ends at
-            // (or very near) 5e-3 (piperine-bench/docs/SPEC.md §5.1).
+            // (or very near) 5e-3.
             let t_end = axis_slice.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
             assert!(
                 (t_end - 5e-3).abs() < 1e-4,
@@ -984,8 +984,8 @@ mod Divider() {
     /// `.mag/.phase/.db` return real `_Waveform`s. `_AcTrace.axis()` returns
     /// the frequency-axis `_Waveform`.
     ///
-    /// Mirrors the bench's own `ac_stim_drives_a_low_pass_response` test
-    /// shape (piperine-bench/tests/bench.rs): 1 A of `ac_stim` current into
+    /// Mirrors the root suite's AC low-pass smoke (tests/spice_smoke.rs):
+    /// 1 A of `ac_stim` current into
     /// a 1 kΩ resistor to gnd → |V_out| = 1 A × 1 kΩ = 1000 V at every
     /// frequency (purely resistive, flat). The spec-defined expected outcome
     /// (PY-17 uniform-shape — same call the bench makes).
@@ -1099,8 +1099,8 @@ mod AcTest() {
 
     /// PY-10 / spec AC9: `module.noise(...)` → `_NoiseTrace.psd()` returns a
     /// `_Waveform` with the configured sweep length; `.total()` returns a
-    /// non-negative float. Mirrors the bench's own noise-test fixture
-    /// (piperine-bench/tests/bench.rs `bench noise_*`): a `NoisyResistor`
+    /// non-negative float. Mirrors the johnson-noise example fixture:
+    /// a `NoisyResistor`
     /// with explicit `white_noise` so the PSD is non-zero and the integrated
     /// total is observable.
     #[test]

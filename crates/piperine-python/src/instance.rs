@@ -3,9 +3,8 @@
 //! the instance's terminal quantities (terminal voltages + branch current) by
 //! delegating to the parent result's `.v/.i` readouts over the connected nets.
 //!
-//! Uniform shape (PY-17): the sub-view's `.v/.i` calls are the same calls the
-//! bench makes (bench `host::SimHost::resolve_instance` walks the same POM
-//! edges to build an `InstanceRef`'s port→net map — piperine-bench/src/host.rs:35).
+//! Uniform shape (PY-17): the sub-view's `.v/.i` calls walk the same POM
+//! edges the elaborator resolved (instance port → connected top-level net).
 
 use std::rc::Rc;
 
@@ -112,8 +111,7 @@ impl InstanceResolver {
     }
 
     /// Map `label`'s port names to their connected top-level net names by
-    /// walking the POM (mirrors `bench::host::SimHost::resolve_instance`,
-    /// piperine-bench/src/host.rs:35). Returns `(port_name, net_name)` pairs
+    /// walking the POM. Returns `(port_name, net_name)` pairs
     /// in port-declaration order. `KeyError` when the instance or its module
     /// is not found (fail loud).
     pub(crate) fn terminal_nets(&self, label: &str) -> PyResult<Vec<(String, String)>> {
