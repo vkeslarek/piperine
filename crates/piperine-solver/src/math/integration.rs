@@ -181,6 +181,27 @@ impl TrBdf2 {
         }
     }
 
+    /// [`phase_coeffs`](Self::phase_coeffs) with the restart convention
+    /// applied — the form device companions stamp.
+    ///
+    /// The trapezoidal companion `i_{n+γ} = (2/(γh))(Q_{n+γ} − Q_n) − i_n`
+    /// needs the previous derivative term `i_n` (capacitor current / inductor
+    /// branch voltage). Across a discontinuity — breakpoint edge or a
+    /// restarted run — the history is unusable and `prev_h` is 0: keeping the
+    /// full `2/(γh)` weight while taking `i_n = 0` doubles the derivative
+    /// estimate for the first step (an O(h)·i_n error that scales with the
+    /// post-edge current). The standard restart convention degrades that
+    /// first TR stage to backward Euler over the `γh` sub-step:
+    /// `(1/(γh), −1/(γh), 0)`, no previous-derivative term. The BDF2 stage
+    /// only spans the current step and is unaffected.
+    pub fn stage_coeffs(phase: TrBdf2Phase, h: f64, prev_h: f64) -> (f64, f64, f64) {
+        if matches!(phase, TrBdf2Phase::Trapezoidal) && prev_h <= 0.0 {
+            let sub = Self::GAMMA * h;
+            return (1.0 / sub, -1.0 / sub, 0.0);
+        }
+        Self::phase_coeffs(phase, h)
+    }
+
     /// Global local-truncation-error estimate via Milne's device. A linear
     /// extrapolation of `Q_n` and `Q_{n+γ}` to `t_{n+1}` is differenced from
     /// the BDF2 solution `Q_{n+1}`, normalized per component by

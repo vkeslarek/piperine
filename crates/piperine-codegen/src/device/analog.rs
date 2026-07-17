@@ -780,7 +780,11 @@ impl AnalogInstance {
         let veff = self.limited_volts(&volts);
         let mut rhs = self.norton_rhs(&veff, &res, &jac);
         if self.kernel.has_reactive() && dt > 0.0 {
-            let (c0, c1, c2) = TrBdf2::phase_coeffs(tran_ctx.phase, tran_ctx.h);
+            // `stage_coeffs`: after a discontinuity (`prev_h = 0`) the TR
+            // stage degrades to backward Euler — the `i_{C,n}` term below is
+            // unavailable there, and the full trapezoid weight without it
+            // doubles the derivative estimate.
+            let (c0, c1, c2) = TrBdf2::stage_coeffs(tran_ctx.phase, tran_ctx.h, tran_ctx.prev_h);
             let n = self.num_terminals();
             let mut qjac = vec![0.0; n * n];
             self.kernel
@@ -969,7 +973,9 @@ impl AnalogInstance {
         states: &TransientAnalysisState<'_>,
         tran_ctx: &TransientAnalysisContext,
     ) -> Vec<Stamp<AnalogReference, f64>> {
-        let (c0, c1, c2) = TrBdf2::phase_coeffs(tran_ctx.phase, tran_ctx.h);
+        // `stage_coeffs`: backward-Euler TR stage after a discontinuity
+        // (`prev_h = 0`), where the `V_n` correction below is unavailable.
+        let (c0, c1, c2) = TrBdf2::stage_coeffs(tran_ctx.phase, tran_ctx.h, tran_ctx.prev_h);
         let terms = self.kernel.flux_terms();
         let mut coeffs = vec![0.0; terms.len()];
         self.kernel

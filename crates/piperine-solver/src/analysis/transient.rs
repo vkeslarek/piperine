@@ -57,6 +57,13 @@ pub struct TransientAnalysisOptions {
     /// the result (ngspice `.tran tstart tstop` semantics). Defaults to 0
     /// (record everything, the pre-existing behavior).
     pub record_from: Second,
+
+    /// Simulation start time (default 0). The integrator's clock starts
+    /// here — `$abstime`, breakpoints, and scheduled sets are all absolute
+    /// times. Used by a host restarting a transient from `t` after a
+    /// structural rebuild (LIVE-16); the starting state comes from the
+    /// initial operating point overlaid with `apply_initial_conditions`.
+    pub start_time: Second,
 }
 
 impl TransientAnalysisOptions {
@@ -69,7 +76,14 @@ impl TransientAnalysisOptions {
             dt_min: 1e-15,
             dt_max: (stop_time / 100.0),
             record_from: 0.0,
+            start_time: 0.0,
         }
+    }
+
+    /// Set the simulation start time (restart-from-`t` semantics).
+    pub fn with_start(mut self, start_time: Second) -> Self {
+        self.start_time = start_time;
+        self
     }
 
     /// Set minimum timestep

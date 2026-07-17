@@ -177,7 +177,7 @@ impl<'a> TransientSolver<'a> {
         let mut system = TransientSystem {
             circuit,
             context,
-            time: 0.0,
+            time: options.start_time,
             phase: TrBdf2Phase::Trapezoidal,
             h: options.dt,
             prev_h: 0.0,
@@ -261,7 +261,7 @@ impl<'a> TransientSolver<'a> {
             self.solver.push_initial_conditions(self.initial_conditions.clone());
         }
 
-        Ok(self.snapshot(0.0))
+        Ok(self.snapshot(self.options.start_time))
     }
 
     /// Advance one TR-BDF2 step over `[t_n, t_n + dt]`. Two Newton solves:
@@ -312,27 +312,29 @@ impl<'a> TransientSolver<'a> {
 
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
         let stop_time: f64 = self.options.stop_time;
+        let start_time: f64 = self.options.start_time;
         let record_from: f64 = self.options.record_from;
         let mut dt: f64 = self.options.dt;
         let dt_min = self.options.dt_min;
 
-        // Sets scheduled at or before t=0 apply before the initial
-        // operating point — equivalent to an idle set before the run
-        // (LIVE-08); the whole run sees the new values, no breakpoint.
-        for set in self.sets.drain_due(0.0) {
+        // Sets scheduled at or before the start time apply before the
+        // initial operating point — equivalent to an idle set before the
+        // run (LIVE-08); the whole run sees the new values, no breakpoint.
+        for set in self.sets.drain_due(start_time) {
             self.system.circuit.set_element_param(&set.label, &set.param, set.value)?;
         }
 
         let initial_snapshot = self.compute_initial_conditions()?;
         let mut steps = Vec::new();
-        // The t=0 DC operating point is only part of the recorded output when
-        // recording starts at (or before) t=0; a delayed start drops it but
-        // still computes it — the initial state seeds the integration.
-        if 0.0 >= record_from {
+        // The start-time operating point is only part of the recorded output
+        // when recording starts at (or before) it; a delayed `record_from`
+        // drops it but still computes it — the initial state seeds the
+        // integration.
+        if start_time >= record_from {
             steps.push(initial_snapshot);
         }
 
-        let mut current_time = 0.0;
+        let mut current_time = start_time;
         self.solver.reset_iteration_counter();
         let mut steps_accepted: usize = 0;
         let mut steps_rejected: usize = 0;

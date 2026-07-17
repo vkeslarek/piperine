@@ -54,6 +54,12 @@ pub struct _LiveSession {
     /// next analysis and cleared once that analysis succeeds. Dropped nets
     /// were already filtered out at rebuild time; new nets start cold.
     carry: HashMap<String, f64>,
+    /// Live value writes applied since the last (re)build, in application
+    /// order. An auto rebuild replays them onto the fresh elaboration so a
+    /// structural set never silently reverts earlier live sets; a
+    /// successful rebuild bakes them into the held design and clears the
+    /// ledger.
+    dirty: Vec<(String, String, f64)>,
 }
 
 impl _LiveSession {
@@ -85,6 +91,7 @@ impl _LiveSession {
             pending_sets: Vec::new(),
             last_voltages: HashMap::new(),
             carry: HashMap::new(),
+            dirty: Vec::new(),
         })
     }
 
@@ -172,16 +179,22 @@ impl _LiveSession {
         InstanceResolver::new(Rc::clone(&self.design), self.module.clone())
     }
 
-    /// Auto re-elaboration on a structural set (LIVE-14): stage the write on
-    /// the held POM design, re-apply + re-elaborate + recompile, carry the
-    /// last solved node voltages by net name as the next solve's initial
-    /// guess (LIVE-15), and bump the `rebuilds` notice. Any failure leaves
-    /// the previous compiled circuit fully usable (LIVE-17) — the swap
-    /// happens only after a successful build.
+    /// Auto re-elaboration on a structural set (LIVE-14): replay every live
+    /// write applied since the last build (the `dirty` ledger — a rebuild
+    /// must never silently revert them) plus the structural write onto a
+    /// fresh fork of the held POM design, re-elaborate + recompile, carry
+    /// the last solved node voltages by net name as the next solve's
+    /// initial guess (LIVE-15), and bump the `rebuilds` notice. Any failure
+    /// leaves the held design unstaged and the previous compiled circuit
+    /// fully usable (LIVE-17) — the swap happens only after a successful
+    /// build.
     fn auto_rebuild(&mut self, label: &str, param: &str, value: f64) -> PyResult<()> {
-        self.design.set_param(label, param, Value::Real(value));
-        let rebuilt = self
-            .design
+        let base = self.design.fork();
+        for (l, p, v) in &self.dirty {
+            base.set_param(l, p, Value::Real(*v));
+        }
+        base.set_param(label, param, Value::Real(value));
+        let rebuilt = base
             .with_overrides_applied(&self.module)
             .map_err(|e| PyValueError::new_err(format!("{e}")))
             .map(|applied| applied.fork())
@@ -201,18 +214,104 @@ impl _LiveSession {
                 self.circuit = circuit;
                 self.info = info;
                 self.rebuilds += 1;
+                // The replayed writes (and the structural one) are baked
+                // into the new design — the ledger restarts empty.
+                self.dirty.clear();
                 Ok(())
             }
-            Err(e) => {
-                // Un-stage the failed write so a later structural set does
-                // not replay it, and keep the old circuit active (LIVE-17).
-                self.design.clear_overrides();
-                Err(PyValueError::new_err(format!(
-                    "structural set `{label}`.`{param}` failed to re-elaborate: {e}; \
-                     previous circuit still active"
-                )))
-            }
+            Err(e) => Err(PyValueError::new_err(format!(
+                "structural set `{label}`.`{param}` failed to re-elaborate: {e}; \
+                 previous circuit still active"
+            ))),
         }
+    }
+
+    /// Bookkeeping after a successful live value write: append it to the
+    /// rebuild-replay ledger and mirror it into the build info so
+    /// device-internal current readbacks (`.i(a, b)` on force-less
+    /// two-terminal devices) see the new value (same mirror as the bench's
+    /// `run_op_sweep`).
+    fn note_applied(&mut self, label: &str, param: &str, value: f64) {
+        self.dirty.push((label.to_string(), param.to_string(), value));
+        if let Some(inst) = self.info.instances.iter_mut().find(|i| i.label == label)
+            && let Some(pidx) = inst.kernel.param_names().iter().position(|n| n == param)
+        {
+            inst.params[pidx] = value;
+        }
+    }
+
+    /// Structural probe for a scheduled set (LIVE-16): classify a write
+    /// without a lasting effect. A structural write returns
+    /// `Ok(Rebuild)` and applies nothing; a plain restamp is reverted
+    /// immediately. Unknown params are left for the solver's loud failure
+    /// at landing time (same behavior as the Rust `schedule_set` path).
+    fn set_is_structural(&mut self, label: &str, param: &str, value: f64) -> bool {
+        let Some(old) = self
+            .circuit
+            .all_devices()
+            .iter()
+            .find(|d| d.name() == label)
+            .and_then(|d| d.get_param(param))
+            .and_then(|v| v.as_real())
+        else {
+            return false;
+        };
+        match self
+            .circuit
+            .set_element_param(label, param, piperine_solver::abi::Value::Real(value))
+        {
+            Ok(inv) if inv >= Invalidation::Rebuild => true,
+            Ok(_) => {
+                let restored = self
+                    .circuit
+                    .set_element_param(label, param, piperine_solver::abi::Value::Real(old));
+                debug_assert!(restored.is_ok(), "probe restore cannot fail");
+                false
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Re-key recorded transient steps onto the current (post-rebuild)
+    /// circuit (LIVE-16 stitching): node values carry by net name, branch
+    /// values by their stable `(label, branch)` identity; variables that no
+    /// longer exist are dropped, new ones start at the restart point.
+    fn remap_steps(
+        &self,
+        steps: Vec<piperine_solver::prelude::TransientStep>,
+        old_nets: &HashMap<String, NodeIdentifier>,
+    ) -> Vec<piperine_solver::prelude::TransientStep> {
+        use piperine_solver::abi::AnalogVariable as Var;
+        // node → name over the *new* net map, to translate new node keys
+        // back to names and look their values up in the old numbering.
+        let new_name_by_node: HashMap<&NodeIdentifier, &String> =
+            self.info.nets.iter().map(|(name, node)| (node, name)).collect();
+        steps
+            .into_iter()
+            .map(|step| {
+                let mut values = HashMap::new();
+                for reference in self.circuit.netlist().all_references() {
+                    let var = reference.variable();
+                    let carried = match var.as_ref() {
+                        Var::Node(node) => new_name_by_node
+                            .get(node)
+                            .and_then(|name| old_nets.get(*name))
+                            .and_then(|old_node| step.get_node(old_node)),
+                        Var::Branch(_) => step.get(std::sync::Arc::clone(var)),
+                        _ => None,
+                    };
+                    if let Some(v) = carried {
+                        values.insert(std::sync::Arc::clone(var), v);
+                    }
+                }
+                let mut digital = Vec::new();
+                while let Some(l) = step.digital(digital.len()) {
+                    digital.push(l);
+                }
+                piperine_solver::prelude::TransientStep::new(step.time(), values)
+                    .with_digital(digital)
+            })
+            .collect()
     }
 
     /// Record the solved node voltages by net name (the LIVE-15 carry
@@ -256,16 +355,7 @@ impl _LiveSession {
             // session re-elaborates automatically (LIVE-14).
             Ok(inv) if inv >= Invalidation::Rebuild => self.auto_rebuild(label, param, value),
             Ok(_) => {
-                // Mirror the write into the build info so device-internal
-                // current readbacks (`.i(a, b)` on force-less two-terminal
-                // devices) see the new value (same mirror as the bench's
-                // `run_op_sweep`).
-                if let Some(inst) = self.info.instances.iter_mut().find(|i| i.label == label)
-                    && let Some(pidx) =
-                        inst.kernel.param_names().iter().position(|n| n == param)
-                {
-                    inst.params[pidx] = value;
-                }
+                self.note_applied(label, param, value);
                 Ok(())
             }
             Err(e) => {
@@ -316,7 +406,13 @@ impl _LiveSession {
     }
 
     /// Run a transient on the held circuit (LIVE-10); same signature and
-    /// result shape as `_Module::tran` (LIVE-13 / PY-17).
+    /// result shape as `_Module::tran` (LIVE-13 / PY-17). Pending
+    /// `schedule_set` entries land on forced breakpoints (LIVE-06). A
+    /// *structural* scheduled set (LIVE-16) splits the run: the session
+    /// auto re-elaborates at the set time and the transient restarts from
+    /// there — same absolute clock (`start_time`), carried node state as
+    /// initial conditions — and the recorded segments stitch into one
+    /// continuous trace.
     #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None))]
     fn tran(
         &mut self,
@@ -327,39 +423,120 @@ impl _LiveSession {
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<_Trace> {
         let config = crate::module::_Module::solver_config(solver)?;
-        let ivs = self.ivs(ic)?;
-        let opts = match step {
-            Some(dt) if dt > 0.0 => {
-                piperine_solver::prelude::TransientAnalysisOptions::new(stop, dt)
-            }
-            _ => piperine_solver::prelude::TransientAnalysisOptions::new(stop, stop * 1e-3),
-        }
-        .with_record_from(start);
-        let mut tran = self
-            .circuit
-            .transient(opts, config.to_context())
-            .map_err(Self::analysis_err)?;
-        tran.policy = config.to_policy();
-        tran.apply_initial_conditions(ivs);
-        let scheduled: Vec<(f64, String, String, f64)> = self.pending_sets.drain(..).collect();
-        for (t, label, param, value) in &scheduled {
-            tran.schedule_set(*t, label, param, piperine_solver::abi::Value::Real(*value));
-        }
-        let result = tran.solve().map_err(Self::analysis_err)?;
-        drop(tran);
-        if let Some(last) = result.iter().last() {
-            self.record_voltages(|node| last.get_node(node).unwrap_or(0.0));
-        }
-        // The run ends with the scheduled values applied — mirror them into
-        // the build info (scheduling order = last-write-wins) so post-run
-        // `.i()` readbacks see the final parameters.
-        for (_, label, param, value) in &scheduled {
-            if let Some(inst) = self.info.instances.iter_mut().find(|i| &i.label == label)
-                && let Some(pidx) = inst.kernel.param_names().iter().position(|n| n == param)
-            {
-                inst.params[pidx] = *value;
+        let dt = match step {
+            Some(dt) if dt > 0.0 => dt,
+            _ => stop * 1e-3,
+        };
+        // Sets at or before t=0 are idle sets (LIVE-08) — including
+        // structural ones, which auto-rebuild before the run starts.
+        let mut scheduled: Vec<(f64, String, String, f64)> = Vec::new();
+        for (t, label, param, value) in std::mem::take(&mut self.pending_sets) {
+            if t <= 0.0 {
+                self.set(&label, &param, value)?;
+            } else {
+                scheduled.push((t, label, param, value));
             }
         }
+
+        let mut user_ic = ic;
+        let mut seg_start = 0.0_f64;
+        let mut steps: Vec<piperine_solver::prelude::TransientStep> = Vec::new();
+        let mut agg = piperine_solver::abi::SolverStats { converged: true, ..Default::default() };
+        loop {
+            // The earliest structural set inside this segment splits it.
+            let mut split: Option<f64> = None;
+            for i in 0..scheduled.len() {
+                let (t, label, param, value) = scheduled[i].clone();
+                if t > seg_start
+                    && t <= stop
+                    && split.is_none_or(|s| t < s)
+                    && self.set_is_structural(&label, &param, value)
+                {
+                    split = Some(t);
+                }
+            }
+            let seg_stop = split.unwrap_or(stop);
+
+            // A continuation segment restarts across the structural
+            // discontinuity: begin with a small first step (the solver's own
+            // post-set convention, `1e-3·dt`) and let the PI controller
+            // regrow — the full user step over the fresh post-edge curvature
+            // would eat the restart accuracy.
+            let seg_dt = if seg_start > 0.0 { 1e-3 * dt } else { dt };
+            let opts = piperine_solver::prelude::TransientAnalysisOptions::new(seg_stop, seg_dt)
+                .with_start(seg_start)
+                .with_record_from(start);
+            let ivs = self.ivs(user_ic.take())?;
+            let mut tran = self
+                .circuit
+                .transient(opts, config.to_context())
+                .map_err(Self::analysis_err)?;
+            tran.policy = config.to_policy();
+            tran.apply_initial_conditions(ivs);
+            // Structural entries never enter the solver queue (the solver
+            // has no POM — it would fail loud at the landing); they are
+            // applied at the split below.
+            let seg_sets: Vec<(f64, String, String, f64)> = scheduled
+                .iter()
+                .filter(|(t, ..)| *t > seg_start && *t <= seg_stop && Some(*t) != split)
+                .cloned()
+                .collect();
+            for (t, label, param, value) in &seg_sets {
+                tran.schedule_set(*t, label, param, piperine_solver::abi::Value::Real(*value));
+            }
+            let result = tran.solve().map_err(Self::analysis_err)?;
+            drop(tran);
+            // The run applied these values — ledger + build-info mirror
+            // (scheduling order = last-write-wins).
+            for (_, label, param, value) in &seg_sets {
+                self.note_applied(label, param, *value);
+            }
+            if let Some(last) = result.iter().last() {
+                self.record_voltages(|node| last.get_node(node).unwrap_or(0.0));
+            }
+            // Stitch: drop the continuation segment's start-point duplicate
+            // (segment 1 already recorded the landing at the split time).
+            for s in result.iter() {
+                if steps.last().is_none_or(|prev| s.time() > prev.time()) {
+                    steps.push(s.clone());
+                }
+            }
+            agg.newton_iterations += result.stats.newton_iterations;
+            agg.steps_accepted += result.stats.steps_accepted;
+            agg.steps_rejected += result.stats.steps_rejected;
+            agg.dt_min_floor_hits += result.stats.dt_min_floor_hits;
+            agg.dt_min = if agg.dt_min == 0.0 {
+                result.stats.dt_min
+            } else {
+                agg.dt_min.min(result.stats.dt_min)
+            };
+            agg.dt_max = agg.dt_max.max(result.stats.dt_max);
+            agg.assembly_time_ns += result.stats.assembly_time_ns;
+            agg.solve_time_ns += result.stats.solve_time_ns;
+
+            let Some(t_split) = split else { break };
+            // Apply every structural set landing exactly at the split (in
+            // scheduling order), auto-rebuilding through the same path as
+            // an idle set (LIVE-14); the carry seeded from the segment-end
+            // state becomes the restart's initial conditions (LIVE-16).
+            let old_nets = self.info.nets.clone();
+            for i in 0..scheduled.len() {
+                let (t, label, param, value) = scheduled[i].clone();
+                if t == t_split && self.set_is_structural(&label, &param, value) {
+                    self.set(&label, &param, value)?;
+                }
+            }
+            // Re-key the recorded history onto the rebuilt circuit: nodes
+            // carry by net name, branches by their stable (label, name)
+            // identity; dropped variables disappear, new ones start at the
+            // restart.
+            steps = self.remap_steps(steps, &old_nets);
+            scheduled.retain(|(t, ..)| *t > t_split);
+            seg_start = t_split;
+        }
+
+        let mut result = piperine_solver::prelude::TransientAnalysisResult::new(steps);
+        result.set_stats(agg);
         let trace = piperine_bench::Trace::new(result, Rc::new(self.info.clone()));
         Ok(_Trace::new(trace).with_resolver(self.instance_resolver()))
     }
@@ -686,6 +863,130 @@ mod Top() {
                 (v_after - v_live).abs() <= 1e-3 * v_live.abs() + 1e-6,
                 "previous circuit must stay usable after a failed set: {v_after} vs {v_live}"
             );
+            Ok(())
+        });
+        let _ = std::fs::remove_file(&path);
+        outcome
+    }
+
+    /// RC fixture with an optional structural leak: r1 (2 kΩ default) into
+    /// c1 (1 nF), plus `d1` whose optional `ns` adds a `ns·1e-3 S` leak at
+    /// `out` when given — the LIVE-16 mid-transient structural set target.
+    const RC_STRUCTURAL: &str = "\
+discipline Electrical { potential v: Real; flow i: Real; }
+
+mod Vsrc(inout p: Electrical, inout n: Electrical) {
+    param dc: Real = 5.0;
+}
+analog Vsrc { V(p, n) <- dc; }
+
+mod Resistor(inout p: Electrical, inout n: Electrical) {
+    param r: Real = 2e3;
+}
+analog Resistor { I(p, n) <+ V(p, n) / r; }
+
+mod Cap(inout p: Electrical, inout n: Electrical) {
+    param c: Real = 1e-9;
+}
+analog Cap { I(p, n) <+ c * ddt(V(p, n)); }
+
+mod Leak(inout p: Electrical, inout n: Electrical) {
+    param ns: Real? = none;
+}
+analog Leak { I(p, n) <+ ns.get_or(0.0) * 1e-3 * V(p, n); }
+
+mod Top() {
+    wire gnd : Electrical;
+    wire vin : Electrical;
+    wire out : Electrical;
+    v1 : Vsrc(.p = vin, .n = gnd) {};
+    r1 : Resistor(.p = vin, .n = out) {};
+    c1 : Cap(.p = out, .n = gnd) {};
+    d1 : Leak(.p = out, .n = gnd) {};
+}
+";
+
+    /// LIVE-16: a structural set scheduled mid-transient auto re-elaborates
+    /// at `t` and the transient restarts from `t` with the carried node
+    /// state as initial conditions — the stitched waveform is continuous at
+    /// `t` (matches the two-phase closed form within reltol) and the post-t
+    /// behavior reflects the new structure. An idle live set applied before
+    /// the run (r 2k→1k) must survive the rebuild (the replay ledger).
+    #[test]
+    fn mid_transient_structural_set_restarts_from_t_with_carried_state() -> PyResult<()> {
+        let path = std::env::temp_dir().join("piperine_python_live_t10_test.phdl");
+        std::fs::write(&path, RC_STRUCTURAL)?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("non-utf8 temp path"))?;
+
+        let outcome = Python::with_gil(|py| -> PyResult<()> {
+            let m = PyModule::new(py, "_piperine")?;
+            crate::_piperine(&m)?;
+            let design = m.getattr("load")?.call1((path_str,))?;
+            let module = design.getattr("module")?.call1(("Top",))?;
+            let session = module.getattr("compile")?.call0()?;
+
+            // Idle value set before the run — must survive the mid-run
+            // rebuild (dirty-ledger replay), or τ/v∞ below go wrong.
+            session.getattr("set")?.call1(("r1", "r", 1e3))?;
+
+            let t_sw = 4e-6;
+            session.getattr("schedule_set")?.call1((t_sw, "d1", "ns", 1.0))?;
+            // The closed form below starts from a discharged cap: ic out=0.
+            let ic = pyo3::types::PyDict::new(py);
+            ic.set_item("out", 0.0)?;
+            let kwargs = pyo3::types::PyDict::new(py);
+            kwargs.set_item("ic", ic)?;
+            let trace = session.getattr("tran")?.call((10e-6, 0.1e-6), Some(&kwargs))?;
+            assert_eq!(
+                session.getattr("rebuilds")?.extract::<usize>()?,
+                1,
+                "the scheduled structural set must rebuild once"
+            );
+
+            let wf = trace.getattr("v")?.call1(("out",))?;
+            let wf_ref = wf.extract::<pyo3::PyRef<'_, crate::results::_Waveform>>()?;
+            let pts = wf_ref.inner.points();
+            assert!(!pts.is_empty());
+
+            // The axis is one continuous, strictly increasing grid with
+            // exactly one point at the split time (no duplicate, no gap).
+            for w in pts.windows(2) {
+                assert!(w[1].0 > w[0].0, "axis must be strictly increasing: {:?}", w);
+            }
+            assert_eq!(
+                pts.iter().filter(|(t, _)| (t - t_sw).abs() < 1e-18).count(),
+                1,
+                "exactly one recorded point at the split time"
+            );
+            let t_end = pts.last().unwrap().0;
+            assert!((t_end - 10e-6).abs() < 1e-9, "run must reach stop, got {t_end:e}");
+
+            // Two-phase closed form: charge with τ1 = RC = 1 µs toward 5 V,
+            // then — restart from the carried state — settle toward 2.5 V
+            // with τ2 = C/(1/R + g) = 0.5 µs.
+            let (tau1, tau2) = (1e3 * 1e-9, 1e-9 / 2e-3);
+            let v_sw = 5.0 * (1.0 - (-t_sw / tau1).exp());
+            let reference = |t: f64| -> f64 {
+                if t <= t_sw {
+                    5.0 * (1.0 - (-t / tau1).exp())
+                } else {
+                    2.5 + (v_sw - 2.5) * (-(t - t_sw) / tau2).exp()
+                }
+            };
+            for &(t, v) in pts {
+                let want = reference(t);
+                assert!(
+                    (v - want).abs() <= 1e-3 * 5.0 + 1e-6,
+                    "t = {t:.4e}: v(out) = {v:.6} vs closed form {want:.6}"
+                );
+            }
+
+            // Post-t structure is really the new one: the tail sits at the
+            // leak divider's 2.5 V, far from the old 5 V asymptote.
+            let v_end = pts.last().unwrap().1;
+            assert!((v_end - 2.5).abs() < 0.02, "tail must settle at 2.5 V, got {v_end}");
             Ok(())
         });
         let _ = std::fs::remove_file(&path);
