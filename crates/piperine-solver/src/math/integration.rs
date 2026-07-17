@@ -508,6 +508,36 @@ mod tests {
     }
 
     #[test]
+    fn trbdf2_stage_coeffs_degrade_to_backward_euler_on_restart() {
+        // Restart convention (prev_h = 0): the TR stage cannot trust a
+        // previous derivative, so it must stamp backward Euler over the γh
+        // sub-step — (1/(γh), −1/(γh), 0) — NOT the trapezoid's 2/(γh),
+        // which doubles the first-step derivative after a discontinuity.
+        let h = 1e-3;
+        let sub = TrBdf2::GAMMA * h;
+        let (c0, c1, c2) = TrBdf2::stage_coeffs(TrBdf2Phase::Trapezoidal, h, 0.0);
+        assert!((c0 - 1.0 / sub).abs() < 1e-6 * (1.0 / sub).abs(), "c0 = {c0}");
+        assert!((c1 + 1.0 / sub).abs() < 1e-6 * (1.0 / sub).abs(), "c1 = {c1}");
+        assert_eq!(c2, 0.0);
+        // The BDF2 stage only spans the current step — unaffected by restart.
+        assert_eq!(
+            TrBdf2::stage_coeffs(TrBdf2Phase::Bdf2, h, 0.0),
+            TrBdf2::phase_coeffs(TrBdf2Phase::Bdf2, h)
+        );
+    }
+
+    #[test]
+    fn trbdf2_stage_coeffs_pass_through_with_history() {
+        // With real history (prev_h > 0) the TR stage keeps the full
+        // trapezoid weights from phase_coeffs.
+        let h = 1e-3;
+        assert_eq!(
+            TrBdf2::stage_coeffs(TrBdf2Phase::Trapezoidal, h, 2e-4),
+            TrBdf2::phase_coeffs(TrBdf2Phase::Trapezoidal, h)
+        );
+    }
+
+    #[test]
     fn milne_lte_is_zero_for_constant_charge() {
         // Constant charge (no dynamics) → linear extrapolation exact → 0.
         let q = [1e-9, 1e-9, 1e-9];
