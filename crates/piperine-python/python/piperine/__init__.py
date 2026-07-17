@@ -46,6 +46,8 @@ __all__ = [
     "Behavior",
     "Selection",
     "Node",
+    # live session (compile once, set, re-run)
+    "LiveSession",
     # analyses
     "OpResult",
     "Trace",
@@ -217,6 +219,20 @@ class Design:
         """
         return self._native.select(path)
 
+    def compile(self, module: str | None = None) -> LiveSession:
+        """Compile a module **once** into a :class:`LiveSession`.
+
+        ``module = None`` compiles the design's top module (raises
+        ``ValueError`` when no unambiguous top exists). The session holds the
+        JIT-compiled circuit; ``set`` + re-run analyses never recompile.
+        """
+        if module is not None:
+            return self.module(module).compile()
+        top = self.top()
+        if top is None:
+            raise ValueError("design has no unambiguous top module; pass a module name")
+        return top.compile()
+
 
 class Module:
     """A reflected view of one POM module (spec AC14) + the four analyses.
@@ -316,6 +332,98 @@ class Module:
         native Python ``for`` loops.
         """
         self._native.stage(label, param, value)
+
+    def compile(self) -> LiveSession:
+        """Compile this module **once** into a :class:`LiveSession`.
+
+        Currently staged overrides are baked into the compilation; the
+        parent :class:`Design` stays untouched.
+        """
+        return LiveSession(self._native.compile())
+
+
+class LiveSession:
+    """A compiled circuit held live across analyses (compile once, set,
+    re-run — the optimization-loop primitive).
+
+    Obtain one via :meth:`Design.compile` / :meth:`Module.compile`.
+    Elaboration + JIT happen exactly once; :meth:`set` writes parameters
+    directly on the compiled circuit through the solver's restamp path (no
+    re-elaboration, no re-JIT), and the analyses re-run on the same
+    compiled circuit. Addressing is the PHDL scheme: flat instance labels,
+    bundle fields flattened to ``{param}_{field}`` (e.g. ``model_is``).
+
+    Result objects are identical to :class:`Module`'s analyses (same
+    types, same readouts).
+    """
+
+    def __init__(self, _native: _piperine._LiveSession) -> None:
+        self._native = _native
+
+    @property
+    def rebuilds(self) -> int:
+        """How many automatic structural rebuilds this session performed
+        (``0`` until a structural set lands)."""
+        return self._native.rebuilds
+
+    def set(self, label: str, param: str, value: float) -> None:
+        """Write a parameter on the compiled circuit, effective from the
+        next analysis run.
+
+        Raises ``KeyError`` for an unknown instance label or parameter
+        (the message lists the element's parameters), ``ValueError`` for a
+        value outside the parameter's declared bounds — no partial apply.
+        """
+        self._native.set(label, param, value)
+
+    def schedule_set(self, t: float, label: str, param: str, value: float) -> None:
+        """Schedule ``set`` at simulation time ``t`` for the next
+        :meth:`tran` run.
+
+        The integrator lands exactly on ``t`` (forced breakpoint) and the
+        write applies there; several sets on the same parameter apply in
+        scheduling order (last write wins). Unknown names fail loud when
+        the set lands, same as :meth:`set`.
+        """
+        self._native.schedule_set(t, label, param, value)
+
+    # ── analyses on the held circuit (same shapes as Module's) ─────────────
+
+    def op(self, config: OpConfig | None = None) -> OpResult:
+        """Run a DC operating point on the held circuit (spec AC3 shape)."""
+        if config is None:
+            return self._native.op()
+        nodeset = config.nodeset if config.nodeset else None
+        return self._native.op(nodeset, config.solver)
+
+    def tran(self, config: TranConfig) -> Trace:
+        """Run a transient on the held circuit (spec AC6 shape), honoring
+        any pending :meth:`schedule_set` entries."""
+        step = config.step if config.step != 0.0 else None
+        ic = config.ic if config.ic else None
+        return self._native.tran(config.stop, step, config.start, ic, config.solver)
+
+    def ac(self, config: AcConfig) -> AcTrace:
+        """Run an AC small-signal sweep on the held circuit (spec AC8
+        shape)."""
+        logarithmic = config.scale in (Scale.Dec, Scale.Oct)
+        return self._native.ac(
+            config.fstart, config.fstop, config.points, logarithmic, config.solver
+        )
+
+    def noise(self, config: NoiseConfig) -> NoiseTrace:
+        """Run an output-referred noise analysis on the held circuit (spec
+        AC9 shape)."""
+        logarithmic = config.scale in (Scale.Dec, Scale.Oct)
+        return self._native.noise(
+            config.out,
+            config.fstart,
+            config.fstop,
+            config.points,
+            "gnd",
+            logarithmic,
+            config.solver,
+        )
 
 
 # ── load ──────────────────────────────────────────────────────────────────────

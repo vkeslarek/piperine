@@ -41,6 +41,11 @@ pub struct _LiveSession {
     circuit: CircuitInstance,
     info: CircuitBuildInfo,
     rebuilds: usize,
+    /// Scheduled live writes `(t, label, param, value)` for the next
+    /// transient (LIVE-06 from Python): drained into
+    /// `TransientSolver::schedule_set` when `tran` runs, in scheduling order
+    /// (last-write-wins per param, one breakpoint per entry).
+    pending_sets: Vec<(f64, String, String, f64)>,
 }
 
 impl _LiveSession {
@@ -69,6 +74,7 @@ impl _LiveSession {
             circuit,
             info,
             rebuilds: 0,
+            pending_sets: Vec::new(),
         })
     }
 
@@ -198,6 +204,15 @@ impl _LiveSession {
         Ok(_OpResult::new(op).with_resolver(self.instance_resolver()))
     }
 
+    /// Schedule a live parameter write at simulation time `t` for the next
+    /// `tran` run (LIVE-06 from Python): the integrator lands exactly on `t`
+    /// (unified breakpoint table) and the write applies there with the
+    /// discontinuity edge rules. Addressing and errors are the solver's —
+    /// unknown names fail loud when the set lands, same as the Rust path.
+    fn schedule_set(&mut self, t: f64, label: &str, param: &str, value: f64) {
+        self.pending_sets.push((t, label.to_string(), param.to_string(), value));
+    }
+
     /// Run a transient on the held circuit (LIVE-10); same signature and
     /// result shape as `_Module::tran` (LIVE-13 / PY-17).
     #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None))]
@@ -224,8 +239,22 @@ impl _LiveSession {
             .map_err(Self::analysis_err)?;
         tran.policy = config.to_policy();
         tran.apply_initial_conditions(ivs);
+        let scheduled: Vec<(f64, String, String, f64)> = self.pending_sets.drain(..).collect();
+        for (t, label, param, value) in &scheduled {
+            tran.schedule_set(*t, label, param, piperine_solver::abi::Value::Real(*value));
+        }
         let result = tran.solve().map_err(Self::analysis_err)?;
         drop(tran);
+        // The run ends with the scheduled values applied — mirror them into
+        // the build info (scheduling order = last-write-wins) so post-run
+        // `.i()` readbacks see the final parameters.
+        for (_, label, param, value) in &scheduled {
+            if let Some(inst) = self.info.instances.iter_mut().find(|i| &i.label == label)
+                && let Some(pidx) = inst.kernel.param_names().iter().position(|n| n == param)
+            {
+                inst.params[pidx] = *value;
+            }
+        }
         let trace = piperine_bench::Trace::new(result, Rc::new(self.info.clone()));
         Ok(_Trace::new(trace).with_resolver(self.instance_resolver()))
     }
