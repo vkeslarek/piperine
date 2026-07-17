@@ -1,0 +1,326 @@
+//! [`SimSession`] — owns a [`Design`] and runs analyses against it:
+//! stage → elaborate-and-solve → snapshot. Every analysis is a pure function
+//! of (design + staged overrides + config); nothing is remembered between
+//! calls.
+
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use piperine_codegen::device::{CircuitBuildInfo, CircuitCompiler};
+use piperine_lang::Design;
+use piperine_solver::prelude::{Context, Policy};
+
+use crate::error::Error;
+use crate::results::{NetLookup, OpResult};
+use crate::waveform::{AcTrace, NoiseTrace, Trace};
+
+/// Analysis configuration (tolerances + convergence tunables) read before an
+/// analysis runs.
+#[derive(Debug, Clone)]
+pub struct SolverConfig {
+    pub temperature: f64,
+    pub reltol: f64,
+    pub abstol: f64,
+    pub gmin: f64,
+    pub max_iter: usize,
+    pub dc_damp_tolerance: f64,
+}
+
+impl Default for SolverConfig {
+    fn default() -> Self {
+        let tol = piperine_solver::prelude::Tolerances::default();
+        let policy = Policy::default();
+        Self {
+            temperature: tol.temperature,
+            reltol: tol.reltol,
+            abstol: tol.abstol,
+            gmin: tol.gmin,
+            max_iter: policy.max_iter,
+            dc_damp_tolerance: policy.dc_damp_tolerance,
+        }
+    }
+}
+
+impl SolverConfig {
+    /// The shared solver [`Context`] (tolerances) this config maps to.
+    /// Public: hosts that drive `CircuitInstance` analyses directly (the
+    /// Python live session) reuse the same mapping.
+    pub fn to_context(&self) -> Context {
+        Context {
+            tolerances: piperine_solver::prelude::Tolerances {
+                temperature: self.temperature,
+                reltol: self.reltol,
+                abstol: self.abstol,
+                gmin: self.gmin,
+                ..Default::default()
+            },
+        }
+    }
+
+    /// The convergence tunables (MD-04): set on each analysis solver so
+    /// user `max_iter` / `dc_damp_tolerance` reach the Newton loop.
+    /// Public for the same host reuse as [`Self::to_context`].
+    pub fn to_policy(&self) -> Policy {
+        Policy {
+            max_iter: self.max_iter,
+            dc_damp_tolerance: self.dc_damp_tolerance,
+        }
+    }
+}
+
+/// A simulation session over one design + top module: staging area,
+/// elaborate-and-solve analyses, result snapshots.
+pub struct SimSession {
+    design: Design,
+    module: String,
+    /// Builds `@device`-annotated instances (SPEC Part VI §7).
+    provider: Option<Rc<dyn piperine_codegen::device::DeviceProvider>>,
+}
+
+impl SimSession {
+    pub fn new(design: Design, module: String) -> Self {
+        Self { design, module, provider: None }
+    }
+
+    /// Wire a plugin host as the device provider for this session's builds.
+    pub fn set_device_provider(
+        &mut self,
+        provider: Rc<dyn piperine_codegen::device::DeviceProvider>,
+    ) {
+        self.provider = Some(provider);
+    }
+
+    pub fn design(&self) -> &Design {
+        &self.design
+    }
+
+    pub fn module(&self) -> &str {
+        &self.module
+    }
+
+    /// Stage a parameter override on the instance labeled `label` (or the
+    /// session's own module, for an empty label) — consumed by the next
+    /// analysis.
+    pub fn stage(&self, label: &str, param: &str, value: piperine_lang::Value) {
+        self.design.set_param(label, param, value);
+    }
+
+    /// Apply staged overrides, lower to resolved bodies, build the circuit.
+    fn build_circuit(&self) -> Result<(piperine_solver::prelude::CircuitInstance, CircuitBuildInfo), Error> {
+        let applied = self.design.with_overrides_applied(&self.module)?;
+        let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
+        let mut compiler = CircuitCompiler::new(&applied, &bodies);
+        if let Some(provider) = &self.provider {
+            compiler = compiler.with_device_provider(provider.as_ref());
+        }
+        let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
+        circuit.init_digital()?;
+        circuit.rebuild_digital_topology();
+        Ok((circuit, info))
+    }
+
+    /// Run a DC operating-point analysis. `nodeset` (net name → volts) seeds
+    /// the Newton initial guess.
+    pub fn run_op(
+        &self,
+        config: &SolverConfig,
+        nodeset: Option<&HashMap<String, f64>>,
+    ) -> Result<OpResult, Error> {
+        let (mut circuit, info) = self.build_circuit()?;
+        let ivs = build_ivs(&info, nodeset, circuit.netlist())?;
+        let mut dc = circuit.dc(config.to_context())?;
+        dc.policy = config.to_policy();
+        dc.apply_initial_conditions(ivs);
+        let result = dc.solve()?;
+        drop(dc);
+        let digital = Self::snapshot_digital(&info, &circuit);
+        Ok(OpResult::new(result, digital, Rc::new(info)))
+    }
+
+    /// Compile-once DC sweep (MD-18): elaborate/JIT the circuit **once**,
+    /// then for each value restamp `label.param` on the already-compiled
+    /// circuit through the solver's [`CircuitInstance::set_element_param`]
+    /// path and re-run the operating point. Never re-elaborates or re-JITs
+    /// per point — that is an architecture defect, not a perf tweak.
+    ///
+    /// Returns one [`OpResult`] per value, in order. Each result's build
+    /// info carries the point's parameter value so device-internal current
+    /// recomputation (`.i(a, b)` on force-less two-terminal devices) reads
+    /// the swept value, not the build-time one.
+    pub fn run_op_sweep(
+        &self,
+        label: &str,
+        param: &str,
+        values: &[f64],
+        config: &SolverConfig,
+        nodeset: Option<&HashMap<String, f64>>,
+    ) -> Result<Vec<OpResult>, Error> {
+        let (mut circuit, mut info) = self.build_circuit()?;
+        let mut results = Vec::with_capacity(values.len());
+        for &v in values {
+            circuit.set_element_param(
+                label,
+                param,
+                piperine_solver::abi::Value::Real(v),
+            )?;
+            // Mirror the restamp into the build info: `.i()` recomputes a
+            // force-less two-terminal current from kernel + params.
+            if let Some(inst) = info.instances.iter_mut().find(|i| i.label == label)
+                && let Some(pidx) = inst.kernel.param_names().iter().position(|n| n == param)
+            {
+                inst.params[pidx] = v;
+            }
+            let ivs = build_ivs(&info, nodeset, circuit.netlist())?;
+            let mut dc = circuit.dc(config.to_context())?;
+            dc.policy = config.to_policy();
+            dc.apply_initial_conditions(ivs);
+            let result = dc.solve()?;
+            drop(dc);
+            let digital = Self::snapshot_digital(&info, &circuit);
+            results.push(OpResult::new(result, digital, Rc::new(info.clone())));
+        }
+        Ok(results)
+    }
+
+    /// The top module's digital net values as reals (0/1; X/Z read as NaN so
+    /// an assertion on an undriven net fails loud, never silently passes).
+    /// Public: hosts that drive `CircuitInstance` directly (the Python live
+    /// session) build the same [`OpResult`] digital snapshot.
+    pub fn snapshot_digital(
+        info: &CircuitBuildInfo,
+        circuit: &piperine_solver::prelude::CircuitInstance,
+    ) -> HashMap<String, f64> {
+        use piperine_solver::prelude::LogicValue;
+        info.digital_nets
+            .iter()
+            .map(|(name, &idx)| {
+                let v = match circuit.digital_state.nets.get(idx) {
+                    Some(LogicValue::Zero) => 0.0,
+                    Some(LogicValue::One) => 1.0,
+                    _ => f64::NAN,
+                };
+                (name.clone(), v)
+            })
+            .collect()
+    }
+
+    /// Run a transient analysis: same elaborate-and-solve recipe as
+    /// [`Self::run_op`], through `CircuitInstance::transient` instead of
+    /// `::dc`. `step: None` selects the adaptive stepper. `start` is the
+    /// earliest recorded time — the solver still integrates from t=0, but
+    /// steps with `t < start` are dropped from the trace. `ic` (net name →
+    /// volts) seeds the t=0 node voltages.
+    pub fn run_tran(
+        &self,
+        stop: f64,
+        step: Option<f64>,
+        start: f64,
+        config: &SolverConfig,
+        ic: Option<&HashMap<String, f64>>,
+    ) -> Result<Trace, Error> {
+        let (mut circuit, info) = self.build_circuit()?;
+        let ivs = build_ivs(&info, ic, circuit.netlist())?;
+        let opts = match step {
+            // SPICE is always adaptive; `step` is the initial dt for the
+            // PI controller. `step = 0` (the "auto" sentinel) seeds dt at
+            // stop/1000. Output interpolation onto the print grid is a
+            // follow-up (ROADMAP).
+            Some(dt) if dt > 0.0 => {
+                piperine_solver::prelude::TransientAnalysisOptions::new(stop, dt)
+            }
+            _ => piperine_solver::prelude::TransientAnalysisOptions::new(stop, stop * 1e-3),
+        }
+        .with_record_from(start);
+        let mut solver = circuit.transient(opts, config.to_context())?;
+        solver.policy = config.to_policy();
+        solver.apply_initial_conditions(ivs);
+        let result = solver.solve()?;
+        Ok(Trace::new(result, Rc::new(info)))
+    }
+
+    /// Run an AC small-signal sweep.
+    pub fn run_ac(
+        &self,
+        fstart: f64,
+        fstop: f64,
+        points: usize,
+        logarithmic: bool,
+        config: &SolverConfig,
+    ) -> Result<AcTrace, Error> {
+        let (mut circuit, info) = self.build_circuit()?;
+        let opts = piperine_solver::prelude::AcSweepAnalysisOptions {
+            start_frequency: fstart,
+            stop_frequency: fstop,
+            steps: points,
+            logarithmic,
+        };
+        let mut ac = circuit.ac(config.to_context())?;
+        ac.policy = config.to_policy();
+        let result = ac.solve_sweep(opts)?;
+        Ok(AcTrace::new(result, Rc::new(info)))
+    }
+
+    /// Run an output-referred noise analysis. `out` and `reference` are net
+    /// names resolved against the built circuit's net map (ground names map
+    /// to the reference node).
+    pub fn run_noise(
+        &self,
+        out: &str,
+        reference: &str,
+        fstart: f64,
+        fstop: f64,
+        points: usize,
+        logarithmic: bool,
+        config: &SolverConfig,
+    ) -> Result<NoiseTrace, Error> {
+        let (mut circuit, info) = self.build_circuit()?;
+        let out = resolve_net(&info, out)?;
+        let reference = resolve_net(&info, reference)?;
+        let opts = piperine_solver::prelude::NoiseAnalysisOptions {
+            sweep_options: piperine_solver::prelude::AcSweepAnalysisOptions {
+                start_frequency: fstart,
+                stop_frequency: fstop,
+                steps: points,
+                logarithmic,
+            },
+            output_node: out,
+            reference_node: reference,
+            input_source_name: None,
+        };
+        let result = circuit.noise(opts, config.to_context())?.solve()?;
+        Ok(NoiseTrace::new(result))
+    }
+}
+
+/// Resolve a host-visible net name to a solver node identifier.
+fn resolve_net(
+    info: &CircuitBuildInfo,
+    name: &str,
+) -> Result<piperine_solver::prelude::NodeIdentifier, Error> {
+    info.net_node(name)
+        .ok_or_else(|| Error::Measurement(format!("net `{name}` is not addressable")))
+}
+
+/// Build solver initial-value hints from a net-name → volts map. Keys
+/// resolve through the built circuit's net map; ground keys are skipped
+/// (ground has no index).
+fn build_ivs(
+    info: &CircuitBuildInfo,
+    map: Option<&HashMap<String, f64>>,
+    netlist: &piperine_solver::prelude::Netlist,
+) -> Result<Vec<piperine_solver::abi::InitialValue<piperine_solver::abi::AnalogReference, f64>>, Error> {
+    use piperine_solver::abi::{AnalogVariable, InitialValue};
+    let mut ivs = Vec::new();
+    if let Some(map) = map {
+        for (name, &value) in map {
+            let node = resolve_net(info, name)?;
+            if let Some(reference) = netlist.reference_for(&AnalogVariable::Node(node)) {
+                ivs.push(InitialValue {
+                    reference: reference.clone(),
+                    value,
+                });
+            }
+        }
+    }
+    Ok(ivs)
+}

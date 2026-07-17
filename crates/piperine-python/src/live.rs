@@ -17,7 +17,7 @@ use std::rc::Rc;
 use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
-use piperine_bench::{OpResult, SimSession};
+use piperine::{OpResult, SimSession};
 use piperine_codegen::device::{CircuitBuildInfo, CircuitCompiler};
 use piperine_lang::{Design, Value};
 use piperine_solver::abi::{AnalogVariable, InitialValue, Invalidation};
@@ -537,7 +537,7 @@ impl _LiveSession {
 
         let mut result = piperine_solver::prelude::TransientAnalysisResult::new(steps);
         result.set_stats(agg);
-        let trace = piperine_bench::Trace::new(result, Rc::new(self.info.clone()));
+        let trace = piperine::Trace::new(result, Rc::new(self.info.clone()));
         Ok(_Trace::new(trace).with_resolver(self.instance_resolver()))
     }
 
@@ -563,7 +563,7 @@ impl _LiveSession {
         ac.policy = config.to_policy();
         let result = ac.solve_sweep(opts).map_err(Self::analysis_err)?;
         drop(ac);
-        let trace = piperine_bench::AcTrace::new(result, Rc::new(self.info.clone()));
+        let trace = piperine::AcTrace::new(result, Rc::new(self.info.clone()));
         Ok(_AcTrace::new(trace))
     }
 
@@ -601,7 +601,7 @@ impl _LiveSession {
             .map_err(Self::analysis_err)?
             .solve()
             .map_err(Self::analysis_err)?;
-        let trace = piperine_bench::NoiseTrace::new(result);
+        let trace = piperine::NoiseTrace::new(result);
         Ok(_NoiseTrace::new(trace))
     }
 }

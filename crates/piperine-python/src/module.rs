@@ -10,7 +10,7 @@ use std::rc::Rc;
 use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
-use piperine_bench::{SimSession, SolverConfig};
+use piperine::{SimSession, SolverConfig};
 use piperine_lang::parse::ast::{BehaviorKind, Direction};
 use piperine_lang::{Behavior, Design, Instance, Module, Param, Port, Value, ValueType, Wire};
 
@@ -94,9 +94,9 @@ impl _Module {
         crate::instance::InstanceResolver::new(Rc::clone(&self.design), self.name.clone())
     }
 
-    /// Map the facade's `Solver` dataclass onto the bench [`SolverConfig`].
+    /// Map the facade's `Solver` dataclass onto the host [`SolverConfig`].
     /// Duck-typed (reads the prelude `bundle Solver` fields by attribute) so
-    /// the facade needs no mirrored pyclass; `None` keeps the bench defaults.
+    /// the facade needs no mirrored pyclass; `None` keeps the defaults.
     /// A missing/mistyped attribute fails loud, never a silent default.
     /// Shared with [`crate::live::_LiveSession`] (LIVE-13: one config mapping).
     pub(crate) fn solver_config(solver: Option<&Bound<'_, PyAny>>) -> PyResult<SolverConfig> {
@@ -109,24 +109,6 @@ impl _Module {
             sc.max_iter = obj.getattr("max_iter")?.extract()?;
         }
         Ok(sc)
-    }
-
-    /// Build the `Map<Net, Real>` bench value from a Python `{net: volts}`
-    /// dict (`OpConfig.nodeset` / `TranConfig.ic`). `None` → `Unit` (absent).
-    fn net_map(map: Option<HashMap<String, f64>>) -> Value {
-        match map {
-            Some(map) => {
-                let pairs: Vec<(Value, Value)> = map
-                    .into_iter()
-                    .map(|(k, v)| {
-                        let netref = piperine_bench::NetRef { name: k };
-                        (Value::Object(Rc::new(netref)), Value::Real(v))
-                    })
-                    .collect();
-                Value::Map(Rc::new(RefCell::new(pairs)))
-            }
-            None => Value::Unit,
-        }
     }
 }
 
@@ -183,7 +165,7 @@ impl _Module {
     ) -> PyResult<_OpResult> {
         let session = self.session()?;
         let result = session
-            .run_op(&Self::solver_config(solver)?, &Self::net_map(nodeset))
+            .run_op(&Self::solver_config(solver)?, nodeset.as_ref())
             .map_err(Self::analysis_err)?;
         Ok(_OpResult::new(result).with_resolver(self.instance_resolver()))
     }
@@ -203,7 +185,7 @@ impl _Module {
     ) -> PyResult<_Trace> {
         let session = self.session()?;
         let result = session
-            .run_tran(stop, step, start, &Self::solver_config(solver)?, &Self::net_map(ic))
+            .run_tran(stop, step, start, &Self::solver_config(solver)?, ic.as_ref())
             .map_err(Self::analysis_err)?;
         Ok(_Trace::new(result).with_resolver(self.instance_resolver()))
     }

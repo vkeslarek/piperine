@@ -167,6 +167,20 @@ solver-level restamp/staging path on the already-compiled circuit.
 
 **Status:** Locked (user, 2026-07-16). Implementation: spice-stdlib T12.
 
+### MD-19: Root crate is the library face (lib-only; bin in cli)
+
+The root `piperine` crate is the complete external Rust view of the project:
+`src/lib.rs` hosts the session/results/waveform plumbing plus a `prelude`
+re-exporting the lang/codegen/solver public faces. The root is **lib-only** —
+the `piperine` binary target lives in `piperine-cli` (`[[bin]] name =
+"piperine"`) because root(bin)→cli→python→root(lib) would close a cargo
+package cycle. Dependency flow: `root(lib) → {lang, codegen, solver}`;
+`python → root(lib)`; `cli → {python, root(lib), project}` + bin.
+`cargo install` targets `crates/piperine-cli`.
+
+**Status:** Locked (user, 2026-07-17 — bench-removal topology option B).
+Implementation: bench-removal T1.
+
 ---
 
 ## Handoff Snapshot

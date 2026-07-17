@@ -435,7 +435,7 @@ mod Divider() {
     #[test]
     fn stage_overrides_next_analysis() -> PyResult<()> {
         use pyo3::types::PyAnyMethods;
-        use piperine_bench::{NetRef, OpResult as BenchOpResult};
+        use piperine::{NetRef, OpResult as HostOpResult};
 
         let path = std::env::temp_dir().join("piperine_python_p6_stage_test.phdl");
         std::fs::write(&path, ANALYSIS_PHDL)?;
@@ -455,7 +455,7 @@ mod Divider() {
                     name: "mid".to_string(),
                 };
                 // `inner` is `Rc<OpResult>`; deref through Rc to call `v`.
-                let v = BenchOpResult::v(&*pyref.inner, &mid_ref, None)
+                let v = HostOpResult::v(&*pyref.inner, &mid_ref, None)
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?;
                 Ok(v)
             };
@@ -487,7 +487,7 @@ mod Divider() {
                 let mid_ref = NetRef {
                     name: "mid".to_string(),
                 };
-                BenchOpResult::v(&*pyref.inner, &mid_ref, None)
+                HostOpResult::v(&*pyref.inner, &mid_ref, None)
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?
             };
             assert!(

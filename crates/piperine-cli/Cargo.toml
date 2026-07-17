@@ -3,6 +3,13 @@ name = "piperine-cli"
 version.workspace = true
 edition.workspace = true
 
+# The `piperine` binary lives here (MD-19): the root crate is lib-only — the
+# CLI depends on piperine-python (embedded CPython for `piperine run`), which
+# depends on the root lib, so a root bin would close a package cycle.
+[[bin]]
+name = "piperine"
+path = "src/main.rs"
+
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
     piperine-lang = { version = "0.1.0", path = "../piperine-lang" }

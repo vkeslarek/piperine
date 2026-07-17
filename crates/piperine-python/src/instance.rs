@@ -12,7 +12,7 @@ use std::rc::Rc;
 use pyo3::exceptions::{PyKeyError, PyRuntimeError};
 use pyo3::prelude::*;
 
-use piperine_bench::{OpResult, Trace};
+use piperine::{OpResult, Trace};
 use piperine_lang::pom::node::Node;
 use piperine_lang::Design;
 
@@ -215,7 +215,7 @@ impl _InstanceView {
         &self,
         port_a: &str,
         port_b: Option<&str>,
-    ) -> PyResult<(piperine_bench::NetRef, Option<piperine_bench::NetRef>)> {
+    ) -> PyResult<(piperine::NetRef, Option<piperine::NetRef>)> {
         let a = self.resolver.terminal_net(&self.label, port_a)?;
         let b = match port_b {
             Some(p) => Some(self.resolver.terminal_net(&self.label, p)?),
@@ -292,11 +292,11 @@ impl _InstanceView {
     }
 }
 
-/// Construct a bench [`piperine_bench::NetRef`] from a net name — the typed
+/// Construct a bench [`piperine::NetRef`] from a net name — the typed
 /// handle every bench readout takes (MD-13: lives on the file that owns the
 /// conversion).
-fn bench_net(name: &str) -> piperine_bench::NetRef {
-    piperine_bench::NetRef {
+fn bench_net(name: &str) -> piperine::NetRef {
+    piperine::NetRef {
         name: name.to_string(),
     }
 }

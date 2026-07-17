@@ -19,7 +19,7 @@ use pyo3::exceptions::{PyKeyError, PyRuntimeError};
 use pyo3::prelude::*;
 
 use num_complex::Complex64;
-use piperine_bench::{AcTrace, ComplexWaveform, NetRef, NoiseTrace, OpResult, Trace, Waveform};
+use piperine::{AcTrace, ComplexWaveform, NetRef, NoiseTrace, OpResult, Trace, Waveform};
 use piperine_solver::abi::SolverStats;
 
 use crate::instance::InstanceResolver;
@@ -92,7 +92,7 @@ pub(crate) fn readout_err<E: std::fmt::Display>(e: E) -> PyErr {
 }
 
 /// `_OpResult` — the typed `$op()` result (PY-06). Holds the immutable DC
-/// snapshot produced by [`piperine_bench::session::SimSession::run_op`] behind
+/// snapshot produced by [`piperine::session::SimSession::run_op`] behind
 /// `Rc` so a PY-13 instance sub-view can share it cheaply. `.v/.i` (PY-06) and
 /// `__getitem__` (PY-11 / spec AC5) resolve nets by name through the bench's
 /// own typed readout — the same call the bench makes (uniform-shape proof).

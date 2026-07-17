@@ -22,20 +22,11 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-dirs = "5.0"
-serde = { workspace = true }
-bincode = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-piperine-cli = { version = "0.1.1", path = "crates/piperine-cli" }
-piperine-project = { version = "0.1.1", path = "crates/piperine-project" }
-
-[dev-dependencies]
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-
-[build-dependencies]
-bindgen = "0.72.1"
+thiserror.workspace = true
+num-complex.workspace = true
+piperine-lang = { version = "0.1.0", path = "crates/piperine-lang" }
+piperine-codegen = { version = "0.1.0", path = "crates/piperine-codegen" }
+piperine-solver = { version = "0.1.0", path = "crates/piperine-solver" }
 
 [profile.dev.package.faer]
 opt-level = 3

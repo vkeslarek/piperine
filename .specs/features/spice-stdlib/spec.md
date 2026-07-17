@@ -157,21 +157,21 @@ drift again.
 
 | Requirement ID | Story | Phase | Status |
 |---|---|---|---|
-| SPICE-01 | P1 builtin use | Design | Pending |
-| SPICE-02 | P1 builtin use (elab clean) | Design | Pending |
-| SPICE-03 | P1 builtin use (smoke tests) | Design | Pending |
-| SPICE-04 | P1 builtin use (shadowing) | Design | Pending |
-| SPICE-05 | P1 validation (harness compare) | Design | Pending |
-| SPICE-06 | P1 validation (skip w/o ngspice) | Design | Pending |
-| SPICE-07 | P1 validation (loud failure) | Design | Pending |
-| SPICE-08 | P1 validation (CSV sweeps) | Design | Pending |
-| SPICE-09 | P1 correctness (MOS1 op) | Design | Pending |
-| SPICE-10 | P1 correctness (MOS1 sweeps) | Design | Pending |
-| SPICE-11 | P1 correctness (JFET) | Design | Pending |
-| SPICE-12 | P1 correctness (BJT saturation) | Design | Pending |
-| SPICE-13 | P1 correctness (BJT mirror) | Design | Pending |
-| SPICE-14 | P2 retirement | - | Pending |
-| SPICE-15 | P2 docs | - | Pending |
+| SPICE-01 | P1 builtin use | Done | Verified |
+| SPICE-02 | P1 builtin use (elab clean) | Done | Verified |
+| SPICE-03 | P1 builtin use (smoke tests) | Done | Verified |
+| SPICE-04 | P1 builtin use (shadowing) | Done | Verified |
+| SPICE-05 | P1 validation (harness compare) | Done | Verified |
+| SPICE-06 | P1 validation (skip w/o ngspice) | Done | Verified |
+| SPICE-07 | P1 validation (loud failure) | Done | Verified |
+| SPICE-08 | P1 validation (CSV sweeps) | Done | Verified |
+| SPICE-09 | P1 correctness (MOS1 op) | Done | Verified |
+| SPICE-10 | P1 correctness (MOS1 sweeps) | Done | Verified |
+| SPICE-11 | P1 correctness (JFET) | Done | Verified |
+| SPICE-12 | P1 correctness (BJT saturation) | Done | Verified |
+| SPICE-13 | P1 correctness (BJT mirror) | Done | Verified |
+| SPICE-14 | P2 retirement | Done | Verified |
+| SPICE-15 | P2 docs | Done | Verified |
 
 **Coverage:** 15 total, 0 mapped to tasks, 15 unmapped ⚠️
 
