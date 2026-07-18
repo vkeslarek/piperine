@@ -181,18 +181,21 @@ package cycle. Dependency flow: `root(lib) → {lang, codegen, solver}`;
 **Status:** Locked (user, 2026-07-17 — bench-removal topology option B).
 Implementation: bench-removal T1. **Superseded by MD-20 (2026-07-18).**
 
-### MD-20: `piperine-api` is the library face; root is the CLI only
+### MD-20: `piperine-api` is the library face; root is a thin re-export shell
 
 A dedicated `crates/piperine-api`, pure Rust: the host API
-(session/results/waveform/hooks) plus the ABI contracts (device/plugin
-traits). `piperine-python` is a thin binding layer over it. The root
-`piperine` package is **only the CLI export** — the `piperine` command line —
-nothing library-shaped lives in root `src/`. Supersedes MD-19. Dependency
-flow: `api → {lang, codegen, solver}`; `python → api`; `root(bin/cli) →
-{python, api, project}` — no cycle.
+(session/results/waveform/hooks/error/prelude). `piperine-python` is a thin
+binding layer over it. The root `piperine` package becomes a **thin
+re-export shell** (`pub use piperine_api::*`) so Rust hosts keep
+`use piperine::…` — no code of its own in root `src/`. The `piperine` binary
+stays in `piperine-cli` (amended 2026-07-18: user chose re-export shell over
+root-absorbs-CLI). Supersedes MD-19. Dependency flow:
+`api → {lang, codegen, solver}`; `python → api`; `root(shell) → api`;
+`cli → {python, api, project}` + bin — no cycle. Device/plugin ABI-contract
+consolidation into the api crate is deferred to the P2/P5 features.
 
-**Status:** Locked (user, 2026-07-18). Implementation: pending (first step of
-the V1 restructuring — P2/P3/P5 build on this topology).
+**Status:** Locked (user, 2026-07-18; shell amendment same day).
+Implementation: feature `api-crate`.
 
 ### MD-21: Plugin backends are native + Python only
 
