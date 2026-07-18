@@ -153,7 +153,7 @@ green; gate quick.
 **Tests**: unit+integration · **Gate**: quick
 **Commit**: `feat(codegen): transition() companion with breakpoints`
 
-### T9: `idt` AC stamp
+### T9: ✅ DONE — `idt` AC stamp (commit 6dedca1)
 **What**: `load_ac` stamps `X/(jω)` for idt terms. Integrator circuit:
 −20 dB/dec + −90° across 4 decades.
 **Where**: `device/analog.rs`, `jit/analog.rs`, tests

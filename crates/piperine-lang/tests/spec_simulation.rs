@@ -1210,6 +1210,74 @@ fn sim_tran_transition_ramps_step_into_rc() {
     assert!((late - 1.0).abs() < 0.03, "settled after tr: V(out) = {late}");
 }
 
+/// SC-11 — two `ac_stim` terms in one contribution sum as phasors: the
+/// combined source `1∠0 + 1∠60°` equals the equivalent two-source circuit
+/// (each stimulus in its own series source) exactly, and anchors to
+/// (1.5, √3/2).
+#[test]
+fn sim_ac_multiple_ac_stim_superposition() {
+    use piperine_solver::prelude::AcSweepAnalysisOptions;
+
+    let solve = |src: &str| {
+        let (design, prog) = elaborate_and_lower(src);
+        let mut compiler = CircuitCompiler::new(&design, &prog);
+        let mut circuit = compiler.build_circuit("Top").expect("build circuit");
+        circuit.init_digital().unwrap();
+        circuit.rebuild_digital_topology();
+        let sweep = AcSweepAnalysisOptions {
+            start_frequency: 1e3,
+            stop_frequency: 1e5,
+            steps: 3,
+            logarithmic: true,
+        };
+        circuit.ac(Context::default()).unwrap().solve_sweep(sweep).unwrap()
+    };
+
+    // One contribution carrying two stimuli: 1∠0 + 1∠60°.
+    let combined = solve("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod VSource ( inout p : Electrical, inout n : Electrical ) { }
+        analog VSource { V(p, n) <+ ac_stim(1.0, 0.0) + ac_stim(1.0, 1.0471975511965976); }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Top ( inout out : Electrical ) {
+            v1 : VSource ( out, gnd );
+            r1 : Resistor ( out, gnd );
+        }
+    ");
+    // The equivalent two-source circuit: one stimulus per series source.
+    let reference = solve("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod V1 ( inout p : Electrical, inout n : Electrical ) { }
+        analog V1 { V(p, n) <+ ac_stim(1.0, 0.0); }
+        mod V2 ( inout p : Electrical, inout n : Electrical ) { }
+        analog V2 { V(p, n) <+ ac_stim(1.0, 1.0471975511965976); }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Top ( inout n1 : Electrical, inout out : Electrical ) {
+            v1 : V1 ( n1, gnd );
+            v2 : V2 ( out, n1 );
+            r1 : Resistor ( out, gnd );
+        }
+    ");
+
+    let out_of = |result: &piperine_solver::prelude::AcAnalysisResult, node: usize, k: usize| {
+        let step = result.get(k).expect("sweep point");
+        *step.get_node(&NodeIdentifier::Anonymous(node)).expect("V(out)")
+    };
+    for k in 0..3 {
+        let got = out_of(&combined, 1, k);
+        let want = out_of(&reference, 2, k);
+        assert!(
+            (got - want).norm() < 1e-12,
+            "point {k}: combined {got} vs two-source {want}"
+        );
+        // Phasor anchor: 1∠0 + 1∠60° = 1.5 + j·√3/2.
+        assert!((got.re - 1.5).abs() < 1e-9, "point {k}: re = {}", got.re);
+        assert!((got.im - 0.8660254037844386).abs() < 1e-9, "point {k}: im = {}", got.im);
+    }
+}
+
 /// SC-10 — `idt` stamps `X/(jω)` in AC: an idt transconductor into a 1 Ω
 /// load is an integrator — |H| falls exactly 20 dB/dec and the phase sits
 /// at −90° across 4 decades.

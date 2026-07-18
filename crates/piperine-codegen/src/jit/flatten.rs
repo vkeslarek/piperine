@@ -1224,30 +1224,25 @@ fn ident_str(e: Option<&PomExpr>) -> Option<String> {
     }
 }
 
-/// Split a contribution expression around a single `$ac_stim` SysCall.
+/// Split a contribution expression around its `$ac_stim` SysCalls.
+///
+/// A single stimulus keeps the direct path: magnitude extracted as
+/// `with_mag − without` (exact for the linear-in-stimulus embeddings
+/// contributions use), phase taken from the call. Multiple stimuli sum as
+/// phasors: each occurrence's magnitude is extracted the same way (that
+/// occurrence at its mag, the rest at 0), then `(re, im) = Σ mag_k·(cos φ_k,
+/// sin φ_k)` and `(mag, phase) = (hypot(re, im), atan2(im, re))`.
 fn split_ac_stim(expr: PomExpr) -> Result<(PomExpr, Option<(PomExpr, PomExpr)>), CodegenError> {
     let mut count = 0usize;
-    let mut phase_expr = None;
     visit_all(&expr, &mut |e| {
-        if let PomExpr::SysCall(name, args) = e
+        if let PomExpr::SysCall(name, _) = e
             && name == "$ac_stim" {
                 count += 1;
-                phase_expr = args.get(1).cloned();
             }
     });
     if count == 0 {
         return Ok((expr, None));
     }
-    if count > 1 {
-        return Err(CodegenError::unsupported("multiple `ac_stim` calls in one contribution"));
-    }
-    let with_mag = rewrite_expr(&expr, &mut |e| {
-        if let PomExpr::SysCall(name, args) = e
-            && name == "$ac_stim" {
-                return args.first().cloned().unwrap_or(lit(1.0));
-            }
-        e.clone()
-    });
     let without = rewrite_expr(&expr, &mut |e| {
         if let PomExpr::SysCall(name, _) = e
             && name == "$ac_stim" {
@@ -1255,7 +1250,46 @@ fn split_ac_stim(expr: PomExpr) -> Result<(PomExpr, Option<(PomExpr, PomExpr)>),
             }
         e.clone()
     });
-    let mag = binary(BinaryOp::Sub, with_mag, without.clone());
-    let phase = phase_expr.unwrap_or(lit(0.0));
+    let math1 = |name: &str, a: PomExpr| PomExpr::Call(Box::new(PomExpr::Ident(name.to_string())), vec![a]);
+    let math2 = |name: &str, a: PomExpr, b: PomExpr| PomExpr::Call(Box::new(PomExpr::Ident(name.to_string())), vec![a, b]);
+    if count == 1 {
+        let mut phase_expr = None;
+        let with_mag = rewrite_expr(&expr, &mut |e| {
+            if let PomExpr::SysCall(name, args) = e
+                && name == "$ac_stim" {
+                    phase_expr = args.get(1).cloned();
+                    return args.first().cloned().unwrap_or(lit(1.0));
+                }
+            e.clone()
+        });
+        let mag = binary(BinaryOp::Sub, with_mag, without.clone());
+        let phase = phase_expr.unwrap_or(lit(0.0));
+        return Ok((without, Some((mag, phase))));
+    }
+    // Phasor sum: one magnitude extraction per occurrence, then rectangular
+    // accumulation so differing phases cancel/reinforce correctly.
+    let mut re = lit(0.0);
+    let mut im = lit(0.0);
+    for k in 0..count {
+        let mut seen = 0usize;
+        let mut phase_k = lit(0.0);
+        let with_k = rewrite_expr(&expr, &mut |e| {
+            if let PomExpr::SysCall(name, args) = e
+                && name == "$ac_stim" {
+                    let this = seen == k;
+                    if this {
+                        phase_k = args.get(1).cloned().unwrap_or(lit(0.0));
+                    }
+                    seen += 1;
+                    return if this { args.first().cloned().unwrap_or(lit(1.0)) } else { lit(0.0) };
+                }
+            e.clone()
+        });
+        let mag_k = binary(BinaryOp::Sub, with_k, without.clone());
+        re = binary(BinaryOp::Add, re, binary(BinaryOp::Mul, mag_k.clone(), math1("cos", phase_k.clone())));
+        im = binary(BinaryOp::Add, im, binary(BinaryOp::Mul, mag_k, math1("sin", phase_k)));
+    }
+    let mag = math2("hypot", re.clone(), im.clone());
+    let phase = math2("atan2", im, re);
     Ok((without, Some((mag, phase))))
 }
