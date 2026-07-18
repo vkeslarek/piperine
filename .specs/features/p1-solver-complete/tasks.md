@@ -10,8 +10,8 @@ host surfaces (`run_sens`/`run_pss`) are born in `piperine-api`.
 ---
 
 **Design**: `.specs/features/p1-solver-complete/design.md`
-**Status**: In Progress — T1–T15 + T17 done; T16 BLOCKED (codegen gap, see
-below); T18 next, 2026-07-18
+**Status**: In Progress — T1–T15, T17, T18 done; T16 BLOCKED (codegen gap,
+see below); Phase 5 next at T19, 2026-07-18
 **Baseline**: whatever `api-crate` closes at (≥449 passed / 5 ignored)
 
 ---
