@@ -1,5 +1,5 @@
 // Resistive voltage divider — the "hello world" of analog verification.
-// The bench checks the exact DC transfer ratio and the branch current, then
+// The python twin checks the exact DC transfer ratio and the branch current, then
 // sweeps the load leg and verifies the divider equation at every point.
 
 discipline Electrical {

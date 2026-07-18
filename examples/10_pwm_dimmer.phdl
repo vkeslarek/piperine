@@ -1,6 +1,6 @@
 // PWM dimmer: an `@timer` event toggles the drive at 10 kHz (50% duty),
 // the switch forces a 0/5 V square wave, and an RC (τ = 1 ms) extracts the
-// average. The bench checks the settled mean is VDD/2 with small ripple.
+// average. The python twin checks the settled mean is VDD/2 with small ripple.
 
 discipline Electrical {
     potential v : Real;

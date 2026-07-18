@@ -8,9 +8,8 @@ use std::path::{Path, PathBuf};
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::Permissions;
 
-/// The host context handed to hooks, bench tasks, and scripts. Carries the
-/// owning plugin's permissions and the project root every path resolves
-/// against.
+/// The host context handed to hooks and scripts. Carries the owning
+/// plugin's permissions and the project root every path resolves against.
 pub struct HostCtx {
     plugin: String,
     project_root: PathBuf,

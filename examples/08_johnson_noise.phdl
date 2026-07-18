@@ -1,5 +1,5 @@
 // Johnson–Nyquist noise of a resistor, band-limited by its own parallel
-// capacitance. The bench checks physics, not plumbing: the output PSD
+// capacitance. The python twin checks physics, not plumbing: the output PSD
 // plateau is 4kTR and the integrated noise approaches the classic kT/C.
 
 discipline Electrical {

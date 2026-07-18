@@ -125,3 +125,24 @@ fn explicit_file_runs_only_it() {
     let text = combined(&out);
     assert!(text.contains("1 run, 1 passed, 0 failed"), "only the named file: {text}");
 }
+
+/// `piperine run <file>.phdl` no longer executes bench entry points (the
+/// bench was removed): it elaborates the file and prints the migration
+/// notice pointing at `*_tb.py` testbenches.
+#[test]
+fn run_phdl_elaborates_and_points_at_testbenches() {
+    let project = scratch_project(&[(
+        "src/main.phdl",
+        "discipline Electrical { potential v: Real; flow i: Real; }\n\
+         mod Top() { wire gnd : Electrical; }\n",
+    )]);
+    let out = Command::new(env!("CARGO_BIN_EXE_piperine"))
+        .arg("run")
+        .current_dir(project.path())
+        .output()
+        .expect("spawn piperine run");
+    let text = combined(&out);
+    assert!(text.contains("elaborates"), "elaboration reported: {text}");
+    assert!(text.contains("bench") && text.contains("removed"), "removal named: {text}");
+    assert!(text.contains("_tb.py"), "migration path shown: {text}");
+}

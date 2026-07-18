@@ -1,6 +1,6 @@
 // Coulomb counter: battery state-of-charge as the running integral (`idt`)
 // of the load current. 100 C capacity discharged at 1 A drops 1 %/s; the
-// bench validates the ramp and the time of the 95 % crossing.
+// python twin validates the ramp and the time of the 95 % crossing.
 
 discipline Electrical {
     potential v : Real;

@@ -68,7 +68,7 @@ impl Item {
     }
 
     /// The declared name of this item, if it has one (`use` and `impl`
-    /// declarations don't). A behavior/bench names the module it attaches to.
+    /// declarations don't). A behavior names the module it attaches to.
     pub fn name(&self) -> Option<&str> {
         match self {
             Item::UseDecl(_) | Item::ImplDecl(_) => None,
@@ -428,8 +428,8 @@ pub struct Block {
 #[derive(Debug, Clone)]
 pub enum Stmt {
     /// `var name [: Type] = expr;` — the type annotation is optional here
-    /// (unlike a `mod`-body `var`): a `bench`/interpreted fn never needs a
-    /// static type, so an omitted `ty` infers from `default` at runtime.
+    /// (unlike a `mod`-body `var`): an omitted `ty` infers from `default`
+    /// at runtime.
     /// A statically-elaborated fn/method body (an `impl` or global `fn`)
     /// still requires an explicit type (SPEC Part I §9) — the elaborator
     /// enforces that, not the parser.
@@ -738,8 +738,8 @@ pub enum Expr {
     /// `(e)` with no comma is a parenthesized group, not a 1-tuple.
     Tuple(Vec<Expr>),
     BundleLit { ty: Type, fields: Vec<(String, Expr)> },
-    /// A `Map { k: v, ... }` literal (piperine-bench/docs/SPEC.md §5.1 — `Map<K, V>`,
-    /// used for `ic`/`nodeset` per-node hints). `Map {}` is the empty map.
+    /// A `Map { k: v, ... }` literal (`Map<K, V>`, used for `ic`/`nodeset`
+    /// per-node hints). `Map {}` is the empty map.
     MapLit(Vec<(Expr, Expr)>),
     /// A `Set { a, b, c }` literal. `Set {}` is the empty set.
     SetLit(Vec<Expr>),

@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 2,
+  "next_id": 5,
   "lessons": [
     {
       "id": "L-001",
@@ -22,6 +22,60 @@
       ],
       "created": "2026-07-17T19:20:56Z",
       "last_seen": "2026-07-17T19:20:56Z"
+    },
+    {
+      "id": "L-002",
+      "key": "surviving_mutant::docstring walk gates must assert an object s own doc or dict doc never inspect getdoc python 3 12 getdoc inherits docstrings from documented non object bases enum so removing a subclass s own class docstring passes the gate",
+      "text": "Docstring-walk gates must assert an object's own __doc__ (or __dict__ doc), never inspect.getdoc: Python 3.12+ getdoc inherits docstrings from documented non-object bases (Enum), so removing a subclass's own class docstring passes the gate.",
+      "signal": "surviving_mutant",
+      "scope": "crates/piperine-python/tests",
+      "status": "candidate",
+      "features": [
+        "bench-removal"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "facade_hygiene.rs:23 / mutant M6a (crates/piperine-python/tests)"
+      ],
+      "created": "2026-07-18T00:55:28Z",
+      "last_seen": "2026-07-18T00:55:28Z"
+    },
+    {
+      "id": "L-003",
+      "key": "ac_gap::vocabulary removal features must grep string literals and error messages not just identifiers ast bench root module not found survived total bench removal in a reachable pub api error because greps targeted code symbols only",
+      "text": "Vocabulary-removal features must grep string literals and error messages, not just identifiers/AST: 'bench root module not found' survived total bench removal in a reachable pub-API error because greps targeted code symbols only.",
+      "signal": "ac_gap",
+      "scope": "crates/piperine-lang",
+      "status": "candidate",
+      "features": [
+        "bench-removal"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "crates/piperine-lang/src/pom/design.rs:385 / BRM-02 (crates/piperine-lang)"
+      ],
+      "created": "2026-07-18T00:55:38Z",
+      "last_seen": "2026-07-18T00:55:38Z"
+    },
+    {
+      "id": "L-004",
+      "key": "spec_deviation::a logged spec deviation that changes user visible cli behavior still needs a test asserting the new behavior the piperine run phdl migration notice is implemented but unasserted",
+      "text": "A logged SPEC_DEVIATION that changes user-visible CLI behavior still needs a test asserting the new behavior (the piperine run .phdl migration notice is implemented but unasserted).",
+      "signal": "spec_deviation",
+      "scope": "crates/piperine-cli",
+      "status": "candidate",
+      "features": [
+        "bench-removal"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "crates/piperine-cli/src/commands/run.rs:43-49 / SPEC_DEVIATION 0b952a4 (crates/piperine-cli)"
+      ],
+      "created": "2026-07-18T00:55:48Z",
+      "last_seen": "2026-07-18T00:55:48Z"
     }
   ]
 }

@@ -1,5 +1,5 @@
 // Time-domain sine source built on `$abstime`, loaded by a resistor.
-// The bench validates the waveform numerically — amplitude at the quarter
+// The python twin validates the waveform numerically — amplitude at the quarter
 // period, RMS = A/√2, zero mean, first rising zero-crossing at one full
 // period — and `$display`s the sampled table plus the DC operating point.
 

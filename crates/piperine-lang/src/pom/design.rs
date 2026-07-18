@@ -358,8 +358,8 @@ impl Design {
 
     /// An independent copy with its own, empty staging area — every other
     /// field is a cheap structural clone. Used to give each host entry
-    /// point a fresh view (piperine-bench/docs/SPEC.md §9: staged overrides never leak
-    /// between entry points).
+    /// point a fresh view (staged overrides never leak between entry
+    /// points).
     pub fn fork(&self) -> Design {
         Design { overrides: Rc::new(RefCell::new(OverrideMap::new())), ..self.clone() }
     }
@@ -368,21 +368,19 @@ impl Design {
     /// with them applied to `root_module`'s instances (and, for an empty
     /// path, the module's own params). Non-structural only: the module set
     /// and topology are unchanged, only `Value` defaults are patched —
-    /// exactly the effect `ppr_to_ir` would see from a differently-written
-    /// source (piperine-bench/docs/SPEC.md §6.2 "the engine decides"; milestone 1 always
-    /// treats a param write as non-structural).
+    /// exactly the effect a differently-written source would have (a param
+    /// write is always treated as non-structural).
     ///
     /// The override path is the target instance's bare label within
-    /// `root_module` (piperine-bench/docs/SPEC.md §3 name resolution — benches address a
-    /// flat, already-monomorphized netlist, so no hierarchical path is
-    /// needed). An override naming an unknown instance or param is a
-    /// fail-loud error, never a silent no-op.
+    /// `root_module` (hosts address a flat, already-monomorphized netlist,
+    /// so no hierarchical path is needed). An override naming an unknown
+    /// instance or param is a fail-loud error, never a silent no-op.
     pub fn with_overrides_applied(&self, root_module: &str) -> Result<Design, ElabError> {
         let mut design = self.clone();
         let overrides: Vec<(String, String, Value)> =
             self.overrides.borrow().iter().map(|(p, n, v)| (p.clone(), n.clone(), v.clone())).collect();
         let module = design.modules.get_mut(root_module).ok_or_else(|| {
-            ElabError::from(ElabErrorKind::Other(format!("bench root module `{root_module}` not found")))
+            ElabError::from(ElabErrorKind::Other(format!("root module `{root_module}` not found")))
         })?;
         for (path, param, value) in overrides {
             if !value.is_const_scalar() {
@@ -490,7 +488,6 @@ impl Design {
     pub(crate) fn consts_map_mut(&mut self) -> &mut HashMap<String, Value> {
         &mut self.consts
     }
-    /// Mutable access to the bench blocks vec. For internal elaboration use.
     /// Insert a module by name. Test-only: the selector unit tests build
     /// synthetic designs without running the elaborator.
     #[cfg(test)]

@@ -16,11 +16,14 @@ import piperine
 failures = []
 
 # ── docstring walk: every facade export + public member is documented ──
+# Own `__doc__` only — `inspect.getdoc` inherits docstrings from base
+# classes, which would let an undocumented subclass pass on its parent's
+# words (mutation-tested).
 def check_doc(owner, name, obj):
     if obj is None:
         failures.append(f"{owner}.{name}: unresolvable")
         return
-    doc = inspect.getdoc(obj) or ""
+    doc = getattr(obj, "__doc__", None) or ""
     if not doc.strip():
         failures.append(f"{owner}.{name}: missing docstring")
 

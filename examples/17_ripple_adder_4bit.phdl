@@ -2,7 +2,7 @@
 // 1-bit FullAdder instances chained by their carry. This exercises the thing
 // that matters across module boundaries — the carry propagates fa0 → fa1 → fa2
 // → fa3, so a wrong inter-module wiring or a settle bug shows up immediately.
-// The bench is EXHAUSTIVE: all 256 (a, b) pairs, a,b ∈ [0, 15], asserting
+// The python twin is EXHAUSTIVE: all 256 (a, b) pairs, a,b ∈ [0, 15], asserting
 // s = a + b as a 5-bit result. It is also the correctness oracle for the fused
 // digital-network JIT (piperine-codegen/docs/DIGITAL_JIT.md): the same cone,
 // per-device or fused, must produce this table.

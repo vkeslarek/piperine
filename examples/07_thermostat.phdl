@@ -1,6 +1,6 @@
 // Bang-bang thermostat: a thermal RC plant (ambient 20 °C, τ = 10 ms in
 // simulation seconds) heated by a controlled source; `@above` events flip
-// the heater off at 25 °C and back on at 22 °C. The bench uses a
+// the heater off at 25 °C and back on at 22 °C. The python twin uses a
 // delayed-start transient (`TranConfig.start`) to skip the warm-up and
 // asserts the steady limit cycle stays inside the hysteresis band.
 

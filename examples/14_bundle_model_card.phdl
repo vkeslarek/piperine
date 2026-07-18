@@ -1,7 +1,7 @@
 // SPICE-style model cards as value bundles, with a capability on top:
 // `DiodeModel` bundles the device physics, `impl Junction for DiodeModel`
 // gives it behavior, and the *same* method runs inside the analog body
-// (inlined into the JIT contribution) and inside the bench (interpreted) —
+// (inlined into the JIT contribution) and in const evaluation —
 // one AST, two consumers. The flattened per-field params stay stageable
 // (`d1.model_isat`).
 

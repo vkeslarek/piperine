@@ -1,6 +1,6 @@
 // Pure digital priority encoder (the heart of an interrupt controller):
 // four request lines, the highest-numbered active one wins, encoded as a
-// 2-bit code plus a valid flag. The bench reads the output Bit nets
+// 2-bit code plus a valid flag. The python twin reads the output Bit nets
 // straight off `$op` results — no analog readback stage.
 
 discipline Bit {

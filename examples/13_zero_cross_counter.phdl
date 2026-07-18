@@ -1,6 +1,6 @@
 // Zero-crossing counter: a `@cross` event increments a counter every time
 // a 1 kHz sine crosses zero (either direction); the count is exposed as a
-// voltage. Three full periods have six crossings after t = 0 — the bench
+// voltage. Three full periods have six crossings after t = 0 — the python twin
 // checks the count and cross-validates with `Waveform.cross`.
 
 discipline Electrical {

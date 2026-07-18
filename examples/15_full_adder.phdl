@@ -1,5 +1,5 @@
 // Pure digital combinational logic: a 1-bit full adder — no analog anywhere.
-// The bench stages the input drivers, runs `$op` (the DC mixed-signal loop
+// The python twin sets the input drivers, runs `op` (the DC mixed-signal loop
 // settles combinational logic), and reads the output Bit nets directly:
 // `r.v(sum)` returns the logic value as 0/1.
 

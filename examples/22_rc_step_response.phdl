@@ -1,7 +1,7 @@
 // First-order RC step response: a 1 V source steps the input at t=0 (the
 // transient starts there), and the capacitor — forced to 0 V through
 // `TranConfig.ic` — charges through R following V_out(t) = 1 − e^(−t/τ),
-// τ = RC. The bench checks the classic 1τ / 2τ / 5τ landmarks.
+// τ = RC. The python twin checks the classic 1τ / 2τ / 5τ landmarks.
 
 discipline Electrical {
     potential v : Real;

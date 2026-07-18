@@ -1,5 +1,5 @@
 // 4-bit binary-weighted current-steering DAC into a load resistor:
-// v(out) = code · Iunit · Rload. The bench walks codes by staging the bit
+// v(out) = code · Iunit · Rload. The python twin walks codes by setting the bit
 // params and checks the staircase — including full-scale and midscale.
 
 discipline Electrical {
