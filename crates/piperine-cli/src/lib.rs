@@ -30,7 +30,7 @@ pub enum Commands {
     },
     /// Run a simulation explicitly, a Python script, or an interactive REPL
     Run {
-        /// The entry point to run: `module::fn` (bench), `foo.py` (Python
+        /// The file to run: `foo.py` (Python
         /// script), or `foo.phdl` (loaded into the interactive REPL with `-i`)
         entry: Option<String>,
         /// The file containing the entry point (defaults to src/main.phdl)

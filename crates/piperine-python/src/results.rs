@@ -1,12 +1,12 @@
 //! `_OpResult`/`_Trace`/`_Waveform`/`_AcTrace`/`_NoiseTrace` — typed Python
-//! wrappers over the bench result objects (PY-06/07/08/09/10). P6 landed the
+//! wrappers over the host result objects (PY-06/07/08/09/10). P6 landed the
 //! shells so [`crate::module::_Module::op`]/`tran`/`ac`/`noise` could return
 //! them; P7 adds `.v/.i/__getitem__` to `_OpResult`/`_Trace` and introduces
 //! the `_Waveform` wrapper (numpy + stats arrive in P8); P9 adds the AC/noise
 //! readouts; PY-13 (Batch 3 Task A) extends `__getitem__` to route instance
 //! paths to a terminal sub-view (`_InstanceView`).
 //!
-//! `_OpResult`/`_Trace` hold their bench result behind `Rc` so a sub-view can
+//! `_OpResult`/`_Trace` hold their host result behind `Rc` so a sub-view can
 //! cheaply share the parent without cloning the (potentially large) result
 //! data; the sub-view holds an `Rc::clone` of the same underlying snapshot.
 //!
@@ -77,11 +77,11 @@ impl _SolverStats {
     }
 }
 
-/// Surface a bench readout error as the right Python exception: an
+/// Surface a host readout error as the right Python exception: an
 /// unaddressable net reads as `KeyError` (spec edge case — fail loud, never a
 /// silent NaN); everything else as `RuntimeError` carrying the diagnostic.
 /// Mirrors [`crate::module::_Module::analysis_err`] over the same string
-/// contract — bench errors implement `Display` via `thiserror`.
+/// contract — host errors implement `Display` via `thiserror`.
 pub(crate) fn readout_err<E: std::fmt::Display>(e: E) -> PyErr {
     let msg = format!("{e}");
     if msg.contains("is not addressable") {
@@ -94,14 +94,14 @@ pub(crate) fn readout_err<E: std::fmt::Display>(e: E) -> PyErr {
 /// `_OpResult` — the typed operating-point result (PY-06). Holds the immutable DC
 /// snapshot produced by [`piperine::session::SimSession::run_op`] behind
 /// `Rc` so a PY-13 instance sub-view can share it cheaply. `.v/.i` (PY-06) and
-/// `__getitem__` (PY-11 / spec AC5) resolve nets by name through the bench's
-/// own typed readout — the same call the bench makes (uniform-shape proof).
+/// `__getitem__` (PY-11 / spec AC5) resolve nets by name through the host's
+/// own typed readout — the same call the host makes (uniform-shape proof).
 ///
 /// When constructed via [`crate::module::_Module::op`], the result also
 /// carries an [`InstanceResolver`] so `__getitem__` can detect instance paths
 /// (PY-13 / spec AC13: `op["r_top"]` returns a terminal sub-view). The
 /// resolver is `None` for results built outside `_Module` (existing unit
-/// tests that wrap a bench `OpResult` directly).
+/// tests that wrap a host `OpResult` directly).
 #[pyclass(module = "piperine", unsendable)]
 pub struct _OpResult {
     pub(crate) inner: Rc<OpResult>,
@@ -130,7 +130,7 @@ impl _OpResult {
         Rc::clone(&self.inner)
     }
 
-    /// Build a [`NetRef`] from a Python `str` — the typed handle every bench
+    /// Build a [`NetRef`] from a Python `str` — the typed handle every host
     /// readout takes. Kept as a struct method (MD-13: no loose `fn`).
     fn net(name: &str) -> NetRef {
         NetRef {
@@ -226,7 +226,7 @@ impl _Trace {
         Rc::clone(&self.inner)
     }
 
-    /// Build a [`NetRef`] from a Python `str` — the typed handle every bench
+    /// Build a [`NetRef`] from a Python `str` — the typed handle every host
     /// readout takes. Kept as a struct method (MD-13).
     fn net(name: &str) -> NetRef {
         NetRef {
@@ -298,9 +298,9 @@ impl _Trace {
 /// `_Waveform` — a swept series of `(axis, value)` samples for one measured
 /// quantity over the analysis axis (PY-08). `.values` and `.axis` are real
 /// `np.ndarray`s of equal length (PY-08 / spec AC7); the scalar stats
-/// (`.at/.rms/.mean/.min/.max/.peak_to_peak/.len`) delegate to the bench
+/// (`.at/.rms/.mean/.min/.max/.peak_to_peak/.len`) delegate to the host
 /// [`Waveform`]'s own typed reductions — uniform-shape: same values the
-/// bench computes (PY-17). P7 introduced the wrapper; P8 lands numpy + stats.
+/// host computes (PY-17). P7 introduced the wrapper; P8 lands numpy + stats.
 #[pyclass(module = "piperine", unsendable)]
 pub struct _Waveform {
     pub(crate) inner: Waveform,
@@ -315,7 +315,7 @@ impl _Waveform {
 #[pymethods]
 impl _Waveform {
     /// The values as a real `np.ndarray` (PY-08 / spec AC7). Built zero-copy
-    /// via `PyArray1::from_vec` from the bench `Waveform.points()`.
+    /// via `PyArray1::from_vec` from the host `Waveform.points()`.
     #[getter]
     fn values(&self, py: Python<'_>) -> PyResult<PyObject> {
         let vec: Vec<f64> = self.inner.points().iter().map(|&(_, v)| v).collect();
@@ -331,12 +331,12 @@ impl _Waveform {
     }
 
     /// Linear interpolation at `x` (clamps outside range) — uniform-shape
-    /// (bench `Waveform::at`).
+    /// (host `Waveform::at`).
     fn at(&self, x: f64) -> f64 {
         self.inner.at(x)
     }
 
-    /// Time-weighted RMS over the recorded grid — uniform-shape (bench
+    /// Time-weighted RMS over the recorded grid — uniform-shape (host
     /// `Waveform::rms`).
     fn rms(&self) -> f64 {
         self.inner.rms()
@@ -364,7 +364,7 @@ impl _Waveform {
 
     /// First axis value where the waveform crosses `level` in direction
     /// `dir` (`"Rising"`/`"Falling"`/`"Either"`), or `None`. Uniform-shape
-    /// (bench `Waveform::cross`).
+    /// (host `Waveform::cross`).
     #[pyo3(signature = (level, dir="Either"))]
     fn cross(&self, level: f64, dir: &str) -> Option<f64> {
         self.inner.cross(level, dir)
@@ -390,7 +390,7 @@ impl _Waveform {
 /// `_ComplexWaveform` — the AC sample surface (PY-09): a series of
 /// `(frequency, Complex64)` samples. `.values` is a complex `np.ndarray`
 /// (complex128); `.mag/.phase/.db` project onto real [`_Waveform`]s
-/// (uniform-shape: same projections the bench `ComplexWaveform` computes).
+/// (uniform-shape: same projections the host `ComplexWaveform` computes).
 /// `.axis` is the frequency grid as a real `np.ndarray` (mirrors
 /// `_Waveform.axis`).
 #[pyclass(module = "piperine", unsendable)]
@@ -421,7 +421,7 @@ impl _ComplexWaveform {
         Ok(numpy::PyArray1::from_vec(py, vec).into_any().unbind())
     }
 
-    /// Magnitude projection `|c|` per sample — uniform-shape (bench
+    /// Magnitude projection `|c|` per sample — uniform-shape (host
     /// `ComplexWaveform::mag`). Returns a real `_Waveform`. Exposed as a
     /// property to match spec AC8 (`.mag` not `.mag()`).
     #[getter]
@@ -479,7 +479,7 @@ impl _AcTrace {
         Self { inner }
     }
 
-    /// Build a [`NetRef`] from a Python `str` — the typed handle every bench
+    /// Build a [`NetRef`] from a Python `str` — the typed handle every host
     /// readout takes. Kept as a struct method (MD-13).
     fn net(name: &str) -> NetRef {
         NetRef {
@@ -510,7 +510,7 @@ impl _AcTrace {
 /// `_NoiseTrace` — the typed noise-analysis result (PY-10). `.psd()` returns
 /// the output-referred noise PSD as a real `_Waveform` (V²/Hz over
 /// frequency); `.total()` returns the integrated RMS noise as a float.
-/// Uniform-shape: same values the bench `NoiseTrace` computes.
+/// Uniform-shape: same values the host `NoiseTrace` computes.
 #[pyclass(module = "piperine", unsendable)]
 pub struct _NoiseTrace {
     pub(crate) inner: NoiseTrace,

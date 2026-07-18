@@ -159,7 +159,7 @@ impl InstanceResolver {
 /// The parent result an `_InstanceView` projects. Kept as a small enum so a
 /// single pyclass covers both `op["r1"]` (scalars) and `trace["r1"]`
 /// (waveforms) without two near-identical wrappers (MD-13: one struct, one
-/// owner per operation). The bench result lives behind `Rc` so the sub-view
+/// owner per operation). The host result lives behind `Rc` so the sub-view
 /// shares the parent's snapshot without copying.
 pub(crate) enum InstanceResult {
     Op(Rc<OpResult>),
@@ -219,7 +219,7 @@ impl _InstanceView {
             Some(p) => Some(self.resolver.terminal_net(&self.label, p)?),
             None => None,
         };
-        Ok((bench_net(&a), b.map(|n| bench_net(&n))))
+        Ok((host_net(&a), b.map(|n| host_net(&n))))
     }
 }
 
@@ -290,10 +290,10 @@ impl _InstanceView {
     }
 }
 
-/// Construct a bench [`piperine::NetRef`] from a net name — the typed
-/// handle every bench readout takes (MD-13: lives on the file that owns the
+/// Construct a host [`piperine::NetRef`] from a net name — the typed
+/// handle every host readout takes (MD-13: lives on the file that owns the
 /// conversion).
-fn bench_net(name: &str) -> piperine::NetRef {
+fn host_net(name: &str) -> piperine::NetRef {
     piperine::NetRef {
         name: name.to_string(),
     }
@@ -330,6 +330,6 @@ impl _Terminal {
 }
 
 // (`_OpResult` and `_Trace` pyclasses are not referenced directly here — the
-// enum holds the bench `OpResult`/`Trace` types behind `Rc`, not the Python
+// enum holds the host `OpResult`/`Trace` types behind `Rc`, not the Python
 // wrappers. The wrappers' `shared()` methods produce the `Rc`s this module
 // consumes.)

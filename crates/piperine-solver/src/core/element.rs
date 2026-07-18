@@ -182,7 +182,7 @@ pub trait Element: Send + Sync {
     // ── Introspection: parameters, queries, terminals (OSDI-style) ────────────
     //
     // All optional. A model exposes as much or as little metadata as it has;
-    // hosts (bench sweeps, optimization, CLI/UI) discover and poke it through
+    // hosts (sweeps, optimization, CLI/UI) discover and poke it through
     // this uniform surface without knowing the device family.
 
     /// Declared parameters and their metadata. Empty when the element exposes no

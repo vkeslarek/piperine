@@ -30,7 +30,7 @@ use crate::value_bridge::PyValue;
 /// is never mutated (spec AC11), and each analysis is a pure function of the
 /// design + currently-staged overrides + config — every analysis is
 /// isolated (no state carries between calls). A re-stage of the same `(label, param)` overwrites the
-/// previous value, matching the bench's last-write-wins staging semantics.
+/// previous value (last write wins).
 ///
 /// `unsendable`: shares an `Rc<Design>` whose interior is not `Sync` (see
 /// [`crate::_Design`]); single-interpreter use only.
@@ -73,7 +73,7 @@ impl _Module {
         Ok(SimSession::new(forked, self.name.clone()))
     }
 
-    /// Surface a bench analysis error as the right Python exception:
+    /// Surface a host analysis error as the right Python exception:
     /// net-not-addressable reads as `KeyError` (spec edge case — fail loud,
     /// never a silent NaN); everything else as `RuntimeError` carrying the
     /// diagnostic. Both error types implement `Display` via `thiserror`.

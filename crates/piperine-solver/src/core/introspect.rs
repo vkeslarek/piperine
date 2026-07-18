@@ -1,6 +1,6 @@
 //! The introspection ABI: parameter, query, and terminal metadata — the
 //! OSDI-style surface an [`Element`](crate::core::element::Element) exposes so
-//! bench sweeps, optimization loops, plugins, and CLI/UI tooling discover and
+//! host sweeps, optimization loops, plugins, and CLI/UI tooling discover and
 //! poke a model without knowing its family.
 //!
 //! Three concerns, all optional (defaulted on `Element`):

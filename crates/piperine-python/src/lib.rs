@@ -1,6 +1,6 @@
 //! # piperine-python
 //!
-//! Native PyO3 extension (`_piperine`) that exposes the Piperine bench + POM
+//! Native PyO3 extension (`_piperine`) that exposes the Piperine host + POM
 //! surface to Python — spec §10 "the uniform host-neutral API". A typed
 //! pure-Python facade (`piperine/__init__.py`, landed later) re-exports these
 //! native types under idiomatic, annotated aliases; the facade is the public
@@ -348,7 +348,7 @@ mod DividerBoard() {
     /// 3 kΩ/2 kΩ resistor divider, so the `mid` node sits at
     /// 5·2/(3+2) = 2.0 V (spec-defined outcome the stage test asserts).
     /// Staging `r_top.r = 2e3` moves `mid` to 5·2/(2+2) = 2.5 V (spec AC12).
-    /// Mirrors the bench's own divider circuit shape — the uniform-host proof.
+    /// Mirrors the root host-API divider circuit shape — the uniform-host proof.
     const ANALYSIS_PHDL: &str = "\
 discipline Electrical { potential v: Real; flow i: Real; }
 
@@ -424,8 +424,8 @@ mod Divider() {
     /// PY-12 / spec AC11/12: `stage(label, param, value)` overrides the next
     /// analysis; staging is pure (the held `_Design` is not mutated). The
     /// Python `.v()` lands in P7, so the stage effect is read through the
-    /// bench's own typed `OpResult::v` readout (uniform-shape proof — same
-    /// call the bench makes) by extracting the inner result from the
+    /// root's typed `OpResult::v` readout (uniform-shape proof — the same
+    /// call a Rust host makes) by extracting the inner result from the
     /// returned `_OpResult`.
     ///
     /// Divider math: `mid = 5·r_bot/(r_top+r_bot)`. Default 3 k/2 k → 2.0 V;
@@ -447,7 +447,7 @@ mod Divider() {
             let design = loaded_design(py, path_str)?;
             let module = design.getattr("module")?.call1(("Divider",))?;
 
-            // Helper: run op() and read `mid` through the bench readout.
+            // Helper: run op() and read `mid` through the host readout.
             let mid_voltage = |module: &Bound<'_, PyAny>| -> PyResult<f64> {
                 let op_obj = module.getattr("op")?.call0()?;
                 let pyref = op_obj.extract::<pyo3::PyRef<'_, super::_OpResult>>()?;
@@ -794,16 +794,16 @@ mod Divider() {
     /// PY-07 / spec AC7/10: `Trace.v(net)` returns a Waveform over the time
     /// axis; `Trace["net"]` SHALL return the same Waveform (AC10 — the
     /// `.values` array equality is verified in P8 once numpy lands; here we
-    /// assert the wrapper equivalence via the inner bench waveform).
+    /// assert the wrapper equivalence via the inner host waveform).
     /// `Trace.axis()` returns the time-axis Waveform. An unknown net on `.v`
     /// raises `KeyError` (fail loud).
     ///
     /// Divider mid is a DC 2.0 V, so the transient `mid` waveform is flat at
     /// 2.0 V across the recorded time grid (spec-defined outcome derived from
     /// the DC operating point). P7 doesn't expose `_Waveform.at/.values` to
-    /// Python yet (that's P8); the value is read through the bench `Waveform`
+    /// Python yet (that's P8); the value is read through the host `Waveform`
     /// readout on the extracted inner — the uniform-shape check (same call
-    /// the bench makes).
+    /// the host makes).
     #[test]
     fn trace_reads_waveforms_and_axis() -> PyResult<()> {
         let path = std::env::temp_dir().join("piperine_python_p7_trace_test.phdl");
@@ -827,8 +827,8 @@ mod Divider() {
 
             // The DC divider's mid sits at 2.0 V — the transient is flat at
             // 2.0 V (a linear DC source + R divider has no startup
-            // dynamics). Read via the bench `Waveform::points` on the
-            // extracted inner — same data the bench exposes (uniform-shape).
+            // dynamics). Read via the host `Waveform::points` on the
+            // extracted inner — same data the host exposes (uniform-shape).
             // (`at` is ambiguous between the real + complex inherent impls;
             // `points` is defined once on `impl<T: Copy>`.)
             let wf_ref = wf.extract::<pyo3::PyRef<'_, super::_Waveform>>()?;
@@ -849,7 +849,7 @@ mod Divider() {
             );
 
             // AC10: trace["net"] returns the same waveform (equivalence
-            // verified through the inner bench readout — `.values` array
+            // verified through the inner host readout — `.values` array
             // equality is P8's numpy assertion).
             let item_wf = trace.getattr("__getitem__")?.call1(("mid",))?;
             let item_ref = item_wf.extract::<pyo3::PyRef<'_, super::_Waveform>>()?;
@@ -879,7 +879,7 @@ mod Divider() {
     /// Divider mid is DC 2.0 V — the transient is flat at 2.0 V across the
     /// recorded grid, so `min == max == mean == rms == 2.0` and
     /// `peak_to_peak == 0.0` (spec-defined outcome derived from the DC
-    /// operating point; uniform-shape — same reductions the bench Waveform
+    /// operating point; uniform-shape — same reductions the host Waveform
     /// computes).
     #[test]
     fn waveform_exposes_numpy_and_stats() -> PyResult<()> {
@@ -947,7 +947,7 @@ mod Divider() {
                 "axis end should be ~5e-3 (the tran stop), got {t_end}"
             );
 
-            // Stats — uniform-shape (PY-17): same reductions the bench
+            // Stats — uniform-shape (PY-17): same reductions the host
             // Waveform computes. The flat 2.0 V transient gives every
             // reduction the value 2.0 (mean/rms/min/max/at), peak_to_peak 0.
             let len = wf.getattr("len")?.call0()?.extract::<usize>()?;
@@ -988,13 +988,13 @@ mod Divider() {
     /// 1 A of `ac_stim` current into
     /// a 1 kΩ resistor to gnd → |V_out| = 1 A × 1 kΩ = 1000 V at every
     /// frequency (purely resistive, flat). The spec-defined expected outcome
-    /// (PY-17 uniform-shape — same call the bench makes).
+    /// (PY-17 uniform-shape — the same call a Rust host makes).
     #[test]
     fn ac_returns_complex_waveform_with_projections() -> PyResult<()> {
         // Dedicated AC fixture: an `ac_stim` current source driving a 1 kΩ
         // resistor to ground. `ac_stim(mag)` is the small-signal injection
-        // (bench spec §5); `-ac_stim(1.0)` means 1 A flows out of `p` into
-        // the source (the bench convention).
+        // `-ac_stim(1.0)` means 1 A flows out of `p` into
+        // the source (the force-branch convention).
         const AC_PHDL: &str = "\
 discipline Electrical { potential v: Real; flow i: Real; }
 
@@ -1050,7 +1050,7 @@ mod AcTest() {
             assert_eq!(values.as_array().len(), 10, "AC sweep had 10 points");
 
             // 1 A × 1 kΩ = 1000 V at every frequency (resistive, flat).
-            // (PY-17 uniform-shape — same magnitude the bench asserts in
+            // (PY-17 uniform-shape — same magnitude the root suite asserts in
             // `ac_stim_drives_a_low_pass_response` for the passband.)
             for (i, c) in values.as_array().iter().enumerate() {
                 assert!(

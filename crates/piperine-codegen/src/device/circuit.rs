@@ -38,7 +38,7 @@ pub struct CircuitBuildInfo {
     /// [`NodeIdentifier::Gnd`]).
     pub nets: HashMap<String, NodeIdentifier>,
     /// Top-module digital net name → index into
-    /// `CircuitInstance::digital_state.nets` — how a bench reads a `Bit`
+    /// `CircuitInstance::digital_state.nets` — how a host reads a `Bit`
     /// net's logic value off a result.
     pub digital_nets: HashMap<String, usize>,
     /// One entry per top-level instance, in declaration order.
@@ -119,7 +119,7 @@ impl<'p> CircuitCompiler<'p> {
     /// Like [`Self::build_circuit`], but also returns a [`CircuitBuildInfo`]
     /// mapping the top module's net names and each instance's compiled
     /// kernel/params/terminals — everything a caller outside the solver
-    /// (a `bench` runner) needs to read a named quantity back out of the
+    /// (a host) needs to read a named quantity back out of the
     /// built circuit.
     pub fn build_circuit_mapped(
         &mut self,
@@ -643,7 +643,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
     fn finish(mut self, title: &str) -> (CircuitInstance, CircuitBuildInfo) {
         let mut circuit = CircuitInstance::from_devices_and_netlist(title, self.devices, self.netlist);
         circuit.digital_state = DigitalState::new(self.digital_nets.len());
-        // Name → digital-net index, for bench-side readback.
+        // Name → digital-net index, for host-side readback.
         for (id, info) in self.top_body.symbols.nodes() {
             if let Some(dn) = self.digital_nets.get(&id) {
                 self.build_info.digital_nets.insert(info.name.clone(), dn.0);

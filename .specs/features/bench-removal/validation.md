@@ -185,3 +185,61 @@ All mutations reverted; `git status` clean.
 3. Cosmetic — stale bench-era comments in lang/plugin/examples
 
 **Next steps**: route Fix 1 (+2/3 optionally) to an implementer; re-verify sensor mutant M6a after the fix.
+
+---
+
+# Round 2 — Re-verification
+
+**Date**: 2026-07-17
+**Diff range**: `f408761..HEAD` (`5498d3a` fix commit on top of round-1 range)
+**Verifier**: independent sub-agent (author ≠ verifier)
+
+## Per-Gap Re-verification
+
+| Gap | Claimed fix | Fresh evidence | Result |
+|---|---|---|---|
+| #1 Major (BRM-12) `getdoc` inherits base docstrings | walk asserts own `__doc__` | `facade_hygiene.rs:26` — `doc = getattr(obj, "__doc__", None) or ""` (+ rationale comment :19-21). Independent M6a re-run: deleted `Scale` docstring (`python/piperine/__init__.py:77`) → `cargo test -p piperine-python --test facade_hygiene` FAILED `piperine.Scale: missing docstring`; `git checkout` restore → PASS | ✅ FIXED — mutant killed |
+| #2 Minor (BRM-02) `"bench root module … not found"` | renamed | `pom/design.rs:387` — now `"root module `{root_module}` not found"`; repo-wide grep: zero `"bench root"` hits | ✅ FIXED |
+| #3 Cosmetic stale comments | swept design.rs/ast.rs/view.rs/capability.rs + 14 example headers | grep: those 4 files → zero `bench` hits; `examples/*.phdl` → only "testbench" (`12_opamp_follower.phdl:20`, new-world vocabulary). **However** the full-surface sweep (this round's mandate) found residuals the fix commit did not claim — see New Gaps below | ⚠️ claimed scope clean; new residuals found |
+| #4 L-004 logged deviation untested | test added | `test_tb.rs:131-148` `run_phdl_elaborates_and_points_at_testbenches` asserts "elaborates" + "bench"+"removed" + "_tb.py"; green in gate | ✅ FIXED |
+
+## Discrimination Sensor (round 2)
+
+| Mutation | File:line | Description | Killed? |
+|---|---|---|---|
+| M6a (re-run) | `python/piperine/__init__.py:77` | remove `Scale` class docstring | ✅ Killed (`piperine.Scale: missing docstring`) |
+| M7 (new) | `crates/piperine-cli/src/commands/run.rs:43-49` | neuter migration notice → `"{} elaborates."` | ✅ Killed (`run_phdl_elaborates_and_points_at_testbenches`: "removal named") |
+
+**Result**: 2/2 killed. All mutations reverted; `git status` clean.
+
+## Gate Check (round 2)
+
+- **Build**: `cargo build --workspace` — zero rustc warnings
+- **Test**: `cargo test --workspace` — **446 passed, 0 failed, 5 ignored** (matches post-fix baseline; +1 vs round 1 = the new run-phdl test)
+- **Failures**: none
+
+## New Gaps (found by the mandated full-surface sweep)
+
+1. **Minor (BRM-02/BRM-10)** — `crates/piperine-cli/src/lib.rs:33`: clap doc on `Run::entry` — `piperine run --help` prints "The entry point to run: `module::fn` (bench), …", advertising a removed entry-point form to users (verified live: `./target/debug/piperine run --help`). Same leak class as round-1 gap #2, one surface over. Fix: drop "`module::fn` (bench), " from the help text.
+2. **Cosmetic (BRM-02)** — stale present-tense bench comments in files outside the fix commit's claimed sweep: `piperine-codegen/src/device/circuit.rs:41,122,646`; `piperine-lang/src/pom/staging.rs:36` (documents `"bench"` as a live `staged_by` value — no code writes it anymore), `eval/const_host.rs:3`, `eval/interp.rs:102,131,151,330,415` (incl. a "bench spec §1" citation), `eval/error.rs:2`; `piperine-python/src/lib.rs:3` (crate doc "exposes the Piperine bench") + test comments `lib.rs:351,427-450,797-1053`, `module.rs:33,76`, `instance.rs:162`.
+
+**Intentional, not flagged**: `run.rs:18,44` migration notice (names the removal); `manifest.rs:74-114` `bench_tasks` rejection field + loud removal error; test assertions naming the removed surface; "testbench"/"_tb.py" new-world vocabulary; historical docs/spec tombstones.
+
+## Requirement Traceability Update (round 2)
+
+| Requirement | Round 1 | Round 2 |
+|---|---|---|
+| BRM-02 | ⚠️ Minor leak | ⚠️ Minor leak (new: cli lib.rs:33 help text; cosmetic comments) |
+| BRM-12 | ❌ Needs Fix | ✅ Verified (sensor M6a killed) |
+| BRM-07 | ✅ (deviation logged) | ✅ Verified (deviation now tested; sensor M7) |
+| all others | as round 1 | unchanged |
+
+## Round-2 Summary
+
+**Overall**: ❌ Not Ready — one new Minor user-facing vocabulary leak (+ cosmetic residuals)
+
+**Spec-anchored check**: all 4 round-1 gaps verifiably fixed with fresh evidence; BRM-12 mutant now killed; but the full-surface sweep (round-2 mandate) exposed a `run --help` text advertising the removed bench entry point — same BRM-02 class as the just-fixed error string.
+**Sensor**: 2 injected (M6a re-run, M7 new), 2 killed
+**Gate**: 446 passed, 0 failed, 5 ignored; build zero warnings
+
+**Next steps**: one-line help-text fix at `crates/piperine-cli/src/lib.rs:33` (+ optional cosmetic comment sweep listed above); no re-sensor needed beyond gates.

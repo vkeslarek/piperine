@@ -1,6 +1,6 @@
 //! [`ConstHost`] — the pure [`Host`] backing [`crate::elab::const_eval::ConstEnv`].
 //!
-//! No POM access, no staging, no bench-only tasks: only the persistent
+//! No POM access, no staging, no effectful tasks: only the persistent
 //! binding stack `ConstEnv` maintains across `push`/`pop`/`define` calls and
 //! the shared pure task registry (`$assert`, diagnostics, math).
 

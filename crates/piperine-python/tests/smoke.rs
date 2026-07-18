@@ -1,7 +1,7 @@
 //! P12 — embedded smoke test: the uniform-shape proof (PY-17 / spec success
 //! criteria). Runs a Python script through the embed path that exercises
 //! `load → module → op/tran/ac/noise → numpy` via the typed public facade,
-//! and asserts the Python results match the bench's results for the same
+//! and asserts the Python results match the Rust host's results for the same
 //! circuits (the binding invariant — PY-17 / spec §10).
 //!
 //! The divider (`vin=5 V`, `r_top=3 kΩ`, `r_bot=2 kΩ` → `mid=2.0 V`) is the
@@ -23,7 +23,7 @@ fn write_temp(name: &str, body: &str) -> String {
     path.to_str().expect("non-utf8 temp path").to_string()
 }
 
-/// The divider circuit — same shape the bench tests solve. `mid` sits at
+/// The divider circuit — same shape the root host tests solve. `mid` sits at
 /// `5·2/(3+2) = 2.0 V`; staging is not exercised here (P6's unit test covers
 /// it). Mirrors `piperine-python/src/lib.rs::ANALYSIS_PHDL`.
 const DIVIDER_PHDL: &str = "\
@@ -51,7 +51,7 @@ mod Divider() {
 
 /// AC + noise fixture: an `ac_stim(1.0)` current source driving a 1 kΩ
 /// resistor to ground → `|V_out| = 1 A × 1 kΩ = 1000 V` at every frequency
-/// (resistive, flat). Mirrors the bench's AC test circuit + the P9 unit test.
+/// (resistive, flat). Mirrors the root AC smoke + the P9 unit test.
 const AC_PHDL: &str = "\
 discipline Electrical { potential v: Real; flow i: Real; }
 
@@ -89,7 +89,7 @@ mod NoiseTest() {
 ";
 
 /// PY-17 / spec success criteria: a Python script going through the typed
-/// facade produces numpy arrays that match the bench's `$tran` + result
+/// facade produces numpy arrays that match the Rust host's tran + result
 /// readouts for the same circuit. This is the binding uniform-shape proof.
 ///
 /// Coverage: `load → module → op/tran/ac/noise` via the facade dataclasses
@@ -97,7 +97,7 @@ mod NoiseTest() {
 /// .axis`), net-name `__getitem__` (AC5/10), and instance-path `__getitem__`
 /// (AC13). Every asserted value is the spec-defined outcome for the circuit.
 #[test]
-fn uniform_shape_matches_bench() {
+fn uniform_shape_matches_rust_host() {
     let divider_path = write_temp("piperine_smoke_divider.phdl", DIVIDER_PHDL);
     let ac_path = write_temp("piperine_smoke_ac.phdl", AC_PHDL);
     let noise_path = write_temp("piperine_smoke_noise.phdl", NOISE_PHDL);
@@ -111,11 +111,11 @@ fn uniform_shape_matches_bench() {
         r#"import piperine
 import numpy as np
 
-# ── Divider: op + tran + instance-path (uniform shape vs bench) ──────────
+# ── Divider: op + tran + instance-path (uniform shape vs Rust host) ──────
 design = piperine.load("{divider_path}")
 divider = design.module("Divider")
 
-# op: mid = 5 * 2/(3+2) = 2.0 V — the same value the bench computes (PY-17).
+# op: mid = 5 * 2/(3+2) = 2.0 V — the same value the host computes (PY-17).
 op = divider.op()
 assert abs(op.v("mid") - 2.0) < 1e-6, op.v("mid")
 assert abs(op.v("vin") - 5.0) < 1e-6, op.v("vin")
@@ -126,7 +126,7 @@ assert abs(op.i("vin", "mid") - 1e-3) < 1e-9, op.i("vin", "mid")
 assert abs(op["mid"] - op.v("mid")) < 1e-12
 
 # tran: the DC divider has no dynamics, so mid is flat at 2.0 V across the
-# grid — the numpy array matches the bench's tran for the same circuit
+# grid — the numpy array matches the host's tran for the same circuit
 # (PY-17, the uniform-shape proof).
 trace = divider.tran(piperine.TranConfig(stop=5e-3, step=1e-5))
 wf = trace.v("mid")
@@ -154,7 +154,7 @@ twf = tview.v("n")
 assert isinstance(twf.values, np.ndarray)
 assert np.allclose(twf.values, 2.0, atol=1e-3)
 
-# ── AC fixture: ac + projections (uniform shape vs bench AC test) ────────
+# ── AC fixture: ac + projections (uniform shape vs host AC smoke) ──────
 ac_design = piperine.load("{ac_path}")
 ac_module = ac_design.module("AcTest")
 ac = ac_module.ac(piperine.AcConfig(fstart=1.0, fstop=1e6, points=10))
@@ -162,7 +162,7 @@ cw = ac.v("out")
 assert cw.values.dtype == np.complex128, cw.values.dtype
 assert len(cw.values) == 10
 # 1 A * 1 kΩ = 1000 V at every frequency (resistive, flat) — matches the
-# bench's ac_stim_drives_a_low_pass_response (PY-17).
+# the root suite's AC low-pass smoke (PY-17).
 assert np.allclose(np.abs(cw.values), 1000.0, atol=1.0), np.abs(cw.values)
 # Projections return real waveforms.
 assert cw.mag.values.dtype == np.float64
@@ -170,7 +170,7 @@ assert cw.phase.values.dtype == np.float64
 assert cw.db.values.dtype == np.float64
 assert len(cw.mag.values) == 10
 
-# ── Noise fixture: psd + total (uniform shape vs bench noise test) ───────
+# ── Noise fixture: psd + total (uniform shape vs host noise path) ─────
 noise_design = piperine.load("{noise_path}")
 noise_module = noise_design.module("NoiseTest")
 noise = noise_module.noise(piperine.NoiseConfig(out="out", fstart=1.0, fstop=1e6, points=5))
@@ -192,7 +192,7 @@ assert noise.total() >= 0.0
     // fails, the AssertionError propagates as Err carrying the diagnostic.
     assert!(
         result.is_ok(),
-        "smoke script must pass (uniform shape vs bench): {:?}",
+        "smoke script must pass (uniform shape vs Rust host): {:?}",
         result.err()
     );
 

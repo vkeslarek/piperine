@@ -99,8 +99,7 @@ pub struct Interpreter<'h, H: Host> {
     host: &'h mut H,
     scopes: Vec<HashMap<String, Value>>,
     /// Nonzero while executing a POM `fn`/bundle-method body — these are
-    /// pure value computations (bench spec §1: "elaboration, `analog`,
-    /// `digital`, ordinary `fn` ... cannot reach [effectful tasks]").
+    /// pure value computations that cannot reach effectful tasks.
     /// `$`-syscalls a host marks effectful are rejected while this is set.
     pure_depth: u32,
 }
@@ -128,7 +127,7 @@ impl<'h, H: Host> Interpreter<'h, H> {
 
     // ── Entry points ────────────────────────────────────────────────────
 
-    /// Call a value-layer closure or bench-local `fn` (parsed AST, not yet
+    /// Call a value-layer closure or a parsed-AST `fn` (not yet
     /// elaborated into a POM `Function`).
     pub fn call_fn_decl(&mut self, decl: &crate::parse::ast::FnDecl, mut args: Vec<Value>) -> Result<Value, EvalError> {
         use crate::parse::ast::FnParam;
@@ -148,7 +147,7 @@ impl<'h, H: Host> Interpreter<'h, H> {
 
     /// Call a POM `Function`/bundle-method body (already elaborated —
     /// generics resolved, `for` unrolled). Increments `pure_depth`: these
-    /// bodies are the language's pure fn layer, never the bench itself.
+    /// bodies are the language's pure fn layer.
     pub fn call_pom_fn(
         &mut self,
         params: &[String],
@@ -326,8 +325,8 @@ impl<'h, H: Host> Interpreter<'h, H> {
         if self.host.assign(dest, &value)? {
             return Ok(Flow::Normal(Value::Unit));
         }
-        // Held-object field assignment (e.g. `s.ctrl = 1` on a `SelectionRef`
-        // the bench holds in a local var): `assign` only sees the `Expr`, so
+        // Held-object field assignment (e.g. `s.ctrl = 1` on a selection
+        // the host holds in a local var): `assign` only sees the `Expr`, so
         // evaluate the base here and hand the value to `assign_field_on`.
         if let Expr::Field(base, field) = dest {
             let base_value = self.eval_expr(base)?;
@@ -411,8 +410,8 @@ impl<'h, H: Host> Interpreter<'h, H> {
                 if let Some(v) = self.lookup_local(name).or_else(|| self.host.lookup(name)) {
                     return Ok(v);
                 }
-                // 2. If the name resolves to a callable (top-level fn,
-                //    bench fn), produce a function-reference value so it
+                // 2. If the name resolves to a callable (a top-level fn),
+                //    produce a function-reference value so it
                 //    can be passed as a `fn(T) -> R` argument.
                 if self.host.resolve_callable(name).is_some() {
                     return Ok(Value::FnRef(name.clone()));

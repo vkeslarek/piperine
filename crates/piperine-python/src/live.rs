@@ -96,7 +96,7 @@ impl _LiveSession {
     }
 
     /// Lower + JIT `module` of `design` into a runnable circuit — the same
-    /// recipe as the bench's `SimSession::build_circuit`, minus plugins.
+    /// recipe as the host's `SimSession::build_circuit`, minus plugins.
     fn build(design: &Design, module: &str) -> PyResult<(CircuitInstance, CircuitBuildInfo)> {
         let bodies = piperine_codegen::ir::lower_bodies(design)
             .map_err(|e| PyValueError::new_err(format!("{e}")))?;
@@ -133,7 +133,7 @@ impl _LiveSession {
     }
 
     /// Resolve a net name against the built circuit (ground names map to the
-    /// reference node) — the live twin of the bench's `NetLookup`.
+    /// reference node) — the live twin of the host's `NetLookup`.
     fn node(&self, name: &str) -> PyResult<NodeIdentifier> {
         if piperine_lang::pom::is_ground(name) {
             return Ok(NodeIdentifier::Gnd);
@@ -146,7 +146,7 @@ impl _LiveSession {
     }
 
     /// Solver initial-value hints from a `{net: volts}` dict
-    /// (`OpConfig.nodeset` / `TranConfig.ic`) — the live twin of the bench's
+    /// (`OpConfig.nodeset` / `TranConfig.ic`) — the live twin of the host's
     /// `build_ivs`, with the post-rebuild carry (LIVE-15) merged under the
     /// user's map (user entries win). Ground keys have no index and are
     /// skipped; user-named unknown nets stay loud.
@@ -229,7 +229,7 @@ impl _LiveSession {
     /// Bookkeeping after a successful live value write: append it to the
     /// rebuild-replay ledger and mirror it into the build info so
     /// device-internal current readbacks (`.i(a, b)` on force-less
-    /// two-terminal devices) see the new value (same mirror as the bench's
+    /// two-terminal devices) see the new value (same mirror as the host's
     /// `run_op_sweep`).
     fn note_applied(&mut self, label: &str, param: &str, value: f64) {
         self.dirty.push((label.to_string(), param.to_string(), value));
