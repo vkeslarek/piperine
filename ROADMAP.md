@@ -48,14 +48,11 @@ Six pillars. V1 ships when all six are green.
 
 ### Architecture decisions
 
-- **MD-20 (locked, user 2026-07-18): `piperine-api` crate.** A dedicated
-  `crates/piperine-api`, pure Rust: host API (session/results/waveform/hooks)
-  + ABI contracts (device/plugin traits). `piperine-python` becomes a thin
-  binding layer over it. The root `piperine` package is **only the CLI
-  export** — the `piperine` command line — nothing library-shaped lives in
-  root `src/`. Supersedes MD-19's root-as-lib. Dependency flow:
-  `api → {lang, codegen, solver}`; `python → api`; `root(bin/cli) →
-  {python, api, project}` — no cycle.
+- **MD-20 (locked + amended, user 2026-07-18; DONE — feature `api-crate`,
+  Verifier PASS): `piperine-api` crate.** `crates/piperine-api` (pure Rust)
+  is the library face; the root `piperine` crate is a thin re-export shell
+  (`pub use piperine_api::*`, bin stays in `piperine-cli`). ABI-contract
+  consolidation deferred to P2/P5.
 - **MD-21 (locked, user 2026-07-18): plugin backends = native + Python.**
   WASM (wasmtime) and process JSON-RPC tiers are removed. Native dlopen stays
   (trusted, fast — same mechanism as the P2 `libloading` device path). Python
@@ -77,14 +74,18 @@ The merged open-gaps audit (ngspice-46 vs the native solver). Status:
 
 ### Analyses
 
-- [ ] **`.dc` sweep — MISSING as a native analysis.** Host-level compile-once
-      restamp sweeps (MD-18) cover param sweeps; confirm they cover nested
-      sweeps and *source* sweeps, or add the solver-side loop.
-- [ ] **`.sens` (DC/AC sensitivity) — MISSING.** Reuse the symbolic-diff
-      infrastructure. Medium value alone; high value as the P6 optimizer
-      feeder.
-- [ ] **PSS (periodic steady state) — MISSING.** Shooting method over the
-      transient engine. Required for switching converters; feeds P6.
+- [x] **`.dc` sweep — CLOSED 2026-07-18 at the host level** (T1,
+      `tests/dc_host_proof.rs`): nested two-param and source sweeps restamp
+      one compilation with exact equality vs fresh builds; no solver-side
+      analysis needed.
+- [x] **`.sens` (DC sensitivity) — DONE 2026-07-18** (p1-solver-complete
+      T3/T4): central-difference over the restamp path, uniform surface on
+      both hosts (`run_sens` / `module.sens`, MD-22). AC sensitivity and the
+      exact-symbolic direct method logged as upgrades.
+- [~] **PSS (periodic steady state) — core DONE 2026-07-18, host bindings
+      ONGOING** (T5/T6): single shooting over transient re-entry, 2nd-period
+      anti-false-fixed-point guard, digital k·T diagnostic,
+      `estimated_settle_time` from the monodromy eigenvalue.
 - [ ] `.four` — Python host post-processing (numpy FFT on `Waveform`), not a
       solver analysis (tracked in P3).
 - [ ] `.pz`, `.disto`, `.sp` — MISSING, niche, post-V1.

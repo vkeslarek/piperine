@@ -10,7 +10,7 @@ host surfaces (`run_sens`/`run_pss`) are born in `piperine-api`.
 ---
 
 **Design**: `.specs/features/p1-solver-complete/design.md`
-**Status**: Draft — approve before Execute
+**Status**: In Progress — batch 1 (Phase 1) executing inline, 2026-07-18
 **Baseline**: whatever `api-crate` closes at (≥449 passed / 5 ignored)
 
 ---
@@ -58,7 +58,7 @@ one cohesive cleanup train; splitting 5/6 is acceptable if preferred).
 
 ## Task Breakdown
 
-### T1: `.dc` host-proof tests
+### T1: ✅ DONE — `.dc` host-proof tests (commit 2b0d846)
 **What**: Extend `compile_once_sweep.rs`: nested two-param sweep (source ×
 resistor) + source-only sweep; every point compared to an independent
 fresh-build solve (exact voltage equality); compile count asserted = 1.
@@ -68,7 +68,7 @@ fresh-build solve (exact voltage equality); compile count asserted = 1.
 **Tests**: integration · **Gate**: quick
 **Commit**: `test(api): nested + source sweeps prove host-level .dc`
 
-### T2: Transient re-entry from arbitrary state
+### T2: ✅ DONE — Transient re-entry from arbitrary state (commit 99fd806)
 **What**: `TransientSolver::with_initial_state(&[f64])` (+ digital snapshot
 restore): start integration from a supplied full state vector instead of the
 IC seed path. Standalone test: run RC 0→T, capture state, re-enter for T→2T,
@@ -80,7 +80,7 @@ gate quick.
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(solver): transient re-entry from a supplied state`
 
-### T3: `SensSolver` (FD direct method)
+### T3: ✅ DONE — `SensSolver` (FD central difference; SPEC_DEVIATION marked) (commit b2fdc60)
 **What**: `analysis/sens.rs` options/result + `solver/sens.rs`: DC solve,
 then per `(label,param)`: perturb via `set_element_param`, restamp-diff
 `∂A/∂p, ∂b/∂p`, one LU-reused solve, `∂V(out)/∂p`. `Invalidation::Rebuild`
@@ -92,7 +92,7 @@ analytic `V·R1/(R1+R2)²` to 1e-6 rel; diode divider vs two-sided FD to 1e-3.
 **Tests**: unit+integration · **Gate**: quick
 **Commit**: `feat(solver): .sens DC sensitivity (FD direct method)`
 
-### T4: sens host + python surface
+### T4: ✅ DONE — sens host + python surface, uniform MD-22 (commit 9e1b0ee)
 **What**: `piperine-api` `SimSession::run_sens` + result object;
 `piperine-python` `module.sens(...)`/session binding with docstrings; part
 VIII section. Rust↔Python value parity test.
@@ -102,7 +102,7 @@ VIII section. Rust↔Python value parity test.
 **Tests**: e2e · **Gate**: full
 **Commit**: `feat(api,python): sensitivity analysis surface`
 
-### T5: `PssSolver` (single shooting)
+### T5: ✅ DONE — `PssSolver` (single shooting + 2nd-period guard + k·T diagnostic) (commit d6f365d)
 **What**: `analysis/pss.rs` (`PssAnalysisOptions {period, tstab,
 max_shoot_iter, shoot_tol}`) + `solver/pss.rs`: optional tstab pre-roll,
 shooting Newton on `g(x₀)=x(T)−x₀` (first Jacobian by FD columns, Broyden
@@ -119,7 +119,7 @@ divider-by-2 case → k·T diagnostic.
 **Tests**: unit+integration · **Gate**: quick
 **Commit**: `feat(solver): periodic steady state via single shooting`
 
-### T6: PSS host + python + rectifier validation
+### T6: 🔄 ONGOING — PSS host + python + rectifier validation (+ estimated_settle_time, user request 2026-07-18)
 **What**: `run_pss` in api + python (docstrings, part VIII); rectifier+RC
 ripple vs settled-transient reference within 10·reltol; tstab equivalence
 case (SC-06).
