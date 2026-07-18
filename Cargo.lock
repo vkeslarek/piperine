@@ -1936,6 +1936,7 @@ dependencies = [
  "piperine-codegen",
  "piperine-lang",
  "piperine-python",
+ "piperine-solver",
 ]
 
 [[package]]

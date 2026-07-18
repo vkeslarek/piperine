@@ -33,6 +33,7 @@ piperine-python = { path = "crates/piperine-python" }
 # introspection) — dev-only edges, not part of the shell's public story.
 piperine-lang = { path = "crates/piperine-lang" }
 piperine-codegen = { path = "crates/piperine-codegen" }
+piperine-solver = { path = "crates/piperine-solver" }
 
 [profile.dev.package.faer]
 opt-level = 3
