@@ -51,7 +51,7 @@ Batching: batch 1 = Phases 1+2 (5 tasks), batch 2 = Phases 3+4 (4 tasks).
 
 ## Task Breakdown
 
-### T1: Root lib scaffold + plumbing move (lib-only; bin → cli)
+### T1: ✅ DONE — Root lib scaffold + plumbing move (lib-only; bin → cli)
 **What**: Root crate becomes **lib-only** (topology B, amended 2026-07-17):
 `src/main.rs` moves to `piperine-cli` as `[[bin]] name = "piperine"`; root
 deps become lang/codegen/solver (drop cli/project). Move `session/objects(→
@@ -74,7 +74,7 @@ face, lib-only + bin-in-cli) in `.specs/STATE.md` Decisions.
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(piperine)!: root crate is the library face; binary moves to cli`
 
-### T2: Migrate tests of record to root
+### T2: ✅ DONE — Migrate tests of record to root
 **What**: Move ngspice_validation(+ngspice/), spice_smoke(+spice/ fixtures
 ported off bench blocks onto session-API calls, same assertions),
 compile_once_sweep, run_examples into root `tests/`; delete `bench.rs`.
@@ -87,7 +87,7 @@ compile_once_sweep, run_examples into root `tests/`; delete `bench.rs`.
 **Tests**: integration · **Gate**: full
 **Commit**: `test(piperine): host-api test suites live on the root crate`
 
-### T3: Python retarget verification + cleanup
+### T3: ✅ DONE — Python retarget verification + cleanup
 **What**: T1 already flips `piperine-python` onto the root lib (cycle-free
 under topology B). This task verifies and finishes: drop every residual
 piperine-bench reference from python (Cargo + imports), result shapes
@@ -101,7 +101,7 @@ untouched (PY-17), lib build lean.
 **Tests**: e2e (examples) · **Gate**: quick
 **Commit**: `refactor(python): host plumbing from the root piperine lib`
 
-### T4: CLI `test` = `*_tb.py` runner
+### T4: ✅ DONE — CLI `test` = `*_tb.py` runner
 **What**: Rewrite `commands/test.rs`: discover `*_tb.py` (root + `tests/`,
 skip `.venv`/`target`), run via the `piperine run` embedded-CPython path,
 per-file PASS/FAIL + traceback, per-file timeout, exit 1 on failure, exit 0
@@ -115,7 +115,7 @@ with notice when none found.
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(cli): piperine test runs *_tb.py python testbenches`
 
-### T5: Plugin bench-task surface removal
+### T5: ✅ DONE — Plugin bench-task surface removal
 **What**: Remove `BenchTask` extension point from plugin SDK + host; manifest
 declaring bench tasks → loud "bench removed; use python testbenches" error.
 **Where**: `crates/piperine-plugin/`, `piperine-plugin-wasm` if touched
@@ -127,7 +127,7 @@ declaring bench tasks → loud "bench removed; use python testbenches" error.
 **Tests**: unit+integration · **Gate**: quick
 **Commit**: `feat(plugin)!: remove bench-task extension point`
 
-### T6: Language bench removal
+### T6: ✅ DONE — Language bench removal
 **What**: Remove `bench` keyword/AST/elab/`Design::benches()`/`eval/`
 interpreter+Host+`tasks.rs` from piperine-lang, preserving const/param
 folding (elab + codegen fn-inliner defaults). Port/delete lang tests that
@@ -143,7 +143,12 @@ still make sense to session-API root tests).
 **Tests**: unit+integration · **Gate**: full
 **Commit**: `feat(lang)!: remove the in-language bench`
 
-### T7: Delete piperine-bench + strip examples
+### T7: ✅ DONE — Delete piperine-bench + strip examples
+**Completed inside T6's commit** (physical coupling: the crate cannot
+compile once `eval/` dies, and stripped examples cannot parse before the
+grammar changes). Verified at closure: `cargo tree -i piperine-bench` →
+no match; zero `bench` blocks in `examples/*.phdl`; run_examples dual
+contract green; build gate zero warnings.
 **What**: Delete the crate (workspace member, temporary re-exports, docs);
 strip bench blocks from all `examples/*.phdl` (modules stay); run_examples
 asserts every `.phdl` elaborates + every `.py` runs.

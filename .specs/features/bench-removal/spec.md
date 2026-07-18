@@ -142,23 +142,23 @@ codes and report verified.
 
 | Requirement ID | Story | Phase | Status |
 |---|---|---|---|
-| BRM-01 | P1 grammar removal | Design | Pending |
-| BRM-02 | P1 no bench surface left | Design | Pending |
-| BRM-03 | P1 const-eval preserved | Design | Pending |
-| BRM-04 | P1 root lib face | Design | Pending |
-| BRM-05 | P1 tests migrated green | Design | Pending |
-| BRM-06 | P1 python on root lib | Design | Pending |
-| BRM-07 | P1 CLI unchanged but test | Design | Pending |
-| BRM-08 | P1 `*_tb.py` discovery/run | Design | Pending |
-| BRM-09 | P1 empty/failing tb semantics | Design | Pending |
-| BRM-10 | P1 examples stripped | Design | Pending |
-| BRM-11 | P1 run_examples dual contract | Design | Pending |
+| BRM-01 | P1 grammar removal | T6 | Verified |
+| BRM-02 | P1 no bench surface left | T6 | Verified |
+| BRM-03 | P1 const-eval preserved | T6 | Verified |
+| BRM-04 | P1 root lib face | T1 | Verified |
+| BRM-05 | P1 tests migrated green | T2 | Verified |
+| BRM-06 | P1 python on root lib | T3 | Verified |
+| BRM-07 | P1 CLI unchanged but test | T4+T5(deviation) | Verified |
+| BRM-08 | P1 `*_tb.py` discovery/run | T4 | Verified |
+| BRM-09 | P1 empty/failing tb semantics | T4 | Verified |
+| BRM-10 | P1 examples stripped | T6 | Verified |
+| BRM-11 | P1 run_examples dual contract | T2+T7 | Verified |
 | BRM-12 | P2 sanitized naming + docstrings | Design | Pending |
 | BRM-13 | P2 host-API docs | Design | Pending |
 | BRM-14 | P2 stub/facade parity | Design | Pending |
-| BRM-15 | P1 plugin bench-task removal | Design | Pending |
+| BRM-15 | P1 plugin bench-task removal | T5 | Verified |
 
-**Coverage:** 15 total, 0 mapped to tasks, 15 unmapped ⚠️
+**Coverage:** 15 total, 12 verified (T1–T7), 3 pending (BRM-12/13/14 → T8/T9)
 
 ## Success Criteria
 
