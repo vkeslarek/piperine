@@ -52,16 +52,3 @@ mod AdcDemo() {
     adc : LevelAdc(.vin = vin, .gnd = gnd, .d2 = d2, .d1 = d1, .d0 = d0, .rec = rec);
 }
 
-bench AdcDemo {
-
-    fn test_quantization_levels() {
-        // Ramp 0 → 4 V over 10 µs; reconstruction is a 0/1/2/3 V staircase.
-        var t = $tran(TranConfig { .stop = 1e-5, .step = 2e-7 });
-        var v = t.v(vin, gnd);
-        var r = t.v(rec, gnd);
-        $assert(abs(v.at(5e-6) - 2.0) < 0.1, "ramp reaches 2 V at 5 µs");
-        // Around 2 V only d0 has fired → rec = 1 V (allow the 1-step A2D lag).
-        $assert(abs(r.at(5e-6) - 1.0) < 0.3, "rec = 1 V while only d0 is high");
-        $assert(abs(r.at(9e-6) - 3.0) < 0.3, "rec = 3 V once all comparators fire");
-    }
-}

@@ -1,16 +1,13 @@
 //! # Evaluator
 //!
 //! One tree-walking interpreter over the `fn`-body grammar (SPEC Part I §9),
-//! shared by two hosts:
-//!
-//! - [`const_host::ConstHost`] — pure, backs [`crate::elab::const_eval::ConstEnv`]
-//!   (array dims, structural `for`/`if`, param defaults, enum discriminants).
-//! - a `SimHost` in `piperine-bench` — effectful, backs the `bench` block
-//!   (piperine-bench/docs/SPEC.md): runs analyses, stages overrides, does I/O.
+//! backing [`crate::elab::const_eval::ConstEnv`] through the pure
+//! [`const_host::ConstHost`] (array dims, structural `for`/`if`, param
+//! defaults, enum discriminants).
 //!
 //! [`interp::Interpreter`] and [`interp::Host`] hold everything context-
-//! independent; a host supplies name resolution, system-task dispatch, and
-//! assignment targets (see the trait docs).
+//! independent; a host supplies name resolution and assignment targets (see
+//! the trait docs).
 
 pub mod const_host;
 pub mod error;

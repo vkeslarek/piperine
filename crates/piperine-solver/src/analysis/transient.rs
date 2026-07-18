@@ -51,7 +51,7 @@ pub struct TransientAnalysisOptions {
     /// Maximum allowed timestep (default: stop_time / 100)
     pub dt_max: Second,
 
-    /// Earliest time at which a step is *recorded* (piperine-bench/docs/SPEC.md §5.1
+    /// Earliest time at which a step is *recorded* (host `run_tran` `start`
     /// `TranConfig.start`). The solver still integrates from t=0 — the state
     /// evolution matters — but steps with `t < record_from` are dropped from
     /// the result (ngspice `.tran tstart tstop` semantics). Defaults to 0

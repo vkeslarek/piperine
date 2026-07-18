@@ -47,7 +47,6 @@ pub enum Item {
     ImplDecl(ImplDecl),
     FnDecl(FnDecl),
     ConstDecl(ConstDecl),
-    BenchDecl(BenchDecl),
 }
 
 impl Item {
@@ -65,7 +64,6 @@ impl Item {
             Item::ImplDecl(i) => i.is_pub,
             Item::FnDecl(f) => f.is_pub,
             Item::ConstDecl(c) => c.is_pub,
-            Item::BenchDecl(b) => b.is_pub,
         }
     }
 
@@ -82,22 +80,8 @@ impl Item {
             Item::CapabilityDecl(c) => Some(&c.name),
             Item::FnDecl(f) => Some(&f.sig.name),
             Item::ConstDecl(c) => Some(&c.name),
-            Item::BenchDecl(b) => Some(&b.name),
         }
     }
-}
-
-/// `bench ModName { fn ... }` — the effectful post-elaboration scripting
-/// layer attached to a module by name (piperine-bench/docs/SPEC.md §2), the same way
-/// `analog`/`digital` attach via [`BehaviorDecl`]. Bodies use the ordinary
-/// `fn` grammar; only the runtime context differs (piperine-bench/docs/SPEC.md §1/§3).
-#[derive(Debug, Clone)]
-pub struct BenchDecl {
-    pub span: Option<miette::SourceSpan>,
-    pub attrs: Vec<Attribute>,
-    pub is_pub: bool,
-    pub name: String,
-    pub fns: Vec<FnDecl>,
 }
 
 /// A `::`-separated module path, e.g. `devices::passives::Resistor`.
@@ -501,19 +485,6 @@ impl Block {
         }
     }
 
-    /// Collect every `$name(...)` system-task call reachable from this
-    /// block. Used to validate a `bench` fn against the system-task
-    /// availability table (piperine-bench/docs/SPEC.md §7/§11) before it is ever
-    /// interpreted — an unimplemented task is a fail-loud elaboration
-    /// error, not a runtime surprise.
-    pub fn collect_syscalls(&self, out: &mut Vec<String>) {
-        self.walk_exprs(&mut |e| {
-            if let Expr::SysCall(name, _) = e {
-                out.push(name.clone());
-            }
-            Walk::Continue
-        });
-    }
 }
 
 impl Stmt {
@@ -902,17 +873,6 @@ impl Expr {
         }
     }
 
-    /// Collect every `$name(...)` system-task call reachable from this
-    /// expression (lambda bodies included — unlike `subst_const`, a syscall
-    /// inside a lambda is still reachable).
-    pub fn collect_syscalls(&self, out: &mut Vec<String>) {
-        self.walk(&mut |e| {
-            if let Expr::SysCall(name, _) = e {
-                out.push(name.clone());
-            }
-            Walk::Continue
-        });
-    }
 
     /// Substitute every `Ident(name)` matching `var` with `Literal::Int(value)`.
     /// Used during behavioral `for` unrolling to replace the loop variable

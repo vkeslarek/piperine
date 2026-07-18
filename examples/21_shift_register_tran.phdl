@@ -63,26 +63,3 @@ mod ShiftTran() {
     f3 : Dff(.clk = clk, .d = q2,  .q = q3);
 }
 
-bench ShiftTran {
-
-    fn test_register_fills_over_time() {
-        // Run 5 clock periods; rising edges at 0.5, 1.5, 2.5, 3.5, 4.5 µs.
-        var tr = $tran(TranConfig { .stop = 5.0e-6, .step = 20.0e-9 });
-
-        // Sample each Q shortly after a rising edge. The 1 walks q0 → q3.
-        var w0 = tr.v(q0);
-        var w1 = tr.v(q1);
-        var w2 = tr.v(q2);
-        var w3 = tr.v(q3);
-
-        // After edge 1 (~0.7 µs): q0 = 1, rest 0.
-        $assert(abs(w0.at(0.7e-6) - 1.0) < 0.5, "after 1 clock: q0 = 1");
-        $assert(abs(w1.at(0.7e-6) - 0.0) < 0.5, "q1 still 0");
-        // After edge 2 (~1.7 µs): q1 = 1.
-        $assert(abs(w1.at(1.7e-6) - 1.0) < 0.5, "after 2 clocks: q1 = 1");
-        // After edge 3 (~2.7 µs): q2 = 1.
-        $assert(abs(w2.at(2.7e-6) - 1.0) < 0.5, "after 3 clocks: q2 = 1");
-        // After edge 4 (~3.7 µs): q3 = 1 — the 1 reached the last stage.
-        $assert(abs(w3.at(3.7e-6) - 1.0) < 0.5, "after 4 clocks: q3 = 1");
-    }
-}

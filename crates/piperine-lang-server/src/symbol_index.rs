@@ -11,7 +11,6 @@ pub enum SymbolKind {
     Instance,
     Function,
     Behavior,
-    Bench,
     Enum,
     Bundle,
     Discipline,
@@ -107,17 +106,6 @@ pub fn resolve_at(design: &Design, source: &str, byte_offset: usize) -> Option<R
         }
     }
     
-    for b in design.benches() {
-        if b.module == word {
-            return Some(Resolution {
-                kind: SymbolKind::Bench,
-                name: b.module.clone(),
-                decl_span: b.span,
-                type_info: None,
-            });
-        }
-    }
-
     for (name, e) in design.enums() {
         if *name == word {
             return Some(Resolution {

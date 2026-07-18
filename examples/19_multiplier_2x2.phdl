@@ -61,23 +61,3 @@ mod Mult2() {
     ha2 : HalfAdder(.a = pp11, .b = c1, .sum = p2, .carry = p3);
 }
 
-bench Mult2 {
-
-    fn test_exhaustive_product() {
-        var bits = [0.0, 1.0];
-        for a1 in bits { for a0 in bits {
-            for b1 in bits { for b0 in bits {
-                da0.level = a0; da1.level = a1;
-                db0.level = b0; db1.level = b1;
-
-                var r = $op();
-                // p0 = a0·b0 (read the AND output net directly).
-                var product = r.v(pp00) + 2.0 * r.v(p1) + 4.0 * r.v(p2) + 8.0 * r.v(p3);
-                var a = 2.0 * a1 + a0;
-                var b = 2.0 * b1 + b0;
-                $assert(abs(product - a * b) < 1e-9,
-                        "2x2 multiplier: partial products + carry chain = a·b");
-            }}
-        }}
-    }
-}

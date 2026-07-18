@@ -41,16 +41,3 @@ mod RcStep() {
     c1   : Capacitor(.p = out, .n = gnd) { .c = 100e-9 };
 }
 
-bench RcStep {
-
-    fn test_step_response_landmarks() {
-        // Capacitor starts at 0 V (UIC); the 1 V source charges it.
-        var t = $tran(TranConfig { .stop = 5e-4, .step = 2e-6, .ic = Map { out: 0.0 } });
-        var v = t.v(out, gnd);
-        $display("v(0) =", v.at(0.0), " v(tau) =", v.at(1e-4), " v(5tau) =", v.at(5e-4));
-        $assert(abs(v.at(0.0) - 0.0) < 0.01, "cap starts discharged at t=0");
-        $assert(abs(v.at(1e-4) - 0.6321) < 0.02, "one tau: 1 - 1/e = 0.6321");
-        $assert(abs(v.at(2e-4) - 0.8647) < 0.02, "two tau: 1 - e^-2 = 0.8647");
-        $assert(abs(v.at(5e-4) - 0.9933) < 0.01, "five tau: settled to 99.3%");
-    }
-}

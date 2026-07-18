@@ -43,12 +43,3 @@ mod Fitter() {
     d1 : Diode(.p = out, .n = gnd) {};
 }
 
-bench Fitter {
-
-    fn test_diode_drop_at_default_r() {
-        var r = $op();
-        var vd = r.v(out, gnd);
-        $display("diode drop:", vd, "V");
-        $assert(vd > 0.6 && vd < 0.75, "out sits near one forward drop");
-    }
-}

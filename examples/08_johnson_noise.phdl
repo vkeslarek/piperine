@@ -33,16 +33,3 @@ mod NoiseCell() {
     c1 : Capacitor(.p = out, .n = gnd);    // fc ≈ 159 kHz
 }
 
-bench NoiseCell {
-
-    fn test_thermal_noise_physics() {
-        var n = $noise(NoiseConfig { .out = out, .fstart = 1.0, .fstop = 1e7, .points = 200 });
-        var psd = n.psd();
-        // Low-frequency plateau: S_v = 4kTR ≈ 1.657e-17 V²/Hz.
-        var plateau = psd.at(100.0);
-        $display("plateau:", plateau, "V^2/Hz, integrated:", n.total(), "V^2");
-        $assert(plateau > 1.3e-17 && plateau < 2.0e-17, "plateau is 4kTR");
-        // Integrated RMS over the band: √(kT/C) ≈ 2.03 µV (band covers ~98%).
-        $assert(n.total() > 1.8e-6 && n.total() < 2.2e-6, "total RMS noise is sqrt(kT/C)");
-    }
-}

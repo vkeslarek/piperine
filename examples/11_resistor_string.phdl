@@ -34,12 +34,3 @@ mod ParallelBank() {
     }
 }
 
-bench ParallelBank {
-
-    fn test_bank_divides() {
-        var r = $op();
-        $display(r);
-        $assert(abs(r.v(mid, gnd) - 1.0) < 1e-6, "4x 1k in parallel is 250 ohms");
-        $assert(abs(r.i(r_top.p, r_top.n) - 4e-3) < 1e-8, "string current is 5V / 1.25k");
-    }
-}

@@ -283,9 +283,6 @@ pub fn server_capabilities() -> ServerCapabilities {
                 full: Some(lsp_types::SemanticTokensFullOptions::Bool(true)),
             }
         )),
-        code_lens_provider: Some(lsp_types::CodeLensOptions {
-            resolve_provider: Some(false),
-        }),
         references_provider: Some(OneOf::Left(true)),
         rename_provider: Some(OneOf::Right(RenameOptions {
             prepare_provider: Some(true),

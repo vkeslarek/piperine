@@ -41,7 +41,6 @@ impl Parse for Item {
                 Ok(Item::FnDecl(FnDecl::parse_with_extern(parser, is_pub, is_extern)?))
             }
             "const" => Ok(Item::ConstDecl(ConstDecl::parse(parser)?)),
-            "bench" => Ok(Item::BenchDecl(BenchDecl::parse(parser)?)),
             _ => Err(format!("Unknown top-level item: {}", ident).into()),
         }
     }

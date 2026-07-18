@@ -34,34 +34,3 @@ mod DacBoard() {
     load : Resistor(.p = out, .n = gnd) { .r = 1e3 };
 }
 
-bench DacBoard {
-
-    // 1 LSB = 100 µA · 1 kΩ = 0.1 V
-    fn test_zero_and_full_scale() {
-        var r0 = $op();
-        $assert(abs(r0.v(out, gnd)) < 1e-9, "code 0 gives 0 V");
-        dac.b3 = 1.0; dac.b2 = 1.0; dac.b1 = 1.0; dac.b0 = 1.0;
-        var r15 = $op();
-        $assert(abs(r15.v(out, gnd) - 1.5) < 1e-6, "code 15 gives 15 LSB");
-    }
-
-    fn test_midscale_step() {
-        dac.b2 = 1.0; dac.b1 = 1.0; dac.b0 = 1.0;
-        var r7 = $op();
-        dac.b3 = 1.0; dac.b2 = 0.0; dac.b1 = 0.0; dac.b0 = 0.0;
-        var r8 = $op();
-        // The major-carry transition 7 → 8 must step exactly one LSB.
-        $assert(abs((r8.v(out, gnd) - r7.v(out, gnd)) - 0.1) < 1e-6, "midscale step is 1 LSB");
-    }
-
-    fn test_lsb_staircase() {
-        var prev = -1.0;
-        for b in [0.0, 1.0] {
-            dac.b0 = b;
-            var r = $op();
-            $display("b0 =", b, "-> v(out) =", r.v(out, gnd));
-            $assert(r.v(out, gnd) > prev, "output is monotonic in the LSB");
-            prev = r.v(out, gnd);
-        }
-    }
-}

@@ -1941,24 +1941,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "piperine-bench"
-version = "0.1.1"
-dependencies = [
- "num-complex",
- "piperine-codegen",
- "piperine-lang",
- "piperine-solver",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "piperine-cli"
 version = "0.1.1"
 dependencies = [
  "clap",
  "include_dir",
  "miette",
- "piperine-bench",
  "piperine-codegen",
  "piperine-lang",
  "piperine-plugin",

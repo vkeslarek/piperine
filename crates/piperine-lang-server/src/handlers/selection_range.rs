@@ -27,7 +27,6 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
                         Item::ModuleDeclaration(m) => m.span,
                         Item::BehaviorDecl(b) => b.span,
                         Item::FnDecl(f) => f.span,
-                        Item::BenchDecl(b) => b.span,
                         Item::DisciplineDecl(d) => d.span,
                         Item::BundleDecl(b) => b.span,
                         Item::EnumDecl(e) => e.span,

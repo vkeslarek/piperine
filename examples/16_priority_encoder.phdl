@@ -61,24 +61,3 @@ mod IrqBoard() {
     enc : PriorityEncoder(.r0 = n0, .r1 = n1, .r2 = n2, .r3 = n3, .y1 = y1, .y0 = y0, .valid = ok);
 }
 
-bench IrqBoard {
-
-    fn read_code() -> Real {
-        var r = $op();
-        return 2.0 * r.v(y1) + r.v(y0) + 4.0 * r.v(ok);
-    }
-
-    fn test_idle_reports_invalid() {
-        $assert(abs(read_code()) < 1e-9, "no request: invalid, code 0");
-    }
-
-    fn test_highest_request_wins() {
-        d1.level = 1.0;
-        $assert(abs(read_code() - 5.0) < 1e-9, "r1 alone: code 1 + valid");
-        d3.level = 1.0;
-        $assert(abs(read_code() - 7.0) < 1e-9, "r3 outranks r1: code 3 + valid");
-        d3.level = 0.0;
-        d2.level = 1.0;
-        $assert(abs(read_code() - 6.0) < 1e-9, "r2 outranks r1: code 2 + valid");
-    }
-}

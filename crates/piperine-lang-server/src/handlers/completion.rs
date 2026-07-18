@@ -120,14 +120,6 @@ fn add_top_level_completions(items: &mut Vec<CompletionItem>) {
         ..Default::default()
     });
     items.push(CompletionItem {
-        label: "bench".into(),
-        kind: Some(CompletionItemKind::SNIPPET),
-        detail: Some("Bench block snippet".into()),
-        insert_text: Some("bench ${1:Name} {\n\t$0\n}".into()),
-        insert_text_format: Some(InsertTextFormat::SNIPPET),
-        ..Default::default()
-    });
-    items.push(CompletionItem {
         label: "discipline".into(),
         kind: Some(CompletionItemKind::SNIPPET),
         detail: Some("Discipline snippet".into()),

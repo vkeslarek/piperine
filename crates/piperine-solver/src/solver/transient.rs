@@ -145,7 +145,7 @@ pub struct TransientSolver<'a> {
     pub system: TransientSystem<'a>,
     pub solver: NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>,
     pub options: TransientAnalysisOptions,
-    /// User-supplied initial node voltages (piperine-bench/docs/SPEC.md §5.1
+    /// User-supplied initial node voltages (host `run_tran` `ic`
     /// `TranConfig.ic`), pushed after the DC operating point so the t=0
     /// state reflects them. Milestone-1: a seed (the companion model's
     /// first step may show a transient); full enforced-hold is deferred.
@@ -216,7 +216,7 @@ impl<'a> TransientSolver<'a> {
     }
 
     /// Seed the transient's t=0 state with user initial node voltages
-    /// (piperine-bench/docs/SPEC.md §5.1 `TranConfig.ic`). Applied after the DC operating
+    /// (the host session's `ic`). Applied after the DC operating
     /// point in `compute_initial_conditions`.
     pub fn apply_initial_conditions(&mut self, ivs: Vec<InitialValue<AnalogReference, f64>>) {
         self.initial_conditions = ivs;
@@ -535,7 +535,7 @@ impl<'a> TransientSolver<'a> {
                 // from the global Milne error (always adaptive — SPICE has
                 // been adaptive since v2). Output interpolation onto a fixed
                 // print grid is a follow-up (ROADMAP); the recorded waveform
-                // is the adaptive time grid for now, and bench statistics
+                // is the adaptive time grid for now, and statistics
                 // weight by `dt` so they stay correct.
                 dt = if post_set_step {
                     // The Milne value measures the jump, not integration

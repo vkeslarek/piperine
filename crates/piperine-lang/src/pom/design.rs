@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::parse::ast::{BundleDecl, CapabilityDecl, DisciplineDecl, EnumDecl};
-use crate::pom::{BenchBlock, ElabError, ElabErrorKind, Function, ImplBlock, Module, OverrideMap, Value};
+use crate::pom::{ElabError, ElabErrorKind, Function, ImplBlock, Module, OverrideMap, Value};
 
 /// A typed staging failure (SPEC Part VI §8.2–§8.4): the plugin layer maps
 /// `UndeclaredType` to P0005 ("type not declared") and `Conflict` to P0008.
@@ -73,7 +73,7 @@ impl Project {
 /// reflection surface: `modules` (with their ports, params, wires,
 /// instances, connections, attributes), `consts`, `project`, and
 /// `top_module`. Fields that are compiled ASTs (declarations, functions,
-/// behaviors, benches) or live host state (the staging area) are skipped —
+/// behaviors) or live host state (the staging area) are skipped —
 /// they are not reflection data and a deserialized `Design` carries their
 /// empty defaults. If the reflection surface cannot express something the
 /// language has, the POM is incomplete and gets extended — never shadowed.
@@ -94,8 +94,6 @@ pub struct Design {
     #[serde(skip)]
     pub(crate) impls: Vec<ImplBlock>,
     pub(crate) consts: HashMap<String, Value>,
-    #[serde(skip)]
-    pub(crate) benches: Vec<BenchBlock>,
     /// Project metadata (name, version, dependencies).
     pub(crate) project: Project,
     /// Staged parameter overrides — the single mutation surface in POM.
@@ -117,7 +115,6 @@ impl Design {
             functions: HashMap::new(),
             impls: Vec::new(),
             consts: HashMap::new(),
-            benches: Vec::new(),
             project: Project::default(),
             overrides: Rc::new(RefCell::new(OverrideMap::new())),
             top_module: None,
@@ -281,16 +278,6 @@ impl Design {
     /// Every impl block.
     pub fn impls(&self) -> &[ImplBlock] { &self.impls }
 
-    /// Every `bench` block.
-    pub fn benches(&self) -> impl Iterator<Item = &BenchBlock> {
-        self.benches.iter()
-    }
-
-    /// The `bench` rooted at `module`, if one exists.
-    pub fn bench(&self, module: &str) -> Option<&BenchBlock> {
-        self.benches.iter().find(|b| b.module == module)
-    }
-
     // ── Staging layer ─────────────────────────────────────────────────────
 
     /// Stage a parameter override. Does NOT mutate the elaborated design —
@@ -316,10 +303,10 @@ impl Design {
 
     /// Stage an instance injection into `parent` (SPEC Part VI §8.2). The
     /// spec's module must be a type declared in this design — a plugin (or
-    /// bench) cannot invent a type that was never declared (no-netlist-magic,
+    /// cannot invent a type that was never declared (no-netlist-magic,
     /// Part VI §2). A duplicate label with a different spec is a typed
     /// [`StageError::Conflict`] naming both writers; `staged_by` identifies
-    /// this writer (a plugin name, or `"bench"`).
+    /// this writer (a plugin name).
     pub fn stage_instance(
         &self,
         parent: &str,
@@ -370,7 +357,7 @@ impl Design {
     }
 
     /// An independent copy with its own, empty staging area — every other
-    /// field is a cheap structural clone. Used to give each `bench` entry
+    /// field is a cheap structural clone. Used to give each host entry
     /// point a fresh view (piperine-bench/docs/SPEC.md §9: staged overrides never leak
     /// between entry points).
     pub fn fork(&self) -> Design {
@@ -504,10 +491,6 @@ impl Design {
         &mut self.consts
     }
     /// Mutable access to the bench blocks vec. For internal elaboration use.
-    pub(crate) fn benches_vec_mut(&mut self) -> &mut Vec<BenchBlock> {
-        &mut self.benches
-    }
-
     /// Insert a module by name. Test-only: the selector unit tests build
     /// synthetic designs without running the elaborator.
     #[cfg(test)]

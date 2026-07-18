@@ -55,9 +55,6 @@ impl Elaborator {
                 Item::BehaviorDecl(b) => {
                     self.syms.behavior_decls.push(b.clone());
                 }
-                Item::BenchDecl(b) => {
-                    self.syms.bench_decls.push(b.clone());
-                }
                 Item::FnDecl(f) => {
                     self.syms.fn_decls.insert(f.sig.name.clone(), f.clone());
                     self.ctx.callables.register(f.clone());

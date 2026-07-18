@@ -49,19 +49,3 @@ mod AdcBoard() {
     adc : FlashAdc(.vin = vin, .gnd = gnd, .rec = rec);
 }
 
-bench AdcBoard {
-
-    fn test_transfer_staircase() {
-        for level in [0.5, 1.5, 2.5, 3.5] {
-            src.voltage = level;
-            // Comparators evaluate once per accepted transient step (A2D),
-            // and the reconstruction picks the new code up on the next
-            // step — a short settle run reads the final code.
-            var t = $tran(TranConfig { .stop = 1e-5, .step = 1e-6 });
-            var code = t.v(rec, gnd).at(1e-5);
-            var expected = level - 0.5;     // floor(level) for these levels
-            $display("vin =", level, "-> code =", code);
-            $assert(abs(code - expected) < 1e-6, "quantizer picks the right code");
-        }
-    }
-}

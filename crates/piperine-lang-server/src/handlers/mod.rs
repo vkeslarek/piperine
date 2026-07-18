@@ -7,7 +7,6 @@ pub mod formatting;
 pub mod references;
 pub mod rename;
 pub mod signature_help;
-pub mod code_lens;
 pub mod semantic_tokens;
 pub mod code_actions;
 pub mod inlay_hints;

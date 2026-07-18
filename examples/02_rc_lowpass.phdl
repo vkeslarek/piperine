@@ -41,23 +41,3 @@ mod RcFilter() {
     probe : AcProbe(.p = out, .n = gnd);
 }
 
-bench RcFilter {
-
-    fn test_frequency_response() {
-        var r = $ac(AcConfig { .fstart = 1.0, .fstop = 1e6, .points = 600 });
-        var mag = r.v(out, gnd).mag();
-        $assert(abs(mag.at(10.0) - 1000.0) < 20.0, "passband magnitude is R");
-        $assert(abs(mag.at(1591.5) - 707.1) < 25.0, "corner magnitude is R/sqrt(2)");
-        var db = r.v(out, gnd).db();
-        var rolloff = db.at(159155.0) - db.at(1591.5);
-        $assert(rolloff < -35.0 && rolloff > -45.0, "-20 dB/decade above the corner");
-    }
-
-    fn test_discharge_follows_exponential() {
-        var t = $tran(TranConfig { .stop = 5e-4, .step = 1e-6, .ic = Map { out: 1.0 } });
-        var v = t.v(out, gnd);
-        $display("v(0) =", v.at(0.0), " v(tau) =", v.at(1e-4), " v(5tau) =", v.at(5e-4));
-        $assert(abs(v.at(1e-4) - 0.3679) < 0.02, "one time constant leaves e^-1 of the charge");
-        $assert(v.at(5e-4) < 0.02, "five time constants fully discharge the node");
-    }
-}

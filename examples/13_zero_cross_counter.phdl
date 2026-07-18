@@ -36,19 +36,3 @@ mod Counter() {
     det : CrossCounter(.vin = sig, .count = count, .gnd = gnd);
 }
 
-bench Counter {
-
-    fn test_counts_six_crossings_in_three_periods() {
-        var t = $tran(TranConfig { .stop = 3e-3, .step = 5e-6 });
-        var n = t.v(count, gnd);
-        $display("crossings counted:", n.at(3e-3));
-        // t=0 starts *at* zero (not a crossing); then T/2, T, 3T/2, ... —
-        // six crossings in (0, 3T].
-        $assert(abs(n.at(3e-3) - 6.0) < 1.1, "six zero crossings in three periods");
-        // Cross-check with the waveform-side detector: the first falling
-        // crossing of the sine itself is at T/2.
-        var first = t.v(sig, gnd).cross(0.0, "Falling");
-        $assert(first.is_some(), "the sine crosses zero");
-        $assert(abs(first.unwrap() - 5e-4) < 5e-5, "first falling crossing at T/2");
-    }
-}

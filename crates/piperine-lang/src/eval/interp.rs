@@ -1,12 +1,9 @@
-//! [`Interpreter`] — the tree-walking evaluator shared by const-eval
-//! ([`crate::elab::const_eval::ConstEnv`], via [`super::const_host::ConstHost`])
-//! and `bench` (via a `SimHost` in `piperine-bench`).
+//! [`Interpreter`] — the tree-walking evaluator backing const-eval
+//! ([`crate::elab::const_eval::ConstEnv`], via [`super::const_host::ConstHost`]).
 //!
-//! One engine, two [`Host`] implementations: the host owns everything that
-//! differs between "elaboration-time constant folding" and "post-elaboration
-//! effectful scripting" — name resolution against the POM, whether a system
-//! task is reachable, and where assignment writes land (nowhere, for
-//! `ConstHost`; a staged override, for `SimHost`).
+//! The [`Host`] owns everything that differs between evaluation contexts:
+//! name resolution against the POM, whether a system task is reachable, and
+//! where assignment writes land (nowhere, for `ConstHost`).
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -27,16 +24,6 @@ pub enum Callable {
         /// Default expressions, parallel to `params` (the language spec Part I §9.1).
         defaults: Vec<Option<Expr>>,
         body: Vec<Stmt>,
-    },
-    /// A sibling `bench` fn (bench spec §2 "fn helper(x: T) -> U") — runs
-    /// in the effectful bench context, so it may call analyses and stage
-    /// overrides, unlike the pure [`Callable::Function`].
-    BenchFn {
-        params: Vec<String>,
-        defaults: Vec<Option<Expr>>,
-        body: Vec<Stmt>,
-        /// The block's trailing expression, if any (`fn f() -> Real { x * 2 }`).
-        tail: Option<Expr>,
     },
 }
 
@@ -182,27 +169,6 @@ impl<'h, H: Host> Interpreter<'h, H> {
         result.map(Flow::into_value)
     }
 
-    /// Call a sibling `bench` fn: same binding as [`Self::call_pom_fn`] but
-    /// in the *effectful* context (no `pure_depth` guard) — a bench helper
-    /// may run analyses and stage overrides (bench spec §2).
-    pub fn call_bench_fn(
-        &mut self,
-        params: &[String],
-        defaults: &[Option<Expr>],
-        body: &[Stmt],
-        tail: Option<&Expr>,
-        mut args: Vec<Value>,
-    ) -> Result<Value, EvalError> {
-        let paired: Vec<(&str, Option<&Expr>)> = params
-            .iter()
-            .zip(defaults.iter())
-            .map(|(n, d)| (n.as_str(), d.as_ref()))
-            .collect();
-        self.fill_defaults(&paired, &mut args)?;
-        let names: Vec<&str> = params.iter().map(String::as_str).collect();
-        self.call_with_params(&names, &args, |me| me.exec_stmts_and_tail(body, tail))
-            .map(Flow::into_value)
-    }
 
     fn call_with_params(
         &mut self,
@@ -572,7 +538,7 @@ impl<'h, H: Host> Interpreter<'h, H> {
                                     self.host.resolve_callable(&name).ok_or_else(|| {
                                         EvalError::Undefined(name.clone())
                                     })?;
-                                self.call_callable(&name, callable, vec![*v])?
+                                self.call_callable(callable, vec![*v])?
                             }
                             other => {
                                 return Err(EvalError::TypeMismatch(format!(
@@ -592,9 +558,6 @@ impl<'h, H: Host> Interpreter<'h, H> {
                 if let Some(callable) = self.host.resolve_method(&ty, method) {
                     return match callable {
                         Callable::Closure(c) => self.call_closure(&c, arg_values),
-                        Callable::BenchFn { .. } => Err(EvalError::TypeMismatch(
-                            "a bench fn is not an impl method".into(),
-                        )),
                         Callable::Function { params, defaults, body } => {
                             let mut names = vec!["self".to_string()];
                             names.extend(params);
@@ -615,13 +578,13 @@ impl<'h, H: Host> Interpreter<'h, H> {
             // parameter) — resolve the referenced function and call it.
             if let Some(Value::FnRef(fn_name)) = self.lookup_local(name)
                 && let Some(callable) = self.host.resolve_callable(&fn_name) {
-                    return self.call_callable(name, callable, arg_values);
+                    return self.call_callable(callable, arg_values);
                 }
             if let Some(Value::Closure(c)) = self.lookup_local(name) {
                 return self.call_closure(&c, arg_values);
             }
             if let Some(callable) = self.host.resolve_callable(name) {
-                return self.call_callable(name, callable, arg_values);
+                return self.call_callable(callable, arg_values);
             }
             // Host-intercepted plain-name call (e.g. `select("...")`).
             if let Some(result) = self.host.call_host_fn(name, &arg_values) {
@@ -640,27 +603,18 @@ impl<'h, H: Host> Interpreter<'h, H> {
             Value::FnRef(name) => {
                 let callable = self.host.resolve_callable(&name)
                     .ok_or_else(|| EvalError::Undefined(name.clone()))?;
-                self.call_callable(&name, callable, arg_values)
+                self.call_callable(callable, arg_values)
             }
             other => Err(EvalError::TypeMismatch(format!("{} is not callable", other.type_name()))),
         }
     }
 
     /// Dispatch a `Callable` resolved from a function name or FnRef.
-    fn call_callable(&mut self, name: &str, callable: Callable, arg_values: Vec<Value>) -> Result<Value, EvalError> {
+    fn call_callable(&mut self, callable: Callable, arg_values: Vec<Value>) -> Result<Value, EvalError> {
         match callable {
             Callable::Closure(c) => self.call_closure(&c, arg_values),
             Callable::Function { params, defaults, body } => {
                 self.call_pom_fn(&params, &defaults, &body, arg_values)
-            }
-            Callable::BenchFn { params, defaults, body, tail } => {
-                if self.pure_depth > 0 {
-                    return Err(EvalError::TaskUnavailable {
-                        name: name.to_string(),
-                        context: "a pure fn/method",
-                    });
-                }
-                self.call_bench_fn(&params, &defaults, &body, tail.as_ref(), arg_values)
             }
         }
     }

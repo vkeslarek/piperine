@@ -28,7 +28,6 @@ fn resolve_hover(doc: &DocumentState, position: lsp_types::Position) -> Option<H
         SymbolKind::Instance => "instance",
         SymbolKind::Behavior => "behavior",
         SymbolKind::Function => "function",
-        SymbolKind::Bench => "bench",
         SymbolKind::Enum => "enum",
         SymbolKind::Bundle => "bundle",
         SymbolKind::Discipline => "discipline",

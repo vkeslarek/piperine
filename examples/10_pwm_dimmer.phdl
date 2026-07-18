@@ -45,14 +45,3 @@ mod Dimmer() {
     c1  : Capacitor(.p = out, .n = gnd);
 }
 
-bench Dimmer {
-
-    fn test_filtered_average_is_half_vdd() {
-        // Record after 5 τ so the filter has settled.
-        var t = $tran(TranConfig { .stop = 10e-3, .step = 5e-6, .start = 5e-3 });
-        var v = t.v(out, gnd);
-        $display("mean:", v.mean(), " ripple:", v.peak_to_peak());
-        $assert(abs(v.mean() - 2.5) < 0.2, "50% duty averages to VDD/2");
-        $assert(v.peak_to_peak() < 0.5, "the RC swallows the 10 kHz ripple");
-    }
-}

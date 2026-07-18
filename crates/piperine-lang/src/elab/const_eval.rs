@@ -45,7 +45,7 @@ impl From<EvalError> for ConstEvalError {
 ///
 /// `eval` delegates to the shared [`crate::eval::Interpreter`], run against
 /// a pure [`ConstHost`] backed by this environment's binding stack — the
-/// same engine a `bench` uses, restricted to constructs valid at
+/// same tree-walking engine, restricted to constructs valid at
 /// elaboration time (no analyses, no staging). Values are the one
 /// [`Value`] type (SIMPLIFICATION.md P2); a result that isn't a
 /// compile-time scalar is rejected here with `NotConst`.
