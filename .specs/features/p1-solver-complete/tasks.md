@@ -268,7 +268,7 @@ support + the const-arg-into-behavior fix). See [[urc-codegen-gaps]].
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(spice): xfmr combined transformer`
 
-### T18: Stdlib off sentinel params
+### T18: ✅ DONE — Stdlib off sentinel params
 **What**: Migrate `1e99`/`$param_given` sentinel encodings to `T?` +
 `.get_or` across `headers/spice/`; behavior unchanged (all model suites +
 goldens green; grep-clean for the sentinel patterns).

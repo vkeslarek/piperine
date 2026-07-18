@@ -76,8 +76,8 @@ pub bundle DioModel {
     af     : Real = 1.0,        // flicker noise exponent
 
     // ── SOA ──────────────────────────────────────────────────────────────────
-    fv_max : Real = 1.0e99,
-    bv_max : Real = 1.0e99,
+    fv_max : Real? = none,    // none = no forward SOA limit
+    bv_max : Real? = none,    // none = no reverse SOA limit
 }
 
 pub mod dio ( inout p : Electrical, inout n : Electrical ) {
@@ -223,7 +223,7 @@ pub analog dio {
     // iteration (25 steps max).  PHDL has no loops, so the iteration is
     // unrolled through ng_dio_bv_step — extra steps past convergence are
     // no-ops on the fixed point.
-    var tBrkdwnV : Real = 1.0e99;
+    var tBrkdwnV : Real = 0.0;   // set from bv when present; unread otherwise
     if (model.bv.is_present()) {
         var tBv : Real = if (model.tlev == 0.0) {
             model.bv.get_or(0.0) - model.tcv * dt

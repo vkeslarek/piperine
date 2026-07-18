@@ -33,7 +33,7 @@ pub bundle ResModel {
     r         : Real? = none,     // default resistance (Ω) — RESresGiven
     kf        : Real = 0.0,       // flicker noise coefficient
     af        : Real = 1.0,       // flicker noise exponent
-    bv_max    : Real = 1.0e99,    // max voltage (SOA)
+    bv_max    : Real? = none,    // max voltage (SOA); none = no limit
 }
 
 pub mod res ( inout p : Electrical, inout n : Electrical ) {
@@ -118,7 +118,7 @@ pub bundle CapModel {
     di       : Real? = none,     // dielectric constant (relative εᵣ)
     thick    : Real? = none,     // dielectric thickness (m)
     c        : Real? = none,     // default capacitance (F) — CAPmCapGiven
-    bv_max   : Real = 1.0e99,    // max voltage (SOA)
+    bv_max   : Real? = none,    // max voltage (SOA); none = no limit
 }
 
 pub mod cap ( inout p : Electrical, inout n : Electrical ) {
