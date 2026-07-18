@@ -1011,8 +1011,8 @@ fn digital_network_fuses_combinational_chain() {
 
     let (i, mid, o) = (DigitalNet(0), DigitalNet(1), DigitalNet(2));
     let members = vec![
-        NetworkMember { module: inv.clone(), in_nets: vec![i], out_nets: vec![mid], params: vec![], int_base: 0, real_base: 0, param_base: 0 },
-        NetworkMember { module: inv.clone(), in_nets: vec![mid], out_nets: vec![o], params: vec![], int_base: 0, real_base: 0, param_base: 0 },
+        NetworkMember { module: inv.clone(), in_nets: vec![i], out_nets: vec![mid], params: vec![], int_base: 0, real_base: 0, param_base: 0, reg_inits: vec![] },
+        NetworkMember { module: inv.clone(), in_nets: vec![mid], out_nets: vec![o], params: vec![], int_base: 0, real_base: 0, param_base: 0, reg_inits: vec![] },
     ];
     let mut net = DigitalNetwork::build(members, 3, 0).expect("build fused network");
 

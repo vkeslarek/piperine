@@ -46,6 +46,10 @@ pub struct NetworkMember {
     pub int_base: usize,
     pub real_base: usize,
     pub param_base: usize,
+    /// Power-on register values `(VarId, value)` — the same values the
+    /// per-device path writes in `DigitalInstance::init`, applied here to the
+    /// network-wide banks at this member's bases.
+    pub reg_inits: Vec<(crate::ir::VarId, f64)>,
 }
 
 /// The cone boundary: nets fed from outside (its sensitivity list) and every
@@ -137,12 +141,28 @@ impl DigitalNetwork {
             }
         }
 
+        // Power-on register values at each member's bank bases — the same
+        // seed `DigitalInstance::init` writes on the per-device path.
+        let mut vars_int = vec![to_quad(LogicValue::X); num_int];
+        let mut vars_real = vec![0.0; num_real];
+        for m in &members {
+            let body = m.module.digital.as_ref().unwrap();
+            let layout = crate::jit::digital::DigitalLayout::build(&m.module, body);
+            for &(var, value) in &m.reg_inits {
+                if let Some(slot) = layout.real_slot(var) {
+                    vars_real[m.real_base + slot] = value;
+                } else if let Some(slot) = layout.int_slot(var) {
+                    vars_int[m.int_base + slot] = value as i64;
+                }
+            }
+        }
+
         let settle_cap = members.len() + 2;
         Ok(Self {
             comb,
             nets: vec![to_quad(LogicValue::X); net_count],
-            vars_int: vec![to_quad(LogicValue::X); num_int],
-            vars_real: vec![0.0; num_real],
+            vars_int,
+            vars_real,
             params,
             ports: NetworkPorts { inputs, outputs },
             cone_nets: cone,

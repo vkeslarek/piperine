@@ -152,15 +152,14 @@ impl DigitalInstance {
         self.kernel.layout().export_vars(&self.vars_int, &self.vars_real)
     }
 
-    /// Apply register power-on values, evaluate once with unknown inputs,
-    /// and schedule the resulting output values at t = 0.
-    pub fn init(&mut self, event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>) {
-        // Integer-bank slots default to X only where the variable is
-        // 4-state; two-state integers start at 0.
+    /// Power-on register values `(VarId, value)`, evaluated from the
+    /// kernel's `RegInit` expressions against this instance's parameters —
+    /// the same values [`DigitalInstance::init`] writes. The fused
+    /// combinational network consumes them for its own power-on bank state.
+    pub(crate) fn reg_init_values(&self) -> Vec<(crate::ir::VarId, f64)> {
         let param_index = &self.kernel.param_index;
         let params = &self.params;
-        let reg_values: Vec<(crate::ir::VarId, f64)> = self
-            .kernel
+        self.kernel
             .reg_inits()
             .iter()
             .map(|r| {
@@ -172,8 +171,15 @@ impl DigitalInstance {
                 .unwrap_or(0.0);
                 (r.var, value)
             })
-            .collect();
-        for (var, value) in reg_values {
+            .collect()
+    }
+
+    /// Apply register power-on values, evaluate once with unknown inputs,
+    /// and schedule the resulting output values at t = 0.
+    pub fn init(&mut self, event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+        // Integer-bank slots default to X only where the variable is
+        // 4-state; two-state integers start at 0.
+        for (var, value) in self.reg_init_values() {
             self.write_var(var, value);
         }
 

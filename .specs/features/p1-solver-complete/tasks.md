@@ -10,7 +10,7 @@ host surfaces (`run_sens`/`run_pss`) are born in `piperine-api`.
 ---
 
 **Design**: `.specs/features/p1-solver-complete/design.md`
-**Status**: In Progress — T1–T8 done; T9 next, 2026-07-18
+**Status**: In Progress — T1–T11 done (Phases 1–2); T12 next, 2026-07-18
 **Baseline**: whatever `api-crate` closes at (≥449 passed / 5 ignored)
 
 ---
@@ -172,7 +172,7 @@ quick.
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(codegen): multiple ac_stim per contribution`
 
-### T11: `@initial` branch force + enforced UIC hold
+### T11: ✅ DONE — `@initial` branch force + enforced UIC hold (commit b9f47af)
 **What**: Extend `FlatAnalog.initial_conditions` to branch constraints
 (`V(a,b) <- ic` in `@initial` no longer errors); t=0 clamp branch (large-G
 `G·(v−ic)`, ngspice CKTsetIC) released after the first accepted step.
