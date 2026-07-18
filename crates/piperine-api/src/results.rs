@@ -16,6 +16,21 @@ pub struct NetRef {
     pub name: String,
 }
 
+/// `.sens` result: `∂V(output)/∂(param)` keyed by
+/// `(output net name, "label.param")` — the uniform host shape (MD-22; the
+/// Python binding exposes the same map and the same `get`).
+#[derive(Debug, Clone)]
+pub struct SensResult {
+    pub d: HashMap<(String, String), f64>,
+}
+
+impl SensResult {
+    /// The sensitivity of `output` w.r.t. `label.param`, if computed.
+    pub fn get(&self, output: &str, label: &str, param: &str) -> Option<f64> {
+        self.d.get(&(output.to_string(), format!("{label}.{param}"))).copied()
+    }
+}
+
 /// The immutable snapshot returned by an operating-point analysis: DC node
 /// potentials and branch currents, read by name through [`CircuitBuildInfo`].
 pub struct OpResult {

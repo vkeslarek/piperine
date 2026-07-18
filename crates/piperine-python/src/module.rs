@@ -170,6 +170,26 @@ impl _Module {
         Ok(_OpResult::new(result).with_resolver(self.instance_resolver()))
     }
 
+    /// Run a DC sensitivity analysis (`.sens`): `∂V(output)/∂(param)` at the
+    /// operating point for each `(label, param)` pair, by central finite
+    /// difference over the restamp path. Returns the uniform host shape
+    /// (MD-22): a dict keyed `(output, "label.param")` → float.
+    #[pyo3(signature = (outputs, params, dp_rel=1.0e-6, solver=None))]
+    fn sens(
+        &self,
+        outputs: Vec<String>,
+        params: Vec<(String, String)>,
+        dp_rel: f64,
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<HashMap<(String, String), f64>> {
+        let session = self.session()?;
+        let outs: Vec<&str> = outputs.iter().map(|s| s.as_str()).collect();
+        let result = session
+            .run_sens(&outs, &params, dp_rel, &Self::solver_config(solver)?)
+            .map_err(Self::analysis_err)?;
+        Ok(result.d)
+    }
+
     /// Run a transient analysis (PY-04 / spec AC6). `step = None` (or `0.0`)
     /// selects the adaptive stepper; `start` is the earliest recorded time
     /// (ngspice `.tran tstart tstop` semantics). `ic` is an

@@ -4,7 +4,7 @@
 
 pub use crate::error::Error;
 pub use crate::hooks::SimHooks;
-pub use crate::results::{NetRef, OpResult};
+pub use crate::results::{NetRef, OpResult, SensResult};
 pub use crate::session::{SimSession, SolverConfig};
 pub use crate::waveform::{AcTrace, ComplexWaveform, NoiseTrace, Trace, Waveform};
 pub use piperine_codegen::device::{CircuitBuildInfo, CircuitCompiler, DeviceProvider};

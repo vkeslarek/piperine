@@ -88,6 +88,23 @@ module.noise(piperine.NoiseConfig(out="out", fstart=1e3, fstop=1e6))
   t=0 state.
 - `Solver` fields: `temperature`, `reltol`, `abstol`, `gmin`, `max_iter`.
 
+**Sensitivity (`.sens`)** — `∂V(output)/∂(param)` at the operating point,
+central finite difference over the compile-once restamp path. Same shape on
+both hosts (MD-22): the result maps `(output, "label.param") → float` with a
+`get(output, label, param)` reader.
+
+```python
+s = module.sens(outputs=["mid"], params=[("r2", "r"), ("v1", "dc")])
+s.get("mid", "r2", "r")     # ∂V(mid)/∂r2.r  (V/Ω)
+```
+
+```rust
+let s = session.run_sens(&["mid"], &params, 1e-6, &config)?;
+s.get("mid", "r2", "r");
+```
+
+Unknown nets/elements/params and rebuild-class parameters fail loud.
+
 `module.set(label, param, value)` stages an override consumed by the next
 analysis on that module — sweeps are native Python loops:
 

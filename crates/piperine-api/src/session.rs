@@ -142,6 +142,58 @@ impl SimSession {
         Ok((circuit, info))
     }
 
+    /// Run a DC sensitivity analysis (`.sens`): `∂V(output)/∂(param)` at the
+    /// operating point for every requested `(label, param)` pair, by central
+    /// finite difference over the compile-once restamp path. Outputs are
+    /// host-visible net names; results key by `(output, "label.param")`.
+    /// Loud on unknown nets/elements/params and on parameters whose write
+    /// would rebuild the circuit.
+    pub fn run_sens(
+        &self,
+        outputs: &[&str],
+        params: &[(String, String)],
+        dp_rel: f64,
+        config: &SolverConfig,
+    ) -> Result<crate::results::SensResult, Error> {
+        use crate::results::NetLookup;
+        let (mut circuit, info) = self.build_circuit()?;
+        // Resolve host names → solver `Net`s (keyed back to the host name
+        // after the solve — solver-side labels are internal ids).
+        let mut nets = Vec::with_capacity(outputs.len());
+        for name in outputs {
+            let node = info.net_node(name).ok_or_else(|| {
+                Error::Measurement(format!("net `{name}` is not addressable"))
+            })?;
+            let var = piperine_solver::abi::AnalogVariable::Node(node);
+            let net = circuit
+                .nets()
+                .into_iter()
+                .find(|n| n.analog_variable().map(|v| **v == var).unwrap_or(false))
+                .ok_or_else(|| {
+                    Error::Measurement(format!("net `{name}` is not a solved analog net"))
+                })?;
+            nets.push(((*name).to_string(), net));
+        }
+        let opts = piperine_solver::prelude::SensAnalysisOptions {
+            outputs: nets.iter().map(|(_, n)| n.clone()).collect(),
+            params: params.to_vec(),
+            dp_rel,
+        };
+        let mut solver = circuit.sens(opts, config.to_context())?;
+        solver.policy = config.to_policy();
+        let inner = solver.solve()?;
+        let mut d = std::collections::HashMap::new();
+        for (name, net) in &nets {
+            for (label, param) in params {
+                if let Some(v) = inner.get(net.label(), label, param) {
+                    d.insert((name.clone(), format!("{label}.{param}")), v);
+                }
+            }
+        }
+        self.fire_after_solve("sens", &[])?;
+        Ok(crate::results::SensResult { d })
+    }
+
     /// Run a DC operating-point analysis. `nodeset` (net name → volts) seeds
     /// the Newton initial guess.
     pub fn run_op(

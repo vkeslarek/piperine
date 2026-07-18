@@ -56,6 +56,7 @@ __all__ = [
     # analyses
     "OpResult",
     "Trace",
+    "SensResult",
     "Waveform",
     "ComplexWaveform",
     "AcTrace",
@@ -246,6 +247,27 @@ class Design:
         return top.compile()
 
 
+
+class SensResult:
+    """``.sens`` result: ``dV(output)/d(param)`` at the operating point.
+
+    The uniform host shape (MD-22): a mapping keyed
+    ``(output, "label.param")`` — identical to the Rust ``SensResult``.
+    ``get(output, label, param)`` reads one entry; ``items()`` iterates.
+    """
+
+    def __init__(self, d: dict[tuple[str, str], float]):
+        self._d = dict(d)
+
+    def get(self, output: str, label: str, param: str) -> float | None:
+        """The sensitivity of ``output`` w.r.t. ``label.param``, or None."""
+        return self._d.get((output, f"{label}.{param}"))
+
+    def items(self):
+        """Iterate ``((output, "label.param"), value)`` pairs."""
+        return self._d.items()
+
+
 class Module:
     """A reflected view of one POM module (spec AC14) + the four analyses.
 
@@ -296,6 +318,22 @@ class Module:
             return self._native.op()
         nodeset = config.nodeset if config.nodeset else None
         return self._native.op(nodeset, config.solver)
+
+    def sens(
+        self,
+        outputs: list[str],
+        params: list[tuple[str, str]],
+        dp_rel: float = 1.0e-6,
+        solver: Solver | None = None,
+    ) -> SensResult:
+        """Run a DC sensitivity analysis (``.sens``).
+
+        ``dV(output)/d(param)`` at the operating point for each
+        ``(label, param)`` pair, by central finite difference over the
+        compile-once restamp path. Unknown nets/elements/params and
+        rebuild-class parameters fail loud.
+        """
+        return SensResult(self._native.sens(outputs, params, dp_rel, solver))
 
     def tran(self, config: TranConfig) -> Trace:
         """Run a transient analysis (spec AC6).
