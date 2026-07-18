@@ -311,6 +311,16 @@ fn ngspice_nmos2_load() {
 }
 
 #[test]
+fn ngspice_nmos3_fixed() {
+    ngspice_op_case("nmos3_fixed");
+}
+
+#[test]
+fn ngspice_nmos3_load() {
+    ngspice_op_case("nmos3_load");
+}
+
+#[test]
 fn ngspice_jfet_bias() {
     ngspice_op_case("jfet_bias");
 }
@@ -386,6 +396,30 @@ fn ngspice_nmos2_id_vgs_sweep() {
             harness.sweep_case("nmos2_id_vgs", "vg", "d", "gnd", NgspiceHarness::ABSTOL_I)
         }
         None => eprintln!("SKIP nmos2_id_vgs: ngspice not on PATH"),
+    }
+}
+
+/// NMOS level 3 Id–Vds (26 points, vgs = 3 V, rd/rs = 100 Ω): short-channel
+/// physics (theta, eta, kappa, vmax, xj) across linear → saturation (SC-14).
+#[test]
+fn ngspice_nmos3_id_vds_sweep() {
+    match NgspiceHarness::detect() {
+        Some(harness) => {
+            harness.sweep_case("nmos3_id_vds", "vd", "d", "gnd", NgspiceHarness::ABSTOL_I)
+        }
+        None => eprintln!("SKIP nmos3_id_vds: ngspice not on PATH"),
+    }
+}
+
+/// NMOS level 3 Id–Vgs (26 points, vds = 3 V, nsub + nfs): cutoff →
+/// subthreshold → strong inversion with short-channel physics (SC-14).
+#[test]
+fn ngspice_nmos3_id_vgs_sweep() {
+    match NgspiceHarness::detect() {
+        Some(harness) => {
+            harness.sweep_case("nmos3_id_vgs", "vg", "d", "gnd", NgspiceHarness::ABSTOL_I)
+        }
+        None => eprintln!("SKIP nmos3_id_vgs: ngspice not on PATH"),
     }
 }
 

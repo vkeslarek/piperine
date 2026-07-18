@@ -1,0 +1,12 @@
+// NMOS level 3 diode-connected load — same circuit as nmos3_load.cir.
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::mos;
+mod Top() {
+    wire gnd: Electrical; wire vdd: Electrical; wire d: Electrical;
+    vd: vsrc (.p=vdd,.n=gnd) { .dc = 5.0 };
+    r1: res  (.p=vdd,.n=d) { .r = 10.0e3 };
+    m1: mos3 (.d=d,.g=d,.s=gnd,.b=gnd)
+        { .l = 2.0e-6, .w = 10.0e-6, .model = Mos3Model { .vto = 1.0, .kp = 2.0e-5 } };
+}

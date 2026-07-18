@@ -10,7 +10,7 @@ host surfaces (`run_sens`/`run_pss`) are born in `piperine-api`.
 ---
 
 **Design**: `.specs/features/p1-solver-complete/design.md`
-**Status**: In Progress — T1–T13 done; Phase 4 continues at T14, 2026-07-18
+**Status**: In Progress — T1–T14 done; Phase 4 continues at T15, 2026-07-18
 **Baseline**: whatever `api-crate` closes at (≥449 passed / 5 ignored)
 
 ---
@@ -210,7 +210,7 @@ full.
 **Tests**: integration (golden) · **Gate**: full
 **Commit**: `feat(spice): MOS level 2`
 
-### T14: MOS level 3
+### T14: ✅ DONE — MOS level 3
 **What**: Same shape as T13 for `mos3` (empirical short-channel).
 **Where**: same
 **Depends on**: T13 · **Requirement**: SC-14
