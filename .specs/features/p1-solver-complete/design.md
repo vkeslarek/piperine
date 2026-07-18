@@ -52,9 +52,25 @@ graph TD
 
 | Approach | Trade-off | Verdict |
 |---|---|---|
-| **A. Single shooting, FD Jacobian (recommended)** — `g(x₀)=x(T)−x₀`; Jacobian columns by perturbed re-integration OR Broyden rank-1 updates after the first full Jacobian | n+1 transients per Newton iter (FD) — fine for the target circuit sizes; trivially correct | **Chosen** |
-| B. Harmonic balance | Frequency-domain, great for RF; a whole new solver | Post-V1 program |
-| C. Extrapolation (accelerated settling) | No periodicity guarantee — violates fail-loud | Rejected |
+| **A. Single shooting, FD Jacobian (chosen — user 2026-07-18)** — `g(x₀)=x(T)−x₀`; Jacobian columns by perturbed re-integration OR Broyden rank-1 updates after the first full Jacobian | n+1 transients per Newton iter (FD) — inefficient but sufficient for V1 (user's words); every shot is an ordinary transient, so **mixed signal comes for free** (scheduler, breakpoints, D2A/A2D, rollback all run unchanged) | **Chosen** |
+| B. Time-domain collocation (user-proposed: all timepoints as unknowns in one giant sparse block system, periodicity stamped as the corner block) | Better global convergence on high-Q/strongly-nonlinear *analog* circuits; but fixed a-priori time grid (loses adaptive stepping + breakpoints) and **hostile to mixed signal** — digital events are discrete in time and value, cannot be stamped; would need a frozen-digital Gauss-Seidel outer loop with regridding, convergence unguaranteed | Rejected for V1; logged as a possible analog-only alternative backend behind the same `run_pss` API (high-Q cases) |
+| C. Harmonic balance | Frequency-domain, great for RF; a whole new solver | Post-V1 program |
+| D. Extrapolation (accelerated settling) | No periodicity guarantee — violates fail-loud | Rejected |
+
+**Mixed-signal shot contract (the design's load-bearing detail):**
+
+- The shot state `x₀` is the **full** circuit state: analog solution vector +
+  digital net values + element hidden states (`delay`/`transition` banks,
+  limiter `vold` slots). The existing digital checkpoint/restore machinery
+  snapshots and restores it between shots.
+- Newton runs on the **continuous** variables only; the digital trajectory
+  follows deterministically from the analog one within each shot.
+- **Digital periodicity is a verification, not a Newton unknown**: after the
+  analog residual converges, assert `digital(T) == digital(0)` and hidden
+  states match. Mismatch → loud `SolverDomain::Pss` error; when the digital
+  state at `T` equals the state at `0` only after `k` periods (detectable by
+  continuing up to a small `k` cap), the error SHALL suggest "circuit period
+  appears to be k·T" (classic divider-by-k case).
 
 `SolverDomain` gains a `Pss` variant. Options:
 `PssAnalysisOptions { period, tstab, max_shoot_iter, shoot_tol }`.

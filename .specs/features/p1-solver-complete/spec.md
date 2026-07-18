@@ -50,7 +50,7 @@ real circuits. `.sens` additionally feeds the P6 optimizer.
 |---|---|---|---|
 | `.sens` method | Finite-difference stamp perturbation + one extra linear solve per (element,param) reusing the run's LU — `A·(dx/dp) = −(∂R/∂p)` | No new codegen; exact symbolic `∂R/∂p` is a later upgrade behind the same API | n (agent) |
 | `.sens` param set | Caller lists `(label, param)` pairs explicitly; params whose `Invalidation` is `Rebuild` → loud error | Fail loud beats silently wrong sensitivities | n (agent) |
-| PSS method | Single shooting: transient over one period from state `x₀`, Newton on `g(x₀)=x(T)−x₀`, Jacobian by finite difference (n columns, LU-reused) or Broyden fallback; optional `tstab` pre-roll | Simplest correct method on top of the existing transient engine; harmonic balance is a different program | n (agent) |
+| PSS method | Single shooting: transient over one period from full state `x₀` (analog + digital nets + hidden states), Newton on `g(x₀)=x(T)−x₀` (continuous vars only), Jacobian FD/Broyden; optional `tstab` pre-roll. Digital periodicity is a post-convergence verification (loud error, with a "period appears to be k·T" diagnostic for dividers). Inefficient but sufficient for V1; time-domain collocation logged as analog-only alternative backend (backlog) | Every shot is an ordinary transient → mixed signal works unchanged; collocation cannot stamp discrete digital events | y (user, 2026-07-18) |
 | PSS drive | Period `T` supplied by the user (driven circuits); autonomous-oscillator period detection out of scope this round | Autonomous PSS needs phase conditions — real research; log backlog | n (agent) |
 | `table` modes | Spec Part V §2 signature; implement 1-D linear interpolation with end-point clamp; non-interpolating "closest" mode if Part V defines it | Match the spec text at implementation time — the task reads Part V first | n (agent) |
 | `transition` semantics | Verilog-AMS: output walks to the new target over rise/fall time from the moment of change; state = (start value, target, t_change); breakpoint declared at ramp ends | Standard semantics; reuses the runtime-operator state machinery (`delay`/`slew`) and `next_breakpoints` | n (agent) |
@@ -113,6 +113,11 @@ finite-differencing whole simulations by hand.
    (within tolerance) to `tstab = 0` on circuits where both converge.
 4. WHEN a full-wave rectifier + RC filter runs under PSS THEN the ripple
    waveform SHALL match a long settled transient within `10·reltol`.
+5. WHEN a mixed-signal circuit converges in the analog residual but the
+   digital state (nets + hidden states) at `T` differs from the state at `0`
+   THEN the analysis SHALL fail loud; WHEN the digital state closes after
+   `k ≤ 4` periods (divider case) THEN the error SHALL name "circuit period
+   appears to be k·T".
 
 **Independent Test**: driven RC case (AC-1) — closed-form comparison.
 

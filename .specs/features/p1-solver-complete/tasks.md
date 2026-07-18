@@ -106,10 +106,13 @@ VIII section. Rust↔Python value parity test.
 **What**: `analysis/pss.rs` (`PssAnalysisOptions {period, tstab,
 max_shoot_iter, shoot_tol}`) + `solver/pss.rs`: optional tstab pre-roll,
 shooting Newton on `g(x₀)=x(T)−x₀` (first Jacobian by FD columns, Broyden
-updates after), inner runs via T2 re-entry. `SolverDomain::Pss`;
-non-convergence → loud with iters+residual. Tests: driven RC vs analytic
-phasor (1 %); `|x(T)−x(0)| < shoot_tol`; period ≤ 0 loud; non-convergent
-case loud.
+updates after), inner runs via T2 re-entry. Shot state = analog + digital
+nets + hidden banks (checkpoint/restore); Newton on continuous vars only;
+digital periodicity is a post-convergence verification — mismatch → loud
+`SolverDomain::Pss`, with the "period appears to be k·T" diagnostic
+(k ≤ 4) for dividers. Tests: driven RC vs analytic phasor (1 %);
+`|x(T)−x(0)| < shoot_tol`; period ≤ 0 loud; non-convergent case loud;
+divider-by-2 case → k·T diagnostic.
 **Where**: `piperine-solver/src/{analysis,solver}/pss.rs`, `error.rs`
 **Depends on**: T2 · **Requirement**: SC-04, SC-05
 **Done when**: all four tests green; gate quick.
