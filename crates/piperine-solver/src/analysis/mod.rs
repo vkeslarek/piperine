@@ -6,5 +6,6 @@
 pub mod ac;
 pub mod dc;
 pub mod noise;
+pub mod sens;
 pub mod tf;
 pub mod transient;

@@ -221,6 +221,17 @@ impl CircuitInstance {
         DcSolver::new(self, context)
     }
 
+    /// DC sensitivity analysis (`.sens`): `∂(output)/∂(param)` at the
+    /// operating point over the restamp path — see
+    /// [`SensSolver`](crate::solver::sens::SensSolver).
+    pub fn sens(
+        &mut self,
+        options: crate::analysis::sens::SensAnalysisOptions,
+        context: Context,
+    ) -> crate::result::Result<crate::solver::sens::SensSolver<'_>> {
+        crate::solver::sens::SensSolver::new(self, options, context)
+    }
+
     pub fn noise(
         &mut self,
         options: NoiseAnalysisOptions,
