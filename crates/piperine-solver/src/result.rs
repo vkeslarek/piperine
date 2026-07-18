@@ -1,8 +1,6 @@
 use crate::error::Error;
-use crate::analog::{BranchIdentifier, AnalogReference, AnalogVariable, NodeIdentifier};
+use crate::analog::{BranchIdentifier, AnalogVariable, NodeIdentifier};
 use crate::core::net::Net;
-use crate::core::circuit::CircuitInstance;
-use crate::math::iv::InitialValue;
 use crate::digital::LogicValue;
 use crate::math::unit::Hertz;
 use num_complex::Complex;
@@ -73,21 +71,6 @@ impl DcAnalysisResult {
 
     pub fn values(&self) -> &HashMap<Arc<AnalogVariable>, f64> {
         &self.values
-    }
-
-    pub fn as_iv(&self, circuit: &CircuitInstance) -> Vec<InitialValue<AnalogReference, f64>> {
-        let netlist = circuit.netlist();
-        let mut initial_values = Vec::with_capacity(self.values.len());
-        for (var, value) in &self.values {
-            if let Some(reference) = netlist.reference_for(var).cloned() {
-                initial_values.push(InitialValue {
-                    reference,
-                    value: *value,
-                });
-            }
-        }
-
-        initial_values
     }
 
     /// Read the solved value by [`Net`] — the unified naming layer used by

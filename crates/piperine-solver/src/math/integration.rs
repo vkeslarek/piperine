@@ -163,9 +163,48 @@ impl TrBdf2 {
     }
 }
 
+/// Numerical quadrature over sampled data (noise PSD integration, …).
+pub struct Integrator;
+
+impl Integrator {
+    /// Trapezoidal integral `Σ ½(x_{i+1} − x_i)·(y_i + y_{i+1})` over
+    /// (possibly non-uniform) abscissae. When the slices differ in length the
+    /// shorter one bounds the sum; empty/single-point input integrates to 0.
+    pub fn trapezoid(xs: &[f64], ys: &[f64]) -> f64 {
+        xs.windows(2)
+            .zip(ys.windows(2))
+            .map(|(x, y)| 0.5 * (x[1] - x[0]) * (y[0] + y[1]))
+            .sum()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trapezoid_uniform_grid() {
+        // y = x² on [0, 2] with unit spacing: ½(0+1) + ½(1+4) = 3.0.
+        let xs = [0.0, 1.0, 2.0];
+        let ys = [0.0, 1.0, 4.0];
+        assert_eq!(Integrator::trapezoid(&xs, &ys), 3.0);
+    }
+
+    #[test]
+    fn trapezoid_non_uniform_grid() {
+        // y = x on [0, 0.5, 2]: ½·0.5·(0+0.5) + ½·1.5·(0.5+2) = 0.125 + 1.875.
+        let xs = [0.0, 0.5, 2.0];
+        let ys = [0.0, 0.5, 2.0];
+        assert_eq!(Integrator::trapezoid(&xs, &ys), 2.0);
+    }
+
+    #[test]
+    fn trapezoid_degenerate_inputs_integrate_to_zero() {
+        assert_eq!(Integrator::trapezoid(&[], &[]), 0.0);
+        assert_eq!(Integrator::trapezoid(&[1.0], &[2.0]), 0.0);
+        // Length mismatch: the shorter slice bounds the sum.
+        assert_eq!(Integrator::trapezoid(&[0.0, 1.0, 2.0], &[1.0, 1.0]), 1.0);
+    }
 
     // ── bdf2_coeffs (the helper behind `TrBdf2::phase_coeffs` BDF2) ───────
 

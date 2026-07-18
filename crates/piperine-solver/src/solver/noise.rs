@@ -270,7 +270,7 @@ impl<'a> NoiseSolver<'a> {
 
     /// Integrates noise power spectral density to get RMS noise voltage.
     ///
-    /// Uses trapezoidal integration to calculate total noise power:
+    /// Trapezoidal integration through the shared [`Integrator`]:
     ///   P_total = ∫ PSD(f) df
     ///   V_rms = √P_total
     ///
@@ -281,13 +281,7 @@ impl<'a> NoiseSolver<'a> {
     /// # Returns
     /// Integrated RMS noise voltage (V)
     fn integrate_noise(&self, freqs: &[f64], psd: &[f64]) -> f64 {
-        let mut sum_sq = 0.0;
-        for i in 0..freqs.len() - 1 {
-            let df = freqs[i + 1] - freqs[i];
-            let avg_psd = (psd[i] + psd[i + 1]) / 2.0;
-            sum_sq += avg_psd * df;
-        }
-        sum_sq.sqrt()
+        crate::math::integration::Integrator::trapezoid(freqs, psd).sqrt()
     }
 }
 

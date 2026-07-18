@@ -298,7 +298,7 @@ impl<'a> TransientSolver<'a> {
         self.system.uic_hold = !self.system.uic_clamps.is_empty();
 
         let _netlist = self.system.circuit.netlist();
-        let iv_dc = dc_result.as_iv(self.system.circuit);
+        let iv_dc = self.system.circuit.netlist().initial_values(dc_result.values());
 
         // Element `@initial { V(p,n) <- ic }` UIC seeds: set the t=0 branch
         // voltage `v(plus) = v(minus) + ic` (cap/ind/dio initial condition,
