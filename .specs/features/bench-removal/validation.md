@@ -297,3 +297,49 @@ All mutations reverted; `git status` clean.
 **Sensor**: rounds 1–3 cumulative 9 injected, 9 killed (M6a survived round 1, killed post-fix in round 2).
 **Gate**: 446 passed, 0 failed, 5 ignored; build zero warnings — exact baseline.
 **Report**: `.specs/features/bench-removal/validation.md` (this file), diff range `f408761..HEAD`.
+
+---
+
+# Round 4 — Post-PASS behavioral audit
+
+**Date**: 2026-07-17
+**Diff range**: `f408761..HEAD` (audit on top of round-3 PASS `3f870fe`)
+**Verifier**: independent fresh-eyes pass (author ≠ verifier)
+
+Rounds 1–3 concentrated on vocabulary sweeps and text assertions. This round
+drove the new CLI surface with adversarial inputs and found two behavioral
+regressions the text-level checks could not see — both in
+`crates/piperine-cli/src/commands/run.rs` (BRM-07 "CLI unchanged except
+`test`").
+
+## Findings (both reproduced live, both fixed)
+
+| # | Severity | Behavior before fix | Fix |
+|---|---|---|---|
+| 1 | Major | `piperine run other.phdl` silently ignored the positional arg and built/reported `src/main.phdl`; `piperine run garbage` (old bench `module::fn` form) also silently succeeded, exit 0 | positional `.phdl`/`.ppr` is now the design file; any other entry → loud "unknown entry … bench was removed" error, exit 1 |
+| 2 | Major | `piperine run` printed "`<file>` elaborates." **without elaborating** — `build::execute` is a TODO stub, so a syntactically invalid design produced the success notice and exit 0 (round-1's own S3-adjacent claim "elaborates" was never true) | run.rs now parses + elaborates (plugin-seeded, same recipe the pre-removal run used) before printing the notice; elaboration failure → miette report, exit 1 |
+| 3 | Minor | `discover_testbenches` followed directory symlinks — a symlink cycle hangs `piperine test` forever | `entry.file_type()` (non-following) gates recursion; symlinked dirs are never entered |
+
+## New tests (`crates/piperine-cli/tests/test_tb.rs`)
+
+- `run_explicit_phdl_elaborates_that_file` — the named file, not the project default
+- `run_unknown_entry_fails_loud` — exit 1 + removal named
+- `run_broken_phdl_fails_instead_of_claiming_success` — exit 1, no false "elaborates."
+
+## Sensor (round 4)
+
+The pre-fix binary itself served as the live mutant for findings 1–2: each
+faulty behavior was reproduced in a scratch project first, the test written
+to detect exactly it, then the fix applied and the test observed
+red→green. Equivalent to 2 injected / 2 killed.
+
+## Gate (round 4)
+
+- `cargo build --workspace` — zero warnings
+- `cargo test --workspace` — **449 passed, 0 failed, 5 ignored** (+3 = the new run tests)
+
+## Verdict
+
+**Overall**: ✅ **PASS** after fixes — BRM-07 now behaviorally verified, not
+just textually. Lesson L-005 recorded (drive CLI surfaces with adversarial
+inputs; text assertions on notices are insufficient).

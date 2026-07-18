@@ -38,6 +38,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: crates/piperine-cli/src/commands/run.rs:43-49 / SPEC_DEVIATION 0b952a4 (crates/piperine-cli)
 - last seen: 2026-07-18T00:55:48Z
 
+### L-005 — Verifying a CLI notice by asserting its text is not enough: drive the command with adversarial inputs (wrong positional arg, broken input file) — 'piperine run other.phdl' silently ignored the arg and a broken design still printed 'elaborates' exit 0 through three verifier rounds.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `crates/piperine-cli` · harmful: 0
+- features: bench-removal
+- evidence: crates/piperine-cli/src/commands/run.rs:30-49 / BRM-07 round 4 (crates/piperine-cli)
+- last seen: 2026-07-18T01:58:47Z
+
 ## Quarantined (failed when applied — ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

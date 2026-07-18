@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 5,
+  "next_id": 6,
   "lessons": [
     {
       "id": "L-001",
@@ -76,6 +76,24 @@
       ],
       "created": "2026-07-18T00:55:48Z",
       "last_seen": "2026-07-18T00:55:48Z"
+    },
+    {
+      "id": "L-005",
+      "key": "ac_gap::verifying a cli notice by asserting its text is not enough drive the command with adversarial inputs wrong positional arg broken input file piperine run other phdl silently ignored the arg and a broken design still printed elaborates exit 0 through three verifier rounds",
+      "text": "Verifying a CLI notice by asserting its text is not enough: drive the command with adversarial inputs (wrong positional arg, broken input file) — 'piperine run other.phdl' silently ignored the arg and a broken design still printed 'elaborates' exit 0 through three verifier rounds.",
+      "signal": "ac_gap",
+      "scope": "crates/piperine-cli",
+      "status": "candidate",
+      "features": [
+        "bench-removal"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "crates/piperine-cli/src/commands/run.rs:30-49 / BRM-07 round 4 (crates/piperine-cli)"
+      ],
+      "created": "2026-07-18T01:58:47Z",
+      "last_seen": "2026-07-18T01:58:47Z"
     }
   ]
 }

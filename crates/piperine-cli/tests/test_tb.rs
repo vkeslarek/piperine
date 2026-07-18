@@ -126,6 +126,72 @@ fn explicit_file_runs_only_it() {
     assert!(text.contains("1 run, 1 passed, 0 failed"), "only the named file: {text}");
 }
 
+/// `piperine run <file>.phdl` elaborates *that* file (not the project
+/// default) and prints the migration notice on it.
+#[test]
+fn run_explicit_phdl_elaborates_that_file() {
+    let project = scratch_project(&[
+        (
+            "src/main.phdl",
+            "discipline Electrical { potential v: Real; flow i: Real; }\n\
+             mod Top() { wire gnd : Electrical; }\n",
+        ),
+        (
+            "other.phdl",
+            "discipline Electrical { potential v: Real; flow i: Real; }\n\
+             mod Other() { wire gnd : Electrical; }\n",
+        ),
+    ]);
+    let out = Command::new(env!("CARGO_BIN_EXE_piperine"))
+        .args(["run", "other.phdl"])
+        .current_dir(project.path())
+        .output()
+        .expect("spawn piperine run");
+    assert!(out.status.success(), "exit 0: {}", combined(&out));
+    let text = combined(&out);
+    assert!(
+        text.contains("other.phdl") && text.contains("elaborates"),
+        "the named file is the one elaborated: {text}"
+    );
+}
+
+/// A positional entry that is neither `.py` nor `.phdl` (the removed bench
+/// `module::fn` form) is a loud error, never a silent ignore.
+#[test]
+fn run_unknown_entry_fails_loud() {
+    let project = scratch_project(&[(
+        "src/main.phdl",
+        "discipline Electrical { potential v: Real; flow i: Real; }\n\
+         mod Top() { wire gnd : Electrical; }\n",
+    )]);
+    let out = Command::new(env!("CARGO_BIN_EXE_piperine"))
+        .args(["run", "Top::test_something"])
+        .current_dir(project.path())
+        .output()
+        .expect("spawn piperine run");
+    assert_eq!(out.status.code(), Some(1), "exit 1: {}", combined(&out));
+    let text = combined(&out);
+    assert!(
+        text.contains("unknown entry") && text.contains("bench") && text.contains("removed"),
+        "removal named: {text}"
+    );
+}
+
+/// A design that does not elaborate must fail loud — `piperine run` never
+/// prints the "elaborates" notice over a broken file.
+#[test]
+fn run_broken_phdl_fails_instead_of_claiming_success() {
+    let project = scratch_project(&[("src/main.phdl", "this is not phdl $$$\n")]);
+    let out = Command::new(env!("CARGO_BIN_EXE_piperine"))
+        .arg("run")
+        .current_dir(project.path())
+        .output()
+        .expect("spawn piperine run");
+    assert_eq!(out.status.code(), Some(1), "exit 1: {}", combined(&out));
+    let text = combined(&out);
+    assert!(!text.contains("elaborates."), "no false success claim: {text}");
+}
+
 /// `piperine run <file>.phdl` no longer executes bench entry points (the
 /// bench was removed): it elaborates the file and prints the migration
 /// notice pointing at `*_tb.py` testbenches.

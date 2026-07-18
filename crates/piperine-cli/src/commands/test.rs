@@ -31,7 +31,10 @@ pub fn discover_testbenches(root: &Path) -> Vec<PathBuf> {
         let Ok(entries) = std::fs::read_dir(&dir) else { continue };
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
-            if path.is_dir() {
+            // `file_type()` does not follow symlinks: a symlinked directory is
+            // never recursed into (a symlink cycle would loop forever).
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            if is_dir {
                 let name = entry.file_name();
                 if !SKIP_DIRS.contains(&name.to_string_lossy().as_ref()) {
                     stack.push(path);
