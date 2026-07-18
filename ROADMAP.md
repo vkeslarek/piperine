@@ -242,7 +242,19 @@ each)**
 
 ## P3 — Python library polished
 
-Facade is docstringed and parity-tested (bench-removal). Remaining:
+Facade is docstringed and parity-tested (bench-removal). Governing rule:
+**MD-22 — uniform host surface**: Python and Rust are one API; every item
+below lands on both sides with the same shape.
+
+- [ ] **`uniform-host-api` feature (MD-22):** Rust gains the object model
+      (`load` → `Design` → `Module` → analyses, `compile()` →
+      `LiveSession`, `InstanceView` indexing, bundle-shaped configs);
+      Python gains the Rust-only knobs (nodeset, `dc_damp_tolerance`);
+      naming unified (`Solver` vs `SolverConfig`, `const_`, `cross`
+      direction enum). Working sheet: `docs/spec/appendix_c_host_surface.md`
+      §4.
+
+Remaining:
 
 - [ ] `piperine.plot(waveform, ...)` convenience (matplotlib wrapper).
 - [ ] `.four`-style post-processing helpers (`waveform.fft()`, etc.).

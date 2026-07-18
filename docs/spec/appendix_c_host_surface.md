@@ -127,7 +127,14 @@ file, `PIPERINE_TEST_TIMEOUT_SECS`).
 
 ---
 
-## 4. Surface review sheet (for discussion — nothing here is committed)
+## 4. Surface review sheet
+
+> **Resolved 2026-07-18 (MD-22 — uniform host surface):** the user accepted
+> the sheet and locked the governing principle: *the API is identical in
+> both languages* — same call shape, same names, same config/result types.
+> Every point below resolves under that rule; the Rust-side alignment is
+> the `uniform-host-api` feature (ROADMAP P3). New analyses land on both
+> hosts with the same shape in the same feature.
 
 Candid list of places where the surface could be better. R = Rust-side,
 P = Python-side, B = both.

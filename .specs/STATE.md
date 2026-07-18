@@ -209,6 +209,24 @@ transparently on load.
 
 **Status:** Locked (user, 2026-07-18). Implementation: pending (ROADMAP P5).
 
+### MD-22: Uniform host surface — Python and Rust are one API
+
+The two host surfaces are the same API in two languages: identical call
+shape, identical names, identical config/result types. Part VIII's "two
+surfaces, one surface" is **normative**, not aspirational. Concretely:
+Rust gains the object model Python already has (`load` → `Design` →
+`Module` → analyses / `compile()` → `LiveSession`, `InstanceView`
+indexing, bundle-shaped configs); Python gains every Rust-only knob
+(nodeset, `dc_damp_tolerance`, …); naming divergences (`Solver` vs
+`SolverConfig`, `const_`, string-typed `cross` direction) are resolved to
+one form on both sides. New analyses (sens, PSS, …) land with the same
+shape on both hosts in the same feature — never one-sided. The full
+Rust-side alignment is the `uniform-host-api` feature (ROADMAP P3);
+Appendix C §4 is the working review sheet.
+
+**Status:** Locked (user, 2026-07-18 — "princípio da uniformidade").
+Implementation: sens/PSS bindings immediately; full alignment in P3.
+
 ---
 
 ## Handoff Snapshot
