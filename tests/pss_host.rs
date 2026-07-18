@@ -88,7 +88,7 @@ fn rectifier_ripple_matches_settled_transient() {
     // Reference: 14 periods of plain transient (tau = R*C = 2 ms = 2T, so
     // 12 periods is a 0.25% settle), statistics on the last one.
     let long = s
-        .run_tran(14.0 * period, Some(period / 100.0), 13.0 * period, &config, None)
+        .run_tran(14.0 * period, Some(period / 100.0), 13.0 * period, &config, None, false)
         .expect("settled tran");
     let w_ref = long.v(&out, None).expect("v(out) settled");
 

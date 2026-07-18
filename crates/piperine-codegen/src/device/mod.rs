@@ -285,6 +285,10 @@ impl Element for PiperineDevice {
             .and_then(|a| a.suggest_transient_step(state, time_history, context))
     }
 
+    fn runtime_banks(&self) -> (&[f64], &[f64]) {
+        self.analog.as_ref().map(|a| a.runtime_banks()).unwrap_or((&[], &[]))
+    }
+
     fn accept_timestep(
         &mut self,
         state: &CircularArrayBuffer2<f64>,

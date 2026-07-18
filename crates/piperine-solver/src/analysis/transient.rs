@@ -64,6 +64,14 @@ pub struct TransientAnalysisOptions {
     /// structural rebuild (LIVE-16); the starting state comes from the
     /// initial operating point overlaid with `apply_initial_conditions`.
     pub start_time: Second,
+
+    /// Opt-in per-step recording of device runtime banks (state/vars),
+    /// keyed by device label on each [`TransientStep`]. Off by default —
+    /// enabling it clones the stateful devices' banks per accepted step.
+    /// With it on, `Trace.i` recomputes currents of state-reading devices
+    /// (`delay`/`transition`/`idt`); with it off, that read stays a loud
+    /// error.
+    pub record_device_state: bool,
 }
 
 impl TransientAnalysisOptions {
@@ -77,6 +85,7 @@ impl TransientAnalysisOptions {
             dt_max: (stop_time / 100.0),
             record_from: 0.0,
             start_time: 0.0,
+            record_device_state: false,
         }
     }
 

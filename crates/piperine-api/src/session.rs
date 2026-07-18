@@ -308,7 +308,10 @@ impl SimSession {
     /// `::dc`. `step: None` selects the adaptive stepper. `start` is the
     /// earliest recorded time — the solver still integrates from t=0, but
     /// steps with `t < start` are dropped from the trace. `ic` (net name →
-    /// volts) seeds the t=0 node voltages.
+    /// volts) seeds the t=0 node voltages. `record_device_state` opts into
+    /// per-step device runtime-bank recording, unlocking `Trace.i` on
+    /// state-reading devices (`delay`/`transition`/`idt`); off it stays a
+    /// loud error (and costs nothing per step).
     pub fn run_tran(
         &self,
         stop: f64,
@@ -316,10 +319,11 @@ impl SimSession {
         start: f64,
         config: &SolverConfig,
         ic: Option<&HashMap<String, f64>>,
+        record_device_state: bool,
     ) -> Result<Trace, Error> {
         let (mut circuit, info) = self.build_circuit()?;
         let ivs = build_ivs(&info, ic, circuit.netlist())?;
-        let opts = match step {
+        let mut opts = match step {
             // SPICE is always adaptive; `step` is the initial dt for the
             // PI controller. `step = 0` (the "auto" sentinel) seeds dt at
             // stop/1000. Output interpolation onto the print grid is a
@@ -330,6 +334,7 @@ impl SimSession {
             _ => piperine_solver::prelude::TransientAnalysisOptions::new(stop, stop * 1e-3),
         }
         .with_record_from(start);
+        opts.record_device_state = record_device_state;
         let mut solver = circuit.transient(opts, config.to_context())?;
         solver.policy = config.to_policy();
         solver.apply_initial_conditions(ivs);

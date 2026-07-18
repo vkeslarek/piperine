@@ -217,7 +217,10 @@ impl _Module {
     /// selects the adaptive stepper; `start` is the earliest recorded time
     /// (ngspice `.tran tstart tstop` semantics). `ic` is an
     /// optional per-node initial-condition map (spec §5.1 `TranConfig.ic`).
-    #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None))]
+    /// `record_device_state` opts into per-step device runtime-bank
+    /// recording, unlocking `Trace.i` on state-reading devices
+    /// (`delay`/`transition`/`idt`); off, that read stays a loud error.
+    #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None, record_device_state=false))]
     fn tran(
         &self,
         stop: f64,
@@ -225,10 +228,11 @@ impl _Module {
         start: f64,
         ic: Option<HashMap<String, f64>>,
         solver: Option<&Bound<'_, PyAny>>,
+        record_device_state: bool,
     ) -> PyResult<_Trace> {
         let session = self.session()?;
         let result = session
-            .run_tran(stop, step, start, &Self::solver_config(solver)?, ic.as_ref())
+            .run_tran(stop, step, start, &Self::solver_config(solver)?, ic.as_ref(), record_device_state)
             .map_err(Self::analysis_err)?;
         Ok(_Trace::new(result).with_resolver(self.instance_resolver()))
     }

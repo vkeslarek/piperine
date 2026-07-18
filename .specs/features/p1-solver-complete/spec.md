@@ -274,12 +274,12 @@ fusion active.
 | SC-18 | P1 stdlib off sentinels (T?) | - | Pending |
 | SC-19 | P2 fetlim/limvds | T19 | Done |
 | SC-20 | P2 temperature uniform + .temp sweep | T20 | Done |
-| SC-21 | P2 inductor TR dual | - | Pending |
-| SC-22 | P2 IntegrationMethod removal | - | Pending |
-| SC-23 | P3 scheduler split + SignalBridge | - | Pending |
-| SC-24 | P3 as_iv + Integrator re-home | - | Pending |
+| SC-21 | P2 inductor TR dual | T21 | Done |
+| SC-22 | P2 IntegrationMethod removal | T22 | Done |
+| SC-23 | P3 scheduler split + SignalBridge | T23+T24 | Done |
+| SC-24 | P3 as_iv + Integrator re-home | T25 | Done |
 | SC-25 | P3 Trace.i state recording (opt-in) | - | Pending |
-| SC-26 | P3 init_global ownership | - | Pending |
+| SC-26 | P3 init_global ownership | T25 | Done |
 
 **Coverage:** 26 total, 0 mapped to tasks (mapping happens in tasks.md).
 

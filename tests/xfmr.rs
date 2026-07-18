@@ -97,7 +97,7 @@ mod Top() {
         .expect("coupled tanks elaborate");
     let ic = std::collections::HashMap::from([("v1".to_string(), 1.0)]);
     let trace = SimSession::new(design, "Top".to_string())
-        .run_tran(12.0e-6, Some(1.0e-8), 0.0, &SolverConfig::default(), Some(&ic))
+        .run_tran(12.0e-6, Some(1.0e-8), 0.0, &SolverConfig::default(), Some(&ic), false)
         .unwrap_or_else(|e| panic!("coupled tanks tran failed: {e}"));
 
     let v1 = trace.v(&NetRef { name: "v1".into() }, None).expect("v(v1)");

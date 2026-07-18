@@ -138,11 +138,16 @@ pub struct TransientStep {
     /// (`Trace.v(bit_net)` → 0/1/NaN), which `$op` cannot express (it is a
     /// stateless operating point).
     digital: Vec<LogicValue>,
+    /// Opt-in per-step device runtime banks (state, vars), keyed by device
+    /// label. Recorded only when the run enables
+    /// `TransientAnalysisOptions::record_device_state`; lets a host recompute
+    /// a stateful device's branch current at this step (`Trace.i`).
+    device_state: HashMap<String, (Vec<f64>, Vec<f64>)>,
 }
 
 impl TransientStep {
     pub fn new(time: f64, values: HashMap<Arc<AnalogVariable>, f64>) -> Self {
-        Self { time, values, digital: Vec::new() }
+        Self { time, values, digital: Vec::new(), device_state: HashMap::new() }
     }
 
     /// Attach a digital-net snapshot (by `DigitalNet` id).
@@ -151,9 +156,22 @@ impl TransientStep {
         self
     }
 
+    /// Attach the per-step device runtime banks (label → (state, vars)).
+    pub fn with_device_state(mut self, device_state: HashMap<String, (Vec<f64>, Vec<f64>)>) -> Self {
+        self.device_state = device_state;
+        self
+    }
+
     /// This step's logic value for digital net `idx`, or `None` if unrecorded.
     pub fn digital(&self, idx: usize) -> Option<LogicValue> {
         self.digital.get(idx).copied()
+    }
+
+    /// This step's recorded runtime banks (state, vars) for the device
+    /// labelled `label`, or `None` when recording was off (or the device has
+    /// no runtime banks).
+    pub fn device_state(&self, label: &str) -> Option<&(Vec<f64>, Vec<f64>)> {
+        self.device_state.get(label)
     }
 
     pub fn get(&self, variable: impl Into<Arc<AnalogVariable>>) -> Option<f64> {

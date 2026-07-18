@@ -412,8 +412,9 @@ impl _LiveSession {
     /// auto re-elaborates at the set time and the transient restarts from
     /// there — same absolute clock (`start_time`), carried node state as
     /// initial conditions — and the recorded segments stitch into one
-    /// continuous trace.
-    #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None))]
+    /// continuous trace. `record_device_state` opts into per-step device
+    /// runtime-bank recording (`Trace.i` on state-reading devices).
+    #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None, record_device_state=false))]
     fn tran(
         &mut self,
         stop: f64,
@@ -421,6 +422,7 @@ impl _LiveSession {
         start: f64,
         ic: Option<HashMap<String, f64>>,
         solver: Option<&Bound<'_, PyAny>>,
+        record_device_state: bool,
     ) -> PyResult<_Trace> {
         let config = crate::module::_Module::solver_config(solver)?;
         let dt = match step {
@@ -463,9 +465,10 @@ impl _LiveSession {
             // regrow — the full user step over the fresh post-edge curvature
             // would eat the restart accuracy.
             let seg_dt = if seg_start > 0.0 { 1e-3 * dt } else { dt };
-            let opts = piperine_solver::prelude::TransientAnalysisOptions::new(seg_stop, seg_dt)
+            let mut opts = piperine_solver::prelude::TransientAnalysisOptions::new(seg_stop, seg_dt)
                 .with_start(seg_start)
                 .with_record_from(start);
+            opts.record_device_state = record_device_state;
             let ivs = self.ivs(user_ic.take())?;
             let mut tran = self
                 .circuit

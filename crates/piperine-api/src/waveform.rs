@@ -235,13 +235,17 @@ impl Trace {
                 .collect();
             return Ok(Waveform::new(points));
         }
-        // Fail loud for devices whose residual reads runtime state/vars not
-        // recorded per step. `ddt` is reactive (charge), not state, so
-        // R/C/nonlinear devices pass; `idt`/`delay` read state.
+        // Devices whose residual reads runtime state/vars need the opt-in
+        // per-step recording (`run_tran(record_device_state = true)`);
+        // without it the read fails loud. `ddt` is reactive (charge), not
+        // state, so R/C/nonlinear devices pass; `idt`/`delay` read state.
         let (_, state_read, vars_read) = instance.kernel.read_bounds();
-        if state_read > 0 || vars_read > 0 {
+        let needs_banks = state_read > 0 || vars_read > 0;
+        if needs_banks
+            && !self.result.iter().all(|s| s.device_state(&instance.label).is_some())
+        {
             return Err(Error::Measurement(format!(
-                "`i()` over time on `{}` is not yet recorded: the device reads runtime state/vars not captured per step",
+                "`i()` over time on `{}` is not recorded: the device reads runtime state/vars not captured per step (rerun with record_device_state = true)",
                 instance.label
             )));
         }
@@ -260,14 +264,21 @@ impl Trace {
                 .iter()
                 .map(|t| if *t == NodeIdentifier::Gnd { 0.0 } else { step.get_node(t).unwrap_or(0.0) })
                 .collect();
+            // Recorded runtime banks when present (stateful devices, opt-in
+            // recording); empty banks otherwise — exactly what the kernel
+            // reads for stateless devices.
+            let (state, vars): (&[f64], &[f64]) = step
+                .device_state(&instance.label)
+                .map(|(s, v)| (s.as_slice(), v.as_slice()))
+                .unwrap_or((&[], &[]));
             let mut residual = vec![0.0; instance.terminals.len()];
             instance
                 .kernel
-                .eval_residual(&volts, &instance.params, &[], &[], &sim, &mut residual);
+                .eval_residual(&volts, &instance.params, state, vars, &sim, &mut residual);
             let mut charge = vec![0.0; instance.terminals.len()];
             instance
                 .kernel
-                .eval_charge(&volts, &instance.params, &[], &[], &sim, &mut charge);
+                .eval_charge(&volts, &instance.params, state, vars, &sim, &mut charge);
             i_res.push(residual[0]);
             q0.push(charge[0]);
             t_series.push(step.time());

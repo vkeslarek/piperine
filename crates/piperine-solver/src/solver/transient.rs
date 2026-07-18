@@ -512,8 +512,7 @@ impl<'a> TransientSolver<'a> {
             // (consumed here; re-armed below when new sets apply).
             let post_set_step = sets_just_applied;
 
-            if let Ok(Some(snapshot)) = analog_result {
-                // Both Newton phases converged. Global Milne-LTE accept gate
+            if let Ok(Some(snapshot)) = analog_result {                // Both Newton phases converged. Global Milne-LTE accept gate
                 // (TRB-05/06): the two-phase buffer holds x_{n+1} (view 0),
                 // x_{n+γ} (view 1), x_n (view 2). The Milne predictor is
                 // evaluated only over **node-voltage** unknowns — branch
@@ -569,6 +568,14 @@ impl<'a> TransientSolver<'a> {
                     .accept_and_run_digital(solution.as_slice().unwrap(), t_next)?;
                 self.system.circuit.digital_state.commit();
                 if t_next >= record_from {
+                    // Runtime banks committed by `accept_and_run_digital`
+                    // (idt/operator state) post-date the in-step snapshot —
+                    // re-attach so the recorded state matches this point.
+                    let snapshot = if self.options.record_device_state {
+                        snapshot.with_device_state(self.collect_device_banks())
+                    } else {
+                        snapshot
+                    };
                     steps.push(snapshot);
                 }
                 current_time = t_next;
@@ -695,8 +702,25 @@ impl<'a> TransientSolver<'a> {
             }
         }
 
-        TransientStep::new(time, values)
-            .with_digital(self.system.circuit.digital_state.nets.clone())
+        let step = TransientStep::new(time, values)
+            .with_digital(self.system.circuit.digital_state.nets.clone());
+        if !self.options.record_device_state {
+            return step;
+        }
+        step.with_device_state(self.collect_device_banks())
+    }
+
+    /// Clone each stateful device's runtime banks (opt-in recording; see
+    /// `TransientAnalysisOptions::record_device_state`).
+    fn collect_device_banks(&self) -> HashMap<String, (Vec<f64>, Vec<f64>)> {
+        let mut device_state = HashMap::new();
+        for dev in &self.system.circuit.devices {
+            let (state, vars) = dev.runtime_banks();
+            if !state.is_empty() || !vars.is_empty() {
+                device_state.insert(dev.name().to_string(), (state.to_vec(), vars.to_vec()));
+            }
+        }
+        device_state
     }
 }
 

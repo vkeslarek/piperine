@@ -352,4 +352,14 @@ pub trait Element: Send + Sync {
     ) -> Option<f64> {
         None
     }
+
+    /// Runtime state/var banks for opt-in per-step recording
+    /// (`TransientAnalysisOptions::record_device_state`). Devices whose
+    /// analog residual reads runtime banks (`delay`/`transition`/`idt`
+    /// state, module `vars`) override to expose them so a trace can later
+    /// recompute branch currents at each recorded step; the default is
+    /// empty banks (nothing to record, zero cost).
+    fn runtime_banks(&self) -> (&[f64], &[f64]) {
+        (&[], &[])
+    }
 }

@@ -297,7 +297,7 @@ host-level `.temp` sweep test — diode forward drop ≈ −2 mV/°C.
 **Tests**: integration · **Gate**: full
 **Commit**: `fix(spice): uniform temperature flow + .temp sweep proof`
 
-### T21: Inductor TR-stage dual
+### T21: ✅ DONE — Inductor TR-stage dual (fix pre-landed d400973; regression added f76b4db)
 **What**: Previous-voltage-tracking dual form for the TR stage flux
 companion; coupled-LC + RL corners unchanged or tighter.
 **Where**: `device/analog.rs`
@@ -306,7 +306,7 @@ companion; coupled-LC + RL corners unchanged or tighter.
 **Tests**: integration · **Gate**: quick
 **Commit**: `fix(solver): TR-stage flux dual form`
 
-### T22: Remove `IntegrationMethod`
+### T22: ✅ DONE — Remove `IntegrationMethod` (commit 1d7e605)
 **What**: Delete the enum + `suggest_transient_step` `method` param;
 migrate ~34 references (TR-BDF2 hardwired). Mechanical; zero behavior
 change.
@@ -316,7 +316,7 @@ change.
 **Tests**: none (behavior-preserving) · **Gate**: build
 **Commit**: `refactor(solver)!: TR-BDF2 is the only integration scheme`
 
-### T23: Scheduler split
+### T23: ✅ DONE — Scheduler split (pre-landed commit 2403e29, 2026-07-16)
 **What**: `digital/scheduler.rs` → `digital/{topology,state,scheduler}.rs`;
 explicit re-exports; no public path breakage beyond module moves.
 **Where**: `piperine-solver/src/digital/`
@@ -325,7 +325,7 @@ explicit re-exports; no public path breakage beyond module moves.
 **Tests**: none · **Gate**: build
 **Commit**: `refactor(solver): scheduler split into topology/state/scheduler`
 
-### T24: `SignalBridge` extraction
+### T24: ✅ DONE — `SignalBridge` extraction (pre-landed commit 1857df5, 2026-07-13)
 **What**: Extract the three jobs of
 `CircuitInstance::accept_and_run_digital` into an internal `core/bridge.rs`
 component; behavior byte-identical.
@@ -335,7 +335,7 @@ component; behavior byte-identical.
 **Tests**: none · **Gate**: build
 **Commit**: `refactor(solver): SignalBridge owns the mixed-signal handoff`
 
-### T25: `as_iv` + shared `Integrator` + `init_global`
+### T25: ✅ DONE — `as_iv` + shared `Integrator` + `init_global` (commit 81b9c1d)
 **What**: Re-home `DcAnalysisResult::as_iv`; noise trapezoid through a
 shared `Integrator`; `Context::default` stops calling global init (first
 solver build owns it). Identical numeric results.

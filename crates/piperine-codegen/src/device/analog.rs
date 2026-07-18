@@ -745,6 +745,12 @@ impl AnalogInstance {
         self.limiting_active
     }
 
+    /// Runtime banks read by the kernel — `(state, vars)` — exposed for
+    /// opt-in per-step recording (the host's `Trace.i` recompute path).
+    pub fn runtime_banks(&self) -> (&[f64], &[f64]) {
+        (&self.state, &self.vars)
+    }
+
     /// Instance parameter names, in kernel order (aligned with the values).
     pub fn param_names(&self) -> &[String] {
         self.kernel.param_names()

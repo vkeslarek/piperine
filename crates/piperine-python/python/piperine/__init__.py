@@ -112,6 +112,9 @@ class TranConfig:
     """Transient analysis config (prelude ``bundle TranConfig``).
 
     ``step = 0.0`` selects the adaptive stepper (initial ``dt = stop/1000``).
+    ``record_device_state = True`` records per-step device runtime banks,
+    unlocking ``Trace.i`` on state-reading devices (``delay``/``transition``/
+    ``idt``); the default keeps that read a loud error.
     """
 
     stop: float
@@ -119,6 +122,7 @@ class TranConfig:
     start: float = 0.0
     ic: dict[str, float] = field(default_factory=dict)
     solver: Solver = field(default_factory=Solver)
+    record_device_state: bool = False
 
 
 @dataclass
@@ -393,7 +397,9 @@ class Module:
         """
         step = config.step if config.step != 0.0 else None
         ic = config.ic if config.ic else None
-        return self._native.tran(config.stop, step, config.start, ic, config.solver)
+        return self._native.tran(
+            config.stop, step, config.start, ic, config.solver, config.record_device_state
+        )
 
     def ac(self, config: AcConfig) -> AcTrace:
         """Run an AC small-signal sweep (spec AC8).
@@ -500,7 +506,9 @@ class LiveSession:
         any pending :meth:`schedule_set` entries."""
         step = config.step if config.step != 0.0 else None
         ic = config.ic if config.ic else None
-        return self._native.tran(config.stop, step, config.start, ic, config.solver)
+        return self._native.tran(
+            config.stop, step, config.start, ic, config.solver, config.record_device_state
+        )
 
     def ac(self, config: AcConfig) -> AcTrace:
         """Run an AC small-signal sweep on the held circuit (spec AC8

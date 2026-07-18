@@ -54,7 +54,7 @@ fn session(rl_ohms: &str) -> SimSession {
 fn tline_matched_no_reflection() {
     let sess = session("50.0");
     let trace = sess
-        .run_tran(4e-9, Some(2e-12), 0.0, &SolverConfig::default(), None)
+        .run_tran(4e-9, Some(2e-12), 0.0, &SolverConfig::default(), None, false)
         .expect("matched tran solves");
     let b = NetRef { name: "b".into() };
 
@@ -74,7 +74,7 @@ fn tline_matched_no_reflection() {
 fn tline_open_termination_doubles() {
     let sess = session("1.0e10");
     let trace = sess
-        .run_tran(4e-9, Some(2e-12), 0.0, &SolverConfig::default(), None)
+        .run_tran(4e-9, Some(2e-12), 0.0, &SolverConfig::default(), None, false)
         .expect("open tran solves");
     let b = NetRef { name: "b".into() };
 

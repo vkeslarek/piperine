@@ -130,7 +130,7 @@ fn rc_session() -> SimSession {
 fn tran_delayed_start_records_from_start_not_zero() {
     let session = rc_session();
     let trace = session
-        .run_tran(5e-3, None, 2.5e-3, &SolverConfig::default(), None)
+        .run_tran(5e-3, None, 2.5e-3, &SolverConfig::default(), None, false)
         .expect("tran solves");
     let axis = trace.axis();
     assert!(axis.len() > 1, "delayed-start trace still has samples");
@@ -162,7 +162,7 @@ fn op_nodeset_hint_is_accepted() {
 fn trace_i_over_time_recomputes_a_resistor_current() {
     let session = divider_session();
     let trace = session
-        .run_tran(1e-3, Some(1e-4), 0.0, &SolverConfig::default(), None)
+        .run_tran(1e-3, Some(1e-4), 0.0, &SolverConfig::default(), None, false)
         .expect("tran solves");
     let vin = NetRef { name: "vin".into() };
     let mid = NetRef { name: "mid".into() };
@@ -183,7 +183,7 @@ fn trace_i_over_time_recomputes_a_resistor_current() {
 fn trace_i_over_time_exercises_the_reactive_path() {
     let session = rc_session();
     let trace = session
-        .run_tran(1e-3, Some(1e-4), 0.0, &SolverConfig::default(), None)
+        .run_tran(1e-3, Some(1e-4), 0.0, &SolverConfig::default(), None, false)
         .expect("tran solves");
     let vsrc = NetRef { name: "vsrc".into() };
     let out = NetRef { name: "out".into() };
@@ -192,6 +192,99 @@ fn trace_i_over_time_exercises_the_reactive_path() {
     let i_c = trace.i(&out, Some(&gnd)).expect("i(out,gnd)");
     assert!(i_r.at(0.0).abs() < 1e-6, "settled resistor current ≈ 0, got {}", i_r.at(0.0));
     assert!(i_c.at(0.0).abs() < 1e-6, "settled capacitor current ≈ 0, got {}", i_c.at(0.0));
+}
+
+/// SC-25 — a current-form `idt` inductor reads the runtime `idt` state
+/// bank, so `Trace.i` on it needs the opt-in per-step recording. Driven RL:
+/// `i_L(t) = (V/R)·(1 − e^(−t/τ))`, τ = L/R = 10 µs.
+const RL_IDT_PHDL: &str = "\
+discipline Electrical { potential v: Real; flow i: Real; }
+
+mod VoltageSource(inout p: Electrical, inout n: Electrical) {
+    param voltage: Real = 0.0;
+}
+analog VoltageSource { V(p, n) <- voltage; }
+
+mod Resistor(inout p: Electrical, inout n: Electrical) {
+    param r: Real = 1e3;
+}
+analog Resistor { I(p, n) <+ V(p, n) / r; }
+
+mod IndIdt(inout p: Electrical, inout n: Electrical) {
+    param l: Real = 1e-2;
+}
+analog IndIdt { I(p, n) <+ idt(V(p, n)) / l; }
+
+mod RlIdt() {
+    wire gnd  : Electrical;
+    wire vin  : Electrical;
+    wire mid  : Electrical;
+    src : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
+    r1  : Resistor      (.p = vin, .n = mid) { .r = 1e3 };
+    l1  : IndIdt        (.p = mid, .n = gnd) {};
+}
+";
+
+fn rl_idt_session() -> SimSession {
+    let design = piperine_lang::parse_and_elaborate(RL_IDT_PHDL, &headers_source_map())
+        .expect("RL idt fixture elaborates");
+    SimSession::new(design, "RlIdt".to_string())
+}
+
+/// Enabled: the recorded state bank lets `Trace.i` recompute the inductor
+/// current per step. The recompute is the solver's own trajectory (KCL
+/// against the resistor current, exact to solver precision) and lands the
+/// analytic settled value `V/R·(1 − e^(−6))` at t = 6τ.
+#[test]
+fn trace_i_on_stateful_device_recomputes_when_recording_enabled() {
+    let session = rl_idt_session();
+    let trace = session
+        .run_tran(60e-6, Some(0.5e-6), 0.0, &SolverConfig::default(), None, true)
+        .expect("tran solves");
+    let vin = NetRef { name: "vin".into() };
+    let mid = NetRef { name: "mid".into() };
+    let gnd = NetRef { name: "gnd".into() };
+    let i_l = trace.i(&mid, Some(&gnd)).expect("i(mid,gnd) with recording");
+    let i_r = trace.i(&vin, Some(&mid)).expect("i(vin,mid)");
+
+    // Per-step KCL: the state-recomputed inductor current is the current the
+    // solver stamped — identical to the voltage-recomputed resistor current.
+    let mut prev = -1.0;
+    for &(t, il) in i_l.points() {
+        let ir = i_r.at(t);
+        assert!(
+            (il - ir).abs() <= 1e-6 * il.abs().max(5e-3) + 1e-9,
+            "t = {t:e}: KCL — i_L = {il:e} vs i_R = {ir:e}"
+        );
+        assert!(il >= prev, "RL charge is monotonic: {il} < {prev} at t = {t:e}");
+        prev = il;
+    }
+    // Settled (6τ): i_L → V/R·(1 − e^(−6)) = 4.9876 mA within reltol.
+    let settled = i_l.at(60e-6);
+    let want = 5e-3 * (1.0 - (-6.0_f64).exp());
+    assert!(
+        (settled - want).abs() <= 1e-3 * want,
+        "settled i_L = {settled:e} vs analytic {want:e}"
+    );
+}
+
+/// Disabled (the default): the same read keeps the loud error, naming the
+/// device and the opt-in.
+#[test]
+fn trace_i_on_stateful_device_fails_loud_when_recording_disabled() {
+    let session = rl_idt_session();
+    let trace = session
+        .run_tran(60e-6, Some(0.5e-6), 0.0, &SolverConfig::default(), None, false)
+        .expect("tran solves");
+    let mid = NetRef { name: "mid".into() };
+    let gnd = NetRef { name: "gnd".into() };
+    let err = trace.i(&mid, Some(&gnd)).expect_err("stateful i() without recording is loud");
+    let msg = format!("{err}");
+    assert!(msg.contains("l1"), "error names the device: {msg}");
+    assert!(
+        msg.contains("record_device_state"),
+        "error names the opt-in: {msg}"
+    );
 }
 
 /// A pure-digital design reads its logic values (0/1) straight off the DC
