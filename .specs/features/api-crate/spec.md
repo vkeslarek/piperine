@@ -119,13 +119,13 @@ package) empty; full gate green.
 
 | Requirement ID | Story | Phase | Status |
 |---|---|---|---|
-| API-01 | P1 api crate owns host API | - | Pending |
-| API-02 | P1 api dependency set exact | - | Pending |
-| API-03 | P1 root is pure re-export | - | Pending |
-| API-04 | P1 guards green unchanged | - | Pending |
-| API-05 | P1 python on api | - | Pending |
-| API-06 | P1 cli on api; bin unchanged | - | Pending |
-| API-07 | P1 docs updated (MD-20) | - | Pending |
+| API-01 | P1 api crate owns host API | - | ✅ Verified |
+| API-02 | P1 api dependency set exact | - | ✅ Verified |
+| API-03 | P1 root is pure re-export | - | ✅ Verified |
+| API-04 | P1 guards green unchanged | - | ✅ Verified |
+| API-05 | P1 python on api | - | ✅ Verified |
+| API-06 | P1 cli on api; bin unchanged | - | ✅ Verified |
+| API-07 | P1 docs updated (MD-20) | - | ✅ Verified (minor: README.md:27 + part_iii:10 still say "root crate" — advisory fix in validation.md) |
 
 **Coverage:** 7 total, 0 mapped to tasks (mapping happens in tasks.md).
 

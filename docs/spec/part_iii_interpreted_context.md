@@ -7,7 +7,8 @@ interpreter is gone, and the `piperine-bench` crate is deleted.
 Everything the interpreted context did — running analyses, measuring through
 result objects, staging parameter overrides, sweeping, asserting — is now
 done by the **host APIs**: Python (`import piperine`, the scripting host)
-or Rust (the root `piperine` crate). See **Part VIII — Host APIs**, and the
+or Rust (`piperine-api`; the root `piperine` crate re-exports it). See
+**Part VIII — Host APIs**, and the
 runnable gallery in `examples/*.py` (one twin per `.phdl` circuit).
 
 The normative text survives in git history (last present at the

@@ -24,7 +24,7 @@ IR is being reworked.
 PHDL (.phdl) ──► elaborated design ──► Cranelift-JIT analog devices ──► native solver
                                              + event-driven digital interpreter
                                              + OSDI (.osdi) device models
-hosts: Python (`import piperine`) and the Rust root crate drive analyses and measurement
+hosts: Python (`import piperine`) and Rust (`piperine-api`) drive analyses and measurement
 ```
 
 ## Highlights
