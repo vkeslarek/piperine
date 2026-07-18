@@ -9,7 +9,7 @@ activated, STOP.
 ---
 
 **Design**: `.specs/features/api-crate/design.md`
-**Status**: Approved — ready to execute
+**Status**: Done — executed 2026-07-18
 
 ---
 
@@ -49,7 +49,7 @@ T1 → T2 → T3
 
 ## Task Breakdown
 
-### T1: Create `piperine-api` and move the host API
+### T1: ✅ DONE — Create `piperine-api` and move the host API
 
 **What**: New crate `crates/piperine-api` (workspace member). `git mv` root
 `src/{session,results,waveform,hooks,error,prelude}.rs` into it; its
@@ -73,7 +73,7 @@ plain compile-time import + manifest review in Done-when).
 **Tests**: integration · **Gate**: full
 **Commit**: `refactor(api)!: extract piperine-api; root becomes a re-export shell`
 
-### T2: Retarget `piperine-python` and `piperine-cli`
+### T2: ✅ DONE — Retarget `piperine-python` and `piperine-cli`
 
 **What**: python `Cargo.toml` → `piperine-api` path dep (drop root);
 `use piperine::` → `use piperine_api::` across `crates/piperine-python/src/`
@@ -90,7 +90,7 @@ dev/test use of the binary, which is its own package).
 **Tests**: e2e + integration · **Gate**: full
 **Commit**: `refactor(python,cli): host API from piperine-api`
 
-### T3: Docs + closure
+### T3: ✅ DONE — Docs + closure
 
 **What**: `CLAUDE.md` crate table (+pipeline hosts line) names
 `piperine-api`; root described as re-export shell; part VIII Rust-face

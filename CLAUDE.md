@@ -28,7 +28,7 @@ PHDL (.phdl) ──parse_and_elaborate──► Design (POM)
                             PiperineDevice ──► solver
                                         │
                                         ▼
-                            hosts: root `piperine` lib (Rust) / `import piperine` (Python)
+                            hosts: `piperine-api` lib (Rust) / `import piperine` (Python)
 ```
 
 There is **no separate IR crate**. The POM (`Design`/`Module`, from `piperine-lang`) is the
@@ -62,7 +62,8 @@ both a package and the workspace) — always pass `--workspace`.
 | `piperine-lang` | PHDL frontend: lexer/parser (`parse/`), elaboration → POM `Design` (`elab/`, `pom/`), const evaluator (`eval/`: `Interpreter`, `Host` trait, pure system tasks in `eval/tasks.rs`) — walks the POM/AST directly, no IR. `parse_and_elaborate` is the entry point. Builtin stdlib headers in `headers/` (prelude, disciplines, constants) and `headers/spice/` (the ngspice-faithful device models — `use spice::<file>;` works in any project, no dependency; a project package named `spice` shadows the builtin). |
 | `piperine-codegen` | POM → devices. `lower/` (codegen-private resolved form: `expr.rs`/`stmt.rs`/`symbols.rs`, `diff.rs` symbolic differentiation, `pom/` `lower_bodies`). `jit/`: `flatten.rs`, `analog.rs` (`AnalogKernel`), `emit.rs`, `digital/`. `device/`: `AnalogInstance`, `DigitalInstance`, `CircuitCompiler` → `PiperineDevice` (implements `Element`). |
 | `piperine-solver` | Native solver: DC/AC/transient/noise/TF (`solver/`), MNA/linear algebra (`math/`, faer), `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming layer (`core/net.rs`), OSDI-style introspection (`core/introspect.rs`), `ConvergencePlan` + `HomotopyStrategy` (`solver/convergence.rs`), `IntegrationMethod` + LTE (`math/integration.rs`), `prelude.rs`. Does **not** depend on codegen. OSDI is an external plugin. |
-| `piperine` (root) | The library face (MD-19, lib-only): `SimSession`/`SolverConfig` (`session.rs`), result objects (`results.rs`, `waveform.rs`), `SimHooks` lifecycle trait (`hooks.rs`), `prelude` re-exports. The `piperine` binary target lives in `piperine-cli`. |
+| `piperine-api` | The library face (MD-20): `SimSession`/`SolverConfig` (`session.rs`), result objects (`results.rs`, `waveform.rs`), `SimHooks` lifecycle trait (`hooks.rs`), `prelude` re-exports. |
+| `piperine` (root) | Thin re-export shell over `piperine-api` (`pub use piperine_api::*`) — external Rust hosts keep `use piperine::…`; the tests of record live here as the shell's parity proof. The `piperine` binary target lives in `piperine-cli`. |
 | `piperine-plugin` | Plugin SDK + host: native/WASM/process backends, TOFU trust, `@device` loading, attribute schemas, CLI scripts. |
 | `piperine-plugin-wasm` | WASM guest SDK (re-exports `pom::wire` for `wasm32-unknown-unknown`). |
 | `piperine-cli` | `piperine` CLI (+ the binary target): `check`, `build`, `run` (python scripts / REPL), `fmt`, `new`, `test` (`*_tb.py` runner), `clean`, `add`, `remove`, `tree`, `plugin`. |

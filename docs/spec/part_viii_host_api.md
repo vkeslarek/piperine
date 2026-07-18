@@ -7,9 +7,11 @@ measure. There are exactly two host surfaces, and they are one surface:
 - **Python** (`import piperine`) — the scripting host. Testbenches are plain
   Python files (`*_tb.py`), run by `piperine test`; scripts run with
   `piperine run script.py`; an interactive REPL is `piperine run -i`.
-- **Rust** (the root `piperine` crate) — the same session/results/waveform
-  plumbing the Python binding wraps (MD-19: the root crate is the complete
-  external view of the project). `piperine::prelude` is the one-import face.
+- **Rust** (`piperine-api`) — the same session/results/waveform plumbing the
+  Python binding wraps (MD-20: `piperine-api` is the complete external view
+  of the project; the root `piperine` crate is a thin re-export shell, so
+  external hosts may equally write `use piperine::…`).
+  `piperine_api::prelude` is the one-import face.
 
 The in-language `bench` block was removed (2026-07-17): a `bench` block is a
 plain syntax error, and the interpreted context no longer exists. Everything

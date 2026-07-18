@@ -33,7 +33,7 @@ availability**, and **system tasks**. Driving analyses, measuring, and verifying
 | **V** | [Builtins Reference](part_v_builtins.md) | Math, analog operators, `$`-syscalls, `@`-events, diagnostics, prelude/stdlib, system-task availability matrix |
 | **VI** | [Plugins](part_vi_plugins.md) | Plugin extensibility model: devices, lifecycle hooks, custom scripts, attribute schemas, security model |
 | **VII** | [Solver](part_vii_solver.md) | Device ABI, analog/digital namespaces, MNA stamping, analyses, mixed-signal execution, convergence aids |
-| **VIII** | [Host APIs](part_viii_host_api.md) | Python (`import piperine`) + Rust (root crate): load/Design/Module, analyses + results, LiveSession, `piperine run`/`-i`/`test` |
+| **VIII** | [Host APIs](part_viii_host_api.md) | Python (`import piperine`) + Rust (`piperine-api`): load/Design/Module, analyses + results, LiveSession, `piperine run`/`-i`/`test` |
 | **App. A** | [Worked Examples](appendix_a_worked_examples.md) | End-to-end architectures spanning analog, digital, interpreted, and mixed-signal |
 | **App. B** | [Complete Grammar (EBNF)](appendix_b_grammar.md) | Consolidated LL(1) grammar for the whole language |
 
