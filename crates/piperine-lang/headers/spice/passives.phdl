@@ -285,3 +285,39 @@ pub analog mut {
     V(p1, n1) <+ m_val * ddt(I(p2, n2));
     V(p2, n2) <+ m_val * ddt(I(p1, n1));
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+//  TRANSFORMER  (combined two-winding device — self + mutual in one element)
+//
+//  A convenience block that carries both winding self-inductances and their
+//  mutual coupling, so a host does not have to wire two `ind` instances plus a
+//  `mut`. The coupled-flux constitutive relations (indload.c mutual section):
+//
+//    Φ1 = L1·I1 + M·I2,   Φ2 = L2·I2 + M·I1,   M = k·√(L1·L2)
+//    V1 = dΦ1/dt,         V2 = dΦ2/dt
+//
+//  In AC with the secondary open, V2/V1 = M/L1 = k·√(L2/L1) (→ the turns ratio
+//  N2/N1 as k → 1). In DC both windings are shorts (ddt → 0). |k| ≤ 1 required.
+// ════════════════════════════════════════════════════════════════════════════
+
+pub mod xfmr (
+    inout p1 : Electrical, inout n1 : Electrical,   // primary
+    inout p2 : Electrical, inout n2 : Electrical,   // secondary
+) {
+    param l1 : Real = 1.0e-6;       // primary self-inductance (H)
+    param l2 : Real = 1.0e-6;       // secondary self-inductance (H)
+    param k  : Real = 0.999;        // coupling coefficient (|k| ≤ 1)
+
+    $assert(l1 > 0.0, "xfmr: l1 (primary inductance) must be > 0");
+    $assert(l2 > 0.0, "xfmr: l2 (secondary inductance) must be > 0");
+    $assert(k * k <= 1.0, "xfmr: |k| (coupling coefficient) must be ≤ 1");
+}
+
+pub analog xfmr {
+    var m_val : Real = k * sqrt(l1 * l2);
+
+    // Each branch voltage is the time-derivative of its coupled flux —
+    // self-term plus the mutual term from the other winding's current.
+    V(p1, n1) <- l1 * ddt(I(p1, n1)) + m_val * ddt(I(p2, n2));
+    V(p2, n2) <- l2 * ddt(I(p2, n2)) + m_val * ddt(I(p1, n1));
+}

@@ -10,8 +10,8 @@ host surfaces (`run_sens`/`run_pss`) are born in `piperine-api`.
 ---
 
 **Design**: `.specs/features/p1-solver-complete/design.md`
-**Status**: In Progress — T1–T15 done; T16 BLOCKED (codegen gap, see below);
-Phase 4 continues at T17, 2026-07-18
+**Status**: In Progress — T1–T15 + T17 done; T16 BLOCKED (codegen gap, see
+below); T18 next, 2026-07-18
 **Baseline**: whatever `api-crate` closes at (≥449 passed / 5 ignored)
 
 ---
@@ -258,7 +258,7 @@ Each is a real codegen feature, not a stdlib-model task. **Recommend a
 separate `codegen-parametric-devices` feature** (flatten pass OR array-node
 support + the const-arg-into-behavior fix). See [[urc-codegen-gaps]].
 
-### T17: Transformer block
+### T17: ✅ DONE — Transformer block
 **What**: `xfmr(l1, l2, k)` combined two-winding device in
 `headers/spice/passives.phdl` over the mutual-flux engine. AC ratio ≈
 `k·√(L2/L1)`; coupled-LC energy-transfer regression stays green.
