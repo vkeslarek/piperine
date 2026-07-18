@@ -404,6 +404,19 @@ impl<'a> TransientSolver<'a> {
             steps.push(initial_snapshot);
         }
 
+        // Seed runtime operators at the operating point (t = start_time) so
+        // history-based operators anchor on the quiescent solution. Without
+        // this a `delay(x, td)` returns the first *stepped* sample for
+        // `t < td` instead of the op value — a spurious pre-arrival leak on a
+        // transmission line. The op point is not a stepped advance, so this
+        // only records history; it does not integrate anything.
+        if let Some(op) = self.solver.current_guess().map(|g| g.to_owned()) {
+            self.system
+                .circuit
+                .accept_and_run_digital(op.as_slice().unwrap(), start_time)?;
+            self.system.circuit.digital_state.commit();
+        }
+
         let mut current_time = start_time;
         self.solver.reset_iteration_counter();
         let mut steps_accepted: usize = 0;

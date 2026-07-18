@@ -10,7 +10,7 @@ host surfaces (`run_sens`/`run_pss`) are born in `piperine-api`.
 ---
 
 **Design**: `.specs/features/p1-solver-complete/design.md`
-**Status**: In Progress — T1–T14 done; Phase 4 continues at T15, 2026-07-18
+**Status**: In Progress — T1–T15 done; Phase 4 continues at T16, 2026-07-18
 **Baseline**: whatever `api-crate` closes at (≥449 passed / 5 ignored)
 
 ---
@@ -218,7 +218,7 @@ full.
 **Tests**: integration (golden) · **Gate**: full
 **Commit**: `feat(spice): MOS level 3`
 
-### T15: Ideal lossless tline
+### T15: ✅ DONE — Ideal lossless tline
 **What**: `headers/spice/tline.phdl`: Branin model over the `delay` runtime
 operator (two internal controlled sources, delayed cross-terms). Tests:
 matched termination (< 1 % reflection), open termination (doubling at 2·td),

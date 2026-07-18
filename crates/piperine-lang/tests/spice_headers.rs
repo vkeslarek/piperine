@@ -36,7 +36,7 @@ fn every_spice_header_elaborates() {
         .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("phdl"))
         .collect();
     files.sort();
-    assert_eq!(files.len(), 10, "expected the 10 migrated model files, got {files:?}");
+    assert_eq!(files.len(), 11, "expected the 11 migrated model files, got {files:?}");
 
     let mut failures = Vec::new();
     for path in &files {

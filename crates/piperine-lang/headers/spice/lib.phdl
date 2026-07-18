@@ -7,3 +7,4 @@ use spice::passives;
 use spice::sources;
 use spice::switches;
 use spice::controlled;
+use spice::tline;
