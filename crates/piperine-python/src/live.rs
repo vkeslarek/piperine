@@ -686,7 +686,7 @@ mod Divider() {
                     .getattr("v")?
                     .call1(("mid",))?
                     .extract::<f64>()?;
-                module.getattr("stage")?.call1(("r_top", "r", r))?;
+                module.getattr("set")?.call1(("r_top", "r", r))?;
                 let fresh = module
                     .getattr("op")?
                     .call0()?
@@ -818,7 +818,7 @@ mod Top() {
             let op1 = session.getattr("op")?.call0()?;
             let v1 = v_out(&op1)?;
             assert!(v0 - v1 > 1e-3, "sidewall leak must lower v(out): {v0} -> {v1}");
-            module.getattr("stage")?.call1(("d1", "ns", 1.2))?;
+            module.getattr("set")?.call1(("d1", "ns", 1.2))?;
             let fresh = module.getattr("op")?.call0()?;
             let v_fresh = v_out(&fresh)?;
             assert!(
@@ -840,7 +840,7 @@ mod Top() {
             // plain restamp (no second rebuild), matching the oracle.
             session.getattr("set")?.call1(("d1", "ns", 3.0))?;
             assert_eq!(session.getattr("rebuilds")?.extract::<usize>()?, 1);
-            module.getattr("stage")?.call1(("d1", "ns", 3.0))?;
+            module.getattr("set")?.call1(("d1", "ns", 3.0))?;
             let v_live = v_out(&session.getattr("op")?.call0()?)?;
             let v_oracle = v_out(&module.getattr("op")?.call0()?)?;
             assert!(

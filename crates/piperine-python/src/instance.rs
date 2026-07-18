@@ -180,7 +180,7 @@ pub struct _InstanceView {
 }
 
 impl _InstanceView {
-    /// Construct an `_InstanceView` over a `$op()` snapshot (PY-13).
+    /// Construct an `_InstanceView` over an op() snapshot (PY-13).
     pub(crate) fn new_op(
         inner: Rc<OpResult>,
         resolver: InstanceResolver,
@@ -193,7 +193,7 @@ impl _InstanceView {
         }
     }
 
-    /// Construct an `_InstanceView` over a `$tran()` snapshot (PY-13).
+    /// Construct an `_InstanceView` over a tran() snapshot (PY-13).
     pub(crate) fn new_trace(
         inner: Rc<Trace>,
         resolver: InstanceResolver,

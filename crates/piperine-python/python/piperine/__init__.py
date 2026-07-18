@@ -5,7 +5,8 @@ host-neutral API). This pure-Python facade wraps the native ``_piperine``
 extension (PyO3) so IDEs see full annotations + docstrings; runtime forwards
 to the native engine with negligible cost.
 
-Uniform shape (PY-15, binding): the call graph mirrors the bench layer — ::
+Uniform shape (PY-15, binding): the call graph mirrors the Rust host
+session — ::
 
     import piperine
     design  = piperine.load("chip.phdl")        # -> Design
@@ -18,7 +19,7 @@ Uniform shape (PY-15, binding): the call graph mirrors the bench layer — ::
     axis    = wave.axis                          # -> np.ndarray (time)
 
 Analyses are pure functions of (design + staged overrides + config); sweeps
-are native Python ``for`` loops driving ``module.stage(label, param, value)``
+are native Python ``for`` loops driving ``module.set(label, param, value)``
 (spec AC11/12).
 
 Numpy arrays: ``Waveform.values`` / ``.axis`` are real ``np.ndarray``;
@@ -46,6 +47,10 @@ __all__ = [
     "Behavior",
     "Selection",
     "Node",
+    # instance sub-views + solver statistics
+    "InstanceView",
+    "Terminal",
+    "SolverStats",
     # live session (compile once, set, re-run)
     "LiveSession",
     # analyses
@@ -93,7 +98,7 @@ class Solver:
 
 @dataclass
 class OpConfig:
-    """``$op`` config (prelude ``bundle OpConfig``)."""
+    """DC operating-point config (prelude ``bundle OpConfig``)."""
 
     solver: Solver = field(default_factory=Solver)
     nodeset: dict[str, float] = field(default_factory=dict)
@@ -101,7 +106,7 @@ class OpConfig:
 
 @dataclass
 class TranConfig:
-    """``$tran`` config (prelude ``bundle TranConfig``).
+    """Transient analysis config (prelude ``bundle TranConfig``).
 
     ``step = 0.0`` selects the adaptive stepper (initial ``dt = stop/1000``).
     """
@@ -115,10 +120,10 @@ class TranConfig:
 
 @dataclass
 class AcConfig:
-    """``$ac`` config (prelude ``bundle AcConfig``).
+    """AC small-signal sweep config (prelude ``bundle AcConfig``).
 
     ``scale`` selects the sweep geometry: ``Dec``/``Oct`` → logarithmic,
-    ``Lin`` → linear (matches the bench's ``logarithmic`` bool).
+    ``Lin`` → linear.
     """
 
     fstart: float
@@ -130,7 +135,7 @@ class AcConfig:
 
 @dataclass
 class NoiseConfig:
-    """``$noise`` config (prelude ``bundle NoiseConfig``)."""
+    """Output-referred noise analysis config (prelude ``bundle NoiseConfig``)."""
 
     out: str
     fstart: float
@@ -155,6 +160,13 @@ Param = _piperine._Param
 Behavior = _piperine._Behavior
 Selection = _piperine._Selection
 Node = _piperine._Node
+# Sub-views and statistics reachable from result objects: an
+# ``InstanceView`` (per-terminal ``.v/.i``) comes from
+# ``result["instance.path"]`` (spec AC13); its terminals are ``Terminal``
+# objects; ``.stats`` on any analysis result is a ``SolverStats``.
+InstanceView = _piperine._InstanceView
+Terminal = _piperine._Terminal
+SolverStats = _piperine._SolverStats
 
 # Analysis-result types — no config-bundle translation needed, so they are
 # plain re-exports of the native pyclasses. Their methods (.v/.i/.values/
@@ -185,7 +197,7 @@ class Design:
     look up a module by name (``design.module("Amp")``), enumerate modules
     (``design.modules()``), read constants (``design.const_("PI")``), or
     resolve a hierarchical selector path (``design.select("/r1/port::p")``).
-    Read-only — the only mutation is :meth:`Module.stage`.
+    Read-only — the only mutation is :meth:`Module.set`.
     """
 
     def __init__(self, _native: _piperine._Design) -> None:
@@ -290,8 +302,8 @@ class Module:
 
         ``config.step = 0.0`` (the prelude default) selects the adaptive
         stepper; a positive ``step`` seeds the initial ``dt``. ``config.ic``
-        presets node voltages (spec §5.1 ``TranConfig.ic``); ``config.solver``
-        carries the tolerances + ``max_iter``.
+        presets node voltages; ``config.solver`` carries the tolerances +
+        ``max_iter``.
         """
         step = config.step if config.step != 0.0 else None
         ic = config.ic if config.ic else None
@@ -323,15 +335,16 @@ class Module:
 
     # ── staging (spec AC11/12) ─────────────────────────────────────────────
 
-    def stage(self, label: str, param: str, value: float) -> None:
-        """Stage a parameter override (spec AC11/12).
+    def set(self, label: str, param: str, value: float) -> None:
+        """Set a parameter override for the next analysis (spec AC11/12).
 
         The next analysis on this module uses ``value`` for the instance
-        ``label``'s ``param``. Staging is pure — the held ``Design`` is not
+        ``label``'s ``param``. Setting is pure — the held ``Design`` is not
         mutated; overrides replay onto each analysis's fork. Sweeps are
-        native Python ``for`` loops.
+        native Python ``for`` loops. Same verb as :meth:`LiveSession.set`:
+        both mean "subsequent analyses see the new value".
         """
-        self._native.stage(label, param, value)
+        self._native.set(label, param, value)
 
     def compile(self) -> LiveSession:
         """Compile this module **once** into a :class:`LiveSession`.

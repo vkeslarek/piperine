@@ -91,7 +91,7 @@ pub(crate) fn readout_err<E: std::fmt::Display>(e: E) -> PyErr {
     }
 }
 
-/// `_OpResult` — the typed `$op()` result (PY-06). Holds the immutable DC
+/// `_OpResult` — the typed operating-point result (PY-06). Holds the immutable DC
 /// snapshot produced by [`piperine::session::SimSession::run_op`] behind
 /// `Rc` so a PY-13 instance sub-view can share it cheaply. `.v/.i` (PY-06) and
 /// `__getitem__` (PY-11 / spec AC5) resolve nets by name through the bench's
@@ -193,8 +193,8 @@ impl _OpResult {
     }
 }
 
-/// `_Trace` — the typed `$tran(...)` result (PY-07). `.v/.i` (PY-07) read
-/// out a per-net `_Waveform` over the analysis axis (time, for `$tran`);
+/// `_Trace` — the typed transient result (PY-07). `.v/.i` (PY-07) read
+/// out a per-net `_Waveform` over the time axis;
 /// `__getitem__` (PY-11 / spec AC10) returns the same waveform handle.
 /// `.axis` returns the time-axis waveform. The snapshot lives behind `Rc` so
 /// a PY-13 instance sub-view can share it (mirrors `_OpResult`).
@@ -322,7 +322,7 @@ impl _Waveform {
         Ok(numpy::PyArray1::from_vec(py, vec).into_any().unbind())
     }
 
-    /// The axis (time, for `$tran`) as a real `np.ndarray` (PY-08 / spec
+    /// The time axis as a real `np.ndarray` (PY-08 / spec
     /// AC7). Equal length to `.values`.
     #[getter]
     fn axis(&self, py: Python<'_>) -> PyResult<PyObject> {
@@ -387,7 +387,7 @@ impl _Waveform {
     }
 }
 
-/// `_ComplexWaveform` — the `$ac` sample surface (PY-09): a series of
+/// `_ComplexWaveform` — the AC sample surface (PY-09): a series of
 /// `(frequency, Complex64)` samples. `.values` is a complex `np.ndarray`
 /// (complex128); `.mag/.phase/.db` project onto real [`_Waveform`]s
 /// (uniform-shape: same projections the bench `ComplexWaveform` computes).
@@ -465,7 +465,7 @@ impl _ComplexWaveform {
     }
 }
 
-/// `_AcTrace` — the typed `$ac(...)` result (PY-09). `.v(net)` returns a
+/// `_AcTrace` — the typed AC-sweep result (PY-09). `.v(net)` returns a
 /// [`_ComplexWaveform`] over the AC frequency sweep; `.axis()` returns the
 /// frequency-axis real `_Waveform`. Net resolution + error handling mirror
 /// `_OpResult::v`.
@@ -507,7 +507,7 @@ impl _AcTrace {
     }
 }
 
-/// `_NoiseTrace` — the typed `$noise(...)` result (PY-10). `.psd()` returns
+/// `_NoiseTrace` — the typed noise-analysis result (PY-10). `.psd()` returns
 /// the output-referred noise PSD as a real `_Waveform` (V²/Hz over
 /// frequency); `.total()` returns the integrated RMS noise as a float.
 /// Uniform-shape: same values the bench `NoiseTrace` computes.

@@ -58,7 +58,7 @@ t0 = time.perf_counter()
 fresh = []
 guess = {"vin": 5.0, "out": 0.65}
 for r in rs:
-    module.stage("r1", "r", r)  # each op() re-elaborates + re-JITs (fresh build)
+    module.set("r1", "r", r)  # each op() re-elaborates + re-JITs (fresh build)
     v = module.op(piperine.OpConfig(nodeset=guess)).v("out")
     guess = {"vin": 5.0, "out": v}
     fresh.append(v)

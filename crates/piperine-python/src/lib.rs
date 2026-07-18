@@ -468,7 +468,7 @@ mod Divider() {
             );
 
             // Stage r_top.r = 2e3 → mid = 5 · 2/(2+2) = 2.5 V (spec AC12).
-            module.getattr("stage")?.call1(("r_top", "r", 2e3))?;
+            module.getattr("set")?.call1(("r_top", "r", 2e3))?;
             let v_staged = mid_voltage(&module)?;
             assert!(
                 (v_staged - 2.5).abs() < 1e-6,

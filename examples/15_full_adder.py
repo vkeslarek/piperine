@@ -4,7 +4,7 @@ m = piperine.load(P).module("AdderBoard")
 for a in [0.0,1.0]:
     for b in [0.0,1.0]:
         for cin in [0.0,1.0]:
-            m.stage("da","level",a); m.stage("db","level",b); m.stage("dc","level",cin)
+            m.set("da","level",a); m.set("db","level",b); m.set("dc","level",cin)
             r = m.op()
             total = r.v("nsum") + 2.0*r.v("ncout")
             assert abs(total - (a+b+cin)) < 1e-9, f"{a}+{b}+{cin}={total}"

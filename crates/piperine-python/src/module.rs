@@ -236,13 +236,13 @@ impl _Module {
         Ok(_NoiseTrace::new(result))
     }
 
-    /// Stage a parameter override on `label`'s `param` (PY-12 / spec AC11):
-    /// the next analysis on this module uses `value`. Staging is pure — the
+    /// Set a parameter override on `label`'s `param` (PY-12 / spec AC11):
+    /// the next analysis on this module uses `value`. Setting is pure — the
     /// held [`crate::design::_Design`] is never mutated; overrides live in an
-    /// isolated map and replay onto each analysis's fork. A re-stage of the
+    /// isolated map and replay onto each analysis's fork. A re-set of the
     /// same `(label, param)` overwrites. Sweeps are native Python `for` loops
     /// (spec AC12).
-    fn stage(&self, label: &str, param: &str, value: f64) {
+    fn set(&self, label: &str, param: &str, value: f64) {
         self.staged
             .borrow_mut()
             .insert((label.to_string(), param.to_string()), Value::Real(value));
