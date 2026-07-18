@@ -1076,3 +1076,57 @@ fn digital_cross_module_flops_sample_simultaneously() {
     assert_eq!(nets[q0.0], LogicValue::Zero, "q0 now 0");
     assert_eq!(nets[q1.0], LogicValue::One, "q1 captured q0's pre-edge 1 (NBA)");
 }
+
+/// SC-08 — `table()` 1-D lookup: a table-driven nonlinear resistor solves to
+/// the piecewise equilibrium (Newton needs the segment-slope Jacobian).
+/// Segment [1,2]: I = 1m + (V−1)·3m; series 1k from 5 V ⇒ V + 1000·I(V) = 5
+/// ⇒ V = 1.75.
+#[test]
+fn sim_dc_table_nonlinear_resistor() {
+    let (_prog, _circuit, result) = dc_solve("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
+        analog VSource { V(p, n) <- dc; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod TableR ( inout p : Electrical, inout n : Electrical ) { }
+        analog TableR {
+            I(p, n) <+ table(V(p, n), [0.0, 1.0, 2.0, 3.0], [0.0, 1.0e-3, 4.0e-3, 9.0e-3]);
+        }
+        mod Top ( inout vin : Electrical, inout mid : Electrical ) {
+            v1 : VSource ( vin, gnd ) { .dc = 5.0 };
+            r1 : Resistor ( vin, mid );
+            t1 : TableR ( mid, gnd );
+        }
+    ", "Top");
+    let v_mid = result.get(piperine_solver::abi::AnalogVariable::Node(
+        NodeIdentifier::Anonymous(2)
+    )).expect("V(mid)");
+    assert!((v_mid - 1.75).abs() < 1e-9, "V(mid) = {v_mid} expected 1.75");
+}
+
+/// SC-08 — `table()` end clamp: past the last breakpoint the value holds
+/// flat (ys.last), so a 10 V drive through 1 Ω sees exactly 9 mA.
+#[test]
+fn sim_dc_table_clamps_at_the_ends() {
+    let (_prog, _circuit, result) = dc_solve("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
+        analog VSource { V(p, n) <- dc; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod TableR ( inout p : Electrical, inout n : Electrical ) { }
+        analog TableR {
+            I(p, n) <+ table(V(p, n), [0.0, 1.0, 2.0, 3.0], [0.0, 1.0e-3, 4.0e-3, 9.0e-3]);
+        }
+        mod Top ( inout vin : Electrical, inout a : Electrical ) {
+            v1 : VSource ( vin, gnd ) { .dc = 10.0 };
+            rs : Resistor ( vin, a );
+            t1 : TableR ( a, gnd );
+        }
+    ", "Top");
+    let v_a = result.get(piperine_solver::abi::AnalogVariable::Node(
+        NodeIdentifier::Anonymous(2)
+    )).expect("V(a)");
+    assert!((v_a - (10.0 - 9.0e-3)).abs() < 1e-9, "V(a) = {v_a} expected 9.991");
+}

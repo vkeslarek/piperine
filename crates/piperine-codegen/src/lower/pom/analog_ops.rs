@@ -120,6 +120,112 @@ impl AnalogOp for Slew {
     }
 }
 
+/// `table(x, xs, ys[, mode])` — 1-D measured-data lookup (spec Part V §2).
+/// `xs`/`ys` must be constant real arrays with `xs` strictly increasing;
+/// interpolation is linear with end clamp. Lowered to a **pure piecewise
+/// expression** (nested selects) — no state, so the Jacobian falls out of
+/// the normal symbolic-diff path as the segment slope.
+struct Table;
+impl Table {
+    fn const_array(e: &Expr, ctx: &mut LowerCtx) -> Option<Vec<f64>> {
+        let Expr::Array(ArrayBody::List(list)) = e else { return None };
+        list.iter()
+            .map(|item| match resolve_expr(item, ctx) {
+                Expr::Literal(Literal::Real(v)) => Some(v),
+                Expr::Literal(Literal::Int(v)) => Some(v as f64),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn err(ctx: &mut LowerCtx, what: &'static str) -> Expr {
+        ctx.errors.push(super::LowerError {
+            module: ctx.module_name.clone(),
+            what,
+            name: "table".to_string(),
+        });
+        Expr::Literal(Literal::Real(0.0))
+    }
+}
+impl AnalogOp for Table {
+    fn lower(&self, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
+        if args.len() < 3 {
+            return Self::err(ctx, "table(x, xs, ys) needs at least 3 arguments");
+        }
+        if let Some(mode) = args.get(3)
+            && !matches!(mode, Expr::Literal(Literal::String(s)) if s == "linear")
+        {
+            return Self::err(ctx, "table interpolation mode: only \"linear\" is supported");
+        }
+        let Some(xs) = Self::const_array(&args[1], ctx) else {
+            return Self::err(ctx, "table breakpoints (xs) must be a constant real array");
+        };
+        let Some(ys) = Self::const_array(&args[2], ctx) else {
+            return Self::err(ctx, "table data (ys) must be a constant real array");
+        };
+        if xs.len() != ys.len() {
+            return Self::err(ctx, "table xs and ys must have the same length");
+        }
+        if xs.len() < 2 {
+            return Self::err(ctx, "table needs at least 2 points");
+        }
+        if !xs.windows(2).all(|w| w[0] < w[1]) {
+            return Self::err(ctx, "table breakpoints (xs) must be strictly increasing");
+        }
+        let x = resolve_expr(&args[0], ctx);
+
+        let real = |v: f64| Expr::Literal(Literal::Real(v));
+        let block = |e: Expr| piperine_lang::parse::ast::Block {
+            stmts: Vec::new(),
+            expr: Some(Box::new(e)),
+        };
+        // Segment i: ys[i] + (x − xs[i]) · slope_i.
+        let seg = |i: usize, x: &Expr| {
+            let slope = (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]);
+            Expr::Binary(
+                Box::new(real(ys[i])),
+                piperine_lang::parse::ast::BinaryOp::Add,
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Binary(
+                        Box::new(x.clone()),
+                        piperine_lang::parse::ast::BinaryOp::Sub,
+                        Box::new(real(xs[i])),
+                    )),
+                    piperine_lang::parse::ast::BinaryOp::Mul,
+                    Box::new(real(slope)),
+                )),
+            )
+        };
+        // Fold back-to-front: else-most = last segment (extrapolation is a
+        // flat clamp on both ends).
+        let n = xs.len();
+        let mut expr = real(ys[n - 1]); // x ≥ xs[n−1] → clamp high
+        for i in (0..n - 1).rev() {
+            // x < xs[i+1] → segment i (for i = 0 the low clamp is applied
+            // below), else previous accumulation.
+            expr = Expr::If {
+                cond: Box::new(Expr::Binary(
+                    Box::new(x.clone()),
+                    piperine_lang::parse::ast::BinaryOp::Lt,
+                    Box::new(real(xs[i + 1])),
+                )),
+                then_body: block(seg(i, &x)),
+                else_body: block(expr),
+            };
+        }
+        // Low clamp: x ≤ xs[0] → ys[0].
+        Expr::If {
+            cond: Box::new(Expr::Binary(
+                Box::new(x.clone()),
+                piperine_lang::parse::ast::BinaryOp::Lt,
+                Box::new(real(xs[0])),
+            )),
+            then_body: block(real(ys[0])),
+            else_body: block(expr),
+        }
+    }
+}
+
 struct Laplace {
     variant: &'static str,
 }
@@ -229,6 +335,7 @@ impl AnalogOpRegistry {
         r.register(&["delay", "absdelay"], Delay);
         r.register(&["transition"], Transition);
         r.register(&["slew"], Slew);
+        r.register(&["table"], Table);
         for variant in ["np", "zp", "pm", "nm", "npm"] {
             r.register(&[&format!("laplace_{variant}")], Laplace { variant });
         }
