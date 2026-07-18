@@ -10,7 +10,8 @@ host surfaces (`run_sens`/`run_pss`) are born in `piperine-api`.
 ---
 
 **Design**: `.specs/features/p1-solver-complete/design.md`
-**Status**: In Progress — T1–T15 done; Phase 4 continues at T16, 2026-07-18
+**Status**: In Progress — T1–T15 done; T16 BLOCKED (codegen gap, see below);
+Phase 4 continues at T17, 2026-07-18
 **Baseline**: whatever `api-crate` closes at (≥449 passed / 5 ignored)
 
 ---
@@ -229,7 +230,7 @@ td/Z0 ≤ 0 loud.
 **Tests**: integration (golden) · **Gate**: full
 **Commit**: `feat(spice): ideal transmission line`
 
-### T16: `urc` lumped RC line
+### T16: ⛔ BLOCKED — `urc` lumped RC line
 **What**: RC-ladder expansion module (`param n`, geometric segmenting per
 ngspice); step-response delay/rise vs ngspice golden.
 **Where**: `headers/spice/tline.phdl` (same file), tests
@@ -237,6 +238,25 @@ ngspice); step-response delay/rise vs ngspice golden.
 **Done when**: golden green; bad-params loud; gate full.
 **Tests**: integration (golden) · **Gate**: full
 **Commit**: `feat(spice): urc lumped RC line`
+
+**BLOCKER (2026-07-18):** a parametric `urc[N]` needs codegen support that
+does not exist. Three distinct gaps found while attempting it:
+1. **No hierarchy flattening** — codegen (`device/circuit.rs:374`) rejects a
+   submodule that itself instantiates devices ("nested hierarchy … flatten
+   during elaboration"); only single-level (top → leaf) designs compile. A
+   structural RC-ladder submodule cannot be simulated. `RcChain[N]` in
+   `language_features.phdl` has the same latent problem.
+2. **Const-args not substituted into analog behaviors** — a generic module's
+   `analog` body sees `N` as undefined (`AttachBehaviors` clones the base
+   behavior unsubstituted). A contained fix exists (subst const params per
+   monomorphized variant via `Stmt::subst_const`) but is unused without gap 3.
+3. **Array wires are not flat analog nets** — `wire node : Electrical[N+1]`
+   stays one array-typed net; `node[i]` in `V()/I()` cannot resolve (the node
+   table has no `node[0]`). Needs array-net expansion + index→net mapping in
+   the flattener.
+Each is a real codegen feature, not a stdlib-model task. **Recommend a
+separate `codegen-parametric-devices` feature** (flatten pass OR array-node
+support + the const-arg-into-behavior fix). See [[urc-codegen-gaps]].
 
 ### T17: Transformer block
 **What**: `xfmr(l1, l2, k)` combined two-winding device in
