@@ -10,7 +10,7 @@ host surfaces (`run_sens`/`run_pss`) are born in `piperine-api`.
 ---
 
 **Design**: `.specs/features/p1-solver-complete/design.md`
-**Status**: In Progress — T1–T11 done (Phases 1–2); T12 next, 2026-07-18
+**Status**: In Progress — T1–T13 done; Phase 4 continues at T14, 2026-07-18
 **Baseline**: whatever `api-crate` closes at (≥449 passed / 5 ignored)
 
 ---
@@ -184,7 +184,7 @@ gate full.
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(solver): @initial branch force + UIC hold clamp`
 
-### T12: Fused digital network integration
+### T12: ✅ DONE — Fused digital network integration (commit 4272f61)
 **What**: `core/circuit.rs`: detect pure-comb cones (`DigitalTopology`),
 build `DigitalNetwork` elements, per-device fallback for clocked/
 `SAMPLES_ANALOG`. Fusion-active assertion (instrumentation counter or
@@ -199,7 +199,7 @@ full.
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(solver): fused combinational digital network active`
 
-### T13: MOS level 2
+### T13: ✅ DONE — MOS level 2
 **What**: Port ngspice `mos2` load equations to `headers/spice/mos.phdl`
 (new module, shared helpers with mos1 where clean); golden DC cases per
 region (cutoff/linear/sat) in the ngspice harness, live-or-SKIP.

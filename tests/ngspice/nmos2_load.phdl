@@ -1,0 +1,12 @@
+// NMOS level 2 diode-connected load — same circuit as nmos2_load.cir.
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::mos;
+mod Top() {
+    wire gnd: Electrical; wire vdd: Electrical; wire d: Electrical;
+    vd: vsrc (.p=vdd,.n=gnd) { .dc = 5.0 };
+    r1: res  (.p=vdd,.n=d) { .r = 10.0e3 };
+    m1: mos2 (.d=d,.g=d,.s=gnd,.b=gnd)
+        { .l = 2.0e-6, .w = 10.0e-6, .model = Mos2Model { .vto = 1.0, .kp = 2.0e-5, .lambda = 0.0 } };
+}

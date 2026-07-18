@@ -301,6 +301,16 @@ fn ngspice_nmos_load() {
 }
 
 #[test]
+fn ngspice_nmos2_fixed() {
+    ngspice_op_case("nmos2_fixed");
+}
+
+#[test]
+fn ngspice_nmos2_load() {
+    ngspice_op_case("nmos2_load");
+}
+
+#[test]
 fn ngspice_jfet_bias() {
     ngspice_op_case("jfet_bias");
 }
@@ -352,6 +362,30 @@ fn ngspice_nmos_id_vds_sweep() {
             harness.sweep_case("nmos_id_vds", "vd", "d", "gnd", NgspiceHarness::ABSTOL_I)
         }
         None => eprintln!("SKIP nmos_id_vds: ngspice not on PATH"),
+    }
+}
+
+/// NMOS level 2 Id–Vds (26 points, vgs = 3 V, rd/rs = 100 Ω): linear →
+/// saturation with the level-2 channel-length modulation (SC-14).
+#[test]
+fn ngspice_nmos2_id_vds_sweep() {
+    match NgspiceHarness::detect() {
+        Some(harness) => {
+            harness.sweep_case("nmos2_id_vds", "vd", "d", "gnd", NgspiceHarness::ABSTOL_I)
+        }
+        None => eprintln!("SKIP nmos2_id_vds: ngspice not on PATH"),
+    }
+}
+
+/// NMOS level 2 Id–Vgs (26 points, vds = 3 V, nsub + nfs): cutoff →
+/// subthreshold → strong inversion (SC-14).
+#[test]
+fn ngspice_nmos2_id_vgs_sweep() {
+    match NgspiceHarness::detect() {
+        Some(harness) => {
+            harness.sweep_case("nmos2_id_vgs", "vg", "d", "gnd", NgspiceHarness::ABSTOL_I)
+        }
+        None => eprintln!("SKIP nmos2_id_vgs: ngspice not on PATH"),
     }
 }
 
