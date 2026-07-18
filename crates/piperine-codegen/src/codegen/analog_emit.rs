@@ -319,9 +319,12 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         let vte = self.emit_analog(&args[3])?;
         let vcrit = self.emit_analog(&args[4])?;
         let vold = self.cse_load(BANK_STATE, self.state_ptr(), ((self.limit_base + slot) * 8) as i32);
+        // For `fetlim`/`limvds` the `vte` argument slot carries `vto` (the
+        // threshold); `limvds` ignores it. `vcrit` still seeds `vold`.
         let vlim = match kind {
             "pnjlim" => self.emit_pnjlim(vnew, vold, vte, vcrit)?,
-            "fetlim" => vnew,
+            "fetlim" => self.emit_fetlim(vnew, vold, vte),
+            "limvds" => self.emit_limvds(vnew, vold),
             other => return Err(CodegenError::unsupported(format!("$limit kind `{other}`"))),
         };
         self.cse.as_mut().expect("analog context").insert(key, vlim);
@@ -352,6 +355,115 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         let vold_pos = self.builder.ins().fcmp(FloatCC::GreaterThan, vold, zero);
         let limited = self.builder.ins().select(vold_pos, posval, negval);
         Ok(self.builder.ins().select(cond, limited, vnew))
+    }
+
+    /// ngspice `MIN(a, b)` — a plain comparison (not IEEE fmin), matching the
+    /// C source exactly.
+    fn emit_min(&mut self, a: Value, b: Value) -> Value {
+        let c = self.builder.ins().fcmp(FloatCC::LessThan, a, b);
+        self.builder.ins().select(c, a, b)
+    }
+
+    /// ngspice `MAX(a, b)`.
+    fn emit_max(&mut self, a: Value, b: Value) -> Value {
+        let c = self.builder.ins().fcmp(FloatCC::GreaterThan, a, b);
+        self.builder.ins().select(c, a, b)
+    }
+
+    /// Branchless ngspice `DEVfetlim(vnew, vold, vto)` (devsup.c) — the MOSFET
+    /// gate-voltage limiter. Every C `if`/`else` becomes a `select` on the
+    /// same predicate; leaf assignments are the candidate values.
+    fn emit_fetlim(&mut self, vnew: Value, vold: Value, vto: Value) -> Value {
+        let two = self.cse_const(2.0);
+        let one = self.cse_const(1.0);
+        let zero = self.cse_const(0.0);
+        let half = self.cse_const(0.5);
+        let four = self.cse_const(4.0);
+
+        let vold_m_vto = self.builder.ins().fsub(vold, vto);
+        let two_diff = self.builder.ins().fmul(two, vold_m_vto);
+        let abs_two_diff = self.builder.ins().fabs(two_diff);
+        let vtsthi = self.builder.ins().fadd(abs_two_diff, two);           // |2(vold-vto)|+2
+        let abs_diff = self.builder.ins().fabs(vold_m_vto);
+        let vtstlo = self.builder.ins().fadd(abs_diff, one);              // |vold-vto|+1
+        let c35 = self.cse_const(3.5);
+        let vtox = self.builder.ins().fadd(vto, c35);                     // vto+3.5
+        let delv = self.builder.ins().fsub(vnew, vold);
+        let neg_delv = self.builder.ins().fneg(delv);
+
+        let on = self.builder.ins().fcmp(FloatCC::GreaterThanOrEqual, vold, vto);
+        let high = self.builder.ins().fcmp(FloatCC::GreaterThanOrEqual, vold, vtox);
+        let delv_le0 = self.builder.ins().fcmp(FloatCC::LessThanOrEqual, delv, zero);
+
+        // on & high & going off (delv<=0):
+        //   vnew>=vtox ? (-delv>vtstlo ? vold-vtstlo : vnew) : max(vnew, vto+2)
+        let vnew_ge_vtox = self.builder.ins().fcmp(FloatCC::GreaterThanOrEqual, vnew, vtox);
+        let vold_m_vtstlo = self.builder.ins().fsub(vold, vtstlo);
+        let negdelv_gt_vtstlo = self.builder.ins().fcmp(FloatCC::GreaterThan, neg_delv, vtstlo);
+        let off_step = self.builder.ins().select(negdelv_gt_vtstlo, vold_m_vtstlo, vnew);
+        let vto_p2 = self.builder.ins().fadd(vto, two);
+        let max_vto_p2 = self.emit_max(vnew, vto_p2);
+        let high_gooff = self.builder.ins().select(vnew_ge_vtox, off_step, max_vto_p2);
+        // on & high & staying on (delv>0): delv>=vtsthi ? vold+vtsthi : vnew
+        let delv_ge_vtsthi = self.builder.ins().fcmp(FloatCC::GreaterThanOrEqual, delv, vtsthi);
+        let vold_p_vtsthi = self.builder.ins().fadd(vold, vtsthi);
+        let high_stayon = self.builder.ins().select(delv_ge_vtsthi, vold_p_vtsthi, vnew);
+        let high_val = self.builder.ins().select(delv_le0, high_gooff, high_stayon);
+
+        // on & mid (vold<vtox): delv<=0 ? max(vnew, vto-0.5) : min(vnew, vto+4)
+        let vto_m05 = self.builder.ins().fsub(vto, half);
+        let mid_dec = self.emit_max(vnew, vto_m05);
+        let vto_p4 = self.builder.ins().fadd(vto, four);
+        let mid_inc = self.emit_min(vnew, vto_p4);
+        let mid_val = self.builder.ins().select(delv_le0, mid_dec, mid_inc);
+
+        let on_val = self.builder.ins().select(high, high_val, mid_val);
+
+        // off (vold<vto):
+        //   delv<=0: -delv>vtsthi ? vold-vtsthi : vnew
+        let negdelv_gt_vtsthi = self.builder.ins().fcmp(FloatCC::GreaterThan, neg_delv, vtsthi);
+        let vold_m_vtsthi = self.builder.ins().fsub(vold, vtsthi);
+        let off_dec = self.builder.ins().select(negdelv_gt_vtsthi, vold_m_vtsthi, vnew);
+        //   delv>0: vnew<=vto+0.5 ? (delv>vtstlo ? vold+vtstlo : vnew) : vto+0.5
+        let vto_p05 = self.builder.ins().fadd(vto, half);
+        let vnew_le_vtemp = self.builder.ins().fcmp(FloatCC::LessThanOrEqual, vnew, vto_p05);
+        let delv_gt_vtstlo = self.builder.ins().fcmp(FloatCC::GreaterThan, delv, vtstlo);
+        let vold_p_vtstlo = self.builder.ins().fadd(vold, vtstlo);
+        let off_inc_lo = self.builder.ins().select(delv_gt_vtstlo, vold_p_vtstlo, vnew);
+        let off_inc = self.builder.ins().select(vnew_le_vtemp, off_inc_lo, vto_p05);
+        let off_val = self.builder.ins().select(delv_le0, off_dec, off_inc);
+
+        self.builder.ins().select(on, on_val, off_val)
+    }
+
+    /// Branchless ngspice `DEVlimvds(vnew, vold)` (devsup.c) — the MOSFET
+    /// drain-source voltage limiter.
+    fn emit_limvds(&mut self, vnew: Value, vold: Value) -> Value {
+        let c35 = self.cse_const(3.5);
+        let c3 = self.cse_const(3.0);
+        let two = self.cse_const(2.0);
+        let c4 = self.cse_const(4.0);
+        let cm05 = self.cse_const(-0.5);
+
+        let hi = self.builder.ins().fcmp(FloatCC::GreaterThanOrEqual, vold, c35);
+        let gt = self.builder.ins().fcmp(FloatCC::GreaterThan, vnew, vold);
+
+        // hi & vnew>vold: min(vnew, 3*vold+2)
+        let three_vold = self.builder.ins().fmul(c3, vold);
+        let lim1 = self.builder.ins().fadd(three_vold, two);
+        let hi_gt = self.emit_min(vnew, lim1);
+        // hi & !gt: vnew<3.5 ? max(vnew,2) : vnew
+        let lt35 = self.builder.ins().fcmp(FloatCC::LessThan, vnew, c35);
+        let max2 = self.emit_max(vnew, two);
+        let hi_le = self.builder.ins().select(lt35, max2, vnew);
+        let hi_val = self.builder.ins().select(gt, hi_gt, hi_le);
+
+        // lo & gt: min(vnew,4); lo & !gt: max(vnew,-0.5)
+        let lo_gt = self.emit_min(vnew, c4);
+        let lo_le = self.emit_max(vnew, cm05);
+        let lo_val = self.builder.ins().select(gt, lo_gt, lo_le);
+
+        self.builder.ins().select(hi, hi_val, lo_val)
     }
 
     // ── Unary / binary / math ──
