@@ -38,7 +38,7 @@ for surface-design decisions (see §4).
 | Class | Defaulted fields visible | Notes |
 |---|---|---|
 | `OpConfig` | *(none)* | nodeset/solver knobs live where? (see §4-R3) |
-| `TranConfig` | `start=0.0`, `step=0.0` (auto) | plus `stop`, `ic` (constructor) |
+| `TranConfig` | `start=0.0`, `step=0.0` (auto), `record_device_state=False` | plus `stop`, `ic` (constructor) |
 | `AcConfig` | `points=100`, `scale=Scale.Dec` | plus `fstart`, `fstop` |
 | `NoiseConfig` | `points=100`, `scale=Scale.Dec` | plus `out`, `ref`, `fstart`, `fstop` |
 | `Solver` | `reltol=1e-3`, `abstol=1e-12`, `gmin=1e-12`, `max_iter=100`, `temperature=300.15` | attaches to configs |
@@ -76,7 +76,7 @@ file, `PIPERINE_TEST_TIMEOUT_SECS`).
 | `stage` | `(&self, label, param, Value)` — staged override, consumed by the next analysis |
 | `run_op` | `(&SolverConfig, Option<&HashMap<String, f64>> /* nodeset */) -> Result<OpResult>` |
 | `run_op_sweep` | `(label, param, &[f64], &SolverConfig, nodeset) -> Result<Vec<OpResult>>` — compile-once (MD-18) |
-| `run_tran` | `(stop, step: Option<f64>, start, &SolverConfig, ic) -> Result<Trace>` |
+| `run_tran` | `(stop, step: Option<f64>, start, &SolverConfig, ic, record_device_state: bool) -> Result<Trace>` |
 | `run_ac` | `(fstart, fstop, points, logarithmic: bool, &SolverConfig) -> Result<AcTrace>` |
 | `run_noise` | `(out, reference, fstart, fstop, points, logarithmic, &SolverConfig) -> Result<NoiseTrace>` |
 | `snapshot_digital` | `(&CircuitBuildInfo, &CircuitInstance) -> HashMap<String, f64>` (pub for host reuse) |

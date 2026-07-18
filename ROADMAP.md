@@ -69,8 +69,10 @@ Six pillars. V1 ships when all six are green.
 
 ## P1 — Solver complete
 
-The merged open-gaps audit (ngspice-46 vs the native solver). Status:
-**PARTIAL** (works in some cases) / **MISSING** (absent).
+The merged open-gaps audit (ngspice-46 vs the native solver). **CLOSED
+2026-07-18** (feature `p1-solver-complete`): every checkbox below is done or
+moved to the named backlog table at the end of the section (`urc` blocked on
+`codegen-parametric-devices`; `laplace_*`/`zi_*` stay fail-loud).
 
 ### Analyses
 
@@ -98,58 +100,77 @@ sources declare edges via `Element::next_breakpoints`, integrator lands
 exactly on them. Print-grid interpolation reclassified as a host feature
 (P3). Remaining:
 
-- [ ] **Enforced UIC hold — PARTIAL.** `@initial` seeds t=0; ngspice UIC also
-      *holds* the node through the first solve via a large-conductance clamp
-      released after t=0.
-- [ ] **Inductor flux TR-stage dual — PARTIAL.** The TR stage uses the
-      pure-derivative form; previous-voltage tracking is the follow-up (no
-      known regression).
-- [ ] Remove vestigial `IntegrationMethod` enum (+ `suggest_transient_step`'s
-      `method` param). TR-BDF2 is the sole scheme; ~34 references linger.
+- [x] **Enforced UIC hold — DONE 2026-07-18** (T11, `b9f47af`): `@initial`
+      branch force compiles into the t=0 IC path and the large-conductance
+      UIC clamp (ngspice CKTsetIC) releases after the first accepted step;
+      pre-charged cap discharge matches `5·e^(−t/RC)`.
+- [x] **Inductor flux TR-stage dual — DONE** (fix `d400973`, regression
+      proof `f76b4db`): the TR stage subtracts the previous branch voltage
+      `V_n` once per flux-carrying branch; RL closed-form (LIVE-07) and the
+      coupled-LC energy-transfer regression pin the trajectory.
+- [x] **`IntegrationMethod` removed — DONE 2026-07-18** (`1d7e605`): enum,
+      dead `TruncationError` trait and `Tolerances.integration` deleted;
+      `suggest_transient_step` lost its `method` param. TR-BDF2 is the sole
+      scheme.
 
 ### Convergence
 
 `gshunt` done (`Tolerances::gshunt`, user-raisable diagonal stamp).
 Remaining:
 
-- [ ] **`fetlim`/`DEVlimvds` — PARTIAL.** Identity today
-      (`analog_emit.rs`: `"fetlim" => vnew`); MOS converges via gmin stepping
-      without them. May matter for exact ngspice parity.
+- [x] **`fetlim`/`limvds` — DONE 2026-07-18** (`81f36af`): ngspice
+      `DEVfetlim`/`DEVlimvds` ported as branchless select IR on the pnjlim
+      slot machinery, unit-tested value-for-value against the C reference
+      across every reachable branch; MOS goldens stay green live.
 
 ### Engine operator gaps (codegen, all fail loud)
 
-- [ ] `table(x, xs, ys, mode)` — **not registered at all** (resolves as
-      unknown fn, never reaches the fail-loud path). Register, then implement
-      1-D interpolation.
-- [ ] `transition`, `laplace_*`, `zi_*` — recognized in the resolved form; no
-      companion models.
-- [ ] `idt` AC `1/jω` admittance — contributes 0 in AC.
-- [ ] Multiple `ac_stim` per contribution.
-- [ ] `@initial` cannot force a branch (event bodies reject Force).
-- [ ] `Trace.i` over time on devices reading runtime state/vars — per-step
-      banks not recorded in `TransientAnalysisResult`.
+- [x] `table(x, xs, ys)` — DONE (T7, `fd2f83e`): 1-D linear interpolation
+      with end clamp, segment-slope Jacobian, loud on non-monotonic axes.
+- [x] `transition` — DONE (T8, `c66b2c7`): runtime-operator state bank,
+      ramp breakpoints, rejected-step commit/rollback.
+- [ ] `laplace_*`, `zi_*` — **backlog (language)**: stay fail-loud (user
+      2026-07-18).
+- [x] `idt` AC `1/jω` admittance — DONE (T9, `6dedca1`): integrator shows
+      −20 dB/dec and −90° across 4 decades.
+- [x] Multiple `ac_stim` per contribution — DONE (T10, `660af1c`): phasor
+      sum, superposition-proven.
+- [x] `@initial` branch force — DONE (T11, `b9f47af`; see UIC hold above).
+- [x] `Trace.i` on state-reading devices — DONE 2026-07-18 (`e8f1ff4`):
+      opt-in `record_device_state` records per-step runtime banks; off, the
+      read stays a loud error.
 
 ### Digital
 
-- [ ] **Fused combinational-network JIT — BUILT, not integrated.**
-      `NetworkComb`/`DigitalNetwork` tested standalone; wire into
-      `circuit.rs::run_digital_at` (cone detection, per-device fallback for
-      clocked/analog members), then fuse clocked members. See
-      `piperine-codegen/docs/DIGITAL_JIT.md`.
+- [x] **Fused combinational-network JIT — ACTIVE** (T12, `4272f61`):
+      pure-comb cones evaluate through `DigitalNetwork` (one fused call),
+      per-device fallback for clocked/analog-sampling members; bit-identical
+      to the per-device path on every digital suite.
+- [ ] Clocked-member fusing — **backlog**: the comb integration left the
+      scheduler seam clean only for combinational cones; clocked fusing
+      touches NBA semantics (logged follow-up, spec assumption 2026-07-18).
 
 ### SPICE model completeness ("everything I can do in spice, I can do here")
 
 Present and ngspice-validated (live golden/sweep cases, zero ignores):
-passives, sources, controlled, switches, diode, BJT, JFET, MOS level 1 —
-the old MOS1 1.5×/JFET 15 mV discrepancies were fixed 2026-07-16
-(series-impedance forces). Missing:
+passives, sources, controlled, switches, diode, BJT, JFET, MOS levels 1/2/3,
+lossless tline, xfmr — the old MOS1 1.5×/JFET 15 mV discrepancies were fixed
+2026-07-16 (series-impedance forces). Missing:
 
-- [ ] MOS levels 2/3 (level 1 exists).
-- [ ] Transmission lines (`tline`, lossy, `urc`).
-- [ ] Combined transformer block (`ind`+`mut` as one device — the mutual-flux
-      engine supports it; separate devices would double-force one branch).
-- [ ] Migrate models off sentinel `$param_given` encodings onto `T?`
-      optionals.
+- [x] MOS levels 2/3 — DONE (T13/T14, `3c76261`, `c9dcd2a`): ngspice
+      goldens per region, live.
+- [x] Lossless transmission line — DONE (T15, `6bfc50f`): Branin model over
+      the `delay` runtime operator; matched/open termination cases green.
+- [ ] `urc` lumped RC line — **BLOCKED on codegen** (T16): parametric
+      devices need hierarchy flattening / const-args-into-behavior /
+      array-node expansion — tracked as the `codegen-parametric-devices`
+      feature. LTRA (lossy tline, full convolution) — **backlog**: urc
+      covers the practical lossy case.
+- [x] Combined transformer block — DONE (T17, `678dcfe`): `xfmr(l1, l2, k)`
+      over the mutual-flux engine; AC ratio and coupled-LC energy transfer
+      validated.
+- [x] Stdlib off sentinel params — DONE (T18, `e4089a1`): `T?`/`.get_or`
+      across `headers/spice/`.
 - [ ] BSIM-class models — hand-ported to PHDL like everything else (user
       decision 2026-07-18: **all** models are native PHDL; OSDI is an interop
       path for external models, never the home of the stdlib). Big, phased:
@@ -161,26 +182,36 @@ Done: device bypass (per-variable-threshold stamp cache, suppressed while a
 limiter clamps), matrix reuse (symbolic LU reused for the whole run),
 transient predictor (CP-16 first-order Newton seed). Remaining:
 
-- [ ] **Temperature sweep — PARTIAL.** Models read `temp`/`dtemp`; confirm
-      global `.temp` + `tnom` rescaling flows uniformly (analysis-level sweep
-      is host-side).
+- [x] **Temperature sweep — DONE 2026-07-18** (`5dfa04d`): `tnom` rescaling
+      audited uniform across stdlib models; host-level `.temp` sweep proves
+      the diode forward drop shifts ≈ −2 mV/°C (measured −1.66 mV/K at
+      4.3 mA bias).
 
 ### Minor refactor leftovers
 
-- [ ] Split `digital/scheduler.rs` into topology/state/scheduler modules.
-- [ ] `DcAnalysisResult::as_iv(&Netlist)` — analysis types shouldn't take
-      `Netlist`; move or re-sign when the surface finalizes.
-- [ ] Shared `Integrator` for noise trapezoid + future `.four`.
-- [ ] `SignalBridge` extraction from
-      `CircuitInstance::accept_and_run_digital` (three jobs in one method).
-- [ ] `Context::default` must not `init_global`; `Solver::build` owns it.
+- [x] `digital/scheduler.rs` split — DONE (`2403e29`, 2026-07-16):
+      topology/state/scheduler modules.
+- [x] `DcAnalysisResult::as_iv` re-homed — DONE (`81b9c1d`):
+      `Netlist::initial_values` owns the variable→reference mapping.
+- [x] Shared `Integrator` — DONE (`81b9c1d`): noise trapezoid via
+      `Integrator::trapezoid` in `math/integration`.
+- [x] `SignalBridge` extraction — DONE (`1857df5`, 2026-07-13): owns the
+      mixed-signal handoff in `core/circuit.rs`.
+- [x] `Context::default` free of `init_global` — DONE (`81b9c1d`): solver
+      builds own it, process-isolated test proves no leak.
 
-### P1 priority order
+### P1 named backlog (explicit non-goals for V1)
 
-1. `.sens` — optimizer feeder.
-2. PSS.
-3. Remaining models (MOS 2/3, tline/urc, transformer block).
-4. Everything else on demand.
+| Item | Disposition |
+|------|-------------|
+| `laplace_*`, `zi_*` operators | fail-loud; language backlog (user 2026-07-18) |
+| LTRA (lossy tline, convolution) | urc covers the practical case; backlog |
+| Autonomous-oscillator PSS | period detection needs phase conditions; backlog |
+| AC `.sens` | DC ships; AC follow-up if the optimizer needs it |
+| Exact-symbolic `∂R/∂p` sens | FD direct ships; upgrade behind the same API |
+| `urc` | blocked on `codegen-parametric-devices` (T16) |
+| Clocked digital fusing | comb cones fused; NBA-semantics follow-up |
+| `.four`, `.pz`, `.disto`, `.sp` | niche, post-V1 |
 
 ---
 

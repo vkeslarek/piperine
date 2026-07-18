@@ -87,6 +87,12 @@ module.noise(piperine.NoiseConfig(out="out", fstart=1e3, fstop=1e6))
 - `nodeset`/`ic` are `{net_name: volts}` maps seeding the Newton guess /
   t=0 state.
 - `Solver` fields: `temperature`, `reltol`, `abstol`, `gmin`, `max_iter`.
+- `TranConfig.record_device_state` (default `False`; Rust:
+  `run_tran(..., record_device_state)`) records per-step device runtime
+  banks. `Trace.i` recomputes branch currents from the solved terminal
+  voltages — with recording on, that also works for devices reading runtime
+  state (`delay`/`transition`/`idt`); with it off, such a read is a loud
+  `Measurement` error naming the opt-in.
 
 **Sensitivity (`.sens`)** — `∂V(output)/∂(param)` at the operating point,
 central finite difference over the compile-once restamp path. Same shape on

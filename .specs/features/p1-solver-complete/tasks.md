@@ -10,8 +10,9 @@ host surfaces (`run_sens`/`run_pss`) are born in `piperine-api`.
 ---
 
 **Design**: `.specs/features/p1-solver-complete/design.md`
-**Status**: In Progress — T1–T15, T17, T18, T19 done; T16 BLOCKED (codegen gap,
-see below); Phase 5 next at T20, 2026-07-18
+**Status**: Complete — T1–T15, T17–T27 done; T16 BLOCKED (external dep:
+`codegen-parametric-devices` feature, see below). Awaiting Verifier,
+2026-07-18
 **Baseline**: whatever `api-crate` closes at (≥449 passed / 5 ignored)
 
 ---
@@ -346,7 +347,7 @@ solver build owns it). Identical numeric results.
 **Tests**: unit · **Gate**: build
 **Commit**: `refactor(solver): analysis-layer seams (as_iv, Integrator, init)`
 
-### T26: `Trace.i` state/var recording (opt-in)
+### T26: ✅ DONE — `Trace.i` state/var recording (opt-in) (commit e8f1ff4)
 **What**: Opt-in per-step state/var bank recording in
 `TransientAnalysisResult` (off by default); `Trace.i` on state-reading
 devices works when enabled, keeps the loud error when disabled.
@@ -357,7 +358,7 @@ gate full.
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(api): opt-in state recording unlocks Trace.i on stateful devices`
 
-### T27: Docs + ROADMAP closure
+### T27: ✅ DONE — Docs + ROADMAP closure (commit PENDING)
 **What**: Part VII/VIII sections for sens/PSS/new operators/models; ROADMAP
 P1 checkboxes closed or moved to named backlog lines (laplace/zi, LTRA,
 autonomous PSS, AC sens, clocked fusing if deferred); traceability →

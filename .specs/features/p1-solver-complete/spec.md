@@ -20,16 +20,16 @@ real circuits. `.sens` additionally feeds the P6 optimizer.
 
 ## Goals
 
-- [ ] `.sens` (DC sensitivity) and PSS ship as native analyses with Python
+- [x] `.sens` (DC sensitivity) and PSS ship as native analyses with Python
       surface and validation against reference values.
-- [ ] Host-level `.dc` proven equivalent (nested + source sweeps) — item
+- [x] Host-level `.dc` proven equivalent (nested + source sweeps) — item
       closed without a solver-side analysis.
-- [ ] All listed operator gaps closed (or explicitly deferred: `laplace_*`,
+- [x] All listed operator gaps closed (explicitly deferred: `laplace_*`,
       `zi_*` stay fail-loud).
-- [ ] Fused digital-network JIT active in real circuits.
-- [ ] Model set: MOS 2/3, lossless tline, urc, transformer block; stdlib off
-      sentinel params.
-- [ ] fetlim/limvds real; UIC hold enforced; temperature flow uniform;
+- [x] Fused digital-network JIT active in real circuits.
+- [x] Model set: MOS 2/3, lossless tline, transformer block; stdlib off
+      sentinel params. (`urc` blocked on `codegen-parametric-devices` — T16.)
+- [x] fetlim/limvds real; UIC hold enforced; temperature flow uniform;
       vestigial `IntegrationMethod` gone; hygiene leftovers cleared.
 
 ## Out of Scope
@@ -254,39 +254,40 @@ fusion active.
 
 | Requirement ID | Story | Phase | Status |
 |---|---|---|---|
-| SC-01 | P1 sens values vs FD reference | - | Pending |
-| SC-02 | P1 sens loud errors | - | Pending |
-| SC-03 | P1 sens python surface | - | Pending |
-| SC-04 | P1 PSS converged periodic trace | - | Pending |
-| SC-05 | P1 PSS loud non-convergence | - | Pending |
-| SC-06 | P1 PSS tstab + rectifier case | - | Pending |
-| SC-07 | P1 .dc host-proof (nested + source) | - | Pending |
-| SC-08 | P1 table operator | - | Pending |
-| SC-09 | P1 transition operator | - | Pending |
-| SC-10 | P1 idt AC stamp | - | Pending |
-| SC-11 | P1 multiple ac_stim | - | Pending |
-| SC-12 | P1 @initial branch force + UIC hold | - | Pending |
-| SC-13 | P1 digital network fused + identical results | - | Pending |
-| SC-14 | P1 MOS2 + MOS3 ngspice parity | - | Pending |
-| SC-15 | P1 tline ideal | - | Pending |
-| SC-16 | P1 urc | - | Pending |
-| SC-17 | P1 transformer block | - | Pending |
-| SC-18 | P1 stdlib off sentinels (T?) | - | Pending |
+| SC-01 | P1 sens values vs FD reference | T3 | Done |
+| SC-02 | P1 sens loud errors | T3 | Done |
+| SC-03 | P1 sens python surface | T4 | Done |
+| SC-04 | P1 PSS converged periodic trace | T5 | Done |
+| SC-05 | P1 PSS loud non-convergence | T5 | Done |
+| SC-06 | P1 PSS tstab + rectifier case | T6 | Done |
+| SC-07 | P1 .dc host-proof (nested + source) | T1 | Done |
+| SC-08 | P1 table operator | T7 | Done |
+| SC-09 | P1 transition operator | T8 | Done |
+| SC-10 | P1 idt AC stamp | T9 | Done |
+| SC-11 | P1 multiple ac_stim | T10 | Done |
+| SC-12 | P1 @initial branch force + UIC hold | T11 | Done |
+| SC-13 | P1 digital network fused + identical results | T12 | Done |
+| SC-14 | P1 MOS2 + MOS3 ngspice parity | T13+T14 | Done |
+| SC-15 | P1 tline ideal | T15 | Done |
+| SC-16 | P1 urc | T16 | **Blocked** — needs `codegen-parametric-devices` (see tasks.md T16) |
+| SC-17 | P1 transformer block | T17 | Done |
+| SC-18 | P1 stdlib off sentinels (T?) | T18 | Done |
 | SC-19 | P2 fetlim/limvds | T19 | Done |
 | SC-20 | P2 temperature uniform + .temp sweep | T20 | Done |
 | SC-21 | P2 inductor TR dual | T21 | Done |
 | SC-22 | P2 IntegrationMethod removal | T22 | Done |
 | SC-23 | P3 scheduler split + SignalBridge | T23+T24 | Done |
 | SC-24 | P3 as_iv + Integrator re-home | T25 | Done |
-| SC-25 | P3 Trace.i state recording (opt-in) | - | Pending |
+| SC-25 | P3 Trace.i state recording (opt-in) | T26 | Done |
 | SC-26 | P3 init_global ownership | T25 | Done |
 
-**Coverage:** 26 total, 0 mapped to tasks (mapping happens in tasks.md).
+**Coverage:** 26 total, 25 done + 1 blocked (SC-16, external codegen dependency
+logged as its own feature).
 
 ## Success Criteria
 
-- [ ] ROADMAP P1 section: every checkbox either checked or explicitly moved
+- [x] ROADMAP P1 section: every checkbox either checked or explicitly moved
       to a named backlog line (laplace/zi, LTRA, autonomous PSS, AC sens).
 - [ ] `cargo test --workspace` green, zero warnings; ngspice harness live
-      with the new golden cases.
-- [ ] `.sens` + PSS callable from Python with docstrings + part VIII docs.
+      with the new golden cases. *(final gate at feature close)*
+- [x] `.sens` + PSS callable from Python with docstrings + part VIII docs.

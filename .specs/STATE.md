@@ -50,13 +50,16 @@ trigger it; `Solver::build()` does.
 
 **Status:** Locked. Implementation pending.
 
-### MD-07: IntegrationMethod in math/
-`IntegrationMethod`, companion coefficients (`coeffs(dt, dt_prev, order)`),
-`TruncationError`, `BreakpointProvider` all live in `math/integration.rs`.
-The kernel calls the centralised formula — no per-method branching in
-codegen.
+### MD-07: Integration helpers in math/
+`TrBdf2`/`TrBdf2Phase`, companion coefficients (`phase_coeffs`/`stage_coeffs`),
+the Milne LTE estimate and `Integrator` (quadrature) all live in
+`math/integration.rs`. The kernel calls the centralised formula — no
+per-method branching in codegen. The vestigial `IntegrationMethod` enum, the
+dead `TruncationError` trait and `Tolerances.integration` were removed
+2026-07-18 (p1-solver-complete T22): TR-BDF2 is the sole scheme, there is no
+method-selection surface.
 
-**Status:** Done.
+**Status:** Done (amended 2026-07-18).
 
 ### MD-08: LTE drives timestep
 After each accepted step, the stepper consults elements for LTE-based dt
@@ -231,8 +234,38 @@ Implementation: sens/PSS bindings immediately; full alignment in P3.
 
 ## Handoff Snapshot
 
-**Last updated:** 2026-07-17 — `bench-removal` DELIVERED (T1–T9, branch
-`feature/bench-removal`).
+**Last updated:** 2026-07-18 — `p1-solver-complete` EXECUTED (T1–T15, T17–T27;
+T16 blocked external), awaiting Verifier.
+
+### Feature E — `p1-solver-complete` (EXECUTED, Verifier pending)
+
+Spec/design/tasks in `.specs/features/p1-solver-complete/`. ROADMAP pillar
+P1 closed: every item done or in the named backlog table (ROADMAP.md).
+Delivered beyond the other AI's T1–T18:
+
+- **T19 fetlim/limvds** (`81f36af`) — inherited uncommitted; validated against
+  ngspice devsup.c, shallow test cases strengthened (all clamps/floors bite).
+- **T20 temperature** (`5dfa04d`) — tnom audit uniform; `.temp` sweep test
+  (−1.66 mV/K at 4.3 mA, theory −1.7).
+- **T21 inductor TR dual** (`f76b4db`) — fix pre-landed `d400973`; added the
+  missing coupled-LC transient regression; discrimination proven (mutant
+  shifts first-transfer peak 1.36→1.69 µs, killed).
+- **T22 IntegrationMethod removal** (`1d7e605`) — enum + dead `TruncationError`
+  + `Tolerances.integration` gone; `suggest_transient_step` re-signed.
+- **T23/T24** — pre-landed (`2403e29` scheduler split, `1857df5` SignalBridge);
+  marked with evidence.
+- **T25** (`81b9c1d`) — `Netlist::initial_values` (as_iv re-home), shared
+  `Integrator::trapezoid`, init_global ownership proof test.
+- **T26** (`e8f1ff4`) — `record_device_state` opt-in (uniform on both hosts,
+  MD-22); `Trace.i` on stateful devices KCL-exact; loud error kept when off.
+- **T27** — ROADMAP P1 closed + named backlog; spec traceability 25 done /
+  1 blocked; docs (part VIII, appendix C) carry `record_device_state`.
+- **T16 urc — BLOCKED** on `codegen-parametric-devices` (hierarchy flattening,
+  const-args-into-behavior, array-node expansion) — logged as its own feature.
+
+**Baseline at close:** `cargo test --workspace` 504 green / 5 ignored, zero
+warnings; ngspice live (27/27). MD-07 amended (IntegrationMethod removed).
+**Branch:** `feature/bench-removal` (all p1 work landed here).
 
 ### Feature D — `bench-removal` (DELIVERED)
 
