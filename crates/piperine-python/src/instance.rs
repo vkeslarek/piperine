@@ -11,7 +11,7 @@ use std::rc::Rc;
 use pyo3::exceptions::{PyKeyError, PyRuntimeError};
 use pyo3::prelude::*;
 
-use piperine::{OpResult, Trace};
+use piperine_api::{OpResult, Trace};
 use piperine_lang::pom::node::Node;
 use piperine_lang::Design;
 
@@ -213,7 +213,7 @@ impl _InstanceView {
         &self,
         port_a: &str,
         port_b: Option<&str>,
-    ) -> PyResult<(piperine::NetRef, Option<piperine::NetRef>)> {
+    ) -> PyResult<(piperine_api::NetRef, Option<piperine_api::NetRef>)> {
         let a = self.resolver.terminal_net(&self.label, port_a)?;
         let b = match port_b {
             Some(p) => Some(self.resolver.terminal_net(&self.label, p)?),
@@ -290,11 +290,11 @@ impl _InstanceView {
     }
 }
 
-/// Construct a host [`piperine::NetRef`] from a net name — the typed
+/// Construct a host [`piperine_api::NetRef`] from a net name — the typed
 /// handle every host readout takes (MD-13: lives on the file that owns the
 /// conversion).
-fn host_net(name: &str) -> piperine::NetRef {
-    piperine::NetRef {
+fn host_net(name: &str) -> piperine_api::NetRef {
+    piperine_api::NetRef {
         name: name.to_string(),
     }
 }

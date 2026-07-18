@@ -435,7 +435,7 @@ mod Divider() {
     #[test]
     fn stage_overrides_next_analysis() -> PyResult<()> {
         use pyo3::types::PyAnyMethods;
-        use piperine::{NetRef, OpResult as HostOpResult};
+        use piperine_api::{NetRef, OpResult as HostOpResult};
 
         let path = std::env::temp_dir().join("piperine_python_p6_stage_test.phdl");
         std::fs::write(&path, ANALYSIS_PHDL)?;

@@ -10,7 +10,7 @@ use std::rc::Rc;
 use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
-use piperine::{SimSession, SolverConfig};
+use piperine_api::{SimSession, SolverConfig};
 use piperine_lang::parse::ast::{BehaviorKind, Direction};
 use piperine_lang::{Behavior, Design, Instance, Module, Param, Port, Value, ValueType, Wire};
 

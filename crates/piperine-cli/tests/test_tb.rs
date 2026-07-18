@@ -2,7 +2,7 @@
 //! discovery (root + nested, skipping `.venv`/`target`), per-file PASS/FAIL
 //! with tracebacks, a killable per-file timeout, and exit codes (BRM-08/09).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output};
 
 use piperine_cli::commands::test::discover_testbenches;
