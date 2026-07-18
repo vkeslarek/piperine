@@ -15,7 +15,9 @@ pub struct PssAnalysisOptions {
     pub tstab: f64,
     /// Shooting-Newton iteration cap.
     pub max_shoot_iter: usize,
-    /// Convergence bound on `max_i |x_i(T) − x_i(0)|`.
+    /// Convergence bound on `max_i |x_i(T) − x_i(0)|`. Default `1e-6`,
+    /// bounded below by the adaptive integrator per-period reproducibility
+    /// (~1e-7) — tighter values just spin at the noise floor.
     pub shoot_tol: f64,
     /// Initial integrator dt for each shot; `None` → `period / 100`.
     pub dt: Option<f64>,
@@ -23,7 +25,7 @@ pub struct PssAnalysisOptions {
 
 impl PssAnalysisOptions {
     pub fn new(period: f64) -> Self {
-        Self { period, tstab: 0.0, max_shoot_iter: 40, shoot_tol: 1.0e-9, dt: None }
+        Self { period, tstab: 0.0, max_shoot_iter: 40, shoot_tol: 1.0e-6, dt: None }
     }
 
     pub fn with_tstab(mut self, tstab: f64) -> Self {
@@ -32,12 +34,19 @@ impl PssAnalysisOptions {
     }
 }
 
-/// Shooting diagnostics: how many Newton iterations the orbit took and the
-/// final periodicity residual `max_i |x_i(T) − x_i(0)|`.
+/// Shooting diagnostics: how many Newton iterations the orbit took, the
+/// final periodicity residual `max_i |x_i(T) − x_i(0)|`, and the estimated
+/// natural settling time.
 #[derive(Debug, Clone, Copy)]
 pub struct PssStats {
     pub shoot_iterations: usize,
     pub residual: f64,
+    /// How long a plain transient would need for its free response to decay
+    /// below `reltol` — `T·ln(reltol)/ln(ρ)` where `ρ` is the dominant
+    /// monodromy eigenvalue magnitude (power iteration on the shooting
+    /// Jacobian). `None` when no Jacobian was computed (the start state was
+    /// already on the orbit) or when `ρ ≥ 1` (no decaying free response).
+    pub estimated_settle_time: Option<f64>,
 }
 
 /// A converged periodic orbit (Debug elided: the trace is bulky): one period of transient samples

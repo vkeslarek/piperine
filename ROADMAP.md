@@ -82,10 +82,11 @@ The merged open-gaps audit (ngspice-46 vs the native solver). Status:
       T3/T4): central-difference over the restamp path, uniform surface on
       both hosts (`run_sens` / `module.sens`, MD-22). AC sensitivity and the
       exact-symbolic direct method logged as upgrades.
-- [~] **PSS (periodic steady state) — core DONE 2026-07-18, host bindings
-      ONGOING** (T5/T6): single shooting over transient re-entry, 2nd-period
+- [x] **PSS (periodic steady state) — DONE 2026-07-18** (T5/T6): single
+      shooting over transient re-entry, damped Newton, 2nd-period
       anti-false-fixed-point guard, digital k·T diagnostic,
-      `estimated_settle_time` from the monodromy eigenvalue.
+      `estimated_settle_time` from the monodromy eigenvalue; uniform hosts
+      (`run_pss` / `module.pss`, MD-22) validated on a full-wave rectifier.
 - [ ] `.four` — Python host post-processing (numpy FFT on `Waveform`), not a
       solver analysis (tracked in P3).
 - [ ] `.pz`, `.disto`, `.sp` — MISSING, niche, post-V1.

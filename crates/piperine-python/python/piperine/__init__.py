@@ -56,6 +56,8 @@ __all__ = [
     # analyses
     "OpResult",
     "Trace",
+    "PssResult",
+    "PssStats",
     "SensResult",
     "Waveform",
     "ComplexWaveform",
@@ -248,6 +250,36 @@ class Design:
 
 
 
+
+class PssStats:
+    """Shooting diagnostics for a PSS run.
+
+    ``shoot_iterations`` — Newton iterations to the orbit;
+    ``residual`` — final ``max|x(T) - x(0)|``;
+    ``estimated_settle_time`` — how long a plain transient would need for
+    its free response to decay below ``reltol`` (from the dominant
+    monodromy eigenvalue), or ``None`` when no Jacobian was needed.
+    """
+
+    def __init__(self, shoot_iterations: int, residual: float, estimated_settle_time: float | None):
+        self.shoot_iterations = shoot_iterations
+        self.residual = residual
+        self.estimated_settle_time = estimated_settle_time
+
+
+class PssResult:
+    """Periodic-steady-state result: one converged period + diagnostics.
+
+    The uniform host shape (MD-22): ``.trace`` is a normal :class:`Trace`
+    restricted to ``t in [tstab, tstab+period]``; ``.stats`` is
+    :class:`PssStats`.
+    """
+
+    def __init__(self, trace: Trace, stats: PssStats):
+        self.trace = trace
+        self.stats = stats
+
+
 class SensResult:
     """``.sens`` result: ``dV(output)/d(param)`` at the operating point.
 
@@ -334,6 +366,22 @@ class Module:
         rebuild-class parameters fail loud.
         """
         return SensResult(self._native.sens(outputs, params, dp_rel, solver))
+
+    def pss(
+        self,
+        period: float,
+        tstab: float = 0.0,
+        solver: Solver | None = None,
+    ) -> PssResult:
+        """Run a periodic-steady-state analysis (single shooting).
+
+        One converged period ``t in [tstab, tstab+period]`` as a
+        :class:`Trace` plus :class:`PssStats` (iterations, residual, and the
+        estimated natural settling time). The drive period is user-supplied;
+        non-periodic circuits and digital ``k*T`` dividers fail loud.
+        """
+        trace, iters, residual, settle = self._native.pss(period, tstab, solver)
+        return PssResult(trace, PssStats(iters, residual, settle))
 
     def tran(self, config: TranConfig) -> Trace:
         """Run a transient analysis (spec AC6).

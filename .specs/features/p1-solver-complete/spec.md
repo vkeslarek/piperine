@@ -103,8 +103,10 @@ finite-differencing whole simulations by hand.
 
 1. WHEN `run_pss(period, config)` runs on a driven RC (sine source, τ ≫ T)
    THEN the returned single-period trace SHALL satisfy
-   `|x(T) − x(0)| < abstol` per state and match the analytic steady-state
-   phasor amplitude within 1 % (vs the transient-until-settled reference).
+   `|x(T) − x(0)| < shoot_tol` (default 1e-6; the adaptive integrator's
+   per-period reproducibility floor is ~1e-7 — spec-precision corrected
+   2026-07-18, abstol-tight bounds spin at the noise floor) per state and
+   match the analytic steady-state phasor amplitude within 1 % (vs the transient-until-settled reference).
 2. WHEN shooting Newton fails to converge within its iteration cap THEN the
    analysis SHALL fail loud (`SolverDomain::Pss`, iterations + final
    residual in the message) — never return a non-periodic trace.

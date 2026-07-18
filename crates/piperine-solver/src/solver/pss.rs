@@ -170,9 +170,16 @@ impl<'a> PssSolver<'a> {
                 }
                 self.verify_digital_periodicity(&x0_step, &arrival_step, t0, period)?;
                 let trace = self.shoot(&x0_step, t0, period)?;
+                let estimated_settle_time = jacobian
+                    .as_ref()
+                    .and_then(|j| dominant_monodromy_magnitude(j))
+                    .filter(|rho| *rho < 1.0 && *rho > 0.0)
+                    .map(|rho| {
+                        period * (self.context.tolerances.reltol.ln() / rho.ln()).max(0.0)
+                    });
                 return Ok(PssResult {
                     trace,
-                    stats: PssStats { shoot_iterations: iter, residual },
+                    stats: PssStats { shoot_iterations: iter, residual, estimated_settle_time },
                 });
             }
 
@@ -230,8 +237,13 @@ impl<'a> PssSolver<'a> {
                 },
             )?;
 
+            // Damped update: an undamped Newton step through an exponential
+            // nonlinearity (diodes) can throw x₀ to hundreds of volts, and
+            // every subsequent shot becomes a stiff nightmare. Clamp each
+            // component to a physically-plausible move.
             for i in 0..n {
-                x0[i] += dx[i];
+                let cap = 10.0 * x0[i].abs().max(1.0);
+                x0[i] += dx[i].clamp(-cap, cap);
             }
             x0_step = Self::vec_to_step(&x0, &vars, t0, &x0_step);
             jacobian = Some(j);
@@ -292,6 +304,38 @@ impl<'a> PssSolver<'a> {
             "digital state is not periodic at T (and does not close within 4·T)".to_string(),
         ))
     }
+}
+
+/// Dominant eigenvalue magnitude of the monodromy `M = J + I` (the shooting
+/// Jacobian is `M − I`) by power iteration — the per-period decay factor of
+/// the slowest free-response mode.
+fn dominant_monodromy_magnitude(j: &[Vec<f64>]) -> Option<f64> {
+    let n = j.len();
+    if n == 0 {
+        return None;
+    }
+    let mut v = vec![1.0_f64; n];
+    let mut rho = 0.0;
+    for _ in 0..60 {
+        let mut w = vec![0.0_f64; n];
+        for row in 0..n {
+            let mut acc = if row < v.len() { v[row] } else { 0.0 }; // + I·v
+            for col in 0..n {
+                acc += j[row][col] * v[col];
+            }
+            w[row] = acc;
+        }
+        let norm = w.iter().fold(0.0_f64, |m, x| m.max(x.abs()));
+        if norm == 0.0 {
+            return Some(0.0);
+        }
+        for x in &mut w {
+            *x /= norm;
+        }
+        rho = norm;
+        v = w;
+    }
+    Some(rho)
 }
 
 /// Dense `A·x = b` by Gaussian elimination with partial pivoting; `None`

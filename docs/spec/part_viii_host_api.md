@@ -105,6 +105,32 @@ s.get("mid", "r2", "r");
 
 Unknown nets/elements/params and rebuild-class parameters fail loud.
 
+**Periodic steady state (PSS)** — single shooting: one converged period as a
+normal transient trace plus diagnostics. The drive period is user-supplied
+(driven circuits; autonomous period detection is out of scope). Uniform on
+both hosts (MD-22):
+
+```python
+r = module.pss(period=1e-3, tstab=0.0)
+r.trace.v("out")                    # Waveform over one period
+r.stats.shoot_iterations            # Newton iterations to the orbit
+r.stats.residual                    # max |x(T) - x(0)|
+r.stats.estimated_settle_time       # how long a plain transient would need
+```
+
+```rust
+let r = session.run_pss(1e-3, 0.0, &config)?;
+r.trace.v(&out, None)?;  r.stats.estimated_settle_time;
+```
+
+Guarantees (all fail loud, never a fake orbit): non-convergence names the
+iteration count and residual; a fixed point whose orbit does not repeat at
+`2T` (non-periodic drive) is rejected; a mixed-signal circuit whose digital
+state closes only after `k` periods reports "circuit period appears to be
+k·T" (divider case). `estimated_settle_time` comes from the dominant
+monodromy eigenvalue — `T·ln(reltol)/ln(ρ)` — and is `None` when shooting
+needed no Jacobian.
+
 `module.set(label, param, value)` stages an override consumed by the next
 analysis on that module — sweeps are native Python loops:
 

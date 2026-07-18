@@ -190,6 +190,29 @@ impl _Module {
         Ok(result.d)
     }
 
+    /// Run a periodic-steady-state analysis (single shooting): one converged
+    /// period as a transient trace + `(shoot_iterations, residual,
+    /// estimated_settle_time)`. The
+    /// drive period is user-supplied; non-periodic circuits fail loud.
+    #[pyo3(signature = (period, tstab=0.0, solver=None))]
+    fn pss(
+        &self,
+        period: f64,
+        tstab: f64,
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<(_Trace, usize, f64, Option<f64>)> {
+        let session = self.session()?;
+        let result = session
+            .run_pss(period, tstab, &Self::solver_config(solver)?)
+            .map_err(Self::analysis_err)?;
+        Ok((
+            _Trace::new(result.trace).with_resolver(self.instance_resolver()),
+            result.stats.shoot_iterations,
+            result.stats.residual,
+            result.stats.estimated_settle_time,
+        ))
+    }
+
     /// Run a transient analysis (PY-04 / spec AC6). `step = None` (or `0.0`)
     /// selects the adaptive stepper; `start` is the earliest recorded time
     /// (ngspice `.tran tstart tstop` semantics). `ic` is an

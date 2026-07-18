@@ -119,7 +119,7 @@ divider-by-2 case → k·T diagnostic.
 **Tests**: unit+integration · **Gate**: quick
 **Commit**: `feat(solver): periodic steady state via single shooting`
 
-### T6: 🔄 ONGOING — PSS host + python + rectifier validation (+ estimated_settle_time, user request 2026-07-18)
+### T6: ✅ DONE — PSS host + python + rectifier validation + estimated_settle_time
 **What**: `run_pss` in api + python (docstrings, part VIII); rectifier+RC
 ripple vs settled-transient reference within 10·reltol; tstab equivalence
 case (SC-06).

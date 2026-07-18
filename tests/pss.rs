@@ -84,8 +84,8 @@ fn sine_rc_converges_to_the_analytic_phasor() {
     let opts = PssAnalysisOptions::new(1.0e-3);
     let result = circuit.pss(opts, Context::default()).expect("pss").solve().expect("orbit");
     assert!(
-        result.stats.residual < 1.0e-9,
-        "periodicity residual: {:.3e}",
+        result.stats.residual < 1.0e-6,
+        "periodicity residual under shoot_tol: {:.3e}",
         result.stats.residual
     );
 

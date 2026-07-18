@@ -194,6 +194,28 @@ impl SimSession {
         Ok(crate::results::SensResult { d })
     }
 
+    /// Run a periodic-steady-state analysis (single shooting): one converged
+    /// period `t ∈ [tstab, tstab+period]` as a transient trace, plus the
+    /// shooting stats. The drive period is user-supplied; non-periodic
+    /// circuits, wrong periods, and digital `k·T` dividers fail loud.
+    pub fn run_pss(
+        &self,
+        period: f64,
+        tstab: f64,
+        config: &SolverConfig,
+    ) -> Result<crate::results::PssResult, Error> {
+        let (mut circuit, info) = self.build_circuit()?;
+        let opts = piperine_solver::prelude::PssAnalysisOptions::new(period).with_tstab(tstab);
+        let mut solver = circuit.pss(opts, config.to_context())?;
+        solver.policy = config.to_policy();
+        let inner = solver.solve()?;
+        self.fire_after_solve("pss", &[])?;
+        Ok(crate::results::PssResult {
+            trace: crate::waveform::Trace::new(inner.trace, Rc::new(info)),
+            stats: inner.stats,
+        })
+    }
+
     /// Run a DC operating-point analysis. `nodeset` (net name → volts) seeds
     /// the Newton initial guess.
     pub fn run_op(

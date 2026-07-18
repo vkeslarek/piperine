@@ -81,3 +81,65 @@ with open({out:?}, "w") as f:
     let analytic = 10.0 * 1.0e3 / (2.0e3_f64).powi(2);
     assert!(((rust_r2 - analytic) / analytic).abs() < 1.0e-6, "analytic anchor: {rust_r2}");
 }
+
+/// SC-06 — uniform PSS shape: python `module.pss` returns the same orbit
+/// stats and waveform values as the Rust `run_pss` on the same design.
+#[test]
+fn python_pss_matches_rust_pss() {
+    let dir = std::env::temp_dir();
+    const SINE_RC: &str = "\
+discipline Electrical { potential v: Real; flow i: Real; }
+mod Vsine(inout p: Electrical, inout n: Electrical) { param amp: Real = 5.0; }
+analog Vsine { V(p, n) <- amp * sin(6283.185307179586 * $abstime); }
+mod R(inout p: Electrical, inout n: Electrical) { param r: Real = 1e3; }
+analog R { I(p, n) <+ V(p, n) / r; }
+mod C(inout p: Electrical, inout n: Electrical) { param c: Real = 1e-6; }
+analog C { I(p, n) <+ c * ddt(V(p, n)); }
+mod Top() {
+    wire gnd : Electrical;
+    wire top : Electrical;
+    wire out : Electrical;
+    v1 : Vsine(.p = top, .n = gnd) {};
+    r1 : R(.p = top, .n = out) {};
+    c1 : C(.p = out, .n = gnd) {};
+}
+";
+    let phdl = dir.join("piperine_pss_parity.phdl");
+    std::fs::write(&phdl, SINE_RC).expect("write phdl");
+    let out_txt = dir.join("piperine_pss_parity.txt");
+
+    let design =
+        piperine_lang::parse_and_elaborate(SINE_RC, &piperine_lang::SourceMap::dummy())
+            .expect("elaborates");
+    let session = piperine_api::SimSession::new(design, "Top".to_string());
+    let rust = session
+        .run_pss(1.0e-3, 0.0, &piperine_api::SolverConfig::default())
+        .expect("rust pss");
+    let rust_max = rust
+        .trace
+        .v(&piperine_api::NetRef { name: "out".into() }, None)
+        .expect("v(out)")
+        .max();
+
+    let script = format!(
+        r#"
+import piperine
+design = piperine.load({phdl:?})
+r = design.module("Top").pss(period=1e-3)
+with open({out:?}, "w") as f:
+    f.write(f"{{float(r.trace.v('out').max())!r}}\n{{r.stats.shoot_iterations}}\n")
+"#,
+        phdl = phdl.to_str().unwrap(),
+        out = out_txt.to_str().unwrap(),
+    );
+    let script_path = dir.join("piperine_pss_parity.py");
+    std::fs::write(&script_path, script).expect("write script");
+    run_script(script_path.to_str().unwrap()).expect("python pss runs");
+
+    let text = std::fs::read_to_string(&out_txt).expect("python output");
+    let mut lines = text.lines();
+    let py_max: f64 = lines.next().unwrap().parse().expect("py max");
+    let py_iters: usize = lines.next().unwrap().parse().expect("py iters");
+    assert_eq!(py_max, rust_max, "orbit max parity");
+    assert_eq!(py_iters, rust.stats.shoot_iterations, "iterations parity");
+}
