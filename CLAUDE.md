@@ -101,7 +101,7 @@ both a package and the workspace) — always pass `--workspace`.
 - **Scheduler:** Returns `Result<(), Error>` instead of `log::warn!`.
 - **Prelude:** `prelude.rs` exports the host-facing surface.
 
-## Known gaps (all fail loud — see `SOLVER_GAPS.md` and `ROADMAP.md`)
+## Known gaps (all fail loud — see `ROADMAP.md`)
 
 - `transition`, `laplace_*`, `zi_*` — recognised in the resolved form, no companion model yet.
 - `ac_stim` in potential contributions is now supported; multiple `ac_stim` per contribution
@@ -143,6 +143,6 @@ both a package and the workspace) — always pass `--workspace`.
 ## Documentation
 
 - Formal spec: `docs/spec/` (Parts I–VII + appendices A/B)
-- Solver gaps + ABI refactor plan: `SOLVER_GAPS.md`
+- Solver gaps + ABI plan: merged into `ROADMAP.md` (P1/P2)
 - Spec-driven feature tracking: `.specs/STATE.md` + `.specs/features/`
 - Open items: `ROADMAP.md`

@@ -179,7 +179,32 @@ package cycle. Dependency flow: `root(lib) → {lang, codegen, solver}`;
 `cargo install` targets `crates/piperine-cli`.
 
 **Status:** Locked (user, 2026-07-17 — bench-removal topology option B).
-Implementation: bench-removal T1.
+Implementation: bench-removal T1. **Superseded by MD-20 (2026-07-18).**
+
+### MD-20: `piperine-api` is the library face; root is the CLI only
+
+A dedicated `crates/piperine-api`, pure Rust: the host API
+(session/results/waveform/hooks) plus the ABI contracts (device/plugin
+traits). `piperine-python` is a thin binding layer over it. The root
+`piperine` package is **only the CLI export** — the `piperine` command line —
+nothing library-shaped lives in root `src/`. Supersedes MD-19. Dependency
+flow: `api → {lang, codegen, solver}`; `python → api`; `root(bin/cli) →
+{python, api, project}` — no cycle.
+
+**Status:** Locked (user, 2026-07-18). Implementation: pending (first step of
+the V1 restructuring — P2/P3/P5 build on this topology).
+
+### MD-21: Plugin backends are native + Python only
+
+The WASM (wasmtime) and process JSON-RPC plugin tiers are removed
+(`piperine-plugin-wasm` deleted with them). Native dlopen stays — trusted,
+fast, and the same mechanism as the low-level `libloading` device path (V1
+P2). Python plugins run through the existing embedded-host isolation (same
+surface as benches); the lifecycle registry must be exposed to Python so a
+plugin self-registers (attribute schemas, hooks, scripts, devices)
+transparently on load.
+
+**Status:** Locked (user, 2026-07-18). Implementation: pending (ROADMAP P5).
 
 ---
 

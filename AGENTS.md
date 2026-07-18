@@ -113,6 +113,6 @@ violates any of them is not ready.
 ## Documentation
 
 - Formal spec: `docs/spec/` (Parts I–VII + appendices A/B)
-- Solver gaps + ABI refactor plan: `SOLVER_GAPS.md`
+- Solver gaps + ABI plan: merged into `ROADMAP.md` (P1/P2)
 - Spec-driven feature tracking: `.specs/STATE.md` + `.specs/features/`
 - Open items: `ROADMAP.md`

@@ -1,8 +1,17 @@
 # ROADMAP.md — Piperine V1 and beyond
 
-Rewritten 2026-07-18. Everything delivered before this date was purged (git
-history + `.specs/` keep the record). Convention unchanged: **fail loud** —
-what the toolchain cannot do is a named error, never a silent no-op.
+Rewritten 2026-07-18 (solver-gaps audit merged in — `SOLVER_GAPS.md` is gone).
+Everything delivered before this date was purged (git history + `.specs/` keep
+the record; the big solver deliveries — Element ABI, Net naming, TR-BDF2 + PI
+controller, LTE stepping, gmin/source stepping, current-residual convergence,
+`$limit`/pnjlim, flux companions, `@initial` seed, live params — are
+summarized in `CLAUDE.md` and `.specs/STATE.md`). Convention unchanged:
+**fail loud** — what the toolchain cannot do is a named error, never a silent
+no-op.
+
+Cross-validation harness: root `tests/ngspice_validation.rs`
+(+`tests/ngspice/`) — `cargo test -p piperine ngspice` after any solver
+change.
 
 ---
 
@@ -34,100 +43,205 @@ Six pillars. V1 ships when all six are green.
 | P2 | **Low-level device ABI** | External compiled devices load via `libloading` and bind with a PHDL `@device` declaration — OSDI is the first client |
 | P3 | **Python library polished** | `import piperine` is the single host: benches, validation, plugins scripting; documented, docstringed, stub-complete |
 | P4 | **Language server 100%** | Scope-aware resolution, project-wide navigation, attribute-schema IDE support, protocol-level tests |
-| P5 | **Plugin interface simplified** | One clear extension story (attributes + devices + hooks + scripts); backend count reduced; writing a plugin is a documented afternoon task |
-| P6 | **Optimizer** | Design-centering-capable optimization loop on the live-params engine; shape (library vs language) locked by study |
+| P5 | **Plugin interface simplified** | One clear extension story (attributes + devices + hooks + scripts); native + Python backends only; writing a plugin is a documented afternoon task |
+| P6 | **Optimizer** | Design-centering-capable optimization loop on the live-params engine; shape under study — PSS and `.sens` land first as its feeders |
 
-### Open architecture decisions (lock before the pillar work starts)
+### Architecture decisions
 
-- **AD-pending: `piperine-api` crate topology.** The host plumbing
-  (session/results/waveform/hooks) moved to the root crate in MD-19 and the
-  root-as-lib layout is unsatisfying. Proposal on the table: a dedicated
-  `crates/piperine-api` (pure Rust: host API + ABI contracts + plugin/device
-  traits), `piperine-python` as a thin binding layer over it, root crate
-  reduced to a re-export shell or removed as a package. Decide, record as
-  MD-20, then move — one refactor, not incremental drift.
-- **AD-pending: plugin backend reduction.** Three backends (native dlopen,
-  WASM/wasmtime, process JSON-RPC) is a monster. Proposal: keep **native**
-  (trusted, fast — also the P2 device path) and **Python** (plugins written in
-  Python through the embedded host — same surface as benches); demote or drop
-  WASM and process tiers. Decide before P5.
-- **AD-pending: optimizer shape.** Library-first (scipy/nevergrad driving
-  `LiveSession` — works today, MD-18 compile-once restamp loop is exactly what
-  an optimizer needs) vs language-baked (`@optimize` attributes + native
-  algorithms). Study in progress (design centering is the target use case);
-  `.sens` (P1) feeds it sensitivities either way.
+- **MD-20 (locked, user 2026-07-18): `piperine-api` crate.** A dedicated
+  `crates/piperine-api`, pure Rust: host API (session/results/waveform/hooks)
+  + ABI contracts (device/plugin traits). `piperine-python` becomes a thin
+  binding layer over it. The root `piperine` package is **only the CLI
+  export** — the `piperine` command line — nothing library-shaped lives in
+  root `src/`. Supersedes MD-19's root-as-lib. Dependency flow:
+  `api → {lang, codegen, solver}`; `python → api`; `root(bin/cli) →
+  {python, api, project}` — no cycle.
+- **MD-21 (locked, user 2026-07-18): plugin backends = native + Python.**
+  WASM (wasmtime) and process JSON-RPC tiers are removed. Native dlopen stays
+  (trusted, fast — same mechanism as the P2 `libloading` device path). Python
+  plugins run through the already-existing embedded-host isolation (clean,
+  same surface as benches). Requirement: **expose the lifecycle registry to
+  Python** so a plugin self-registers (schemas, hooks, scripts, devices)
+  transparently on load.
+- **Optimizer shape — open study (user).** Not a V1 blocker to decide now.
+  Design centering is the target; library-first on `LiveSession` vs
+  language-baked `@optimize` stays a To-Do design item under P6. PSS and
+  `.sens` are needed regardless and land in P1.
 
 ---
 
 ## P1 — Solver complete
 
-Deep audit lives in `SOLVER_GAPS.md` (open items only). Summary of what V1
-requires:
+The merged open-gaps audit (ngspice-46 vs the native solver). Status:
+**PARTIAL** (works in some cases) / **MISSING** (absent).
 
-**Analyses**
-- [ ] `.dc` sweep as a native solver analysis (today: host-level compile-once
-      sweep — decide if that already satisfies V1 or if source sweeps need the
-      solver loop).
-- [ ] `.sens` (DC/AC sensitivity) — reuse the symbolic-diff machinery; direct
-      feeder for the P6 optimizer.
-- [ ] **PSS (periodic steady state)** — shooting method over the transient
-      engine; required for switching converters and RF-adjacent work.
-- [ ] `.four` — Python-side post-processing helper (numpy FFT on `Waveform`),
-      not a solver analysis.
-- [ ] `.pz`, `.disto`, `.sp` — niche, post-V1 unless a model needs them.
+### Analyses
 
-**Transient engine (TR-BDF2 core is done and active)**
-- [ ] **Breakpoints** — the efficiency gate for switched circuits (edge
-      thrashing ~40k steps today). Source-declared breakpoint schedule.
-- [ ] Output interpolation onto the `.step` print grid.
-- [ ] Enforced UIC hold (`.ic` clamp at t=0, released after).
-- [ ] Remove vestigial `IntegrationMethod` enum (TR-BDF2 is the sole scheme;
-      ~34 references left in the solver).
+- [ ] **`.dc` sweep — MISSING as a native analysis.** Host-level compile-once
+      restamp sweeps (MD-18) cover param sweeps; confirm they cover nested
+      sweeps and *source* sweeps, or add the solver-side loop.
+- [ ] **`.sens` (DC/AC sensitivity) — MISSING.** Reuse the symbolic-diff
+      infrastructure. Medium value alone; high value as the P6 optimizer
+      feeder.
+- [ ] **PSS (periodic steady state) — MISSING.** Shooting method over the
+      transient engine. Required for switching converters; feeds P6.
+- [ ] `.four` — Python host post-processing (numpy FFT on `Waveform`), not a
+      solver analysis (tracked in P3).
+- [ ] `.pz`, `.disto`, `.sp` — MISSING, niche, post-V1.
 
-**Codegen/engine operator gaps (all fail loud today)**
-- [ ] `table(x, xs, ys, mode)` — not even registered; register fail-loud, then
-      implement 1-D interpolation companion.
-- [ ] `transition`, `laplace_*`, `zi_*` — companion models.
-- [ ] `idt` AC stamp (`1/jω`) — contributes 0 in AC today.
+### Transient (TR-BDF2 core is done and active)
+
+- [ ] **Breakpoints — MISSING. Top transient priority.** ngspice lands a
+      timepoint exactly on every source discontinuity; piperine's LTE-reject
+      backtracking resolves pulse edges but thrashes (~40k steps at edges).
+      Source-declared breakpoint schedule (codegen-extracted from the
+      periodic phase trick, or a `$periodic_breakpoints` declaration). Design
+      decision pending; pairs with the unified event model (P2 checklist).
+- [ ] **Output interpolation onto the `.step` print grid — MISSING.** The
+      recorded waveform is the raw adaptive grid (correct but uneven);
+      `Waveform::at` interpolates point queries and stats are dt-weighted, so
+      this is presentation-layer.
+- [ ] **Enforced UIC hold — PARTIAL.** `@initial` seeds t=0; ngspice UIC also
+      *holds* the node through the first solve via a large-conductance clamp
+      released after t=0.
+- [ ] **Inductor flux TR-stage dual — PARTIAL.** The TR stage uses the
+      pure-derivative form; previous-voltage tracking is the follow-up (no
+      known regression).
+- [ ] Remove vestigial `IntegrationMethod` enum (+ `suggest_transient_step`'s
+      `method` param). TR-BDF2 is the sole scheme; ~34 references linger.
+
+### Convergence
+
+- [ ] **Circuit-wide `gshunt` / user-raisable diagonal GMIN — PARTIAL.**
+      Models add junction gmin; no global option. Low priority.
+- [ ] **`fetlim`/`DEVlimvds` — PARTIAL.** Identity today; MOS converges via
+      gmin stepping without them. May matter for exact ngspice parity.
+
+### Engine operator gaps (codegen, all fail loud)
+
+- [ ] `table(x, xs, ys, mode)` — **not registered at all** (resolves as
+      unknown fn, never reaches the fail-loud path). Register, then implement
+      1-D interpolation.
+- [ ] `transition`, `laplace_*`, `zi_*` — recognized in the resolved form; no
+      companion models.
+- [ ] `idt` AC `1/jω` admittance — contributes 0 in AC.
 - [ ] Multiple `ac_stim` per contribution.
-- [ ] `@initial` cannot force a branch (event bodies reject Force statements).
-- [ ] `Trace.i` over time on devices with runtime state/vars (per-step
-      state/var banks not recorded).
+- [ ] `@initial` cannot force a branch (event bodies reject Force).
+- [ ] `Trace.i` over time on devices reading runtime state/vars — per-step
+      banks not recorded in `TransientAnalysisResult`.
 
-**Digital**
-- [ ] Wire the fused combinational-network JIT (`NetworkComb`, built and
-      tested standalone) into `circuit.rs::run_digital_at`; then fuse clocked
-      members.
+### Digital
 
-**SPICE model completeness ("everything I can do in spice, I can do here")**
-- [ ] Fix MOS1 drain current ~1.5× (`headers/spice/mos.phdl` vs `mos1load.c`).
-- [ ] Fix JFET ~15 mV bias discrepancy.
+- [ ] **Fused combinational-network JIT — BUILT, not integrated.**
+      `NetworkComb`/`DigitalNetwork` tested standalone; wire into
+      `circuit.rs::run_digital_at` (cone detection, per-device fallback for
+      clocked/analog members), then fuse clocked members. See
+      `piperine-codegen/docs/DIGITAL_JIT.md`.
+
+### SPICE model completeness ("everything I can do in spice, I can do here")
+
+- [ ] **MOS1 drain current ~1.5× high** (`validation/nmos_load`: ngspice
+      v(d)=3.0 V vs 1.92 V). Check `headers/spice/mos.phdl` β/`kp` path
+      against `mos1load.c`. (Model-equation bug, not solver — converges to a
+      KCL-consistent point.)
+- [ ] **JFET ~15 mV / ~1 % off** (`validation/jfet_bias`: 1.382 vs 1.397 V).
 - [ ] MOS levels 2/3 (level 1 exists).
 - [ ] Transmission lines (`tline`, lossy, `urc`).
 - [ ] Combined transformer block (`ind`+`mut` as one device — the mutual-flux
       engine supports it; separate devices would double-force one branch).
-- [ ] Migrate models off sentinel `$param_given` encodings onto `T?` optionals.
+- [ ] Migrate models off sentinel `$param_given` encodings onto `T?`
+      optionals.
 - [ ] BSIM-class models arrive via OSDI (P2), not hand-ported PHDL.
+
+### Performance
+
+- [ ] **Device bypass — MISSING.** Skip re-evaluating nonlinear devices whose
+      terminal voltages barely changed (`CKTbypass`). Matters for large
+      circuits; becomes an ABI capability (P2 checklist).
+- [ ] **Matrix reuse — CHECK.** `self.linear_system = L::new(...)` per Newton
+      iteration looks like a full rebuild; confirm faer symbolic
+      factorization is actually reused.
+- [ ] **Transient predictor — CHECK.** Confirm warm-start from previous step;
+      evaluate a polynomial predictor for Newton seeding.
+- [ ] **Temperature sweep — PARTIAL.** Models read `temp`/`dtemp`; confirm
+      global `.temp` + `tnom` rescaling flows uniformly (analysis-level sweep
+      is host-side).
+
+### Minor refactor leftovers
+
+- [ ] Split `digital/scheduler.rs` into topology/state/scheduler modules.
+- [ ] `DcAnalysisResult::as_iv(&Netlist)` — analysis types shouldn't take
+      `Netlist`; move or re-sign when the surface finalizes.
+- [ ] Shared `Integrator` for noise trapezoid + future `.four`.
+- [ ] `SignalBridge` extraction from
+      `CircuitInstance::accept_and_run_digital` (three jobs in one method).
+- [ ] `Context::default` must not `init_global`; `Solver::build` owns it.
+
+### P1 priority order
+
+1. Breakpoints + unified event model — transient efficiency gate.
+2. `.sens` — optimizer feeder.
+3. PSS.
+4. MOS1/JFET model fixes — parity credibility.
+5. Bypass + matrix-reuse check — perf once correctness is solid.
+6. Everything else on demand.
 
 ---
 
 ## P2 — Low-level device ABI (`libloading` + PHDL declaration)
 
 The plugin device path exists (native backend, `@device(plugin=…)`,
-`DeviceProvider`). What's missing for V1:
+`DeviceProvider`). OSDI/ngspice are used as a **checklist for integration
+maturity, not as the native ABI** — the native contract stays
+mixed-signal-first; OSDI wrappers are one client.
 
-- [ ] **Internal-unknown allocation seam** — external models (OSDI first)
-      need to allocate internal MNA nodes/branches before matrix
-      finalization. This is the blocker for `@device(plugin = "osdi", …)`
-      binding from PHDL (the `piperine_osdi` Rust API works; the PHDL seam
-      fails loud).
-- [ ] Element lifecycle formalized for external devices (setup → temperature
-      → load → accept/rollback → destroy) — see SOLVER_GAPS ABI checklist.
+**V1 blockers**
+
+- [ ] **Internal-unknown allocation — MISSING, the P2 blocker.** External
+      models need auxiliary nodes/branches allocated pre-finalization. Blocks
+      the `@device(plugin = "osdi", …)` PHDL seam (factory fails loud today;
+      the `piperine_osdi` Rust API works meanwhile).
+- [ ] **Model/instance separation — MISSING.** `ModelHandle` (shared card) vs
+      `ElementInstance` (terminals, instance params, state); gives sweeps a
+      clean rebuild rule.
+- [ ] **Explicit lifecycle — MISSING.** Ordered hooks: model setup → instance
+      setup → temperature preprocess → load/evaluate → accept/commit →
+      rollback → destroy. One chart per analysis.
 - [ ] Artifact distribution — prebuilt plugin binaries per target triple from
       git releases (today the artifact must pre-exist).
-- [ ] The MCU-simulation plugin (post-V1, see gallery) is the second client
-      of this ABI — keep the contract wide enough for event-driven digital
-      peripherals, not just analog compact models.
+
+**Element ABI maturity checklist (schedule with the first client that needs
+each)**
+
+- [ ] **Commit/rollback for all mixed-signal state.** Rejected timesteps must
+      restore every stateful participant (A2D crossings, D2A latches, co-sim
+      state), not only the digital net array. Hard requirement for the MCU
+      co-sim plugin (gallery #1).
+- [ ] **Unified event model.** One queue for digital events, analog
+      crossings, timers, breakpoints, `$bound_step` hints (kind, target,
+      time, priority, source, rollback behavior). Pairs with P1 breakpoints.
+- [ ] Richer terminal descriptors — domain, direction, required/optional,
+      sign convention, external/internal/auxiliary.
+- [ ] Opvar catalog — declared names/types/units/owner for `gm`, `vbe`,
+      register state; uniform query path.
+- [ ] Noise metadata — per-source names/types/terminal pairs; per-source
+      contribution reporting (today total PSD only).
+- [ ] Temperature protocol — nominal/instance/delta separation; declare
+      whether a change means recompute constants, restamp, or rebuild.
+- [ ] Parameter invalidation rules — partially landed
+      (`ParamDescriptor::invalidation`); wire sweeps/optimizer to honor them.
+- [ ] Formal limiting API — proposed/limited values, limiter name, active
+      state, reason (today `limiting_active` bool).
+- [ ] Jacobian/stamp capability declaration — analytic vs numeric vs missing;
+      validation error for analyses that need what's absent.
+- [ ] Device-side bypass capability (P1 performance item, ABI-shaped).
+- [ ] Save/probe selection — devices declare observables + cost; record only
+      what the host asked.
+- [ ] `NewtonStrategy`/`StepperStrategy` — fold Newton damping/limiting and
+      transient step rejection into the `ConvergencePlan` composition
+      (homotopy half is done).
+- [ ] Introspect leftovers: model descriptor (type id/version), real
+      opvar/terminal catalogs from the kernel (indices exist, names don't).
 
 ---
 
@@ -170,43 +284,40 @@ Post-V1 interactivity (oscilloscope, dashboards, sliders driving
 
 ## P5 — Plugin interface simplified
 
-Part VI is implemented (manifest, TOFU, native/WASM/process backends, attr
-schemas, `@device`, hooks, scripts). V1 is about **reduction and polish**, not
-features:
+Part VI is implemented (manifest, TOFU, attr schemas, `@device`, hooks,
+scripts). V1 is **reduction and polish** under MD-21:
 
-- [ ] Execute the backend-reduction decision (AD-pending above).
+- [ ] Remove the WASM (wasmtime) and process JSON-RPC backends +
+      `piperine-plugin-wasm`; native dlopen stays.
+- [ ] **Python plugin tier**: a `.py` plugin loaded through the embedded host
+      (same isolation as benches), with the **lifecycle registry exposed to
+      Python** — self-registration of attribute schemas, hooks, scripts, and
+      devices on load.
 - [ ] One "write a plugin" document with a worked example per extension kind
-      (attribute schema, device, hook, script).
-- [ ] Plugin-authoring in Python (if the backend decision lands there):
-      register schemas/hooks/scripts from a `.py` plugin through the embedded
-      host.
-- [ ] Wire-tier scripts (capability-gated fs) — only if the process/WASM tier
-      survives the reduction; otherwise delete the loud error with the tier.
+      (attribute schema, device, hook, script) × per tier (native, Python).
 
 ---
 
 ## P6 — Optimizer
 
 Target use case: **design centering** (maximize yield over process/tolerance
-spread). Foundations already in place: compile-once restamp sweeps (MD-18),
-`LiveSession` (`set`/`schedule_set`/rebuilds), `.sens` planned in P1.
+spread). Foundations in place: compile-once restamp sweeps (MD-18),
+`LiveSession` (`set`/`schedule_set`/rebuilds); `.sens` + PSS land in P1.
 
-- [ ] Study closure: pick the algorithm family (worst-case distance vs
-      Monte-Carlo yield estimation vs ellipsoidal) and the shape (Python
-      library vs language-baked) — AD-pending above.
-- [ ] V1 deliverable: an optimization loop a user can run on a real circuit
-      (params in, spec functions out, centered design back) with docs and an
-      example.
-- [ ] Language hooks (`@optimize`, tolerance annotations on params) only if
-      the study says they pay for themselves in V1; otherwise post-V1.
+- [ ] **To-Do design (user studying):** algorithm family (worst-case distance
+      vs Monte-Carlo yield vs ellipsoidal) and shape (Python library vs
+      language-baked `@optimize`). No decision forced now.
+- [ ] V1 deliverable once the study closes: an optimization loop a user runs
+      on a real circuit (params in, spec functions out, centered design back)
+      with docs and an example.
 
 ---
 
 ## Post-V1 — plugin gallery (priority order sketch)
 
 1. **MCU co-simulation** — inject event-driven digital devices simulating
-   AVR/ESP32-class MCUs (candidate engines: Renode, Wokwi cores — evaluate);
-   rides the P2 device ABI.
+   AVR/ESP32-class MCUs (engines: Renode and/or Wokwi cores — possibly both,
+   per target family); rides the P2 device ABI + commit/rollback.
 2. **Yosys bridge** — translate digital PHDL to Yosys for synthesis +
    open-source programmer flows.
 3. **Python interactivity** — digital oscilloscope, dashboards with
@@ -223,8 +334,7 @@ spread). Foundations already in place: compile-once restamp sweeps (MD-18),
 
 ## Language backlog (schedule on demand — none blocks V1)
 
-Condensed from the old roadmap; full design sketches in git history
-(`ROADMAP.md` pre-2026-07-18).
+Condensed; full design sketches in git history (`ROADMAP.md` pre-2026-07-18).
 
 - **Capabilities for implicit rules**: `From<T>` widening (replace the
   hardcoded typecheck table), intrinsic `impl Add for Real`-style prelude
