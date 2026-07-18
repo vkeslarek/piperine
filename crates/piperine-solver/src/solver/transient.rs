@@ -32,6 +32,11 @@ pub struct TransientSystem<'a> {
     /// capacitor current. Updated after each accepted BDF2 phase.
     pub prev_h: f64,
     pub tfinal: f64,
+    /// UIC hold clamps (ngspice `CKTsetIC`): `@initial` branch seeds pinned
+    /// through the t=0 solve and the first accepted step.
+    pub uic_clamps: Vec<crate::solver::uic::UicClamp>,
+    /// While true, the clamps stamp — released after the first accepted step.
+    pub uic_hold: bool,
 }
 
 impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
@@ -67,6 +72,13 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
                 if r.variable().is_node() && !r.variable().is_ground() {
                     all_stamps.push(Stamp::Matrix(r.clone(), r.clone(), gshunt));
                 }
+            }
+        }
+
+        // UIC hold clamps: pinned through the first accepted step.
+        if self.uic_hold {
+            for clamp in &self.uic_clamps {
+                clamp.stamp(&mut all_stamps);
             }
         }
 
@@ -185,6 +197,8 @@ impl<'a> TransientSolver<'a> {
             h: options.dt,
             prev_h: 0.0,
             tfinal: options.stop_time,
+            uic_clamps: Vec::new(),
+            uic_hold: false,
         };
 
         let solver = NewtonRaphsonSolver::new(&mut system, size, 4)?;
@@ -264,8 +278,24 @@ impl<'a> TransientSolver<'a> {
         }
 
         debug!("Calculating DC Operating Point...");
+        // UIC hold clamps (ngspice `CKTsetIC`): the `@initial` branch seeds
+        // pin the t=0 solve so the seed is the *consistent* operating point,
+        // and stay stamped through the first accepted step.
+        let uic_clamps: Vec<crate::solver::uic::UicClamp> = self
+            .system
+            .circuit
+            .devices
+            .iter()
+            .flat_map(|dev| dev.initial_conditions())
+            .filter_map(|(plus, minus, ic)| {
+                plus.map(|plus| crate::solver::uic::UicClamp { plus, minus, ic })
+            })
+            .collect();
         let mut dc_solver = DcSolver::new(self.system.circuit, Context::default())?;
+        dc_solver.system.uic_clamps = uic_clamps.clone();
         let dc_result = dc_solver.solve()?;
+        self.system.uic_clamps = uic_clamps;
+        self.system.uic_hold = !self.system.uic_clamps.is_empty();
 
         let _netlist = self.system.circuit.netlist();
         let iv_dc = dc_result.as_iv(self.system.circuit);
@@ -515,6 +545,8 @@ impl<'a> TransientSolver<'a> {
                 // Accept.
                 steps_accepted += 1;
                 last_step_accepted = true;
+                // UIC clamps release after the first accepted step (CKTsetIC).
+                self.system.uic_hold = false;
                 dt_min_seen = dt_min_seen.min(dt_actual);
                 dt_max_seen = dt_max_seen.max(dt_actual);
                 let solution = self.solver.current_guess().unwrap().to_owned();

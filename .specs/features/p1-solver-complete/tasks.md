@@ -162,7 +162,7 @@ green; gate quick.
 **Tests**: integration · **Gate**: quick
 **Commit**: `feat(codegen): idt 1/jω AC stamp`
 
-### T10: Multiple `ac_stim` per contribution
+### T10: ✅ DONE — Multiple `ac_stim` per contribution (commit 660af1c)
 **What**: Sum stimulus terms in flatten (mag/phase as complex sum);
 superposition test vs equivalent two-source circuit.
 **Where**: `jit/flatten.rs`, `jit/analog.rs`, tests

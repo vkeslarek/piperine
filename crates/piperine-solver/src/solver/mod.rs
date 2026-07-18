@@ -21,6 +21,7 @@ pub mod pss;
 pub mod sens;
 pub mod tf;
 pub mod transient;
+pub mod uic;
 pub mod solve;
 
 static INIT: Once = Once::new();

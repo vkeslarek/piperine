@@ -31,6 +31,9 @@ pub struct DcSystem<'a> {
     /// normal operation, ramped 0 → 1 by [`DcSolver::solve_source_stepping`].
     /// Passed to elements through [`DcAnalysisState::src_scale`].
     pub src_scale: f64,
+    /// UIC hold clamps (ngspice `CKTsetIC`): stamped only by the transient
+    /// driver's internal t=0 solve — empty for a standalone DC analysis.
+    pub uic_clamps: Vec<crate::solver::uic::UicClamp>,
     /// Device bypass: stamps cached from the last evaluation. Reused when the
     /// solution vector barely moved between Newton iterations (audit P4).
     stamp_cache: Vec<Stamp<AnalogReference, f64>>,
@@ -116,6 +119,12 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
             }
         }
 
+        // UIC hold clamps: pin each seeded branch to its `@initial` value
+        // for the t=0 solve (ngspice `CKTsetIC`).
+        for clamp in &self.uic_clamps {
+            clamp.stamp(all_stamps);
+        }
+
         // Remember the solution this evaluation saw, so the next iteration
         // can measure how far it moved.
         if let Some(curr) = state.latest() {
@@ -186,6 +195,7 @@ impl<'a> DcSolver<'a> {
             context,
             gmin_extra: 0.0,
             src_scale: 1.0,
+            uic_clamps: Vec::new(),
             stamp_cache: Vec::new(),
             last_solution: Vec::new(),
             cache_valid: false,

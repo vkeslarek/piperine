@@ -1210,6 +1210,57 @@ fn sim_tran_transition_ramps_step_into_rc() {
     assert!((late - 1.0).abs() < 0.03, "settled after tr: V(out) = {late}");
 }
 
+/// SC-12 — `@initial { V(p,n) <- ic }` branch force with UIC hold: a cap
+/// pre-charged to 5 V starts at exactly 5 and discharges through R along
+/// `5·e^(−t/RC)` — the t=0 state is a *consistent* clamped solution, not a
+/// guess overlaid on an inconsistent operating point.
+#[test]
+fn sim_tran_initial_branch_force_precharged_cap() {
+    use piperine_solver::prelude::TransientAnalysisOptions;
+
+    let (design, prog) = elaborate_and_lower("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Cap ( inout p : Electrical, inout n : Electrical ) {
+            param c : Real = 1u;
+            param ic : Real = 0.0;
+        }
+        analog Cap {
+            @ initial { V(p, n) <- ic; }
+            I(p, n) <+ c * ddt(V(p, n));
+        }
+        mod Top ( inout out : Electrical ) {
+            c1 : Cap ( out, gnd ) { .ic = 5.0 };
+            r1 : Resistor ( out, gnd );
+        }
+    ");
+    let mut compiler = CircuitCompiler::new(&design, &prog);
+    let mut circuit = compiler.build_circuit("Top").expect("build circuit");
+    circuit.init_digital().unwrap();
+    circuit.rebuild_digital_topology();
+
+    // τ = RC = 1 ms; stop at 5 ms = 5τ.
+    let options = TransientAnalysisOptions::new(5e-3.into(), 1e-6.into());
+    let result = circuit.transient(options, Context::default())
+        .unwrap().solve().unwrap();
+
+    let reltol = Context::default().tolerances.reltol;
+    let tau = 1e3 * 1e-6;
+    let first = result.iter().next().expect("t=0 step");
+    let v0 = first.get_node(&NodeIdentifier::Anonymous(1)).expect("V(out)@0");
+    assert!((v0 - 5.0).abs() < 1e-6, "t=0 starts from ic exactly: {v0}");
+    for step in result.iter() {
+        let t = step.time();
+        let got = step.get_node(&NodeIdentifier::Anonymous(1)).expect("V(out)");
+        let want = 5.0 * (-t / tau).exp();
+        assert!(
+            (got - want).abs() <= 10.0 * reltol * want + 1e-6,
+            "t = {t:.4e}: V(out) = {got}, want {want} (10·reltol)"
+        );
+    }
+}
+
 /// SC-11 — two `ac_stim` terms in one contribution sum as phasors: the
 /// combined source `1∠0 + 1∠60°` equals the equivalent two-source circuit
 /// (each stimulus in its own series source) exactly, and anchors to
