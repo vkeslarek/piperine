@@ -506,6 +506,7 @@ impl<'a> TransientSolver<'a> {
                             dt, current_time
                         );
                     } else {
+                        steps_rejected += 1;
                         last_step_accepted = false;
                         self.solver.restore_state(analog_history);
                         continue;

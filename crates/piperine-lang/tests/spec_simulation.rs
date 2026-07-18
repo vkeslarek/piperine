@@ -1130,3 +1130,134 @@ fn sim_dc_table_clamps_at_the_ends() {
     )).expect("V(a)");
     assert!((v_a - (10.0 - 9.0e-3)).abs() < 1e-9, "V(a) = {v_a} expected 9.991");
 }
+
+/// SC-09 — kernel wiring: `transition` lowers to a runtime-serviced state;
+/// the contribution reads the state bank and the operator's input is V(p,n).
+#[test]
+fn sim_kernel_transition_reads_state_bank() {
+    use piperine_codegen::jit::analog::RuntimeState;
+    let prog = compile("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod TranOp ( inout p : Electrical, inout n : Electrical ) { }
+        analog TranOp { I(p, n) <+ transition(V(p, n), 0.0, 1n, 1n); }
+    ");
+    let cm = compiled(&prog, "TranOp");
+    let kernel = cm.analog().expect("analog kernel");
+    let specs = kernel.runtime_states();
+    assert_eq!(specs.len(), 1, "one runtime state");
+    assert!(matches!(specs[0].kind, RuntimeState::Transition { .. }), "transition spec");
+
+    // The contribution is explicit through the state bank: residual = state.
+    let state = vec![0.42; kernel.num_state_slots()];
+    let mut res = vec![0.0; kernel.num_terminals()];
+    kernel.eval_residual(&[1.5, 0.0], &[], &state, &[], &SimCtx::default(), &mut res);
+    assert_eq!(res.as_slice(), [0.42, -0.42], "contribution reads the state bank");
+
+    // The operator input row evaluates V(p,n) from the solution.
+    let mut inputs = vec![0.0; specs.len()];
+    kernel.eval_state_inputs(&[1.5, 0.0], &[], &state, &[], &SimCtx::default(), &mut inputs);
+    assert_eq!(inputs.as_slice(), [1.5], "operator input is V(p,n)");
+}
+
+/// SC-09 — a step driven through `transition(tr = 0.5 ms)` into an RC with
+/// τ ≪ tr shows the ramped edge (not an instantaneous jump) in the trace:
+/// mid-ramp the output sits between the rails, and it settles after tr.
+#[test]
+fn sim_tran_transition_ramps_step_into_rc() {
+    use piperine_solver::prelude::TransientAnalysisOptions;
+
+    let (design, prog) = elaborate_and_lower("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Capacitor ( inout p : Electrical, inout n : Electrical ) { param c : Real = 1n; }
+        analog Capacitor { I(p, n) <+ c * ddt(V(p, n)); }
+        mod Step ( inout p : Electrical, inout n : Electrical ) {
+            param tr : Real = 5e-4;
+            var st : Real = 0.0;
+        }
+        analog Step {
+            @timer(1e-3) { st = 1.0; }
+            V(p, n) <- transition(st, 0.0, tr, tr);
+        }
+        mod Top ( inout step : Electrical, inout out : Electrical ) {
+            s1 : Step ( step, gnd );
+            r1 : Resistor ( step, out );
+            c1 : Capacitor ( out, gnd ) { .c = 1e-8 };
+        }
+    ");
+    let mut compiler = CircuitCompiler::new(&design, &prog);
+    let mut circuit = compiler.build_circuit("Top").expect("build circuit");
+    circuit.init_digital().unwrap();
+    circuit.rebuild_digital_topology();
+
+    // τ = 1e3·1e-8 = 10 µs ≪ tr = 500 µs: the RC tracks the ramp
+    // quasi-statically, so V(out) ≈ the transition output itself.
+    let options = TransientAnalysisOptions::new(2e-3.into(), 1e-5.into());
+    let result = circuit.transient(options, Context::default())
+        .unwrap().solve().unwrap();
+
+    let v_out = |t: f64| {
+        result.iter().find(|s| s.time() >= t)
+            .and_then(|s| s.get_node(&NodeIdentifier::Anonymous(2)))
+            .expect("V(out)")
+    };
+    let pre = v_out(5e-4);
+    assert!(pre.abs() < 1e-6, "before the edge: V(out) = {pre}");
+    let mid = v_out(1.25e-3);
+    assert!(mid > 0.3 && mid < 0.6, "mid-ramp, not a jump: V(out) = {mid}");
+    let late = v_out(1.9e-3);
+    assert!((late - 1.0).abs() < 0.03, "settled after tr: V(out) = {late}");
+}
+
+/// SC-09 — operator state advances only on accepted steps. The RC's
+/// exponential settle right after the ramp-start kink is real curvature
+/// (not a declared discontinuity), so the Milne gate rejects and halves
+/// there — exactly while the transition ramp is in flight. The ramp
+/// anchors (start, target, t_change) must come through untouched.
+#[test]
+fn sim_tran_transition_state_survives_rejected_steps() {
+    use piperine_solver::prelude::TransientAnalysisOptions;
+
+    let (design, prog) = elaborate_and_lower("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Capacitor ( inout p : Electrical, inout n : Electrical ) { param c : Real = 1n; }
+        analog Capacitor { I(p, n) <+ c * ddt(V(p, n)); }
+        mod Step ( inout p : Electrical, inout n : Electrical ) {
+            param tr : Real = 5e-4;
+            var st : Real = 0.0;
+        }
+        analog Step {
+            @timer(1e-3) { st = 1.0; }
+            V(p, n) <- transition(st, 0.0, tr, tr);
+        }
+        mod Top ( inout step : Electrical, inout out : Electrical ) {
+            s1 : Step ( step, gnd );
+            r1 : Resistor ( step, out );
+            c1 : Capacitor ( out, gnd ) { .c = 1e-8 };
+        }
+    ");
+    let mut compiler = CircuitCompiler::new(&design, &prog);
+    let mut circuit = compiler.build_circuit("Top").expect("build circuit");
+    circuit.init_digital().unwrap();
+    circuit.rebuild_digital_topology();
+
+    let options = TransientAnalysisOptions::new(2e-3.into(), 1e-5.into());
+    let result = circuit.transient(options, Context::default())
+        .unwrap().solve().unwrap();
+
+    assert!(result.stats.steps_rejected > 0, "post-kink settle curvature forces LTE rejections");
+    let v_out = |t: f64| {
+        result.iter().find(|s| s.time() >= t)
+            .and_then(|s| s.get_node(&NodeIdentifier::Anonymous(2)))
+            .expect("V(out)")
+    };
+    // Ramp fraction at 1.4 ms ≈ 0.76 (ramp spans ~[1.02 ms, 1.52 ms]); a
+    // corrupted anchor (e.g. a ramp restarted at a rejected step) lands far off.
+    let mid = v_out(1.4e-3);
+    assert!(mid > 0.6 && mid < 0.85, "ramp anchor intact through rejections: V(out) = {mid}");
+    let late = v_out(1.9e-3);
+    assert!((late - 1.0).abs() < 0.03, "settled after tr: V(out) = {late}");
+}

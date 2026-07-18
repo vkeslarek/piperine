@@ -10,7 +10,7 @@ host surfaces (`run_sens`/`run_pss`) are born in `piperine-api`.
 ---
 
 **Design**: `.specs/features/p1-solver-complete/design.md`
-**Status**: In Progress — batch 1 (Phase 1) executing inline, 2026-07-18
+**Status**: In Progress — T1–T7 done; batch 2 (T8–T12) next, 2026-07-18
 **Baseline**: whatever `api-crate` closes at (≥449 passed / 5 ignored)
 
 ---
@@ -129,7 +129,7 @@ case (SC-06).
 **Tests**: e2e · **Gate**: full
 **Commit**: `feat(api,python): pss surface + rectifier validation`
 
-### T7: `table` operator
+### T7: ✅ DONE — `table` operator (commit fd2f83e)
 **What**: Register `"table"` in `lower/pom/analog_ops.rs`; flatten/emit 1-D
 linear interpolation with end clamp (read spec Part V §2 first — implement
 the modes it defines); Jacobian = segment slope; non-monotonic xs / length

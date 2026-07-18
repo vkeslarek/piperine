@@ -45,7 +45,8 @@ use piperine_lang::parse::ast::Expr as PomExpr;
 /// this bank). Unused when the module has no module-level vars.
 type AnalogFn = unsafe extern "C" fn(*const f64, *const f64, *const f64, *const f64, *const SimCtx, *mut f64);
 
-/// A runtime-serviced operator state (`delay` / `slew` / `idt` / `idtmod`).
+/// A runtime-serviced operator state (`delay` / `slew` / `transition` /
+/// `idt` / `idtmod`).
 /// The device evaluates the config expressions once per instance (they must
 /// be parameter-constant) and updates `state[id]` from the compiled
 /// state-input function each accepted timestep.
@@ -53,6 +54,10 @@ type AnalogFn = unsafe extern "C" fn(*const f64, *const f64, *const f64, *const 
 pub enum RuntimeState {
     Delay { delay: PomExpr },
     Slew { rise: PomExpr, fall: PomExpr },
+    /// `transition(x, td, rise, fall)` — piecewise-linear walk to the latest
+    /// input; `td` delays the ramp start. `ttol` (5th language argument) is
+    /// a breakpoint-placement hint and is intentionally not carried here.
+    Transition { delay: PomExpr, rise: PomExpr, fall: PomExpr },
     /// `idt`/`idtmod` accumulator: `state[id]` holds the integral up to the
     /// last accepted step (starting at `ic`); the kernel reads it as
     /// `state + dt·x` (implicit Euler). `modulus` wraps the accumulator
@@ -1104,6 +1109,11 @@ impl<'m> AnalogCompiler<'m> {
                     StateKind::Slew { rise, fall } => {
                         RuntimeState::Slew { rise: rise.clone(), fall: fall.clone() }
                     }
+                    StateKind::Transition { delay, rise, fall, .. } => RuntimeState::Transition {
+                        delay: delay.clone(),
+                        rise: rise.clone(),
+                        fall: fall.clone(),
+                    },
                     StateKind::Idt { ic } => {
                         RuntimeState::Integrator { ic: ic.clone(), modulus: None }
                     }
