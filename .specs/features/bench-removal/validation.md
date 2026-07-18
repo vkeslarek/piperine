@@ -243,3 +243,57 @@ All mutations reverted; `git status` clean.
 **Gate**: 446 passed, 0 failed, 5 ignored; build zero warnings
 
 **Next steps**: one-line help-text fix at `crates/piperine-cli/src/lib.rs:33` (+ optional cosmetic comment sweep listed above); no re-sensor needed beyond gates.
+
+---
+
+# Round 3 — Final re-verification
+
+**Date**: 2026-07-17
+**Diff range**: `f408761..HEAD` (fix commit `b2d2204`, content-identical HEAD `6f67981` — amended, same message/diff)
+**Verifier**: independent sub-agent (author ≠ verifier)
+
+## Per-Gap Re-verification
+
+| Gap | Claimed fix | Fresh evidence | Result |
+|---|---|---|---|
+| R2#1 Minor (BRM-02) `run --help` advertised "`module::fn` (bench)" | reworded | `crates/piperine-cli/src/lib.rs:33` — now "The file to run: `foo.py` (Python script), …"; `git show b2d2204` diffs the exact line; live `./target/debug/piperine run --help` (exit 0) prints zero bench mentions | ✅ FIXED |
+| R2#2 Cosmetic stale bench comments (codegen `circuit.rs`; lang `staging.rs`, `eval/{const_host,interp,error}.rs`; python `lib/module/instance/live/results.rs`, `tests/smoke.rs`) | repo-wide pattern sweep (L-005) | `grep -rin "bench" crates/ src/ tests/ --include="*.rs"`: every cited file → **zero hits**. Full triage of remaining hits below — no leaks | ✅ FIXED |
+
+## Grep triage (every remaining hit judged)
+
+| Hit class | Files | Verdict |
+|---|---|---|
+| "testbench" / `*_tb.py` new-world vocabulary | `cli/src/commands/test.rs`, `cli/tests/test_tb.rs`, `cli/src/lib.rs:44-49` (`Test` cmd) | ✅ legitimate |
+| Removal notes ("the bench was removed" / "bench-era" / "no bench …") | `cli/src/commands/run.rs:18-19,44-45`; `lang/tests/bench_removed.rs`; `plugin/src/manifest.rs:74-115` + `plugin/tests/manifest.rs:82-102` (loud `bench_tasks` rejection); `tests/session.rs:3`; `tests/spice_smoke.rs:5` (historical "assertions the bench-block fixtures carried") | ✅ legitimate |
+| Hygiene test's own negative assertions | `python/tests/facade_hygiene.rs:2,42-49` | ✅ legitimate |
+| Pre-existing digital test-driver structs | `DigitalBench` in `lang/tests/spec_simulation.rs:50-503` (whitelisted) + its documented mirror-source `Bench` in `codegen/tests/digital_jit.rs:78-316` — same category, untouched by the removal diff | ✅ legitimate |
+| Anything else | — | none — **zero leaks** |
+
+## Gate Check (round 3)
+
+- **Build**: `cargo build --workspace` — zero rustc warnings (0 warning lines)
+- **Test**: `cargo test --workspace` — **446 passed, 0 failed, 5 ignored** (exact baseline match)
+- **Failures**: none
+
+## Discrimination Sensor (round 3 spot-check)
+
+| Probe | Behavior | Evidence | Killed? |
+|---|---|---|---|
+| S3 | BRM-01: `bench` block is a loud parse error | scratch `/tmp/opencode/brm3_sensor/bench_top.phdl` (`mod Top() {}` + `bench Top { fn test_something() {…} }`) → `./target/debug/piperine check` → `× Unknown top-level item: bench`, exit 1 | ✅ Killed (scratch discarded) |
+
+## Requirement Traceability Update (round 3)
+
+| Requirement | Round 2 | Round 3 (FINAL) |
+|---|---|---|
+| BRM-01 | ✅ | ✅ Verified (sensor S3: "Unknown top-level item: bench", exit 1) |
+| BRM-02 | ⚠️ Minor leak | ✅ Verified (help text reworded; repo-wide grep triage clean) |
+| all others | as rounds 1–2 | unchanged, verified |
+
+## FINAL VERDICT
+
+**Overall**: ✅ **PASS** — feature complete and verified.
+
+**Spec-anchored check**: 19/19 ACs match spec outcome; all round-1 (4) and round-2 (2) gaps verifiably fixed with fresh `file:line` evidence; zero residual bench-surface leaks repo-wide.
+**Sensor**: rounds 1–3 cumulative 9 injected, 9 killed (M6a survived round 1, killed post-fix in round 2).
+**Gate**: 446 passed, 0 failed, 5 ignored; build zero warnings — exact baseline.
+**Report**: `.specs/features/bench-removal/validation.md` (this file), diff range `f408761..HEAD`.
