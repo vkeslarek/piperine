@@ -358,7 +358,7 @@ gate full.
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(api): opt-in state recording unlocks Trace.i on stateful devices`
 
-### T27: ✅ DONE — Docs + ROADMAP closure (commit PENDING)
+### T27: ✅ DONE — Docs + ROADMAP closure (commit 53cb068)
 **What**: Part VII/VIII sections for sens/PSS/new operators/models; ROADMAP
 P1 checkboxes closed or moved to named backlog lines (laplace/zi, LTRA,
 autonomous PSS, AC sens, clocked fusing if deferred); traceability →
