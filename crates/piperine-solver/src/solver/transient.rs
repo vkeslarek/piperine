@@ -157,6 +157,9 @@ pub struct TransientSolver<'a> {
     pub policy: crate::solver::Policy,
     /// Host-scheduled live parameter writes (LIVE-06/09).
     sets: SetQueue,
+    /// Full-state re-entry point (PSS shooting enabler): when set, the run
+    /// starts from this captured step instead of a DC operating point.
+    reentry_state: Option<TransientStep>,
 }
 
 impl<'a> TransientSolver<'a> {
@@ -194,7 +197,18 @@ impl<'a> TransientSolver<'a> {
             stepper: crate::solver::convergence::PiController::default(),
             policy: crate::solver::Policy::default(),
             sets: SetQueue::default(),
+            reentry_state: None,
         })
+    }
+
+    /// Start the integration from a previously captured step — analog
+    /// solution and digital snapshot — instead of a DC operating point
+    /// (full-state re-entry, the PSS shooting seam). Pair with
+    /// [`TransientAnalysisOptions::with_start`] so the clock continues from
+    /// the capture time; user/device initial conditions are ignored (the
+    /// captured state *is* the initial condition).
+    pub fn with_initial_state(&mut self, state: &TransientStep) {
+        self.reentry_state = Some(state.clone());
     }
 
     /// Schedule a live parameter write for simulation time `t` (LIVE-06):
@@ -223,6 +237,32 @@ impl<'a> TransientSolver<'a> {
     }
 
     fn compute_initial_conditions(&mut self) -> crate::result::Result<TransientStep> {
+        // Full-state re-entry: seed both companion-history rows from the
+        // captured solution and restore the digital snapshot — no DC solve,
+        // no device/user seeds (the captured state is the whole story).
+        if let Some(state) = self.reentry_state.take() {
+            let ivs: Vec<InitialValue<AnalogReference, f64>> = {
+                let netlist = self.system.circuit.netlist();
+                netlist
+                    .all_references()
+                    .into_iter()
+                    .filter_map(|reference| {
+                        state
+                            .get(reference.variable().clone())
+                            .map(|value| InitialValue { reference: reference.clone(), value })
+                    })
+                    .collect()
+            };
+            for idx in 0..self.system.circuit.digital_state.nets.len() {
+                if let Some(lv) = state.digital(idx) {
+                    self.system.circuit.digital_state.nets[idx] = lv;
+                }
+            }
+            self.solver.push_initial_conditions(ivs.clone());
+            self.solver.push_initial_conditions(ivs);
+            return Ok(self.snapshot(self.options.start_time));
+        }
+
         debug!("Calculating DC Operating Point...");
         let mut dc_solver = DcSolver::new(self.system.circuit, Context::default())?;
         let dc_result = dc_solver.solve()?;
