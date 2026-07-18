@@ -89,18 +89,13 @@ The merged open-gaps audit (ngspice-46 vs the native solver). Status:
       solver analysis (tracked in P3).
 - [ ] `.pz`, `.disto`, `.sp` — MISSING, niche, post-V1.
 
-### Transient (TR-BDF2 core is done and active)
+### Transient
 
-- [ ] **Breakpoints — MISSING. Top transient priority.** ngspice lands a
-      timepoint exactly on every source discontinuity; piperine's LTE-reject
-      backtracking resolves pulse edges but thrashes (~40k steps at edges).
-      Source-declared breakpoint schedule (codegen-extracted from the
-      periodic phase trick, or a `$periodic_breakpoints` declaration). Design
-      decision pending; pairs with the unified event model (P2 checklist).
-- [ ] **Output interpolation onto the `.step` print grid — MISSING.** The
-      recorded waveform is the raw adaptive grid (correct but uneven);
-      `Waveform::at` interpolates point queries and stats are dt-weighted, so
-      this is presentation-layer.
+TR-BDF2 core done and active. Breakpoints done — unified table (TRB-11),
+sources declare edges via `Element::next_breakpoints`, integrator lands
+exactly on them. Print-grid interpolation reclassified as a host feature
+(P3). Remaining:
+
 - [ ] **Enforced UIC hold — PARTIAL.** `@initial` seeds t=0; ngspice UIC also
       *holds* the node through the first solve via a large-conductance clamp
       released after t=0.
@@ -112,10 +107,12 @@ The merged open-gaps audit (ngspice-46 vs the native solver). Status:
 
 ### Convergence
 
-- [ ] **Circuit-wide `gshunt` / user-raisable diagonal GMIN — PARTIAL.**
-      Models add junction gmin; no global option. Low priority.
-- [ ] **`fetlim`/`DEVlimvds` — PARTIAL.** Identity today; MOS converges via
-      gmin stepping without them. May matter for exact ngspice parity.
+`gshunt` done (`Tolerances::gshunt`, user-raisable diagonal stamp).
+Remaining:
+
+- [ ] **`fetlim`/`DEVlimvds` — PARTIAL.** Identity today
+      (`analog_emit.rs`: `"fetlim" => vnew`); MOS converges via gmin stepping
+      without them. May matter for exact ngspice parity.
 
 ### Engine operator gaps (codegen, all fail loud)
 
@@ -140,11 +137,11 @@ The merged open-gaps audit (ngspice-46 vs the native solver). Status:
 
 ### SPICE model completeness ("everything I can do in spice, I can do here")
 
-- [ ] **MOS1 drain current ~1.5× high** (`validation/nmos_load`: ngspice
-      v(d)=3.0 V vs 1.92 V). Check `headers/spice/mos.phdl` β/`kp` path
-      against `mos1load.c`. (Model-equation bug, not solver — converges to a
-      KCL-consistent point.)
-- [ ] **JFET ~15 mV / ~1 % off** (`validation/jfet_bias`: 1.382 vs 1.397 V).
+Present and ngspice-validated (live golden/sweep cases, zero ignores):
+passives, sources, controlled, switches, diode, BJT, JFET, MOS level 1 —
+the old MOS1 1.5×/JFET 15 mV discrepancies were fixed 2026-07-16
+(series-impedance forces). Missing:
+
 - [ ] MOS levels 2/3 (level 1 exists).
 - [ ] Transmission lines (`tline`, lossy, `urc`).
 - [ ] Combined transformer block (`ind`+`mut` as one device — the mutual-flux
@@ -155,14 +152,10 @@ The merged open-gaps audit (ngspice-46 vs the native solver). Status:
 
 ### Performance
 
-- [ ] **Device bypass — MISSING.** Skip re-evaluating nonlinear devices whose
-      terminal voltages barely changed (`CKTbypass`). Matters for large
-      circuits; becomes an ABI capability (P2 checklist).
-- [ ] **Matrix reuse — CHECK.** `self.linear_system = L::new(...)` per Newton
-      iteration looks like a full rebuild; confirm faer symbolic
-      factorization is actually reused.
-- [ ] **Transient predictor — CHECK.** Confirm warm-start from previous step;
-      evaluate a polynomial predictor for Newton seeding.
+Done: device bypass (per-variable-threshold stamp cache, suppressed while a
+limiter clamps), matrix reuse (symbolic LU reused for the whole run),
+transient predictor (CP-16 first-order Newton seed). Remaining:
+
 - [ ] **Temperature sweep — PARTIAL.** Models read `temp`/`dtemp`; confirm
       global `.temp` + `tnom` rescaling flows uniformly (analysis-level sweep
       is host-side).
@@ -179,12 +172,10 @@ The merged open-gaps audit (ngspice-46 vs the native solver). Status:
 
 ### P1 priority order
 
-1. Breakpoints + unified event model — transient efficiency gate.
-2. `.sens` — optimizer feeder.
-3. PSS.
-4. MOS1/JFET model fixes — parity credibility.
-5. Bypass + matrix-reuse check — perf once correctness is solid.
-6. Everything else on demand.
+1. `.sens` — optimizer feeder.
+2. PSS.
+3. Remaining models (MOS 2/3, tline/urc, transformer block).
+4. Everything else on demand.
 
 ---
 
@@ -217,9 +208,11 @@ each)**
       restore every stateful participant (A2D crossings, D2A latches, co-sim
       state), not only the digital net array. Hard requirement for the MCU
       co-sim plugin (gallery #1).
-- [ ] **Unified event model.** One queue for digital events, analog
-      crossings, timers, breakpoints, `$bound_step` hints (kind, target,
-      time, priority, source, rollback behavior). Pairs with P1 breakpoints.
+- [ ] **Unified event model — PARTIAL.** The unified *breakpoint* table
+      (TRB-11, `Element::next_breakpoints`) landed; full unification of
+      digital events, analog crossings, timers, and `$bound_step` hints under
+      one queue (kind, target, time, priority, source, rollback behavior) is
+      still open.
 - [ ] Richer terminal descriptors — domain, direction, required/optional,
       sign convention, external/internal/auxiliary.
 - [ ] Opvar catalog — declared names/types/units/owner for `gm`, `vbe`,
@@ -234,7 +227,6 @@ each)**
       state, reason (today `limiting_active` bool).
 - [ ] Jacobian/stamp capability declaration — analytic vs numeric vs missing;
       validation error for analyses that need what's absent.
-- [ ] Device-side bypass capability (P1 performance item, ABI-shaped).
 - [ ] Save/probe selection — devices declare observables + cost; record only
       what the host asked.
 - [ ] `NewtonStrategy`/`StepperStrategy` — fold Newton damping/limiting and
@@ -251,6 +243,9 @@ Facade is docstringed and parity-tested (bench-removal). Remaining:
 
 - [ ] `piperine.plot(waveform, ...)` convenience (matplotlib wrapper).
 - [ ] `.four`-style post-processing helpers (`waveform.fft()`, etc.).
+- [ ] `waveform.resample(grid)` — `.tran tstep`-style print-grid
+      interpolation (decision 2026-07-18: host feature, not solver;
+      `Waveform.at` already interpolates point queries).
 - [ ] `extract` / `.attach` / `.meta`-class helpers as Python host-API
       functions (the plugin bench-task surface died with the bench).
 - [ ] Ergonomics pass driven by real bench-writing (error messages, numpy
