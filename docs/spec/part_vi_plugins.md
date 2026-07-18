@@ -1,7 +1,7 @@
 # Part VI — Plugins
 
 The plugin extensibility model. Plugins extend Piperine with custom devices,
-design-transform hooks, bench tasks, custom scripts, and attribute schemas —
+design-transform hooks, custom scripts, and attribute schemas —
 without breaking "fail loud", without coupling the solver to codegen, and
 without compromising security.
 
@@ -38,11 +38,9 @@ extension surfaces without breaking the core pipeline's invariants:
    existing `Device` traits. The solver sees them as any other device.
 2. **Hooks** — lifecycle points that read (and in one case, mutate) the
    POM at specific stages of the compilation pipeline.
-3. **Bench tasks** — custom `$name(...)` system tasks callable from bench
-   fns, extending the allowlist at load time.
-4. **Scripts** — custom CLI subcommands (Cargo-style) for importers,
+3. **Scripts** — custom CLI subcommands (Cargo-style) for importers,
    exporters, and tooling.
-5. **Attribute schemas** — plugin-registered schemas that validate
+4. **Attribute schemas** — plugin-registered schemas that validate
    `@schema_name(...)` attributes in source (Part I §8).
 
 **What stays closed.** Plugins cannot extend the parser grammar, the IR
@@ -141,9 +139,11 @@ opt-in + reproducibility**. Real isolation comes from the process backend.
 
 The manifest (`piperine-plugin.toml`) lives at the root of the plugin
 repository. It is intentionally minimal — just identity, artifact location,
-and permissions. Device registrations, attribute schemas, bench tasks, and
-script handlers are all declared in code at registration time, never
-duplicated in the manifest.
+and permissions. Device registrations, attribute schemas, and script
+handlers are all declared in code at registration time, never duplicated
+in the manifest. A manifest declaring `bench_tasks` is a load-time error —
+the in-language bench (and its plugin extension point) was removed; write
+Python testbenches instead (Part VIII).
 
 ```toml
 [plugin]
@@ -237,14 +237,14 @@ code executes.
 ### 5.4 Inspection
 
 `piperine plugin list` shows every loaded plugin with its ABI and
-contribution counts (devices, schemas, bench tasks, scripts).
+contribution counts (devices, schemas, scripts).
 
 ---
 
 ## §6 ABI tiers and the wire protocol
 
 Three backends share one contract: a `Plugin` with a `manifest()` accessor,
-a `register()` method for contributing devices, schemas, tasks, and scripts,
+a `register()` method for contributing devices, schemas, and scripts,
 and the lifecycle hooks of §8. Every contribution is optional — a plugin
 that registers nothing but hooks is valid. Whatever the backend, the host
 presents the guest as an ordinary `Plugin`; nothing downstream can tell them
@@ -256,7 +256,6 @@ The registration surface offers five contribution types:
 |--------------|--------|------------------|
 | Device | `device(type_id, factory)` | A `DeviceFactory` that constructs a solver `Device` for a given type ID (§7) |
 | Attribute schema | `attr_schema(name, fields)` | A schema name validated against source `@name(...)` attributes (§11) |
-| Bench task | `bench_task(name, task)` | A custom task callable from bench fns via `$name(...)` (§9) |
 | Script | `script(name, handler)` | A custom CLI subcommand (§10) |
 | Hooks | (trait methods, no registration) | Lifecycle observation and design transformation (§8) |
 
@@ -274,7 +273,7 @@ pub struct MyPlugin { manifest: Manifest }
 impl Plugin for MyPlugin {
     fn manifest(&self) -> &Manifest { &self.manifest }
     fn register(&self, r: &mut Registrar) {
-        // devices, schemas, bench tasks, scripts — all optional
+        // devices, schemas, scripts — all optional
     }
 }
 
@@ -315,7 +314,7 @@ struct Parasitics;
 
 impl WirePlugin for Parasitics {
     fn register(&self) -> Registration {
-        Registration { bench_tasks: vec!["wgain".into()], ..Default::default() }
+        Registration::default()
     }
 
     fn transform_design(&self, design: &Design) -> Result<Vec<Action>, String> {
@@ -330,17 +329,10 @@ impl WirePlugin for Parasitics {
             params: vec![("r".into(), Value::Real(1e3))],
         }])
     }
-
-    fn bench_task(&self, name: &str, _args: Vec<Value>) -> Result<Value, String> {
-        match name {
-            "wgain" => Ok(Value::Real(42.0)),
-            other => Err(format!("unknown task `{other}`")),
-        }
-    }
 }
 ```
 
-Wire-tier guests may contribute schemas and bench tasks and observe every
+Wire-tier guests may contribute schemas and observe every
 hook; they may **not** contribute devices (a device sits in the Newton
 inner loop — snapshot-per-call is unusable there) or scripts (scripts need
 capability-gated fs the out-of-host tiers don't have yet). Declaring either
@@ -440,8 +432,8 @@ tries to return staging actions (wire tiers) fails loud.
 ### 8.2 Mutation through design staging
 
 `Design` is immutable after elaboration — the only mutation surface is the
-staging layer, the same mechanism bench fns use to stage param writes
-(Part III §9). The `transform_design` hook receives a staging handle, never
+staging layer, the same mechanism a host's `set` uses to stage param writes
+(Part VIII §3). The `transform_design` hook receives a staging handle, never
 `&mut Design`:
 
 ```rust
@@ -459,7 +451,7 @@ fn transform_design(&self, _cx: &mut HostCtx, staging: &DesignStaging) -> Plugin
 
 The staging handle offers three verbs:
 
-- `set_param(instance, param, value)` — same as a bench `inst.r = …` write.
+- `set_param(instance, param, value)` — same as a host `set` write.
 - `add_instance(parent, label, module, ports, params)` — inject an instance
   of a **declared** type.
 - `add_connection(parent, lhs, rhs)` — inject a net connection.
@@ -478,7 +470,7 @@ and pass the same structural validation as source-declared instances
 The canonical gate (it runs, verbatim, as a test on all three backends):
 a design whose `r1` dangles from `vin` to `out` with nothing after it. The
 plugin's `transform_design` stages a declared `Resistor` from `out` to
-`gnd` — and the bench observes a 2.5 V divider that only exists if the
+`gnd` — and the host observes a 2.5 V divider that only exists if the
 injection happened:
 
 ```phdl
@@ -489,46 +481,12 @@ mod Top() {
     src : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
     r1  : Resistor (.p = vin, .n = out);
 }
-bench Top {
-    fn divider() {
-        var r = $op();
-        $assert(r.v(out, gnd) > 2.49, "divider low");
-        $assert(r.v(out, gnd) < 2.51, "divider high");
-    }
-}
 ```
 
----
-
-## §9 Bench tasks
-
-A plugin may contribute `$name(...)` system tasks callable from bench fns.
-Registered names join the bench allowlist at load time — the elaboration
-gate (Part III §5) accepts them exactly like builtins, and an unknown
-`$name` is still a loud elaboration error when no plugin provides it.
-Builtin task names (`op`, `tran`, `write`, …) cannot be shadowed — the
-attempt is a P0003 collision at load.
-
-```rust
-struct GainTask;
-impl PluginBenchTask for GainTask {
-    fn run(&self, _args: Vec<Value>, _cx: &mut HostCtx) -> Result<Value, String> {
-        Ok(Value::Real(42.0))
-    }
-}
-// in register():  r.bench_task("gain", Box::new(GainTask));
+```python
+op = session.run_op(&SolverConfig::default(), None)?;   // host API (Part VIII §7)
+assert!(2.49 < v && v < 2.51, "divider at 2.5 V");
 ```
-
-```phdl
-bench Top {
-    fn uses_plugin_task() {
-        $assert($gain() == 42.0, "plugin task value");
-    }
-}
-```
-
-This is the landing path for `extract` / `.attach` / `.meta` (Part III §9)
-once their design pass happens.
 
 ---
 
@@ -589,12 +547,11 @@ d1 : dio (.p = out, .n = gnd);
 The `@device` and `@port` schemas are registered by the plugin *system*
 itself whenever at least one plugin is loaded — they belong to no single
 plugin, so two device plugins never collide on them. If two plugins
-register the same schema name (or the same device type ID, bench task
-name, or script name), the host raises `PluginError::SchemaConflict`
-(P0003) at load time.
+register the same schema name (or the same device type ID or script
+name), the host raises `PluginError::SchemaConflict` (P0003) at load time.
 
 Schema seeding happens before elaboration: the host contributes its
-schemas and task names to the elaboration registries, then the design
+schemas to the elaboration registries, then the design
 elaborates. Without the plugin loaded, `@device(...)` in source is an
 ordinary unknown-schema error (E2022) — attributes never validate against
 a plugin that isn't there.
@@ -636,6 +593,5 @@ elaboration (`E2xxx`), and reflection (`E3xxx`).
 | §8.1 | a hook returns an error / a read-only hook returns actions | P0005 `HookFailed` |
 | §8.2 | staged instance of an undeclared type, or port-count mismatch | P0005 `HookFailed` ("type not declared") |
 | §8.2 | two writers stage different specs at one `(parent, label)` | P0008 `StagingConflict` |
-| §9 | plugin bench task shadows a builtin name | P0003 `SchemaConflict` |
 | §10 | CLI subcommand not registered by any plugin | P0009 `UnknownScript` |
 | §11 | two plugins register the same schema name | P0003 `SchemaConflict` |

@@ -2,37 +2,33 @@
 
 Distilled from the closed-out `SPEC_BENCH_GAPS.md` / `IDE_GAPS.md` handoff drafts
 (2026-07-04). Everything listed in those documents that got implemented is gone; this file
-keeps only what is still open. Conventions: fail-loud until closed — an unimplemented bench
-task is an elaboration error (`bench_task_implemented` allowlist in
-`piperine-lang/src/eval/tasks.rs`), never a silent no-op. Closing an item updates the bench
-spec §11 row (`crates/piperine-bench/docs/SPEC.md`) in the same change.
+keeps only what is still open. Conventions: fail-loud until closed — what the toolchain
+cannot do is a named error, never a silent no-op.
+
+> **2026-07-17 — the in-language `bench` was removed** (bench-removal feature): the
+> keyword is a syntax error, `piperine-bench` is deleted, and verification lives in the
+> host APIs (`docs/spec/part_viii_host_api.md` — Python `import piperine`, Rust root
+> crate). Bench-anchored items below are reframed to the host APIs or closed as
+> obsolete.
 
 ---
 
-## Bench
+## Host API
 
-### `$plot(waveform, title)` (was G1)
+### Plotting / artifact export (was G1)
 
-**Spec:** bench spec §8 table row, §11 — "emit artifacts".
-**Today:** elaboration-rejected (not in `bench_task_implemented`). `$write` (CSV) is the
-reference `BenchTask` to copy.
+**Today:** testbenches are Python — plotting is `matplotlib` (see
+`examples/07_thermostat_plot.py`), CSV export is `csv`/`numpy.savetxt` on
+`Waveform.points()`. Nothing to build in the simulator itself; a convenience
+`piperine.plot(waveform, title)` helper on the Python facade is a possible
+follow-up, not a simulator feature.
 
-Sketch:
-1. Artifact format: hand-rolled SVG line chart (~100 lines, zero deps, viewable anywhere).
-   Axis autoscale from `Waveform.points`, polyline, title text.
-2. New `Plot` struct in `piperine-bench/src/tasks.rs` implementing `BenchTask`; accepts
-   `(Value::Object(Waveform | ComplexWaveform), Value::Str(title))`; downcast via
-   `Object::as_any` exactly like `$noise` does for `NetRef`.
-3. Output path: `<title>.svg` in the CWD (same convention as `$write`); sanitize the title
-   into a filename.
-4. Add `"plot"` to `bench_task_implemented`; flip the spec §11 row; e2e test in
-   `piperine-bench/tests/bench.rs` asserting the file exists and starts with `<svg`.
+### The uniform API (was G12) — CLOSED 2026-07-17
 
-### The uniform API (was G12) — milestone
-
-Bench spec §8 in full: public `load()` + `Design::op/tran/ac/noise` Rust surface first
-(`SimSession` renamed/made public with typed config structs), Python via `pyo3` only after
-the Rust surface settles. The §8 identical-shape rule is the review gate for every signature.
+Delivered by python-bindings + bench-removal: the root `piperine` crate is the
+Rust library face (MD-19 — `SimSession`, typed result objects) and
+`import piperine` wraps it with the identical call shape
+(`docs/spec/part_viii_host_api.md`).
 
 ### `extract` / `.attach` / `.meta` (was G13)
 
@@ -144,7 +140,7 @@ Spec: `.specs/features/solver-trbdf2-engine/`.
   (`V(x,xp) <- 0.0` under `if` lowered to a 1e12 penalty conductance) — fixed by exact
   `V = R·I` series-impedance forces (`FlatForce::current_terms`, stamped on the branch
   current column in DC/AC/tran). All 8 validation circuits plus Id–Vgs/Id–Vds sweep
-  goldens are green with zero `#[ignore]` (`cargo test -p piperine-bench ngspice`).
+  goldens are green with zero `#[ignore]` (`cargo test -p piperine ngspice`).
 - `transition`, `laplace_*`, `zi_*` analog operators — recognized in the IR, fail loud at
   codegen. Each is its own companion-model follow-up.
 - **`table(x, xs, ys, mode)` operator (spec Part V §2) — not registered at all.** The
@@ -203,13 +199,13 @@ Spec: `.specs/features/solver-trbdf2-engine/`.
   `piperine-codegen/docs/DIGITAL_JIT.md`.
 - **Sequential logic cannot be clocked through `$op`.** `$op` is a *pure function* of
   (design + staged overrides): `session.rs::run_op` re-elaborates and builds a **fresh**
-  circuit each call, so no digital state persists between `$op`s — a register/shift-register
-  can't be stepped by staging a clock across calls (each rebuild also fires a spurious X→1
-  posedge). The digital kernel and *cross-module* NBA sampling are correct — proven by
-  `spec_simulation::digital_cross_module_flops_sample_simultaneously` (two flip-flops in
-  separate modules; the downstream flop captures the upstream's pre-edge output). Verifying
-  sequential multi-module logic through a bench needs `$tran` to record digital nets over time
-  (see the `Trace` gap above). Combinational multi-module logic verifies fine through `$op` —
+  circuit each call, so no digital state persists between `op` calls — a
+  register/shift-register can't be stepped by setting a clock across calls (each rebuild
+  also fires a spurious X→1 posedge). The digital kernel and *cross-module* NBA sampling
+  are correct — proven by `spec_simulation::digital_cross_module_flops_sample_simultaneously`
+  (two flip-flops in separate modules; the downstream flop captures the upstream's pre-edge
+  output). Sequential logic verifies through `tran` (digital nets are recorded per step);
+  combinational multi-module logic verifies fine through `op` —
   see `examples/17_ripple_adder_4bit`, `18_mux4_tree`, `19_multiplier_2x2`,
   `20_comparator_4bit` (all exhaustive).
 
@@ -230,22 +226,21 @@ Spec: `.specs/features/solver-trbdf2-engine/`.
 
 ## Language / interpreter gaps
 
-**Closed 2026-07-04** (each with a gate test in `piperine-bench/tests/bench.rs`):
-`impl` method dispatch everywhere (interpreter via `Host::resolve_method` on tagged
-`Value::Record`s; analog/digital via `Bundle::method` IR fns with `self` flattened
-per-field); bench fn → sibling bench fn calls (`Callable::BenchFn`, effectful); tuple
-index `t.0`; bundle-typed fn params (flattened like module bundle params, call sites
-expand the argument); the lowering's silent `Real(0.0)` fallbacks for method calls and
-value-layer expressions are now loud `LowerError`s. Digital nets read directly off `$op`
-results (`r.v(bit_net)` → 0/1, NaN for X/Z).
+**Closed 2026-07-04:** `impl` method dispatch everywhere (interpreter via
+`Host::resolve_method` on tagged `Value::Record`s; analog/digital via `Bundle::method`
+IR fns with `self` flattened per-field); sibling fn calls; tuple index `t.0`;
+bundle-typed fn params (flattened like module bundle params, call sites expand the
+argument); the lowering's silent `Real(0.0)` fallbacks for method calls and value-layer
+expressions are now loud `LowerError`s. Digital nets read directly off op results
+(0/1, NaN for X/Z).
 
 Still open:
 - `for` patterns can't destructure tuples (`for (a, b) in …`); loop bodies index `case.0`.
 - A bundle *literal* passed as a bundle-typed argument inside an analog body must name
   every field — the declared field defaults aren't expanded at that call site yet.
-- Net/instance arrays are not addressable from a bench (`tap[2]`, `bank[0]`), and a
-  bench-built circuit collapses a `wire x : T[N]` array into a single net.
-- A bench top module must have at least one instance (leaf top = empty circuit);
+- Net/instance arrays are not addressable from a host (`tap[2]`, `bank[0]`), and a
+  host-built circuit collapses a `wire x : T[N]` array into a single net.
+- A host top module must have at least one instance (leaf top = empty circuit);
   `.i(a, b)` needs a unique two-terminal match between the named nets.
 - `Trace` (transient) does not record digital net values over time — digital readback is
   `$op`-only today.
@@ -391,7 +386,7 @@ types (`parse_type` has a `(` branch) and `ValueType::Tuple(Vec<ValueType>)` exi
 **Still open:** tuple type *resolution* — `resolve_type`/the typechecker have no
 `Tuple` handling, so an annotation parses but is not checked against the value. Wire
 resolution + checking, then test `fn foo() -> (Real, Natural)`, `var x : (Real, String)`,
-`Vec<(Real, Real)>` (the bench-spec §12.4 sweep shape).
+`Vec<(Real, Real)>` (the sweep shape).
 
 ### Function references — passing named functions as arguments
 
@@ -412,16 +407,11 @@ through the callable registry. **Still open:** confirm with a gate test
 (`apply_op(my_func, 5.0)` end-to-end) and typecheck `FnRef` against the declared
 `fn(T) -> R` annotation.
 
-### Type inference for `var` — less verbosity
+### Type inference for `var` — CLOSED 2026-07-17 (obsolete)
 
-**Spec (Part III §1):** "`var name = expr;` may omit its type, inferred at interpretation
-time — only valid in the interpreted context (bench)."
-
-**Today:** in compiled contexts (`analog`/`digital`), a `var` requires an explicit type:
-`var acc : Real = 0.0;`. Omitting the type is a hard error outside bench
-(`behavior.rs:60-64`). In bench, the type is accepted but **ignored** — it's decorative,
-not checked. There is no actual inference: the interpreter treats every value by its
-runtime shape, and the typechecker doesn't infer from initializers.
+The inferred-`var` rule was scoped to the interpreted context, which no longer exists
+(the bench was removed). In the remaining contexts (`analog`/`digital`/elaboration) a
+`var` requires an explicit type — that is now simply the rule, not a gap.
 
 **Goal:** proper type inference for initialized `var` declarations everywhere:
 - `var x = 0.1;` → `Real` (literal inference)
@@ -595,8 +585,7 @@ All three backends (native dlopen, WASM/wasmtime, process JSON-RPC) share one
 contract; the wire form **is the POM itself** (serde on the real
 `Design`/`Value`, `pom/wire.rs` is protocol-only — D14, revised 2026-07-11);
 staging conflicts are typed P0008; plugins live in the official monorepo
-`~/Git/plugins` referenced via git deps with `subdir`. Builtin bench tasks
-share the plugin task shape (`BenchTask::run(args, cx)`, `tasks.rs`).
+`~/Git/plugins` referenced via git deps with `subdir`.
 
 **Still open:**
 - **Artifact distribution** — prebuilt plugin binaries fetched from git
@@ -606,9 +595,10 @@ share the plugin task shape (`BenchTask::run(args, cx)`, `tasks.rs`).
   (declaring a script on those tiers is a loud load error today).
 - **OSDI DeviceProvider netlist seam** — internal-node allocation for
   `@device(plugin = "osdi", …)` (see item 10 below).
-- **`extract`/`.attach`/`.meta`** as spice-plugin bench tasks (G13).
-- **`HookInput.solve` for swept analyses** — only `$op` carries node voltages;
-  `$tran`/`$ac`/`$noise` hand plugins the analysis kind only.
+- **`extract`/`.attach`/`.meta`** (G13) — as Python host-API helpers
+  (the plugin bench-task surface was removed with the bench).
+- **`HookInput.solve` for swept analyses** — only `op` carries node voltages;
+  `tran`/`ac`/`noise` hand plugins the analysis kind only.
 
 Historical order (steps kept for reference; all but the noted leftovers done):
 
@@ -620,17 +610,14 @@ Historical order (steps kept for reference; all but the noted leftovers done):
 3. **TOFU (§3.2).** CLI approval prompt keyed by content hash, persisted to the
    lockfile; `--trust <file>` / `--no-trust` CI modes. Error: P0001 `Untrusted`.
 4. **Registration contract (§6).** The `Plugin` trait: `manifest()`, `register()`
-   (devices, attr schemas, bench tasks, scripts), seven no-op-default hooks. Start
+   (devices, attr schemas, scripts), no-op-default lifecycle hooks. Start
    with the **native** backend (plain dlopen + one entry symbol — least new
    machinery), WASM (`wasmtime` + serialized POM views) second, out-of-process
    JSON-RPC last. The device ABI is Piperine's own `AnalogDevice`/`DigitalDevice`
    traits — never OSDI or any external model ABI (Plugin plan D13).
 5. **Attribute schemas from plugins (§10).** Plugin-registered schemas join the
    `@attribute(schema=...)` registry; collision → P0003 `SchemaConflict`.
-6. **Bench tasks from plugins (§6).** Plugin `BenchTask`s extend the
-   `bench_task_implemented` allowlist at load time — this is the landing path for
-   `extract`/`.attach`/`.meta` (G13 above).
-7. **Device loading (§7).** `@device(plugin=…, type=…)` + `@port(name=…)` binding:
+6. **Device loading (§7).** `@device(plugin=…, type=…)` + `@port(name=…)` binding:
    `CircuitCompiler` detects the attribute, skips PHDL lowering, calls the plugin's
    `DeviceFactory` with the device spec (type id, attrs, port `NetRef` bindings,
    params). Solver sees a plain `Device`. Errors: P0004 `DeviceNotRegistered`.

@@ -161,7 +161,7 @@ asserts every `.phdl` elaborates + every `.py` runs.
 **Tests**: integration · **Gate**: build
 **Commit**: `feat(piperine)!: delete piperine-bench — python is the host`
 
-### T8: Python sanitation
+### T8: ✅ DONE — Python sanitation
 **What**: Facade/pyclass sweep: consistent naming, no bench-era vocabulary,
 dead paths removed; docstrings on every public class/method; python test
 walks the facade asserting non-empty `__doc__` + stub/impl parity.
@@ -173,7 +173,7 @@ walks the facade asserting non-empty `__doc__` + stub/impl parity.
 **Tests**: e2e · **Gate**: quick
 **Commit**: `refactor(python): sanitized, fully docstringed public surface`
 
-### T9: Host-API docs + closure
+### T9: ✅ DONE — Host-API docs + closure
 **What**: `docs/spec/` Python host-API part/appendix (load→Design→analyses→
 results→LiveSession→CLI run/-i/test) with runnable snippets; CLAUDE.md/
 README/ROADMAP updated (bench gone, root lib face); traceability → Verified.

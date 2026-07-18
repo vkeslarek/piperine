@@ -185,8 +185,38 @@ Implementation: bench-removal T1.
 
 ## Handoff Snapshot
 
-**Last updated:** 2026-07-15. Two features delivered this cycle; remaining
-solver specs are planning-only (no code yet).
+**Last updated:** 2026-07-17 — `bench-removal` DELIVERED (T1–T9, branch
+`feature/bench-removal`).
+
+### Feature D — `bench-removal` (DELIVERED)
+
+Spec/design/tasks in `.specs/features/bench-removal/`. The in-language
+`bench` is gone (keyword = syntax error, `piperine-bench` deleted) and the
+host surfaces consolidated:
+
+- **Root `piperine` crate is the library face (MD-19, lib-only)**: `src/`
+  hosts `SimSession`/`SolverConfig`, result objects (`results.rs`,
+  `waveform.rs`), `Error`, `SimHooks` (plugin lifecycle — preserved per user
+  decision), and a `prelude` re-exporting lang/codegen/solver. The `piperine`
+  binary target lives in `piperine-cli` (`[[bin]]`).
+- **Tests of record migrated** to root `tests/`: ngspice harness (19, live
+  green), spice smoke (7, fixtures ported to session API with identical
+  assertions), compile-once sweep, run_examples dual contract (24 `.phdl`
+  elaborate + 26 `.py` run), session suite incl. 4 behaviors ported from the
+  deleted bench.rs (tran start, nodeset, `Trace::i`, digital op readback).
+- **`piperine test`** runs `*_tb.py` testbenches (subprocess isolation,
+  per-file timeout via `PIPERINE_TEST_TIMEOUT_SECS`, exit codes).
+- **Plugin bench-task surface removed** (SDK, wire protocol, WASM ABI v3);
+  manifests declaring `bench_tasks` fail loud. Lifecycle hooks preserved via
+  root `SimHooks`; plugin gates ported to the root session.
+- **Python sanitized**: `Module.stage` → `Module.set`, facade fully
+  docstringed (hygiene gate walks it), native sub-views surfaced
+  (`InstanceView`/`Terminal`/`SolverStats`).
+- **Docs**: `docs/spec/part_viii_host_api.md` (new host-API part); Part III
+  tombstoned; index/Parts I/II/V/VI/appendices swept; AGENTS.md/CLAUDE.md/
+  README/ROADMAP updated.
+- **Deviation logged**: `piperine run <file>.phdl` no longer executes bench
+  entry points (it elaborates and points at `*_tb.py`/the REPL).
 
 ### Feature A — `solver-trbdf2-engine` (DELIVERED — cleanups deferred)
 

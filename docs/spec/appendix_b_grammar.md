@@ -44,7 +44,7 @@ UseDecl   ::= "use" Path ";"
 Path      ::= Ident { "::" Ident }
 Item      ::= { Attribute } [ "pub" ] ItemKind
 ItemKind  ::= ModDecl | BehaviorDecl | DisciplineDecl | BundleDecl | EnumDecl
-             | CapabilityDecl | ImplDecl | FnDecl | ConstDecl | BenchDecl
+             | CapabilityDecl | ImplDecl | FnDecl | ConstDecl
 ConstDecl ::= "const" Ident ":" Type "=" Expr ";"
 ```
 
@@ -170,15 +170,7 @@ Diagnostic    ::= SysCall "(" [ Expr {"," Expr} ] ")" ";"
 The left-hand side of `<+` / `<-` must be an access expression (type-checked); the
 left-hand side of `=` must be an lvalue.
 
-## B.8 Bench block
-
-```
-BenchDecl ::= "bench" Ident "{" { FnDecl } "}"
-```
-
-The body uses the `fn` grammar (§B.9). Semantics are defined in Part III.
-
-## B.9 Statements and expressions
+## B.8 Statements and expressions
 
 ```
 Stmt      ::= VarDecl | ReturnStmt | IfStmt | MatchStmt | ForStmt | BindStmt | ExprStmt

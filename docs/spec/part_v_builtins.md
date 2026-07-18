@@ -125,23 +125,6 @@ These are available everywhere, including inside pure `fn` bodies:
 
 Plus the full math catalog (§1), callable with a `$` prefix.
 
-### 3.3 Available in the interpreted context only (bench)
-
-These require the Host and are unavailable elsewhere:
-
-| Syntax | Returns |
-|--------|---------|
-| `$op(cfg)` | DC operating point → `OpResult` |
-| `$tran(cfg)` | transient → `Trace` |
-| `$ac(cfg)` | AC sweep → `Trace` (complex) |
-| `$noise(cfg)` | noise → `NoiseTrace` |
-| `$write(path, data)` | write `data` as CSV to `path` |
-| `$plot(waveform, title)` | render `waveform` as an SVG line-chart artifact named after `title` |
-
-Config bundles and result types are defined in Part III §7–§8.
-
----
-
 ## §4 Diagnostic / control tasks (statement)
 
 | Syntax | Effect | Context |
@@ -254,30 +237,27 @@ A project or dependency package named `spice` shadows the builtin namespace
 This matrix shows which constructs are legal in which execution context. A construct
 marked "—" in a column is an elaboration error if used there.
 
-| Construct | `analog` | `digital` | `bench` |
-|-----------|----------|-----------|---------|
-| Math (`exp`, `abs`, ...) | ✓ | ✓ | ✓ |
-| `ddt` / `idt` / `idtmod` | ✓ | — | — |
-| `ddx` | ✓ | — | — |
-| `delay` / `absdelay` / `slew` | ✓ | — | — |
-| `transition` / `table` / `laplace_*` / `zi_*` | ✓ | — | — |
-| `white_noise` / `flicker_noise` | ✓ | — | — |
-| `ac_stim` | ✓ (`.ac` only) | — | — |
-| `$temperature` / `$vt` / `$abstime` / `$mfactor` / `$xposition` / ... | ✓ | ✓ | — |
-| `$analysis` | ✓ | ✓ | — |
-| `$random` / `$dist_*` | ✓ | ✓ | — |
-| `$bound_step` / `$discontinuity` | ✓ | — | — |
-| `$assert` / `$info` / `$warn` / `$error` / `$fatal` | ✓ | ✓ | ✓ |
-| `$display` / `$write(args...)` | ✓ | ✓ | ✓ |
-| `$finish` | ✓ | ✓ | — |
-| `$op` / `$tran` / `$ac` / `$noise` | — | — | ✓ |
-| `$write(path, data)` / `$plot` | — | — | ✓ |
-| `select(...)` | — | — | ✓ |
-| `V(a,b)` / `I(a,b)` | ✓ | ✓ *(read only)* | — *(use result object)* |
-| `<+` (contribution) | ✓ | — | — |
-| `<-` (force / drive) | ✓ | ✓ | — |
-| `=` (assign) | — | ✓ | ✓ *(locals only)* |
-| `@` events | ✓ | ✓ | — |
+| Construct | `analog` | `digital` |
+|-----------|----------|-----------|
+| Math (`exp`, `abs`, ...) | ✓ | ✓ |
+| `ddt` / `idt` / `idtmod` | ✓ | — |
+| `ddx` | ✓ | — |
+| `delay` / `absdelay` / `slew` | ✓ | — |
+| `transition` / `table` / `laplace_*` / `zi_*` | ✓ | — |
+| `white_noise` / `flicker_noise` | ✓ | — |
+| `ac_stim` | ✓ (`.ac` only) | — |
+| `$temperature` / `$vt` / `$abstime` / `$mfactor` / `$xposition` / ... | ✓ | ✓ |
+| `$analysis` | ✓ | ✓ |
+| `$random` / `$dist_*` | ✓ | ✓ |
+| `$bound_step` / `$discontinuity` | ✓ | — |
+| `$assert` / `$info` / `$warn` / `$error` / `$fatal` | ✓ | ✓ |
+| `$display` / `$write(args...)` | ✓ | ✓ |
+| `$finish` | ✓ | ✓ |
+| `V(a,b)` / `I(a,b)` | ✓ | ✓ *(read only)* |
+| `<+` (contribution) | ✓ | — |
+| `<-` (force / drive) | ✓ | ✓ |
+| `=` (assign) | — | ✓ |
+| `@` events | ✓ | ✓ |
 
-The bench column uses the result object (`r.v(a,b)`, `r.i(a,b)`) for measurement instead
-of the analog `V`/`I` access functions (Part III §6).
+Measurement from a host uses the result objects (Part VIII §4), not the analog
+`V`/`I` access functions.

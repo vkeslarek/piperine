@@ -21,9 +21,10 @@ compiled **OSDI** (v0.4) shared libraries; a native Verilog-AMS frontend targeti
 IR is being reworked.
 
 ```
-PHDL (.phdl) ──► elaborated design ──► shared IR ──► Cranelift-JIT analog devices ──► native solver
-                        │                            + event-driven digital interpreter
-                        └──► bench (interpreted verification layer)      + OSDI (.osdi) device models
+PHDL (.phdl) ──► elaborated design ──► Cranelift-JIT analog devices ──► native solver
+                                             + event-driven digital interpreter
+                                             + OSDI (.osdi) device models
+hosts: Python (`import piperine`) and the Rust root crate drive analyses and measurement
 ```
 
 ## Highlights
@@ -35,10 +36,11 @@ PHDL (.phdl) ──► elaborated design ──► shared IR ──► Cranelift
   small-signal (including `ac_stim` stimuli), and noise analysis (white + flicker device
   PSDs), all over MNA with symbolic Jacobians — the derivative of your device model is
   computed symbolically and JIT-compiled next to its residual.
-- **Built-in verification (`bench`).** An effectful, interpreted scripting layer runs
-  right in your source file: `$op` / `$tran` / `$ac` / `$noise` analyses with typed config
-  bundles, waveform post-processing (`fft`, `rise_time`, `db`, closures via `map`),
-  parameter staging and sweeps as plain `for` loops, CSV export via `$write`. No TCL, no
+- **Python testbenches.** Verification is real code in a real language: `import piperine`
+  gives you the elaborated design, `op`/`tran`/`ac`/`noise` analyses with typed config
+  dataclasses, numpy waveforms (`values`/`axis`, `cross`, `rms`, `mag`/`db`), parameter
+  sweeps as plain `for` loops, and a compile-once `LiveSession` for optimization loops.
+  Run them with `piperine test` (`*_tb.py`) or `piperine run script.py`. No TCL, no
   `.measure` mini-language.
 - **A real language.** Generics with const parameters, capabilities (traits), bundles,
   enums, default parameter values, `Map`/`Vec`/`Option` value types, SI-suffixed literals
@@ -55,7 +57,7 @@ PHDL (.phdl) ──► elaborated design ──► shared IR ──► Cranelift
   compilation target) alongside JIT-compiled PHDL devices.
 - **Tooling included.** A `piperine` CLI (project scaffolding, git dependencies, check,
   format, run, test), an LSP language server (diagnostics, hover, completion,
-  go-to-definition, formatting, semantic tokens, rename, code lenses that run your benches),
+  go-to-definition, formatting, semantic tokens, rename),
   and a VS Code extension under `editors/vscode/`.
 
 ## What it looks like
@@ -118,36 +120,29 @@ analog Ladder {
 
 ### Verification is code, not an afterthought
 
-A `bench` block attaches to a module and runs analyses over the elaborated netlist.
-Measurement goes through immutable result objects; configuration is a value, never hidden
-state:
+A Python testbench (`*_tb.py`) drives analyses over the elaborated netlist. Measurement
+goes through immutable result objects; configuration is a dataclass, never hidden state:
 
-```phdl
-bench SwitchOpenTest {
-    fn test_open_circuit() {
-        var r = $op();
-        $assert(r.v(vsrc, gnd) > 4.9, "voltage source should be active");
-        $assert(r.i(resistor.p, resistor.n) < 1e-8, "no current with the switch open");
-    }
+```python
+import piperine
 
-    fn test_bandwidth() {
-        var r = $ac(AcConfig { .fstart = 1.0, .fstop = 1e9, .points = 100 });
-        $assert(r.v(out).db().at(1e3) > -3.0, "passband flat at 1 kHz");
-    }
+m = piperine.load("src/main.phdl").module("SwitchOpenTest")
 
-    fn dc_gain_vs_load() {
-        var curve : Vec<(Real, Real)> = [];
-        for rl in [1e3, 1e4, 1e5, 1e6] {   // a sweep is a loop, not a task
-            load.resistance = rl;           // stage an override
-            var r = $op();                  // deterministic re-elaborate + solve
-            curve.push((rl, r.v(out) / r.v(in_)));
-        }
-        $write("gain_vs_load.csv", curve);
-    }
-}
+r = m.op()
+assert r.v("vsrc", "gnd") > 4.9, "voltage source should be active"
+assert abs(r.i("vsrc", "gnd")) < 1e-8, "no current with the switch open"
+
+r = m.ac(piperine.AcConfig(fstart=1.0, fstop=1e9, points=100))
+assert r.v("out").db().at(1e3) > -3.0, "passband flat at 1 kHz"
+
+curve = []
+for rl in [1e3, 1e4, 1e5, 1e6]:   # a sweep is a loop, not a task
+    m.set("load", "resistance", rl)
+    r = m.op()
+    curve.append((rl, r.v("out") / r.v("in_")))
 ```
 
-Run it with `piperine test` — every zero-argument bench `fn` is a discovered entry point.
+Run it with `piperine test` — every `*_tb.py` in the project is discovered and run.
 
 ### Typed metadata (attributes)
 
@@ -167,30 +162,29 @@ wire clk : Electrical;
 piperine new my_chip             # scaffold a project (Piperine.toml + src/)
 piperine check src/main.phdl     # parse, elaborate, sanity-check
 piperine fmt   src/main.phdl     # canonical formatting
-piperine test                    # discover and run every bench entry point
-piperine run --entry Amp::tune   # run one bench fn
+piperine test                    # discover and run every *_tb.py testbench
+piperine run script.py           # run a python script (embedded CPython)
+piperine run -i src/main.phdl    # interactive REPL with the design loaded
 piperine add <git-url>           # add a dependency (resolved via git)
 piperine tree                    # show the dependency tree
 ```
 
 The `examples/` directory holds a gallery of self-contained real-world designs with numerically
-validated benches — voltage dividers, RC filters, diode clippers, DACs, a flash ADC, a bang-bang
-thermostat, Johnson noise, a coulomb counter, PWM, an op-amp follower — all of
-them run green in CI via `piperine-bench/tests/run_examples.rs`.
+validated Python testbenches — voltage dividers, RC filters, diode clippers, DACs, a flash ADC, a
+bang-bang thermostat, Johnson noise, a coulomb counter, PWM, an op-amp follower — every `.phdl`
+elaborates and every `.py` runs green in CI (`tests/run_examples.rs`).
 
 ## IDE support
 
 `piperine-lang-server` speaks LSP: diagnostics with real spans, hover, context-aware
 completion (parser-predicted), go-to-definition, document symbols, formatting, semantic
-tokens, references/rename, folding, inlay hints (SI-literal expansion: `10k` → `= 10000`),
-and code lenses that run benches. The VS Code extension lives in `editors/vscode/`.
+tokens, references/rename, folding, inlay hints (SI-literal expansion: `10k` → `= 10000`).
+The VS Code extension lives in `editors/vscode/`.
 
 ## Documentation
 
 | Document | What it covers |
 |----------|----------------|
-| `crates/piperine-lang/docs/SPEC.md` | The PHDL language: types, modules, behavior, elaboration, grammar, reflection, selector, builtins |
-| `crates/piperine-bench/docs/SPEC.md` | The `bench` block, analyses, result/waveform types, the uniform API |
-| `crates/piperine-codegen/docs/SPEC.md` | The shared IR and lowering contract |
-| `crates/piperine-cli/docs/CLI_TOOLS.md` | CLI commands and project management |
+| `docs/spec/` (Parts I–VII + appendices) | The formal PHDL specification |
+| `docs/spec/part_viii_host_api.md` | The Python + Rust host APIs (load/Design/Module, analyses, LiveSession, CLI) |
 | `ROADMAP.md` | Open work items |

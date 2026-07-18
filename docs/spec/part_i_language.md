@@ -157,7 +157,6 @@ PHDL's construct kinds, each with a distinct role (the full top-level item list 
 | `capability` | A named contract of function signatures. Operators desugar to capabilities. Satisfied via `impl Cap for T`. |
 | `impl` | Provides method bodies for a bundle, or an implementation of a capability. |
 | `analog` / `digital` | Behavior blocks: the continuous and discrete engines that run during solve. |
-| `bench` | An interpreted testbench attached to a module. Uses the same `fn`-body grammar; covered in Part III. |
 
 Metadata attaches to any declaration via `@` attributes (§8). Attributes are inert —
 they do not affect elaboration or simulation. They carry tool-specific intent (layout,
@@ -176,8 +175,8 @@ The location of a construct determines when it runs:
   controls elaboration structure: you cannot write a `for` loop whose bound depends on
   a voltage. Runtime topology (a switch opening and closing) is expressed as a switch
   branch over a fixed node set, not as structural change.
-- A **`bench` body** runs at **interpretation time** — after elaboration, tree-walked
-  over the elaborated design. Part III covers this context.
+Verification and measurement are **host** concerns, not language constructs —
+the Python/Rust host APIs (Part VIII) drive analyses over the elaborated design.
 
 This phase separation is what makes PHDL statically analyzable: the structure is known
 before any current flows.
@@ -230,7 +229,7 @@ The following identifiers are reserved at the parser level — they cannot be us
 variable, field, or type names because the parser interprets them as keywords in the
 positions where they are expected:
 
-`above`, `analog`, `bench`, `bundle`, `capability`, `change`, `const`, `cross`,
+`above`, `analog`, `bundle`, `capability`, `change`, `const`, `cross`,
 `digital`, `discipline`, `else`, `enum`, `final`, `flow`, `fn`, `for`, `if`, `impl`,
 `in`, `initial`, `inout`, `input`, `match`, `mod`, `negedge`, `none`, `output`,
 `param`, `posedge`, `potential`, `pub`, `resolve`, `return`, `self`, `Self`,
@@ -288,7 +287,6 @@ ConstDecl ::= "const" Ident ":" Type "=" Expr ";"
 | `mod` | module shape (§7) |
 | `analog`/`digital` | module behavior (§10) |
 | `impl` | bundle methods / capability impl (§6.5–§6.6) |
-| `bench` | interpreted testbench (Part III) |
 
 ### 5.3 Packages and visibility
 
@@ -357,7 +355,7 @@ narrowing and no implicit `Integer`/`Natural` → `Real` — write `real(x)`.
 *Note (roadmap):* the widening table is intended to become explicit `impl From<T>`
 capability declarations in the prelude, replacing the compiler-internal table.
 
-**Collections and composites** (interpreted `fn`-body grammar — bench and const-eval):
+**Collections and composites** (the `fn`-body value layer, const-eval included):
 
 - **Tuples** `(a, b, ...)` — indexed `.0`/`.1`/...; `(e)` with no comma is a
   parenthesized group, not a 1-tuple.
@@ -751,10 +749,9 @@ Arguments pass by value (basic types) or read-only reference (bundles). `mod` is
 unit of reusable structure; `fn` is the unit of reusable value computation.
 
 This `fn`-body grammar — `var`, `if`/`else`, `match`, `for`, `return`, expressions,
-lambdas — is **the same grammar** used everywhere in PHDL: bundle `impl` methods,
-`bench` fns (Part III), and analog/digital behavior bodies. The statements and
-expressions are uniform; what changes by context is purity, effect availability, and
-the system-task set.
+lambdas — is **the same grammar** used everywhere in PHDL: bundle `impl` methods
+and analog/digital behavior bodies. The statements and expressions are uniform;
+what changes by context is purity, effect availability, and the system-task set.
 
 ### 9.1 Default parameter values
 
@@ -969,8 +966,7 @@ Part V):
    `$abstime`, `$analysis`, `$random`, ...) and control (`$bound_step`, `$finish`,
    `$discontinuity`). Available in `analog`/`digital` bodies only.
 
-3. **Interpreted context (bench):** analyses (`$op`, `$tran`, `$ac`, `$noise`) and
-   artifact writers (`$write`, `$plot`). Available in `bench` fns only.
+Analyses are driven by the host APIs (Part VIII), not by `$`-syscalls.
 
 The syscall set is open — new syscalls register through the layer-2 extension mechanism
 (§14). This section gives the grammar; Part V gives the exhaustive tables.
@@ -983,9 +979,8 @@ The syscall set is open — new syscalls register through the layer-2 extension 
 |-------|-------|------|
 | Elaboration | `mod` body, type annotations, structural control | resolved once into a fixed netlist |
 | Solve | `analog` / `digital` | evaluated by the NR / event-driven engine |
-| Interpreted | `bench` | tree-walked over the elaborated design |
 
-Hardware is neither created nor destroyed during solve or interpretation. Runtime
+Hardware is neither created nor destroyed during solve. Runtime
 topology — a switch opening, a MOSFET entering cutoff — is a switch branch over a
 static node set, not structural change. This is the fundamental contract: the structure
 is fixed before any current flows, and the solver specializes itself to that structure.
@@ -1019,7 +1014,7 @@ The core grammar (layer 0) is closed. Growth happens above it, through five laye
 | 2 | Compiler registries (trait + registry) | Analog operators, `$`-syscalls, `@`-event kinds |
 | 3 | Attribute schemas | Typed per-declaration metadata (layout, routing, ...) |
 | 4 | POM + selector + plugins | Reflection, overrides, annotations — the design-closure loop |
-| 5 | Interpreted context (bench) | Orchestration, sweeps, verification, closure loops |
+| 5 | Host APIs (Part VIII) | Orchestration, sweeps, verification, closure loops |
 
 New value types (layer 1) and new operators/syscalls/events (layer 2) never touch the
 grammar — they register at startup and the existing grammar productions (function

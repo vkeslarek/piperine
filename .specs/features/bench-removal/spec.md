@@ -153,12 +153,12 @@ codes and report verified.
 | BRM-09 | P1 empty/failing tb semantics | T4 | Verified |
 | BRM-10 | P1 examples stripped | T6 | Verified |
 | BRM-11 | P1 run_examples dual contract | T2+T7 | Verified |
-| BRM-12 | P2 sanitized naming + docstrings | Design | Pending |
-| BRM-13 | P2 host-API docs | Design | Pending |
-| BRM-14 | P2 stub/facade parity | Design | Pending |
+| BRM-12 | P2 sanitized naming + docstrings | T8 | Verified |
+| BRM-13 | P2 host-API docs | T9 | Verified |
+| BRM-14 | P2 stub/facade parity | T8 | Verified |
 | BRM-15 | P1 plugin bench-task removal | T5 | Verified |
 
-**Coverage:** 15 total, 12 verified (T1–T7), 3 pending (BRM-12/13/14 → T8/T9)
+**Coverage:** 15 total, 15 verified ✅
 
 ## Success Criteria
 

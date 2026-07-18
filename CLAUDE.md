@@ -14,20 +14,21 @@ the only frontend. Rust workspace, edition 2024.
 ```
 PHDL (.phdl) ──parse_and_elaborate──► Design (POM)
                                         │
-                                        │ (bench: interpreted directly)
                                         ▼
-                                   BenchRunner              piperine_codegen::ir::lower_bodies
-                                   ($op/$tran/$ac/$noise)   (Design ──► LoweredBody per module)
-                                                                      │
-                                                                      ▼
-                                                              CircuitCompiler::new(&design, &bodies)
-                                                                      │
-                                                                      ▼
-                                                              CompiledModule (AnalogKernel JIT +
-                                                              DigitalKernel)
-                                                                      │
-                                                                      ▼
-                                                              PiperineDevice ──► solver
+                            piperine_codegen::ir::lower_bodies
+                            (Design ──► LoweredBody per module)
+                                        │
+                                        ▼
+                            CircuitCompiler::new(&design, &bodies)
+                                        │
+                                        ▼
+                            CompiledModule (AnalogKernel JIT + DigitalKernel)
+                                        │
+                                        ▼
+                            PiperineDevice ──► solver
+                                        │
+                                        ▼
+                            hosts: root `piperine` lib (Rust) / `import piperine` (Python)
 ```
 
 There is **no separate IR crate**. The POM (`Design`/`Module`, from `piperine-lang`) is the
@@ -39,8 +40,7 @@ interned ids, symbolic differentiation (`lower/diff.rs`), the POM→resolved pas
 (connections, param overrides) — there is no `IrModule`/`IrInstance`/`IrProgram` structural
 twin. "100% coverage" means: every PHDL construct lowers to executable device code. When
 something cannot be faithfully lowered, **fail loud** (`CodegenError::Unsupported`) — never
-silently emit `0.0`. Same rule in the bench: an unimplemented task is an elaboration error
-(`bench_task_implemented` allowlist), never a silent no-op.
+silently emit `0.0` or a no-op.
 
 ## Build and test
 
@@ -59,13 +59,13 @@ both a package and the workspace) — always pass `--workspace`.
 
 | Crate | Role |
 |-------|------|
-| `piperine-lang` | PHDL frontend: lexer/parser (`parse/`), elaboration → POM `Design` (`elab/`, `pom/`), bench/const interpreter (`eval/`: `Interpreter`, `Host` trait, task allowlist in `eval/tasks.rs`) — walks the POM/AST directly, no IR. `parse_and_elaborate` is the entry point. Builtin stdlib headers in `headers/` (prelude, disciplines, constants) and `headers/spice/` (the ngspice-faithful device models — `use spice::<file>;` works in any project, no dependency; a project package named `spice` shadows the builtin). |
+| `piperine-lang` | PHDL frontend: lexer/parser (`parse/`), elaboration → POM `Design` (`elab/`, `pom/`), const evaluator (`eval/`: `Interpreter`, `Host` trait, pure system tasks in `eval/tasks.rs`) — walks the POM/AST directly, no IR. `parse_and_elaborate` is the entry point. Builtin stdlib headers in `headers/` (prelude, disciplines, constants) and `headers/spice/` (the ngspice-faithful device models — `use spice::<file>;` works in any project, no dependency; a project package named `spice` shadows the builtin). |
 | `piperine-codegen` | POM → devices. `lower/` (codegen-private resolved form: `expr.rs`/`stmt.rs`/`symbols.rs`, `diff.rs` symbolic differentiation, `pom/` `lower_bodies`). `jit/`: `flatten.rs`, `analog.rs` (`AnalogKernel`), `emit.rs`, `digital/`. `device/`: `AnalogInstance`, `DigitalInstance`, `CircuitCompiler` → `PiperineDevice` (implements `Element`). |
 | `piperine-solver` | Native solver: DC/AC/transient/noise/TF (`solver/`), MNA/linear algebra (`math/`, faer), `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming layer (`core/net.rs`), OSDI-style introspection (`core/introspect.rs`), `ConvergencePlan` + `HomotopyStrategy` (`solver/convergence.rs`), `IntegrationMethod` + LTE (`math/integration.rs`), `prelude.rs`. Does **not** depend on codegen. OSDI is an external plugin. |
-| `piperine-bench` | Bench runtime: `SimHost` (`host.rs`), `BenchTask`s (`tasks.rs`), result objects (`objects.rs`, `waveform.rs`), solve plumbing (`session.rs`), `BenchRunner` (`runner.rs`). |
-| `piperine-plugin` | Plugin SDK + host: native/WASM/process backends, TOFU trust, `@device` loading, attribute schemas, bench tasks, CLI scripts. |
+| `piperine` (root) | The library face (MD-19, lib-only): `SimSession`/`SolverConfig` (`session.rs`), result objects (`results.rs`, `waveform.rs`), `SimHooks` lifecycle trait (`hooks.rs`), `prelude` re-exports. The `piperine` binary target lives in `piperine-cli`. |
+| `piperine-plugin` | Plugin SDK + host: native/WASM/process backends, TOFU trust, `@device` loading, attribute schemas, CLI scripts. |
 | `piperine-plugin-wasm` | WASM guest SDK (re-exports `pom::wire` for `wasm32-unknown-unknown`). |
-| `piperine-cli` | `piperine` CLI: `check`, `build`, `run`, `fmt`, `new`, `test`, `clean`, `add`, `remove`, `tree`, `plugin`. |
+| `piperine-cli` | `piperine` CLI (+ the binary target): `check`, `build`, `run` (python scripts / REPL), `fmt`, `new`, `test` (`*_tb.py` runner), `clean`, `add`, `remove`, `tree`, `plugin`. |
 | `piperine-project` | `Piperine.toml` discovery, git dependency resolver, plugin lockfile. |
 | `piperine-lang-server` | LSP server. Handlers share `RequestExt::parse`/`ConnectionExt::respond` (every request id gets a response), `DocumentState::{analyze,resolve_at,word_occurrences}`, `ProjectContext::discover`. |
 
@@ -106,10 +106,8 @@ both a package and the workspace) — always pass `--workspace`.
 - `transition`, `laplace_*`, `zi_*` — recognised in the resolved form, no companion model yet.
 - `ac_stim` in potential contributions is now supported; multiple `ac_stim` per contribution
   is still fail-loud.
-- `$limit` (pnjlim/fetlim) is not lowered in the JIT — blocks junction devices from
-  compiling through `CircuitCompiler` (works in the bench interpreter).
+- `$limit` (pnjlim/fetlim) is not lowered in the JIT.
 - `idt` contributes 0 in AC (no `1/jω` stamp).
-- `$plot`, `extract`/`.attach`/`.meta` — bench tasks not yet implemented (allowlist-gated).
 - Solver ABI refactor in progress — see `.specs/STATE.md` for macro decisions and
   `.specs/features/` for feature specs.
 
@@ -132,11 +130,12 @@ both a package and the workspace) — always pass `--workspace`.
 
 - `piperine-codegen/tests/`: `analog_jit.rs`, `digital_jit.rs` (kernel-level JIT);
   `codegen_ir.rs`, `codegen_api.rs`, `from_ir.rs`, `silent_bugs.rs` (POM→resolved + circuit).
-- `piperine-lang/tests/`: `parse_elab.rs`, `spec_simulation.rs`, `bench.rs`, `elab.rs`,
-  `bundle_param.rs`, `bundle_connections.rs`, `prelude.rs`, `type_casts.rs`, `pom_serde.rs`.
-- `piperine-bench/tests/`: `bench.rs` (e2e with `elab` helper + `CIRCUIT` fixture);
-  `run_examples.rs` (every `examples/*.phdl` must stay green); `spice_smoke.rs`
-  (builtin `spice` stdlib smoke benches).
+- `piperine-lang/tests/`: `parse_elab.rs`, `spec_simulation.rs`, `elab.rs`,
+  `bundle_param.rs`, `bundle_connections.rs`, `prelude.rs`, `type_casts.rs`, `pom_serde.rs`,
+  `bench_removed.rs` (the bench keyword is a syntax error).
+- `tests/` (root, host API): `session.rs`, `ngspice_validation.rs` (+`ngspice/`),
+  `spice_smoke.rs` (+`spice/`), `compile_once_sweep.rs`, `run_examples.rs` (every
+  `examples/*.phdl` elaborates + every `examples/*.py` runs).
 - `piperine-solver/tests/`: `digital_topology.rs`, `mixed_signal.rs`.
 - `piperine-plugin/tests/`: `e2e.rs`, `native_smoke.rs`, `phase3.rs`, `process_smoke.rs`,
   `wasm_smoke.rs`, `trust.rs`, `manifest.rs`.
