@@ -148,7 +148,10 @@ the old MOS1 1.5×/JFET 15 mV discrepancies were fixed 2026-07-16
       engine supports it; separate devices would double-force one branch).
 - [ ] Migrate models off sentinel `$param_given` encodings onto `T?`
       optionals.
-- [ ] BSIM-class models arrive via OSDI (P2), not hand-ported PHDL.
+- [ ] BSIM-class models — hand-ported to PHDL like everything else (user
+      decision 2026-07-18: **all** models are native PHDL; OSDI is an interop
+      path for external models, never the home of the stdlib). Big, phased:
+      start from the ngspice C sources, one level at a time.
 
 ### Performance
 
