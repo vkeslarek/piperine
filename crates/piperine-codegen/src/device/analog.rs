@@ -1172,6 +1172,21 @@ impl AnalogInstance {
                 }
             }
         }
+        // Integrator admittance `dRes/dV / (jω)` for `idt`/`idtmod` terms —
+        // the linear-operator stamp `X/(jω)` = `−j·X/ω`.
+        if self.kernel.has_ac_idt() {
+            let mut gjac = vec![0.0; n * n];
+            self.kernel
+                .eval_ac_idt_jacobian(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut gjac);
+            for i in 0..n {
+                for j in 0..n {
+                    let g = gjac[i * n + j];
+                    if g != 0.0 {
+                        complex_stamp(&mut stamps, &self.node_refs, i, j, Complex64::new(0.0, -g / omega));
+                    }
+                }
+            }
+        }
         // Force branches stay ideal in small-signal: same topology rows,
         // zero source perturbation.
         for (i, branch) in self.force_refs.iter().enumerate() {

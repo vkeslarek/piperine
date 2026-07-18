@@ -10,7 +10,7 @@ host surfaces (`run_sens`/`run_pss`) are born in `piperine-api`.
 ---
 
 **Design**: `.specs/features/p1-solver-complete/design.md`
-**Status**: In Progress — T1–T7 done; batch 2 (T8–T12) next, 2026-07-18
+**Status**: In Progress — T1–T8 done; T9 next, 2026-07-18
 **Baseline**: whatever `api-crate` closes at (≥449 passed / 5 ignored)
 
 ---
@@ -141,7 +141,7 @@ case (table-driven resistor curve).
 **Tests**: unit+integration · **Gate**: quick
 **Commit**: `feat(codegen): table() 1-D interpolation operator`
 
-### T8: `transition` operator
+### T8: ✅ DONE — `transition` operator (commit c66b2c7)
 **What**: Companion using the runtime-operator state bank: state (start
 value, target, t_change); linear ramp over rise/fall; breakpoints at ramp
 start/end via `next_breakpoints`; rise/fall = 0 → instantaneous with

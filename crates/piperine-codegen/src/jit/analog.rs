@@ -166,6 +166,10 @@ pub struct AnalogKernel {
     /// Charge `Q(V)` and its Jacobian; `None` without reactive contributions.
     charge: Option<AnalogFn>,
     charge_jacobian: Option<AnalogFn>,
+    /// Resistive Jacobian with every `idt`/`idtmod` state load replaced by
+    /// its input expression — the linear-operator view of the integrator.
+    /// `load_ac` scales it by 1/(jω). `None` without integrator states.
+    ac_idt_jacobian: Option<AnalogFn>,
     /// Force source values `E_i(V)` and their Jacobian (`num_forces × n`
     /// row-major); `None` without forces.
     force: Option<AnalogFn>,
@@ -513,6 +517,20 @@ impl AnalogKernel {
         }
     }
 
+    /// True when the body integrates at least one signal (`idt`/`idtmod`).
+    pub fn has_ac_idt(&self) -> bool {
+        self.ac_idt_jacobian.is_some()
+    }
+
+    /// Accumulate the AC integrator Jacobian (`∂res/∂V` with `idt(x)` read
+    /// as `x`) into `out[0..n²]`. No-op without integrator states.
+    pub fn eval_ac_idt_jacobian(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.ac_idt_jacobian {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(f, volts, params, state, vars, sim, out);
+        }
+    }
+
     /// Write each force's source value `E_i(V)` to `out[0..num_forces]`.
     pub fn eval_force(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
         if let Some(f) = self.force {
@@ -853,8 +871,49 @@ impl<'m> AnalogCompiler<'m> {
         let runtime_inputs = self.flat.runtime_states.clone();
         let initial_conditions = std::mem::take(&mut self.flat.initial_conditions);
 
+        let temps = self.flat.temps.clone();
         let residual_id = self.compile_residual("residual", &resistive)?;
-        let jacobian_id = self.compile_jacobian("jacobian", &resistive)?;
+        let jacobian_id = self.compile_jacobian("jacobian", &resistive, &temps)?;
+
+        // AC `idt` stamp: re-diff the resistive tape with every integrator
+        // state's `__state_load` replaced by its input expression — the
+        // linear-operator view of `idt(x)` (the device scales by 1/(jω) at
+        // stamp time). Other runtime states stay frozen in AC, as before.
+        let ac_idt_jacobian_id = {
+            let idt_inputs: Vec<(u64, &PomExpr)> = runtime_inputs
+                .iter()
+                .filter(|(id, _)| {
+                    matches!(
+                        self.module.symbols.state(*id).kind,
+                        StateKind::Idt { .. } | StateKind::IdtMod { .. }
+                    )
+                })
+                .map(|(id, x)| (id.0 as u64, x))
+                .collect();
+            if idt_inputs.is_empty() {
+                None
+            } else {
+                let subst = |e: &PomExpr| -> PomExpr {
+                    super::flatten::rewrite_expr(e, &mut |ex| {
+                        if let PomExpr::Call(func, args) = ex
+                            && let PomExpr::Ident(name) = func.as_ref()
+                            && name == "__state_load"
+                            && let Some(PomExpr::Literal(piperine_lang::parse::ast::Literal::Int(k))) = args.first()
+                            && let Some((_, x)) = idt_inputs.iter().find(|(slot, _)| slot == k)
+                        {
+                            return (*x).clone();
+                        }
+                        ex.clone()
+                    })
+                };
+                let temps_ac: Vec<PomExpr> = temps.iter().map(|t| subst(t)).collect();
+                let contribs_ac: Vec<FlatContrib> = resistive
+                    .iter()
+                    .map(|c| FlatContrib { plus: c.plus, minus: c.minus, expr: subst(&c.expr) })
+                    .collect();
+                Some(self.compile_jacobian("ac_idt_jacobian", &contribs_ac, &temps_ac)?)
+            }
+        };
 
         // `@initial` UIC seeds: one param-only row per condition (its value),
         // plus the terminal pair it seeds.
@@ -872,7 +931,7 @@ impl<'m> AnalogCompiler<'m> {
         } else {
             (
                 Some(self.compile_residual("charge", &charge)?),
-                Some(self.compile_jacobian("charge_jacobian", &charge)?),
+                Some(self.compile_jacobian("charge_jacobian", &charge, &temps)?),
             )
         };
 
@@ -1159,6 +1218,7 @@ impl<'m> AnalogCompiler<'m> {
             jacobian: get(&self.jit, jacobian_id),
             charge: charge_id.map(|id| get(&self.jit, id)),
             charge_jacobian: charge_jac_id.map(|id| get(&self.jit, id)),
+            ac_idt_jacobian: ac_idt_jacobian_id.map(|id| get(&self.jit, id)),
             force: force_id.map(|id| get(&self.jit, id)),
             force_jacobian: force_jac_id.map(|id| get(&self.jit, id)),
             force_ac_mag: force_ac_mag_id.map(|id| get(&self.jit, id)),
@@ -1211,12 +1271,14 @@ impl<'m> AnalogCompiler<'m> {
     /// Jacobian shape: `out[row·n + col] += ∂I/∂V` stamps per contribution.
     ///
     /// Contributions hold only `__temp` leaves, so the voltage dependence
-    /// lives in the temp tape. For each voltage branch `(a,b)` we build the
-    /// derivative tape `dtemps[k] = d(temps[k])/dV(a,b)` once, then each
+    /// lives in the temp tape — passed explicitly so callers can substitute
+    /// an adjusted tape (the AC `idt` Jacobian swaps integrator state loads
+    /// for their input expressions). For each voltage branch `(a,b)` we build
+    /// the derivative tape `dtemps[k] = d(temps[k])/dV(a,b)` once, then each
     /// contribution's derivative — which references `__dtemp` leaves — is
     /// emitted against it. Every temp/dtemp is emitted once per branch,
     /// keeping the Jacobian linear in body size.
-    fn compile_jacobian(&mut self, name: &str, contribs: &[FlatContrib]) -> Result<FuncId, CodegenError> {
+    fn compile_jacobian(&mut self, name: &str, contribs: &[FlatContrib], temps: &[PomExpr]) -> Result<FuncId, CodegenError> {
         let n = self.terminals.len();
         let exprs: Vec<&PomExpr> = contribs.iter().map(|c| &c.expr).collect();
         let module = self.module;
@@ -1224,7 +1286,6 @@ impl<'m> AnalogCompiler<'m> {
             if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
-        let temps = self.flat.temps.clone();
         // Global branch set: every V/I branch read anywhere in the body
         // (contributions carry none directly — they're inside the temps).
         let mut seen = std::collections::HashSet::new();
@@ -1239,7 +1300,7 @@ impl<'m> AnalogCompiler<'m> {
             }
         };
         for c in contribs { collect(&c.expr); }
-        for t in &temps { collect(t); }
+        for t in temps { collect(t); }
         self.build_fn(name, &exprs, move |b, slot, out_ptr| {
             for (a, bb) in branches {
                 // Derivative tape for this branch.

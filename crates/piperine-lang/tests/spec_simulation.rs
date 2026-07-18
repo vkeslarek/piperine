@@ -1210,6 +1210,66 @@ fn sim_tran_transition_ramps_step_into_rc() {
     assert!((late - 1.0).abs() < 0.03, "settled after tr: V(out) = {late}");
 }
 
+/// SC-10 — `idt` stamps `X/(jω)` in AC: an idt transconductor into a 1 Ω
+/// load is an integrator — |H| falls exactly 20 dB/dec and the phase sits
+/// at −90° across 4 decades.
+#[test]
+fn sim_ac_idt_integrator_slope_and_phase() {
+    use piperine_solver::prelude::AcSweepAnalysisOptions;
+
+    let (design, prog) = elaborate_and_lower("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
+        analog VSource { V(p, n) <+ dc + ac_stim(1.0, 0.0); }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Integ ( inout i : Electrical, inout o : Electrical ) { param r : Real = 1e3; }
+        analog Integ { I(o, gnd) <+ -idt(V(i, gnd)) / r; }
+        mod Top ( inout vin : Electrical, inout vout : Electrical ) {
+            v1 : VSource ( vin, gnd );
+            g1 : Integ ( vin, vout );
+            rl : Resistor ( vout, gnd );
+        }
+    ");
+    let mut compiler = CircuitCompiler::new(&design, &prog);
+    let mut circuit = compiler.build_circuit("Top").expect("build circuit");
+    circuit.init_digital().unwrap();
+    circuit.rebuild_digital_topology();
+
+    // H(jω) = 1/(jω·1e3): −20 dB/dec, −90°. 9 points over 4 decades.
+    let sweep = AcSweepAnalysisOptions {
+        start_frequency: 1e2,
+        stop_frequency: 1e6,
+        steps: 9,
+        logarithmic: true,
+    };
+    let result = circuit.ac(Context::default()).unwrap()
+        .solve_sweep(sweep).unwrap();
+
+    let mag_phase = |k: usize| {
+        let step = result.get(k).expect("sweep point");
+        let v = step.get_node(&NodeIdentifier::Anonymous(2)).expect("V(vout)");
+        (v.norm(), v.arg())
+    };
+    // Absolute anchor at 1 kHz (k=2: 1e2·(1e4)^(2/8)): |H| = 1/(2π·1e3·1e3).
+    let (mag_1k, _) = mag_phase(2);
+    let want_1k = 1.0 / (2.0 * std::f64::consts::PI * 1e3 * 1e3);
+    assert!((mag_1k / want_1k - 1.0).abs() < 1e-3, "|H(1kHz)| = {mag_1k}, want {want_1k}");
+    for k in 0..9 {
+        let (mag, phase) = mag_phase(k);
+        assert!(
+            (phase + std::f64::consts::FRAC_PI_2).abs() < 1e-3,
+            "point {k}: phase = {}°, want −90°",
+            phase.to_degrees()
+        );
+        if k + 2 < 9 {
+            let (mag_next, _) = mag_phase(k + 2);
+            let ratio = mag_next / mag;
+            assert!((ratio - 0.1).abs() < 1e-3, "decade ratio = {ratio}, want 0.1 (−20 dB/dec)");
+        }
+    }
+}
+
 /// SC-09 — operator state advances only on accepted steps. The RC's
 /// exponential settle right after the ramp-start kink is real curvature
 /// (not a declared discontinuity), so the Milne gate rejects and halves
