@@ -25,7 +25,7 @@ pub use crate::analysis::transient::{
     TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisState,
 };
 // Integration (kernels read phase/coeffs)
-pub use crate::math::integration::{IntegrationMethod, TrBdf2, TrBdf2Phase};
+pub use crate::math::integration::{TrBdf2, TrBdf2Phase};
 pub use crate::math::unit::Second;
 // Digital evaluation
 pub use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};

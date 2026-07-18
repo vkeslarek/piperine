@@ -650,7 +650,6 @@ impl<'a> TransientSolver<'a> {
                     if let Some(dt_floor) = dev.suggest_transient_step(
                         &tran_state,
                         &time_history,
-                        crate::math::integration::IntegrationMethod::Trapezoidal,
                         &self.system.context,
                     ) {
                         dt = dt.min(dt_floor);

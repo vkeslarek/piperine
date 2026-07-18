@@ -6,7 +6,6 @@
 //! elements live in `crate::analysis`.
 
 use crate::analog::Netlist;
-use crate::math::integration::IntegrationMethod;
 use crate::math::unit::{Ohm, Siemens};
 use faer::{Par, set_global_parallelism};
 use ndarray::ArrayView1;
@@ -43,7 +42,6 @@ pub struct Tolerances {
     pub chgtol: f64,
     pub temperature: f64,
     pub tnom: f64,
-    pub integration: IntegrationMethod,
     /// Circuit-wide diagonal conductance to ground on every node (default 0).
     /// Helps convergence on floating/poorly-damped topologies (ngspice gshunt).
     pub gshunt: f64,
@@ -61,7 +59,6 @@ impl Default for Tolerances {
             chgtol: 1e-14,
             temperature: 300.15,
             tnom: 300.15,
-            integration: IntegrationMethod::Gear { order: 2 },
             gshunt: 0.0,
         }
     }

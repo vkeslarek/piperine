@@ -29,7 +29,6 @@ pub use crate::analysis::tf::TransferFunctionAnalysisOptions;
 pub use crate::analysis::pss::{PssAnalysisOptions, PssResult, PssStats};
 pub use crate::analysis::sens::{SensAnalysisOptions, SensResult};
 pub use crate::analysis::transient::TransientAnalysisOptions;
-pub use crate::math::integration::IntegrationMethod;
 pub use crate::solver::Context;
 pub use crate::solver::{Policy, Tolerances};
 pub use crate::solver::solve::Solver;

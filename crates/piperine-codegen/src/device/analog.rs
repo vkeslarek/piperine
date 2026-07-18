@@ -966,9 +966,10 @@ impl AnalogInstance {
     }
 
     /// LTE-driven timestep suggestion for the transient stepper. Evaluates
-    /// the charge at `t_n` and `t_{n-1}` (plus `t_{n-2}` for order ≥ 2),
-    /// computes the (order+1)-th divided difference, and returns the
-    /// largest dt the model can tolerate given `trtol·chgtol`.
+    /// the charge at `t_n`, `t_{n-1}` and `t_{n-2}`, computes the second
+    /// divided difference scaled by the trapezoidal LTE coefficient (1/12 —
+    /// TR-BDF2's trapezoidal stage is the order-2 form this estimate models),
+    /// and returns the largest dt the model can tolerate given `trtol·chgtol`.
     ///
     /// Returns `None` when the kernel has no reactive ports, when history is
     /// too short, or when the charge has not meaningfully changed.
@@ -976,7 +977,6 @@ impl AnalogInstance {
         &self,
         state_history: &TransientAnalysisState<'_>,
         time_history: &[f64],
-        method: piperine_solver::abi::IntegrationMethod,
         context: &Context,
     ) -> Option<f64> {
         if !self.kernel.has_reactive() || time_history.is_empty() {
@@ -986,35 +986,27 @@ impl AnalogInstance {
         if dt <= 0.0 {
             return None;
         }
-        let order = method.order();
-        let trunc = method.truncation_coefficient();
+        // Order-2 trapezoidal LTE coefficient (TR-BDF2's TR stage).
+        const ORDER: usize = 2;
+        const TRUNC: f64 = 1.0 / 12.0;
 
         let q_now = self.charge_at(state_history, 0);
         let q_prev = self.charge_at(state_history, 1);
-        // charge_at(2) is only needed for order ≥ 2; compute lazily.
-        let order_gte_2 = order >= 2;
-        let q_prev2 = if order_gte_2 { self.charge_at(state_history, 2) } else { Vec::new() };
+        let q_prev2 = self.charge_at(state_history, 2);
 
-        let ddiv_mag = match order {
-            1 => q_now.iter()
-                .zip(&q_prev)
-                .map(|(&n, &p)| (n - p).abs())
-                .fold(0.0_f64, f64::max),
-            _ => {
-                let p2 = if q_prev2.is_empty() { &q_prev } else { &q_prev2 };
-                q_now.iter()
-                    .zip(&q_prev)
-                    .zip(p2)
-                    .map(|((&n, &p1), &p2)| (n - 2.0 * p1 + p2).abs())
-                    .fold(0.0_f64, f64::max)
-            }
-        };
+        let p2 = if q_prev2.is_empty() { &q_prev } else { &q_prev2 };
+        let ddiv_mag = q_now
+            .iter()
+            .zip(&q_prev)
+            .zip(p2)
+            .map(|((&n, &p1), &p2)| (n - 2.0 * p1 + p2).abs())
+            .fold(0.0_f64, f64::max);
 
         if ddiv_mag == 0.0 {
             return None;
         }
 
-        let lte = trunc * ddiv_mag;
+        let lte = TRUNC * ddiv_mag;
 
         let q_mag = q_now.iter()
             .zip(&q_prev)
@@ -1026,7 +1018,7 @@ impl AnalogInstance {
             return None;
         }
 
-        let power = 1.0 / ((order + 1) as f64);
+        let power = 1.0 / ((ORDER + 1) as f64);
         let safety = 0.9_f64;
         let suggested = dt * (safety * tol / lte).powf(power);
         if suggested.is_finite() && suggested > 0.0 {

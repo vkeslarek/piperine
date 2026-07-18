@@ -342,14 +342,12 @@ pub trait Element: Send + Sync {
     /// - `state`: the accepted analog solution history at `t_n`, `t_{n-1}`,
     ///   `t_{n-2}`, …
     /// - `time_history`: the accepted step sizes `[dt_n, dt_{n-1}, …]`.
-    /// - `method`: integration method in use (Trapezoidal, Gear, …).
     /// - `context`: solver tolerances (`trtol`, `chgtol`, `reltol`,
     ///   `abstol`).
     fn suggest_transient_step(
         &self,
         _state: &TransientAnalysisState<'_>,
         _time_history: &[f64],
-        _method: crate::math::integration::IntegrationMethod,
         _context: &Context,
     ) -> Option<f64> {
         None

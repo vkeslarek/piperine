@@ -278,12 +278,11 @@ impl Element for PiperineDevice {
         &self,
         state: &TransientAnalysisState<'_>,
         time_history: &[f64],
-        method: piperine_solver::abi::IntegrationMethod,
         context: &Context,
     ) -> Option<f64> {
         self.analog
             .as_ref()
-            .and_then(|a| a.suggest_transient_step(state, time_history, method, context))
+            .and_then(|a| a.suggest_transient_step(state, time_history, context))
     }
 
     fn accept_timestep(
