@@ -36,6 +36,7 @@ availability**, and **system tasks**. Driving analyses, measuring, and verifying
 | **VIII** | [Host APIs](part_viii_host_api.md) | Python (`import piperine`) + Rust (`piperine-api`): load/Design/Module, analyses + results, LiveSession, `piperine run`/`-i`/`test` |
 | **App. A** | [Worked Examples](appendix_a_worked_examples.md) | End-to-end architectures spanning analog, digital, interpreted, and mixed-signal |
 | **App. B** | [Complete Grammar (EBNF)](appendix_b_grammar.md) | Consolidated LL(1) grammar for the whole language |
+| **App. C** | [Host API Surface Reference](appendix_c_host_surface.md) | Flat inventory of the Python + Rust host surfaces, asymmetries, and the surface-review sheet |
 
 ## Conventions
 
