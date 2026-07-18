@@ -221,6 +221,16 @@ impl CircuitInstance {
         DcSolver::new(self, context)
     }
 
+    /// Periodic steady state via single shooting — see
+    /// [`PssSolver`](crate::solver::pss::PssSolver).
+    pub fn pss(
+        &mut self,
+        options: crate::analysis::pss::PssAnalysisOptions,
+        context: Context,
+    ) -> crate::result::Result<crate::solver::pss::PssSolver<'_>> {
+        crate::solver::pss::PssSolver::new(self, options, context)
+    }
+
     /// DC sensitivity analysis (`.sens`): `∂(output)/∂(param)` at the
     /// operating point over the restamp path — see
     /// [`SensSolver`](crate::solver::sens::SensSolver).

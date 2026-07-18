@@ -26,6 +26,7 @@ pub use crate::digital::{DigitalNet, LogicValue};
 pub use crate::analysis::ac::AcSweepAnalysisOptions;
 pub use crate::analysis::noise::{NoiseAnalysisOptions, NoiseKind};
 pub use crate::analysis::tf::TransferFunctionAnalysisOptions;
+pub use crate::analysis::pss::{PssAnalysisOptions, PssResult, PssStats};
 pub use crate::analysis::sens::{SensAnalysisOptions, SensResult};
 pub use crate::analysis::transient::TransientAnalysisOptions;
 pub use crate::math::integration::IntegrationMethod;

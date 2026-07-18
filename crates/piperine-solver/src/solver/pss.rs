@@ -1,0 +1,335 @@
+//! PSS driver — single shooting (MD: user 2026-07-18, "inefficient but
+//! sufficient for V1"): Newton on `g(x₀) = x(t₀+T) − x₀` where each
+//! evaluation of `g` is an ordinary transient over one period re-entered
+//! from `x₀` ([`TransientSolver::with_initial_state`]). Mixed signal runs
+//! unchanged inside every shot (scheduler, breakpoints, bridges); Newton
+//! sees only the continuous unknowns. The first Jacobian is finite
+//! difference (n extra shots), then Broyden rank-1 updates. Digital
+//! periodicity is a post-convergence verification — a mismatch fails loud,
+//! and when the digital state closes only after `k ≤ 4` periods the error
+//! names "circuit period appears to be k·T" (divider case).
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use crate::analysis::pss::{PssAnalysisOptions, PssResult, PssStats};
+use crate::analysis::transient::TransientAnalysisOptions;
+use crate::core::circuit::CircuitInstance;
+use crate::error::{Error, SolverDomain};
+use crate::result::TransientStep;
+use crate::solver::transient::TransientSolver;
+use crate::solver::Policy;
+use crate::Context;
+use crate::analog::netlist::AnalogVariable;
+
+pub struct PssSolver<'a> {
+    circuit: &'a mut CircuitInstance,
+    options: PssAnalysisOptions,
+    context: Context,
+    /// Convergence tunables applied to every inner transient (MD-04).
+    pub policy: Policy,
+}
+
+impl<'a> PssSolver<'a> {
+    pub fn new(
+        circuit: &'a mut CircuitInstance,
+        options: PssAnalysisOptions,
+        context: Context,
+    ) -> crate::result::Result<Self> {
+        if !(options.period > 0.0) {
+            return Err(Error::simple(
+                SolverDomain::Pss,
+                format!("period must be positive (got {})", options.period),
+            ));
+        }
+        if options.tstab < 0.0 {
+            return Err(Error::simple(
+                SolverDomain::Pss,
+                format!("tstab must be non-negative (got {})", options.tstab),
+            ));
+        }
+        Ok(Self { circuit, options, context, policy: Policy::default() })
+    }
+
+    /// The index-ordered continuous unknowns (nodes + branch currents).
+    fn variables(&self) -> Vec<(usize, Arc<AnalogVariable>)> {
+        let mut vars: Vec<(usize, Arc<AnalogVariable>)> = self
+            .circuit
+            .netlist()
+            .all_references()
+            .into_iter()
+            .filter_map(|r| {
+                use crate::math::linear::AsIndex;
+                r.as_index().map(|i| (i, r.variable().clone()))
+            })
+            .collect();
+        vars.sort_by_key(|(i, _)| *i);
+        vars
+    }
+
+    fn step_to_vec(step: &TransientStep, vars: &[(usize, Arc<AnalogVariable>)]) -> Vec<f64> {
+        vars.iter().map(|(_, v)| step.get(v.clone()).unwrap_or(0.0)).collect()
+    }
+
+    fn vec_to_step(
+        x: &[f64],
+        vars: &[(usize, Arc<AnalogVariable>)],
+        time: f64,
+        digital_from: &TransientStep,
+    ) -> TransientStep {
+        let mut values: HashMap<Arc<AnalogVariable>, f64> = HashMap::new();
+        for ((_, var), &v) in vars.iter().zip(x) {
+            values.insert(var.clone(), v);
+        }
+        let digital: Vec<crate::digital::LogicValue> =
+            (0..usize::MAX).map_while(|i| digital_from.digital(i)).collect();
+        TransientStep::new(time, values).with_digital(digital)
+    }
+
+    /// One shot: integrate `[t0, t0+span]` from `state`, returning the full
+    /// recorded trace (last step = the arrival state).
+    fn shoot(
+        &mut self,
+        state: &TransientStep,
+        t0: f64,
+        span: f64,
+    ) -> crate::result::Result<crate::result::TransientAnalysisResult> {
+        let dt = self.options.dt.unwrap_or(self.options.period / 100.0);
+        let opts = TransientAnalysisOptions::new(t0 + span, dt).with_start(t0);
+        let mut solver = TransientSolver::new(self.circuit, opts, self.context.clone())?;
+        solver.policy = self.policy.clone();
+        solver.with_initial_state(state);
+        solver.solve()
+    }
+
+    pub fn solve(mut self) -> crate::result::Result<PssResult> {
+        let period = self.options.period;
+        let t0 = self.options.tstab;
+        let vars = self.variables();
+        let n = vars.len();
+
+        // Starting state: DC operating point, optionally rolled to `tstab`.
+        let mut x0_step: TransientStep = {
+            let dt = self.options.dt.unwrap_or(period / 100.0);
+            if t0 > 0.0 {
+                let opts = TransientAnalysisOptions::new(t0, dt);
+                let mut solver =
+                    TransientSolver::new(self.circuit, opts, self.context.clone())?;
+                solver.policy = self.policy.clone();
+                solver.solve()?.last().expect("pre-roll has steps").clone()
+            } else {
+                // A zero-length "shot" is not defined; take the DC point via
+                // a minimal transient record at t=0: integrate one dt and
+                // keep the *initial* snapshot (index 0).
+                let opts = TransientAnalysisOptions::new(dt, dt);
+                let mut solver =
+                    TransientSolver::new(self.circuit, opts, self.context.clone())?;
+                solver.policy = self.policy.clone();
+                let r = solver.solve()?;
+                r.iter().next().expect("transient records t=0").clone()
+            }
+        };
+
+        let mut x0 = Self::step_to_vec(&x0_step, &vars);
+        let mut jacobian: Option<Vec<Vec<f64>>> = None; // (M − I), row-major
+        let mut last_dx: Vec<f64> = vec![0.0; n];
+        let mut last_g: Vec<f64> = Vec::new();
+        let mut residual = f64::INFINITY;
+
+        for iter in 0..self.options.max_shoot_iter.max(1) {
+            let arrival = self.shoot(&x0_step, t0, period)?;
+            let x_t = Self::step_to_vec(arrival.last().expect("shot has steps"), &vars);
+            let g: Vec<f64> = x_t.iter().zip(&x0).map(|(a, b)| a - b).collect();
+            residual = g.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
+
+            if residual < self.options.shoot_tol {
+                // Converged — but a fixed point of the period map is only a
+                // steady state when the drive itself is T-periodic: a linear
+                // circuit under a non-periodic drive still has an (affine)
+                // fixed point. Verify the orbit *repeats*: one extra shot
+                // over the second period must land where the first did,
+                // within the integration-tolerance class (not shoot_tol —
+                // per-period LTE drift is larger than the Newton residual).
+                let arrival_step = arrival.last().unwrap().clone();
+                let second = self.shoot(&arrival_step, t0 + period, period)?;
+                let x_2t = Self::step_to_vec(second.last().unwrap(), &vars);
+                for (i, (a, b)) in x_t.iter().zip(&x_2t).enumerate() {
+                    let tol = 1.0e-9 + 1.0e-3 * a.abs().max(b.abs());
+                    if (a - b).abs() > tol {
+                        return Err(Error::simple(
+                            SolverDomain::Pss,
+                            format!(
+                                "shooting found a fixed point, but the orbit does not repeat: \
+                                 |x(2T) − x(T)| = {:.3e} on `{}` — the drive is not periodic \
+                                 at T={period:.3e}",
+                                (a - b).abs(),
+                                format!("{:?}", vars[i].1)
+                            ),
+                        ));
+                    }
+                }
+                self.verify_digital_periodicity(&x0_step, &arrival_step, t0, period)?;
+                let trace = self.shoot(&x0_step, t0, period)?;
+                return Ok(PssResult {
+                    trace,
+                    stats: PssStats { shoot_iterations: iter, residual },
+                });
+            }
+
+            // Jacobian: FD on the first iteration, Broyden updates after.
+            let j = match jacobian.take() {
+                None => {
+                    let mut m = vec![vec![0.0_f64; n]; n];
+                    for col in 0..n {
+                        let eps = 1.0e-7 * x0[col].abs().max(1.0e-3);
+                        let mut xp = x0.clone();
+                        xp[col] += eps;
+                        let xp_step = Self::vec_to_step(&xp, &vars, t0, &x0_step);
+                        let arr = self.shoot(&xp_step, t0, period)?;
+                        let xtp = Self::step_to_vec(arr.last().unwrap(), &vars);
+                        for row in 0..n {
+                            // d g_row / d x0_col = M − I (monodromy minus identity).
+                            m[row][col] = (xtp[row] - x_t[row]) / eps
+                                - if row == col { 1.0 } else { 0.0 };
+                        }
+                    }
+                    m
+                }
+                Some(mut m) => {
+                    // Broyden: J += ((Δg − J·Δx) Δxᵀ) / (Δxᵀ Δx)
+                    let dg: Vec<f64> =
+                        g.iter().zip(&last_g).map(|(a, b)| a - b).collect();
+                    let dx = &last_dx;
+                    let dxtdx: f64 = dx.iter().map(|v| v * v).sum();
+                    if dxtdx > 0.0 {
+                        let jdx: Vec<f64> = m
+                            .iter()
+                            .map(|row| row.iter().zip(dx).map(|(a, b)| a * b).sum::<f64>())
+                            .collect();
+                        for row in 0..n {
+                            let coef = (dg[row] - jdx[row]) / dxtdx;
+                            for col in 0..n {
+                                m[row][col] += coef * dx[col];
+                            }
+                        }
+                    }
+                    m
+                }
+            };
+
+            // Solve J·dx = −g (dense Gaussian elimination, partial pivot).
+            let dx = solve_dense(&j, &g.iter().map(|v| -v).collect::<Vec<_>>()).ok_or_else(
+                || {
+                    Error::simple(
+                        SolverDomain::Pss,
+                        format!(
+                            "shooting Jacobian is singular after {iter} iteration(s) \
+                             (residual {residual:.3e})"
+                        ),
+                    )
+                },
+            )?;
+
+            for i in 0..n {
+                x0[i] += dx[i];
+            }
+            x0_step = Self::vec_to_step(&x0, &vars, t0, &x0_step);
+            jacobian = Some(j);
+            last_dx = dx;
+            last_g = g;
+        }
+
+        Err(Error::simple(
+            SolverDomain::Pss,
+            format!(
+                "shooting did not converge in {} iterations (final residual {residual:.3e}, \
+                 tol {:.1e}) — the circuit may not be periodic at T={period:.3e}",
+                self.options.max_shoot_iter, self.options.shoot_tol
+            ),
+        ))
+    }
+
+    /// After analog convergence: the digital state must also close over one
+    /// period. When it closes only after `k ≤ 4` periods, say so (divider).
+    fn verify_digital_periodicity(
+        &mut self,
+        start: &TransientStep,
+        arrival: &TransientStep,
+        t0: f64,
+        period: f64,
+    ) -> crate::result::Result<()> {
+        let matches = |a: &TransientStep, b: &TransientStep| -> bool {
+            (0..usize::MAX)
+                .map_while(|i| match (a.digital(i), b.digital(i)) {
+                    (Some(x), Some(y)) => Some(x == y),
+                    (None, None) => None,
+                    _ => Some(false),
+                })
+                .all(|eq| eq)
+        };
+        if matches(start, arrival) {
+            return Ok(());
+        }
+        // Walk forward whole periods looking for the true digital period.
+        let mut state = arrival.clone();
+        for k in 2..=4_usize {
+            let arr = self.shoot(&state, t0 + (k as f64 - 1.0) * period, period)?;
+            let next = arr.last().unwrap().clone();
+            if matches(start, &next) {
+                return Err(Error::simple(
+                    SolverDomain::Pss,
+                    format!(
+                        "digital state is not periodic at T — circuit period appears to be \
+                         {k}·T (digital divider); re-run with period = {:.6e}",
+                        k as f64 * period
+                    ),
+                ));
+            }
+            state = next;
+        }
+        Err(Error::simple(
+            SolverDomain::Pss,
+            "digital state is not periodic at T (and does not close within 4·T)".to_string(),
+        ))
+    }
+}
+
+/// Dense `A·x = b` by Gaussian elimination with partial pivoting; `None`
+/// on a (numerically) singular matrix. Shooting systems are circuit-sized,
+/// so dense is fine.
+fn solve_dense(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
+    let n = b.len();
+    let mut m: Vec<Vec<f64>> = a.iter().cloned().collect();
+    let mut x: Vec<f64> = b.to_vec();
+    for col in 0..n {
+        let pivot = (col..n).max_by(|&i, &j| {
+            m[i][col].abs().total_cmp(&m[j][col].abs())
+        })?;
+        if m[pivot][col].abs() < 1.0e-300 {
+            return None;
+        }
+        m.swap(col, pivot);
+        x.swap(col, pivot);
+        for row in (col + 1)..n {
+            let f = m[row][col] / m[col][col];
+            for k in col..n {
+                m[row][k] -= f * m[col][k];
+            }
+            x[row] -= f * x[col];
+        }
+    }
+    for col in (0..n).rev() {
+        for row in 0..col {
+            let f = m[row][col] / m[col][col];
+            x[row] -= f * x[col];
+        }
+        x[col] /= m[col][col];
+    }
+    Some(x)
+}
+
+impl std::fmt::Debug for PssSolver<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PssSolver").field("options", &self.options).finish_non_exhaustive()
+    }
+}
