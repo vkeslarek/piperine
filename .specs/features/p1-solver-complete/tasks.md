@@ -10,8 +10,8 @@ host surfaces (`run_sens`/`run_pss`) are born in `piperine-api`.
 ---
 
 **Design**: `.specs/features/p1-solver-complete/design.md`
-**Status**: In Progress — T1–T15, T17, T18 done; T16 BLOCKED (codegen gap,
-see below); Phase 5 next at T19, 2026-07-18
+**Status**: In Progress — T1–T15, T17, T18, T19 done; T16 BLOCKED (codegen gap,
+see below); Phase 5 next at T20, 2026-07-18
 **Baseline**: whatever `api-crate` closes at (≥449 passed / 5 ignored)
 
 ---
@@ -278,7 +278,7 @@ goldens green; grep-clean for the sentinel patterns).
 **Tests**: integration (existing suites) · **Gate**: full
 **Commit**: `refactor(spice): optional params replace sentinels`
 
-### T19: fetlim / limvds
+### T19: ✅ DONE — fetlim / limvds (commit 81f36af)
 **What**: Port `DEVfetlim`/`DEVlimvds` formulas into `emit_analog_limit`
 (same slot machinery as pnjlim); unit tests against reference values
 computed from the ngspice C source; MOS validation stays green.
@@ -288,7 +288,7 @@ computed from the ngspice C source; MOS validation stays green.
 **Tests**: unit+integration · **Gate**: full
 **Commit**: `feat(codegen): real fetlim/limvds limiters`
 
-### T20: Temperature uniformity + `.temp` sweep
+### T20: ✅ DONE — Temperature uniformity + `.temp` sweep (commit 5dfa04d)
 **What**: Audit `tnom` rescaling per stdlib model (fix inconsistencies);
 host-level `.temp` sweep test — diode forward drop ≈ −2 mV/°C.
 **Where**: `headers/spice/`, api tests

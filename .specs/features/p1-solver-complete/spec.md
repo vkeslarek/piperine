@@ -272,8 +272,8 @@ fusion active.
 | SC-16 | P1 urc | - | Pending |
 | SC-17 | P1 transformer block | - | Pending |
 | SC-18 | P1 stdlib off sentinels (T?) | - | Pending |
-| SC-19 | P2 fetlim/limvds | - | Pending |
-| SC-20 | P2 temperature uniform + .temp sweep | - | Pending |
+| SC-19 | P2 fetlim/limvds | T19 | Done |
+| SC-20 | P2 temperature uniform + .temp sweep | T20 | Done |
 | SC-21 | P2 inductor TR dual | - | Pending |
 | SC-22 | P2 IntegrationMethod removal | - | Pending |
 | SC-23 | P3 scheduler split + SignalBridge | - | Pending |

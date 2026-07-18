@@ -65,8 +65,7 @@ mod Top() {
 
 /// A non-positive winding inductance fails loud.
 #[test]
-fn xfmr_bad_inductance_is_loud() {
-    let phdl = "use piperine::disciplines;
+fn xfmr_bad_inductance_is_loud() {    let phdl = "use piperine::disciplines;
 use spice::passives;
 mod Top() {
     wire gnd: Electrical; wire a: Electrical; wire b: Electrical;
@@ -75,4 +74,67 @@ mod Top() {
     let err = piperine_lang::parse_and_elaborate(phdl, &headers_source_map())
         .expect_err("l1 = 0 must fail loud");
     assert!(format!("{err}").contains("l1"), "loud error names l1: {err:?}");
+}
+
+/// SC-17/SC-21 — coupled-LC energy transfer through the mutual-flux engine
+/// under TR-BDF2: two identical lossless tanks (L = 10 µH, C = 10 nF,
+/// k = 0.5), the primary pre-charged to 1 V. The tanks' mode split
+/// (ω0/√(1±k)) sloshes the energy fully between them with the first
+/// secondary peak at π/(ω_a − ω_s) ≈ 1.66 µs. The TR-stage flux companion's
+/// previous-voltage dual form is what keeps the tank frequencies (and thus
+/// the transfer timing/envelope) correct.
+#[test]
+fn xfmr_coupled_lc_energy_transfer() {
+    let phdl = "use piperine::disciplines;
+use spice::passives;
+mod Top() {
+    wire gnd: Electrical; wire v1: Electrical; wire v2: Electrical;
+    c1: cap   (.p=v1,.n=gnd) { .c = 1.0e-8 };
+    c2: cap   (.p=v2,.n=gnd) { .c = 1.0e-8 };
+    t1: xfmr  (.p1=v1,.n1=gnd,.p2=v2,.n2=gnd) { .l1 = 1.0e-5, .l2 = 1.0e-5, .k = 0.5 };
+}";
+    let design = piperine_lang::parse_and_elaborate(phdl, &headers_source_map())
+        .expect("coupled tanks elaborate");
+    let ic = std::collections::HashMap::from([("v1".to_string(), 1.0)]);
+    let trace = SimSession::new(design, "Top".to_string())
+        .run_tran(12.0e-6, Some(1.0e-8), 0.0, &SolverConfig::default(), Some(&ic))
+        .unwrap_or_else(|e| panic!("coupled tanks tran failed: {e}"));
+
+    let v1 = trace.v(&NetRef { name: "v1".into() }, None).expect("v(v1)");
+    let v2 = trace.v(&NetRef { name: "v2".into() }, None).expect("v(v2)");
+    let pts1 = v1.points();
+    let pts2 = v2.points();
+
+    // Bounded: a lossless tank never exceeds its initial stored voltage.
+    for ((t, a), (_, b)) in pts1.iter().zip(pts2.iter()) {
+        assert!(a.abs() <= 1.1 && b.abs() <= 1.1, "t = {t:e}: energy created: v1 = {a}, v2 = {b}");
+    }
+    // Transfer: the secondary rings up to ≥ 0.7 of the initial charge while
+    // the primary collapses — full slosh is 1.0 for identical tanks. The
+    // first beat (t ≤ 3 µs) is the one the analytic timing pins.
+    let first_beat: Vec<(f64, f64)> =
+        pts2.iter().filter(|(t, _)| *t <= 3.0e-6).cloned().collect();
+    let (peak_t, v2_peak) = first_beat
+        .iter()
+        .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
+        .map(|&(t, v)| (t, v.abs()))
+        .expect("non-empty first beat");
+    assert!(v2_peak >= 0.7, "secondary peak = {v2_peak}, want ≥ 0.7 (full transfer is 1.0)");
+    let v1_at_peak = pts1
+        .iter()
+        .min_by(|(ta, _), (tb, _)| (ta - peak_t).abs().total_cmp(&(tb - peak_t).abs()))
+        .map(|&(_, v)| v)
+        .expect("non-empty trace");
+    assert!(
+        v1_at_peak.abs() < 0.35,
+        "at the secondary peak the primary has collapsed: v1 = {v1_at_peak}"
+    );
+    // Timing discriminates the TR-stage dual form: with the previous-voltage
+    // term the first transfer peaks at 1.36 µs; dropping it (the pure
+    // backward-difference companion) doubles the derivative estimate and the
+    // peak slips to 1.69 µs. The window sits between the two.
+    assert!(
+        (1.1e-6..=1.55e-6).contains(&peak_t),
+        "first transfer peak at t = {peak_t:e}, reference 1.36 µs (mutant: 1.69 µs)"
+    );
 }
