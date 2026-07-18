@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/piperine-api",
     "crates/piperine-cli",
     "crates/piperine-codegen",
     "crates/piperine-lang",
@@ -21,16 +22,17 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-thiserror.workspace = true
-num-complex.workspace = true
-piperine-lang = { version = "0.1.0", path = "crates/piperine-lang" }
-piperine-codegen = { version = "0.1.0", path = "crates/piperine-codegen" }
-piperine-solver = { version = "0.1.0", path = "crates/piperine-solver" }
+piperine-api = { version = "0.1.1", path = "crates/piperine-api" }
 
-# Dev-dependency cycle is cargo-legal: the tests run the .py examples through
-# the embedded-CPython host, which itself links the root lib.
+# The tests of record stay on this crate importing `piperine::…` — they are
+# the proof the shell re-exports the full host surface. run_examples drives
+# the .py examples through the embedded-CPython host.
 [dev-dependencies]
 piperine-python = { path = "crates/piperine-python" }
+# The suites also reach lang/codegen directly (SourceMap setup, kernel
+# introspection) — dev-only edges, not part of the shell's public story.
+piperine-lang = { path = "crates/piperine-lang" }
+piperine-codegen = { path = "crates/piperine-codegen" }
 
 [profile.dev.package.faer]
 opt-level = 3

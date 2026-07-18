@@ -1,6 +1,6 @@
 //! One-import host surface: the session, result objects, and waveforms, plus
 //! re-exports of the lang/codegen/solver public faces — the complete
-//! external view of the project (MD-19).
+//! external view of the project (MD-20).
 
 pub use crate::error::Error;
 pub use crate::hooks::SimHooks;

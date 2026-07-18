@@ -1,0 +1,11 @@
+[package]
+name = "piperine-api"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+num-complex.workspace = true
+piperine-lang = { version = "0.1.0", path = "../piperine-lang" }
+piperine-codegen = { version = "0.1.0", path = "../piperine-codegen" }
+piperine-solver = { version = "0.1.0", path = "../piperine-solver" }
