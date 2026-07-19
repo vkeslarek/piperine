@@ -268,7 +268,7 @@ impl Element for PiperineDevice {
         }
     }
 
-    fn next_breakpoints(&self, from: piperine_solver::abi::Second, horizon: piperine_solver::abi::Second) -> Vec<piperine_solver::abi::Second> {
+    fn next_breakpoints(&self, from: f64, horizon: f64) -> Vec<f64> {
         match &self.analog {
             Some(analog) => analog.next_breakpoints(from, horizon),
             None => Vec::new(),

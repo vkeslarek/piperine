@@ -26,8 +26,6 @@ pub use crate::analysis::transient::{
 };
 // Integration (kernels read phase/coeffs)
 pub use crate::math::integration::{TrBdf2, TrBdf2Phase};
-/// Absolute time in seconds (`f64`).
-pub type Second = f64;
 // Digital evaluation
 pub use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};
 pub use crate::digital::{DigitalEvent, DigitalNet, LogicValue};
