@@ -150,16 +150,19 @@ to select behavior: capability flags gate, as before.
 | `LOADS_AC` | `load_ac` contributes to the small-signal AC sweep. |
 | `LOADS_TRAN` | `load_transient` contributes to time-domain integration. |
 | `EMITS_NOISE` | `noise_current_psd` returns non-empty sources. |
-| `DEPENDS_ON_DIGITAL` | Analog load reads the digital net snapshot (D2A); the DC and transient drivers order the digital settle before stamping this element. Implies `ANALOG`. |
+| `DEPENDS_ON_DIGITAL` | Analog load reads the digital net snapshot (D2A). Implies `ANALOG`; a D2A-ordering descriptor for the DC and transient drivers. |
 | `HAS_INTERNAL_UNKNOWNS` | The element allocated internal MNA unknowns (auxiliary branch currents, hidden states) through the `allocate_unknowns` seam during circuit construction. |
-| `BYPASS_OK` | The element is eligible for stamp bypass: when its terminal voltages are unchanged within tolerance since the last evaluation, the DC driver may reuse its previous stamps for that Newton iteration. Suppressed while any element reports `limiting_active()`. Opt-in — only for models whose stamps are a pure function of terminal voltages. |
+| `BYPASS_OK` | Reserved: stamp bypass is owned by the `solver-performance` follow-up. The DC driver's stamp cache (§9) is global — gated on solution movement and limiting, not on this flag. |
 | `SUPPORTS_ROLLBACK` | Reserved: the commit/rollback lifecycle is owned by a follow-up feature. No method is promised — the `Element` contract exposes no checkpoint/rollback/commit hooks. |
 | `SUPPORTS_QUERIES` | Reserved: a host-facing hint that the model overrides `list_queries`/`query` with typed metadata beyond the `read_opvars` default. No solver path reads this flag. |
 
 An element must declare its capabilities accurately; the solver gates analysis
 and scheduling on this descriptor rather than on which methods are overridden.
-Every flag except the two reserved bits has both a producer and a solver
-consumer.
+Two flags gate solver control flow directly — `DIGITAL` (the mixed-signal loop,
+the scheduler, digital initialization) and `HAS_INTERNAL_UNKNOWNS` (the
+builder's allocation check). The remaining live flags are participation
+descriptors consumed by the loaders and result mapping; the three reserved bits
+name their owning follow-up and promise nothing today.
 
 The analog operations in this section and the digital operations in §4 are all
 methods of the one element. Analog methods default to contributing no stamps;
@@ -541,6 +544,18 @@ The DC algorithm is:
    or the mixed-signal iteration cap is reached.
 6. Return a mapping from every indexed analog variable to its solved value.
 
+Two assembly-level details are normative:
+
+- **Stamp cache.** Between Newton iterations the DC driver reuses the previous
+  iteration's assembled stamps when every unknown moved less than
+  `vntol + reltol·max(|x|, |x_old|)` (ngspice bypass semantics), suppressed
+  while any device reports `limiting_active()`. The cache is dropped whenever
+  the stamps depend on anything besides the solution vector — a homotopy scale
+  change or a digital settle — and on any parameter write.
+- **Shunt conductances.** The homotopy conductance (§15.5) and the optional
+  circuit-wide `gshunt` tolerance stamp a diagonal conductance to ground on
+  every non-ground node — never on branch-current unknowns.
+
 DC ignores dynamic charge history except where a device's DC model explicitly
 depends on its internally updated operating point. Time-varying sources are
 evaluated at the DC context defined by the source model.
@@ -569,38 +584,63 @@ V(plus) = V(minus) + value
 
 where a missing `minus` terminal means ground.
 
-Initial-condition seeds populate enough solution history for the companion model
-to start without an artificial first-step discontinuity. They are seeds, not a
-guaranteed hold constraint unless the device model stamps such a constraint.
+Device initial conditions are **enforced**, not merely seeded (the ngspice
+`CKTsetIC` analogue): each `@initial` branch seed becomes a UIC hold clamp — a
+large conductance (`G = 10¹²`) across the seeded branch carrying `G·ic` — stamped
+through the t=0 operating-point solve and the first accepted step, so the seed
+value is the *consistent* t=0 solution the rest of the circuit solves against.
+The clamp releases after the first accepted step.
+
+User node-voltage seeds and the solved history populate enough solution history
+for the companion model to start without an artificial first-step
+discontinuity: the initial values are pushed into both history rows. A host
+restart instead re-enters from a previously captured step — the analog solution
+and the digital snapshot (including hidden register state, §4.2) — with no DC
+solve and no device/user seeds.
 
 ### 10.2 Step algorithm
 
-For each step:
+The time loop is a thin loop over named phase methods, with its mutable state
+(the clock, the current step size, acceptance bookkeeping) carried in one
+`TimeLoop` state:
 
-1. Choose a proposed timestep from the current timestep controller (a PI
-   controller driven by the global truncation error — see §10.3).
-2. Clamp the target time to the analysis stop time, to the next pending
-   digital event time, and to the next declared **breakpoint** (analog
-   `@timer` fires and source edges — see §15.9). Digital-var/enum `if`s in
-   analog bodies switch at digital events, which are themselves breakpoints,
-   so landing here covers them.
-3. Checkpoint the digital state.
-4. Apply digital events exactly at the target time before the analog solve.
-5. Solve the analog implicit companion system for the interval ending at the
-   target time — TR-BDF2 runs two Newton sub-steps (Trapezoidal → `x_{n+γ}`,
-   BDF2 → `x_{n+1}`; γ = 2−√2).
-6. If both sub-steps succeed and the global LTE is within tolerance:
-   - Service analog-to-digital acceptance hooks and run digital evaluation at
-     the target time.
-   - Commit the digital checkpoint.
-   - Record the step if it is at or after `record_from`.
-   - Advance integration history and let the PI controller propose the next
-     timestep from the global error.
-7. If either sub-step fails or the LTE exceeds tolerance:
-   - Roll back the digital checkpoint.
-   - Reduce the proposed timestep (÷8 backtracking) and reset the PI memory.
-   - If the minimum timestep is reached and the solve still fails, the analysis
-     fails loud.
+1. **Predict** (`predict_step`). Take the PI controller's proposed timestep
+   (§10.3) and clamp the target time to the analysis stop time, to the next
+   pending digital event time, to the next declared **breakpoint** (analog
+   `@timer` fires and source edges — see §15.9), and to the next scheduled
+   live-set time (§10.5). Digital-var/enum `if`s in analog bodies switch at
+   digital events, which are themselves breakpoints, so landing here covers
+   them. A target landing on a declared discontinuity is marked exempt from
+   the LTE gate.
+2. **Attempt** (`attempt_step`). Checkpoint the digital state and the analog
+   solution history, apply digital events exactly at the target time before
+   the analog solve, then solve the analog implicit companion system for the
+   interval ending at the target time — TR-BDF2 runs two Newton sub-steps
+   (Trapezoidal → `x_{n+γ}`, BDF2 → `x_{n+1}`; γ = 2−√2).
+3. **Assess** (`assess_step`). If both sub-steps converged, estimate the
+   global LTE (Milne's device over node-voltage unknowns) and compare against
+   `trtol`. Steps exempted in predict (and the first step after a live set,
+   whose LTE window spans the intentional value jump) skip this gate.
+4. **Accept** (`accept_step`). On a pass:
+   - Service analog-to-digital acceptance hooks and run digital evaluation to
+     quiescence at the target time (`settle_digital`), then commit the digital
+     checkpoint.
+   - Record the step if it is at or after `record_from` (`record_step`).
+   - Apply any scheduled live sets due at the accepted point (§10.5); a write
+     of operating-point strength or stronger re-solves the landing point so
+     the recorded state there is the post-set consistent solution.
+   - Advance the clock and integration history; reset the previous-step size
+     across a discontinuity so the next TR stage restarts first-order.
+   - Propose the next timestep (`propose_dt`) — the PI controller from the
+     global error, then clamped by every element's `suggest_transient_step`.
+5. **Reject.** On an LTE failure (`reject_lte_step`): roll back the digital
+   checkpoint and the analog history, reduce the proposed timestep
+   (÷8 backtracking), and reset the PI memory. At the minimum-timestep floor
+   the step is **accepted as-is** rather than stalling — the accuracy
+   concession is warned and counted in the run statistics. On a Newton failure
+   in either sub-step (`reject_step`): roll back both checkpoints, reduce the
+   timestep, and retry; reaching the minimum timestep without convergence
+   fails the analysis loud.
 
 The solver is **always adaptive** (SPICE has been adaptive since v2); the
 user's `.step` is the initial timestep, grown/shrunk from there. The recorded
@@ -631,18 +671,26 @@ unavailable (the history spans the jump) and the Trapezoidal stage degrades to
 backward Euler over the `γh` sub-step: `i_{C,n+γ} = (1/(γh))(Q_{n+γ}−Q_n)`,
 no previous-current term. Keeping the full trapezoid weight with an assumed
 zero previous current would double the derivative estimate for the first step,
-an O(h)·i error scaling with the post-edge current. The step after such an
-edge also restarts small (`1e-3` of the accepted step) and the PI controller
-regrows from clean error readings; the same applies to the inductor flux
-companion's previous branch voltage.
+an O(h)·i error scaling with the post-edge current. The same applies to the
+inductor flux companion's previous branch voltage. After a scheduled live set
+the run additionally restarts small (`1e-3` of the accepted step) and the PI
+controller regrows from clean error readings; a plain breakpoint edge resets
+only the previous-step history, leaving the PI proposal intact.
 
 The timestep controller is a **Proportional-Integral (PI) controller**: after
 each accepted step the global local-truncation error is estimated via Milne's
 device (a linear extrapolation of the node voltages at `t_n` and `t_{n+γ}`
 differenced from `x_{n+1}`, normalized per node by `reltol·|v| + vntol`), and
 the next timestep follows `dt_{n+1} = dt_n · (target/lte)^p` with `p = kp +
-ki·(lte − lte_prev)/lte` (defaults `kp = 0.7`, `ki = 0.4`). A rejected step
-resets the PI memory. The Milne estimate is computed over node-voltage
+ki·(lte − lte_prev)/lte` (defaults `kp = 0.7`, `ki = 0.4`). A node whose
+consecutive differences straddle a discontinuity (one side flat, the other
+large) is skipped — its predictor residual is the intentional jump, not
+truncation error. The growth factor is clamped to a safe per-step range
+(`[0.2, 1.5]`) and the result to `[dt_min, dt_max]`. A rejected step divides
+the failed step by 8 and resets the PI memory. With no usable error signal
+(non-reactive step or short history) the controller grows `dt` by 1.5× toward
+`dt_max`. All of these gains live in the typed `StepperGains` config (§15.4),
+not in the controller body. The Milne estimate is computed over node-voltage
 unknowns only (branch currents are KCL-derived).
 
 ### 10.4 Results
@@ -666,8 +714,8 @@ restamps. Addressing is the PHDL scheme — the same flat instance labels and
 flattened `{param}_{field}` bundle names the POM's `Design::set_param`
 accepts. A write routes to the element's `set_param` (§3.4) and the caller
 recomputes exactly what the reported invalidation requires; a successful
-write also invalidates the element's bypass stamp cache and marks the
-operating point dirty. Unknown labels or parameters fail loud (the parameter
+write through a held DC analysis also invalidates the driver's bypass stamp
+cache. Unknown labels or parameters fail loud (the parameter
 error lists the element's candidates); an out-of-bounds value is rejected
 with no partial apply.
 
@@ -684,12 +732,15 @@ operating point — an idle set.
 
 **Structural writes.** A write whose invalidation is *rebuild* (matrix
 structure / element reconstruction — e.g. an optional-parameter presence
-flip) is beyond the solver: it has no POM, so the solver-level call fails
-loud with the typed outcome. The **host layer** (the Python `LiveSession`:
+flip) is beyond the solver: it has no POM. The restamp path reports the
+rebuild invalidation to the caller, and a structural set scheduled
+mid-transient fails the run loud with the typed outcome. The **host layer**
+(the Python `LiveSession`:
 compile once, `set`, re-run analyses on the held circuit) re-elaborates and
 recompiles automatically, reports it visibly, and carries the solved node
 voltages by net name as the next solve's initial guess — dropped nets are
-discarded, new nets start cold. A structural set scheduled mid-transient
+discarded, new nets start cold. At the host layer a structural set scheduled
+mid-transient
 splits the run at `t`: the session rebuilds there and the transient restarts
 from `t` (absolute start time, carried node state as initial conditions), and
 the recorded segments stitch into one continuous trace. A failed
@@ -787,6 +838,13 @@ Mixed-signal behavior is expressed by an element that declares both `ANALOG` and
 communicate through explicit analog and digital nets. There is no implicit
 converter insertion.
 
+The analog↔digital crossing has exactly one owner: the circuit instance's
+mixed-signal-seam methods (§2). `accept_and_run_digital` turns an accepted
+analog solution into digital events (every element's `accept_timestep` hook
+seeds the event queue) and runs the scheduler to quiescence; the DC settle loop
+(§14.1) and the transient accept path (§14.2) both go through it. There is no
+separate bridge object — any element is natively mixed-signal.
+
 ### 14.1 DC mixed-signal settle loop
 
 After an analog DC solve converges, the solver lets analog acceptance hooks emit
@@ -857,11 +915,15 @@ Newton convergence requires both:
    |A · x_old - b| <= abstol_kind + reltol · row_scale
    ```
 
-   Node rows use current tolerance. Branch-equation rows use voltage tolerance.
+   The tolerance kind follows the unknown the row belongs to: node-voltage
+   rows use voltage tolerance; branch-current rows use current tolerance.
 
 Device-side limiting is an additional gate: if any analog device reports
 `limiting_active()`, Newton convergence is false even when the numeric tests
-pass.
+pass. Before the tests run, the solver applies every device's structured
+limiting feedback (`convergence_hint`, §3.1) to the Newton guess — the clamped
+unknown is set to the limited value, so the iteration continues from the
+clamped point instead of oscillating around it.
 
 ### 15.2 Damping
 
@@ -888,6 +950,16 @@ the plain-Newton solve and sets the homotopy scales through a driver interface,
 and never reaches into the solver's internals. This is the seam at which an
 analysis or host selects a different escalation.
 
+Every behavior-affecting numeric lives in the solver's **config home** as a
+typed, defaulted, documented field — no magic literals in strategy or driver
+bodies. The plan owns the two homotopy schedules (`GminSchedule`,
+`SourceSchedule`, one `Schedules` family); the transient stepper owns its
+`StepperGains` (§10.3); the diagnostic trace toggles are `TraceFlags` fields
+seeded once from the `PIPERINE_TRACE_{GMIN,SRC,TRAN}` environment variables and
+read as typed fields thereafter. Cross-driver numerical caps (the mixed-signal
+settle cap, the digital delta-cycle cap, the scheduler time-equality epsilon)
+live beside them in `PlanLimits`.
+
 ### 15.5 Gmin and gmin stepping
 
 The solver context contains a normal `gmin`, used by device models for weak
@@ -895,18 +967,31 @@ conductance stabilization. Gmin stepping adds an extra homotopy conductance,
 owned by the DC driver (not the shared context).
 
 During gmin stepping, every non-ground node receives an added conductance to
-ground. The strategy starts from an easy, strongly shunted problem and reduces
-the extra conductance toward zero, warm-starting each step from the previous
-solution. The final accepted operating point is always solved with the extra
-conductance at zero. The extra conductance is applied only to node-voltage
-unknowns, never to branch current unknowns.
+ground. The strategy starts from an easy, strongly shunted problem
+(`start_g = 0.1` S) and reduces the extra conductance toward zero,
+warm-starting each step from the previous solution: one decade per converged
+solve (`decade_factor = 0.1`), the step factor relaxing after each success
+(`relax_growth = 1.3`, capped at `relax_cap = 0.5`) and backing off after each
+failure (`backoff_growth = 3.0`, capped at `backoff_cap = 0.7`), for at most
+`max_steps = 200` iterations, stopping once the conductance is below
+`floor_margin = 10` × the gmin floor. A failure before any step converged gives
+up immediately. The final accepted operating point is always solved with the
+extra conductance at zero. The extra conductance is applied only to
+node-voltage unknowns, never to branch current unknowns.
 
 ### 15.6 Source stepping
 
 Source stepping scales independent forced source values from zero to full
 strength. It runs after plain Newton and gmin stepping fail. Each scale point
-warm-starts from the previous point. A temporary shunt may be held during the
-source ramp and then ramped out so the final solve is exact.
+warm-starts from the previous point: the ramp starts fully off
+(`start_step = 0.1`), grows the step after each converged solve
+(`step_growth = 1.5`, capped at `step_cap = 0.25`), halves the step after a
+failure (`backoff_factor = 0.5`) and gives up when the step falls below
+`min_step = 1e-6`, for at most `max_steps = 300` iterations. A temporary shunt
+(`knee_gmin = 1e-6` S) conditions the exponential turn-on knee; it is held
+through the source ramp and then itself ramped out (one decade per converged
+solve, `knee_decay = 0.1`, until below `floor_margin = 10` × the gmin floor),
+so the final solve is exact.
 
 An element whose source value is affected by source stepping multiplies that
 source by the source-stepping scale carried in `DcAnalysisState`. Elements that
@@ -915,8 +1000,8 @@ do not represent independent sources ignore it.
 ### 15.7 Initial guesses, node sets, and device initial conditions
 
 Node-set values and user initial conditions seed Newton history; they are not
-themselves constraints. Device initial conditions seed transient history and may
-become constraints only when the device stamps a constraint.
+themselves constraints. Device initial conditions in transient are enforced by
+the UIC hold clamps of §10.1 through the t=0 solve and the first accepted step.
 
 The solver may push the same initial condition into multiple history rows when a
 multistep integration method needs a consistent starting history.
@@ -930,12 +1015,18 @@ and same-time digital acceptance has run.
 
 ### 15.9 Timestep bounds and breakpoints
 
-Devices may request a maximum timestep (`bound_step_hint`), and elements
-declare **breakpoints** — absolute landing times — through
-`Element::next_breakpoints(from, horizon)`. The solver's target time is the
-minimum of the PI-proposed timestep, the next declared breakpoint, the next
-pending digital event time, and the stop time. Breakpoints are absolute, so
-they survive step rollback.
+The step size is bounded from three directions. Elements declare
+**breakpoints** — absolute landing times — through
+`Element::next_breakpoints(from, horizon)`; reactive elements report the
+largest step their charge/flux history tolerates through
+`suggest_transient_step`, consulted after every accepted step, with the
+proposal clamped to the minimum over all suggestions; and the PI proposal
+itself is clamped to the analysis options' `[dt_min, dt_max]`. The target time is the minimum of
+the PI-proposed timestep, the next declared breakpoint, the next pending
+digital event time, the next scheduled live set, and the stop time.
+Breakpoints are absolute, so they survive step rollback. (The ABI also carries
+`bound_step_hint` — the `$bound_step` lineage — which the current stepper does
+not consult; the enforced element-side bound is `suggest_transient_step`.)
 
 Breakpoints come from two unified sources: (a) **analog** — each element's
 `@timer` fires (a phased `@timer(period, phase)` lets a source declare both
@@ -970,7 +1061,7 @@ device construction.
 | §6 | Stamp references an unmapped non-ground/non-branch variable | Analysis error. |
 | §8 | Analysis-time loading changes matrix dimension or sparsity contract | Analysis error. |
 | §9 | DC fails plain Newton, gmin stepping, and source stepping | Convergence failure. |
-| §10 | Transient reaches minimum timestep without convergence | Convergence failure. |
+| §10 | Transient Newton solve reaches the minimum timestep without converging | Convergence failure. (An LTE rejection at the minimum timestep is instead accepted with a warning and counted in the run statistics.) |
 | §11 | AC frequency point cannot solve its linear system | Analysis error for that sweep. |
 | §12 | Noise output/reference node cannot be resolved | Analysis error. |
 | §13 | Unsupported transfer-function source form is requested | Analysis error. |
