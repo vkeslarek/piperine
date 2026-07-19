@@ -254,35 +254,36 @@ fusion active.
 
 | Requirement ID | Story | Phase | Status |
 |---|---|---|---|
-| SC-01 | P1 sens values vs FD reference | T3 | Done |
-| SC-02 | P1 sens loud errors | T3 | Done |
-| SC-03 | P1 sens python surface | T4 | Done |
-| SC-04 | P1 PSS converged periodic trace | T5 | Done |
-| SC-05 | P1 PSS loud non-convergence | T5 | Done |
-| SC-06 | P1 PSS tstab + rectifier case | T6 | Done |
-| SC-07 | P1 .dc host-proof (nested + source) | T1 | Done |
-| SC-08 | P1 table operator | T7 | Done |
-| SC-09 | P1 transition operator | T8 | Done |
-| SC-10 | P1 idt AC stamp | T9 | Done |
-| SC-11 | P1 multiple ac_stim | T10 | Done |
-| SC-12 | P1 @initial branch force + UIC hold | T11 | Done |
-| SC-13 | P1 digital network fused + identical results | T12 | Done |
-| SC-14 | P1 MOS2 + MOS3 ngspice parity | T13+T14 | Done |
-| SC-15 | P1 tline ideal | T15 | Done |
+| SC-01 | P1 sens values vs FD reference | T3 | Verified |
+| SC-02 | P1 sens loud errors | T3 | Verified |
+| SC-03 | P1 sens python surface | T4 | Verified |
+| SC-04 | P1 PSS converged periodic trace | T5 | Verified |
+| SC-05 | P1 PSS loud non-convergence | T5 | Verified |
+| SC-06 | P1 PSS tstab + rectifier case | T6 | Verified |
+| SC-07 | P1 .dc host-proof (nested + source) | T1 | Verified |
+| SC-08 | P1 table operator | T7 | Verified |
+| SC-09 | P1 transition operator | T8 | Verified |
+| SC-10 | P1 idt AC stamp | T9 | Verified |
+| SC-11 | P1 multiple ac_stim | T10 | Verified |
+| SC-12 | P1 @initial branch force + UIC hold | T11 | Verified |
+| SC-13 | P1 digital network fused + identical results | T12 | Verified |
+| SC-14 | P1 MOS2 + MOS3 ngspice parity | T13+T14 | Verified |
+| SC-15 | P1 tline ideal | T15 | Verified |
 | SC-16 | P1 urc | T16 | **Blocked** — needs `codegen-parametric-devices` (see tasks.md T16) |
-| SC-17 | P1 transformer block | T17 | Done |
-| SC-18 | P1 stdlib off sentinels (T?) | T18 | Done |
-| SC-19 | P2 fetlim/limvds | T19 | Done |
-| SC-20 | P2 temperature uniform + .temp sweep | T20 | Done |
-| SC-21 | P2 inductor TR dual | T21 | Done |
-| SC-22 | P2 IntegrationMethod removal | T22 | Done |
-| SC-23 | P3 scheduler split + SignalBridge | T23+T24 | Done |
-| SC-24 | P3 as_iv + Integrator re-home | T25 | Done |
-| SC-25 | P3 Trace.i state recording (opt-in) | T26 | Done |
-| SC-26 | P3 init_global ownership | T25 | Done |
+| SC-17 | P1 transformer block | T17 | Verified |
+| SC-18 | P1 stdlib off sentinels (T?) | T18 | Verified |
+| SC-19 | P2 fetlim/limvds | T19 | Verified |
+| SC-20 | P2 temperature uniform + .temp sweep | T20 | Verified |
+| SC-21 | P2 inductor TR dual | T21 | Verified |
+| SC-22 | P2 IntegrationMethod removal | T22 | Verified |
+| SC-23 | P3 scheduler split + SignalBridge | T23+T24 | Verified |
+| SC-24 | P3 as_iv + Integrator re-home | T25 | Verified |
+| SC-25 | P3 Trace.i state recording (opt-in) | T26 | Verified |
+| SC-26 | P3 init_global ownership | T25 | Verified |
 
-**Coverage:** 26 total, 25 done + 1 blocked (SC-16, external codegen dependency
-logged as its own feature).
+**Coverage:** 26 total — 25 Verified (independent Verifier, round 2 PASS:
+spec-anchored evidence + discrimination sensor 6/6 killed), 1 blocked (SC-16,
+external `codegen-parametric-devices` feature).
 
 ## Success Criteria
 

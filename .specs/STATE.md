@@ -234,10 +234,19 @@ Implementation: sens/PSS bindings immediately; full alignment in P3.
 
 ## Handoff Snapshot
 
-**Last updated:** 2026-07-18 — `p1-solver-complete` EXECUTED (T1–T15, T17–T27;
-T16 blocked external), awaiting Verifier.
+**Last updated:** 2026-07-18 — `p1-solver-complete` DELIVERED (Verifier round 2
+PASS), 509 green / 5 ignored.
 
-### Feature E — `p1-solver-complete` (EXECUTED, Verifier pending)
+### Feature E — `p1-solver-complete` (DELIVERED)
+
+Verifier round 2 **PASS** (`.specs/features/p1-solver-complete/validation.md`):
+spec-anchored evidence for all 25 active ACs; discrimination sensor 6/6 killed.
+Round 1 FAIL gaps fixed: `list_params` Rebuild classification (`d3693a9`),
+PSS hidden-digital-state round-trip (`5dc84a9` — new
+`Element::digital_hidden_snapshot/restore` ABI; shots now deterministic from
+the shot start per the mixed-signal contract), table slope discrimination
+(`038d5f8`), transition zero-rise edge (`4c178b1`). SC-16 (urc) stays blocked
+on the `codegen-parametric-devices` feature.
 
 Spec/design/tasks in `.specs/features/p1-solver-complete/`. ROADMAP pillar
 P1 closed: every item done or in the named backlog table (ROADMAP.md).
