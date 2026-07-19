@@ -14,6 +14,7 @@
 //! ```
 
 pub mod error;
+pub mod fourier;
 pub mod hooks;
 pub mod prelude;
 pub mod results;
@@ -21,6 +22,7 @@ pub mod session;
 pub mod waveform;
 
 pub use error::Error;
+pub use fourier::{FourierComponent, FourierResult};
 pub use hooks::SimHooks;
 pub use results::{NetRef, OpResult, PssResult, SensResult};
 pub use session::{SimSession, SolverConfig};

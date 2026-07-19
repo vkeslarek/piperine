@@ -3,6 +3,7 @@
 //! external view of the project (MD-20).
 
 pub use crate::error::Error;
+pub use crate::fourier::{FourierComponent, FourierResult};
 pub use crate::hooks::SimHooks;
 pub use crate::results::{NetRef, OpResult, PssResult, SensResult};
 pub use crate::session::{SimSession, SolverConfig};
