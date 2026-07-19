@@ -324,28 +324,28 @@ pub trait Introspect: Send + Sync {
 ///
 /// There is no separate "analog device" or "digital device" type and no
 /// downcast: an element implements exactly the operations it needs and declares
-/// them through [`capabilities`]. A pure resistor stamps the analog system and
-/// leaves the digital methods at their defaults; a logic gate does the reverse;
-/// a comparator or DAC does both over one shared object, so mixed-signal
-/// coupling (analog load reading digital state, digital events reading analog
-/// history) is native rather than bridged.
+/// them through [`capabilities`]. `Element` is the conjunction of three
+/// concern-scoped supertraits — [`AnalogDevice`] (MNA loading + analog
+/// lifecycle), [`DigitalDevice`] (two-phase delta cycle), and [`Introspect`]
+/// (OSDI-style parameters/queries/terminals) — whose methods all default, so
+/// a pure resistor overrides only [`load_dc`](AnalogDevice::load_dc) and
+/// inherits the inert digital/introspection surfaces; a logic gate does the
+/// reverse; a comparator or DAC does both over one shared object, so
+/// mixed-signal coupling (analog load reading digital state, digital events
+/// reading analog history) is native rather than bridged. The object is not
+/// split — only its surface is grouped so each concern is separately legible,
+/// and the solver never names a supertrait to select behavior:
+/// [`capabilities`] gates, as before.
 ///
-/// The analog methods ([`load_dc`], [`load_ac`], [`load_transient`],
-/// [`noise_current_psd`], plus the lifecycle hooks) default to no-ops that
-/// contribute nothing. The digital methods ([`boundary`], [`init`],
-/// [`seq_phase`], [`comb_phase`]) default to an element that drives no nets.
-/// Every element still declares [`capabilities`] so the solver never guesses.
+/// `Element` itself keeps only identity and the cross-cutting lifecycle that
+/// isn't purely one concern: [`name`](Element::name),
+/// [`capabilities`](Element::capabilities), [`setup`](Element::setup),
+/// [`destroy`](Element::destroy), the analog→digital bridge hook
+/// [`accept_timestep`](Element::accept_timestep), and
+/// [`runtime_banks`](Element::runtime_banks).
 ///
 /// [`capabilities`]: Element::capabilities
-/// [`load_dc`]: Element::load_dc
-/// [`load_ac`]: Element::load_ac
-/// [`load_transient`]: Element::load_transient
-/// [`noise_current_psd`]: Element::noise_current_psd
-/// [`boundary`]: Element::boundary
-/// [`init`]: Element::init
-/// [`seq_phase`]: Element::seq_phase
-/// [`comb_phase`]: Element::comb_phase
-pub trait Element: Send + Sync {
+pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     // ── Identity & capabilities ───────────────────────────────────────────────
 
     /// Source-level identity, for diagnostics and result mapping.

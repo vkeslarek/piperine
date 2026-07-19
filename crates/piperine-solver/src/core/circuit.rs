@@ -114,7 +114,8 @@ impl CircuitInstance {
     }
 
     /// Steer the Newton guess with every device's structured limiting
-    /// feedback ([`Element::convergence_hint`]): the clamped unknown is set
+    /// feedback ([`AnalogDevice::convergence_hint`](crate::core::element::AnalogDevice::convergence_hint)):
+    /// the clamped unknown is set
     /// to the limited value before the convergence test. The DC and
     /// transient systems delegate here each iteration.
     pub fn apply_convergence_hints(&self, mut guess: ndarray::ArrayViewMut1<f64>) {

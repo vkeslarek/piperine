@@ -2,7 +2,9 @@
 //! Hosts use [`crate::prelude`]; element implementors use this module.
 
 // The contract
-pub use crate::core::element::{ConvergenceHint, Element, ElementCapabilities};
+pub use crate::core::element::{
+    AnalogDevice, ConvergenceHint, DigitalDevice, Element, ElementCapabilities, Introspect,
+};
 pub use crate::core::circuit::CircuitInstance;
 pub use crate::core::introspect::{
     Bounds, Direction, Domain, Invalidation, ParamDescriptor, ParamError,

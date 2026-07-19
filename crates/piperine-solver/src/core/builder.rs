@@ -15,7 +15,8 @@ use crate::result::Result;
 // ── UnknownAllocator ─────────────────────────────────────────────────────────
 
 /// Pre-freeze internal-unknown allocation seam handed to
-/// [`Element::allocate_unknowns`]. Constructed **only** by
+/// [`AnalogDevice::allocate_unknowns`](crate::core::element::AnalogDevice::allocate_unknowns).
+/// Constructed **only** by
 /// [`CircuitBuilder::build`] — not exported in `prelude` (hosts never allocate
 /// unknowns); exported in `abi` so elements can name the type in signatures.
 pub struct UnknownAllocator<'a> {
