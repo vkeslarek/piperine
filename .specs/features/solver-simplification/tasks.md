@@ -13,7 +13,10 @@ without it.**
 ---
 
 **Design**: `.specs/features/solver-simplification/design.md`
-**Status**: Approved (user, 2026-07-18) — sub-agent execution accepted
+**Status**: In Progress — batch 1 (P0+P1) DONE
+
+## Progress Log
+- **Batch 1 (P0+P1)** ✅ — T1 `4565f9e` analog parity baselines · T2 `0912915` mixed-signal+digital baselines · T3 `cba1783` remove `LINEAR` · T4 `2a521cb` remove `ANALYTIC_JACOBIAN`/`STAMPS_CHARGE`+producers+asserts, add `capabilities_contract.rs` · T5 `9e324ec` phantom rollback doc removed, `SUPPORTS_QUERIES`/`SUPPORTS_ROLLBACK` kept as reserved bits (no method promise) · T6 `50225cf` `SignalBridge` folded into `CircuitInstance`. +8 tests, all gates green, baselines bit-identical.
 **Invariant**: behavior-preserving refactor. Every task keeps
 `cargo test --workspace` green with **bit-identical numerics** on the P0 parity
 baselines. A task that changes a solved value is a defect, not a deviation.
