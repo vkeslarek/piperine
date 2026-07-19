@@ -10,6 +10,7 @@ pub use callables::{CallableRegistry, CallableDef};
 pub use schemas::{AttrField, SchemaRegistry, SchemaShape};
 
 use crate::elab::event::EventRegistry;
+use crate::value::Value;
 
 pub struct ElabContext {
     pub types: TypeRegistry,
@@ -43,12 +44,30 @@ impl ElabContext {
             types.register(TypeDefKind::Primitive { name: name.to_string(), val_type });
         }
 
+        let mut schemas = SchemaRegistry::new();
+        // `@rfport(num, z0)` — stdlib-reserved attribute marking a node/wire
+        // as an `.sp` S-parameter port (SP-01). Registered unconditionally
+        // (not gated by plugin loading, unlike the plugin system's own
+        // `@device`/`@port`) so `.sp` port declarations work in any project.
+        schemas.register_declared(
+            "rfport",
+            vec![
+                AttrField { name: "num".into(), ty: "Integer".into(), required: true, default: None },
+                AttrField {
+                    name: "z0".into(),
+                    ty: "Real".into(),
+                    required: false,
+                    default: Some(Value::Real(50.0)),
+                },
+            ],
+        );
+
         Self {
             types,
             components: ComponentRegistry::new(),
             callables: CallableRegistry::new(),
             events: EventRegistry::with_builtins(),
-            schemas: SchemaRegistry::new(),
+            schemas,
         }
     }
 }

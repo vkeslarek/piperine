@@ -16,7 +16,7 @@ pub mod traits;
 pub use crate::value;
 
 pub use behavior::{Behavior, BehaviorStmt, Function, ImplBlock, MatchArm};
-pub use design::{Design, Project};
+pub use design::{Design, Project, RfPort};
 pub use error::{ElabError, ElabErrorKind, ReflectError};
 pub use module::{Connection, Instance, Module, Param, Port, Var, Wire};
 pub use net_type::{is_ground, GROUND_NAMES, NetRef, NetType, TypeRef, ValueType};

@@ -63,6 +63,15 @@ impl Project {
     }
 }
 
+/// A resolved `@rfport(num, z0)` attribute instance (SP-01): the node it
+/// decorates, its 1-based port index, and its reference impedance.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RfPort {
+    pub num: u64,
+    pub z0: f64,
+    pub node: String,
+}
+
 /// The complete output of elaboration — the POM root.
 ///
 /// Fields are `pub(crate)`; external consumers use the public accessor
@@ -277,6 +286,63 @@ impl Design {
 
     /// Every impl block.
     pub fn impls(&self) -> &[ImplBlock] { &self.impls }
+
+    /// Resolve every `@rfport(num, z0)` attribute declared on a wire or port
+    /// of `module_name` into a [`RfPort`] (SP-01) — the `.sp` port
+    /// declaration path (Part VI attribute-schema machinery, no new device
+    /// kind). Fails loud (SP-05): an unknown module, a non-positive `z0`, or
+    /// a duplicate port `num`.
+    pub fn rfports(&self, module_name: &str) -> Result<Vec<RfPort>, ElabError> {
+        let module = self.modules.get(module_name).ok_or_else(|| {
+            ElabError::from(ElabErrorKind::Other(format!(
+                "@rfport: unknown module `{module_name}`"
+            )))
+        })?;
+        let field_err = |field: &str, reason: String| {
+            ElabError::from(ElabErrorKind::AttrSchemaField {
+                schema: "rfport".into(),
+                field: field.into(),
+                reason,
+            })
+        };
+        let candidates = module
+            .wires
+            .iter()
+            .map(|w| (w.name.as_str(), w.attributes.as_slice()))
+            .chain(module.ports.iter().map(|p| (p.name.as_str(), p.attributes.as_slice())));
+        let mut ports = Vec::new();
+        let mut seen_nums = std::collections::HashSet::new();
+        for (node, attrs) in candidates {
+            for attr in attrs {
+                if attr.schema() != "rfport" {
+                    continue;
+                }
+                let num = match attr.field("num") {
+                    Some(Value::Nat(n)) => *n,
+                    Some(Value::Int(n)) if *n >= 0 => *n as u64,
+                    other => {
+                        return Err(field_err(
+                            "num",
+                            format!("expected a non-negative integer port number, got {other:?}"),
+                        ));
+                    }
+                };
+                let z0 = match attr.field("z0") {
+                    Some(Value::Real(v)) => *v,
+                    Some(Value::Nat(n)) => *n as f64,
+                    other => return Err(field_err("z0", format!("expected a real z0, got {other:?}"))),
+                };
+                if z0 <= 0.0 {
+                    return Err(field_err("z0", format!("z0 must be positive, got {z0}")));
+                }
+                if !seen_nums.insert(num) {
+                    return Err(field_err("num", format!("duplicate port number {num}")));
+                }
+                ports.push(RfPort { num, z0, node: node.to_string() });
+            }
+        }
+        Ok(ports)
+    }
 
     // ── Staging layer ─────────────────────────────────────────────────────
 
