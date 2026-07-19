@@ -1,3 +1,4 @@
+//! Solver error taxonomy: `SolverDomain` + the loud-error types every layer returns.
 use thiserror::Error;
 
 /// Where an error originated. Replaces the free string titles (`"DC"`, `"TF"`,

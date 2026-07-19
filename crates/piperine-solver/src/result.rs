@@ -1,3 +1,4 @@
+//! Analysis result containers handed back to hosts (waveforms, operating points).
 use crate::error::Error;
 use crate::analog::{BranchIdentifier, AnalogVariable, NodeIdentifier};
 use crate::core::net::Net;
