@@ -407,6 +407,30 @@ impl SetQueue {
     }
 }
 
+/// Phase 1 output — the candidate landing point chosen over the unified
+/// breakpoint table from the PI-proposed step size.
+struct StepPrediction {
+    /// Absolute landing time.
+    t_next: f64,
+    /// The step size actually taken: `t_next − t_n`.
+    dt_actual: f64,
+    /// The step size the PI controller proposed (before breakpoint clamping).
+    dt_proposed: f64,
+    /// The step lands on a declared discontinuity → exempt from the
+    /// Milne-LTE accept gate.
+    landed_on_breakpoint: bool,
+}
+
+/// Phase 2 output — the Newton candidate solve plus the rollback
+/// checkpoints a rejection must restore.
+struct StepAttempt {
+    prediction: StepPrediction,
+    /// The TR-BDF2 solve: `Ok(Some(snapshot))` when both phases converged.
+    outcome: crate::result::Result<Option<TransientStep>>,
+    /// Analog history checkpoint, restored on rejection.
+    analog_history: CircularArrayBuffer2<f64>,
+}
+
 pub struct TransientSolver<'a> {
     pub system: TransientSystem<'a>,
     pub solver: NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>,
@@ -645,6 +669,76 @@ impl<'a> TransientSolver<'a> {
         Ok(Some(self.snapshot(t_next)))
     }
 
+    /// Phase 1 — predict: from the PI-proposed `dt_proposed`, pick the
+    /// landing point `t_next` over the unified breakpoint table (TRB-11):
+    /// the nearest of (a) the PI-proposed step, (b) the next DIGITAL event
+    /// — digital-var/enum `if`s in analog bodies switch at these times, so
+    /// landing here covers them — and (c) ANALOG `@timer` fires / source
+    /// edges declared via `Element::next_breakpoints`. Absolute times →
+    /// survive rollback.
+    ///
+    /// A step that lands on a declared discontinuity is ACCEPTED without
+    /// the Milne-LTE gate: the LTE would otherwise see the intentional
+    /// source jump (e.g. V(in) 0→5 at a pulse edge) as a huge error and
+    /// reject, thrashing the integrator against the edge it already hit.
+    fn predict_step(&self, current_time: f64, dt_proposed: f64) -> StepPrediction {
+        let t_next_event = self.system.circuit.digital_state.peek_next_event_time();
+        let pi_target = current_time + dt_proposed;
+        let mut t_next = pi_target.min(self.options.stop_time);
+        let mut landed_on_breakpoint = false;
+        if t_next_event < t_next {
+            t_next = t_next_event;
+            landed_on_breakpoint = true;
+        }
+        for dev in self.system.circuit.devices.iter() {
+            for bp in dev.next_breakpoints(current_time, dt_proposed) {
+                if bp > current_time && bp < t_next {
+                    t_next = bp;
+                    landed_on_breakpoint = true;
+                }
+            }
+        }
+        // Scheduled live sets (LIVE-06): each pending set time is a
+        // declared discontinuity — land exactly on it so the write
+        // applies at its scheduled time with the edge rules (skip LTE,
+        // reset prev_h). The relative-epsilon snap absorbs float
+        // accumulation: a proposal one ulp shy of the set time
+        // stretches onto it instead of leaving a ~1e-22 s sliver step.
+        if let Some(ts) = self.sets.next_breakpoint(current_time) {
+            let snap = 1e-9 * ts.abs().max(f64::MIN_POSITIVE);
+            if ts <= t_next + snap {
+                t_next = ts;
+                landed_on_breakpoint = true;
+            }
+        }
+        StepPrediction {
+            t_next,
+            dt_actual: t_next - current_time,
+            dt_proposed,
+            landed_on_breakpoint,
+        }
+    }
+
+    /// Phase 2 — attempt: checkpoint the digital state and the analog
+    /// history (a rejected attempt leaves its rows in the Newton buffer,
+    /// and the retry's charge-history views would integrate off the
+    /// rejected trajectory), process digital events EXACTLY at `t_next`
+    /// BEFORE the analog solve, then solve the TR-BDF2 candidate step
+    /// `[current_time, t_next]` (two phases).
+    fn attempt_step(
+        &mut self,
+        current_time: f64,
+        prediction: StepPrediction,
+        last_step_accepted: bool,
+    ) -> crate::result::Result<StepAttempt> {
+        self.system.circuit.digital_state.checkpoint();
+        let analog_history = self.solver.state_snapshot();
+        self.system.circuit.run_digital_at(prediction.t_next)?;
+        let outcome =
+            self.execute_timestep(current_time, prediction.dt_actual, last_step_accepted);
+        Ok(StepAttempt { prediction, outcome, analog_history })
+    }
+
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
         let stop_time: f64 = self.options.stop_time;
         let start_time: f64 = self.options.start_time;
@@ -713,65 +807,15 @@ impl<'a> TransientSolver<'a> {
             .collect();
 
         while current_time < stop_time {
-            let dt_proposed = dt;
-
-            // Unified breakpoint table (TRB-11): the integrator lands on the
-            // nearest of (a) the PI-proposed step, (b) the next DIGITAL event
-            // — digital-var/enum `if`s in analog bodies switch at these times,
-            // so landing here covers them — and (c) ANALOG `@timer` fires /
-            // source edges declared via `Element::next_breakpoints`. Absolute
-            // times → survive rollback.
-            //
-            // A step that lands on a declared discontinuity is ACCEPTED without
-            // the Milne-LTE gate: the LTE would otherwise see the intentional
-            // source jump (e.g. V(in) 0→5 at a pulse edge) as a huge error and
-            // reject, thrashing the integrator against the edge it already hit.
-            let t_next_event = self.system.circuit.digital_state.peek_next_event_time();
-            let pi_target = current_time + dt_proposed;
-            let mut t_next = pi_target.min(stop_time);
-            let mut landed_on_breakpoint = false;
-            if t_next_event < t_next {
-                t_next = t_next_event;
-                landed_on_breakpoint = true;
-            }
-            for dev in self.system.circuit.devices.iter() {
-                for bp in dev.next_breakpoints(current_time, dt_proposed) {
-                    if bp > current_time && bp < t_next {
-                        t_next = bp;
-                        landed_on_breakpoint = true;
-                    }
-                }
-            }
-            // Scheduled live sets (LIVE-06): each pending set time is a
-            // declared discontinuity — land exactly on it so the write
-            // applies at its scheduled time with the edge rules (skip LTE,
-            // reset prev_h). The relative-epsilon snap absorbs float
-            // accumulation: a proposal one ulp shy of the set time
-            // stretches onto it instead of leaving a ~1e-22 s sliver step.
-            if let Some(ts) = self.sets.next_breakpoint(current_time) {
-                let snap = 1e-9 * ts.abs().max(f64::MIN_POSITIVE);
-                if ts <= t_next + snap {
-                    t_next = ts;
-                    landed_on_breakpoint = true;
-                }
-            }
-
-            let dt_actual = t_next - current_time;
-
-            // Checkpoint digital state
-            self.system.circuit.digital_state.checkpoint();
-
-            // Checkpoint the analog history: a rejected attempt leaves its
-            // rows in the Newton buffer, and the retry's charge-history
-            // views would integrate off the rejected trajectory.
-            let analog_history = self.solver.state_snapshot();
-
-            // Process digital events EXACTLY at t_next BEFORE analog solve.
-            self.system.circuit.run_digital_at(t_next)?;
-
-            // Solve the TR-BDF2 step [current_time, t_next] (two phases).
-            let analog_result =
-                self.execute_timestep(current_time, dt_actual, last_step_accepted);
+            let prediction = self.predict_step(current_time, dt);
+            let attempt = self.attempt_step(current_time, prediction, last_step_accepted)?;
+            let StepAttempt { prediction, outcome: analog_result, analog_history } = attempt;
+            let StepPrediction {
+                t_next,
+                dt_actual,
+                dt_proposed,
+                mut landed_on_breakpoint,
+            } = prediction;
 
             // Whether this step's Milne window spans a live-set value jump
             // (consumed here; re-armed below when new sets apply).
