@@ -19,9 +19,12 @@
 //! comparison, and the analysis fails loud (PZ-06) rather than silently
 //! mis-extracting `C`.
 //!
-//! Poles/zeros themselves (generalized eigenvalues of the `(G, C)` pencil and
-//! the Rosenbrock system pencil) are added in the next task; this module
-//! currently exposes the `(G, C)` extraction the eigensolve consumes.
+//! **Poles.** The finite generalized eigenvalues of `(−G, C)` (`s = α/β`
+//! from the QZ decomposition's `S_a`/`S_b` factors); `|β| ≈ 0` roots are
+//! "at infinity" (a singular `C` — fewer dynamic states than nodes) and are
+//! dropped. A circuit with no reactive elements has no finite poles at all,
+//! which fails loud (PZ-05) rather than returning an empty success. Zeros
+//! (the Rosenbrock system pencil) are added in the next task.
 #![allow(dead_code)]
 
 use crate::analog::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
@@ -146,6 +149,64 @@ impl<'a> PoleZeroSolver<'a> {
     /// The system size `n` (number of MNA unknowns).
     pub fn size(&self) -> usize {
         self.size
+    }
+
+    /// Poles of `H(s) = lᵀ(sC + G)⁻¹b`: the finite generalized eigenvalues of
+    /// `(−G, C)` (PZ-01), infinite eigenvalues filtered (singular `C` — fewer
+    /// dynamic states than nodes), real/conjugate-paired (PZ-03). A circuit
+    /// with no reactive elements has no finite poles at all — that is a
+    /// fail-loud condition (PZ-05), not an empty success.
+    pub fn poles(&self) -> crate::result::Result<Vec<Complex<f64>>> {
+        let neg_g = self.g.mapv(|v| -v);
+        let roots = Self::finite_generalized_eigenvalues(&neg_g, &self.c, self.size)?;
+        if roots.is_empty() {
+            return Err(Error::simple(
+                SolverDomain::Pz,
+                "circuit has no reactive elements (C is structurally zero) — no finite poles exist",
+            ));
+        }
+        Ok(roots)
+    }
+
+    /// Finite generalized eigenvalues of the pencil `(a, b)`: `s = α/β` for
+    /// every `(α, β)` pair the QZ decomposition returns, dropping "at
+    /// infinity" roots (`|β| ≈ 0`, PZ-01/edge case), snapping near-real
+    /// roots to the real axis, and sorting for determinism (real matrices
+    /// give conjugate pairs directly from the QZ solve, so a stable sort by
+    /// `(Re, Im)` keeps each pair adjacent — PZ-03).
+    fn finite_generalized_eigenvalues(
+        a: &Array2<f64>,
+        b: &Array2<f64>,
+        size: usize,
+    ) -> crate::result::Result<Vec<Complex<f64>>> {
+        if size == 0 {
+            return Ok(Vec::new());
+        }
+        const TOL_INFINITE: f64 = 1e-9;
+        const TOL_REAL: f64 = 1e-9;
+
+        let a_mat = faer::Mat::from_fn(size, size, |i, j| a[[i, j]]);
+        let b_mat = faer::Mat::from_fn(size, size, |i, j| b[[i, j]]);
+        let evd = a_mat.generalized_eigen(&b_mat).map_err(|e| {
+            Error::simple(SolverDomain::Pz, format!("QZ generalized eigenvalue solve failed: {e:?}"))
+        })?;
+
+        let mut roots = Vec::new();
+        for (alpha, beta) in evd.S_a().column_vector().iter().zip(evd.S_b().column_vector().iter()) {
+            if beta.norm() <= TOL_INFINITE * (alpha.norm() + beta.norm()) {
+                continue; // root at infinity — singular C / algebraic constraint row
+            }
+            let mut s = alpha / beta;
+            if !s.re.is_finite() || !s.im.is_finite() {
+                continue;
+            }
+            if s.im.abs() < TOL_REAL * s.norm().max(1.0) {
+                s.im = 0.0;
+            }
+            roots.push(s);
+        }
+        roots.sort_by(|x, y| x.re.partial_cmp(&y.re).unwrap().then(x.im.partial_cmp(&y.im).unwrap()));
+        Ok(roots)
     }
 
     /// `G`: update every device at the DC point, collect `load_dc` matrix
@@ -359,6 +420,158 @@ mod tests {
         }
     }
 
+    /// An ideal DC voltage source between `p` and `n`, MNA branch-unknown
+    /// style (mirrors `core::builder::tests::TestVsource`).
+    struct TestVoltageSource {
+        p: AnalogReference,
+        n: AnalogReference,
+        branch: AnalogReference,
+        v: f64,
+    }
+    impl AnalogDevice for TestVoltageSource {
+        fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
+            let b = self.branch.clone();
+            vec![
+                Stamp::Matrix(self.p.clone(), b.clone(), 1.0),
+                Stamp::Matrix(b.clone(), self.p.clone(), 1.0),
+                Stamp::Matrix(self.n.clone(), b.clone(), -1.0),
+                Stamp::Matrix(b.clone(), self.n.clone(), -1.0),
+                Stamp::Rhs(b, self.v),
+            ]
+        }
+    }
+    impl DigitalDevice for TestVoltageSource {}
+    impl Introspect for TestVoltageSource {}
+    impl Element for TestVoltageSource {
+        fn name(&self) -> &str {
+            "v1"
+        }
+        fn capabilities(&self) -> ElementCapabilities {
+            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
+        }
+    }
+
+    /// An ideal inductor between `p` and `n`: a DC short (branch constraint
+    /// `V(p) − V(n) = 0`) whose AC branch row adds `−jωL` on the branch
+    /// unknown (`V(p) − V(n) − jωL·I = 0`).
+    struct TestInductor {
+        p: AnalogReference,
+        n: AnalogReference,
+        branch: AnalogReference,
+        l: f64,
+    }
+    impl AnalogDevice for TestInductor {
+        fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
+            let b = self.branch.clone();
+            vec![
+                Stamp::Matrix(self.p.clone(), b.clone(), 1.0),
+                Stamp::Matrix(b.clone(), self.p.clone(), 1.0),
+                Stamp::Matrix(self.n.clone(), b.clone(), -1.0),
+                Stamp::Matrix(b.clone(), self.n.clone(), -1.0),
+            ]
+        }
+        fn load_ac(
+            &mut self,
+            _dc: &DcAnalysisResult,
+            ac_ctx: &AcAnalysisContext,
+            _ctx: &Context,
+        ) -> Vec<Stamp<AnalogReference, Complex64>> {
+            let omega = 2.0 * std::f64::consts::PI * ac_ctx.frequency;
+            let b = self.branch.clone();
+            let one = Complex64::new(1.0, 0.0);
+            vec![
+                Stamp::Matrix(self.p.clone(), b.clone(), one),
+                Stamp::Matrix(b.clone(), self.p.clone(), one),
+                Stamp::Matrix(self.n.clone(), b.clone(), -one),
+                Stamp::Matrix(b.clone(), self.n.clone(), -one),
+                Stamp::Matrix(b.clone(), b, Complex64::new(0.0, -omega * self.l)),
+            ]
+        }
+    }
+    impl DigitalDevice for TestInductor {}
+    impl Introspect for TestInductor {}
+    impl Element for TestInductor {
+        fn name(&self) -> &str {
+            "l1"
+        }
+        fn capabilities(&self) -> ElementCapabilities {
+            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::LOADS_AC
+        }
+    }
+
+    /// `v1(in,gnd) --R-- out --C-- gnd`: a source-driven single-pole RC
+    /// low-pass — `.pz`'s canonical single-pole worked example. `V(in)` is
+    /// pinned by the ideal source, so `H(s) = V(out)/V(in) = 1/(RCs + 1)`,
+    /// pole at `s = −1/(RC)`.
+    fn rc_circuit_with_source(r: f64, c: f64) -> (CircuitInstance, PoleZeroOptions) {
+        let mut netlist = Netlist::new();
+        let n_in = netlist.connect_node(NodeIdentifier::Anonymous(0));
+        let n_out = netlist.connect_node(NodeIdentifier::Anonymous(1));
+        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
+        let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
+
+        let devices: Vec<Box<dyn Element>> = vec![
+            Box::new(TestVoltageSource { p: n_in.clone(), n: gnd.clone(), branch, v: 1.0 }),
+            Box::new(TestResistor { n1: n_in, n2: n_out.clone(), r }),
+            Box::new(TestCapacitor { n1: n_out, n2: gnd, c }),
+        ];
+        let circuit = CircuitInstance::from_devices_and_netlist("rc", devices, netlist);
+        let options = PoleZeroOptions {
+            input_source: BranchIdentifier::from_component("v1"),
+            output: AnalogVariable::Node(NodeIdentifier::Anonymous(1)),
+            output_ref: None,
+        };
+        (circuit, options)
+    }
+
+    /// `v1(in,gnd) --R-- a --L-- b --C-- gnd`: a source-driven series RLC —
+    /// `.pz`'s canonical complex-conjugate-pair worked example, poles at
+    /// `−R/(2L) ± j·sqrt(1/(LC) − (R/(2L))²)`.
+    fn rlc_circuit_with_source(r: f64, l: f64, c: f64) -> (CircuitInstance, PoleZeroOptions) {
+        let mut netlist = Netlist::new();
+        let n_in = netlist.connect_node(NodeIdentifier::Anonymous(0));
+        let n_a = netlist.connect_node(NodeIdentifier::Anonymous(1));
+        let n_b = netlist.connect_node(NodeIdentifier::Anonymous(2));
+        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
+        let v_branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
+        let l_branch = netlist.connect_branch(BranchIdentifier::from_component("l1"));
+
+        let devices: Vec<Box<dyn Element>> = vec![
+            Box::new(TestVoltageSource { p: n_in.clone(), n: gnd.clone(), branch: v_branch, v: 1.0 }),
+            Box::new(TestResistor { n1: n_in, n2: n_a.clone(), r }),
+            Box::new(TestInductor { p: n_a, n: n_b.clone(), branch: l_branch, l }),
+            Box::new(TestCapacitor { n1: n_b, n2: gnd, c }),
+        ];
+        let circuit = CircuitInstance::from_devices_and_netlist("rlc", devices, netlist);
+        let options = PoleZeroOptions {
+            input_source: BranchIdentifier::from_component("v1"),
+            output: AnalogVariable::Node(NodeIdentifier::Anonymous(2)),
+            output_ref: None,
+        };
+        (circuit, options)
+    }
+
+    /// `v1(in,gnd) --R-- gnd`: a purely resistive network (no reactive
+    /// element anywhere) — `.pz`'s PZ-05 fail-loud worked example.
+    fn resistor_only_circuit(r: f64) -> (CircuitInstance, PoleZeroOptions) {
+        let mut netlist = Netlist::new();
+        let n_in = netlist.connect_node(NodeIdentifier::Anonymous(0));
+        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
+        let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
+
+        let devices: Vec<Box<dyn Element>> = vec![
+            Box::new(TestVoltageSource { p: n_in.clone(), n: gnd.clone(), branch, v: 1.0 }),
+            Box::new(TestResistor { n1: n_in.clone(), n2: gnd, r }),
+        ];
+        let circuit = CircuitInstance::from_devices_and_netlist("ronly", devices, netlist);
+        let options = PoleZeroOptions {
+            input_source: BranchIdentifier::from_component("v1"),
+            output: AnalogVariable::Node(NodeIdentifier::Anonymous(0)),
+            output_ref: None,
+        };
+        (circuit, options)
+    }
+
     /// `in --Rin-- gnd`, `in --R-- out`, `out --C-- gnd`: a 2-unknown RC
     /// network with a well-posed (nonsingular) DC point and a clean,
     /// hand-computable `(G, C)` pencil.
@@ -427,5 +640,54 @@ mod tests {
         assert!(result.is_err(), "frequency-nonlinear AC stamp must fail loud (PZ-06)");
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("not affine in jω"), "error should name the linearity guard: {msg}");
+    }
+
+    // ── T4: poles via QZ ────────────────────────────────────────────────
+
+    #[test]
+    fn rc_low_pass_has_one_real_pole_at_minus_one_over_rc() {
+        let (mut circuit, options) = rc_circuit_with_source(1000.0, 1e-6);
+        let solver = PoleZeroSolver::new(&mut circuit, options, Context::default()).unwrap();
+        let poles = solver.poles().expect("RC has one finite pole");
+
+        assert_eq!(poles.len(), 1, "RC low-pass should have exactly one finite pole: {poles:?}");
+        let expected = -1.0 / (1000.0 * 1e-6); // -1000 rad/s
+        assert!(poles[0].im == 0.0, "pole should be snapped real: {:?}", poles[0]);
+        let rel_err = (poles[0].re - expected).abs() / expected.abs();
+        assert!(rel_err < 1e-6, "pole = {:?}, expected {expected}, rel_err = {rel_err}", poles[0]);
+    }
+
+    #[test]
+    fn series_rlc_has_complex_conjugate_pole_pair() {
+        let (r, l, c) = (10.0, 1e-3, 1e-6);
+        let (mut circuit, options) = rlc_circuit_with_source(r, l, c);
+        let solver = PoleZeroSolver::new(&mut circuit, options, Context::default()).unwrap();
+        let poles = solver.poles().expect("series RLC has a conjugate pole pair");
+
+        assert_eq!(poles.len(), 2, "series RLC should have exactly two finite poles: {poles:?}");
+        let sigma = -r / (2.0 * l);
+        let omega_d = (1.0 / (l * c) - (r / (2.0 * l)).powi(2)).sqrt();
+
+        // Sorted by (Re, Im): the negative-imaginary root comes first.
+        let (p_minus, p_plus) = (poles[0], poles[1]);
+        assert!(p_minus.im < 0.0 && p_plus.im > 0.0, "expected a conjugate pair: {poles:?}");
+        assert!((p_minus.re - sigma).abs() / sigma.abs() < 1e-6, "Re(pole) = {}, expected {sigma}", p_minus.re);
+        assert!((p_plus.re - sigma).abs() / sigma.abs() < 1e-6);
+        assert!(
+            (p_plus.im - omega_d).abs() / omega_d < 1e-6,
+            "Im(pole) = {}, expected {omega_d}",
+            p_plus.im
+        );
+        assert!((p_minus.im + omega_d).abs() / omega_d < 1e-6, "conjugate: Im = {}", p_minus.im);
+    }
+
+    #[test]
+    fn resistor_only_circuit_fails_loud_pz05() {
+        let (mut circuit, options) = resistor_only_circuit(1000.0);
+        let solver = PoleZeroSolver::new(&mut circuit, options, Context::default()).unwrap();
+        let result = solver.poles();
+        assert!(result.is_err(), "a purely resistive network has no finite poles (PZ-05)");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("no reactive elements") || msg.contains("no finite poles"), "{msg}");
     }
 }
