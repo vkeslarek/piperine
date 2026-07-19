@@ -209,6 +209,65 @@ pub trait AnalogDevice: Send + Sync {
     }
 }
 
+/// Digital participation: two-phase delta cycle + hidden-state round-trip.
+///
+/// The delta cycle is two-phase to preserve non-blocking (NBA) semantics
+/// across register chains (SPEC §9): the scheduler calls `seq_phase` on every
+/// woken element first, then `comb_phase` on every woken element, so a
+/// register samples the pre-edge net snapshot instead of racing ahead.
+///
+/// Every method defaults to an element that drives no nets, so a purely
+/// analog device inherits the inert digital surface untouched.
+pub trait DigitalDevice: Send + Sync {
+    /// Boundary wiring: the nets this element reads (its sensitivity list) and
+    /// the nets it drives. Defaults to driving/reading nothing.
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: &[], outputs: &[] }
+    }
+
+    /// Power-on: apply register initial values and emit initial output events
+    /// (typically at `t = 0`). No-op for elements with no digital state.
+    fn init(&mut self, _sink: &mut dyn EventSink) {}
+
+    /// Phase 1 (register commit): detect clock edges against the previous
+    /// evaluation and commit register writes from the pre-settle net snapshot.
+    /// Returns whether any clocked block fired. **Must not** emit output events
+    /// — those happen in [`comb_phase`](DigitalDevice::comb_phase).
+    fn seq_phase(&mut self, _ctx: &EvalCtx<'_>) -> bool { false }
+
+    /// Phase 2 (combinational): recompute outputs from live `ctx.nets` and the
+    /// (possibly just-committed) register banks, emitting change events into
+    /// `sink`.
+    fn comb_phase(&mut self, _ctx: &EvalCtx<'_>, _sink: &mut dyn EventSink) {}
+
+    /// Fused one-shot evaluation: [`seq_phase`](DigitalDevice::seq_phase) then
+    /// [`comb_phase`](DigitalDevice::comb_phase) in a single call. Used by external
+    /// co-simulators that don't participate in the scheduler's two-phase cycle.
+    fn evaluate(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+        self.seq_phase(ctx);
+        self.comb_phase(ctx, sink);
+    }
+
+    /// Convenience: true if any of the element's input nets is in `changed`.
+    fn has_input_on(&self, changed: &HashSet<DigitalNet>) -> bool {
+        self.boundary().inputs.iter().any(|n| changed.contains(n))
+    }
+
+    /// Hidden digital state (module vars, edge-detection memory) as an
+    /// opaque `(int, real)` carrier, snapshotted into each recorded
+    /// [`crate::result::TransientStep`] and restored verbatim on full-state
+    /// re-entry (PSS shots, `TransientSolver::with_initial_state`) — the
+    /// shot-state contract requires register state to round-trip with the
+    /// digital nets. `None` = stateless (pure combinational) element.
+    fn digital_hidden_snapshot(&self) -> Option<(Vec<i64>, Vec<f64>)> {
+        None
+    }
+
+    /// Restore a state previously produced by [`Self::digital_hidden_snapshot`].
+    /// Called on full-state re-entry after `init`, before the first settle.
+    fn digital_hidden_restore(&mut self, _state: &(Vec<i64>, Vec<f64>)) {}
+}
+
 /// A single thing the solver simulates — the one contract over every
 /// participant, analog or digital or both.
 ///
@@ -313,47 +372,6 @@ pub trait Element: Send + Sync {
     ) {
     }
 
-    // ── Digital evaluation ────────────────────────────────────────────────────
-    //
-    // The delta cycle is two-phase to preserve non-blocking (NBA) semantics
-    // across register chains (SPEC §9): the scheduler calls `seq_phase` on every
-    // woken element first, then `comb_phase` on every woken element, so a
-    // register samples the pre-edge net snapshot instead of racing ahead.
-
-    /// Boundary wiring: the nets this element reads (its sensitivity list) and
-    /// the nets it drives. Defaults to driving/reading nothing.
-    fn boundary(&self) -> DigitalPorts<'_> {
-        DigitalPorts { inputs: &[], outputs: &[] }
-    }
-
-    /// Power-on: apply register initial values and emit initial output events
-    /// (typically at `t = 0`). No-op for elements with no digital state.
-    fn init(&mut self, _sink: &mut dyn EventSink) {}
-
-    /// Phase 1 (register commit): detect clock edges against the previous
-    /// evaluation and commit register writes from the pre-settle net snapshot.
-    /// Returns whether any clocked block fired. **Must not** emit output events
-    /// — those happen in [`comb_phase`](Element::comb_phase).
-    fn seq_phase(&mut self, _ctx: &EvalCtx<'_>) -> bool { false }
-
-    /// Phase 2 (combinational): recompute outputs from live `ctx.nets` and the
-    /// (possibly just-committed) register banks, emitting change events into
-    /// `sink`.
-    fn comb_phase(&mut self, _ctx: &EvalCtx<'_>, _sink: &mut dyn EventSink) {}
-
-    /// Fused one-shot evaluation: [`seq_phase`](Element::seq_phase) then
-    /// [`comb_phase`](Element::comb_phase) in a single call. Used by external
-    /// co-simulators that don't participate in the scheduler's two-phase cycle.
-    fn evaluate(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
-        self.seq_phase(ctx);
-        self.comb_phase(ctx, sink);
-    }
-
-    /// Convenience: true if any of the element's input nets is in `changed`.
-    fn has_input_on(&self, changed: &HashSet<DigitalNet>) -> bool {
-        self.boundary().inputs.iter().any(|n| changed.contains(n))
-    }
-
     /// Runtime state/var banks for opt-in per-step recording
     /// (`TransientAnalysisOptions::record_device_state`). Devices whose
     /// analog residual reads runtime banks (`delay`/`transition`/`idt`
@@ -363,18 +381,4 @@ pub trait Element: Send + Sync {
     fn runtime_banks(&self) -> (&[f64], &[f64]) {
         (&[], &[])
     }
-
-    /// Hidden digital state (module vars, edge-detection memory) as an
-    /// opaque `(int, real)` carrier, snapshotted into each recorded
-    /// [`crate::result::TransientStep`] and restored verbatim on full-state
-    /// re-entry (PSS shots, `TransientSolver::with_initial_state`) — the
-    /// shot-state contract requires register state to round-trip with the
-    /// digital nets. `None` = stateless (pure combinational) element.
-    fn digital_hidden_snapshot(&self) -> Option<(Vec<i64>, Vec<f64>)> {
-        None
-    }
-
-    /// Restore a state previously produced by [`Self::digital_hidden_snapshot`].
-    /// Called on full-state re-entry after `init`, before the first settle.
-    fn digital_hidden_restore(&mut self, _state: &(Vec<i64>, Vec<f64>)) {}
 }
