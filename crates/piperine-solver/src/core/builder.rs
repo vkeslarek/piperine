@@ -50,6 +50,14 @@ impl<'a> UnknownAllocator<'a> {
 /// Safe, discoverable circuit assembly. Wraps the manual `Netlist` API so
 /// hosts never call `Netlist::connect_node` directly.
 ///
+/// Construction boundary (design §6b): this builder is the one construction
+/// path — [`build`](Self::build) is the sole intended caller of
+/// [`CircuitInstance::from_devices_and_netlist`], and `CircuitInstance` grows
+/// no ad-hoc constructor beyond it. After construction, re-entry goes through
+/// the analysis drivers (e.g. `TransientSolver::with_initial_state`) and the
+/// MD-18 restamp path (`CircuitInstance::set_element_param` + re-run), never
+/// through a new constructor.
+///
 /// ```ignore
 /// use piperine_solver::prelude::*;
 /// let mut b = CircuitBuilder::new("top");
