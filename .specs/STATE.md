@@ -11,7 +11,14 @@ The solver talks to every participant through one `Element` trait with
 split, no downcast. A resistor, a gate, a comparator, and a plugin are the
 same type to the solver.
 
-**Status:** Done.
+**Status:** Done (amended 2026-07-19, solver-simplification batch 3):
+`Element` is the conjunction of concern-scoped supertraits (`AnalogDevice`
++ `DigitalDevice` + `Introspect`). The object is not split — still one
+`Element` ABI, still no `Any`/downcast; only its surface is grouped so
+each concern is separately legible, and capability flags still gate which
+concern runs. Rationale beyond legibility: a downcast-based facet split
+would block the future C-style FFI ABI — supertraits keep the object flat
+across the boundary.
 
 ### MD-02: Net is the unified naming layer
 `Net` (kind + dense index + label + optional `Arc<AnalogVariable>`) replaces
@@ -42,7 +49,11 @@ composed of three strategy traits: `NewtonStrategy`, `HomotopyStrategy`,
 `StepperStrategy`. Each analysis picks the strategies it needs. No inline
 if-else cascades in drivers.
 
-**Status:** Locked. `HomotopyStrategy` done; Newton/Stepper pending.
+**Status:** Done (2026-07-19, solver-simplification). `HomotopyStrategy`
+(gmin/source stepping), `NewtonStrategy` (`DampedNewton`, wired in
+`analyses/dc.rs` + the transient kernel), and `StepperStrategy`
+(`PiController`, wired in `analyses/transient.rs`) all shipped and wired;
+homotopy/stepper literals live in `analyses/config.rs`.
 
 ### MD-06: init_global as Once
 `tracing`/`faer` need one-time process init. `Context::default` does not
@@ -234,162 +245,56 @@ Implementation: sens/PSS bindings immediately; full alignment in P3.
 
 ## Handoff Snapshot
 
-**Last updated:** 2026-07-18 — `p1-solver-complete` DELIVERED (Verifier round 2
-PASS), 509 green / 5 ignored.
+**Last updated:** 2026-07-19 — `solver-simplification` batches 1–5 (P0–P8)
+DONE, 520 green / 5 ignored, 0 rustc warnings.
 
-### Feature E — `p1-solver-complete` (DELIVERED)
+### Feature — `solver-simplification` (IN PROGRESS — batch 6 remaining)
 
-Verifier round 2 **PASS** (`.specs/features/p1-solver-complete/validation.md`):
-spec-anchored evidence for all 25 active ACs; discrimination sensor 6/6 killed.
-Round 1 FAIL gaps fixed: `list_params` Rebuild classification (`d3693a9`),
-PSS hidden-digital-state round-trip (`5dc84a9` — new
-`Element::digital_hidden_snapshot/restore` ABI; shots now deterministic from
-the shot start per the mixed-signal contract), table slope discrimination
-(`038d5f8`), transition zero-rise edge (`4c178b1`). SC-16 (urc) stays blocked
-on the `codegen-parametric-devices` feature.
+Spec/design/tasks in `.specs/features/solver-simplification/`.
+Behavior-preserving refactor of `piperine-solver`; the oracle is the P0
+parity baselines (bit-identical) plus the unchanged 520-test suite.
 
-Spec/design/tasks in `.specs/features/p1-solver-complete/`. ROADMAP pillar
-P1 closed: every item done or in the named backlog table (ROADMAP.md).
-Delivered beyond the other AI's T1–T18:
+- **Batch 1 (P0+P1)** ✅ — parity baselines pinned; dead surface removed
+  (`LINEAR`, `ANALYTIC_JACOBIAN`, `STAMPS_CHARGE` + producers/asserts,
+  phantom rollback doc); `SignalBridge` folded into `CircuitInstance`.
+- **Batch 2 (P2+P3)** ✅ — `math/unit.rs` removed (`f64` inline, `Second`
+  off the ABI surface); config home `analyses/config.rs`
+  (`GminSchedule`/`SourceSchedule`/`StepperGains`/`TraceFlags`, defaults
+  == former literals) wired into homotopy, `PiController`, trace path.
+- **Batch 3 (P4)** ✅ — `Element` = `AnalogDevice + DigitalDevice +
+  Introspect` conjunction (MD-01 amended 2026-07-19); codegen
+  `PiperineDevice` + test doubles regrouped into the four blocks;
+  composed-surface contract test (`composed_element.rs`).
+- **Batch 4 (P5+P6)** ✅ — `CircuitInstance` five contracted sections;
+  `solver/` + `analysis/` collapsed into `analyses/` (Scheme B, data +
+  driver co-located); per-module `//!` layer contracts.
+- **Batch 5 (P7+P8)** ✅ — transient `solve()` decomposed into named
+  phase methods (`predict_step` / `attempt_step` / `assess_step` /
+  `accept_step` / `settle_digital` / `record_step` / `propose_dt` /
+  `reject_lte_step` / `reject_step`, plus `begin_run` / `finish_run` and
+  the `TimeLoop` state struct — no driver method > 60 lines); STATE.md
+  refreshed (MD-05 done, MD-01 amendment, this snapshot); module `//!`
+  contract audit.
 
-- **T19 fetlim/limvds** (`81f36af`) — inherited uncommitted; validated against
-  ngspice devsup.c, shallow test cases strengthened (all clamps/floors bite).
-- **T20 temperature** (`5dfa04d`) — tnom audit uniform; `.temp` sweep test
-  (−1.66 mV/K at 4.3 mA, theory −1.7).
-- **T21 inductor TR dual** (`f76b4db`) — fix pre-landed `d400973`; added the
-  missing coupled-LC transient regression; discrimination proven (mutant
-  shifts first-transfer peak 1.36→1.69 µs, killed).
-- **T22 IntegrationMethod removal** (`1d7e605`) — enum + dead `TruncationError`
-  + `Tolerances.integration` gone; `suggest_transient_step` re-signed.
-- **T23/T24** — pre-landed (`2403e29` scheduler split, `1857df5` SignalBridge);
-  marked with evidence.
-- **T25** (`81b9c1d`) — `Netlist::initial_values` (as_iv re-home), shared
-  `Integrator::trapezoid`, init_global ownership proof test.
-- **T26** (`e8f1ff4`) — `record_device_state` opt-in (uniform on both hosts,
-  MD-22); `Trace.i` on stateful devices KCL-exact; loud error kept when off.
-- **T27** — ROADMAP P1 closed + named backlog; spec traceability 25 done /
-  1 blocked; docs (part VIII, appendix C) carry `record_device_state`.
-- **T16 urc — BLOCKED** on `codegen-parametric-devices` (hierarchy flattening,
-  const-args-into-behavior, array-node expansion) — logged as its own feature.
+**Baseline at batch-5 close:** `cargo test --workspace` 520 green /
+5 ignored, 0 rustc warnings; parity baselines bit-identical through every
+batch.
+**Remaining:** batch 6 (P9) — Part VII canonical rewrite (T33–T35), then
+the feature Verifier.
+**Branch:** `feature/bench-removal`.
 
-**Baseline at close:** `cargo test --workspace` 504 green / 5 ignored, zero
-warnings; ngspice live (27/27). MD-07 amended (IntegrationMethod removed).
-**Branch:** `feature/bench-removal` (all p1 work landed here).
+### Previously delivered features (summary)
 
-### Feature D — `bench-removal` (DELIVERED)
-
-Spec/design/tasks in `.specs/features/bench-removal/`. The in-language
-`bench` is gone (keyword = syntax error, `piperine-bench` deleted) and the
-host surfaces consolidated:
-
-- **Root `piperine` crate is the library face (MD-19, lib-only)**: `src/`
-  hosts `SimSession`/`SolverConfig`, result objects (`results.rs`,
-  `waveform.rs`), `Error`, `SimHooks` (plugin lifecycle — preserved per user
-  decision), and a `prelude` re-exporting lang/codegen/solver. The `piperine`
-  binary target lives in `piperine-cli` (`[[bin]]`).
-- **Tests of record migrated** to root `tests/`: ngspice harness (19, live
-  green), spice smoke (7, fixtures ported to session API with identical
-  assertions), compile-once sweep, run_examples dual contract (24 `.phdl`
-  elaborate + 26 `.py` run), session suite incl. 4 behaviors ported from the
-  deleted bench.rs (tran start, nodeset, `Trace::i`, digital op readback).
-- **`piperine test`** runs `*_tb.py` testbenches (subprocess isolation,
-  per-file timeout via `PIPERINE_TEST_TIMEOUT_SECS`, exit codes).
-- **Plugin bench-task surface removed** (SDK, wire protocol, WASM ABI v3);
-  manifests declaring `bench_tasks` fail loud. Lifecycle hooks preserved via
-  root `SimHooks`; plugin gates ported to the root session.
-- **Python sanitized**: `Module.stage` → `Module.set`, facade fully
-  docstringed (hygiene gate walks it), native sub-views surfaced
-  (`InstanceView`/`Terminal`/`SolverStats`).
-- **Docs**: `docs/spec/part_viii_host_api.md` (new host-API part); Part III
-  tombstoned; index/Parts I/II/V/VI/appendices swept; AGENTS.md/CLAUDE.md/
-  README/ROADMAP updated.
-- **Deviation logged**: `piperine run <file>.phdl` no longer executes bench
-  entry points (it elaborates and points at `*_tb.py`/the REPL).
-
-### Feature A — `solver-trbdf2-engine` (DELIVERED — cleanups deferred)
-
-Spec/context/design/tasks in `.specs/features/solver-trbdf2-engine/`.
-**Delivered & green:** TR-BDF2 (γ=2−√2) two-phase sole scheme; trapezoidal
-companion fix (`i_{C,n}` re-derived from prior BDF2); **PI controller
-always-adaptive** (Milne LTE over node voltages, with asymmetric-difference
-discontinuity exclusion); **`@timer(period, phase)`** + **unified
-analog/digital breakpoints**; breakpoint discontinuity handling (skip LTE at
-edges, reset prev_h). `docs/spec/` Parts I/II/III/V/VII + ROADMAP updated.
-**Subsumed:** `solver-breakpoints` and `solver-unified-events` specs deleted
-(both fully delivered by this engine).
-**Deferred cleanups (user: "ignore for now"):** (1) remove vestigial
-`IntegrationMethod` enum + `TruncationError` trait + dead
-`suggest_transient_step` + `Tolerances.integration`; (2) inductor flux
-TR-stage companion (dual previous-voltage); (3) T15/T16 permanent
-discrimination test + ngspice parity; (4) `bp_dt`.
-
-### Feature B — `python-bindings` (DELIVERED)
-
-All 17 requirements (PY-01..PY-17) verified. Spec/context/design/tasks in
-`.specs/features/python-bindings/`. **Delivered:**
-- Crate `piperine-python` (PyO3) — `_piperine` native + typed pure-Python facade.
-- `load → Design → Module → op/tran/ac/noise → results.v(net)` matching the
-  bench shape exactly (PY-17 uniform-shape proof via embedded smoke test).
-- numpy arrays (`.values`/`.axis`), `.cross()`, stats, `TranConfig.ic`.
-- `piperine run foo.py` (embedded CPython, no pip install).
-- `piperine run -i [design.phdl]` (interactive REPL with autocomplete).
-- `piperine new` creates `.venv/` with bundled `_piperine.so` + facade (IDE
-  autocomplete out of the box — no `target/` needed on the user's machine).
-- 21 Python example scripts (one per `.phdl` in `examples/`) — 21/21 pass.
-
-### Remaining solver specs (planning only — no code yet)
-
-| Feature | What | Status |
-|---------|------|--------|
-| `solver-strategy-composition` | Extract `NewtonStrategy`/`StepperStrategy` traits; `Tolerances`/`Policy` split; `SignalBridge`; MD-13 cleanup | Spec + design + tasks; partially done (homotopy + PI controller delivered) |
-| `solver-library-abi` | `Circuit` builder; `Solver::build()`; prelude-only public surface; scheduler split; `as_iv` decoupled | Spec + design + tasks |
-| `solver-osdi-abi-completion` | Lifecycle hooks; terminal descriptors; internal unknowns; noise metadata; model/instance separation | Spec only |
-| `solver-performance` | Device bypass; matrix reuse; predictor | Spec only |
-| `solver-convergence-aids` | Circuit-wide `gshunt`; `fetlim`/`limvds` | Spec only |
-| `solver-commit-rollback` | `Element::checkpoint/rollback/commit` lifecycle hooks | Spec only |
-
-### Feature C — `solver-convergence-performance` (DELIVERED — 13/13 tasks)
-
-Spec/design/tasks in `.specs/features/solver-convergence-performance/`.
-**Delivered (all phases, 2026-07-16):**
-- `SolverStats` fully wired: newton_iterations (plan total incl. homotopy),
-  steps accepted/rejected, `dt_min_floor_hits`, dt range, bypass counters,
-  `homotopy_strategy`/`homotopy_levels` (via `PlanOutcome`),
-  `assembly_time_ns`/`solve_time_ns` (CP-01..03, CP-08)
-- User tolerances reach the Newton loop (CP-04,05); Python `op.stats` /
-  `trace.stats` (CP-09)
-- Zero-alloc Newton loop: `reset()` + hoisted `residual`/`scale` fields +
-  shared `compute_residual` (CP-06); Milne `node_indices` hoisted out of the
-  step loop
-- Device bypass (solution-delta stamp cache) hardened: cache invalidated on
-  gmin/src_scale changes + digital settle; suppressed while limiting;
-  build-into-cache buffer reuse (CP-11)
-- `ConvergenceHint{net, limited_value}` + `Element::convergence_hint` — the
-  solver applies structured limits to the guess pre-convergence-test (CP-12)
-- `suggest_transient_step` consulted (CP-13); `gshunt` (CP-14)
-- First-order Newton predictor: `set_predictor_ratio` one-shot seed, armed by
-  the transient driver for the TR stage, gated off after rejections and
-  breakpoint landings (CP-16)
-- Tolerances/Policy split (MD-04 **done**): `Context = {Tolerances}` only;
-  `Policy{max_iter, dc_damp_tolerance}` owned per driver (`pub policy` on
-  Dc/Transient/Ac solvers); `Context.time` removed — time is an explicit
-  argument (`accept_timestep(state, t, …)`, `accept_and_run_digital(sol, t)`)
-  (CP-17)
-- Dead code: `alpha`, `apply_limit` overrides, `Policy::damp_update`,
-  `DcContext` stub, `util.rs` (`AsAny` + `map!` macro — MD-13 rules 4+5)
-- Newton unsafe removed: `NonLinearSystem::netlist()` replaces the
-  raw-pointer aliasing workaround in dc/transient; convergence math deduped
-  onto `Tolerances::{has_converged, residual_test}`
-
-**Known perf lever (not a regression):** DC midpoint damping
-(`dc_damp_tolerance = 0.5`, global L2) costs ~4 extra Newton iterations on
-trivial linear circuits (divider converges in 6, not 2). Next candidate:
-damp only when limiting/oscillation is detected.
-
-### Test baseline
-- `cargo build --workspace` — zero warnings.
-- `cargo test --workspace` — 391 green.
-- 21/21 `examples/*.py` pass via `piperine run`.
-- Stats validated on real runs: divider op ni=6 (plain Newton), clipper op
-  ni=75, clipper tran 2 iters/step (1/phase — floor), timing/homotopy fields
-  populated.
+- **`p1-solver-complete`** (DELIVERED 2026-07-18, Verifier round 2 PASS) —
+  25/25 active ACs, sensor 6/6; ROADMAP pillar P1 closed. Details in
+  `.specs/features/p1-solver-complete/validation.md` and git history.
+- **`bench-removal`** (DELIVERED) — in-language `bench` gone; root
+  `piperine` crate is the library face (MD-19, superseded by MD-20);
+  tests of record in root `tests/`; `piperine test` runs `*_tb.py`.
+- **`solver-trbdf2-engine`** (DELIVERED) — TR-BDF2 sole scheme, PI
+  controller always-adaptive, unified analog/digital breakpoints.
+- **`python-bindings`** (DELIVERED) — `piperine-python` (PyO3) +
+  pure-Python facade; PY-01..PY-17 verified.
+- **`solver-convergence-performance`** (DELIVERED) — `SolverStats` wired,
+  zero-alloc Newton, device bypass, `ConvergenceHint`, Tolerances/Policy
+  split (MD-04 done).
