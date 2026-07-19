@@ -90,8 +90,11 @@ fn test_purely_resistive_device_capabilities() {
     let dev = piperine_codegen::device::PiperineDevice::new("testR", Some(a_inst), None);
     
     let caps = dev.capabilities();
-    assert!(caps.contains(ElementCapabilities::ANALYTIC_JACOBIAN));
-    assert!(!caps.contains(ElementCapabilities::STAMPS_CHARGE));
+    // A purely resistive analog device advertises the analog engine and no
+    // digital participation (the removed ANALYTIC_JACOBIAN/STAMPS_CHARGE flags
+    // had no solver consumer — SS-10).
+    assert!(caps.contains(ElementCapabilities::ANALOG));
+    assert!(!caps.contains(ElementCapabilities::DIGITAL));
 }
 
 #[test]
@@ -109,6 +112,9 @@ fn test_reactive_device_capabilities() {
     let dev = piperine_codegen::device::PiperineDevice::new("testC", Some(a_inst), None);
     
     let caps = dev.capabilities();
-    assert!(caps.contains(ElementCapabilities::ANALYTIC_JACOBIAN));
-    assert!(caps.contains(ElementCapabilities::STAMPS_CHARGE));
+    // A reactive analog device still advertises just the analog engine —
+    // reactivity is an internal kernel property, no longer a capability flag
+    // (the removed STAMPS_CHARGE had no solver consumer — SS-10).
+    assert!(caps.contains(ElementCapabilities::ANALOG));
+    assert!(!caps.contains(ElementCapabilities::DIGITAL));
 }
