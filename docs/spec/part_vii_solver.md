@@ -70,43 +70,106 @@ A circuit instance is the complete solver input:
 The device order is stable for the lifetime of the circuit. Event provenance may
 refer to this order, and deterministic ties use a monotonic sequence number.
 
+The circuit instance (`CircuitInstance`) exposes its surface grouped into five
+contracted responsibilities; every public method belongs to exactly one:
+
+| Responsibility | Contents |
+|----------------|----------|
+| Circuit state | Read-only views of the built circuit: the analog netlist, the unified net list, digital labels, the capability union (the OR of every element's `ElementCapabilities`), and device access. |
+| Analysis entry | One uniform entry point per analysis — `dc`, `ac`, `transient`, `noise`, `transfer_function`, `sens`, `pss` — each handing a driver a borrow of the circuit plus a `Context`. |
+| Mixed-signal seam | The one place analog acceptance seeds digital events and the scheduler runs (§14): `init_digital`, `run_digital_at[_with_analog]`, `accept_and_run_digital`, `rebuild_digital_topology`. |
+| Live mutation | The restamp path (`set_element_param`, §10.5) plus the per-solve hooks (`setup_all`, `update_all`, `apply_convergence_hints`). |
+| Construction | None — construction stays in the `CircuitBuilder`. |
+
+Construction is the builder's job. `CircuitBuilder::build` runs each element's
+`allocate_unknowns` pre-freeze allocation seam (an element that allocates
+internal unknowns without declaring `HAS_INTERNAL_UNKNOWNS` fails the build),
+assembles the instance, sizes and labels the digital state, rebuilds the
+digital topology, and initializes the digital devices at time zero. After
+construction, re-entry goes through the analysis drivers (e.g. a transient
+restart from a captured step) and the restamp path — never through a new
+constructor.
+
 The circuit instance offers analyses over the same topology. A DC analysis,
-transient analysis, AC sweep, noise analysis, and transfer-function analysis all
-consume the same device set and analog/digital namespaces.
+transient analysis, AC sweep, noise analysis, transfer-function analysis,
+sensitivity analysis, and periodic-steady-state analysis all consume the same
+device set and analog/digital namespaces. The `Solver` facade is the host entry
+point: it owns the circuit plus the shared run configuration (`Context` and
+`Policy`) and hands out each analysis driver with that configuration applied.
 
 ---
 
 ## §3 Element ABI — analog operations
 
-There is **one** solver-facing contract, the **element**. It replaces the older
-split of a `Device` wrapper over separate analog and digital device traits:
-every participant — a pure resistor, a logic gate, a comparator, a JIT-compiled
-PHDL block, a plugin, a wrapped external model — implements the same `Element`
-trait and implements only the operations it needs. There is no downcast.
+There is **one** solver-facing object, the **element**. Every participant — a
+pure resistor, a logic gate, a comparator, a JIT-compiled PHDL block, a plugin,
+a wrapped external model — implements the same `Element` contract and
+implements only the operations it needs. There is no downcast and no `Any`.
 
-Every element declares two things:
+The contract's surface is grouped by concern: `Element` is the conjunction of
+three supertraits, each independently documented with every method defaulted.
+
+```text
+Element = AnalogDevice + DigitalDevice + Introspect
+          + identity & cross-cutting lifecycle
+```
+
+| Supertrait | Concern |
+|------------|---------|
+| `AnalogDevice` | MNA loading (`load_dc`/`load_ac`/`load_transient`/`noise_current_psd`) plus the analog lifecycle and convergence/timestep hooks (this section). |
+| `DigitalDevice` | The two-phase delta cycle and digital hidden-state round-trip (§4). |
+| `Introspect` | OSDI-style parameters, queries, terminals, and operating variables (§3.4). |
+
+`Element` itself keeps only identity and the cross-cutting lifecycle that is
+not purely one concern:
 
 | Method | Contract |
 |--------|----------|
 | `name()` | Source-level identity, for diagnostics and result mapping. |
 | `capabilities()` | Required. A capability descriptor (`ElementCapabilities`) declaring what the element participates in, so the solver and scheduler plan without probing. |
+| `setup(context)` | One-time initialization before the first solve, with the run context. |
+| `destroy()` | Teardown when the circuit instance is dropped. |
+| `accept_timestep(state, t, nets, sink)` | The analog→digital bridge hook: called after each accepted solution point at time `t`; a mixed-signal element may emit digital events through `sink`. |
+| `runtime_banks()` | Runtime state/var banks for opt-in per-step recording; default empty. |
 
-`ElementCapabilities` is a bit set. The normative flags are `ANALOG` (contributes
-MNA stamps), `DIGITAL` (participates in the digital scheduler), and
-`SAMPLES_ANALOG` (its digital logic reads analog node voltages, so it must be
-evaluated on every accepted analog solve even without a pending digital event).
+All supertrait methods default to a no-op, so a pure-analog element overrides
+only its analog methods and inherits the inert digital and introspection
+surfaces (the empty impl blocks are explicit — their presence documents that
+the element is deliberately inert in the other concerns). The object is not
+split — only its surface is grouped — and the solver never names a supertrait
+to select behavior: capability flags gate, as before.
+
+`ElementCapabilities` is a bit set:
+
+| Flag | Meaning |
+|------|---------|
+| `ANALOG` | Contributes to the analog system (MNA stamps in DC/AC/transient/noise). |
+| `DIGITAL` | Participates in the digital scheduler (drives/reads logic nets). |
+| `SAMPLES_ANALOG` | Its digital logic reads analog node voltages, so it must be evaluated on every accepted analog solve even without a pending digital event. |
+| `LOADS_DC` | `load_dc` contributes to the DC operating point. |
+| `LOADS_AC` | `load_ac` contributes to the small-signal AC sweep. |
+| `LOADS_TRAN` | `load_transient` contributes to time-domain integration. |
+| `EMITS_NOISE` | `noise_current_psd` returns non-empty sources. |
+| `DEPENDS_ON_DIGITAL` | Analog load reads the digital net snapshot (D2A); the DC and transient drivers order the digital settle before stamping this element. Implies `ANALOG`. |
+| `HAS_INTERNAL_UNKNOWNS` | The element allocated internal MNA unknowns (auxiliary branch currents, hidden states) through the `allocate_unknowns` seam during circuit construction. |
+| `BYPASS_OK` | The element is eligible for stamp bypass: when its terminal voltages are unchanged within tolerance since the last evaluation, the DC driver may reuse its previous stamps for that Newton iteration. Suppressed while any element reports `limiting_active()`. Opt-in — only for models whose stamps are a pure function of terminal voltages. |
+| `SUPPORTS_ROLLBACK` | Reserved: the commit/rollback lifecycle is owned by a follow-up feature. No method is promised — the `Element` contract exposes no checkpoint/rollback/commit hooks. |
+| `SUPPORTS_QUERIES` | Reserved: a host-facing hint that the model overrides `list_queries`/`query` with typed metadata beyond the `read_opvars` default. No solver path reads this flag. |
+
 An element must declare its capabilities accurately; the solver gates analysis
 and scheduling on this descriptor rather than on which methods are overridden.
+Every flag except the two reserved bits has both a producer and a solver
+consumer.
 
 The analog operations in this section and the digital operations in §4 are all
-methods of the one `Element` trait. Analog methods default to contributing no
-stamps; digital methods default to an element that drives no nets. A pure-analog
+methods of the one element. Analog methods default to contributing no stamps;
+digital methods default to an element that drives no nets. A pure-analog
 element leaves the digital methods at their defaults and vice versa.
 
-An element that contributes to MNA declares `ANALOG` and implements the analog
-methods below: it contributes matrix and right-hand-side stamps for one or more
-analyses, may expose operating variables, may emit noise sources, and may request
-convergence or timestep controls.
+An element that contributes to MNA declares `ANALOG` and implements the
+`AnalogDevice` methods below: it contributes matrix and right-hand-side stamps
+for one or more analyses, may expose operating variables, may emit noise
+sources, and may request convergence or timestep controls.
 
 ### 3.1 Analog lifecycle methods
 
@@ -114,18 +177,22 @@ convergence or timestep controls.
 |--------|----------|
 | `set_temperature(t)` | Set the device temperature for temperature-dependent parameters. `t` is absolute temperature in kelvin. |
 | `update(state, context)` | Refresh internal model state from the current analog solution history before loading stamps. |
-| `accept_timestep(state, context, nets, sink)` | Commit an accepted solution point. A mixed-signal analog device may emit digital events through `sink`. |
 | `initial_conditions()` | Return requested initial branch voltages as `(plus, minus, value)` tuples. A missing terminal means ground. |
-| `read_opvars()` | Return named operating-point values for diagnostics and result extraction. |
 | `limiting_active()` | Report that device-side limiting is still active; convergence must not be accepted while true. |
-| `bound_step_hint()` | Return the maximum desirable next timestep. Infinity means no bound. |
+| `convergence_hint()` | Structured limiting feedback: which unknown the limiter clamped, and to what value. The solver applies the limited value to the Newton guess before the convergence test, so the iteration continues from the clamped point. Default none. |
+| `bound_step_hint()` | Return the maximum desirable next timestep (`$bound_step` lineage). Infinity means no bound. |
+| `next_breakpoints(from, horizon)` | Absolute landing times this element requires the integrator to hit within `(from, from + horizon]` — `@timer` fires, source edges, PWL corners. Absolute times, so they survive step rollback. Default empty. |
+| `allocate_unknowns(alloc)` | Pre-freeze internal-unknown allocation, called once per element by the circuit builder before the matrix shape freezes (§5.2). Elements that allocate must declare `HAS_INTERNAL_UNKNOWNS`. Default no-op. |
+| `suggest_transient_step(state, time_history, context)` | LTE-driven timestep suggestion, consulted by the transient stepper after each accepted step; the proposal is clamped to the minimum over all suggestions. Default none (no bound). |
 
-`context` carries tolerances, time, and temperature. (The transient
-integration method is fixed — TR-BDF2 is the sole scheme — so there is no
-method-selection field.) It
-carries **no** mutable homotopy state — the source-stepping scale reaches an
-element through the analysis state (below), and the gmin-stepping conductance is
-owned by the DC driver (§15).
+`context` carries only the immutable `Tolerances` (§3.3) — gmin, the
+convergence tolerances, temperature, and the circuit-wide shunt. Simulation
+time reaches an element through its analysis context (§3.3) or as an explicit
+argument (`accept_timestep`), never through `Context`. `Context` carries **no**
+mutable homotopy state — the source-stepping scale reaches an element through
+the analysis state (below), and the gmin-stepping conductance is owned by the
+DC driver (§15). Per-analysis convergence tunables (iteration cap, damping
+threshold, trace toggles) live on the separate driver-owned `Policy`.
 
 ### 3.2 Analog loading methods
 
@@ -150,20 +217,25 @@ element-construction/load error.
 
 ### 3.3 Analog ABI types
 
+All times, frequencies, values, and step sizes crossing this ABI are plain
+`f64` — times are `f64` seconds; there is no typed-units layer.
+
 | Type | Meaning |
 |------|---------|
 | `AnalogReference` | Reference to one analog variable. Ground has no MNA index; every other solved variable has one dense index. |
 | `Stamp<Ref, Scalar>` | Either `Matrix(row, col, value)` or `Rhs(row, value)`. The scalar is real for DC/transient and complex for AC/noise. |
 | `Noise` | A current-noise source between two analog references with PSD in A²/Hz. |
-| `Context` | Solver tolerances, temperature, time, and integration controls. Immutable for a run; carries no per-solve homotopy or convergence state. |
+| `Context` | The shared, immutable run context: only the `Tolerances` (gmin, reltol, vntol, abstol, min_res, trtol, chgtol, temperature, tnom, gshunt). Immutable for a run; carries no time, no integration controls, and no per-solve homotopy or convergence state. |
+| `Policy` | The driver-owned convergence tunables: the Newton iteration cap, the damping threshold, and the diagnostic trace toggles. Each analysis driver carries its own. |
 | `DcAnalysisState` | The DC loading state: the analog solution history (row 0 latest), the digital net snapshot (D2A), and the source-stepping scale. Derefs to the history. |
 | `TransientAnalysisState` | The transient loading state: the analog solution history and the digital net snapshot. Derefs to the history. |
-| `TransientAnalysisContext` | Current time, the TR-BDF2 phase being stamped (Trapezoidal over `γh` or BDF2 over `(1−γ)h`), the full step `h`, and the previous accepted step size (so the TR stage can re-derive the previous capacitor current). No integration-method field — TR-BDF2 is the sole scheme. |
+| `TransientAnalysisContext` | Current time, the final time, the TR-BDF2 phase being stamped (Trapezoidal over `γh` or BDF2 over `(1−γ)h`), the full step `h`, and the previous accepted step size (so the TR stage can re-derive the previous capacitor current). No integration-method field — TR-BDF2 is the sole scheme. |
 | `AcAnalysisContext` | Current frequency. |
 
 ### 3.4 Introspection: parameters, queries, terminals
 
-An element may expose OSDI-style metadata so hosts — bench sweeps, optimization
+Introspection is the third supertrait, `Introspect`. An element may expose
+OSDI-style metadata so hosts — bench sweeps, optimization
 loops, plugins, CLI/UI — discover and poke a model without knowing its family.
 Every method here is optional; an element exposes as much or as little as it has.
 
@@ -205,8 +277,9 @@ Values carried by parameters and queries are real, integer, boolean, or text.
 
 An element that declares `DIGITAL` participates in event-driven simulation. It
 declares the nets it reads and drives, initializes its outputs, and evaluates in
-two phases so register chains have non-blocking semantics. These are methods of
-the same `Element` trait as §3; there is no separate digital device type.
+two phases so register chains have non-blocking semantics. These are the methods
+of the `DigitalDevice` supertrait of the one element contract (§3); there is no
+separate digital device type.
 
 ### 4.1 Digital boundary
 
@@ -233,6 +306,8 @@ other conflicts produce `X`.
 | `comb_phase(ctx, sink)` | Phase 2: recompute driven outputs from current nets and internal state, emitting value-change events. |
 | `evaluate(ctx, sink)` | Fused one-shot evaluation for models that do not participate in the scheduler's two-phase protocol. It is equivalent to `seq_phase` followed by `comb_phase`. |
 | `has_input_on(changed)` | Convenience sensitivity test: true when any input net is in the changed set. |
+| `digital_hidden_snapshot()` | Hidden digital state (module vars, edge-detection memory) as an opaque `(int, real)` carrier, snapshotted into each recorded transient step. `None` means stateless (pure combinational). |
+| `digital_hidden_restore(state)` | Restore a state previously produced by `digital_hidden_snapshot`. Called on full-state re-entry (periodic-steady-state shots, transient restart from a captured step) after `init`, before the first settle — register state round-trips with the digital nets. |
 
 An element whose logic samples analog voltages declares the `SAMPLES_ANALOG`
 capability (§3) rather than a separate predicate method; the scheduler evaluates
@@ -262,6 +337,11 @@ declaring its `ElementCapabilities`:
 | Pure analog | `ANALOG`. |
 | Pure digital | `DIGITAL`. |
 | Mixed signal | `ANALOG | DIGITAL` (plus `SAMPLES_ANALOG` if it reads analog voltages). |
+
+The coarse flags are refined by the per-analysis flags: an analog element also
+declares which analyses it contributes to (`LOADS_DC`/`LOADS_AC`/`LOADS_TRAN`/
+`EMITS_NOISE`), and `DEPENDS_ON_DIGITAL` marks an analog load that reads the
+digital net snapshot.
 
 A loader receives already-resolved terminal bindings: analog terminals as analog
 references and digital terminals as digital nets. Parameter values are already
@@ -322,9 +402,12 @@ must provide a stable digital boundary for the lifetime of the analysis. A
 mixed-signal factory must satisfy both contracts.
 
 If an external ABI requires internal unknowns or auxiliary branches, the loader
-must allocate those unknowns before the circuit instance is finalized. If it
-cannot, loading fails loud with a diagnostic naming the model and the missing
-allocation capability.
+must allocate those unknowns before the circuit instance is finalized, through
+the one allocation seam: the builder calls each element's `allocate_unknowns`
+with an `UnknownAllocator` before the matrix shape freezes, and an element that
+allocates must declare `HAS_INTERNAL_UNKNOWNS` (the build fails loud otherwise).
+If allocation is impossible, loading fails loud with a diagnostic naming the
+model and the missing allocation capability.
 
 ### 5.3 Device-loading validation
 
