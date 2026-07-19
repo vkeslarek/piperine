@@ -13,11 +13,12 @@ without it.**
 ---
 
 **Design**: `.specs/features/solver-simplification/design.md`
-**Status**: In Progress — batch 2 (P2+P3) DONE
+**Status**: In Progress — batch 3 (P4) DONE
 
 ## Progress Log
 - **Batch 1 (P0+P1)** ✅ — T1 `4565f9e` analog parity baselines · T2 `0912915` mixed-signal+digital baselines · T3 `cba1783` remove `LINEAR` · T4 `2a521cb` remove `ANALYTIC_JACOBIAN`/`STAMPS_CHARGE`+producers+asserts, add `capabilities_contract.rs` · T5 `9e324ec` phantom rollback doc removed, `SUPPORTS_QUERIES`/`SUPPORTS_ROLLBACK` kept as reserved bits (no method promise) · T6 `50225cf` `SignalBridge` folded into `CircuitInstance`. +8 tests, all gates green, baselines bit-identical.
 - **Batch 2 (P2+P3)** ✅ — T7 `4735157` `math::unit` aliases inlined as `f64`, `unit.rs` deleted · T8 `7471d71` `Second` dropped from the `abi` surface (codegen consumer to `f64`) · T9 `7f438d0` config home `solver/config.rs` (`GminSchedule`/`SourceSchedule`/`StepperGains`/`TraceFlags`; defaults == former literals, contract test) · T10 `e595347` `Schedules` owned by `ConvergencePlan`, homotopy bodies de-literaled · T11 `2184b5e` `StepperGains` wired into `PiController` · T12 `06c0275` `PIPERINE_TRACE_*` routed through `TraceFlags` (`Policy` seeds from env, single env read left). +1 test (518 total), all gates green, baselines bit-identical.
+- **Batch 3 (P4)** ✅ — T13 `a475f42` `AnalogDevice` extracted (13 analog methods, all defaulted) · T14 `75ff42a` `DigitalDevice` extracted (8 digital methods) · T15 `36631ea` `Introspect` extracted (7 introspection methods) · T16 `855c323` `Element: AnalogDevice + DigitalDevice + Introspect` conjunction (identity/lifecycle kept), sub-traits exported from `abi` — first green gate of P4 · T17 `67c9cfd` codegen `PiperineDevice` + all in-workspace impls regrouped into the four explicit blocks (full-gate forced solver doubles in here rather than T18) · T18 `145d068` `composed_element.rs` contract test: analog-only double solves with no downcast. +2 tests (520 total), all gates green, baselines bit-identical.
 **Invariant**: behavior-preserving refactor. Every task keeps
 `cargo test --workspace` green with **bit-identical numerics** on the P0 parity
 baselines. A task that changes a solved value is a defect, not a deviation.
