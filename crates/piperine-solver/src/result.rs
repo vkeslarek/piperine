@@ -375,7 +375,6 @@ pub enum TransferType {
 /// Pole-zero analysis (`.pz`) result: the finite poles and zeros of the
 /// linearized input→output transfer function, in rad/s — see
 /// [`PoleZeroSolver`](crate::analyses::pz::PoleZeroSolver).
-#[allow(dead_code)] // populated by PoleZeroSolver::solve, landing in the next task
 #[derive(Debug, Clone, Default)]
 pub struct PoleZeroResult {
     pub poles: Vec<Complex<f64>>,

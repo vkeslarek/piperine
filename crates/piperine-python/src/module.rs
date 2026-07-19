@@ -213,6 +213,30 @@ impl _Module {
         ))
     }
 
+    /// Run a pole-zero analysis (`.pz`): poles and transmission zeros of the
+    /// linearized input→output transfer function at the DC operating point.
+    /// `input_source` is the driving voltage source's instance label;
+    /// `output` is the measured net name, optionally differential against
+    /// `output_ref`. Returns `(poles, zeros)` as lists of Python `complex`
+    /// (rad/s) — uniform host shape (MD-22, PZ-07): same field order as the
+    /// Rust `PoleZeroResult { poles, zeros }`. Fails loud (`RuntimeError`, or
+    /// `KeyError` for an unaddressable net) when the circuit has no reactive
+    /// elements (PZ-05) or a device's AC stamp is not affine in `jω` (PZ-06).
+    #[pyo3(signature = (input_source, output, output_ref=None, solver=None))]
+    fn pz(
+        &self,
+        input_source: &str,
+        output: &str,
+        output_ref: Option<&str>,
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<(Vec<num_complex::Complex64>, Vec<num_complex::Complex64>)> {
+        let session = self.session()?;
+        let result = session
+            .run_pz(input_source, output, output_ref, &Self::solver_config(solver)?)
+            .map_err(Self::analysis_err)?;
+        Ok((result.poles, result.zeros))
+    }
+
     /// Run a transient analysis (PY-04 / spec AC6). `step = None` (or `0.0`)
     /// selects the adaptive stepper; `start` is the earliest recorded time
     /// (ngspice `.tran tstart tstop` semantics). `ic` is an

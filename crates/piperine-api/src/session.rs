@@ -217,6 +217,37 @@ impl SimSession {
         })
     }
 
+    /// Run a pole-zero analysis (`.pz`): poles (and, when `input_source` is
+    /// given, transmission zeros) of the linearized input→output transfer
+    /// function at the DC operating point. `input_source` is the instance
+    /// label of the driving voltage source (its ideal-source branch, the
+    /// same one `Trace::i`/`OpResult::i` read); `output` is the measured net
+    /// name, optionally differential against `output_ref`. Fails loud when
+    /// `input_source`/`output`/`output_ref` are not addressable, when a
+    /// device's AC stamp is not affine in `jω` (PZ-06), or when the circuit
+    /// has no reactive elements (PZ-05, no finite poles).
+    pub fn run_pz(
+        &self,
+        input_source: &str,
+        output: &str,
+        output_ref: Option<&str>,
+        config: &SolverConfig,
+    ) -> Result<piperine_solver::prelude::PoleZeroResult, Error> {
+        let (mut circuit, info) = self.build_circuit()?;
+        let output_node = resolve_net(&info, output)?;
+        let output_ref_node = output_ref.map(|r| resolve_net(&info, r)).transpose()?;
+        let options = piperine_solver::prelude::PoleZeroOptions {
+            input_source: piperine_solver::abi::BranchIdentifier::new(input_source, "force0"),
+            output: piperine_solver::abi::AnalogVariable::Node(output_node),
+            output_ref: output_ref_node,
+        };
+        let solver = circuit.pz(options, config.to_context())?;
+        let poles = solver.poles()?;
+        let zeros = solver.zeros()?;
+        self.fire_after_solve("pz", &[])?;
+        Ok(piperine_solver::prelude::PoleZeroResult { poles, zeros })
+    }
+
     /// Run a DC operating-point analysis. `nodeset` (net name → volts) seeds
     /// the Newton initial guess.
     pub fn run_op(

@@ -155,6 +155,17 @@ impl CircuitInstance {
         crate::analyses::pss::PssSolver::new(self, options, context)
     }
 
+    /// Pole-zero analysis (`.pz`): poles/zeros of the linearized
+    /// input→output transfer function — see
+    /// [`PoleZeroSolver`](crate::analyses::pz::PoleZeroSolver).
+    pub fn pz(
+        &mut self,
+        options: crate::analyses::pz::PoleZeroOptions,
+        context: Context,
+    ) -> crate::result::Result<crate::analyses::pz::PoleZeroSolver<'_>> {
+        crate::analyses::pz::PoleZeroSolver::new(self, options, context)
+    }
+
     // ── Mixed-signal seam ────────────────────────────────────────────────────
     //
     // The one place analog acceptance seeds digital events and the scheduler

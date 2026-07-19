@@ -59,6 +59,7 @@ __all__ = [
     "PssResult",
     "PssStats",
     "SensResult",
+    "PoleZeroResult",
     "Waveform",
     "ComplexWaveform",
     "FourierComponent",
@@ -308,6 +309,20 @@ class SensResult:
         return self._d.items()
 
 
+@dataclass
+class PoleZeroResult:
+    """``.pz`` result: poles and transmission zeros of the linearized
+    input→output transfer function, in rad/s.
+
+    The uniform host shape (MD-22): same field names as the Rust
+    ``PoleZeroResult { poles, zeros }``. An empty ``zeros`` list is a
+    legitimate answer (many networks have no finite transmission zero).
+    """
+
+    poles: list[complex]
+    zeros: list[complex]
+
+
 class Module:
     """A reflected view of one POM module (spec AC14) + the four analyses.
 
@@ -390,6 +405,25 @@ class Module:
         """
         trace, iters, residual, settle = self._native.pss(period, tstab, solver)
         return PssResult(trace, PssStats(iters, residual, settle))
+
+    def pz(
+        self,
+        input_source: str,
+        output: str,
+        output_ref: str | None = None,
+        solver: Solver | None = None,
+    ) -> PoleZeroResult:
+        """Run a pole-zero analysis (``.pz``).
+
+        Poles (and transmission zeros) of the linearized input→output
+        transfer function at the DC operating point. ``input_source`` is the
+        driving voltage source's instance label; ``output`` is the measured
+        net name, optionally differential against ``output_ref``. A circuit
+        with no reactive elements (no finite poles) fails loud, as does a
+        device whose AC stamp is not affine in ``jω``.
+        """
+        poles, zeros = self._native.pz(input_source, output, output_ref, solver)
+        return PoleZeroResult(poles=list(poles), zeros=list(zeros))
 
     def tran(self, config: TranConfig) -> Trace:
         """Run a transient analysis (spec AC6).
