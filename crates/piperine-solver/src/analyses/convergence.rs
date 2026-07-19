@@ -140,14 +140,14 @@ pub trait StepperStrategy: Send + Sync {
         &mut self,
         lte: f64,
         dt_actual: f64,
-        tran_opts: &crate::analysis::transient::TransientAnalysisOptions,
+        tran_opts: &crate::analyses::transient::TransientAnalysisOptions,
     ) -> f64;
 
     /// Reduced timestep after a failed (rejected) step.
     fn reject_dt(
         &mut self,
         failed_dt: f64,
-        tran_opts: &crate::analysis::transient::TransientAnalysisOptions,
+        tran_opts: &crate::analyses::transient::TransientAnalysisOptions,
     ) -> f64;
 }
 
@@ -191,7 +191,7 @@ impl StepperStrategy for PiController {
         &mut self,
         lte: f64,
         dt_actual: f64,
-        tran_opts: &crate::analysis::transient::TransientAnalysisOptions,
+        tran_opts: &crate::analyses::transient::TransientAnalysisOptions,
     ) -> f64 {
         // No error signal (non-reactive step, or history too short): grow dt
         // toward dt_max without biasing the PI memory.
@@ -217,7 +217,7 @@ impl StepperStrategy for PiController {
     fn reject_dt(
         &mut self,
         failed_dt: f64,
-        tran_opts: &crate::analysis::transient::TransientAnalysisOptions,
+        tran_opts: &crate::analyses::transient::TransientAnalysisOptions,
     ) -> f64 {
         // Aggressive backtracking: a failed step (Newton non-convergence or
         // LTE-reject) means the local dynamics are too fast for this dt, so

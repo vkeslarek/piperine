@@ -4,8 +4,8 @@ use std::collections::HashSet;
 use crate::analyses::ac::AcAnalysisContext;
 use crate::prelude::DcAnalysisResult;
 use crate::analyses::dc::DcAnalysisState;
-use crate::analysis::noise::Noise;
-use crate::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
+use crate::analyses::noise::Noise;
+use crate::analyses::transient::{TransientAnalysisContext, TransientAnalysisState};
 use crate::analog::AnalogReference;
 use crate::core::introspect::{
     Invalidation, ParamDescriptor, ParamError, QueryDescriptor, TerminalDescriptor, Value,

@@ -88,7 +88,7 @@ pub struct DcSystem<'a> {
     pub src_scale: f64,
     /// UIC hold clamps (ngspice `CKTsetIC`): stamped only by the transient
     /// driver's internal t=0 solve — empty for a standalone DC analysis.
-    pub uic_clamps: Vec<crate::solver::uic::UicClamp>,
+    pub uic_clamps: Vec<crate::analyses::transient::UicClamp>,
     /// Device bypass: stamps cached from the last evaluation. Reused when the
     /// solution vector barely moved between Newton iterations (audit P4).
     stamp_cache: Vec<Stamp<AnalogReference, f64>>,

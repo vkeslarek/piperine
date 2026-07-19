@@ -6,10 +6,3 @@
 //! drivers exchange with elements live in `crate::analysis`.
 
 pub use crate::analyses::{Context, Policy, Tolerances};
-
-pub mod noise;
-pub mod pss;
-pub mod sens;
-pub mod solve;
-pub mod transient;
-pub mod uic;

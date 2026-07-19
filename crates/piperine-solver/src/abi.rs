@@ -22,8 +22,8 @@ pub use crate::math::circular_array::CircularArrayBuffer2;
 pub use crate::analyses::ac::AcAnalysisContext;
 pub use crate::analyses::dc::DcAnalysisState;
 pub use crate::prelude::DcAnalysisResult;
-pub use crate::analysis::noise::{Noise, NoiseKind};
-pub use crate::analysis::transient::{
+pub use crate::analyses::noise::{Noise, NoiseKind};
+pub use crate::analyses::transient::{
     TransientAnalysisContext, TransientAnalysisOptions, TransientAnalysisState,
 };
 // Integration (kernels read phase/coeffs)

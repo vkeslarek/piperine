@@ -6,7 +6,7 @@ use num_complex::Complex;
 use std::collections::HashMap;
 use std::slice::Iter;
 use std::sync::Arc;
-use crate::analysis::noise::NoiseKind;
+use crate::analyses::noise::NoiseKind;
 
 pub type Result<T> = std::result::Result<T, Error>;
 

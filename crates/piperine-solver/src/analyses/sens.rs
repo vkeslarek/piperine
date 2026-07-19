@@ -1,7 +1,8 @@
-//! `.sens` driver — DC sensitivities by central finite difference over the
-//! restamp path: for each `(label, param)`, perturb the parameter
-//! `±dp`, re-solve the operating point (same compiled circuit, symbolic LU
-//! reused for the run), and difference the requested outputs.
+//! DC sensitivity analysis (`.sens`) — options, result types, and the
+//! driver: DC sensitivities by central finite difference over the restamp
+//! path. For each `(label, param)`, perturb the parameter `±dp`, re-solve
+//! the operating point (same compiled circuit, symbolic LU reused for the
+//! run), and difference the requested outputs.
 //!
 //! SPEC_DEVIATION: the design sketched a single-linear-solve direct method
 //! (`A·dx = −∂R/∂p` on the converged Jacobian).
@@ -9,13 +10,52 @@
 //! today; central-difference re-solves are the robust baseline behind the
 //! same API, and the exact/direct method remains the documented upgrade.
 
+use std::collections::HashMap;
+
 use crate::core::circuit::CircuitInstance;
 use crate::core::introspect::{Invalidation, Value};
+use crate::core::net::Net;
 use crate::error::{Error, SolverDomain};
 use crate::analyses::dc::DcSolver;
 use crate::analyses::Policy;
-use crate::analysis::sens::{SensAnalysisOptions, SensResult};
 use crate::Context;
+
+// ── request/state ────────────────────────────────────────────────────────
+
+/// What to differentiate and with respect to what. `outputs` are solved
+/// analog nets (node voltages / branch currents); `params` are
+/// `(element label, parameter name)` pairs addressed exactly like
+/// [`CircuitInstance::set_element_param`](crate::core::circuit::CircuitInstance::set_element_param).
+#[derive(Debug, Clone)]
+pub struct SensAnalysisOptions {
+    pub outputs: Vec<Net>,
+    pub params: Vec<(String, String)>,
+    /// Relative finite-difference step (absolute fallback when the
+    /// parameter value is 0). Default `1e-6`.
+    pub dp_rel: f64,
+}
+
+impl SensAnalysisOptions {
+    pub fn new(outputs: Vec<Net>, params: Vec<(String, String)>) -> Self {
+        Self { outputs, params, dp_rel: 1e-6 }
+    }
+}
+
+/// `∂(output)/∂(param)` at the DC operating point, keyed by
+/// `(output label, "element.param")`.
+#[derive(Debug, Clone)]
+pub struct SensResult {
+    pub d: HashMap<(String, String), f64>,
+}
+
+impl SensResult {
+    /// The sensitivity of `output` w.r.t. `label.param`, if computed.
+    pub fn get(&self, output: &str, label: &str, param: &str) -> Option<f64> {
+        self.d.get(&(output.to_string(), format!("{label}.{param}"))).copied()
+    }
+}
+
+// ── driver ───────────────────────────────────────────────────────────────
 
 pub struct SensSolver<'a> {
     circuit: &'a mut CircuitInstance,

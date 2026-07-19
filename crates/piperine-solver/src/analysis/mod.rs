@@ -2,8 +2,3 @@
 //! back: analysis states (the read-only view during stamping), options, and
 //! result types, one file per analysis. The drivers that *run* the analyses
 //! live in `crate::solver`.
-
-pub mod noise;
-pub mod pss;
-pub mod sens;
-pub mod transient;

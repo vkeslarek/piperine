@@ -1,16 +1,87 @@
-use crate::analyses::ac::AcAnalysisContext;
-use crate::prelude::DcAnalysisResult;
-use crate::analysis::noise::NoiseAnalysisOptions;
-use crate::prelude::NoiseAnalysisResult;
-use std::collections::HashMap;
+#![allow(dead_code)]
+use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
+use crate::analyses::Context;
+use crate::analyses::ac::{AcAnalysis, AcAnalysisContext, AcSweepAnalysisOptions};
+use crate::analyses::dc::{DcAnalysis, DcSolver};
 use crate::core::circuit::CircuitInstance;
-use crate::analog::{AnalogReference, AnalogVariable};
 use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
 use crate::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
-use crate::analyses::dc::DcSolver;
-use crate::solver::Context;
+use crate::prelude::DcAnalysisResult;
+use crate::prelude::NoiseAnalysisResult;
+
 use ndarray::Array1;
 use num_complex::Complex;
+use std::collections::HashMap;
+
+// ── request/state ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NoiseKind { Thermal, Shot, Flicker, Other }
+
+pub struct Noise {
+    pub terminals: (AnalogReference, AnalogReference),
+    pub value: f64,
+    pub name: Option<String>,
+    pub kind: NoiseKind,
+}
+
+impl Noise {
+    pub fn new(terminals: (AnalogReference, AnalogReference), value: f64) -> Self {
+        Self { terminals, value, name: None, kind: NoiseKind::Other }
+    }
+    pub fn named(mut self, name: impl Into<String>, kind: NoiseKind) -> Self {
+        self.name = Some(name.into()); self.kind = kind; self
+    }
+}
+
+pub trait NoiseSource: AcAnalysis + DcAnalysis {
+    fn noise_current_psd(
+        &mut self,
+        dc_point: &DcAnalysisResult,
+        ac_context: &AcAnalysisContext,
+    ) -> Vec<Noise>;
+}
+#[derive(Clone, Debug)]
+pub struct NoiseAnalysisOptions {
+    pub sweep_options: AcSweepAnalysisOptions,
+    pub output_node: NodeIdentifier,
+    pub reference_node: NodeIdentifier,
+    pub input_source_name: Option<String>,
+}
+
+
+
+/// Per-analysis config for noise. Carries the sweep, output/reference nodes,
+/// and optional input source name.
+#[derive(Debug, Clone)]
+pub struct NoiseContext {
+    pub options: NoiseAnalysisOptions,
+}
+
+#[cfg(test)]
+mod noise_tests {
+    use super::*;
+
+    #[test]
+    fn noise_new_defaults() {
+        let n1 = AnalogReference::ground();
+        let n2 = AnalogReference::ground();
+        let noise = Noise::new((n1.clone(), n2.clone()), 1.0);
+        assert_eq!(noise.name, None);
+        assert_eq!(noise.kind, NoiseKind::Other);
+    }
+
+    #[test]
+    fn noise_named() {
+        let n1 = AnalogReference::ground();
+        let n2 = AnalogReference::ground();
+        let noise = Noise::new((n1.clone(), n2.clone()), 1.0).named("rn", NoiseKind::Thermal);
+        assert_eq!(noise.name, Some("rn".to_string()));
+        assert_eq!(noise.kind, NoiseKind::Thermal);
+    }
+}
+
+// ── driver ───────────────────────────────────────────────────────────────
 
 /// Noise analysis solver for computing circuit noise floor.
 ///
@@ -96,7 +167,7 @@ impl<'a> NoiseSolver<'a> {
     pub fn solve(&mut self) -> crate::result::Result<NoiseAnalysisResult> {
         let frequencies = self.options.sweep_options.generate_frequencies();
         let mut out_noise_sq = Vec::with_capacity(frequencies.len());
-        let mut psd_map: HashMap<(String, String), (crate::analysis::noise::NoiseKind, Vec<f64>)> = HashMap::new();
+        let mut psd_map: HashMap<(String, String), (NoiseKind, Vec<f64>)> = HashMap::new();
 
         for (i, &f) in frequencies.iter().enumerate() {
             let ac_ctx = AcAnalysisContext { frequency: f };
@@ -294,8 +365,8 @@ mod tests {
     use num_complex::Complex64;
     use crate::analyses::ac::{AcSweepAnalysisOptions, AcAnalysisContext};
     use crate::prelude::DcAnalysisResult;
-    use crate::analysis::noise::{Noise, NoiseKind};
-    use crate::solver::Context;
+    use crate::analyses::noise::{Noise, NoiseKind};
+    use crate::analyses::Context;
 
     struct NoisyResistor {
         name: String,
@@ -381,7 +452,7 @@ mod tests {
             steps: 10,
             logarithmic: false,
         };
-        
+
         let opts = NoiseAnalysisOptions {
             sweep_options: sweep,
             output_node: NodeIdentifier::Anonymous(1),
@@ -413,12 +484,12 @@ mod tests {
         for i in 0..res.frequencies.len() {
             let sum_psd: f64 = contribs.iter().map(|c| c.psd[i]).sum();
             let total = res.out_noise_sq[i];
-            
+
             let err = (sum_psd - total).abs();
             let rel_err = if total > 1e-30 { err / total } else { err };
             assert!(rel_err < 1e-9, "freq idx {}, sum {} != total {}", i, sum_psd, total);
         }
-        
+
         let mut manual_int = 0.0;
         for i in 0..res.frequencies.len() - 1 {
             let df = res.frequencies[i + 1] - res.frequencies[i];

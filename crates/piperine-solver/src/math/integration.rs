@@ -243,7 +243,7 @@ mod tests {
     /// stepper loop consults elements for LTE via `AnalogDevice::suggest_transient_step`.
     #[test]
     fn lte_default_element_returns_none() {
-        use crate::analysis::transient::TransientAnalysisState;
+        use crate::analyses::transient::TransientAnalysisState;
         use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
         use crate::math::circular_array::CircularArrayBuffer2;
         use crate::solver::Context;
@@ -269,7 +269,7 @@ mod tests {
     /// stepper can consume the suggestion through the trait.
     #[test]
     fn lte_element_override_returns_custom_dt() {
-        use crate::analysis::transient::TransientAnalysisState;
+        use crate::analyses::transient::TransientAnalysisState;
         use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
         use crate::math::circular_array::CircularArrayBuffer2;
         use crate::solver::Context;

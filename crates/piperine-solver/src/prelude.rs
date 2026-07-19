@@ -24,14 +24,14 @@ pub use crate::digital::{DigitalNet, LogicValue};
 
 // ── Run configuration ──────────────────────────────────────────────────────
 pub use crate::analyses::ac::AcSweepAnalysisOptions;
-pub use crate::analysis::noise::{NoiseAnalysisOptions, NoiseKind};
+pub use crate::analyses::noise::{NoiseAnalysisOptions, NoiseKind};
 pub use crate::analyses::tf::TransferFunctionAnalysisOptions;
-pub use crate::analysis::pss::{PssAnalysisOptions, PssResult, PssStats};
-pub use crate::analysis::sens::{SensAnalysisOptions, SensResult};
-pub use crate::analysis::transient::TransientAnalysisOptions;
+pub use crate::analyses::pss::{PssAnalysisOptions, PssResult, PssStats};
+pub use crate::analyses::sens::{SensAnalysisOptions, SensResult};
+pub use crate::analyses::transient::TransientAnalysisOptions;
 pub use crate::solver::Context;
 pub use crate::solver::{Policy, Tolerances};
-pub use crate::solver::solve::Solver;
+pub use crate::analyses::Solver;
 
 // ── Convergence policy (opt-in customization) ──────────────────────────────
 pub use crate::analyses::config::{GminSchedule, Schedules, SourceSchedule, StepperGains, TraceFlags};

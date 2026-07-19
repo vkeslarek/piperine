@@ -1,6 +1,6 @@
-use crate::analysis::noise::NoiseAnalysisOptions;
+use crate::analyses::noise::NoiseAnalysisOptions;
 use crate::analyses::tf::TransferFunctionAnalysisOptions;
-use crate::analysis::transient::TransientAnalysisOptions;
+use crate::analyses::transient::TransientAnalysisOptions;
 use crate::analog::Netlist;
 use crate::core::element::{Element, ElementCapabilities};
 use crate::digital::{DigitalState, DigitalTopology};
@@ -8,9 +8,9 @@ use crate::math::circular_array::CircularArrayBuffer2;
 use crate::solver::Context;
 use crate::analyses::ac::AcSolver;
 use crate::analyses::dc::DcSolver;
-use crate::solver::noise::NoiseSolver;
+use crate::analyses::noise::NoiseSolver;
 use crate::analyses::tf::TransferFunctionSolver;
-use crate::solver::transient::TransientSolver;
+use crate::analyses::transient::TransientSolver;
 
 
 // ---------------------------------------------------------------------------
@@ -132,23 +132,23 @@ impl CircuitInstance {
 
     /// DC sensitivity analysis (`.sens`): `∂(output)/∂(param)` at the
     /// operating point over the restamp path — see
-    /// [`SensSolver`](crate::solver::sens::SensSolver).
+    /// [`SensSolver`](crate::analyses::sens::SensSolver).
     pub fn sens(
         &mut self,
-        options: crate::analysis::sens::SensAnalysisOptions,
+        options: crate::analyses::sens::SensAnalysisOptions,
         context: Context,
-    ) -> crate::result::Result<crate::solver::sens::SensSolver<'_>> {
-        crate::solver::sens::SensSolver::new(self, options, context)
+    ) -> crate::result::Result<crate::analyses::sens::SensSolver<'_>> {
+        crate::analyses::sens::SensSolver::new(self, options, context)
     }
 
     /// Periodic steady state via single shooting — see
-    /// [`PssSolver`](crate::solver::pss::PssSolver).
+    /// [`PssSolver`](crate::analyses::pss::PssSolver).
     pub fn pss(
         &mut self,
-        options: crate::analysis::pss::PssAnalysisOptions,
+        options: crate::analyses::pss::PssAnalysisOptions,
         context: Context,
-    ) -> crate::result::Result<crate::solver::pss::PssSolver<'_>> {
-        crate::solver::pss::PssSolver::new(self, options, context)
+    ) -> crate::result::Result<crate::analyses::pss::PssSolver<'_>> {
+        crate::analyses::pss::PssSolver::new(self, options, context)
     }
 
     // ── Mixed-signal seam ────────────────────────────────────────────────────
@@ -383,7 +383,7 @@ impl CircuitInstance {
     // devices are built and wired there, and this type grows no ad-hoc
     // constructor beyond the builder's output below and documented re-entry
     // (analyses re-enter solve state via e.g.
-    // [`TransientSolver::with_initial_state`](crate::solver::transient::TransientSolver::with_initial_state);
+    // [`TransientSolver::with_initial_state`](crate::analyses::transient::TransientSolver::with_initial_state);
     // the MD-18 restamp path re-enters via [`set_element_param`](Self::set_element_param)
     // + a re-run of the analysis — never via a new constructor).
 
