@@ -18,7 +18,7 @@ use ndarray::Array1;
 use ndarray::{ArrayView1, ArrayViewMut1};
 use crate::analog::Netlist;
 use crate::math::circular_array::CircularArrayBuffer2;
-use crate::solver::config::Schedules;
+use crate::solver::config::{Schedules, StepperGains};
 use crate::solver::{Policy, Tolerances};
 use crate::result::Result;
 
@@ -162,24 +162,27 @@ pub trait StepperStrategy: Send + Sync {
 /// `p = kp + ki·(lte − lte_prev)/lte`. `target = 1` (the Milne estimate is
 /// already normalized by tolerance). The result is clamped to a safe per-step
 /// range and `[dt_min, dt_max]`. A rejection resets the error memory so the
-/// retry is not biased (TRB-09).
+/// retry is not biased (TRB-09). All gains live in [`StepperGains`].
 pub struct PiController {
-    pub kp: f64,
-    pub ki: f64,
+    pub gains: StepperGains,
     prev_error: Option<f64>,
 }
 
 impl Default for PiController {
     fn default() -> Self {
-        Self { kp: 0.7, ki: 0.4, prev_error: None }
+        Self { gains: StepperGains::default(), prev_error: None }
     }
 }
 
 impl PiController {
-    /// Build a controller with explicit gains (ngspice-lineage defaults are
-    /// `kp = 0.7`, `ki = 0.4`).
+    /// Build a controller with explicit PI gains (ngspice-lineage defaults are
+    /// `kp = 0.7`, `ki = 0.4`); the remaining stepper gains keep their
+    /// [`StepperGains`] defaults.
     pub fn new(kp: f64, ki: f64) -> Self {
-        Self { kp, ki, prev_error: None }
+        Self {
+            gains: StepperGains { kp, ki, ..StepperGains::default() },
+            prev_error: None,
+        }
     }
 }
 
@@ -194,19 +197,20 @@ impl StepperStrategy for PiController {
         // toward dt_max without biasing the PI memory.
         if !lte.is_finite() || lte <= 0.0 {
             self.prev_error = None;
-            return (dt_actual * 1.5).clamp(tran_opts.dt_min, tran_opts.dt_max);
+            return (dt_actual * self.gains.grow_factor).clamp(tran_opts.dt_min, tran_opts.dt_max);
         }
         // Exponent: proportional gain + integral correction on error history.
         let p = match self.prev_error {
             Some(prev) => {
                 let de = (lte - prev) / lte.max(1e-30);
-                self.kp + self.ki * de
+                self.gains.kp + self.gains.ki * de
             }
-            None => self.kp, // first accepted step: proportional only
+            None => self.gains.kp, // first accepted step: proportional only
         };
         self.prev_error = Some(lte);
         // (target/lte)^p: error above tolerance (lte > 1) shrinks dt.
-        let factor = lte.powf(-p).clamp(0.2, 1.5);
+        let (lo, hi) = self.gains.factor_clamp;
+        let factor = lte.powf(-p).clamp(lo, hi);
         (dt_actual * factor).clamp(tran_opts.dt_min, tran_opts.dt_max)
     }
 
@@ -217,10 +221,11 @@ impl StepperStrategy for PiController {
     ) -> f64 {
         // Aggressive backtracking: a failed step (Newton non-convergence or
         // LTE-reject) means the local dynamics are too fast for this dt, so
-        // cut hard — ÷8 — and let the PI regrow on the accepts that follow.
-        // ÷8 reaches a workable dt in one retry instead of the timid ÷2 cascade.
+        // cut hard and let the PI regrow on the accepts that follow. The ÷8
+        // default reaches a workable dt in one retry instead of the timid ÷2
+        // cascade.
         self.prev_error = None;
-        (failed_dt / 8.0).max(tran_opts.dt_min)
+        (failed_dt / self.gains.reject_divisor).max(tran_opts.dt_min)
     }
 }
 

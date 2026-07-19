@@ -34,7 +34,7 @@ pub use crate::solver::{Policy, Tolerances};
 pub use crate::solver::solve::Solver;
 
 // ── Convergence policy (opt-in customization) ──────────────────────────────
-pub use crate::solver::config::{GminSchedule, Schedules, SourceSchedule};
+pub use crate::solver::config::{GminSchedule, Schedules, SourceSchedule, StepperGains};
 pub use crate::solver::convergence::{
     ConvergencePlan, DampedNewton, HomotopyStrategy, NewtonStrategy, PiController, StepperStrategy,
 };
