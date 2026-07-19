@@ -272,6 +272,17 @@ impl<'a> TransientSolver<'a> {
                     self.system.circuit.digital_state.nets[idx] = lv;
                 }
             }
+            // Hidden register state (module vars, edge memory) round-trips
+            // with the nets — the full-state shot contract (PSS). Restored
+            // after `init_digital` (constructor) so the restore wins over the
+            // power-on reset; unknown labels are skipped (a structurally
+            // rebuilt circuit starts its new devices fresh).
+            for dev in &mut self.system.circuit.devices {
+                if let Some(hidden) = state.digital_hidden(dev.name()) {
+                    let hidden = hidden.clone();
+                    dev.digital_hidden_restore(&hidden);
+                }
+            }
             self.solver.push_initial_conditions(ivs.clone());
             self.solver.push_initial_conditions(ivs);
             return Ok(self.snapshot(self.options.start_time));
@@ -703,11 +714,25 @@ impl<'a> TransientSolver<'a> {
         }
 
         let step = TransientStep::new(time, values)
-            .with_digital(self.system.circuit.digital_state.nets.clone());
+            .with_digital(self.system.circuit.digital_state.nets.clone())
+            .with_digital_hidden(self.collect_digital_hidden());
         if !self.options.record_device_state {
             return step;
         }
         step.with_device_state(self.collect_device_banks())
+    }
+
+    /// Snapshot each digital device's hidden state (module vars + edge
+    /// memory) — the register half of the full-state contract, always
+    /// recorded so any step can seed a re-entry.
+    fn collect_digital_hidden(&self) -> HashMap<String, (Vec<i64>, Vec<f64>)> {
+        let mut hidden = HashMap::new();
+        for dev in &self.system.circuit.devices {
+            if let Some(state) = dev.digital_hidden_snapshot() {
+                hidden.insert(dev.name().to_string(), state);
+            }
+        }
+        hidden
     }
 
     /// Clone each stateful device's runtime banks (opt-in recording; see

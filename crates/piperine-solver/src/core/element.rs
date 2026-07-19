@@ -362,4 +362,18 @@ pub trait Element: Send + Sync {
     fn runtime_banks(&self) -> (&[f64], &[f64]) {
         (&[], &[])
     }
+
+    /// Hidden digital state (module vars, edge-detection memory) as an
+    /// opaque `(int, real)` carrier, snapshotted into each recorded
+    /// [`crate::result::TransientStep`] and restored verbatim on full-state
+    /// re-entry (PSS shots, `TransientSolver::with_initial_state`) — the
+    /// shot-state contract requires register state to round-trip with the
+    /// digital nets. `None` = stateless (pure combinational) element.
+    fn digital_hidden_snapshot(&self) -> Option<(Vec<i64>, Vec<f64>)> {
+        None
+    }
+
+    /// Restore a state previously produced by [`Self::digital_hidden_snapshot`].
+    /// Called on full-state re-entry after `init`, before the first settle.
+    fn digital_hidden_restore(&mut self, _state: &(Vec<i64>, Vec<f64>)) {}
 }

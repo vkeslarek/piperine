@@ -145,6 +145,31 @@ impl DigitalInstance {
         &self.kernel
     }
 
+    /// Hidden state carrier for full-state re-entry (PSS shots): module
+    /// vars + edge-detection memory. Empty when the kernel is stateless.
+    pub fn hidden_snapshot(&self) -> Option<(Vec<i64>, Vec<f64>)> {
+        if self.vars_int.is_empty() && self.vars_real.is_empty() && self.prev_watch.is_empty() {
+            return None;
+        }
+        let mut ints = self.vars_int.clone();
+        ints.extend_from_slice(&self.prev_watch);
+        Some((ints, self.vars_real.clone()))
+    }
+
+    /// Restore a state produced by [`Self::hidden_snapshot`]. Splits the int
+    /// carrier back into module vars and watch memory by the current layout
+    /// (the layout is kernel-fixed, so a same-kernel snapshot always fits).
+    pub fn hidden_restore(&mut self, state: &(Vec<i64>, Vec<f64>)) {
+        let (ints, reals) = state;
+        let n_int = self.vars_int.len();
+        let n_watch = self.prev_watch.len();
+        if ints.len() == n_int + n_watch && reals.len() == self.vars_real.len() {
+            self.vars_int.clone_from_slice(&ints[..n_int]);
+            self.prev_watch.clone_from_slice(&ints[n_int..]);
+            self.vars_real.clone_from_slice(reals);
+        }
+    }
+
     /// Export all register/variable values as `f64`, indexed by `VarId`.
     /// Used by the D2A bridge to sync digital state into the analog vars
     /// bank after each evaluation.

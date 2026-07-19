@@ -143,11 +143,22 @@ pub struct TransientStep {
     /// `TransientAnalysisOptions::record_device_state`; lets a host recompute
     /// a stateful device's branch current at this step (`Trace.i`).
     device_state: HashMap<String, (Vec<f64>, Vec<f64>)>,
+    /// Per-step hidden digital state (module vars + edge memory), keyed by
+    /// device label. Always recorded — it is what makes a step a *full*
+    /// circuit state for re-entry (PSS shots): register state round-trips
+    /// with the digital nets (the shot-state contract).
+    digital_hidden: HashMap<String, (Vec<i64>, Vec<f64>)>,
 }
 
 impl TransientStep {
     pub fn new(time: f64, values: HashMap<Arc<AnalogVariable>, f64>) -> Self {
-        Self { time, values, digital: Vec::new(), device_state: HashMap::new() }
+        Self {
+            time,
+            values,
+            digital: Vec::new(),
+            device_state: HashMap::new(),
+            digital_hidden: HashMap::new(),
+        }
     }
 
     /// Attach a digital-net snapshot (by `DigitalNet` id).
@@ -162,6 +173,15 @@ impl TransientStep {
         self
     }
 
+    /// Attach the per-step hidden digital state (label → (ints, reals)).
+    pub fn with_digital_hidden(
+        mut self,
+        digital_hidden: HashMap<String, (Vec<i64>, Vec<f64>)>,
+    ) -> Self {
+        self.digital_hidden = digital_hidden;
+        self
+    }
+
     /// This step's logic value for digital net `idx`, or `None` if unrecorded.
     pub fn digital(&self, idx: usize) -> Option<LogicValue> {
         self.digital.get(idx).copied()
@@ -172,6 +192,12 @@ impl TransientStep {
     /// no runtime banks).
     pub fn device_state(&self, label: &str) -> Option<&(Vec<f64>, Vec<f64>)> {
         self.device_state.get(label)
+    }
+
+    /// This step's hidden digital state for the device labelled `label`
+    /// (always recorded), or `None` when the device is stateless/unknown.
+    pub fn digital_hidden(&self, label: &str) -> Option<&(Vec<i64>, Vec<f64>)> {
+        self.digital_hidden.get(label)
     }
 
     pub fn get(&self, variable: impl Into<Arc<AnalogVariable>>) -> Option<f64> {

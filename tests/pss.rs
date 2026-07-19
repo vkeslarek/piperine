@@ -13,6 +13,7 @@ use piperine_solver::prelude::{Context, PssAnalysisOptions};
 /// |H| = 1/√(1+(ωRC)²) ≈ 0.157167; steady-state out amplitude = 5·|H|.
 const FIXTURE: &str = r#"
     discipline Electrical { potential v : Real; flow i : Real; }
+    discipline Bit { storage Boolean; }
 
     mod R (inout p : Electrical, inout n : Electrical) {
         param r : Real = 1.0e3;
@@ -50,6 +51,41 @@ const FIXTURE: &str = r#"
         v1 : Vramp(.p = top, .n = gnd) {};
         r1 : R(.p = top, .n = out) {};
         c1 : C(.p = out, .n = gnd) {};
+    }
+
+    // Digital toggle clocked by an analog square wave at period T (rising
+    // edges at T/4, 5T/4, …): its output period is 2·T — the classic
+    // divider-by-2 (same A2D pattern as example 21). The clock's edges sit
+    // at T/4 and 3T/4 so every comparison-relevant net is stable in a whole
+    // neighborhood of the k·T boundaries (a stimulus wrapping exactly at the
+    // boundary would be phase-jittered by floating-point rounding).
+    mod ClockSrc (inout clk_a : Electrical, inout gnd : Electrical) {
+        param period : Real = 1.0e-3;
+    }
+    analog ClockSrc {
+        var ph : Real = $abstime - period * floor($abstime / period);
+        V(clk_a, gnd) <- if (ph > period * 0.25 && ph < period * 0.75) { 1.0 } else { 0.0 };
+    }
+
+    mod Comparator (input a : Electrical, input n : Electrical, output y : Bit) { }
+    digital Comparator { y <- V(a, n) > 0.5; }
+
+    mod ToggleDff (input clk : Bit, output q : Bit) {
+        var st : Bit = 0;
+    }
+    digital ToggleDff {
+        q <- st;
+        @ (posedge(clk)) { st = !st; }
+    }
+
+    mod DivTop () {
+        wire gnd : Electrical;
+        wire clk_a : Electrical;
+        wire clk : Bit;
+        wire q : Bit;
+        ck : ClockSrc(.clk_a = clk_a, .gnd = gnd) { .period = 1.0e-3 };
+        cmp : Comparator(.a = clk_a, .n = gnd, .y = clk);
+        tg : ToggleDff(.clk = clk, .q = q);
     }
 "#;
 
@@ -110,6 +146,16 @@ fn non_positive_period_is_loud() {
     assert!(err.to_string().contains("period"), "names the period: {err}");
 }
 
+/// `tstab < 0` → loud options error.
+#[test]
+fn negative_tstab_is_loud() {
+    let (mut circuit, _info) = build("Top");
+    let mut opts = PssAnalysisOptions::new(1.0e-3);
+    opts.tstab = -1.0;
+    let err = circuit.pss(opts, Context::default()).expect_err("bad tstab");
+    assert!(err.to_string().contains("tstab"), "names tstab: {err}");
+}
+
 /// A ramp-driven circuit is not periodic at any T: shooting must fail loud
 /// (never return a fake orbit).
 #[test]
@@ -129,4 +175,21 @@ fn non_periodic_circuit_fails_loud() {
             || msg.contains("does not repeat"),
         "loud non-periodicity: {msg}"
     );
+}
+
+/// SC-05 — mixed-signal digital periodicity: the analog RC closes its orbit
+/// at T but the toggle's state only closes at 2·T (divider-by-2), so PSS at
+/// T fails loud with the "period appears to be k·T" diagnostic naming k = 2
+/// and the suggested re-run period.
+#[test]
+fn digital_divider_reports_k_times_period() {
+    let (mut circuit, _info) = build("DivTop");
+    let err = circuit
+        .pss(PssAnalysisOptions::new(1.0e-3), Context::default())
+        .expect("pss")
+        .solve()
+        .expect_err("divider state closes at 2·T, not T");
+    let msg = err.to_string();
+    assert!(msg.contains("appears to be 2·T"), "k·T diagnostic: {msg}");
+    assert!(msg.contains("2.000000e-3"), "suggests period = 2·T: {msg}");
 }

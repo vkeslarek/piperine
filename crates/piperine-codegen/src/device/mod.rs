@@ -296,6 +296,16 @@ impl Element for PiperineDevice {
         self.analog.as_ref().map(|a| a.runtime_banks()).unwrap_or((&[], &[]))
     }
 
+    fn digital_hidden_snapshot(&self) -> Option<(Vec<i64>, Vec<f64>)> {
+        self.digital.as_ref().and_then(|d| d.hidden_snapshot())
+    }
+
+    fn digital_hidden_restore(&mut self, state: &(Vec<i64>, Vec<f64>)) {
+        if let Some(d) = self.digital.as_mut() {
+            d.hidden_restore(state);
+        }
+    }
+
     fn accept_timestep(
         &mut self,
         state: &CircularArrayBuffer2<f64>,
