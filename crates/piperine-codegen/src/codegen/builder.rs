@@ -203,6 +203,19 @@ pub struct Builder<'a, 'f, 'm> {
     /// reference these. Memoized in `dtemp_values`.
     dtemps: Vec<Expr>,
     dtemp_values: Vec<Option<Value>>,
+    /// Second-derivative tape for the current `.disto` branch pair:
+    /// `d²(temps[id])/dV(a,b)dV(c,d)` (DISTO-03). Set per branch pair via
+    /// [`Builder::set_ddtemp_tape`]; `__ddtemp(id)` leaves reference these.
+    /// Memoized in `ddtemp_values`.
+    ddtemps: Vec<Expr>,
+    ddtemp_values: Vec<Option<Value>>,
+    /// Second first-derivative tape, live only while a `.disto` branch pair
+    /// is emitted: `d(temps[id])/dV(a,b)` — the pair's *other* branch
+    /// (`__dtemp_inner(id)` leaves, which survive a second-derivative pass
+    /// as undifferentiated product/quotient-rule operands). Set per branch
+    /// pair via [`Builder::set_deriv_tape2`]; memoized in `dtemp2_values`.
+    dtemps2: Vec<Expr>,
+    dtemp2_values: Vec<Option<Value>>,
 }
 
 impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
@@ -239,6 +252,10 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             temp_values: Vec::new(),
             dtemps: Vec::new(),
             dtemp_values: Vec::new(),
+            ddtemps: Vec::new(),
+            ddtemp_values: Vec::new(),
+            dtemps2: Vec::new(),
+            dtemp2_values: Vec::new(),
         }
     }
 
@@ -280,6 +297,10 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             temp_values: Vec::new(),
             dtemps: Vec::new(),
             dtemp_values: Vec::new(),
+            ddtemps: Vec::new(),
+            ddtemp_values: Vec::new(),
+            dtemps2: Vec::new(),
+            dtemp2_values: Vec::new(),
         }
     }
 
@@ -324,6 +345,23 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         self.dtemps = dtemps;
     }
 
+    /// Install the second-derivative tape for the current `.disto` branch
+    /// pair (`d²(temps[id])/dV(a,b)dV(c,d)`) and clear its memo cache. Call
+    /// once per branch pair, alongside [`Builder::set_deriv_tape`] for the
+    /// inner branch (DISTO-03).
+    pub(crate) fn set_ddtemp_tape(&mut self, ddtemps: Vec<Expr>) {
+        self.ddtemp_values = vec![None; ddtemps.len()];
+        self.ddtemps = ddtemps;
+    }
+
+    /// Install the second first-derivative tape for the current `.disto`
+    /// branch pair (`d(temps[id])/dV(a,b)` — the pair's `(a,b)` branch) and
+    /// clear its memo cache (DISTO-03).
+    pub(crate) fn set_deriv_tape2(&mut self, dtemps: Vec<Expr>) {
+        self.dtemp2_values = vec![None; dtemps.len()];
+        self.dtemps2 = dtemps;
+    }
+
     /// Emit `__temp(id)`: the value of temporary `id`, evaluated once and
     /// memoized. Temps only reference earlier temps, so no cycle.
     pub(crate) fn emit_temp(&mut self, id: usize) -> Result<Value, CodegenError> {
@@ -349,6 +387,35 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             .clone();
         let v = self.emit_analog(&expr)?;
         self.dtemp_values[id] = Some(v);
+        Ok(v)
+    }
+
+    /// Emit `__ddtemp(id)`: the second derivative of temporary `id` for the
+    /// current branch pair, evaluated once and memoized (DISTO-03).
+    pub(crate) fn emit_ddtemp(&mut self, id: usize) -> Result<Value, CodegenError> {
+        if let Some(Some(v)) = self.ddtemp_values.get(id) {
+            return Ok(*v);
+        }
+        let expr = self.ddtemps.get(id)
+            .ok_or_else(|| CodegenError::Invalid(format!("__ddtemp({id}) out of range")))?
+            .clone();
+        let v = self.emit_analog(&expr)?;
+        self.ddtemp_values[id] = Some(v);
+        Ok(v)
+    }
+
+    /// Emit `__dtemp_inner(id)`: the first derivative of temporary `id`
+    /// w.r.t. the pair's `(a,b)` branch, evaluated once and memoized
+    /// (DISTO-03).
+    pub(crate) fn emit_dtemp2(&mut self, id: usize) -> Result<Value, CodegenError> {
+        if let Some(Some(v)) = self.dtemp2_values.get(id) {
+            return Ok(*v);
+        }
+        let expr = self.dtemps2.get(id)
+            .ok_or_else(|| CodegenError::Invalid(format!("__dtemp_inner({id}) out of range")))?
+            .clone();
+        let v = self.emit_analog(&expr)?;
+        self.dtemp2_values[id] = Some(v);
         Ok(v)
     }
 

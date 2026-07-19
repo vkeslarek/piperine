@@ -207,6 +207,20 @@ pub struct AnalogKernel {
     event_actions: Option<AnalogFn>,
     /// Minimum `$bound_step` expression; `None` without bound steps.
     bound_step: Option<AnalogFn>,
+    /// `.disto` 2nd-derivative kernel (DISTO-03): for each ordered branch
+    /// pair `(j, k)` in `disto2_pairs`, `∂²(contrib)/∂V(j)∂V(k)` per
+    /// contribution (resistive first, then charge), stored at
+    /// `out[pair·num_contribs + contrib]`. `None` when every contribution
+    /// is linear (all second derivatives fold to zero).
+    disto2: Option<AnalogFn>,
+    /// Ordered branch pairs `(j, k)` the disto2 kernel emits rows for, in
+    /// `out` row order — only pairs with at least one nonzero row.
+    disto2_pairs: Vec<((NodeId, NodeId), (NodeId, NodeId))>,
+    /// Contribution terminals `(plus, minus)` in disto2 row order:
+    /// resistive first, then charge (the split is `disto2_charge_start`).
+    disto2_contribs: Vec<(NodeId, NodeId)>,
+    /// Index in `disto2_contribs` where charge contributions begin.
+    disto2_charge_start: usize,
     /// `@initial` UIC seed terminal pairs and their (param-only) value rows.
     initial_condition_terminals: Vec<(NodeId, NodeId)>,
     initial_conditions: Option<AnalogFn>,
@@ -629,6 +643,41 @@ impl AnalogKernel {
             None => f64::INFINITY,
         }
     }
+
+    /// Whether the device has any nonlinear contribution (a compiled
+    /// `.disto` 2nd-derivative kernel).
+    pub fn has_disto2(&self) -> bool {
+        self.disto2.is_some()
+    }
+
+    /// Ordered branch pairs `(j, k)` the disto2 kernel emits, in `out` row
+    /// order.
+    pub fn disto2_pairs(&self) -> &[((NodeId, NodeId), (NodeId, NodeId))] {
+        &self.disto2_pairs
+    }
+
+    /// Contribution terminals `(plus, minus)` in disto2 row order (resistive
+    /// first, then charge).
+    pub fn disto2_contribs(&self) -> &[(NodeId, NodeId)] {
+        &self.disto2_contribs
+    }
+
+    /// Index in `disto2_contribs` where charge contributions begin.
+    pub fn disto2_charge_start(&self) -> usize {
+        self.disto2_charge_start
+    }
+
+    /// Write the `.disto` second derivatives: for each ordered branch pair
+    /// `(j, k)` in [`AnalogKernel::disto2_pairs`], `∂²(contrib)/∂V(j)∂V(k)`
+    /// per contribution at `out[pair·num_contribs + contrib]`. Only nonzero
+    /// rows are stored — `out` must be pre-zeroed. No-op for a fully linear
+    /// device.
+    pub fn eval_disto2(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.disto2 {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(f, volts, params, state, vars, sim, out);
+        }
+    }
 }
 
 /// Collect the unique `$limit` expressions across every flattened expression,
@@ -935,6 +984,13 @@ impl<'m> AnalogCompiler<'m> {
             )
         };
 
+        // `.disto` second derivatives over the resistive + charge
+        // contributions (DISTO-03); `None` when the device is fully linear.
+        let (disto2_id, disto2_pairs) = match self.compile_disto2("disto2", &resistive, &charge, &temps)? {
+            Some((id, pairs)) => (Some(id), pairs),
+            None => (None, Vec::new()),
+        };
+
         let (force_id, force_jac_id) = if forces.is_empty() {
             (None, None)
         } else {
@@ -1218,6 +1274,14 @@ impl<'m> AnalogCompiler<'m> {
             jacobian: get(&self.jit, jacobian_id),
             charge: charge_id.map(|id| get(&self.jit, id)),
             charge_jacobian: charge_jac_id.map(|id| get(&self.jit, id)),
+            disto2: disto2_id.map(|id| get(&self.jit, id)),
+            disto2_pairs,
+            disto2_contribs: resistive
+                .iter()
+                .chain(&charge)
+                .map(|c| (c.plus, c.minus))
+                .collect(),
+            disto2_charge_start: resistive.len(),
             ac_idt_jacobian: ac_idt_jacobian_id.map(|id| get(&self.jit, id)),
             force: force_id.map(|id| get(&self.jit, id)),
             force_jacobian: force_jac_id.map(|id| get(&self.jit, id)),
@@ -1330,6 +1394,143 @@ impl<'m> AnalogCompiler<'m> {
             }
             Ok(())
         })
+    }
+
+    /// Disto2 shape: `out[pair·nc + ci] = ∂²(contrib_ci)/∂V(j)∂V(k)` per
+    /// ordered branch pair `(j, k)`, over the resistive contributions
+    /// followed by the charge ones (DISTO-03).
+    ///
+    /// For each branch `k` the first-derivative tape `d(temps)/dV(k)` is
+    /// built once; for each ordered pair `(j, k)` the cross tape
+    /// `d²(temps)/dV(j)dV(k)` (via [`crate::lower::diff::d_dv_twice`]) backs
+    /// the `__ddtemp` leaves of each contribution's second derivative —
+    /// derivatives reference the shared value tape, never an inlined tree.
+    /// Rows that fold to a literal zero (linear in `(j, k)`) are skipped, as
+    /// are pairs with no nonzero row; `out` is pre-zeroed by the caller.
+    /// Returns `None` when every contribution is linear — a fully linear
+    /// device carries no `.disto` kernel at all.
+    ///
+    /// DISTO-04: the Volterra bookkeeping is over controlling *voltages*; a
+    /// contribution reading a branch current `I(...)` couples to a current
+    /// unknown and has no voltage-pair second derivative — fail loud,
+    /// naming the device.
+    #[allow(clippy::type_complexity)]
+    fn compile_disto2(
+        &mut self,
+        name: &str,
+        resistive: &[FlatContrib],
+        charge: &[FlatContrib],
+        temps: &[PomExpr],
+    ) -> Result<Option<(FuncId, Vec<((NodeId, NodeId), (NodeId, NodeId))>)>, CodegenError> {
+        let contribs: Vec<&FlatContrib> = resistive.iter().chain(charge).collect();
+        if contribs.is_empty() {
+            return Ok(None);
+        }
+        let mut reads_i = false;
+        let mut scan = |e: &PomExpr| {
+            visit_all(e, &mut |node| {
+                if let PomExpr::Call(func, _) = node
+                    && let PomExpr::Ident(fname) = func.as_ref()
+                    && fname == "I"
+                {
+                    reads_i = true;
+                }
+            });
+        };
+        for c in &contribs { scan(&c.expr); }
+        for t in temps { scan(t); }
+        if reads_i {
+            return Err(CodegenError::unsupported(format!(
+                "disto2: device `{}` reads a branch current `I(...)`; \
+                 current-controlled nonlinearities have no voltage-pair second derivative",
+                self.module.name
+            )));
+        }
+
+        let module = self.module;
+        let resolve_node = |name: &str| -> Option<NodeId> {
+            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
+            module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
+        };
+        let mut seen = std::collections::HashSet::new();
+        let mut branches: Vec<(NodeId, NodeId)> = Vec::new();
+        let mut collect = |e: &PomExpr| {
+            let mut branch_pairs = Vec::new();
+            crate::lower::diff::collect_branches(e, &mut branch_pairs, &resolve_node);
+            for pair in branch_pairs {
+                if seen.insert(pair) {
+                    branches.push(pair);
+                }
+            }
+        };
+        for c in &contribs { collect(&c.expr); }
+        for t in temps { collect(t); }
+
+        // Precompute every row symbolically, k-major so each branch's
+        // first-derivative tape is built once; drop literal-zero rows and
+        // empty pairs/groups.
+        let all_dtemps: Vec<Vec<PomExpr>> = branches
+            .iter()
+            .map(|&(a, b)| {
+                temps
+                    .iter()
+                    .map(|t| crate::lower::diff::d_dv(t, a, b, &resolve_node))
+                    .collect()
+            })
+            .collect();
+        let mut pairs: Vec<((NodeId, NodeId), (NodeId, NodeId))> = Vec::new();
+        let mut groups: Vec<(usize, Vec<(usize, Vec<PomExpr>, Vec<Option<PomExpr>>)>)> = Vec::new();
+        for (k_idx, &(c, d)) in branches.iter().enumerate() {
+            let mut js: Vec<(usize, Vec<PomExpr>, Vec<Option<PomExpr>>)> = Vec::new();
+            for (j_idx, &(a, b)) in branches.iter().enumerate() {
+                let ddtemps: Vec<PomExpr> = temps
+                    .iter()
+                    .map(|t| crate::lower::diff::d_dv_twice(t, a, b, c, d, &resolve_node))
+                    .collect();
+                let rows: Vec<Option<PomExpr>> = contribs
+                    .iter()
+                    .map(|contrib| {
+                        let e = crate::lower::diff::d_dv_twice(&contrib.expr, a, b, c, d, &resolve_node);
+                        match &e {
+                            PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(v)) if *v == 0.0 => None,
+                            _ => Some(e),
+                        }
+                    })
+                    .collect();
+                if rows.iter().any(Option::is_some) {
+                    pairs.push(((a, b), (c, d)));
+                    js.push((j_idx, ddtemps, rows));
+                }
+            }
+            if !js.is_empty() {
+                groups.push((k_idx, js));
+            }
+        }
+        if groups.is_empty() {
+            return Ok(None);
+        }
+
+        let nc = contribs.len();
+        let exprs: Vec<&PomExpr> = contribs.iter().map(|c| &c.expr).collect();
+        let func_id = self.build_fn(name, &exprs, move |b, _slot, out_ptr| {
+            let mut pair_idx = 0usize;
+            for (k_idx, js) in &groups {
+                b.set_deriv_tape(all_dtemps[*k_idx].clone());
+                for (j_idx, ddtemps, rows) in js {
+                    b.set_deriv_tape2(all_dtemps[*j_idx].clone());
+                    b.set_ddtemp_tape(ddtemps.clone());
+                    for (ci, row) in rows.iter().enumerate() {
+                        if let Some(e) = row {
+                            let value = b.emit_analog(e)?;
+                            b.store_f64(value, out_ptr, pair_idx * nc + ci);
+                        }
+                    }
+                    pair_idx += 1;
+                }
+            }
+            Ok(())
+        })?;
+        Ok(Some((func_id, pairs)))
     }
 
     /// Row shape: `out[i] = expr_i`.
