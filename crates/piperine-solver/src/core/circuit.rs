@@ -14,50 +14,6 @@ use crate::solver::transient::TransientSolver;
 
 
 // ---------------------------------------------------------------------------
-// SignalBridge — analog↔digital bridge, extracted from CircuitInstance
-// ---------------------------------------------------------------------------
-
-/// Internal component owned by `CircuitInstance`. Handles the analog→digital
-/// bridge: builds the solution buffer, seeds the digital event queue from
-/// analog accept hooks, and runs the digital scheduler.
-pub struct SignalBridge {
-    // stateless today; future home for bridge-specific config
-}
-
-impl SignalBridge {
-    /// Build a 1-row circular buffer from the solution slice.
-    pub fn build_accept_state(&self, solution: &[f64]) -> CircularArrayBuffer2<f64> {
-        let mut state = CircularArrayBuffer2::new(1, solution.len());
-        let row = ndarray::Array1::from_vec(solution.to_vec());
-        state.push(&row.view());
-        state
-    }
-
-    /// Run analog accept hooks at time `t` and seed the digital event queue.
-    /// The caller must call `run_digital_at` afterward.
-    pub fn settle(
-        &mut self,
-        devices: &mut [Box<dyn Element>],
-        digital_state: &mut DigitalState,
-        state: &CircularArrayBuffer2<f64>,
-        t: f64,
-    ) {
-        use std::cmp::Reverse;
-        let before = digital_state.nets.clone();
-        let mut seed_queue = std::collections::BinaryHeap::new();
-        let mut seq = 0u64;
-        for (i, device) in devices.iter_mut().enumerate() {
-            let mut sink =
-                crate::digital::interface::QueueSink::new(&mut seed_queue, t, i, &mut seq);
-            device.accept_timestep(state, t, &before, &mut sink);
-        }
-        for Reverse(event) in seed_queue {
-            digital_state.schedule(event);
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // CircuitInstance — the instantiated, ready-to-simulate circuit
 // ---------------------------------------------------------------------------
 
@@ -69,7 +25,6 @@ pub struct CircuitInstance {
     pub digital_topology: Option<DigitalTopology>,
     pub digital_state: DigitalState,
     pub netlist: Netlist,
-    bridge: SignalBridge,
     is_set_up: bool,
 }
 
@@ -87,7 +42,6 @@ impl CircuitInstance {
             digital_topology: None,
             digital_state: DigitalState::new(0),
             netlist,
-            bridge: SignalBridge {},
             is_set_up: false,
         }
     }
@@ -322,14 +276,46 @@ impl CircuitInstance {
     ///
     /// Returns `true` if any digital output net changed value.
     pub fn accept_and_run_digital(&mut self, solution: &[f64], t: f64) -> crate::result::Result<bool> {
-        let state = self.bridge.build_accept_state(solution);
+        let state = self.build_accept_state(solution);
         let before = self.digital_state.nets.clone();
-        {
-            let CircuitInstance { devices, digital_state, bridge, .. } = self;
-            bridge.settle(devices, digital_state, &state, t);
-        }
+        self.seed_digital_from_accept_hooks(&state, t);
         self.run_digital_at_with_analog(t, solution)?;
         Ok(before != self.digital_state.nets)
+    }
+
+    // ── Mixed-signal seam (folded from the former `SignalBridge`) ────────────
+    //
+    // The analog→digital plumbing: turn an accepted analog solution into the
+    // 1-row state buffer the accept hooks read, then seed the digital event
+    // queue from every device's `accept_timestep`. This is the one place the
+    // analog side hands off to the scheduler; any `Element` is natively
+    // mixed-signal (MD-01), so there is no separate bridge object.
+
+    /// Build the 1-row analog state buffer the accept hooks read from a
+    /// solution slice.
+    fn build_accept_state(&self, solution: &[f64]) -> CircularArrayBuffer2<f64> {
+        let mut state = CircularArrayBuffer2::new(1, solution.len());
+        let row = ndarray::Array1::from_vec(solution.to_vec());
+        state.push(&row.view());
+        state
+    }
+
+    /// Run every device's analog accept hook at time `t`, seeding the digital
+    /// event queue. The caller must run the scheduler (`run_digital_at`)
+    /// afterward.
+    fn seed_digital_from_accept_hooks(&mut self, state: &CircularArrayBuffer2<f64>, t: f64) {
+        use std::cmp::Reverse;
+        let before = self.digital_state.nets.clone();
+        let mut seed_queue = std::collections::BinaryHeap::new();
+        let mut seq = 0u64;
+        for (i, device) in self.devices.iter_mut().enumerate() {
+            let mut sink =
+                crate::digital::interface::QueueSink::new(&mut seed_queue, t, i, &mut seq);
+            device.accept_timestep(state, t, &before, &mut sink);
+        }
+        for Reverse(event) in seed_queue {
+            self.digital_state.schedule(event);
+        }
     }
 
     /// Initialize all digital devices and seed the `DigitalState` with t=0 events.
