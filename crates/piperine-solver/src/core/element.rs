@@ -59,14 +59,14 @@ bitflags::bitflags! {
         /// before analysis, but the loader needs this flag to know the element
         /// took the allocation seam.
         const HAS_INTERNAL_UNKNOWNS = 1 << 8;
-        /// The model owns hidden state with non-trivial checkpoint/rollback
-        /// (delayed outputs, latches, A2D detector state). The transient solver
-        /// must drive `Element::checkpoint_state`/`rollback_state`/`commit_state`
-        /// around candidate timesteps. (Hooks land with Phase 4.)
+        /// Reserved: the commit/rollback lifecycle is owned by the
+        /// `solver-commit-rollback` follow-up. No method is promised here — the
+        /// `Element` trait exposes no checkpoint/rollback/commit hooks today.
         const SUPPORTS_ROLLBACK = 1 << 9;
-        /// The model overrides `list_queries`/`query` with typed metadata
-        /// beyond the `read_opvars` default. Hosts can rely on this flag to skip
-        /// the default scan.
+        /// Reserved: a host hint that the model overrides `list_queries`/`query`
+        /// with typed metadata beyond the `read_opvars` default. No solver path
+        /// reads this flag today (audit SS-11); it remains a host-facing
+        /// descriptor with no solver consumer.
         const SUPPORTS_QUERIES = 1 << 10;
         /// The model is eligible for stamp bypass: when its terminal voltages
         /// are unchanged within tolerance since the last evaluation, the

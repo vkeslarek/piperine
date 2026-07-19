@@ -44,7 +44,7 @@ fn documented_consumer(flag_name: &str) -> Option<&'static str> {
         // ── Reserved bits owned by a named follow-up feature ─────────────────
         "BYPASS_OK" => "reserved: solver-performance owns stamp bypass",
         "SUPPORTS_ROLLBACK" => "reserved: solver-commit-rollback owns the lifecycle",
-        "SUPPORTS_QUERIES" => "descriptor: host may skip the default opvar scan (core/introspect.rs)",
+        "SUPPORTS_QUERIES" => "reserved: host query-metadata hint; no solver consumer today (SS-11 audit)",
         _ => return None,
     })
 }
