@@ -1,3 +1,6 @@
+//! Linear-system vocabulary: the `Stamp` (matrix/rhs entry) currency
+//! devices pay, and the `LinearSystem`/`SymbolicLinearSystem` contracts
+//! sparse backends implement.
 use crate::math::num::Scalar;
 use ndarray::Array1;
 

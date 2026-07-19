@@ -1,3 +1,5 @@
+//! The `Scalar` trait: the numeric-field bounds (real and complex) every
+//! math routine is generic over.
 use faer::traits::ComplexField;
 use num_complex::Complex;
 use num_traits::{One, Zero};

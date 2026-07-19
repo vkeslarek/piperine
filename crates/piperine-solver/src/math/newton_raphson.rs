@@ -1,3 +1,6 @@
+//! The Newton-Raphson engine: the `NonLinearSystem` contract, the
+//! strategy-driven damped iteration loop with predictor seed, and the
+//! solution-history buffer it owns.
 use crate::error::Error;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::{InitialValue, InitialValueApplyExt};

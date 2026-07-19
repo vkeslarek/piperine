@@ -1,3 +1,5 @@
+//! The digital topology: DAG evaluation order + back edges for a fixed
+//! device set, rebuilt on structural change.
 use std::collections::HashMap;
 use crate::digital::DigitalNet;
 use crate::core::element::Element;

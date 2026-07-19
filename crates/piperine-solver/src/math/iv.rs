@@ -1,3 +1,5 @@
+//! Initial values: the `InitialValue` seed type and its application to
+//! the solution history buffer.
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::linear::AsIndex;
 use crate::math::num::Scalar;

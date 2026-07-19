@@ -1,3 +1,5 @@
+//! Digital events and logic values: `LogicValue`, the `DigitalNet`
+//! handle, and the time-ordered `DigitalEvent` the scheduler queues.
 use std::cmp::Ordering;
 
 // ---------------------------------------------------------------------------

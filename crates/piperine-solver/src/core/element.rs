@@ -1,3 +1,7 @@
+//! The `Element` object model: the composed device ABI (`Element:
+//! AnalogDevice + DigitalDevice + Introspect`), `ElementCapabilities`,
+//! and the stamping/lifecycle vocabulary every participant and every
+//! driver speaks (MD-01 as amended 2026-07-19).
 use num_complex::Complex64;
 use std::collections::HashSet;
 

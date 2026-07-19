@@ -1,3 +1,7 @@
+//! The analog netlist: node/branch identity (`NodeIdentifier`,
+//! `BranchIdentifier`, `AnalogVariable`), the `AnalogReference` → MNA
+//! unknown-index map, and DC initial values — the analog view of the
+//! circuit handed to MNA assembly.
 use crate::math::linear::AsIndex;
 use bimap::BiMap;
 use std::fmt;

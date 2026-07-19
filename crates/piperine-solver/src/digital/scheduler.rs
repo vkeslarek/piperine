@@ -1,3 +1,5 @@
+//! The two-phase delta-cycle scheduler: fixed-point evaluation over the
+//! DAG topology with delta/time event queues (methods on `DigitalState`).
 use std::collections::HashSet;
 use std::cmp::Reverse;
 use crate::digital::{LogicValue, DigitalNet, DigitalEvent};

@@ -1,4 +1,6 @@
 #![allow(dead_code)]
+//! Mathematical and physical constants (`PI`, `E`, Boltzmann, …) shared
+//! by devices and kernels.
 use num_complex::Complex64;
 use std::f64::consts::{E as STD_E, PI as STD_PI};
 

@@ -1,3 +1,5 @@
+//! Digital run state: the net values, the event queue, and the
+//! checkpoint/rollback snapshots the analog accept gate relies on.
 use std::collections::BinaryHeap;
 use std::cmp::Reverse;
 use crate::digital::{LogicValue, DigitalNet, DigitalEvent};

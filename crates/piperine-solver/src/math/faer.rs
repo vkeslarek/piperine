@@ -1,3 +1,6 @@
+//! The `faer` sparse LU linear system: symbolic analysis + numeric
+//! factorization behind the `LinearSystem`/`SymbolicLinearSystem`
+//! contracts.
 use crate::error::Error;
 use crate::math::linear::{
     AsIndex, LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix,

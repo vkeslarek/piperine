@@ -1,3 +1,7 @@
+//! `CircuitInstance` — the built, simulatable circuit: owns the devices
+//! and the analog/digital state behind five contracted responsibilities
+//! (circuit state, analysis entry, the mixed-signal seam, live mutation;
+//! construction stays in `CircuitBuilder`).
 use crate::analyses::noise::NoiseAnalysisOptions;
 use crate::analyses::tf::TransferFunctionAnalysisOptions;
 use crate::analyses::transient::TransientAnalysisOptions;
