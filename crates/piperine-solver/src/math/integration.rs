@@ -246,7 +246,7 @@ mod tests {
         use crate::analyses::transient::TransientAnalysisState;
         use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
         use crate::math::circular_array::CircularArrayBuffer2;
-        use crate::solver::Context;
+        use crate::analyses::Context;
 
         struct PlainElement;
         impl AnalogDevice for PlainElement {}
@@ -272,7 +272,7 @@ mod tests {
         use crate::analyses::transient::TransientAnalysisState;
         use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
         use crate::math::circular_array::CircularArrayBuffer2;
-        use crate::solver::Context;
+        use crate::analyses::Context;
 
         struct FixedLte(f64);
         impl AnalogDevice for FixedLte {

@@ -5,7 +5,7 @@ use crate::analog::Netlist;
 use crate::core::element::{Element, ElementCapabilities};
 use crate::digital::{DigitalState, DigitalTopology};
 use crate::math::circular_array::CircularArrayBuffer2;
-use crate::solver::Context;
+use crate::analyses::Context;
 use crate::analyses::ac::AcSolver;
 use crate::analyses::dc::DcSolver;
 use crate::analyses::noise::NoiseSolver;
@@ -96,7 +96,7 @@ impl CircuitInstance {
     //
     // Hand a driver a borrow of the circuit plus a [`Context`]. Uniform shape,
     // one line each — the analysis itself lives in its driver under
-    // `crate::solver`.
+    // `crate::analyses`.
 
     pub fn dc(&mut self, context: Context) -> crate::result::Result<DcSolver<'_>> {
         DcSolver::new(self, context)

@@ -195,7 +195,7 @@ mod tests {
     use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
     use crate::math::linear::Stamp;
     use crate::analyses::dc::DcAnalysisState;
-    use crate::solver::Context;
+    use crate::analyses::Context;
 
 
     // Test double that allocates an internal unknown

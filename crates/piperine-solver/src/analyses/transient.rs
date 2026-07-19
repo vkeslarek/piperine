@@ -1,3 +1,7 @@
+//! Transient (`.tran`) — the element-facing state/options, the UIC hold
+//! clamps (ngspice `CKTsetIC`), and the adaptive TR-BDF2 driver: unified
+//! breakpoint table, Milne-LTE accept gate, PI timestep control, and live
+//! scheduled parameter sets.
 #![allow(dead_code)]
 use crate::analog::AnalogReference;
 use crate::analyses::Context;

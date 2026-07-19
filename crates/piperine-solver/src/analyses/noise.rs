@@ -1,3 +1,6 @@
+//! Noise (`.noise`) — the noise vocabulary (`Noise`/`NoiseKind`, per-source
+//! PSD contract) and options, plus the adjoint-method driver integrating
+//! per-source contributions over the frequency sweep.
 #![allow(dead_code)]
 use crate::analog::{AnalogReference, AnalogVariable, NodeIdentifier};
 use crate::analyses::Context;

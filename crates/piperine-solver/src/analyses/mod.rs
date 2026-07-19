@@ -1,8 +1,13 @@
-//! One module per analysis (Scheme B, design §2) plus the shared run
-//! configuration every driver speaks: `Context` (immutable `Tolerances`) and
-//! `Policy` (per-analysis convergence tunables, MD-04). The per-analysis
-//! modules co-locate here through P6; until then the drivers remain under
-//! `crate::solver`, which re-exports this module's types unchanged.
+//! The analyses layer (design §1/§2 — Scheme B): one module per analysis,
+//! each holding both its request/state types (what element and host
+//! exchange) and its driver (how it runs). Shared here: the run
+//! configuration every driver speaks — `Context` (immutable `Tolerances`)
+//! and `Policy` (per-analysis convergence tunables, MD-04) — plus the
+//! `Solver` host entry that hands out the analyses. The config home lives
+//! in `config.rs`, the Newton/homotopy/stepper machinery in
+//! `convergence.rs`. A driver may call down into `analog`, `digital`,
+//! `math`, and read config — never sideways into another analysis, never
+//! up into the host.
 
 use crate::analog::Netlist;
 use crate::analyses::config::TraceFlags;

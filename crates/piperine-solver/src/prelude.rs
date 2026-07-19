@@ -29,8 +29,8 @@ pub use crate::analyses::tf::TransferFunctionAnalysisOptions;
 pub use crate::analyses::pss::{PssAnalysisOptions, PssResult, PssStats};
 pub use crate::analyses::sens::{SensAnalysisOptions, SensResult};
 pub use crate::analyses::transient::TransientAnalysisOptions;
-pub use crate::solver::Context;
-pub use crate::solver::{Policy, Tolerances};
+pub use crate::analyses::Context;
+pub use crate::analyses::{Policy, Tolerances};
 pub use crate::analyses::Solver;
 
 // ── Convergence policy (opt-in customization) ──────────────────────────────

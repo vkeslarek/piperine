@@ -14,7 +14,7 @@ use crate::digital::{DigitalNet, LogicValue};
 use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::linear::Stamp;
-use crate::solver::Context;
+use crate::analyses::Context;
 
 bitflags::bitflags! {
     /// What an [`Element`] participates in, declared up front. The solver and

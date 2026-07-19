@@ -1,3 +1,6 @@
+//! AC small-signal sweep (`.ac`) — the sweep options and the element-facing
+//! `AcAnalysisContext`, plus the driver that linearizes the circuit around
+//! the DC operating point and solves the complex system at each frequency.
 #![allow(dead_code)]
 use crate::analog::AnalogReference;
 use crate::analyses::Context;

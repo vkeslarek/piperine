@@ -1,3 +1,6 @@
+//! Transfer function (`.tf`) — the analysis options and the DC small-signal
+//! driver: gain, input resistance, and output resistance from unit
+//! excitations on the system linearized at the operating point.
 #![allow(dead_code)]
 use crate::analog::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
 use crate::analyses::Context;
