@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::analog::{BranchIdentifier, AnalogVariable, NodeIdentifier};
 use crate::core::net::Net;
 use crate::digital::LogicValue;
+use ndarray::Array2;
 use num_complex::Complex;
 use std::collections::HashMap;
 use std::slice::Iter;
@@ -379,6 +380,24 @@ pub enum TransferType {
 pub struct PoleZeroResult {
     pub poles: Vec<Complex<f64>>,
     pub zeros: Vec<Complex<f64>>,
+}
+
+/// N-port scattering-parameter analysis (`.sp`) result: the `S` matrix at
+/// every swept frequency, in port order — see
+/// [`SpSolver`](crate::analyses::sp::SpSolver).
+// Host wiring (T9) is what reads these fields from outside the crate; until
+// then `cargo build` (which excludes `#[cfg(test)]`) sees no reader.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Default)]
+pub struct SpResult {
+    pub frequencies: Vec<f64>,
+    /// `s[k]` is the `n_ports × n_ports` matrix at `frequencies[k]`,
+    /// `s[k][[i, j]] = S_ij` (port `i` response / port `j` excitation).
+    pub s: Vec<Array2<Complex<f64>>>,
+    /// Reference impedance of each port, indexed by port position (not
+    /// necessarily the declared `num`).
+    pub z0: Vec<f64>,
+    pub n_ports: usize,
 }
 
 impl std::fmt::Display for TransferType {

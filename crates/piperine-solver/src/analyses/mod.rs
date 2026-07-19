@@ -24,6 +24,7 @@ pub mod noise;
 pub mod pss;
 pub mod pz;
 pub mod sens;
+pub mod sp;
 pub mod tf;
 pub mod transient;
 
