@@ -1240,6 +1240,68 @@ fn sim_tran_transition_ramps_step_into_rc() {
     assert!((late - 1.0).abs() < 0.03, "settled after tr: V(out) = {late}");
 }
 
+/// SC-09 edge case — `transition` with rise/fall = 0 is an instantaneous
+/// step (no divide-by-zero), still landing on a declared breakpoint: the
+/// output only ever reads the rails (never a ramp sample), the integrator
+/// lands exactly on the switching edge, and every value is finite.
+#[test]
+fn sim_tran_transition_zero_rise_fall_is_an_instantaneous_step() {
+    use piperine_solver::prelude::TransientAnalysisOptions;
+
+    let (design, prog) = elaborate_and_lower("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Capacitor ( inout p : Electrical, inout n : Electrical ) { param c : Real = 1n; }
+        analog Capacitor { I(p, n) <+ c * ddt(V(p, n)); }
+        mod Step ( inout p : Electrical, inout n : Electrical ) {
+            var st : Real = 0.0;
+        }
+        analog Step {
+            @timer(1e-3) { st = 1.0; }
+            V(p, n) <- transition(st, 0.0, 0.0, 0.0);
+        }
+        mod Top ( inout step : Electrical, inout out : Electrical ) {
+            s1 : Step ( step, gnd );
+            r1 : Resistor ( step, out );
+            c1 : Capacitor ( out, gnd ) { .c = 1e-8 };
+        }
+    ");
+    let mut compiler = CircuitCompiler::new(&design, &prog);
+    let mut circuit = compiler.build_circuit("Top").expect("build circuit");
+    circuit.init_digital().unwrap();
+    circuit.rebuild_digital_topology();
+
+    let options = TransientAnalysisOptions::new(2e-3.into(), 1e-5.into());
+    let result = circuit.transient(options, Context::default())
+        .unwrap().solve().unwrap();
+
+    // Instantaneous: the driving node reads a rail at every recorded step
+    // (a ramp — even a fast one — would show intermediate samples).
+    let mut t_flip = None;
+    for step in result.iter() {
+        let t = step.time();
+        let v = step.get_node(&NodeIdentifier::Anonymous(1)).expect("V(step)");
+        assert!(v.is_finite(), "NaN at t = {t:e}");
+        assert!(
+            v.abs() < 1e-9 || (v - 1.0).abs() < 1e-9,
+            "t = {t:e}: instantaneous step reads a rail, got {v}"
+        );
+        if t_flip.is_none() && (v - 1.0).abs() < 1e-9 && t >= 1e-3 {
+            t_flip = Some(t);
+        }
+    }
+    // The integrator lands exactly on the timer's declared breakpoint edge.
+    assert!(
+        result.iter().any(|s| (s.time() - 1e-3).abs() < 1e-12),
+        "a recorded step sits exactly on the switching edge"
+    );
+    // The flip propagates within a few steps of the edge (the operator
+    // commits at accepted steps — the change is visible right after).
+    let t_flip = t_flip.expect("the step eventually flips to the high rail");
+    assert!(t_flip < 1e-3 + 3.0 * 2.0e-5, "flip at {t_flip:e}, within 3·dt_max of the edge");
+}
+
 /// SC-12 — `@initial { V(p,n) <- ic }` branch force with UIC hold: a cap
 /// pre-charged to 5 V starts at exactly 5 and discharges through R along
 /// `5·e^(−t/RC)` — the t=0 state is a *consistent* clamped solution, not a
