@@ -199,6 +199,12 @@ transient predictor (CP-16 first-order Newton seed). Remaining:
       mixed-signal handoff in `core/circuit.rs`.
 - [x] `Context::default` free of `init_global` — DONE (`81b9c1d`): solver
       builds own it, process-isolated test proves no leak.
+- [ ] `bound_step_hint` has a codegen producer (`codegen/device/mod.rs`) but no
+      solver consumer — wire it into the transient stepper or remove it
+      (found by solver-simplification Verifier, 2026-07-19).
+- [ ] Part VII §16 failure rows unenforced at runtime: empty-capabilities
+      check, digital event → nonexistent net validation, digital boundary
+      stability check. Either enforce or drop from the contract.
 
 ### P1 named backlog (explicit non-goals for V1)
 
