@@ -74,6 +74,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: SC-15, tests/ngspice/ (no tline .cir pair) (spice)
 - last seen: 2026-07-19T00:20:12Z
 
+### L-011 — When a task audits 'every module has a //! contract', enumerate modules from the filesystem (all src/**/*.rs), not from the design's layer table — top-level modules outside the table (error.rs, result.rs) were missed.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `piperine-solver` · harmful: 0
+- features: solver-simplification
+- evidence: SS-14 / crates/piperine-solver/src/error.rs:1,result.rs:1 (piperine-solver)
+- last seen: 2026-07-19T16:34:44Z
+
 ## Quarantined (failed when applied — ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
