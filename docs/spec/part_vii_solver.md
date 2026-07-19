@@ -2,7 +2,8 @@
 
 This Part defines the solver contract: the element ABI consumed by analyses, the
 analog and digital variable namespaces, the numerical algorithms for DC, AC,
-transient, noise, and transfer-function analysis, and the convergence aids that
+transient, noise, transfer-function, sensitivity, and periodic-steady-state
+analysis, and the convergence aids that
 make mixed-signal simulation deterministic.
 
 The solver is below elaboration and device construction. It receives a fixed set
@@ -29,6 +30,8 @@ plugin device, and an external model are equivalent once they present the one
 - §14 Mixed-signal execution
 - §15 Convergence aids
 - §16 Validation and failure rules
+- §17 Sensitivity analysis
+- §18 Periodic steady state
 
 ---
 
@@ -735,13 +738,13 @@ structure / element reconstruction — e.g. an optional-parameter presence
 flip) is beyond the solver: it has no POM. The restamp path reports the
 rebuild invalidation to the caller, and a structural set scheduled
 mid-transient fails the run loud with the typed outcome. The **host layer**
-(the Python `LiveSession`:
-compile once, `set`, re-run analyses on the held circuit) re-elaborates and
+(the Python `LiveSession`: compile once, `set`, re-run analyses on the held
+circuit) re-elaborates and
 recompiles automatically, reports it visibly, and carries the solved node
 voltages by net name as the next solve's initial guess — dropped nets are
 discarded, new nets start cold. At the host layer a structural set scheduled
-mid-transient
-splits the run at `t`: the session rebuilds there and the transient restarts
+mid-transient splits the run at `t`: the session rebuilds there and the
+transient restarts
 from `t` (absolute start time, carried node state as initial conditions), and
 the recorded segments stitch into one continuous trace. A failed
 re-elaboration surfaces the error and keeps the previous compiled circuit
@@ -1021,7 +1024,8 @@ The step size is bounded from three directions. Elements declare
 largest step their charge/flux history tolerates through
 `suggest_transient_step`, consulted after every accepted step, with the
 proposal clamped to the minimum over all suggestions; and the PI proposal
-itself is clamped to the analysis options' `[dt_min, dt_max]`. The target time is the minimum of
+itself is clamped to the analysis options' `[dt_min, dt_max]`. The target time
+is the minimum of
 the PI-proposed timestep, the next declared breakpoint, the next pending
 digital event time, the next scheduled live set, and the stop time.
 Breakpoints are absolute, so they survive step rollback. (The ABI also carries
@@ -1067,3 +1071,71 @@ device construction.
 | §13 | Unsupported transfer-function source form is requested | Analysis error. |
 | §14 | Digital delta cycle does not settle within the iteration cap | Digital convergence failure. |
 | §15 | Linear solve returns NaN or infinity | Convergence failure. |
+| §17 | Sensitivity parameter is unknown, unreadable, non-real, or rebuild-strength | Analysis error. |
+| §18 | Non-positive period or negative pre-roll requested; digital state not periodic after convergence | Analysis error. |
+
+---
+
+## §17 Sensitivity analysis
+
+DC sensitivity analysis (`.sens`) computes `∂(output)/∂(param)` at the
+operating point over the restamp path (§10.5).
+
+The algorithm is:
+
+1. Validate the whole request up front (no partial writes on a bad request):
+   each `(element label, parameter)` pair must name an existing element with a
+   declared, real, readable parameter whose write does not invalidate the
+   compiled structure (a *rebuild*-strength
+   parameter fails loud — a finite difference across a rebuild boundary is not
+   a sensitivity), and each requested output must be a solved analog net.
+2. For each pair, perturb the parameter by a central difference step
+   (`±dp`, relative with default `dp_rel = 1e-6`, absolute fallback when the
+   parameter value is zero), re-solving the DC operating point at each side on
+   the same compiled circuit.
+3. Difference the requested outputs (node voltages and branch currents,
+   addressed as nets) across the two operating points.
+
+The result is keyed by `(output label, "element.param")`. Sensitivities are
+defined only for restampable parameters; every addressing failure is loud.
+
+---
+
+## §18 Periodic steady state
+
+Periodic-steady-state analysis (PSS) finds a periodic orbit of a driven circuit
+by **single shooting**: Newton iteration on `g(x₀) = x(t₀+T) − x₀`, where each
+evaluation of `g` is an ordinary transient over one period re-entered from `x₀`
+(§10.1 full-state re-entry). Mixed-signal circuits run unchanged inside every
+shot — scheduler, breakpoints, and bridges all active; Newton sees only the
+continuous unknowns.
+
+The algorithm is:
+
+1. Validate the request: the period `T` must be positive and the optional
+   pre-roll `tstab` non-negative (autonomous period detection is out of scope;
+   the drive period is supplied).
+2. Optionally integrate `[0, tstab]` once to move the starting state near the
+   orbit before shooting begins.
+3. Shooting Newton: from the current `x₀`, run one period and form the
+   periodicity residual. The first Jacobian is built by finite difference (one
+   extra shot per unknown); later iterations reuse it with Broyden rank-1
+   updates. The Newton update is damped — each component's move is clamped to a
+   physically plausible magnitude so an exponential nonlinearity cannot throw
+   `x₀` to hundreds of volts — and a singular Jacobian fails loud. Converge
+   when `max_i |x_i(T) − x_i(0)|` is within the shooting
+   tolerance (default `1e-6`, bounded below by the adaptive integrator's
+   per-period reproducibility of ~`1e-7`); iteration count is capped
+   (default 40) and exhausting it fails loud.
+4. Verify the orbit *repeats*: one extra shot over the second period must land
+   where the first did (within integration tolerance) — a fixed point of the
+   period map under a non-periodic drive is not a steady state. Then verify
+   digital periodicity: a mismatch fails loud, and
+   when the digital state closes only after `k` periods (checked up to `k = 4`)
+   the error names the circuit period as `k·T` (the divider case).
+
+The result is one period of transient samples (`t ∈ [t₀, t₀+T]`) plus the
+shooting diagnostics: iteration count, the final periodicity residual, and —
+when a Jacobian was computed and the orbit is stable — the estimated natural
+settling time from the dominant monodromy eigenvalue (power iteration on the
+shooting Jacobian).
