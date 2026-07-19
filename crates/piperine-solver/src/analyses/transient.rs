@@ -577,42 +577,69 @@ impl<'a> TransientSolver<'a> {
         self.initial_conditions = ivs;
     }
 
+    /// Full-state re-entry (PSS shooting seam): seed both
+    /// companion-history rows from the captured solution and restore the
+    /// digital snapshot — no DC solve, no device/user seeds (the captured
+    /// state is the whole story).
+    fn apply_reentry_state(&mut self, state: TransientStep) -> crate::result::Result<TransientStep> {
+        let ivs: Vec<InitialValue<AnalogReference, f64>> = {
+            let netlist = self.system.circuit.netlist();
+            netlist
+                .all_references()
+                .into_iter()
+                .filter_map(|reference| {
+                    state
+                        .get(reference.variable().clone())
+                        .map(|value| InitialValue { reference: reference.clone(), value })
+                })
+                .collect()
+        };
+        for idx in 0..self.system.circuit.digital_state.nets.len() {
+            if let Some(lv) = state.digital(idx) {
+                self.system.circuit.digital_state.nets[idx] = lv;
+            }
+        }
+        // Hidden register state (module vars, edge memory) round-trips
+        // with the nets — the full-state shot contract (PSS). Restored
+        // after `init_digital` (constructor) so the restore wins over the
+        // power-on reset; unknown labels are skipped (a structurally
+        // rebuilt circuit starts its new devices fresh).
+        for dev in &mut self.system.circuit.devices {
+            if let Some(hidden) = state.digital_hidden(dev.name()) {
+                let hidden = hidden.clone();
+                dev.digital_hidden_restore(&hidden);
+            }
+        }
+        self.solver.push_initial_conditions(ivs.clone());
+        self.solver.push_initial_conditions(ivs);
+        Ok(self.snapshot(self.options.start_time))
+    }
+
+    /// Element `@initial { V(p,n) <- ic }` UIC seeds: the t=0 branch
+    /// voltage `v(plus) = v(minus) + ic` (cap/ind/dio initial condition,
+    /// SPICE `.ic`), overlaid on the DC point so unconstrained nodes keep
+    /// their operating-point values.
+    fn device_initial_conditions(
+        &self,
+        iv_dc: &[InitialValue<AnalogReference, f64>],
+    ) -> Vec<InitialValue<AnalogReference, f64>> {
+        let mut device_ic: Vec<InitialValue<AnalogReference, f64>> = Vec::new();
+        for dev in &self.system.circuit.devices {
+            for (plus, minus, ic) in dev.initial_conditions() {
+                let Some(plus_ref) = plus else { continue };
+                let v_minus = minus
+                    .as_ref()
+                    .and_then(|m| m.as_index())
+                    .map_or(0.0, |i| iv_dc.iter().find(|iv| iv.reference.as_index() == Some(i)).map_or(0.0, |iv| iv.value));
+                device_ic.push(InitialValue { reference: plus_ref, value: v_minus + ic });
+            }
+        }
+        device_ic
+    }
+
     fn compute_initial_conditions(&mut self) -> crate::result::Result<TransientStep> {
-        // Full-state re-entry: seed both companion-history rows from the
-        // captured solution and restore the digital snapshot — no DC solve,
-        // no device/user seeds (the captured state is the whole story).
         if let Some(state) = self.reentry_state.take() {
-            let ivs: Vec<InitialValue<AnalogReference, f64>> = {
-                let netlist = self.system.circuit.netlist();
-                netlist
-                    .all_references()
-                    .into_iter()
-                    .filter_map(|reference| {
-                        state
-                            .get(reference.variable().clone())
-                            .map(|value| InitialValue { reference: reference.clone(), value })
-                    })
-                    .collect()
-            };
-            for idx in 0..self.system.circuit.digital_state.nets.len() {
-                if let Some(lv) = state.digital(idx) {
-                    self.system.circuit.digital_state.nets[idx] = lv;
-                }
-            }
-            // Hidden register state (module vars, edge memory) round-trips
-            // with the nets — the full-state shot contract (PSS). Restored
-            // after `init_digital` (constructor) so the restore wins over the
-            // power-on reset; unknown labels are skipped (a structurally
-            // rebuilt circuit starts its new devices fresh).
-            for dev in &mut self.system.circuit.devices {
-                if let Some(hidden) = state.digital_hidden(dev.name()) {
-                    let hidden = hidden.clone();
-                    dev.digital_hidden_restore(&hidden);
-                }
-            }
-            self.solver.push_initial_conditions(ivs.clone());
-            self.solver.push_initial_conditions(ivs);
-            return Ok(self.snapshot(self.options.start_time));
+            return self.apply_reentry_state(state);
         }
 
         debug!("Calculating DC Operating Point...");
@@ -638,21 +665,7 @@ impl<'a> TransientSolver<'a> {
         let _netlist = self.system.circuit.netlist();
         let iv_dc = self.system.circuit.netlist().initial_values(dc_result.values());
 
-        // Element `@initial { V(p,n) <- ic }` UIC seeds: set the t=0 branch
-        // voltage `v(plus) = v(minus) + ic` (cap/ind/dio initial condition,
-        // SPICE `.ic`). Overlaid on the DC point so unconstrained nodes keep
-        // their operating-point values.
-        let mut device_ic: Vec<InitialValue<AnalogReference, f64>> = Vec::new();
-        for dev in &self.system.circuit.devices {
-            for (plus, minus, ic) in dev.initial_conditions() {
-                let Some(plus_ref) = plus else { continue };
-                let v_minus = minus
-                    .as_ref()
-                    .and_then(|m| m.as_index())
-                    .map_or(0.0, |i| iv_dc.iter().find(|iv| iv.reference.as_index() == Some(i)).map_or(0.0, |iv| iv.value));
-                device_ic.push(InitialValue { reference: plus_ref, value: v_minus + ic });
-            }
-        }
+        let device_ic = self.device_initial_conditions(&iv_dc);
 
         self.solver.push_initial_conditions(iv_dc.clone());
         self.solver.push_initial_conditions(iv_dc);
@@ -845,42 +858,7 @@ impl<'a> TransientSolver<'a> {
         self.settle_digital(t_next)?;
         self.record_step(steps, t_next, snapshot);
         st.current_time = t_next;
-        // Apply scheduled live sets due at this accepted point
-        // (LIVE-06/09): scheduling order = last-write-wins per
-        // param. The new values take effect from the next accepted
-        // step; a write of ≥ OperatingPoint strength additionally
-        // re-solves the just-closed step with the new values so the
-        // point at t is the post-set consistent solution. Rebuild
-        // is beyond the solver (no POM here) — fail loud.
-        let due = self.sets.drain_due(st.current_time);
-        st.sets_just_applied = !due.is_empty();
-        if !due.is_empty() {
-            use crate::core::introspect::Invalidation;
-            let mut strongest = Invalidation::None;
-            for set in due {
-                let inv = self.system.circuit.set_element_param(
-                    &set.label, &set.param, set.value,
-                )?;
-                strongest = strongest.max(inv);
-            }
-            if strongest >= Invalidation::Rebuild {
-                return Err(crate::error::Error::simple(
-                    crate::error::SolverDomain::Transient,
-                    format!(
-                        "scheduled set at t={:.3e} needs a structural \
-                         rebuild — re-elaborate at the host layer (MD-18)",
-                        st.current_time
-                    ),
-                ));
-            }
-            if strongest >= Invalidation::OperatingPoint
-                && let Some(re) =
-                    self.execute_timestep(st.current_time - dt_actual, dt_actual, false)?
-                && st.current_time >= self.options.record_from
-                && let Some(last) = steps.last_mut()
-            {
-                *last = re;
-            }
+        if self.apply_scheduled_sets(st, steps, dt_actual)? {
             // The value jump is a discontinuity: the next TR stage
             // must not re-derive a previous current across it.
             landed_on_breakpoint = true;
@@ -893,6 +871,53 @@ impl<'a> TransientSolver<'a> {
         self.system.prev_h = if landed_on_breakpoint { 0.0 } else { dt_actual };
         st.dt = self.propose_dt(milne, dt_actual, dt_proposed, post_set_step, st.sets_just_applied);
         Ok(())
+    }
+
+    /// Apply the scheduled live sets due at the just-accepted point
+    /// (LIVE-06/09): scheduling order = last-write-wins per param. The new
+    /// values take effect from the next accepted step; a write of
+    /// ≥ OperatingPoint strength additionally re-solves the just-closed
+    /// step with the new values so the point at t is the post-set
+    /// consistent solution. Rebuild is beyond the solver (no POM here) —
+    /// fail loud. Returns true when any set applied.
+    fn apply_scheduled_sets(
+        &mut self,
+        st: &mut TimeLoop,
+        steps: &mut Vec<TransientStep>,
+        dt_actual: f64,
+    ) -> crate::result::Result<bool> {
+        let due = self.sets.drain_due(st.current_time);
+        st.sets_just_applied = !due.is_empty();
+        if due.is_empty() {
+            return Ok(false);
+        }
+        use crate::core::introspect::Invalidation;
+        let mut strongest = Invalidation::None;
+        for set in due {
+            let inv = self.system.circuit.set_element_param(
+                &set.label, &set.param, set.value,
+            )?;
+            strongest = strongest.max(inv);
+        }
+        if strongest >= Invalidation::Rebuild {
+            return Err(crate::error::Error::simple(
+                crate::error::SolverDomain::Transient,
+                format!(
+                    "scheduled set at t={:.3e} needs a structural \
+                     rebuild — re-elaborate at the host layer (MD-18)",
+                    st.current_time
+                ),
+            ));
+        }
+        if strongest >= Invalidation::OperatingPoint
+            && let Some(re) =
+                self.execute_timestep(st.current_time - dt_actual, dt_actual, false)?
+            && st.current_time >= self.options.record_from
+            && let Some(last) = steps.last_mut()
+        {
+            *last = re;
+        }
+        Ok(true)
     }
 
     /// D2A settle on acceptance: the analog accept-hooks seed the digital
@@ -1036,6 +1061,60 @@ impl<'a> TransientSolver<'a> {
         result
     }
 
+    /// Reject a converged candidate on LTE: trace, roll back the digital
+    /// checkpoint, and halve dt via the stepper (resetting the PI memory).
+    /// At the dt floor, accept the step as-is rather than stall — the
+    /// accuracy concession is surfaced (audit C2) and the analog history
+    /// is kept. Returns true when the step must be accepted at the floor.
+    fn reject_lte_step(
+        &mut self,
+        st: &mut TimeLoop,
+        prediction: &StepPrediction,
+        milne: f64,
+        analog_history: CircularArrayBuffer2<f64>,
+    ) -> bool {
+        if self.policy.trace.transient {
+            eprintln!(
+                "REJECT t={:.3e} dt={:.3e} milne={:.3e} (trtol={})",
+                st.current_time,
+                prediction.dt_actual,
+                milne,
+                self.system.context.tolerances.trtol
+            );
+        }
+        self.system.circuit.digital_state.rollback();
+        st.dt = self.stepper.reject_dt(prediction.dt_proposed, &self.options);
+        if st.dt <= self.options.dt_min {
+            st.dt_min_floor_hits += 1;
+            tracing::warn!(
+                "transient LTE exceeded trtol at dt_min ({:.3e}); \
+                 accepting step at t={:.3e} with reduced accuracy",
+                st.dt, st.current_time
+            );
+            return true;
+        }
+        st.steps_rejected += 1;
+        st.last_step_accepted = false;
+        self.solver.restore_state(analog_history);
+        false
+    }
+
+    /// Reject a candidate whose Newton phases failed to converge: roll back
+    /// the digital + analog checkpoints, halve dt, reset the PI memory
+    /// (TRB-05/09).
+    fn reject_step(
+        &mut self,
+        st: &mut TimeLoop,
+        dt_proposed: f64,
+        analog_history: CircularArrayBuffer2<f64>,
+    ) {
+        st.steps_rejected += 1;
+        st.last_step_accepted = false;
+        self.system.circuit.digital_state.rollback();
+        self.solver.restore_state(analog_history);
+        st.dt = self.stepper.reject_dt(dt_proposed, &self.options);
+    }
+
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
         let (mut steps, node_indices) = self.begin_run()?;
         let mut st = TimeLoop::new(self.options.start_time, self.options.dt);
@@ -1056,52 +1135,21 @@ impl<'a> TransientSolver<'a> {
                         &mut st, &mut steps, prediction, snapshot,
                         assessment.milne, post_set_step,
                     )?;
-                } else {
-                    // LTE too large: reject, halve dt, reset the PI memory.
-                    if self.policy.trace.transient {
-                        eprintln!(
-                            "REJECT t={:.3e} dt={:.3e} milne={:.3e} (trtol={})",
-                            st.current_time,
-                            prediction.dt_actual,
-                            assessment.milne,
-                            self.system.context.tolerances.trtol
-                        );
-                    }
-                    self.system.circuit.digital_state.rollback();
-                    st.dt = self.stepper.reject_dt(prediction.dt_proposed, &self.options);
-                    if st.dt <= self.options.dt_min {
-                        // Can't shrink further — accept the step as-is rather
-                        // than stall. Surface the accuracy concession (audit C2).
-                        st.dt_min_floor_hits += 1;
-                        tracing::warn!(
-                            "transient LTE exceeded trtol at dt_min ({:.3e}); \
-                             accepting step at t={:.3e} with reduced accuracy",
-                            st.dt, st.current_time
-                        );
-                        self.accept_step(
-                            &mut st, &mut steps, prediction, snapshot,
-                            assessment.milne, post_set_step,
-                        )?;
-                    } else {
-                        st.steps_rejected += 1;
-                        st.last_step_accepted = false;
-                        self.solver.restore_state(analog_history);
-                        continue;
-                    }
+                } else if self.reject_lte_step(
+                    &mut st, &prediction, assessment.milne, analog_history,
+                ) {
+                    // dt floor: accept the step as-is rather than stall.
+                    self.accept_step(
+                        &mut st, &mut steps, prediction, snapshot,
+                        assessment.milne, post_set_step,
+                    )?;
                 }
             } else {
-                // Either phase failed to converge — reject the whole step,
-                // halve dt, reset the PI memory (TRB-05/09).
-                st.steps_rejected += 1;
-                st.last_step_accepted = false;
-                self.system.circuit.digital_state.rollback();
-                self.solver.restore_state(analog_history);
-                st.dt = self.stepper.reject_dt(prediction.dt_proposed, &self.options);
-
+                // Either phase failed to converge — reject the whole step.
+                self.reject_step(&mut st, prediction.dt_proposed, analog_history);
                 if st.dt <= self.options.dt_min && let Err(e) = outcome {
                     return Err(e);
                 }
-                continue;
             }
         }
 
