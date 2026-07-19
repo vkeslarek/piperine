@@ -287,6 +287,42 @@ impl SimSession {
         Ok(result)
     }
 
+    /// Run a distortion analysis (`.disto`): small-signal Volterra
+    /// distortion at the DC operating point. Single-tone (`f2 = None`)
+    /// reports `hd2`/`hd3` at `2·f1`/`3·f1`; two-tone (`f2 = Some(..)`)
+    /// reports `im2` at `f1+f2` and `im3` at `2·f1−f2` — equal-amplitude
+    /// tones, the ngspice convention. `amplitude` scales every AC stimulus
+    /// magnitude in the circuit for the first-order solve; `output` is the
+    /// measured net name, optionally differential against `output_ref`.
+    /// Fails loud when `f1`/`amplitude` are non-positive, `f2` collides
+    /// with `f1`, the output is not addressable, there is no first-order
+    /// response at the output, or a device reads a branch current in a
+    /// nonlinear contribution (DISTO-04).
+    pub fn run_disto(
+        &self,
+        f1: f64,
+        f2: Option<f64>,
+        amplitude: f64,
+        output: &str,
+        output_ref: Option<&str>,
+        config: &SolverConfig,
+    ) -> Result<piperine_solver::prelude::DistoResult, Error> {
+        let (mut circuit, info) = self.build_circuit()?;
+        let output_node = resolve_net(&info, output)?;
+        let output_ref_node = output_ref.map(|r| resolve_net(&info, r)).transpose()?;
+        let options = piperine_solver::prelude::DistoOptions {
+            f1,
+            f2,
+            amplitude,
+            output: piperine_solver::abi::AnalogVariable::Node(output_node),
+            output_ref: output_ref_node,
+        };
+        let mut solver = circuit.disto(options, config.to_context())?;
+        let result = solver.solve()?;
+        self.fire_after_solve("disto", &[])?;
+        Ok(result)
+    }
+
     /// Run a DC operating-point analysis. `nodeset` (net name → volts) seeds
     /// the Newton initial guess.
     pub fn run_op(

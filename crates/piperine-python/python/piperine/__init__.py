@@ -340,6 +340,22 @@ class SpResult:
     n_ports: int
 
 
+@dataclass
+class DistoResult:
+    """``.disto`` result: small-signal Volterra distortion ratios.
+
+    The uniform host shape (MD-22): same field names as the Rust
+    ``DistoResult { hd2, hd3, im2, im3 }``. Single-tone runs report
+    ``hd2``/``hd3`` (``im2``/``im3`` are ``None``); two-tone runs report
+    ``im2`` (at ``F1+F2``) and ``im3`` (at ``2·F1−F2``).
+    """
+
+    hd2: float | None
+    hd3: float | None
+    im2: float | None
+    im3: float | None
+
+
 class Module:
     """A reflected view of one POM module (spec AC14) + the four analyses.
 
@@ -460,6 +476,28 @@ class Module:
         """
         frequencies, s, z0, n_ports = self._native.sp(fstart, fstop, points, logarithmic, solver)
         return SpResult(frequencies=list(frequencies), s=s, z0=list(z0), n_ports=n_ports)
+
+    def disto(
+        self,
+        f1: float,
+        amplitude: float,
+        output: str,
+        f2: float | None = None,
+        output_ref: str | None = None,
+        solver: Solver | None = None,
+    ) -> DistoResult:
+        """Run a distortion analysis (``.disto``).
+
+        Small-signal Volterra distortion at the DC operating point.
+        Single-tone (``f2 = None``) reports ``hd2``/``hd3``; two-tone
+        reports ``im2`` (at ``F1+F2``) and ``im3`` (at ``2·F1−F2``) with
+        equal-amplitude tones. ``amplitude`` scales every AC stimulus
+        magnitude in the circuit. Non-positive ``f1``/``amplitude``,
+        ``f2 == f1``, an unaddressable output, no first-order response, or
+        a current-controlled nonlinearity fails loud.
+        """
+        hd2, hd3, im2, im3 = self._native.disto(f1, amplitude, output, f2, output_ref, solver)
+        return DistoResult(hd2=hd2, hd3=hd3, im2=im2, im3=im3)
 
     def tran(self, config: TranConfig) -> Trace:
         """Run a transient analysis (spec AC6).

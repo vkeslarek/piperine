@@ -237,6 +237,34 @@ impl _Module {
         Ok((result.poles, result.zeros))
     }
 
+    /// Run a distortion analysis (`.disto`): small-signal Volterra
+    /// distortion at the DC operating point. Single-tone (`f2 = None`)
+    /// reports `hd2`/`hd3`; two-tone (`f2` given) reports `im2` (at
+    /// `f1+f2`) and `im3` (at `2·f1−f2`) with equal-amplitude tones.
+    /// `amplitude` scales every AC stimulus magnitude in the circuit.
+    /// Returns `(hd2, hd3, im2, im3)` — per-mode fields are `None` — the
+    /// uniform host shape (MD-22, DISTO-06): same field order as the Rust
+    /// `DistoResult { hd2, hd3, im2, im3 }`. Fails loud for non-positive
+    /// `f1`/`amplitude`, `f2 == f1`, an unaddressable output, no
+    /// first-order response, or a current-controlled nonlinearity
+    /// (DISTO-04).
+    #[pyo3(signature = (f1, amplitude, output, f2=None, output_ref=None, solver=None))]
+    fn disto(
+        &self,
+        f1: f64,
+        amplitude: f64,
+        output: &str,
+        f2: Option<f64>,
+        output_ref: Option<&str>,
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<(Option<f64>, Option<f64>, Option<f64>, Option<f64>)> {
+        let session = self.session()?;
+        let result = session
+            .run_disto(f1, f2, amplitude, output, output_ref, &Self::solver_config(solver)?)
+            .map_err(Self::analysis_err)?;
+        Ok((result.hd2, result.hd3, result.im2, result.im3))
+    }
+
     /// Run an N-port S-parameter analysis (`.sp`): the scattering matrix
     /// over a frequency sweep for every node carrying an `@rfport(num, z0)`
     /// attribute in this module. Returns `(frequencies, s, z0, n_ports)` —

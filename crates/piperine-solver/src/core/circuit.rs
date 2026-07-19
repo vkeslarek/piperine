@@ -176,6 +176,17 @@ impl CircuitInstance {
         crate::analyses::sp::SpSolver::new(self, options, context)
     }
 
+    /// Distortion analysis (`.disto`): small-signal Volterra HD2/HD3
+    /// (single-tone) or IM2/IM3 (two-tone) — see
+    /// [`DistoSolver`](crate::analyses::disto::DistoSolver).
+    pub fn disto(
+        &mut self,
+        options: crate::analyses::disto::DistoOptions,
+        context: Context,
+    ) -> crate::result::Result<crate::analyses::disto::DistoSolver<'_>> {
+        crate::analyses::disto::DistoSolver::new(self, options, context)
+    }
+
     // ── Mixed-signal seam ────────────────────────────────────────────────────
     //
     // The one place analog acceptance seeds digital events and the scheduler
