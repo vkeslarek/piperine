@@ -190,6 +190,18 @@ pub trait AnalogDevice: Send + Sync {
         Vec::new()
     }
 
+    /// Second derivatives of the device's nonlinear contributions at the DC
+    /// operating point — the `.disto` nonlinear-current source data
+    /// (DISTO-03). Default `None`: a fully linear device contributes no
+    /// nonlinear currents.
+    fn load_disto2(
+        &mut self,
+        _dc_op: &DcAnalysisResult,
+        _context: &Context,
+    ) -> Option<crate::analyses::disto::Disto2> {
+        None
+    }
+
     // ── Numerical integration feedback ────────────────────────────────────────
 
     /// LTE-driven timestep suggestion, called by the transient stepper after

@@ -397,6 +397,24 @@ pub struct SpResult {
     pub n_ports: usize,
 }
 
+/// Distortion analysis (`.disto`) result — see
+/// [`DistoSolver`](crate::analyses::disto::DistoSolver). Fields are
+/// populated per mode: single-tone runs report `hd2`/`hd3`, two-tone runs
+/// `im2`/`im3`.
+#[derive(Debug, Clone, Default)]
+pub struct DistoResult {
+    /// `|X(2·F1)| / |X(F1)|` at the output (single-tone, DISTO-01).
+    pub hd2: Option<f64>,
+    /// `|X(3·F1)| / |X(F1)|` at the output (single-tone, DISTO-01).
+    pub hd3: Option<f64>,
+    /// Intermodulation ratio at `F1±F2` relative to the fundamental
+    /// (two-tone, DISTO-02).
+    pub im2: Option<f64>,
+    /// Intermodulation ratio at `2F1∓F2`/`2F2∓F1` relative to the
+    /// fundamental (two-tone, DISTO-02).
+    pub im3: Option<f64>,
+}
+
 impl std::fmt::Display for TransferType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

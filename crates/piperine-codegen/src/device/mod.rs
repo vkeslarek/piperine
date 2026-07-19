@@ -182,6 +182,17 @@ impl AnalogDevice for PiperineDevice {
         }
     }
 
+    fn load_disto2(
+        &mut self,
+        dc_op: &DcAnalysisResult,
+        context: &Context,
+    ) -> Option<piperine_solver::abi::Disto2> {
+        match &mut self.analog {
+            Some(analog) => analog.load_disto2(dc_op, context),
+            None => None,
+        }
+    }
+
     fn load_transient(
         &mut self,
         states: &TransientAnalysisState<'_>,
