@@ -23,8 +23,12 @@
 //! from the QZ decomposition's `S_a`/`S_b` factors); `|β| ≈ 0` roots are
 //! "at infinity" (a singular `C` — fewer dynamic states than nodes) and are
 //! dropped. A circuit with no reactive elements has no finite poles at all,
-//! which fails loud (PZ-05) rather than returning an empty success. Zeros
-//! (the Rosenbrock system pencil) are added in the next task.
+//! which fails loud (PZ-05) rather than returning an empty success.
+//!
+//! **Zeros.** The finite generalized eigenvalues of the bordered
+//! `(n+1)×(n+1)` Rosenbrock system pencil `([−G, b; lᵀ, 0], [C, 0; 0, 0])` —
+//! the textbook transmission-zero definition, exact (no root-search
+//! heuristic). An empty zero set is a legitimate answer, unlike poles.
 #![allow(dead_code)]
 
 use crate::analog::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
@@ -67,8 +71,8 @@ const GUARD_REL: f64 = 1e-6;
 const GUARD_ABS: f64 = 1e-12;
 
 /// Pole-zero solver: extracts the `(G, C)` descriptor-system pencil at the DC
-/// operating point, then (next task) computes poles/zeros as generalized
-/// eigenvalues of that pencil.
+/// operating point, then computes poles ([`Self::poles`]) and zeros
+/// ([`Self::zeros`]) as generalized eigenvalues of that pencil.
 pub struct PoleZeroSolver<'a> {
     #[allow(dead_code)]
     circuit: &'a mut CircuitInstance,
@@ -166,6 +170,45 @@ impl<'a> PoleZeroSolver<'a> {
             ));
         }
         Ok(roots)
+    }
+
+    /// Transmission zeros of `H(s) = lᵀ(sC + G)⁻¹b`: the finite generalized
+    /// eigenvalues of the bordered `(n+1)×(n+1)` Rosenbrock system pencil
+    /// (PZ-02)
+    ///
+    /// ```text
+    /// A' = [ −G   b ]      B' = [ C   0 ]
+    ///      [  lᵀ  0 ]           [ 0   0 ]
+    /// ```
+    ///
+    /// `b` is a unit excitation at the input branch's row; `l` is a unit
+    /// selector at the output's row (minus a unit at the differential
+    /// reference's row, when one is given). Unlike [`Self::poles`], an empty
+    /// zero set is a legitimate answer (e.g. a plain RC low-pass has no
+    /// transmission zero) — not a fail-loud condition.
+    pub fn zeros(&self) -> crate::result::Result<Vec<Complex<f64>>> {
+        let n = self.size;
+        let bordered = n + 1;
+        let mut a = Array2::<f64>::zeros((bordered, bordered));
+        let mut b = Array2::<f64>::zeros((bordered, bordered));
+        for i in 0..n {
+            for j in 0..n {
+                a[[i, j]] = -self.g[[i, j]];
+                b[[i, j]] = self.c[[i, j]];
+            }
+        }
+        if let Some(idx) = self.input_ref.idx() {
+            a[[idx, n]] = 1.0;
+        }
+        if let Some(idx) = self.output_ref.idx() {
+            a[[n, idx]] = 1.0;
+        }
+        if let Some(ref_node) = &self.output_ref_node
+            && let Some(idx) = ref_node.idx()
+        {
+            a[[n, idx]] -= 1.0;
+        }
+        Self::finite_generalized_eigenvalues(&a, &b, bordered)
     }
 
     /// Finite generalized eigenvalues of the pencil `(a, b)`: `s = α/β` for
@@ -572,6 +615,33 @@ mod tests {
         (circuit, options)
     }
 
+    /// `v1(in,gnd) --R1‖C-- out --R2-- gnd`: a lead/lag network — `R1` and
+    /// `C` in parallel between `in` and `out`, `R2` from `out` to gnd.
+    /// `H(s) = (1/R1 + sC) / (1/R1 + 1/R2 + sC)`: zero at `s = −1/(R1·C)`,
+    /// pole at `s = −1/((R1‖R2)·C)` — `.pz`'s canonical worked example with
+    /// a known finite zero (PZ-02/04).
+    fn lag_network_circuit(r1: f64, r2: f64, c: f64) -> (CircuitInstance, PoleZeroOptions) {
+        let mut netlist = Netlist::new();
+        let n_in = netlist.connect_node(NodeIdentifier::Anonymous(0));
+        let n_out = netlist.connect_node(NodeIdentifier::Anonymous(1));
+        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
+        let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
+
+        let devices: Vec<Box<dyn Element>> = vec![
+            Box::new(TestVoltageSource { p: n_in.clone(), n: gnd.clone(), branch, v: 1.0 }),
+            Box::new(TestResistor { n1: n_in.clone(), n2: n_out.clone(), r: r1 }),
+            Box::new(TestCapacitor { n1: n_in, n2: n_out.clone(), c }),
+            Box::new(TestResistor { n1: n_out.clone(), n2: gnd, r: r2 }),
+        ];
+        let circuit = CircuitInstance::from_devices_and_netlist("lag", devices, netlist);
+        let options = PoleZeroOptions {
+            input_source: BranchIdentifier::from_component("v1"),
+            output: AnalogVariable::Node(NodeIdentifier::Anonymous(1)),
+            output_ref: None,
+        };
+        (circuit, options)
+    }
+
     /// `in --Rin-- gnd`, `in --R-- out`, `out --C-- gnd`: a 2-unknown RC
     /// network with a well-posed (nonsingular) DC point and a clean,
     /// hand-computable `(G, C)` pencil.
@@ -689,5 +759,93 @@ mod tests {
         assert!(result.is_err(), "a purely resistive network has no finite poles (PZ-05)");
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("no reactive elements") || msg.contains("no finite poles"), "{msg}");
+    }
+
+    // ── T5: zeros via Rosenbrock pencil ─────────────────────────────────
+
+    #[test]
+    fn lag_network_has_the_known_pole_and_zero() {
+        let (r1, r2, c) = (1000.0, 2000.0, 1e-6);
+        let (mut circuit, options) = lag_network_circuit(r1, r2, c);
+        let solver = PoleZeroSolver::new(&mut circuit, options, Context::default()).unwrap();
+
+        let poles = solver.poles().expect("lag network has one finite pole");
+        let r_parallel = 1.0 / (1.0 / r1 + 1.0 / r2);
+        let expected_pole = -1.0 / (r_parallel * c);
+        assert_eq!(poles.len(), 1, "expected exactly one finite pole: {poles:?}");
+        assert!(poles[0].im == 0.0, "pole should be real: {:?}", poles[0]);
+        assert!(
+            (poles[0].re - expected_pole).abs() / expected_pole.abs() < 1e-6,
+            "pole = {:?}, expected {expected_pole}",
+            poles[0]
+        );
+
+        let zeros = solver.zeros().expect("Rosenbrock pencil solves");
+        let expected_zero = -1.0 / (r1 * c);
+        assert_eq!(zeros.len(), 1, "expected exactly one finite zero: {zeros:?}");
+        assert!(zeros[0].im == 0.0, "zero should be real: {:?}", zeros[0]);
+        assert!(
+            (zeros[0].re - expected_zero).abs() / expected_zero.abs() < 1e-6,
+            "zero = {:?}, expected {expected_zero}",
+            zeros[0]
+        );
+    }
+
+    #[test]
+    fn rc_low_pass_has_no_transmission_zero() {
+        // A plain RC low-pass has one pole and no finite zero — zeros() must
+        // return an empty (not an error) result, unlike poles().
+        let (mut circuit, options) = rc_circuit_with_source(1000.0, 1e-6);
+        let solver = PoleZeroSolver::new(&mut circuit, options, Context::default()).unwrap();
+        let zeros = solver.zeros().expect("empty zero set is a legitimate answer, not an error");
+        assert!(zeros.is_empty(), "RC low-pass should have no finite transmission zero: {zeros:?}");
+    }
+
+    #[test]
+    fn finite_generalized_eigenvalues_pairs_conjugates() {
+        // Shared by both poles() and zeros() (PZ-03): a hand-built pencil
+        // with B = I reduces to a plain eigenvalue problem. Char. poly of
+        // [[0,1],[-1,-1]] is λ² + λ + 1 = 0 -> λ = -1/2 ± j·√3/2, the
+        // textbook complex-conjugate pair. Padded to 3×3 (an extra decoupled
+        // real root) — faer 0.23.2's real-GEVD path has a scratch-sizing
+        // edge case at bare n=2 with a complex pair; n=3 sidesteps it and is
+        // just as valid a probe of the shared post-processing.
+        Context::init_global();
+        let a = ndarray::arr2(&[[0.0, 1.0, 0.0], [-1.0, -1.0, 0.0], [0.0, 0.0, -5.0]]);
+        let b = ndarray::arr2(&[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+        let roots = PoleZeroSolver::finite_generalized_eigenvalues(&a, &b, 3).unwrap();
+
+        // Sorted by (Re, Im): the decoupled real root (-5) comes first, then
+        // the conjugate pair (negative-imaginary member first).
+        assert_eq!(roots.len(), 3, "{roots:?}");
+        assert!((roots[0].re - (-5.0)).abs() < 1e-9 && roots[0].im == 0.0, "real root: {:?}", roots[0]);
+
+        let (p_minus, p_plus) = (roots[1], roots[2]);
+        assert!(p_minus.im < 0.0 && p_plus.im > 0.0, "expected a sorted conjugate pair: {roots:?}");
+        let (expected_re, expected_im) = (-0.5, (3.0_f64).sqrt() / 2.0);
+        assert!((p_minus.re - expected_re).abs() < 1e-9, "Re(root) = {}, expected {expected_re}", p_minus.re);
+        assert!((p_plus.re - expected_re).abs() < 1e-9, "Re(root) = {}, expected {expected_re}", p_plus.re);
+        assert!((p_plus.im - expected_im).abs() < 1e-9);
+        assert!((p_minus.im + expected_im).abs() < 1e-9, "not a conjugate pair: {roots:?}");
+    }
+
+    #[test]
+    fn finite_generalized_eigenvalues_snaps_real_roots() {
+        // Shared by both poles() and zeros() (PZ-03): a real diagonal
+        // pencil's roots must land exactly on the real axis (im == 0.0),
+        // not with QZ-solver floating-point noise in the imaginary part.
+        Context::init_global();
+        let a = ndarray::arr2(&[[-2.0, 0.0], [0.0, -3.0]]);
+        let b = ndarray::arr2(&[[1.0, 0.0], [0.0, 1.0]]);
+        let roots = PoleZeroSolver::finite_generalized_eigenvalues(&a, &b, 2).unwrap();
+
+        assert_eq!(roots.len(), 2, "{roots:?}");
+        for r in &roots {
+            assert_eq!(r.im, 0.0, "expected exact real snap: {r:?}");
+        }
+        let mut re: Vec<f64> = roots.iter().map(|r| r.re).collect();
+        re.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert!((re[0] - (-3.0)).abs() < 1e-9);
+        assert!((re[1] - (-2.0)).abs() < 1e-9);
     }
 }
