@@ -6,6 +6,7 @@
 //! elements live in `crate::analysis`.
 
 use crate::analog::Netlist;
+use crate::solver::config::TraceFlags;
 use faer::{Par, set_global_parallelism};
 use ndarray::ArrayView1;
 use std::num::NonZeroUsize;
@@ -136,6 +137,10 @@ impl Tolerances {
 pub struct Policy {
     pub max_iter: usize,
     pub dc_damp_tolerance: f64,
+    /// Diagnostic trace toggles (SS-08). `Default` seeds them from the
+    /// `PIPERINE_TRACE_{GMIN,SRC,TRAN}` env vars — the single env read left;
+    /// every trace site reads these typed fields.
+    pub trace: TraceFlags,
 }
 
 impl Default for Policy {
@@ -143,6 +148,7 @@ impl Default for Policy {
         Self {
             max_iter: 500,
             dc_damp_tolerance: 0.5,
+            trace: TraceFlags::from_env(),
         }
     }
 }

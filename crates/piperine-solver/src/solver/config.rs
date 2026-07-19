@@ -5,9 +5,6 @@
 //! `StepperGains` parameterizes the transient PI stepper, and `TraceFlags`
 //! carries the diagnostic toggles that used to be read from `PIPERINE_TRACE_*`
 //! env vars inline. Every default equals the literal it replaced (SS-09 parity).
-// Wired in by the homotopy/stepper/trace tasks (T10–T12); until then the
-// fields are exercised only by the parity-by-construction test below.
-#![allow(dead_code)]
 
 /// Gmin-stepping homotopy schedule (SPICE gmin stepping). The defaults are the
 /// literals that used to live inline in `GminStepping::converge`.

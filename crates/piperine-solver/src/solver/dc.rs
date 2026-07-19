@@ -235,7 +235,7 @@ impl<'a> DcSolver<'a> {
     }
 
     pub fn solve(&mut self) -> crate::result::Result<DcAnalysisResult> {
-        let plan = ConvergencePlan::default();
+        let plan = ConvergencePlan::default().with_trace(self.policy.trace);
         let max_ms_iter = plan.limits().max_mixed_signal_iter;
         self.solver.reset_iteration_counter();
         self.newton_calls = 0;

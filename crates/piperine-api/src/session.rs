@@ -64,6 +64,7 @@ impl SolverConfig {
         Policy {
             max_iter: self.max_iter,
             dc_damp_tolerance: self.dc_damp_tolerance,
+            ..Default::default()
         }
     }
 }

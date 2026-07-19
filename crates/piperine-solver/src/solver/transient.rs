@@ -544,7 +544,7 @@ impl<'a> TransientSolver<'a> {
                 };
                 if !landed_on_breakpoint && !post_set_step && milne > tolerances.trtol {
                     // LTE too large: reject, halve dt, reset the PI memory.
-                    if std::env::var("PIPERINE_TRACE_TRAN").is_ok() {
+                    if self.policy.trace.transient {
                         eprintln!("REJECT t={current_time:.3e} dt={dt_actual:.3e} milne={milne:.3e} (trtol={})", tolerances.trtol);
                     }
                     self.system.circuit.digital_state.rollback();
