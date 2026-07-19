@@ -11,7 +11,7 @@ use crate::math::integration::{TrBdf2, TrBdf2Phase};
 use crate::math::iv::InitialValue;
 use crate::math::linear::{AsIndex, Stamp};
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
-use crate::solver::convergence::StepperStrategy;
+use crate::analyses::convergence::StepperStrategy;
 use crate::solver::dc::DcSolver;
 use crate::solver::Context;
 use log::debug;
@@ -163,10 +163,10 @@ pub struct TransientSolver<'a> {
     /// first step may show a transient); full enforced-hold is deferred.
     initial_conditions: Vec<InitialValue<AnalogReference, f64>>,
     /// Stateful PI timestep controller (TRB-07).
-    stepper: crate::solver::convergence::PiController,
+    stepper: crate::analyses::convergence::PiController,
     /// Convergence tunables for this analysis (MD-04). Defaults on
     /// construction; hosts override before [`solve`](Self::solve).
-    pub policy: crate::solver::Policy,
+    pub policy: crate::analyses::Policy,
     /// Host-scheduled live parameter writes (LIVE-06/09).
     sets: SetQueue,
     /// Full-state re-entry point (PSS shooting enabler): when set, the run
@@ -208,8 +208,8 @@ impl<'a> TransientSolver<'a> {
             solver,
             options,
             initial_conditions: Vec::new(),
-            stepper: crate::solver::convergence::PiController::default(),
-            policy: crate::solver::Policy::default(),
+            stepper: crate::analyses::convergence::PiController::default(),
+            policy: crate::analyses::Policy::default(),
             sets: SetQueue::default(),
             reentry_state: None,
         })
@@ -357,7 +357,7 @@ impl<'a> TransientSolver<'a> {
         dt: f64,
         use_predictor: bool,
     ) -> crate::result::Result<Option<TransientStep>> {
-        let strategy = crate::solver::convergence::DampedNewton;
+        let strategy = crate::analyses::convergence::DampedNewton;
         let policy = self.policy.clone();
         let tolerances = self.system.context.tolerances;
         let t_next = t_n + dt;

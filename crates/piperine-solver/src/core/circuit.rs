@@ -227,7 +227,7 @@ impl CircuitInstance {
         t: f64,
         analog_slice: &[f64],
     ) -> crate::result::Result<()> {
-        let limits = crate::solver::convergence::PlanLimits::default();
+        let limits = crate::analyses::convergence::PlanLimits::default();
         match &self.digital_topology {
             Some(topo) => self.digital_state.evaluate_dag_ordered(
                 t,

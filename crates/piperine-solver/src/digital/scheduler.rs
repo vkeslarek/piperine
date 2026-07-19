@@ -21,7 +21,7 @@ impl DigitalState {
         &mut self,
         t: f64,
         devices: &mut [Box<dyn Element>],
-        limits: crate::solver::convergence::PlanLimits,
+        limits: crate::analyses::convergence::PlanLimits,
         analog_slice: &[f64],
     ) -> crate::result::Result<()> {
         let epsilon = limits.digital_time_epsilon;
@@ -98,7 +98,7 @@ impl DigitalState {
         t: f64,
         devices: &mut [Box<dyn Element>],
         topology: &DigitalTopology,
-        limits: crate::solver::convergence::PlanLimits,
+        limits: crate::analyses::convergence::PlanLimits,
         analog_slice: &[f64],
     ) -> crate::result::Result<()> {
         let epsilon = limits.digital_time_epsilon;

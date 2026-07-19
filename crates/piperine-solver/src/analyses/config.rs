@@ -1,7 +1,7 @@
 //! The solver's config home: every tunable schedule/gain/trace knob as typed,
 //! defaulted, documented fields. This module is **data** — no logic beyond
 //! construction. `GminSchedule`/`SourceSchedule` parameterize the homotopy
-//! strategies (owned by [`ConvergencePlan`](crate::solver::convergence::ConvergencePlan)),
+//! strategies (owned by [`ConvergencePlan`](crate::analyses::convergence::ConvergencePlan)),
 //! `StepperGains` parameterizes the transient PI stepper, and `TraceFlags`
 //! carries the diagnostic toggles that used to be read from `PIPERINE_TRACE_*`
 //! env vars inline. Every default equals the literal it replaced (SS-09 parity).
@@ -93,8 +93,8 @@ impl Default for SourceSchedule {
 /// The two homotopy schedules as one family — the config a [`ConvergencePlan`]
 /// owns and hands to each [`HomotopyStrategy`] it drives.
 ///
-/// [`ConvergencePlan`]: crate::solver::convergence::ConvergencePlan
-/// [`HomotopyStrategy`]: crate::solver::convergence::HomotopyStrategy
+/// [`ConvergencePlan`]: crate::analyses::convergence::ConvergencePlan
+/// [`HomotopyStrategy`]: crate::analyses::convergence::HomotopyStrategy
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Schedules {
     pub gmin: GminSchedule,

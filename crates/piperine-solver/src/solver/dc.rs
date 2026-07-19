@@ -2,7 +2,7 @@ use crate::prelude::DcAnalysisResult;
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::ElementCapabilities;
 use crate::analysis::dc::DcAnalysisState;
-use crate::solver::convergence::{ConvergencePlan, HomotopyDriver};
+use crate::analyses::convergence::{ConvergencePlan, HomotopyDriver};
 use crate::analog::AnalogReference;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
@@ -275,7 +275,7 @@ impl<'a> DcSolver<'a> {
                     // The digital snapshot feeds the stamps, so the bypass
                     // cache is stale even though the analog solution is not.
                     self.system.invalidate_bypass();
-                    let strategy = crate::solver::convergence::DampedNewton;
+                    let strategy = crate::analyses::convergence::DampedNewton;
                     let policy = self.policy.clone();
                     let tolerances = self.system.context.tolerances;
                     sol = self.solver.solve_with_strategy(
@@ -319,7 +319,7 @@ impl<'a> DcSolver<'a> {
 impl HomotopyDriver for DcSolver<'_> {
     fn newton(&mut self) -> crate::result::Result<ndarray::Array1<f64>> {
         self.newton_calls += 1;
-        let strategy = crate::solver::convergence::DampedNewton;
+        let strategy = crate::analyses::convergence::DampedNewton;
         let policy = self.policy.clone();
         let tolerances = self.system.context.tolerances;
         self.solver.solve_with_strategy(

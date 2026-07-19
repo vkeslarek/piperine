@@ -18,8 +18,8 @@ use ndarray::Array1;
 use ndarray::{ArrayView1, ArrayViewMut1};
 use crate::analog::Netlist;
 use crate::math::circular_array::CircularArrayBuffer2;
-use crate::solver::config::{Schedules, StepperGains, TraceFlags};
-use crate::solver::{Policy, Tolerances};
+use crate::analyses::config::{Schedules, StepperGains, TraceFlags};
+use crate::analyses::{Policy, Tolerances};
 use crate::result::Result;
 
 /// Numerical caps honored across drivers. Replaces the literals that used to
@@ -326,7 +326,7 @@ impl ConvergencePlan {
     }
 
     /// Override the diagnostic trace toggles handed to the strategies
-    /// (drivers seed them from [`Policy::trace`](crate::solver::Policy)).
+    /// (drivers seed them from [`Policy::trace`](crate::analyses::Policy)).
     pub fn with_trace(mut self, trace: TraceFlags) -> Self {
         self.trace = trace;
         self

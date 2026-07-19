@@ -18,7 +18,7 @@ use crate::core::circuit::CircuitInstance;
 use crate::error::{Error, SolverDomain};
 use crate::result::TransientStep;
 use crate::solver::transient::TransientSolver;
-use crate::solver::Policy;
+use crate::analyses::Policy;
 use crate::Context;
 use crate::analog::netlist::AnalogVariable;
 

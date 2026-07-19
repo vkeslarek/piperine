@@ -5,11 +5,14 @@
 //! `crate::solver`, which re-exports this module's types unchanged.
 
 use crate::analog::Netlist;
-use crate::solver::config::TraceFlags;
+use crate::analyses::config::TraceFlags;
 use faer::{Par, set_global_parallelism};
 use ndarray::ArrayView1;
 use std::num::NonZeroUsize;
 use std::sync::Once;
+
+pub mod config;
+pub mod convergence;
 
 static INIT: Once = Once::new();
 
