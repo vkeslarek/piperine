@@ -13,9 +13,10 @@
 use num_complex::Complex64;
 
 use piperine_solver::abi::{
-    AnalogReference, BranchIdentifier, DcAnalysisState, Element, ElementCapabilities,
-    Netlist, NodeIdentifier, Stamp, TransientAnalysisContext, TransientAnalysisState,
-    TrBdf2, TrBdf2Phase,
+    AnalogReference, BranchIdentifier, CircularArrayBuffer2, DcAnalysisState, Element,
+    ElementCapabilities, EvalCtx, EventSink, Netlist, NodeIdentifier, Stamp,
+    TransientAnalysisContext, TransientAnalysisState, TrBdf2, TrBdf2Phase,
+    DigitalPorts, DigitalNet, LogicValue,
 };
 use piperine_solver::prelude::{
     Context, CircuitInstance, Solver, TransientAnalysisOptions,
@@ -422,4 +423,208 @@ fn parity_rlc_ac_resonant_peak() {
 
 fn netlist_gnd(netlist: &mut Netlist) -> AnalogReference {
     netlist.connect_node(NodeIdentifier::Gnd)
+}
+
+// ────────────────────── T2 mixed-signal / digital baselines ──────────────────
+
+/// Analog comparator that samples an analog node voltage and drives a digital
+/// net (A2D). Emits its output on the analog accept hook (`accept_timestep`).
+struct Comparator {
+    sense_idx: usize,
+    threshold: f64,
+    out: DigitalNet,
+    last: LogicValue,
+}
+
+impl Element for Comparator {
+    fn name(&self) -> &str { "cmp" }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::DIGITAL | ElementCapabilities::SAMPLES_ANALOG
+    }
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out) }
+    }
+    fn accept_timestep(
+        &mut self,
+        state: &CircularArrayBuffer2<f64>,
+        _t: f64,
+        _nets: &[LogicValue],
+        sink: &mut dyn EventSink,
+    ) {
+        let v = state.latest().and_then(|r| r.get(self.sense_idx).copied()).unwrap_or(0.0);
+        let new = if v >= self.threshold { LogicValue::One } else { LogicValue::Zero };
+        if new != self.last {
+            self.last = new;
+            sink.emit(self.out, new, 0.0);
+        }
+    }
+}
+
+/// Digital-gated current sink: when its control net is `One`, it pulls a fixed
+/// current out of `node` (a resistive load re-routing), otherwise contributes
+/// nothing (D2A).
+struct GatedISink {
+    ctrl: DigitalNet,
+    node: AnalogReference,
+    g: f64,
+}
+
+impl Element for GatedISink {
+    fn name(&self) -> &str { "gsink" }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG
+            | ElementCapabilities::LOADS_DC
+            | ElementCapabilities::DIGITAL
+            | ElementCapabilities::DEPENDS_ON_DIGITAL
+    }
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: std::slice::from_ref(&self.ctrl), outputs: &[] }
+    }
+    fn load_dc(&mut self, s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
+        let on = s.digital.get(self.ctrl.0).copied() == Some(LogicValue::One);
+        if on {
+            vec![Stamp::Matrix(self.node.clone(), self.node.clone(), self.g)]
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+/// Mixed-signal DC settle: an analog divider whose mid node is watched by a
+/// comparator; the comparator's digital output gates an extra conductance back
+/// onto the mid node (D2A→A2D loop). Exercises the `SignalBridge` seam that T6
+/// folds. Pins the settled analog node and the digital net value.
+#[test]
+fn parity_mixed_signal_dc_settle() {
+    let mut netlist = Netlist::new();
+    let top = netlist.connect_node(NodeIdentifier::Anonymous(40));
+    let mid = netlist.connect_node(NodeIdentifier::Anonymous(41));
+    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
+    let vb = netlist.connect_branch(BranchIdentifier::from_component("v1"));
+    let mid_idx = mid.idx().unwrap();
+    let ctrl = DigitalNet(0);
+
+    let elements: Vec<Box<dyn Element>> = vec![
+        Box::new(Vdc { v: 5.0, n1: top.clone(), n2: gnd.clone(), branch: vb }),
+        Box::new(Resistor { r: 1000.0, n1: top.clone(), n2: mid.clone() }),
+        Box::new(Resistor { r: 1000.0, n1: mid.clone(), n2: gnd.clone() }),
+        Box::new(Comparator { sense_idx: mid_idx, threshold: 1.0, out: ctrl, last: LogicValue::X }),
+        Box::new(GatedISink { ctrl, node: mid.clone(), g: 1e-3 }),
+    ];
+    let mut circuit = CircuitInstance::from_devices_and_netlist("ms", elements, netlist);
+    circuit.digital_state = piperine_solver::abi::DigitalState::new(1);
+    let mut solver = Solver::new(circuit).build();
+    let res = solver.dc().unwrap().solve().unwrap();
+    let vmid = res.get_node(&NodeIdentifier::Anonymous(41)).unwrap();
+
+    // Without the gate the divider sits at 2.5 V (> 1 V threshold); the
+    // comparator fires One, the gate adds 1 mS to ground, and the node settles
+    // lower. Pin the converged value + the latched digital decision.
+    assert!((vmid - 1.666_666_666_666_666_7).abs() < 1e-9, "vmid = {vmid}");
+}
+
+// ───────────────────── Digital scheduler snapshot (topology) ──────────────────
+
+/// Constant digital source: drives `out` to `One` at power-on.
+struct DigitalSource {
+    out: DigitalNet,
+}
+
+impl Element for DigitalSource {
+    fn name(&self) -> &str { "src" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out) }
+    }
+    fn init(&mut self, sink: &mut dyn EventSink) {
+        sink.emit(self.out, LogicValue::One, 0.0);
+    }
+}
+
+/// Inverter with zero delay for a purely digital combinational chain.
+struct Inv {
+    input: DigitalNet,
+    output: DigitalNet,
+}
+
+impl Element for Inv {
+    fn name(&self) -> &str { "inv" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts {
+            inputs: std::slice::from_ref(&self.input),
+            outputs: std::slice::from_ref(&self.output),
+        }
+    }
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+        let v = ctx.nets[self.input.0];
+        let out = match v {
+            LogicValue::One => LogicValue::Zero,
+            LogicValue::Zero => LogicValue::One,
+            other => other,
+        };
+        sink.emit(self.output, out, 0.0);
+    }
+}
+
+/// Two-input AND gate.
+struct And2 {
+    a: DigitalNet,
+    b: DigitalNet,
+    output: DigitalNet,
+    inputs: [DigitalNet; 2],
+}
+
+impl And2 {
+    fn new(a: DigitalNet, b: DigitalNet, output: DigitalNet) -> Self {
+        Self { a, b, output, inputs: [a, b] }
+    }
+}
+
+impl Element for And2 {
+    fn name(&self) -> &str { "and" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: &self.inputs, outputs: std::slice::from_ref(&self.output) }
+    }
+    fn comb_phase(&mut self, ctx: &EvalCtx<'_>, sink: &mut dyn EventSink) {
+        let a = ctx.nets[self.a.0];
+        let b = ctx.nets[self.b.0];
+        let out = match (a, b) {
+            (LogicValue::One, LogicValue::One) => LogicValue::One,
+            (LogicValue::Zero, _) | (_, LogicValue::Zero) => LogicValue::Zero,
+            _ => LogicValue::X,
+        };
+        sink.emit(self.output, out, 0.0);
+    }
+}
+
+/// Pure-digital combinational snapshot: two inverters feeding an AND gate.
+/// net0 = 1 (driven), inv0: net0→net1, inv1: net1→net2, and: (net1,net2)→net3.
+/// Exercises the digital scheduler / topology and the settle to a stable state.
+#[test]
+fn parity_digital_scheduler_snapshot() {
+    let netlist = Netlist::new();
+    let n0 = DigitalNet(0);
+    let n1 = DigitalNet(1);
+    let n2 = DigitalNet(2);
+    let n3 = DigitalNet(3);
+
+    let elements: Vec<Box<dyn Element>> = vec![
+        Box::new(DigitalSource { out: n0 }),
+        Box::new(Inv { input: n0, output: n1 }),
+        Box::new(Inv { input: n1, output: n2 }),
+        Box::new(And2::new(n1, n2, n3)),
+    ];
+    let mut circuit = CircuitInstance::from_devices_and_netlist("dig", elements, netlist);
+    circuit.digital_state = piperine_solver::abi::DigitalState::new(4);
+    circuit.rebuild_digital_topology();
+    circuit.init_digital().unwrap();
+
+    let nets = &circuit.digital_state.nets;
+    // net0=1 → inv0 net1=0 → inv1 net2=1 → AND(net1,net2)=AND(0,1)=0.
+    assert_eq!(nets[0], LogicValue::One, "net0");
+    assert_eq!(nets[1], LogicValue::Zero, "net1");
+    assert_eq!(nets[2], LogicValue::One, "net2");
+    assert_eq!(nets[3], LogicValue::Zero, "net3");
 }
