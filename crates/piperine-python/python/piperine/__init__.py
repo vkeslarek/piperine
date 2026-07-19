@@ -61,6 +61,8 @@ __all__ = [
     "SensResult",
     "Waveform",
     "ComplexWaveform",
+    "FourierComponent",
+    "FourierResult",
     "AcTrace",
     "NoiseTrace",
     # config bundles (mirror headers/prelude.phdl)
@@ -183,6 +185,8 @@ OpResult = _piperine._OpResult
 Trace = _piperine._Trace
 Waveform = _piperine._Waveform
 ComplexWaveform = _piperine._ComplexWaveform
+FourierComponent = _piperine._FourierComponent
+FourierResult = _piperine._FourierResult
 AcTrace = _piperine._AcTrace
 NoiseTrace = _piperine._NoiseTrace
 

@@ -19,7 +19,7 @@ use pyo3::exceptions::{PyKeyError, PyRuntimeError};
 use pyo3::prelude::*;
 
 use num_complex::Complex64;
-use piperine_api::{AcTrace, ComplexWaveform, NetRef, NoiseTrace, OpResult, Trace, Waveform};
+use piperine_api::{AcTrace, ComplexWaveform, FourierResult, NetRef, NoiseTrace, OpResult, Trace, Waveform};
 use piperine_solver::abi::SolverStats;
 
 use crate::instance::InstanceResolver;
@@ -384,6 +384,70 @@ impl _Waveform {
     /// exposes empty arrays, not None — `is_empty()` is the honest reflection).
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
+    }
+
+    /// Fourier decomposition of this (transient) waveform (FOUR-01..05):
+    /// DC + `n_harmonics - 1` harmonics of `f0`, plus THD. Delegates to the
+    /// host `Waveform::fourier` — same DFT, same values, uniform-shape
+    /// (MD-22). Fails loud (`ValueError`) on `f0 <= 0`, `n_harmonics < 2`, or
+    /// a span shorter than one fundamental period.
+    fn fourier(&self, f0: f64, n_harmonics: usize) -> PyResult<_FourierResult> {
+        let result = self.inner.fourier(f0, n_harmonics).map_err(readout_err)?;
+        _FourierResult::new(result)
+    }
+}
+
+/// `_FourierComponent` — one DC/harmonic bin of a `.four` result: absolute
+/// frequency/magnitude/phase plus the fundamental-normalized magnitude/phase
+/// (FOUR-01). Field names mirror the host `FourierComponent` exactly.
+#[pyclass(module = "piperine")]
+pub struct _FourierComponent {
+    #[pyo3(get)]
+    pub frequency: f64,
+    #[pyo3(get)]
+    pub magnitude: f64,
+    #[pyo3(get)]
+    pub phase: f64,
+    #[pyo3(get)]
+    pub norm_magnitude: f64,
+    #[pyo3(get)]
+    pub norm_phase: f64,
+}
+
+/// `_FourierResult` — the `.four` result: the fundamental frequency, the
+/// harmonic components, and THD (FOUR-01/02). Uniform-shape (MD-22): same
+/// field names as the host `FourierResult`.
+#[pyclass(module = "piperine")]
+pub struct _FourierResult {
+    #[pyo3(get)]
+    pub fundamental: f64,
+    #[pyo3(get)]
+    pub harmonics: Vec<Py<_FourierComponent>>,
+    #[pyo3(get)]
+    pub thd: f64,
+}
+
+impl _FourierResult {
+    fn new(inner: FourierResult) -> PyResult<Self> {
+        Python::with_gil(|py| {
+            let harmonics = inner
+                .harmonics
+                .into_iter()
+                .map(|h| {
+                    Py::new(
+                        py,
+                        _FourierComponent {
+                            frequency: h.frequency,
+                            magnitude: h.magnitude,
+                            phase: h.phase,
+                            norm_magnitude: h.norm_magnitude,
+                            norm_phase: h.norm_phase,
+                        },
+                    )
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+            Ok(Self { fundamental: inner.fundamental, harmonics, thd: inner.thd })
+        })
     }
 }
 

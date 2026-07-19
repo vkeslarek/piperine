@@ -40,6 +40,8 @@ use module::_Module;
 use module::{_Behavior, _Instance, _Net, _Param, _Port};
 use results::_AcTrace;
 use results::_ComplexWaveform;
+use results::_FourierComponent;
+use results::_FourierResult;
 use results::_NoiseTrace;
 use results::_SolverStats;
 use results::_OpResult;
@@ -72,6 +74,8 @@ pub(crate) fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_Trace>()?;
     m.add_class::<_Waveform>()?;
     m.add_class::<_ComplexWaveform>()?;
+    m.add_class::<_FourierComponent>()?;
+    m.add_class::<_FourierResult>()?;
     m.add_class::<_AcTrace>()?;
     m.add_class::<_NoiseTrace>()?;
     m.add_class::<_SolverStats>()?;
