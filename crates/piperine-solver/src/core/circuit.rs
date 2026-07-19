@@ -154,13 +154,26 @@ impl CircuitInstance {
     // ── Mixed-signal seam ────────────────────────────────────────────────────
     //
     // The one place analog acceptance seeds digital events and the scheduler
-    // runs. The analog→digital plumbing (`build_accept_state` +
+    // runs — the named owner of the D2A/A2D crossing (design §1/§6b). Any
+    // `Element` is natively mixed-signal (MD-01), so there is no separate
+    // bridge object; this section is the whole seam.
+    //
+    // Call-order contract:
+    //   1. `init_digital` — once, before the first `run_digital_at*`: collects
+    //      every digital device's `init` events and settles t=0 power-on.
+    //   2. `rebuild_digital_topology` — after the device set changes, before
+    //      the next run: rebuilds the ranked DAG the scheduler walks.
+    //   3. `accept_and_run_digital` — per accepted analog step (the DC
+    //      mixed-signal loop and transient accept path):
+    //      `build_accept_state` → `seed_digital_from_accept_hooks` →
+    //      `run_digital_at_with_analog`; returns whether any output net moved.
+    //   `run_digital_at[_with_analog]` — standalone evaluation at time `t`.
+    //
+    // The analog→digital plumbing (`build_accept_state` +
     // `seed_digital_from_accept_hooks`, folded from the former `SignalBridge`)
     // turns an accepted analog solution into the 1-row state buffer the accept
     // hooks read, then seeds the digital event queue from every device's
-    // `accept_timestep`. Any `Element` is natively mixed-signal (MD-01), so
-    // there is no separate bridge object — this section is the named owner of
-    // the D2A/A2D crossing.
+    // `accept_timestep`.
 
     pub fn rebuild_digital_topology(&mut self) {
         self.digital_topology = Some(DigitalTopology::build(&self.devices));
