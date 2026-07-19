@@ -268,6 +268,57 @@ pub trait DigitalDevice: Send + Sync {
     fn digital_hidden_restore(&mut self, _state: &(Vec<i64>, Vec<f64>)) {}
 }
 
+/// OSDI-style introspection: parameters, queries, terminals, opvars.
+///
+/// All optional. A model exposes as much or as little metadata as it has;
+/// hosts (sweeps, optimization, CLI/UI) discover and poke it through
+/// this uniform surface without knowing the device family.
+pub trait Introspect: Send + Sync {
+    /// Operating-point variables (`gm`, `vbe`, …) as flat name/value pairs.
+    /// The introspection layer ([`query`](Introspect::query)) reads through this by
+    /// default; a model with typed or documented queries overrides those methods.
+    fn read_opvars(&self) -> Vec<(String, f64)> { Vec::new() }
+
+    /// Declared parameters and their metadata. Empty when the element exposes no
+    /// runtime-inspectable parameters.
+    fn list_params(&self) -> Vec<ParamDescriptor> { Vec::new() }
+
+    /// The current value of parameter `name`, or `None` if there is no such
+    /// parameter.
+    fn get_param(&self, _name: &str) -> Option<Value> { None }
+
+    /// Write parameter `name`, returning what the change invalidates so the
+    /// caller recomputes exactly as much as needed. The default rejects every
+    /// write as unknown; a model with writable parameters overrides this.
+    fn set_param(&mut self, name: &str, _value: Value) -> Result<Invalidation, ParamError> {
+        Err(ParamError::Unknown(name.to_string()))
+    }
+
+    /// Declared queries (operating variables, terminal quantities, internal
+    /// state, counters). Defaults to one [`QueryKind::OperatingVariable`] per
+    /// [`read_opvars`](Introspect::read_opvars) entry.
+    fn list_queries(&self) -> Vec<QueryDescriptor> {
+        self.read_opvars()
+            .into_iter()
+            .map(|(name, _)| QueryDescriptor::opvar(name))
+            .collect()
+    }
+
+    /// Read query `name`. Defaults to scanning
+    /// [`read_opvars`](Introspect::read_opvars); a model with typed queries
+    /// overrides this.
+    fn query(&self, name: &str) -> Option<Value> {
+        self.read_opvars()
+            .into_iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| Value::Real(v))
+    }
+
+    /// Declared terminals (name, domain, direction, required). Empty when the
+    /// element does not describe its terminals.
+    fn list_terminals(&self) -> Vec<TerminalDescriptor> { Vec::new() }
+}
+
 /// A single thing the solver simulates — the one contract over every
 /// participant, analog or digital or both.
 ///
@@ -304,56 +355,6 @@ pub trait Element: Send + Sync {
     /// — an element must declare itself so the solver and scheduler can plan
     /// without probing. Forgetting a flag is a visible bug, not a silent no-op.
     fn capabilities(&self) -> ElementCapabilities;
-
-    /// Operating-point variables (`gm`, `vbe`, …) as flat name/value pairs.
-    /// The introspection layer ([`query`](Element::query)) reads through this by
-    /// default; a model with typed or documented queries overrides those methods.
-    fn read_opvars(&self) -> Vec<(String, f64)> { Vec::new() }
-
-    // ── Introspection: parameters, queries, terminals (OSDI-style) ────────────
-    //
-    // All optional. A model exposes as much or as little metadata as it has;
-    // hosts (sweeps, optimization, CLI/UI) discover and poke it through
-    // this uniform surface without knowing the device family.
-
-    /// Declared parameters and their metadata. Empty when the element exposes no
-    /// runtime-inspectable parameters.
-    fn list_params(&self) -> Vec<ParamDescriptor> { Vec::new() }
-
-    /// The current value of parameter `name`, or `None` if there is no such
-    /// parameter.
-    fn get_param(&self, _name: &str) -> Option<Value> { None }
-
-    /// Write parameter `name`, returning what the change invalidates so the
-    /// caller recomputes exactly as much as needed. The default rejects every
-    /// write as unknown; a model with writable parameters overrides this.
-    fn set_param(&mut self, name: &str, _value: Value) -> Result<Invalidation, ParamError> {
-        Err(ParamError::Unknown(name.to_string()))
-    }
-
-    /// Declared queries (operating variables, terminal quantities, internal
-    /// state, counters). Defaults to one [`QueryKind::OperatingVariable`] per
-    /// [`read_opvars`](Element::read_opvars) entry.
-    fn list_queries(&self) -> Vec<QueryDescriptor> {
-        self.read_opvars()
-            .into_iter()
-            .map(|(name, _)| QueryDescriptor::opvar(name))
-            .collect()
-    }
-
-    /// Read query `name`. Defaults to scanning
-    /// [`read_opvars`](Element::read_opvars); a model with typed queries
-    /// overrides this.
-    fn query(&self, name: &str) -> Option<Value> {
-        self.read_opvars()
-            .into_iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, v)| Value::Real(v))
-    }
-
-    /// Declared terminals (name, domain, direction, required). Empty when the
-    /// element does not describe its terminals.
-    fn list_terminals(&self) -> Vec<TerminalDescriptor> { Vec::new() }
 
     fn setup(&mut self, _ctx: &Context) -> crate::result::Result<()> { Ok(()) }
     fn destroy(&mut self) {}
