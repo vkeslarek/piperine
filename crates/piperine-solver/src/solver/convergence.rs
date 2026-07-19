@@ -18,6 +18,7 @@ use ndarray::Array1;
 use ndarray::{ArrayView1, ArrayViewMut1};
 use crate::analog::Netlist;
 use crate::math::circular_array::CircularArrayBuffer2;
+use crate::solver::config::Schedules;
 use crate::solver::{Policy, Tolerances};
 use crate::result::Result;
 
@@ -244,23 +245,26 @@ pub trait HomotopyDriver {
 
 /// One homotopy: reshapes a hard operating-point problem into an easy one and
 /// tracks the solution back to full strength. Stateless — all mutable state is
-/// behind the [`HomotopyDriver`].
+/// behind the [`HomotopyDriver`]; the numeric schedule it ramps is owned by
+/// the plan and handed in as [`Schedules`].
 pub trait HomotopyStrategy: Send + Sync {
     /// Short name for diagnostics/tracing.
     fn name(&self) -> &'static str;
 
     /// Attempt to converge to the true operating point, or fail so the plan
     /// falls through to the next strategy.
-    fn converge(&self, driver: &mut dyn HomotopyDriver) -> Result<Array1<f64>>;
+    fn converge(&self, driver: &mut dyn HomotopyDriver, schedules: &Schedules) -> Result<Array1<f64>>;
 }
 
 /// The DC convergence plan: plain Newton, then each homotopy in order until one
 /// converges. Replaces the hand-inlined homotopy cascade in the DC driver, and
-/// is the seam where an analysis or host selects a different escalation.
+/// is the seam where an analysis or host selects a different escalation. Owns
+/// the [`Schedules`] every strategy reads its numeric ramp from.
 pub struct ConvergencePlan {
     newton: Box<dyn NewtonStrategy>,
     strategies: Vec<Box<dyn HomotopyStrategy>>,
     limits: PlanLimits,
+    schedules: Schedules,
 }
 
 impl Default for ConvergencePlan {
@@ -272,6 +276,7 @@ impl Default for ConvergencePlan {
             newton: Box::new(DampedNewton),
             strategies: vec![Box::new(GminStepping), Box::new(SourceStepping)],
             limits: PlanLimits::default(),
+            schedules: Schedules::default(),
         }
     }
 }
@@ -283,6 +288,7 @@ impl ConvergencePlan {
             newton: Box::new(DampedNewton),
             strategies,
             limits: PlanLimits::default(),
+            schedules: Schedules::default(),
         }
     }
 
@@ -298,6 +304,12 @@ impl ConvergencePlan {
         self
     }
 
+    /// Override the homotopy schedules the strategies ramp by.
+    pub fn with_schedules(mut self, schedules: Schedules) -> Self {
+        self.schedules = schedules;
+        self
+    }
+
     /// The Newton iteration policy.
     pub fn newton(&self) -> &dyn NewtonStrategy {
         self.newton.as_ref()
@@ -306,6 +318,11 @@ impl ConvergencePlan {
     /// Numerical caps every driver should honor.
     pub fn limits(&self) -> PlanLimits {
         self.limits
+    }
+
+    /// The homotopy schedules owned by this plan.
+    pub fn schedules(&self) -> &Schedules {
+        &self.schedules
     }
 
     /// Run the plan: plain Newton, then each homotopy in order. Returns the
@@ -317,7 +334,7 @@ impl ConvergencePlan {
             Err(err) => err,
         };
         for strategy in &self.strategies {
-            match strategy.converge(driver) {
+            match strategy.converge(driver, &self.schedules) {
                 Ok(solution) => {
                     return Ok(PlanOutcome { solution, strategy: Some(strategy.name()) });
                 }
@@ -347,18 +364,19 @@ impl HomotopyStrategy for GminStepping {
         "gmin-stepping"
     }
 
-    fn converge(&self, driver: &mut dyn HomotopyDriver) -> Result<Array1<f64>> {
+    fn converge(&self, driver: &mut dyn HomotopyDriver, schedules: &Schedules) -> Result<Array1<f64>> {
+        let schedule = &schedules.gmin;
         let trace = std::env::var("PIPERINE_TRACE_GMIN").is_ok();
         // Ramp until the extra conductance is negligible next to the real gmin.
-        let floor = driver.gmin_floor() * 10.0;
+        let floor = driver.gmin_floor() * schedule.floor_margin;
         // Start very easy (100 mS to ground) and drop a decade per step, with
         // adaptive back-off: a step that won't converge raises the conductance
         // again (smaller decrements) instead of giving up. Bounded so a truly
         // non-convergent circuit still terminates.
-        let mut g = 0.1_f64;
-        let mut factor = 0.1_f64;
+        let mut g = schedule.start_g;
+        let mut factor = schedule.decade_factor;
         let mut converged_any = false;
-        for _ in 0..200 {
+        for _ in 0..schedule.max_steps {
             driver.set_gmin_extra(g);
             let result = driver.newton();
             if trace {
@@ -370,7 +388,7 @@ impl HomotopyStrategy for GminStepping {
                     if g <= floor {
                         break;
                     }
-                    factor = (factor * 1.3).min(0.5); // relax faster once it's easy
+                    factor = (factor * schedule.relax_growth).min(schedule.relax_cap); // relax faster once it's easy
                     g *= factor;
                 }
                 Err(err) => {
@@ -379,7 +397,7 @@ impl HomotopyStrategy for GminStepping {
                         driver.set_gmin_extra(0.0);
                         return Err(err);
                     }
-                    factor = (factor * 3.0).min(0.7); // back off: raise g, shrink step
+                    factor = (factor * schedule.backoff_growth).min(schedule.backoff_cap); // back off: raise g, shrink step
                     g /= factor;
                 }
             }
@@ -406,31 +424,32 @@ impl HomotopyStrategy for SourceStepping {
         "source-stepping"
     }
 
-    fn converge(&self, driver: &mut dyn HomotopyDriver) -> Result<Array1<f64>> {
+    fn converge(&self, driver: &mut dyn HomotopyDriver, schedules: &Schedules) -> Result<Array1<f64>> {
+        let schedule = &schedules.source;
         let trace = std::env::var("PIPERINE_TRACE_SRC").is_ok();
         // A real shunt conductance (1 µS) conditions the exponential turn-on
         // knee (the BJT/MOS threshold), held through the source ramp then itself
         // ramped to 0 (a nested gmin step) so the final answer is exact.
-        let knee_gmin = 1e-6_f64;
+        let knee_gmin = schedule.knee_gmin;
         let mut scale = 0.0_f64;
-        let mut step = 0.1_f64;
+        let mut step = schedule.start_step;
         let mut last_ok = 0.0_f64;
         driver.set_src_scale(0.0);
         driver.set_gmin_extra(knee_gmin);
         // Solve the fully-off circuit first (trivial).
         let mut sol = driver.newton();
-        for _ in 0..300 {
+        for _ in 0..schedule.max_steps {
             if sol.is_ok() {
                 last_ok = scale;
                 if scale >= 1.0 {
                     break;
                 }
-                step = (step * 1.5).min(0.25);
+                step = (step * schedule.step_growth).min(schedule.step_cap);
                 scale = (last_ok + step).min(1.0);
             } else {
                 // Back off toward the last converged scale.
-                step *= 0.5;
-                if step < 1e-6 {
+                step *= schedule.backoff_factor;
+                if step < schedule.min_step {
                     driver.set_src_scale(1.0);
                     driver.set_gmin_extra(0.0);
                     return sol; // give up with the failure
@@ -448,8 +467,8 @@ impl HomotopyStrategy for SourceStepping {
         // exact.
         driver.set_src_scale(1.0);
         let mut g = knee_gmin;
-        while g > driver.gmin_floor() * 10.0 {
-            g *= 0.1;
+        while g > driver.gmin_floor() * schedule.floor_margin {
+            g *= schedule.knee_decay;
             driver.set_gmin_extra(g);
             if driver.newton().is_err() {
                 break;
@@ -509,7 +528,7 @@ mod tests {
     #[test]
     fn source_stepping_ramp_schedule() {
         let mut driver = ScriptedDriver::new(|_, _| false);
-        SourceStepping.converge(&mut driver).expect("all-converging driver must succeed");
+        SourceStepping.converge(&mut driver, &Schedules::default()).expect("all-converging driver must succeed");
 
         let calls = &driver.calls;
         assert_eq!(calls[0], (0.0, 1e-6), "ramp starts fully off, knee shunt in");
@@ -534,7 +553,7 @@ mod tests {
         // A transient hard region: scales above 0.55 fail for the first 6
         // newton calls, then converge.
         let mut driver = ScriptedDriver::new(|scale, n| scale > 0.55 && n < 6);
-        SourceStepping.converge(&mut driver).expect("transient hard region must be passable");
+        SourceStepping.converge(&mut driver, &Schedules::default()).expect("transient hard region must be passable");
 
         let calls = &driver.calls;
         let first_fail = calls
@@ -554,7 +573,7 @@ mod tests {
     #[test]
     fn source_stepping_gives_up_when_backoff_exhausts() {
         let mut driver = ScriptedDriver::new(|scale, _| scale > 0.5);
-        let result = SourceStepping.converge(&mut driver);
+        let result = SourceStepping.converge(&mut driver, &Schedules::default());
         assert!(result.is_err(), "impassable ramp must report non-convergence");
         assert_eq!(driver.src_scale, 1.0, "source scale restored");
         assert_eq!(driver.gmin_extra, 0.0, "shunt removed");
@@ -566,7 +585,7 @@ mod tests {
     #[test]
     fn source_stepping_warm_start_chain() {
         let mut driver = ScriptedDriver::new(|scale, n| scale > 0.55 && n < 6);
-        SourceStepping.converge(&mut driver).unwrap();
+        SourceStepping.converge(&mut driver, &Schedules::default()).unwrap();
         let ramp_ok: Vec<f64> = driver
             .calls
             .iter()
