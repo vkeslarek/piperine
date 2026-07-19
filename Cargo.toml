@@ -34,6 +34,7 @@ piperine-python = { path = "crates/piperine-python" }
 piperine-lang = { path = "crates/piperine-lang" }
 piperine-codegen = { path = "crates/piperine-codegen" }
 piperine-solver = { path = "crates/piperine-solver" }
+num-complex = { workspace = true }
 
 [profile.dev.package.faer]
 opt-level = 3

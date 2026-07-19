@@ -385,9 +385,6 @@ pub struct PoleZeroResult {
 /// N-port scattering-parameter analysis (`.sp`) result: the `S` matrix at
 /// every swept frequency, in port order — see
 /// [`SpSolver`](crate::analyses::sp::SpSolver).
-// Host wiring (T9) is what reads these fields from outside the crate; until
-// then `cargo build` (which excludes `#[cfg(test)]`) sees no reader.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct SpResult {
     pub frequencies: Vec<f64>,

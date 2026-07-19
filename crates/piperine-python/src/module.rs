@@ -237,6 +237,37 @@ impl _Module {
         Ok((result.poles, result.zeros))
     }
 
+    /// Run an N-port S-parameter analysis (`.sp`): the scattering matrix
+    /// over a frequency sweep for every node carrying an `@rfport(num, z0)`
+    /// attribute in this module. Returns `(frequencies, s, z0, n_ports)` —
+    /// `s[k]` is the `n_ports x n_ports` matrix (as nested lists of Python
+    /// `complex`) at `frequencies[k]`, `s[k][i][j] = S_ij` — the uniform
+    /// host shape (MD-22, SP-06): same field order as the Rust
+    /// `SpResult { frequencies, s, z0, n_ports }`. Fails loud when the
+    /// module declares no ports, a port's `z0` is non-positive, ports
+    /// collide (same `num` or the same node), or a port's node is not
+    /// addressable (SP-05).
+    #[pyo3(signature = (fstart, fstop, points=100, logarithmic=true, solver=None))]
+    fn sp(
+        &self,
+        fstart: f64,
+        fstop: f64,
+        points: usize,
+        logarithmic: bool,
+        solver: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<(Vec<f64>, Vec<Vec<Vec<num_complex::Complex64>>>, Vec<f64>, usize)> {
+        let session = self.session()?;
+        let result = session
+            .run_sp(fstart, fstop, points, logarithmic, &Self::solver_config(solver)?)
+            .map_err(Self::analysis_err)?;
+        let s: Vec<Vec<Vec<num_complex::Complex64>>> = result
+            .s
+            .iter()
+            .map(|mat| mat.rows().into_iter().map(|row| row.to_vec()).collect())
+            .collect();
+        Ok((result.frequencies, s, result.z0, result.n_ports))
+    }
+
     /// Run a transient analysis (PY-04 / spec AC6). `step = None` (or `0.0`)
     /// selects the adaptive stepper; `start` is the earliest recorded time
     /// (ngspice `.tran tstart tstop` semantics). `ic` is an

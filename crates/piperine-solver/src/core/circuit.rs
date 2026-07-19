@@ -166,6 +166,16 @@ impl CircuitInstance {
         crate::analyses::pz::PoleZeroSolver::new(self, options, context)
     }
 
+    /// N-port S-parameter analysis (`.sp`): power-wave scattering matrix
+    /// over a frequency sweep — see [`SpSolver`](crate::analyses::sp::SpSolver).
+    pub fn sp(
+        &mut self,
+        options: crate::analyses::sp::SpOptions,
+        context: Context,
+    ) -> crate::result::Result<crate::analyses::sp::SpSolver<'_>> {
+        crate::analyses::sp::SpSolver::new(self, options, context)
+    }
+
     // ── Mixed-signal seam ────────────────────────────────────────────────────
     //
     // The one place analog acceptance seeds digital events and the scheduler

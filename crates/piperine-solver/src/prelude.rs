@@ -29,6 +29,7 @@ pub use crate::analyses::tf::TransferFunctionAnalysisOptions;
 pub use crate::analyses::pss::{PssAnalysisOptions, PssResult, PssStats};
 pub use crate::analyses::pz::{PoleZeroOptions, PoleZeroSolver};
 pub use crate::analyses::sens::{SensAnalysisOptions, SensResult};
+pub use crate::analyses::sp::{SpOptions, SpPort, SpSolver};
 pub use crate::analyses::transient::TransientAnalysisOptions;
 pub use crate::analyses::Context;
 pub use crate::analyses::{Policy, Tolerances};
@@ -43,7 +44,7 @@ pub use crate::analyses::convergence::{
 // ── Results ────────────────────────────────────────────────────────────────
 pub use crate::result::{
     AcAnalysisResult, AcAnalysisStep, DcAnalysisResult, NoiseAnalysisResult, NoiseContribution,
-    PoleZeroResult, TransferFunctionAnalysisResult, TransferType, TransientAnalysisResult, TransientStep,
+    PoleZeroResult, SpResult, TransferFunctionAnalysisResult, TransferType, TransientAnalysisResult, TransientStep,
 };
 
 // ── Errors ─────────────────────────────────────────────────────────────────

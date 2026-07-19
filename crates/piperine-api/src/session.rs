@@ -248,6 +248,45 @@ impl SimSession {
         Ok(piperine_solver::prelude::PoleZeroResult { poles, zeros })
     }
 
+    /// Run an N-port S-parameter analysis (`.sp`): the scattering matrix
+    /// over a frequency sweep for every node carrying an `@rfport(num, z0)`
+    /// attribute in this session's module (SP-01, SP-02). Ports are
+    /// resolved from the design's attribute schema (`Design::rfports`),
+    /// then translated to circuit node identifiers the same way any other
+    /// host-visible net name is. Fails loud (SP-05) when the module
+    /// declares no ports, a `z0` is non-positive, two ports collide on the
+    /// same `num` or the same node, or a port's node is not addressable in
+    /// the built circuit.
+    pub fn run_sp(
+        &self,
+        fstart: f64,
+        fstop: f64,
+        points: usize,
+        logarithmic: bool,
+        config: &SolverConfig,
+    ) -> Result<piperine_solver::prelude::SpResult, Error> {
+        let (mut circuit, info) = self.build_circuit()?;
+        let rfports = self.design.rfports(&self.module)?;
+        let mut ports = Vec::with_capacity(rfports.len());
+        for p in &rfports {
+            let node = resolve_net(&info, &p.node)?;
+            ports.push(piperine_solver::prelude::SpPort { num: p.num as usize, node, z0: p.z0 });
+        }
+        let options = piperine_solver::prelude::SpOptions {
+            ports,
+            sweep: piperine_solver::prelude::AcSweepAnalysisOptions {
+                start_frequency: fstart,
+                stop_frequency: fstop,
+                steps: points,
+                logarithmic,
+            },
+        };
+        let mut solver = circuit.sp(options, config.to_context())?;
+        let result = solver.solve_sweep()?;
+        self.fire_after_solve("sp", &[])?;
+        Ok(result)
+    }
+
     /// Run a DC operating-point analysis. `nodeset` (net name → volts) seeds
     /// the Newton initial guess.
     pub fn run_op(

@@ -1932,6 +1932,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 name = "piperine"
 version = "0.1.1"
 dependencies = [
+ "num-complex",
  "piperine-api",
  "piperine-codegen",
  "piperine-lang",

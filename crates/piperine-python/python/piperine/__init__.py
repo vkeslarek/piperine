@@ -60,6 +60,7 @@ __all__ = [
     "PssStats",
     "SensResult",
     "PoleZeroResult",
+    "SpResult",
     "Waveform",
     "ComplexWaveform",
     "FourierComponent",
@@ -323,6 +324,22 @@ class PoleZeroResult:
     zeros: list[complex]
 
 
+@dataclass
+class SpResult:
+    """``.sp`` result: the N-port scattering matrix over a frequency sweep.
+
+    The uniform host shape (MD-22): same field names as the Rust
+    ``SpResult { frequencies, s, z0, n_ports }``. ``s[k]`` is the
+    ``n_ports x n_ports`` matrix at ``frequencies[k]``,
+    ``s[k][i][j] == S_ij`` (port ``i`` response / port ``j`` excitation).
+    """
+
+    frequencies: list[float]
+    s: list[list[list[complex]]]
+    z0: list[float]
+    n_ports: int
+
+
 class Module:
     """A reflected view of one POM module (spec AC14) + the four analyses.
 
@@ -424,6 +441,25 @@ class Module:
         """
         poles, zeros = self._native.pz(input_source, output, output_ref, solver)
         return PoleZeroResult(poles=list(poles), zeros=list(zeros))
+
+    def sp(
+        self,
+        fstart: float,
+        fstop: float,
+        points: int = 100,
+        logarithmic: bool = True,
+        solver: Solver | None = None,
+    ) -> SpResult:
+        """Run an N-port S-parameter analysis (``.sp``).
+
+        The scattering matrix over a frequency sweep for every node
+        carrying an ``@rfport(num, z0)`` attribute in this module. A module
+        with no declared ports, a non-positive ``z0``, colliding ports
+        (same ``num`` or the same node), or a port on an unaddressable node
+        fails loud.
+        """
+        frequencies, s, z0, n_ports = self._native.sp(fstart, fstop, points, logarithmic, solver)
+        return SpResult(frequencies=list(frequencies), s=s, z0=list(z0), n_ports=n_ports)
 
     def tran(self, config: TranConfig) -> Trace:
         """Run a transient analysis (spec AC6).
