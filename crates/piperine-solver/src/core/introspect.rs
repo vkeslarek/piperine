@@ -223,7 +223,7 @@ impl std::error::Error for ParamError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::element::{Element, ElementCapabilities};
+    use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
 
     /// A resistor exposing one writable parameter (`r`) and one operating
     /// variable (`g` = 1/r) — a reference implementation of the introspection
@@ -232,13 +232,11 @@ mod tests {
         r: f64,
     }
 
-    impl Element for Resistor {
-        fn name(&self) -> &str {
-            "r1"
-        }
-        fn capabilities(&self) -> ElementCapabilities {
-            ElementCapabilities::ANALOG
-        }
+    impl AnalogDevice for Resistor {}
+
+    impl DigitalDevice for Resistor {}
+
+    impl Introspect for Resistor {
         fn read_opvars(&self) -> Vec<(String, f64)> {
             vec![("g".into(), 1.0 / self.r)]
         }
@@ -268,6 +266,15 @@ mod tests {
             }
             self.r = v;
             Ok(Invalidation::Restamp)
+        }
+    }
+
+    impl Element for Resistor {
+        fn name(&self) -> &str {
+            "r1"
+        }
+        fn capabilities(&self) -> ElementCapabilities {
+            ElementCapabilities::ANALOG
         }
     }
 

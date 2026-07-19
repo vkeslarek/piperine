@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use piperine_solver::abi::{DigitalNet, LogicValue};
-use piperine_solver::abi::{Element, ElementCapabilities};
+use piperine_solver::abi::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
 use piperine_solver::abi::{DigitalPorts, EvalCtx, EventSink};
 
 use crate::ir::LoweredBody;
@@ -199,15 +199,9 @@ impl DigitalNetwork {
     }
 }
 
-impl Element for DigitalNetwork {
-    fn name(&self) -> &str {
-        "digital_network"
-    }
+impl AnalogDevice for DigitalNetwork {}
 
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::DIGITAL
-    }
-
+impl DigitalDevice for DigitalNetwork {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &self.ports.inputs, outputs: &self.ports.outputs }
     }
@@ -235,6 +229,18 @@ impl Element for DigitalNetwork {
                 sink.emit(net, new, 0.0);
             }
         }
+    }
+}
+
+impl Introspect for DigitalNetwork {}
+
+impl Element for DigitalNetwork {
+    fn name(&self) -> &str {
+        "digital_network"
+    }
+
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::DIGITAL
     }
 }
 

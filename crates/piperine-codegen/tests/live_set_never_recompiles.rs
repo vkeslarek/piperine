@@ -10,8 +10,8 @@ use piperine_lang::parse_and_elaborate;
 use piperine_codegen::ir::LoweredBody;
 use piperine_codegen::{AnalogKernel, CircuitCompiler};
 use piperine_solver::abi::{
-    AnalogReference, DcAnalysisState, Element, ElementCapabilities, Invalidation, ParamDescriptor,
-    ParamError, ParamScope, Stamp, Value, ValueKind,
+    AnalogDevice, AnalogReference, DcAnalysisState, DigitalDevice, Element, ElementCapabilities,
+    Introspect, Invalidation, ParamDescriptor, ParamError, ParamScope, Stamp, Value, ValueKind,
 };
 use piperine_solver::prelude::{Bounds, Context, NodeIdentifier};
 
@@ -58,15 +58,30 @@ impl TempResistor {
     }
 }
 
-impl Element for TempResistor {
-    fn name(&self) -> &str {
-        "rt"
+impl AnalogDevice for TempResistor {
+    fn set_temperature(&mut self, t: f64) {
+        self.temp = t;
+        self.refresh();
     }
 
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
+    fn load_dc(
+        &mut self,
+        _state: &DcAnalysisState<'_>,
+        _ctx: &Context,
+    ) -> Vec<Stamp<AnalogReference, f64>> {
+        let g = 1.0 / self.r_eff;
+        vec![
+            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
+            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
+            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
+            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
+        ]
     }
+}
 
+impl DigitalDevice for TempResistor {}
+
+impl Introspect for TempResistor {
     fn list_params(&self) -> Vec<ParamDescriptor> {
         vec![ParamDescriptor {
             name: "temp".into(),
@@ -94,24 +109,15 @@ impl Element for TempResistor {
         self.refresh();
         Ok(Invalidation::Temperature)
     }
+}
 
-    fn set_temperature(&mut self, t: f64) {
-        self.temp = t;
-        self.refresh();
+impl Element for TempResistor {
+    fn name(&self) -> &str {
+        "rt"
     }
 
-    fn load_dc(
-        &mut self,
-        _state: &DcAnalysisState<'_>,
-        _ctx: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        let g = 1.0 / self.r_eff;
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-        ]
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
     }
 }
 

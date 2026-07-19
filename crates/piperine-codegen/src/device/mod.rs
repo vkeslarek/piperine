@@ -24,7 +24,7 @@ use piperine_solver::abi::AcAnalysisContext;
 use piperine_solver::abi::{DcAnalysisResult, DcAnalysisState};
 use piperine_solver::abi::Noise;
 use piperine_solver::abi::{TransientAnalysisContext, TransientAnalysisState};
-use piperine_solver::abi::{Element, ElementCapabilities};
+use piperine_solver::abi::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
 use piperine_solver::abi::{
     Bounds, Invalidation, ParamDescriptor, ParamError, ParamScope, Value, ValueKind,
 };
@@ -140,28 +140,7 @@ impl PiperineDevice {
     }
 }
 
-impl Element for PiperineDevice {
-    fn name(&self) -> &str {
-        &self.label
-    }
-
-    fn capabilities(&self) -> ElementCapabilities {
-        let mut caps = ElementCapabilities::empty();
-        // A digital-only device with analog input terminals (the A2D bridge)
-        // still participates in the analog lifecycle: `accept_timestep` caches
-        // its terminal voltages after every accepted solution.
-        if self.analog.is_some() || !self.analog_terminal_refs.is_empty() {
-            caps |= ElementCapabilities::ANALOG;
-        }
-        if let Some(digital) = &self.digital {
-            caps |= ElementCapabilities::DIGITAL;
-            if digital.kernel().layout().num_analog() > 0 {
-                caps |= ElementCapabilities::SAMPLES_ANALOG;
-            }
-        }
-        caps
-    }
-
+impl AnalogDevice for PiperineDevice {
     fn limiting_active(&self) -> bool {
         self.analog
             .as_ref()
@@ -178,59 +157,6 @@ impl Element for PiperineDevice {
         self.analog
             .as_ref()
             .map_or_else(Vec::new, AnalogInstance::initial_conditions)
-    }
-
-    fn list_params(&self) -> Vec<ParamDescriptor> {
-        let Some(analog) = &self.analog else { return Vec::new() };
-        analog
-            .param_names()
-            .iter()
-            .filter_map(|name| {
-                analog.param(name).map(|value| ParamDescriptor {
-                    name: name.clone(),
-                    kind: ValueKind::Real,
-                    // The JIT bakes elaborated defaults into the value; the
-                    // model default is not carried separately, so the current
-                    // value stands in.
-                    default: Value::Real(value),
-                    unit: None,
-                    bounds: Bounds::UNBOUNDED,
-                    scope: ParamScope::Instance,
-                    // Presence-queried, never-given optional params are
-                    // structural to write (the given-mask is baked at build)
-                    // — same classification as `set_param` (LIVE-14).
-                    invalidation: if analog.set_flips_presence(name) {
-                        Invalidation::Rebuild
-                    } else {
-                        Invalidation::Restamp
-                    },
-                })
-            })
-            .collect()
-    }
-
-    fn get_param(&self, name: &str) -> Option<Value> {
-        self.analog.as_ref().and_then(|a| a.param(name)).map(Value::Real)
-    }
-
-    fn set_param(&mut self, name: &str, value: Value) -> Result<Invalidation, ParamError> {
-        let Some(v) = value.as_real() else {
-            return Err(ParamError::TypeMismatch { name: name.into(), expected: ValueKind::Real });
-        };
-        if let Some(analog) = self.analog.as_mut() {
-            // Writing a presence-queried, never-given optional param is
-            // structural: the given-mask is baked at build, so the value
-            // alone cannot surface the guarded behavior. Typed `Rebuild`
-            // outcome, value NOT applied (no partial apply) — the host
-            // re-elaborates and rebuilds (LIVE-14).
-            if analog.set_flips_presence(name) {
-                return Ok(Invalidation::Rebuild);
-            }
-            if analog.set_param(name, v) {
-                return Ok(Invalidation::Restamp);
-            }
-        }
-        Err(ParamError::Unknown(name.to_string()))
     }
 
     fn load_dc(
@@ -286,48 +212,6 @@ impl Element for PiperineDevice {
             .and_then(|a| a.suggest_transient_step(state, time_history, context))
     }
 
-    fn runtime_banks(&self) -> (&[f64], &[f64]) {
-        self.analog.as_ref().map(|a| a.runtime_banks()).unwrap_or((&[], &[]))
-    }
-
-    fn digital_hidden_snapshot(&self) -> Option<(Vec<i64>, Vec<f64>)> {
-        self.digital.as_ref().and_then(|d| d.hidden_snapshot())
-    }
-
-    fn digital_hidden_restore(&mut self, state: &(Vec<i64>, Vec<f64>)) {
-        if let Some(d) = self.digital.as_mut() {
-            d.hidden_restore(state);
-        }
-    }
-
-    fn accept_timestep(
-        &mut self,
-        state: &CircularArrayBuffer2<f64>,
-        t: f64,
-        nets: &[piperine_solver::abi::LogicValue],
-        sink: &mut dyn EventSink,
-    ) {
-        if let Some(analog) = &mut self.analog {
-            analog.accept_timestep(state, t);
-        }
-
-        if self.analog.is_none() && !self.analog_terminal_refs.is_empty() {
-            let latest = state.latest();
-            for (i, opt_ref) in self.analog_terminal_refs.iter().enumerate() {
-                self.last_analog_voltages[i] = opt_ref
-                    .as_ref()
-                    .and_then(|r| r.idx())
-                    .and_then(|idx| latest.map(|s| s[idx]))
-                    .unwrap_or(0.0);
-            }
-        }
-
-        if self.digital.as_ref().is_some_and(|d| d.kernel().layout().num_analog() > 0) {
-            let eval_ctx = EvalCtx { time: t, nets, analog: &[] };
-            self.evaluate(&eval_ctx, sink);
-        }
-    }
-
     fn noise_current_psd(
         &mut self,
         dc_point: &DcAnalysisResult,
@@ -338,7 +222,9 @@ impl Element for PiperineDevice {
             None => Vec::new(),
         }
     }
+}
 
+impl DigitalDevice for PiperineDevice {
     fn boundary(&self) -> DigitalPorts<'_> {
         match &self.digital {
             Some(d) => DigitalPorts {
@@ -390,6 +276,126 @@ impl Element for PiperineDevice {
             let vars = digital.export_vars();
             analog.sync_vars(&vars);
         }
+    }
+
+    fn digital_hidden_snapshot(&self) -> Option<(Vec<i64>, Vec<f64>)> {
+        self.digital.as_ref().and_then(|d| d.hidden_snapshot())
+    }
+
+    fn digital_hidden_restore(&mut self, state: &(Vec<i64>, Vec<f64>)) {
+        if let Some(d) = self.digital.as_mut() {
+            d.hidden_restore(state);
+        }
+    }
+}
+
+impl Introspect for PiperineDevice {
+    fn list_params(&self) -> Vec<ParamDescriptor> {
+        let Some(analog) = &self.analog else { return Vec::new() };
+        analog
+            .param_names()
+            .iter()
+            .filter_map(|name| {
+                analog.param(name).map(|value| ParamDescriptor {
+                    name: name.clone(),
+                    kind: ValueKind::Real,
+                    // The JIT bakes elaborated defaults into the value; the
+                    // model default is not carried separately, so the current
+                    // value stands in.
+                    default: Value::Real(value),
+                    unit: None,
+                    bounds: Bounds::UNBOUNDED,
+                    scope: ParamScope::Instance,
+                    // Presence-queried, never-given optional params are
+                    // structural to write (the given-mask is baked at build)
+                    // — same classification as `set_param` (LIVE-14).
+                    invalidation: if analog.set_flips_presence(name) {
+                        Invalidation::Rebuild
+                    } else {
+                        Invalidation::Restamp
+                    },
+                })
+            })
+            .collect()
+    }
+
+    fn get_param(&self, name: &str) -> Option<Value> {
+        self.analog.as_ref().and_then(|a| a.param(name)).map(Value::Real)
+    }
+
+    fn set_param(&mut self, name: &str, value: Value) -> Result<Invalidation, ParamError> {
+        let Some(v) = value.as_real() else {
+            return Err(ParamError::TypeMismatch { name: name.into(), expected: ValueKind::Real });
+        };
+        if let Some(analog) = self.analog.as_mut() {
+            // Writing a presence-queried, never-given optional param is
+            // structural: the given-mask is baked at build, so the value
+            // alone cannot surface the guarded behavior. Typed `Rebuild`
+            // outcome, value NOT applied (no partial apply) — the host
+            // re-elaborates and rebuilds (LIVE-14).
+            if analog.set_flips_presence(name) {
+                return Ok(Invalidation::Rebuild);
+            }
+            if analog.set_param(name, v) {
+                return Ok(Invalidation::Restamp);
+            }
+        }
+        Err(ParamError::Unknown(name.to_string()))
+    }
+}
+
+impl Element for PiperineDevice {
+    fn name(&self) -> &str {
+        &self.label
+    }
+
+    fn capabilities(&self) -> ElementCapabilities {
+        let mut caps = ElementCapabilities::empty();
+        // A digital-only device with analog input terminals (the A2D bridge)
+        // still participates in the analog lifecycle: `accept_timestep` caches
+        // its terminal voltages after every accepted solution.
+        if self.analog.is_some() || !self.analog_terminal_refs.is_empty() {
+            caps |= ElementCapabilities::ANALOG;
+        }
+        if let Some(digital) = &self.digital {
+            caps |= ElementCapabilities::DIGITAL;
+            if digital.kernel().layout().num_analog() > 0 {
+                caps |= ElementCapabilities::SAMPLES_ANALOG;
+            }
+        }
+        caps
+    }
+
+    fn accept_timestep(
+        &mut self,
+        state: &CircularArrayBuffer2<f64>,
+        t: f64,
+        nets: &[piperine_solver::abi::LogicValue],
+        sink: &mut dyn EventSink,
+    ) {
+        if let Some(analog) = &mut self.analog {
+            analog.accept_timestep(state, t);
+        }
+
+        if self.analog.is_none() && !self.analog_terminal_refs.is_empty() {
+            let latest = state.latest();
+            for (i, opt_ref) in self.analog_terminal_refs.iter().enumerate() {
+                self.last_analog_voltages[i] = opt_ref
+                    .as_ref()
+                    .and_then(|r| r.idx())
+                    .and_then(|idx| latest.map(|s| s[idx]))
+                    .unwrap_or(0.0);
+            }
+        }
+
+        if self.digital.as_ref().is_some_and(|d| d.kernel().layout().num_analog() > 0) {
+            let eval_ctx = EvalCtx { time: t, nets, analog: &[] };
+            self.evaluate(&eval_ctx, sink);
+        }
+    }
+
+    fn runtime_banks(&self) -> (&[f64], &[f64]) {
+        self.analog.as_ref().map(|a| a.runtime_banks()).unwrap_or((&[], &[]))
     }
 }
 

@@ -6,15 +6,21 @@ struct Resistor {
     n2: AnalogReference,
 }
 
-impl Element for Resistor {
-    fn name(&self) -> &str {
-        "r1"
+impl AnalogDevice for Resistor {
+    fn load_dc(&mut self, _state: &DcAnalysisState, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
+        let g = 1.0 / self.r;
+        vec![
+            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
+            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
+            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
+            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
+        ]
     }
-    
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
-    }
+}
 
+impl DigitalDevice for Resistor {}
+
+impl Introspect for Resistor {
     fn list_params(&self) -> Vec<ParamDescriptor> {
         vec![ParamDescriptor {
             name: "r".into(),
@@ -44,15 +50,15 @@ impl Element for Resistor {
         self.r = v;
         Ok(Invalidation::Restamp)
     }
+}
 
-    fn load_dc(&mut self, _state: &DcAnalysisState, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
-        let g = 1.0 / self.r;
-        vec![
-            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
-        ]
+impl Element for Resistor {
+    fn name(&self) -> &str {
+        "r1"
+    }
+
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
     }
 }
 

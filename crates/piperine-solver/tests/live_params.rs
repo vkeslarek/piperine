@@ -4,7 +4,8 @@
 
 use piperine_solver::prelude::*;
 use piperine_solver::abi::{
-    DcAnalysisState, Stamp, TransientAnalysisContext, TransientAnalysisState,
+    AnalogDevice, DcAnalysisState, DigitalDevice, Introspect, Stamp, TransientAnalysisContext,
+    TransientAnalysisState,
 };
 
 /// A linear resistor with one writable parameter `r` (bounds: r > 0),
@@ -16,18 +17,34 @@ struct Resistor {
     n2: AnalogReference,
 }
 
-impl Element for Resistor {
-    fn name(&self) -> &str {
-        &self.label
+impl AnalogDevice for Resistor {
+    fn load_dc(
+        &mut self,
+        _state: &DcAnalysisState<'_>,
+        _ctx: &Context,
+    ) -> Vec<Stamp<AnalogReference, f64>> {
+        let g = 1.0 / self.r;
+        vec![
+            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
+            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
+            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
+            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
+        ]
     }
 
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::LOADS_TRAN
-            | ElementCapabilities::BYPASS_OK
+    fn load_transient(
+        &mut self,
+        state: &TransientAnalysisState<'_>,
+        _tran_ctx: &TransientAnalysisContext,
+        ctx: &Context,
+    ) -> Vec<Stamp<AnalogReference, f64>> {
+        self.load_dc(&DcAnalysisState::new(state.history(), state.digital, 1.0), ctx)
     }
+}
 
+impl DigitalDevice for Resistor {}
+
+impl Introspect for Resistor {
     fn list_params(&self) -> Vec<ParamDescriptor> {
         vec![ParamDescriptor {
             name: "r".into(),
@@ -57,18 +74,43 @@ impl Element for Resistor {
         self.r = v;
         Ok(Invalidation::Restamp)
     }
+}
 
+impl Element for Resistor {
+    fn name(&self) -> &str {
+        &self.label
+    }
+
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG
+            | ElementCapabilities::LOADS_DC
+            | ElementCapabilities::LOADS_TRAN
+            | ElementCapabilities::BYPASS_OK
+    }
+}
+
+/// An ideal DC voltage source; writes to `dc` invalidate the operating point.
+struct Vdc {
+    label: String,
+    v: f64,
+    n1: AnalogReference,
+    n2: AnalogReference,
+    branch: AnalogReference,
+}
+
+impl AnalogDevice for Vdc {
     fn load_dc(
         &mut self,
         _state: &DcAnalysisState<'_>,
         _ctx: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
-        let g = 1.0 / self.r;
+        let branch = self.branch.clone();
         vec![
-            Stamp::Matrix(self.n1.clone(), self.n1.clone(), g),
-            Stamp::Matrix(self.n2.clone(), self.n2.clone(), g),
-            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -g),
-            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -g),
+            Stamp::Matrix(self.n1.clone(), branch.clone(), 1.0),
+            Stamp::Matrix(branch.clone(), self.n1.clone(), 1.0),
+            Stamp::Matrix(self.n2.clone(), branch.clone(), -1.0),
+            Stamp::Matrix(branch.clone(), self.n2.clone(), -1.0),
+            Stamp::Rhs(branch, self.v),
         ]
     }
 
@@ -82,27 +124,9 @@ impl Element for Resistor {
     }
 }
 
-/// An ideal DC voltage source; writes to `dc` invalidate the operating point.
-struct Vdc {
-    label: String,
-    v: f64,
-    n1: AnalogReference,
-    n2: AnalogReference,
-    branch: AnalogReference,
-}
+impl DigitalDevice for Vdc {}
 
-impl Element for Vdc {
-    fn name(&self) -> &str {
-        &self.label
-    }
-
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::LOADS_TRAN
-            | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
-    }
-
+impl Introspect for Vdc {
     fn list_params(&self) -> Vec<ParamDescriptor> {
         vec![ParamDescriptor {
             name: "dc".into(),
@@ -129,29 +153,18 @@ impl Element for Vdc {
         self.v = v;
         Ok(Invalidation::OperatingPoint)
     }
+}
 
-    fn load_dc(
-        &mut self,
-        _state: &DcAnalysisState<'_>,
-        _ctx: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        let branch = self.branch.clone();
-        vec![
-            Stamp::Matrix(self.n1.clone(), branch.clone(), 1.0),
-            Stamp::Matrix(branch.clone(), self.n1.clone(), 1.0),
-            Stamp::Matrix(self.n2.clone(), branch.clone(), -1.0),
-            Stamp::Matrix(branch.clone(), self.n2.clone(), -1.0),
-            Stamp::Rhs(branch, self.v),
-        ]
+impl Element for Vdc {
+    fn name(&self) -> &str {
+        &self.label
     }
 
-    fn load_transient(
-        &mut self,
-        state: &TransientAnalysisState<'_>,
-        _tran_ctx: &TransientAnalysisContext,
-        ctx: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        self.load_dc(&DcAnalysisState::new(state.history(), state.digital, 1.0), ctx)
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG
+            | ElementCapabilities::LOADS_DC
+            | ElementCapabilities::LOADS_TRAN
+            | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
     }
 }
 
@@ -207,6 +220,9 @@ fn unknown_param_fails_loud_and_lists_available_params() {
 #[test]
 fn unknown_param_on_paramless_element_says_so() {
     struct Mute;
+    impl AnalogDevice for Mute {}
+    impl DigitalDevice for Mute {}
+    impl Introspect for Mute {}
     impl Element for Mute {
         fn name(&self) -> &str { "mute" }
         fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::empty() }

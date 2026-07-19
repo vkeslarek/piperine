@@ -13,7 +13,7 @@ use std::collections::BinaryHeap;
 
 use piperine_solver::abi::{AnalogReference, Netlist, NodeIdentifier};
 use piperine_solver::abi::DcAnalysisState;
-use piperine_solver::abi::{Element, ElementCapabilities};
+use piperine_solver::abi::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
 use piperine_solver::abi::{DigitalPorts, EvalCtx, EventSink, QueueSink};
 use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue};
 use piperine_solver::abi::CircularArrayBuffer2;
@@ -57,14 +57,9 @@ impl Comparator {
     }
 }
 
-impl Element for Comparator {
-    fn name(&self) -> &str { "comparator" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
-    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, t: f64, nets: &[LogicValue], sink: &mut dyn EventSink) {
-        let latest = state.latest().unwrap();
-        let eval_ctx = EvalCtx { time: t, nets, analog: latest.as_slice().unwrap() };
-        self.comb_phase(&eval_ctx, sink);
-    }
+impl AnalogDevice for Comparator {}
+
+impl DigitalDevice for Comparator {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out_net) }
     }
@@ -79,6 +74,18 @@ impl Element for Comparator {
             self.last_out = out;
             sink.emit(self.out_net, out, 0.0);
         }
+    }
+}
+
+impl Introspect for Comparator {}
+
+impl Element for Comparator {
+    fn name(&self) -> &str { "comparator" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
+    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, t: f64, nets: &[LogicValue], sink: &mut dyn EventSink) {
+        let latest = state.latest().unwrap();
+        let eval_ctx = EvalCtx { time: t, nets, analog: latest.as_slice().unwrap() };
+        self.comb_phase(&eval_ctx, sink);
     }
 }
 
@@ -101,14 +108,9 @@ impl SchmittTrigger {
     }
 }
 
-impl Element for SchmittTrigger {
-    fn name(&self) -> &str { "schmitt" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
-    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, t: f64, nets: &[LogicValue], sink: &mut dyn EventSink) {
-        let latest = state.latest().unwrap();
-        let eval_ctx = EvalCtx { time: t, nets, analog: latest.as_slice().unwrap() };
-        self.comb_phase(&eval_ctx, sink);
-    }
+impl AnalogDevice for SchmittTrigger {}
+
+impl DigitalDevice for SchmittTrigger {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out_net) }
     }
@@ -124,6 +126,18 @@ impl Element for SchmittTrigger {
         };
         self.state = new_state;
         sink.emit(self.out_net, new_state, 0.0);
+    }
+}
+
+impl Introspect for SchmittTrigger {}
+
+impl Element for SchmittTrigger {
+    fn name(&self) -> &str { "schmitt" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
+    fn accept_timestep(&mut self, state: &CircularArrayBuffer2<f64>, t: f64, nets: &[LogicValue], sink: &mut dyn EventSink) {
+        let latest = state.latest().unwrap();
+        let eval_ctx = EvalCtx { time: t, nets, analog: latest.as_slice().unwrap() };
+        self.comb_phase(&eval_ctx, sink);
     }
 }
 
@@ -144,9 +158,7 @@ impl AnalogSwitch {
     }
 }
 
-impl Element for AnalogSwitch {
-    fn name(&self) -> &str { "analog_switch" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
+impl AnalogDevice for AnalogSwitch {
     fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
             if !self.closed { return Vec::new(); }
             let g = self.conductance;
@@ -158,7 +170,9 @@ impl Element for AnalogSwitch {
                 Stamp::Matrix(b.clone(), b.clone(),  g),
             ]
         }
+}
 
+impl DigitalDevice for AnalogSwitch {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: std::slice::from_ref(&self.ctrl_net), outputs: &[] }
     }
@@ -168,6 +182,13 @@ impl Element for AnalogSwitch {
     fn comb_phase(&mut self, ctx: &EvalCtx<'_>, _sink: &mut dyn EventSink) {
         self.closed = ctx.nets[self.ctrl_net.0] == LogicValue::One;
     }
+}
+
+impl Introspect for AnalogSwitch {}
+
+impl Element for AnalogSwitch {
+    fn name(&self) -> &str { "analog_switch" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
 }
 
 
@@ -187,9 +208,7 @@ impl GatedCurrentSource {
     }
 }
 
-impl Element for GatedCurrentSource {
-    fn name(&self) -> &str { "gated_isrc" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
+impl AnalogDevice for GatedCurrentSource {
     fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
             if !self.enabled { return Vec::new(); }
             let mut stamps = Vec::new();
@@ -197,7 +216,9 @@ impl Element for GatedCurrentSource {
             if let Some(n) = &self.node_n { stamps.push(Stamp::Rhs(n.clone(), -self.ibias)); }
             stamps
         }
+}
 
+impl DigitalDevice for GatedCurrentSource {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: std::slice::from_ref(&self.enable_net), outputs: &[] }
     }
@@ -207,6 +228,13 @@ impl Element for GatedCurrentSource {
     fn comb_phase(&mut self, ctx: &EvalCtx<'_>, _sink: &mut dyn EventSink) {
         self.enabled = ctx.nets[self.enable_net.0] == LogicValue::One;
     }
+}
+
+impl Introspect for GatedCurrentSource {}
+
+impl Element for GatedCurrentSource {
+    fn name(&self) -> &str { "gated_isrc" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
 }
 
 
@@ -228,9 +256,7 @@ impl SampleAndHold {
     }
 }
 
-impl Element for SampleAndHold {
-    fn name(&self) -> &str { "sah" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
+impl AnalogDevice for SampleAndHold {
     fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _ctx: &Context) -> Vec<Stamp<AnalogReference, f64>> {
             if let Some(r) = &self.out_ref {
                 vec![Stamp::Rhs(r.clone(), self.held_value)]
@@ -238,7 +264,9 @@ impl Element for SampleAndHold {
                 Vec::new()
             }
         }
+}
 
+impl DigitalDevice for SampleAndHold {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: std::slice::from_ref(&self.clk_net), outputs: &[] }
     }
@@ -256,6 +284,13 @@ impl Element for SampleAndHold {
 
         // Drives a Thevenin source (v_held with 0Ω) — simplified: just RHS stamp.
 
+}
+
+impl Introspect for SampleAndHold {}
+
+impl Element for SampleAndHold {
+    fn name(&self) -> &str { "sah" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG | ElementCapabilities::DIGITAL }
 }
 
 
@@ -278,9 +313,9 @@ impl GlitchTestDevice {
     }
 }
 
-impl Element for GlitchTestDevice {
-    fn name(&self) -> &str { "glitch_test" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+impl AnalogDevice for GlitchTestDevice {}
+
+impl DigitalDevice for GlitchTestDevice {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out_net) }
     }
@@ -296,6 +331,13 @@ impl Element for GlitchTestDevice {
             sink.emit(self.out_net, out, 0.0);
         }
     }
+}
+
+impl Introspect for GlitchTestDevice {}
+
+impl Element for GlitchTestDevice {
+    fn name(&self) -> &str { "glitch_test" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
 }
 
 
@@ -847,9 +889,8 @@ fn test_a2d_drives_digital_chain() {
 
     #[allow(dead_code)]
     struct SimpleInverter { input: DigitalNet, output: DigitalNet, id: usize }
-    impl Element for SimpleInverter {
-    fn name(&self) -> &str { "inv" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+    impl AnalogDevice for SimpleInverter {}
+    impl DigitalDevice for SimpleInverter {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: std::slice::from_ref(&self.input), outputs: std::slice::from_ref(&self.output) }
     }
@@ -865,6 +906,11 @@ fn test_a2d_drives_digital_chain() {
                 sink.emit(self.output, out, 0.0);
             }
 
+}
+    impl Introspect for SimpleInverter {}
+    impl Element for SimpleInverter {
+    fn name(&self) -> &str { "inv" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
 }
 
 

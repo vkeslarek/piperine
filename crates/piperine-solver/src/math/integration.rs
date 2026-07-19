@@ -240,15 +240,18 @@ mod tests {
     }
 
     /// Mock element that returns a fixed timestep, used to verify the
-    /// stepper loop consults elements for LTE via `Element::suggest_transient_step`.
+    /// stepper loop consults elements for LTE via `AnalogDevice::suggest_transient_step`.
     #[test]
     fn lte_default_element_returns_none() {
         use crate::analysis::transient::TransientAnalysisState;
-        use crate::core::element::{Element, ElementCapabilities};
+        use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
         use crate::math::circular_array::CircularArrayBuffer2;
         use crate::solver::Context;
 
         struct PlainElement;
+        impl AnalogDevice for PlainElement {}
+        impl DigitalDevice for PlainElement {}
+        impl Introspect for PlainElement {}
         impl Element for PlainElement {
             fn name(&self) -> &str { "plain" }
             fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG }
@@ -267,14 +270,12 @@ mod tests {
     #[test]
     fn lte_element_override_returns_custom_dt() {
         use crate::analysis::transient::TransientAnalysisState;
-        use crate::core::element::{Element, ElementCapabilities};
+        use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
         use crate::math::circular_array::CircularArrayBuffer2;
         use crate::solver::Context;
 
         struct FixedLte(f64);
-        impl Element for FixedLte {
-            fn name(&self) -> &str { "fixed_lte" }
-            fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG }
+        impl AnalogDevice for FixedLte {
             fn suggest_transient_step(
                 &self,
                 _state: &TransientAnalysisState<'_>,
@@ -283,6 +284,12 @@ mod tests {
             ) -> Option<f64> {
                 Some(self.0)
             }
+        }
+        impl DigitalDevice for FixedLte {}
+        impl Introspect for FixedLte {}
+        impl Element for FixedLte {
+            fn name(&self) -> &str { "fixed_lte" }
+            fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG }
         }
 
         let buf = CircularArrayBuffer2::new(1, 2);

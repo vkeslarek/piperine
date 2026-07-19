@@ -1,4 +1,4 @@
-use piperine_solver::abi::{Element, ElementCapabilities};
+use piperine_solver::abi::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
 use piperine_solver::abi::{LogicValue, DigitalNet};
 use piperine_solver::abi::{DigitalPorts, EvalCtx, EventSink};
 
@@ -55,9 +55,9 @@ impl D2ADevice {
     }
 }
 
-impl Element for D2ADevice {
-    fn name(&self) -> &str { "d2a" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+impl AnalogDevice for D2ADevice {}
+
+impl DigitalDevice for D2ADevice {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts {
             inputs: std::slice::from_ref(&self.input_net),
@@ -81,6 +81,13 @@ impl Element for D2ADevice {
             self.current_value = new_val;
         }
     }
+}
+
+impl Introspect for D2ADevice {}
+
+impl Element for D2ADevice {
+    fn name(&self) -> &str { "d2a" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
 }
 
 

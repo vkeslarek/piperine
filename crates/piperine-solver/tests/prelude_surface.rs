@@ -1,4 +1,5 @@
 use piperine_solver::prelude::*;
+use piperine_solver::abi::{AnalogDevice, DigitalDevice, Introspect};
 
 struct Resistor {
     r: f64,
@@ -6,13 +7,7 @@ struct Resistor {
     n2: AnalogReference,
 }
 
-impl Element for Resistor {
-    fn name(&self) -> &str { "r" }
-
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
-    }
-
+impl AnalogDevice for Resistor {
     fn load_dc(
         &mut self,
         _state: &piperine_solver::abi::DcAnalysisState,
@@ -28,6 +23,18 @@ impl Element for Resistor {
     }
 }
 
+impl DigitalDevice for Resistor {}
+
+impl Introspect for Resistor {}
+
+impl Element for Resistor {
+    fn name(&self) -> &str { "r" }
+
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
+    }
+}
+
 struct Vdc {
     v: f64,
     n1: AnalogReference,
@@ -35,13 +42,7 @@ struct Vdc {
     branch: AnalogReference,
 }
 
-impl Element for Vdc {
-    fn name(&self) -> &str { "v" }
-
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
-    }
-
+impl AnalogDevice for Vdc {
     fn load_dc(
         &mut self,
         _state: &piperine_solver::abi::DcAnalysisState,
@@ -55,6 +56,18 @@ impl Element for Vdc {
             piperine_solver::abi::Stamp::Matrix(branch.clone(), self.n2.clone(), -1.0),
             piperine_solver::abi::Stamp::Rhs(branch, self.v),
         ]
+    }
+}
+
+impl DigitalDevice for Vdc {}
+
+impl Introspect for Vdc {}
+
+impl Element for Vdc {
+    fn name(&self) -> &str { "v" }
+
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
     }
 }
 

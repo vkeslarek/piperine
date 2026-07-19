@@ -999,7 +999,7 @@ fn sim_tran_above_event_toggles_switch_state() {
 #[test]
 fn digital_network_fuses_combinational_chain() {
     use piperine_codegen::jit::digital::network::{DigitalNetwork, NetworkMember};
-    use piperine_solver::prelude::Element;
+    use piperine_solver::abi::DigitalDevice;
     use piperine_solver::abi::{EvalCtx, EventSink};
     use std::sync::Arc;
 

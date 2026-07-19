@@ -8,6 +8,12 @@ struct LifecycleTestDevice {
     fail_setup: bool,
 }
 
+impl AnalogDevice for LifecycleTestDevice {}
+
+impl DigitalDevice for LifecycleTestDevice {}
+
+impl Introspect for LifecycleTestDevice {}
+
 impl Element for LifecycleTestDevice {
     fn name(&self) -> &str {
         "LifecycleTestDevice"

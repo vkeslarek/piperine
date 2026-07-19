@@ -288,7 +288,7 @@ impl<'a> NoiseSolver<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::element::{Element, ElementCapabilities};
+    use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
     use crate::analog::{AnalogReference, Netlist, NodeIdentifier};
     use crate::math::linear::Stamp;
     use num_complex::Complex64;
@@ -304,13 +304,7 @@ mod tests {
         n2: AnalogReference,
     }
 
-    impl Element for NoisyResistor {
-        fn name(&self) -> &str { &self.name }
-
-        fn capabilities(&self) -> ElementCapabilities {
-            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::LOADS_AC | ElementCapabilities::EMITS_NOISE
-        }
-
+    impl AnalogDevice for NoisyResistor {
         fn load_dc(
             &mut self,
             _state: &crate::abi::DcAnalysisState<'_>,
@@ -350,6 +344,18 @@ mod tests {
                 Noise::new((self.n1.clone(), self.n2.clone()), thermal_psd).named("thermal", NoiseKind::Thermal),
                 Noise::new((self.n1.clone(), self.n2.clone()), 1e-24).named("flicker", NoiseKind::Flicker)
             ]
+        }
+    }
+
+    impl DigitalDevice for NoisyResistor {}
+
+    impl Introspect for NoisyResistor {}
+
+    impl Element for NoisyResistor {
+        fn name(&self) -> &str { &self.name }
+
+        fn capabilities(&self) -> ElementCapabilities {
+            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::LOADS_AC | ElementCapabilities::EMITS_NOISE
         }
     }
 

@@ -184,7 +184,7 @@ impl CircuitBuilder {
 mod tests {
     use super::*;
     use crate::analog::AnalogReference;
-    use crate::core::element::{Element, ElementCapabilities};
+    use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
     use crate::math::linear::Stamp;
     use crate::analysis::dc::DcAnalysisState;
     use crate::solver::Context;
@@ -198,13 +198,7 @@ mod tests {
         branch: Option<AnalogReference>,
     }
 
-    impl Element for TestVsource {
-        fn name(&self) -> &str { "v" }
-        fn capabilities(&self) -> ElementCapabilities {
-            ElementCapabilities::ANALOG
-                | ElementCapabilities::LOADS_DC
-                | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
-        }
+    impl AnalogDevice for TestVsource {
         fn allocate_unknowns(&mut self, alloc: &mut UnknownAllocator<'_>) {
             self.branch = Some(alloc.branch("v", "i"));
         }
@@ -224,14 +218,31 @@ mod tests {
         }
     }
 
+    impl DigitalDevice for TestVsource {}
+
+    impl Introspect for TestVsource {}
+
+    impl Element for TestVsource {
+        fn name(&self) -> &str { "v" }
+        fn capabilities(&self) -> ElementCapabilities {
+            ElementCapabilities::ANALOG
+                | ElementCapabilities::LOADS_DC
+                | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
+        }
+    }
+
     // Test double that allocates without declaring HAS_INTERNAL_UNKNOWNS
     struct BadElement;
-    impl Element for BadElement {
-        fn name(&self) -> &str { "bad" }
-        fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG }
+    impl AnalogDevice for BadElement {
         fn allocate_unknowns(&mut self, alloc: &mut UnknownAllocator<'_>) {
             let _ = alloc.branch("bad", "x");
         }
+    }
+    impl DigitalDevice for BadElement {}
+    impl Introspect for BadElement {}
+    impl Element for BadElement {
+        fn name(&self) -> &str { "bad" }
+        fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG }
     }
 
     #[test]

@@ -13,9 +13,9 @@
 use num_complex::Complex64;
 
 use piperine_solver::abi::{
-    AnalogReference, BranchIdentifier, CircularArrayBuffer2, DcAnalysisState, Element,
-    ElementCapabilities, EvalCtx, EventSink, Netlist, NodeIdentifier, Stamp,
-    TransientAnalysisContext, TransientAnalysisState, TrBdf2, TrBdf2Phase,
+    AnalogDevice, AnalogReference, BranchIdentifier, CircularArrayBuffer2, DcAnalysisState,
+    DigitalDevice, Element, ElementCapabilities, EvalCtx, EventSink, Introspect, Netlist,
+    NodeIdentifier, Stamp, TransientAnalysisContext, TransientAnalysisState, TrBdf2, TrBdf2Phase,
     DigitalPorts, DigitalNet, LogicValue,
 };
 use piperine_solver::prelude::{
@@ -44,14 +44,7 @@ impl Resistor {
     }
 }
 
-impl Element for Resistor {
-    fn name(&self) -> &str { "r" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::LOADS_AC
-            | ElementCapabilities::LOADS_TRAN
-    }
+impl AnalogDevice for Resistor {
     fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
         self.stamps(1.0 / self.r)
     }
@@ -79,6 +72,20 @@ impl Element for Resistor {
     }
 }
 
+impl DigitalDevice for Resistor {}
+
+impl Introspect for Resistor {}
+
+impl Element for Resistor {
+    fn name(&self) -> &str { "r" }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG
+            | ElementCapabilities::LOADS_DC
+            | ElementCapabilities::LOADS_AC
+            | ElementCapabilities::LOADS_TRAN
+    }
+}
+
 /// Ideal DC voltage source with its own branch-current unknown. The forced
 /// value tracks the source-stepping homotopy scale (`src_scale`).
 struct Vdc {
@@ -100,14 +107,7 @@ impl Vdc {
     }
 }
 
-impl Element for Vdc {
-    fn name(&self) -> &str { "v" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::LOADS_TRAN
-            | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
-    }
+impl AnalogDevice for Vdc {
     fn load_dc(&mut self, s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
         self.branch_stamps(self.v * s.src_scale)
     }
@@ -118,6 +118,20 @@ impl Element for Vdc {
         _c: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
         self.branch_stamps(self.v)
+    }
+}
+
+impl DigitalDevice for Vdc {}
+
+impl Introspect for Vdc {}
+
+impl Element for Vdc {
+    fn name(&self) -> &str { "v" }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG
+            | ElementCapabilities::LOADS_DC
+            | ElementCapabilities::LOADS_TRAN
+            | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
     }
 }
 
@@ -144,14 +158,7 @@ impl SineVsrc {
     }
 }
 
-impl Element for SineVsrc {
-    fn name(&self) -> &str { "vsin" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::LOADS_TRAN
-            | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
-    }
+impl AnalogDevice for SineVsrc {
     fn load_dc(&mut self, _s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
         self.branch_stamps(0.0)
     }
@@ -166,6 +173,20 @@ impl Element for SineVsrc {
     }
 }
 
+impl DigitalDevice for SineVsrc {}
+
+impl Introspect for SineVsrc {}
+
+impl Element for SineVsrc {
+    fn name(&self) -> &str { "vsin" }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG
+            | ElementCapabilities::LOADS_DC
+            | ElementCapabilities::LOADS_TRAN
+            | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
+    }
+}
+
 /// Shockley diode (`i = is·(exp(v/vt) − 1)`) between `n1` and `n2`, stamped as a
 /// Norton companion linearised at the current Newton guess.
 struct Diode {
@@ -175,11 +196,7 @@ struct Diode {
     n2: AnalogReference,
 }
 
-impl Element for Diode {
-    fn name(&self) -> &str { "d" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
-    }
+impl AnalogDevice for Diode {
     fn load_dc(&mut self, s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
         let v = |r: &AnalogReference| {
             r.idx()
@@ -202,6 +219,17 @@ impl Element for Diode {
     }
 }
 
+impl DigitalDevice for Diode {}
+
+impl Introspect for Diode {}
+
+impl Element for Diode {
+    fn name(&self) -> &str { "d" }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
+    }
+}
+
 /// Linear capacitor to ground (`Q = C·v`). Transient companion mirrors the
 /// codegen kernel's TR-BDF2 stamping (`TrBdf2::stage_coeffs`, MD-07).
 struct CapGnd {
@@ -209,11 +237,7 @@ struct CapGnd {
     node: AnalogReference,
 }
 
-impl Element for CapGnd {
-    fn name(&self) -> &str { "c" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_TRAN | ElementCapabilities::LOADS_AC
-    }
+impl AnalogDevice for CapGnd {
     fn load_transient(
         &mut self,
         states: &TransientAnalysisState<'_>,
@@ -256,6 +280,17 @@ impl Element for CapGnd {
     }
 }
 
+impl DigitalDevice for CapGnd {}
+
+impl Introspect for CapGnd {}
+
+impl Element for CapGnd {
+    fn name(&self) -> &str { "c" }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_TRAN | ElementCapabilities::LOADS_AC
+    }
+}
+
 /// Ideal inductor to ground modelled as a node-to-ground admittance
 /// `Y = 1/(jωL)` for the AC resonator (no DC/transient participation here).
 struct AcIndGnd {
@@ -263,11 +298,7 @@ struct AcIndGnd {
     node: AnalogReference,
 }
 
-impl Element for AcIndGnd {
-    fn name(&self) -> &str { "l" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_AC
-    }
+impl AnalogDevice for AcIndGnd {
     fn load_ac(
         &mut self,
         _dc: &piperine_solver::abi::DcAnalysisResult,
@@ -280,17 +311,24 @@ impl Element for AcIndGnd {
     }
 }
 
+impl DigitalDevice for AcIndGnd {}
+
+impl Introspect for AcIndGnd {}
+
+impl Element for AcIndGnd {
+    fn name(&self) -> &str { "l" }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_AC
+    }
+}
+
 /// AC current source injecting `i` amps into `node` (small-signal stimulus).
 struct AcISrc {
     i: f64,
     node: AnalogReference,
 }
 
-impl Element for AcISrc {
-    fn name(&self) -> &str { "iac" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_AC
-    }
+impl AnalogDevice for AcISrc {
     fn load_ac(
         &mut self,
         _dc: &piperine_solver::abi::DcAnalysisResult,
@@ -298,6 +336,17 @@ impl Element for AcISrc {
         _c: &Context,
     ) -> Vec<Stamp<AnalogReference, Complex64>> {
         vec![Stamp::Rhs(self.node.clone(), Complex64::new(self.i, 0.0))]
+    }
+}
+
+impl DigitalDevice for AcISrc {}
+
+impl Introspect for AcISrc {}
+
+impl Element for AcISrc {
+    fn name(&self) -> &str { "iac" }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_AC
     }
 }
 
@@ -436,13 +485,20 @@ struct Comparator {
     last: LogicValue,
 }
 
+impl AnalogDevice for Comparator {}
+
+impl DigitalDevice for Comparator {
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out) }
+    }
+}
+
+impl Introspect for Comparator {}
+
 impl Element for Comparator {
     fn name(&self) -> &str { "cmp" }
     fn capabilities(&self) -> ElementCapabilities {
         ElementCapabilities::DIGITAL | ElementCapabilities::SAMPLES_ANALOG
-    }
-    fn boundary(&self) -> DigitalPorts<'_> {
-        DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out) }
     }
     fn accept_timestep(
         &mut self,
@@ -469,17 +525,7 @@ struct GatedISink {
     g: f64,
 }
 
-impl Element for GatedISink {
-    fn name(&self) -> &str { "gsink" }
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-            | ElementCapabilities::LOADS_DC
-            | ElementCapabilities::DIGITAL
-            | ElementCapabilities::DEPENDS_ON_DIGITAL
-    }
-    fn boundary(&self) -> DigitalPorts<'_> {
-        DigitalPorts { inputs: std::slice::from_ref(&self.ctrl), outputs: &[] }
-    }
+impl AnalogDevice for GatedISink {
     fn load_dc(&mut self, s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
         let on = s.digital.get(self.ctrl.0).copied() == Some(LogicValue::One);
         if on {
@@ -487,6 +533,24 @@ impl Element for GatedISink {
         } else {
             Vec::new()
         }
+    }
+}
+
+impl DigitalDevice for GatedISink {
+    fn boundary(&self) -> DigitalPorts<'_> {
+        DigitalPorts { inputs: std::slice::from_ref(&self.ctrl), outputs: &[] }
+    }
+}
+
+impl Introspect for GatedISink {}
+
+impl Element for GatedISink {
+    fn name(&self) -> &str { "gsink" }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG
+            | ElementCapabilities::LOADS_DC
+            | ElementCapabilities::DIGITAL
+            | ElementCapabilities::DEPENDS_ON_DIGITAL
     }
 }
 
@@ -530,9 +594,9 @@ struct DigitalSource {
     out: DigitalNet,
 }
 
-impl Element for DigitalSource {
-    fn name(&self) -> &str { "src" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+impl AnalogDevice for DigitalSource {}
+
+impl DigitalDevice for DigitalSource {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &[], outputs: std::slice::from_ref(&self.out) }
     }
@@ -541,15 +605,22 @@ impl Element for DigitalSource {
     }
 }
 
+impl Introspect for DigitalSource {}
+
+impl Element for DigitalSource {
+    fn name(&self) -> &str { "src" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+}
+
 /// Inverter with zero delay for a purely digital combinational chain.
 struct Inv {
     input: DigitalNet,
     output: DigitalNet,
 }
 
-impl Element for Inv {
-    fn name(&self) -> &str { "inv" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+impl AnalogDevice for Inv {}
+
+impl DigitalDevice for Inv {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts {
             inputs: std::slice::from_ref(&self.input),
@@ -567,6 +638,13 @@ impl Element for Inv {
     }
 }
 
+impl Introspect for Inv {}
+
+impl Element for Inv {
+    fn name(&self) -> &str { "inv" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+}
+
 /// Two-input AND gate.
 struct And2 {
     a: DigitalNet,
@@ -581,9 +659,9 @@ impl And2 {
     }
 }
 
-impl Element for And2 {
-    fn name(&self) -> &str { "and" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+impl AnalogDevice for And2 {}
+
+impl DigitalDevice for And2 {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &self.inputs, outputs: std::slice::from_ref(&self.output) }
     }
@@ -597,6 +675,13 @@ impl Element for And2 {
         };
         sink.emit(self.output, out, 0.0);
     }
+}
+
+impl Introspect for And2 {}
+
+impl Element for And2 {
+    fn name(&self) -> &str { "and" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
 }
 
 /// Pure-digital combinational snapshot: two inverters feeding an AND gate.
