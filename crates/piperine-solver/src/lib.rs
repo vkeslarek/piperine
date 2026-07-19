@@ -1,3 +1,4 @@
+pub(crate) mod analyses;
 pub(crate) mod analysis;
 pub(crate) mod analog;
 pub(crate) mod core;
