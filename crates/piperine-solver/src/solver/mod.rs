@@ -6,7 +6,6 @@
 //! elements live in `crate::analysis`.
 
 use crate::analog::Netlist;
-use crate::math::unit::{Ohm, Siemens};
 use faer::{Par, set_global_parallelism};
 use ndarray::ArrayView1;
 use std::num::NonZeroUsize;
@@ -31,11 +30,11 @@ static INIT: Once = Once::new();
 /// through `Context`. Extracted from the old flat `Context` fields (MD-04).
 #[derive(Debug, Clone, Copy)]
 pub struct Tolerances {
-    pub gmin: Siemens,
+    pub gmin: f64,
     pub reltol: f64,
     pub vntol: f64,
     pub abstol: f64,
-    pub min_res: Ohm,
+    pub min_res: f64,
     /// Truncation error tolerance for adaptive timestep (default: 7.0)
     pub trtol: f64,
     /// Charge tolerance in Coulombs for truncation error (default: 1e-14)

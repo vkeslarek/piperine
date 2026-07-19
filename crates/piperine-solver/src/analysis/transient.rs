@@ -4,7 +4,6 @@ use crate::digital::LogicValue;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::InitialValue;
 use crate::math::linear::Stamp;
-use crate::math::unit::Second;
 use crate::solver::Context;
 use std::ops::Deref;
 
@@ -38,32 +37,32 @@ impl Deref for TransientAnalysisState<'_> {
 #[derive(Clone)]
 pub struct TransientAnalysisOptions {
     /// Simulation stop time
-    pub stop_time: Second,
+    pub stop_time: f64,
 
     /// Initial timestep for the adaptive stepper (SPICE has been adaptive
     /// since v2; the integrator varies `dt` from here via the PI controller).
     /// A user-supplied `.step` becomes this initial value.
-    pub dt: Second,
+    pub dt: f64,
 
     /// Minimum allowed timestep (default: 1e-15 seconds)
-    pub dt_min: Second,
+    pub dt_min: f64,
 
     /// Maximum allowed timestep (default: stop_time / 100)
-    pub dt_max: Second,
+    pub dt_max: f64,
 
     /// Earliest time at which a step is *recorded* (host `run_tran` `start`
     /// `TranConfig.start`). The solver still integrates from t=0 — the state
     /// evolution matters — but steps with `t < record_from` are dropped from
     /// the result (ngspice `.tran tstart tstop` semantics). Defaults to 0
     /// (record everything, the pre-existing behavior).
-    pub record_from: Second,
+    pub record_from: f64,
 
     /// Simulation start time (default 0). The integrator's clock starts
     /// here — `$abstime`, breakpoints, and scheduled sets are all absolute
     /// times. Used by a host restarting a transient from `t` after a
     /// structural rebuild (LIVE-16); the starting state comes from the
     /// initial operating point overlaid with `apply_initial_conditions`.
-    pub start_time: Second,
+    pub start_time: f64,
 
     /// Opt-in per-step recording of device runtime banks (state/vars),
     /// keyed by device label on each [`TransientStep`]. Off by default —
@@ -77,7 +76,7 @@ pub struct TransientAnalysisOptions {
 impl TransientAnalysisOptions {
     /// Create transient options. The integrator is always adaptive (PI
     /// controller); `dt` is the initial step size, grown/shrunk from there.
-    pub fn new(stop_time: Second, dt: Second) -> Self {
+    pub fn new(stop_time: f64, dt: f64) -> Self {
         Self {
             stop_time,
             dt,
@@ -90,25 +89,25 @@ impl TransientAnalysisOptions {
     }
 
     /// Set the simulation start time (restart-from-`t` semantics).
-    pub fn with_start(mut self, start_time: Second) -> Self {
+    pub fn with_start(mut self, start_time: f64) -> Self {
         self.start_time = start_time;
         self
     }
 
     /// Set minimum timestep
-    pub fn with_dt_min(mut self, dt_min: Second) -> Self {
+    pub fn with_dt_min(mut self, dt_min: f64) -> Self {
         self.dt_min = dt_min;
         self
     }
 
     /// Set maximum timestep
-    pub fn with_dt_max(mut self, dt_max: Second) -> Self {
+    pub fn with_dt_max(mut self, dt_max: f64) -> Self {
         self.dt_max = dt_max;
         self
     }
 
     /// Set the earliest recorded time (`TranConfig.start`).
-    pub fn with_record_from(mut self, record_from: Second) -> Self {
+    pub fn with_record_from(mut self, record_from: f64) -> Self {
         self.record_from = record_from;
         self
     }
@@ -144,20 +143,20 @@ impl From<TransientAnalysisOptions> for TransientContext {
 /// method-selection surface (TR-BDF2 is the sole integration scheme).
 #[derive(Clone, Copy)]
 pub struct TransientAnalysisContext {
-    pub time: Second,
-    pub tfinal: Second,
+    pub time: f64,
+    pub tfinal: f64,
     /// Which sub-step the kernel is stamping: [`Trapezoidal`][TrBdf2Phase::Trapezoidal]
     /// over `γh` (solving for `x_{n+γ}`) or [`Bdf2`][TrBdf2Phase::Bdf2] over
     /// `(1−γ)h` (solving for `x_{n+1}` from `x_{n+γ}` and `x_n`).
     pub phase: crate::math::integration::TrBdf2Phase,
     /// The full step size `h = t_{n+1} − t_n`. The companion sub-step (`γh` or
     /// `(1−γ)h`) is derived from `phase` inside `TrBdf2::phase_coeffs`.
-    pub h: Second,
+    pub h: f64,
     /// The previous accepted step size. The TR stage's trapezoidal companion
     /// needs the capacitor current at `t_n`, which the kernel re-derives from
     /// the prior step's BDF2 formula using this. Zero on the first step (no
     /// history → no current, matching the DC operating point).
-    pub prev_h: Second,
+    pub prev_h: f64,
 }
 
 pub trait TransientAnalysis {

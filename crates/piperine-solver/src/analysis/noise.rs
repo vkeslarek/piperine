@@ -3,20 +3,19 @@ use crate::analysis::ac::{AcAnalysis, AcAnalysisContext, AcSweepAnalysisOptions}
 use crate::analysis::dc::DcAnalysis;
 use crate::prelude::DcAnalysisResult;
 use crate::analog::{AnalogReference, NodeIdentifier};
-use crate::math::unit::AmpereSquaredSecond;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NoiseKind { Thermal, Shot, Flicker, Other }
 
 pub struct Noise {
     pub terminals: (AnalogReference, AnalogReference),
-    pub value: AmpereSquaredSecond,
+    pub value: f64,
     pub name: Option<String>,
     pub kind: NoiseKind,
 }
 
 impl Noise {
-    pub fn new(terminals: (AnalogReference, AnalogReference), value: AmpereSquaredSecond) -> Self {
+    pub fn new(terminals: (AnalogReference, AnalogReference), value: f64) -> Self {
         Self { terminals, value, name: None, kind: NoiseKind::Other }
     }
     pub fn named(mut self, name: impl Into<String>, kind: NoiseKind) -> Self {

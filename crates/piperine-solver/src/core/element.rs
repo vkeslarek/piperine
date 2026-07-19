@@ -14,7 +14,6 @@ use crate::digital::{DigitalNet, LogicValue};
 use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::linear::Stamp;
-use crate::math::unit::Second;
 use crate::solver::Context;
 
 bitflags::bitflags! {
@@ -155,7 +154,7 @@ pub trait Element: Send + Sync {
     /// The solver reads this each step and merges it with the digital event
     /// queue. The times are absolute (not relative), so they survive step
     /// rollback.
-    fn next_breakpoints(&self, _from: Second, _horizon: Second) -> Vec<Second> { Vec::new() }
+    fn next_breakpoints(&self, _from: f64, _horizon: f64) -> Vec<f64> { Vec::new() }
 
     /// `@initial` UIC seeds: the branch `(plus, minus)` and the voltage the
     /// device wants across it at t=0 (SPICE `.ic`). Ground terminals are

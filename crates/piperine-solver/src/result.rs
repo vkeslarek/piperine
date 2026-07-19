@@ -2,7 +2,6 @@ use crate::error::Error;
 use crate::analog::{BranchIdentifier, AnalogVariable, NodeIdentifier};
 use crate::core::net::Net;
 use crate::digital::LogicValue;
-use crate::math::unit::Hertz;
 use num_complex::Complex;
 use std::collections::HashMap;
 use std::slice::Iter;
@@ -270,12 +269,12 @@ impl AcAnalysisResult {
 }
 
 pub struct AcAnalysisStep {
-    pub frequency: Hertz,
+    pub frequency: f64,
     values: HashMap<Arc<AnalogVariable>, Complex<f64>>,
 }
 
 impl AcAnalysisStep {
-    pub fn new(frequency: Hertz, values: HashMap<Arc<AnalogVariable>, Complex<f64>>) -> Self {
+    pub fn new(frequency: f64, values: HashMap<Arc<AnalogVariable>, Complex<f64>>) -> Self {
         Self { frequency, values }
     }
 

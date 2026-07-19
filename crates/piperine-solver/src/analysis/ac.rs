@@ -3,12 +3,11 @@ use crate::analysis::dc::DcAnalysis;
 use crate::prelude::DcAnalysisResult;
 use crate::analog::AnalogReference;
 use crate::math::linear::Stamp;
-use crate::math::unit::Hertz;
 use crate::solver::Context;
 use num_complex::Complex;
 
 pub struct AcAnalysisContext {
-    pub frequency: Hertz,
+    pub frequency: f64,
 }
 
 pub trait AcAnalysis: DcAnalysis {
