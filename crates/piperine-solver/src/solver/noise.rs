@@ -1,4 +1,4 @@
-use crate::analysis::ac::AcAnalysisContext;
+use crate::analyses::ac::AcAnalysisContext;
 use crate::prelude::DcAnalysisResult;
 use crate::analysis::noise::NoiseAnalysisOptions;
 use crate::prelude::NoiseAnalysisResult;
@@ -7,7 +7,7 @@ use crate::core::circuit::CircuitInstance;
 use crate::analog::{AnalogReference, AnalogVariable};
 use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
 use crate::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
-use crate::solver::dc::DcSolver;
+use crate::analyses::dc::DcSolver;
 use crate::solver::Context;
 use ndarray::Array1;
 use num_complex::Complex;
@@ -292,7 +292,7 @@ mod tests {
     use crate::analog::{AnalogReference, Netlist, NodeIdentifier};
     use crate::math::linear::Stamp;
     use num_complex::Complex64;
-    use crate::analysis::ac::{AcSweepAnalysisOptions, AcAnalysisContext};
+    use crate::analyses::ac::{AcSweepAnalysisOptions, AcAnalysisContext};
     use crate::prelude::DcAnalysisResult;
     use crate::analysis::noise::{Noise, NoiseKind};
     use crate::solver::Context;

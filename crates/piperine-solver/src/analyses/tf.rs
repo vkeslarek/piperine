@@ -1,14 +1,59 @@
-use crate::analysis::dc::DcAnalysisState;
-use crate::prelude::DcAnalysisResult;
-use crate::analysis::tf::TransferFunctionAnalysisOptions;
-use crate::prelude::{TransferFunctionAnalysisResult, TransferType};
+#![allow(dead_code)]
+use crate::analog::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
+use crate::analyses::Context;
+use crate::analyses::dc::{DcAnalysisState, DcSolver};
 use crate::core::circuit::CircuitInstance;
-use crate::analog::{AnalogReference, AnalogVariable};
 use crate::math::faer::FaerSymbolicMatrix;
 use crate::math::linear::{SymbolicLinearSystem, SymbolicMatrix};
-use crate::solver::dc::DcSolver;
-use crate::solver::Context;
+use crate::prelude::DcAnalysisResult;
+use crate::prelude::{TransferFunctionAnalysisResult, TransferType};
+
 use ndarray::Array1;
+
+// ── request/state ────────────────────────────────────────────────────────
+
+/// Transfer Function analysis options.
+///
+/// Specifies the input source and output variable for transfer function analysis.
+/// Transfer function analysis calculates DC small-signal transfer characteristics:
+/// - **Gain:** dOutput/dInput
+/// - **Input Resistance:** Resistance seen by the input source
+/// - **Output Resistance:** Thévenin/Norton equivalent resistance at output
+#[derive(Clone, Debug)]
+pub struct TransferFunctionAnalysisOptions {
+    /// Output variable to measure.
+    ///
+    /// Can be:
+    /// - `AnalogVariable::Node(n)` for voltage at node n (referenced to GND)
+    /// - `AnalogVariable::Branch(b)` for current through branch b
+    pub output: AnalogVariable,
+
+    /// Reference node for differential voltage measurement.
+    ///
+    /// - `None`: Single-ended measurement V(output) with implicit GND reference
+    /// - `Some(n)`: Differential measurement V(output, n) = V(output) - V(n)
+    ///
+    /// Only used when output is a Node. Ignored for Branch outputs.
+    pub output_ref: Option<NodeIdentifier>,
+
+    /// Input source branch identifier.
+    ///
+    /// Identifies the voltage or current source to use as input.
+    /// Examples:
+    /// - `BranchIdentifier::from_component("V1")` for voltage source V1
+    /// - `BranchIdentifier::from_component("I1")` for current source I1
+    pub input_source: BranchIdentifier,
+}
+
+
+
+/// Per-analysis config for TF. Thin wrapper over the analysis options.
+#[derive(Debug, Clone)]
+pub struct TfContext {
+    pub options: TransferFunctionAnalysisOptions,
+}
+
+// ── driver ───────────────────────────────────────────────────────────────
 
 /// Transfer Function solver.
 ///
@@ -472,4 +517,3 @@ mod a13_no_debug_eprintln {
         }
     }
 }
-

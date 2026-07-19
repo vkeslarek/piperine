@@ -1,6 +1,6 @@
 #![allow(dead_code)]
-use crate::analysis::ac::{AcAnalysis, AcAnalysisContext, AcSweepAnalysisOptions};
-use crate::analysis::dc::DcAnalysis;
+use crate::analyses::ac::{AcAnalysis, AcAnalysisContext, AcSweepAnalysisOptions};
+use crate::analyses::dc::DcAnalysis;
 use crate::prelude::DcAnalysisResult;
 use crate::analog::{AnalogReference, NodeIdentifier};
 

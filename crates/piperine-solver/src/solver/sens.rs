@@ -12,7 +12,7 @@
 use crate::core::circuit::CircuitInstance;
 use crate::core::introspect::{Invalidation, Value};
 use crate::error::{Error, SolverDomain};
-use crate::solver::dc::DcSolver;
+use crate::analyses::dc::DcSolver;
 use crate::analyses::Policy;
 use crate::analysis::sens::{SensAnalysisOptions, SensResult};
 use crate::Context;

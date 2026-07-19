@@ -227,7 +227,7 @@ impl Netlist {
     /// its dense [`AnalogReference`]. Variables with no reference in this
     /// netlist are skipped, mirroring the previous `as_iv` behavior.
     ///
-    /// [`DcAnalysisResult`]: crate::analysis::dc::DcAnalysisResult
+    /// [`DcAnalysisResult`]: crate::analyses::dc::DcAnalysisResult
     pub fn initial_values(
         &self,
         values: &std::collections::HashMap<std::sync::Arc<AnalogVariable>, f64>,

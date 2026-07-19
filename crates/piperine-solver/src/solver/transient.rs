@@ -12,7 +12,7 @@ use crate::math::iv::InitialValue;
 use crate::math::linear::{AsIndex, Stamp};
 use crate::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::analyses::convergence::StepperStrategy;
-use crate::solver::dc::DcSolver;
+use crate::analyses::dc::DcSolver;
 use crate::solver::Context;
 use log::debug;
 use ndarray::ArrayView1;

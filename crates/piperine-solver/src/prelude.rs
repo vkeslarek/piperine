@@ -23,9 +23,9 @@ pub use crate::core::net::{Net, NetKind};
 pub use crate::digital::{DigitalNet, LogicValue};
 
 // ── Run configuration ──────────────────────────────────────────────────────
-pub use crate::analysis::ac::AcSweepAnalysisOptions;
+pub use crate::analyses::ac::AcSweepAnalysisOptions;
 pub use crate::analysis::noise::{NoiseAnalysisOptions, NoiseKind};
-pub use crate::analysis::tf::TransferFunctionAnalysisOptions;
+pub use crate::analyses::tf::TransferFunctionAnalysisOptions;
 pub use crate::analysis::pss::{PssAnalysisOptions, PssResult, PssStats};
 pub use crate::analysis::sens::{SensAnalysisOptions, SensResult};
 pub use crate::analysis::transient::TransientAnalysisOptions;

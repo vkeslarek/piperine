@@ -1,15 +1,15 @@
 use crate::analysis::noise::NoiseAnalysisOptions;
-use crate::analysis::tf::TransferFunctionAnalysisOptions;
+use crate::analyses::tf::TransferFunctionAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
 use crate::analog::Netlist;
 use crate::core::element::{Element, ElementCapabilities};
 use crate::digital::{DigitalState, DigitalTopology};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::solver::Context;
-use crate::solver::ac::AcSolver;
-use crate::solver::dc::DcSolver;
+use crate::analyses::ac::AcSolver;
+use crate::analyses::dc::DcSolver;
 use crate::solver::noise::NoiseSolver;
-use crate::solver::tf::TransferFunctionSolver;
+use crate::analyses::tf::TransferFunctionSolver;
 use crate::solver::transient::TransientSolver;
 
 

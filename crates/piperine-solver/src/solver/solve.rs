@@ -1,12 +1,12 @@
 use crate::analysis::noise::NoiseAnalysisOptions;
-use crate::analysis::tf::TransferFunctionAnalysisOptions;
+use crate::analyses::tf::TransferFunctionAnalysisOptions;
 use crate::analysis::transient::TransientAnalysisOptions;
 use crate::core::circuit::CircuitInstance;
 use crate::result::Result;
-use crate::solver::ac::AcSolver;
-use crate::solver::dc::DcSolver;
+use crate::analyses::ac::AcSolver;
+use crate::analyses::dc::DcSolver;
 use crate::solver::noise::NoiseSolver;
-use crate::solver::tf::TransferFunctionSolver;
+use crate::analyses::tf::TransferFunctionSolver;
 use crate::solver::transient::TransientSolver;
 use crate::solver::{Context, Policy};
 

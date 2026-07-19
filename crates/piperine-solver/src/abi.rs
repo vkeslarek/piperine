@@ -19,8 +19,8 @@ pub use crate::analog::{
 };
 // Solution history + per-analysis states/contexts
 pub use crate::math::circular_array::CircularArrayBuffer2;
-pub use crate::analysis::ac::AcAnalysisContext;
-pub use crate::analysis::dc::DcAnalysisState;
+pub use crate::analyses::ac::AcAnalysisContext;
+pub use crate::analyses::dc::DcAnalysisState;
 pub use crate::prelude::DcAnalysisResult;
 pub use crate::analysis::noise::{Noise, NoiseKind};
 pub use crate::analysis::transient::{
