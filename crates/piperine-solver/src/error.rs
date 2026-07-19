@@ -19,6 +19,7 @@ pub enum SolverDomain {
     Element,
     Sens,
     Pss,
+    Pz,
 }
 
 impl SolverDomain {
@@ -37,6 +38,7 @@ impl SolverDomain {
             SolverDomain::Element => "Element",
             SolverDomain::Sens => "Sens",
             SolverDomain::Pss => "PSS",
+            SolverDomain::Pz => "PZ",
         }
     }
 }

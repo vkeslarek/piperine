@@ -372,6 +372,16 @@ pub enum TransferType {
     CurrentGain,
 }
 
+/// Pole-zero analysis (`.pz`) result: the finite poles and zeros of the
+/// linearized input→output transfer function, in rad/s — see
+/// [`PoleZeroSolver`](crate::analyses::pz::PoleZeroSolver).
+#[allow(dead_code)] // populated by PoleZeroSolver::solve, landing in the next task
+#[derive(Debug, Clone, Default)]
+pub struct PoleZeroResult {
+    pub poles: Vec<Complex<f64>>,
+    pub zeros: Vec<Complex<f64>>,
+}
+
 impl std::fmt::Display for TransferType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

@@ -22,6 +22,7 @@ pub mod convergence;
 pub mod dc;
 pub mod noise;
 pub mod pss;
+pub mod pz;
 pub mod sens;
 pub mod tf;
 pub mod transient;
