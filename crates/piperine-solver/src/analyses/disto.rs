@@ -28,6 +28,18 @@
 //! carry `j·3ω1`). Solving `Y(j·3ω1)·X3 = −I3` yields
 //! `HD3 = |X3(out)| / |X1(out)|` (DISTO-01).
 //!
+//! **Two-tone (DISTO-02).** With inputs at `F1` and `F2` (equal
+//! amplitudes, the ngspice `.disto` convention — `skw2`/`refpow` are
+//! deck-level frequency-ratio/dB-presentation knobs that do not change
+//! the ratios), first order is solved per tone. A two-tone product
+//! `Re{a·e^{jω1t}}·Re{b·e^{jω2t}}` lands at `F1+F2` with phasor `a·b/2`
+//! and at `|F1−F2|` with `a·b*/2`, so the second-order mix current is
+//! `½·Σ H_jk·a_j·b_k` (sum) resp. `½·Σ H_jk·a_j·b_k*` (difference);
+//! `IM2 = |X2(out, F1+F2)| / |X1(out, F1)|`. Third-order intermod at
+//! `2F1−F2` collects `(1/24)·Σ T_jkl·a_j·a_k·b_l*` plus the cross of
+//! `f''` with the second-order responses, `¼·Σ H_jk·(a_j·c_k(F1−F2)* +
+//! b_j*·c_k(2F1))`; `IM3 = |X3(out, 2F1−F2)| / |X1(out, F1)|`.
+//!
 //! Devices whose nonlinearity cannot be differentiated fail loud at
 //! compile time (`CodegenError::Unsupported`, DISTO-04) — never a silent
 //! zero row.
@@ -98,12 +110,15 @@ pub struct Disto3 {
 
 // ── request/state ────────────────────────────────────────────────────────
 
-/// Distortion analysis options: the stimulus tone and the output the
+/// Distortion analysis options: the stimulus tone(s) and the output the
 /// distortion ratios are measured at.
 #[derive(Clone, Debug)]
 pub struct DistoOptions {
-    /// Single-tone stimulus frequency `F1` (Hz).
+    /// Stimulus frequency `F1` (Hz).
     pub f1: f64,
+    /// Second tone `F2` (Hz); `Some` selects two-tone mode (DISTO-02).
+    /// Both tones carry `amplitude` (equal-amplitude convention).
+    pub f2: Option<f64>,
     /// Stimulus amplitude (peak): every AC stimulus magnitude in the
     /// circuit is scaled by this factor for the first-order solve.
     pub amplitude: f64,
@@ -186,6 +201,14 @@ impl<'a> DistoSolver<'a> {
                 format!("`.disto` requires a positive stimulus frequency, got f1 = {}", options.f1),
             ));
         }
+        if let Some(f2) = options.f2
+            && (f2 <= 0.0 || f2 == options.f1)
+        {
+            return Err(Error::simple(
+                SolverDomain::Disto,
+                format!("`.disto` two-tone requires f2 > 0 and f2 ≠ f1, got f2 = {f2}"),
+            ));
+        }
         if options.amplitude <= 0.0 {
             return Err(Error::simple(
                 SolverDomain::Disto,
@@ -231,8 +254,13 @@ impl<'a> DistoSolver<'a> {
     }
 
     /// Single-tone distortion: first order at `F1`, second order at
-    /// `2·F1`, returning `HD2` (DISTO-01).
+    /// `2·F1`, third order at `3·F1`, returning `HD2`/`HD3` (DISTO-01).
+    /// Two-tone mode ([`DistoOptions::f2`]) computes the intermodulation
+    /// products instead, returning `IM2`/`IM3` (DISTO-02).
     pub fn solve(&mut self) -> crate::result::Result<DistoResult> {
+        if self.options.f2.is_some() {
+            return self.solve_two_tone();
+        }
         let f1 = self.options.f1;
         let omega1 = 2.0 * std::f64::consts::PI * f1;
 
@@ -279,6 +307,180 @@ impl<'a> DistoSolver<'a> {
         self.system.stim_scale = stim_scale;
         self.system.nonlinear_rhs = extra;
         Ok(self.solver.solve(&mut self.system, self.policy.max_iter)?)
+    }
+
+    /// Two-tone distortion (DISTO-02): first order per tone, second-order
+    /// mixes at `F1+F2` (reported as IM2) and `|F1−F2|`, third-order at
+    /// `2F1−F2` (reported as IM3).
+    fn solve_two_tone(&mut self) -> crate::result::Result<DistoResult> {
+        let f1 = self.options.f1;
+        let f2 = self.options.f2.expect("two-tone mode checked by solve");
+        let (w1, w2) = (
+            2.0 * std::f64::consts::PI * f1,
+            2.0 * std::f64::consts::PI * f2,
+        );
+        let amplitude = self.options.amplitude;
+
+        let xa = self.solve_at(f1, amplitude, Vec::new())?;
+        let xb = self.solve_at(f2, amplitude, Vec::new())?;
+        let out1 = self.output_phasor(&xa);
+        if out1.norm() == 0.0 {
+            return Err(Error::simple(
+                SolverDomain::Disto,
+                "no first-order response at the output — distortion ratios are undefined",
+            ));
+        }
+
+        // IM2: 2nd-order mix at F1+F2 (½·Σ H·a·b, design Algorithm 4).
+        let i2s = self.nonlinear_mix_2(&xa, &xb, false, w1 + w2);
+        let x2s = self.solve_at(f1 + f2, 0.0, Self::rhs(i2s))?;
+        let im2 = self.output_phasor(&x2s).norm() / out1.norm();
+
+        // 2nd-order responses feeding the IM3 cross terms: the two-tone
+        // mix at |F1−F2| and the same-tone 2nd harmonic at 2·F1.
+        let i2d = self.nonlinear_mix_2(&xa, &xb, true, (w1 - w2).abs());
+        let x2d = self.solve_at((f1 - f2).abs(), 0.0, Self::rhs(i2d))?;
+        let i21 = self.nonlinear_currents(&xa, w1);
+        let x21 = self.solve_at(2.0 * f1, 0.0, Self::rhs(i21))?;
+
+        // IM3: 3rd-order mix at 2F1−F2.
+        let i3 = self.nonlinear_mix_3(&xa, &xb, &x2d, &x21, (2.0 * w1 - w2).abs());
+        let x3 = self.solve_at((2.0 * f1 - f2).abs(), 0.0, Self::rhs(i3))?;
+        let im3 = self.output_phasor(&x3).norm() / out1.norm();
+
+        Ok(DistoResult { im2: Some(im2), im3: Some(im3), ..DistoResult::default() })
+    }
+
+    /// Nonlinear-current injections as RHS stamps (`Y·X = −I`).
+    fn rhs(currents: Vec<(AnalogReference, Complex64)>) -> Vec<Stamp<AnalogReference, Complex64>> {
+        currents
+            .into_iter()
+            .map(|(reference, value)| Stamp::Rhs(reference, value))
+            .collect()
+    }
+
+    /// The second-order two-tone mix current at the sum (or, with
+    /// `conjugate_b`, difference) frequency: `½·Σ H_jk·a_j·b_k` resp.
+    /// `½·Σ H_jk·a_j·b_k*`, charge rows scaled by `j·ω_out`.
+    fn nonlinear_mix_2(
+        &mut self,
+        xa: &ndarray::Array1<Complex64>,
+        xb: &ndarray::Array1<Complex64>,
+        conjugate_b: bool,
+        omega_out: f64,
+    ) -> Vec<(AnalogReference, Complex64)> {
+        let mut currents = Vec::new();
+        let DistoSystem { circuit, dc_point, context, .. } = &mut self.system;
+        for dev in &mut circuit.devices {
+            let Some(d2) = dev.load_disto2(dc_point, context) else { continue };
+            let nc = d2.contribs.len();
+            let mut sums = vec![Complex64::ZERO; nc];
+            for (pi, (j, k)) in d2.pairs.iter().enumerate() {
+                let a = Self::branch_phasor(xa, &j.0) - Self::branch_phasor(xa, &j.1);
+                let mut b = Self::branch_phasor(xb, &k.0) - Self::branch_phasor(xb, &k.1);
+                if conjugate_b {
+                    b = b.conj();
+                }
+                if a == Complex64::ZERO || b == Complex64::ZERO {
+                    continue;
+                }
+                for (ci, sum) in sums.iter_mut().enumerate() {
+                    let h = d2.values[pi * nc + ci];
+                    if h != 0.0 {
+                        *sum += 0.5 * h * a * b;
+                    }
+                }
+            }
+            Self::stamp_nonlinear(&d2.contribs, d2.charge_start, &sums, omega_out, &mut currents);
+        }
+        currents
+    }
+
+    /// The third-order two-tone mix current at `2F1−F2`:
+    /// `(1/24)·Σ T_jkl·a_j·a_k·b_l*` plus the `f''` cross with the
+    /// second-order responses, `¼·Σ H_jk·(a_j·c_k(F1−F2)* +
+    /// b_j*·c_k(2F1))`, charge rows scaled by `j·ω_out`.
+    fn nonlinear_mix_3(
+        &mut self,
+        xa: &ndarray::Array1<Complex64>,
+        xb: &ndarray::Array1<Complex64>,
+        x2_diff: &ndarray::Array1<Complex64>,
+        x2_2f1: &ndarray::Array1<Complex64>,
+        omega_out: f64,
+    ) -> Vec<(AnalogReference, Complex64)> {
+        let mut currents = Vec::new();
+        let DistoSystem { circuit, dc_point, context, .. } = &mut self.system;
+        for dev in &mut circuit.devices {
+            let d2 = dev.load_disto2(dc_point, context);
+            let d3 = dev.load_disto3(dc_point, context);
+            let nc = d2.as_ref().map(|d| d.contribs.len()).unwrap_or(0);
+            let mut sums = vec![Complex64::ZERO; nc];
+            if let Some(d3) = &d3 {
+                for (ti, (j, k, l)) in d3.triples.iter().enumerate() {
+                    let aj = Self::branch_phasor(xa, &j.0) - Self::branch_phasor(xa, &j.1);
+                    let ak = Self::branch_phasor(xa, &k.0) - Self::branch_phasor(xa, &k.1);
+                    let bl = (Self::branch_phasor(xb, &l.0) - Self::branch_phasor(xb, &l.1)).conj();
+                    if aj == Complex64::ZERO || ak == Complex64::ZERO || bl == Complex64::ZERO {
+                        continue;
+                    }
+                    for (ci, sum) in sums.iter_mut().enumerate() {
+                        let t = d3.values[ti * nc + ci];
+                        if t != 0.0 {
+                            *sum += t * aj * ak * bl / 24.0;
+                        }
+                    }
+                }
+            }
+            if let Some(d2) = &d2 {
+                for (pi, (j, k)) in d2.pairs.iter().enumerate() {
+                    let a = Self::branch_phasor(xa, &j.0) - Self::branch_phasor(xa, &j.1);
+                    let c_diff = (Self::branch_phasor(x2_diff, &k.0) - Self::branch_phasor(x2_diff, &k.1)).conj();
+                    let b = (Self::branch_phasor(xb, &j.0) - Self::branch_phasor(xb, &j.1)).conj();
+                    let c_2f1 = Self::branch_phasor(x2_2f1, &k.0) - Self::branch_phasor(x2_2f1, &k.1);
+                    let cross = a * c_diff + b * c_2f1;
+                    if cross == Complex64::ZERO {
+                        continue;
+                    }
+                    for (ci, sum) in sums.iter_mut().enumerate() {
+                        let h = d2.values[pi * nc + ci];
+                        if h != 0.0 {
+                            *sum += 0.25 * h * cross;
+                        }
+                    }
+                }
+            }
+            if let Some(d2) = &d2 {
+                Self::stamp_nonlinear(&d2.contribs, d2.charge_start, &sums, omega_out, &mut currents);
+            }
+        }
+        currents
+    }
+
+    /// Stamp one contribution's mix current onto the RHS accumulator:
+    /// `cur` leaves `plus` through the device (charge rows carry
+    /// `j·ω_out`), so the RHS (`−I`) takes the negation there.
+    fn stamp_nonlinear(
+        contribs: &[(Option<AnalogReference>, Option<AnalogReference>)],
+        charge_start: usize,
+        sums: &[Complex64],
+        omega_out: f64,
+        currents: &mut Vec<(AnalogReference, Complex64)>,
+    ) {
+        for (ci, (plus, minus)) in contribs.iter().enumerate() {
+            let mut cur = sums[ci];
+            if cur == Complex64::ZERO {
+                continue;
+            }
+            if ci >= charge_start {
+                cur *= Complex64::new(0.0, omega_out);
+            }
+            if let Some(p) = plus {
+                currents.push((p.clone(), -cur));
+            }
+            if let Some(m) = minus {
+                currents.push((m.clone(), cur));
+            }
+        }
     }
 
     /// The output phasor from a solution vector (single-ended or
@@ -640,6 +842,7 @@ mod tests {
         let (mut circuit, _in, out) = poly_stage(v_dc, r, g1, g2, g3);
         let options = DistoOptions {
             f1: 1e6,
+            f2: None,
             amplitude,
             output: AnalogVariable::Node(NodeIdentifier::Anonymous(1)),
             output_ref: None,
@@ -673,6 +876,7 @@ mod tests {
         let mut circuit = CircuitInstance::from_devices_and_netlist("linear", devices, netlist);
         let options = DistoOptions {
             f1: 1e6,
+            f2: None,
             amplitude: 0.5,
             output: AnalogVariable::Node(NodeIdentifier::Anonymous(1)),
             output_ref: None,
@@ -770,6 +974,7 @@ mod tests {
         let (mut circuit, _, _) = poly_stage(v_dc, r, g1, g2, g3);
         let options = DistoOptions {
             f1: 1e6,
+            f2: None,
             amplitude,
             output: AnalogVariable::Node(NodeIdentifier::Anonymous(1)),
             output_ref: None,
@@ -806,6 +1011,7 @@ mod tests {
         let mut circuit = CircuitInstance::from_devices_and_netlist("load", devices, netlist);
         let options = DistoOptions {
             f1: 1e6,
+            f2: None,
             amplitude,
             output: AnalogVariable::Node(NodeIdentifier::Anonymous(0)),
             output_ref: None,
@@ -831,10 +1037,63 @@ mod tests {
     }
 
     #[test]
+    fn two_tone_im2_im3_match_hand_run_volterra_recursion() {
+        // Poly load to ground through `Rs` at zero bias, two equal tones:
+        // IM2 at F1+F2 from the ½·f''·a·b mix, IM3 at 2F1−F2 from the
+        // f''' term plus the f'' cross with the F1−F2 and 2F1 responses
+        // (design Algorithm 4, hand-run below).
+        let (v_dc, rs, g1, g2, g3) = (0.0, 50.0, 0.1, 0.02, 0.004);
+        let amplitude = 0.2;
+        let mut netlist = Netlist::new();
+        let n_in = netlist.connect_node(NodeIdentifier::Anonymous(0));
+        let n_src = netlist.connect_node(NodeIdentifier::Anonymous(1));
+        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
+        let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
+        let devices: Vec<Box<dyn Element>> = vec![
+            Box::new(TestAcVsource { p: n_src.clone(), n: gnd.clone(), branch, v: v_dc }),
+            Box::new(TestResistor { n1: n_src, n2: n_in.clone(), r: rs }),
+            Box::new(TestPolyLoad { input: n_in, g1, g2, g3 }),
+        ];
+        let mut circuit = CircuitInstance::from_devices_and_netlist("load2t", devices, netlist);
+        let options = DistoOptions {
+            f1: 1e6,
+            f2: Some(1.1e6),
+            amplitude,
+            output: AnalogVariable::Node(NodeIdentifier::Anonymous(0)),
+            output_ref: None,
+        };
+        let mut solver = DistoSolver::new(&mut circuit, options, Context::default()).unwrap();
+        let result = solver.solve().expect("two-tone disto solves");
+
+        // Hand-run (resistive Y, frequency-independent): x1 at both tones.
+        let (fpp, fppp) = (2.0 * g2, 6.0 * g3);
+        let y1 = 1.0 / rs + g1;
+        let x1 = amplitude / rs / y1;
+        // IM2 at F1+F2: I2 = ½·f''·x1².
+        let i2s = 0.5 * fpp * x1 * x1;
+        let expected_im2 = (i2s / y1 / x1).abs();
+        // IM3 at 2F1−F2: c_diff = −(½·f''·x1²)/y1, c_2f1 = −(¼·f''·x1²)/y1;
+        // I3 = f'''·x1³/24 + ¼·f''·(x1·c_diff* + x1*·c_2f1).
+        let c_diff = -0.5 * fpp * x1 * x1 / y1;
+        let c_2f1 = -0.25 * fpp * x1 * x1 / y1;
+        let i3 = fppp * x1.powi(3) / 24.0 + 0.25 * fpp * (x1 * c_diff + x1 * c_2f1);
+        let expected_im3 = (i3 / y1 / x1).abs();
+
+        let im2 = result.im2.expect("two-tone run reports IM2");
+        let im3 = result.im3.expect("two-tone run reports IM3");
+        let rel2 = (im2 - expected_im2).abs() / expected_im2;
+        let rel3 = (im3 - expected_im3).abs() / expected_im3;
+        assert!(rel2 < 1e-3, "IM2 = {im2}, hand-run {expected_im2} (rel {rel2})");
+        assert!(rel3 < 1e-3, "IM3 = {im3}, hand-run {expected_im3} (rel {rel3})");
+        assert!(result.hd2.is_none() && result.hd3.is_none(), "two-tone mode reports IM only");
+    }
+
+    #[test]
     fn bad_options_fail_loud() {
         let (mut circuit, _, _) = poly_stage(0.5, 50.0, 0.1, 0.02, 0.003);
         let options = DistoOptions {
             f1: 0.0,
+            f2: None,
             amplitude: 0.1,
             output: AnalogVariable::Node(NodeIdentifier::Anonymous(1)),
             output_ref: None,
