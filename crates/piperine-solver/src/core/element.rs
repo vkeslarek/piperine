@@ -92,6 +92,123 @@ pub struct ConvergenceHint {
     pub limited_value: f64,
 }
 
+/// Analog participation: MNA loading + the analog lifecycle/convergence hooks.
+///
+/// Every method defaults to a no-op that contributes nothing, so an element
+/// with no analog side inherits the empty surface untouched. The analog
+/// drivers only ever call these through capability flags ([`ElementCapabilities`])
+/// — declaring `ANALOG` without overriding the loaders is a visible bug, not
+/// a silent no-op.
+pub trait AnalogDevice: Send + Sync {
+    // ── Analog lifecycle ──────────────────────────────────────────────────────
+
+    /// Whether a device limiter is currently clamping (pnjlim/fetlim). While
+    /// active the global Newton loop must not declare convergence.
+    fn limiting_active(&self) -> bool { false }
+
+    /// Structured limiting feedback: which unknown was clamped, and to what.
+    /// The solver applies the hint to the Newton guess before the convergence
+    /// test. Default `None` — a device that only knows *that* it limited
+    /// keeps reporting through [`limiting_active`](AnalogDevice::limiting_active);
+    /// a device that knows *what* it limited upgrades to a hint.
+    fn convergence_hint(&self) -> Option<ConvergenceHint> { None }
+
+    /// Largest timestep the element can tolerate from here (`$bound_step`).
+    fn bound_step_hint(&self) -> f64 { f64::INFINITY }
+
+    /// Absolute landing points this element requires the integrator to hit
+    /// within `(from, from + horizon]`. Time-varying source models (pulse
+    /// edges, PWL corners, `@timer` fires) and digital switching times declare
+    /// their discontinuities here so the stepper never steps over a kink. The
+    /// default is empty — elements without discontinuities need not override.
+    ///
+    /// The solver reads this each step and merges it with the digital event
+    /// queue. The times are absolute (not relative), so they survive step
+    /// rollback.
+    fn next_breakpoints(&self, _from: f64, _horizon: f64) -> Vec<f64> { Vec::new() }
+
+    /// `@initial` UIC seeds: the branch `(plus, minus)` and the voltage the
+    /// device wants across it at t=0 (SPICE `.ic`). Ground terminals are
+    /// `None`. Empty for devices without an initial-condition force. The
+    /// transient analysis seeds these into the t=0 state.
+    fn initial_conditions(
+        &self,
+    ) -> Vec<(Option<AnalogReference>, Option<AnalogReference>, f64)> {
+        Vec::new()
+    }
+
+    /// Pre-freeze internal-unknown allocation. Called by [`CircuitBuilder::build`]
+    /// once per element, in insertion order, before the matrix shape freezes.
+    /// Elements that allocate internal MNA unknowns (auxiliary branch currents,
+    /// hidden states) do so here via [`UnknownAllocator::branch`] and MUST
+    /// declare [`ElementCapabilities::HAS_INTERNAL_UNKNOWNS`]. Default: no-op.
+    fn allocate_unknowns(&mut self, _alloc: &mut crate::core::builder::UnknownAllocator<'_>) {}
+
+    /// Set the instance temperature; recompute temperature-dependent constants.
+    fn set_temperature(&mut self, _t: f64) {}
+
+    /// Refresh cached state from the current solution before stamping.
+    fn update(&mut self, _state: &CircularArrayBuffer2<f64>, _ctx: &Context) {}
+
+    // ── Analog loading ────────────────────────────────────────────────────────
+
+    fn load_dc(
+        &mut self,
+        _state: &DcAnalysisState<'_>,
+        _context: &Context,
+    ) -> Vec<Stamp<AnalogReference, f64>> {
+        Vec::new()
+    }
+
+    fn load_ac(
+        &mut self,
+        _dc_op: &DcAnalysisResult,
+        _ac_ctx: &AcAnalysisContext,
+        _context: &Context,
+    ) -> Vec<Stamp<AnalogReference, Complex64>> {
+        Vec::new()
+    }
+
+    fn load_transient(
+        &mut self,
+        _states: &TransientAnalysisState<'_>,
+        _tran_ctx: &TransientAnalysisContext,
+        _context: &Context,
+    ) -> Vec<Stamp<AnalogReference, f64>> {
+        Vec::new()
+    }
+
+    fn noise_current_psd(
+        &mut self,
+        _dc_point: &DcAnalysisResult,
+        _ac_context: &AcAnalysisContext,
+    ) -> Vec<Noise> {
+        Vec::new()
+    }
+
+    // ── Numerical integration feedback ────────────────────────────────────────
+
+    /// LTE-driven timestep suggestion, called by the transient stepper after
+    /// an accepted step. Reactive devices override this to report the
+    /// maximum timestep they can tolerate; elements without charge/flux
+    /// history (pure resistors, pure digital) leave this at the default
+    /// `None`.
+    ///
+    /// - `state`: the accepted analog solution history at `t_n`, `t_{n-1}`,
+    ///   `t_{n-2}`, …
+    /// - `time_history`: the accepted step sizes `[dt_n, dt_{n-1}, …]`.
+    /// - `context`: solver tolerances (`trtol`, `chgtol`, `reltol`,
+    ///   `abstol`).
+    fn suggest_transient_step(
+        &self,
+        _state: &TransientAnalysisState<'_>,
+        _time_history: &[f64],
+        _context: &Context,
+    ) -> Option<f64> {
+        None
+    }
+}
+
 /// A single thing the solver simulates — the one contract over every
 /// participant, analog or digital or both.
 ///
@@ -128,43 +245,6 @@ pub trait Element: Send + Sync {
     /// — an element must declare itself so the solver and scheduler can plan
     /// without probing. Forgetting a flag is a visible bug, not a silent no-op.
     fn capabilities(&self) -> ElementCapabilities;
-
-    // ── Analog lifecycle ──────────────────────────────────────────────────────
-
-    /// Whether a device limiter is currently clamping (pnjlim/fetlim). While
-    /// active the global Newton loop must not declare convergence.
-    fn limiting_active(&self) -> bool { false }
-
-    /// Structured limiting feedback: which unknown was clamped, and to what.
-    /// The solver applies the hint to the Newton guess before the convergence
-    /// test. Default `None` — a device that only knows *that* it limited
-    /// keeps reporting through [`limiting_active`](Element::limiting_active);
-    /// a device that knows *what* it limited upgrades to a hint.
-    fn convergence_hint(&self) -> Option<ConvergenceHint> { None }
-
-    /// Largest timestep the element can tolerate from here (`$bound_step`).
-    fn bound_step_hint(&self) -> f64 { f64::INFINITY }
-
-    /// Absolute landing points this element requires the integrator to hit
-    /// within `(from, from + horizon]`. Time-varying source models (pulse
-    /// edges, PWL corners, `@timer` fires) and digital switching times declare
-    /// their discontinuities here so the stepper never steps over a kink. The
-    /// default is empty — elements without discontinuities need not override.
-    ///
-    /// The solver reads this each step and merges it with the digital event
-    /// queue. The times are absolute (not relative), so they survive step
-    /// rollback.
-    fn next_breakpoints(&self, _from: f64, _horizon: f64) -> Vec<f64> { Vec::new() }
-
-    /// `@initial` UIC seeds: the branch `(plus, minus)` and the voltage the
-    /// device wants across it at t=0 (SPICE `.ic`). Ground terminals are
-    /// `None`. Empty for devices without an initial-condition force. The
-    /// transient analysis seeds these into the t=0 state.
-    fn initial_conditions(
-        &self,
-    ) -> Vec<(Option<AnalogReference>, Option<AnalogReference>, f64)> {
-        Vec::new()
-    }
 
     /// Operating-point variables (`gm`, `vbe`, …) as flat name/value pairs.
     /// The introspection layer ([`query`](Element::query)) reads through this by
@@ -219,19 +299,6 @@ pub trait Element: Send + Sync {
     fn setup(&mut self, _ctx: &Context) -> crate::result::Result<()> { Ok(()) }
     fn destroy(&mut self) {}
 
-    /// Pre-freeze internal-unknown allocation. Called by [`CircuitBuilder::build`]
-    /// once per element, in insertion order, before the matrix shape freezes.
-    /// Elements that allocate internal MNA unknowns (auxiliary branch currents,
-    /// hidden states) do so here via [`UnknownAllocator::branch`] and MUST
-    /// declare [`ElementCapabilities::HAS_INTERNAL_UNKNOWNS`]. Default: no-op.
-    fn allocate_unknowns(&mut self, _alloc: &mut crate::core::builder::UnknownAllocator<'_>) {}
-
-    /// Set the instance temperature; recompute temperature-dependent constants.
-    fn set_temperature(&mut self, _t: f64) {}
-
-    /// Refresh cached state from the current solution before stamping.
-    fn update(&mut self, _state: &CircularArrayBuffer2<f64>, _ctx: &Context) {}
-
     /// Called after each accepted solution point at time `t`. Elements that
     /// couple into the digital world (A2D bridges, analog event detectors)
     /// emit their net value-changes through `sink` — the same write-only
@@ -244,42 +311,6 @@ pub trait Element: Send + Sync {
         _nets: &[LogicValue],
         _sink: &mut dyn EventSink,
     ) {
-    }
-
-    // ── Analog loading ────────────────────────────────────────────────────────
-
-    fn load_dc(
-        &mut self,
-        _state: &DcAnalysisState<'_>,
-        _context: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        Vec::new()
-    }
-
-    fn load_ac(
-        &mut self,
-        _dc_op: &DcAnalysisResult,
-        _ac_ctx: &AcAnalysisContext,
-        _context: &Context,
-    ) -> Vec<Stamp<AnalogReference, Complex64>> {
-        Vec::new()
-    }
-
-    fn load_transient(
-        &mut self,
-        _states: &TransientAnalysisState<'_>,
-        _tran_ctx: &TransientAnalysisContext,
-        _context: &Context,
-    ) -> Vec<Stamp<AnalogReference, f64>> {
-        Vec::new()
-    }
-
-    fn noise_current_psd(
-        &mut self,
-        _dc_point: &DcAnalysisResult,
-        _ac_context: &AcAnalysisContext,
-    ) -> Vec<Noise> {
-        Vec::new()
     }
 
     // ── Digital evaluation ────────────────────────────────────────────────────
@@ -321,28 +352,6 @@ pub trait Element: Send + Sync {
     /// Convenience: true if any of the element's input nets is in `changed`.
     fn has_input_on(&self, changed: &HashSet<DigitalNet>) -> bool {
         self.boundary().inputs.iter().any(|n| changed.contains(n))
-    }
-
-    // ── Numerical integration feedback ────────────────────────────────────────
-
-    /// LTE-driven timestep suggestion, called by the transient stepper after
-    /// an accepted step. Reactive devices override this to report the
-    /// maximum timestep they can tolerate; elements without charge/flux
-    /// history (pure resistors, pure digital) leave this at the default
-    /// `None`.
-    ///
-    /// - `state`: the accepted analog solution history at `t_n`, `t_{n-1}`,
-    ///   `t_{n-2}`, …
-    /// - `time_history`: the accepted step sizes `[dt_n, dt_{n-1}, …]`.
-    /// - `context`: solver tolerances (`trtol`, `chgtol`, `reltol`,
-    ///   `abstol`).
-    fn suggest_transient_step(
-        &self,
-        _state: &TransientAnalysisState<'_>,
-        _time_history: &[f64],
-        _context: &Context,
-    ) -> Option<f64> {
-        None
     }
 
     /// Runtime state/var banks for opt-in per-step recording
