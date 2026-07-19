@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 6,
+  "next_id": 11,
   "lessons": [
     {
       "id": "L-001",
@@ -94,6 +94,96 @@
       ],
       "created": "2026-07-18T01:58:47Z",
       "last_seen": "2026-07-18T01:58:47Z"
+    },
+    {
+      "id": "L-006",
+      "key": "surviving_mutant::interpolation or ratio tests must use non uniform sample spacing so a dropped division or normalization is discriminated",
+      "text": "Interpolation or ratio tests must use non-uniform sample spacing so a dropped division or normalization is discriminated",
+      "signal": "surviving_mutant",
+      "scope": "codegen",
+      "status": "candidate",
+      "features": [
+        "p1-solver-complete"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "crates/piperine-codegen/src/lower/pom/analog_ops.rs:180 (mutant M4) (codegen)"
+      ],
+      "created": "2026-07-19T00:20:01Z",
+      "last_seen": "2026-07-19T00:20:01Z"
+    },
+    {
+      "id": "L-007",
+      "key": "surviving_mutant::every fail loud validation branch needs its own negative test that trips it unknown name tests alone leave guard clauses undiscriminated",
+      "text": "Every fail-loud validation branch needs its own negative test that trips it; unknown-name tests alone leave guard clauses undiscriminated",
+      "signal": "surviving_mutant",
+      "scope": "solver",
+      "status": "candidate",
+      "features": [
+        "p1-solver-complete"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "crates/piperine-solver/src/solver/sens.rs:59 (mutant M8, SC-02) (solver)"
+      ],
+      "created": "2026-07-19T00:20:01Z",
+      "last_seen": "2026-07-19T00:20:01Z"
+    },
+    {
+      "id": "L-008",
+      "key": "ac_gap::a done when that names a specific diagnostic case must have a test asserting that diagnostic message before the task is marked done",
+      "text": "A Done-when that names a specific diagnostic case must have a test asserting that diagnostic message before the task is marked done",
+      "signal": "ac_gap",
+      "scope": "solver",
+      "status": "candidate",
+      "features": [
+        "p1-solver-complete"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "SC-05, crates/piperine-solver/src/solver/pss.rs:294 verify_digital_periodicity (solver)"
+      ],
+      "created": "2026-07-19T00:20:01Z",
+      "last_seen": "2026-07-19T00:20:01Z"
+    },
+    {
+      "id": "L-009",
+      "key": "spec_precision_gap::when the spec names an independent reference method assert against that reference not a self consistency proxy",
+      "text": "When the spec names an independent reference method, assert against that reference, not a self-consistency proxy",
+      "signal": "spec_precision_gap",
+      "scope": "solver",
+      "status": "candidate",
+      "features": [
+        "p1-solver-complete"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "SC-01, tests/sens.rs:111 (solver)"
+      ],
+      "created": "2026-07-19T00:20:12Z",
+      "last_seen": "2026-07-19T00:20:12Z"
+    },
+    {
+      "id": "L-010",
+      "key": "spec_precision_gap::a spec claim of golden file validation requires a checked in fixture pair grep the fixtures directory before closing the task",
+      "text": "A spec claim of golden-file validation requires a checked-in fixture pair; grep the fixtures directory before closing the task",
+      "signal": "spec_precision_gap",
+      "scope": "spice",
+      "status": "candidate",
+      "features": [
+        "p1-solver-complete"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "SC-15, tests/ngspice/ (no tline .cir pair) (spice)"
+      ],
+      "created": "2026-07-19T00:20:12Z",
+      "last_seen": "2026-07-19T00:20:12Z"
     }
   ]
 }

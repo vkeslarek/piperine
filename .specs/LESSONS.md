@@ -44,6 +44,36 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: crates/piperine-cli/src/commands/run.rs:30-49 / BRM-07 round 4 (crates/piperine-cli)
 - last seen: 2026-07-18T01:58:47Z
 
+### L-006 — Interpolation or ratio tests must use non-uniform sample spacing so a dropped division or normalization is discriminated
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `codegen` · harmful: 0
+- features: p1-solver-complete
+- evidence: crates/piperine-codegen/src/lower/pom/analog_ops.rs:180 (mutant M4) (codegen)
+- last seen: 2026-07-19T00:20:01Z
+
+### L-007 — Every fail-loud validation branch needs its own negative test that trips it; unknown-name tests alone leave guard clauses undiscriminated
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `solver` · harmful: 0
+- features: p1-solver-complete
+- evidence: crates/piperine-solver/src/solver/sens.rs:59 (mutant M8, SC-02) (solver)
+- last seen: 2026-07-19T00:20:01Z
+
+### L-008 — A Done-when that names a specific diagnostic case must have a test asserting that diagnostic message before the task is marked done
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `solver` · harmful: 0
+- features: p1-solver-complete
+- evidence: SC-05, crates/piperine-solver/src/solver/pss.rs:294 verify_digital_periodicity (solver)
+- last seen: 2026-07-19T00:20:01Z
+
+### L-009 — When the spec names an independent reference method, assert against that reference, not a self-consistency proxy
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `solver` · harmful: 0
+- features: p1-solver-complete
+- evidence: SC-01, tests/sens.rs:111 (solver)
+- last seen: 2026-07-19T00:20:12Z
+
+### L-010 — A spec claim of golden-file validation requires a checked-in fixture pair; grep the fixtures directory before closing the task
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `spice` · harmful: 0
+- features: p1-solver-complete
+- evidence: SC-15, tests/ngspice/ (no tline .cir pair) (spice)
+- last seen: 2026-07-19T00:20:12Z
+
 ## Quarantined (failed when applied — ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
