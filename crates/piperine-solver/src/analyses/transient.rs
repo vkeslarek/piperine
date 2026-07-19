@@ -431,6 +431,55 @@ struct StepAttempt {
     analog_history: CircularArrayBuffer2<f64>,
 }
 
+/// Phase 3 output — the Milne-LTE accept-gate verdict for a converged
+/// candidate step.
+struct StepAssessment {
+    /// The global Milne LTE over node-voltage unknowns (feeds the PI
+    /// controller on accept).
+    milne: f64,
+    /// Gate verdict: accept the candidate step.
+    accept: bool,
+}
+
+/// The adaptive time loop's mutable state: the clock, the current step
+/// size, and the acceptance bookkeeping the phase methods read and
+/// advance. Owned by [`TransientSolver::solve`]; the phase methods take it
+/// as an explicit parameter.
+struct TimeLoop {
+    current_time: f64,
+    dt: f64,
+    steps_accepted: usize,
+    steps_rejected: usize,
+    dt_min_floor_hits: usize,
+    /// Predictor gate: extrapolation history is only valid coming off an
+    /// accepted step (a rejection leaves rejected rows in the buffer).
+    last_step_accepted: bool,
+    /// Live-set edge rule (LIVE-06/07): the first step after a scheduled
+    /// set integrates the value jump, so its Milne window spans the
+    /// discontinuity — the LTE there is not error but the jump itself.
+    /// That one step is exempt from the accept gate and from the PI
+    /// update (dt held), exactly like landing on a declared breakpoint.
+    sets_just_applied: bool,
+    dt_min_seen: f64,
+    dt_max_seen: f64,
+}
+
+impl TimeLoop {
+    fn new(start_time: f64, dt: f64) -> Self {
+        Self {
+            current_time: start_time,
+            dt,
+            steps_accepted: 0,
+            steps_rejected: 0,
+            dt_min_floor_hits: 0,
+            last_step_accepted: false,
+            sets_just_applied: false,
+            dt_min_seen: f64::INFINITY,
+            dt_max_seen: 0.0,
+        }
+    }
+}
+
 pub struct TransientSolver<'a> {
     pub system: TransientSystem<'a>,
     pub solver: NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>,
@@ -681,9 +730,9 @@ impl<'a> TransientSolver<'a> {
     /// the Milne-LTE gate: the LTE would otherwise see the intentional
     /// source jump (e.g. V(in) 0→5 at a pulse edge) as a huge error and
     /// reject, thrashing the integrator against the edge it already hit.
-    fn predict_step(&self, current_time: f64, dt_proposed: f64) -> StepPrediction {
+    fn predict_step(&self, st: &TimeLoop) -> StepPrediction {
         let t_next_event = self.system.circuit.digital_state.peek_next_event_time();
-        let pi_target = current_time + dt_proposed;
+        let pi_target = st.current_time + st.dt;
         let mut t_next = pi_target.min(self.options.stop_time);
         let mut landed_on_breakpoint = false;
         if t_next_event < t_next {
@@ -691,8 +740,8 @@ impl<'a> TransientSolver<'a> {
             landed_on_breakpoint = true;
         }
         for dev in self.system.circuit.devices.iter() {
-            for bp in dev.next_breakpoints(current_time, dt_proposed) {
-                if bp > current_time && bp < t_next {
+            for bp in dev.next_breakpoints(st.current_time, st.dt) {
+                if bp > st.current_time && bp < t_next {
                     t_next = bp;
                     landed_on_breakpoint = true;
                 }
@@ -704,7 +753,7 @@ impl<'a> TransientSolver<'a> {
         // reset prev_h). The relative-epsilon snap absorbs float
         // accumulation: a proposal one ulp shy of the set time
         // stretches onto it instead of leaving a ~1e-22 s sliver step.
-        if let Some(ts) = self.sets.next_breakpoint(current_time) {
+        if let Some(ts) = self.sets.next_breakpoint(st.current_time) {
             let snap = 1e-9 * ts.abs().max(f64::MIN_POSITIVE);
             if ts <= t_next + snap {
                 t_next = ts;
@@ -713,8 +762,8 @@ impl<'a> TransientSolver<'a> {
         }
         StepPrediction {
             t_next,
-            dt_actual: t_next - current_time,
-            dt_proposed,
+            dt_actual: t_next - st.current_time,
+            dt_proposed: st.dt,
             landed_on_breakpoint,
         }
     }
@@ -727,23 +776,181 @@ impl<'a> TransientSolver<'a> {
     /// `[current_time, t_next]` (two phases).
     fn attempt_step(
         &mut self,
-        current_time: f64,
+        st: &TimeLoop,
         prediction: StepPrediction,
-        last_step_accepted: bool,
     ) -> crate::result::Result<StepAttempt> {
         self.system.circuit.digital_state.checkpoint();
         let analog_history = self.solver.state_snapshot();
         self.system.circuit.run_digital_at(prediction.t_next)?;
         let outcome =
-            self.execute_timestep(current_time, prediction.dt_actual, last_step_accepted);
+            self.execute_timestep(st.current_time, prediction.dt_actual, st.last_step_accepted);
         Ok(StepAttempt { prediction, outcome, analog_history })
+    }
+
+    /// Phase 3 — assess: the global Milne-LTE accept gate (TRB-05/06). The
+    /// two-phase buffer holds x_{n+1} (view 0), x_{n+γ} (view 1), x_n
+    /// (view 2). The Milne predictor is evaluated only over
+    /// **node-voltage** unknowns — branch currents are KCL-derived (their
+    /// accuracy follows the node voltages) and the `/γ` extrapolation
+    /// falsely amplifies a source branch's startup jump. Steps landing on
+    /// a declared discontinuity (breakpoint or live-set edge) are exempt.
+    fn assess_step(
+        &self,
+        prediction: &StepPrediction,
+        post_set_step: bool,
+        node_indices: &[usize],
+    ) -> StepAssessment {
+        let tolerances = self.system.context.tolerances;
+        let milne = match (self.solver.state().view(0), self.solver.state().view(1), self.solver.state().view(2)) {
+            (Some(a), Some(b), Some(c)) => TrBdf2::milne_lte_indexed(
+                c.as_slice().unwrap(),
+                b.as_slice().unwrap(),
+                a.as_slice().unwrap(),
+                node_indices,
+                tolerances.reltol,
+                tolerances.vntol,
+            ),
+            _ => 0.0,
+        };
+        let reject =
+            !prediction.landed_on_breakpoint && !post_set_step && milne > tolerances.trtol;
+        StepAssessment { milne, accept: !reject }
+    }
+
+    /// Phase 4 — accept: commit the converged candidate step. Bookkeeping,
+    /// the D2A settle + digital commit, recording inside the `record_from`
+    /// window, the clock/history advance, the scheduled live sets due at
+    /// the accepted point (LIVE-06/09), and the next step-size proposal.
+    fn accept_step(
+        &mut self,
+        st: &mut TimeLoop,
+        steps: &mut Vec<TransientStep>,
+        prediction: StepPrediction,
+        snapshot: TransientStep,
+        milne: f64,
+        post_set_step: bool,
+    ) -> crate::result::Result<()> {
+        let StepPrediction {
+            t_next,
+            dt_actual,
+            dt_proposed,
+            mut landed_on_breakpoint,
+        } = prediction;
+        st.steps_accepted += 1;
+        st.last_step_accepted = true;
+        // UIC clamps release after the first accepted step (CKTsetIC).
+        self.system.uic_hold = false;
+        st.dt_min_seen = st.dt_min_seen.min(dt_actual);
+        st.dt_max_seen = st.dt_max_seen.max(dt_actual);
+        let solution = self.solver.current_guess().unwrap().to_owned();
+        let _changed = self
+            .system
+            .circuit
+            .accept_and_run_digital(solution.as_slice().unwrap(), t_next)?;
+        self.system.circuit.digital_state.commit();
+        if t_next >= self.options.record_from {
+            // Runtime banks committed by `accept_and_run_digital`
+            // (idt/operator state) post-date the in-step snapshot —
+            // re-attach so the recorded state matches this point.
+            let snapshot = if self.options.record_device_state {
+                snapshot.with_device_state(self.collect_device_banks())
+            } else {
+                snapshot
+            };
+            steps.push(snapshot);
+        }
+        st.current_time = t_next;
+        // Apply scheduled live sets due at this accepted point
+        // (LIVE-06/09): scheduling order = last-write-wins per
+        // param. The new values take effect from the next accepted
+        // step; a write of ≥ OperatingPoint strength additionally
+        // re-solves the just-closed step with the new values so the
+        // point at t is the post-set consistent solution. Rebuild
+        // is beyond the solver (no POM here) — fail loud.
+        let due = self.sets.drain_due(st.current_time);
+        st.sets_just_applied = !due.is_empty();
+        if !due.is_empty() {
+            use crate::core::introspect::Invalidation;
+            let mut strongest = Invalidation::None;
+            for set in due {
+                let inv = self.system.circuit.set_element_param(
+                    &set.label, &set.param, set.value,
+                )?;
+                strongest = strongest.max(inv);
+            }
+            if strongest >= Invalidation::Rebuild {
+                return Err(crate::error::Error::simple(
+                    crate::error::SolverDomain::Transient,
+                    format!(
+                        "scheduled set at t={:.3e} needs a structural \
+                         rebuild — re-elaborate at the host layer (MD-18)",
+                        st.current_time
+                    ),
+                ));
+            }
+            if strongest >= Invalidation::OperatingPoint
+                && let Some(re) =
+                    self.execute_timestep(st.current_time - dt_actual, dt_actual, false)?
+                && st.current_time >= self.options.record_from
+                && let Some(last) = steps.last_mut()
+            {
+                *last = re;
+            }
+            // The value jump is a discontinuity: the next TR stage
+            // must not re-derive a previous current across it.
+            landed_on_breakpoint = true;
+        }
+        // This step's size seeds the next step's TR-stage
+        // previous-current re-derivation — UNLESS the step landed on a
+        // declared discontinuity, in which case the history spans a
+        // jump (e.g. a source edge) and must not feed the next TR
+        // stage; reset so the next step starts clean (i_{C,n} = 0).
+        self.system.prev_h = if landed_on_breakpoint { 0.0 } else { dt_actual };
+        // Timestep policy: the PI controller grows / shrinks `dt`
+        // from the global Milne error (always adaptive — SPICE has
+        // been adaptive since v2). Output interpolation onto a fixed
+        // print grid is a follow-up (ROADMAP); the recorded waveform
+        // is the adaptive time grid for now, and statistics
+        // weight by `dt` so they stay correct.
+        st.dt = if post_set_step {
+            // The Milne value measures the jump, not integration
+            // error — hold dt instead of feeding the PI garbage.
+            dt_proposed
+        } else {
+            self.stepper.propose_dt(milne, dt_actual, &self.options)
+        };
+        if st.sets_just_applied {
+            // Discontinuity restart (SPICE breakpoint convention):
+            // the step after a live-set jump starts first-order
+            // (prev_h = 0 discards the pre-jump current), so resume
+            // with a small step and let the PI regrow from clean
+            // LTE readings.
+            st.dt = (1e-3 * dt_actual).max(self.options.dt_min);
+        }
+
+        // Per-device LTE floor: reactive devices can cap dt tighter
+        // than the global Milne LTE (audit P5 — this was never called).
+        let tran_state = TransientAnalysisState::new(
+            self.solver.state(),
+            &self.system.circuit.digital_state.nets,
+        );
+        let time_history = [self.system.prev_h, dt_actual];
+        for dev in &self.system.circuit.devices {
+            if let Some(dt_floor) = dev.suggest_transient_step(
+                &tran_state,
+                &time_history,
+                &self.system.context,
+            ) {
+                st.dt = st.dt.min(dt_floor);
+            }
+        }
+        Ok(())
     }
 
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
         let stop_time: f64 = self.options.stop_time;
         let start_time: f64 = self.options.start_time;
         let record_from: f64 = self.options.record_from;
-        let mut dt: f64 = self.options.dt;
         let dt_min = self.options.dt_min;
 
         // Sets scheduled at or before the start time apply before the
@@ -776,22 +983,8 @@ impl<'a> TransientSolver<'a> {
             self.system.circuit.digital_state.commit();
         }
 
-        let mut current_time = start_time;
         self.solver.reset_iteration_counter();
-        let mut steps_accepted: usize = 0;
-        let mut steps_rejected: usize = 0;
-        let mut dt_min_floor_hits: usize = 0;
-        // Predictor gate: extrapolation history is only valid coming off an
-        // accepted step (a rejection leaves rejected rows in the buffer).
-        let mut last_step_accepted = false;
-        // Live-set edge rule (LIVE-06/07): the first step after a scheduled
-        // set integrates the value jump, so its Milne window spans the
-        // discontinuity — the LTE there is not error but the jump itself.
-        // That one step is exempt from the accept gate and from the PI
-        // update (dt held), exactly like landing on a declared breakpoint.
-        let mut sets_just_applied = false;
-        let mut dt_min_seen = f64::INFINITY;
-        let mut dt_max_seen = 0.0_f64;
+        let mut st = TimeLoop::new(start_time, self.options.dt);
 
         // The Milne accept gate reads only node-voltage unknowns; the netlist
         // is structurally stable for the whole run, so build the index list
@@ -806,181 +999,65 @@ impl<'a> TransientSolver<'a> {
             .filter_map(|r| r.idx())
             .collect();
 
-        while current_time < stop_time {
-            let prediction = self.predict_step(current_time, dt);
-            let attempt = self.attempt_step(current_time, prediction, last_step_accepted)?;
-            let StepAttempt { prediction, outcome: analog_result, analog_history } = attempt;
-            let StepPrediction {
-                t_next,
-                dt_actual,
-                dt_proposed,
-                mut landed_on_breakpoint,
-            } = prediction;
-
+        while st.current_time < stop_time {
+            let prediction = self.predict_step(&st);
+            let attempt = self.attempt_step(&st, prediction)?;
             // Whether this step's Milne window spans a live-set value jump
             // (consumed here; re-armed below when new sets apply).
-            let post_set_step = sets_just_applied;
+            let post_set_step = st.sets_just_applied;
+            let StepAttempt { prediction, outcome, analog_history } = attempt;
 
-            if let Ok(Some(snapshot)) = analog_result {                // Both Newton phases converged. Global Milne-LTE accept gate
-                // (TRB-05/06): the two-phase buffer holds x_{n+1} (view 0),
-                // x_{n+γ} (view 1), x_n (view 2). The Milne predictor is
-                // evaluated only over **node-voltage** unknowns — branch
-                // currents are KCL-derived (their accuracy follows the node
-                // voltages) and the `/γ` extrapolation falsely amplifies a
-                // source branch's startup jump.
-                let tolerances = self.system.context.tolerances;
-                let milne = match (self.solver.state().view(0), self.solver.state().view(1), self.solver.state().view(2)) {
-                    (Some(a), Some(b), Some(c)) => TrBdf2::milne_lte_indexed(
-                        c.as_slice().unwrap(),
-                        b.as_slice().unwrap(),
-                        a.as_slice().unwrap(),
-                        &node_indices,
-                        tolerances.reltol,
-                        tolerances.vntol,
-                    ),
-                    _ => 0.0,
-                };
-                if !landed_on_breakpoint && !post_set_step && milne > tolerances.trtol {
+            if let Ok(Some(snapshot)) = outcome {
+                // Both Newton phases converged.
+                let assessment = self.assess_step(&prediction, post_set_step, &node_indices);
+                if assessment.accept {
+                    self.accept_step(
+                        &mut st, &mut steps, prediction, snapshot,
+                        assessment.milne, post_set_step,
+                    )?;
+                } else {
                     // LTE too large: reject, halve dt, reset the PI memory.
                     if self.policy.trace.transient {
-                        eprintln!("REJECT t={current_time:.3e} dt={dt_actual:.3e} milne={milne:.3e} (trtol={})", tolerances.trtol);
+                        eprintln!(
+                            "REJECT t={:.3e} dt={:.3e} milne={:.3e} (trtol={})",
+                            st.current_time,
+                            prediction.dt_actual,
+                            assessment.milne,
+                            self.system.context.tolerances.trtol
+                        );
                     }
                     self.system.circuit.digital_state.rollback();
-                    dt = self.stepper.reject_dt(dt_proposed, &self.options);
-                    if dt <= self.options.dt_min {
+                    st.dt = self.stepper.reject_dt(prediction.dt_proposed, &self.options);
+                    if st.dt <= dt_min {
                         // Can't shrink further — accept the step as-is rather
                         // than stall. Surface the accuracy concession (audit C2).
-                        dt_min_floor_hits += 1;
+                        st.dt_min_floor_hits += 1;
                         tracing::warn!(
                             "transient LTE exceeded trtol at dt_min ({:.3e}); \
                              accepting step at t={:.3e} with reduced accuracy",
-                            dt, current_time
+                            st.dt, st.current_time
                         );
+                        self.accept_step(
+                            &mut st, &mut steps, prediction, snapshot,
+                            assessment.milne, post_set_step,
+                        )?;
                     } else {
-                        steps_rejected += 1;
-                        last_step_accepted = false;
+                        st.steps_rejected += 1;
+                        st.last_step_accepted = false;
                         self.solver.restore_state(analog_history);
                         continue;
-                    }
-                }
-                // Accept.
-                steps_accepted += 1;
-                last_step_accepted = true;
-                // UIC clamps release after the first accepted step (CKTsetIC).
-                self.system.uic_hold = false;
-                dt_min_seen = dt_min_seen.min(dt_actual);
-                dt_max_seen = dt_max_seen.max(dt_actual);
-                let solution = self.solver.current_guess().unwrap().to_owned();
-                let _changed = self
-                    .system
-                    .circuit
-                    .accept_and_run_digital(solution.as_slice().unwrap(), t_next)?;
-                self.system.circuit.digital_state.commit();
-                if t_next >= record_from {
-                    // Runtime banks committed by `accept_and_run_digital`
-                    // (idt/operator state) post-date the in-step snapshot —
-                    // re-attach so the recorded state matches this point.
-                    let snapshot = if self.options.record_device_state {
-                        snapshot.with_device_state(self.collect_device_banks())
-                    } else {
-                        snapshot
-                    };
-                    steps.push(snapshot);
-                }
-                current_time = t_next;
-                // Apply scheduled live sets due at this accepted point
-                // (LIVE-06/09): scheduling order = last-write-wins per
-                // param. The new values take effect from the next accepted
-                // step; a write of ≥ OperatingPoint strength additionally
-                // re-solves the just-closed step with the new values so the
-                // point at t is the post-set consistent solution. Rebuild
-                // is beyond the solver (no POM here) — fail loud.
-                let due = self.sets.drain_due(current_time);
-                sets_just_applied = !due.is_empty();
-                if !due.is_empty() {
-                    use crate::core::introspect::Invalidation;
-                    let mut strongest = Invalidation::None;
-                    for set in due {
-                        let inv = self.system.circuit.set_element_param(
-                            &set.label, &set.param, set.value,
-                        )?;
-                        strongest = strongest.max(inv);
-                    }
-                    if strongest >= Invalidation::Rebuild {
-                        return Err(crate::error::Error::simple(
-                            crate::error::SolverDomain::Transient,
-                            format!(
-                                "scheduled set at t={current_time:.3e} needs a structural \
-                                 rebuild — re-elaborate at the host layer (MD-18)"
-                            ),
-                        ));
-                    }
-                    if strongest >= Invalidation::OperatingPoint
-                        && let Some(re) =
-                            self.execute_timestep(current_time - dt_actual, dt_actual, false)?
-                        && current_time >= record_from
-                        && let Some(last) = steps.last_mut()
-                    {
-                        *last = re;
-                    }
-                    // The value jump is a discontinuity: the next TR stage
-                    // must not re-derive a previous current across it.
-                    landed_on_breakpoint = true;
-                }
-                // This step's size seeds the next step's TR-stage
-                // previous-current re-derivation — UNLESS the step landed on a
-                // declared discontinuity, in which case the history spans a
-                // jump (e.g. a source edge) and must not feed the next TR
-                // stage; reset so the next step starts clean (i_{C,n} = 0).
-                self.system.prev_h = if landed_on_breakpoint { 0.0 } else { dt_actual };
-                // Timestep policy: the PI controller grows / shrinks `dt`
-                // from the global Milne error (always adaptive — SPICE has
-                // been adaptive since v2). Output interpolation onto a fixed
-                // print grid is a follow-up (ROADMAP); the recorded waveform
-                // is the adaptive time grid for now, and statistics
-                // weight by `dt` so they stay correct.
-                dt = if post_set_step {
-                    // The Milne value measures the jump, not integration
-                    // error — hold dt instead of feeding the PI garbage.
-                    dt_proposed
-                } else {
-                    self.stepper.propose_dt(milne, dt_actual, &self.options)
-                };
-                if sets_just_applied {
-                    // Discontinuity restart (SPICE breakpoint convention):
-                    // the step after a live-set jump starts first-order
-                    // (prev_h = 0 discards the pre-jump current), so resume
-                    // with a small step and let the PI regrow from clean
-                    // LTE readings.
-                    dt = (1e-3 * dt_actual).max(self.options.dt_min);
-                }
-
-                // Per-device LTE floor: reactive devices can cap dt tighter
-                // than the global Milne LTE (audit P5 — this was never called).
-                let tran_state = TransientAnalysisState::new(
-                    self.solver.state(),
-                    &self.system.circuit.digital_state.nets,
-                );
-                let time_history = [self.system.prev_h, dt_actual];
-                for dev in &self.system.circuit.devices {
-                    if let Some(dt_floor) = dev.suggest_transient_step(
-                        &tran_state,
-                        &time_history,
-                        &self.system.context,
-                    ) {
-                        dt = dt.min(dt_floor);
                     }
                 }
             } else {
                 // Either phase failed to converge — reject the whole step,
                 // halve dt, reset the PI memory (TRB-05/09).
-                steps_rejected += 1;
-                last_step_accepted = false;
+                st.steps_rejected += 1;
+                st.last_step_accepted = false;
                 self.system.circuit.digital_state.rollback();
                 self.solver.restore_state(analog_history);
-                dt = self.stepper.reject_dt(dt_proposed, &self.options);
+                st.dt = self.stepper.reject_dt(prediction.dt_proposed, &self.options);
 
-                if dt <= dt_min && let Err(e) = analog_result {
+                if st.dt <= dt_min && let Err(e) = outcome {
                     return Err(e);
                 }
                 continue;
@@ -990,11 +1067,11 @@ impl<'a> TransientSolver<'a> {
         let mut result = TransientAnalysisResult::new(steps);
         result.stats.newton_iterations = self.solver.total_iterations();
         result.stats.converged = true;
-        result.stats.steps_accepted = steps_accepted;
-        result.stats.steps_rejected = steps_rejected;
-        result.stats.dt_min_floor_hits = dt_min_floor_hits;
-        result.stats.dt_min = if dt_min_seen.is_finite() { dt_min_seen } else { 0.0 };
-        result.stats.dt_max = dt_max_seen;
+        result.stats.steps_accepted = st.steps_accepted;
+        result.stats.steps_rejected = st.steps_rejected;
+        result.stats.dt_min_floor_hits = st.dt_min_floor_hits;
+        result.stats.dt_min = if st.dt_min_seen.is_finite() { st.dt_min_seen } else { 0.0 };
+        result.stats.dt_max = st.dt_max_seen;
         result.stats.assembly_time_ns = self.solver.assembly_time_ns();
         result.stats.solve_time_ns = self.solver.solve_time_ns();
         Ok(result)
