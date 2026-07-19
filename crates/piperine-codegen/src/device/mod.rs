@@ -202,7 +202,14 @@ impl Element for PiperineDevice {
                     unit: None,
                     bounds: Bounds::UNBOUNDED,
                     scope: ParamScope::Instance,
-                    invalidation: Invalidation::Restamp,
+                    // Presence-queried, never-given optional params are
+                    // structural to write (the given-mask is baked at build)
+                    // — same classification as `set_param` (LIVE-14).
+                    invalidation: if analog.set_flips_presence(name) {
+                        Invalidation::Rebuild
+                    } else {
+                        Invalidation::Restamp
+                    },
                 })
             })
             .collect()

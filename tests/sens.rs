@@ -43,6 +43,25 @@ const DIVIDER: &str = r#"
         r1 : R(.p = top, .n = mid) {};
         d1 : D(.p = mid, .n = gnd) {};
     }
+
+    mod ROpt (inout p : Electrical, inout n : Electrical) {
+        param r : Real = 1.0e3;
+        param w : Real? = none;
+    }
+    analog ROpt {
+        var g : Real = 1.0e-3;
+        if (w.is_present()) { g = w.get_or(1.0e-3); }
+        I(p, n) <+ V(p, n) * g;
+    }
+
+    mod OptTop () {
+        wire gnd : Electrical;
+        wire top : Electrical;
+        wire mid : Electrical;
+        v1 : Vsrc(.p = top, .n = gnd) {};
+        r1 : ROpt(.p = top, .n = mid) {};
+        r2 : ROpt(.p = mid, .n = gnd) {};
+    }
 "#;
 
 fn headers_source_map() -> SourceMap {
@@ -125,7 +144,8 @@ fn diode_sensitivity_is_step_independent_and_signed() {
 }
 
 /// Loud errors: unknown element, unknown parameter (naming the available
-/// ones), and a digital/pseudo output.
+/// ones), a Rebuild-class (presence-flipping) parameter, and a
+/// digital/pseudo output net.
 #[test]
 fn sens_error_paths_are_loud() {
     let (mut circuit, info) = build("Top");
@@ -150,4 +170,48 @@ fn sens_error_paths_are_loud() {
         .solve()
         .expect_err("unknown param");
     assert!(err.to_string().contains("bogus"), "names the param: {err}");
+
+    // Non-addressable output: a digital net is not a solved analog net — loud.
+    let digital = Net::from(piperine_solver::abi::DigitalNet(0));
+    let err = circuit
+        .sens(
+            SensAnalysisOptions::new(vec![digital], vec![("r2".into(), "r".into())]),
+            Context::default(),
+        )
+        .expect("sens")
+        .solve()
+        .expect_err("digital output");
+    assert!(
+        err.to_string().contains("not a solved analog net"),
+        "names the output class: {err}"
+    );
+}
+
+/// SC-02 — a presence-queried optional param that was never given is
+/// Rebuild-class (the given-mask is baked at build): a finite difference
+/// across a rebuild boundary is not a sensitivity, so the analysis fails
+/// loud naming the param.
+#[test]
+fn sens_rebuild_class_param_fails_loud() {
+    let (mut circuit, info) = build("OptTop");
+    let mid = net_for(&circuit, &info, "mid");
+
+    let err = circuit
+        .sens(
+            SensAnalysisOptions::new(vec![mid], vec![("r1".into(), "w".into())]),
+            Context::default(),
+        )
+        .expect("sens")
+        .solve()
+        .expect_err("Rebuild-class param");
+    let msg = err.to_string();
+    assert!(msg.contains("w"), "names the param: {msg}");
+    assert!(msg.contains("Rebuild"), "names the invalidation class: {msg}");
+
+    // The given-at-build scalar param stays Restamp-class and solves fine.
+    let opts = SensAnalysisOptions::new(
+        vec![net_for(&circuit, &info, "mid")],
+        vec![("r2".into(), "r".into())],
+    );
+    circuit.sens(opts, Context::default()).expect("sens").solve().expect("restampable param solves");
 }
