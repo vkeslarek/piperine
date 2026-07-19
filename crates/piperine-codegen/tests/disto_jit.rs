@@ -186,3 +186,151 @@ analog ProbeDev {{
         other => panic!("expected CodegenError::Unsupported, got {other}"),
     }
 }
+
+/// `i = g2·t2` with a two-level temp chain (`t1 = V`, `t2 = t1·t1`):
+/// `f'' = 2·g2` on ((inp,inn)²) and *zero* on every cross pair — a
+/// multi-level chain must read each branch's own first-derivative tape,
+/// never another branch's (regression: `__dtemp_inner` tape entries once
+/// referenced the wrong branch's tape).
+#[test]
+fn disto2_nested_temp_chain_reads_the_correct_branch_tapes() {
+    let src = format!(
+        "{DISCIPLINE}
+mod NestedVar ( inout inp : Electrical, inout inn : Electrical,
+                inout outp : Electrical, inout outn : Electrical ) {{
+    param g2 : Real = 0.02;
+}}
+analog NestedVar {{
+    var t1 : Real;
+    var t2 : Real;
+    t1 = V(inp, inn);
+    t2 = t1 * t1;
+    I(outp, outn) <+ g2 * t2;
+}}
+"
+    );
+    let (kernel, node) = compile_module(&src, "NestedVar");
+    assert!(kernel.has_disto2());
+
+    let in_branch = (node("inp"), node("inn"));
+    let out_branch = (node("outp"), node("outn"));
+    assert_eq!(
+        kernel.disto2_pairs(),
+        &[(in_branch, in_branch)],
+        "no cross pair may leak a nonzero row through the temp chain"
+    );
+
+    let volts = [0.4, 0.1, 0.7, 0.2];
+    let params = [0.02_f64];
+    let mut out = [0.0_f64; 1];
+    kernel.eval_disto2(&volts, &params, &[], &[], &SimCtx::default(), &mut out);
+    assert!(
+        (out[0] - 2.0 * 0.02).abs() < 1e-15,
+        "f'' = {} vs 2·g2 = 0.04 (out branch {out_branch:?})",
+        out[0]
+    );
+}
+
+/// `i = g3·v³` through the var tape: `f'''(v) = 6·g3` is the only nonzero
+/// third derivative, in the single ordered triple ((inp,inn)³).
+#[test]
+fn disto3_cubic_vccs_matches_symbolic_third_derivative() {
+    let src = format!(
+        "{DISCIPLINE}
+mod CubicVccs ( inout inp : Electrical, inout inn : Electrical,
+                inout outp : Electrical, inout outn : Electrical ) {{
+    param g3 : Real = 0.003;
+}}
+analog CubicVccs {{
+    var v_in : Real;
+    v_in = V(inp, inn);
+    I(outp, outn) <+ g3 * v_in * v_in * v_in;
+}}
+"
+    );
+    let (kernel, node) = compile_module(&src, "CubicVccs");
+    assert!(kernel.has_disto3(), "cubic device must carry a disto3 kernel");
+
+    let branch = (node("inp"), node("inn"));
+    assert_eq!(kernel.disto3_triples(), &[(branch, branch, branch)]);
+
+    let volts = [0.4, 0.1, 0.0, 0.0];
+    let params = [0.003_f64];
+    let mut out = [0.0_f64; 1];
+    kernel.eval_disto3(&volts, &params, &[], &[], &SimCtx::default(), &mut out);
+    assert!(
+        (out[0] - 6.0 * 0.003).abs() < 1e-18,
+        "f''' = {} vs 6·g3 = 0.018",
+        out[0]
+    );
+}
+
+/// `i = k·V(o)·V(o)·V(i)`: `∂³i/∂V(o)²∂V(i) = 2·k` for each of the three
+/// ordered permutations of (o, o, i); all other triples are zero.
+#[test]
+fn disto3_cross_third_derivative_matches_symbolic_reference() {
+    let src = format!(
+        "{DISCIPLINE}
+mod Cross3 ( inout inp : Electrical, inout inn : Electrical,
+             inout outp : Electrical, inout outn : Electrical ) {{
+    param k : Real = 0.5;
+}}
+analog Cross3 {{
+    I(outp, outn) <+ k * V(outp, outn) * V(outp, outn) * V(inp, inn);
+}}
+"
+    );
+    let (kernel, node) = compile_module(&src, "Cross3");
+    assert!(kernel.has_disto3());
+
+    let o = (node("outp"), node("outn"));
+    let i = (node("inp"), node("inn"));
+    let mut want = [(o, o, i), (o, i, o), (i, o, o)];
+    want.sort();
+    let mut got = kernel.disto3_triples().to_vec();
+    got.sort();
+    assert_eq!(got, want, "the three ordered (o,o,i) permutations survive");
+
+    let volts = [0.3, 0.1, 0.7, 0.2];
+    let params = [0.5_f64];
+    let mut out = [0.0_f64; 3];
+    kernel.eval_disto3(&volts, &params, &[], &[], &SimCtx::default(), &mut out);
+    for (row, value) in out.iter().enumerate() {
+        assert!(
+            (value - 1.0).abs() < 1e-15,
+            "cross third derivative row {row} = {value} vs 2·k = 1.0"
+        );
+    }
+}
+
+/// Cubic charge `q = c3·v³`: `q''' = 6·c3` lands in the charge row.
+#[test]
+fn disto3_cubic_charge_third_derivative() {
+    let src = format!(
+        "{DISCIPLINE}
+mod CubicCap ( inout p : Electrical, inout n : Electrical ) {{
+    param c3 : Real = 1e-7;
+}}
+analog CubicCap {{
+    I(p, n) <+ ddt(c3 * V(p, n) * V(p, n) * V(p, n));
+}}
+"
+    );
+    let (kernel, node) = compile_module(&src, "CubicCap");
+    assert!(kernel.has_disto3(), "cubic charge must carry a disto3 kernel");
+
+    let branch = (node("p"), node("n"));
+    assert_eq!(kernel.disto3_triples(), &[(branch, branch, branch)]);
+
+    let volts = [0.9, 0.1];
+    let params = [1e-7_f64];
+    let mut out = [0.0_f64; 2];
+    kernel.eval_disto3(&volts, &params, &[], &[], &SimCtx::default(), &mut out);
+    assert_eq!(out[0], 0.0, "resistive row folds to zero");
+    assert!(
+        (out[1] - 6.0e-7).abs() < 1e-19,
+        "q''' = {} vs 6·c3 = 6e-7",
+        out[1]
+    );
+}
+

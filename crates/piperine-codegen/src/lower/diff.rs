@@ -21,13 +21,29 @@ pub fn d_dv(
     minus: NodeId,
     resolve_node: &impl Fn(&str) -> Option<NodeId>,
 ) -> Expr {
+    d_dv_named(expr, plus, minus, resolve_node, "__dtemp")
+}
+
+/// `∂expr / ∂V(plus, minus)` with a custom tape-marker name: `__temp(id)`
+/// leaves differentiate to `__deriv_marker(id)`, so the emitted tape's own
+/// entries reference the *same* marker (self-consistent tape). The `.disto`
+/// kernels keep one first-derivative tape per branch, each under its own
+/// name; a tape built with the wrong name would read another branch's
+/// values through multi-level temp chains.
+pub fn d_dv_named(
+    expr: &Expr,
+    plus: NodeId,
+    minus: NodeId,
+    resolve_node: &impl Fn(&str) -> Option<NodeId>,
+    deriv_marker: &'static str,
+) -> Expr {
     differentiate(expr, &|p, m| {
         if p == plus && m == minus {
             lit(1.0)
         } else {
             lit(0.0)
         }
-    }, resolve_node, TAPE_D1)
+    }, resolve_node, &[("__temp", deriv_marker)])
 }
 
 /// `∂expr / ∂V(node)` — the `ddx` derivative w.r.t. a single node potential.
@@ -85,14 +101,74 @@ pub fn d_dv_twice(
     d: NodeId,
     resolve_node: &impl Fn(&str) -> Option<NodeId>,
 ) -> Expr {
+    d_dv_twice_named(expr, a, b, c, d, resolve_node, "__dtemp_inner", "__dtemp", "__ddtemp")
+}
+
+/// [`d_dv_twice`] with custom tape-marker names, so every installed tape's
+/// entries reference only markers the caller installs (see [`d_dv_named`]):
+/// pass 1 (w.r.t. `(a,b)`) maps `__temp` → `d1`; pass 2 (w.r.t. `(c,d)`)
+/// maps `__temp` → `d2` and `d1` → `d12`.
+pub fn d_dv_twice_named(
+    expr: &Expr,
+    a: NodeId,
+    b: NodeId,
+    c: NodeId,
+    d: NodeId,
+    resolve_node: &impl Fn(&str) -> Option<NodeId>,
+    d1: &'static str,
+    d2: &'static str,
+    d12: &'static str,
+) -> Expr {
     let seed1 = |p: NodeId, m: NodeId| {
         if p == a && m == b { lit(1.0) } else { lit(0.0) }
     };
-    let inner = differentiate(expr, &seed1, resolve_node, &[("__temp", "__dtemp_inner")]);
+    let inner = differentiate(expr, &seed1, resolve_node, &[("__temp", d1)]);
     let seed2 = |p: NodeId, m: NodeId| {
         if p == c && m == d { lit(1.0) } else { lit(0.0) }
     };
-    differentiate(&inner, &seed2, resolve_node, &[("__temp", "__dtemp"), ("__dtemp_inner", "__ddtemp")])
+    differentiate(&inner, &seed2, resolve_node, &[("__temp", d2), (d1, d12)])
+}
+
+/// `∂³expr / ∂V(a,b)∂V(c,d)∂V(e,f)` — the `.disto` 3rd-derivative kernel's
+/// core (DISTO-03), three single-variable passes through private markers:
+///
+/// - pass 1 (w.r.t. `(a,b)`): `__temp` → `__dtemp1`
+/// - pass 2 (w.r.t. `(c,d)`): `__temp` → `__dtemp2`, `__dtemp1` → `__ddtemp12`
+/// - pass 3 (w.r.t. `(e,f)`): `__temp` → `__dtemp3`, `__dtemp1` → `__ddtemp13`,
+///   `__dtemp2` → `__ddtemp23`, `__ddtemp12` → `__dddtemp123`
+///
+/// As with [`d_dv_twice`], product/quotient/power rules clone their
+/// undifferentiated operands, so markers from every earlier level can
+/// survive into the result. Before emitting, the caller must install seven
+/// tapes (via [`Builder::set_tape`](crate::codegen::Builder::set_tape)):
+/// `__dtemp1`/`__dtemp2`/`__dtemp3` — the first-derivative tapes of the
+/// three branches; `__ddtemp12`/`__ddtemp13`/`__ddtemp23` — the three
+/// pairwise cross tapes (each built with [`d_dv_twice`]); and
+/// `__dddtemp123` — this function applied to each `temps[id]`.
+pub fn d_dv_thrice(
+    expr: &Expr,
+    a: NodeId,
+    b: NodeId,
+    c: NodeId,
+    d: NodeId,
+    e: NodeId,
+    f: NodeId,
+    resolve_node: &impl Fn(&str) -> Option<NodeId>,
+) -> Expr {
+    let pass1 = differentiate(expr, &|p, m| {
+        if p == a && m == b { lit(1.0) } else { lit(0.0) }
+    }, resolve_node, &[("__temp", "__dtemp1")]);
+    let pass2 = differentiate(&pass1, &|p, m| {
+        if p == c && m == d { lit(1.0) } else { lit(0.0) }
+    }, resolve_node, &[("__temp", "__dtemp2"), ("__dtemp1", "__ddtemp12")]);
+    differentiate(&pass2, &|p, m| {
+        if p == e && m == f { lit(1.0) } else { lit(0.0) }
+    }, resolve_node, &[
+        ("__temp", "__dtemp3"),
+        ("__dtemp1", "__ddtemp13"),
+        ("__dtemp2", "__ddtemp23"),
+        ("__ddtemp12", "__dddtemp123"),
+    ])
 }
 
 /// Core chain-rule walk; `seed` gives the derivative of a branch read.

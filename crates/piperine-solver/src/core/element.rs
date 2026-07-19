@@ -202,6 +202,17 @@ pub trait AnalogDevice: Send + Sync {
         None
     }
 
+    /// Third derivatives of the device's nonlinear contributions at the DC
+    /// operating point (DISTO-03). Default `None`: contributions of degree
+    /// ≤ 2 have no third-order nonlinear current.
+    fn load_disto3(
+        &mut self,
+        _dc_op: &DcAnalysisResult,
+        _context: &Context,
+    ) -> Option<crate::analyses::disto::Disto3> {
+        None
+    }
+
     // ── Numerical integration feedback ────────────────────────────────────────
 
     /// LTE-driven timestep suggestion, called by the transient stepper after

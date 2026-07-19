@@ -18,6 +18,16 @@
 //! numeric perturbation). Solving `Y(j·2ω1)·X2 = −I2` yields the
 //! second-order response; `HD2 = |X2(out)| / |X1(out)|` (DISTO-01).
 //!
+//! **Third order (3·F1).** The 3rd-order nonlinear current mixes the
+//! third derivative with the first-order phasors and the second
+//! derivative with the first- and second-order phasors:
+//! `I3 = (1/6)·f'''·X1³ + ½·f''·(2·X1⊙X2)`. With peak phasors, a
+//! same-tone triple product lands at `3·F1` with phasor `x³/4`, and a
+//! `x1·x2` cross product with phasor `x1·x2/2`, so the `3·F1` phasor is
+//! `(1/24)·Σ T_jkl·x1_j·x1_k·x1_l + ½·Σ H_jk·x1_j·x2_k` (charge rows
+//! carry `j·3ω1`). Solving `Y(j·3ω1)·X3 = −I3` yields
+//! `HD3 = |X3(out)| / |X1(out)|` (DISTO-01).
+//!
 //! Devices whose nonlinearity cannot be differentiated fail loud at
 //! compile time (`CodegenError::Unsupported`, DISTO-04) — never a silent
 //! zero row.
@@ -60,6 +70,29 @@ pub struct Disto2 {
     /// Index in `contribs` where charge contributions begin.
     pub charge_start: usize,
     /// Row-major `[pair][contrib]` Hessian values at the DC point.
+    pub values: Vec<f64>,
+}
+
+/// A device's third derivatives at the DC operating point (DISTO-03): the
+/// third-order Hessian of every nonlinear contribution over every ordered
+/// controlling-branch triple.
+#[derive(Debug, Clone)]
+pub struct Disto3 {
+    /// Ordered controlling branch triples `(j, k, l)`, in `values` row
+    /// order; a `None` terminal is ground. Only triples with at least one
+    /// nonzero row appear.
+    pub triples: Vec<(
+        (Option<AnalogReference>, Option<AnalogReference>),
+        (Option<AnalogReference>, Option<AnalogReference>),
+        (Option<AnalogReference>, Option<AnalogReference>),
+    )>,
+    /// Contribution terminals `(plus, minus)`, in `values` column order:
+    /// resistive first, then charge (the split is `charge_start`) — the
+    /// same row order as [`Disto2::contribs`].
+    pub contribs: Vec<(Option<AnalogReference>, Option<AnalogReference>)>,
+    /// Index in `contribs` where charge contributions begin.
+    pub charge_start: usize,
+    /// Row-major `[triple][contrib]` third-derivative values at the DC point.
     pub values: Vec<f64>,
 }
 
@@ -211,15 +244,27 @@ impl<'a> DistoSolver<'a> {
             .collect();
         let x2 = self.solve_at(2.0 * f1, 0.0, rhs)?;
 
+        let i3 = self.nonlinear_currents_3(&x1, &x2, omega1);
+        let rhs3: Vec<Stamp<AnalogReference, Complex64>> = i3
+            .into_iter()
+            .map(|(reference, value)| Stamp::Rhs(reference, value))
+            .collect();
+        let x3 = self.solve_at(3.0 * f1, 0.0, rhs3)?;
+
         let out1 = self.output_phasor(&x1);
         let out2 = self.output_phasor(&x2);
+        let out3 = self.output_phasor(&x3);
         if out1.norm() == 0.0 {
             return Err(Error::simple(
                 SolverDomain::Disto,
                 "no first-order response at the output — distortion ratios are undefined",
             ));
         }
-        Ok(DistoResult { hd2: Some(out2.norm() / out1.norm()), ..DistoResult::default() })
+        Ok(DistoResult {
+            hd2: Some(out2.norm() / out1.norm()),
+            hd3: Some(out3.norm() / out1.norm()),
+            ..DistoResult::default()
+        })
     }
 
     /// Solve the linearized system at `f_hz` with the stimulus scaled by
@@ -295,6 +340,77 @@ impl<'a> DistoSolver<'a> {
             }
         }
         i2
+    }
+
+    /// The third-order nonlinear-current injections at `3·F1`:
+    /// `(1/24)·Σ T_jkl·x1_j·x1_k·x1_l` (from [`Disto3`]) plus
+    /// `½·Σ H_jk·x1_j·x2_k` (from [`Disto2`]), charge rows scaled by
+    /// `j·3ω1`, stamped as `−I3` on the RHS (`Y·X3 = −I3`).
+    fn nonlinear_currents_3(
+        &mut self,
+        x1: &ndarray::Array1<Complex64>,
+        x2: &ndarray::Array1<Complex64>,
+        omega1: f64,
+    ) -> Vec<(AnalogReference, Complex64)> {
+        let mut i3: Vec<(AnalogReference, Complex64)> = Vec::new();
+        let DistoSystem { circuit, dc_point, context, .. } = &mut self.system;
+        for dev in &mut circuit.devices {
+            let d2 = dev.load_disto2(dc_point, context);
+            let d3 = dev.load_disto3(dc_point, context);
+            let nc = d2.as_ref().map(|d| d.contribs.len()).unwrap_or(0);
+            let mut sums = vec![Complex64::ZERO; nc];
+            if let Some(d3) = &d3 {
+                for (ti, (j, k, l)) in d3.triples.iter().enumerate() {
+                    let xj = Self::branch_phasor(x1, &j.0) - Self::branch_phasor(x1, &j.1);
+                    let xk = Self::branch_phasor(x1, &k.0) - Self::branch_phasor(x1, &k.1);
+                    let xl = Self::branch_phasor(x1, &l.0) - Self::branch_phasor(x1, &l.1);
+                    if xj == Complex64::ZERO || xk == Complex64::ZERO || xl == Complex64::ZERO {
+                        continue;
+                    }
+                    for (ci, sum) in sums.iter_mut().enumerate() {
+                        let t = d3.values[ti * nc + ci];
+                        if t != 0.0 {
+                            *sum += t * xj * xk * xl / 24.0;
+                        }
+                    }
+                }
+            }
+            if let Some(d2) = &d2 {
+                for (pi, (j, k)) in d2.pairs.iter().enumerate() {
+                    let xj = Self::branch_phasor(x1, &j.0) - Self::branch_phasor(x1, &j.1);
+                    let xk = Self::branch_phasor(x2, &k.0) - Self::branch_phasor(x2, &k.1);
+                    if xj == Complex64::ZERO || xk == Complex64::ZERO {
+                        continue;
+                    }
+                    for (ci, sum) in sums.iter_mut().enumerate() {
+                        let h = d2.values[pi * nc + ci];
+                        if h != 0.0 {
+                            *sum += 0.5 * h * xj * xk;
+                        }
+                    }
+                }
+            }
+            let contribs = d2.as_ref().map(|d| &d.contribs);
+            let charge_start = d2.as_ref().map(|d| d.charge_start).unwrap_or(0);
+            if let Some(contribs) = contribs {
+                for (ci, (plus, minus)) in contribs.iter().enumerate() {
+                    let mut cur = sums[ci];
+                    if cur == Complex64::ZERO {
+                        continue;
+                    }
+                    if ci >= charge_start {
+                        cur *= Complex64::new(0.0, 3.0 * omega1);
+                    }
+                    if let Some(p) = plus {
+                        i3.push((p.clone(), -cur));
+                    }
+                    if let Some(m) = minus {
+                        i3.push((m.clone(), cur));
+                    }
+                }
+            }
+        }
+        i3
     }
 
     /// A solution phasor at a (possibly ground) terminal reference.
@@ -474,6 +590,19 @@ mod tests {
                 values: vec![hessian],
             })
         }
+        fn load_disto3(&mut self, dc_op: &DcAnalysisResult, _context: &Context) -> Option<Disto3> {
+            let _ = dc_op;
+            Some(Disto3 {
+                triples: vec![(
+                    (Some(self.input.clone()), None),
+                    (Some(self.input.clone()), None),
+                    (Some(self.input.clone()), None),
+                )],
+                contribs: vec![(Some(self.output.clone()), None)],
+                charge_start: 1,
+                values: vec![6.0 * self.g3],
+            })
+        }
     }
     impl DigitalDevice for TestPolyVccs {}
     impl Introspect for TestPolyVccs {}
@@ -551,6 +680,154 @@ mod tests {
         let mut solver = DistoSolver::new(&mut circuit, options, Context::default()).unwrap();
         let result = solver.solve().expect("disto solves");
         assert_eq!(result.hd2, Some(0.0), "a linear circuit has no 2nd-order response");
+    }
+
+    /// Polynomial load `i = g1·v + g2·v² + g3·v³` from `in` to ground.
+    /// Driven through a source resistor, its controlling node develops a
+    /// 2nd-order response — exercising the `½·f''·(2·X1⊙X2)` cross term of
+    /// the 3rd-order nonlinear current.
+    struct TestPolyLoad {
+        input: AnalogReference,
+        g1: f64,
+        g2: f64,
+        g3: f64,
+    }
+    impl TestPolyLoad {
+        fn conductance(&self, v: f64) -> f64 {
+            self.g1 + 2.0 * self.g2 * v + 3.0 * self.g3 * v * v
+        }
+        fn current(&self, v: f64) -> f64 {
+            self.g1 * v + self.g2 * v * v + self.g3 * v * v * v
+        }
+        fn dc_voltage(&self, dc: &DcAnalysisResult) -> f64 {
+            dc.get(AnalogVariable::Node(NodeIdentifier::Anonymous(0))).unwrap_or(0.0)
+        }
+    }
+    impl AnalogDevice for TestPolyLoad {
+        fn load_dc(&mut self, s: &DcAnalysisState<'_>, _c: &Context) -> Vec<Stamp<AnalogReference, f64>> {
+            let v = s
+                .latest()
+                .and_then(|x| self.input.idx().and_then(|i| x.get(i)).copied())
+                .unwrap_or(0.0);
+            let g = self.conductance(v);
+            let i_eq = self.current(v) - g * v;
+            vec![
+                Stamp::Matrix(self.input.clone(), self.input.clone(), g),
+                Stamp::Rhs(self.input.clone(), -i_eq),
+            ]
+        }
+        fn load_ac(
+            &mut self,
+            dc: &DcAnalysisResult,
+            _ac: &AcAnalysisContext,
+            _ctx: &Context,
+        ) -> Vec<Stamp<AnalogReference, Complex64>> {
+            let g = Complex64::new(self.conductance(self.dc_voltage(dc)), 0.0);
+            vec![Stamp::Matrix(self.input.clone(), self.input.clone(), g)]
+        }
+        fn load_disto2(&mut self, dc_op: &DcAnalysisResult, _context: &Context) -> Option<Disto2> {
+            let v = self.dc_voltage(dc_op);
+            Some(Disto2 {
+                pairs: vec![(
+                    (Some(self.input.clone()), None),
+                    (Some(self.input.clone()), None),
+                )],
+                contribs: vec![(Some(self.input.clone()), None)],
+                charge_start: 1,
+                values: vec![2.0 * self.g2 + 6.0 * self.g3 * v],
+            })
+        }
+        fn load_disto3(&mut self, _dc_op: &DcAnalysisResult, _context: &Context) -> Option<Disto3> {
+            Some(Disto3 {
+                triples: vec![(
+                    (Some(self.input.clone()), None),
+                    (Some(self.input.clone()), None),
+                    (Some(self.input.clone()), None),
+                )],
+                contribs: vec![(Some(self.input.clone()), None)],
+                charge_start: 1,
+                values: vec![6.0 * self.g3],
+            })
+        }
+    }
+    impl DigitalDevice for TestPolyLoad {}
+    impl Introspect for TestPolyLoad {}
+    impl Element for TestPolyLoad {
+        fn name(&self) -> &str {
+            "n1"
+        }
+        fn capabilities(&self) -> ElementCapabilities {
+            ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC | ElementCapabilities::LOADS_AC
+        }
+    }
+
+    #[test]
+    fn single_tone_hd3_matches_closed_form_volterra() {
+        // Same stage as the HD2 test: `X2 = 0` at the pinned input, so HD3
+        // is purely the third-derivative term `|f'''|·A² / (24·f')`.
+        let (v_dc, r, g1, g2, g3) = (0.5, 50.0, 0.1, 0.02, 0.003);
+        let amplitude = 0.1;
+        let (mut circuit, _, _) = poly_stage(v_dc, r, g1, g2, g3);
+        let options = DistoOptions {
+            f1: 1e6,
+            amplitude,
+            output: AnalogVariable::Node(NodeIdentifier::Anonymous(1)),
+            output_ref: None,
+        };
+        let mut solver = DistoSolver::new(&mut circuit, options, Context::default()).unwrap();
+        let result = solver.solve().expect("disto solves");
+
+        let f1p = g1 + 2.0 * g2 * v_dc + 3.0 * g3 * v_dc * v_dc;
+        let expected = 6.0 * g3 * amplitude * amplitude / (24.0 * f1p);
+        let hd3 = result.hd3.expect("single-tone run reports HD3");
+        let rel = (hd3 - expected).abs() / expected;
+        assert!(rel < 1e-3, "HD3 = {hd3}, closed form {expected} (rel {rel})");
+    }
+
+    #[test]
+    fn hd3_includes_the_f2_x1_x2_cross_term() {
+        // `v1 --Rs-- in`, poly load `in--gnd`: the controlling node has a
+        // nonzero 2nd-order response, so the `½·f''·X1·X2` cross term
+        // contributes to I3 alongside the `f'''·X1³/24` term. Reference is
+        // the hand-run Volterra recursion (design Algorithm 4). Zero bias
+        // keeps V(in) = 0 so `f' = g1`, `f'' = 2·g2`, `f''' = 6·g3`.
+        let (v_dc, rs, g1, g2, g3) = (0.0, 50.0, 0.1, 0.02, 0.004);
+        let amplitude = 0.2;
+        let mut netlist = Netlist::new();
+        let n_in = netlist.connect_node(NodeIdentifier::Anonymous(0));
+        let n_src = netlist.connect_node(NodeIdentifier::Anonymous(1));
+        let gnd = netlist.connect_node(NodeIdentifier::Gnd);
+        let branch = netlist.connect_branch(BranchIdentifier::from_component("v1"));
+        let devices: Vec<Box<dyn Element>> = vec![
+            Box::new(TestAcVsource { p: n_src.clone(), n: gnd.clone(), branch, v: v_dc }),
+            Box::new(TestResistor { n1: n_src, n2: n_in.clone(), r: rs }),
+            Box::new(TestPolyLoad { input: n_in, g1, g2, g3 }),
+        ];
+        let mut circuit = CircuitInstance::from_devices_and_netlist("load", devices, netlist);
+        let options = DistoOptions {
+            f1: 1e6,
+            amplitude,
+            output: AnalogVariable::Node(NodeIdentifier::Anonymous(0)),
+            output_ref: None,
+        };
+        let mut solver = DistoSolver::new(&mut circuit, options, Context::default()).unwrap();
+        let result = solver.solve().expect("disto solves");
+
+        // Hand-run recursion on the single unknown (purely resistive Y).
+        let gp = g1 + 2.0 * g2 * v_dc + 3.0 * g3 * v_dc * v_dc;
+        let fpp = 2.0 * g2 + 6.0 * g3 * v_dc;
+        let fppp = 6.0 * g3;
+        let y1 = 1.0 / rs + gp;
+        let x1 = amplitude / rs / y1;
+        let i2 = fpp * x1 * x1 / 4.0;
+        let x2 = -i2 / y1;
+        let i3 = fppp * x1 * x1 * x1 / 24.0 + fpp * x1 * x2 / 2.0;
+        let x3 = -i3 / y1;
+        let expected = (x3 / x1).abs();
+        let hd3 = result.hd3.expect("two-term HD3");
+        let rel = (hd3 - expected).abs() / expected;
+        assert!(rel < 1e-3, "HD3 = {hd3}, hand-run recursion {expected} (rel {rel})");
+        assert!(x2 != 0.0, "test topology must exercise the cross term");
     }
 
     #[test]

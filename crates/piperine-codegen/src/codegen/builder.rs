@@ -194,28 +194,20 @@ pub struct Builder<'a, 'f, 'm> {
     pub limit_base: usize,
     /// Common-subexpression cache for analog emission.
     pub cse: Option<HashMap<CseKey, Value>>,
-    /// Value tape: `var` definitions (`__temp(id)` leaves reference these).
-    /// Evaluated once each, memoized in `temp_values`.
-    pub temps: Vec<Expr>,
-    temp_values: Vec<Option<Value>>,
-    /// Derivative tape for the current Jacobian branch: `d(temps[id])/dV`.
-    /// Set per branch via [`Builder::set_deriv_tape`]; `__dtemp(id)` leaves
-    /// reference these. Memoized in `dtemp_values`.
-    dtemps: Vec<Expr>,
-    dtemp_values: Vec<Option<Value>>,
-    /// Second-derivative tape for the current `.disto` branch pair:
-    /// `d²(temps[id])/dV(a,b)dV(c,d)` (DISTO-03). Set per branch pair via
-    /// [`Builder::set_ddtemp_tape`]; `__ddtemp(id)` leaves reference these.
-    /// Memoized in `ddtemp_values`.
-    ddtemps: Vec<Expr>,
-    ddtemp_values: Vec<Option<Value>>,
-    /// Second first-derivative tape, live only while a `.disto` branch pair
-    /// is emitted: `d(temps[id])/dV(a,b)` — the pair's *other* branch
-    /// (`__dtemp_inner(id)` leaves, which survive a second-derivative pass
-    /// as undifferentiated product/quotient-rule operands). Set per branch
-    /// pair via [`Builder::set_deriv_tape2`]; memoized in `dtemp2_values`.
-    dtemps2: Vec<Expr>,
-    dtemp2_values: Vec<Option<Value>>,
+    /// Marker tapes: a `__marker(id)` leaf evaluates `tapes[marker].exprs[id]`
+    /// once and memoizes in `values`. Installed per kernel/branch via
+    /// [`Builder::set_tape`] (and the named wrappers below): the value tape
+    /// (`__temp`), the Jacobian branch's derivative tape (`__dtemp`), and
+    /// the `.disto` higher-order tapes (`__ddtemp`, `__dtemp_inner`,
+    /// `__dtemp1..3`, `__ddtemp12/13/23`, `__dddtemp123`).
+    tapes: HashMap<&'static str, Tape>,
+}
+
+/// One expression tape (`__temp`, `__dtemp`, …): entries evaluated lazily,
+/// memoized per id in `values`.
+struct Tape {
+    exprs: Vec<Expr>,
+    values: Vec<Option<Value>>,
 }
 
 impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
@@ -248,14 +240,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             limits: None,
             limit_base: 0,
             cse: None,
-            temps: Vec::new(),
-            temp_values: Vec::new(),
-            dtemps: Vec::new(),
-            dtemp_values: Vec::new(),
-            ddtemps: Vec::new(),
-            ddtemp_values: Vec::new(),
-            dtemps2: Vec::new(),
-            dtemp2_values: Vec::new(),
+            tapes: HashMap::new(),
         }
     }
 
@@ -293,14 +278,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             limits: Some(limits),
             limit_base,
             cse: Some(HashMap::new()),
-            temps: Vec::new(),
-            temp_values: Vec::new(),
-            dtemps: Vec::new(),
-            dtemp_values: Vec::new(),
-            ddtemps: Vec::new(),
-            ddtemp_values: Vec::new(),
-            dtemps2: Vec::new(),
-            dtemp2_values: Vec::new(),
+            tapes: HashMap::new(),
         }
     }
 
@@ -334,15 +312,13 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
     /// Install the value tape (`var` definitions). Call once per function
     /// before emitting contributions.
     pub(crate) fn set_value_tape(&mut self, temps: Vec<Expr>) {
-        self.temp_values = vec![None; temps.len()];
-        self.temps = temps;
+        self.set_tape("__temp", temps);
     }
 
     /// Install the derivative tape for the current Jacobian branch and clear
     /// its memo cache. Call once per branch.
     pub(crate) fn set_deriv_tape(&mut self, dtemps: Vec<Expr>) {
-        self.dtemp_values = vec![None; dtemps.len()];
-        self.dtemps = dtemps;
+        self.set_tape("__dtemp", dtemps);
     }
 
     /// Install the second-derivative tape for the current `.disto` branch
@@ -350,72 +326,77 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
     /// once per branch pair, alongside [`Builder::set_deriv_tape`] for the
     /// inner branch (DISTO-03).
     pub(crate) fn set_ddtemp_tape(&mut self, ddtemps: Vec<Expr>) {
-        self.ddtemp_values = vec![None; ddtemps.len()];
-        self.ddtemps = ddtemps;
+        self.set_tape("__ddtemp", ddtemps);
     }
 
     /// Install the second first-derivative tape for the current `.disto`
     /// branch pair (`d(temps[id])/dV(a,b)` — the pair's `(a,b)` branch) and
     /// clear its memo cache (DISTO-03).
     pub(crate) fn set_deriv_tape2(&mut self, dtemps: Vec<Expr>) {
-        self.dtemp2_values = vec![None; dtemps.len()];
-        self.dtemps2 = dtemps;
+        self.set_tape("__dtemp_inner", dtemps);
     }
 
-    /// Emit `__temp(id)`: the value of temporary `id`, evaluated once and
-    /// memoized. Temps only reference earlier temps, so no cycle.
-    pub(crate) fn emit_temp(&mut self, id: usize) -> Result<Value, CodegenError> {
-        if let Some(Some(v)) = self.temp_values.get(id) {
-            return Ok(*v);
-        }
-        let expr = self.temps.get(id)
-            .ok_or_else(|| CodegenError::Invalid(format!("__temp({id}) out of range")))?
-            .clone();
-        let v = self.emit_analog(&expr)?;
-        self.temp_values[id] = Some(v);
-        Ok(v)
+    /// Install the tape behind `marker` and clear its memo cache: every
+    /// `marker(id)` leaf emitted from here on evaluates `exprs[id]`.
+    pub(crate) fn set_tape(&mut self, marker: &'static str, exprs: Vec<Expr>) {
+        let values = vec![None; exprs.len()];
+        self.tapes.insert(marker, Tape { exprs, values });
     }
 
-    /// Emit `__dtemp(id)`: the derivative of temporary `id` for the current
-    /// branch, evaluated once and memoized.
-    pub(crate) fn emit_dtemp(&mut self, id: usize) -> Result<Value, CodegenError> {
-        if let Some(Some(v)) = self.dtemp_values.get(id) {
-            return Ok(*v);
-        }
-        let expr = self.dtemps.get(id)
-            .ok_or_else(|| CodegenError::Invalid(format!("__dtemp({id}) out of range")))?
-            .clone();
-        let v = self.emit_analog(&expr)?;
-        self.dtemp_values[id] = Some(v);
-        Ok(v)
+    /// Whether `name` is a tape-marker call (`__temp`, `__dtemp`,
+    /// `__ddtemp12`, …) rather than another `__`-intrinsic.
+    pub(crate) fn is_tape_marker(name: &str) -> bool {
+        let Some(rest) = name.strip_prefix("__") else { return false; };
+        rest.trim_start_matches('d').starts_with("temp")
     }
 
-    /// Emit `__ddtemp(id)`: the second derivative of temporary `id` for the
-    /// current branch pair, evaluated once and memoized (DISTO-03).
-    pub(crate) fn emit_ddtemp(&mut self, id: usize) -> Result<Value, CodegenError> {
-        if let Some(Some(v)) = self.ddtemp_values.get(id) {
-            return Ok(*v);
+    /// Evaluate every entry of the named tapes in increasing id order, so
+    /// subsequent emissions read memoized values instead of recursing
+    /// through marker chains — emission recursion depth stays at one
+    /// entry's own tree depth (long temp chains would otherwise overflow
+    /// the stack on the `.disto` multi-tape kernels). Entries reference
+    /// only earlier ids of their own or lower tapes, so one ordered pass
+    /// resolves everything.
+    pub(crate) fn force_tapes(&mut self, markers: &[&'static str]) -> Result<(), CodegenError> {
+        let len = markers
+            .iter()
+            .filter_map(|m| self.tapes.get(m))
+            .map(|t| t.exprs.len())
+            .max()
+            .unwrap_or(0);
+        for id in 0..len {
+            for marker in markers {
+                let has = self.tapes.get(marker).is_some_and(|t| id < t.exprs.len());
+                if has {
+                    self.emit_tape(marker, id)?;
+                }
+            }
         }
-        let expr = self.ddtemps.get(id)
-            .ok_or_else(|| CodegenError::Invalid(format!("__ddtemp({id}) out of range")))?
-            .clone();
-        let v = self.emit_analog(&expr)?;
-        self.ddtemp_values[id] = Some(v);
-        Ok(v)
+        Ok(())
     }
 
-    /// Emit `__dtemp_inner(id)`: the first derivative of temporary `id`
-    /// w.r.t. the pair's `(a,b)` branch, evaluated once and memoized
-    /// (DISTO-03).
-    pub(crate) fn emit_dtemp2(&mut self, id: usize) -> Result<Value, CodegenError> {
-        if let Some(Some(v)) = self.dtemp2_values.get(id) {
-            return Ok(*v);
-        }
-        let expr = self.dtemps2.get(id)
-            .ok_or_else(|| CodegenError::Invalid(format!("__dtemp_inner({id}) out of range")))?
-            .clone();
+    /// Emit `__marker(id)`: entry `id` of the tape installed behind
+    /// `marker`, evaluated once and memoized. Tapes only reference earlier
+    /// ids of their own/lower-order tapes, so no cycle.
+    pub(crate) fn emit_tape(&mut self, marker: &str, id: usize) -> Result<Value, CodegenError> {
+        let expr = {
+            let tape = self
+                .tapes
+                .get(marker)
+                .ok_or_else(|| CodegenError::Invalid(format!("no tape installed for `{marker}`")))?;
+            if let Some(Some(v)) = tape.values.get(id) {
+                return Ok(*v);
+            }
+            tape.exprs
+                .get(id)
+                .cloned()
+                .ok_or_else(|| CodegenError::Invalid(format!("{marker}({id}) out of range")))?
+        };
         let v = self.emit_analog(&expr)?;
-        self.dtemp2_values[id] = Some(v);
+        self.tapes
+            .get_mut(marker)
+            .expect("tape checked above")
+            .values[id] = Some(v);
         Ok(v)
     }
 

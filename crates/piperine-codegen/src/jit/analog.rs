@@ -221,6 +221,15 @@ pub struct AnalogKernel {
     disto2_contribs: Vec<(NodeId, NodeId)>,
     /// Index in `disto2_contribs` where charge contributions begin.
     disto2_charge_start: usize,
+    /// `.disto` 3rd-derivative kernel (DISTO-03): for each ordered branch
+    /// triple in `disto3_triples`, `∂³(contrib)/∂V(j)∂V(k)∂V(l)` per
+    /// contribution (same row order as `disto2_contribs`), stored at
+    /// `out[triple·num_contribs + contrib]`. `None` when no contribution
+    /// has a third derivative.
+    disto3: Option<AnalogFn>,
+    /// Ordered branch triples `(j, k, l)` the disto3 kernel emits rows
+    /// for, in `out` row order — only triples with a nonzero row.
+    disto3_triples: Vec<((NodeId, NodeId), (NodeId, NodeId), (NodeId, NodeId))>,
     /// `@initial` UIC seed terminal pairs and their (param-only) value rows.
     initial_condition_terminals: Vec<(NodeId, NodeId)>,
     initial_conditions: Option<AnalogFn>,
@@ -678,6 +687,30 @@ impl AnalogKernel {
             Self::call(f, volts, params, state, vars, sim, out);
         }
     }
+
+    /// Whether the device has a compiled `.disto` 3rd-derivative kernel.
+    pub fn has_disto3(&self) -> bool {
+        self.disto3.is_some()
+    }
+
+    /// Ordered branch triples `(j, k, l)` the disto3 kernel emits, in `out`
+    /// row order.
+    pub fn disto3_triples(&self) -> &[((NodeId, NodeId), (NodeId, NodeId), (NodeId, NodeId))] {
+        &self.disto3_triples
+    }
+
+    /// Write the `.disto` third derivatives: for each ordered branch triple
+    /// `(j, k, l)` in [`AnalogKernel::disto3_triples`],
+    /// `∂³(contrib)/∂V(j)∂V(k)∂V(l)` per contribution at
+    /// `out[triple·num_contribs + contrib]` (same contribution row order as
+    /// [`AnalogKernel::disto2_contribs`]). Only nonzero rows are stored —
+    /// `out` must be pre-zeroed. No-op without third derivatives.
+    pub fn eval_disto3(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.disto3 {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(f, volts, params, state, vars, sim, out);
+        }
+    }
 }
 
 /// Collect the unique `$limit` expressions across every flattened expression,
@@ -990,6 +1023,12 @@ impl<'m> AnalogCompiler<'m> {
             Some((id, pairs)) => (Some(id), pairs),
             None => (None, Vec::new()),
         };
+        // `.disto` third derivatives (DISTO-03); `None` when every
+        // contribution is at most quadratic.
+        let (disto3_id, disto3_triples) = match self.compile_disto3("disto3", &resistive, &charge, &temps)? {
+            Some((id, triples)) => (Some(id), triples),
+            None => (None, Vec::new()),
+        };
 
         let (force_id, force_jac_id) = if forces.is_empty() {
             (None, None)
@@ -1276,6 +1315,8 @@ impl<'m> AnalogCompiler<'m> {
             charge_jacobian: charge_jac_id.map(|id| get(&self.jit, id)),
             disto2: disto2_id.map(|id| get(&self.jit, id)),
             disto2_pairs,
+            disto3: disto3_id.map(|id| get(&self.jit, id)),
+            disto3_triples,
             disto2_contribs: resistive
                 .iter()
                 .chain(&charge)
@@ -1396,6 +1437,191 @@ impl<'m> AnalogCompiler<'m> {
         })
     }
 
+    /// DISTO-04 guard shared by the `.disto` kernels: fail loud, naming the
+    /// device, when any contribution or temp reads a branch current
+    /// `I(...)` — the Volterra bookkeeping is over controlling *voltages*;
+    /// a current-controlled nonlinearity has no voltage-pair higher
+    /// derivative.
+    fn guard_voltage_controlled(
+        &self,
+        kernel: &str,
+        contribs: &[&FlatContrib],
+        temps: &[PomExpr],
+    ) -> Result<(), CodegenError> {
+        let mut reads_i = false;
+        let mut scan = |e: &PomExpr| {
+            visit_all(e, &mut |node| {
+                if let PomExpr::Call(func, _) = node
+                    && let PomExpr::Ident(fname) = func.as_ref()
+                    && fname == "I"
+                {
+                    reads_i = true;
+                }
+            });
+        };
+        for c in contribs { scan(&c.expr); }
+        for t in temps { scan(t); }
+        if reads_i {
+            return Err(CodegenError::unsupported(format!(
+                "{kernel}: device `{}` reads a branch current `I(...)`; \
+                 current-controlled nonlinearities have no voltage-pair higher derivative",
+                self.module.name
+            )));
+        }
+        Ok(())
+    }
+
+    /// The ordered set of V/I branches read anywhere in the contributions
+    /// or the temp tape (first-seen order).
+    fn contrib_branches(&self, contribs: &[&FlatContrib], temps: &[PomExpr]) -> Vec<(NodeId, NodeId)> {
+        let module = self.module;
+        let resolve_node = |name: &str| -> Option<NodeId> {
+            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
+            module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
+        };
+        let mut seen = std::collections::HashSet::new();
+        let mut branches: Vec<(NodeId, NodeId)> = Vec::new();
+        let mut collect = |e: &PomExpr| {
+            let mut branch_pairs = Vec::new();
+            crate::lower::diff::collect_branches(e, &mut branch_pairs, &resolve_node);
+            for pair in branch_pairs {
+                if seen.insert(pair) {
+                    branches.push(pair);
+                }
+            }
+        };
+        for c in contribs { collect(&c.expr); }
+        for t in temps { collect(t); }
+        branches
+    }
+
+    /// Disto3 shape: `out[triple·nc + ci] = ∂³(contrib_ci)/∂V(j)∂V(k)∂V(l)`
+    /// per ordered branch triple `(j, k, l)`, over the resistive
+    /// contributions followed by the charge ones (DISTO-03).
+    ///
+    /// Each triple's third derivatives ([`crate::lower::diff::d_dv_thrice`])
+    /// reference seven tapes — the three branches' first-derivative tapes,
+    /// the three pairwise cross tapes, and the third-derivative tape — all
+    /// over the shared value tape, never an inlined tree. Literal-zero rows
+    /// and empty triples are skipped (`out` is pre-zeroed by the caller);
+    /// `None` when no contribution has a third derivative (degree ≤ 2).
+    #[allow(clippy::type_complexity)]
+    fn compile_disto3(
+        &mut self,
+        name: &str,
+        resistive: &[FlatContrib],
+        charge: &[FlatContrib],
+        temps: &[PomExpr],
+    ) -> Result<Option<(FuncId, Vec<((NodeId, NodeId), (NodeId, NodeId), (NodeId, NodeId))>)>, CodegenError> {
+        let contribs: Vec<&FlatContrib> = resistive.iter().chain(charge).collect();
+        if contribs.is_empty() {
+            return Ok(None);
+        }
+        self.guard_voltage_controlled("disto3", &contribs, temps)?;
+        let branches = self.contrib_branches(&contribs, temps);
+        let module = self.module;
+        let resolve_node = |name: &str| -> Option<NodeId> {
+            if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
+            module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
+        };
+
+        // Every tape is built with the marker names of its role
+        // (`d_dv_named`/`d_dv_twice_named`), so tape entries only reference
+        // markers the emission installs: `__dtemp1/2/3` for the three
+        // branches, `__ddtemp12/13/23` for the three pairwise crosses.
+        let first_tapes = |marker: &'static str| -> Vec<Vec<PomExpr>> {
+            branches
+                .iter()
+                .map(|&(a, b)| {
+                    temps
+                        .iter()
+                        .map(|t| crate::lower::diff::d_dv_named(t, a, b, &resolve_node, marker))
+                        .collect()
+                })
+                .collect()
+        };
+        let dtemps1 = first_tapes("__dtemp1");
+        let dtemps2 = first_tapes("__dtemp2");
+        let dtemps3 = first_tapes("__dtemp3");
+        let cross_tapes = |d1: &'static str, d2: &'static str, d12: &'static str| -> Vec<Vec<Vec<PomExpr>>> {
+            branches
+                .iter()
+                .map(|&(a, b)| {
+                    branches
+                        .iter()
+                        .map(|&(c, d)| {
+                            temps
+                                .iter()
+                                .map(|t| crate::lower::diff::d_dv_twice_named(t, a, b, c, d, &resolve_node, d1, d2, d12))
+                                .collect()
+                        })
+                        .collect()
+                })
+                .collect()
+        };
+        let ddtemps12 = cross_tapes("__dtemp1", "__dtemp2", "__ddtemp12");
+        let ddtemps13 = cross_tapes("__dtemp1", "__dtemp3", "__ddtemp13");
+        let ddtemps23 = cross_tapes("__dtemp2", "__dtemp3", "__ddtemp23");
+
+        // Precompute every row symbolically; drop literal-zero rows and
+        // empty triples.
+        let mut triples: Vec<((NodeId, NodeId), (NodeId, NodeId), (NodeId, NodeId))> = Vec::new();
+        let mut kept: Vec<(usize, usize, usize, Vec<PomExpr>, Vec<Option<PomExpr>>)> = Vec::new();
+        for (j_idx, &(a, b)) in branches.iter().enumerate() {
+            for (k_idx, &(c, d)) in branches.iter().enumerate() {
+                for (l_idx, &(e, f)) in branches.iter().enumerate() {
+                    let dddtemps: Vec<PomExpr> = temps
+                        .iter()
+                        .map(|t| crate::lower::diff::d_dv_thrice(t, a, b, c, d, e, f, &resolve_node))
+                        .collect();
+                    let rows: Vec<Option<PomExpr>> = contribs
+                        .iter()
+                        .map(|contrib| {
+                            let row = crate::lower::diff::d_dv_thrice(&contrib.expr, a, b, c, d, e, f, &resolve_node);
+                            match &row {
+                                PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(v)) if *v == 0.0 => None,
+                                _ => Some(row),
+                            }
+                        })
+                        .collect();
+                    if rows.iter().any(Option::is_some) {
+                        triples.push(((a, b), (c, d), (e, f)));
+                        kept.push((j_idx, k_idx, l_idx, dddtemps, rows));
+                    }
+                }
+            }
+        }
+        if kept.is_empty() {
+            return Ok(None);
+        }
+
+        let nc = contribs.len();
+        let exprs: Vec<&PomExpr> = contribs.iter().map(|c| &c.expr).collect();
+        let func_id = self.build_fn(name, &exprs, move |b, _slot, out_ptr| {
+            for (triple_idx, (j, k, l, dddtemps, rows)) in kept.iter().enumerate() {
+                b.set_tape("__dtemp1", dtemps1[*j].clone());
+                b.set_tape("__dtemp2", dtemps2[*k].clone());
+                b.set_tape("__dtemp3", dtemps3[*l].clone());
+                b.set_tape("__ddtemp12", ddtemps12[*j][*k].clone());
+                b.set_tape("__ddtemp13", ddtemps13[*j][*l].clone());
+                b.set_tape("__ddtemp23", ddtemps23[*k][*l].clone());
+                b.set_tape("__dddtemp123", dddtemps.clone());
+                b.force_tapes(&[
+                    "__temp", "__dtemp1", "__dtemp2", "__dtemp3",
+                    "__ddtemp12", "__ddtemp13", "__ddtemp23", "__dddtemp123",
+                ])?;
+                for (ci, row) in rows.iter().enumerate() {
+                    if let Some(e) = row {
+                        let value = b.emit_analog(e)?;
+                        b.store_f64(value, out_ptr, triple_idx * nc + ci);
+                    }
+                }
+            }
+            Ok(())
+        })?;
+        Ok(Some((func_id, triples)))
+    }
+
     /// Disto2 shape: `out[pair·nc + ci] = ∂²(contrib_ci)/∂V(j)∂V(k)` per
     /// ordered branch pair `(j, k)`, over the resistive contributions
     /// followed by the charge ones (DISTO-03).
@@ -1426,55 +1652,35 @@ impl<'m> AnalogCompiler<'m> {
         if contribs.is_empty() {
             return Ok(None);
         }
-        let mut reads_i = false;
-        let mut scan = |e: &PomExpr| {
-            visit_all(e, &mut |node| {
-                if let PomExpr::Call(func, _) = node
-                    && let PomExpr::Ident(fname) = func.as_ref()
-                    && fname == "I"
-                {
-                    reads_i = true;
-                }
-            });
-        };
-        for c in &contribs { scan(&c.expr); }
-        for t in temps { scan(t); }
-        if reads_i {
-            return Err(CodegenError::unsupported(format!(
-                "disto2: device `{}` reads a branch current `I(...)`; \
-                 current-controlled nonlinearities have no voltage-pair second derivative",
-                self.module.name
-            )));
-        }
-
+        self.guard_voltage_controlled("disto2", &contribs, temps)?;
+        let branches = self.contrib_branches(&contribs, temps);
         let module = self.module;
         let resolve_node = |name: &str| -> Option<NodeId> {
             if piperine_lang::pom::is_ground(name) { return Some(NodeId::GROUND); }
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
-        let mut seen = std::collections::HashSet::new();
-        let mut branches: Vec<(NodeId, NodeId)> = Vec::new();
-        let mut collect = |e: &PomExpr| {
-            let mut branch_pairs = Vec::new();
-            crate::lower::diff::collect_branches(e, &mut branch_pairs, &resolve_node);
-            for pair in branch_pairs {
-                if seen.insert(pair) {
-                    branches.push(pair);
-                }
-            }
-        };
-        for c in &contribs { collect(&c.expr); }
-        for t in temps { collect(t); }
 
         // Precompute every row symbolically, k-major so each branch's
         // first-derivative tape is built once; drop literal-zero rows and
-        // empty pairs/groups.
+        // empty pairs/groups. Each role's tape is built with its own marker
+        // name so its entries stay self-consistent (`d_dv_named`): the
+        // `(c,d)` tape references `__dtemp`, the `(a,b)` tape
+        // `__dtemp_inner`.
         let all_dtemps: Vec<Vec<PomExpr>> = branches
             .iter()
             .map(|&(a, b)| {
                 temps
                     .iter()
                     .map(|t| crate::lower::diff::d_dv(t, a, b, &resolve_node))
+                    .collect()
+            })
+            .collect();
+        let all_dtemps_inner: Vec<Vec<PomExpr>> = branches
+            .iter()
+            .map(|&(a, b)| {
+                temps
+                    .iter()
+                    .map(|t| crate::lower::diff::d_dv_named(t, a, b, &resolve_node, "__dtemp_inner"))
                     .collect()
             })
             .collect();
@@ -1517,8 +1723,9 @@ impl<'m> AnalogCompiler<'m> {
             for (k_idx, js) in &groups {
                 b.set_deriv_tape(all_dtemps[*k_idx].clone());
                 for (j_idx, ddtemps, rows) in js {
-                    b.set_deriv_tape2(all_dtemps[*j_idx].clone());
+                    b.set_deriv_tape2(all_dtemps_inner[*j_idx].clone());
                     b.set_ddtemp_tape(ddtemps.clone());
+                    b.force_tapes(&["__temp", "__dtemp", "__dtemp_inner", "__ddtemp"])?;
                     for (ci, row) in rows.iter().enumerate() {
                         if let Some(e) = row {
                             let value = b.emit_analog(e)?;

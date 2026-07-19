@@ -1335,6 +1335,57 @@ impl AnalogInstance {
         })
     }
 
+    /// The `.disto` third-derivative kernel evaluated at the DC operating
+    /// point, remapped to solver references (DISTO-03). `None` when no
+    /// contribution has a third derivative.
+    pub fn load_disto3(
+        &mut self,
+        dc_op: &DcAnalysisResult,
+        context: &Context,
+    ) -> Option<piperine_solver::abi::Disto3> {
+        if !self.kernel.has_disto3() {
+            return None;
+        }
+        self.sync_sim(context, Analysis::Ac);
+        let refs = self.node_refs.clone();
+        let volts = self.collect_volts(&|k| {
+            refs.iter()
+                .flatten()
+                .find(|r| r.idx() == Some(k))
+                .and_then(|r| dc_op.get(r.variable().clone()))
+                .unwrap_or(0.0)
+        });
+        let num_triples = self.kernel.disto3_triples().len();
+        let num_contribs = self.kernel.disto2_contribs().len();
+        let mut values = vec![0.0; num_triples * num_contribs];
+        self.kernel
+            .eval_disto3(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut values);
+        let triples = self
+            .kernel
+            .disto3_triples()
+            .iter()
+            .map(|&((a, b), (c, d), (e, f))| {
+                (
+                    (self.terminal_ref(a), self.terminal_ref(b)),
+                    (self.terminal_ref(c), self.terminal_ref(d)),
+                    (self.terminal_ref(e), self.terminal_ref(f)),
+                )
+            })
+            .collect();
+        let contribs = self
+            .kernel
+            .disto2_contribs()
+            .iter()
+            .map(|&(p, m)| (self.terminal_ref(p), self.terminal_ref(m)))
+            .collect();
+        Some(piperine_solver::abi::Disto3 {
+            triples,
+            contribs,
+            charge_start: self.kernel.disto2_charge_start(),
+            values,
+        })
+    }
+
     pub fn noise_current_psd(
         &mut self,
         dc_point: &DcAnalysisResult,

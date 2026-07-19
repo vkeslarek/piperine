@@ -48,18 +48,13 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                     match name.as_str() {
                         "V" | "I" => return self.emit_analog_branch(args),
                         "__state_load" => return self.emit_state_load(args),
-                        "__temp" | "__dtemp" | "__ddtemp" | "__dtemp_inner" => {
+                        name if Self::is_tape_marker(name) => {
                             let id = match args.first() {
                                 Some(Expr::Literal(Literal::Int(n))) => *n as usize,
                                 _ => return Err(CodegenError::Invalid(
                                     format!("{name} needs an integer id"))),
                             };
-                            return match name.as_str() {
-                                "__temp" => self.emit_temp(id),
-                                "__dtemp" => self.emit_dtemp(id),
-                                "__dtemp_inner" => self.emit_dtemp2(id),
-                                _ => self.emit_ddtemp(id),
-                            };
+                            return self.emit_tape(name, id);
                         }
                         _ => {}
                     }
