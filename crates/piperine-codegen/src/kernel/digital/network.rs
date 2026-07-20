@@ -20,9 +20,9 @@ use piperine_solver::abi::{AnalogDevice, DigitalDevice, Element, ElementCapabili
 use piperine_solver::abi::{DigitalPorts, EvalCtx, EventSink};
 
 use crate::resolve::LoweredBody;
-use crate::jit::digital::compile::{NetworkComb, NetworkMemberSpec};
+use crate::kernel::digital::compile::{NetworkComb, NetworkMemberSpec};
 use crate::error::CodegenError;
-use crate::jit::SimCtx;
+use crate::emit::abi::SimCtx;
 
 /// Quad encoding shared with the JIT (0, 1, 2 = X, 3 = Z).
 fn to_quad(v: LogicValue) -> i64 {
@@ -117,7 +117,7 @@ impl DigitalNetwork {
         let mut cone: Vec<DigitalNet> = Vec::new();
         for m in &members {
             let body = m.module.digital.as_ref().unwrap();
-            let layout = crate::jit::digital::DigitalLayout::build(&m.module, body);
+            let layout = crate::kernel::digital::DigitalLayout::build(&m.module, body);
             num_int = num_int.max(m.int_base + layout.num_int_slots());
             num_real = num_real.max(m.real_base + layout.num_real_slots());
             num_params = num_params.max(m.param_base + m.params.len());
@@ -148,7 +148,7 @@ impl DigitalNetwork {
         let mut vars_real = vec![0.0; num_real];
         for m in &members {
             let body = m.module.digital.as_ref().unwrap();
-            let layout = crate::jit::digital::DigitalLayout::build(&m.module, body);
+            let layout = crate::kernel::digital::DigitalLayout::build(&m.module, body);
             for &(var, value) in &m.reg_inits {
                 if let Some(slot) = layout.real_slot(var) {
                     vars_real[m.real_base + slot] = value;

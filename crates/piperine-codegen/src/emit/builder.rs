@@ -11,10 +11,10 @@ use cranelift_frontend::FunctionBuilder;
 use piperine_lang::parse::ast::{BinaryOp, Expr};
 
 use crate::resolve::{BinOp, LoweredBody, NodeId, ParamId, Type, UnOp, VarId};
-use crate::jit::digital::compile::{Pointers, VarReads};
-use crate::jit::digital::layout::DigitalLayout;
+use crate::kernel::digital::compile::{Pointers, VarReads};
+use crate::kernel::digital::layout::DigitalLayout;
 use crate::error::CodegenError;
-use crate::jit::math;
+use piperine_lang::math;
 
 use super::cse::CseKey;
 use super::digital_expr::Codegen;

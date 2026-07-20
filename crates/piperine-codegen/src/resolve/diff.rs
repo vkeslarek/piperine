@@ -91,7 +91,7 @@ pub fn d_dnode(
 /// install all three tapes — the `(c,d)`-branch `__dtemp` tape, the
 /// `(a,b)`-branch `__dtemp_inner` tape, and the cross `__ddtemp` tape —
 /// before emitting the result, mirroring how
-/// [`crate::jit::analog::AnalogCompiler::compile_jacobian`] installs its
+/// [`crate::kernel::analog::AnalogCompiler::compile_jacobian`] installs its
 /// single derivative tape before emitting a first-order Jacobian row.
 pub fn d_dv_twice(
     expr: &Expr,

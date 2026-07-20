@@ -13,7 +13,7 @@ use cranelift_frontend::FunctionBuilder;
 use piperine_lang::parse::ast::{BinaryOp, Expr, Literal, Stmt, UnaryOp};
 use piperine_lang::math;
 use crate::error::CodegenError;
-use crate::jit::SimCtx;
+use crate::emit::abi::SimCtx;
 
 use crate::emit::builder::*;
 use crate::emit::cse::*;

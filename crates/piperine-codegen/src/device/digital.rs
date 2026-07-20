@@ -9,9 +9,9 @@ use std::sync::Arc;
 use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue};
 
 use crate::resolve::{EdgeKind, Type};
-use crate::jit::digital::{DigitalAbi, DigitalKernel};
+use crate::kernel::digital::{DigitalAbi, DigitalKernel};
 use crate::error::CodegenError;
-use crate::jit::SimCtx;
+use crate::emit::abi::SimCtx;
 
 /// Quad encoding shared with the JIT (0, 1, 2 = X, 3 = Z).
 struct Quad;

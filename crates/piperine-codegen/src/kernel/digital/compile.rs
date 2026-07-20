@@ -37,7 +37,7 @@ use crate::resolve::{
     DigitalBody, EdgeKind, LoweredBody, ParamId,
 };
 
-use super::super::math;
+use piperine_lang::math;
 use crate::error::CodegenError;
 
 use super::abi::*;
@@ -393,7 +393,7 @@ pub type NetworkCombFn = unsafe extern "C" fn(
     *mut i64,
     *mut f64,
     *const f64,
-    *const crate::jit::SimCtx,
+    *const crate::emit::abi::SimCtx,
     *const f64,
 );
 
@@ -418,7 +418,7 @@ impl NetworkComb {
         vars_int: *mut i64,
         vars_real: *mut f64,
         params: *const f64,
-        sim: *const crate::jit::SimCtx,
+        sim: *const crate::emit::abi::SimCtx,
         analog: *const f64,
     ) {
         unsafe { (self.func)(nets, vars_int, vars_real, params, sim, analog) }

@@ -18,9 +18,9 @@ use piperine_solver::abi::{AsIndex, Stamp};
 use piperine_solver::abi::Context;
 
 use crate::resolve::{Analysis, CrossDir};
-use crate::jit::analog::{AnalogKernel, CompiledTrigger, RuntimeState};
+use crate::kernel::analog::{AnalogKernel, CompiledTrigger, RuntimeState};
 use crate::error::CodegenError;
-use crate::jit::SimCtx;
+use crate::emit::abi::SimCtx;
 
 /// A runtime-serviced analog operator: updated once per accepted timestep,
 /// its output read by the kernel through the state array.

@@ -36,8 +36,8 @@ use piperine_solver::abi::Context;
 
 use crate::resolve::{Analysis, NodeId};
 use crate::resolve::pom::LoweredBody;
-use crate::jit::analog::AnalogKernel;
-use crate::jit::digital::DigitalKernel;
+use crate::kernel::analog::AnalogKernel;
+use crate::kernel::digital::DigitalKernel;
 use crate::error::CodegenError;
 
 pub use analog::AnalogInstance;
@@ -437,7 +437,7 @@ impl PiperineDevice {
     /// ports), remapped from terminal order into the kernel's compact
     /// `analog_index` order.
     fn analog_voltages_for(
-        layout: &crate::jit::digital::DigitalLayout,
+        layout: &crate::kernel::digital::DigitalLayout,
         analog: Option<&AnalogInstance>,
         terminal_node_ids: &[NodeId],
         last_analog_voltages: &[f64],

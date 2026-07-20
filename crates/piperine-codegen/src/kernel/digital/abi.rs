@@ -23,8 +23,8 @@
 //!   a `posedge`/`negedge`/`change`); the device compares against the
 //!   previous values to derive the per-block `fired` flags.
 
-use crate::jit::SimCtx;
-use crate::jit::digital::compile::DigitalCompiler;
+use crate::emit::abi::SimCtx;
+use crate::kernel::digital::compile::DigitalCompiler;
 
 
 use cranelift_jit::JITModule;

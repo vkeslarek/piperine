@@ -1,7 +1,7 @@
 //! `$limit` limiter formulas — the JIT-emitted `fetlim`/`limvds` must match
 //! the ngspice C reference (devsup.c) value-for-value (SC-19).
 
-use piperine_codegen::jit::analog::AnalogKernel;
+use piperine_codegen::kernel::analog::AnalogKernel;
 use piperine_codegen::SimCtx;
 use piperine_lang::parse_and_elaborate;
 

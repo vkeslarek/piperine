@@ -50,7 +50,7 @@ pub struct CircuitBuildInfo {
 }
 
 /// A single instantiated device as built into the circuit: its compiled
-/// kernel plus everything [`crate::jit::analog::AnalogKernel::eval_residual`]
+/// kernel plus everything [`crate::kernel::analog::AnalogKernel::eval_residual`]
 /// needs to recompute a terminal current outside the solver's own MNA
 /// stamping (used to read `.i(a, b)` on a two-terminal device with no force
 /// row).
@@ -58,7 +58,7 @@ pub struct CircuitBuildInfo {
 pub struct BuiltInstanceInfo {
     pub label: String,
     pub module: String,
-    pub kernel: Arc<crate::jit::analog::AnalogKernel>,
+    pub kernel: Arc<crate::kernel::analog::AnalogKernel>,
     pub params: Vec<f64>,
     pub terminals: Vec<NodeIdentifier>,
     /// Number of MNA branch-current unknowns this instance owns
@@ -86,7 +86,7 @@ pub struct CircuitCompiler<'p> {
     /// bit-exact reference the fused path is validated against.
     pub fuse_digital_cones: bool,
     /// Whether compiled analog kernels include the `.disto` 2nd/3rd-derivative
-    /// kernels (see [`crate::jit::analog::AnalogKernel::compile_with_options`]).
+    /// kernels (see [`crate::kernel::analog::AnalogKernel::compile_with_options`]).
     /// Defaults to `true` (matches the pre-flag behavior); callers that know
     /// `.disto` will never run on this circuit call [`Self::with_disto`]`(false)`
     /// to skip that compile cost.
@@ -754,7 +754,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
     /// A cone with internal feedback keeps the per-device path — the
     /// event/delta-cycle loop owns loop semantics (ring-oscillator style).
     fn fuse_comb_cones(&mut self) -> Result<(), CodegenError> {
-        use crate::jit::digital::network::{DigitalNetwork, NetworkMember};
+        use crate::kernel::digital::network::{DigitalNetwork, NetworkMember};
         use piperine_solver::abi::DigitalTopology;
 
         if !self.compiler.fuse_digital_cones || self.fusion_candidates.len() < 2 {
@@ -833,7 +833,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                 };
                 fused_device_idxs.insert(self.fusion_candidates[ci].device_index);
                 let module = self.module_arc(&module_name)?;
-                let layout = crate::jit::digital::DigitalLayout::build(
+                let layout = crate::kernel::digital::DigitalLayout::build(
                     &module,
                     module.digital.as_ref().ok_or_else(|| {
                         CodegenError::Invalid(format!("`{module_name}` has no digital body"))

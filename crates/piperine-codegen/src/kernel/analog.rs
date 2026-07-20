@@ -29,8 +29,9 @@ use crate::flatten::analog::{
     visit_all, AnalogFlattener, FlatAnalog, FlatContrib, FlatDiagnostic, FlatEventTrigger,
     FlatForce,
 };
-use super::{math, SimCtx};
+use crate::emit::abi::SimCtx;
 use crate::error::CodegenError;
+use piperine_lang::math;
 
 use piperine_lang::parse::ast::Expr as PomExpr;
 

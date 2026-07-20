@@ -998,7 +998,7 @@ fn sim_tran_above_event_toggles_switch_state() {
 /// whole chain in one rank-ordered pass and emits mid/out as boundary events.
 #[test]
 fn digital_network_fuses_combinational_chain() {
-    use piperine_codegen::jit::digital::network::{DigitalNetwork, NetworkMember};
+    use piperine_codegen::kernel::digital::network::{DigitalNetwork, NetworkMember};
     use piperine_solver::abi::DigitalDevice;
     use piperine_solver::abi::{EvalCtx, EventSink};
     use std::sync::Arc;
@@ -1165,7 +1165,7 @@ fn sim_dc_table_nonuniform_spacing_slope() {
 /// the contribution reads the state bank and the operator's input is V(p,n).
 #[test]
 fn sim_kernel_transition_reads_state_bank() {
-    use piperine_codegen::jit::analog::RuntimeState;
+    use piperine_codegen::kernel::analog::RuntimeState;
     let prog = compile("
         discipline Electrical { potential v : Real; flow i : Real; }
         mod TranOp ( inout p : Electrical, inout n : Electrical ) { }

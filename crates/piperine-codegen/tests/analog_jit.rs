@@ -4,7 +4,7 @@
 //! Pending rewrite for POM Expr/Stmt (IrExpr/IrStmt removed).
 
 use piperine_codegen::resolve::*;
-use piperine_codegen::jit::analog::AnalogKernel;
+use piperine_codegen::kernel::analog::AnalogKernel;
 use piperine_codegen::{CircuitCompiler, CodegenError, SimCtx};
 use piperine_solver::prelude::Context;
 

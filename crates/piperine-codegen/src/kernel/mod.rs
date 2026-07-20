@@ -1,5 +1,6 @@
-//! JIT codegen: the IR is compiled — analog *and* digital — to native code
-//! via Cranelift. There is no interpreted execution path.
+//! Kernel stage: the flattened/resolved body is compiled — analog *and*
+//! digital — to native code via Cranelift. There is no interpreted execution
+//! path.
 //!
 //! - [`analog`] compiles an [`crate::resolve::AnalogBody`] into an
 //!   [`analog::AnalogKernel`]: residual, Jacobian, charge, force, noise, and
@@ -14,7 +15,3 @@
 
 pub mod analog;
 pub mod digital;
-pub use piperine_lang::math;
-
-pub use crate::emit::abi::SimCtx;
-pub use crate::error::CodegenError;
