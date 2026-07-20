@@ -72,7 +72,7 @@ pub fn d_dnode(
 ///      differentiates to `__dtemp(id)` — the ordinary first-derivative tape
 ///      for branch `(c,d)`, exactly what [`d_dv`] would build for that
 ///      branch. The caller installs this tape (via
-///      [`Builder::set_deriv_tape`](crate::codegen::Builder::set_deriv_tape))
+///      [`Builder::set_deriv_tape`](crate::emit::Builder::set_deriv_tape))
 ///      before evaluating the result.
 ///    - a `__dtemp_inner(id)` leaf (the first pass's own tape reference)
 ///      differentiates to `__ddtemp(id)` — the genuine second-order cross
@@ -163,7 +163,7 @@ pub fn d_dv_once_more_named(
 /// As with [`d_dv_twice`], product/quotient/power rules clone their
 /// undifferentiated operands, so markers from every earlier level can
 /// survive into the result. Before emitting, the caller must install seven
-/// tapes (via [`Builder::set_tape`](crate::codegen::Builder::set_tape)):
+/// tapes (via [`Builder::set_tape`](crate::emit::Builder::set_tape)):
 /// `__dtemp1`/`__dtemp2`/`__dtemp3` — the first-derivative tapes of the
 /// three branches; `__ddtemp12`/`__ddtemp13`/`__ddtemp23` — the three
 /// pairwise cross tapes (each built with [`d_dv_twice`]); and

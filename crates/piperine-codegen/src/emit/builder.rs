@@ -1,6 +1,6 @@
 //! The [`Builder`]: wraps Cranelift's `FunctionBuilder` and provides
 //! high-level emission methods (arithmetic, quad logic, name resolution,
-//! control flow) that the [`Codegen`](super::trait_::Codegen) trait impls call.
+//! control flow) that the [`Codegen`](super::digital_expr::Codegen) trait impls call.
 
 use std::collections::HashMap;
 
@@ -16,7 +16,7 @@ use crate::jit::digital::layout::DigitalLayout;
 use crate::error::CodegenError;
 use crate::jit::math;
 
-use super::trait_::Codegen;
+use super::digital_expr::Codegen;
 
 // ─── Analog CSE infrastructure (copied from jit/emit.rs) ──────────────────────
 

@@ -22,7 +22,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
-use crate::codegen::{Builder, Resolver};
+use crate::emit::{Builder, Resolver};
 use crate::resolve::{CrossDir, Domain, LoweredBody, StateKind, NodeId, StateId, VarId};
 
 use super::flatten::{
@@ -825,7 +825,7 @@ fn ident_of(e: Option<&PomExpr>) -> Option<String> {
 
 /// Structural equality for POM `Expr`.
 fn expr_eq(a: &PomExpr, b: &PomExpr) -> bool {
-    crate::codegen::expr_structural_eq(a, b)
+    crate::emit::expr_structural_eq(a, b)
 }
 
 // ─── Compiler ─────────────────────────────────────────────────────────────────

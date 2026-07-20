@@ -15,14 +15,14 @@
 //! - [`device`] — kernels wrapped as `piperine_solver` devices, plus the
 //!   program-level [`device::CircuitCompiler`].
 
-pub mod codegen;
 pub mod device;
+pub mod emit;
 pub mod error;
 pub mod jit;
 pub mod resolve;
 
 pub use device::{BuiltInstanceInfo, CircuitBuildInfo, CircuitCompiler, CompiledModule, PiperineDevice};
+pub use emit::SimCtx;
 pub use error::CodegenError;
 pub use jit::analog::AnalogKernel;
 pub use jit::digital::DigitalKernel;
-pub use jit::SimCtx;

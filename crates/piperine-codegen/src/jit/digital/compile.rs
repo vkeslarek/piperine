@@ -32,7 +32,7 @@ use cranelift_module::{FuncId, Linkage, Module};
 
 use piperine_lang::parse::ast::{EventSpec, Expr, Stmt};
 
-use crate::codegen::{Builder, Codegen, DigTy, Resolver};
+use crate::emit::{Builder, Codegen, DigTy, Resolver};
 use crate::resolve::{
     DigitalBody, EdgeKind, LoweredBody, ParamId,
 };
@@ -123,7 +123,7 @@ impl<'m> DigitalCompiler<'m> {
             let mut event_terms = Vec::new();
             extract_event_terms(spec, &mut event_terms);
             for (edge_name, arg) in event_terms {
-                let index = match watch_terms.iter().position(|t| crate::codegen::expr_structural_eq(t, &arg)) {
+                let index = match watch_terms.iter().position(|t| crate::emit::expr_structural_eq(t, &arg)) {
                     Some(i) => i,
                     None => {
                         watch_terms.push(arg.clone());

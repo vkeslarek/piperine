@@ -15,7 +15,7 @@ use piperine_lang::math;
 use crate::error::CodegenError;
 use crate::jit::SimCtx;
 
-use crate::codegen::builder::*;
+use crate::emit::builder::*;
 
 impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
 
