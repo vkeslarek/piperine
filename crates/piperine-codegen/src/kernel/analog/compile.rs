@@ -15,8 +15,13 @@ use piperine_lang::math;
 use piperine_lang::parse::ast::Expr as PomExpr;
 
 use super::{
-    AnalogFn, AnalogKernel, CompiledEvent, CompiledTrigger, RuntimeState, RuntimeStateSpec,
+    AnalogCore, AnalogFn, AnalogKernel, CompiledEvent, CompiledTrigger, RuntimeState, RuntimeStateSpec,
 };
+use super::ac_stim::AcStim;
+use super::forces::Forces;
+use super::limits::Limits;
+use super::noise::Noise;
+use super::reactive::Reactive;
 
 /// Collect the unique `$limit` expressions across every flattened expression,
 /// in a stable order. Each becomes a `vold` slot appended to the state bank.
@@ -601,70 +606,111 @@ impl<'m> AnalogCompiler<'m> {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(AnalogKernel {
+        // Optional capability sub-structs: presence is `Some(_)` exactly when
+        // the corresponding data was non-empty above (same conditions the
+        // flat `Option<AnalogFn>` fields were gated on before this split —
+        // regrouped, not re-derived).
+        let reactive = charge_id.zip(charge_jac_id).map(|(c, cj)| Reactive {
+            charge: get(&self.jit, c),
+            charge_jacobian: get(&self.jit, cj),
+        });
+        let forces_cap = force_id.zip(force_jac_id).map(|(v, j)| Forces {
+            terminals: forces.iter().map(|f| (f.plus, f.minus)).collect(),
+            value: get(&self.jit, v),
+            jacobian: get(&self.jit, j),
+            ac_mag: force_ac_mag_id.map(|id| get(&self.jit, id)),
+            ac_phase: force_ac_phase_id.map(|id| get(&self.jit, id)),
+            flux: force_flux_id.map(|id| get(&self.jit, id)),
+            flux_meta,
+            current: force_current_id.map(|id| get(&self.jit, id)),
+            current_meta,
+        });
+        let limits_cap = limit_update_id
+            .zip(limit_seed_id)
+            .zip(limit_vnew_id)
+            .map(|((update, seed), vnew)| Limits {
+                update: get(&self.jit, update),
+                seed: get(&self.jit, seed),
+                vnew: get(&self.jit, vnew),
+                branches: limit_branches,
+            });
+        let noise_cap = noise_id.map(|id| Noise {
+            source: get(&self.jit, id),
+            terminals: noise.iter().map(|&(p, m, _, _)| (p, m)).collect(),
+            exponents: noise_exp_id.map(|id| get(&self.jit, id)),
+        });
+        let ac_stim_cap = ac_stim_mag_id.zip(ac_stim_phase_id).map(|(m, p)| AcStim {
+            terminals: ac_stims.iter().map(|s| (s.plus, s.minus)).collect(),
+            mag: get(&self.jit, m),
+            phase: get(&self.jit, p),
+        });
+
+        // Remaining top-level (ungrouped) fields — resolved to native function
+        // pointers before `self.jit` moves into `core` below.
+        let ac_idt_jacobian = ac_idt_jacobian_id.map(|id| get(&self.jit, id));
+        let event_triggers = event_triggers_id.map(|id| get(&self.jit, id));
+        let event_actions = event_actions_id.map(|id| get(&self.jit, id));
+        let bound_step = bound_step_id.map(|id| get(&self.jit, id));
+        let disto2: Vec<AnalogFn> = disto2_ids.iter().map(|&id| get(&self.jit, id)).collect();
+        let disto3: Vec<AnalogFn> = disto3_ids.iter().map(|&id| get(&self.jit, id)).collect();
+        let disto2_contribs: Vec<(NodeId, NodeId)> = resistive
+            .iter()
+            .chain(&charge)
+            .map(|c| (c.plus, c.minus))
+            .collect();
+        let disto2_charge_start = resistive.len();
+        let initial_conditions = ic_values_id.map(|id| get(&self.jit, id));
+        let diagnostics = std::mem::take(&mut self.flat.diagnostics);
+
+        let digital_terminals: Vec<bool> = self
+            .terminals
+            .iter()
+            .map(|&id| self.module.symbols.node(id).domain == Domain::Digital)
+            .collect();
+        let param_names: Vec<String> =
+            self.module.symbols.params().map(|(_, p)| p.name.clone()).collect();
+        let terminals = std::mem::take(&mut self.terminals);
+
+        let core = AnalogCore {
             name: self.module.name.clone(),
-            num_ports: self.num_ports,
+            terminals,
+            digital_terminals,
+            read_bounds,
+            param_names,
             presence_mask,
+            num_ports: self.num_ports,
             num_params: self.module.symbols.num_params(),
             num_state_slots: self.module.symbols.num_states() + self.limits.len(),
-            num_limits: self.limits.len(),
-            limit_update: limit_update_id.map(|id| get(&self.jit, id)),
-            limit_seed: limit_seed_id.map(|id| get(&self.jit, id)),
-            limit_vnew: limit_vnew_id.map(|id| get(&self.jit, id)),
-            limit_branches,
             num_vars: self.module.symbols.vars().count(),
-            num_forces: forces.len(),
-            num_noise: noise.len(),
-            num_ac_stims: ac_stims.len(),
-            force_terminals: forces.iter().map(|f| (f.plus, f.minus)).collect(),
-            ac_stim_terminals: ac_stims.iter().map(|s| (s.plus, s.minus)).collect(),
-            noise_terminals: noise.iter().map(|&(p, m, _, _)| (p, m)).collect(),
-            noise_exponents: noise_exp_id.map(|id| get(&self.jit, id)),
+            residual: get(&self.jit, residual_id),
+            jacobian: get(&self.jit, jacobian_id),
+            state_inputs: state_inputs_id.map(|id| get(&self.jit, id)),
+            _jit: self.jit,
+        };
+
+        Ok(AnalogKernel {
+            core,
+            reactive,
+            forces: forces_cap,
+            limits: limits_cap,
+            noise: noise_cap,
+            ac_stim: ac_stim_cap,
+            ac_idt_jacobian,
             runtime_states,
             events: compiled_events,
             num_event_actions,
-            diagnostics: std::mem::take(&mut self.flat.diagnostics),
-            residual: get(&self.jit, residual_id),
-            jacobian: get(&self.jit, jacobian_id),
-            charge: charge_id.map(|id| get(&self.jit, id)),
-            charge_jacobian: charge_jac_id.map(|id| get(&self.jit, id)),
-            disto2: disto2_ids.iter().map(|&id| get(&self.jit, id)).collect(),
+            event_triggers,
+            event_actions,
+            diagnostics,
+            bound_step,
+            disto2,
             disto2_pairs,
-            disto3: disto3_ids.iter().map(|&id| get(&self.jit, id)).collect(),
+            disto3,
             disto3_triples,
-            disto2_contribs: resistive
-                .iter()
-                .chain(&charge)
-                .map(|c| (c.plus, c.minus))
-                .collect(),
-            disto2_charge_start: resistive.len(),
-            ac_idt_jacobian: ac_idt_jacobian_id.map(|id| get(&self.jit, id)),
-            force: force_id.map(|id| get(&self.jit, id)),
-            force_jacobian: force_jac_id.map(|id| get(&self.jit, id)),
-            force_ac_mag: force_ac_mag_id.map(|id| get(&self.jit, id)),
-            force_ac_phase: force_ac_phase_id.map(|id| get(&self.jit, id)),
-            force_flux: force_flux_id.map(|id| get(&self.jit, id)),
-            flux_meta,
-            force_current: force_current_id.map(|id| get(&self.jit, id)),
-            current_meta,
-            noise: noise_id.map(|id| get(&self.jit, id)),
-            ac_stim_mag: ac_stim_mag_id.map(|id| get(&self.jit, id)),
-            ac_stim_phase: ac_stim_phase_id.map(|id| get(&self.jit, id)),
-            state_inputs: state_inputs_id.map(|id| get(&self.jit, id)),
-            event_triggers: event_triggers_id.map(|id| get(&self.jit, id)),
-            event_actions: event_actions_id.map(|id| get(&self.jit, id)),
-            bound_step: bound_step_id.map(|id| get(&self.jit, id)),
+            disto2_contribs,
+            disto2_charge_start,
             initial_condition_terminals: ic_terminals,
-            initial_conditions: ic_values_id.map(|id| get(&self.jit, id)),
-            digital_terminals: self
-                .terminals
-                .iter()
-                .map(|&id| self.module.symbols.node(id).domain == Domain::Digital)
-                .collect(),
-            read_bounds,
-            param_names: self.module.symbols.params().map(|(_, p)| p.name.clone()).collect(),
-            terminals: std::mem::take(&mut self.terminals),
-            _jit: self.jit,
+            initial_conditions,
         })
     }
 
