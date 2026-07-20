@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use num_complex::Complex64;
 
-use piperine_solver::abi::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
+use piperine_solver::abi::{AnalogReference, Netlist, NodeIdentifier};
 use piperine_solver::abi::AcAnalysisContext;
 use piperine_solver::abi::{DcAnalysisResult, DcAnalysisState};
 use piperine_solver::abi::Noise;
@@ -17,10 +17,52 @@ use piperine_solver::abi::{TrBdf2, TrBdf2Phase};
 use piperine_solver::abi::{AsIndex, Stamp};
 use piperine_solver::abi::Context;
 
-use crate::resolve::{Analysis, CrossDir};
+use crate::resolve::{Analysis, CrossDir, NodeId};
 use crate::kernel::analog::{AnalogKernel, CompiledTrigger, RuntimeState};
 use crate::error::CodegenError;
 use crate::emit::abi::SimCtx;
+
+mod forces;
+mod limits;
+
+use forces::ForceStamper;
+use limits::Limiter;
+
+/// Read-only context shared by every capability's stamp: the compiled
+/// kernel, the instance's netlist references, and its parameter/state/var
+/// banks — everything a capability needs to evaluate its own compiled
+/// functions and turn slot indices into solver references.
+struct LoadCtx<'a> {
+    kernel: &'a AnalogKernel,
+    node_refs: &'a [Option<AnalogReference>],
+    params: &'a [f64],
+    state: &'a [f64],
+    vars: &'a [f64],
+    sim: &'a SimCtx,
+}
+
+impl LoadCtx<'_> {
+    /// The netlist reference for a kernel terminal node (`None` = ground).
+    fn terminal_ref(&self, node: NodeId) -> Option<AnalogReference> {
+        self.kernel
+            .terminals()
+            .iter()
+            .position(|&t| t == node)
+            .and_then(|i| self.node_refs[i].clone())
+    }
+}
+
+/// One capability's contribution to an MNA load at a given analysis point.
+/// `AnalogInstance::load_dc`/`load_transient` iterate the present
+/// capabilities and fold their stamps — internal to codegen, never a
+/// solver-facing `Element` facet (MD-01: `PiperineDevice` stays flat, no
+/// downcast, no per-capability trait object crosses the solver ABI).
+trait Stamps {
+    /// Real-valued (DC/transient) stamps at `volts`, scaled by the
+    /// independent-source ramp factor `src_scale` (1.0 outside DC source
+    /// stepping).
+    fn stamp(&self, cx: &LoadCtx<'_>, volts: &[f64], src_scale: f64) -> Vec<Stamp<AnalogReference, f64>>;
+}
 
 /// A runtime-serviced analog operator: updated once per accepted timestep,
 /// its output read by the kernel through the state array.
@@ -212,8 +254,8 @@ pub struct AnalogInstance {
     kernel: Arc<AnalogKernel>,
     /// Per-terminal netlist references (`None` = ground).
     node_refs: Vec<Option<AnalogReference>>,
-    /// One MNA branch-current unknown per force row.
-    force_refs: Vec<AnalogReference>,
+    /// Forces capability: one MNA branch-current unknown per force row.
+    forces: ForceStamper,
     /// Netlist references for each noise source's terminals (`None` when a
     /// terminal is ground-mapped).
     noise_refs: Vec<(Option<AnalogReference>, Option<AnalogReference>)>,
@@ -232,12 +274,8 @@ pub struct AnalogInstance {
     vars: Vec<f64>,
     /// Last accepted node voltages (for `bound_step_hint`).
     last_volts: Vec<f64>,
-    /// Whether `$limit` voltage limiting was still moving at the last load
-    /// (vetoes Newton convergence — see `update_limits`).
-    limiting_active: bool,
-    /// Per-`$limit` seed voltage `vcrit`, kept so `update_limits` can tell an
-    /// unbiased (still-seeded) junction from a tracked one.
-    limit_seeds: Vec<f64>,
+    /// Limits capability: `$limit` voltage-limiting runtime state.
+    limiter: Limiter,
 }
 
 impl AnalogInstance {
@@ -289,9 +327,7 @@ impl AnalogInstance {
             })
             .collect();
 
-        let force_refs = (0..kernel.num_forces())
-            .map(|i| netlist.connect_branch(BranchIdentifier::new(label, format!("force{i}"))))
-            .collect();
+        let forces = ForceStamper::new(label, &kernel, netlist);
 
         // Noise terminals resolve through the kernel terminal order.
         let terminal_slot = |node: crate::resolve::NodeId| {
@@ -399,7 +435,7 @@ impl AnalogInstance {
             state,
             kernel,
             node_refs,
-            force_refs,
+            forces,
             noise_refs,
             params,
             sim,
@@ -408,11 +444,10 @@ impl AnalogInstance {
             event_periods,
             vars: vec![0.0; num_vars],
             last_volts: vec![0.0; n],
-            limiting_active: false,
-            limit_seeds: vec![0.0; num_limits],
+            limiter: Limiter::new(num_limits),
         };
         instance.fire_initial_events();
-        instance.seed_limits();
+        instance.limiter.seed(&instance.kernel, n, &instance.params, &mut instance.state, &instance.vars, &instance.sim);
         Ok(instance)
     }
 
@@ -523,106 +558,17 @@ impl AnalogInstance {
         stamps
     }
 
-    /// Ideal-source rows: per force `i`, a branch-current unknown `ib_i`,
-    /// KCL coupling at its terminals, and the branch equation
-    /// `V(p) − V(m) − E_i(V) = 0`, Newton-linearised.
-    fn force_stamps(&self, volts: &[f64], src_scale: f64) -> Vec<Stamp<AnalogReference, f64>> {
-        let nf = self.kernel.num_forces();
-        if nf == 0 {
-            return Vec::new();
+    /// This instance's read-only stamping context (kernel + netlist refs +
+    /// parameter/state/var banks), for the capability `Stamps` impls.
+    fn ctx(&self) -> LoadCtx<'_> {
+        LoadCtx {
+            kernel: &self.kernel,
+            node_refs: &self.node_refs,
+            params: &self.params,
+            state: &self.state,
+            vars: &self.vars,
+            sim: &self.sim,
         }
-        let n = self.num_terminals();
-        let mut e = vec![0.0; nf];
-        let mut de = vec![0.0; nf * n];
-        self.kernel
-            .eval_force(volts, &self.params, &self.state, &self.vars, &self.sim, &mut e);
-        self.kernel
-            .eval_force_jacobian(volts, &self.params, &self.state, &self.vars, &self.sim, &mut de);
-        // Source stepping: scale the forced value (and its bias dependence) by
-        // the independent-source factor. Internal-node-collapse forces
-        // (`V(c,cp) <- 0`) have `e = 0`, so they are untouched; only real
-        // driven voltages ramp. `1.0` in normal operation.
-        if src_scale != 1.0 {
-            for v in &mut e {
-                *v *= src_scale;
-            }
-            for v in &mut de {
-                *v *= src_scale;
-            }
-        }
-
-        let mut stamps = Vec::new();
-        for (i, (branch, &(plus, minus))) in self
-            .force_refs
-            .iter()
-            .zip(self.kernel.force_terminals().iter())
-            .enumerate()
-        {
-            let plus_ref = self.terminal_ref(plus);
-            let minus_ref = self.terminal_ref(minus);
-            // KCL: ib leaves `plus`, enters `minus`.
-            if let Some(p) = &plus_ref {
-                stamps.push(Stamp::Matrix(p.clone(), branch.clone(), 1.0));
-                stamps.push(Stamp::Matrix(branch.clone(), p.clone(), 1.0));
-            }
-            if let Some(m) = &minus_ref {
-                stamps.push(Stamp::Matrix(m.clone(), branch.clone(), -1.0));
-                stamps.push(Stamp::Matrix(branch.clone(), m.clone(), -1.0));
-            }
-            // Controlled-source coupling: −∂E/∂V_j on the branch row.
-            let mut rhs = e[i];
-            for j in 0..n {
-                let g = de[i * n + j];
-                if g == 0.0 {
-                    continue;
-                }
-                if let Some(col) = &self.node_refs[j] {
-                    stamps.push(Stamp::Matrix(branch.clone(), col.clone(), -g));
-                }
-                rhs -= g * volts[j];
-            }
-            stamps.push(Stamp::Rhs(branch.clone(), rhs));
-        }
-        // Series-impedance terms `coeff·I(target)` split out of force values
-        // (`V(p,n) <- R·I(p,n) + …`): the branch row gains `−coeff` on the
-        // target branch-current column — an exact series resistor (perfect
-        // short at `R = 0`), linear, entirely in the matrix. Deliberately
-        // outside the `src_scale` scaling: an impedance is not a source.
-        if self.kernel.has_force_current() {
-            let terms = self.kernel.current_terms();
-            let mut coeffs = vec![0.0; terms.len()];
-            self.kernel
-                .eval_force_current(volts, &self.params, &self.state, &self.vars, &self.sim, &mut coeffs);
-            for (&(force_idx, tp, tm), &r) in terms.iter().zip(&coeffs) {
-                if r == 0.0 {
-                    continue;
-                }
-                let Some((target_idx, sign)) = self.force_branch_target(tp, tm) else { continue };
-                stamps.push(Stamp::Matrix(
-                    self.force_refs[force_idx].clone(),
-                    self.force_refs[target_idx].clone(),
-                    -r * sign,
-                ));
-            }
-        }
-        stamps
-    }
-
-    /// The force branch whose terminals are `(tp, tm)`, with the sign flip
-    /// when the probe orientation is reversed — the branch-current column a
-    /// flux/impedance term couples to.
-    fn force_branch_target(&self, tp: crate::resolve::NodeId, tm: crate::resolve::NodeId) -> Option<(usize, f64)> {
-        let force_terminals = self.kernel.force_terminals();
-        force_terminals
-            .iter()
-            .position(|&(p, m)| p == tp && m == tm)
-            .map(|k| (k, 1.0))
-            .or_else(|| {
-                force_terminals
-                    .iter()
-                    .position(|&(p, m)| p == tm && m == tp)
-                    .map(|k| (k, -1.0))
-            })
     }
 
     /// The netlist reference for a kernel terminal node (None = ground).
@@ -654,96 +600,17 @@ impl AnalogInstance {
         // voltages, so the Norton companion must linearize there too
         // (ngspice: `cdeq = cd − gd·vlim`, not `cd − gd·vnode`). Otherwise the
         // node is pinned at a non-solution.
-        let veff = self.limited_volts(&volts);
+        let veff = self.limiter.limited_volts(&self.ctx(), &volts);
         let rhs = self.norton_rhs(&veff, &res, &jac);
         let mut stamps = self.nodal_stamps(&rhs, &jac);
-        stamps.extend(self.force_stamps(&volts, state.src_scale));
-        self.update_limits(&volts);
+        stamps.extend(self.forces.stamp(&self.ctx(), &volts, state.src_scale));
+        self.limiter.update(&self.kernel, &volts, &self.params, &mut self.state, &self.vars, &self.sim);
         stamps
     }
 
-    /// Node voltages with each `$limit` junction branch replaced by its limited
-    /// value `vlim` — the linearization point for the Norton transform when
-    /// voltage limiting is active. Non-junction nodes are unchanged. Returns
-    /// `volts` unchanged when the device has no `$limit`.
-    fn limited_volts(&self, volts: &[f64]) -> Vec<f64> {
-        let nl = self.kernel.num_limits();
-        if nl == 0 {
-            return volts.to_vec();
-        }
-        let mut vlim = vec![0.0; nl];
-        self.kernel
-            .eval_limit_update(volts, &self.params, &self.state, &self.vars, &self.sim, &mut vlim);
-        let mut vnew = vec![0.0; nl];
-        self.kernel
-            .eval_limit_vnew(volts, &self.params, &self.state, &self.vars, &self.sim, &mut vnew);
-        let mut veff = volts.to_vec();
-        for (i, branch) in self.kernel.limit_branches().iter().enumerate() {
-            let Some((plus, minus)) = branch else { continue };
-            let vp = plus.map_or(0.0, |p| volts[p]);
-            let vm = minus.map_or(0.0, |m| volts[m]);
-            let vbr_raw = vp - vm;
-            // `vnew = type · vbr_raw`, type = ±1: recover the branch polarity so
-            // the limited node-space voltage is `vlim / type`.
-            let ty = if vbr_raw.abs() > 1e-12 { (vnew[i] / vbr_raw).signum() } else { 1.0 };
-            let vbr_eff = vlim[i] * ty;
-            // Move the minus node if it is a real node (keeps a shared plus node
-            // — e.g. a BJT base' — fixed); otherwise move the plus node.
-            if let Some(m) = minus {
-                veff[*m] = vp - vbr_eff;
-            } else if let Some(p) = plus {
-                veff[*p] = vm + vbr_eff;
-            }
-        }
-        veff
-    }
-
-    /// Advance the `$limit` vold slots after loading: store this iteration's
-    /// limited voltages so the next Newton iteration limits against them
-    /// (ngspice stores the limited junction voltage in device state). This is
-    /// what makes junction devices converge — without it a stiff exponential
-    /// overshoots and stalls. Called each iteration of DC and transient loads;
-    /// AC/noise reuse the converged DC vold (limiter inactive there).
-    fn update_limits(&mut self, volts: &[f64]) {
-        let nl = self.kernel.num_limits();
-        if nl == 0 {
-            return;
-        }
-        let base = self.kernel.limit_base();
-        let mut vlim = vec![0.0; nl];
-        self.kernel
-            .eval_limit_update(volts, &self.params, &self.state, &self.vars, &self.sim, &mut vlim);
-        let mut vnew = vec![0.0; nl];
-        self.kernel
-            .eval_limit_vnew(volts, &self.params, &self.state, &self.vars, &self.sim, &mut vnew);
-        // A junction is "still limiting" iff pnjlim actually clamped this
-        // iteration — the limited value differs from the raw branch voltage
-        // (ngspice's `Check == 1`). While that holds, the Newton loop must not
-        // declare convergence (see PiperineDevice::limiting_active): a clamped
-        // junction can momentarily satisfy KCL at a non-solution voltage. Tiny
-        // Newton jitter once limiting is off (vnew ≈ vlim) must NOT veto, hence
-        // the tolerance below.
-        let mut active = false;
-        for (i, v) in vlim.into_iter().enumerate() {
-            let old = self.state[base + i];
-            // Preserve the vcrit seed until the junction is first biased:
-            // `pnjlim(0, vcrit) = 0` on the opening iterations would discard the
-            // seed and let the node float to the supply (ngspice MODEINITJCT).
-            let seeded = (old - self.limit_seeds[i]).abs() <= 1e-12;
-            if seeded && v < old {
-                continue;
-            }
-            if (vnew[i] - v).abs() > 1e-6 + 1e-4 * vnew[i].abs() {
-                active = true;
-            }
-            self.state[base + i] = v;
-        }
-        self.limiting_active = active;
-    }
-
-    /// Whether junction voltage limiting is still moving (see `update_limits`).
+    /// Whether junction voltage limiting is still moving (see `Limiter::update`).
     pub fn limiting_active(&self) -> bool {
-        self.limiting_active
+        self.limiter.active()
     }
 
     /// Runtime banks read by the kernel — `(state, vars)` — exposed for
@@ -790,25 +657,6 @@ impl AnalogInstance {
 
     fn param_index(&self, name: &str) -> Option<usize> {
         self.kernel.param_names().iter().position(|n| n == name)
-    }
-
-    /// Seed each `$limit` vold slot with its critical voltage `vcrit`, so a
-    /// junction starts limiting near turn-on (ngspice MODEINITJCT) rather than
-    /// from 0 V. `vcrit` depends only on params/temperature, not node voltages.
-    fn seed_limits(&mut self) {
-        let nl = self.kernel.num_limits();
-        if nl == 0 {
-            return;
-        }
-        let base = self.kernel.limit_base();
-        let zeros = vec![0.0; self.num_terminals()];
-        let mut seeds = vec![0.0; nl];
-        self.kernel
-            .eval_limit_seed(&zeros, &self.params, &self.state, &self.vars, &self.sim, &mut seeds);
-        for (i, s) in seeds.iter().enumerate() {
-            self.state[base + i] = *s;
-        }
-        self.limit_seeds = seeds;
     }
 
     /// `@initial` UIC seeds: `(plus, minus, value)` in netlist references —
@@ -863,7 +711,7 @@ impl AnalogInstance {
         // step's BDF2 formula (coeffs at `prev_h`, charges at view 1/2/3),
         // which is fixed across the TR Newton iteration, hence idempotent. The
         // BDF2 stage is a pure derivative and needs no current term.
-        let veff = self.limited_volts(&volts);
+        let veff = self.limiter.limited_volts(&self.ctx(), &volts);
         let mut rhs = self.norton_rhs(&veff, &res, &jac);
         if self.kernel.has_reactive() && dt > 0.0 {
             // `stage_coeffs`: after a discontinuity (`prev_h = 0`) the TR
@@ -919,7 +767,7 @@ impl AnalogInstance {
         }
         let mut stamps = self.nodal_stamps(&rhs, &jac);
         // Transient never source-steps (that homotopy is DC-only) → full scale.
-        stamps.extend(self.force_stamps(&volts, 1.0));
+        stamps.extend(self.forces.stamp(&self.ctx(), &volts, 1.0));
         // Inductor flux companion `V(p,n) = dΦ/dt`, Φ = L·ib, on the force
         // branch's own current unknown. DC uses no flux (dt = 0 → the
         // inductor is a short, already forced to 0 V by `force_stamps`).
@@ -936,7 +784,7 @@ impl AnalogInstance {
             // 0, mirroring the capacitor's `i_{C,n} = 0` restart convention.
             stamps.extend(self.force_flux_stamps(&volts, states, tran_ctx));
         }
-        self.update_limits(&volts);
+        self.limiter.update(&self.kernel, &volts, &self.params, &mut self.state, &self.vars, &self.sim);
         stamps
     }
 
@@ -1085,7 +933,7 @@ impl AnalogInstance {
                 };
                 let v_prev = read_prev(plus) - read_prev(minus);
                 if v_prev != 0.0 {
-                    stamps.push(Stamp::Rhs(self.force_refs[force_idx].clone(), -v_prev));
+                    stamps.push(Stamp::Rhs(self.forces.refs()[force_idx].clone(), -v_prev));
                 }
             }
         }
@@ -1093,7 +941,7 @@ impl AnalogInstance {
             if l == 0.0 {
                 continue;
             }
-            let this_branch = &self.force_refs[force_idx];
+            let this_branch = &self.forces.refs()[force_idx];
             // The branch current the flux integrates: the force branch whose
             // terminals are `(tp, tm)` (self = this force; else a mutual
             // partner). Orientation flips the sign if terminals are reversed.
@@ -1104,7 +952,7 @@ impl AnalogInstance {
                 .or_else(|| force_terminals.iter().position(|&(p, m)| p == tm && m == tp).map(|k| (Some(k), -1.0)))
                 .unwrap_or((None, 1.0));
             let Some(target_idx) = target_idx else { continue };
-            let target_branch = &self.force_refs[target_idx];
+            let target_branch = &self.forces.refs()[target_idx];
             let bi = target_branch.as_index();
             let ib_prev = bi.and_then(|k| states.view(1).and_then(|s| s.get(k).copied())).unwrap_or(0.0);
             let ib_prev2 = bi.and_then(|k| states.view(2).and_then(|s| s.get(k).copied())).unwrap_or(0.0);
@@ -1188,7 +1036,7 @@ impl AnalogInstance {
         }
         // Force branches stay ideal in small-signal: same topology rows,
         // zero source perturbation.
-        for (i, branch) in self.force_refs.iter().enumerate() {
+        for (i, branch) in self.forces.refs().iter().enumerate() {
             let (plus, minus) = self.kernel.force_terminals()[i];
             if let Some(p) = self.terminal_ref(plus) {
                 stamps.push(Stamp::Matrix(p.clone(), branch.clone(), Complex64::new(1.0, 0.0)));
@@ -1221,8 +1069,8 @@ impl AnalogInstance {
                     .unwrap_or((None, 1.0));
                 let Some(target_idx) = target_idx else { continue };
                 stamps.push(Stamp::Matrix(
-                    self.force_refs[force_idx].clone(),
-                    self.force_refs[target_idx].clone(),
+                    self.forces.refs()[force_idx].clone(),
+                    self.forces.refs()[target_idx].clone(),
                     Complex64::new(0.0, -omega * l * sign),
                 ));
             }
@@ -1238,10 +1086,10 @@ impl AnalogInstance {
                 if r == 0.0 {
                     continue;
                 }
-                let Some((target_idx, sign)) = self.force_branch_target(tp, tm) else { continue };
+                let Some((target_idx, sign)) = self.forces.branch_target(&self.kernel, tp, tm) else { continue };
                 stamps.push(Stamp::Matrix(
-                    self.force_refs[force_idx].clone(),
-                    self.force_refs[target_idx].clone(),
+                    self.forces.refs()[force_idx].clone(),
+                    self.forces.refs()[target_idx].clone(),
                     Complex64::new(-r * sign, 0.0),
                 ));
             }
@@ -1254,7 +1102,7 @@ impl AnalogInstance {
             let mut phases = vec![0.0; nf];
             self.kernel
                 .eval_force_ac_stim(&volts, &self.params, &self.state, &self.vars, &self.sim, &mut mags, &mut phases);
-            for (i, branch) in self.force_refs.iter().enumerate() {
+            for (i, branch) in self.forces.refs().iter().enumerate() {
                 let stim = Complex64::from_polar(mags[i], phases[i]);
                 if stim != Complex64::ZERO {
                     stamps.push(Stamp::Rhs(branch.clone(), stim));
