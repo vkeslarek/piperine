@@ -16,6 +16,7 @@ use crate::error::CodegenError;
 use crate::jit::SimCtx;
 
 use crate::emit::builder::*;
+use crate::emit::cse::*;
 
 impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
 

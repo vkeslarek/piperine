@@ -7,7 +7,8 @@ use piperine_lang::parse::ast::{Expr, Literal, UnaryOp};
 use crate::resolve::UnOp;
 use crate::error::CodegenError;
 
-use super::builder::{Builder, Typed};
+use super::builder::Builder;
+use super::resolver::Typed;
 
 /// Code generation for POM expressions.
 ///
