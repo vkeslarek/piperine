@@ -5,7 +5,7 @@ use cranelift_codegen::ir::InstBuilder;
 use piperine_lang::parse::ast::{Expr, Literal, UnaryOp};
 
 use crate::ir::UnOp;
-use crate::jit::CodegenError;
+use crate::error::CodegenError;
 
 use super::builder::{Builder, Typed};
 

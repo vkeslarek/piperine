@@ -17,31 +17,7 @@ pub mod digital;
 pub mod flatten;
 pub use piperine_lang::math;
 
-use thiserror::Error;
-
-/// Errors from IR validation and JIT compilation. Every unimplemented
-/// lowering is a *named* error — nothing ever silently compiles to `0.0`.
-#[derive(Debug, Error)]
-pub enum CodegenError {
-    #[error("module `{0}` not found in IrProgram")]
-    ModuleNotFound(String),
-    #[error("IR validation failed: {0}")]
-    Invalid(String),
-    #[error("Cranelift module error: {0}")]
-    Module(String),
-    #[error("unsupported construct: {0}")]
-    Unsupported(String),
-    #[error("constant evaluation failed: {0}")]
-    ConstEval(String),
-    #[error("function lowering failed: {0}")]
-    Function(String),
-}
-
-impl CodegenError {
-    pub fn unsupported(what: impl Into<String>) -> Self {
-        Self::Unsupported(what.into())
-    }
-}
+pub use crate::error::CodegenError;
 
 /// Live simulator state threaded through every JIT-compiled analog function.
 ///

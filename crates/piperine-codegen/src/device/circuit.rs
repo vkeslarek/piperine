@@ -22,7 +22,7 @@ use piperine_solver::abi::DigitalState;
 
 use crate::ir::{NodeId, ParamId};
 use crate::lower::pom::LoweredBody;
-use crate::jit::CodegenError;
+use crate::error::CodegenError;
 
 use super::{AnalogInstance, CompiledModule, DigitalInstance, PiperineDevice};
 
@@ -85,16 +85,31 @@ pub struct CircuitCompiler<'p> {
     /// `false` keeps every digital instance on the per-device path — the
     /// bit-exact reference the fused path is validated against.
     pub fuse_digital_cones: bool,
+    /// Whether compiled analog kernels include the `.disto` 2nd/3rd-derivative
+    /// kernels (see [`crate::jit::analog::AnalogKernel::compile_with_options`]).
+    /// Defaults to `true` (matches the pre-flag behavior); callers that know
+    /// `.disto` will never run on this circuit call [`Self::with_disto`]`(false)`
+    /// to skip that compile cost.
+    compile_disto: bool,
 }
 
 impl<'p> CircuitCompiler<'p> {
     pub fn new(design: &'p Design, bodies: &'p HashMap<String, LoweredBody>) -> Self {
-        Self { design, bodies, kernels: HashMap::new(), provider: None, fuse_digital_cones: true }
+        Self { design, bodies, kernels: HashMap::new(), provider: None, fuse_digital_cones: true, compile_disto: true }
     }
 
     /// Wire a plugin host as the builder for `@device` instances.
     pub fn with_device_provider(mut self, provider: &'p dyn super::provider::DeviceProvider) -> Self {
         self.provider = Some(provider);
+        self
+    }
+
+    /// Gate whether compiled analog kernels include the `.disto`
+    /// 2nd/3rd-derivative kernels (default `true`). Pass `false` when this
+    /// circuit will never run `.disto` — a many-branch device otherwise
+    /// pays a real Cranelift compile cost for kernels it never uses.
+    pub fn with_disto(mut self, enabled: bool) -> Self {
+        self.compile_disto = enabled;
         self
     }
 
@@ -112,7 +127,7 @@ impl<'p> CircuitCompiler<'p> {
             return Ok(compiled.clone());
         }
         let body = self.body(name)?;
-        let compiled = Arc::new(CompiledModule::compile(body)?);
+        let compiled = Arc::new(CompiledModule::compile_with_options(body, self.compile_disto)?);
         self.kernels.insert(name.to_string(), compiled.clone());
         Ok(compiled)
     }

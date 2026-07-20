@@ -18,12 +18,14 @@
 
 pub mod codegen;
 pub mod device;
+pub mod error;
 pub mod jit;
 pub mod lower;
 
 pub use lower as ir;
 
 pub use device::{BuiltInstanceInfo, CircuitBuildInfo, CircuitCompiler, CompiledModule, PiperineDevice};
+pub use error::CodegenError;
 pub use jit::analog::AnalogKernel;
 pub use jit::digital::DigitalKernel;
-pub use jit::{CodegenError, SimCtx};
+pub use jit::SimCtx;

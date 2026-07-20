@@ -13,7 +13,8 @@ use piperine_lang::parse::ast::{BindOp, BinaryOp, Expr, Pattern, Stmt};
 use crate::ir::{BinOp, FnId, LoweredBody, NodeId, ParamId, SymbolTable, Type, UnOp, VarId};
 use crate::jit::digital::compile::{Pointers, VarReads};
 use crate::jit::digital::layout::DigitalLayout;
-use crate::jit::{math, CodegenError};
+use crate::error::CodegenError;
+use crate::jit::math;
 
 use super::trait_::Codegen;
 

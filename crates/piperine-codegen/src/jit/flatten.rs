@@ -18,7 +18,7 @@ use crate::ir::{
     NatureKind, NodeId, StateId, VarId,
 };
 
-use super::CodegenError;
+use crate::error::CodegenError;
 
 /// Convert an `EventSpec` (AST) to `EventSource`(s) for the flattener.
 /// Expressions are NOT substituted here — `add_event` does that.

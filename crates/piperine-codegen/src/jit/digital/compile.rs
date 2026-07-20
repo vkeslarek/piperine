@@ -37,7 +37,8 @@ use crate::ir::{
     DigitalBody, EdgeKind, LoweredBody, ParamId,
 };
 
-use super::super::{math, CodegenError};
+use super::super::math;
+use crate::error::CodegenError;
 
 use super::abi::*;
 use super::layout::*;

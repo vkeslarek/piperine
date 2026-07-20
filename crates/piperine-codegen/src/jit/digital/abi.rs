@@ -34,7 +34,7 @@ use crate::ir::{
     NodeId, VarId,
 };
 
-use super::super::CodegenError;
+use crate::error::CodegenError;
 
 use super::layout::*;
 

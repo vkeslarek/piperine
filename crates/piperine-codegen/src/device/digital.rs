@@ -10,7 +10,8 @@ use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue};
 
 use crate::ir::{EdgeKind, Type};
 use crate::jit::digital::{DigitalAbi, DigitalKernel};
-use crate::jit::{CodegenError, SimCtx};
+use crate::error::CodegenError;
+use crate::jit::SimCtx;
 
 /// Quad encoding shared with the JIT (0, 1, 2 = X, 3 = Z).
 struct Quad;

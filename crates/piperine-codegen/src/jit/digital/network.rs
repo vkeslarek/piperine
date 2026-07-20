@@ -21,7 +21,8 @@ use piperine_solver::abi::{DigitalPorts, EvalCtx, EventSink};
 
 use crate::ir::LoweredBody;
 use crate::jit::digital::compile::{NetworkComb, NetworkMemberSpec};
-use crate::jit::{CodegenError, SimCtx};
+use crate::error::CodegenError;
+use crate::jit::SimCtx;
 
 /// Quad encoding shared with the JIT (0, 1, 2 = X, 3 = Z).
 fn to_quad(v: LogicValue) -> i64 {

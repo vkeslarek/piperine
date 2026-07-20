@@ -29,7 +29,8 @@ use super::flatten::{
     visit_all, AnalogFlattener, FlatAnalog, FlatContrib, FlatDiagnostic, FlatEventTrigger,
     FlatForce,
 };
-use super::{math, CodegenError, SimCtx};
+use super::{math, SimCtx};
+use crate::error::CodegenError;
 
 use piperine_lang::parse::ast::Expr as PomExpr;
 
@@ -207,12 +208,15 @@ pub struct AnalogKernel {
     event_actions: Option<AnalogFn>,
     /// Minimum `$bound_step` expression; `None` without bound steps.
     bound_step: Option<AnalogFn>,
-    /// `.disto` 2nd-derivative kernel (DISTO-03): for each ordered branch
-    /// pair `(j, k)` in `disto2_pairs`, `∂²(contrib)/∂V(j)∂V(k)` per
-    /// contribution (resistive first, then charge), stored at
-    /// `out[pair·num_contribs + contrib]`. `None` when every contribution
-    /// is linear (all second derivatives fold to zero).
-    disto2: Option<AnalogFn>,
+    /// `.disto` 2nd-derivative kernel (DISTO-03): one compiled function per
+    /// ordered branch pair `(j, k)` in `disto2_pairs` (same index), each
+    /// writing `∂²(contrib)/∂V(j)∂V(k)` per contribution (resistive first,
+    /// then charge) into its own `nc`-sized output slice. Empty when every
+    /// contribution is linear (all second derivatives fold to zero). One
+    /// function per pair (rather than one function unrolling every pair)
+    /// keeps each Cranelift function small — a many-branch device unrolled
+    /// into a single function overwhelmed Cranelift's own compilation.
+    disto2: Vec<AnalogFn>,
     /// Ordered branch pairs `(j, k)` the disto2 kernel emits rows for, in
     /// `out` row order — only pairs with at least one nonzero row.
     disto2_pairs: Vec<((NodeId, NodeId), (NodeId, NodeId))>,
@@ -221,12 +225,12 @@ pub struct AnalogKernel {
     disto2_contribs: Vec<(NodeId, NodeId)>,
     /// Index in `disto2_contribs` where charge contributions begin.
     disto2_charge_start: usize,
-    /// `.disto` 3rd-derivative kernel (DISTO-03): for each ordered branch
-    /// triple in `disto3_triples`, `∂³(contrib)/∂V(j)∂V(k)∂V(l)` per
-    /// contribution (same row order as `disto2_contribs`), stored at
-    /// `out[triple·num_contribs + contrib]`. `None` when no contribution
-    /// has a third derivative.
-    disto3: Option<AnalogFn>,
+    /// `.disto` 3rd-derivative kernel (DISTO-03): one compiled function per
+    /// ordered branch triple in `disto3_triples` (same index), each writing
+    /// `∂³(contrib)/∂V(j)∂V(k)∂V(l)` per contribution (same row order as
+    /// `disto2_contribs`) into its own `nc`-sized output slice. Empty when
+    /// no contribution has a third derivative.
+    disto3: Vec<AnalogFn>,
     /// Ordered branch triples `(j, k, l)` the disto3 kernel emits rows
     /// for, in `out` row order — only triples with a nonzero row.
     disto3_triples: Vec<((NodeId, NodeId), (NodeId, NodeId), (NodeId, NodeId))>,
@@ -246,11 +250,25 @@ unsafe impl Sync for AnalogKernel {}
 static COMPILE_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 impl AnalogKernel {
-    /// Flatten and compile `module`'s analog body.
+    /// Flatten and compile `module`'s analog body, including the `.disto`
+    /// 2nd/3rd-derivative kernels.
     pub fn compile(module: &LoweredBody) -> Result<Self, CodegenError> {
+        Self::compile_with_options(module, true)
+    }
+
+    /// Flatten and compile `module`'s analog body. `compile_disto` gates
+    /// the `.disto` 2nd/3rd-derivative kernels (DISTO-03): every ordered
+    /// controlling-branch combination compiles as its own small Cranelift
+    /// function (`compile_disto2`/`compile_disto3`), and a many-branch
+    /// device (several controlling terminals — a MOSFET, say) pays a real,
+    /// non-trivial compile cost for those kernels. Callers that will never
+    /// run `.disto` on this circuit (every analysis but `.disto` itself)
+    /// pass `false` to skip that cost entirely — the host's `.disto` entry
+    /// point is the only caller that passes `true` (`SimSession::build_circuit`).
+    pub fn compile_with_options(module: &LoweredBody, compile_disto: bool) -> Result<Self, CodegenError> {
         COMPILE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let flat = AnalogFlattener::new(module).flatten()?;
-        AnalogCompiler::new(module, flat)?.compile()
+        AnalogCompiler::new(module, flat)?.compile(compile_disto)
     }
 
     /// How many analog kernels this process has JIT-compiled so far.
@@ -656,7 +674,7 @@ impl AnalogKernel {
     /// Whether the device has any nonlinear contribution (a compiled
     /// `.disto` 2nd-derivative kernel).
     pub fn has_disto2(&self) -> bool {
-        self.disto2.is_some()
+        !self.disto2.is_empty()
     }
 
     /// Ordered branch pairs `(j, k)` the disto2 kernel emits, in `out` row
@@ -682,15 +700,19 @@ impl AnalogKernel {
     /// rows are stored — `out` must be pre-zeroed. No-op for a fully linear
     /// device.
     pub fn eval_disto2(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
-        if let Some(f) = self.disto2 {
-            self.check_input_lens(volts, params, state, vars);
-            Self::call(f, volts, params, state, vars, sim, out);
+        if self.disto2.is_empty() {
+            return;
+        }
+        self.check_input_lens(volts, params, state, vars);
+        let nc = self.disto2_contribs.len();
+        for (i, &f) in self.disto2.iter().enumerate() {
+            Self::call(f, volts, params, state, vars, sim, &mut out[i * nc..(i + 1) * nc]);
         }
     }
 
     /// Whether the device has a compiled `.disto` 3rd-derivative kernel.
     pub fn has_disto3(&self) -> bool {
-        self.disto3.is_some()
+        !self.disto3.is_empty()
     }
 
     /// Ordered branch triples `(j, k, l)` the disto3 kernel emits, in `out`
@@ -706,9 +728,13 @@ impl AnalogKernel {
     /// [`AnalogKernel::disto2_contribs`]). Only nonzero rows are stored —
     /// `out` must be pre-zeroed. No-op without third derivatives.
     pub fn eval_disto3(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
-        if let Some(f) = self.disto3 {
-            self.check_input_lens(volts, params, state, vars);
-            Self::call(f, volts, params, state, vars, sim, out);
+        if self.disto3.is_empty() {
+            return;
+        }
+        self.check_input_lens(volts, params, state, vars);
+        let nc = self.disto2_contribs.len();
+        for (i, &f) in self.disto3.iter().enumerate() {
+            Self::call(f, volts, params, state, vars, sim, &mut out[i * nc..(i + 1) * nc]);
         }
     }
 }
@@ -905,7 +931,7 @@ impl<'m> AnalogCompiler<'m> {
         (terminals, num_ports)
     }
 
-    fn compile(mut self) -> Result<AnalogKernel, CodegenError> {
+    fn compile(mut self, compile_disto: bool) -> Result<AnalogKernel, CodegenError> {
         let read_bounds = self.flat.read_bounds(self.module);
         // Presence-queried params (`$param_given`, the optional `T?`
         // machinery) — collected before the flat body is drained below.
@@ -1017,17 +1043,27 @@ impl<'m> AnalogCompiler<'m> {
             )
         };
 
-        // `.disto` second derivatives over the resistive + charge
-        // contributions (DISTO-03); `None` when the device is fully linear.
-        let (disto2_id, disto2_pairs) = match self.compile_disto2("disto2", &resistive, &charge, &temps)? {
-            Some((id, pairs)) => (Some(id), pairs),
-            None => (None, Vec::new()),
+        // `.disto` second/third derivatives over the resistive + charge
+        // contributions (DISTO-03); skipped entirely (empty, zero compile
+        // cost) unless the caller requested `.disto` support — a
+        // many-branch device pays a real Cranelift compile cost for these
+        // kernels (one function per branch combination), wasted on every
+        // analysis but `.disto` itself.
+        let (disto2_ids, disto2_pairs) = if compile_disto {
+            match self.compile_disto2("disto2", &resistive, &charge, &temps)? {
+                Some((ids, pairs)) => (ids, pairs),
+                None => (Vec::new(), Vec::new()),
+            }
+        } else {
+            (Vec::new(), Vec::new())
         };
-        // `.disto` third derivatives (DISTO-03); `None` when every
-        // contribution is at most quadratic.
-        let (disto3_id, disto3_triples) = match self.compile_disto3("disto3", &resistive, &charge, &temps)? {
-            Some((id, triples)) => (Some(id), triples),
-            None => (None, Vec::new()),
+        let (disto3_ids, disto3_triples) = if compile_disto {
+            match self.compile_disto3("disto3", &resistive, &charge, &temps)? {
+                Some((ids, triples)) => (ids, triples),
+                None => (Vec::new(), Vec::new()),
+            }
+        } else {
+            (Vec::new(), Vec::new())
         };
 
         let (force_id, force_jac_id) = if forces.is_empty() {
@@ -1313,9 +1349,9 @@ impl<'m> AnalogCompiler<'m> {
             jacobian: get(&self.jit, jacobian_id),
             charge: charge_id.map(|id| get(&self.jit, id)),
             charge_jacobian: charge_jac_id.map(|id| get(&self.jit, id)),
-            disto2: disto2_id.map(|id| get(&self.jit, id)),
+            disto2: disto2_ids.iter().map(|&id| get(&self.jit, id)).collect(),
             disto2_pairs,
-            disto3: disto3_id.map(|id| get(&self.jit, id)),
+            disto3: disto3_ids.iter().map(|&id| get(&self.jit, id)).collect(),
             disto3_triples,
             disto2_contribs: resistive
                 .iter()
@@ -1495,15 +1531,19 @@ impl<'m> AnalogCompiler<'m> {
         branches
     }
 
-    /// Disto3 shape: `out[triple·nc + ci] = ∂³(contrib_ci)/∂V(j)∂V(k)∂V(l)`
-    /// per ordered branch triple `(j, k, l)`, over the resistive
-    /// contributions followed by the charge ones (DISTO-03).
+    /// Disto3 shape: one compiled function per ordered branch triple
+    /// `(j, k, l)`, each writing `out[ci] = ∂³(contrib_ci)/∂V(j)∂V(k)∂V(l)`
+    /// for its own triple over the resistive contributions followed by the
+    /// charge ones (DISTO-03). A separate function per triple — rather
+    /// than one function unrolling every triple — keeps each Cranelift
+    /// function's instruction count bounded (see [`Self::compile_disto2`]).
     ///
-    /// Each triple's third derivatives ([`crate::lower::diff::d_dv_thrice`])
-    /// reference seven tapes — the three branches' first-derivative tapes,
-    /// the three pairwise cross tapes, and the third-derivative tape — all
-    /// over the shared value tape, never an inlined tree. Literal-zero rows
-    /// and empty triples are skipped (`out` is pre-zeroed by the caller);
+    /// Each triple's third derivatives reference seven tapes — the three
+    /// branches' first-derivative tapes, the three pairwise cross tapes
+    /// (each completing its branch's first-derivative tape with one more
+    /// differentiate pass, shared across every third branch), and the
+    /// third-derivative tape — all over the shared value tape, never an
+    /// inlined tree. Literal-zero rows and empty triples are skipped;
     /// `None` when no contribution has a third derivative (degree ≤ 2).
     #[allow(clippy::type_complexity)]
     fn compile_disto3(
@@ -1512,7 +1552,7 @@ impl<'m> AnalogCompiler<'m> {
         resistive: &[FlatContrib],
         charge: &[FlatContrib],
         temps: &[PomExpr],
-    ) -> Result<Option<(FuncId, Vec<((NodeId, NodeId), (NodeId, NodeId), (NodeId, NodeId))>)>, CodegenError> {
+    ) -> Result<Option<(Vec<FuncId>, Vec<((NodeId, NodeId), (NodeId, NodeId), (NodeId, NodeId))>)>, CodegenError> {
         let contribs: Vec<&FlatContrib> = resistive.iter().chain(charge).collect();
         if contribs.is_empty() {
             return Ok(None);
@@ -1563,17 +1603,16 @@ impl<'m> AnalogCompiler<'m> {
         let ddtemps13 = cross_tapes("__dtemp1", "__dtemp3", "__ddtemp13");
         let ddtemps23 = cross_tapes("__dtemp2", "__dtemp3", "__ddtemp23");
 
-        // Precompute every row symbolically; drop literal-zero rows and
-        // empty triples.
+        let exprs: Vec<&PomExpr> = contribs.iter().map(|c| &c.expr).collect();
         let mut triples: Vec<((NodeId, NodeId), (NodeId, NodeId), (NodeId, NodeId))> = Vec::new();
-        let mut kept: Vec<(usize, usize, usize, Vec<PomExpr>, Vec<Option<PomExpr>>)> = Vec::new();
+        let mut func_ids: Vec<FuncId> = Vec::new();
         for (j_idx, &(a, b)) in branches.iter().enumerate() {
             for (k_idx, &(c, d)) in branches.iter().enumerate() {
                 for (l_idx, &(e, f)) in branches.iter().enumerate() {
-                    let dddtemps: Vec<PomExpr> = temps
-                        .iter()
-                        .map(|t| crate::lower::diff::d_dv_thrice(t, a, b, c, d, e, f, &resolve_node))
-                        .collect();
+                    // Cheap check first (a handful of contribs, not the
+                    // whole temp tape): skip the triple entirely — and the
+                    // expensive per-temp third-derivative tape below — when
+                    // every contribution's third derivative is literal zero.
                     let rows: Vec<Option<PomExpr>> = contribs
                         .iter()
                         .map(|contrib| {
@@ -1584,57 +1623,73 @@ impl<'m> AnalogCompiler<'m> {
                             }
                         })
                         .collect();
-                    if rows.iter().any(Option::is_some) {
-                        triples.push(((a, b), (c, d), (e, f)));
-                        kept.push((j_idx, k_idx, l_idx, dddtemps, rows));
+                    if !rows.iter().any(Option::is_some) {
+                        continue;
                     }
+                    // Completes the already-built second pass
+                    // (`ddtemps12[j][k]`, shared across every `l`) with one
+                    // more differentiate pass — never redoes the first two.
+                    let dddtemps: Vec<PomExpr> = ddtemps12[j_idx][k_idx]
+                        .iter()
+                        .map(|pass2| crate::lower::diff::d_dv_thrice_from_twice(pass2, e, f, &resolve_node))
+                        .collect();
+                    let dtemp1_j = dtemps1[j_idx].clone();
+                    let dtemp2_k = dtemps2[k_idx].clone();
+                    let dtemp3_l = dtemps3[l_idx].clone();
+                    let ddtemp12_jk = ddtemps12[j_idx][k_idx].clone();
+                    let ddtemp13_jl = ddtemps13[j_idx][l_idx].clone();
+                    let ddtemp23_kl = ddtemps23[k_idx][l_idx].clone();
+                    let fn_name = format!("{name}_{j_idx}_{k_idx}_{l_idx}");
+                    let func_id = self.build_fn(&fn_name, &exprs, move |b, _slot, out_ptr| {
+                        b.set_tape("__dtemp1", dtemp1_j);
+                        b.set_tape("__dtemp2", dtemp2_k);
+                        b.set_tape("__dtemp3", dtemp3_l);
+                        b.set_tape("__ddtemp12", ddtemp12_jk);
+                        b.set_tape("__ddtemp13", ddtemp13_jl);
+                        b.set_tape("__ddtemp23", ddtemp23_kl);
+                        b.set_tape("__dddtemp123", dddtemps);
+                        b.force_tapes(&[
+                            "__temp", "__dtemp1", "__dtemp2", "__dtemp3",
+                            "__ddtemp12", "__ddtemp13", "__ddtemp23", "__dddtemp123",
+                        ])?;
+                        for (ci, row) in rows.iter().enumerate() {
+                            if let Some(e) = row {
+                                let value = b.emit_analog(e)?;
+                                b.store_f64(value, out_ptr, ci);
+                            }
+                        }
+                        Ok(())
+                    })?;
+                    triples.push(((a, b), (c, d), (e, f)));
+                    func_ids.push(func_id);
                 }
             }
         }
-        if kept.is_empty() {
+        if func_ids.is_empty() {
             return Ok(None);
         }
-
-        let nc = contribs.len();
-        let exprs: Vec<&PomExpr> = contribs.iter().map(|c| &c.expr).collect();
-        let func_id = self.build_fn(name, &exprs, move |b, _slot, out_ptr| {
-            for (triple_idx, (j, k, l, dddtemps, rows)) in kept.iter().enumerate() {
-                b.set_tape("__dtemp1", dtemps1[*j].clone());
-                b.set_tape("__dtemp2", dtemps2[*k].clone());
-                b.set_tape("__dtemp3", dtemps3[*l].clone());
-                b.set_tape("__ddtemp12", ddtemps12[*j][*k].clone());
-                b.set_tape("__ddtemp13", ddtemps13[*j][*l].clone());
-                b.set_tape("__ddtemp23", ddtemps23[*k][*l].clone());
-                b.set_tape("__dddtemp123", dddtemps.clone());
-                b.force_tapes(&[
-                    "__temp", "__dtemp1", "__dtemp2", "__dtemp3",
-                    "__ddtemp12", "__ddtemp13", "__ddtemp23", "__dddtemp123",
-                ])?;
-                for (ci, row) in rows.iter().enumerate() {
-                    if let Some(e) = row {
-                        let value = b.emit_analog(e)?;
-                        b.store_f64(value, out_ptr, triple_idx * nc + ci);
-                    }
-                }
-            }
-            Ok(())
-        })?;
-        Ok(Some((func_id, triples)))
+        Ok(Some((func_ids, triples)))
     }
 
-    /// Disto2 shape: `out[pair·nc + ci] = ∂²(contrib_ci)/∂V(j)∂V(k)` per
-    /// ordered branch pair `(j, k)`, over the resistive contributions
-    /// followed by the charge ones (DISTO-03).
+    /// Disto2 shape: one compiled function per ordered branch pair `(j, k)`,
+    /// each writing `out[ci] = ∂²(contrib_ci)/∂V(j)∂V(k)` for its own pair
+    /// over the resistive contributions followed by the charge ones
+    /// (DISTO-03). A separate function per pair — rather than one function
+    /// unrolling every pair — keeps each Cranelift function's instruction
+    /// count bounded; a many-branch device (e.g. a MOSFET with several
+    /// controlling terminals) unrolled into a single function overwhelmed
+    /// Cranelift's own compilation (`define_function`), not the symbolic
+    /// differentiation, which stays fast.
     ///
     /// For each branch `k` the first-derivative tape `d(temps)/dV(k)` is
     /// built once; for each ordered pair `(j, k)` the cross tape
-    /// `d²(temps)/dV(j)dV(k)` (via [`crate::lower::diff::d_dv_twice`]) backs
-    /// the `__ddtemp` leaves of each contribution's second derivative —
-    /// derivatives reference the shared value tape, never an inlined tree.
-    /// Rows that fold to a literal zero (linear in `(j, k)`) are skipped, as
-    /// are pairs with no nonzero row; `out` is pre-zeroed by the caller.
-    /// Returns `None` when every contribution is linear — a fully linear
-    /// device carries no `.disto` kernel at all.
+    /// `d²(temps)/dV(j)dV(k)` completes the pair's own first pass
+    /// (`all_dtemps_inner[j]`, built once per branch) with a single more
+    /// differentiate pass rather than redoing it — derivatives reference
+    /// the shared value tape, never an inlined tree. Rows that fold to a
+    /// literal zero (linear in `(j, k)`) are skipped, as are pairs with no
+    /// nonzero row. Returns `None` when every contribution is linear — a
+    /// fully linear device carries no `.disto` kernel at all.
     ///
     /// DISTO-04: the Volterra bookkeeping is over controlling *voltages*; a
     /// contribution reading a branch current `I(...)` couples to a current
@@ -1647,7 +1702,7 @@ impl<'m> AnalogCompiler<'m> {
         resistive: &[FlatContrib],
         charge: &[FlatContrib],
         temps: &[PomExpr],
-    ) -> Result<Option<(FuncId, Vec<((NodeId, NodeId), (NodeId, NodeId))>)>, CodegenError> {
+    ) -> Result<Option<(Vec<FuncId>, Vec<((NodeId, NodeId), (NodeId, NodeId))>)>, CodegenError> {
         let contribs: Vec<&FlatContrib> = resistive.iter().chain(charge).collect();
         if contribs.is_empty() {
             return Ok(None);
@@ -1660,12 +1715,9 @@ impl<'m> AnalogCompiler<'m> {
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
 
-        // Precompute every row symbolically, k-major so each branch's
-        // first-derivative tape is built once; drop literal-zero rows and
-        // empty pairs/groups. Each role's tape is built with its own marker
-        // name so its entries stay self-consistent (`d_dv_named`): the
-        // `(c,d)` tape references `__dtemp`, the `(a,b)` tape
-        // `__dtemp_inner`.
+        // Each role's tape is built with its own marker name so its
+        // entries stay self-consistent (`d_dv_named`): the `(c,d)` tape
+        // references `__dtemp`, the `(a,b)` tape `__dtemp_inner`.
         let all_dtemps: Vec<Vec<PomExpr>> = branches
             .iter()
             .map(|&(a, b)| {
@@ -1684,15 +1736,15 @@ impl<'m> AnalogCompiler<'m> {
                     .collect()
             })
             .collect();
+
+        let exprs: Vec<&PomExpr> = contribs.iter().map(|c| &c.expr).collect();
         let mut pairs: Vec<((NodeId, NodeId), (NodeId, NodeId))> = Vec::new();
-        let mut groups: Vec<(usize, Vec<(usize, Vec<PomExpr>, Vec<Option<PomExpr>>)>)> = Vec::new();
+        let mut func_ids: Vec<FuncId> = Vec::new();
         for (k_idx, &(c, d)) in branches.iter().enumerate() {
-            let mut js: Vec<(usize, Vec<PomExpr>, Vec<Option<PomExpr>>)> = Vec::new();
             for (j_idx, &(a, b)) in branches.iter().enumerate() {
-                let ddtemps: Vec<PomExpr> = temps
-                    .iter()
-                    .map(|t| crate::lower::diff::d_dv_twice(t, a, b, c, d, &resolve_node))
-                    .collect();
+                // Cheap check first (a handful of contribs): skip the pair
+                // — and the expensive per-temp second-derivative tape below
+                // — when every contribution's second derivative is zero.
                 let rows: Vec<Option<PomExpr>> = contribs
                     .iter()
                     .map(|contrib| {
@@ -1703,41 +1755,44 @@ impl<'m> AnalogCompiler<'m> {
                         }
                     })
                     .collect();
-                if rows.iter().any(Option::is_some) {
-                    pairs.push(((a, b), (c, d)));
-                    js.push((j_idx, ddtemps, rows));
+                if !rows.iter().any(Option::is_some) {
+                    continue;
                 }
-            }
-            if !js.is_empty() {
-                groups.push((k_idx, js));
-            }
-        }
-        if groups.is_empty() {
-            return Ok(None);
-        }
-
-        let nc = contribs.len();
-        let exprs: Vec<&PomExpr> = contribs.iter().map(|c| &c.expr).collect();
-        let func_id = self.build_fn(name, &exprs, move |b, _slot, out_ptr| {
-            let mut pair_idx = 0usize;
-            for (k_idx, js) in &groups {
-                b.set_deriv_tape(all_dtemps[*k_idx].clone());
-                for (j_idx, ddtemps, rows) in js {
-                    b.set_deriv_tape2(all_dtemps_inner[*j_idx].clone());
-                    b.set_ddtemp_tape(ddtemps.clone());
+                // Completes the already-built first pass (`all_dtemps_inner[j]`,
+                // shared across every `k`) with one more differentiate
+                // pass — never redoes it.
+                let ddtemps: Vec<PomExpr> = all_dtemps_inner[j_idx]
+                    .iter()
+                    .map(|inner| {
+                        crate::lower::diff::d_dv_once_more_named(
+                            inner, c, d, &resolve_node, "__dtemp_inner", "__dtemp", "__ddtemp",
+                        )
+                    })
+                    .collect();
+                let dtemp_k = all_dtemps[k_idx].clone();
+                let dtemp_inner_j = all_dtemps_inner[j_idx].clone();
+                let fn_name = format!("{name}_{j_idx}_{k_idx}");
+                let func_id = self.build_fn(&fn_name, &exprs, move |b, _slot, out_ptr| {
+                    b.set_deriv_tape(dtemp_k);
+                    b.set_deriv_tape2(dtemp_inner_j);
+                    b.set_ddtemp_tape(ddtemps);
                     b.force_tapes(&["__temp", "__dtemp", "__dtemp_inner", "__ddtemp"])?;
                     for (ci, row) in rows.iter().enumerate() {
                         if let Some(e) = row {
                             let value = b.emit_analog(e)?;
-                            b.store_f64(value, out_ptr, pair_idx * nc + ci);
+                            b.store_f64(value, out_ptr, ci);
                         }
                     }
-                    pair_idx += 1;
-                }
+                    Ok(())
+                })?;
+                pairs.push(((a, b), (c, d)));
+                func_ids.push(func_id);
             }
-            Ok(())
-        })?;
-        Ok(Some((func_id, pairs)))
+        }
+        if func_ids.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some((func_ids, pairs)))
     }
 
     /// Row shape: `out[i] = expr_i`.

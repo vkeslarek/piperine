@@ -12,7 +12,8 @@ use cranelift_frontend::FunctionBuilder;
 
 use piperine_lang::parse::ast::{BinaryOp, Expr, Literal, Stmt, UnaryOp};
 use piperine_lang::math;
-use crate::jit::{CodegenError, SimCtx};
+use crate::error::CodegenError;
+use crate::jit::SimCtx;
 
 use crate::codegen::builder::*;
 

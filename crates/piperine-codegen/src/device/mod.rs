@@ -38,7 +38,7 @@ use crate::ir::{Analysis, NodeId};
 use crate::lower::pom::LoweredBody;
 use crate::jit::analog::AnalogKernel;
 use crate::jit::digital::DigitalKernel;
-use crate::jit::CodegenError;
+use crate::error::CodegenError;
 
 pub use analog::AnalogInstance;
 pub use circuit::{BuiltInstanceInfo, CircuitBuildInfo, CircuitCompiler};
@@ -55,12 +55,20 @@ pub struct CompiledModule {
 }
 
 impl CompiledModule {
-    /// Compile every behavior body of `module`.
+    /// Compile every behavior body of `module`, including `.disto` kernels.
     pub fn compile(module: &LoweredBody) -> Result<Self, CodegenError> {
+        Self::compile_with_options(module, true)
+    }
+
+    /// Compile every behavior body of `module`. `compile_disto` gates the
+    /// `.disto` 2nd/3rd-derivative kernels (see
+    /// [`AnalogKernel::compile_with_options`]) — callers that will never
+    /// run `.disto` on this circuit pass `false` to skip that compile cost.
+    pub fn compile_with_options(module: &LoweredBody, compile_disto: bool) -> Result<Self, CodegenError> {
         let analog = module
             .analog
             .as_ref()
-            .map(|_| AnalogKernel::compile(module).map(Arc::new))
+            .map(|_| AnalogKernel::compile_with_options(module, compile_disto).map(Arc::new))
             .transpose()?;
         let digital = module
             .digital
