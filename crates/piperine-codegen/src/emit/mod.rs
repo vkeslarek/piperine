@@ -9,7 +9,7 @@
 
 pub mod abi;
 #[allow(unused_imports)]
-pub mod analog_emit;
+pub mod analog_expr;
 pub mod builder;
 pub mod cse;
 pub mod digital_expr;
