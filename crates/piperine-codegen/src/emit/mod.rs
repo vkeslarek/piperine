@@ -14,6 +14,7 @@ pub mod builder;
 pub mod cse;
 pub mod digital_expr;
 pub mod resolver;
+pub mod stmt;
 
 pub use abi::SimCtx;
 pub use builder::Builder;
