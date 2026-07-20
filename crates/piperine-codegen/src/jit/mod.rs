@@ -14,7 +14,6 @@
 
 pub mod analog;
 pub mod digital;
-pub mod flatten;
 pub use piperine_lang::math;
 
 pub use crate::emit::abi::SimCtx;

@@ -18,6 +18,7 @@
 pub mod device;
 pub mod emit;
 pub mod error;
+pub mod flatten;
 pub mod jit;
 pub mod resolve;
 

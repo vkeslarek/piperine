@@ -25,7 +25,7 @@ use cranelift_module::{FuncId, Linkage, Module};
 use crate::emit::{Builder, Resolver};
 use crate::resolve::{CrossDir, Domain, LoweredBody, StateKind, NodeId, StateId, VarId};
 
-use super::flatten::{
+use crate::flatten::analog::{
     visit_all, AnalogFlattener, FlatAnalog, FlatContrib, FlatDiagnostic, FlatEventTrigger,
     FlatForce,
 };
@@ -1002,7 +1002,7 @@ impl<'m> AnalogCompiler<'m> {
                 None
             } else {
                 let subst = |e: &PomExpr| -> PomExpr {
-                    super::flatten::rewrite_expr(e, &mut |ex| {
+                    crate::flatten::analog::rewrite_expr(e, &mut |ex| {
                         if let PomExpr::Call(func, args) = ex
                             && let PomExpr::Ident(name) = func.as_ref()
                             && name == "__state_load"
