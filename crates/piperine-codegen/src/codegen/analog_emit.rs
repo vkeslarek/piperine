@@ -206,7 +206,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
                     None => self.load_sim_f64(SimField::TEMPERATURE),
                 };
                 let kb_over_q = self.cse_const(SimCtx::K_B_OVER_Q);
-                Ok(self.cse_op2(bin_tag(crate::ir::BinOp::Mul), temperature, kb_over_q, |b| {
+                Ok(self.cse_op2(bin_tag(crate::resolve::BinOp::Mul), temperature, kb_over_q, |b| {
                     b.ins().fmul(temperature, kb_over_q)
                 }))
             }
@@ -493,7 +493,7 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         // `to_pom`; `d_math("pow")` and `d_via_pow` produce it). In an analog
         // expression a real bitwise xor is meaningless, so `BitXor` is always
         // that pow carrier.
-        if ir_op == crate::ir::BinOp::Pow || ir_op == crate::ir::BinOp::BitXor {
+        if ir_op == crate::resolve::BinOp::Pow || ir_op == crate::resolve::BinOp::BitXor {
             let lhs = self.emit_analog(a)?;
             let rhs = self.emit_analog(b)?;
             return self.analog_call_math("pow", &[lhs, rhs]);
@@ -509,38 +509,38 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
             e.bool_to_f64(flag)
         };
         let val = match ir_op {
-            crate::ir::BinOp::Add => self.builder.ins().fadd(lhs, rhs),
-            crate::ir::BinOp::Sub => self.builder.ins().fsub(lhs, rhs),
-            crate::ir::BinOp::Mul => self.builder.ins().fmul(lhs, rhs),
-            crate::ir::BinOp::Div => self.builder.ins().fdiv(lhs, rhs),
-            crate::ir::BinOp::Rem => {
+            crate::resolve::BinOp::Add => self.builder.ins().fadd(lhs, rhs),
+            crate::resolve::BinOp::Sub => self.builder.ins().fsub(lhs, rhs),
+            crate::resolve::BinOp::Mul => self.builder.ins().fmul(lhs, rhs),
+            crate::resolve::BinOp::Div => self.builder.ins().fdiv(lhs, rhs),
+            crate::resolve::BinOp::Rem => {
                 let quotient = self.builder.ins().fdiv(lhs, rhs);
                 let floored = self.analog_call_math("floor", &[quotient])?;
                 let product = self.builder.ins().fmul(floored, rhs);
                 self.builder.ins().fsub(lhs, product)
             }
-            crate::ir::BinOp::Eq => cmp(self, FloatCC::Equal),
-            crate::ir::BinOp::Ne => cmp(self, FloatCC::NotEqual),
-            crate::ir::BinOp::Lt => cmp(self, FloatCC::LessThan),
-            crate::ir::BinOp::Le => cmp(self, FloatCC::LessThanOrEqual),
-            crate::ir::BinOp::Gt => cmp(self, FloatCC::GreaterThan),
-            crate::ir::BinOp::Ge => cmp(self, FloatCC::GreaterThanOrEqual),
-            crate::ir::BinOp::And | crate::ir::BinOp::Or => {
+            crate::resolve::BinOp::Eq => cmp(self, FloatCC::Equal),
+            crate::resolve::BinOp::Ne => cmp(self, FloatCC::NotEqual),
+            crate::resolve::BinOp::Lt => cmp(self, FloatCC::LessThan),
+            crate::resolve::BinOp::Le => cmp(self, FloatCC::LessThanOrEqual),
+            crate::resolve::BinOp::Gt => cmp(self, FloatCC::GreaterThan),
+            crate::resolve::BinOp::Ge => cmp(self, FloatCC::GreaterThanOrEqual),
+            crate::resolve::BinOp::And | crate::resolve::BinOp::Or => {
                 let zero = self.cse_const(0.0);
                 let a_true = self.builder.ins().fcmp(FloatCC::NotEqual, lhs, zero);
                 let b_true = self.builder.ins().fcmp(FloatCC::NotEqual, rhs, zero);
-                let combined = if ir_op == crate::ir::BinOp::And {
+                let combined = if ir_op == crate::resolve::BinOp::And {
                     self.builder.ins().band(a_true, b_true)
                 } else {
                     self.builder.ins().bor(a_true, b_true)
                 };
                 self.bool_to_f64(combined)
             }
-            crate::ir::BinOp::BitAnd | crate::ir::BinOp::BitOr
-            | crate::ir::BinOp::BitXor | crate::ir::BinOp::Shl | crate::ir::BinOp::Shr => {
+            crate::resolve::BinOp::BitAnd | crate::resolve::BinOp::BitOr
+            | crate::resolve::BinOp::BitXor | crate::resolve::BinOp::Shl | crate::resolve::BinOp::Shr => {
                 return Err(CodegenError::unsupported(format!("bitwise/shift {ir_op:?} in an analog expression")));
             }
-            crate::ir::BinOp::Pow => unreachable!("handled above"),
+            crate::resolve::BinOp::Pow => unreachable!("handled above"),
         };
         self.cse.as_mut().expect("analog context").insert(key, val);
         Ok(val)

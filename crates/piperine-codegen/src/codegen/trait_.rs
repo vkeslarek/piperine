@@ -4,7 +4,7 @@
 use cranelift_codegen::ir::InstBuilder;
 use piperine_lang::parse::ast::{Expr, Literal, UnaryOp};
 
-use crate::ir::UnOp;
+use crate::resolve::UnOp;
 use crate::error::CodegenError;
 
 use super::builder::{Builder, Typed};
@@ -44,7 +44,7 @@ impl Codegen for Expr {
             Expr::Binary(lhs, op, rhs) => {
                 let l = lhs.emit(b)?;
                 let r = rhs.emit(b)?;
-                b.emit_binary(crate::ir::BinOp::from_pom(op.clone()), l, r)
+                b.emit_binary(crate::resolve::BinOp::from_pom(op.clone()), l, r)
             }
             Expr::Unary(op, x) => {
                 let v = x.emit(b)?;

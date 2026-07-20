@@ -63,7 +63,7 @@ fn fresh_build_v_mid(v_dc: f64, r_bot: f64) -> f64 {
 fn nested_and_source_sweeps_restamp_one_compilation() {
     let design = piperine_lang::parse_and_elaborate(DIVIDER, &headers_source_map())
         .expect("divider elaborates");
-    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("lower");
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lower");
     let mut compiler = CircuitCompiler::new(&design, &bodies);
     let (mut circuit, info) = compiler.build_circuit_mapped("Top").expect("circuit builds");
     circuit.init_digital().expect("digital init");

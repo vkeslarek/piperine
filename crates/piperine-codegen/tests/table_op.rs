@@ -11,7 +11,7 @@ fn lower_err(body: &str) -> String {
     let design =
         piperine_lang::parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy())
             .expect("elaborates");
-    let err = piperine_codegen::ir::lower_bodies(&design).expect_err("must fail loud");
+    let err = piperine_codegen::resolve::lower_bodies(&design).expect_err("must fail loud");
     format!("{err}")
 }
 

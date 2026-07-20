@@ -17,7 +17,7 @@ use piperine_solver::abi::{TrBdf2, TrBdf2Phase};
 use piperine_solver::abi::{AsIndex, Stamp};
 use piperine_solver::abi::Context;
 
-use crate::ir::{Analysis, CrossDir};
+use crate::resolve::{Analysis, CrossDir};
 use crate::jit::analog::{AnalogKernel, CompiledTrigger, RuntimeState};
 use crate::error::CodegenError;
 use crate::jit::SimCtx;
@@ -294,7 +294,7 @@ impl AnalogInstance {
             .collect();
 
         // Noise terminals resolve through the kernel terminal order.
-        let terminal_slot = |node: crate::ir::NodeId| {
+        let terminal_slot = |node: crate::resolve::NodeId| {
             kernel
                 .terminals()
                 .iter()
@@ -317,7 +317,7 @@ impl AnalogInstance {
                         param_names.iter().position(|n| n == name)
                             .and_then(|i| params.get(i).copied())
                     };
-                    crate::ir::pom_eval_const(expr, &resolve)
+                    crate::resolve::pom_eval_const(expr, &resolve)
                         .map_err(CodegenError::ConstEval)
                 };
                 Ok(match &spec.kind {
@@ -373,11 +373,11 @@ impl AnalogInstance {
                         param_names.iter().position(|n| n == name)
                             .and_then(|i| params.get(i).copied())
                     };
-                    let p = crate::ir::pom_eval_const(period, &resolve)
+                    let p = crate::resolve::pom_eval_const(period, &resolve)
                         .map_err(CodegenError::ConstEval)?;
                     // First fire at `phase` (a phased timer `@timer(period, phase)`),
                     // or at `period` for the unphased `@timer(period)` (phase ≤ 0).
-                    let ph = crate::ir::pom_eval_const(phase, &resolve)
+                    let ph = crate::resolve::pom_eval_const(phase, &resolve)
                         .map_err(CodegenError::ConstEval)?;
                     Ok(if ph > 0.0 { (p, ph) } else { (p, p) })
                 }
@@ -611,7 +611,7 @@ impl AnalogInstance {
     /// The force branch whose terminals are `(tp, tm)`, with the sign flip
     /// when the probe orientation is reversed — the branch-current column a
     /// flux/impedance term couples to.
-    fn force_branch_target(&self, tp: crate::ir::NodeId, tm: crate::ir::NodeId) -> Option<(usize, f64)> {
+    fn force_branch_target(&self, tp: crate::resolve::NodeId, tm: crate::resolve::NodeId) -> Option<(usize, f64)> {
         let force_terminals = self.kernel.force_terminals();
         force_terminals
             .iter()
@@ -626,7 +626,7 @@ impl AnalogInstance {
     }
 
     /// The netlist reference for a kernel terminal node (None = ground).
-    fn terminal_ref(&self, node: crate::ir::NodeId) -> Option<AnalogReference> {
+    fn terminal_ref(&self, node: crate::resolve::NodeId) -> Option<AnalogReference> {
         self.kernel
             .terminals()
             .iter()
@@ -1077,7 +1077,7 @@ impl AnalogInstance {
                 }
                 corrected.push(force_idx);
                 let (plus, minus) = force_terminals[force_idx];
-                let read_prev = |node: crate::ir::NodeId| -> f64 {
+                let read_prev = |node: crate::resolve::NodeId| -> f64 {
                     self.terminal_ref(node)
                         .and_then(|r| r.idx())
                         .and_then(|k| states.view(1).and_then(|s| s.get(k).copied()))
@@ -1477,7 +1477,7 @@ impl AnalogInstance {
     }
 
     /// The analog kernel's terminal NodeIds (terminal order).
-    pub fn terminal_node_ids(&self) -> &[crate::ir::NodeId] {
+    pub fn terminal_node_ids(&self) -> &[crate::resolve::NodeId] {
         self.kernel.terminals()
     }
 

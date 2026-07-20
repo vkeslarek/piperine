@@ -3,7 +3,7 @@
 
 use piperine_lang::pom::{Function as PomFunction, Module, NetType, ValueType, Design};
 use piperine_lang::parse::ast::{DisciplineItem, DisciplineDecl, Expr as PomExpr};
-use crate::lower::*;
+use crate::resolve::*;
 use super::stmt::resolve_stmts;
 use super::LowerCtx;
 use std::collections::HashSet;

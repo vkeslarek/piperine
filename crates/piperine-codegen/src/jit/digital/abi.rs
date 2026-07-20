@@ -1,4 +1,4 @@
-//! Digital kernel compilation: an [`crate::ir::DigitalBody`] to native
+//! Digital kernel compilation: an [`crate::resolve::DigitalBody`] to native
 //! code. There is no digital interpreter — combinational logic, register
 //! updates, and event watching all compile through Cranelift.
 //!
@@ -29,7 +29,7 @@ use crate::jit::digital::compile::DigitalCompiler;
 
 use cranelift_jit::JITModule;
 
-use crate::ir::{
+use crate::resolve::{
     EdgeKind, LoweredBody, ParamId,
     NodeId, VarId,
 };

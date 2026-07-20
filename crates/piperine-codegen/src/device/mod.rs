@@ -5,7 +5,7 @@
 //! - [`PiperineDevice`] — one instance: parameter values, operator state,
 //!   register banks, netlist references. Implements the solver `Element`
 //!   trait for both domains.
-//! - [`CircuitCompiler`] — walks an [`crate::ir::IrProgram`]'s top module and
+//! - [`CircuitCompiler`] — walks an [`crate::resolve::IrProgram`]'s top module and
 //!   builds a ready-to-simulate `CircuitInstance`.
 
 mod analog;
@@ -34,8 +34,8 @@ use piperine_solver::abi::CircularArrayBuffer2;
 use piperine_solver::abi::Stamp;
 use piperine_solver::abi::Context;
 
-use crate::ir::{Analysis, NodeId};
-use crate::lower::pom::LoweredBody;
+use crate::resolve::{Analysis, NodeId};
+use crate::resolve::pom::LoweredBody;
 use crate::jit::analog::AnalogKernel;
 use crate::jit::digital::DigitalKernel;
 use crate::error::CodegenError;

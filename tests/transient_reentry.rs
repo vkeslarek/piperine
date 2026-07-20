@@ -69,7 +69,7 @@ fn headers_source_map() -> SourceMap {
 fn reentry_from_captured_state_matches_continuous_run() {
     let design =
         piperine_lang::parse_and_elaborate(RC, &headers_source_map()).expect("rc elaborates");
-    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("lower");
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lower");
     let mut compiler = CircuitCompiler::new(&design, &bodies);
 
     let t_half = 1.0e-3;

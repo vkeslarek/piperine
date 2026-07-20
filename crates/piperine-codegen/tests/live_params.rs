@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 use piperine_lang::parse_and_elaborate;
 use piperine_lang::pom::Design;
-use piperine_codegen::ir::LoweredBody;
+use piperine_codegen::resolve::LoweredBody;
 use piperine_codegen::CircuitCompiler;
 use piperine_solver::prelude::{Context, Value};
 
@@ -48,7 +48,7 @@ const DIVIDER: &str = r#"
 fn elaborate() -> (Design, HashMap<String, LoweredBody>) {
     let design = parse_and_elaborate(DIVIDER, &piperine_lang::SourceMap::dummy())
         .expect("divider elaborates");
-    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("divider lowers");
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("divider lowers");
     (design, bodies)
 }
 
@@ -89,7 +89,7 @@ fn solver_set_matches_pom_path_for_flat_and_bundle_params() {
     design.set_param("r2", "model_r0", piperine_lang::pom::Value::Real(3000.0));
     let staged_design = design.with_overrides_applied("Top").expect("override applies");
     let staged_bodies =
-        piperine_codegen::ir::lower_bodies(&staged_design).expect("staged design lowers");
+        piperine_codegen::resolve::lower_bodies(&staged_design).expect("staged design lowers");
     let mut staged_compiler = CircuitCompiler::new(&staged_design, &staged_bodies);
     let (mut staged_circuit, staged_info) =
         staged_compiler.build_circuit_mapped("Top").expect("staged circuit builds");
@@ -168,7 +168,7 @@ fn presence_flipping_set_returns_typed_rebuild_without_applying() {
     "#;
     let design = parse_and_elaborate(OPTIONAL, &piperine_lang::SourceMap::dummy())
         .expect("optional fixture elaborates");
-    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("optional fixture lowers");
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("optional fixture lowers");
     let mut compiler = CircuitCompiler::new(&design, &bodies);
     let (mut circuit, info) = compiler.build_circuit_mapped("Top").expect("circuit builds");
     let mid = info.nets.get("mid").expect("net `mid`").clone();
@@ -199,7 +199,7 @@ fn presence_flipping_set_returns_typed_rebuild_without_applying() {
     // effect (g2 = 1e-3 + 3e-3 => mid = 10*g1/(g1+g2) = 2.0 V).
     design.set_param("r2", "ns", piperine_lang::pom::Value::Real(1.0));
     let staged = design.with_overrides_applied("Top").expect("override applies");
-    let staged_bodies = piperine_codegen::ir::lower_bodies(&staged).expect("staged lowers");
+    let staged_bodies = piperine_codegen::resolve::lower_bodies(&staged).expect("staged lowers");
     let mut staged_compiler = CircuitCompiler::new(&staged, &staged_bodies);
     let (mut given_circuit, given_info) =
         staged_compiler.build_circuit_mapped("Top").expect("staged builds");
@@ -253,7 +253,7 @@ fn mid_transient_r_set_switches_the_rc_time_constant_at_the_breakpoint() {
     "#;
     let design = parse_and_elaborate(RC, &piperine_lang::SourceMap::dummy())
         .expect("rc elaborates");
-    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("rc lowers");
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("rc lowers");
     let mut compiler = CircuitCompiler::new(&design, &bodies);
     let (mut circuit, info) = compiler.build_circuit_mapped("Top").expect("rc builds");
     let out = info.nets.get("out").expect("net `out`").clone();
@@ -352,7 +352,7 @@ fn mid_transient_c_jump_stays_accurate_and_storm_free() {
         }
     "#;
     let design = parse_and_elaborate(RC, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("lower");
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lower");
     let mut compiler = CircuitCompiler::new(&design, &bodies);
     let (mut circuit, info) = compiler.build_circuit_mapped("Top").expect("build");
     let out = info.nets.get("out").expect("net `out`").clone();
@@ -437,7 +437,7 @@ fn mid_transient_l_jump_stays_accurate_and_storm_free() {
         }
     "#;
     let design = parse_and_elaborate(RL, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("lower");
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lower");
     let mut compiler = CircuitCompiler::new(&design, &bodies);
     let (mut circuit, info) = compiler.build_circuit_mapped("Top").expect("build");
     let mid = info.nets.get("mid").expect("net `mid`").clone();

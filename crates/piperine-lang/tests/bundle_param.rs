@@ -7,8 +7,8 @@
 
 use piperine_lang::{parse_str, parse_and_elaborate};
 
-fn ppr_to_ir(design: &piperine_lang::Design) -> Result<std::collections::HashMap<String, piperine_codegen::ir::LoweredBody>, piperine_codegen::ir::LowerErrors> {
-    piperine_codegen::ir::lower_bodies(design)
+fn ppr_to_ir(design: &piperine_lang::Design) -> Result<std::collections::HashMap<String, piperine_codegen::resolve::LoweredBody>, piperine_codegen::resolve::LowerErrors> {
+    piperine_codegen::resolve::lower_bodies(design)
 }
 
 const DISCIPLINE: &str = "

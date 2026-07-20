@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue};
 
-use crate::ir::{EdgeKind, Type};
+use crate::resolve::{EdgeKind, Type};
 use crate::jit::digital::{DigitalAbi, DigitalKernel};
 use crate::error::CodegenError;
 use crate::jit::SimCtx;
@@ -182,7 +182,7 @@ impl DigitalInstance {
     /// kernel's `RegInit` expressions against this instance's parameters —
     /// the same values [`DigitalInstance::init`] writes. The fused
     /// combinational network consumes them for its own power-on bank state.
-    pub(crate) fn reg_init_values(&self) -> Vec<(crate::ir::VarId, f64)> {
+    pub(crate) fn reg_init_values(&self) -> Vec<(crate::resolve::VarId, f64)> {
         let param_index = &self.kernel.param_index;
         let params = &self.params;
         self.kernel
@@ -440,7 +440,7 @@ impl DigitalInstance {
         self.kernel.eval_watch(&abi, &mut s.watch);
     }
 
-    fn write_var(&mut self, var: crate::ir::VarId, value: f64) {
+    fn write_var(&mut self, var: crate::resolve::VarId, value: f64) {
         // The kernel layout knows the bank; the symbol type decides the
         // conversion.
         let layout = self.kernel.layout();

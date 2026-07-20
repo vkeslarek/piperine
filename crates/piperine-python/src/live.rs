@@ -98,7 +98,7 @@ impl _LiveSession {
     /// Lower + JIT `module` of `design` into a runnable circuit — the same
     /// recipe as the host's `SimSession::build_circuit`, minus plugins.
     fn build(design: &Design, module: &str) -> PyResult<(CircuitInstance, CircuitBuildInfo)> {
-        let bodies = piperine_codegen::ir::lower_bodies(design)
+        let bodies = piperine_codegen::resolve::lower_bodies(design)
             .map_err(|e| PyValueError::new_err(format!("{e}")))?;
         let mut compiler = CircuitCompiler::new(design, &bodies);
         let (mut circuit, info) = compiler

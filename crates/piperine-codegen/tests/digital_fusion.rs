@@ -35,7 +35,7 @@ const PRELUDE: &str = "
 /// manual init corrupts the per-device event scheduler's state.)
 fn run(src: &str, top: &str, fuse: bool, stop: f64) -> (CircuitInstance, CircuitBuildInfo, Vec<Vec<Option<LogicValue>>>) {
     let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
-    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("lowers");
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowers");
     let mut compiler = CircuitCompiler::new(&design, &bodies);
     compiler.fuse_digital_cones = fuse;
     let (mut circuit, info) = compiler.build_circuit_mapped(top).expect("builds");

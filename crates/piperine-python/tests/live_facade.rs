@@ -50,7 +50,7 @@ mod Top() {
 fn solver_set_error(label: &str, param: &str) -> String {
     let design = piperine_lang::parse_and_elaborate(RC_PHDL, &piperine_lang::SourceMap::dummy())
         .expect("fixture elaborates");
-    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("fixture lowers");
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("fixture lowers");
     let mut compiler = piperine_codegen::CircuitCompiler::new(&design, &bodies);
     let mut circuit = compiler.build_circuit("Top").expect("fixture builds");
     circuit

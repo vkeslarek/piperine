@@ -76,7 +76,7 @@ fn headers_source_map() -> SourceMap {
 fn build(top: &str) -> (piperine_solver::prelude::CircuitInstance, piperine_codegen::device::CircuitBuildInfo) {
     let design = piperine_lang::parse_and_elaborate(DIVIDER, &headers_source_map())
         .expect("fixture elaborates");
-    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("lower");
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lower");
     let mut compiler = CircuitCompiler::new(&design, &bodies);
     let (mut circuit, info) = compiler.build_circuit_mapped(top).expect("build");
     circuit.init_digital().expect("digital");

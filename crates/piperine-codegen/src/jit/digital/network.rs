@@ -19,7 +19,7 @@ use piperine_solver::abi::{DigitalNet, LogicValue};
 use piperine_solver::abi::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
 use piperine_solver::abi::{DigitalPorts, EvalCtx, EventSink};
 
-use crate::ir::LoweredBody;
+use crate::resolve::LoweredBody;
 use crate::jit::digital::compile::{NetworkComb, NetworkMemberSpec};
 use crate::error::CodegenError;
 use crate::jit::SimCtx;
@@ -50,7 +50,7 @@ pub struct NetworkMember {
     /// Power-on register values `(VarId, value)` — the same values the
     /// per-device path writes in `DigitalInstance::init`, applied here to the
     /// network-wide banks at this member's bases.
-    pub reg_inits: Vec<(crate::ir::VarId, f64)>,
+    pub reg_inits: Vec<(crate::resolve::VarId, f64)>,
 }
 
 /// The cone boundary: nets fed from outside (its sensitivity list) and every

@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 use piperine_lang::pom::Design;
 
-use crate::lower::*;
+use crate::resolve::*;
 use self::structure::FnSigParams;
 
 pub mod analog_ops;

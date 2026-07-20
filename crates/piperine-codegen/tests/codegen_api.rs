@@ -4,11 +4,11 @@ use std::collections::HashMap;
 
 use piperine_lang::parse_and_elaborate;
 use piperine_codegen::DigitalKernel;
-use piperine_codegen::ir::LoweredBody;
+use piperine_codegen::resolve::LoweredBody;
 
 fn parse_ppr(body: &str) -> HashMap<String, LoweredBody> {
     let elab = parse_and_elaborate(body, &piperine_lang::SourceMap::dummy()).expect("PHDL parse/elab");
-    piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed")
+    piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed")
 }
 
 #[test]
@@ -62,7 +62,7 @@ fn ir_digital_compile_dff() {
         digital DFF { @ posedge(clk) { Q <- D; } }
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("parse_and_elaborate DFF");
-    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
     let _interp = DigitalKernel::compile(bodies.get("DFF").unwrap()).expect("DFF interp");
 }
 

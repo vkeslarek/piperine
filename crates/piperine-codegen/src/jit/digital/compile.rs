@@ -1,4 +1,4 @@
-//! Digital kernel compilation: an [`crate::ir::DigitalBody`] to native
+//! Digital kernel compilation: an [`crate::resolve::DigitalBody`] to native
 //! code. There is no digital interpreter — combinational logic, register
 //! updates, and event watching all compile through Cranelift.
 //!
@@ -33,7 +33,7 @@ use cranelift_module::{FuncId, Linkage, Module};
 use piperine_lang::parse::ast::{EventSpec, Expr, Stmt};
 
 use crate::codegen::{Builder, Codegen, DigTy, Resolver};
-use crate::ir::{
+use crate::resolve::{
     DigitalBody, EdgeKind, LoweredBody, ParamId,
 };
 
@@ -377,7 +377,7 @@ pub struct Pointers {
 /// global net ids wired to kernel input/output `i`; the `*_base` fields are the
 /// member's offsets into the shared int/real variable banks and the params bank.
 pub struct NetworkMemberSpec<'m> {
-    pub module: &'m crate::ir::LoweredBody,
+    pub module: &'m crate::resolve::LoweredBody,
     pub in_net_slots: Vec<usize>,
     pub out_net_slots: Vec<usize>,
     pub int_base: usize,

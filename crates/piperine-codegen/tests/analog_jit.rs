@@ -3,7 +3,7 @@
 //! checked numerically and through full solver analyses.
 //! Pending rewrite for POM Expr/Stmt (IrExpr/IrStmt removed).
 
-use piperine_codegen::ir::*;
+use piperine_codegen::resolve::*;
 use piperine_codegen::jit::analog::AnalogKernel;
 use piperine_codegen::{CircuitCompiler, CodegenError, SimCtx};
 use piperine_solver::prelude::Context;
@@ -319,7 +319,7 @@ fn build_top(
     let src = format!("{DISCIPLINE}{body}\nmod Top() {{\n{top_src}\n}}\n");
     let design = piperine_lang::parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy())
         .expect("parse_and_elaborate");
-    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("lower_bodies");
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lower_bodies");
     let mut compiler = CircuitCompiler::new(&design, &bodies);
     compiler.build_circuit_mapped("Top").expect("build circuit")
 }

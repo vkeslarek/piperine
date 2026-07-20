@@ -23,7 +23,7 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 
 use crate::codegen::{Builder, Resolver};
-use crate::ir::{CrossDir, Domain, LoweredBody, StateKind, NodeId, StateId, VarId};
+use crate::resolve::{CrossDir, Domain, LoweredBody, StateKind, NodeId, StateId, VarId};
 
 use super::flatten::{
     visit_all, AnalogFlattener, FlatAnalog, FlatContrib, FlatDiagnostic, FlatEventTrigger,
@@ -908,7 +908,7 @@ impl<'m> AnalogCompiler<'m> {
             module.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
         };
         for expr in flat.exprs() {
-            crate::lower::diff::collect_branches(expr, &mut pairs, &resolve_node);
+            crate::resolve::diff::collect_branches(expr, &mut pairs, &resolve_node);
         }
         for contrib in flat.resistive.iter().chain(&flat.charge) {
             pairs.push((contrib.plus, contrib.minus));
@@ -1433,7 +1433,7 @@ impl<'m> AnalogCompiler<'m> {
         let mut branches: Vec<(NodeId, NodeId)> = Vec::new();
         let mut collect = |e: &PomExpr| {
             let mut pairs = Vec::new();
-            crate::lower::diff::collect_branches(e, &mut pairs, &resolve_node);
+            crate::resolve::diff::collect_branches(e, &mut pairs, &resolve_node);
             for pair in pairs {
                 if seen.insert(pair) {
                     branches.push(pair);
@@ -1447,13 +1447,13 @@ impl<'m> AnalogCompiler<'m> {
                 // Derivative tape for this branch.
                 let dtemps: Vec<PomExpr> = temps
                     .iter()
-                    .map(|t| crate::lower::diff::d_dv(t, a, bb, &resolve_node))
+                    .map(|t| crate::resolve::diff::d_dv(t, a, bb, &resolve_node))
                     .collect();
                 b.set_deriv_tape(dtemps);
                 let col_a = slot.get(&a).copied();
                 let col_b = slot.get(&bb).copied();
                 for contrib in contribs {
-                    let derivative = crate::lower::diff::d_dv(&contrib.expr, a, bb, &resolve_node);
+                    let derivative = crate::resolve::diff::d_dv(&contrib.expr, a, bb, &resolve_node);
                     let g = b.emit_analog(&derivative)?;
                     let plus = slot.get(&contrib.plus).copied();
                     let minus = slot.get(&contrib.minus).copied();
@@ -1519,7 +1519,7 @@ impl<'m> AnalogCompiler<'m> {
         let mut branches: Vec<(NodeId, NodeId)> = Vec::new();
         let mut collect = |e: &PomExpr| {
             let mut branch_pairs = Vec::new();
-            crate::lower::diff::collect_branches(e, &mut branch_pairs, &resolve_node);
+            crate::resolve::diff::collect_branches(e, &mut branch_pairs, &resolve_node);
             for pair in branch_pairs {
                 if seen.insert(pair) {
                     branches.push(pair);
@@ -1575,7 +1575,7 @@ impl<'m> AnalogCompiler<'m> {
                 .map(|&(a, b)| {
                     temps
                         .iter()
-                        .map(|t| crate::lower::diff::d_dv_named(t, a, b, &resolve_node, marker))
+                        .map(|t| crate::resolve::diff::d_dv_named(t, a, b, &resolve_node, marker))
                         .collect()
                 })
                 .collect()
@@ -1592,7 +1592,7 @@ impl<'m> AnalogCompiler<'m> {
                         .map(|&(c, d)| {
                             temps
                                 .iter()
-                                .map(|t| crate::lower::diff::d_dv_twice_named(t, a, b, c, d, &resolve_node, d1, d2, d12))
+                                .map(|t| crate::resolve::diff::d_dv_twice_named(t, a, b, c, d, &resolve_node, d1, d2, d12))
                                 .collect()
                         })
                         .collect()
@@ -1616,7 +1616,7 @@ impl<'m> AnalogCompiler<'m> {
                     let rows: Vec<Option<PomExpr>> = contribs
                         .iter()
                         .map(|contrib| {
-                            let row = crate::lower::diff::d_dv_thrice(&contrib.expr, a, b, c, d, e, f, &resolve_node);
+                            let row = crate::resolve::diff::d_dv_thrice(&contrib.expr, a, b, c, d, e, f, &resolve_node);
                             match &row {
                                 PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(v)) if *v == 0.0 => None,
                                 _ => Some(row),
@@ -1631,7 +1631,7 @@ impl<'m> AnalogCompiler<'m> {
                     // more differentiate pass — never redoes the first two.
                     let dddtemps: Vec<PomExpr> = ddtemps12[j_idx][k_idx]
                         .iter()
-                        .map(|pass2| crate::lower::diff::d_dv_thrice_from_twice(pass2, e, f, &resolve_node))
+                        .map(|pass2| crate::resolve::diff::d_dv_thrice_from_twice(pass2, e, f, &resolve_node))
                         .collect();
                     let dtemp1_j = dtemps1[j_idx].clone();
                     let dtemp2_k = dtemps2[k_idx].clone();
@@ -1723,7 +1723,7 @@ impl<'m> AnalogCompiler<'m> {
             .map(|&(a, b)| {
                 temps
                     .iter()
-                    .map(|t| crate::lower::diff::d_dv(t, a, b, &resolve_node))
+                    .map(|t| crate::resolve::diff::d_dv(t, a, b, &resolve_node))
                     .collect()
             })
             .collect();
@@ -1732,7 +1732,7 @@ impl<'m> AnalogCompiler<'m> {
             .map(|&(a, b)| {
                 temps
                     .iter()
-                    .map(|t| crate::lower::diff::d_dv_named(t, a, b, &resolve_node, "__dtemp_inner"))
+                    .map(|t| crate::resolve::diff::d_dv_named(t, a, b, &resolve_node, "__dtemp_inner"))
                     .collect()
             })
             .collect();
@@ -1748,7 +1748,7 @@ impl<'m> AnalogCompiler<'m> {
                 let rows: Vec<Option<PomExpr>> = contribs
                     .iter()
                     .map(|contrib| {
-                        let e = crate::lower::diff::d_dv_twice(&contrib.expr, a, b, c, d, &resolve_node);
+                        let e = crate::resolve::diff::d_dv_twice(&contrib.expr, a, b, c, d, &resolve_node);
                         match &e {
                             PomExpr::Literal(piperine_lang::parse::ast::Literal::Real(v)) if *v == 0.0 => None,
                             _ => Some(e),
@@ -1764,7 +1764,7 @@ impl<'m> AnalogCompiler<'m> {
                 let ddtemps: Vec<PomExpr> = all_dtemps_inner[j_idx]
                     .iter()
                     .map(|inner| {
-                        crate::lower::diff::d_dv_once_more_named(
+                        crate::resolve::diff::d_dv_once_more_named(
                             inner, c, d, &resolve_node, "__dtemp_inner", "__dtemp", "__ddtemp",
                         )
                     })
@@ -1822,7 +1822,7 @@ impl<'m> AnalogCompiler<'m> {
         let mut branches: Vec<(NodeId, NodeId)> = Vec::new();
         let mut collect = |e: &PomExpr| {
             let mut pairs = Vec::new();
-            crate::lower::diff::collect_branches(e, &mut pairs, &resolve_node);
+            crate::resolve::diff::collect_branches(e, &mut pairs, &resolve_node);
             for pair in pairs {
                 if seen.insert(pair) {
                     branches.push(pair);
@@ -1835,11 +1835,11 @@ impl<'m> AnalogCompiler<'m> {
             for (a, bb) in branches {
                 let dtemps: Vec<PomExpr> = temps
                     .iter()
-                    .map(|t| crate::lower::diff::d_dv(t, a, bb, &resolve_node))
+                    .map(|t| crate::resolve::diff::d_dv(t, a, bb, &resolve_node))
                     .collect();
                 b.set_deriv_tape(dtemps);
                 for (i, force) in forces.iter().enumerate() {
-                    let derivative = crate::lower::diff::d_dv(&force.expr, a, bb, &resolve_node);
+                    let derivative = crate::resolve::diff::d_dv(&force.expr, a, bb, &resolve_node);
                     let g = b.emit_analog(&derivative)?;
                     if let Some(&col) = slot.get(&a) {
                         b.accumulate_f64(g, out_ptr, i * n + col);
@@ -1915,10 +1915,10 @@ impl<'m> AnalogCompiler<'m> {
         let temps = self.flat.temps.clone();
         let mut pairs = Vec::new();
         for expr in exprs {
-            crate::lower::diff::collect_branches(expr, &mut pairs, &resolve_node);
+            crate::resolve::diff::collect_branches(expr, &mut pairs, &resolve_node);
         }
         for temp in &temps {
-            crate::lower::diff::collect_branches(temp, &mut pairs, &resolve_node);
+            crate::resolve::diff::collect_branches(temp, &mut pairs, &resolve_node);
         }
         let mut branch_voltages = HashMap::new();
         for (plus, minus) in pairs {

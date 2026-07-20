@@ -5,7 +5,7 @@
 
 use piperine_lang::parse::ast::{BindOp, Expr, Stmt};
 
-use crate::lower::*;
+use crate::resolve::*;
 
 use super::expr::{resolve_expr, resolve_stmt, parse_contrib_dest, scan_noise};
 use super::LowerCtx;

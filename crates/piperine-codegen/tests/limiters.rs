@@ -75,7 +75,7 @@ analog L {{ I(d, s) <+ $limit(\"{kind}\", V(d, s), 0.0, vto, 0.0); }}"
     );
     let elab = parse_and_elaborate(&src, &piperine_lang::SourceMap::dummy())
         .expect("PHDL parses + elaborates");
-    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
     let kernel = AnalogKernel::compile(&bodies["L"]).expect("compile limiter device");
 
     assert_eq!(kernel.num_limits(), 1, "exactly one $limit slot");

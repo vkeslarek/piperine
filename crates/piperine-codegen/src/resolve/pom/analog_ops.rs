@@ -8,7 +8,7 @@ use std::sync::{Arc, LazyLock};
 
 use piperine_lang::parse::ast::{ArrayBody, Expr, Literal};
 
-use crate::lower::*;
+use crate::resolve::*;
 
 use super::expr::resolve_expr;
 use super::LowerCtx;

@@ -7,7 +7,7 @@
 //! the SPEC prescribes — analog residuals, digital register pipelines,
 //! mixed-signal A2D/D2A bridges, switch branches, and structural circuits.
 
-use piperine_codegen::ir::*;
+use piperine_codegen::resolve::*;
 use piperine_codegen::device::DigitalInstance;
 use piperine_codegen::{CircuitCompiler, CompiledModule, SimCtx};
 use piperine_lang::parse_and_elaborate;
@@ -25,7 +25,7 @@ use std::collections::HashMap;
 /// Panics on any elaboration or lowering error with the full diagnostic.
 fn compile(src: &str) -> HashMap<String, LoweredBody> {
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
-    piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed")
+    piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed")
 }
 
 /// Like [`compile`], but also keeps the elaborated `Design` alive — needed
@@ -33,7 +33,7 @@ fn compile(src: &str) -> HashMap<String, LoweredBody> {
 /// directly (there is no `IrProgram` structural twin to carry both).
 fn elaborate_and_lower(src: &str) -> (piperine_lang::Design, HashMap<String, LoweredBody>) {
     let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
-    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowering failed");
     (design, bodies)
 }
 

@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use piperine_lang::parse::ast::{BinaryOp, BindOp, EventSpec, Expr as PomExpr, Literal, Stmt as PomStmt};
 
-use crate::ir::{
+use crate::resolve::{
     CrossDir, EventSource, AnalogEvent, LoweredBody,
     NatureKind, NodeId, StateId, VarId,
 };
@@ -93,7 +93,7 @@ pub struct FlatForce {
 
 #[derive(Debug, Clone)]
 pub struct FlatDiagnostic {
-    pub severity: crate::ir::Severity,
+    pub severity: crate::resolve::Severity,
     pub format: String,
 }
 
@@ -183,7 +183,7 @@ impl FlatAnalog {
     /// How far into the `params`/`state`/`vars` banks the compiled code reads.
     pub fn read_bounds(&self, module: &LoweredBody) -> (usize, usize, usize) {
         // Function param VarIds are NOT module-level vars — exclude them.
-        let fn_param_ids: std::collections::HashSet<crate::ir::VarId> = module
+        let fn_param_ids: std::collections::HashSet<crate::resolve::VarId> = module
             .symbols
             .fns()
             .flat_map(|(_, f)| f.params.iter().copied())
@@ -212,11 +212,11 @@ impl FlatAnalog {
     }
 }
 
-fn module_param_id(module: &LoweredBody, name: &str) -> Option<crate::ir::ParamId> {
+fn module_param_id(module: &LoweredBody, name: &str) -> Option<crate::resolve::ParamId> {
     module.symbols.params().find(|(_, p)| p.name == name).map(|(id, _)| id)
 }
 
-fn module_var_id(module: &LoweredBody, name: &str) -> Option<crate::ir::VarId> {
+fn module_var_id(module: &LoweredBody, name: &str) -> Option<crate::resolve::VarId> {
     module.symbols.vars().find(|(_, v)| v.name == name).map(|(id, _)| id)
 }
 
@@ -364,8 +364,8 @@ impl<'m> AnalogFlattener<'m> {
 
         for source in &body.noise {
             let (psd_src, exponent_src) = match &source.kind {
-                crate::ir::NoiseKind::White { psd } => (psd.clone(), None),
-                crate::ir::NoiseKind::Flicker { psd, exponent } => (psd.clone(), Some(exponent.clone())),
+                crate::resolve::NoiseKind::White { psd } => (psd.clone(), None),
+                crate::resolve::NoiseKind::Flicker { psd, exponent } => (psd.clone(), Some(exponent.clone())),
             };
             let psd = self.subst(&psd_src)?;
             let psd = self.finish_expr(psd)?;
@@ -454,10 +454,10 @@ impl<'m> AnalogFlattener<'m> {
                             | "warning" | "warn" | "error" | "fatal" | "info") =>
                         {
                             let severity = match n {
-                                "warning" | "warn" => crate::ir::Severity::Warn,
-                                "error" => crate::ir::Severity::Error,
-                                "fatal" => crate::ir::Severity::Fatal,
-                                _ => crate::ir::Severity::Info,
+                                "warning" | "warn" => crate::resolve::Severity::Warn,
+                                "error" => crate::resolve::Severity::Error,
+                                "fatal" => crate::resolve::Severity::Fatal,
+                                _ => crate::resolve::Severity::Info,
                             };
                             let fmt = match args.first() {
                                 Some(PomExpr::Literal(Literal::String(s))) => s.clone(),
@@ -472,10 +472,10 @@ impl<'m> AnalogFlattener<'m> {
                 PomStmt::Diagnostic { sys, .. } => {
                     let bare = sys.trim_start_matches('$');
                     let severity = match bare {
-                        "warning" | "warn" => crate::ir::Severity::Warn,
-                        "error" => crate::ir::Severity::Error,
-                        "fatal" => crate::ir::Severity::Fatal,
-                        _ => crate::ir::Severity::Info,
+                        "warning" | "warn" => crate::resolve::Severity::Warn,
+                        "error" => crate::resolve::Severity::Error,
+                        "fatal" => crate::resolve::Severity::Fatal,
+                        _ => crate::resolve::Severity::Info,
                     };
                     self.out.diagnostics.push(FlatDiagnostic {
                         severity,
@@ -722,7 +722,7 @@ impl<'m> AnalogFlattener<'m> {
                                 let resolve = |n: &str| -> Option<NodeId> {
                                     module.symbols.nodes().find(|(_, info)| info.name == n).map(|(id, _)| id)
                                 };
-                                return crate::lower::diff::d_dnode(x, node_id, &resolve);
+                                return crate::resolve::diff::d_dnode(x, node_id, &resolve);
                             }
                             return lit(0.0);
                         }
@@ -817,7 +817,7 @@ impl<'m> AnalogFlattener<'m> {
             EventSource::InitialStep => FlatEventTrigger::Initial,
             EventSource::FinalStep => {
                 self.out.diagnostics.push(FlatDiagnostic {
-                    severity: crate::ir::Severity::Info,
+                    severity: crate::resolve::Severity::Info,
                     format: String::new(),
                 });
                 return Ok(());

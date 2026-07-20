@@ -6,8 +6,8 @@
 //! into a [`PiperineDevice`]. Instance structure (connections, param
 //! overrides) is read straight from the POM `Design`/`Module`/`Instance` —
 //! there is no `IrModule`/`IrInstance`/`IrProgram` structural twin; only a
-//! module's *own* resolved body ([`crate::lower::pom::LoweredBody`]) is
-//! precomputed, by `crate::lower::pom::lower_bodies`.
+//! module's *own* resolved body ([`crate::resolve::pom::LoweredBody`]) is
+//! precomputed, by `crate::resolve::pom::lower_bodies`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,8 +20,8 @@ use piperine_solver::abi::Element;
 use piperine_solver::abi::DigitalNet;
 use piperine_solver::abi::DigitalState;
 
-use crate::ir::{NodeId, ParamId};
-use crate::lower::pom::LoweredBody;
+use crate::resolve::{NodeId, ParamId};
+use crate::resolve::pom::LoweredBody;
 use crate::error::CodegenError;
 
 use super::{AnalogInstance, CompiledModule, DigitalInstance, PiperineDevice};
@@ -193,7 +193,7 @@ impl<'p> CircuitCompiler<'p> {
                     .find(|(_, p)| p.name == name)
                     .and_then(|(id, _)| values.get(id.0 as usize).copied().flatten())
             };
-            let value = crate::ir::pom_eval_const(default, &resolve)
+            let value = crate::resolve::pom_eval_const(default, &resolve)
                 .map_err(CodegenError::ConstEval)?;
             values[id.0 as usize] = Some(value);
         }
@@ -245,7 +245,7 @@ struct FusionCandidate {
     in_nets: Vec<DigitalNet>,
     out_nets: Vec<DigitalNet>,
     params: Vec<f64>,
-    reg_inits: Vec<(crate::ir::VarId, f64)>,
+    reg_inits: Vec<(crate::resolve::VarId, f64)>,
 }
 
 impl FusionCandidate {
@@ -358,7 +358,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                             instance.name()
                         ))
                     })?;
-                let expr = crate::lower::pom::structure::value_to_pom_expr(pval);
+                let expr = crate::resolve::pom::structure::value_to_pom_expr(pval);
                 let top = &self.top_params;
                 let top_body = &self.top_body;
                 let resolve = |name: &str| -> Option<f64> {
@@ -366,7 +366,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
                         .find(|(_, p)| p.name == name)
                         .and_then(|(id, _)| top.get(id.0 as usize).copied())
                 };
-                let value = crate::ir::pom_eval_const(&expr, &resolve)
+                let value = crate::resolve::pom_eval_const(&expr, &resolve)
                     .map_err(CodegenError::ConstEval)?;
                 Ok((id, value))
             })

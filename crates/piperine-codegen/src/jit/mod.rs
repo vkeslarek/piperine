@@ -1,10 +1,10 @@
 //! JIT codegen: the IR is compiled — analog *and* digital — to native code
 //! via Cranelift. There is no interpreted execution path.
 //!
-//! - [`analog`] compiles an [`crate::ir::AnalogBody`] into an
+//! - [`analog`] compiles an [`crate::resolve::AnalogBody`] into an
 //!   [`analog::AnalogKernel`]: residual, Jacobian, charge, force, noise, and
 //!   state-input functions over a fixed `f64` ABI.
-//! - [`digital`] compiles an [`crate::ir::DigitalBody`] into a
+//! - [`digital`] compiles an [`crate::resolve::DigitalBody`] into a
 //!   [`digital::DigitalKernel`]: combinational, sequential (register update),
 //!   and event-watch functions over quad-coded `i64` signals.
 //!

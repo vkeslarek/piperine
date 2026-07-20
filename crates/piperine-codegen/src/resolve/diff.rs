@@ -129,6 +129,29 @@ pub fn d_dv_twice_named(
     differentiate(&inner, &seed2, resolve_node, &[("__temp", d2), (d1, d12)])
 }
 
+/// Completes [`d_dv_twice_named`]'s second pass on an *already-computed*
+/// first pass (`inner` — some `temps[id]` differentiated once w.r.t.
+/// `(a,b)` under marker `d1`), differentiating it once more w.r.t.
+/// `(c,d)`. Equivalent to `d_dv_twice_named(expr, a, b, c, d, ..., d1, d2,
+/// d12)` when `inner` is that same first pass, but without redoing it —
+/// callers building one first-derivative tape per branch (once) and one
+/// cross tape per branch *pair* (once) must not re-run the first pass for
+/// every pair (DISTO-03 perf).
+pub fn d_dv_once_more_named(
+    inner: &Expr,
+    c: NodeId,
+    d: NodeId,
+    resolve_node: &impl Fn(&str) -> Option<NodeId>,
+    d1: &'static str,
+    d2: &'static str,
+    d12: &'static str,
+) -> Expr {
+    let seed2 = |p: NodeId, m: NodeId| {
+        if p == c && m == d { lit(1.0) } else { lit(0.0) }
+    };
+    differentiate(inner, &seed2, resolve_node, &[("__temp", d2), (d1, d12)])
+}
+
 /// `∂³expr / ∂V(a,b)∂V(c,d)∂V(e,f)` — the `.disto` 3rd-derivative kernel's
 /// core (DISTO-03), three single-variable passes through private markers:
 ///
@@ -162,6 +185,32 @@ pub fn d_dv_thrice(
         if p == c && m == d { lit(1.0) } else { lit(0.0) }
     }, resolve_node, &[("__temp", "__dtemp2"), ("__dtemp1", "__ddtemp12")]);
     differentiate(&pass2, &|p, m| {
+        if p == e && m == f { lit(1.0) } else { lit(0.0) }
+    }, resolve_node, &[
+        ("__temp", "__dtemp3"),
+        ("__dtemp1", "__ddtemp13"),
+        ("__dtemp2", "__ddtemp23"),
+        ("__ddtemp12", "__dddtemp123"),
+    ])
+}
+
+/// Completes [`d_dv_thrice`]'s third pass on an *already-computed* second
+/// pass (`pass2` — some `temps[id]` differentiated w.r.t. `(a,b)` then
+/// `(c,d)`, via [`d_dv_twice_named`] with markers `__dtemp1`/`__dtemp2`/
+/// `__ddtemp12`), differentiating it once more w.r.t. `(e,f)`. Equivalent
+/// to `d_dv_thrice(expr, a, b, c, d, e, f, ...)` when `pass2` is that same
+/// second pass, but without redoing the first two — the disto3 kernel
+/// builds one first-derivative tape per branch and one cross tape per
+/// branch *pair* (both shared across every triple); redoing them per
+/// triple made compilation cubic-times-redundant on many-branch devices
+/// (DISTO-03 perf).
+pub fn d_dv_thrice_from_twice(
+    pass2: &Expr,
+    e: NodeId,
+    f: NodeId,
+    resolve_node: &impl Fn(&str) -> Option<NodeId>,
+) -> Expr {
+    differentiate(pass2, &|p, m| {
         if p == e && m == f { lit(1.0) } else { lit(0.0) }
     }, resolve_node, &[
         ("__temp", "__dtemp3"),

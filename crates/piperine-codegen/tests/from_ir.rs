@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use piperine_lang::parse_and_elaborate;
 use piperine_lang::pom::Design;
-use piperine_codegen::ir::LoweredBody;
+use piperine_codegen::resolve::LoweredBody;
 use piperine_solver::prelude::CircuitInstance;
 use piperine_codegen::CircuitCompiler;
 
@@ -27,7 +27,7 @@ fn from_ir_resistor_va_yields_circuit() {
         analog R { I(p, n) <+ V(p, n) / r; }
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
-    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
     // Sanity: the module is present in the lowered bodies.
     assert!(bodies.contains_key("R"));
     // `from_ir` on the leaf accepts but produces an empty netlist.
@@ -46,7 +46,7 @@ fn from_ir_ppr_resistor_yields_circuit() {
         mod Top ( inout a: Electrical, inout b: Electrical ) { R(a, b); }
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parse_and_elaborate");
-    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
     let ci: CircuitInstance = from_ir(&elab, &bodies, "Top").expect("from_ir compiles top");
     assert!(ci.all_devices().len() >= 1);
 }
@@ -62,7 +62,7 @@ fn jit_device_exposes_params_through_introspection() {
         mod Top ( inout a: Electrical, inout b: Electrical ) { R(a, b); }
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("parse+elab");
-    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
     let mut ci = from_ir(&elab, &bodies, "Top").expect("from_ir compiles Top");
 
     let dev = &mut ci.all_devices_mut()[0];
@@ -91,7 +91,7 @@ fn from_ir_unknown_top_returns_err() {
         analog R { I(p, n) <+ V(p, n) / r; }
     ";
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses");
-    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
     assert!(from_ir(&elab, &bodies, "no-such-module").is_err());
 }
 

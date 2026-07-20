@@ -9,7 +9,7 @@ use piperine_lang::parse::ast::{
 };
 
 use piperine_codegen::device::DigitalInstance;
-use piperine_codegen::ir::*;
+use piperine_codegen::resolve::*;
 use piperine_codegen::DigitalKernel;
 use piperine_solver::abi::DigitalEvent; use piperine_solver::prelude::{DigitalNet, LogicValue};
 

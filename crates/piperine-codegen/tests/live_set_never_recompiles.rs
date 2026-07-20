@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use piperine_lang::parse_and_elaborate;
-use piperine_codegen::ir::LoweredBody;
+use piperine_codegen::resolve::LoweredBody;
 use piperine_codegen::{AnalogKernel, CircuitCompiler};
 use piperine_solver::abi::{
     AnalogDevice, AnalogReference, DcAnalysisState, DigitalDevice, Element, ElementCapabilities,
@@ -126,7 +126,7 @@ fn live_sets_never_recompile_across_restamp_and_temperature_cycles() {
     let design = parse_and_elaborate(DIVIDER, &piperine_lang::SourceMap::dummy())
         .expect("divider elaborates");
     let bodies: HashMap<String, LoweredBody> =
-        piperine_codegen::ir::lower_bodies(&design).expect("divider lowers");
+        piperine_codegen::resolve::lower_bodies(&design).expect("divider lowers");
 
     let before_build = AnalogKernel::compile_count();
     let mut compiler = CircuitCompiler::new(&design, &bodies);

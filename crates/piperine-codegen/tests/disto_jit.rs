@@ -2,7 +2,7 @@
 //! derivatives are checked value-for-value against hand-derived symbolic
 //! references on polynomial devices, and the unlowerable path fails loud.
 
-use piperine_codegen::ir::NodeId;
+use piperine_codegen::resolve::NodeId;
 use piperine_codegen::{CompiledModule, SimCtx};
 use piperine_lang::parse_and_elaborate;
 
@@ -15,7 +15,7 @@ fn compile_module(
     name: &str,
 ) -> (std::sync::Arc<piperine_codegen::AnalogKernel>, impl Fn(&str) -> NodeId) {
     let prog = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let bodies = piperine_codegen::ir::lower_bodies(&prog).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&prog).expect("lowering failed");
     let module = bodies.get(name).expect("module present");
     let nodes: Vec<(NodeId, String)> = module
         .symbols
@@ -37,7 +37,7 @@ fn compile_module(
 /// Compile `src`, expecting failure.
 fn compile_err(src: &str, name: &str) -> piperine_codegen::CodegenError {
     let prog = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let bodies = piperine_codegen::ir::lower_bodies(&prog).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&prog).expect("lowering failed");
     match CompiledModule::compile(bodies.get(name).expect("module present")) {
         Err(e) => e,
         Ok(_) => panic!("device `{name}` must not compile"),

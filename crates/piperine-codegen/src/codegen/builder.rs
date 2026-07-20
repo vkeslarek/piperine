@@ -10,7 +10,7 @@ use cranelift_frontend::FunctionBuilder;
 
 use piperine_lang::parse::ast::{BindOp, BinaryOp, Expr, Pattern, Stmt};
 
-use crate::ir::{BinOp, FnId, LoweredBody, NodeId, ParamId, SymbolTable, Type, UnOp, VarId};
+use crate::resolve::{BinOp, FnId, LoweredBody, NodeId, ParamId, SymbolTable, Type, UnOp, VarId};
 use crate::jit::digital::compile::{Pointers, VarReads};
 use crate::jit::digital::layout::DigitalLayout;
 use crate::error::CodegenError;
@@ -67,28 +67,28 @@ pub(crate) const T_FCMP_BASE: u8 = 16;
 pub(crate) const T_BIN_BASE: u8 = 40;
 
 /// Distinct CSE tag per binary op (offset past the fcmp/select tags).
-pub(crate) fn bin_tag(op: crate::ir::BinOp) -> u8 {
+pub(crate) fn bin_tag(op: crate::resolve::BinOp) -> u8 {
     T_BIN_BASE
         + match op {
-            crate::ir::BinOp::Add => 0,
-            crate::ir::BinOp::Sub => 1,
-            crate::ir::BinOp::Mul => 2,
-            crate::ir::BinOp::Div => 3,
-            crate::ir::BinOp::Rem => 4,
-            crate::ir::BinOp::Eq => 5,
-            crate::ir::BinOp::Ne => 6,
-            crate::ir::BinOp::Lt => 7,
-            crate::ir::BinOp::Le => 8,
-            crate::ir::BinOp::Gt => 9,
-            crate::ir::BinOp::Ge => 10,
-            crate::ir::BinOp::And => 11,
-            crate::ir::BinOp::Or => 12,
-            crate::ir::BinOp::Pow => 13,
-            crate::ir::BinOp::BitAnd => 14,
-            crate::ir::BinOp::BitOr => 15,
-            crate::ir::BinOp::BitXor => 16,
-            crate::ir::BinOp::Shl => 17,
-            crate::ir::BinOp::Shr => 18,
+            crate::resolve::BinOp::Add => 0,
+            crate::resolve::BinOp::Sub => 1,
+            crate::resolve::BinOp::Mul => 2,
+            crate::resolve::BinOp::Div => 3,
+            crate::resolve::BinOp::Rem => 4,
+            crate::resolve::BinOp::Eq => 5,
+            crate::resolve::BinOp::Ne => 6,
+            crate::resolve::BinOp::Lt => 7,
+            crate::resolve::BinOp::Le => 8,
+            crate::resolve::BinOp::Gt => 9,
+            crate::resolve::BinOp::Ge => 10,
+            crate::resolve::BinOp::And => 11,
+            crate::resolve::BinOp::Or => 12,
+            crate::resolve::BinOp::Pow => 13,
+            crate::resolve::BinOp::BitAnd => 14,
+            crate::resolve::BinOp::BitOr => 15,
+            crate::resolve::BinOp::BitXor => 16,
+            crate::resolve::BinOp::Shl => 17,
+            crate::resolve::BinOp::Shr => 18,
         }
 }
 
@@ -1202,25 +1202,25 @@ pub(crate) fn ident_from_expr(e: Option<&Expr>) -> Option<String> {
 }
 
 /// Map a POM `BinaryOp` to the IR `BinOp` (shared by digital and analog paths).
-pub(crate) fn lower_binop_pom(op: BinaryOp) -> crate::ir::BinOp {
+pub(crate) fn lower_binop_pom(op: BinaryOp) -> crate::resolve::BinOp {
     use piperine_lang::parse::ast::BinaryOp as P;
     match op {
-        P::Add => crate::ir::BinOp::Add,
-        P::Sub => crate::ir::BinOp::Sub,
-        P::Mul => crate::ir::BinOp::Mul,
-        P::Div => crate::ir::BinOp::Div,
-        P::Rem => crate::ir::BinOp::Rem,
-        P::Eq => crate::ir::BinOp::Eq,
-        P::Neq => crate::ir::BinOp::Ne,
-        P::Lt => crate::ir::BinOp::Lt,
-        P::Le => crate::ir::BinOp::Le,
-        P::Gt => crate::ir::BinOp::Gt,
-        P::Ge => crate::ir::BinOp::Ge,
-        P::BitAnd => crate::ir::BinOp::BitAnd,
-        P::BitOr => crate::ir::BinOp::BitOr,
-        P::BitXor => crate::ir::BinOp::BitXor,
-        P::And => crate::ir::BinOp::And,
-        P::Or => crate::ir::BinOp::Or,
+        P::Add => crate::resolve::BinOp::Add,
+        P::Sub => crate::resolve::BinOp::Sub,
+        P::Mul => crate::resolve::BinOp::Mul,
+        P::Div => crate::resolve::BinOp::Div,
+        P::Rem => crate::resolve::BinOp::Rem,
+        P::Eq => crate::resolve::BinOp::Eq,
+        P::Neq => crate::resolve::BinOp::Ne,
+        P::Lt => crate::resolve::BinOp::Lt,
+        P::Le => crate::resolve::BinOp::Le,
+        P::Gt => crate::resolve::BinOp::Gt,
+        P::Ge => crate::resolve::BinOp::Ge,
+        P::BitAnd => crate::resolve::BinOp::BitAnd,
+        P::BitOr => crate::resolve::BinOp::BitOr,
+        P::BitXor => crate::resolve::BinOp::BitXor,
+        P::And => crate::resolve::BinOp::And,
+        P::Or => crate::resolve::BinOp::Or,
     }
 }
 

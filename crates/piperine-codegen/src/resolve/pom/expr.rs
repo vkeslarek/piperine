@@ -4,7 +4,7 @@
 //! resolves names to ids at JIT emit time via the `Resolver`.
 
 use piperine_lang::parse::ast::{ArrayBody, Block, Expr, Literal, Stmt};
-use crate::lower::*;
+use crate::resolve::*;
 
 use super::analog_ops::analog_ops;
 use super::LowerCtx;
@@ -113,7 +113,7 @@ pub(crate) fn resolve_expr(expr: &Expr, ctx: &mut LowerCtx) -> Expr {
             } else if let Some(id) = ctx.lookup_node(name) {
                 if ctx.is_digital {
                     expr.clone()
-                } else if ctx.symbols.node(id).domain == crate::lower::Domain::Digital {
+                } else if ctx.symbols.node(id).domain == crate::resolve::Domain::Digital {
                     let var = ctx.shadow_var_for(id, name);
                     Expr::Ident(ctx.symbols.var(var).name.clone())
                 } else {
@@ -499,7 +499,7 @@ fn resolve_call(func: &Expr, args: &[Expr], ctx: &mut LowerCtx) -> Expr {
         return op.lower(args, ctx);
     }
 
-    if crate::lower::math::math_fn(name).is_some() {
+    if crate::resolve::math::math_fn(name).is_some() {
         let resolved: Vec<Expr> = args.iter().map(|a| resolve_expr(a, ctx)).collect();
         return Expr::Call(Box::new(func.clone()), resolved);
     }
