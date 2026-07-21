@@ -102,12 +102,19 @@ impl Elaborator {
                     });
                 }
                 // `extern operator name(...) -> Ret;` registers into the
-                // dedicated `OperatorRegistry` (T10) — real enforcement for
-                // operator calls lands in T22; this task just completes
-                // registration so `extern operator` declarations aren't
-                // silently dropped.
+                // dedicated `OperatorRegistry` (T10). Carrying real
+                // `param_types` here (same shape as `ExternFnDecl` above) is
+                // load-bearing — without it, `resolve_operator_call`'s
+                // `validate_call` always succeeds and operator arity/type
+                // mismatches silently pass elaboration (Verifier's
+                // surviving-mutant finding during declared-language-surface
+                // validation, fixed post-T27).
                 Item::ExternDecl(crate::parse::ast::ExternDecl::Operator(sig)) => {
-                    self.ctx.operators.register(crate::elab::registry::ExternOperatorDecl(sig.clone()));
+                    let param_types = self.extern_sig_param_types(sig)?;
+                    self.ctx.operators.register(crate::elab::registry::ExternOperatorDecl {
+                        sig: sig.clone(),
+                        param_types,
+                    });
                 }
                 // `extern attribute name { field: Type, ... }` registers
                 // into `SchemaRegistry` exactly like a bundle-backed schema

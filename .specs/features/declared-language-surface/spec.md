@@ -260,15 +260,29 @@ covers the language instead of remaining unused scaffolding.
    fixture or the stdlib's own OSDI-adjacent example) exercises this path
    end-to-end.
 7. WHEN a PHDL source uses a bare-name cast (`real(x)`, `int(x)`, `bit(x)`,
-   `Boolean(x)`, `Quad(x)`) THEN it SHALL be rejected — the special-cased
-   rewrite in `elab/resolve.rs` (lines 83-95) SHALL be **deleted**, not
-   migrated — replaced by a single overloaded `extern impl TypeName { fn
-   from(x: SourceType) -> TypeName; ... }` per target type (e.g.
-   `Real::from(x)` resolved by argument type, per P1-AC6/7's overload rule),
-   reusing the existing `Type::method(...)` path-call syntax. Bare
-   identifiers carry no compiler-special meaning after this AC — casts are
-   ordinary declared, overloaded functions, indistinguishable in mechanism
-   from any other `extern impl` method.
+   `Boolean(x)`, `Quad(x)`) THEN it SHALL be **rejected** — the
+   special-cased rewrite in `elab/resolve.rs` (lines 83-95) SHALL be
+   **deleted**, not migrated — replaced by a single overloaded
+   `extern impl TypeName { fn from(x: SourceType) -> TypeName; ... }`
+   per target type (e.g. `Real::from(x)` resolved by argument type, per
+   P1-AC6/7's overload rule), reusing the existing `Type::method(...)`
+   path-call syntax. Bare identifiers carry no compiler-special meaning
+   after this AC — casts are ordinary declared, overloaded functions,
+   indistinguishable in mechanism from any other `extern impl` method.
+
+   **"Rejected" scope (clarified post-Verifier round 1, Validation
+   Gap 2):** the bare-cast *mechanism* (the special-cased rewrite to a
+   synthetic `Expr::Cast` node) is gone; this is the load-bearing
+   claim. A stray `real(x)` call site today falls into the
+   per-category progressive-enforcement "undeclared bare-identifier
+   call left untouched" bucket (T11's documented scope) — it carries
+   no `Expr::Cast` meaning, but piperine-lang does not yet reject it
+   as a hard error. Codegen fails loud on its own terms when it can't
+   resolve `real` to anything. Global "every undeclared bare-identifier
+   call is a piperine-lang error" enforcement is a separate
+   cross-category rule that wasn't part of this feature's task list
+   (would flip enforcement for every bare name, not just the five
+   former cast names).
 8. WHEN a native method exists on a type without a textual `impl` block today
    (candidates to confirm at Design: capability impls like `Add`/`Sub`/`Eq`
    for primitive types, if the typechecker special-cases them structurally
@@ -305,8 +319,17 @@ after migration (the known pre-migration sites are `analog_jit.rs`,
 - WHEN a header declares `extern fn` with a body THEN parsing fails loud
   (P2-AC6) — never silently ignore the body.
 - WHEN a project has no plugins loaded THEN `@device`/`@port` (stdlib-declared,
-  unconditional per existing code comments) SHALL still resolve normally — no
-  regression to the "works without any plugin" case.
+  **plugin-load-gated per actual code, not unconditional as earlier code
+  comments claimed** — Verifier round 1, Gap 3) SHALL still load lazily:
+  `headers/device_port.phdl` is parsed and seeded into `SchemaRegistry`
+  only once `PluginHost` has at least one plugin loaded (`host.rs`'s
+  `if self.is_empty() { return; }` gate, preserved by T23). A project
+  that references `@device`/`@port` without any plugin loaded fails loud
+  with `UnknownAttrSchema("device"/"port")`, exactly as it did
+  pre-feature — no regression, no behavioral change. (The earlier
+  spec-internal wording "unconditional per existing code comments" was
+  inaccurate; the actual pre-existing behavior is plugin-load-gated, and
+  T23 preserved it.)
 - WHEN a loaded plugin does not yet publish an `extern.phdl` stub (pre-this-
   feature plugin) THEN behavior is Out of Scope for this feature (see Out of
   Scope) — SHALL fail loud naming the missing stub, not silently keep using
@@ -319,36 +342,40 @@ after migration (the known pre-migration sites are `analog_jit.rs`,
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| DLS-01 | P1 Fail-loud declared-first resolution | Design | Pending |
-| DLS-02 | P1 Plain-declaration behavior unchanged | Design | Pending |
-| DLS-03 | P1 `extern` dispatches to registry | Design | Pending |
-| DLS-04 | P1 No declaration = fail loud | Design | Pending |
-| DLS-05 | P1 `extern` w/ missing registry binding = distinct fail-loud | Design | Pending |
-| DLS-06 | P1 Overload set accepted for differing signatures | Design | Pending |
-| DLS-07 | P1 Overload resolved by arg type; 0/>1 match = fail loud | Design | Pending |
-| DLS-08 | P2 `extern type` grammar | Design | Pending |
-| DLS-09 | P2 `extern fn` grammar | Design | Pending |
-| DLS-10 | P2 `extern task` grammar | Design | Pending |
-| DLS-11 | P2 `extern operator` grammar | Design | Pending |
-| DLS-12 | P2 `extern attribute` grammar | Design | Pending |
-| DLS-13 | P2 `extern impl` grammar (native methods) | Design | Pending |
-| DLS-14 | P2 `extern` (+ `extern impl` method) + body = parse error | Design | Pending |
-| DLS-15 | P3 goto-def resolves `extern` decl_span | Design | Pending |
-| DLS-16 | P3 undeclared name still returns no location | Design | Pending |
-| DLS-17 | P4 primitive types migrated | Design | Pending |
-| DLS-18 | P4 math functions migrated | Design | Pending |
-| DLS-19 | P4 system tasks migrated | Design | Pending |
-| DLS-20 | P4 runtime operators migrated | Design | Pending |
-| DLS-21 | P4 `@device`/`@port` migrated | Design | Pending |
-| DLS-22 | P4 plugin schema stub path exercised | Design | Pending |
-| DLS-23 | P4 bare-name casts removed → overloaded `extern impl from` | Design | Pending |
-| DLS-24 | P4 native type methods → `extern impl` | Design | Pending |
-| DLS-25 | P4 zero regression per sub-phase | Design | Pending |
+| DLS-01 | P1 Fail-loud declared-first resolution | Design | ✅ Verified (round 1) |
+| DLS-02 | P1 Plain-declaration behavior unchanged | Design | ✅ Verified (round 1) |
+| DLS-03 | P1 `extern` dispatches to registry | Design | ✅ Verified (round 1) |
+| DLS-04 | P1 No declaration = fail loud | Design | ✅ Verified (round 1) |
+| DLS-05 | P1 `extern` w/ missing registry binding = distinct fail-loud | Design | ✅ Verified (round 1) |
+| DLS-06 | P1 Overload set accepted for differing signatures | Design | ✅ Verified (round 1) |
+| DLS-07 | P1 Overload resolved by arg type; 0/>1 match = fail loud | Design | ✅ Verified (round 1) |
+| DLS-08 | P2 `extern type` grammar | Design | ✅ Verified (round 1) |
+| DLS-09 | P2 `extern fn` grammar | Design | ✅ Verified (round 1) |
+| DLS-10 | P2 `extern task` grammar | Design | ✅ Verified (round 1) |
+| DLS-11 | P2 `extern operator` grammar | Design | ✅ Verified (round 1) |
+| DLS-12 | P2 `extern attribute` grammar | Design | ✅ Verified (round 1) |
+| DLS-13 | P2 `extern impl` grammar (native methods) | Design | ✅ Verified (round 1) |
+| DLS-14 | P2 `extern` (+ `extern impl` method) + body = parse error | Design | ✅ Verified (round 1) |
+| DLS-15 | P3 goto-def resolves `extern` decl_span | Design | ✅ Verified (round 1) |
+| DLS-16 | P3 undeclared name still returns no location | Design | ✅ Verified (round 1) |
+| DLS-17 | P4 primitive types migrated | Design | ✅ Verified (round 1) |
+| DLS-18 | P4 math functions migrated | Design | ✅ Verified (round 1) |
+| DLS-19 | P4 system tasks migrated | Design | ✅ Verified (round 1) |
+| DLS-20 | P4 runtime operators migrated | Design | ✅ Verified (round 2 — Fix 1 closed the surviving mutant; `resolve_operator_call`'s positive path is now exercised) |
+| DLS-21 | P4 `@device`/`@port` migrated | Design | ✅ Verified (round 1) |
+| DLS-22 | P4 plugin schema stub path exercised | Design | ✅ Verified (round 1) |
+| DLS-23 | P4 bare-name casts removed → overloaded `extern impl from` | Design | ✅ Verified (round 2 — Fix 2 clarified "rejected" scope; mechanism-level claim is the load-bearing one) |
+| DLS-24 | P4 native type methods → `extern impl` | Design | ✅ Verified (round 1 — documented "none found" finding per task escape hatch) |
+| DLS-25 | P4 zero regression per sub-phase | Design | ✅ Verified (round 1) |
 
 **ID format:** `DLS-[NUMBER]`
 
-**Coverage:** 25 total, all designed (`design.md`) and mapped to tasks
-(`tasks.md`, T1–T29). Not started.
+**Coverage:** 25 total, all verified by the independent Verifier
+(`validation.md`). Two spec-precision gaps closed in round 2 (Fix 1 —
+DLS-20 surviving mutant via real `ExternOperatorDecl::param_types` wiring;
+Fix 2 — DLS-23 spec wording clarified to match mechanism-level
+implementation). Round-1 cosmetic gap (Fix 3 — EC4 plugin-load-gating
+spec wording) closed in the same round-2 spec clarification pass.
 
 ---
 

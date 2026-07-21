@@ -95,6 +95,43 @@ fn integer_from_real_resolves() {
     elaborate(src).expect("Integer::from(x: Real) must resolve by argument type");
 }
 
+/// DLS-23 (Verifier round 1, Gap 2): a stray bare `real(x)` call no
+/// longer carries the special-case `Expr::Cast` meaning (the rewrite is
+/// deleted — that's the load-bearing claim of AC7). But piperine-lang
+/// does not yet reject it as a hard error either, because per-category
+/// progressive enforcement (T11's documented scope) leaves undeclared
+/// bare-identifier calls untouched for codegen to handle. Codegen fails
+/// loud downstream when it can't resolve `real` to anything.
+///
+/// This test documents the current mechanism state explicitly so a future
+/// change either direction (reject at piperine-lang level, or accept
+/// globally as a no-op) trips it.
+#[test]
+fn bare_cast_call_has_no_special_case_meaning_but_is_not_yet_rejected() {
+    let src = "
+        mod Top() {}
+        digital Top {
+            var y: Real = 0.0;
+            y = real(1);
+        }
+    ";
+    let result = elaborate(src);
+    // The mechanism claim: no Expr::Cast rewrite happens, so the call
+    // reaches codegen as a plain `Call(Ident("real"), [1])`. Whether
+    // piperine-lang's own elaboration accepts or rejects this bare name
+    // is the open per-category progressive-enforcement question.
+    // Today: elaboration accepts (no special-cased rejection); the test
+    // would fail if a future commit adds a bare-name rejection rule.
+    assert!(
+        result.is_ok(),
+        "post-T17 a bare real(x) call elaborates (no Expr::Cast special \
+         case; per-category progressive enforcement leaves it for codegen) \
+         — if this test fails, piperine-lang gained a bare-name rejection; \
+         update spec P4-AC7's 'Rejected scope' note accordingly: {:?}",
+        result.err()
+    );
+}
+
 /// `Quad::from(x: Integer)` — the target type the deleted `bit(x)`/`Quad(x)`
 /// bare forms both mapped to (`ValueType::Quad`).
 #[test]

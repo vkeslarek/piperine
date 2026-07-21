@@ -13,19 +13,24 @@ use crate::pom::{ElabError, ElabErrorKind, ValueType};
 use std::collections::HashMap;
 
 /// A registered `extern operator` declaration — wraps the parsed signature
-/// so it can be stored as a `CallableDef` candidate in `OperatorRegistry`'s
-/// overload sets, exactly like `extern fn`/`extern task` do for
-/// `CallableRegistry`.
-pub struct ExternOperatorDecl(pub ExternSig);
+/// plus its param types, resolved once at registration time, so it can be
+/// stored as a `CallableDef` candidate in `OperatorRegistry`'s overload
+/// sets, exactly like `extern fn`/`extern task` do for `CallableRegistry`.
+/// Carrying real `param_types` (rather than the permissive default) is
+/// load-bearing: without it, `resolve_operator_call`'s `validate_call`
+/// always succeeds and operator arity/type mismatches silently pass
+/// elaboration (the Verifier's surviving-mutant finding during
+/// declared-language-surface validation, fixed post-T27).
+pub struct ExternOperatorDecl {
+    pub sig: ExternSig,
+    pub param_types: Vec<crate::pom::ValueType>,
+}
 
 impl CallableDef for ExternOperatorDecl {
-    fn name(&self) -> &str { &self.0.name }
-    // No structural `param_types` yet — real `extern operator` bodies (with
-    // resolvable param types) land in T22's migration; until then every
-    // candidate is permissively "always matches" (the `CallableDef` default),
-    // consistent with `FnDecl`'s current (pre-T16/T22) scope.
+    fn name(&self) -> &str { &self.sig.name }
+    fn param_types(&self) -> Option<&[crate::pom::ValueType]> { Some(&self.param_types) }
     fn is_extern(&self) -> bool { true }
-    fn decl_span(&self) -> Option<miette::SourceSpan> { self.0.span }
+    fn decl_span(&self) -> Option<miette::SourceSpan> { self.sig.span }
 }
 
 pub struct OperatorRegistry {
