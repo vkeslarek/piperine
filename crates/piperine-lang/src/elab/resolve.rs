@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::elab::registry::{CallableDef, ElabContext};
 use crate::parse::ast::{Expr, Literal, Path, Walk};
 use crate::pom::{BehaviorStmt, ElabError, ElabErrorKind, ValueType};
@@ -26,8 +28,14 @@ use crate::pom::{BehaviorStmt, ElabError, ElabErrorKind, ValueType};
 pub fn resolve_calls(design: &mut crate::pom::Design, ctx: &ElabContext) -> Result<(), ElabError> {
     for module in design.modules_map_mut().values_mut() {
         for behavior in &mut module.behaviors {
+            // `Behavior::var_types` is populated by the earlier
+            // `AttachBehaviors` pass (SIMPLIFICATION.md P3's lowering side
+            // table) — already-known local-variable types this pass reuses
+            // for overload-disambiguating argument-type inference (DLS-07)
+            // instead of re-deriving its own locals tracking.
+            let locals = behavior.var_types.clone();
             for stmt in &mut behavior.body {
-                resolve_calls_in_stmt(stmt, &module.name, ctx)?;
+                resolve_calls_in_stmt(stmt, &module.name, ctx, &locals)?;
             }
         }
     }
@@ -38,6 +46,7 @@ fn resolve_calls_in_stmt(
     stmt: &mut BehaviorStmt,
     module_name: &str,
     ctx: &ElabContext,
+    locals: &HashMap<String, ValueType>,
 ) -> Result<(), ElabError> {
     // First resolve any BehaviorStmt-specific logic (Diagnostic validation),
     // then delegate expression traversal to walk_exprs_mut + resolve_calls_in_expr.
@@ -58,24 +67,24 @@ fn resolve_calls_in_stmt(
     match stmt {
         BehaviorStmt::If { then_body, else_body, .. } => {
             for s in &mut then_body.stmts {
-                resolve_calls_in_stmt(s, module_name, ctx)?;
+                resolve_calls_in_stmt(s, module_name, ctx, locals)?;
             }
             if let Some(eb) = else_body {
                 for s in &mut eb.stmts {
-                    resolve_calls_in_stmt(s, module_name, ctx)?;
+                    resolve_calls_in_stmt(s, module_name, ctx, locals)?;
                 }
             }
         }
         BehaviorStmt::Match { arms, .. } => {
             for arm in arms {
                 for s in &mut arm.body.stmts {
-                    resolve_calls_in_stmt(s, module_name, ctx)?;
+                    resolve_calls_in_stmt(s, module_name, ctx, locals)?;
                 }
             }
         }
         BehaviorStmt::Event { body, .. } => {
             for s in &mut body.stmts {
-                resolve_calls_in_stmt(s, module_name, ctx)?;
+                resolve_calls_in_stmt(s, module_name, ctx, locals)?;
             }
         }
         _ => {}
@@ -86,7 +95,7 @@ fn resolve_calls_in_stmt(
     let mut err: Option<ElabError> = None;
     stmt.walk_exprs_mut(&mut |e| {
         if err.is_some() { return Walk::SkipChildren; }
-        match resolve_calls_in_expr(e, module_name, ctx) {
+        match resolve_calls_in_expr(e, module_name, ctx, locals) {
             Ok(()) => Walk::Continue,
             Err(e) => { err = Some(e); Walk::SkipChildren }
         }
@@ -96,36 +105,30 @@ fn resolve_calls_in_stmt(
     Ok(())
 }
 
-/// The five bare-name cast forms (SPEC P4-AC7) — still special-cased here
-/// unchanged until T17 deletes this and replaces it with `Type::from(x)`
-/// (`Expr::Path` call syntax, resolved via `resolve_path_call` below).
-const CAST_NAMES: [&str; 5] = ["real", "int", "bit", "Boolean", "Quad"];
-
-/// Resolve type-cast calls (`real(x)`, `int(x)`, `bit(x)`, `Boolean(x)`,
-/// `Quad(x)`) into `Expr::Cast` nodes, and (T11/T13) declared-first call
-/// resolution for every other `Expr::Call`. This is a *transform* on the
-/// current `Expr` node — the child recursion is done by the caller via
-/// `walk_exprs_mut`. It only needs to handle the `Call` variant.
-fn resolve_calls_in_expr(expr: &mut Expr, module_name: &str, ctx: &ElabContext) -> Result<(), ElabError> {
+/// Declared-first call resolution for every `Expr::Call` (T11/T13). The
+/// former bare-name cast rewrite (`real(x)`/`int(x)`/`bit(x)`/`Boolean(x)`/
+/// `Quad(x)` → a synthetic `Expr::Cast` node) lived here until T17 deleted
+/// it (SPEC P4-AC7) — casts are now ordinary `Type::from(x)` calls
+/// (`Expr::Path` callees), resolved via `resolve_path_call` below through
+/// the `extern impl` blocks in `headers/types.phdl`, exactly like any other
+/// declared method. No bare identifier carries compiler-special meaning
+/// after this deletion. This is a *transform* on the current `Expr` node —
+/// the child recursion is done by the caller via `walk_exprs_mut`. It only
+/// needs to handle the `Call` variant.
+fn resolve_calls_in_expr(
+    expr: &mut Expr,
+    module_name: &str,
+    ctx: &ElabContext,
+    locals: &HashMap<String, ValueType>,
+) -> Result<(), ElabError> {
     if let Expr::Call(callee, args) = expr {
         match &**callee {
-            Expr::Ident(name) if CAST_NAMES.contains(&name.as_str()) => {
-                let name = name.clone();
-                if args.len() != 1 {
-                    return Err(ElabError::from(ElabErrorKind::Other(format!(
-                        "Cast to `{}` expects exactly 1 argument, got {}",
-                        name, args.len()
-                    ))));
-                }
-                let arg = args.remove(0);
-                *expr = Expr::Cast(name, Box::new(arg));
-            }
             Expr::Ident(name) => {
                 let name = name.clone();
-                resolve_declared_call(&name, args, module_name, ctx)?;
+                resolve_declared_call(&name, args, module_name, ctx, locals)?;
             }
             Expr::Path(path) => {
-                resolve_path_call(path, args, module_name, ctx)?;
+                resolve_path_call(path, args, module_name, ctx, locals)?;
             }
             _ => {}
         }
@@ -150,6 +153,7 @@ fn resolve_declared_call(
     args: &[Expr],
     module_name: &str,
     ctx: &ElabContext,
+    locals: &HashMap<String, ValueType>,
 ) -> Result<(), ElabError> {
     let candidates = ctx.callables.candidates(name);
     if candidates.is_empty() {
@@ -158,12 +162,28 @@ fn resolve_declared_call(
     let resolved: &dyn CallableDef = if candidates.len() == 1 {
         candidates[0].as_ref()
     } else {
-        let arg_types = infer_arg_types(args, name, module_name)?;
+        // Genuine overload disambiguation needs every argument's type
+        // known — unlike the single-candidate case below, there is no
+        // fallback: an unresolvable argument type is a fail-loud error
+        // naming the call site (DLS-07).
+        let arg_types = infer_arg_types(args, name, module_name, locals)?;
         ctx.callables.resolve(name, &arg_types)?
     };
     if resolved.is_extern() {
-        let arg_types = infer_arg_types(args, name, module_name)?;
-        resolved.validate_call(&arg_types)?;
+        // Signature validation is best-effort here: a single (non-
+        // overloaded) candidate has nothing to disambiguate, so an
+        // argument whose type can't be statically inferred at this
+        // elaboration stage (e.g. a member access or nested call, as
+        // opposed to a literal or a known local) simply skips validation
+        // rather than failing loud — full argument type-checking for
+        // arbitrary expressions is `elab/typecheck.rs`'s job, run later in
+        // the pipeline. This keeps DLS-03's "extern does not weaken
+        // argument checking" promise for the checkable cases (literals,
+        // locals) without forcing every extern-fn call site in the stdlib
+        // to have a statically-literal argument.
+        if let Some(arg_types) = try_infer_arg_types(args, locals) {
+            resolved.validate_call(&arg_types)?;
+        }
         if crate::math::math_fn(name).is_none() {
             return Err(ElabError::from(ElabErrorKind::ExternMissingBinding {
                 name: name.to_string(),
@@ -184,6 +204,7 @@ fn resolve_path_call(
     args: &[Expr],
     module_name: &str,
     ctx: &ElabContext,
+    locals: &HashMap<String, ValueType>,
 ) -> Result<(), ElabError> {
     // Only `Type::method` (exactly 2 segments) is meaningful call syntax for
     // the impl-method table today; anything else is left untouched.
@@ -200,25 +221,35 @@ fn resolve_path_call(
              expected an `impl`/`extern impl {type_name}` method named `{method_name}`"
         ))));
     }
-    let arg_types = infer_arg_types(args, &qualified, module_name)?;
-    let resolved = if candidates.len() == 1 {
-        candidates[0].as_ref()
-    } else {
-        ctx.impl_methods.resolve(type_name, method_name, &arg_types)?
-    };
+    if candidates.len() == 1 {
+        // No ambiguity to resolve — signature validation is best-effort,
+        // same reasoning as `resolve_declared_call`'s single-candidate path.
+        if let Some(arg_types) = try_infer_arg_types(args, locals) {
+            candidates[0].validate_call(&arg_types)?;
+        }
+        return Ok(());
+    }
+    let arg_types = infer_arg_types(args, &qualified, module_name, locals)?;
+    let resolved = ctx.impl_methods.resolve(type_name, method_name, &arg_types)?;
     resolved.validate_call(&arg_types)?;
     Ok(())
 }
 
-/// Best-effort literal argument-type inference for overload disambiguation
-/// (DLS-07) — sufficient at this elaboration stage since the overload sets
-/// this task exercises are proven via literal-argument fixtures; a call
-/// whose argument type cannot be determined here fails loud rather than
-/// silently guessing a candidate.
-fn infer_arg_types(args: &[Expr], name: &str, module_name: &str) -> Result<Vec<ValueType>, ElabError> {
+/// Argument-type inference for overload disambiguation (DLS-07), required
+/// (fail-loud) variant: a call whose argument type cannot be determined
+/// here fails loud rather than silently guessing a candidate — used only
+/// where disambiguation is actually needed (more than one registered
+/// candidate). See `try_infer_arg_types` for the best-effort variant used
+/// where a single candidate leaves nothing to disambiguate.
+fn infer_arg_types(
+    args: &[Expr],
+    name: &str,
+    module_name: &str,
+    locals: &HashMap<String, ValueType>,
+) -> Result<Vec<ValueType>, ElabError> {
     args.iter()
         .map(|a| {
-            infer_literal_arg_type(a).ok_or_else(|| {
+            infer_arg_type(a, locals).ok_or_else(|| {
                 ElabError::from(ElabErrorKind::Other(format!(
                     "cannot resolve overload of `{name}` in module `{module_name}`: \
                      argument type is not statically known at elaboration time"
@@ -228,13 +259,34 @@ fn infer_arg_types(args: &[Expr], name: &str, module_name: &str) -> Result<Vec<V
         .collect()
 }
 
-fn infer_literal_arg_type(expr: &Expr) -> Option<ValueType> {
+/// Best-effort variant of `infer_arg_types`: `None` (rather than an error)
+/// when any argument's type can't be determined at this elaboration stage
+/// — used for single-candidate `extern` signature validation, where a
+/// skipped check just defers to `elab/typecheck.rs`'s later, fuller
+/// analysis instead of forcing every call site to have statically-known
+/// argument types.
+fn try_infer_arg_types(args: &[Expr], locals: &HashMap<String, ValueType>) -> Option<Vec<ValueType>> {
+    args.iter().map(|a| infer_arg_type(a, locals)).collect()
+}
+
+/// Type inference for a single call argument, sufficient for overload
+/// disambiguation (DLS-07): literals infer their own type; a bare
+/// identifier resolves through the enclosing behavior's already-known
+/// local-variable types (`Behavior::var_types`, populated by the earlier
+/// `AttachBehaviors` pass) — module elaboration resolves argument types
+/// concretely before call resolution runs (design.md's "Overload
+/// resolution" component), so a local var's declared type is exactly as
+/// legitimate a source as a literal here. Anything else (member access,
+/// nested calls, arithmetic) is not attempted — that's `elab/typecheck.rs`'s
+/// job, run later in the pipeline.
+fn infer_arg_type(expr: &Expr, locals: &HashMap<String, ValueType>) -> Option<ValueType> {
     match expr {
         Expr::Literal(Literal::Int(_)) => Some(ValueType::Integer),
         Expr::Literal(Literal::Real(_)) => Some(ValueType::Real),
         Expr::Literal(Literal::Bool(_)) => Some(ValueType::Boolean),
         Expr::Literal(Literal::Quad(_)) => Some(ValueType::Quad),
         Expr::Literal(Literal::String(_)) => Some(ValueType::Str),
+        Expr::Ident(name) => locals.get(name).cloned(),
         _ => None,
     }
 }
