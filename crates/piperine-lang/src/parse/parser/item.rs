@@ -33,6 +33,7 @@ impl Parse for Item {
             return match ident {
                 "type" => Ok(Item::ExternDecl(super::extern_decl::parse_extern_type(parser)?)),
                 "fn" => Ok(Item::ExternDecl(super::extern_decl::parse_extern_fn(parser)?)),
+                "task" => Ok(Item::ExternDecl(super::extern_decl::parse_extern_task(parser)?)),
                 _ => Err(format!("Unknown extern item: `extern {}`", ident).into()),
             };
         }

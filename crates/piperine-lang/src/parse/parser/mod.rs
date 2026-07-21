@@ -165,6 +165,20 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses and consumes a single `$name` system-call token, returning the
+    /// full `$`-prefixed name (e.g. `"$temperature"`) — the identifier form
+    /// `extern task` declarations preserve (SPEC "declared language surface").
+    pub(crate) fn parse_syscall_name(&mut self) -> Result<String, crate::parse::error::ParseError> {
+        match self.peek() {
+            Some(Tok::SysCall(s)) => {
+                let res = format!("${s}");
+                self.pos += 1;
+                Ok(res)
+            }
+            _ => Err(format!("Expected a `$name` system-task name, found {:?}", self.peek()).into()),
+        }
+    }
+
 
     // ─────────────────────────── §2  Compilation unit ────────────────────────
 

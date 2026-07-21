@@ -67,3 +67,30 @@ fn extern_fn_with_body_is_a_parse_error_naming_the_declaration() {
     let msg = err.to_string();
     assert!(msg.contains("extern fn sin"), "error should name the offending declaration, got: {msg}");
 }
+
+// ─────────────────────────── T3: extern task (DLS-10) ──────────────────────
+
+#[test]
+fn extern_task_parses_with_correct_decl_span_and_dollar_prefixed_name() {
+    let src = "extern task $temperature() -> Real;";
+    let decl = parse_one_extern(src);
+    let ExternDecl::Task(sig) = &decl else {
+        panic!("expected ExternDecl::Task, got {decl:?}");
+    };
+    // The `$`-prefixed system-task name form is preserved (spec: "name
+    // retains the $-prefixed form").
+    assert_eq!(sig.name, "$temperature");
+    assert!(sig.params.is_empty());
+    assert_eq!(sig.ret.name, "Real");
+    let span = sig.span.expect("extern task must carry a decl_span");
+    assert_eq!(span.offset(), 0);
+    assert_eq!(span.offset() + span.len(), src.len());
+}
+
+#[test]
+fn extern_task_with_body_is_a_parse_error_naming_the_declaration() {
+    let src = "extern task $temperature() -> Real { 300.0 }";
+    let err = parse_str(src).expect_err("a body on `extern task` must be a parse error");
+    let msg = err.to_string();
+    assert!(msg.contains("extern task $temperature"), "error should name the offending declaration, got: {msg}");
+}

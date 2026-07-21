@@ -109,6 +109,9 @@ pub enum ExternDecl {
     /// `extern fn name(params) -> RetType;` — a native function, signature
     /// only (the body is a compiler-side registry entry, e.g. `math.rs`).
     Fn(ExternSig),
+    /// `extern task $name(params) -> RetType;` — a system task; `sig.name`
+    /// retains the `$`-prefixed form.
+    Task(ExternSig),
 }
 
 impl ExternDecl {
@@ -117,16 +120,16 @@ impl ExternDecl {
     pub fn span(&self) -> Option<miette::SourceSpan> {
         match self {
             ExternDecl::Type { span, .. } => *span,
-            ExternDecl::Fn(sig) => sig.span,
+            ExternDecl::Fn(sig) | ExternDecl::Task(sig) => sig.span,
         }
     }
 
-    /// The declared name (the type name for `extern type`; the function
-    /// name for `extern fn`).
+    /// The declared name (the type name for `extern type`; the
+    /// function/task name — `$`-prefixed for `extern task` — otherwise).
     pub fn name(&self) -> &str {
         match self {
             ExternDecl::Type { name, .. } => name,
-            ExternDecl::Fn(sig) => &sig.name,
+            ExternDecl::Fn(sig) | ExternDecl::Task(sig) => &sig.name,
         }
     }
 }
