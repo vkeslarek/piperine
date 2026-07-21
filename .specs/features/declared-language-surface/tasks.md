@@ -1017,6 +1017,19 @@ regression, it becomes a fix task, not a silent pass)
       new tests added across T1–T27).
 **Tests**: regression (existing + all new suite) · **Gate**: full
 **Commit**: `chore: final regression sweep for declared-language-surface` (only if a fix was needed — otherwise this task closes with no commit, noted in the batch summary)
+**Status**: ✅ Complete — no commit needed (clean sweep). `cargo build
+--workspace`: zero rustc warnings (the two `piperine-cli` python-venv
+build-script notices are pre-existing and unrelated to this feature — they
+fire whenever `piperine-python`'s cdylib hasn't been built yet, which is
+the default in a `--workspace` build). `cargo test --workspace`: **666
+passed, 0 failed, 5 ignored** — vs. the 582 baseline in the spec's Test
+Coverage Matrix (the floor at feature start), that's +84 tests added
+across the feature (T9 overload fixtures, T17 cast tests, T21 system-task
+completeness, T24 plugin stub tests, T25 schema-stub end-to-end, T27
+extern coverage guard, plus LSP-side integration tests under T14/T15).
+All 25 DLS requirements covered; all 29 tasks complete; ready for the
+Verifier sub-agent (feature-level validation, the closing step of
+Execute per `tlc-spec-driven`'s implement.md step 10).
 
 ---
 
