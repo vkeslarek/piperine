@@ -36,6 +36,7 @@ impl Parse for Item {
                 "task" => Ok(Item::ExternDecl(super::extern_decl::parse_extern_task(parser)?)),
                 "operator" => Ok(Item::ExternDecl(super::extern_decl::parse_extern_operator(parser)?)),
                 "attribute" => Ok(Item::ExternDecl(super::extern_decl::parse_extern_attribute(parser)?)),
+                "impl" => Ok(Item::ExternDecl(super::extern_decl::parse_extern_impl(parser)?)),
                 _ => Err(format!("Unknown extern item: `extern {}`", ident).into()),
             };
         }

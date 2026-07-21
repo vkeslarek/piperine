@@ -105,6 +105,37 @@ pub(crate) fn parse_extern_attribute(parser: &mut Parser) -> Result<ExternDecl, 
     Ok(ExternDecl::Attribute { span: Some((start, end - start).into()), name, fields })
 }
 
+/// `extern impl [Capability for] TypeName { fn method(self, ...) -> Ret; ... }`
+pub(crate) fn parse_extern_impl(parser: &mut Parser) -> Result<ExternDecl, ParseError> {
+    let start = parser.current_span_start();
+    parser.expect_ident_str("extern")?;
+    parser.expect_ident_str("impl")?;
+    let mut ident1 = parser.parse_ident()?;
+    let mut capability = None;
+    if parser.eat_ident("for") {
+        capability = Some(ident1);
+        ident1 = parser.parse_ident()?;
+    }
+    parser.expect(&Tok::LBrace)?;
+    let mut methods = Vec::new();
+    while !parser.eat(&Tok::RBrace) {
+        let m_start = parser.current_span_start();
+        parser.expect_ident_str("fn")?;
+        let m_name = parser.parse_ident()?;
+        let (params, ret) = parse_sig_tail(parser)?;
+        if parser.peek() == Some(&Tok::LBrace) {
+            return Err(parser.make_error(format!(
+                "`extern impl {ident1}` method `{m_name}` may not have a body — extern declarations are signature-only"
+            )));
+        }
+        parser.expect(&Tok::Semi)?;
+        let m_end = parser.previous_span_end();
+        methods.push(ExternSig { span: Some((m_start, m_end - m_start).into()), name: m_name, params, ret });
+    }
+    let end = parser.previous_span_end();
+    Ok(ExternDecl::Impl { span: Some((start, end - start).into()), capability, target: ident1, methods })
+}
+
 /// Parses `(params) -> RetType` — the tail shared by every `extern`
 /// signature form (`fn`/`task`/`operator`, and each `extern impl` method).
 /// Mirrors [`FnSig::parse`]'s parameter-list grammar (no defaults — not

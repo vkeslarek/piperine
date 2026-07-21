@@ -118,6 +118,18 @@ pub enum ExternDecl {
     /// `extern attribute name { field: Type, ... }` — an attribute schema
     /// (`@device`, `@port`, plugin-contributed ones).
     Attribute { span: Option<miette::SourceSpan>, name: String, fields: Vec<ExternAttrField> },
+    /// `extern impl [Capability for] TypeName { fn method(self, ...) ->
+    /// Ret; ... }` — native methods on a type. `capability` is `Some` for
+    /// `extern impl Capability for TypeName`, `None` for inherent methods
+    /// (mirrors [`ImplDecl`]'s `impl [Capability for] TypeRef` shape). Each
+    /// method in `methods` carries its own `decl_span`, in addition to the
+    /// block's own `decl_span` in `span`.
+    Impl {
+        span: Option<miette::SourceSpan>,
+        capability: Option<String>,
+        target: String,
+        methods: Vec<ExternSig>,
+    },
 }
 
 impl ExternDecl {
@@ -125,18 +137,20 @@ impl ExternDecl {
     /// go-to-definition target for the declaration itself.
     pub fn span(&self) -> Option<miette::SourceSpan> {
         match self {
-            ExternDecl::Type { span, .. } | ExternDecl::Attribute { span, .. } => *span,
+            ExternDecl::Type { span, .. } | ExternDecl::Attribute { span, .. } | ExternDecl::Impl { span, .. } => *span,
             ExternDecl::Fn(sig) | ExternDecl::Task(sig) | ExternDecl::Operator(sig) => sig.span,
         }
     }
 
     /// The declared name (the type/attribute-schema name for `extern
-    /// type`/`extern attribute`; the function/task/operator name —
-    /// `$`-prefixed for `extern task` — otherwise).
+    /// type`/`extern attribute`; the target type's name for `extern impl`;
+    /// the function/task/operator name — `$`-prefixed for `extern task` —
+    /// otherwise).
     pub fn name(&self) -> &str {
         match self {
             ExternDecl::Type { name, .. } | ExternDecl::Attribute { name, .. } => name,
             ExternDecl::Fn(sig) | ExternDecl::Task(sig) | ExternDecl::Operator(sig) => &sig.name,
+            ExternDecl::Impl { target, .. } => target,
         }
     }
 }

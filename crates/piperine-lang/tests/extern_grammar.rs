@@ -143,3 +143,55 @@ fn extern_attribute_parses_with_field_decl_spans() {
         assert!(field_span.offset() >= schema_span.offset() && field_span.offset() < schema_span.offset() + schema_span.len());
     }
 }
+
+// ─────────────────────────── T6: extern impl (DLS-13, DLS-14) ──────────────
+
+#[test]
+fn extern_impl_parses_block_and_each_method_with_distinct_decl_spans() {
+    let src = "extern impl Real { fn from(x: Integer) -> Real; fn from(x: Boolean) -> Real; }";
+    let decl = parse_one_extern(src);
+    let ExternDecl::Impl { span, capability, target, methods } = &decl else {
+        panic!("expected ExternDecl::Impl, got {decl:?}");
+    };
+    assert_eq!(target, "Real");
+    assert!(capability.is_none(), "no `for` clause — this is an inherent-method impl");
+    assert_eq!(methods.len(), 2);
+    assert_eq!(methods[0].name, "from");
+    assert_eq!(methods[0].params.len(), 1);
+    assert_eq!(methods[0].ret.name, "Real");
+    assert_eq!(methods[1].name, "from");
+
+    let block_span = span.expect("extern impl block must carry a decl_span");
+    let m0_span = methods[0].span.expect("each method must carry its own decl_span");
+    let m1_span = methods[1].span.expect("each method must carry its own decl_span");
+    // The block's span and each method's span are distinct, and each
+    // method's span is nested inside the block's span — ctrl+click on
+    // `.method(...)` and on the block itself both resolve to different lines.
+    assert_ne!(m0_span.offset(), block_span.offset());
+    assert_ne!(m0_span.offset(), m1_span.offset());
+    for m_span in [m0_span, m1_span] {
+        assert!(m_span.offset() >= block_span.offset());
+        assert!(m_span.offset() + m_span.len() <= block_span.offset() + block_span.len());
+    }
+}
+
+#[test]
+fn extern_impl_capability_for_type_parses() {
+    let src = "extern impl Add for Real { fn add(self, other: Real) -> Real; }";
+    let decl = parse_one_extern(src);
+    let ExternDecl::Impl { capability, target, methods, .. } = &decl else {
+        panic!("expected ExternDecl::Impl, got {decl:?}");
+    };
+    assert_eq!(capability.as_deref(), Some("Add"));
+    assert_eq!(target, "Real");
+    assert_eq!(methods.len(), 1);
+    assert_eq!(methods[0].name, "add");
+}
+
+#[test]
+fn extern_impl_method_with_body_is_a_parse_error_naming_the_method() {
+    let src = "extern impl Map { fn get(self, k: K) -> V { k } }";
+    let err = parse_str(src).expect_err("a body on an `extern impl` method must be a parse error");
+    let msg = err.to_string();
+    assert!(msg.contains("extern impl Map") && msg.contains("get"), "error should name the offending method, got: {msg}");
+}
