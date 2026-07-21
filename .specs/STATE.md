@@ -243,10 +243,93 @@ Implementation: sens/PSS bindings immediately; full alignment in P3.
 
 ---
 
+### MD-23: Codegen module tree = pipeline stages
+
+`piperine-codegen`'s top-level modules name the compilation pipeline stage
+they perform, one module per stage: `resolve` (POM → resolved form) →
+`flatten` (resolved analog → `FlatAnalog`) → `emit` (Cranelift emission
+machinery) → `kernel` (compiled `AnalogKernel`/`DigitalKernel` products) →
+`device` (kernels as solver `Element`s + `CircuitCompiler`). No module named
+after a language construct or a vague bucket (the former `jit`/inner-`codegen`
+split, which named *what tech* not *what stage*, is gone). Public surface is a
+single `lib.rs` façade, not a two-tier split — codegen has one deliverable
+(unlike the solver's `prelude`/`abi`, MD-17): a module stays `pub` only when
+external code addresses it by deep path (grep-verified), everything else is
+crate-private with host-facing items re-exported through `lib.rs`.
+
+**Status:** Locked (user, 2026-07-20 — `codegen-architecture` feature,
+`hierarchy-flattening`-adjacent readability pass). Applies to future codegen
+modules: name by pipeline stage, narrow visibility by evidence not habit.
+
+---
+
 ## Handoff Snapshot
 
-**Last updated:** 2026-07-19 — `solver-simplification` batches 1–5 (P0–P8)
-DONE, 520 green / 5 ignored, 0 rustc warnings.
+**Last updated:** 2026-07-19 — `spectral-analyses` DELIVERED (T1–T16);
+`solver-simplification` batches 1–5 (P0–P8) DONE, batch 6 remaining.
+`cargo test --workspace`: 582 passed, 0 failed, 5 ignored, 0 rustc warnings.
+
+### Feature — `spectral-analyses` (DELIVERED 2026-07-19)
+
+Spec/design/tasks in `.specs/features/spectral-analyses/`. `.four` (Rust
+direct-DFT + Python numpy, `Waveform::fourier`), `.pz` (poles via QZ on
+`(G,C)`, zeros via the Rosenbrock bordered pencil), `.sp` (per-port
+Thévenin excitation + power-wave S-matrix, `@rfport` attribute — no new
+device kind), `.disto` (full Volterra HD2/HD3/IM2/IM3 from symbolic
+`disto2`/`disto3` JIT kernels) — all four on both hosts (MD-22). ngspice
+cross-checked for `.four`/`.pz`/`.disto` (`tests/ngspice_validation.rs`);
+`.sp` has no ngspice reference (documented Out of Scope).
+
+**T15's gate surfaced and fixed a real regression** (found by running the
+existing ngspice suite, not part of the original task list — logged here
+because it changed shared, non-feature-scoped files):
+`compile_disto2`/`compile_disto3` (DISTO-01..06) unrolled every ordered
+controlling-branch combination into **one** Cranelift function per device.
+For a many-branch device (a MOSFET: several controlling terminals) this
+never terminated compiling — Cranelift's own codegen doesn't scale to a
+function with tens of thousands of instructions. Root-caused via bisection
+across the five `.disto` commits + `git worktree` isolation, then fixed in
+three parts:
+1. **Symbolic redundancy removed** (`crates/piperine-codegen/src/lower/diff.rs`):
+   `d_dv_once_more_named`/`d_dv_thrice_from_twice` complete an
+   already-built first/second derivative pass with one more differentiate
+   step, instead of `compile_disto2`/`compile_disto3` redoing the first
+   one/two passes from the raw expression for every branch pair/triple.
+2. **One Cranelift function per branch combination**, not one function
+   unrolling every combination (`crates/piperine-codegen/src/jit/analog.rs`)
+   — `AnalogKernel::disto2`/`disto3` are now `Vec<AnalogFn>` (one entry per
+   `disto2_pairs`/`disto3_triples` index), each writing its own `nc`-sized
+   output slice.
+3. **`compile_disto: bool` flag** threaded `AnalogKernel::compile_with_options`
+   → `CompiledModule::compile_with_options` → `CircuitCompiler::with_disto`
+   → `SimSession::build_circuit` (`crates/piperine-api/src/session.rs`) —
+   every `run_*` analysis but `run_disto` passes `false`, skipping the
+   `.disto` kernel compile entirely (its cost is real even after fix 1/2,
+   and only `.disto` itself needs it). Existing direct `AnalogKernel::compile`/
+   `CompiledModule::compile` callers (codegen/lang test fixtures) are
+   unaffected — those keep the `compile_disto: true` default.
+
+Also added (needed to make fix 2 tractable at all): `Cargo.toml` dev-profile
+`opt-level = 3` override for `cranelift-codegen`/`cranelift-jit`/
+`cranelift-module`/`cranelift-frontend`/`cranelift-native`/`regalloc2` —
+Cranelift's own register allocator is prohibitively slow unoptimized, and
+every analog kernel compile (not just `.disto`) now benefits. This made
+`examples/live_optimize.py`'s fresh-build path faster in absolute terms,
+shrinking its `>= 10x` speedup ratio against the live-restamp path to
+~7.9x (MD-18's real invariant — zero recompiles in the live loop — is
+unaffected, checked separately via `compile_count`); threshold lowered to
+`>= 5x` with a comment explaining why.
+
+**Result:** full `tests/ngspice_validation.rs` suite (30 tests, includes
+MOS2/MOS3 op-points that previously hung indefinitely): infinite → 370s
+(fix 1+2 alone) → **5s** (+ fix 3, the flag). `cargo test --workspace`:
+582 passed, 0 failed, 5 ignored.
+
+**Next for this feature:** none — delivered. If further `.disto` perf is
+ever needed on very-many-branch devices, the next lever is Schwarz-symmetry
+deduplication (mixed partials are order-independent — cuts branch-pair/
+triple combinations by ~2×/~6× before compiling), not attempted here
+(diminishing returns given fix 3 already makes the cost opt-in).
 
 ### Feature — `solver-simplification` (IN PROGRESS — batch 6 remaining)
 

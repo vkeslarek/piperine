@@ -15,7 +15,7 @@ the only frontend. Rust workspace, edition 2024.
 PHDL (.phdl) ──parse_and_elaborate──► Design (POM)
                                         │
                                         ▼
-                            piperine_codegen::ir::lower_bodies
+                            piperine_codegen::resolve::lower_bodies
                             (Design ──► LoweredBody per module)
                                         │
                                         ▼
@@ -32,15 +32,29 @@ PHDL (.phdl) ──parse_and_elaborate──► Design (POM)
 ```
 
 There is **no separate IR crate**. The POM (`Design`/`Module`, from `piperine-lang`) is the
-single object model; `piperine_codegen::ir` (formerly the standalone `piperine-ir` crate,
-now `piperine-codegen/src/lower/`) is codegen's **private** resolved form — expressions with
-interned ids, symbolic differentiation (`lower/diff.rs`), the POM→resolved pass
-(`lower/pom/`, `lower_bodies`). Nothing outside `piperine-codegen` depends on its shape.
+single object model; `piperine_codegen::resolve` (formerly the standalone `piperine-ir` crate,
+then `piperine-codegen/src/lower/`) is codegen's resolved form — expressions with
+interned ids, symbolic differentiation (`resolve/diff.rs`), the POM→resolved pass
+(`resolve/pom/`, `lower_bodies`). `resolve` stays `pub` (hosts/tests address it by deep path,
+e.g. `resolve::pom::LoweredBody`) but nothing outside `piperine-codegen` depends on its shape.
 `CircuitCompiler` walks the POM `Design`/`Module`/`Instance` directly for structure
 (connections, param overrides) — there is no `IrModule`/`IrInstance`/`IrProgram` structural
 twin. "100% coverage" means: every PHDL construct lowers to executable device code. When
 something cannot be faithfully lowered, **fail loud** (`CodegenError::Unsupported`) — never
 silently emit `0.0` or a no-op.
+
+### UNBREAKABLE RULE — POM navigability mirrors the source
+
+**The POM's navigability reflects the structure of the original code, never the internal
+structure of elaboration.** A device author reads back their own modules, instances, and
+hierarchy from the POM exactly as written; internal transforms (hierarchy flattening above
+all) are codegen concerns they must never leak into `Design::modules`. Every elaboration pass
+builds the POM from the immutable AST and only *adds* or *validates* — it never overwrites
+authored structure. Monomorphization may *name* a concrete variant (`urc__5`) but must keep
+the `instance → submodule → sub-instances` tree walkable. A transform that needs a
+collapsed/flattened form (e.g. for codegen) produces a **separate side artifact**
+(`Design::flat_modules`, `#[serde(skip)]`), leaving the authored hierarchy intact. See
+`.specs/features/hierarchy-flattening/design.md`.
 
 ## Build and test
 
@@ -60,7 +74,7 @@ both a package and the workspace) — always pass `--workspace`.
 | Crate | Role |
 |-------|------|
 | `piperine-lang` | PHDL frontend: lexer/parser (`parse/`), elaboration → POM `Design` (`elab/`, `pom/`), const evaluator (`eval/`: `Interpreter`, `Host` trait, pure system tasks in `eval/tasks.rs`) — walks the POM/AST directly, no IR. `parse_and_elaborate` is the entry point. Builtin stdlib headers in `headers/` (prelude, disciplines, constants) and `headers/spice/` (the ngspice-faithful device models — `use spice::<file>;` works in any project, no dependency; a project package named `spice` shadows the builtin). |
-| `piperine-codegen` | POM → devices. `lower/` (codegen-private resolved form: `expr.rs`/`stmt.rs`/`symbols.rs`, `diff.rs` symbolic differentiation, `pom/` `lower_bodies`). `jit/`: `flatten.rs`, `analog.rs` (`AnalogKernel`), `emit.rs`, `digital/`. `device/`: `AnalogInstance`, `DigitalInstance`, `CircuitCompiler` → `PiperineDevice` (implements `Element`). |
+| `piperine-codegen` | POM → devices, one module per pipeline stage: `pom::Design ─▶ resolve ─▶ flatten ─▶ emit ─▶ kernel ─▶ device`. `resolve/` (resolved form: `expr.rs`/`stmt.rs`/`symbols.rs`, `diff.rs` symbolic differentiation, `pom/` `lower_bodies`). `flatten/` (resolved analog → `FlatAnalog`, crate-private). `emit/` (Cranelift emission machinery: `Builder`, `Codegen` trait, CSE, `SimCtx` ABI, crate-private). `kernel/`: `analog/` (`AnalogKernel`, capability sub-structs behind `Option`), `digital/`. `device/`: `analog/` (`AnalogInstance`, capability files `forces.rs`/`limits.rs`/`operators.rs`/`events.rs`), `digital.rs`, `circuit.rs`/`builder.rs`/`fusion.rs`/`plugin.rs` (`CircuitCompiler`) → `PiperineDevice` (implements `Element`). Public surface is a single `lib.rs` façade (MD-23) — `resolve`/`kernel`/`device` stay `pub`, `emit`/`flatten`/`error` are crate-private. |
 | `piperine-solver` | Native solver: DC/AC/transient/noise/TF (`solver/`), MNA/linear algebra (`math/`, faer), `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming layer (`core/net.rs`), OSDI-style introspection (`core/introspect.rs`), `ConvergencePlan` + `HomotopyStrategy` (`solver/convergence.rs`), `IntegrationMethod` + LTE (`math/integration.rs`), `prelude.rs`. Does **not** depend on codegen. OSDI is an external plugin. |
 | `piperine-api` | The library face (MD-20): `SimSession`/`SolverConfig` (`session.rs`), result objects (`results.rs`, `waveform.rs`), `SimHooks` lifecycle trait (`hooks.rs`), `prelude` re-exports. |
 | `piperine` (root) | Thin re-export shell over `piperine-api` (`pub use piperine_api::*`) — external Rust hosts keep `use piperine::…`; the tests of record live here as the shell's parity proof. The `piperine` binary target lives in `piperine-cli`. |
@@ -72,9 +86,9 @@ both a package and the workspace) — always pass `--workspace`.
 
 ## The analog device path
 
-- `AnalogKernel::compile(module)` flattens the analog body (`jit/flatten.rs`) and JITs it:
+- `AnalogKernel::compile(module)` flattens the analog body (`flatten/analog.rs`) and JITs it:
   contributions split into resistive + charge `Q(V)` (`ddt` companion model) + `ac_stim`
-  stimulus rows; the Jacobian is **symbolic differentiation** (`codegen/src/lower/diff.rs`),
+  stimulus rows; the Jacobian is **symbolic differentiation** (`resolve/diff.rs`),
   emitted like any other expression.
 - `AnalogInstance` stamps MNA via `Element::load_dc`/`load_transient` (Norton companion,
   coefficients from `IntegrationMethod::coeffs`), `load_ac` (`jω·dQ/dV`, force branch rows,
@@ -116,15 +130,16 @@ both a package and the workspace) — always pass `--workspace`.
 
 - Ground net → MNA reference; gnd-family names: `gnd/GND/vss/VSS`.
 - PHDL pre-folds param defaults during elaboration; `fn` default parameters are elaboration
-  constants honored by both the interpreter and codegen's fn inliner (`jit/flatten.rs`).
+  constants honored by both the interpreter and codegen's fn inliner (`flatten/analog.rs`).
 
 ## Files not to edit casually
 
 - `crates/piperine-lang/src/parse/` — hand-written recursive-descent parsers; changes
   ripple through all parsing.
-- `crates/piperine-codegen/src/lower/` — the resolved expression/statement form and its
-  symbolic differentiation; codegen-private, but the correctness-critical core.
-- `crates/piperine-codegen/src/jit/analog.rs` — the shared JIT residual/Jacobian skeleton.
+- `crates/piperine-codegen/src/resolve/` — the resolved expression/statement form and its
+  symbolic differentiation; the correctness-critical core.
+- `crates/piperine-codegen/src/emit/analog_expr.rs` — the shared JIT residual/Jacobian skeleton
+  emission (formerly `jit/analog.rs`'s `emit_analog`).
 - `headers/`, `tests/fixtures*` — frozen test corpora.
 
 ## Tests of record
