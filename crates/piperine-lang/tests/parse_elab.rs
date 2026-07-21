@@ -35,6 +35,9 @@ impl Document {
                 Item::FnDecl(f)         => doc.functions.push(f),
                 Item::UseDecl(u)        => doc.uses.push(u),
                 Item::ConstDecl(c)      => doc.consts.push(c),
+                // Grammar only (declared-language-surface Phase 1) — not yet
+                // consumed by this test's flattened `Document` view.
+                Item::ExternDecl(_)     => {}
             }
         }
         doc

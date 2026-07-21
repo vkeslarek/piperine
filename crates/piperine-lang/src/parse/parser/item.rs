@@ -18,12 +18,23 @@ impl Parse for Item {
         }
 
         let _ = fork.eat_ident("pub");
-        let _ = fork.eat_ident("extern");
+        let is_extern = fork.eat_ident("extern");
 
         let ident = match fork.peek() {
             Some(Tok::Ident(s)) => s.as_str(),
             _ => return Err(format!("Unknown top-level item at {:?}", fork.peek()).into()),
         };
+
+        // `extern` items are their own family (SPEC "declared language
+        // surface" P2) — dispatched before the plain-declaration match below
+        // so an `extern fn`/`extern impl`/... never falls into the
+        // plain-declaration parsers.
+        if is_extern {
+            return match ident {
+                "type" => Ok(Item::ExternDecl(super::extern_decl::parse_extern_type(parser)?)),
+                _ => Err(format!("Unknown extern item: `extern {}`", ident).into()),
+            };
+        }
 
         match ident {
             "mod" => Ok(Item::ModuleDeclaration(ModuleDeclaration::parse(parser)?)),
@@ -33,13 +44,7 @@ impl Parse for Item {
             "enum" => Ok(Item::EnumDecl(EnumDecl::parse(parser)?)),
             "capability" => Ok(Item::CapabilityDecl(CapabilityDecl::parse(parser)?)),
             "impl" => Ok(Item::ImplDecl(ImplDecl::parse(parser)?)),
-            "fn" => {
-                // Consume `pub` / `extern` in the real parser, then parse the fn.
-                parser.parse_attributes()?;
-                let is_pub = parser.eat_ident("pub");
-                let is_extern = parser.eat_ident("extern");
-                Ok(Item::FnDecl(FnDecl::parse_with_extern(parser, is_pub, is_extern)?))
-            }
+            "fn" => Ok(Item::FnDecl(FnDecl::parse(parser)?)),
             "const" => Ok(Item::ConstDecl(ConstDecl::parse(parser)?)),
             _ => Err(format!("Unknown top-level item: {}", ident).into()),
         }

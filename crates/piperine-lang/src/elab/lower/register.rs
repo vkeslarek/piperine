@@ -69,6 +69,10 @@ impl Elaborator {
                     self.syms.const_decls.insert(c.name.clone(), c.clone());
                 }
                 Item::UseDecl(_) => {} // already expanded by Resolver
+                // Grammar only for now (declared-language-surface Phase 1:
+                // T1-T6) — registry wiring into TypeRegistry/CallableRegistry/
+                // OperatorRegistry/SchemaRegistry lands in a later phase (T7+).
+                Item::ExternDecl(_) => {}
             }
         }
         Ok(())

@@ -233,3 +233,4 @@ mod fn_decl;
 mod block;
 mod const_decl;
 mod item;
+mod extern_decl;

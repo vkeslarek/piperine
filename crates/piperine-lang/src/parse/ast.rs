@@ -47,6 +47,9 @@ pub enum Item {
     ImplDecl(ImplDecl),
     FnDecl(FnDecl),
     ConstDecl(ConstDecl),
+    /// An `extern` declaration — see [`ExternDecl`]. Signature-only by
+    /// construction (SPEC "declared language surface" P2).
+    ExternDecl(ExternDecl),
 }
 
 impl Item {
@@ -64,6 +67,9 @@ impl Item {
             Item::ImplDecl(i) => i.is_pub,
             Item::FnDecl(f) => f.is_pub,
             Item::ConstDecl(c) => c.is_pub,
+            // `extern` declarations have no `pub` modifier (SPEC P2) — a
+            // header's extern decls are always visible where the header is used.
+            Item::ExternDecl(_) => false,
         }
     }
 
@@ -80,6 +86,41 @@ impl Item {
             Item::CapabilityDecl(c) => Some(&c.name),
             Item::FnDecl(f) => Some(&f.sig.name),
             Item::ConstDecl(c) => Some(&c.name),
+            Item::ExternDecl(e) => Some(e.name()),
+        }
+    }
+}
+
+// ─────────────────────────────── Extern declarations ─────────────────────────
+
+/// An `extern <kind> ...;` declaration — the textual home for a name whose
+/// *implementation* is a native Rust registry entry (math functions, system
+/// tasks, runtime operators, attribute schemas, primitive types, and native
+/// type methods). Every variant is signature-only: giving any `extern`
+/// declaration (or an individual method inside `Impl`) a body is a parse
+/// error (SPEC "declared language surface" P2-AC7).
+///
+/// See `.specs/features/declared-language-surface/spec.md` P2 and
+/// `design.md`'s "Grammar: extern modifier" component.
+#[derive(Debug, Clone)]
+pub enum ExternDecl {
+    /// `extern type Name;` — a primitive value type, no body.
+    Type { span: Option<miette::SourceSpan>, name: String },
+}
+
+impl ExternDecl {
+    /// The `decl_span` covering the whole declaration — the LSP
+    /// go-to-definition target for the declaration itself.
+    pub fn span(&self) -> Option<miette::SourceSpan> {
+        match self {
+            ExternDecl::Type { span, .. } => *span,
+        }
+    }
+
+    /// The declared name (the type name for `extern type`).
+    pub fn name(&self) -> &str {
+        match self {
+            ExternDecl::Type { name, .. } => name,
         }
     }
 }
