@@ -920,6 +920,29 @@ Error Handling Strategy, resolved as a permanent test per Open Design Item #3).
 - [ ] Full gate passes; workspace test count ≥ prior baseline.
 **Tests**: integration · **Gate**: full
 **Commit**: `test(lang): extern coverage regression guard (DLS-25)`
+**Status**: ✅ Complete — commit (this commit). Workspace: 666 passed,
+0 failed, 5 ignored (660 baseline + 6 new in
+`extern_coverage_guard.rs`). Six tests, one per native surface:
+`MATH_FNS` (iterate `math::MATH_FNS`), `TaskRegistry::with_builtins`
+(needed a new `pub fn names(&self)` on `TaskRegistry` for iteration),
+runtime operators (hardcoded contract from spec P4-AC4 — no central
+Rust table; split into `Expr::Call`-shaped 8, `EventSpec::Named`-shaped
+3, and `$limit` declared as `extern task` because the `extern operator`
+grammar can't spell `$`-prefixed names), primitive value types (the 7
+from P4-AC1), `@device`/`@port` schemas (parsed directly from
+`headers/device_port.phdl` via `include_str!` since they're not in
+every project's prelude), and cast target types' `extern impl from`
+blocks. Discrimination sensor verified by hand: temporarily deleting
+`extern fn cos` from `headers/math.phdl` and re-running produces the
+named failure ("MATH_FNS entry `cos` (arity 1) has no matching `extern
+fn cos` declaration...") — sensor kills the mutation; declaration
+restored before commit. Note: headers loaded via `include_str!` are
+embedded at compile time, so a header edit needs a rustc rebuild
+(`touch`ing any src file is enough) for the test to see it — cargo
+*does* track `include_str!` files as dependencies, but the `mv`
+operation used in the discrimination-sensor run reset mtime in a way
+cargo's hash didn't always pick up. Documented here so the next
+investigator doesn't trip on the same diagnostic-vs-source mismatch.
 
 ---
 

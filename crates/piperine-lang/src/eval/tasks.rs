@@ -124,6 +124,15 @@ impl TaskRegistry {
     pub fn lookup(&self, name: &str) -> Option<&dyn Task> {
         self.0.get(name).map(|b| b.as_ref())
     }
+
+    /// Every registered task name — declared-language-surface T27's
+    /// regression guard iterates this to assert each entry has a matching
+    /// `extern task` declaration, so a new task added without a textual
+    /// declaration fails loud (rather than silently becoming "magic"
+    /// again).
+    pub fn names(&self) -> impl Iterator<Item = &'static str> {
+        self.0.keys().copied()
+    }
 }
 
 /// Try the shared pure registry, then the bare-name math catalog
