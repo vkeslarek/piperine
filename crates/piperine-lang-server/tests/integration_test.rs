@@ -231,4 +231,37 @@ fn extern_attribute_use_site_resolves_to_its_decl_span() {
     assert_eq!(decl_span.offset(), decl_start);
 }
 
+/// DLS-16: a name with no declaration anywhere (the P1-AC4 error case)
+/// still returns `None` — today's behavior for undeclared names is
+/// unaffected by T14 wiring the registries into `resolve_at`. Note the
+/// source itself fails to elaborate (an undeclared call is a hard
+/// elaboration error per T11), so `design`/`ctx` on the `DocumentState`
+/// are `None` too — `resolve_at` correctly returns `None` rather than
+/// panicking or fabricating a location.
+#[test]
+fn undeclared_name_use_site_still_returns_no_location() {
+    let src = "mod Top() {}\ndigital Top { NoSuchType::no_such_method(1.0); }";
+    let doc = analyzed(src);
+    assert!(doc.design.is_none(), "a source with an undeclared call must fail to elaborate");
+
+    let use_site = src.rfind("no_such_method").expect("call site must be present");
+    let resolution = doc.resolve_at(use_site);
+    assert!(resolution.is_none(), "an undeclared name must not resolve to any location");
+}
+
+/// DLS-16 (companion case): even when the *rest* of the document elaborates
+/// fine, a position that isn't an identifier at all resolves to nothing —
+/// T14's new registry arms don't turn every byte offset into a resolvable
+/// symbol, only real identifier use sites.
+#[test]
+fn non_identifier_position_returns_no_location() {
+    let src = "mod Top() {}\ndigital Top { var y: Real = 1.0; }";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let bogus_offset = src.rfind("1.0").expect("literal must be present");
+    let resolution = doc.resolve_at(bogus_offset);
+    assert!(resolution.is_none(), "a numeric literal is not a resolvable symbol");
+}
+
 
