@@ -118,6 +118,13 @@ impl<'a> Resolver<'a> {
             items.extend(source.items);
         }
 
+        // `tasks` (declared-language-surface DLS-19) — system tasks
+        // (`$display`, `$temperature`, …), same embedding rationale as
+        // `types`/`math` above (called from any analog/digital body).
+        if let Ok(source) = parse_str(include_str!("../headers/tasks.phdl")) {
+            items.extend(source.items);
+        }
+
         // Load the standard library built-ins dynamically if they resolve.
         // We ignore errors so that a bare-bones SourceMap doesn't panic.
         let cap_key = vec!["piperine".to_string(), "capabilities".to_string()];

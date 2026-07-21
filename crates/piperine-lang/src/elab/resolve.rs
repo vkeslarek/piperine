@@ -50,12 +50,16 @@ fn resolve_calls_in_stmt(
 ) -> Result<(), ElabError> {
     // First resolve any BehaviorStmt-specific logic (Diagnostic validation),
     // then delegate expression traversal to walk_exprs_mut + resolve_calls_in_expr.
+    //
+    // Diagnostic-statement validity (declared-language-surface T20,
+    // DLS-19) now comes from the same `CallableRegistry` every other
+    // system task resolves through — the former hardcoded
+    // `valid_diagnostics` array (a second, disconnected source for the
+    // same category, flagged in design.md) is gone; a name is valid iff
+    // `headers/tasks.phdl` declares a matching `extern task $name`.
     if let BehaviorStmt::Diagnostic { sys, .. } = stmt {
-        let valid_diagnostics = [
-            "write", "strobe", "display", "info", "warning", "error", "fatal",
-            "bound_step", "finish", "stop", "discontinuity"
-        ];
-        if !valid_diagnostics.contains(&sys.as_str()) {
+        let task_name = format!("${sys}");
+        if ctx.callables.candidates(&task_name).is_empty() {
             return Err(ElabError::from(ElabErrorKind::Other(format!(
                 "Unrecognized diagnostic call `{}` in module `{}`",
                 sys, module_name

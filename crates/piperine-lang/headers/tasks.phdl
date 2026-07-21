@@ -1,0 +1,39 @@
+// declared-language-surface P4 sub-phase (DLS-19) — system tasks
+// ($name(args)), textually declared so ctrl+click on `$display`/
+// `$temperature`/etc. resolves to a real declaration instead of two
+// disconnected hardcoded Rust lists (`eval/tasks.rs`'s `TaskRegistry` and
+// `elab/resolve.rs`'s former `valid_diagnostics` array — both collapse
+// into this one textual source; `eval/tasks.rs`'s `Task` impls stay as
+// the implementation backing, unchanged).
+
+// `eval/tasks.rs`'s `TaskRegistry::with_builtins()` set — reachable from
+// pure fn/method bodies via the const-eval interpreter.
+extern task $assert(cond: Boolean, msg: String) -> Unit;
+extern task $display() -> Unit;
+extern task $info() -> Unit;
+extern task $warn() -> Unit;
+extern task $error() -> Unit;
+extern task $fatal() -> Unit;
+
+// The diagnostic-statement family (`elab/resolve.rs`'s former
+// `valid_diagnostics` array) — used inside `analog`/`digital` behavior
+// bodies. `$display`/`$info`/`$error`/`$fatal` are shared with the set
+// above; `$warning` (behavior-body form) is a distinct name from
+// `$warn` (pure-context form) — both are real, pre-existing names, not
+// merged into one spelling (SPEC "zero behavior change").
+extern task $write() -> Unit;
+extern task $strobe() -> Unit;
+extern task $warning() -> Unit;
+extern task $bound_step(step: Real) -> Unit;
+extern task $finish() -> Unit;
+extern task $stop() -> Unit;
+extern task $discontinuity() -> Unit;
+
+// Value-returning analog-context system tasks (codegen-resolved today —
+// `piperine-codegen/src/emit/analog_expr.rs`; declared here for their
+// name/arity/type textual home, per DLS-19's "codegen analog-context
+// tasks" scope — codegen's own resolution is untouched).
+extern task $temperature() -> Real;
+extern task $simparam(name: String) -> Real;
+extern task $abstime() -> Real;
+extern task $mfactor() -> Real;
