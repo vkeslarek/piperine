@@ -144,7 +144,25 @@ impl PluginHost {
                 }
             };
             let extern_stub = Self::load_extern_stub(&manifest.name, plugin_root)?;
-            host.register_one(&manifest.name.clone(), instance, manifest, extern_stub)?;
+            let plugin_name = manifest.name.clone();
+            let has_stub = extern_stub.is_some();
+            host.register_one(&plugin_name, instance, manifest, extern_stub)?;
+            // T25 (DLS-22): a plugin that contributes an attribute schema
+            // but publishes no stub fails loud here — never silently kept
+            // reachable through the old dynamic-registration path (spec
+            // Edge Cases). `from_plugins` (in-process/test plugins) is
+            // deliberately exempt — see `LoadedPlugin::extern_stub`'s doc.
+            if !has_stub {
+                if let Some((schema, _)) =
+                    host.contributions.schemas.iter().find(|(_, (owner, _))| owner == &plugin_name)
+                {
+                    return Err(PluginError::MissingExternStub {
+                        plugin: plugin_name.clone(),
+                        schema: schema.clone(),
+                        expected_path: plugin_root.join("extern.phdl").display().to_string(),
+                    });
+                }
+            }
         }
         host.sort();
         Ok(host)
@@ -299,18 +317,24 @@ impl PluginHost {
         )) {
             Self::register_attribute_items(ctx, &source.items);
         }
-        // Each loaded plugin's own published `extern.phdl` stub (T24,
-        // DLS-22 groundwork) — auto-imported, no explicit `use` required
-        // (mirrors `headers/spice/`'s availability). Ctrl+click on a
-        // stub-declared `@name(...)` resolves to the stub's own
-        // `decl_span`, exactly like any other `extern attribute`.
+        // Each loaded plugin's own published `extern.phdl` stub (T24/T25,
+        // DLS-22) — auto-imported, no explicit `use` required (mirrors
+        // `headers/spice/`'s availability). Ctrl+click on a stub-declared
+        // `@name(...)` resolves to the stub's own `decl_span`, exactly like
+        // any other `extern attribute`. This is now the **only** path a
+        // plugin-contributed schema is reachable through: the old dynamic
+        // `register_declared(name, fields_from_registrar, None)` fallback
+        // is gone (T25) — `load_for_project` already refuses to load a
+        // plugin that contributes a schema (`Registrar::attr_schema`) with
+        // no published stub (`PluginError::MissingExternStub`), so by the
+        // time a `PluginHost` exists, every `contributions.schemas` entry
+        // either came from a `from_plugins`-loaded (in-process/test)
+        // plugin that never elaborates real PHDL against it, or has a
+        // stub already imported here.
         for loaded in &self.plugins {
             if let Some(items) = &loaded.extern_stub {
                 Self::register_attribute_items(ctx, items);
             }
-        }
-        for (name, (_owner, fields)) in &self.contributions.schemas {
-            ctx.schemas.register_declared(name, fields.clone(), None);
         }
     }
 

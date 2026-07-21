@@ -30,6 +30,13 @@ tempfile.workspace = true
 name = "fixture_plugin"
 crate-type = ["cdylib", "rlib"]
 
+# T25 (DLS-22) fixture: a plugin contributing its own custom attribute
+# schema (`widget_meta`), separate from `fixture_plugin` so its stub
+# requirement doesn't affect the stub-less fixture's own tests.
+[[example]]
+name = "fixture_schema_plugin"
+crate-type = ["cdylib", "rlib"]
+
 # The process-tier gate guest (rc-parasitics served over stdio JSON-RPC via
 # piperine_lang::pom::wire::serve_stdio): `cargo build --example
 # process_parasitics` produces the executable the process backend spawns.
