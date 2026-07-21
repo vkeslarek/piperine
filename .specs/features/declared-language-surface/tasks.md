@@ -257,11 +257,12 @@ signature-only with its own `decl_span`; the block itself carries a
 **Requirement**: DLS-01 (groundwork)
 **Tools**: MCP: NONE · Skill: NONE
 **Done when**:
-- [ ] An `extern type` item registers into `TypeRegistry` with its `decl_span`.
-- [ ] Duplicate `extern type`/plain-type same-name is a duplicate-declaration error.
-- [ ] Quick gate passes.
+- [x] An `extern type` item registers into `TypeRegistry` with its `decl_span`.
+- [x] Duplicate `extern type`/plain-type same-name is a duplicate-declaration error.
+- [x] Quick gate passes.
 **Tests**: unit · **Gate**: quick
 **Commit**: `feat(lang): TypeRegistry extern variant (DLS-01 groundwork)`
+**Status**: ✅ Complete — commit `8c81ef2`
 
 ---
 
@@ -277,14 +278,15 @@ risk mitigation — lands before any grammar/registry integration depends on it)
 **Requirement**: DLS-06
 **Tools**: MCP: NONE · Skill: NONE
 **Done when**:
-- [ ] `CallableRegistry::register` appends to a `Vec` per name; existing
+- [x] `CallableRegistry::register` appends to a `Vec` per name; existing
       single-`fn`-per-name callers (today's only path) behave identically
       (a `Vec` of length 1 resolves exactly as the old single value did).
-- [ ] `validate_call` performs full param-type matching against a candidate's
+- [x] `validate_call` performs full param-type matching against a candidate's
       declared signature.
-- [ ] Quick gate passes; existing `piperine-lang` suite (184 baseline) unchanged.
+- [x] Quick gate passes; existing `piperine-lang` suite (184 baseline) unchanged.
 **Tests**: unit · **Gate**: quick
 **Commit**: `refactor(lang): CallableRegistry overload-aware storage (DLS-06)`
+**Status**: ✅ Complete — commit `1a018a9`
 
 ---
 
@@ -297,14 +299,15 @@ risk mitigation — lands before any grammar/registry integration depends on it)
 **Requirement**: DLS-07
 **Tools**: MCP: NONE · Skill: NONE
 **Done when**:
-- [ ] 1-candidate resolves normally.
-- [ ] N-candidate-disjoint-types resolves the matching one by arg type.
-- [ ] 0-match fails loud naming the call site and every candidate signature tried.
-- [ ] Ambiguous-match (two structurally identical signatures — defensive path)
+- [x] 1-candidate resolves normally.
+- [x] N-candidate-disjoint-types resolves the matching one by arg type.
+- [x] 0-match fails loud naming the call site and every candidate signature tried.
+- [x] Ambiguous-match (two structurally identical signatures — defensive path)
       fails loud naming every matching candidate.
-- [ ] Quick gate passes.
+- [x] Quick gate passes.
 **Tests**: unit · **Gate**: quick
 **Commit**: `feat(lang): overload resolution algorithm + fixture tests (DLS-07)`
+**Status**: ✅ Complete — commit `f53f4f2`
 
 ---
 
@@ -322,14 +325,15 @@ impl-method table, also overload-aware, both living in `ElabContext`.
 **Requirement**: DLS-01 (groundwork), DLS-13/14 (impl-method table home)
 **Tools**: MCP: NONE · Skill: NONE
 **Done when**:
-- [ ] `OperatorRegistry::register`/`resolve` work identically to
+- [x] `OperatorRegistry::register`/`resolve` work identically to
       `CallableRegistry`'s overload path (shared algorithm, different map).
-- [ ] Impl-method table keyed by `(type_name, method_name)` resolves
+- [x] Impl-method table keyed by `(type_name, method_name)` resolves
       correctly, including overloaded methods on the same type.
-- [ ] `SchemaRegistry`'s `AttrField`s carry `decl_span`.
-- [ ] Quick gate passes.
+- [x] `SchemaRegistry`'s `AttrField`s carry `decl_span`.
+- [x] Quick gate passes.
 **Tests**: unit · **Gate**: quick
 **Commit**: `feat(lang): OperatorRegistry + extern impl method table (DLS-01,13,14)`
+**Status**: ✅ Complete — commit `e8aa80d`
 
 ---
 
@@ -346,17 +350,24 @@ codegen's operator match without passing through this.
 **Requirement**: DLS-02, DLS-03, DLS-04
 **Tools**: MCP: NONE · Skill: NONE
 **Done when**:
-- [ ] A plain-declaration call resolves exactly as before this task (no
+- [x] A plain-declaration call resolves exactly as before this task (no
       behavior change — DLS-02).
-- [ ] An `extern`-declared call dispatches with signature validated against
+- [x] An `extern`-declared call dispatches with signature validated against
       the `extern` decl (DLS-03).
-- [ ] A call to a name with no declaration anywhere fails loud, naming the
+- [x] A call to a name with no declaration anywhere fails loud, naming the
       identifier and use site (DLS-04).
-- [ ] Full gate passes — **enforcement is not yet flipped for any category**
+- [x] Full gate passes — **enforcement is not yet flipped for any category**
       (no `extern` declarations exist yet outside test fixtures), so this
       task's own tests use small synthetic PHDL, not the stdlib.
 **Tests**: unit · **Gate**: full
 **Commit**: `feat(lang): declared-first fail-loud call resolution (DLS-02,03,04)`
+**Status**: ✅ Complete — commit `3b7f289`. Scope note: bare-identifier
+calls with no `CallableRegistry` entry are left untouched (deferred to each
+P4 sub-phase per design.md's per-category progressive enforcement); DLS-04
+is proven via `Type::method(...)` (`Expr::Path`) calls, a currently-unused
+production surface, so the fail-loud rule is 100% safe and immediately
+enforced there. Also wired `extern fn/task/operator/attribute/impl`
+registration (`elab/lower/register.rs`), a Phase 2 gap this task depended on.
 
 ---
 
@@ -371,11 +382,15 @@ attribute-resolution call sites
 **Requirement**: DLS-01, DLS-04 (extended to types/attributes)
 **Tools**: MCP: NONE · Skill: NONE
 **Done when**:
-- [ ] An undeclared type name fails loud, naming it and the use site.
-- [ ] An undeclared `@attr` schema name fails loud identically.
-- [ ] Full gate passes with the same "not yet globally enforced" caveat as T11.
+- [x] An undeclared type name fails loud, naming it and the use site.
+- [x] An undeclared `@attr` schema name fails loud identically.
+- [x] Full gate passes with the same "not yet globally enforced" caveat as T11.
 **Tests**: unit · **Gate**: full
 **Commit**: `feat(lang): declared-first fail-loud type/attribute resolution (DLS-01,04)`
+**Status**: ✅ Complete — commit `8915255`. Both lookup paths already were
+declared-first/fail-loud before this task (no Rust-side fallback existed);
+work was completing `extern attribute` registration (done alongside T11)
+and adding the previously-nonexistent `UnknownAttrSchema` test coverage.
 
 ---
 
@@ -390,12 +405,17 @@ implementation entry, fail loud with a message distinct from T11/T12's
 **Requirement**: DLS-05
 **Tools**: MCP: NONE · Skill: NONE
 **Done when**:
-- [ ] A synthetic `extern fn` with no backing Rust table entry fails loud
+- [x] A synthetic `extern fn` with no backing Rust table entry fails loud
       with a message distinguishable from the "undeclared" error (different
       `ElabErrorKind` variant or clearly distinct text, asserted in the test).
-- [ ] Quick gate passes.
+- [x] Quick gate passes.
 **Tests**: unit · **Gate**: quick
 **Commit**: `feat(lang): distinct fail-loud for extern w/ missing native binding (DLS-05)`
+**Status**: ✅ Complete — commit `8c343ae` (test only; the
+`ElabErrorKind::ExternMissingBinding` mechanism itself landed with T11's
+commit `3b7f289`, since it's the natural consequence of extern candidates
+entering the T11 lookup chain — this task's own contribution is the
+dedicated proof asserting on the distinct variant).
 
 ---
 
@@ -411,11 +431,18 @@ needs zero changes (confirmed in design.md)
 **Requirement**: DLS-15
 **Tools**: MCP: NONE · Skill: NONE
 **Done when**:
-- [ ] A use site of a name resolved via any of the 5 registries returns a
+- [x] A use site of a name resolved via any of the 5 registries returns a
       `Resolution` with the correct `decl_span`.
-- [ ] LSP gate passes (baseline 10 tests, must not drop).
+- [x] LSP gate passes (baseline 10 tests, must not drop).
 **Tests**: integration · **Gate**: LSP
 **Commit**: `feat(lang-server): symbol_index resolves extern declarations (DLS-15)`
+**Status**: ✅ Complete — commit `74d504e`. Required plumbing beyond the
+listed file: `SourceFile::elaborate_with_context` (new, `piperine-lang`)
+since `Design` alone carries no registry state; `DocumentState` now keeps
+the returned `ElabContext`; `SchemaRegistry` gained a schema-name-level
+`decl_span` (previously field-level only); `ImplMethodTable` gained
+`find_by_method_name`. LSP suite: 11 tests (baseline 10 + 1 net after the
+T15 split), zero dropped.
 
 ---
 
@@ -430,10 +457,15 @@ still correctly returns no location (unchanged `None` behavior).
 **Requirement**: DLS-16
 **Tools**: MCP: NONE · Skill: NONE
 **Done when**:
-- [ ] Test asserts `None` for a use site of a name with zero declaration.
-- [ ] LSP gate passes.
+- [x] Test asserts `None` for a use site of a name with zero declaration.
+- [x] LSP gate passes.
 **Tests**: integration · **Gate**: LSP
 **Commit**: `test(lang-server): undeclared name still returns no goto-def location (DLS-16)`
+**Status**: ✅ Complete — commit `8acd259`. Used `DocumentState` directly
+(the real `analyze()`/`resolve_at()` path) rather than the legacy
+`find_definition` test helper, which is unused elsewhere and stayed
+untouched (still takes no `ElabContext`, per design.md's "goto_def.rs
+needs zero changes").
 
 ---
 
