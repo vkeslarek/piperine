@@ -9,6 +9,7 @@
 //!   builds a ready-to-simulate `CircuitInstance`.
 
 mod analog;
+mod builder;
 mod circuit;
 mod digital;
 mod provider;
