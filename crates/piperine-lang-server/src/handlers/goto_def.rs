@@ -36,7 +36,7 @@ pub fn find_definition(
     let design = design?;
     // Fallback for tests: find the word using basic string search since we don't have byte offset
     let pos = source.find(word)?;
-    let resolution = crate::symbol_index::resolve_at(design, source, pos)?;
+    let resolution = crate::symbol_index::resolve_at(design, source, pos, None)?;
     let decl_span = resolution.decl_span?;
     Some(crate::text_pos::byte_range(source, decl_span.offset(), decl_span.offset() + decl_span.len()))
 }

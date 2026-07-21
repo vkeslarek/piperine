@@ -45,6 +45,20 @@ impl ImplMethodTable {
             .unwrap_or(&[])
     }
 
+    /// The first registered candidate for `method_name` on *any* type — a
+    /// best-effort, scope-free lookup for LSP indexing (T14), where a
+    /// hover/goto-def request only has the bare method-name token, not
+    /// which `Type::method` path it came from (mirrors the same
+    /// name-only, first-match style already used for `impl` methods
+    /// elsewhere in `symbol_index::resolve_at`).
+    pub fn find_by_method_name(&self, method_name: &str) -> Option<&dyn CallableDef> {
+        self.methods
+            .iter()
+            .find(|((_, m), _)| m == method_name)
+            .and_then(|(_, v)| v.first())
+            .map(|c| c.as_ref())
+    }
+
     /// Overload resolution — identical algorithm to
     /// `CallableRegistry::resolve` (SPEC DLS-07), applied to a single type's
     /// method namespace.

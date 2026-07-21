@@ -115,7 +115,7 @@ impl Elaborator {
                 // attrs.rs`) already fails loud (`UnknownAttrSchema`) for
                 // any name not registered here, so this wiring alone closes
                 // DLS-04 for the attribute-schema category.
-                Item::ExternDecl(crate::parse::ast::ExternDecl::Attribute { name, fields, .. }) => {
+                Item::ExternDecl(crate::parse::ast::ExternDecl::Attribute { span, name, fields }) => {
                     let attr_fields = fields
                         .iter()
                         .map(|f| crate::elab::registry::AttrField {
@@ -126,7 +126,7 @@ impl Elaborator {
                             decl_span: f.span,
                         })
                         .collect();
-                    self.ctx.schemas.register_declared(name, attr_fields);
+                    self.ctx.schemas.register_declared(name, attr_fields, *span);
                 }
                 // `extern impl TypeName { fn method(...) -> Ret; ... }`
                 // registers each method into the impl-method table (T10),

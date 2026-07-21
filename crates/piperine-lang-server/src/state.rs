@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use lsp_types::Uri;
 
+use piperine_lang::elab::registry::ElabContext;
 use piperine_lang::Design;
 
 /// Holds the current state of each open document.
@@ -18,6 +19,11 @@ pub struct DocumentState {
     pub version: i32,
     /// The elaborated design, if parsing succeeded.
     pub design: Option<Design>,
+    /// The `ElabContext` registries populated alongside `design` — carries
+    /// every `extern`-declared type/fn/task/operator/attribute-schema/impl
+    /// method's `decl_span` (declared-language-surface T14). `None` until
+    /// the first successful `analyze()`, same lifecycle as `design`.
+    pub ctx: Option<ElabContext>,
     /// The raw parsed AST.
     pub ast: Option<piperine_lang::parse::ast::SourceFile>,
     /// Parse/elaboration error messages if any.
@@ -53,7 +59,7 @@ impl Default for ServerState {
 impl DocumentState {
     /// A fresh document holding `source` at `version`, not yet analyzed.
     pub fn new(source: String, version: i32) -> Self {
-        Self { source, version, design: None, ast: None, errors: Vec::new() }
+        Self { source, version, design: None, ctx: None, ast: None, errors: Vec::new() }
     }
 
     /// Run the full lexer+parser+elaborator pipeline over the current
@@ -71,25 +77,28 @@ impl DocumentState {
             self.errors.push(ParseError { message: e.to_string(), span: e.span() });
         }
 
-        match source_file.clone().elaborate(source_map) {
-            Ok(d) => {
-                // Update to the new valid design.
+        match source_file.clone().elaborate_with_context(source_map) {
+            Ok((d, ctx)) => {
+                // Update to the new valid design (+ its registries).
                 self.design = Some(d);
+                self.ctx = Some(ctx);
             }
             Err(e) => {
                 // Record the error but keep the previous design alive so
                 // language features (hover, go-to-def, outline) keep working.
                 self.errors.push(ParseError { message: e.to_string(), span: e.span });
-                // `self.design` intentionally left unchanged (stale-but-valid).
+                // `self.design`/`self.ctx` intentionally left unchanged
+                // (stale-but-valid).
             }
         };
         self.ast = Some(source_file);
     }
 
     /// Resolve the identifier at `byte_offset` against the elaborated
-    /// design (None when the document has no design or no symbol matches).
+    /// design and its registries (None when the document has no design or
+    /// no symbol matches).
     pub fn resolve_at(&self, byte_offset: usize) -> Option<crate::symbol_index::Resolution> {
-        crate::symbol_index::resolve_at(self.design.as_ref()?, &self.source, byte_offset)
+        crate::symbol_index::resolve_at(self.design.as_ref()?, &self.source, byte_offset, self.ctx.as_ref())
     }
 
     /// Byte ranges of every whole-word occurrence of `word` in the source.

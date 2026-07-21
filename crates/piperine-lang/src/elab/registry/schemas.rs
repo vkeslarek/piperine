@@ -41,11 +41,19 @@ pub enum SchemaShape {
 /// against.
 pub struct SchemaRegistry {
     schemas: HashMap<String, SchemaShape>,
+    /// The declaration span of the schema *name* itself (as opposed to
+    /// `AttrField::decl_span`, one per field) — populated only for
+    /// `extern attribute` declarations (declared-language-surface T14),
+    /// so `@name(...)` itself (not just its fields) is goto-def-able.
+    /// `None` for bundle-backed schemas (their span is the bundle's own,
+    /// already resolved via `design.bundles()`) and host/plugin-registered
+    /// schemas with no textual source.
+    decl_spans: HashMap<String, miette::SourceSpan>,
 }
 
 impl SchemaRegistry {
     pub fn new() -> Self {
-        Self { schemas: HashMap::new() }
+        Self { schemas: HashMap::new(), decl_spans: HashMap::new() }
     }
 
     /// Register a schema name backed by the named bundle's fields.
@@ -53,9 +61,15 @@ impl SchemaRegistry {
         self.schemas.insert(schema_name.to_string(), SchemaShape::Bundle(bundle_name.to_string()));
     }
 
-    /// Register a schema name with directly-declared fields (host/plugins).
-    pub fn register_declared(&mut self, schema_name: &str, fields: Vec<AttrField>) {
+    /// Register a schema name with directly-declared fields (host/plugins),
+    /// optionally with the declaration's own `decl_span` (populated for
+    /// `extern attribute`; `None` for host/plugin-registered schemas with
+    /// no textual source, e.g. the built-in `@rfport`).
+    pub fn register_declared(&mut self, schema_name: &str, fields: Vec<AttrField>, decl_span: Option<miette::SourceSpan>) {
         self.schemas.insert(schema_name.to_string(), SchemaShape::Declared(fields));
+        if let Some(span) = decl_span {
+            self.decl_spans.insert(schema_name.to_string(), span);
+        }
     }
 
     /// The shape backing a schema, if registered.
@@ -74,6 +88,11 @@ impl SchemaRegistry {
             Some(SchemaShape::Bundle(b)) => Some(b.as_str()),
             _ => None,
         }
+    }
+
+    /// The schema name's own `decl_span`, when known (T14 — LSP indexing).
+    pub fn decl_span(&self, schema_name: &str) -> Option<miette::SourceSpan> {
+        self.decl_spans.get(schema_name).copied()
     }
 }
 

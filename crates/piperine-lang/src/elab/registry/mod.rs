@@ -73,6 +73,7 @@ impl ElabContext {
                     decl_span: None,
                 },
             ],
+            None,
         );
 
         Self {

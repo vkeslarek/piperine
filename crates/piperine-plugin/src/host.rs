@@ -265,10 +265,10 @@ impl PluginHost {
             default: None,
             decl_span: None,
         };
-        ctx.schemas.register_declared("device", vec![req("plugin", "String"), req("type", "String")]);
-        ctx.schemas.register_declared("port", vec![req("name", "String"), opt("kind", "String")]);
+        ctx.schemas.register_declared("device", vec![req("plugin", "String"), req("type", "String")], None);
+        ctx.schemas.register_declared("port", vec![req("name", "String"), opt("kind", "String")], None);
         for (name, (_owner, fields)) in &self.contributions.schemas {
-            ctx.schemas.register_declared(name, fields.clone());
+            ctx.schemas.register_declared(name, fields.clone(), None);
         }
     }
 }

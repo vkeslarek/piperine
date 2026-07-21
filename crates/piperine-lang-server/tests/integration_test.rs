@@ -133,3 +133,102 @@ fn test_e2e_lsp_server_memory_connection() {
     })).unwrap();
 }
 
+// ── declared-language-surface T14/T15: symbol_index resolves extern decls ──
+
+use piperine_lang_server::state::DocumentState;
+use piperine_lang_server::symbol_index::SymbolKind;
+
+fn analyzed(source: &str) -> DocumentState {
+    let mut doc = DocumentState::new(source.to_string(), 1);
+    doc.analyze(&piperine_lang::SourceMap::dummy());
+    doc
+}
+
+/// DLS-15: an `extern fn` use site resolves to a `Resolution` pointing at
+/// the `extern fn` declaration's own `decl_span` — the same
+/// `Resolution.decl_span` shape `goto_def.rs` already forwards for every
+/// ordinary declaration (module/param/wire/…), no special-casing needed.
+#[test]
+fn extern_fn_use_site_resolves_to_its_decl_span() {
+    let src = "extern fn sin(x: Real) -> Real;\nmod Top() {}\ndigital Top { var y: Real = sin(1.0); }";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let call_site = src.rfind("sin(1.0)").expect("call site must be present");
+    let resolution = doc.resolve_at(call_site).expect("sin(...) use site must resolve");
+
+    assert_eq!(resolution.kind, SymbolKind::Function);
+    let decl_span = resolution.decl_span.expect("extern fn must carry a decl_span");
+    let decl_start = src.find("extern fn sin").expect("declaration must be present");
+    assert_eq!(decl_span.offset(), decl_start, "decl_span must point at the extern fn declaration, not the call site");
+}
+
+/// DLS-15: an `extern type` use site (the type name itself) resolves to the
+/// `extern type` declaration's `decl_span`.
+#[test]
+fn extern_type_use_site_resolves_to_its_decl_span() {
+    let src = "extern type Widget;\nextern impl Widget { fn make(x: Real) -> Widget; }\nmod Top() {}\ndigital Top { Widget::make(1.0); }";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let use_site = src.rfind("Widget::make").expect("call site must be present");
+    let resolution = doc.resolve_at(use_site).expect("`Widget` in `Widget::make(...)` must resolve");
+
+    assert_eq!(resolution.kind, SymbolKind::Type);
+    let decl_span = resolution.decl_span.expect("extern type must carry a decl_span");
+    let decl_start = src.find("extern type Widget").expect("declaration must be present");
+    assert_eq!(decl_span.offset(), decl_start);
+}
+
+/// DLS-15: a `Type::method(...)` use site (the method name) resolves to
+/// the `extern impl` method's own `decl_span`, distinct from the block's
+/// own span.
+#[test]
+fn extern_impl_method_use_site_resolves_to_its_own_decl_span() {
+    let src = "extern type Widget;\nextern impl Widget { fn make(x: Real) -> Widget; }\nmod Top() {}\ndigital Top { Widget::make(1.0); }";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let use_site = src.rfind("make(1.0)").expect("call site must be present");
+    let resolution = doc.resolve_at(use_site).expect("`make` in `Widget::make(...)` must resolve");
+
+    assert_eq!(resolution.kind, SymbolKind::Function);
+    let decl_span = resolution.decl_span.expect("extern impl method must carry a decl_span");
+    let method_decl_start = src.find("fn make").expect("method declaration must be present");
+    assert_eq!(decl_span.offset(), method_decl_start);
+}
+
+/// DLS-15: an `extern operator` use site resolves to its own `decl_span`.
+#[test]
+fn extern_operator_use_site_resolves_to_its_decl_span() {
+    let src = "extern operator ddt(x: Real) -> Real;\nmod Top() {}\ndigital Top { var y: Real = ddt(1.0); }";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let use_site = src.rfind("ddt(1.0)").expect("call site must be present");
+    let resolution = doc.resolve_at(use_site).expect("`ddt` use site must resolve");
+
+    assert_eq!(resolution.kind, SymbolKind::Operator);
+    let decl_span = resolution.decl_span.expect("extern operator must carry a decl_span");
+    let decl_start = src.find("extern operator ddt").expect("declaration must be present");
+    assert_eq!(decl_span.offset(), decl_start);
+}
+
+/// DLS-15: an `extern attribute` schema name's use site (`@name(...)`)
+/// resolves to the schema declaration's own `decl_span`.
+#[test]
+fn extern_attribute_use_site_resolves_to_its_decl_span() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\nextern attribute widget_meta { rating: Real }\nmod Top ( inout p : Electrical ) { @widget_meta(rating = 4.5) wire w : Electrical; }";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let use_site = src.rfind("widget_meta(rating").expect("use site must be present");
+    let resolution = doc.resolve_at(use_site).expect("`@widget_meta` use site must resolve");
+
+    assert_eq!(resolution.kind, SymbolKind::AttrSchema);
+    let decl_span = resolution.decl_span.expect("extern attribute must carry a decl_span");
+    let decl_start = src.find("extern attribute widget_meta").expect("declaration must be present");
+    assert_eq!(decl_span.offset(), decl_start);
+}
+
+
