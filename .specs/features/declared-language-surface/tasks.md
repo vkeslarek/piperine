@@ -483,11 +483,18 @@ for the type category** (T12's rule now has real declarations to find).
 **Requirement**: DLS-17
 **Tools**: MCP: NONE · Skill: NONE
 **Done when**:
-- [ ] The 7 primitives resolve via parsed `extern type` decls, not the
+- [x] The 7 primitives resolve via parsed `extern type` decls, not the
       hardcoded list (grep-verified `prims` removed).
-- [ ] Full gate passes; workspace test count ≥ 582 (baseline), same suite green.
+- [x] Full gate passes; workspace test count ≥ 582 (baseline), same suite green.
 **Tests**: regression (existing suite) · **Gate**: full
 **Commit**: `feat(lang): migrate primitive types to extern type headers (DLS-17)`
+**Status**: ✅ Complete — commit `0e7b0ea`. Deviation: `headers/types.phdl`
+is loaded via `include_str!` (compile-time embed), not the on-disk
+`SourceMap`-relative `load_source` path the other prelude headers use —
+the relative-path lookup is cwd-dependent and broke `tests/disto.rs`
+(cwd = repo root, no `headers/` there); the 7 primitives are load-bearing
+everywhere, unlike optional stdlib sugar, so they can't depend on a
+resolvable cwd.
 
 ---
 
@@ -503,12 +510,30 @@ cast rewrite entirely (not migrated — removed, per spec P4-AC7).
 **Requirement**: DLS-23
 **Tools**: MCP: NONE · Skill: NONE
 **Done when**:
-- [ ] `real(x)`-shaped rewrite in `resolve.rs` is gone (grep-verified).
-- [ ] `Real::from(x)` (and siblings for other primitives) resolves via
+- [x] `real(x)`-shaped rewrite in `resolve.rs` is gone (grep-verified).
+- [x] `Real::from(x)` (and siblings for other primitives) resolves via
       overload by argument type.
-- [ ] Quick gate passes on `piperine-lang` alone (call-site migration is T18).
+- [x] Quick gate passes on `piperine-lang` alone (call-site migration is T18).
 **Tests**: unit · **Gate**: quick
 **Commit**: `feat(lang): extern impl cast functions; delete bare-cast special case (DLS-23)`
+**Status**: ✅ Complete — commit `374e7ee`. Declared 4 target types (Real,
+Integer, Quad, Boolean — "bit"/"Quad" both targeted `ValueType::Quad`
+before, collapsed into one block), each with `from` overloads for the
+other primitives (Natural included). Fixed a real latent gap in
+`elab/resolve.rs`'s argument-type inference (was literal-only) by
+threading `Behavior::var_types` into overload/signature resolution —
+needed for `Real::from(x)` where `x` is a local var, and for T18/T19's
+real (non-literal) call sites. New tests:
+`crates/piperine-lang/tests/cast_impl_methods.rs` (8 tests). Known finding
+(not acted on, out of T17's scope): a bare `real(x)`-shaped call no longer
+carries special meaning, but since "real" has zero declared candidates it
+also isn't yet rejected by elaboration (falls into the pre-existing
+"undeclared bare-identifier call left untouched" bucket, per T11's
+documented per-category progressive-enforcement scope) — AC7's "SHALL be
+rejected" is satisfied at the syntax/mechanism level (no compiler-special
+meaning, `Type::from(x)` is the sanctioned form) but a stray bare `real(x)`
+is not yet a piperine-lang-level error; full undeclared-bare-call
+enforcement was never assigned to any T16–T21 task.
 
 ---
 
@@ -525,12 +550,21 @@ calls to `Real::from(x)`/`Bit::from(x)`-shaped calls (enumerated in
 **Requirement**: DLS-23 (completion)
 **Tools**: MCP: NONE · Skill: NONE
 **Done when**:
-- [ ] `rg 'real\(|int\(|bit\(|Boolean\(|Quad\('` over `headers/`, `tests/`,
-      `examples/` finds zero PHDL bare-call-cast sites.
-- [ ] Full gate passes; workspace test count ≥ prior baseline, same suite green.
+- [x] `rg 'real\(|int\(|bit\(|Boolean\(|Quad\('` over `headers/`, `tests/`,
+      `examples/` finds zero PHDL bare-call-cast sites (semantically —
+      see Status below for a raw-grep caveat).
+- [x] Full gate passes; workspace test count ≥ prior baseline, same suite green.
 **Tests**: regression (existing suite, updated in place — not new assertions,
 per spec's "zero behavior change") · **Gate**: full
 **Commit**: `test: migrate bare-cast call sites to Type::from (DLS-23)`
+**Status**: ✅ Complete — commit `a76c4f2`. Workspace: 644 passed, 0 failed
+(636 baseline + 8 from T17). Finding: 2 of context.md's 4 enumerated sites
+(`analog_jit.rs`, `digital_fusion.rs`) are false positives — Rust-level IR
+test-fixture helper functions (`fn real(v: f64) -> IrExpr`, a `bit`
+closure), not PHDL source; a raw textual `rg` over those two `.rs` files
+still matches (their Rust identifiers happen to spell `real(`/`bit(`), but
+neither contains PHDL bare-cast syntax — confirmed by full-file read, not
+left to grep. Only `type_casts.rs` and `sar_adc.phdl` needed edits.
 
 ---
 
@@ -546,12 +580,23 @@ math.phdl`); flip fail-loud enforcement for math-function calls.
 **Requirement**: DLS-18
 **Tools**: MCP: NONE · Skill: NONE
 **Done when**:
-- [ ] Every `MATH_FNS` entry has a matching `extern fn` declaration.
-- [ ] `sin(x)` (etc.) in PHDL resolves via the declaration, dispatches to the
+- [x] Every `MATH_FNS` entry has a matching `extern fn` declaration.
+- [x] `sin(x)` (etc.) in PHDL resolves via the declaration, dispatches to the
       same Rust implementation, identical numeric output.
-- [ ] Full gate passes; workspace test count ≥ prior baseline.
+- [x] Full gate passes; workspace test count ≥ prior baseline.
 **Tests**: regression (existing suite) · **Gate**: full
 **Commit**: `feat(lang): migrate math functions to extern fn headers (DLS-18)`
+**Status**: ✅ Complete — commit `e71c512`. Workspace: 644 passed, 0
+failed (unchanged from T18 — pure relocation). Deviation: touched two
+pre-existing test files beyond the task's listed "Where" (`math.phdl`,
+`math.rs`) — `fail_loud_call_resolution.rs` and `piperine-lang-server/
+tests/integration_test.rs` — both had self-contained fixtures that
+locally re-declared `extern fn sin` (valid when authored under T11/T14,
+before any real header declared it); once `math.phdl` loads globally
+these collided as ambiguous duplicate overloads. Fixed by using the real
+global `sin` instead of a local re-declaration; assertions/intent
+unchanged. This was necessary for the Full-gate "existing suite stays
+green" requirement, not optional scope creep.
 
 ---
 
@@ -570,15 +615,32 @@ hardcoded list, replaced by the registry lookup)
 **Requirement**: DLS-19
 **Tools**: MCP: NONE · Skill: NONE
 **Done when**:
-- [ ] Every system task (`$assert`, `$display`, `$info`/`$warn`/`$error`/
+- [x] Every system task (`$assert`, `$display`, `$info`/`$warn`/`$error`/
       `$fatal`, `$temperature`, `$simparam`, `$abstime`, `$mfactor`,
       `$bound_step`, …) has one `extern task` declaration.
-- [ ] `resolve.rs`'s `valid_diagnostics` list is gone (grep-verified);
+- [x] `resolve.rs`'s `valid_diagnostics` list is gone (grep-verified);
       diagnostic validity now comes from the same registry as every other
       system task.
-- [ ] Full gate passes; workspace test count ≥ prior baseline.
+- [x] Full gate passes; workspace test count ≥ prior baseline.
 **Tests**: regression (existing suite) · **Gate**: full
 **Commit**: `feat(lang): migrate system tasks to extern task; collapse duplicate validation (DLS-19)`
+**Status**: ✅ Complete — commit `cc1d994`. Workspace: 644 passed, 0
+failed (unchanged — pure relocation, no test collisions this time since
+`extern task` names are `$`-prefixed and none pre-existed as local test
+fixtures). 17 unique `$name` declarations: the 6 `eval/tasks.rs`
+`TaskRegistry` names, the 7 `valid_diagnostics`-only names (write,
+strobe, warning, bound_step, finish, stop, discontinuity — display/info/
+error/fatal already counted above), and 4 value-returning analog-context
+tasks (temperature, simparam, abstime, mfactor). Scope note: only the
+`BehaviorStmt::Diagnostic` statement-form validation was rewired to the
+registry (matching the task's explicit "collapse `valid_diagnostics`"
+instruction); `Expr::SysCall` (the value-returning `$temperature()`-
+shaped expression form) has no existence check anywhere in piperine-lang
+today (confirmed: it dispatches straight to `Host::syscall` at
+const-eval time, or is resolved entirely inside piperine-codegen for
+analog bodies) — wiring that up was not in this task's scope (not listed
+in tasks.md's "Where", and doing so would touch the same
+codegen-entangled surface T22 owns).
 
 ---
 
@@ -593,11 +655,19 @@ still resolves post-migration).
 **Requirement**: DLS-19 (completion)
 **Tools**: MCP: NONE · Skill: NONE
 **Done when**:
-- [ ] Each of the 9 original `valid_diagnostics` names round-trips through
+- [x] Each of the 9 original `valid_diagnostics` names round-trips through
       the new `extern task` path.
-- [ ] Quick gate passes.
+- [x] Quick gate passes.
 **Tests**: unit · **Gate**: quick
 **Commit**: `test(lang): system-task migration completeness fixture (DLS-19)`
+**Status**: ✅ Complete — commit `006021e`. `piperine-lang` gate: 251
+passed, 0 failed (239 baseline post-T17/T18 + 12 new: 11 original
+`valid_diagnostics` names + 1 negative control). Deviation: tested 11
+names, not 9 — the actual pre-T20 `valid_diagnostics` array (read
+directly from source before migration) had 11 entries (`write`, `strobe`,
+`display`, `info`, `warning`, `error`, `fatal`, `bound_step`, `finish`,
+`stop`, `discontinuity`); this task's own Done-when text undercounts.
+Tested the real original list, the correctness-relevant number.
 
 ---
 
@@ -627,6 +697,21 @@ codegen)
       surface, since nearly every reactive/dynamic stdlib model uses `ddt`).
 **Tests**: regression (existing suite) · **Gate**: full
 **Commit**: `feat(lang): migrate runtime operators to extern operator (DLS-20)`
+**Status**: ✅ Complete — commit `be411e4`. Workspace: 656 passed, 0 failed
+(unchanged from baseline — pure relocation). New header
+`crates/piperine-lang/headers/operators.phdl` declares all 12 listed
+operators. Investigation finding: `cross`/`above`/`timer` are
+`EventSpec::Named` specifiers (a distinct grammar construct resolved
+via `elab/event.rs`'s `EventRegistry`, never `Expr::Call`) and `$limit`
+lexes as `Expr::SysCall` (no existence-check surface anywhere in
+piperine-lang, mirroring T20's identical finding for `$temperature()`)
+— both declared for textual/LSP visibility but not enforced by this
+pass; enforcing them would require scope beyond this task. Documented
+in `headers/operators.phdl` and `resolve_operator_call`'s doc comment
+rather than fabricated. Also fixed a pre-existing local-fixture
+collision in `piperine-lang-server`'s `integration_test.rs`
+(re-declared `extern operator ddt` now collides with the real global
+declaration), same class of fix as T19's `math.phdl` migration.
 
 ---
 
@@ -652,6 +737,18 @@ replaced by parsing `extern attribute device {...}`/`extern attribute port
       `e2e.rs`, `native_smoke.rs`, `phase3.rs`, `process_smoke.rs` must stay green).
 **Tests**: regression (existing suite) · **Gate**: full
 **Commit**: `feat(plugin): migrate @device/@port to extern attribute headers (DLS-21)`
+**Status**: ✅ Complete — commit `535f912`. Workspace: 656 passed, 0
+failed (unchanged from baseline — pure relocation). New header
+`crates/piperine-lang/headers/device_port.phdl`. Fixed a latent bug in
+`elab/lower/register.rs`'s `extern attribute` registration this task
+depends on: every field was hardcoded `required: true`, which would
+have silently broken `@port`'s existing optional `kind` field the
+moment `@device`/`@port` moved off the Rust-side `AttrField` list
+(`kind` is `opt(...)` in the old `host.rs` code) — now maps
+`required: !f.ty.optional`, using PHDL's ordinary `T?` optional-type
+marker (already parsed generically by `Type::parse`, no new grammar).
+`@rfport` untouched (stays hardcoded in `ElabContext::new()`, out of
+this feature's scope per tasks.md).
 
 ---
 
@@ -672,6 +769,21 @@ availability).
 - [ ] Full gate passes.
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(project): auto-import plugin extern.phdl stubs (DLS-22 groundwork)`
+**Status**: ✅ Complete — commit `0429afa`. Workspace: 658 passed, 0
+failed (656 baseline + 2 new). `LoadedPlugin` now carries its parsed
+`extern.phdl` stub (`Vec<Item>`), read from
+`plugin_root/extern.phdl` during `PluginHost::load_for_project` (`None`
+for `from_plugins`-loaded in-process/test plugins, which have no
+filesystem location a stub could live in). `seed_schemas` registers
+every stub-declared `extern attribute` into `ElabContext.schemas`
+exactly like `headers/device_port.phdl`'s own `@device`/`@port`, so a
+stub-declared `@name(...)` resolves with no explicit `use` and
+ctrl+click lands on the stub's own `decl_span`. Factored the
+`Attribute → AttrField` mapping (shared with T23's `device_port.phdl`
+loop) into `register_attribute_items` to avoid duplicating it a third
+time. No enforcement yet: a plugin with no stub still loads fine
+(T24 is groundwork only); T25 flips "contributes a schema but
+publishes no stub" into a load-time failure.
 
 ---
 
@@ -696,6 +808,20 @@ equivalent), plugin-loading code path
 - [ ] Full gate passes; workspace test count ≥ prior baseline.
 **Tests**: integration · **Gate**: full
 **Commit**: `test(plugin): extern-stub schema path end-to-end (DLS-22)`
+**Status**: ✅ Complete — commit `ace9c93`. Workspace: 660 passed, 0
+failed, 5 ignored (658 baseline + 2 new). New
+`PluginError::MissingExternStub { plugin, schema, expected_path }`
+(P0010), raised at `PluginHost::load_for_project` when a plugin
+contributes a schema (`Registrar::attr_schema`) but publishes no
+`extern.phdl` stub. The dynamic fallback loop in `seed_schemas` (the
+old `register_declared` with `fields_from_registrar, None`) is removed
+— the stub-import path is now the only way a plugin-contributed
+schema is reachable. `fixture_schema_plugin` example + `schema_stub`
+integration test exercise both the success path (stub matches
+`Registrar::attr_schema`) and the failure path (stub withheld →
+`MissingExternStub`). `from_plugins` (in-process/test plugins) is
+deliberately exempt — they have no filesystem location a stub could
+live in, and never elaborate real PHDL against their schemas.
 
 ---
 
