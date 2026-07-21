@@ -53,9 +53,8 @@ The elaborator runs a fixed pipeline:
 4. **Elaborate in dependency order** — resolve types, unroll structure, monomorphize,
    expand bundles, elaborate behavior bodies.
 
-The output feeds two consumers: the codegen (which lowers it to JIT-compiled analog
-kernels and event-driven digital models) and the interpreted context (which tree-walks
-bench fns over the design graph).
+The output feeds the codegen (which lowers it to JIT-compiled analog kernels and
+event-driven digital models); host APIs (Part VIII) drive analyses over it.
 
 ## §3 Constant evaluation
 
@@ -189,7 +188,7 @@ registry and validates that the event class is legal in the enclosing block's do
 | `change(sig)` | digital edge | any change of `sig` |
 | `cross(expr)` | analog crossing | zero crossing of `expr` |
 | `above(expr)` | analog crossing | one-shot level crossing |
-| `timer(period)` | analog | periodic, every `period` seconds |
+| `timer(period)` / `timer(period, phase)` | analog | periodic, every `period` seconds; optional `phase` offsets the first fire (see Part V) |
 | `initial` | lifecycle | once, at the start of the analysis |
 | `final` | lifecycle | once, at the end (diagnostics only) |
 
@@ -303,14 +302,6 @@ explained.
 
 Every unimplemented lowering is a named `Unsupported` error — nothing silently compiles
 to `0.0` or a no-op. This is the fail-loud contract.
-
-### Bench task enforcement
-
-A `bench` fn may call only tasks in the `bench_task_implemented` allowlist; otherwise
-the call is an elaboration error before any analysis runs. The allowlist contains:
-`assert`, `info`, `warn`, `error`, `fatal`, `display`, `op`, `tran`, `ac`, `noise`,
-`write`. Plugin-registered bench tasks (Part VI §9) extend the allowlist at load time.
-(Covered in Part III §5.)
 
 ## §12 Diagnostics
 

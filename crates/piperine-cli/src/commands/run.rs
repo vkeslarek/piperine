@@ -1,10 +1,49 @@
-use piperine_bench::BenchRunner;
 use std::path::PathBuf;
 
-pub fn execute(entry: Option<String>, file: Option<String>) {
-    crate::commands::build::execute(file.clone());
+pub fn execute(entry: Option<String>, file: Option<String>, interactive: bool) {
+    // Interactive Python REPL: `piperine run -i [design.phdl]`.
+    // Pre-loads `import piperine`; with a `.phdl` arg, loads it as `design`.
+    if interactive {
+        let design_path = entry.as_deref().filter(|e| e.ends_with(".phdl"));
+        if let Err(e) = piperine_python::embed::run_interactive(design_path) {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
 
-    let (source_map, project_root) = super::utils::build_source_map();
+    // Python script path: `piperine run foo.py` embeds CPython and runs the
+    // script with `import piperine` available (PY-15 / spec AC16). Detected
+    // by `.py` suffix on the positional `entry` arg so no extra flag is
+    // needed. Python is the scripting host — the in-language `bench` was
+    // removed (bench-removal); project testbenches are `*_tb.py` files run
+    // by `piperine test`.
+    if entry.as_deref().is_some_and(|e| e.ends_with(".py")) {
+        let path = entry.expect("checked above");
+        if let Err(e) = piperine_python::embed::run_script(&path) {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    // A positional `.phdl`/`.ppr` names the design file to elaborate; any
+    // other entry form (the removed bench `module::fn`) is a loud error,
+    // never a silent ignore.
+    let file = match entry {
+        Some(e) if e.ends_with(".phdl") || e.ends_with(".ppr") => Some(e),
+        Some(e) => {
+            eprintln!(
+                "Error: unknown entry `{e}`. The in-language `bench` was removed: run a \
+                 Python script (`piperine run foo.py`), elaborate a design (`piperine run \
+                 foo.phdl`), or run `*_tb.py` testbenches with `piperine test`."
+            );
+            std::process::exit(1);
+        }
+        None => file,
+    };
+
+    crate::commands::build::execute(file.clone());
 
     let path = if let Some(f) = file {
         PathBuf::from(f)
@@ -17,6 +56,9 @@ pub fn execute(entry: Option<String>, file: Option<String>) {
         }
     };
 
+    // Elaborate for real before claiming success — a design that does not
+    // parse must fail loud, not print an "elaborates" notice.
+    let (source_map, project_root) = super::utils::build_source_map();
     let body = match std::fs::read_to_string(&path) {
         Ok(b) => b,
         Err(e) => {
@@ -24,85 +66,23 @@ pub fn execute(entry: Option<String>, file: Option<String>) {
             std::process::exit(1);
         }
     };
-
     let plugin_host = super::utils::load_plugin_host(&project_root);
     if let Err(e) = plugin_host.fire_after_parse(&body) {
         eprintln!("Plugin error: {e}");
         std::process::exit(1);
     }
-    let mut design = match piperine_lang::parse_and_elaborate_seeded(&body, &source_map, |ctx| {
+    if let Err(e) = piperine_lang::parse_and_elaborate_seeded(&body, &source_map, |ctx| {
         plugin_host.seed_schemas(ctx);
     }) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("Error elaborating {}:\n{:?}", path.display(), e);
-            std::process::exit(1);
-        }
-    };
-    super::utils::stamp_project_meta(&mut design, &project_root);
-    if let Err(e) = plugin_host.fire_after_elaborate(&design) {
-        eprintln!("Plugin error: {e}");
+        eprintln!("Error in file {}:\n{:?}", path.display(), e);
         std::process::exit(1);
     }
 
-    let mut runner = BenchRunner::new(&design);
-    if !plugin_host.is_empty() {
-        runner = runner
-            .with_device_provider(plugin_host.clone())
-            .with_plugins(plugin_host.clone());
-    }
-
-    if let Some(e) = entry {
-        let parts: Vec<&str> = e.split("::").collect();
-        if parts.len() != 2 {
-            eprintln!(
-                "Error: entry point must be in the form `module::fn` (e.g. `my_bench::main`)"
-            );
-            std::process::exit(1);
-        }
-        let module = parts[0];
-        let func = parts[1];
-
-        println!("Running {}::{}...", module, func);
-        match runner.run_entry(module, func) {
-            piperine_bench::BenchOutcome::Passed => {
-                println!("Success.");
-            }
-            piperine_bench::BenchOutcome::Failed(msg) => {
-                eprintln!("Failed: {}", msg);
-                std::process::exit(1);
-            }
-            piperine_bench::BenchOutcome::Error(msg) => {
-                eprintln!("Error: {}", msg);
-                std::process::exit(1);
-            }
-        }
-    } else {
-        println!("Running all bench entry points in {}...", path.display());
-        let report = runner.run_all();
-        let mut had_failure = false;
-        let mut ran_any = false;
-        for result in &report.results {
-            ran_any = true;
-            match &result.outcome {
-                piperine_bench::BenchOutcome::Passed => {
-                    println!("ok   {}::{}", result.module, result.entry)
-                }
-                piperine_bench::BenchOutcome::Failed(msg) => {
-                    println!("FAIL {}::{} — {}", result.module, result.entry, msg);
-                    had_failure = true;
-                }
-                piperine_bench::BenchOutcome::Error(msg) => {
-                    println!("ERR  {}::{} — {}", result.module, result.entry, msg);
-                    had_failure = true;
-                }
-            }
-        }
-        if !ran_any {
-            println!("No bench entry points found.");
-        }
-        if had_failure {
-            std::process::exit(1);
-        }
-    }
+    println!(
+        "{} elaborates. The in-language `bench` was removed: write a Python \
+         testbench (`*_tb.py`) and run `piperine test`, or drive the design \
+         interactively with `piperine run -i {}`.",
+        path.display(),
+        path.display()
+    );
 }

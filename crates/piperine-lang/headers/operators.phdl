@@ -1,0 +1,61 @@
+// declared-language-surface P4 sub-phase (DLS-20) — runtime operators used
+// inside `analog`/`digital` bodies, textually declared so ctrl+click on
+// `ddt`/`delay`/`white_noise`/etc. resolves to a real declaration instead
+// of a string-match buried inside `piperine-codegen`
+// (`resolve/pom/analog_ops.rs`, `flatten/analog.rs`) — this is the first
+// time any of these twelve names has a `piperine-lang`-level presence at
+// all. Codegen's structural handling (companion-charge models for `ddt`,
+// event triggers, noise stamping, …) is completely untouched by this file
+// — `extern operator` declares the name/arity/type *contract* only, per
+// design.md's explicit scope note; codegen still recognizes these names by
+// its own string-match exactly as before.
+
+// ── `Expr::Call`-shaped operators (8) ──
+// These appear as ordinary calls (`ddt(qtotal)`, `white_noise(pwr)`, …) —
+// `elab/resolve.rs`'s `resolve_operator_call` (T22) now checks
+// `OperatorRegistry` for these before codegen ever sees them, mirroring
+// `resolve_declared_call`'s existing extern-fn dispatch shape.
+extern operator ddt(x: Real) -> Real;
+extern operator idt(x: Real) -> Real;
+extern operator ddx(x: Real, node: Real) -> Real;
+extern operator delay(x: Real, td: Real) -> Real;
+extern operator transition(x: Real, td: Real, tr: Real, tf: Real) -> Real;
+extern operator slew(x: Real, rise: Real, fall: Real) -> Real;
+extern operator white_noise(pwr: Real) -> Real;
+extern operator flicker_noise(pwr: Real, exponent: Real) -> Real;
+
+// ── `EventSpec::Named`-shaped operators (3) ──
+// `cross`/`above`/`timer` are event-block specifiers (`@ above(x) { ... }`),
+// a distinct grammar construct from `Expr::Call` (`parse/ast.rs`'s
+// `EventSpec::Named`), resolved through `elab/event.rs`'s `EventRegistry`
+// — a mechanism that predates this feature and is structurally unrelated
+// to `CallableRegistry`/`OperatorRegistry` (it validates event *kinds*, not
+// call signatures). Declared here for textual/LSP existence (ctrl+click
+// resolves to this declaration, satisfying DLS-20's "every listed runtime
+// operator has an `extern operator` declaration"), but `resolve_operator_
+// call` never reaches them — they never appear as `Expr::Call`. Wiring
+// `EventRegistry` itself into the declared-first/fail-loud discipline is
+// separate follow-on work (would touch `elab/event.rs`, outside this
+// task's listed scope), not attempted here.
+extern operator cross(x: Real) -> Boolean;
+extern operator above(x: Real) -> Boolean;
+extern operator timer(period: Real) -> Boolean;
+
+// ── `$limit` (`Expr::SysCall`-shaped, not `Expr::Call`) ──
+// `$limit(kind, ...)` lexes and parses as `Expr::SysCall` (the `$`-prefixed
+// system-task form), exactly like `$temperature()`/`$assert(...)` — and,
+// as T20 found for that whole expression form, `Expr::SysCall` has **no**
+// existence-check surface anywhere in `piperine-lang` today (it dispatches
+// straight to codegen's `emit_analog_limit`/`Host::syscall`, never through
+// `resolve.rs`'s `Expr::Call` walk). The `extern operator` grammar (T4)
+// only accepts a plain identifier (`parser.parse_ident()`), not the
+// `$`-prefixed form `extern task` uses (`parse_syscall_name()`) — so
+// `$limit` is declared below as `extern task`, the one existing grammar
+// form that can spell a `$`-prefixed name, purely for textual/LSP presence
+// (ctrl+click). It registers into `CallableRegistry` but is never consulted
+// by any resolution pass (there is no `Expr::Call` site named `$limit` —
+// `Expr::SysCall`'s own existence-check wiring is out of this task's scope,
+// matching T20's identical, already-recorded finding). Zero existing
+// `$limit` call sites in the workspace today, so this is a purely additive,
+// zero-risk declaration.
+extern task $limit(kind: String) -> Real;

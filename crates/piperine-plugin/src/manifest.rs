@@ -71,6 +71,11 @@ struct ManifestFile {
     plugin: PluginSection,
     #[serde(default)]
     permissions: Option<Permissions>,
+    /// Removed surface: the in-language bench (and its plugin bench tasks)
+    /// no longer exists — a manifest declaring one gets a clear error, not
+    /// an "unknown field".
+    #[serde(default)]
+    bench_tasks: Option<toml::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -81,6 +86,10 @@ struct PluginSection {
     entry: String,
     #[serde(default)]
     description: Option<String>,
+    /// Same removed surface as [`ManifestFile::bench_tasks`], in the section
+    /// an author would naturally put it.
+    #[serde(default)]
+    bench_tasks: Option<toml::Value>,
 }
 
 /// The parsed, validated manifest the host carries for a plugin's lifetime.
@@ -100,6 +109,13 @@ impl Manifest {
     pub fn parse(name_hint: &str, text: &str) -> Result<Self, PluginError> {
         let bad = |reason: String| PluginError::BadManifest { plugin: name_hint.to_string(), reason };
         let file: ManifestFile = toml::from_str(text).map_err(|e| bad(e.to_string()))?;
+        if file.bench_tasks.is_some() || file.plugin.bench_tasks.is_some() {
+            return Err(bad(
+                "`bench_tasks`: the in-language bench was removed — plugin bench tasks no longer \
+                 exist; write python testbenches (`*_tb.py`, run by `piperine test`) instead"
+                    .into(),
+            ));
+        }
         if file.plugin.name.is_empty() {
             return Err(bad("`plugin.name` must not be empty".into()));
         }

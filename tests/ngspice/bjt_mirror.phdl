@@ -1,0 +1,14 @@
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::bjt;
+mod Top() {
+    wire gnd: Electrical; wire vcc: Electrical; wire ref: Electrical; wire out: Electrical;
+    vc: vsrc (.p=vcc,.n=gnd) { .dc = 5.0 };
+    rref: res (.p=vcc,.n=ref) { .r = 4.7e3 };
+    rload: res (.p=vcc,.n=out) { .r = 4.7e3 };
+    q1: bjt (.c=ref,.b=ref,.e=gnd,.sub=gnd)
+        { .model = BjtModel { .is = 1.0e-16, .bf = 100.0, .nf = 1.0, .br = 1.0, .nr = 1.0 } };
+    q2: bjt (.c=out,.b=ref,.e=gnd,.sub=gnd)
+        { .model = BjtModel { .is = 1.0e-16, .bf = 100.0, .nf = 1.0, .br = 1.0, .nr = 1.0 } };
+}

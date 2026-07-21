@@ -94,7 +94,7 @@ impl EventSink for QueueSink<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::element::{Element, ElementCapabilities};
+    use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
 
     /// A minimal external-style model: an inverter written directly against the
     /// stable interface, proving a non-JIT participant needs nothing else.
@@ -104,9 +104,9 @@ mod tests {
         delay: f64,
     }
 
-    impl Element for ExternalInverter {
-        fn name(&self) -> &str { "external_inverter" }
-        fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+    impl AnalogDevice for ExternalInverter {}
+
+    impl DigitalDevice for ExternalInverter {
         fn boundary(&self) -> DigitalPorts<'_> {
             DigitalPorts { inputs: std::slice::from_ref(&self.input), outputs: std::slice::from_ref(&self.output) }
         }
@@ -121,6 +121,13 @@ mod tests {
             };
             sink.emit(self.output, out, self.delay);
         }
+    }
+
+    impl Introspect for ExternalInverter {}
+
+    impl Element for ExternalInverter {
+        fn name(&self) -> &str { "external_inverter" }
+        fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
     }
 
     #[test]

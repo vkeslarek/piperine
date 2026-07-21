@@ -4,14 +4,13 @@
 
 use std::path::{Path, PathBuf};
 
-use piperine_bench::plugins::BenchPlugins;
+use piperine::SimHooks;
 use piperine_codegen::device::{DeviceProvider, PluginDeviceSpec};
 use piperine_lang::elab::registry::{AttrField, ElabContext};
-use piperine_lang::eval::{EvalError, Value};
 use piperine_lang::Design;
 use piperine_project::resolver::Resolver;
 use piperine_project::PiperineToml;
-use piperine_solver::core::element::Element;
+use piperine_solver::abi::Element;
 
 use crate::backend::native::{self, NativePlugin};
 use crate::capability::HostCtx;
@@ -26,6 +25,14 @@ use crate::Plugin;
 struct LoadedPlugin {
     manifest: Manifest,
     instance: PluginInstance,
+    /// The plugin's published `extern.phdl` stub (declared-language-surface
+    /// T24, DLS-22 groundwork), parsed once at load time — `None` for
+    /// `from_plugins`-loaded (in-process/test) plugins, which have no
+    /// filesystem location a stub could live at, and for `load_for_project`
+    /// plugins that simply don't publish one (T24 imposes no requirement
+    /// yet; T25 is where "no stub" becomes load-time-fatal for a plugin
+    /// that also contributes a schema).
+    extern_stub: Option<Vec<piperine_lang::parse::ast::Item>>,
 }
 
 impl LoadedPlugin {
@@ -84,7 +91,10 @@ impl PluginHost {
         let mut host = Self::empty();
         for plugin in plugins {
             let manifest = plugin.manifest().clone();
-            host.register_one(&manifest.name.clone(), PluginInstance::InProcess(plugin), manifest)?;
+            // No filesystem location exists for an in-process plugin, so
+            // there is nowhere an `extern.phdl` stub could live — always
+            // `None` (declared-language-surface T24).
+            host.register_one(&manifest.name.clone(), PluginInstance::InProcess(plugin), manifest, None)?;
         }
         host.sort();
         Ok(host)
@@ -133,10 +143,49 @@ impl PluginHost {
                     PluginInstance::InProcess(crate::backend::process::load(&manifest, &artifact)?)
                 }
             };
-            host.register_one(&manifest.name.clone(), instance, manifest)?;
+            let extern_stub = Self::load_extern_stub(&manifest.name, plugin_root)?;
+            let plugin_name = manifest.name.clone();
+            let has_stub = extern_stub.is_some();
+            host.register_one(&plugin_name, instance, manifest, extern_stub)?;
+            // T25 (DLS-22): a plugin that contributes an attribute schema
+            // but publishes no stub fails loud here — never silently kept
+            // reachable through the old dynamic-registration path (spec
+            // Edge Cases). `from_plugins` (in-process/test plugins) is
+            // deliberately exempt — see `LoadedPlugin::extern_stub`'s doc.
+            if !has_stub {
+                if let Some((schema, _)) =
+                    host.contributions.schemas.iter().find(|(_, (owner, _))| owner == &plugin_name)
+                {
+                    return Err(PluginError::MissingExternStub {
+                        plugin: plugin_name.clone(),
+                        schema: schema.clone(),
+                        expected_path: plugin_root.join("extern.phdl").display().to_string(),
+                    });
+                }
+            }
         }
         host.sort();
         Ok(host)
+    }
+
+    /// Parse `extern.phdl` alongside a loaded plugin's manifest, if it
+    /// publishes one (declared-language-surface T24, DLS-22 groundwork).
+    /// `Ok(None)` when no stub file exists — T24 imposes no requirement
+    /// that one does; a malformed stub (a real authoring bug, not a
+    /// "plugin didn't publish one" case) fails loud naming the plugin.
+    fn load_extern_stub(
+        plugin_name: &str,
+        plugin_root: &Path,
+    ) -> PluginResult<Option<Vec<piperine_lang::parse::ast::Item>>> {
+        let stub_path = plugin_root.join("extern.phdl");
+        let Ok(text) = std::fs::read_to_string(&stub_path) else {
+            return Ok(None);
+        };
+        let source = piperine_lang::parse::parse_str(&text).map_err(|e| PluginError::Other {
+            plugin: plugin_name.to_string(),
+            message: format!("malformed extern stub `{}`: {e}", stub_path.display()),
+        })?;
+        Ok(Some(source.items))
     }
 
     fn sort(&mut self) {
@@ -150,6 +199,7 @@ impl PluginHost {
         name: &str,
         instance: PluginInstance,
         manifest: Manifest,
+        extern_stub: Option<Vec<piperine_lang::parse::ast::Item>>,
     ) -> PluginResult<()> {
         let plugin: &dyn Plugin = match &instance {
             PluginInstance::Native(n) => n.plugin.as_ref(),
@@ -160,7 +210,7 @@ impl PluginHost {
         if let Some(err) = errors.into_iter().next() {
             return Err(err);
         }
-        self.plugins.push(LoadedPlugin { manifest, instance });
+        self.plugins.push(LoadedPlugin { manifest, instance, extern_stub });
         Ok(())
     }
 
@@ -213,7 +263,6 @@ impl PluginHost {
                 let name = &l.manifest.name;
                 let devices = self.contributions.devices.values().filter(|(o, _)| o == name).count();
                 let schemas = self.contributions.schemas.values().filter(|(o, _)| o == name).count();
-                let tasks = self.contributions.bench_tasks.values().filter(|(o, _)| o == name).count();
                 let scripts: Vec<&str> = self
                     .contributions
                     .scripts
@@ -222,7 +271,7 @@ impl PluginHost {
                     .map(|(n, _)| n.as_str())
                     .collect();
                 format!(
-                    "{name} ({}): {devices} device(s), {schemas} schema(s), {tasks} bench task(s), scripts: [{}]",
+                    "{name} ({}): {devices} device(s), {schemas} schema(s), scripts: [{}]",
                     l.manifest.abi.as_str(),
                     scripts.join(", ")
                 )
@@ -245,41 +294,80 @@ impl PluginHost {
 
     /// Seed the elaboration registries (Plugin plan D2): the plugin
     /// system's own `@device`/`@port` schemas, plus every plugin-declared
-    /// schema. Called by whoever drives elaboration (CLI, bench, tests)
+    /// schema. Called by whoever drives elaboration (CLI, hosts, tests)
     /// through `parse_and_elaborate_seeded`.
+    ///
+    /// `@device`/`@port`'s shape (declared-language-surface T23, DLS-21)
+    /// comes from `headers/device_port.phdl`'s `extern attribute`
+    /// declarations, not a hand-rolled `AttrField` list — ctrl+click on
+    /// either name now resolves to that header exactly like any other
+    /// `extern attribute`. This header is parsed here (not embedded into
+    /// every compilation unit like `piperine-lang`'s own
+    /// `types.phdl`/`math.phdl`/etc.) because `@device`/`@port` are only
+    /// meaningful once a plugin is loaded — unchanged: still gated on
+    /// `!self.is_empty()` below.
     pub fn seed_schemas(&self, ctx: &mut ElabContext) {
         if self.is_empty() {
             return;
         }
         // The @device/@port schemas belong to the plugin *system*, not to
         // any single plugin — two device plugins must not collide on them.
-        let req = |name: &str, ty: &str| AttrField {
-            name: name.into(),
-            ty: ty.into(),
-            required: true,
-            default: None,
-        };
-        let opt = |name: &str, ty: &str| AttrField {
-            name: name.into(),
-            ty: ty.into(),
-            required: false,
-            default: None,
-        };
-        ctx.schemas.register_declared("device", vec![req("plugin", "String"), req("type", "String")]);
-        ctx.schemas.register_declared("port", vec![req("name", "String"), opt("kind", "String")]);
-        for (name, (_owner, fields)) in &self.contributions.schemas {
-            ctx.schemas.register_declared(name, fields.clone());
+        if let Ok(source) = piperine_lang::parse::parse_str(include_str!(
+            "../../piperine-lang/headers/device_port.phdl"
+        )) {
+            Self::register_attribute_items(ctx, &source.items);
         }
-        // Plugin bench tasks join the allowlist gate (SPEC Part VI §6).
-        for name in self.contributions.bench_tasks.keys() {
-            ctx.bench_tasks.insert(name.clone());
+        // Each loaded plugin's own published `extern.phdl` stub (T24/T25,
+        // DLS-22) — auto-imported, no explicit `use` required (mirrors
+        // `headers/spice/`'s availability). Ctrl+click on a stub-declared
+        // `@name(...)` resolves to the stub's own `decl_span`, exactly like
+        // any other `extern attribute`. This is now the **only** path a
+        // plugin-contributed schema is reachable through: the old dynamic
+        // `register_declared(name, fields_from_registrar, None)` fallback
+        // is gone (T25) — `load_for_project` already refuses to load a
+        // plugin that contributes a schema (`Registrar::attr_schema`) with
+        // no published stub (`PluginError::MissingExternStub`), so by the
+        // time a `PluginHost` exists, every `contributions.schemas` entry
+        // either came from a `from_plugins`-loaded (in-process/test)
+        // plugin that never elaborates real PHDL against it, or has a
+        // stub already imported here.
+        for loaded in &self.plugins {
+            if let Some(items) = &loaded.extern_stub {
+                Self::register_attribute_items(ctx, items);
+            }
+        }
+    }
+
+    /// Register every `extern attribute` item's schema into `ctx.schemas` —
+    /// shared by `@device`/`@port`'s own header and each plugin's
+    /// `extern.phdl` stub (T23/T24). Non-attribute items are ignored (a
+    /// stub could in principle carry other `extern` kinds; only attribute
+    /// schemas are this feature's concern here).
+    fn register_attribute_items(ctx: &mut ElabContext, items: &[piperine_lang::parse::ast::Item]) {
+        for item in items {
+            if let piperine_lang::parse::ast::Item::ExternDecl(
+                piperine_lang::parse::ast::ExternDecl::Attribute { span, name, fields },
+            ) = item
+            {
+                let attr_fields = fields
+                    .iter()
+                    .map(|f| AttrField {
+                        name: f.name.clone(),
+                        ty: f.ty.name.clone(),
+                        required: !f.ty.optional,
+                        default: None,
+                        decl_span: f.span,
+                    })
+                    .collect();
+                ctx.schemas.register_declared(name, attr_fields, *span);
+            }
         }
     }
 }
 
-/// The bench seam (Plugin plan Phase 3): `SimSession` fires the per-analysis
-/// hooks and dispatches plugin bench tasks through this.
-impl BenchPlugins for PluginHost {
+/// The simulation seam (Plugin plan Phase 3): the host API's `SimSession`
+/// fires the per-analysis lifecycle hooks through this.
+impl SimHooks for PluginHost {
     fn transform_design(&self, design: &Design) -> Result<(), String> {
         if self.is_empty() {
             return Ok(());
@@ -323,15 +411,6 @@ impl BenchPlugins for PluginHost {
         self.fire("after_solve", |p, cx| p.after_solve(cx, &result))
     }
 
-    fn run_bench_task(&self, name: &str, args: Vec<Value>) -> Option<Result<Value, EvalError>> {
-        let (owner, task) = self.contributions.bench_tasks.get(name)?;
-        let loaded = self.plugins.iter().find(|l| &l.manifest.name == owner)?;
-        let mut cx = self.ctx_for(loaded);
-        Some(
-            task.run(args, &mut cx)
-                .map_err(|e| EvalError::Host(format!("plugin bench task `${name}`: {e}"))),
-        )
-    }
 }
 
 /// The codegen seam (Plugin plan D4): `CircuitCompiler` hands

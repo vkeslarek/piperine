@@ -4,14 +4,14 @@
 //! Tests that pattern-matched on `IrStmt` variants are `#[ignore]`d pending
 //! rewrite for the POM `Stmt` structure.
 
-use piperine_codegen::ir::{LowerErrors, LoweredBody};
+use piperine_codegen::resolve::{LowerErrors, LoweredBody};
 use piperine_lang::parse_and_elaborate;
 
 /// `piperine-lang`'s old `ppr_to_ir` is gone — lowering lives in codegen and
 /// returns a name→body map instead of an `IrProgram`. Kept as a thin local
 /// shim so every call site below reads unchanged.
 fn ppr_to_ir(design: &piperine_lang::Design) -> Result<std::collections::HashMap<String, LoweredBody>, LowerErrors> {
-    piperine_codegen::ir::lower_bodies(design)
+    piperine_codegen::resolve::lower_bodies(design)
 }
 
 const DISCIPLINE: &str = "
@@ -78,7 +78,7 @@ fn capacitor_reactive_contrib_with_state_var() {
     let m = ir.get("TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     assert_eq!(body.states.len(), 1, "expected one state var");
-    assert!(matches!(m.symbols.state(body.states[0]).kind, piperine_codegen::ir::StateKind::Ddt));
+    assert!(matches!(m.symbols.state(body.states[0]).kind, piperine_codegen::resolve::StateKind::Ddt));
 
     assert_eq!(body.stmts.len(), 1);
     match &body.stmts[0] {
@@ -247,7 +247,7 @@ fn noise_source_registered() {
     let ns = &body.noise[0];
     assert_eq!(m.symbols.node(ns.plus).name, "p");
     assert_eq!(m.symbols.node(ns.minus).name, "n");
-    assert!(matches!(&ns.kind, piperine_codegen::ir::NoiseKind::White { .. }));
+    assert!(matches!(&ns.kind, piperine_codegen::resolve::NoiseKind::White { .. }));
     assert_eq!(ns.label.as_deref(), Some("rn1"));
 }
 
@@ -261,7 +261,7 @@ fn flicker_noise_source_registered() {
     let m = ir.get("TestMod").expect("module");
     let body = m.analog.as_ref().expect("analog");
     assert_eq!(body.noise.len(), 1);
-    assert!(matches!(&body.noise[0].kind, piperine_codegen::ir::NoiseKind::Flicker { .. }));
+    assert!(matches!(&body.noise[0].kind, piperine_codegen::resolve::NoiseKind::Flicker { .. }));
 }
 
 // ─── idtmod ────────────────────────────────────────────────────────────────────
@@ -361,7 +361,7 @@ analog GuardMod {{
         _ => None,
     });
     let (kind, event_body) = event.expect("expected AnalogEvent");
-    assert!(matches!(kind, piperine_codegen::ir::EventSource::Cross { .. }), "expected Cross event");
+    assert!(matches!(kind, piperine_codegen::resolve::EventSource::Cross { .. }), "expected Cross event");
     // The guard should wrap the body in an If
     assert!(event_body.iter().any(|s| matches!(s, IrStmt::If { .. })), "guard should produce If");
 }
@@ -386,7 +386,7 @@ analog AboveMod {{
     let body = m.analog.as_ref().expect("analog");
     let has_above = body.stmts.iter().any(|s| matches!(
         s,
-        IrStmt::AnalogEvent(piperine_codegen::ir::AnalogEvent { source: piperine_codegen::ir::EventSource::Above { .. }, .. })
+        IrStmt::AnalogEvent(piperine_codegen::resolve::AnalogEvent { source: piperine_codegen::resolve::EventSource::Above { .. }, .. })
     ));
     assert!(has_above, "expected Above event");
 }

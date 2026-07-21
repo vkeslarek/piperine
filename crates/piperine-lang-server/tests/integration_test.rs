@@ -133,3 +133,160 @@ fn test_e2e_lsp_server_memory_connection() {
     })).unwrap();
 }
 
+// ── declared-language-surface T14/T15: symbol_index resolves extern decls ──
+
+use piperine_lang_server::state::DocumentState;
+use piperine_lang_server::symbol_index::SymbolKind;
+
+fn analyzed(source: &str) -> DocumentState {
+    let mut doc = DocumentState::new(source.to_string(), 1);
+    doc.analyze(&piperine_lang::SourceMap::dummy());
+    doc
+}
+
+/// DLS-15: an `extern fn` use site resolves to a `Resolution` pointing at
+/// the `extern fn` declaration's own `decl_span` — the same
+/// `Resolution.decl_span` shape `goto_def.rs` already forwards for every
+/// ordinary declaration (module/param/wire/…), no special-casing needed.
+///
+/// Uses the real, globally-declared `sin` (`headers/math.phdl`, T19/
+/// DLS-18, auto-loaded into every compilation unit's prelude) rather than
+/// a local re-declaration: a local `extern fn sin` would now collide with
+/// the real one (two structurally identical candidates — an ambiguous
+/// overload, correctly rejected), and any *other* locally-declared name
+/// would correctly fail as DLS-05's "extern with no native binding" case,
+/// since every `MATH_FNS`-backed name now already has its own extern
+/// declaration. This is arguably the more faithful proof of P3's actual
+/// acceptance bar ("`sin(x)` in a stdlib header … returns a Location
+/// inside the relevant extern declaration") — the `decl_span` now points
+/// into the real `headers/math.phdl` text (embedded identically via
+/// `include_str!` here and in `piperine-lang`'s own prelude loading, so
+/// the expected offset can be computed precisely without reading the file
+/// from disk at test time).
+#[test]
+fn extern_fn_use_site_resolves_to_its_decl_span() {
+    let src = "mod Top() {}\ndigital Top { var y: Real = sin(1.0); }";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let call_site = src.rfind("sin(1.0)").expect("call site must be present");
+    let resolution = doc.resolve_at(call_site).expect("sin(...) use site must resolve");
+
+    assert_eq!(resolution.kind, SymbolKind::Function);
+    let decl_span = resolution.decl_span.expect("extern fn must carry a decl_span");
+
+    let math_header = include_str!("../../piperine-lang/headers/math.phdl");
+    let decl_start = math_header.find("extern fn sin(").expect("declaration must be present in headers/math.phdl");
+    assert_eq!(
+        decl_span.offset(), decl_start,
+        "decl_span must point at headers/math.phdl's `extern fn sin` declaration, not the call site"
+    );
+}
+
+/// DLS-15: an `extern type` use site (the type name itself) resolves to the
+/// `extern type` declaration's `decl_span`.
+#[test]
+fn extern_type_use_site_resolves_to_its_decl_span() {
+    let src = "extern type Widget;\nextern impl Widget { fn make(x: Real) -> Widget; }\nmod Top() {}\ndigital Top { Widget::make(1.0); }";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let use_site = src.rfind("Widget::make").expect("call site must be present");
+    let resolution = doc.resolve_at(use_site).expect("`Widget` in `Widget::make(...)` must resolve");
+
+    assert_eq!(resolution.kind, SymbolKind::Type);
+    let decl_span = resolution.decl_span.expect("extern type must carry a decl_span");
+    let decl_start = src.find("extern type Widget").expect("declaration must be present");
+    assert_eq!(decl_span.offset(), decl_start);
+}
+
+/// DLS-15: a `Type::method(...)` use site (the method name) resolves to
+/// the `extern impl` method's own `decl_span`, distinct from the block's
+/// own span.
+#[test]
+fn extern_impl_method_use_site_resolves_to_its_own_decl_span() {
+    let src = "extern type Widget;\nextern impl Widget { fn make(x: Real) -> Widget; }\nmod Top() {}\ndigital Top { Widget::make(1.0); }";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let use_site = src.rfind("make(1.0)").expect("call site must be present");
+    let resolution = doc.resolve_at(use_site).expect("`make` in `Widget::make(...)` must resolve");
+
+    assert_eq!(resolution.kind, SymbolKind::Function);
+    let decl_span = resolution.decl_span.expect("extern impl method must carry a decl_span");
+    let method_decl_start = src.find("fn make").expect("method declaration must be present");
+    assert_eq!(decl_span.offset(), method_decl_start);
+}
+
+/// DLS-15: an `extern operator` use site resolves to its own `decl_span`.
+#[test]
+fn extern_operator_use_site_resolves_to_its_decl_span() {
+    // A distinct name (not one of `headers/operators.phdl`'s real DLS-20
+    // declarations, e.g. `ddt`) — reusing a real name here would register
+    // a second, ambiguous overload candidate now that `ddt` has a genuine
+    // global declaration (DLS-20/T22), rather than testing this fixture's
+    // own local decl_span in isolation.
+    let src = "extern operator my_op(x: Real) -> Real;\nmod Top() {}\ndigital Top { var y: Real = my_op(1.0); }";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let use_site = src.rfind("my_op(1.0)").expect("call site must be present");
+    let resolution = doc.resolve_at(use_site).expect("`my_op` use site must resolve");
+
+    assert_eq!(resolution.kind, SymbolKind::Operator);
+    let decl_span = resolution.decl_span.expect("extern operator must carry a decl_span");
+    let decl_start = src.find("extern operator my_op").expect("declaration must be present");
+    assert_eq!(decl_span.offset(), decl_start);
+}
+
+/// DLS-15: an `extern attribute` schema name's use site (`@name(...)`)
+/// resolves to the schema declaration's own `decl_span`.
+#[test]
+fn extern_attribute_use_site_resolves_to_its_decl_span() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\nextern attribute widget_meta { rating: Real }\nmod Top ( inout p : Electrical ) { @widget_meta(rating = 4.5) wire w : Electrical; }";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let use_site = src.rfind("widget_meta(rating").expect("use site must be present");
+    let resolution = doc.resolve_at(use_site).expect("`@widget_meta` use site must resolve");
+
+    assert_eq!(resolution.kind, SymbolKind::AttrSchema);
+    let decl_span = resolution.decl_span.expect("extern attribute must carry a decl_span");
+    let decl_start = src.find("extern attribute widget_meta").expect("declaration must be present");
+    assert_eq!(decl_span.offset(), decl_start);
+}
+
+/// DLS-16: a name with no declaration anywhere (the P1-AC4 error case)
+/// still returns `None` — today's behavior for undeclared names is
+/// unaffected by T14 wiring the registries into `resolve_at`. Note the
+/// source itself fails to elaborate (an undeclared call is a hard
+/// elaboration error per T11), so `design`/`ctx` on the `DocumentState`
+/// are `None` too — `resolve_at` correctly returns `None` rather than
+/// panicking or fabricating a location.
+#[test]
+fn undeclared_name_use_site_still_returns_no_location() {
+    let src = "mod Top() {}\ndigital Top { NoSuchType::no_such_method(1.0); }";
+    let doc = analyzed(src);
+    assert!(doc.design.is_none(), "a source with an undeclared call must fail to elaborate");
+
+    let use_site = src.rfind("no_such_method").expect("call site must be present");
+    let resolution = doc.resolve_at(use_site);
+    assert!(resolution.is_none(), "an undeclared name must not resolve to any location");
+}
+
+/// DLS-16 (companion case): even when the *rest* of the document elaborates
+/// fine, a position that isn't an identifier at all resolves to nothing —
+/// T14's new registry arms don't turn every byte offset into a resolvable
+/// symbol, only real identifier use sites.
+#[test]
+fn non_identifier_position_returns_no_location() {
+    let src = "mod Top() {}\ndigital Top { var y: Real = 1.0; }";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let bogus_offset = src.rfind("1.0").expect("literal must be present");
+    let resolution = doc.resolve_at(bogus_offset);
+    assert!(resolution.is_none(), "a numeric literal is not a resolvable symbol");
+}
+
+

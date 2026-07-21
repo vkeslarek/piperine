@@ -7,7 +7,7 @@ use lsp_types::notification::{
     Notification as _,
 };
 use lsp_types::request::{
-    CodeActionRequest, CodeLensRequest, Completion, DocumentHighlightRequest, DocumentSymbolRequest,
+    CodeActionRequest, Completion, DocumentHighlightRequest, DocumentSymbolRequest,
     FoldingRangeRequest, GotoDefinition, HoverRequest, InlayHintRequest, PrepareRenameRequest,
     References, Rename, Request as _, SelectionRangeRequest, SemanticTokensFullRequest,
     SignatureHelpRequest, WorkspaceSymbolRequest,
@@ -40,9 +40,6 @@ pub fn handle_request(state: &mut ServerState, req: Request, conn_sender: &Sende
         }
         lsp_types::request::Formatting::METHOD => {
             handlers::formatting::handle(state, req, &connection);
-        }
-        CodeLensRequest::METHOD => {
-            handlers::code_lens::handle(state, req, &connection);
         }
         SemanticTokensFullRequest::METHOD => {
             handlers::semantic_tokens::handle(state, req, &connection);

@@ -2,7 +2,8 @@
 
 This Part defines the solver contract: the element ABI consumed by analyses, the
 analog and digital variable namespaces, the numerical algorithms for DC, AC,
-transient, noise, and transfer-function analysis, and the convergence aids that
+transient, noise, transfer-function, sensitivity, and periodic-steady-state
+analysis, and the convergence aids that
 make mixed-signal simulation deterministic.
 
 The solver is below elaboration and device construction. It receives a fixed set
@@ -29,6 +30,8 @@ plugin device, and an external model are equivalent once they present the one
 - §14 Mixed-signal execution
 - §15 Convergence aids
 - §16 Validation and failure rules
+- §17 Sensitivity analysis
+- §18 Periodic steady state
 
 ---
 
@@ -70,43 +73,109 @@ A circuit instance is the complete solver input:
 The device order is stable for the lifetime of the circuit. Event provenance may
 refer to this order, and deterministic ties use a monotonic sequence number.
 
+The circuit instance (`CircuitInstance`) exposes its surface grouped into five
+contracted responsibilities; every public method belongs to exactly one:
+
+| Responsibility | Contents |
+|----------------|----------|
+| Circuit state | Read-only views of the built circuit: the analog netlist, the unified net list, digital labels, the capability union (the OR of every element's `ElementCapabilities`), and device access. |
+| Analysis entry | One uniform entry point per analysis — `dc`, `ac`, `transient`, `noise`, `transfer_function`, `sens`, `pss` — each handing a driver a borrow of the circuit plus a `Context`. |
+| Mixed-signal seam | The one place analog acceptance seeds digital events and the scheduler runs (§14): `init_digital`, `run_digital_at[_with_analog]`, `accept_and_run_digital`, `rebuild_digital_topology`. |
+| Live mutation | The restamp path (`set_element_param`, §10.5) plus the per-solve hooks (`setup_all`, `update_all`, `apply_convergence_hints`). |
+| Construction | None — construction stays in the `CircuitBuilder`. |
+
+Construction is the builder's job. `CircuitBuilder::build` runs each element's
+`allocate_unknowns` pre-freeze allocation seam (an element that allocates
+internal unknowns without declaring `HAS_INTERNAL_UNKNOWNS` fails the build),
+assembles the instance, sizes and labels the digital state, rebuilds the
+digital topology, and initializes the digital devices at time zero. After
+construction, re-entry goes through the analysis drivers (e.g. a transient
+restart from a captured step) and the restamp path — never through a new
+constructor.
+
 The circuit instance offers analyses over the same topology. A DC analysis,
-transient analysis, AC sweep, noise analysis, and transfer-function analysis all
-consume the same device set and analog/digital namespaces.
+transient analysis, AC sweep, noise analysis, transfer-function analysis,
+sensitivity analysis, and periodic-steady-state analysis all consume the same
+device set and analog/digital namespaces. The `Solver` facade is the host entry
+point: it owns the circuit plus the shared run configuration (`Context` and
+`Policy`) and hands out each analysis driver with that configuration applied.
 
 ---
 
 ## §3 Element ABI — analog operations
 
-There is **one** solver-facing contract, the **element**. It replaces the older
-split of a `Device` wrapper over separate analog and digital device traits:
-every participant — a pure resistor, a logic gate, a comparator, a JIT-compiled
-PHDL block, a plugin, a wrapped external model — implements the same `Element`
-trait and implements only the operations it needs. There is no downcast.
+There is **one** solver-facing object, the **element**. Every participant — a
+pure resistor, a logic gate, a comparator, a JIT-compiled PHDL block, a plugin,
+a wrapped external model — implements the same `Element` contract and
+implements only the operations it needs. There is no downcast and no `Any`.
 
-Every element declares two things:
+The contract's surface is grouped by concern: `Element` is the conjunction of
+three supertraits, each independently documented with every method defaulted.
+
+```text
+Element = AnalogDevice + DigitalDevice + Introspect
+          + identity & cross-cutting lifecycle
+```
+
+| Supertrait | Concern |
+|------------|---------|
+| `AnalogDevice` | MNA loading (`load_dc`/`load_ac`/`load_transient`/`noise_current_psd`) plus the analog lifecycle and convergence/timestep hooks (this section). |
+| `DigitalDevice` | The two-phase delta cycle and digital hidden-state round-trip (§4). |
+| `Introspect` | OSDI-style parameters, queries, terminals, and operating variables (§3.4). |
+
+`Element` itself keeps only identity and the cross-cutting lifecycle that is
+not purely one concern:
 
 | Method | Contract |
 |--------|----------|
 | `name()` | Source-level identity, for diagnostics and result mapping. |
 | `capabilities()` | Required. A capability descriptor (`ElementCapabilities`) declaring what the element participates in, so the solver and scheduler plan without probing. |
+| `setup(context)` | One-time initialization before the first solve, with the run context. |
+| `destroy()` | Teardown when the circuit instance is dropped. |
+| `accept_timestep(state, t, nets, sink)` | The analog→digital bridge hook: called after each accepted solution point at time `t`; a mixed-signal element may emit digital events through `sink`. |
+| `runtime_banks()` | Runtime state/var banks for opt-in per-step recording; default empty. |
 
-`ElementCapabilities` is a bit set. The normative flags are `ANALOG` (contributes
-MNA stamps), `DIGITAL` (participates in the digital scheduler), and
-`SAMPLES_ANALOG` (its digital logic reads analog node voltages, so it must be
-evaluated on every accepted analog solve even without a pending digital event).
+All supertrait methods default to a no-op, so a pure-analog element overrides
+only its analog methods and inherits the inert digital and introspection
+surfaces (the empty impl blocks are explicit — their presence documents that
+the element is deliberately inert in the other concerns). The object is not
+split — only its surface is grouped — and the solver never names a supertrait
+to select behavior: capability flags gate, as before.
+
+`ElementCapabilities` is a bit set:
+
+| Flag | Meaning |
+|------|---------|
+| `ANALOG` | Contributes to the analog system (MNA stamps in DC/AC/transient/noise). |
+| `DIGITAL` | Participates in the digital scheduler (drives/reads logic nets). |
+| `SAMPLES_ANALOG` | Its digital logic reads analog node voltages, so it must be evaluated on every accepted analog solve even without a pending digital event. |
+| `LOADS_DC` | `load_dc` contributes to the DC operating point. |
+| `LOADS_AC` | `load_ac` contributes to the small-signal AC sweep. |
+| `LOADS_TRAN` | `load_transient` contributes to time-domain integration. |
+| `EMITS_NOISE` | `noise_current_psd` returns non-empty sources. |
+| `DEPENDS_ON_DIGITAL` | Analog load reads the digital net snapshot (D2A). Implies `ANALOG`; a D2A-ordering descriptor for the DC and transient drivers. |
+| `HAS_INTERNAL_UNKNOWNS` | The element allocated internal MNA unknowns (auxiliary branch currents, hidden states) through the `allocate_unknowns` seam during circuit construction. |
+| `BYPASS_OK` | Reserved: stamp bypass is owned by the `solver-performance` follow-up. The DC driver's stamp cache (§9) is global — gated on solution movement and limiting, not on this flag. |
+| `SUPPORTS_ROLLBACK` | Reserved: the commit/rollback lifecycle is owned by a follow-up feature. No method is promised — the `Element` contract exposes no checkpoint/rollback/commit hooks. |
+| `SUPPORTS_QUERIES` | Reserved: a host-facing hint that the model overrides `list_queries`/`query` with typed metadata beyond the `read_opvars` default. No solver path reads this flag. |
+
 An element must declare its capabilities accurately; the solver gates analysis
 and scheduling on this descriptor rather than on which methods are overridden.
+Two flags gate solver control flow directly — `DIGITAL` (the mixed-signal loop,
+the scheduler, digital initialization) and `HAS_INTERNAL_UNKNOWNS` (the
+builder's allocation check). The remaining live flags are participation
+descriptors consumed by the loaders and result mapping; the three reserved bits
+name their owning follow-up and promise nothing today.
 
 The analog operations in this section and the digital operations in §4 are all
-methods of the one `Element` trait. Analog methods default to contributing no
-stamps; digital methods default to an element that drives no nets. A pure-analog
+methods of the one element. Analog methods default to contributing no stamps;
+digital methods default to an element that drives no nets. A pure-analog
 element leaves the digital methods at their defaults and vice versa.
 
-An element that contributes to MNA declares `ANALOG` and implements the analog
-methods below: it contributes matrix and right-hand-side stamps for one or more
-analyses, may expose operating variables, may emit noise sources, and may request
-convergence or timestep controls.
+An element that contributes to MNA declares `ANALOG` and implements the
+`AnalogDevice` methods below: it contributes matrix and right-hand-side stamps
+for one or more analyses, may expose operating variables, may emit noise
+sources, and may request convergence or timestep controls.
 
 ### 3.1 Analog lifecycle methods
 
@@ -114,16 +183,22 @@ convergence or timestep controls.
 |--------|----------|
 | `set_temperature(t)` | Set the device temperature for temperature-dependent parameters. `t` is absolute temperature in kelvin. |
 | `update(state, context)` | Refresh internal model state from the current analog solution history before loading stamps. |
-| `accept_timestep(state, context, nets, sink)` | Commit an accepted solution point. A mixed-signal analog device may emit digital events through `sink`. |
 | `initial_conditions()` | Return requested initial branch voltages as `(plus, minus, value)` tuples. A missing terminal means ground. |
-| `read_opvars()` | Return named operating-point values for diagnostics and result extraction. |
 | `limiting_active()` | Report that device-side limiting is still active; convergence must not be accepted while true. |
-| `bound_step_hint()` | Return the maximum desirable next timestep. Infinity means no bound. |
+| `convergence_hint()` | Structured limiting feedback: which unknown the limiter clamped, and to what value. The solver applies the limited value to the Newton guess before the convergence test, so the iteration continues from the clamped point. Default none. |
+| `bound_step_hint()` | Return the maximum desirable next timestep (`$bound_step` lineage). Infinity means no bound. |
+| `next_breakpoints(from, horizon)` | Absolute landing times this element requires the integrator to hit within `(from, from + horizon]` — `@timer` fires, source edges, PWL corners. Absolute times, so they survive step rollback. Default empty. |
+| `allocate_unknowns(alloc)` | Pre-freeze internal-unknown allocation, called once per element by the circuit builder before the matrix shape freezes (§5.2). Elements that allocate must declare `HAS_INTERNAL_UNKNOWNS`. Default no-op. |
+| `suggest_transient_step(state, time_history, context)` | LTE-driven timestep suggestion, consulted by the transient stepper after each accepted step; the proposal is clamped to the minimum over all suggestions. Default none (no bound). |
 
-`context` carries tolerances, time, temperature, and the integration method. It
-carries **no** mutable homotopy state — the source-stepping scale reaches an
-element through the analysis state (below), and the gmin-stepping conductance is
-owned by the DC driver (§15).
+`context` carries only the immutable `Tolerances` (§3.3) — gmin, the
+convergence tolerances, temperature, and the circuit-wide shunt. Simulation
+time reaches an element through its analysis context (§3.3) or as an explicit
+argument (`accept_timestep`), never through `Context`. `Context` carries **no**
+mutable homotopy state — the source-stepping scale reaches an element through
+the analysis state (below), and the gmin-stepping conductance is owned by the
+DC driver (§15). Per-analysis convergence tunables (iteration cap, damping
+threshold, trace toggles) live on the separate driver-owned `Policy`.
 
 ### 3.2 Analog loading methods
 
@@ -148,20 +223,25 @@ element-construction/load error.
 
 ### 3.3 Analog ABI types
 
+All times, frequencies, values, and step sizes crossing this ABI are plain
+`f64` — times are `f64` seconds; there is no typed-units layer.
+
 | Type | Meaning |
 |------|---------|
 | `AnalogReference` | Reference to one analog variable. Ground has no MNA index; every other solved variable has one dense index. |
 | `Stamp<Ref, Scalar>` | Either `Matrix(row, col, value)` or `Rhs(row, value)`. The scalar is real for DC/transient and complex for AC/noise. |
 | `Noise` | A current-noise source between two analog references with PSD in A²/Hz. |
-| `Context` | Solver tolerances, temperature, time, and integration controls. Immutable for a run; carries no per-solve homotopy or convergence state. |
+| `Context` | The shared, immutable run context: only the `Tolerances` (gmin, reltol, vntol, abstol, min_res, trtol, chgtol, temperature, tnom, gshunt). Immutable for a run; carries no time, no integration controls, and no per-solve homotopy or convergence state. |
+| `Policy` | The driver-owned convergence tunables: the Newton iteration cap, the damping threshold, and the diagnostic trace toggles. Each analysis driver carries its own. |
 | `DcAnalysisState` | The DC loading state: the analog solution history (row 0 latest), the digital net snapshot (D2A), and the source-stepping scale. Derefs to the history. |
 | `TransientAnalysisState` | The transient loading state: the analog solution history and the digital net snapshot. Derefs to the history. |
-| `TransientAnalysisContext` | Current time, current timestep, final time, previous timestep, and active integration order. |
+| `TransientAnalysisContext` | Current time, the final time, the TR-BDF2 phase being stamped (Trapezoidal over `γh` or BDF2 over `(1−γ)h`), the full step `h`, and the previous accepted step size (so the TR stage can re-derive the previous capacitor current). No integration-method field — TR-BDF2 is the sole scheme. |
 | `AcAnalysisContext` | Current frequency. |
 
 ### 3.4 Introspection: parameters, queries, terminals
 
-An element may expose OSDI-style metadata so hosts — bench sweeps, optimization
+Introspection is the third supertrait, `Introspect`. An element may expose
+OSDI-style metadata so hosts — bench sweeps, optimization
 loops, plugins, CLI/UI — discover and poke a model without knowing its family.
 Every method here is optional; an element exposes as much or as little as it has.
 
@@ -203,8 +283,9 @@ Values carried by parameters and queries are real, integer, boolean, or text.
 
 An element that declares `DIGITAL` participates in event-driven simulation. It
 declares the nets it reads and drives, initializes its outputs, and evaluates in
-two phases so register chains have non-blocking semantics. These are methods of
-the same `Element` trait as §3; there is no separate digital device type.
+two phases so register chains have non-blocking semantics. These are the methods
+of the `DigitalDevice` supertrait of the one element contract (§3); there is no
+separate digital device type.
 
 ### 4.1 Digital boundary
 
@@ -231,6 +312,8 @@ other conflicts produce `X`.
 | `comb_phase(ctx, sink)` | Phase 2: recompute driven outputs from current nets and internal state, emitting value-change events. |
 | `evaluate(ctx, sink)` | Fused one-shot evaluation for models that do not participate in the scheduler's two-phase protocol. It is equivalent to `seq_phase` followed by `comb_phase`. |
 | `has_input_on(changed)` | Convenience sensitivity test: true when any input net is in the changed set. |
+| `digital_hidden_snapshot()` | Hidden digital state (module vars, edge-detection memory) as an opaque `(int, real)` carrier, snapshotted into each recorded transient step. `None` means stateless (pure combinational). |
+| `digital_hidden_restore(state)` | Restore a state previously produced by `digital_hidden_snapshot`. Called on full-state re-entry (periodic-steady-state shots, transient restart from a captured step) after `init`, before the first settle — register state round-trips with the digital nets. |
 
 An element whose logic samples analog voltages declares the `SAMPLES_ANALOG`
 capability (§3) rather than a separate predicate method; the scheduler evaluates
@@ -260,6 +343,11 @@ declaring its `ElementCapabilities`:
 | Pure analog | `ANALOG`. |
 | Pure digital | `DIGITAL`. |
 | Mixed signal | `ANALOG | DIGITAL` (plus `SAMPLES_ANALOG` if it reads analog voltages). |
+
+The coarse flags are refined by the per-analysis flags: an analog element also
+declares which analyses it contributes to (`LOADS_DC`/`LOADS_AC`/`LOADS_TRAN`/
+`EMITS_NOISE`), and `DEPENDS_ON_DIGITAL` marks an analog load that reads the
+digital net snapshot.
 
 A loader receives already-resolved terminal bindings: analog terminals as analog
 references and digital terminals as digital nets. Parameter values are already
@@ -320,9 +408,12 @@ must provide a stable digital boundary for the lifetime of the analysis. A
 mixed-signal factory must satisfy both contracts.
 
 If an external ABI requires internal unknowns or auxiliary branches, the loader
-must allocate those unknowns before the circuit instance is finalized. If it
-cannot, loading fails loud with a diagnostic naming the model and the missing
-allocation capability.
+must allocate those unknowns before the circuit instance is finalized, through
+the one allocation seam: the builder calls each element's `allocate_unknowns`
+with an `UnknownAllocator` before the matrix shape freezes, and an element that
+allocates must declare `HAS_INTERNAL_UNKNOWNS` (the build fails loud otherwise).
+If allocation is impossible, loading fails loud with a diagnostic naming the
+model and the missing allocation capability.
 
 ### 5.3 Device-loading validation
 
@@ -456,6 +547,18 @@ The DC algorithm is:
    or the mixed-signal iteration cap is reached.
 6. Return a mapping from every indexed analog variable to its solved value.
 
+Two assembly-level details are normative:
+
+- **Stamp cache.** Between Newton iterations the DC driver reuses the previous
+  iteration's assembled stamps when every unknown moved less than
+  `vntol + reltol·max(|x|, |x_old|)` (ngspice bypass semantics), suppressed
+  while any device reports `limiting_active()`. The cache is dropped whenever
+  the stamps depend on anything besides the solution vector — a homotopy scale
+  change or a digital settle — and on any parameter write.
+- **Shunt conductances.** The homotopy conductance (§15.5) and the optional
+  circuit-wide `gshunt` tolerance stamp a diagonal conductance to ground on
+  every non-ground node — never on branch-current unknowns.
+
 DC ignores dynamic charge history except where a device's DC model explicitly
 depends on its internally updated operating point. Time-varying sources are
 evaluated at the DC context defined by the source model.
@@ -464,8 +567,12 @@ evaluated at the DC context defined by the source model.
 
 ## §10 Transient analysis
 
-Transient analysis integrates from `t = 0` to `stop_time` over a fixed circuit
-topology.
+Transient analysis integrates from a start time (default `t = 0`) to
+`stop_time` over a fixed circuit topology. A non-zero start time is the host
+restart form (§10.5): the integrator's clock is absolute — `$abstime`,
+breakpoints, and scheduled sets all read it — and the initial state is the
+start-time operating point overlaid with the host's carried initial
+conditions.
 
 ### 10.1 Initial state
 
@@ -480,43 +587,114 @@ V(plus) = V(minus) + value
 
 where a missing `minus` terminal means ground.
 
-Initial-condition seeds populate enough solution history for the companion model
-to start without an artificial first-step discontinuity. They are seeds, not a
-guaranteed hold constraint unless the device model stamps such a constraint.
+Device initial conditions are **enforced**, not merely seeded (the ngspice
+`CKTsetIC` analogue): each `@initial` branch seed becomes a UIC hold clamp — a
+large conductance (`G = 10¹²`) across the seeded branch carrying `G·ic` — stamped
+through the t=0 operating-point solve and the first accepted step, so the seed
+value is the *consistent* t=0 solution the rest of the circuit solves against.
+The clamp releases after the first accepted step.
+
+User node-voltage seeds and the solved history populate enough solution history
+for the companion model to start without an artificial first-step
+discontinuity: the initial values are pushed into both history rows. A host
+restart instead re-enters from a previously captured step — the analog solution
+and the digital snapshot (including hidden register state, §4.2) — with no DC
+solve and no device/user seeds.
 
 ### 10.2 Step algorithm
 
-For each step:
+The time loop is a thin loop over named phase methods, with its mutable state
+(the clock, the current step size, acceptance bookkeeping) carried in one
+`TimeLoop` state:
 
-1. Choose a proposed timestep from the current timestep controller.
-2. Clamp the target time to the analysis stop time and to the next pending
-   digital event time.
-3. Checkpoint the digital state.
-4. Apply digital events exactly at the target time before the analog solve.
-5. Solve the analog implicit companion system for the interval ending at the
-   target time.
-6. If the analog solve succeeds:
-   - Service analog-to-digital acceptance hooks and run digital evaluation at
-     the target time.
-   - Commit the digital checkpoint.
-   - Record the step if it is at or after `record_from`.
-   - Advance integration history and grow the proposed timestep within bounds.
-7. If the analog solve fails:
-   - Roll back the digital checkpoint.
-   - Reduce the proposed timestep and retry.
-   - If the minimum timestep is reached and the solve still fails, the analysis
-     fails loud.
+1. **Predict** (`predict_step`). Take the PI controller's proposed timestep
+   (§10.3) and clamp the target time to the analysis stop time, to the next
+   pending digital event time, to the next declared **breakpoint** (analog
+   `@timer` fires and source edges — see §15.9), and to the next scheduled
+   live-set time (§10.5). Digital-var/enum `if`s in analog bodies switch at
+   digital events, which are themselves breakpoints, so landing here covers
+   them. A target landing on a declared discontinuity is marked exempt from
+   the LTE gate.
+2. **Attempt** (`attempt_step`). Checkpoint the digital state and the analog
+   solution history, apply digital events exactly at the target time before
+   the analog solve, then solve the analog implicit companion system for the
+   interval ending at the target time — TR-BDF2 runs two Newton sub-steps
+   (Trapezoidal → `x_{n+γ}`, BDF2 → `x_{n+1}`; γ = 2−√2).
+3. **Assess** (`assess_step`). If both sub-steps converged, estimate the
+   global LTE (Milne's device over node-voltage unknowns) and compare against
+   `trtol`. Steps exempted in predict (and the first step after a live set,
+   whose LTE window spans the intentional value jump) skip this gate.
+4. **Accept** (`accept_step`). On a pass:
+   - Service analog-to-digital acceptance hooks and run digital evaluation to
+     quiescence at the target time (`settle_digital`), then commit the digital
+     checkpoint.
+   - Record the step if it is at or after `record_from` (`record_step`).
+   - Apply any scheduled live sets due at the accepted point (§10.5); a write
+     of operating-point strength or stronger re-solves the landing point so
+     the recorded state there is the post-set consistent solution.
+   - Advance the clock and integration history; reset the previous-step size
+     across a discontinuity so the next TR stage restarts first-order.
+   - Propose the next timestep (`propose_dt`) — the PI controller from the
+     global error, then clamped by every element's `suggest_transient_step`.
+5. **Reject.** On an LTE failure (`reject_lte_step`): roll back the digital
+   checkpoint and the analog history, reduce the proposed timestep
+   (÷8 backtracking), and reset the PI memory. At the minimum-timestep floor
+   the step is **accepted as-is** rather than stalling — the accuracy
+   concession is warned and counted in the run statistics. On a Newton failure
+   in either sub-step (`reject_step`): roll back both checkpoints, reduce the
+   timestep, and retry; reaching the minimum timestep without convergence
+   fails the analysis loud.
+
+The solver is **always adaptive** (SPICE has been adaptive since v2); the
+user's `.step` is the initial timestep, grown/shrunk from there. The recorded
+waveform is the adaptive time grid; waveform statistics weight by the timestep
+so they stay correct on the uneven grid. Output interpolation onto a fixed
+print grid is a roadmap follow-up; point queries (`Waveform::at(t)`) already
+interpolate.
 
 ### 10.3 Integration method
 
-The transient companion model uses an implicit integration method selected by the
-solver context. The default method is Gear/BDF order 2. The first accepted steps
-use order 1 until sufficient history exists; then the method may use the
-configured order, capped by available history.
+The transient companion uses **TR-BDF2** (Trapezoidal Rule / Backward
+Differentiation Formula 2) as the sole integration scheme. Each step advances
+`[t_n, t_{n+1}]` in two stages with γ = 2−√2: a Trapezoidal stage over `γh`
+produces the intermediate point `x_{n+γ}`, then a BDF2 stage over `(1−γ)h`
+produces `x_{n+1}` from `x_{n+γ}` and `x_n`. The BDF2 stage is a native
+low-pass filter, giving L-stability (no trapezoidal ringing on stiff/switched
+nodes). There is no method-selection surface.
 
-Trapezoidal integration is permitted as a second-order implicit method. Gear
-orders outside the supported range clamp to a valid conservative coefficient;
-they must not panic or produce a non-finite timestep calculation.
+The Trapezoidal stage's companion carries the previous capacitor current
+`i_{C,n}` (the trapezoidal companion is `i_{C,n+γ} = (2/(γh))(Q_{n+γ}−Q_n) −
+i_{C,n}`), which the kernel re-derives from the prior step's BDF2 formula
+(coeffs at the previous step size, charges at the three history points). The
+BDF2 stage uses the pure-derivative companion.
+
+**Restart convention.** Across a declared discontinuity — a breakpoint edge, a
+scheduled live set, or a host restart — the previous-derivative term is
+unavailable (the history spans the jump) and the Trapezoidal stage degrades to
+backward Euler over the `γh` sub-step: `i_{C,n+γ} = (1/(γh))(Q_{n+γ}−Q_n)`,
+no previous-current term. Keeping the full trapezoid weight with an assumed
+zero previous current would double the derivative estimate for the first step,
+an O(h)·i error scaling with the post-edge current. The same applies to the
+inductor flux companion's previous branch voltage. After a scheduled live set
+the run additionally restarts small (`1e-3` of the accepted step) and the PI
+controller regrows from clean error readings; a plain breakpoint edge resets
+only the previous-step history, leaving the PI proposal intact.
+
+The timestep controller is a **Proportional-Integral (PI) controller**: after
+each accepted step the global local-truncation error is estimated via Milne's
+device (a linear extrapolation of the node voltages at `t_n` and `t_{n+γ}`
+differenced from `x_{n+1}`, normalized per node by `reltol·|v| + vntol`), and
+the next timestep follows `dt_{n+1} = dt_n · (target/lte)^p` with `p = kp +
+ki·(lte − lte_prev)/lte` (defaults `kp = 0.7`, `ki = 0.4`). A node whose
+consecutive differences straddle a discontinuity (one side flat, the other
+large) is skipped — its predictor residual is the intentional jump, not
+truncation error. The growth factor is clamped to a safe per-step range
+(`[0.2, 1.5]`) and the result to `[dt_min, dt_max]`. A rejected step divides
+the failed step by 8 and resets the PI memory. With no usable error signal
+(non-reactive step or short history) the controller grows `dt` by 1.5× toward
+`dt_max`. All of these gains live in the typed `StepperGains` config (§15.4),
+not in the controller body. The Milne estimate is computed over node-voltage
+unknowns only (branch currents are KCL-derived).
 
 ### 10.4 Results
 
@@ -528,8 +706,49 @@ Each recorded transient point contains:
 | analog values | Solved value of each indexed analog variable. |
 | digital snapshot | Logic value of every digital net after digital evaluation at that time. |
 
-`record_from` affects recording only. The solver still integrates from `t = 0`
-because skipped early states influence later history.
+`record_from` affects recording only. The solver still integrates from the
+start time because skipped early states influence later history.
+
+### 10.5 Live parameter sets and the host surface
+
+A host may write parameters on the **compiled** circuit — no re-elaboration,
+no re-JIT (the MD-18 boundary): elaboration fixes devices; simulation
+restamps. Addressing is the PHDL scheme — the same flat instance labels and
+flattened `{param}_{field}` bundle names the POM's `Design::set_param`
+accepts. A write routes to the element's `set_param` (§3.4) and the caller
+recomputes exactly what the reported invalidation requires; a successful
+write through a held DC analysis also invalidates the driver's bypass stamp
+cache. Unknown labels or parameters fail loud (the parameter
+error lists the element's candidates); an out-of-bounds value is rejected
+with no partial apply.
+
+**Scheduled sets.** A write may be scheduled for a simulation time `t` on a
+running transient. Each scheduled time is a declared discontinuity: it feeds
+the unified breakpoint table, so the integrator lands exactly on `t`, applies
+the write there (scheduling order — last write wins per parameter), and the
+new value takes effect from the next accepted step under the §10.3 restart
+convention (LTE skipped at the edge, previous-derivative history discarded,
+small resume step). A write of operating-point strength or stronger re-solves
+the landing point so the recorded state at `t` is the post-set consistent
+solution. Sets scheduled at or before the start time apply before the initial
+operating point — an idle set.
+
+**Structural writes.** A write whose invalidation is *rebuild* (matrix
+structure / element reconstruction — e.g. an optional-parameter presence
+flip) is beyond the solver: it has no POM. The restamp path reports the
+rebuild invalidation to the caller, and a structural set scheduled
+mid-transient fails the run loud with the typed outcome. The **host layer**
+(the Python `LiveSession`: compile once, `set`, re-run analyses on the held
+circuit) re-elaborates and
+recompiles automatically, reports it visibly, and carries the solved node
+voltages by net name as the next solve's initial guess — dropped nets are
+discarded, new nets start cold. At the host layer a structural set scheduled
+mid-transient splits the run at `t`: the session rebuilds there and the
+transient restarts
+from `t` (absolute start time, carried node state as initial conditions), and
+the recorded segments stitch into one continuous trace. A failed
+re-elaboration surfaces the error and keeps the previous compiled circuit
+usable.
 
 ---
 
@@ -622,6 +841,13 @@ Mixed-signal behavior is expressed by an element that declares both `ANALOG` and
 communicate through explicit analog and digital nets. There is no implicit
 converter insertion.
 
+The analog↔digital crossing has exactly one owner: the circuit instance's
+mixed-signal-seam methods (§2). `accept_and_run_digital` turns an accepted
+analog solution into digital events (every element's `accept_timestep` hook
+seeds the event queue) and runs the scheduler to quiescence; the DC settle loop
+(§14.1) and the transient accept path (§14.2) both go through it. There is no
+separate bridge object — any element is natively mixed-signal.
+
 ### 14.1 DC mixed-signal settle loop
 
 After an analog DC solve converges, the solver lets analog acceptance hooks emit
@@ -692,11 +918,15 @@ Newton convergence requires both:
    |A · x_old - b| <= abstol_kind + reltol · row_scale
    ```
 
-   Node rows use current tolerance. Branch-equation rows use voltage tolerance.
+   The tolerance kind follows the unknown the row belongs to: node-voltage
+   rows use voltage tolerance; branch-current rows use current tolerance.
 
 Device-side limiting is an additional gate: if any analog device reports
 `limiting_active()`, Newton convergence is false even when the numeric tests
-pass.
+pass. Before the tests run, the solver applies every device's structured
+limiting feedback (`convergence_hint`, §3.1) to the Newton guess — the clamped
+unknown is set to the limited value, so the iteration continues from the
+clamped point instead of oscillating around it.
 
 ### 15.2 Damping
 
@@ -723,6 +953,16 @@ the plain-Newton solve and sets the homotopy scales through a driver interface,
 and never reaches into the solver's internals. This is the seam at which an
 analysis or host selects a different escalation.
 
+Every behavior-affecting numeric lives in the solver's **config home** as a
+typed, defaulted, documented field — no magic literals in strategy or driver
+bodies. The plan owns the two homotopy schedules (`GminSchedule`,
+`SourceSchedule`, one `Schedules` family); the transient stepper owns its
+`StepperGains` (§10.3); the diagnostic trace toggles are `TraceFlags` fields
+seeded once from the `PIPERINE_TRACE_{GMIN,SRC,TRAN}` environment variables and
+read as typed fields thereafter. Cross-driver numerical caps (the mixed-signal
+settle cap, the digital delta-cycle cap, the scheduler time-equality epsilon)
+live beside them in `PlanLimits`.
+
 ### 15.5 Gmin and gmin stepping
 
 The solver context contains a normal `gmin`, used by device models for weak
@@ -730,18 +970,31 @@ conductance stabilization. Gmin stepping adds an extra homotopy conductance,
 owned by the DC driver (not the shared context).
 
 During gmin stepping, every non-ground node receives an added conductance to
-ground. The strategy starts from an easy, strongly shunted problem and reduces
-the extra conductance toward zero, warm-starting each step from the previous
-solution. The final accepted operating point is always solved with the extra
-conductance at zero. The extra conductance is applied only to node-voltage
-unknowns, never to branch current unknowns.
+ground. The strategy starts from an easy, strongly shunted problem
+(`start_g = 0.1` S) and reduces the extra conductance toward zero,
+warm-starting each step from the previous solution: one decade per converged
+solve (`decade_factor = 0.1`), the step factor relaxing after each success
+(`relax_growth = 1.3`, capped at `relax_cap = 0.5`) and backing off after each
+failure (`backoff_growth = 3.0`, capped at `backoff_cap = 0.7`), for at most
+`max_steps = 200` iterations, stopping once the conductance is below
+`floor_margin = 10` × the gmin floor. A failure before any step converged gives
+up immediately. The final accepted operating point is always solved with the
+extra conductance at zero. The extra conductance is applied only to
+node-voltage unknowns, never to branch current unknowns.
 
 ### 15.6 Source stepping
 
 Source stepping scales independent forced source values from zero to full
 strength. It runs after plain Newton and gmin stepping fail. Each scale point
-warm-starts from the previous point. A temporary shunt may be held during the
-source ramp and then ramped out so the final solve is exact.
+warm-starts from the previous point: the ramp starts fully off
+(`start_step = 0.1`), grows the step after each converged solve
+(`step_growth = 1.5`, capped at `step_cap = 0.25`), halves the step after a
+failure (`backoff_factor = 0.5`) and gives up when the step falls below
+`min_step = 1e-6`, for at most `max_steps = 300` iterations. A temporary shunt
+(`knee_gmin = 1e-6` S) conditions the exponential turn-on knee; it is held
+through the source ramp and then itself ramped out (one decade per converged
+solve, `knee_decay = 0.1`, until below `floor_margin = 10` × the gmin floor),
+so the final solve is exact.
 
 An element whose source value is affected by source stepping multiplies that
 source by the source-stepping scale carried in `DcAnalysisState`. Elements that
@@ -750,8 +1003,8 @@ do not represent independent sources ignore it.
 ### 15.7 Initial guesses, node sets, and device initial conditions
 
 Node-set values and user initial conditions seed Newton history; they are not
-themselves constraints. Device initial conditions seed transient history and may
-become constraints only when the device stamps a constraint.
+themselves constraints. Device initial conditions in transient are enforced by
+the UIC hold clamps of §10.1 through the t=0 solve and the first accepted step.
 
 The solver may push the same initial condition into multiple history rows when a
 multistep integration method needs a consistent starting history.
@@ -765,11 +1018,29 @@ and same-time digital acceptance has run.
 
 ### 15.9 Timestep bounds and breakpoints
 
-Devices may request a maximum timestep, and sources may expose breakpoints where
-the solver should land exactly. A timestep controller that supports these hooks
-must take the minimum positive bound that does not overshoot the stop time or the
-next digital event. If no hook is available, the solver still must honor digital
-event times and the global minimum/maximum timestep limits.
+The step size is bounded from three directions. Elements declare
+**breakpoints** — absolute landing times — through
+`Element::next_breakpoints(from, horizon)`; reactive elements report the
+largest step their charge/flux history tolerates through
+`suggest_transient_step`, consulted after every accepted step, with the
+proposal clamped to the minimum over all suggestions; and the PI proposal
+itself is clamped to the analysis options' `[dt_min, dt_max]`. The target time
+is the minimum of
+the PI-proposed timestep, the next declared breakpoint, the next pending
+digital event time, the next scheduled live set, and the stop time.
+Breakpoints are absolute, so they survive step rollback. (The ABI also carries
+`bound_step_hint` — the `$bound_step` lineage — which the current stepper does
+not consult; the enforced element-side bound is `suggest_transient_step`.)
+
+Breakpoints come from two unified sources: (a) **analog** — each element's
+`@timer` fires (a phased `@timer(period, phase)` lets a source declare both
+its rise and fall edges, so the integrator lands on each switching edge
+instead of stepping over it); (b) **digital** — the digital event queue's
+future value-change times, which are when digital-var/enum `if`s in analog
+bodies switch. Landing on a digital event thus covers analog contributions
+that branch on a digital variable. If no hook is available, the solver still
+must honor digital event times and the global minimum/maximum timestep
+limits.
 
 ### 15.10 Linear-solver safety
 
@@ -794,9 +1065,77 @@ device construction.
 | §6 | Stamp references an unmapped non-ground/non-branch variable | Analysis error. |
 | §8 | Analysis-time loading changes matrix dimension or sparsity contract | Analysis error. |
 | §9 | DC fails plain Newton, gmin stepping, and source stepping | Convergence failure. |
-| §10 | Transient reaches minimum timestep without convergence | Convergence failure. |
+| §10 | Transient Newton solve reaches the minimum timestep without converging | Convergence failure. (An LTE rejection at the minimum timestep is instead accepted with a warning and counted in the run statistics.) |
 | §11 | AC frequency point cannot solve its linear system | Analysis error for that sweep. |
 | §12 | Noise output/reference node cannot be resolved | Analysis error. |
 | §13 | Unsupported transfer-function source form is requested | Analysis error. |
 | §14 | Digital delta cycle does not settle within the iteration cap | Digital convergence failure. |
 | §15 | Linear solve returns NaN or infinity | Convergence failure. |
+| §17 | Sensitivity parameter is unknown, unreadable, non-real, or rebuild-strength | Analysis error. |
+| §18 | Non-positive period or negative pre-roll requested; digital state not periodic after convergence | Analysis error. |
+
+---
+
+## §17 Sensitivity analysis
+
+DC sensitivity analysis (`.sens`) computes `∂(output)/∂(param)` at the
+operating point over the restamp path (§10.5).
+
+The algorithm is:
+
+1. Validate the whole request up front (no partial writes on a bad request):
+   each `(element label, parameter)` pair must name an existing element with a
+   declared, real, readable parameter whose write does not invalidate the
+   compiled structure (a *rebuild*-strength
+   parameter fails loud — a finite difference across a rebuild boundary is not
+   a sensitivity), and each requested output must be a solved analog net.
+2. For each pair, perturb the parameter by a central difference step
+   (`±dp`, relative with default `dp_rel = 1e-6`, absolute fallback when the
+   parameter value is zero), re-solving the DC operating point at each side on
+   the same compiled circuit.
+3. Difference the requested outputs (node voltages and branch currents,
+   addressed as nets) across the two operating points.
+
+The result is keyed by `(output label, "element.param")`. Sensitivities are
+defined only for restampable parameters; every addressing failure is loud.
+
+---
+
+## §18 Periodic steady state
+
+Periodic-steady-state analysis (PSS) finds a periodic orbit of a driven circuit
+by **single shooting**: Newton iteration on `g(x₀) = x(t₀+T) − x₀`, where each
+evaluation of `g` is an ordinary transient over one period re-entered from `x₀`
+(§10.1 full-state re-entry). Mixed-signal circuits run unchanged inside every
+shot — scheduler, breakpoints, and bridges all active; Newton sees only the
+continuous unknowns.
+
+The algorithm is:
+
+1. Validate the request: the period `T` must be positive and the optional
+   pre-roll `tstab` non-negative (autonomous period detection is out of scope;
+   the drive period is supplied).
+2. Optionally integrate `[0, tstab]` once to move the starting state near the
+   orbit before shooting begins.
+3. Shooting Newton: from the current `x₀`, run one period and form the
+   periodicity residual. The first Jacobian is built by finite difference (one
+   extra shot per unknown); later iterations reuse it with Broyden rank-1
+   updates. The Newton update is damped — each component's move is clamped to a
+   physically plausible magnitude so an exponential nonlinearity cannot throw
+   `x₀` to hundreds of volts — and a singular Jacobian fails loud. Converge
+   when `max_i |x_i(T) − x_i(0)|` is within the shooting
+   tolerance (default `1e-6`, bounded below by the adaptive integrator's
+   per-period reproducibility of ~`1e-7`); iteration count is capped
+   (default 40) and exhausting it fails loud.
+4. Verify the orbit *repeats*: one extra shot over the second period must land
+   where the first did (within integration tolerance) — a fixed point of the
+   period map under a non-periodic drive is not a steady state. Then verify
+   digital periodicity: a mismatch fails loud, and
+   when the digital state closes only after `k` periods (checked up to `k = 4`)
+   the error names the circuit period as `k·T` (the divider case).
+
+The result is one period of transient samples (`t ∈ [t₀, t₀+T]`) plus the
+shooting diagnostics: iteration count, the final periodicity residual, and —
+when a Jacobian was computed and the orbit is stable — the estimated natural
+settling time from the dominant monodromy eigenvalue (power iteration on the
+shooting Jacobian).

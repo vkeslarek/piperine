@@ -1,5 +1,5 @@
 // Resistive voltage divider — the "hello world" of analog verification.
-// The bench checks the exact DC transfer ratio and the branch current, then
+// The python twin checks the exact DC transfer ratio and the branch current, then
 // sweeps the load leg and verifies the divider equation at every point.
 
 discipline Electrical {
@@ -32,22 +32,3 @@ mod DividerBoard() {
     r_bot  : Resistor(.p = mid, .n = gnd) { .r = 2e3 };
 }
 
-bench DividerBoard {
-
-    fn test_dc_ratio() {
-        var r = $op();
-        // 5 V * 2k / (3k + 2k) = 2 V, 1 mA through the string.
-        $assert(abs(r.v(mid, gnd) - 2.0) < 1e-6, "divider ratio is R2/(R1+R2)");
-        $assert(abs(r.i(r_top.p, r_top.n) - 1e-3) < 1e-9, "string current is V/(R1+R2)");
-    }
-
-    fn test_loading_sweep() {
-        for rl in [2e3, 1e3, 500.0, 250.0] {
-            r_bot.r = rl;
-            var r = $op();
-            var expected = 5.0 * rl / (3e3 + rl);
-            $display("R2 =", rl, "-> v(mid) =", r.v(mid, gnd));
-            $assert(abs(r.v(mid, gnd) - expected) < 1e-6, "divider equation holds across the sweep");
-        }
-    }
-}

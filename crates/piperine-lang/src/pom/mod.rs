@@ -3,7 +3,6 @@
 //! The reflection API. See `docs/reflection_api.md`.
 
 pub mod behavior;
-pub mod bench;
 pub mod design;
 pub mod error;
 pub mod module;
@@ -17,8 +16,7 @@ pub mod traits;
 pub use crate::value;
 
 pub use behavior::{Behavior, BehaviorStmt, Function, ImplBlock, MatchArm};
-pub use bench::BenchBlock;
-pub use design::{Design, Project};
+pub use design::{Design, Project, RfPort};
 pub use error::{ElabError, ElabErrorKind, ReflectError};
 pub use module::{Connection, Instance, Module, Param, Port, Var, Wire};
 pub use net_type::{is_ground, GROUND_NAMES, NetRef, NetType, TypeRef, ValueType};

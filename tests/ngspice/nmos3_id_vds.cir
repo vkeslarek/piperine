@@ -1,0 +1,13 @@
+* NMOS level 3 Id-Vds sweep (golden): vgs = 3 V fixed, rd/rs = 100 ohm
+* short-channel physics active: theta, eta, kappa, vmax, xj, nsub
+* 26 points crossing linear -> saturation
+Vd d 0 DC 0
+Vg g 0 DC 3
+M1 d g 0 0 NMOD L=1u W=10u
+.model NMOD NMOS (level=3 vto=1 kp=2e-5 nsub=1e15 theta=0.05 eta=0.1
++ kappa=0.5 vmax=1e5 xj=0.3u rd=100 rs=100)
+.control
+dc Vd 0 5 0.2
+wrdata nmos3_id_vds_sweep i(vd)
+.endc
+.end

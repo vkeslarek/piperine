@@ -1,0 +1,323 @@
+// NGSPICE faithful models — passive devices.
+//
+// Source: ngspice/src/spicelib/devices/{res,cap,ind}/
+//   restemp.c  resload.c  resparam.c  resmpar.c  resdefs.h
+//   captemp.c  capload.c  capsetup.c  capparam.c  capmpar.c  capdefs.h
+//   indtemp.c  indload.c  indsetup.c  indparam.c  indmpar.c  inddefs.h
+//   muttemp.c  mutparam.c  (mutual inductance, lives in ind/)
+//
+// All equations are translated line-by-line from the C source. ngspice's
+// `XXXGiven` flags map onto PHDL optionals: a `T?` param/field is "given"
+// exactly when the instance (or model card) set it — `.is_present()` /
+// `.get_or(default)` replace the C given-flag branches one-for-one.
+// ════════════════════════════════════════════════════════════════════════════
+
+use piperine::constants;
+use piperine::disciplines;
+use spice::constants;
+
+// ════════════════════════════════════════════════════════════════════════════
+//  RESISTOR  (ngspice `R` element, res device)
+//  Source: restemp.c, resload.c
+// ════════════════════════════════════════════════════════════════════════════
+
+pub bundle ResModel {
+    rsh       : Real = 0.0,       // sheet resistance (Ω/sq)
+    defWidth  : Real = 10.0e-6,   // default width (m)
+    defLength : Real = 10.0e-6,   // default length (m)
+    narrow    : Real = 0.0,       // width reduction (m)
+    short     : Real = 0.0,       // length reduction (m)
+    tc1       : Real = 0.0,       // 1st temp coefficient (1/K)
+    tc2       : Real = 0.0,       // 2nd temp coefficient (1/K²)
+    tnom      : Real = 300.15,    // nominal temperature (K)
+    r         : Real? = none,     // default resistance (Ω) — RESresGiven
+    kf        : Real = 0.0,       // flicker noise coefficient
+    af        : Real = 1.0,       // flicker noise exponent
+    bv_max    : Real? = none,    // max voltage (SOA); none = no limit
+}
+
+pub mod res ( inout p : Electrical, inout n : Electrical ) {
+    param model : ResModel = ResModel {};
+    param r     : Real? = none;     // resistance (Ω) — overrides geometry
+    param w     : Real? = none;     // width (m)
+    param l     : Real? = none;     // length (m)
+    param temp  : Real? = none;     // absolute temp (K) — overrides ambient+dtemp
+    param dtemp : Real = 0.0;       // delta temp from ambient (K)
+    param scale : Real = 1.0;       // scale factor
+    param m     : Real = 1.0;       // parallel multiplier
+    param tc1   : Real? = none;     // instance tc1 (overrides model)
+    param tc2   : Real? = none;     // instance tc2 (overrides model)
+    param ac    : Real? = none;     // AC resistance (Ω)
+    param noisy : Boolean = 1;      // generate noise?
+}
+
+pub analog res {
+    // ── Temperature (restemp.c:50-57) — temp given ⇒ dtemp ignored ──────────
+    var t : Real = temp.get_or($temperature() + dtemp);
+
+    // ── Width / length defaults (restemp.c:59-61) ────────────────────────────
+    var w_eff : Real = w.get_or(model.defWidth);
+    var l_eff : Real = l.get_or(model.defLength);
+
+    // ── Resistance derivation (restemp.c:64-77) ──────────────────────────────
+    // Instance r wins; then geometry (rsh); then model.r if given; else 1 mΩ.
+    var r_nom : Real = r.get_or(
+        if (l_eff * w_eff * model.rsh > 0.0) {
+            model.rsh * (l_eff - model.short) / (w_eff - model.narrow)
+        } else {
+            model.r.get_or(1.0e-3)
+        });
+
+    // ── Temperature coefficient (restemp.c:79-94) ────────────────────────────
+    // Instance tc1/tc2 override model tc1/tc2.
+    var tc1_eff : Real = tc1.get_or(model.tc1);
+    var tc2_eff : Real = tc2.get_or(model.tc2);
+
+    var diff   : Real = t - model.tnom;
+    var factor : Real = 1.0 + tc1_eff * diff + tc2_eff * diff * diff;
+
+    // ── Conductance (restemp.c:96) ───────────────────────────────────────────
+    var g_dc : Real = 1.0 / (r_nom * factor * scale);
+
+    // AC conductance (restemp.c:99-104) — used only in AC analysis (resacld.c)
+    var g_ac : Real = if (ac.is_present()) { 1.0 / (ac.get_or(1.0) * factor * scale) }
+                      else { g_dc };
+
+    // ── DC / transient / AC contribution (resload.c:34-37, resacld.c:63-68) ──
+    // I(p,n) = m · g · V(p,n); AC swaps in the acConduct value.
+    var g_now : Real = if ($analysis("ac")) { g_ac } else { g_dc };
+    I(p, n) <+ m * g_now * V(p, n);
+
+    // ── Noise (resnoise.c:120-137) ───────────────────────────────────────────
+    // Thermal: 4kT·(m·G).  Flicker: m·KF·|I|^AF/f with I = G·V (no m inside).
+    if (noisy) {
+        I(p, n) <+ white_noise(4.0 * NG_K * t * m * g_dc);
+        if (model.kf > 0.0) {
+            var i_r : Real = g_dc * V(p, n);
+            I(p, n) <+ flicker_noise(m * model.kf * pow(abs(i_r), model.af), 1.0);
+        }
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CAPACITOR  (ngspice `C` element, cap device)
+//  Source: captemp.c, capload.c, capsetup.c
+// ════════════════════════════════════════════════════════════════════════════
+
+pub bundle CapModel {
+    cj       : Real? = none,     // bottom capacitance per area (F/m²)
+    cjsw     : Real = 0.0,       // sidewall capacitance per perimeter (F/m)
+    defWidth : Real = 10.0e-6,   // default width (m)
+    defLength: Real = 0.0,       // default length (m)
+    narrow   : Real? = none,     // width reduction (m)
+    short    : Real? = none,     // length reduction (m)
+    del      : Real? = none,     // process bias (m); narrows & shorts by 2*del
+    tc1      : Real = 0.0,       // 1st temp coefficient (1/K)
+    tc2      : Real = 0.0,       // 2nd temp coefficient (1/K²)
+    tnom     : Real = 300.15,    // nominal temperature (K)
+    di       : Real? = none,     // dielectric constant (relative εᵣ)
+    thick    : Real? = none,     // dielectric thickness (m)
+    c        : Real? = none,     // default capacitance (F) — CAPmCapGiven
+    bv_max   : Real? = none,    // max voltage (SOA); none = no limit
+}
+
+pub mod cap ( inout p : Electrical, inout n : Electrical ) {
+    param model : CapModel = CapModel {};
+    param c     : Real? = none;     // capacitance (F) — overrides geometry
+    param w     : Real? = none;     // width (m)
+    param l     : Real? = none;     // length (m)
+    param ic    : Real = 0.0;       // initial voltage (V)
+    param temp  : Real? = none;     // absolute temp (K) — overrides ambient+dtemp
+    param dtemp : Real = 0.0;       // delta temp from ambient (K)
+    param scale : Real = 1.0;
+    param m     : Real = 1.0;
+    param tc1   : Real? = none;
+    param tc2   : Real? = none;
+}
+
+pub analog cap {
+    // ── Temperature (captemp.c:39-47) — temp given ⇒ dtemp ignored ──────────
+    var t : Real = temp.get_or($temperature() + dtemp);
+
+    // ── Width / length defaults (capsetup.c:95-101) ──────────────────────────
+    var w_eff : Real = w.get_or(model.defWidth);
+    var l_eff : Real = l.get_or(model.defLength);
+
+    // ── narrow / short from del (capsetup.c:83-88) ───────────────────────────
+    var nar : Real = model.narrow.get_or(
+        if (model.del.is_present()) { 2.0 * model.del.get_or(0.0) } else { 0.0 });
+    var sho : Real = model.short.get_or(
+        if (model.del.is_present()) { 2.0 * model.del.get_or(0.0) } else { 0.0 });
+
+    // ── cj derivation from thick/di (capsetup.c:71-81) ───────────────────────
+    var cj_eff : Real = model.cj.get_or(
+        if (model.thick.is_present() && model.thick.get_or(0.0) > 0.0) {
+            if (model.di.is_present()) { model.di.get_or(0.0) * NG_EPS0 / model.thick.get_or(1.0) }
+            else { NG_EPS_SIO2 / model.thick.get_or(1.0) }
+        } else { 0.0 });
+
+    // ── Capacitance derivation (captemp.c:55-67) ─────────────────────────────
+    // Instance c wins; then model c (Given, not >0); else geometry.
+    var c_nom : Real = c.get_or(model.c.get_or(
+        cj_eff * (w_eff - nar) * (l_eff - sho)
+        + model.cjsw * 2.0 * ((l_eff - sho) + (w_eff - nar))));
+
+    // ── Temperature coefficient (captemp.c:69-77) ────────────────────────────
+    var tc1_eff : Real = tc1.get_or(model.tc1);
+    var tc2_eff : Real = tc2.get_or(model.tc2);
+
+    var diff   : Real = t - model.tnom;
+    var factor : Real = 1.0 + tc1_eff * diff + tc2_eff * diff * diff;
+
+    // ── Effective capacitance (captemp.c:79) ─────────────────────────────────
+    // NOTE: ngspice does NOT multiply by m here; m is applied at stamp time.
+    var c_eff : Real = c_nom * factor * scale;
+
+    // ── Charge / current (capload.c:55-70) ───────────────────────────────────
+    // Q = C * V;  I = dQ/dt = m * C * dV/dt
+    // In DC, ddt → 0 (capacitor is open). ✓
+    I(p, n) <+ m * ddt(c_eff * V(p, n));
+
+    // ── Initial condition (capgetic.c) ───────────────────────────────────────
+    // `ic` sets the UIC start voltage. Forcing a branch inside `@ initial` is
+    // not yet lowerable in the JIT (see piperine ROADMAP "@initial cannot force
+    // a branch"); `ic` is reserved until then rather than making the whole
+    // device fail to compile.
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  INDUCTOR  (ngspice `L` element, ind device)
+//  Source: indtemp.c, indload.c, indsetup.c
+//
+//  FAITHFULNESS NOTE: ngspice divides stored L by m in indtemp.c AND again
+//  in indload.c, giving L_eff = L / m².  This is the stock SPICE3f5 behaviour
+//  and is replicated here verbatim.
+// ════════════════════════════════════════════════════════════════════════════
+
+pub bundle IndModel {
+    tc1    : Real = 0.0,       // 1st temp coefficient (1/K)
+    tc2    : Real = 0.0,       // 2nd temp coefficient (1/K²)
+    tnom   : Real = 300.15,    // nominal temperature (K)
+    csect  : Real = 0.0,       // core cross-section (m²)
+    length : Real? = none,     // magnetic path length (m)
+    nt     : Real = 0.0,       // model default turn count
+    mu     : Real? = none,     // relative permeability
+}
+
+pub mod ind ( inout p : Electrical, inout n : Electrical ) {
+    param model : IndModel = IndModel {};
+    param l     : Real? = none;     // inductance (H) — overrides geometry
+    param ic    : Real = 0.0;       // initial voltage (V) — seeds flux
+    param temp  : Real? = none;
+    param dtemp : Real = 0.0;
+    param scale : Real = 1.0;
+    param m     : Real = 1.0;
+    param nt    : Real? = none;     // instance turn count (overrides model)
+    param tc1   : Real? = none;
+    param tc2   : Real? = none;
+}
+
+pub analog ind {
+    // ── Temperature (indtemp.c:30-36) ────────────────────────────────────────
+    var t : Real = temp.get_or($temperature() + dtemp);
+
+    // ── Specific inductance from core geometry (indsetup.c:54-63) ────────────
+    // lengthGiven && length > 0, muGiven picks mu·μ0 over μ0.
+    var spec_ind : Real =
+        if (model.length.is_present() && model.length.get_or(1.0) > 0.0) {
+            model.mu.get_or(1.0) * NG_MU0 * model.csect * model.csect
+                / model.length.get_or(1.0)
+        } else { 0.0 };
+
+    // ── Inductance derivation (indtemp.c:38-46) ──────────────────────────────
+    var l_nom : Real = l.get_or(
+        if (nt.is_present()) { spec_ind * nt.get_or(0.0) * nt.get_or(0.0) }
+        else { model.nt * model.nt * spec_ind });
+
+    // ── Temperature coefficient (indtemp.c:48-54) ────────────────────────────
+    var tc1_eff : Real = tc1.get_or(model.tc1);
+    var tc2_eff : Real = tc2.get_or(model.tc2);
+
+    var diff   : Real = t - model.tnom;
+    var factor : Real = 1.0 + tc1_eff * diff + tc2_eff * diff * diff;
+
+    // ── Effective inductance (indtemp.c:56-57 + indload.c:92) ────────────────
+    // ngspice quirk: L is divided by m in temp setup AND again in load.
+    //   L_eff = L * factor * scale / m²
+    var l_eff : Real = l_nom * factor * scale / (m * m);
+
+    // ── Constitutive relation: V = L * dI/dt (indload.c:97-124) ──────────────
+    // In DC, ddt → 0, so V = 0 (inductor is a short). ✓
+    V(p, n) <- l_eff * ddt(I(p, n));
+
+    // ── Initial condition (indload.c:39-42, UIC path) ────────────────────────
+    // ngspice: ic seeds the UIC start current. Reserved until the JIT can force
+    // a branch inside `@ initial` (see piperine ROADMAP).
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  MUTUAL INDUCTOR  (ngspice `K` element, mut device)
+//  Source: muttemp.c, indload.c:52-77 (mutual section)
+//
+//  In SPICE, K references two named inductors by name and adds cross-coupling
+//  flux.  Here, `mut` takes the four terminals of the two inductors and the
+//  two inductance values, and adds the mutual voltage contributions on top of
+//  whatever the individual `ind` instances already force.
+//
+//  V1 += M * dI2/dt     V2 += M * dI1/dt     M = k * sqrt(L1 * L2)
+// ════════════════════════════════════════════════════════════════════════════
+
+pub mod mut (
+    inout p1 : Electrical, inout n1 : Electrical,
+    inout p2 : Electrical, inout n2 : Electrical,
+) {
+    param k  : Real = 1.0;          // coupling coefficient
+    param l1 : Real = 1.0e-6;       // inductance of L1 (H) — must match instance
+    param l2 : Real = 1.0e-6;       // inductance of L2 (H) — must match instance
+}
+
+pub analog mut {
+    // ── Mutual inductance (muttemp.c) ────────────────────────────────────────
+    var m_val : Real = k * sqrt(l1 * l2);
+
+    // ── Cross-coupling (indload.c:56-60, 68-69) ─────────────────────────────
+    // Adds M * dI_other/dt to each inductor's branch voltage.
+    V(p1, n1) <+ m_val * ddt(I(p2, n2));
+    V(p2, n2) <+ m_val * ddt(I(p1, n1));
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  TRANSFORMER  (combined two-winding device — self + mutual in one element)
+//
+//  A convenience block that carries both winding self-inductances and their
+//  mutual coupling, so a host does not have to wire two `ind` instances plus a
+//  `mut`. The coupled-flux constitutive relations (indload.c mutual section):
+//
+//    Φ1 = L1·I1 + M·I2,   Φ2 = L2·I2 + M·I1,   M = k·√(L1·L2)
+//    V1 = dΦ1/dt,         V2 = dΦ2/dt
+//
+//  In AC with the secondary open, V2/V1 = M/L1 = k·√(L2/L1) (→ the turns ratio
+//  N2/N1 as k → 1). In DC both windings are shorts (ddt → 0). |k| ≤ 1 required.
+// ════════════════════════════════════════════════════════════════════════════
+
+pub mod xfmr (
+    inout p1 : Electrical, inout n1 : Electrical,   // primary
+    inout p2 : Electrical, inout n2 : Electrical,   // secondary
+) {
+    param l1 : Real = 1.0e-6;       // primary self-inductance (H)
+    param l2 : Real = 1.0e-6;       // secondary self-inductance (H)
+    param k  : Real = 0.999;        // coupling coefficient (|k| ≤ 1)
+
+    $assert(l1 > 0.0, "xfmr: l1 (primary inductance) must be > 0");
+    $assert(l2 > 0.0, "xfmr: l2 (secondary inductance) must be > 0");
+    $assert(k * k <= 1.0, "xfmr: |k| (coupling coefficient) must be ≤ 1");
+}
+
+pub analog xfmr {
+    var m_val : Real = k * sqrt(l1 * l2);
+
+    // Each branch voltage is the time-derivative of its coupled flux —
+    // self-term plus the mutual term from the other winding's current.
+    V(p1, n1) <- l1 * ddt(I(p1, n1)) + m_val * ddt(I(p2, n2));
+    V(p2, n2) <- l2 * ddt(I(p2, n2)) + m_val * ddt(I(p1, n1));
+}

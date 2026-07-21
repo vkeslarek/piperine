@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Unified port model (Section 3 of SOLVER_COSIMULATION.md).
 //!
 //! A `Port` represents any connection point in the simulation, regardless

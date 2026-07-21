@@ -40,20 +40,3 @@ mod Follower() {
     amp : OpAmp(.inp = vin, .inn = out, .pole = comp, .out = out, .gnd = gnd);
 }
 
-bench Follower {
-
-    fn test_dc_tracks_input() {
-        var r = $op();
-        // Closed-loop error = 1/(1+A0) = 1e-4.
-        $assert(abs(r.v(out, gnd) - 1.0) < 5e-4, "follower output equals its input");
-    }
-
-    fn test_step_settles_at_gbw() {
-        // Zero the compensation node: the loop slews back with
-        // τ = 1/(2π·GBW) ≈ 1.59 µs.
-        var t = $tran(TranConfig { .stop = 1e-5, .step = 2e-8, .ic = Map { comp: 0.0 } });
-        var v = t.v(out, gnd);
-        $assert(abs(v.at(1.59e-6) - 0.632) < 0.05, "one closed-loop tau reaches 63%");
-        $assert(v.at(1e-5) > 0.99, "six tau settles to the input");
-    }
-}

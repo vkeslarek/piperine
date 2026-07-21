@@ -6,7 +6,7 @@ mod Dac[N] ( input code : Bit[N], inout out : Electrical, inout gnd : Electrical
 analog Dac {
     var acc : Real = 0.0;
     for i in 0..N {
-        if (code[i] == 1) { acc = acc + vref * pow(2.0, real(i)) / pow(2.0, real(N)); }
+        if (code[i] == 1) { acc = acc + vref * pow(2.0, Real::from(i)) / pow(2.0, Real::from(N)); }
     }
     V(out, gnd) <- acc;
 }

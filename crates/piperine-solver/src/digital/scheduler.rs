@@ -1,186 +1,14 @@
-use std::collections::{BinaryHeap, HashMap, HashSet};
+//! The two-phase delta-cycle scheduler: fixed-point evaluation over the
+//! DAG topology with delta/time event queues (methods on `DigitalState`).
+use std::collections::HashSet;
 use std::cmp::Reverse;
 use crate::digital::{LogicValue, DigitalNet, DigitalEvent};
 use crate::digital::interface::{EvalCtx, QueueSink};
 use crate::core::element::{Element, ElementCapabilities};
-
-/// Frozen scheduler snapshot for checkpoint/rollback.
-#[derive(Clone)]
-struct Checkpoint {
-    nets: Vec<LogicValue>,
-    queue: BinaryHeap<Reverse<DigitalEvent>>,
-    labels: Vec<String>,
-}
-
-// ---------------------------------------------------------------------------
-// DigitalTopology — DAG order + back edges for a fixed set of devices
-// ---------------------------------------------------------------------------
-
-pub struct DigitalTopology {
-    /// Element indices (into the original `digital_runtimes` vec) in topological order.
-    pub topo_order: Vec<usize>,
-    /// Back edges as (src_topo_pos, dst_topo_pos) where src > dst.
-    /// When the device at src_topo_pos changes its outputs, restart from dst_topo_pos.
-    pub back_edges: Vec<(usize, usize)>,
-}
-
-impl DigitalTopology {
-    pub fn build(devices: &[Box<dyn Element>]) -> Self {
-        let n = devices.len();
-        if n == 0 {
-            return Self { topo_order: Vec::new(), back_edges: Vec::new() };
-        }
-
-        // net → element index that produces it. A pure-analog element drives no
-        // nets (its `boundary()` is empty), so it never appears here.
-        let mut output_to_dev: HashMap<DigitalNet, usize> = HashMap::new();
-        for (i, dev) in devices.iter().enumerate() {
-            for &net in dev.boundary().outputs {
-                output_to_dev.insert(net, i);
-            }
-        }
-
-        // adj[i] = elements that consume at least one of element i's outputs
-        let mut adj: Vec<Vec<usize>> = vec![vec![]; n];
-        for (j, dev) in devices.iter().enumerate() {
-            for &net in dev.boundary().inputs {
-                if let Some(&i) = output_to_dev.get(&net)
-                    && i != j && !adj[i].contains(&j) {
-                        adj[i].push(j);
-                    }
-            }
-        }
-
-        // Iterative DFS topo sort with back-edge detection.
-        // color: 0=unvisited, 1=on-stack, 2=done
-        let mut color = vec![0u8; n];
-        let mut topo_rev: Vec<usize> = Vec::with_capacity(n);
-        let mut raw_back: Vec<(usize, usize)> = Vec::new(); // (src_dev, dst_dev)
-
-        for start in 0..n {
-            if color[start] != 0 { continue; }
-            let mut stack: Vec<(usize, usize)> = vec![(start, 0)];
-            color[start] = 1;
-            while let Some((v, ai)) = stack.last_mut() {
-                let v = *v;
-                if *ai < adj[v].len() {
-                    let u = adj[v][*ai];
-                    *ai += 1;
-                    match color[u] {
-                        0 => { color[u] = 1; stack.push((u, 0)); }
-                        1 => { raw_back.push((v, u)); } // back edge
-                        _ => {}
-                    }
-                } else {
-                    color[v] = 2;
-                    topo_rev.push(v);
-                    stack.pop();
-                }
-            }
-        }
-
-        let topo_order: Vec<usize> = topo_rev.into_iter().rev().collect();
-
-        let mut dev_to_pos = vec![0usize; n];
-        for (pos, &dev) in topo_order.iter().enumerate() {
-            dev_to_pos[dev] = pos;
-        }
-
-        let back_edges = raw_back.iter()
-            .map(|&(src, dst)| (dev_to_pos[src], dev_to_pos[dst]))
-            .collect();
-
-        Self { topo_order, back_edges }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// DigitalState
-// ---------------------------------------------------------------------------
-
-pub struct DigitalState {
-    pub nets: Vec<LogicValue>,
-    pub event_queue: BinaryHeap<Reverse<DigitalEvent>>,
-    /// Stable source-level labels for each digital net, parallel to `nets`.
-    /// Empty when the circuit builder does not attach labels — the public
-    /// lookup then falls back to the anonymous `d{idx}` form.
-    labels: Vec<String>,
-    checkpoint: Option<Checkpoint>,
-}
+use crate::digital::state::DigitalState;
+use crate::digital::topology::DigitalTopology;
 
 impl DigitalState {
-    pub fn new(num_nets: usize) -> Self {
-        Self {
-            nets: vec![LogicValue::X; num_nets],
-            event_queue: BinaryHeap::new(),
-            labels: Vec::new(),
-            checkpoint: None,
-        }
-    }
-
-    /// Build with explicit labels (one per net, in dense order).
-    pub fn with_labels(num_nets: usize, labels: Vec<String>) -> Self {
-        assert_eq!(
-            labels.len(),
-            num_nets,
-            "with_labels: label count must match net count"
-        );
-        Self {
-            nets: vec![LogicValue::X; num_nets],
-            event_queue: BinaryHeap::new(),
-            labels,
-            checkpoint: None,
-        }
-    }
-
-    /// Attach a label to a single digital net. Existing nets beyond the
-    /// supplied index keep their labels (or `d{i}` if none was set).
-    pub fn set_label(&mut self, net: DigitalNet, label: impl Into<String>) {
-        let idx = net.0;
-        if self.labels.len() <= idx {
-            self.labels
-                .resize(idx + 1, format!("d{}", self.labels.len()));
-        }
-        self.labels[idx] = label.into();
-    }
-
-    /// Look up the stable label for a digital net. Returns the anonymous
-    /// `d{idx}` form when no source-level label was attached.
-    pub fn label_or_default(&self, net: DigitalNet) -> String {
-        match self.labels.get(net.0) {
-            Some(s) if !s.is_empty() => s.clone(),
-            _ => format!("d{}", net.0),
-        }
-    }
-
-    pub fn schedule(&mut self, event: DigitalEvent) {
-        self.event_queue.push(Reverse(event));
-    }
-
-    pub fn peek_next_event_time(&self) -> f64 {
-        self.event_queue.peek().map(|Reverse(e)| e.time).unwrap_or(f64::INFINITY)
-    }
-
-    pub fn checkpoint(&mut self) {
-        self.checkpoint = Some(Checkpoint {
-            nets: self.nets.clone(),
-            queue: self.event_queue.clone(),
-            labels: self.labels.clone(),
-        });
-    }
-
-    pub fn rollback(&mut self) {
-        if let Some(chk) = self.checkpoint.take() {
-            self.nets = chk.nets;
-            self.event_queue = chk.queue;
-            self.labels = chk.labels;
-        }
-    }
-
-    pub fn commit(&mut self) {
-        self.checkpoint = None;
-    }
-
     /// Simple fixed-point evaluation (fallback, no topology required).
     ///
     /// `limits` controls the delta-cycle cap and the time-equality epsilon.
@@ -195,7 +23,7 @@ impl DigitalState {
         &mut self,
         t: f64,
         devices: &mut [Box<dyn Element>],
-        limits: crate::solver::convergence::PlanLimits,
+        limits: crate::analyses::convergence::PlanLimits,
         analog_slice: &[f64],
     ) -> crate::result::Result<()> {
         let epsilon = limits.digital_time_epsilon;
@@ -272,7 +100,7 @@ impl DigitalState {
         t: f64,
         devices: &mut [Box<dyn Element>],
         topology: &DigitalTopology,
-        limits: crate::solver::convergence::PlanLimits,
+        limits: crate::analyses::convergence::PlanLimits,
         analog_slice: &[f64],
     ) -> crate::result::Result<()> {
         let epsilon = limits.digital_time_epsilon;
@@ -322,7 +150,7 @@ impl DigitalState {
         // cycle dominated chain propagation.
         let mut output_changed_at = vec![false; n];
         let mut prev_outs: Vec<LogicValue> = Vec::new();
-        let mut local_q: BinaryHeap<Reverse<DigitalEvent>> = BinaryHeap::new();
+        let mut local_q: std::collections::BinaryHeap<Reverse<DigitalEvent>> = std::collections::BinaryHeap::new();
 
         'outer: for iter in 0..max_iters {
             output_changed_at.iter_mut().for_each(|c| *c = false);

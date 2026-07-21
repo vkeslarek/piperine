@@ -1,5 +1,5 @@
 //! [`EvalError`] — everything that can go wrong while walking an [`Expr`]/[`Stmt`]
-//! tree, whether in const-eval or in a `bench`.
+//! tree, in any const-eval context.
 //!
 //! [`Expr`]: crate::parse::ast::Expr
 //! [`Stmt`]: crate::parse::ast::Stmt

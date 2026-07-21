@@ -7,13 +7,13 @@
 //! the SPEC prescribes — analog residuals, digital register pipelines,
 //! mixed-signal A2D/D2A bridges, switch branches, and structural circuits.
 
-use piperine_codegen::ir::*;
+use piperine_codegen::resolve::*;
 use piperine_codegen::device::DigitalInstance;
 use piperine_codegen::{CircuitCompiler, CompiledModule, SimCtx};
 use piperine_lang::parse_and_elaborate;
-use piperine_solver::analog::NodeIdentifier;
-use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
-use piperine_solver::solver::Context;
+use piperine_solver::abi::NodeIdentifier;
+use piperine_solver::abi::DigitalEvent; use piperine_solver::prelude::{DigitalNet, LogicValue};
+use piperine_solver::prelude::Context;
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -25,7 +25,7 @@ use std::collections::HashMap;
 /// Panics on any elaboration or lowering error with the full diagnostic.
 fn compile(src: &str) -> HashMap<String, LoweredBody> {
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
-    piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed")
+    piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed")
 }
 
 /// Like [`compile`], but also keeps the elaborated `Design` alive — needed
@@ -33,7 +33,7 @@ fn compile(src: &str) -> HashMap<String, LoweredBody> {
 /// directly (there is no `IrProgram` structural twin to carry both).
 fn elaborate_and_lower(src: &str) -> (piperine_lang::Design, HashMap<String, LoweredBody>) {
     let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
-    let bodies = piperine_codegen::ir::lower_bodies(&design).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowering failed");
     (design, bodies)
 }
 
@@ -578,7 +578,7 @@ fn spec_parametric_module_monomorphizes() {
 // ═════════════ Section Sim — DC operating point with sources ══════════════════
 
 /// Build a resolved lowering from source + a structural top, compile, and solve DC.
-fn dc_solve(src: &str, top: &str) -> (HashMap<String, LoweredBody>, piperine_solver::core::circuit::CircuitInstance, piperine_solver::analysis::dc::DcAnalysisResult) {
+fn dc_solve(src: &str, top: &str) -> (HashMap<String, LoweredBody>, piperine_solver::prelude::CircuitInstance, piperine_solver::prelude::DcAnalysisResult) {
     let (design, prog) = elaborate_and_lower(src);
     let mut compiler = CircuitCompiler::new(&design, &prog);
     let mut circuit = compiler.build_circuit(top).expect("build circuit");
@@ -606,10 +606,10 @@ fn sim_dc_voltage_divider() {
     ", "Top");
 
     // V(vin) = 5V (forced), V(mid) = 2.5V (divider).
-    let v_in = result.get(piperine_solver::analog::AnalogVariable::Node(
+    let v_in = result.get(piperine_solver::abi::AnalogVariable::Node(
         NodeIdentifier::Anonymous(1)
     )).expect("V(vin)");
-    let v_mid = result.get(piperine_solver::analog::AnalogVariable::Node(
+    let v_mid = result.get(piperine_solver::abi::AnalogVariable::Node(
         NodeIdentifier::Anonymous(2)
     )).expect("V(mid)");
     assert!((v_in - 5.0).abs() < 1e-6, "V(vin) = {v_in} expected 5.0");
@@ -632,7 +632,7 @@ fn sim_dc_current_source_into_resistor() {
     ", "Top");
 
     // 1mA into 1kΩ → V(a) = 1V
-    let v = result.get(piperine_solver::analog::AnalogVariable::Node(
+    let v = result.get(piperine_solver::abi::AnalogVariable::Node(
         NodeIdentifier::Anonymous(1)
     )).expect("V(a)");
     assert!((v - 1.0).abs() < 1e-6, "V(a) = {v} expected 1.0");
@@ -660,7 +660,7 @@ fn sim_dc_diode_operating_point() {
         }
     ", "Top");
 
-    let v_d = result.get(piperine_solver::analog::AnalogVariable::Node(
+    let v_d = result.get(piperine_solver::abi::AnalogVariable::Node(
         NodeIdentifier::Anonymous(2)
     )).expect("V(d)");
     assert!(v_d > 0.5 && v_d < 0.9, "diode drop {v_d}");
@@ -695,7 +695,7 @@ fn sim_dc_optional_param_get_or() {
         }
     ", "Top");
 
-    let v_mid = result.get(piperine_solver::analog::AnalogVariable::Node(
+    let v_mid = result.get(piperine_solver::abi::AnalogVariable::Node(
         NodeIdentifier::Anonymous(2)
     )).expect("V(mid)");
     // 10 V · 500 / (2200 + 500) = 1.852 V
@@ -728,7 +728,7 @@ fn sim_dc_diode_pnjlim_converges() {
         }
     ", "Top");
 
-    let v_d = result.get(piperine_solver::analog::AnalogVariable::Node(
+    let v_d = result.get(piperine_solver::abi::AnalogVariable::Node(
         NodeIdentifier::Anonymous(2)
     )).expect("V(d)");
     // KCL: (5 − Vd)/1k == Is·(exp(Vd/Vt) − 1); the limiter must not shift it.
@@ -778,7 +778,7 @@ fn analog_var_reuse_does_not_explode() {
         }
     ", "Top");
 
-    let v_d = result.get(piperine_solver::analog::AnalogVariable::Node(
+    let v_d = result.get(piperine_solver::abi::AnalogVariable::Node(
         NodeIdentifier::Anonymous(2)
     )).expect("V(d)");
     // acc/20 == e, so the device is the same Shockley diode: ~0.69 V drop.
@@ -791,7 +791,7 @@ fn analog_var_reuse_does_not_explode() {
 /// After 5τ, V(out) ≈ 5V.
 #[test]
 fn sim_tran_rc_charging() {
-    use piperine_solver::analysis::transient::TransientAnalysisOptions;
+    use piperine_solver::prelude::TransientAnalysisOptions;
 
     let (design, prog) = elaborate_and_lower("
         discipline Electrical { potential v : Real; flow i : Real; }
@@ -946,7 +946,7 @@ fn spec_parent_contribution_with_behavioral_for_and_indexed_ports() {
 /// conductance flips and the divider output collapses.
 #[test]
 fn sim_tran_above_event_toggles_switch_state() {
-    use piperine_solver::analysis::transient::TransientAnalysisOptions;
+    use piperine_solver::prelude::TransientAnalysisOptions;
 
     let (design, prog) = elaborate_and_lower("
         discipline Electrical { potential v : Real; flow i : Real; }
@@ -984,7 +984,7 @@ fn sim_tran_above_event_toggles_switch_state() {
     let result = circuit.transient(options, Context::default())
         .unwrap().solve().unwrap();
 
-    let v_mid = |step: &piperine_solver::analysis::transient::TransientStep| {
+    let v_mid = |step: &piperine_solver::prelude::TransientStep| {
         step.get_node(&NodeIdentifier::Anonymous(2)).expect("V(mid)")
     };
     let early = result.iter().find(|s| s.time() >= 2e-5).expect("early step");
@@ -998,9 +998,9 @@ fn sim_tran_above_event_toggles_switch_state() {
 /// whole chain in one rank-ordered pass and emits mid/out as boundary events.
 #[test]
 fn digital_network_fuses_combinational_chain() {
-    use piperine_codegen::jit::digital::network::{DigitalNetwork, NetworkMember};
-    use piperine_solver::core::element::Element;
-    use piperine_solver::digital::interface::{EvalCtx, EventSink};
+    use piperine_codegen::kernel::digital::network::{DigitalNetwork, NetworkMember};
+    use piperine_solver::abi::DigitalDevice;
+    use piperine_solver::abi::{EvalCtx, EventSink};
     use std::sync::Arc;
 
     let prog = compile(format!("{CORE_LIB}
@@ -1011,8 +1011,8 @@ fn digital_network_fuses_combinational_chain() {
 
     let (i, mid, o) = (DigitalNet(0), DigitalNet(1), DigitalNet(2));
     let members = vec![
-        NetworkMember { module: inv.clone(), in_nets: vec![i], out_nets: vec![mid], params: vec![], int_base: 0, real_base: 0, param_base: 0 },
-        NetworkMember { module: inv.clone(), in_nets: vec![mid], out_nets: vec![o], params: vec![], int_base: 0, real_base: 0, param_base: 0 },
+        NetworkMember { module: inv.clone(), in_nets: vec![i], out_nets: vec![mid], params: vec![], int_base: 0, real_base: 0, param_base: 0, reg_inits: vec![] },
+        NetworkMember { module: inv.clone(), in_nets: vec![mid], out_nets: vec![o], params: vec![], int_base: 0, real_base: 0, param_base: 0, reg_inits: vec![] },
     ];
     let mut net = DigitalNetwork::build(members, 3, 0).expect("build fused network");
 
@@ -1075,4 +1075,460 @@ fn digital_cross_module_flops_sample_simultaneously() {
     pulse(&mut nets, &mut f0, &mut f1, 2.0);
     assert_eq!(nets[q0.0], LogicValue::Zero, "q0 now 0");
     assert_eq!(nets[q1.0], LogicValue::One, "q1 captured q0's pre-edge 1 (NBA)");
+}
+
+/// SC-08 — `table()` 1-D lookup: a table-driven nonlinear resistor solves to
+/// the piecewise equilibrium (Newton needs the segment-slope Jacobian).
+/// Segment [1,2]: I = 1m + (V−1)·3m; series 1k from 5 V ⇒ V + 1000·I(V) = 5
+/// ⇒ V = 1.75.
+#[test]
+fn sim_dc_table_nonlinear_resistor() {
+    let (_prog, _circuit, result) = dc_solve("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
+        analog VSource { V(p, n) <- dc; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod TableR ( inout p : Electrical, inout n : Electrical ) { }
+        analog TableR {
+            I(p, n) <+ table(V(p, n), [0.0, 1.0, 2.0, 3.0], [0.0, 1.0e-3, 4.0e-3, 9.0e-3]);
+        }
+        mod Top ( inout vin : Electrical, inout mid : Electrical ) {
+            v1 : VSource ( vin, gnd ) { .dc = 5.0 };
+            r1 : Resistor ( vin, mid );
+            t1 : TableR ( mid, gnd );
+        }
+    ", "Top");
+    let v_mid = result.get(piperine_solver::abi::AnalogVariable::Node(
+        NodeIdentifier::Anonymous(2)
+    )).expect("V(mid)");
+    assert!((v_mid - 1.75).abs() < 1e-9, "V(mid) = {v_mid} expected 1.75");
+}
+
+/// SC-08 — `table()` end clamp: past the last breakpoint the value holds
+/// flat (ys.last), so a 10 V drive through 1 Ω sees exactly 9 mA.
+#[test]
+fn sim_dc_table_clamps_at_the_ends() {
+    let (_prog, _circuit, result) = dc_solve("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
+        analog VSource { V(p, n) <- dc; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod TableR ( inout p : Electrical, inout n : Electrical ) { }
+        analog TableR {
+            I(p, n) <+ table(V(p, n), [0.0, 1.0, 2.0, 3.0], [0.0, 1.0e-3, 4.0e-3, 9.0e-3]);
+        }
+        mod Top ( inout vin : Electrical, inout a : Electrical ) {
+            v1 : VSource ( vin, gnd ) { .dc = 10.0 };
+            rs : Resistor ( vin, a );
+            t1 : TableR ( a, gnd );
+        }
+    ", "Top");
+    let v_a = result.get(piperine_solver::abi::AnalogVariable::Node(
+        NodeIdentifier::Anonymous(2)
+    )).expect("V(a)");
+    assert!((v_a - (10.0 - 9.0e-3)).abs() < 1e-9, "V(a) = {v_a} expected 9.991");
+}
+
+/// SC-08 — `table()` segment slope with NON-unit spacing: the interpolation
+/// divides by `Δx` (slope `Δy/Δx`), and the exact equilibrium only solves
+/// when that division is present and correct. Segment [0.5, 3]:
+/// I = 1m + (V−0.5)·(2m/2.5); series 1k from 5 V ⇒ V + 1000·I(V) = 5
+/// ⇒ 1.8·V = 4.4 ⇒ V = 22/9.
+#[test]
+fn sim_dc_table_nonuniform_spacing_slope() {
+    let (_prog, _circuit, result) = dc_solve("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
+        analog VSource { V(p, n) <- dc; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod TableR ( inout p : Electrical, inout n : Electrical ) { }
+        analog TableR {
+            I(p, n) <+ table(V(p, n), [0.0, 0.5, 3.0], [0.0, 1.0e-3, 3.0e-3]);
+        }
+        mod Top ( inout vin : Electrical, inout mid : Electrical ) {
+            v1 : VSource ( vin, gnd ) { .dc = 5.0 };
+            r1 : Resistor ( vin, mid );
+            t1 : TableR ( mid, gnd );
+        }
+    ", "Top");
+    let v_mid = result.get(piperine_solver::abi::AnalogVariable::Node(
+        NodeIdentifier::Anonymous(2)
+    )).expect("V(mid)");
+    let want = 4.4 / 1.8; // 22/9 ≈ 2.444
+    assert!((v_mid - want).abs() < 1e-9, "V(mid) = {v_mid} expected {want}");
+}
+
+/// SC-09 — kernel wiring: `transition` lowers to a runtime-serviced state;
+/// the contribution reads the state bank and the operator's input is V(p,n).
+#[test]
+fn sim_kernel_transition_reads_state_bank() {
+    use piperine_codegen::kernel::analog::RuntimeState;
+    let prog = compile("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod TranOp ( inout p : Electrical, inout n : Electrical ) { }
+        analog TranOp { I(p, n) <+ transition(V(p, n), 0.0, 1n, 1n); }
+    ");
+    let cm = compiled(&prog, "TranOp");
+    let kernel = cm.analog().expect("analog kernel");
+    let specs = kernel.runtime_states();
+    assert_eq!(specs.len(), 1, "one runtime state");
+    assert!(matches!(specs[0].kind, RuntimeState::Transition { .. }), "transition spec");
+
+    // The contribution is explicit through the state bank: residual = state.
+    let state = vec![0.42; kernel.num_state_slots()];
+    let mut res = vec![0.0; kernel.num_terminals()];
+    kernel.eval_residual(&[1.5, 0.0], &[], &state, &[], &SimCtx::default(), &mut res);
+    assert_eq!(res.as_slice(), [0.42, -0.42], "contribution reads the state bank");
+
+    // The operator input row evaluates V(p,n) from the solution.
+    let mut inputs = vec![0.0; specs.len()];
+    kernel.eval_state_inputs(&[1.5, 0.0], &[], &state, &[], &SimCtx::default(), &mut inputs);
+    assert_eq!(inputs.as_slice(), [1.5], "operator input is V(p,n)");
+}
+
+/// SC-09 — a step driven through `transition(tr = 0.5 ms)` into an RC with
+/// τ ≪ tr shows the ramped edge (not an instantaneous jump) in the trace:
+/// mid-ramp the output sits between the rails, and it settles after tr.
+#[test]
+fn sim_tran_transition_ramps_step_into_rc() {
+    use piperine_solver::prelude::TransientAnalysisOptions;
+
+    let (design, prog) = elaborate_and_lower("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Capacitor ( inout p : Electrical, inout n : Electrical ) { param c : Real = 1n; }
+        analog Capacitor { I(p, n) <+ c * ddt(V(p, n)); }
+        mod Step ( inout p : Electrical, inout n : Electrical ) {
+            param tr : Real = 5e-4;
+            var st : Real = 0.0;
+        }
+        analog Step {
+            @timer(1e-3) { st = 1.0; }
+            V(p, n) <- transition(st, 0.0, tr, tr);
+        }
+        mod Top ( inout step : Electrical, inout out : Electrical ) {
+            s1 : Step ( step, gnd );
+            r1 : Resistor ( step, out );
+            c1 : Capacitor ( out, gnd ) { .c = 1e-8 };
+        }
+    ");
+    let mut compiler = CircuitCompiler::new(&design, &prog);
+    let mut circuit = compiler.build_circuit("Top").expect("build circuit");
+    circuit.init_digital().unwrap();
+    circuit.rebuild_digital_topology();
+
+    // τ = 1e3·1e-8 = 10 µs ≪ tr = 500 µs: the RC tracks the ramp
+    // quasi-statically, so V(out) ≈ the transition output itself.
+    let options = TransientAnalysisOptions::new(2e-3.into(), 1e-5.into());
+    let result = circuit.transient(options, Context::default())
+        .unwrap().solve().unwrap();
+
+    let v_out = |t: f64| {
+        result.iter().find(|s| s.time() >= t)
+            .and_then(|s| s.get_node(&NodeIdentifier::Anonymous(2)))
+            .expect("V(out)")
+    };
+    let pre = v_out(5e-4);
+    assert!(pre.abs() < 1e-6, "before the edge: V(out) = {pre}");
+    let mid = v_out(1.25e-3);
+    assert!(mid > 0.3 && mid < 0.6, "mid-ramp, not a jump: V(out) = {mid}");
+    let late = v_out(1.9e-3);
+    assert!((late - 1.0).abs() < 0.03, "settled after tr: V(out) = {late}");
+}
+
+/// SC-09 edge case — `transition` with rise/fall = 0 is an instantaneous
+/// step (no divide-by-zero), still landing on a declared breakpoint: the
+/// output only ever reads the rails (never a ramp sample), the integrator
+/// lands exactly on the switching edge, and every value is finite.
+#[test]
+fn sim_tran_transition_zero_rise_fall_is_an_instantaneous_step() {
+    use piperine_solver::prelude::TransientAnalysisOptions;
+
+    let (design, prog) = elaborate_and_lower("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Capacitor ( inout p : Electrical, inout n : Electrical ) { param c : Real = 1n; }
+        analog Capacitor { I(p, n) <+ c * ddt(V(p, n)); }
+        mod Step ( inout p : Electrical, inout n : Electrical ) {
+            var st : Real = 0.0;
+        }
+        analog Step {
+            @timer(1e-3) { st = 1.0; }
+            V(p, n) <- transition(st, 0.0, 0.0, 0.0);
+        }
+        mod Top ( inout step : Electrical, inout out : Electrical ) {
+            s1 : Step ( step, gnd );
+            r1 : Resistor ( step, out );
+            c1 : Capacitor ( out, gnd ) { .c = 1e-8 };
+        }
+    ");
+    let mut compiler = CircuitCompiler::new(&design, &prog);
+    let mut circuit = compiler.build_circuit("Top").expect("build circuit");
+    circuit.init_digital().unwrap();
+    circuit.rebuild_digital_topology();
+
+    let options = TransientAnalysisOptions::new(2e-3.into(), 1e-5.into());
+    let result = circuit.transient(options, Context::default())
+        .unwrap().solve().unwrap();
+
+    // Instantaneous: the driving node reads a rail at every recorded step
+    // (a ramp — even a fast one — would show intermediate samples).
+    let mut t_flip = None;
+    for step in result.iter() {
+        let t = step.time();
+        let v = step.get_node(&NodeIdentifier::Anonymous(1)).expect("V(step)");
+        assert!(v.is_finite(), "NaN at t = {t:e}");
+        assert!(
+            v.abs() < 1e-9 || (v - 1.0).abs() < 1e-9,
+            "t = {t:e}: instantaneous step reads a rail, got {v}"
+        );
+        if t_flip.is_none() && (v - 1.0).abs() < 1e-9 && t >= 1e-3 {
+            t_flip = Some(t);
+        }
+    }
+    // The integrator lands exactly on the timer's declared breakpoint edge.
+    assert!(
+        result.iter().any(|s| (s.time() - 1e-3).abs() < 1e-12),
+        "a recorded step sits exactly on the switching edge"
+    );
+    // The flip propagates within a few steps of the edge (the operator
+    // commits at accepted steps — the change is visible right after).
+    let t_flip = t_flip.expect("the step eventually flips to the high rail");
+    assert!(t_flip < 1e-3 + 3.0 * 2.0e-5, "flip at {t_flip:e}, within 3·dt_max of the edge");
+}
+
+/// SC-12 — `@initial { V(p,n) <- ic }` branch force with UIC hold: a cap
+/// pre-charged to 5 V starts at exactly 5 and discharges through R along
+/// `5·e^(−t/RC)` — the t=0 state is a *consistent* clamped solution, not a
+/// guess overlaid on an inconsistent operating point.
+#[test]
+fn sim_tran_initial_branch_force_precharged_cap() {
+    use piperine_solver::prelude::TransientAnalysisOptions;
+
+    let (design, prog) = elaborate_and_lower("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Cap ( inout p : Electrical, inout n : Electrical ) {
+            param c : Real = 1u;
+            param ic : Real = 0.0;
+        }
+        analog Cap {
+            @ initial { V(p, n) <- ic; }
+            I(p, n) <+ c * ddt(V(p, n));
+        }
+        mod Top ( inout out : Electrical ) {
+            c1 : Cap ( out, gnd ) { .ic = 5.0 };
+            r1 : Resistor ( out, gnd );
+        }
+    ");
+    let mut compiler = CircuitCompiler::new(&design, &prog);
+    let mut circuit = compiler.build_circuit("Top").expect("build circuit");
+    circuit.init_digital().unwrap();
+    circuit.rebuild_digital_topology();
+
+    // τ = RC = 1 ms; stop at 5 ms = 5τ.
+    let options = TransientAnalysisOptions::new(5e-3.into(), 1e-6.into());
+    let result = circuit.transient(options, Context::default())
+        .unwrap().solve().unwrap();
+
+    let reltol = Context::default().tolerances.reltol;
+    let tau = 1e3 * 1e-6;
+    let first = result.iter().next().expect("t=0 step");
+    let v0 = first.get_node(&NodeIdentifier::Anonymous(1)).expect("V(out)@0");
+    assert!((v0 - 5.0).abs() < 1e-6, "t=0 starts from ic exactly: {v0}");
+    for step in result.iter() {
+        let t = step.time();
+        let got = step.get_node(&NodeIdentifier::Anonymous(1)).expect("V(out)");
+        let want = 5.0 * (-t / tau).exp();
+        assert!(
+            (got - want).abs() <= 10.0 * reltol * want + 1e-6,
+            "t = {t:.4e}: V(out) = {got}, want {want} (10·reltol)"
+        );
+    }
+}
+
+/// SC-11 — two `ac_stim` terms in one contribution sum as phasors: the
+/// combined source `1∠0 + 1∠60°` equals the equivalent two-source circuit
+/// (each stimulus in its own series source) exactly, and anchors to
+/// (1.5, √3/2).
+#[test]
+fn sim_ac_multiple_ac_stim_superposition() {
+    use piperine_solver::prelude::AcSweepAnalysisOptions;
+
+    let solve = |src: &str| {
+        let (design, prog) = elaborate_and_lower(src);
+        let mut compiler = CircuitCompiler::new(&design, &prog);
+        let mut circuit = compiler.build_circuit("Top").expect("build circuit");
+        circuit.init_digital().unwrap();
+        circuit.rebuild_digital_topology();
+        let sweep = AcSweepAnalysisOptions {
+            start_frequency: 1e3,
+            stop_frequency: 1e5,
+            steps: 3,
+            logarithmic: true,
+        };
+        circuit.ac(Context::default()).unwrap().solve_sweep(sweep).unwrap()
+    };
+
+    // One contribution carrying two stimuli: 1∠0 + 1∠60°.
+    let combined = solve("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod VSource ( inout p : Electrical, inout n : Electrical ) { }
+        analog VSource { V(p, n) <+ ac_stim(1.0, 0.0) + ac_stim(1.0, 1.0471975511965976); }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Top ( inout out : Electrical ) {
+            v1 : VSource ( out, gnd );
+            r1 : Resistor ( out, gnd );
+        }
+    ");
+    // The equivalent two-source circuit: one stimulus per series source.
+    let reference = solve("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod V1 ( inout p : Electrical, inout n : Electrical ) { }
+        analog V1 { V(p, n) <+ ac_stim(1.0, 0.0); }
+        mod V2 ( inout p : Electrical, inout n : Electrical ) { }
+        analog V2 { V(p, n) <+ ac_stim(1.0, 1.0471975511965976); }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Top ( inout n1 : Electrical, inout out : Electrical ) {
+            v1 : V1 ( n1, gnd );
+            v2 : V2 ( out, n1 );
+            r1 : Resistor ( out, gnd );
+        }
+    ");
+
+    let out_of = |result: &piperine_solver::prelude::AcAnalysisResult, node: usize, k: usize| {
+        let step = result.get(k).expect("sweep point");
+        *step.get_node(&NodeIdentifier::Anonymous(node)).expect("V(out)")
+    };
+    for k in 0..3 {
+        let got = out_of(&combined, 1, k);
+        let want = out_of(&reference, 2, k);
+        assert!(
+            (got - want).norm() < 1e-12,
+            "point {k}: combined {got} vs two-source {want}"
+        );
+        // Phasor anchor: 1∠0 + 1∠60° = 1.5 + j·√3/2.
+        assert!((got.re - 1.5).abs() < 1e-9, "point {k}: re = {}", got.re);
+        assert!((got.im - 0.8660254037844386).abs() < 1e-9, "point {k}: im = {}", got.im);
+    }
+}
+
+/// SC-10 — `idt` stamps `X/(jω)` in AC: an idt transconductor into a 1 Ω
+/// load is an integrator — |H| falls exactly 20 dB/dec and the phase sits
+/// at −90° across 4 decades.
+#[test]
+fn sim_ac_idt_integrator_slope_and_phase() {
+    use piperine_solver::prelude::AcSweepAnalysisOptions;
+
+    let (design, prog) = elaborate_and_lower("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod VSource ( inout p : Electrical, inout n : Electrical ) { param dc : Real = 0.0; }
+        analog VSource { V(p, n) <+ dc + ac_stim(1.0, 0.0); }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1.0; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Integ ( inout i : Electrical, inout o : Electrical ) { param r : Real = 1e3; }
+        analog Integ { I(o, gnd) <+ -idt(V(i, gnd)) / r; }
+        mod Top ( inout vin : Electrical, inout vout : Electrical ) {
+            v1 : VSource ( vin, gnd );
+            g1 : Integ ( vin, vout );
+            rl : Resistor ( vout, gnd );
+        }
+    ");
+    let mut compiler = CircuitCompiler::new(&design, &prog);
+    let mut circuit = compiler.build_circuit("Top").expect("build circuit");
+    circuit.init_digital().unwrap();
+    circuit.rebuild_digital_topology();
+
+    // H(jω) = 1/(jω·1e3): −20 dB/dec, −90°. 9 points over 4 decades.
+    let sweep = AcSweepAnalysisOptions {
+        start_frequency: 1e2,
+        stop_frequency: 1e6,
+        steps: 9,
+        logarithmic: true,
+    };
+    let result = circuit.ac(Context::default()).unwrap()
+        .solve_sweep(sweep).unwrap();
+
+    let mag_phase = |k: usize| {
+        let step = result.get(k).expect("sweep point");
+        let v = step.get_node(&NodeIdentifier::Anonymous(2)).expect("V(vout)");
+        (v.norm(), v.arg())
+    };
+    // Absolute anchor at 1 kHz (k=2: 1e2·(1e4)^(2/8)): |H| = 1/(2π·1e3·1e3).
+    let (mag_1k, _) = mag_phase(2);
+    let want_1k = 1.0 / (2.0 * std::f64::consts::PI * 1e3 * 1e3);
+    assert!((mag_1k / want_1k - 1.0).abs() < 1e-3, "|H(1kHz)| = {mag_1k}, want {want_1k}");
+    for k in 0..9 {
+        let (mag, phase) = mag_phase(k);
+        assert!(
+            (phase + std::f64::consts::FRAC_PI_2).abs() < 1e-3,
+            "point {k}: phase = {}°, want −90°",
+            phase.to_degrees()
+        );
+        if k + 2 < 9 {
+            let (mag_next, _) = mag_phase(k + 2);
+            let ratio = mag_next / mag;
+            assert!((ratio - 0.1).abs() < 1e-3, "decade ratio = {ratio}, want 0.1 (−20 dB/dec)");
+        }
+    }
+}
+
+/// SC-09 — operator state advances only on accepted steps. The RC's
+/// exponential settle right after the ramp-start kink is real curvature
+/// (not a declared discontinuity), so the Milne gate rejects and halves
+/// there — exactly while the transition ramp is in flight. The ramp
+/// anchors (start, target, t_change) must come through untouched.
+#[test]
+fn sim_tran_transition_state_survives_rejected_steps() {
+    use piperine_solver::prelude::TransientAnalysisOptions;
+
+    let (design, prog) = elaborate_and_lower("
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod Resistor ( inout p : Electrical, inout n : Electrical ) { param r : Real = 1k; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Capacitor ( inout p : Electrical, inout n : Electrical ) { param c : Real = 1n; }
+        analog Capacitor { I(p, n) <+ c * ddt(V(p, n)); }
+        mod Step ( inout p : Electrical, inout n : Electrical ) {
+            param tr : Real = 5e-4;
+            var st : Real = 0.0;
+        }
+        analog Step {
+            @timer(1e-3) { st = 1.0; }
+            V(p, n) <- transition(st, 0.0, tr, tr);
+        }
+        mod Top ( inout step : Electrical, inout out : Electrical ) {
+            s1 : Step ( step, gnd );
+            r1 : Resistor ( step, out );
+            c1 : Capacitor ( out, gnd ) { .c = 1e-8 };
+        }
+    ");
+    let mut compiler = CircuitCompiler::new(&design, &prog);
+    let mut circuit = compiler.build_circuit("Top").expect("build circuit");
+    circuit.init_digital().unwrap();
+    circuit.rebuild_digital_topology();
+
+    let options = TransientAnalysisOptions::new(2e-3.into(), 1e-5.into());
+    let result = circuit.transient(options, Context::default())
+        .unwrap().solve().unwrap();
+
+    assert!(result.stats.steps_rejected > 0, "post-kink settle curvature forces LTE rejections");
+    let v_out = |t: f64| {
+        result.iter().find(|s| s.time() >= t)
+            .and_then(|s| s.get_node(&NodeIdentifier::Anonymous(2)))
+            .expect("V(out)")
+    };
+    // Ramp fraction at 1.4 ms ≈ 0.76 (ramp spans ~[1.02 ms, 1.52 ms]); a
+    // corrupted anchor (e.g. a ramp restarted at a rejected step) lands far off.
+    let mid = v_out(1.4e-3);
+    assert!(mid > 0.6 && mid < 0.85, "ramp anchor intact through rejections: V(out) = {mid}");
+    let late = v_out(1.9e-3);
+    assert!((late - 1.0).abs() < 0.03, "settled after tr: V(out) = {late}");
 }

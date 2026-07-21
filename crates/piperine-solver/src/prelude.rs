@@ -12,36 +12,43 @@
 
 // ── Building blocks ────────────────────────────────────────────────────────
 pub use crate::analog::{AnalogReference, BranchIdentifier, Netlist, NodeIdentifier};
+pub use crate::core::builder::CircuitBuilder;
 pub use crate::core::circuit::CircuitInstance;
-pub use crate::core::element::{Element, ElementCapabilities};
+pub use crate::core::element::{ConvergenceHint, Element, ElementCapabilities};
 pub use crate::core::introspect::{
     Bounds, Direction, Domain, Invalidation, ParamDescriptor, ParamError, ParamScope,
-    QueryDescriptor, QueryKind, TerminalDescriptor, Value, ValueKind,
+    QueryDescriptor, QueryKind, SignConvention, TerminalDescriptor, Value, ValueKind,
 };
 pub use crate::core::net::{Net, NetKind};
 pub use crate::digital::{DigitalNet, LogicValue};
 
 // ── Run configuration ──────────────────────────────────────────────────────
-pub use crate::analysis::ac::AcSweepAnalysisOptions;
-pub use crate::analysis::noise::NoiseAnalysisOptions;
-pub use crate::analysis::tf::TransferFunctionAnalysisOptions;
-pub use crate::analysis::transient::TransientAnalysisOptions;
-pub use crate::math::integration::IntegrationMethod;
-pub use crate::solver::Context;
-pub use crate::solver::{Policy, Tolerances};
+pub use crate::analyses::ac::AcSweepAnalysisOptions;
+pub use crate::analyses::disto::{DistoOptions, DistoSolver};
+pub use crate::analyses::noise::{NoiseAnalysisOptions, NoiseKind};
+pub use crate::analyses::tf::TransferFunctionAnalysisOptions;
+pub use crate::analyses::pss::{PssAnalysisOptions, PssResult, PssStats};
+pub use crate::analyses::pz::{PoleZeroOptions, PoleZeroSolver};
+pub use crate::analyses::sens::{SensAnalysisOptions, SensResult};
+pub use crate::analyses::sp::{SpOptions, SpPort, SpSolver};
+pub use crate::analyses::transient::TransientAnalysisOptions;
+pub use crate::analyses::Context;
+pub use crate::analyses::{Policy, Tolerances};
+pub use crate::analyses::Solver;
 
 // ── Convergence policy (opt-in customization) ──────────────────────────────
-pub use crate::solver::convergence::{
-    ConvergencePlan, DampedNewton, HomotopyStrategy, LteStepper, NewtonStrategy, StepperStrategy,
+pub use crate::analyses::config::{GminSchedule, Schedules, SourceSchedule, StepperGains, TraceFlags};
+pub use crate::analyses::convergence::{
+    ConvergencePlan, DampedNewton, HomotopyStrategy, NewtonStrategy, PiController, StepperStrategy,
 };
 
 // ── Results ────────────────────────────────────────────────────────────────
-pub use crate::analysis::ac::{AcAnalysisResult, AcAnalysisStep};
-pub use crate::analysis::dc::DcAnalysisResult;
-pub use crate::analysis::noise::NoiseAnalysisResult;
-pub use crate::analysis::tf::TransferFunctionAnalysisResult;
-pub use crate::analysis::transient::{TransientAnalysisResult, TransientStep};
+pub use crate::result::{
+    AcAnalysisResult, AcAnalysisStep, DcAnalysisResult, DistoResult, NoiseAnalysisResult, NoiseContribution,
+    PoleZeroResult, SpResult, TransferFunctionAnalysisResult, TransferType, TransientAnalysisResult, TransientStep,
+};
 
 // ── Errors ─────────────────────────────────────────────────────────────────
 pub use crate::error::Error;
 pub use crate::result::Result;
+pub use crate::result::SolverStats;

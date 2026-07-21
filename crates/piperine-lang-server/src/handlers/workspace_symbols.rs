@@ -20,7 +20,6 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
                     Item::ModuleDeclaration(m) => (&m.name, SymbolKind::MODULE, m.span),
                     Item::BehaviorDecl(b) => (&b.name, SymbolKind::CLASS, b.span),
                     Item::FnDecl(f) => (&f.sig.name, SymbolKind::FUNCTION, f.span),
-                    Item::BenchDecl(b) => (&b.name, SymbolKind::METHOD, b.span),
                     Item::DisciplineDecl(d) => (&d.name, SymbolKind::INTERFACE, d.span),
                     Item::BundleDecl(b) => (&b.name, SymbolKind::STRUCT, b.span),
                     Item::EnumDecl(e) => (&e.name, SymbolKind::ENUM, e.span),

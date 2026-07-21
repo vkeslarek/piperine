@@ -2,7 +2,8 @@
 //! `Plugin plan.md`).
 //!
 //! A plugin implements [`Plugin`]: a [`Manifest`] accessor plus a
-//! `register()` that contributes devices and attribute schemas through the
+//! `register()` that contributes devices, attribute schemas, and CLI
+//! scripts through the
 //! [`Registrar`]. The host ([`PluginHost`]) discovers plugins from
 //! `Piperine.toml [plugins]`, verifies them (TOFU + content hash), loads
 //! them (native dlopen today; WASM/process later), and answers the
@@ -24,9 +25,7 @@ mod view;
 
 pub use backend::native::ABI_VERSION;
 pub use capability::HostCtx;
-pub use contributions::{
-    Contributions, DeviceFactory, DeviceKind, PluginBenchTask, Registrar, ScriptHandler,
-};
+pub use contributions::{Contributions, DeviceFactory, DeviceKind, Registrar, ScriptHandler};
 pub use error::{PluginError, PluginResult};
 pub use host::PluginHost;
 pub use manifest::{Abi, Manifest, Permissions};
@@ -46,8 +45,8 @@ pub use piperine_lang::pom::Design;
 pub trait Plugin: Send + Sync {
     fn manifest(&self) -> &Manifest;
 
-    /// Contribute devices, attribute schemas, bench tasks, and scripts.
-    /// Runs once at load time, before elaboration.
+    /// Contribute devices, attribute schemas, and scripts. Runs once at
+    /// load time, before elaboration.
     fn register(&self, r: &mut Registrar) {
         let _ = r;
     }

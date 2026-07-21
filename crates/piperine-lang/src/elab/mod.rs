@@ -80,4 +80,28 @@ impl SourceFile {
         design.set_origins(resolver.take_origins());
         Ok(design)
     }
+
+    /// Like [`elaborate`](Self::elaborate), but also returns the
+    /// [`ElabContext`][crate::elab::registry::ElabContext] populated during
+    /// elaboration — the `TypeRegistry`/`CallableRegistry`/`OperatorRegistry`/
+    /// `SchemaRegistry`/impl-method-table entries a host needs to resolve
+    /// `extern`-declared names after the fact (declared-language-surface
+    /// T14: `piperine-lang-server`'s `symbol_index::resolve_at` is the
+    /// first consumer — `Design` alone carries no registry state).
+    pub fn elaborate_with_context(
+        self,
+        source_map: &SourceMap,
+    ) -> Result<(Design, crate::elab::registry::ElabContext), ElabError> {
+        let mut resolver = Resolver::new(source_map);
+        let mut items = resolver.prelude_items();
+        let expanded = resolver
+            .expand(self)
+            .map_err(|e| ElabError::from(ElabErrorKind::Other(e.to_string())))?;
+        items.extend(expanded);
+        let augmented = SourceFile { items };
+        let mut elaborator = Elaborator::new();
+        let mut design = elaborator.elaborate(augmented)?;
+        design.set_origins(resolver.take_origins());
+        Ok((design, elaborator.ctx))
+    }
 }

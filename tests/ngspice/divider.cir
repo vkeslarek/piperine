@@ -1,0 +1,9 @@
+* resistive divider
+V1 vin 0 DC 10
+R1 vin mid 1k
+R2 mid 0 3k
+.control
+op
+print v(vin) v(mid)
+.endc
+.end

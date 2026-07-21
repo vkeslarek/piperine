@@ -6,11 +6,12 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 
-use piperine_solver::digital::{DigitalEvent, DigitalNet, LogicValue};
+use piperine_solver::abi::{DigitalEvent, DigitalNet, LogicValue};
 
-use crate::ir::{EdgeKind, Type};
-use crate::jit::digital::{DigitalAbi, DigitalKernel};
-use crate::jit::{CodegenError, SimCtx};
+use crate::resolve::{EdgeKind, Type};
+use crate::kernel::digital::{DigitalAbi, DigitalKernel};
+use crate::error::CodegenError;
+use crate::emit::abi::SimCtx;
 
 /// Quad encoding shared with the JIT (0, 1, 2 = X, 3 = Z).
 struct Quad;
@@ -145,6 +146,31 @@ impl DigitalInstance {
         &self.kernel
     }
 
+    /// Hidden state carrier for full-state re-entry (PSS shots): module
+    /// vars + edge-detection memory. Empty when the kernel is stateless.
+    pub fn hidden_snapshot(&self) -> Option<(Vec<i64>, Vec<f64>)> {
+        if self.vars_int.is_empty() && self.vars_real.is_empty() && self.prev_watch.is_empty() {
+            return None;
+        }
+        let mut ints = self.vars_int.clone();
+        ints.extend_from_slice(&self.prev_watch);
+        Some((ints, self.vars_real.clone()))
+    }
+
+    /// Restore a state produced by [`Self::hidden_snapshot`]. Splits the int
+    /// carrier back into module vars and watch memory by the current layout
+    /// (the layout is kernel-fixed, so a same-kernel snapshot always fits).
+    pub fn hidden_restore(&mut self, state: &(Vec<i64>, Vec<f64>)) {
+        let (ints, reals) = state;
+        let n_int = self.vars_int.len();
+        let n_watch = self.prev_watch.len();
+        if ints.len() == n_int + n_watch && reals.len() == self.vars_real.len() {
+            self.vars_int.clone_from_slice(&ints[..n_int]);
+            self.prev_watch.clone_from_slice(&ints[n_int..]);
+            self.vars_real.clone_from_slice(reals);
+        }
+    }
+
     /// Export all register/variable values as `f64`, indexed by `VarId`.
     /// Used by the D2A bridge to sync digital state into the analog vars
     /// bank after each evaluation.
@@ -152,15 +178,14 @@ impl DigitalInstance {
         self.kernel.layout().export_vars(&self.vars_int, &self.vars_real)
     }
 
-    /// Apply register power-on values, evaluate once with unknown inputs,
-    /// and schedule the resulting output values at t = 0.
-    pub fn init(&mut self, event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>) {
-        // Integer-bank slots default to X only where the variable is
-        // 4-state; two-state integers start at 0.
+    /// Power-on register values `(VarId, value)`, evaluated from the
+    /// kernel's `RegInit` expressions against this instance's parameters —
+    /// the same values [`DigitalInstance::init`] writes. The fused
+    /// combinational network consumes them for its own power-on bank state.
+    pub(crate) fn reg_init_values(&self) -> Vec<(crate::resolve::VarId, f64)> {
         let param_index = &self.kernel.param_index;
         let params = &self.params;
-        let reg_values: Vec<(crate::ir::VarId, f64)> = self
-            .kernel
+        self.kernel
             .reg_inits()
             .iter()
             .map(|r| {
@@ -172,8 +197,15 @@ impl DigitalInstance {
                 .unwrap_or(0.0);
                 (r.var, value)
             })
-            .collect();
-        for (var, value) in reg_values {
+            .collect()
+    }
+
+    /// Apply register power-on values, evaluate once with unknown inputs,
+    /// and schedule the resulting output values at t = 0.
+    pub fn init(&mut self, event_queue: &mut BinaryHeap<Reverse<DigitalEvent>>) {
+        // Integer-bank slots default to X only where the variable is
+        // 4-state; two-state integers start at 0.
+        for (var, value) in self.reg_init_values() {
             self.write_var(var, value);
         }
 
@@ -408,7 +440,7 @@ impl DigitalInstance {
         self.kernel.eval_watch(&abi, &mut s.watch);
     }
 
-    fn write_var(&mut self, var: crate::ir::VarId, value: f64) {
+    fn write_var(&mut self, var: crate::resolve::VarId, value: f64) {
         // The kernel layout knows the bank; the symbol type decides the
         // conversion.
         let layout = self.kernel.layout();

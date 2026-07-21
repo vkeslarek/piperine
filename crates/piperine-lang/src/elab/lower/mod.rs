@@ -17,7 +17,7 @@
 use std::collections::HashMap;
 
 use crate::parse::ast::{
-    BehaviorDecl, BenchDecl, DisciplineDecl, EnumDecl, FnDecl, ImplDecl, ModuleDeclaration, SourceFile,
+    BehaviorDecl, DisciplineDecl, EnumDecl, FnDecl, ImplDecl, ModuleDeclaration, SourceFile,
 };
 use crate::elab::const_eval::ConstEnv;
 use crate::value::Value;
@@ -40,7 +40,6 @@ pub struct SymbolTable {
     pub enums: HashMap<String, EnumDecl>,
     pub module_decls: HashMap<String, ModuleDeclaration>,
     pub behavior_decls: Vec<BehaviorDecl>,
-    pub bench_decls: Vec<BenchDecl>,
     pub fn_decls: HashMap<String, FnDecl>,
     pub capability_decls: HashMap<String, crate::parse::ast::CapabilityDecl>,
     pub impl_decls: Vec<ImplDecl>,
@@ -57,7 +56,6 @@ impl SymbolTable {
             enums: HashMap::new(),
             module_decls: HashMap::new(),
             behavior_decls: Vec::new(),
-            bench_decls: Vec::new(),
             fn_decls: HashMap::new(),
             capability_decls: HashMap::new(),
             impl_decls: Vec::new(),

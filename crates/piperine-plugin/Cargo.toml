@@ -9,7 +9,7 @@ piperine-lang = { version = "0.1.0", path = "../piperine-lang" }
 piperine-codegen = { version = "0.1.0", path = "../piperine-codegen" }
 piperine-solver = { version = "0.1.0", path = "../piperine-solver" }
 piperine-project = { version = "0.1.0", path = "../piperine-project" }
-piperine-bench = { version = "0.1.1", path = "../piperine-bench" }
+piperine = { version = "0.1.1", path = "../.." }
 thiserror.workspace = true
 miette = { version = "7", features = ["fancy"] }
 serde.workspace = true
@@ -28,6 +28,13 @@ tempfile.workspace = true
 # via `#[path]`.
 [[example]]
 name = "fixture_plugin"
+crate-type = ["cdylib", "rlib"]
+
+# T25 (DLS-22) fixture: a plugin contributing its own custom attribute
+# schema (`widget_meta`), separate from `fixture_plugin` so its stub
+# requirement doesn't affect the stub-less fixture's own tests.
+[[example]]
+name = "fixture_schema_plugin"
 crate-type = ["cdylib", "rlib"]
 
 # The process-tier gate guest (rc-parasitics served over stdio JSON-RPC via

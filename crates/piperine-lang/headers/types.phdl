@@ -1,0 +1,49 @@
+// declared-language-surface P4 sub-phase (DLS-17) — the seven primitive
+// value types, textually declared so ctrl+click on `Real`/`Integer`/etc.
+// resolves to a real declaration instead of falling back to a hardcoded
+// Rust list (`ElabContext::new()`'s former `prims` vec). The native
+// `ValueType` binding each name dispatches to lives in
+// `elab/registry/types.rs`'s implementation table.
+extern type Real;
+extern type Natural;
+extern type Integer;
+extern type Complex;
+extern type Boolean;
+extern type Quad;
+extern type String;
+
+// declared-language-surface P4 sub-phase (DLS-23) — explicit-cast
+// associated functions. The former bare-name cast forms (`real(x)`,
+// `int(x)`, `bit(x)`, `Boolean(x)`, `Quad(x)`) targeted four distinct
+// value types (`bit`/`Quad` both meant `ValueType::Quad`); each target
+// type below gets one overloaded `from`, resolved by the argument's
+// source type (SPEC P4-AC7, DLS-06/07's overload resolution) — casts are
+// ordinary declared functions now, no bare identifier carries
+// compiler-special meaning. A cast performs no value conversion (it never
+// did — `Expr::Cast` was a type-system-only annotation, a no-op at
+// runtime/codegen); `Real::from(x)` is the same transparent pass-through
+// `x`'s evaluated/emitted form always was.
+extern impl Real {
+    fn from(x: Integer) -> Real;
+    fn from(x: Natural) -> Real;
+    fn from(x: Boolean) -> Real;
+    fn from(x: Quad) -> Real;
+}
+extern impl Integer {
+    fn from(x: Real) -> Integer;
+    fn from(x: Natural) -> Integer;
+    fn from(x: Boolean) -> Integer;
+    fn from(x: Quad) -> Integer;
+}
+extern impl Quad {
+    fn from(x: Real) -> Quad;
+    fn from(x: Integer) -> Quad;
+    fn from(x: Natural) -> Quad;
+    fn from(x: Boolean) -> Quad;
+}
+extern impl Boolean {
+    fn from(x: Real) -> Boolean;
+    fn from(x: Integer) -> Boolean;
+    fn from(x: Natural) -> Boolean;
+    fn from(x: Quad) -> Boolean;
+}

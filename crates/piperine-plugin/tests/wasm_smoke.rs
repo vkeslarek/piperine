@@ -1,11 +1,11 @@
 //! Phase-4 gates (Plugin plan): the rc-parasitics case recompiled to WASM
-//! passes the Phase-3 divider gate unmodified, guest bench tasks dispatch
-//! through `pp_task`, and a runaway guest is killed by the fuel cap.
+//! passes the Phase-3 divider gate unmodified, and a runaway guest is
+//! killed by the fuel cap — driven through the root host API.
 
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use piperine_bench::{BenchOutcome, BenchRunner};
+use piperine::{NetRef, SimSession, SolverConfig};
 use piperine_lang::SourceMap;
 use piperine_plugin::{PluginHost, TrustMode};
 
@@ -81,30 +81,21 @@ const DIVIDER: &str = "
         src : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
         r1  : Resistor (.p = vin, .n = out);
     }
-    bench Top {
-        fn divider() {
-            var r = $op();
-            $assert(r.v(out, gnd) > 2.49, \"divider low\");
-            $assert(r.v(out, gnd) < 2.51, \"divider high\");
-        }
-        fn task_roundtrip() {
-            $assert($wgain() == 42.0, \"guest task value\");
-        }
-        fn runaway() {
-            var x = $spin();
-        }
-    }
 ";
 
-fn run(host: Rc<PluginHost>, entry: &str) -> BenchOutcome {
-    let design = piperine_lang::parse_and_elaborate_seeded(DIVIDER, &SourceMap::dummy(), |ctx| {
+/// An operating point of `Top` through a session wired with the wasm host.
+fn run_top_op(host: Rc<PluginHost>, src: &str) -> Result<f64, String> {
+    let design = piperine_lang::parse_and_elaborate_seeded(src, &SourceMap::dummy(), |ctx| {
         host.seed_schemas(ctx);
     })
     .expect("elaborate");
-    BenchRunner::new(&design)
-        .with_device_provider(host.clone())
-        .with_plugins(host)
-        .run_entry("Top", entry)
+    let mut session = SimSession::new(design, "Top".to_string());
+    session.set_device_provider(host.clone());
+    session.set_hooks(host);
+    let op = session
+        .run_op(&SolverConfig::default(), None)
+        .map_err(|e| e.to_string())?;
+    op.v(&NetRef { name: "out".to_string() }, None).map_err(|e| e.to_string())
 }
 
 #[test]
@@ -114,25 +105,8 @@ fn wasm_parasitics_passes_the_phase3_gate() {
     project_with_guest(dir.path(), &artifact);
     let host = load_host(dir.path());
 
-    match run(host, "divider") {
-        BenchOutcome::Passed => {}
-        BenchOutcome::Failed(m) => panic!("bench assert failed: {m}"),
-        BenchOutcome::Error(m) => panic!("bench errored: {m}"),
-    }
-}
-
-#[test]
-fn wasm_bench_task_dispatches_through_pp_task() {
-    let artifact = guest_wasm();
-    let dir = tempfile::tempdir().unwrap();
-    project_with_guest(dir.path(), &artifact);
-    let host = load_host(dir.path());
-
-    match run(host, "task_roundtrip") {
-        BenchOutcome::Passed => {}
-        BenchOutcome::Failed(m) => panic!("bench assert failed: {m}"),
-        BenchOutcome::Error(m) => panic!("bench errored: {m}"),
-    }
+    let out = run_top_op(host, DIVIDER).expect("op solves");
+    assert!(out > 2.49 && out < 2.51, "divider at 2.5 V, got {out}");
 }
 
 #[test]
@@ -142,13 +116,8 @@ fn runaway_guest_is_killed_by_the_fuel_cap() {
     project_with_guest(dir.path(), &artifact);
     let host = load_host(dir.path());
 
-    match run(host, "runaway") {
-        BenchOutcome::Error(msg) => {
-            assert!(
-                msg.contains("fuel"),
-                "the trap must name the fuel cap: {msg}"
-            );
-        }
-        other => panic!("expected the fuel trap, got {other:?}"),
-    }
+    // The `Runaway` marker module tells the guest to spin in `before_lower`.
+    let src = format!("{DIVIDER}\n    mod Runaway() {{}}\n");
+    let msg = run_top_op(host, &src).expect_err("the fuel cap must trap");
+    assert!(msg.contains("fuel"), "the trap must name the fuel cap: {msg}");
 }

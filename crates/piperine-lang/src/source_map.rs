@@ -37,6 +37,7 @@ impl SourceMap {
         let mut map = Self::new("headers".into());
         map = map.with_prelude("headers/prelude.phdl".into());
         map.add_namespace("piperine", "headers");
+        map.add_namespace("spice", "headers/spice");
         map
     }
 }

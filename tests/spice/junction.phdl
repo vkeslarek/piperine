@@ -1,0 +1,52 @@
+// Junction devices through the JIT. All four converge to their physical
+// operating points:
+//   - diode: pnjlim single-junction (Shockley forward drop).
+//   - bjt: coupled B-E / B-C junctions, converged via gmin stepping (the
+//     solver's SPICE homotopy fallback for stiff coupled junctions).
+//   - mos1 / jfet: gate/channel + bulk junctions.
+// The flattener's shared-temporary tape lets these large bodies compile at
+// all (they used to exhaust memory); gmin stepping gets the coupled
+// operating points to converge.
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::diode;
+use spice::bjt;
+use spice::mos;
+use spice::jfet;
+
+mod DioBias() {
+    wire gnd: Electrical; wire vin: Electrical; wire out: Electrical;
+    vs: vsrc (.p=vin,.n=gnd) { .dc = 5.0 };
+    rb: res  (.p=vin,.n=out) { .r = 1.0e3 };
+    d1: dio  (.p=out,.n=gnd) { };
+}
+
+// Diode-connected NPN (base = collector): a single effective B-E junction
+// with a real KCL-consistent operating point (passes the current-residual
+// convergence check). The common-emitter *amplifier* — coupled BE-forward /
+// BC-reverse junctions that need saturation — is a known gap: gmin stepping
+// alone converges to the wrong solution branch (active instead of saturated);
+// it needs source stepping. See validation/ (bjt_ce) and the piperine ROADMAP.
+mod BjtDiode() {
+    wire gnd: Electrical; wire vin: Electrical; wire bc: Electrical;
+    vs: vsrc (.p=vin,.n=gnd) { .dc = 5.0 };
+    r1: res  (.p=vin,.n=bc) { .r = 1.0e3 };
+    q1: bjt  (.c=bc,.b=bc,.e=gnd,.sub=gnd) { };
+}
+
+// NMOS diode-connected (gate=drain): channel + bulk junctions.
+mod MosBias() {
+    wire gnd: Electrical; wire vdd: Electrical; wire d: Electrical;
+    vd: vsrc (.p=vdd,.n=gnd) { .dc = 5.0 };
+    r1: res (.p=vdd,.n=d) { .r = 10.0e3 };
+    m1: mos1 (.d=d,.g=d,.s=gnd,.b=gnd) { .model = Mos1Model { .vto = 1.0, .kp = 2.0e-5 } };
+}
+
+// JFET: gate junction reverse-biased, channel conducts.
+mod JfetBias() {
+    wire gnd: Electrical; wire vdd: Electrical; wire d: Electrical;
+    vd: vsrc (.p=vdd,.n=gnd) { .dc = 5.0 };
+    r1: res (.p=vdd,.n=d) { .r = 1.0e3 };
+    j1: jfet (.d=d,.g=gnd,.s=gnd) { };
+}

@@ -238,100 +238,19 @@ digital Accumulator {
 }
 ```
 
-## A.3 Worked benches (interpreted context)
+## A.3 Worked testbenches (host API)
 
-### A.3.1 Open-circuit test
+The interpreted `bench` block was removed — testbenches are Python files
+(Part VIII). One runnable twin exists per `.phdl` circuit in `examples/`;
+a minimal one:
 
-DC operating-point test: the switch is open, so current should be near zero. Then the
-switch is closed (override staged) and current should flow.
+```python
+# switch_open_tb.py
+import piperine
 
-```phdl
-mod SwitchOpenTest() {
-    wire signal : Electrical;  wire gnd : Ground;
-    sw     : Switch ( /* ctrl, p, n */ );
-    source : VoltageSource ( /* p, n */ ) { .dc = 5.0 };
-    resistor : Resistor ( /* p, n */ );
-}
-bench SwitchOpenTest {
-    fn test_open_circuit() {
-        var r = $op();
-        $assert(r.v(source.p, gnd) > 4.9, "source must be near 5V");
-        $assert(r.i(resistor.p, resistor.n) < 1e-8, "open switch => ~0 current");
-    }
-    fn test_closed_circuit() {
-        sw.ctrl = 1.0;
-        var r = $op();
-        $assert(r.i(resistor.p, resistor.n) > 4e-6, "closed switch => current flows");
-    }
-}
+m = piperine.load("switch.phdl").module("SwitchOpenTest")
+r = m.op()
+assert r.v("signal") < 1e-6, "open switch pulls the node to ground"
 ```
 
-### A.3.2 Transient with a warm-corner config
-
-Transient analysis at 358.15 K (85°C). The `solver` field of `TranConfig` carries the
-temperature override.
-
-```phdl
-bench OscTest {
-    fn test_frequency() {
-        var r = $tran(TranConfig {
-            .stop = 1e-3, .step = 1e-7,
-            .solver = Solver { .temperature = 358.15 }
-        });
-        var out = r.v(out, gnd);
-        $assert(out.peak_to_peak() > 1.0, "oscillation should start");
-    }
-}
-```
-
-### A.3.3 AC bandwidth
-
-AC sweep from 1 Hz to 1 GHz, 100 points per decade. The result is a
-`Waveform<Complex>`; `.db()` converts to dB, `.at(f)` reads at a specific frequency.
-
-```phdl
-bench FilterTest {
-    fn test_bandwidth() {
-        var r = $ac(AcConfig { .fstart = 1.0, .fstop = 1e9, .points = 100 });
-        $assert(r.v(out).db().at(1e3) > -3.0, "passband flat at 1 kHz");
-    }
-}
-```
-
-### A.3.4 Sweep — a `for`, not a task
-
-DC gain vs. load resistance, swept over four values. The curve is a `Vec<(Real, Real)>`
-emitted as CSV.
-
-```phdl
-bench AmpSweep {
-    fn dc_gain_vs_load() {
-        var curve : Vec<(Real, Real)> = [];
-        for rl in [1e3, 1e4, 1e5, 1e6] {
-            load.resistance = rl;
-            var r = $op();
-            curve.push((rl, r.v(out) / r.v(in_)));
-        }
-        $write("gain_vs_load.csv", curve);
-    }
-}
-```
-
-### A.3.5 Closure loop (tune_bias)
-
-Measure → adjust → re-run, in a bounded loop. If the bias converges (error < 1mV), the
-fn returns; otherwise it errors after 20 iterations.
-
-```phdl
-bench BiasTrim {
-    fn tune_bias() {
-        for i in 0..20 {
-            var r = $op();
-            var err = r.v(out) - 1.0;
-            if (abs(err) < 1e-3) { return; }
-            bias.trim = bias.trim - 0.1 * err;
-        }
-        $error("bias did not converge");
-    }
-}
-```
+Run with `piperine test` (discovers `*_tb.py`) or `piperine run switch_open_tb.py`.

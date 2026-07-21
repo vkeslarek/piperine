@@ -33,7 +33,7 @@ pub struct ConnectionSpec {
 }
 
 /// One staged instance injection with its provenance — `staged_by` names
-/// the writer (a plugin name, or `"bench"`), so a conflict can name both
+/// the writer (a plugin name), so a conflict can name both
 /// parties (SPEC Part VI §8.2, P0008).
 #[derive(Debug, Clone)]
 pub struct StagedInstance {

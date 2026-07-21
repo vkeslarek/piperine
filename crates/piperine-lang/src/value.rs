@@ -2,7 +2,7 @@
 //!
 //! One enum serves every phase: elaboration-time constant folding
 //! (`ConstEnv`), POM storage (param defaults, instance overrides, global
-//! consts, staged overrides), the `eval` interpreter, and `bench` results.
+//! consts, staged overrides) and the `eval` const interpreter.
 //! The former `ConstVal` and `pom::Value` were narrower copies of the same
 //! scalars; they are gone — a site that must reject non-constants narrows
 //! at the point of use instead of routing through a second type.
@@ -57,7 +57,7 @@ pub enum Value {
         ty: String,
         fields: Rc<RefCell<HashMap<String, Value>>>,
     },
-    /// A `Map<K, V>` association list (piperine-bench/docs/SPEC.md §5.1 — `ic`/`nodeset`
+    /// A `Map<K, V>` association list (host `ic`/`nodeset` maps
     /// per-node hints). Backed by a `Vec<(Value, Value)>`, not a `HashMap`:
     /// `Value` keys aren't `Hash`/`Eq`-clean, and N is tiny. Shared/mutable
     /// so `.insert(...)` is visible through every alias, like `List`.
@@ -90,13 +90,13 @@ pub struct Closure {
     pub captured: Vec<HashMap<String, Value>>,
 }
 
-/// A host-defined object reachable from `bench`/const-eval code.
+/// A host-defined object reachable from const-eval code.
 ///
-/// Lets host crates (e.g. `piperine-bench`) hand PHDL-callable handles
+/// Lets host crates hand PHDL-callable handles
 /// (`OpResult`, `NetRef`, `InstanceRef`, ...) into the interpreter without
 /// this crate knowing their concrete types.
 /// Interpreter re-entry used by closure-taking object methods
-/// ([`Object::call_method_with`]): invokes a bench `Closure` with arguments.
+/// ([`Object::call_method_with`]): invokes a `Closure` with arguments.
 pub type InvokeClosure<'a> = dyn FnMut(&Closure, Vec<Value>) -> Result<Value, EvalError> + 'a;
 
 pub trait Object: fmt::Debug {
@@ -121,7 +121,7 @@ pub trait Object: fmt::Debug {
     /// objects' data compares equal (e.g. two `NetRef`s with the same name).
     /// The default is identity (distinct objects compare unequal), which is
     /// the safe fallback; concrete object types that have meaningful value
-    /// identity override this (piperine-bench/docs/SPEC.md §5.1 — `Map<Net, Real>` keys
+    /// identity override this (map keys compare by name, not by object
     /// must compare by net name, not object pointer).
     fn equals(&self, _other: &dyn Any) -> bool {
         false

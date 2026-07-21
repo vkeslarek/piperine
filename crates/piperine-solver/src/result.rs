@@ -1,3 +1,427 @@
+//! Analysis result containers handed back to hosts (waveforms, operating points).
 use crate::error::Error;
+use crate::analog::{BranchIdentifier, AnalogVariable, NodeIdentifier};
+use crate::core::net::Net;
+use crate::digital::LogicValue;
+use ndarray::Array2;
+use num_complex::Complex;
+use std::collections::HashMap;
+use std::slice::Iter;
+use std::sync::Arc;
+use crate::analyses::noise::NoiseKind;
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// Per-analysis convergence + performance diagnostics. Accumulated during
+/// the solve; returned on the result type. Always-on (counter increments
+/// are negligible); `Default::default()` zeroes everything for analyses
+/// that haven't been instrumented yet.
+#[derive(Debug, Clone, Default)]
+pub struct SolverStats {
+    // Newton (DC + each transient step's inner loop)
+    pub newton_iterations: usize,
+    pub converged: bool,
+    // Transient step loop
+    pub steps_accepted: usize,
+    pub steps_rejected: usize,
+    pub dt_min_floor_hits: usize,
+    pub dt_min: f64,
+    pub dt_max: f64,
+    // Device-level
+    pub bypass_hits: usize,
+    pub bypass_misses: usize,
+    // Homotopy / convergence strategy
+    pub homotopy_strategy: Option<String>,
+    pub homotopy_levels: usize,
+    // Timing (nanoseconds)
+    pub assembly_time_ns: u64,
+    pub solve_time_ns: u64,
+}
+
+#[derive(Debug)]
+pub struct DcAnalysisResult {
+    values: HashMap<Arc<AnalogVariable>, f64>,
+    pub stats: SolverStats,
+}
+
+impl DcAnalysisResult {
+    pub fn new(
+        values: HashMap<Arc<AnalogVariable>, f64>,
+    ) -> Self {
+        Self {
+            values,
+            stats: SolverStats::default(),
+        }
+    }
+
+    /// Replace the default (zeroed) stats with populated values.
+    pub fn set_stats(&mut self, stats: SolverStats) {
+        self.stats = stats;
+    }
+    pub fn get(&self, variable: impl Into<Arc<AnalogVariable>>) -> Option<f64> {
+        self.values.get(&variable.into()).cloned()
+    }
+
+    pub fn get_node(&self, node_identifier: &NodeIdentifier) -> Option<f64> {
+        self.get(AnalogVariable::Node(node_identifier.clone()))
+    }
+
+    pub fn get_branch(&self, branch_identifier: impl Into<BranchIdentifier>) -> Option<f64> {
+        self.get(AnalogVariable::Branch(branch_identifier.into()))
+    }
+
+    pub fn values(&self) -> &HashMap<Arc<AnalogVariable>, f64> {
+        &self.values
+    }
+
+    /// Read the solved value by [`Net`] — the unified naming layer used by
+    /// hosts, diagnostics, and result mappers. Returns `None` for any net
+    /// the result does not cover (pseudo nets like ground, or unmapped
+    /// digital nets — those live on a separate path).
+    pub fn get_net(&self, net: &Net) -> Option<f64> {
+        let var = net.analog_variable()?;
+        self.values.get(var).copied()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TransientAnalysisResult {
+    values: Vec<TransientStep>,
+    pub stats: SolverStats,
+}
+
+impl TransientAnalysisResult {
+    pub fn new(values: Vec<TransientStep>) -> Self {
+        Self {
+            values,
+            stats: SolverStats::default(),
+        }
+    }
+
+    /// Replace the default (zeroed) stats with populated values.
+    pub fn set_stats(&mut self, stats: SolverStats) {
+        self.stats = stats;
+    }
+
+    pub fn push(&mut self, step: TransientStep) {
+        self.values.push(step)
+    }
+
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    pub fn get(&self, index: usize) -> Option<&TransientStep> {
+        assert!(index < self.values.len());
+
+        self.values.get(index)
+    }
+
+    pub fn last(&self) -> Option<&TransientStep> {
+        self.values.last()
+    }
+
+    pub fn iter(&self) -> Iter<'_, TransientStep> {
+        self.values.iter()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TransientStep {
+    time: f64,
+    values: HashMap<Arc<AnalogVariable>, f64>,
+    /// Snapshot of every digital net's logic value at this step, indexed by
+    /// `DigitalNet` id. Lets a transient trace read sequential logic over time
+    /// (`Trace.v(bit_net)` → 0/1/NaN), which `$op` cannot express (it is a
+    /// stateless operating point).
+    digital: Vec<LogicValue>,
+    /// Opt-in per-step device runtime banks (state, vars), keyed by device
+    /// label. Recorded only when the run enables
+    /// `TransientAnalysisOptions::record_device_state`; lets a host recompute
+    /// a stateful device's branch current at this step (`Trace.i`).
+    device_state: HashMap<String, (Vec<f64>, Vec<f64>)>,
+    /// Per-step hidden digital state (module vars + edge memory), keyed by
+    /// device label. Always recorded — it is what makes a step a *full*
+    /// circuit state for re-entry (PSS shots): register state round-trips
+    /// with the digital nets (the shot-state contract).
+    digital_hidden: HashMap<String, (Vec<i64>, Vec<f64>)>,
+}
+
+impl TransientStep {
+    pub fn new(time: f64, values: HashMap<Arc<AnalogVariable>, f64>) -> Self {
+        Self {
+            time,
+            values,
+            digital: Vec::new(),
+            device_state: HashMap::new(),
+            digital_hidden: HashMap::new(),
+        }
+    }
+
+    /// Attach a digital-net snapshot (by `DigitalNet` id).
+    pub fn with_digital(mut self, digital: Vec<LogicValue>) -> Self {
+        self.digital = digital;
+        self
+    }
+
+    /// Attach the per-step device runtime banks (label → (state, vars)).
+    pub fn with_device_state(mut self, device_state: HashMap<String, (Vec<f64>, Vec<f64>)>) -> Self {
+        self.device_state = device_state;
+        self
+    }
+
+    /// Attach the per-step hidden digital state (label → (ints, reals)).
+    pub fn with_digital_hidden(
+        mut self,
+        digital_hidden: HashMap<String, (Vec<i64>, Vec<f64>)>,
+    ) -> Self {
+        self.digital_hidden = digital_hidden;
+        self
+    }
+
+    /// This step's logic value for digital net `idx`, or `None` if unrecorded.
+    pub fn digital(&self, idx: usize) -> Option<LogicValue> {
+        self.digital.get(idx).copied()
+    }
+
+    /// This step's recorded runtime banks (state, vars) for the device
+    /// labelled `label`, or `None` when recording was off (or the device has
+    /// no runtime banks).
+    pub fn device_state(&self, label: &str) -> Option<&(Vec<f64>, Vec<f64>)> {
+        self.device_state.get(label)
+    }
+
+    /// This step's hidden digital state for the device labelled `label`
+    /// (always recorded), or `None` when the device is stateless/unknown.
+    pub fn digital_hidden(&self, label: &str) -> Option<&(Vec<i64>, Vec<f64>)> {
+        self.digital_hidden.get(label)
+    }
+
+    pub fn get(&self, variable: impl Into<Arc<AnalogVariable>>) -> Option<f64> {
+        self.values.get(&variable.into()).cloned()
+    }
+
+    pub fn get_node(&self, node_identifier: &NodeIdentifier) -> Option<f64> {
+        self.get(AnalogVariable::Node(node_identifier.clone()))
+    }
+
+    pub fn get_branch(&self, branch_identifier: impl Into<BranchIdentifier>) -> Option<f64> {
+        self.get(AnalogVariable::Branch(branch_identifier.into()))
+    }
+
+    /// Read the analog value by [`Net`] (the unified naming layer). Returns
+    /// `None` for digital and pseudo nets.
+    pub fn get_net(&self, net: &Net) -> Option<f64> {
+        let var = net.analog_variable()?;
+        self.values.get(var).copied()
+    }
+
+    /// Read the digital logic value by [`Net`]. Returns `None` for analog
+    /// and pseudo nets, or for digital nets that were not recorded this
+    /// step.
+    pub fn digital_net(&self, net: &Net) -> Option<LogicValue> {
+        if !matches!(net.kind(), crate::core::net::NetKind::Digital) {
+            return None;
+        }
+        let idx = net.dense()?;
+        self.digital.get(idx).copied()
+    }
+
+    pub fn values(&self) -> &HashMap<Arc<AnalogVariable>, f64> {
+        &self.values
+    }
+
+    pub fn time(&self) -> f64 {
+        self.time
+    }
+}
+
+pub struct AcAnalysisResult {
+    values: Vec<AcAnalysisStep>,
+}
+
+impl AcAnalysisResult {
+    pub fn new(values: Vec<AcAnalysisStep>) -> Self {
+        Self {
+            values,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    pub fn get(&self, index: usize) -> Option<&AcAnalysisStep> {
+        assert!(index < self.values.len());
+
+        self.values.get(index)
+    }
+
+    pub fn iter(&self) -> Iter<'_, AcAnalysisStep> {
+        self.values.iter()
+    }
+}
+
+pub struct AcAnalysisStep {
+    pub frequency: f64,
+    values: HashMap<Arc<AnalogVariable>, Complex<f64>>,
+}
+
+impl AcAnalysisStep {
+    pub fn new(frequency: f64, values: HashMap<Arc<AnalogVariable>, Complex<f64>>) -> Self {
+        Self { frequency, values }
+    }
+
+    pub fn get(&self, circuit_var: &AnalogVariable) -> Option<&Complex<f64>> {
+        self.values.get(circuit_var)
+    }
+
+    pub fn get_branch(
+        &self,
+        branch_identifier: impl Into<BranchIdentifier>,
+    ) -> Option<&Complex<f64>> {
+        self.get(&AnalogVariable::Branch(branch_identifier.into()))
+    }
+
+    pub fn get_node(&self, node_identifier: &NodeIdentifier) -> Option<&Complex<f64>> {
+        self.get(&AnalogVariable::Node(node_identifier.clone()))
+    }
+
+    /// Read the small-signal value by [`Net`]. Returns `None` for digital
+    /// and pseudo nets — those have no AC representation here.
+    pub fn get_net(&self, net: &Net) -> Option<&Complex<f64>> {
+        let var = net.analog_variable()?;
+        self.values.get(var)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NoiseContribution {
+    pub element: String,
+    pub source: String,
+    pub kind: NoiseKind,
+    pub integrated_sq: f64,
+    pub psd: Vec<f64>,
+}
+
+pub struct NoiseAnalysisResult {
+    pub frequencies: Vec<f64>,
+    pub out_noise_sq: Vec<f64>,
+    pub integrated_noise: f64,
+    pub contributions: Vec<NoiseContribution>,
+}
+
+impl NoiseAnalysisResult {
+    pub fn contributions(&self) -> &[NoiseContribution] {
+        &self.contributions
+    }
+}
+
+/// Transfer Function analysis result.
+///
+/// Contains the three fundamental transfer function parameters calculated at the DC operating point.
+#[derive(Clone, Debug)]
+pub struct TransferFunctionAnalysisResult {
+    /// Transfer function gain (dOutput/dInput).
+    ///
+    /// Units depend on input and output types:
+    /// - **V→V:** Dimensionless (voltage gain)
+    /// - **V→I:** Siemens (transconductance, g_m)
+    /// - **I→V:** Ohms (transresistance, r_m)
+    /// - **I→I:** Dimensionless (current gain, β)
+    pub gain: f64,
+
+    /// Input resistance seen by the source (Ohms).
+    ///
+    /// For voltage source: `R_in = V_source / I_source`
+    /// For current source: `R_in = V_across / I_source`
+    ///
+    /// Represents the effective load on the input source.
+    pub input_resistance: f64,
+
+    /// Output resistance at the output terminals (Ohms).
+    ///
+    /// Thévenin equivalent resistance looking back into the circuit from the output.
+    /// Calculated by applying a test perturbation at the output.
+    pub output_resistance: f64,
+
+    /// Type of transfer function for clarity and unit interpretation.
+    pub tf_type: TransferType,
+}
+
+/// Classification of transfer function type based on input/output variables.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TransferType {
+    /// Voltage input → Voltage output (dimensionless gain)
+    VoltageGain,
+
+    /// Voltage input → Current output (Siemens, transconductance)
+    Transconductance,
+
+    /// Current input → Voltage output (Ohms, transresistance)
+    Transresistance,
+
+    /// Current input → Current output (dimensionless gain)
+    CurrentGain,
+}
+
+/// Pole-zero analysis (`.pz`) result: the finite poles and zeros of the
+/// linearized input→output transfer function, in rad/s — see
+/// [`PoleZeroSolver`](crate::analyses::pz::PoleZeroSolver).
+#[derive(Debug, Clone, Default)]
+pub struct PoleZeroResult {
+    pub poles: Vec<Complex<f64>>,
+    pub zeros: Vec<Complex<f64>>,
+}
+
+/// N-port scattering-parameter analysis (`.sp`) result: the `S` matrix at
+/// every swept frequency, in port order — see
+/// [`SpSolver`](crate::analyses::sp::SpSolver).
+#[derive(Debug, Clone, Default)]
+pub struct SpResult {
+    pub frequencies: Vec<f64>,
+    /// `s[k]` is the `n_ports × n_ports` matrix at `frequencies[k]`,
+    /// `s[k][[i, j]] = S_ij` (port `i` response / port `j` excitation).
+    pub s: Vec<Array2<Complex<f64>>>,
+    /// Reference impedance of each port, indexed by port position (not
+    /// necessarily the declared `num`).
+    pub z0: Vec<f64>,
+    pub n_ports: usize,
+}
+
+/// Distortion analysis (`.disto`) result — see
+/// [`DistoSolver`](crate::analyses::disto::DistoSolver). Fields are
+/// populated per mode: single-tone runs report `hd2`/`hd3`, two-tone runs
+/// `im2`/`im3`.
+#[derive(Debug, Clone, Default)]
+pub struct DistoResult {
+    /// `|X(2·F1)| / |X(F1)|` at the output (single-tone, DISTO-01).
+    pub hd2: Option<f64>,
+    /// `|X(3·F1)| / |X(F1)|` at the output (single-tone, DISTO-01).
+    pub hd3: Option<f64>,
+    /// Intermodulation ratio at `F1±F2` relative to the fundamental
+    /// (two-tone, DISTO-02).
+    pub im2: Option<f64>,
+    /// Intermodulation ratio at `2F1∓F2`/`2F2∓F1` relative to the
+    /// fundamental (two-tone, DISTO-02).
+    pub im3: Option<f64>,
+}
+
+impl std::fmt::Display for TransferType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TransferType::VoltageGain => write!(f, "Voltage Gain (V/V)"),
+            TransferType::Transconductance => write!(f, "Transconductance (I/V, S)"),
+            TransferType::Transresistance => write!(f, "Transresistance (V/I, Ω)"),
+            TransferType::CurrentGain => write!(f, "Current Gain (I/I)"),
+        }
+    }
+}

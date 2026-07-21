@@ -32,4 +32,5 @@ impl ComponentDef for ModuleDeclaration {
 // Fn Def
 impl CallableDef for FnDecl {
     fn name(&self) -> &str { &self.sig.name }
+    fn decl_span(&self) -> Option<miette::SourceSpan> { self.span }
 }

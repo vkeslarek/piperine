@@ -1,0 +1,12 @@
+// diode I-V sweep — same circuit as diode_iv.cir; the harness stages
+// v1.dc per sweep point and reads the source branch current.
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::diode;
+mod Top() {
+    wire gnd: Electrical; wire vin: Electrical; wire a: Electrical;
+    v1: vsrc (.p=vin,.n=gnd) { .dc = 0.0 };
+    r1: res  (.p=vin,.n=a) { .r = 1.0 };
+    d1: dio  (.p=a,.n=gnd) { .model = DioModel { .is = 1.0e-14, .n = 1.0, .rs = 0.0 } };
+}

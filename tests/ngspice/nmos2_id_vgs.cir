@@ -1,0 +1,12 @@
+* NMOS level 2 Id-Vgs sweep (golden): vds = 3 V fixed
+* nsub (body-effect derivation) + nfs (subthreshold) active
+* 26 points crossing cutoff -> subthreshold -> strong inversion
+Vd d 0 DC 3
+Vg g 0 DC 0
+M1 d g 0 0 NMOD L=2u W=10u
+.model NMOD NMOS (level=2 vto=1 kp=2e-5 nsub=1e15 nfs=1e11 lambda=0.02 rd=100 rs=100)
+.control
+dc Vg 0 5 0.2
+wrdata nmos2_id_vgs_sweep i(vd)
+.endc
+.end

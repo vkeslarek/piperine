@@ -1,0 +1,11 @@
+* two series diodes
+V1 vin 0 DC 5
+R1 vin a 1k
+D1 a b DMOD
+D2 b 0 DMOD
+.model DMOD D (is=1e-14 n=1 rs=0)
+.control
+op
+print v(a) v(b)
+.endc
+.end

@@ -1,0 +1,31 @@
+// declared-language-surface P4 sub-phase (DLS-18) — the libm intrinsics
+// available to JIT/const-eval code, textually declared so ctrl+click on
+// `sin`/`pow`/etc. resolves to a real declaration instead of a Rust-only
+// name-match. `math.rs`'s `MATH_FNS` table is the implementation backing,
+// reached only after the declaration below resolves the call (unchanged —
+// same table, same wrapped libm symbols).
+extern fn sin(x: Real) -> Real;
+extern fn cos(x: Real) -> Real;
+extern fn tan(x: Real) -> Real;
+extern fn asin(x: Real) -> Real;
+extern fn acos(x: Real) -> Real;
+extern fn atan(x: Real) -> Real;
+extern fn atan2(y: Real, x: Real) -> Real;
+extern fn sinh(x: Real) -> Real;
+extern fn cosh(x: Real) -> Real;
+extern fn tanh(x: Real) -> Real;
+extern fn asinh(x: Real) -> Real;
+extern fn acosh(x: Real) -> Real;
+extern fn atanh(x: Real) -> Real;
+extern fn exp(x: Real) -> Real;
+extern fn limexp(x: Real) -> Real;
+extern fn ln(x: Real) -> Real;
+extern fn log10(x: Real) -> Real;
+extern fn sqrt(x: Real) -> Real;
+extern fn pow(b: Real, e: Real) -> Real;
+extern fn hypot(a: Real, b: Real) -> Real;
+extern fn abs(x: Real) -> Real;
+extern fn min(a: Real, b: Real) -> Real;
+extern fn max(a: Real, b: Real) -> Real;
+extern fn floor(x: Real) -> Real;
+extern fn ceil(x: Real) -> Real;

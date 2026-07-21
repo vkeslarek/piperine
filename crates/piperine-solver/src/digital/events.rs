@@ -1,3 +1,5 @@
+//! Digital events and logic values: `LogicValue`, the `DigitalNet`
+//! handle, and the time-ordered `DigitalEvent` the scheduler queues.
 use std::cmp::Ordering;
 
 // ---------------------------------------------------------------------------
@@ -76,9 +78,9 @@ impl Ord for DigitalEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::digital::scheduler::DigitalState;
+    use crate::digital::DigitalState;
     use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink};
-    use crate::core::element::{Element, ElementCapabilities};
+    use crate::core::element::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
     use std::cmp::Reverse;
 
     #[allow(dead_code)]
@@ -89,10 +91,9 @@ mod tests {
         delay: f64,
     }
 
-    impl Element for MockInverter {
-        fn name(&self) -> &str { "mock_inverter" }
-        fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+    impl AnalogDevice for MockInverter {}
 
+    impl DigitalDevice for MockInverter {
         fn boundary(&self) -> DigitalPorts<'_> {
             DigitalPorts {
                 inputs: std::slice::from_ref(&self.input),
@@ -110,6 +111,13 @@ mod tests {
             };
             sink.emit(self.output, out_val, self.delay);
         }
+    }
+
+    impl Introspect for MockInverter {}
+
+    impl Element for MockInverter {
+        fn name(&self) -> &str { "mock_inverter" }
+        fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
     }
 
     #[test]

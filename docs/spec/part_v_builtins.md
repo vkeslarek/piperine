@@ -5,6 +5,33 @@ functions, analog operators, `$`-syscalls, diagnostic tasks, `@`-events, and the
 always-in-scope prelude. This reference is **normative** for the builtin set;
 operators, syscalls, and events are extensible via the layer-2 registries (Part I §14).
 
+## §0 Declared surface (MD-24)
+
+Every name listed in this Part is a **textual declaration** in a stdlib header, marked
+`extern` (Part I §5.4), not a Rust-only registry entry. The implementation backing
+each declaration lives in a Rust table consulted *only after* the declaration resolves
+the call — so LSP go-to-definition (ctrl+click) on `sin`, `$temperature`, `ddt`,
+`@device`, `Real`, or `Real::from` lands on a real declaration line, never silently
+dead-ends.
+
+| Section | Header | Form |
+|---------|--------|------|
+| §1 Math functions | `crates/piperine-lang/headers/math.phdl` | `extern fn` |
+| §2 Analog operators (the `Expr::Call`-shaped 8) | `crates/piperine-lang/headers/operators.phdl` | `extern operator` |
+| §2 Analog operators (the `EventSpec::Named` 3: `cross`/`above`/`timer`) | same | `extern operator` (textual presence only; resolved by `EventRegistry`) |
+| §3 `$`-syscalls (the value-returning analog-context set) | `crates/piperine-lang/headers/tasks.phdl` | `extern task` |
+| §4 Diagnostic / control tasks | `crates/piperine-lang/headers/tasks.phdl` | `extern task` |
+| `@device`/`@port` attribute schemas | `crates/piperine-lang/headers/device_port.phdl` | `extern attribute` (parsed by `PluginHost::seed_schemas`, not part of every project's prelude) |
+| Primitive value types (Part I §6.1) | `crates/piperine-lang/headers/types.phdl` | `extern type` |
+| Cast associated functions (`Real::from` etc.) | `crates/piperine-lang/headers/types.phdl` | `extern impl TypeName { fn from(...) -> TypeName; ... }` |
+| Plugin-contributed attribute schemas | each plugin's `extern.phdl` stub | `extern attribute` (auto-imported at load time; a schema-contributing plugin that publishes no stub fails loud `PluginError::MissingExternStub`) |
+
+A permanent regression guard
+(`crates/piperine-lang/tests/extern_coverage_guard.rs`) iterates every native
+implementation table and asserts a matching `extern` declaration exists, so a future
+commit adding an entry to `MATH_FNS` or `TaskRegistry::with_builtins()` without
+authoring the matching declaration fails this test by name.
+
 ## Alias policy
 
 The native canonical spelling is one per meaning: `|` for event OR, `ln` for natural
@@ -125,23 +152,6 @@ These are available everywhere, including inside pure `fn` bodies:
 
 Plus the full math catalog (§1), callable with a `$` prefix.
 
-### 3.3 Available in the interpreted context only (bench)
-
-These require the Host and are unavailable elsewhere:
-
-| Syntax | Returns |
-|--------|---------|
-| `$op(cfg)` | DC operating point → `OpResult` |
-| `$tran(cfg)` | transient → `Trace` |
-| `$ac(cfg)` | AC sweep → `Trace` (complex) |
-| `$noise(cfg)` | noise → `NoiseTrace` |
-| `$write(path, data)` | write `data` as CSV to `path` |
-| `$plot(waveform, title)` | render `waveform` as an SVG line-chart artifact named after `title` |
-
-Config bundles and result types are defined in Part III §7–§8.
-
----
-
 ## §4 Diagnostic / control tasks (statement)
 
 | Syntax | Effect | Context |
@@ -169,7 +179,7 @@ events. An unrecognized event name is a compile error — there is no silent fal
 | `change(sig)` | digital edge | any change of `sig` |
 | `cross(expr)` | analog crossing | zero crossing of `expr` |
 | `above(expr)` | analog crossing | one-shot level crossing of `expr` |
-| `timer(period)` | analog | periodic, every `period` seconds |
+| `timer(period)` / `timer(period, phase)` | analog | periodic, every `period` seconds; optional `phase` offsets the first fire to `phase` (fires at `phase`, `phase+period`, …) so a source can declare both its rise and fall edges with two phased timers |
 | `initial` | lifecycle | once, at the start |
 | `final` | lifecycle | once, at the end (diagnostics only) |
 | `A \| B` | composite | either `A` or `B` fires |
@@ -226,6 +236,27 @@ file sees.
 `reduce<T>(xs: T[N], op: fn(T,T)->T) -> T`,
 `concat(...)`. The bundles `UInt[N]`, `SInt[N]`, `Complex`.
 
+### The `spice` namespace
+
+The ngspice-faithful device model library ships as builtin stdlib headers
+(`headers/spice/`), resolvable from any project without a `Piperine.toml`
+dependency:
+
+```phdl
+use spice::diode;      // dio
+use spice::bjt;        // bjt (Gummel-Poon)
+use spice::mos;        // mos1 (Shichman-Hodges)
+use spice::jfet;       // jfet
+use spice::passives;   // res, cap, ind, mut
+use spice::sources;    // vsrc, isrc
+use spice::controlled; // vcvs, vccs, ccvs, cccs
+use spice::switches;   // sw, csw
+use spice::constants;  // ngspice const.h/defines.h values
+```
+
+A project or dependency package named `spice` shadows the builtin namespace
+(project packages always win).
+
 ---
 
 ## §7 System-task availability matrix
@@ -233,30 +264,27 @@ file sees.
 This matrix shows which constructs are legal in which execution context. A construct
 marked "—" in a column is an elaboration error if used there.
 
-| Construct | `analog` | `digital` | `bench` |
-|-----------|----------|-----------|---------|
-| Math (`exp`, `abs`, ...) | ✓ | ✓ | ✓ |
-| `ddt` / `idt` / `idtmod` | ✓ | — | — |
-| `ddx` | ✓ | — | — |
-| `delay` / `absdelay` / `slew` | ✓ | — | — |
-| `transition` / `table` / `laplace_*` / `zi_*` | ✓ | — | — |
-| `white_noise` / `flicker_noise` | ✓ | — | — |
-| `ac_stim` | ✓ (`.ac` only) | — | — |
-| `$temperature` / `$vt` / `$abstime` / `$mfactor` / `$xposition` / ... | ✓ | ✓ | — |
-| `$analysis` | ✓ | ✓ | — |
-| `$random` / `$dist_*` | ✓ | ✓ | — |
-| `$bound_step` / `$discontinuity` | ✓ | — | — |
-| `$assert` / `$info` / `$warn` / `$error` / `$fatal` | ✓ | ✓ | ✓ |
-| `$display` / `$write(args...)` | ✓ | ✓ | ✓ |
-| `$finish` | ✓ | ✓ | — |
-| `$op` / `$tran` / `$ac` / `$noise` | — | — | ✓ |
-| `$write(path, data)` / `$plot` | — | — | ✓ |
-| `select(...)` | — | — | ✓ |
-| `V(a,b)` / `I(a,b)` | ✓ | ✓ *(read only)* | — *(use result object)* |
-| `<+` (contribution) | ✓ | — | — |
-| `<-` (force / drive) | ✓ | ✓ | — |
-| `=` (assign) | — | ✓ | ✓ *(locals only)* |
-| `@` events | ✓ | ✓ | — |
+| Construct | `analog` | `digital` |
+|-----------|----------|-----------|
+| Math (`exp`, `abs`, ...) | ✓ | ✓ |
+| `ddt` / `idt` / `idtmod` | ✓ | — |
+| `ddx` | ✓ | — |
+| `delay` / `absdelay` / `slew` | ✓ | — |
+| `transition` / `table` / `laplace_*` / `zi_*` | ✓ | — |
+| `white_noise` / `flicker_noise` | ✓ | — |
+| `ac_stim` | ✓ (`.ac` only) | — |
+| `$temperature` / `$vt` / `$abstime` / `$mfactor` / `$xposition` / ... | ✓ | ✓ |
+| `$analysis` | ✓ | ✓ |
+| `$random` / `$dist_*` | ✓ | ✓ |
+| `$bound_step` / `$discontinuity` | ✓ | — |
+| `$assert` / `$info` / `$warn` / `$error` / `$fatal` | ✓ | ✓ |
+| `$display` / `$write(args...)` | ✓ | ✓ |
+| `$finish` | ✓ | ✓ |
+| `V(a,b)` / `I(a,b)` | ✓ | ✓ *(read only)* |
+| `<+` (contribution) | ✓ | — |
+| `<-` (force / drive) | ✓ | ✓ |
+| `=` (assign) | — | ✓ |
+| `@` events | ✓ | ✓ |
 
-The bench column uses the result object (`r.v(a,b)`, `r.i(a,b)`) for measurement instead
-of the analog `V`/`I` access functions (Part III §6).
+Measurement from a host uses the result objects (Part VIII §4), not the analog
+`V`/`I` access functions.

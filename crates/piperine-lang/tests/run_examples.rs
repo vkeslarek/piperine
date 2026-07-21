@@ -34,7 +34,7 @@ fn test_all_examples_compile() {
         match piperine_lang::parse_and_elaborate(&body, &piperine_lang::SourceMap::dummy()) {
             Ok(elab) => {
                 // Lower every module to its resolved body.
-                let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+                let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
 
                 // For every module, compile it down to executable JIT/Interpreter code
                 for module in bodies.values() {

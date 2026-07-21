@@ -1,0 +1,12 @@
+* NPN common-emitter
+Vcc vcc 0 DC 5
+Vbb vb 0 DC 2
+Rb vb base 10k
+Rc vcc col 1k
+Q1 col base 0 0 QMOD
+.model QMOD NPN (is=1e-16 bf=100 nf=1 br=1 nr=1)
+.control
+op
+print v(col) v(base)
+.endc
+.end

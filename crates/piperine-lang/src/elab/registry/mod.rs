@@ -3,13 +3,18 @@ pub mod components;
 pub mod callables;
 pub mod impls;
 pub mod schemas;
+pub mod operators;
+pub mod impl_methods;
 
 pub use types::{TypeRegistry, TypeDefKind};
 pub use components::{ComponentRegistry, ComponentDef};
-pub use callables::{CallableRegistry, CallableDef};
+pub use callables::{CallableRegistry, CallableDef, ExternFnDecl};
 pub use schemas::{AttrField, SchemaRegistry, SchemaShape};
+pub use operators::{OperatorRegistry, ExternOperatorDecl};
+pub use impl_methods::ImplMethodTable;
 
 use crate::elab::event::EventRegistry;
+use crate::value::Value;
 
 pub struct ElabContext {
     pub types: TypeRegistry,
@@ -17,9 +22,14 @@ pub struct ElabContext {
     pub callables: CallableRegistry,
     pub events: EventRegistry,
     pub schemas: SchemaRegistry,
-    /// Extra bench task names contributed by plugins (SPEC Part VI §6) —
-    /// consulted by the bench allowlist gate alongside the builtin set.
-    pub bench_tasks: std::collections::HashSet<String>,
+    /// Runtime operators (`ddt`, `delay`, `slew`, …) — declared-language-
+    /// surface T10 groundwork; real `extern operator` declarations land in
+    /// T22.
+    pub operators: OperatorRegistry,
+    /// Native methods declared via `extern impl TypeName { fn ...; }`,
+    /// keyed by `(type_name, method_name)` — T10 groundwork; the first real
+    /// consumer is the cast migration (T17).
+    pub impl_methods: ImplMethodTable,
 }
 
 impl Default for ElabContext {
@@ -30,29 +40,50 @@ impl Default for ElabContext {
 
 impl ElabContext {
     pub fn new() -> Self {
-        let mut types = TypeRegistry::new();
-        use crate::pom::ValueType;
-        use self::types::TypeDefKind;
-        let prims = vec![
-            ("Real", ValueType::Real),
-            ("Natural", ValueType::Natural),
-            ("Integer", ValueType::Integer),
-            ("Complex", ValueType::Complex),
-            ("Boolean", ValueType::Boolean),
-            ("Quad", ValueType::Quad),
-            ("String", ValueType::Str),
-        ];
-        for (name, val_type) in prims {
-            types.register(TypeDefKind::Primitive { name: name.to_string(), val_type });
-        }
+        // The seven primitives (`Real`, `Natural`, `Integer`, `Complex`,
+        // `Boolean`, `Quad`, `String`) are no longer hardcoded here — they
+        // register via `extern type` declarations parsed from
+        // `headers/types.phdl` (declared-language-surface T16, DLS-17),
+        // routed through the ordinary `Register` pass exactly like any
+        // other top-level item.
+        let types = TypeRegistry::new();
+
+        let mut schemas = SchemaRegistry::new();
+        // `@rfport(num, z0)` — stdlib-reserved attribute marking a node/wire
+        // as an `.sp` S-parameter port (SP-01). Registered unconditionally
+        // (not gated by plugin loading, unlike the plugin system's own
+        // `@device`/`@port`) so `.sp` port declarations work in any project.
+        schemas.register_declared(
+            "rfport",
+            vec![
+                AttrField { name: "num".into(), ty: "Integer".into(), required: true, default: None, decl_span: None },
+                AttrField {
+                    name: "z0".into(),
+                    ty: "Real".into(),
+                    required: false,
+                    default: Some(Value::Real(50.0)),
+                    decl_span: None,
+                },
+            ],
+            None,
+        );
 
         Self {
             types,
             components: ComponentRegistry::new(),
             callables: CallableRegistry::new(),
             events: EventRegistry::with_builtins(),
-            schemas: SchemaRegistry::new(),
-            bench_tasks: std::collections::HashSet::new(),
+            schemas,
+            operators: OperatorRegistry::new(),
+            impl_methods: ImplMethodTable::new(),
         }
+    }
+
+    /// Entry point for the `ResolveCalls` elaboration pass
+    /// (declared-language-surface T11) — needs the whole `ElabContext`
+    /// (not just `CallableRegistry`) since resolution also consults
+    /// `impl_methods` for `Type::method(...)` calls.
+    pub fn resolve_calls(&self, design: &mut crate::pom::Design) -> Result<(), crate::pom::ElabError> {
+        crate::elab::resolve::resolve_calls(design, self)
     }
 }

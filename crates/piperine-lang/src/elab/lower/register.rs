@@ -55,9 +55,6 @@ impl Elaborator {
                 Item::BehaviorDecl(b) => {
                     self.syms.behavior_decls.push(b.clone());
                 }
-                Item::BenchDecl(b) => {
-                    self.syms.bench_decls.push(b.clone());
-                }
                 Item::FnDecl(f) => {
                     self.syms.fn_decls.insert(f.sig.name.clone(), f.clone());
                     self.ctx.callables.register(f.clone());
@@ -72,9 +69,115 @@ impl Elaborator {
                     self.syms.const_decls.insert(c.name.clone(), c.clone());
                 }
                 Item::UseDecl(_) => {} // already expanded by Resolver
+                // `extern type Name;` registers into TypeRegistry alongside
+                // plain types (declared-language-surface T7, DLS-01
+                // groundwork). Types are not overloadable — a name already
+                // taken by any type declaration (plain or extern) is an
+                // ordinary duplicate-declaration error (SPEC Edge Cases: no
+                // shadowing of an `extern` declaration).
+                Item::ExternDecl(crate::parse::ast::ExternDecl::Type { span, name }) => {
+                    if self.ctx.types.lookup(name).is_some() {
+                        return Err(ElabError::from(crate::pom::ElabErrorKind::Other(format!(
+                            "type `{name}` is already declared (duplicate `extern type`/type declaration)"
+                        ))).with_span(*span));
+                    }
+                    self.ctx.types.register(crate::elab::registry::TypeDefKind::Extern {
+                        name: name.clone(),
+                        decl_span: *span,
+                    });
+                }
+                // `extern fn`/`extern task` register into `CallableRegistry`
+                // as an overload candidate (declared-language-surface T11,
+                // DLS-01/03 groundwork) — the `resolve.rs` fail-loud call
+                // path (T11) is their first real consumer. `extern task`
+                // shares `CallableRegistry`'s namespace with `extern fn`
+                // (both are just named, typed callables); its `$`-prefixed
+                // form keeps it distinct from any `fn` name in practice.
+                Item::ExternDecl(crate::parse::ast::ExternDecl::Fn(sig))
+                | Item::ExternDecl(crate::parse::ast::ExternDecl::Task(sig)) => {
+                    let param_types = self.extern_sig_param_types(sig)?;
+                    self.ctx.callables.register(crate::elab::registry::ExternFnDecl {
+                        sig: sig.clone(),
+                        param_types,
+                    });
+                }
+                // `extern operator name(...) -> Ret;` registers into the
+                // dedicated `OperatorRegistry` (T10). Carrying real
+                // `param_types` here (same shape as `ExternFnDecl` above) is
+                // load-bearing — without it, `resolve_operator_call`'s
+                // `validate_call` always succeeds and operator arity/type
+                // mismatches silently pass elaboration (Verifier's
+                // surviving-mutant finding during declared-language-surface
+                // validation, fixed post-T27).
+                Item::ExternDecl(crate::parse::ast::ExternDecl::Operator(sig)) => {
+                    let param_types = self.extern_sig_param_types(sig)?;
+                    self.ctx.operators.register(crate::elab::registry::ExternOperatorDecl {
+                        sig: sig.clone(),
+                        param_types,
+                    });
+                }
+                // `extern attribute name { field: Type, ... }` registers
+                // into `SchemaRegistry` exactly like a bundle-backed schema
+                // (T12) — `@name(...)` attribute validation (`elab/lower/
+                // attrs.rs`) already fails loud (`UnknownAttrSchema`) for
+                // any name not registered here, so this wiring alone closes
+                // DLS-04 for the attribute-schema category. A field's own
+                // trailing `?` (`Type::optional`, the same optional-type
+                // marker used everywhere else in PHDL) makes it an
+                // optional schema field (T23, DLS-21) — omission at a use
+                // site is fine, no default substituted; a field without
+                // `?` is required, matching bundle-backed schemas' own
+                // "no default = required" rule.
+                Item::ExternDecl(crate::parse::ast::ExternDecl::Attribute { span, name, fields }) => {
+                    let attr_fields = fields
+                        .iter()
+                        .map(|f| crate::elab::registry::AttrField {
+                            name: f.name.clone(),
+                            ty: f.ty.name.clone(),
+                            required: !f.ty.optional,
+                            default: None,
+                            decl_span: f.span,
+                        })
+                        .collect();
+                    self.ctx.schemas.register_declared(name, attr_fields, *span);
+                }
+                // `extern impl TypeName { fn method(...) -> Ret; ... }`
+                // registers each method into the impl-method table (T10),
+                // keyed by `(target, method.name)` — `resolve.rs`'s
+                // `Type::method(...)` call path (T11) is its first real
+                // consumer.
+                Item::ExternDecl(crate::parse::ast::ExternDecl::Impl { target, methods, .. }) => {
+                    for method in methods {
+                        let param_types = self.extern_sig_param_types(method)?;
+                        self.ctx.impl_methods.register_impl_method(
+                            target,
+                            crate::elab::registry::ExternFnDecl { sig: method.clone(), param_types },
+                        );
+                    }
+                }
             }
         }
         Ok(())
     }
 
+    /// Resolves an `extern fn`/`extern task`/`extern impl` method
+    /// signature's declared parameter types to `ValueType`s, for storage in
+    /// `ExternFnDecl::param_types` — skips `self` (not a call-site
+    /// argument). Requires every referenced type to already be registered
+    /// (an author declaring `extern fn foo(x: Bar)` before `Bar` exists
+    /// gets the ordinary `UndefinedType` error, same as any other type use).
+    fn extern_sig_param_types(
+        &self,
+        sig: &crate::parse::ast::ExternSig,
+    ) -> Result<Vec<crate::pom::ValueType>, ElabError> {
+        sig.params
+            .iter()
+            .filter_map(|p| match p {
+                crate::parse::ast::FnParam::SelfParam => None,
+                crate::parse::ast::FnParam::Typed { ty, .. } => {
+                    Some(self.resolve_value_type(ty, &crate::elab::const_eval::ConstEnv::new()))
+                }
+            })
+            .collect()
+    }
 }

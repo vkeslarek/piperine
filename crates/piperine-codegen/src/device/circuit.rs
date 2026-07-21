@@ -3,28 +3,26 @@
 //!
 //! The top module is structural — a netlist of instances. Each instantiated
 //! module compiles once ([`CompiledModule`], cached) and wraps per-instance
-//! into a [`PiperineDevice`]. Instance structure (connections, param
+//! into a [`super::PiperineDevice`]. Instance structure (connections, param
 //! overrides) is read straight from the POM `Design`/`Module`/`Instance` —
 //! there is no `IrModule`/`IrInstance`/`IrProgram` structural twin; only a
-//! module's *own* resolved body ([`crate::lower::pom::LoweredBody`]) is
-//! precomputed, by `crate::lower::pom::lower_bodies`.
+//! module's *own* resolved body ([`crate::resolve::pom::LoweredBody`]) is
+//! precomputed, by `crate::resolve::pom::lower_bodies`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use piperine_lang::pom::{Design, Instance, Module};
+use piperine_lang::pom::{Design, Module};
 
-use piperine_solver::analog::{Netlist, NodeIdentifier};
-use piperine_solver::core::circuit::CircuitInstance;
-use piperine_solver::core::element::Element;
-use piperine_solver::digital::DigitalNet;
-use piperine_solver::digital::scheduler::DigitalState;
+use piperine_solver::abi::NodeIdentifier;
+use piperine_solver::abi::CircuitInstance;
 
-use crate::ir::{NodeId, ParamId};
-use crate::lower::pom::LoweredBody;
-use crate::jit::CodegenError;
+use crate::resolve::{NodeId, ParamId};
+use crate::resolve::pom::LoweredBody;
+use crate::error::CodegenError;
 
-use super::{AnalogInstance, CompiledModule, DigitalInstance, PiperineDevice};
+use super::CompiledModule;
+use super::builder::InstanceBuilder;
 
 /// Everything a caller outside the solver needs to *address* a built
 /// circuit by name — the top module's net names, and each instance's
@@ -32,27 +30,33 @@ use super::{AnalogInstance, CompiledModule, DigitalInstance, PiperineDevice};
 /// (e.g. a branch current) that isn't already a solver-level result. Built
 /// alongside the circuit by [`CircuitCompiler::build_circuit_mapped`];
 /// `build_circuit` discards this and is a thin wrapper over it.
+#[derive(Clone)]
 pub struct CircuitBuildInfo {
     /// Top-module net name → solver node (`"gnd"` included, mapping to
     /// [`NodeIdentifier::Gnd`]).
     pub nets: HashMap<String, NodeIdentifier>,
     /// Top-module digital net name → index into
-    /// `CircuitInstance::digital_state.nets` — how a bench reads a `Bit`
+    /// `CircuitInstance::digital_state.nets` — how a host reads a `Bit`
     /// net's logic value off a result.
     pub digital_nets: HashMap<String, usize>,
     /// One entry per top-level instance, in declaration order.
     pub instances: Vec<BuiltInstanceInfo>,
+    /// How many fused combinational cones were compiled into single
+    /// `DigitalNetwork` elements during the build (SC-13 instrumentation —
+    /// a circuit with comb cones proves fusion is active when this is > 0).
+    pub fused_networks: usize,
 }
 
 /// A single instantiated device as built into the circuit: its compiled
-/// kernel plus everything [`crate::jit::analog::AnalogKernel::eval_residual`]
+/// kernel plus everything [`crate::kernel::analog::AnalogKernel::eval_residual`]
 /// needs to recompute a terminal current outside the solver's own MNA
 /// stamping (used to read `.i(a, b)` on a two-terminal device with no force
 /// row).
+#[derive(Clone)]
 pub struct BuiltInstanceInfo {
     pub label: String,
     pub module: String,
-    pub kernel: Arc<crate::jit::analog::AnalogKernel>,
+    pub kernel: Arc<crate::kernel::analog::AnalogKernel>,
     pub params: Vec<f64>,
     pub terminals: Vec<NodeIdentifier>,
     /// Number of MNA branch-current unknowns this instance owns
@@ -73,25 +77,45 @@ pub struct CircuitCompiler<'p> {
     kernels: HashMap<String, Arc<CompiledModule>>,
     /// Builds `@device`-annotated instances (SPEC Part VI §7). `None` means
     /// no plugin host is wired — a `@device` instance then fails loud.
-    provider: Option<&'p dyn super::provider::DeviceProvider>,
+    pub(super) provider: Option<&'p dyn super::plugin::DeviceProvider>,
+    /// Fuse connected pure-combinational digital cones into single
+    /// `DigitalNetwork` elements (Verilator-style whole-cone evaluation).
+    /// `false` keeps every digital instance on the per-device path — the
+    /// bit-exact reference the fused path is validated against.
+    pub fuse_digital_cones: bool,
+    /// Whether compiled analog kernels include the `.disto` 2nd/3rd-derivative
+    /// kernels (see [`crate::kernel::analog::AnalogKernel::compile_with_options`]).
+    /// Defaults to `true` (matches the pre-flag behavior); callers that know
+    /// `.disto` will never run on this circuit call [`Self::with_disto`]`(false)`
+    /// to skip that compile cost.
+    compile_disto: bool,
 }
 
 impl<'p> CircuitCompiler<'p> {
     pub fn new(design: &'p Design, bodies: &'p HashMap<String, LoweredBody>) -> Self {
-        Self { design, bodies, kernels: HashMap::new(), provider: None }
+        Self { design, bodies, kernels: HashMap::new(), provider: None, fuse_digital_cones: true, compile_disto: true }
     }
 
     /// Wire a plugin host as the builder for `@device` instances.
-    pub fn with_device_provider(mut self, provider: &'p dyn super::provider::DeviceProvider) -> Self {
+    pub fn with_device_provider(mut self, provider: &'p dyn super::plugin::DeviceProvider) -> Self {
         self.provider = Some(provider);
         self
     }
 
-    fn module(&self, name: &str) -> Result<&'p Module, CodegenError> {
+    /// Gate whether compiled analog kernels include the `.disto`
+    /// 2nd/3rd-derivative kernels (default `true`). Pass `false` when this
+    /// circuit will never run `.disto` — a many-branch device otherwise
+    /// pays a real Cranelift compile cost for kernels it never uses.
+    pub fn with_disto(mut self, enabled: bool) -> Self {
+        self.compile_disto = enabled;
+        self
+    }
+
+    pub(super) fn module(&self, name: &str) -> Result<&'p Module, CodegenError> {
         self.design.module(name).ok_or_else(|| CodegenError::ModuleNotFound(name.to_string()))
     }
 
-    fn body(&self, name: &str) -> Result<&'p LoweredBody, CodegenError> {
+    pub(super) fn body(&self, name: &str) -> Result<&'p LoweredBody, CodegenError> {
         self.bodies.get(name).ok_or_else(|| CodegenError::ModuleNotFound(name.to_string()))
     }
 
@@ -101,7 +125,7 @@ impl<'p> CircuitCompiler<'p> {
             return Ok(compiled.clone());
         }
         let body = self.body(name)?;
-        let compiled = Arc::new(CompiledModule::compile(body)?);
+        let compiled = Arc::new(CompiledModule::compile_with_options(body, self.compile_disto)?);
         self.kernels.insert(name.to_string(), compiled.clone());
         Ok(compiled)
     }
@@ -117,7 +141,7 @@ impl<'p> CircuitCompiler<'p> {
     /// Like [`Self::build_circuit`], but also returns a [`CircuitBuildInfo`]
     /// mapping the top module's net names and each instance's compiled
     /// kernel/params/terminals — everything a caller outside the solver
-    /// (a `bench` runner) needs to read a named quantity back out of the
+    /// (a host) needs to read a named quantity back out of the
     /// built circuit.
     pub fn build_circuit_mapped(
         &mut self,
@@ -141,12 +165,12 @@ impl<'p> CircuitCompiler<'p> {
         {
             builder.add_top_behavior_device()?;
         }
-        Ok(builder.finish(top))
+        builder.finish(top)
     }
 
     /// Evaluate a module's parameter values: defaults in id order (later
     /// defaults may reference earlier parameters), then `overrides`.
-    fn param_values(
+    pub(super) fn param_values(
         body: &LoweredBody,
         overrides: &[(ParamId, f64)],
     ) -> Result<Vec<f64>, CodegenError> {
@@ -167,7 +191,7 @@ impl<'p> CircuitCompiler<'p> {
                     .find(|(_, p)| p.name == name)
                     .and_then(|(id, _)| values.get(id.0 as usize).copied().flatten())
             };
-            let value = crate::ir::pom_eval_const(default, &resolve)
+            let value = crate::resolve::pom_eval_const(default, &resolve)
                 .map_err(CodegenError::ConstEval)?;
             values[id.0 as usize] = Some(value);
         }
@@ -179,475 +203,10 @@ impl<'p> CircuitCompiler<'p> {
     /// access (`load.p`) both funnel through this at circuit-build time —
     /// the same resolution `lower_bodies` used to do for the (now deleted)
     /// `IrInstance.connections` structural twin.
-    fn resolve_node(body: &LoweredBody, name: &str) -> Option<NodeId> {
+    pub(super) fn resolve_node(body: &LoweredBody, name: &str) -> Option<NodeId> {
         if piperine_lang::pom::is_ground(name) {
             return Some(NodeId::GROUND);
         }
         body.symbols.nodes().find(|(_, info)| info.name == name).map(|(id, _)| id)
-    }
-}
-
-/// Accumulates devices, the analog netlist, and the digital net map while
-/// walking the top module's instances.
-struct InstanceBuilder<'c, 'p> {
-    compiler: &'c mut CircuitCompiler<'p>,
-    top: &'p Module,
-    top_body: &'p LoweredBody,
-    top_params: Vec<f64>,
-    netlist: Netlist,
-    devices: Vec<Box<dyn Element>>,
-    digital_nets: HashMap<NodeId, DigitalNet>,
-    /// Fresh ids for module-internal analog nodes (top node ids come first).
-    next_anon: usize,
-    build_info: CircuitBuildInfo,
-}
-
-impl<'c, 'p> InstanceBuilder<'c, 'p> {
-    fn new(
-        compiler: &'c mut CircuitCompiler<'p>,
-        top: &'p Module,
-        top_body: &'p LoweredBody,
-        top_params: Vec<f64>,
-    ) -> Self {
-        let next_anon = top_body.symbols.nodes().count();
-        let nets = top_body
-            .symbols
-            .nodes()
-            .map(|(id, info)| {
-                let node = if id.is_ground() { NodeIdentifier::Gnd } else { NodeIdentifier::Anonymous(id.0 as usize) };
-                (info.name.clone(), node)
-            })
-            .collect();
-        Self {
-            compiler,
-            top,
-            top_body,
-            top_params,
-            netlist: Netlist::new(),
-            devices: Vec::new(),
-            digital_nets: HashMap::new(),
-            next_anon,
-            build_info: CircuitBuildInfo {
-                nets,
-                digital_nets: HashMap::new(),
-                instances: Vec::new(),
-            },
-        }
-    }
-
-    /// Resolve one instance's port bindings (parent-scope net names) into
-    /// this module's `NodeId`s — the structural work `lower_bodies` used to
-    /// do once for every module's `IrInstance.connections`; now done here,
-    /// once per instantiation, directly from the POM.
-    fn resolve_connections(&self, instance: &Instance) -> Result<Vec<NodeId>, CodegenError> {
-        instance
-            .ports()
-            .iter()
-            .map(|r| {
-                let name = r.to_string();
-                CircuitCompiler::resolve_node(self.top_body, &name)
-                    .or_else(|| CircuitCompiler::resolve_node(self.top_body, r.net()))
-                    .ok_or_else(|| {
-                        CodegenError::Invalid(format!(
-                            "instance `{}`: unresolved net `{name}`",
-                            instance.name()
-                        ))
-                    })
-            })
-            .collect()
-    }
-
-    /// Resolve one instance's param overrides against the child module's
-    /// `ParamId`s (by name) and evaluate each override in the parent scope.
-    fn resolve_overrides(
-        &self,
-        instance: &Instance,
-        child_body: &LoweredBody,
-    ) -> Result<Vec<(ParamId, f64)>, CodegenError> {
-        instance
-            .params()
-            .iter()
-            .map(|(pname, pval)| {
-                let id = child_body
-                    .symbols
-                    .params()
-                    .find(|(_, info)| &info.name == pname)
-                    .map(|(id, _)| id)
-                    .ok_or_else(|| {
-                        CodegenError::Invalid(format!(
-                            "instance `{}`: unknown parameter override `{pname}`",
-                            instance.name()
-                        ))
-                    })?;
-                let expr = crate::lower::pom::structure::value_to_pom_expr(pval);
-                let top = &self.top_params;
-                let top_body = &self.top_body;
-                let resolve = |name: &str| -> Option<f64> {
-                    top_body.symbols.params()
-                        .find(|(_, p)| p.name == name)
-                        .and_then(|(id, _)| top.get(id.0 as usize).copied())
-                };
-                let value = crate::ir::pom_eval_const(&expr, &resolve)
-                    .map_err(CodegenError::ConstEval)?;
-                Ok((id, value))
-            })
-            .collect()
-    }
-
-    fn add_instance(&mut self, device_id: usize, instance: &Instance) -> Result<(), CodegenError> {
-        let child = self.compiler.module(instance.module_name())?;
-        // A `@device`-annotated module's behavior is provided by a plugin,
-        // not by PHDL analog/digital blocks (SPEC Part VI §7).
-        if let Some(dev_attr) = child
-            .attributes()
-            .iter()
-            .chain(instance.attributes().iter())
-            .find(|a| a.schema() == "device")
-        {
-            let dev_attr = dev_attr.clone();
-            return self.add_plugin_instance(instance, child, &dev_attr);
-        }
-        if !child.instances().is_empty() {
-            return Err(CodegenError::unsupported(format!(
-                "nested hierarchy: `{}` instantiates further modules — flatten during elaboration",
-                child.name()
-            )));
-        }
-        if instance.ports().len() != child.ports().len() {
-            return Err(CodegenError::Invalid(format!(
-                "instance `{}` connects {} nets, module `{}` has {} ports",
-                instance.name(),
-                instance.ports().len(),
-                child.name(),
-                child.ports().len()
-            )));
-        }
-        let connections = self.resolve_connections(instance)?;
-        let child_body = self.compiler.body(instance.module_name())?;
-        let overrides = self.resolve_overrides(instance, child_body)?;
-        let compiled = self.compiler.compiled(instance.module_name()).map_err(|e| {
-            CodegenError::Invalid(format!(
-                "instance `{}` (module `{}`): {e}",
-                instance.name(), instance.module_name()
-            ))
-        })?;
-
-        let params = CircuitCompiler::param_values(child_body, &overrides)?;
-        let param_given_mask = overrides
-            .iter()
-            .fold(0u64, |mask, (id, _)| mask | (1 << id.0.min(63)));
-
-        let analog_terminals: Option<Vec<NodeIdentifier>> = compiled.analog().map(|kernel| {
-            // Terminal identifiers: connected parent nodes for ports,
-            // fresh anonymous nodes for module-internal terminals.
-            kernel
-                .terminals()
-                .iter()
-                .enumerate()
-                .map(|(i, _)| match connections.get(i) {
-                    Some(&parent) => self.node_identifier(parent),
-                    None => {
-                        let id = NodeIdentifier::Anonymous(self.next_anon);
-                        self.next_anon += 1;
-                        id
-                    }
-                })
-                .collect()
-        });
-        if let (Some(kernel), Some(terminals)) = (compiled.analog(), &analog_terminals) {
-            self.build_info.instances.push(BuiltInstanceInfo {
-                label: instance.name().to_string(),
-                module: instance.module_name().to_string(),
-                kernel: kernel.clone(),
-                params: params.clone(),
-                terminals: terminals.clone(),
-                num_forces: kernel.num_forces(),
-            });
-        }
-        let analog = match (compiled.analog(), analog_terminals) {
-            (Some(kernel), Some(terminals)) => Some(AnalogInstance::new(
-                instance.name(),
-                kernel.clone(),
-                &terminals,
-                params.clone(),
-                param_given_mask,
-                &mut self.netlist,
-            )?),
-            _ => None,
-        };
-
-        let digital = compiled
-            .digital()
-            .map(|kernel| {
-                let map_nets = |nodes: &[NodeId],
-                                nets: &mut HashMap<NodeId, DigitalNet>|
-                 -> Result<Vec<DigitalNet>, CodegenError> {
-                    nodes
-                        .iter()
-                        .map(|node| {
-                            let port_index = child_body
-                                .ports
-                                .iter()
-                                .position(|p| p.node == *node)
-                                .ok_or_else(|| {
-                                    CodegenError::unsupported(format!(
-                                        "digital net `{}` of `{}` is not a port",
-                                        child_body.symbols.node(*node).name,
-                                        child.name()
-                                    ))
-                                })?;
-                            let parent = connections[port_index];
-                            let next = nets.len();
-                            Ok(*nets.entry(parent).or_insert(DigitalNet(next)))
-                        })
-                        .collect()
-                };
-                let in_nets = map_nets(kernel.inputs(), &mut self.digital_nets)?;
-                let out_nets = map_nets(kernel.outputs(), &mut self.digital_nets)?;
-                DigitalInstance::new(kernel.clone(), device_id, in_nets, out_nets, params.clone())
-            })
-            .transpose()?;
-
-        let mut device = PiperineDevice::new(
-            instance.name().to_string(),
-            analog,
-            digital,
-        );
-
-        // For digital-only devices with analog input ports (e.g. a
-        // Comparator: `input vp : Electrical, input vn : Electrical,
-        // output out : Bit`): wire the analog port terminals into the
-        // netlist so the A2D bridge can read their voltages.
-        if device.analog.is_none()
-            && let Some(digital) = device.digital()
-                && digital.kernel().layout().num_analog() > 0 {
-                    let mut refs = Vec::new();
-                    let mut node_ids = Vec::new();
-                    for (port_idx, port) in child_body.ports.iter().enumerate() {
-                        // Only ports the digital kernel actually reads as
-                        // analog (Electrical) terminals get a netlist node —
-                        // a digital-typed port (e.g. `output y : Bit`) must
-                        // never allocate an MNA unknown, or it leaves an
-                        // unstamped row (`SymbolicSingular`).
-                        if digital.kernel().layout().analog_index(port.node).is_none() {
-                            refs.push(None);
-                            node_ids.push(port.node);
-                            continue;
-                        }
-                        let parent = connections.get(port_idx).copied().unwrap_or(NodeId::GROUND);
-                        let node_id = self.node_identifier(parent);
-                        let reference = self.netlist.connect_node(node_id);
-                        refs.push(reference.idx().map(|_| reference));
-                        node_ids.push(port.node);
-                    }
-                    device.set_analog_terminals(refs, node_ids);
-                }
-
-        self.devices.push(Box::new(device));
-        Ok(())
-    }
-
-    /// Build a `@device`-annotated instance through the wired
-    /// [`DeviceProvider`](super::provider::DeviceProvider) (SPEC Part VI §7):
-    /// resolve each port into an analog netlist reference or a digital
-    /// scheduler net (per its `@port(kind = …)` or its discipline), hand the
-    /// spec to the provider, and inject the returned `Element` as-is.
-    fn add_plugin_instance(
-        &mut self,
-        instance: &Instance,
-        child: &'p Module,
-        dev_attr: &piperine_lang::pom::module::Attribute,
-    ) -> Result<(), CodegenError> {
-        use piperine_lang::Value;
-        let provider = self.compiler.provider.ok_or_else(|| {
-            CodegenError::unsupported(format!(
-                "instance `{}` is a plugin device (`@device`) but no plugin host is wired",
-                instance.name()
-            ))
-        })?;
-        let str_field = |attr: &piperine_lang::pom::module::Attribute, field: &str| -> Option<String> {
-            match attr.field(field) {
-                Some(Value::Str(s)) => Some(s.clone()),
-                _ => None,
-            }
-        };
-        let plugin = str_field(dev_attr, "plugin").ok_or_else(|| {
-            CodegenError::Invalid(format!("instance `{}`: @device needs a `plugin` string", instance.name()))
-        })?;
-        let type_id = str_field(dev_attr, "type").ok_or_else(|| {
-            CodegenError::Invalid(format!("instance `{}`: @device needs a `type` string", instance.name()))
-        })?;
-        if instance.ports().len() != child.ports().len() {
-            return Err(CodegenError::Invalid(format!(
-                "instance `{}` connects {} nets, module `{}` has {} ports",
-                instance.name(), instance.ports().len(), child.name(), child.ports().len()
-            )));
-        }
-        let connections = self.resolve_connections(instance)?;
-
-        let mut ports = Vec::with_capacity(child.ports().len());
-        for (i, port) in child.ports().iter().enumerate() {
-            let port_attr = port.attributes().iter().find(|a| a.schema() == "port");
-            let logical = port_attr
-                .and_then(|a| str_field(a, "name"))
-                .unwrap_or_else(|| port.name().to_string());
-            // `@port(kind = …)` wins; otherwise the port's discipline decides
-            // (digital storage disciplines → scheduler net, else MNA node).
-            let kind = port_attr
-                .and_then(|a| str_field(a, "kind"))
-                .unwrap_or_else(|| {
-                    match port.ty.discipline_name() {
-                        "Bit" | "Logic" | "DDiscrete" => "digital".to_string(),
-                        _ => "analog".to_string(),
-                    }
-                });
-            let parent = connections[i];
-            let binding = match kind.as_str() {
-                "digital" => {
-                    let next = self.digital_nets.len();
-                    super::provider::PortBinding::Digital(
-                        *self.digital_nets.entry(parent).or_insert(DigitalNet(next)),
-                    )
-                }
-                "analog" => {
-                    let node = self.node_identifier(parent);
-                    super::provider::PortBinding::Analog(self.netlist.connect_node(node))
-                }
-                other => {
-                    return Err(CodegenError::Invalid(format!(
-                        "instance `{}` port `{}`: unknown @port kind `{other}` (analog|digital)",
-                        instance.name(), port.name()
-                    )));
-                }
-            };
-            ports.push(super::provider::PluginPort {
-                logical,
-                phdl_name: port.name().to_string(),
-                direction: port.direction.clone(),
-                binding,
-            });
-        }
-
-        let mut attributes: Vec<piperine_lang::pom::module::Attribute> = child.attributes().to_vec();
-        attributes.extend(instance.attributes().iter().cloned());
-        let spec = super::provider::PluginDeviceSpec {
-            plugin,
-            type_id: type_id.clone(),
-            instance_label: instance.name().to_string(),
-            attributes,
-            ports,
-            params: instance.params().iter().map(|(n, v)| (n.clone(), v.clone())).collect(),
-        };
-        let device = provider.build(spec).map_err(|e| {
-            CodegenError::Invalid(format!(
-                "plugin device `{type_id}` (instance `{}`): {e}",
-                instance.name()
-            ))
-        })?;
-        self.devices.push(device);
-        Ok(())
-    }
-
-    /// Compile the top module's own behavior bodies into a device (SPEC
-    /// §7.3, B.1, B.10). The top's analog/digital blocks contribute to
-    /// the child instance nodes — parasitic loads, coupling, trim. The
-    /// top's NodeIds map directly to netlist nodes.
-    fn add_top_behavior_device(&mut self) -> Result<(), CodegenError> {
-        let compiled = self.compiler.compiled(self.top.name())?;
-        let device_id = self.devices.len();
-        let params = self.top_params.clone();
-        let param_given_mask = 0u64; // all defaults, no overrides
-
-        let analog = compiled
-            .analog()
-            .map(|kernel| {
-                // Top terminals map directly: NodeId → NodeIdentifier.
-                let terminals: Vec<NodeIdentifier> = kernel
-                    .terminals()
-                    .iter()
-                    .map(|&node| self.node_identifier(node))
-                    .collect();
-                AnalogInstance::new(
-                    &format!("{}__top", self.top.name()),
-                    kernel.clone(),
-                    &terminals,
-                    params.clone(),
-                    param_given_mask,
-                    &mut self.netlist,
-                )
-            })
-            .transpose()?;
-
-        let digital = compiled
-            .digital()
-            .map(|kernel| {
-                let map_nets = |nodes: &[NodeId], nets: &mut HashMap<NodeId, DigitalNet>|
-                 -> Result<Vec<DigitalNet>, CodegenError> {
-                    nodes
-                        .iter()
-                        .map(|node| {
-                            let next = nets.len();
-                            Ok(*nets.entry(*node).or_insert(DigitalNet(next)))
-                        })
-                        .collect()
-                };
-                let in_nets = map_nets(kernel.inputs(), &mut self.digital_nets)?;
-                let out_nets = map_nets(kernel.outputs(), &mut self.digital_nets)?;
-                DigitalInstance::new(kernel.clone(), device_id, in_nets, out_nets, params.clone())
-            })
-            .transpose()?;
-
-        let mut device = PiperineDevice::new(
-            format!("{}__top", self.top.name()),
-            analog,
-            digital,
-        );
-
-        // A2D bridge for digital-only top behavior with analog port reads.
-        if device.analog.is_none()
-            && let Some(digital) = device.digital()
-                && digital.kernel().layout().num_analog() > 0 {
-                    let mut refs = Vec::new();
-                    let mut node_ids = Vec::new();
-                    for port in self.top_body.ports.iter() {
-                        if digital.kernel().layout().analog_index(port.node).is_none() {
-                            refs.push(None);
-                            node_ids.push(port.node);
-                            continue;
-                        }
-                        let node_id = self.node_identifier(port.node);
-                        let reference = self.netlist.connect_node(node_id);
-                        refs.push(reference.idx().map(|_| reference));
-                        node_ids.push(port.node);
-                    }
-                    device.set_analog_terminals(refs, node_ids);
-                }
-
-        self.devices.push(Box::new(device));
-        Ok(())
-    }
-
-    /// Map a top-module node to a solver identifier. Digital-domain nodes
-    /// also pass through here for mixed instances; the analog side sees them
-    /// as ordinary nodes.
-    fn node_identifier(&self, node: NodeId) -> NodeIdentifier {
-        if node.is_ground() {
-            NodeIdentifier::Gnd
-        } else {
-            NodeIdentifier::Anonymous(node.0 as usize)
-        }
-    }
-
-    fn finish(mut self, title: &str) -> (CircuitInstance, CircuitBuildInfo) {
-        let mut circuit = CircuitInstance::from_devices_and_netlist(title, self.devices, self.netlist);
-        circuit.digital_state = DigitalState::new(self.digital_nets.len());
-        // Name → digital-net index, for bench-side readback.
-        for (id, info) in self.top_body.symbols.nodes() {
-            if let Some(dn) = self.digital_nets.get(&id) {
-                self.build_info.digital_nets.insert(info.name.clone(), dn.0);
-            }
-        }
-        let _ = self.top_params;
-        (circuit, self.build_info)
     }
 }

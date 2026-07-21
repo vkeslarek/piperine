@@ -1,0 +1,251 @@
+// NGSPICE faithful models — independent sources.
+//
+// Source: ngspice/src/spicelib/devices/{vsrc,isrc}/
+//   vsrcdefs.h  vsrcload.c  vsrcparam.c  vsrctemp.c
+//   isrcdefs.h  isrcload.c  isrcparam.c  isrctemp.c
+//
+// VSRC = voltage source (V element) — forces V(p,n) = waveform(t)
+// ISRC = current source (I element) — injects I(p,n) = m * waveform(t)
+//
+// Waveforms: DC, AC (small-signal), SIN, PULSE, EXP, SFFM, AM.
+// All formulas translated from vsrcload.c.  The waveform defaults (step,
+// tfinal) are read via $simparam.
+// ════════════════════════════════════════════════════════════════════════════
+
+use piperine::constants;
+use piperine::disciplines;
+use spice::constants;
+
+// ── Waveform helper functions (pure, inline into contributions) ─────────────
+
+pub fn ng_deg2rad(deg: Real) -> Real { return deg * M_PI / 180.0; }
+
+// SINE(VO VA FREQ TD THETA PHASE) — vsrcload.c SINE case
+pub fn ng_sin(t: Real, vo: Real, va: Real, freq: Real, td: Real, theta: Real, phase: Real) -> Real {
+    var tp : Real = t - td;
+    if (tp <= 0.0) { return vo; }
+    return vo + va * sin(2.0 * M_PI * freq * tp + phase) * exp(0.0 - tp * theta);
+}
+
+// PULSE(V1 V2 TD TR TF PW PER) — vsrcload.c PULSE case
+pub fn ng_pulse(t: Real, v1: Real, v2: Real, td: Real, tr: Real, tf: Real, pw: Real, per: Real) -> Real {
+    var tp : Real = t - td;
+    if (per > 0.0 && tp > per) {
+        tp = tp - per * floor(tp / per);
+    }
+    if (tp <= 0.0 || tp >= tr + pw + tf) { return v1; }
+    if (tp < tr) { return v1 + (v2 - v1) * tp / tr; }
+    if (tp <= tr + pw) { return v2; }
+    return v2 + (v1 - v2) * (tp - tr - pw) / tf;
+}
+
+// EXP(V1 V2 TD1 TAU1 TD2 TAU2) — vsrcload.c EXP case
+pub fn ng_exp(t: Real, v1: Real, v2: Real, td1: Real, tau1: Real, td2: Real, tau2: Real) -> Real {
+    if (t <= td1) { return v1; }
+    var val : Real = v1 + (v2 - v1) * (1.0 - exp(0.0 - (t - td1) / tau1));
+    if (t > td2) {
+        val = val + (v1 - v2) * (1.0 - exp(0.0 - (t - td2) / tau2));
+    }
+    return val;
+}
+
+// SFFM(VO VA FC MDI FS) — vsrcload.c SFFM case
+pub fn ng_sffm(t: Real, vo: Real, va: Real, fc: Real, mdi: Real, fs: Real) -> Real {
+    return vo + va * sin(2.0 * M_PI * fc * t + mdi * sin(2.0 * M_PI * fs * t));
+}
+
+// AM(VA VO MF FC TD) — vsrcload.c AM case
+pub fn ng_am(t: Real, va: Real, vo: Real, mf: Real, fc: Real, td: Real) -> Real {
+    var tp : Real = t - td;
+    if (tp <= 0.0) { return 0.0; }
+    return va * (vo + sin(2.0 * M_PI * mf * tp)) * sin(2.0 * M_PI * fc * tp);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  VSRC — voltage source
+// ════════════════════════════════════════════════════════════════════════════
+
+pub mod vsrc ( inout p : Electrical, inout n : Electrical ) {
+    param dc       : Real = 0.0;        // DC value (V)
+    param ac_mag   : Real = 0.0;        // AC magnitude
+    param ac_phase : Real = 0.0;        // AC phase (degrees)
+
+    // Waveform selector: 0=dc, 1=sin, 2=pulse, 3=exp, 4=sffm, 5=am
+    param wave     : Natural = 0;
+
+    // SIN params (0 sentinels resolve to ngspice defaults: freq → 1/tstop)
+    param sin_vo    : Real = 0.0;
+    param sin_va    : Real = 1.0;
+    param sin_freq  : Real = 0.0;
+    param sin_td    : Real = 0.0;
+    param sin_theta : Real = 0.0;
+    param sin_phase : Real = 0.0;   // degrees (XSPICE extension; 0 = classic)
+
+    // PULSE params (tr/tf → tstep, pw/per → tstop when 0)
+    param pulse_v1  : Real = 0.0;
+    param pulse_v2  : Real = 1.0;
+    param pulse_td  : Real = 0.0;
+    param pulse_tr  : Real = 0.0;
+    param pulse_tf  : Real = 0.0;
+    param pulse_pw  : Real = 0.0;
+    param pulse_per : Real = 0.0;
+
+    // EXP params (td1/tau1/tau2 → tstep, td2 → td1+tstep when 0)
+    param exp_v1   : Real = 0.0;
+    param exp_v2   : Real = 1.0;
+    param exp_td1  : Real = 0.0;
+    param exp_tau1 : Real = 0.0;
+    param exp_td2  : Real = 0.0;
+    param exp_tau2 : Real = 0.0;
+
+    // SFFM params (fc/fs → 1/tstop when 0)
+    param sffm_vo  : Real = 0.0;
+    param sffm_va  : Real = 1.0;
+    param sffm_fc  : Real = 0.0;
+    param sffm_mdi : Real = 0.0;
+    param sffm_fs  : Real = 0.0;
+
+    // AM params (mf → 1/tstop when 0)
+    param am_va : Real = 1.0;
+    param am_vo : Real = 0.0;
+    param am_mf : Real = 0.0;
+    param am_fc : Real = 0.0;
+    param am_td : Real = 0.0;
+}
+
+pub analog vsrc {
+    var t : Real = $abstime;
+    // ngspice waveform defaults come from the transient tstep/tstop (vsrcload.c)
+    var tstep : Real = $simparam("step", 1.0e-9);
+    var tstop : Real = $simparam("tfinal", 1.0e-3);
+
+    // Waveform value (vsrcload.c — all waveform cases)
+    var val : Real = dc;
+
+    if (wave == 1) {
+        var freq : Real = if (sin_freq != 0.0) { sin_freq } else { 1.0 / tstop };
+        val = ng_sin(t, sin_vo, sin_va, freq, sin_td, sin_theta, ng_deg2rad(sin_phase));
+    } else if (wave == 2) {
+        var tr  : Real = if (pulse_tr  != 0.0) { pulse_tr }  else { tstep };
+        var tf  : Real = if (pulse_tf  != 0.0) { pulse_tf }  else { tstep };
+        var pw  : Real = if (pulse_pw  != 0.0) { pulse_pw }  else { tstop };
+        var per : Real = if (pulse_per != 0.0) { pulse_per } else { tstop };
+        val = ng_pulse(t, pulse_v1, pulse_v2, pulse_td, tr, tf, pw, per);
+    } else if (wave == 3) {
+        var td1  : Real = if (exp_td1  != 0.0) { exp_td1 }  else { tstep };
+        var tau1 : Real = if (exp_tau1 != 0.0) { exp_tau1 } else { tstep };
+        var td2  : Real = if (exp_td2  != 0.0) { exp_td2 }  else { td1 + tstep };
+        var tau2 : Real = if (exp_tau2 != 0.0) { exp_tau2 } else { tstep };
+        val = ng_exp(t, exp_v1, exp_v2, td1, tau1, td2, tau2);
+    } else if (wave == 4) {
+        var fc : Real = if (sffm_fc != 0.0) { sffm_fc } else { 1.0 / tstop };
+        var fs : Real = if (sffm_fs != 0.0) { sffm_fs } else { 1.0 / tstop };
+        val = ng_sffm(t, sffm_vo, sffm_va, fc, sffm_mdi, fs);
+    } else if (wave == 5) {
+        var mf : Real = if (am_mf != 0.0) { am_mf } else { 1.0 / tstop };
+        val = ng_am(t, am_va, am_vo, mf, am_fc, am_td);
+    }
+
+    // DC operating point uses the dc value; transient uses the waveform.
+    // Both fold into ONE branch contribution alongside the AC stimulus so the
+    // source is a single ideal-voltage MNA branch (vsrcload.c): the dc/tran
+    // value drives DC/transient, `ac_stim` drives its RHS in AC analysis.
+    var vval : Real = if ($analysis("tran")) { val } else { dc };
+    V(p, n) <+ vval + ac_stim(ac_mag, ac_phase);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  ISRC — current source
+// ════════════════════════════════════════════════════════════════════════════
+
+pub mod isrc ( inout p : Electrical, inout n : Electrical ) {
+    param dc       : Real = 0.0;
+    param ac_mag   : Real = 0.0;
+    param ac_phase : Real = 0.0;
+    param m        : Real = 1.0;        // parallel multiplier
+    param wave     : Natural = 0;
+
+    // SIN params (0 sentinels resolve to ngspice defaults)
+    param sin_vo    : Real = 0.0;
+    param sin_va    : Real = 1.0e-3;
+    param sin_freq  : Real = 0.0;
+    param sin_td    : Real = 0.0;
+    param sin_theta : Real = 0.0;
+    param sin_phase : Real = 0.0;
+
+    // PULSE params
+    param pulse_v1  : Real = 0.0;
+    param pulse_v2  : Real = 1.0e-3;
+    param pulse_td  : Real = 0.0;
+    param pulse_tr  : Real = 0.0;
+    param pulse_tf  : Real = 0.0;
+    param pulse_pw  : Real = 0.0;
+    param pulse_per : Real = 0.0;
+
+    // EXP params
+    param exp_v1   : Real = 0.0;
+    param exp_v2   : Real = 1.0e-3;
+    param exp_td1  : Real = 0.0;
+    param exp_tau1 : Real = 0.0;
+    param exp_td2  : Real = 0.0;
+    param exp_tau2 : Real = 0.0;
+
+    // SFFM params
+    param sffm_vo  : Real = 0.0;
+    param sffm_va  : Real = 1.0e-3;
+    param sffm_fc  : Real = 0.0;
+    param sffm_mdi : Real = 0.0;
+    param sffm_fs  : Real = 0.0;
+
+    // AM params
+    param am_va : Real = 1.0e-3;
+    param am_vo : Real = 0.0;
+    param am_mf : Real = 0.0;
+    param am_fc : Real = 0.0;
+    param am_td : Real = 0.0;
+}
+
+pub analog isrc {
+    var t : Real = $abstime;
+    var tstep : Real = $simparam("step", 1.0e-9);
+    var tstop : Real = $simparam("tfinal", 1.0e-3);
+
+    var val : Real = dc;
+
+    if (wave == 1) {
+        var freq : Real = if (sin_freq != 0.0) { sin_freq } else { 1.0 / tstop };
+        val = ng_sin(t, sin_vo, sin_va, freq, sin_td, sin_theta, ng_deg2rad(sin_phase));
+    } else if (wave == 2) {
+        var tr  : Real = if (pulse_tr  != 0.0) { pulse_tr }  else { tstep };
+        var tf  : Real = if (pulse_tf  != 0.0) { pulse_tf }  else { tstep };
+        var pw  : Real = if (pulse_pw  != 0.0) { pulse_pw }  else { tstop };
+        var per : Real = if (pulse_per != 0.0) { pulse_per } else { tstop };
+        val = ng_pulse(t, pulse_v1, pulse_v2, pulse_td, tr, tf, pw, per);
+    } else if (wave == 3) {
+        var td1  : Real = if (exp_td1  != 0.0) { exp_td1 }  else { tstep };
+        var tau1 : Real = if (exp_tau1 != 0.0) { exp_tau1 } else { tstep };
+        var td2  : Real = if (exp_td2  != 0.0) { exp_td2 }  else { td1 + tstep };
+        var tau2 : Real = if (exp_tau2 != 0.0) { exp_tau2 } else { tstep };
+        val = ng_exp(t, exp_v1, exp_v2, td1, tau1, td2, tau2);
+    } else if (wave == 4) {
+        var fc : Real = if (sffm_fc != 0.0) { sffm_fc } else { 1.0 / tstop };
+        var fs : Real = if (sffm_fs != 0.0) { sffm_fs } else { 1.0 / tstop };
+        val = ng_sffm(t, sffm_vo, sffm_va, fc, sffm_mdi, fs);
+    } else if (wave == 5) {
+        var mf : Real = if (am_mf != 0.0) { am_mf } else { 1.0 / tstop };
+        val = ng_am(t, am_va, am_vo, mf, am_fc, am_td);
+    }
+
+    // Current injection (isrcload.c: RHS[p] += m*value, RHS[n] -= m*value).
+    // The DC value scales with the source-stepping ramp (ngspice cktop.c:
+    // CKTsrcFact multiplies every independent source); 1.0 outside the
+    // homotopy, so normal operation is untouched.
+    if ($analysis("tran")) {
+        I(p, n) <+ m * val;
+    } else {
+        I(p, n) <+ m * dc * $simparam("sourceScaleFactor", 1.0);
+    }
+
+    // AC stimulus
+    I(p, n) <+ m * ac_stim(ac_mag, ac_phase);
+}

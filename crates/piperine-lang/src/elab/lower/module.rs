@@ -256,6 +256,12 @@ impl Elaborator {
                 } else {
                     None
                 };
+                // Bind the folded default into the const env so later body
+                // statements — `$assert` range checks, wire sizes, dependent
+                // param defaults — can reference this param by name.
+                if let Some(v) = &def {
+                    env.define(name.clone(), v.clone());
+                }
                 out.push(ModBodyItem::Param(Param { span: *span, attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?,
                     name: name.clone(),
                     ty: vt,
@@ -515,6 +521,8 @@ impl Elaborator {
             }
         }
 
+        self.validate_instance_asserts(module, &resolved_params)?;
+
         out.push(ModBodyItem::Inst(Instance {
             span,
             attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?,
@@ -523,6 +531,66 @@ impl Elaborator {
             ports: elab_ports,
             params: resolved_params,
         }));
+        Ok(())
+    }
+
+    /// Re-evaluate the child module's `$assert` range checks against this
+    /// instance's resolved params (defaults + overrides). A leaf device's
+    /// body asserts only see its *default* params when the module itself is
+    /// elaborated; without this pass a bad instance override
+    /// (`tline { .z0 = -1.0 }`) would slip past the guard.
+    fn validate_instance_asserts(
+        &self,
+        module: &str,
+        resolved_params: &[(String, Value)],
+    ) -> Result<(), ElabError> {
+        let Some(decl) = self.syms.module_decls.get(module) else {
+            return Ok(());
+        };
+        if !decl.body.iter().any(|s| matches!(s, ModuleStatement::Assert { .. })) {
+            return Ok(());
+        }
+
+        let overrides: HashMap<&str, &Value> =
+            resolved_params.iter().map(|(n, v)| (n.as_str(), v)).collect();
+
+        // Build the child's param env in declaration order: an override wins,
+        // otherwise the folded default (dependent defaults see earlier params).
+        let mut env = ConstEnv::new();
+        for stmt in &decl.body {
+            if let ModuleStatement::ParamDecl { name, default, .. } = stmt {
+                if let Some(v) = overrides.get(name.as_str()) {
+                    env.define(name.clone(), (*v).clone());
+                } else if let Some(expr) = default
+                    && let Ok(v) = env.eval(expr)
+                {
+                    env.define(name.clone(), v);
+                }
+            }
+        }
+
+        for stmt in &decl.body {
+            if let ModuleStatement::Assert { cond, msg, .. } = stmt {
+                let holds = match env.eval(cond) {
+                    Ok(Value::Bool(b)) => b,
+                    Ok(Value::Int(v)) => v != 0,
+                    Ok(Value::Nat(v)) => v != 0,
+                    Ok(Value::Real(r)) => r != 0.0,
+                    // Non-scalar / non-evaluable → treat as passing (matches
+                    // the definition-time assert semantics above).
+                    _ => true,
+                };
+                if !holds {
+                    let text = match env.eval(msg) {
+                        Ok(Value::Str(s)) => s,
+                        _ => "assertion failed".into(),
+                    };
+                    return Err(ElabError::from(ElabErrorKind::Other(format!(
+                        "$assert failed: {text}"
+                    ))));
+                }
+            }
+        }
         Ok(())
     }
 

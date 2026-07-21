@@ -1,3 +1,4 @@
+//! Solver error taxonomy: `SolverDomain` + the loud-error types every layer returns.
 use thiserror::Error;
 
 /// Where an error originated. Replaces the free string titles (`"DC"`, `"TF"`,
@@ -16,6 +17,11 @@ pub enum SolverDomain {
     Linear,
     SpaceMatrix,
     Element,
+    Sens,
+    Pss,
+    Pz,
+    Sp,
+    Disto,
 }
 
 impl SolverDomain {
@@ -32,6 +38,11 @@ impl SolverDomain {
             SolverDomain::Linear => "Linear",
             SolverDomain::SpaceMatrix => "SpaceMatrix",
             SolverDomain::Element => "Element",
+            SolverDomain::Sens => "Sens",
+            SolverDomain::Pss => "PSS",
+            SolverDomain::Pz => "PZ",
+            SolverDomain::Sp => "SP",
+            SolverDomain::Disto => "Disto",
         }
     }
 }

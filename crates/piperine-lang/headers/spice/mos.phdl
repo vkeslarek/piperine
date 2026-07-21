@@ -1,0 +1,1706 @@
+// NGSPICE faithful model — MOS Level 1 (Shichman-Hodges).
+//
+// Source: ngspice/src/spicelib/devices/mos1/
+//   mos1defs.h  mos1temp.c  mos1load.c  mos1noi.c  mos1par.c  mos1mpar.c
+//   devsup.c (DEVqmeyer)
+//
+// Includes: NMOS/PMOS, series resistances (RD/RS with internal nodes), body
+// effect, channel-length modulation (λ), bulk junction diodes (BD/BS with
+// bottom + sidewall), Meyer gate capacitances (Cgs/Cgd/Cgb), overlap caps,
+// process derivation (TOX/NSUB/UO/TPG → Cox/KP/PHI/GAMMA/VTO), temperature
+// dependence, thermal/channel/flicker noise.
+// ════════════════════════════════════════════════════════════════════════════
+
+use piperine::constants;
+use piperine::disciplines;
+use spice::constants;
+
+pub bundle Mos1Model {
+    // ── Type ──────────────────────────────────────────────────────────────────
+    nmos : Boolean = 1,           // 1 = NMOS, 0 = PMOS
+
+    // ── DC (Shichman-Hodges) ──────────────────────────────────────────────────
+    vto    : Real = 0.0,          // threshold voltage (V) at Vbs=0
+    kp     : Real = 2.0e-5,       // transconductance (A/V²)
+    gamma  : Real = 0.0,          // body-effect coefficient (V^½)
+    phi    : Real = 0.6,          // surface potential 2φf (V)
+    lambda : Real = 0.0,          // channel-length modulation (1/V)
+
+    // ── Series resistances ────────────────────────────────────────────────────
+    rd     : Real = 0.0,          // drain resistance (Ω)
+    rs     : Real = 0.0,          // source resistance (Ω)
+    rsh    : Real = 0.0,          // sheet resistance (Ω/□) — used with NRD/NRS
+
+    // ── Bulk junction ─────────────────────────────────────────────────────────
+    cbd    : Real = 0.0,          // zero-bias B-D cap (F)
+    cbs    : Real = 0.0,          // zero-bias B-S cap (F)
+    is     : Real = 1.0e-14,      // bulk-junction sat current (A)
+    js     : Real = 0.0,          // bulk-junction sat current density (A/m²)
+    pb     : Real = 0.8,           // bulk junction potential (V)
+    cj     : Real = 0.0,           // bottom cap per area (F/m²)
+    mj     : Real = 0.5,           // bottom grading coefficient
+    cjsw   : Real = 0.0,           // sidewall cap per perimeter (F/m)
+    mjsw   : Real = 0.5,           // sidewall grading coefficient
+    fc     : Real = 0.5,           // forward-bias depletion cap coeff
+
+    // ── Overlap capacitance ───────────────────────────────────────────────────
+    cgso   : Real = 0.0,          // G-S overlap cap per width (F/m)
+    cgdo   : Real = 0.0,          // G-D overlap cap per width (F/m)
+    cgbo   : Real = 0.0,          // G-B overlap cap per length (F/m)
+
+    // ── Process ───────────────────────────────────────────────────────────────
+    tox    : Real = 0.0,          // oxide thickness (m) → Cox
+    ld     : Real = 0.0,          // lateral diffusion (m)
+    u0     : Real = 600.0,        // surface mobility (cm²/V·s)
+    nsub   : Real = 0.0,          // substrate doping (cm⁻³)
+    tpg    : Real = 1.0,          // gate material type: 1=opp of sub, -1=same, 0=Al
+    nss    : Real = 0.0,          // surface state density (cm⁻²)
+
+    // ── Temperature ───────────────────────────────────────────────────────────
+    tnom   : Real = 300.15,
+
+    // ── Noise ─────────────────────────────────────────────────────────────────
+    kf     : Real = 0.0,
+    af     : Real = 1.0,
+}
+
+pub mod mos1 (
+    inout d : Electrical,         // drain
+    inout g : Electrical,         // gate
+    inout s : Electrical,         // source
+    inout b : Electrical,         // bulk (substrate)
+) {
+    param model : Mos1Model = Mos1Model {};
+    param w     : Real = 100.0e-6;  // channel width (m)
+    param l     : Real = 100.0e-6;  // channel length (m)
+    param ad    : Real = 0.0;       // drain area (m²)
+    param as    : Real = 0.0;       // source area (m²)
+    param pd    : Real = 0.0;       // drain perimeter (m)
+    param ps    : Real = 0.0;       // source perimeter (m)
+    param nrd   : Real = 1.0;       // drain squares (for RSH)
+    param nrs   : Real = 1.0;       // source squares
+    param m     : Real = 1.0;       // parallel multiplier
+    param temp  : Real = 0.0;
+    param dtemp : Real = 0.0;
+    param off   : Boolean = 0;
+
+    wire dp : Electrical;          // drain'  (if RD > 0)
+    wire sp : Electrical;          // source' (if RS > 0)
+}
+
+pub analog mos1 {
+    // ════════════════════════════════════════════════════════════════════════
+    //  §0  Type and geometry
+    // ════════════════════════════════════════════════════════════════════════
+    var type : Real = if (model.nmos) { 1.0 } else { -1.0 };
+    var l_eff : Real = l - 2.0 * model.ld;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §1  Derived model parameters  (mos1temp.c:61-113)
+    // ════════════════════════════════════════════════════════════════════════
+    // Cox from TOX
+    var cox : Real = 0.0;
+    if (model.tox > 0.0) {
+        cox = NG_EPS_SIO2 / model.tox;
+    }
+
+    // KP from U0 and Cox (if KP not explicitly given)
+    var kp_eff : Real = model.kp;
+    if (model.tox > 0.0 && cox > 0.0) {
+        // ngspice: if KP not given, KP = U0 * Cox * 1e-4
+        kp_eff = model.u0 * cox * 1.0e-4;
+    }
+
+    // PHI, GAMMA, VTO from NSUB (mos1temp.c:74-113)
+    var phi_eff : Real = model.phi;
+    var gamma_eff : Real = model.gamma;
+    var vto_eff : Real = model.vto;
+    if (model.nsub > NG_NI_SI) {
+        var vtnom : Real = $vt(model.tnom);
+        phi_eff = 2.0 * vtnom * ln(model.nsub / NG_NI_SI);
+        if (phi_eff < 0.1) { phi_eff = 0.1; }
+
+        if (cox > 0.0) {
+            var nsub_m3 : Real = model.nsub * 1.0e6;  // cm⁻³ → m⁻³
+            gamma_eff = sqrt(2.0 * NG_EPS_SI * NG_Q * nsub_m3) / cox;
+
+            // VTO from flat-band (mos1temp.c:96-113)
+            var fermis : Real = type * 0.5 * phi_eff;
+            var eg_tnom : Real = ng_egfet(model.tnom);
+            var fermig : Real = if (model.tpg != 0.0) { type * model.tpg * 0.5 * eg_tnom } else { 0.0 };
+            var wkfng : Real = if (model.tpg != 0.0) { 3.25 + 0.5 * eg_tnom - fermig } else { 3.25 };
+            var wkfngs : Real = wkfng - (3.25 + 0.5 * eg_tnom + fermis);
+            var vfb : Real = wkfngs - model.nss * 1.0e4 * NG_Q / cox;
+            vto_eff = vfb + type * (gamma_eff * sqrt(phi_eff) + phi_eff);
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §2  Temperature preprocessing  (mos1temp.c:115-330)
+    // ════════════════════════════════════════════════════════════════════════
+    var t : Real = if (temp > 0.0) { temp } else { $temperature() + dtemp };
+    var dt : Real = t - model.tnom;
+    var vt : Real = $vt(t);
+    var vtnom : Real = $vt(model.tnom);
+    var ratio4 : Real = pow(t / model.tnom, 1.5);  // (T/Tnom)^1.5
+
+    // Mobility temperature (mos1temp.c:120-121)
+    var tTransconductance : Real = kp_eff / ratio4;
+
+    // PHI temperature (mos1temp.c:123-128)
+    var fact1 : Real = model.tnom / NG_REFTEMP;
+    var fact2 : Real = t / NG_REFTEMP;
+    var egfet1 : Real = ng_egfet(model.tnom);
+    var arg1 : Real = 0.0 - egfet1 / (2.0 * NG_K * model.tnom) + 1.1150877 / (2.0 * NG_K * NG_REFTEMP);
+    var pbfact1 : Real = 0.0 - 2.0 * vtnom * (1.5 * ln(fact1) + NG_Q * arg1);
+    var egfet : Real = ng_egfet(t);
+    var arg : Real = 0.0 - egfet / (2.0 * NG_K * t) + 1.1150877 / (2.0 * NG_K * NG_REFTEMP);
+    var pbfact : Real = 0.0 - 2.0 * vt * (1.5 * ln(fact2) + NG_Q * arg);
+
+    var phio : Real = (phi_eff - pbfact1) / fact1;
+    var tPhi : Real = fact2 * phio + pbfact;
+
+    // Vbi / Vto temperature (mos1temp.c:130-135)
+    var tVbi : Real = vto_eff - type * gamma_eff * sqrt(phi_eff)
+                      + 0.5 * (egfet1 - egfet)
+                      + type * 0.5 * (tPhi - phi_eff);
+    var tVto : Real = tVbi + type * gamma_eff * sqrt(tPhi);
+
+    // IS temperature (mos1temp.c:137-140)
+    var tSatCur : Real = model.is * exp(0.0 - ng_egfet(t) / vt + ng_egfet(model.tnom) / vtnom);
+
+    // Bulk junction potential/cap temperature (mos1temp.c:142-170)
+    var pbo : Real = (model.pb - pbfact1) / fact1;
+    var gmaold : Real = (model.pb - pbo) / pbo;
+    var tBulkPot : Real = pbfact + fact2 * pbo;
+    var gmanew : Real = (tBulkPot - pbo) / pbo;
+    var tDepCap : Real = model.fc * tBulkPot;
+
+    var tCbd : Real = model.cbd / (1.0 + model.mj * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCbd = tCbd * (1.0 + model.mj * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+
+    var tCbs : Real = model.cbs / (1.0 + model.mj * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCbs = tCbs * (1.0 + model.mj * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+
+    var tCj : Real = model.cj / (1.0 + model.mj * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCj = tCj * (1.0 + model.mj * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+
+    var tCjsw : Real = model.cjsw / (1.0 + model.mjsw * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCjsw = tCjsw * (1.0 + model.mjsw * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §3  Per-instance derived quantities  (mos1load.c:126-148)
+    // ════════════════════════════════════════════════════════════════════════
+    var beta : Real = tTransconductance * m * w / l_eff;
+    var oxideCap : Real = cox * l_eff * m * w;
+
+    var gsOverlapCap : Real = model.cgso * m * w;
+    var gdOverlapCap : Real = model.cgdo * m * w;
+    var gbOverlapCap : Real = model.cgbo * m * l_eff;   // ngspice scales by m
+
+    // Drain/source sat current (mos1load.c:128-138).
+    // ngspice uses the temp-adjusted density tSatCurDens and requires BOTH the
+    // drain and source areas (and the density) to be nonzero to use area mode.
+    var tSatCurDens : Real = model.js * exp(0.0 - egfet / vt + egfet1 / vtnom);
+    var use_dens : Boolean = model.js > 0.0 && ad > 0.0 && as > 0.0;
+    var drainSatCur : Real = if (use_dens) { tSatCurDens * m * ad } else { m * tSatCur };
+    var sourceSatCur : Real = if (use_dens) { tSatCurDens * m * as } else { m * tSatCur };
+
+    // Bulk junction caps
+    var czbd : Real = if (model.cbd > 0.0) { m * tCbd } else if (model.cj > 0.0 && ad > 0.0) { m * tCj * ad } else { 0.0 };
+    var czbs : Real = if (model.cbs > 0.0) { m * tCbs } else if (model.cj > 0.0 && as > 0.0) { m * tCj * as } else { 0.0 };
+    var czbdsw : Real = if (model.cjsw > 0.0 && pd > 0.0) { m * tCjsw * pd } else { 0.0 };
+    var czbssw : Real = if (model.cjsw > 0.0 && ps > 0.0) { m * tCjsw * ps } else { 0.0 };
+
+    // Series conductances
+    var drainCond : Real = if (model.rd > 0.0) { m / model.rd }
+                           else if (model.rsh > 0.0 && nrd > 0.0) { m / (model.rsh * nrd) }
+                           else { 0.0 };
+    var sourceCond : Real = if (model.rs > 0.0) { m / model.rs }
+                            else if (model.rsh > 0.0 && nrs > 0.0) { m / (model.rsh * nrs) }
+                            else { 0.0 };
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §4  Voltages  (mos1load.c:298-316)
+    // ════════════════════════════════════════════════════════════════════════
+    var vgs : Real = type * V(g, sp);
+    var vgd : Real = type * V(g, dp);
+    var vds : Real = vgs - vgd;
+    var vbs : Real = type * V(b, sp);
+    var vbd : Real = type * V(b, dp);
+    var vgb : Real = type * V(g, b);
+
+    var mode : Real = if (vds >= 0.0) { 1.0 } else { -1.0 };
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §5  Threshold voltage  (mos1load.c:463-480)
+    // ════════════════════════════════════════════════════════════════════════
+    var vbx : Real = if (mode == 1.0) { vbs } else { vbd };
+    var sarg : Real = if (vbx <= 0.0) { sqrt(tPhi - vbx) } else { sqrt(tPhi) - vbx / (2.0 * sqrt(tPhi)) };
+    if (sarg < 0.0) { sarg = 0.0; }
+    var von : Real = tVbi * type + gamma_eff * sarg;  // = Vth
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §6  Drain current — Shichman-Hodges  (mos1load.c:481-530)
+    // ════════════════════════════════════════════════════════════════════════
+    var sgx : Real = if (mode == 1.0) { vgs } else { vgd };
+    var vgst : Real = sgx - von;
+    var vds_eff : Real = vds * mode;  // always ≥ 0
+    var vdsat : Real = if (vgst > 0.0) { vgst } else { 0.0 };
+
+    var cdrain : Real = 0.0;
+    if (vgst > 0.0) {
+        var betap : Real = beta * (1.0 + model.lambda * vds_eff);
+        if (vgst < vds_eff) {
+            // Saturation
+            cdrain = betap * vgst * vgst * 0.5;
+        } else {
+            // Linear
+            cdrain = betap * vds_eff * (vgst - vds_eff * 0.5);
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §7  Bulk junction diodes  (mos1load.c:433-448)
+    // ════════════════════════════════════════════════════════════════════════
+    var gmin : Real = $simparam("gmin", 1.0e-12);
+
+    // ngspice mos1 uses a FLAT reverse clamp (not the diode cubic): for
+    // vbd ≤ -3·vt the current is just -DrainSatCur + gmin·vbd (mos1load.c:441-447).
+    var cbd : Real = if (vbd <= 0.0 - 3.0 * vt) {
+        0.0 - drainSatCur
+    } else {
+        drainSatCur * (limexp(vbd / vt) - 1.0)
+    };
+    cbd = cbd + gmin * vbd;
+
+    var cbs : Real = if (vbs <= 0.0 - 3.0 * vt) {
+        0.0 - sourceSatCur
+    } else {
+        sourceSatCur * (limexp(vbs / vt) - 1.0)
+    };
+    cbs = cbs + gmin * vbs;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §8  Bulk junction charges  (mos1load.c:567-674)
+    //  Combined bottom + sidewall depletion charge.
+    // ════════════════════════════════════════════════════════════════════════
+    // Precomputed coefficients for BD junction
+    var arg0 : Real = 1.0 - model.fc;
+    var sarg0_bd : Real = exp(0.0 - model.mj * ln(arg0));
+    var sargsw0_bd : Real = exp(0.0 - model.mjsw * ln(arg0));
+
+    var f2_bd : Real = czbd * (1.0 - model.fc * (1.0 + model.mj)) * sarg0_bd / arg0
+                     + czbdsw * (1.0 - model.fc * (1.0 + model.mjsw)) * sargsw0_bd / arg0;
+    var f3_bd : Real = (czbd * model.mj * sarg0_bd / arg0 + czbdsw * model.mjsw * sargsw0_bd / arg0) / tBulkPot;
+    var f4_bd : Real = czbd * tBulkPot * (1.0 - arg0 * sarg0_bd) / (1.0 - model.mj)
+                     + czbdsw * tBulkPot * (1.0 - arg0 * sargsw0_bd) / (1.0 - model.mjsw)
+                     - (f3_bd * 0.5) * tDepCap * tDepCap - tDepCap * f2_bd;
+
+    var qbd : Real;
+    if (vbd < tDepCap) {
+        var a : Real = 1.0 - vbd / tBulkPot;
+        var sj : Real = exp(0.0 - model.mj * ln(a));
+        var ssw : Real = exp(0.0 - model.mjsw * ln(a));
+        qbd = tBulkPot * (czbd * (1.0 - a * sj) / (1.0 - model.mj) + czbdsw * (1.0 - a * ssw) / (1.0 - model.mjsw));
+    } else {
+        qbd = f4_bd + vbd * (f2_bd + vbd * f3_bd * 0.5);
+    }
+
+    // BS junction (same formulas)
+    var sarg0_bs : Real = sarg0_bd;
+    var sargsw0_bs : Real = sargsw0_bd;
+    var f2_bs : Real = czbs * (1.0 - model.fc * (1.0 + model.mj)) * sarg0_bs / arg0
+                     + czbssw * (1.0 - model.fc * (1.0 + model.mjsw)) * sargsw0_bs / arg0;
+    var f3_bs : Real = (czbs * model.mj * sarg0_bs / arg0 + czbssw * model.mjsw * sargsw0_bs / arg0) / tBulkPot;
+    var f4_bs : Real = czbs * tBulkPot * (1.0 - arg0 * sarg0_bs) / (1.0 - model.mj)
+                     + czbssw * tBulkPot * (1.0 - arg0 * sargsw0_bs) / (1.0 - model.mjsw)
+                     - (f3_bs * 0.5) * tDepCap * tDepCap - tDepCap * f2_bs;
+
+    var qbs : Real;
+    if (vbs < tDepCap) {
+        var a : Real = 1.0 - vbs / tBulkPot;
+        var sj : Real = exp(0.0 - model.mj * ln(a));
+        var ssw : Real = exp(0.0 - model.mjsw * ln(a));
+        qbs = tBulkPot * (czbs * (1.0 - a * sj) / (1.0 - model.mj) + czbssw * (1.0 - a * ssw) / (1.0 - model.mjsw));
+    } else {
+        qbs = f4_bs + vbs * (f2_bs + vbs * f3_bs * 0.5);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §9  Meyer gate capacitances  (DEVqmeyer in devsup.c:624-689)
+    //  Returns the "non-constant half" of Cgs, Cgd, Cgb.
+    //  Total cap = 2 × return + overlap.
+    // ════════════════════════════════════════════════════════════════════════
+    var vgst_m : Real = vgs - von;
+    var vds_m : Real = vds;
+    var vdsat_m : Real = if (vdsat > 0.025) { vdsat } else { 0.025 };
+
+    var cgs_meyer : Real = 0.0;
+    var cgd_meyer : Real = 0.0;
+    var cgb_meyer : Real = 0.0;
+
+    if (vgst_m <= 0.0 - tPhi) {
+        // Deep cutoff
+        cgb_meyer = oxideCap * 0.5;
+    } else if (vgst_m <= 0.0 - tPhi * 0.5) {
+        // Depletion
+        cgb_meyer = 0.0 - vgst_m * oxideCap / (2.0 * tPhi);
+    } else if (vgst_m <= 0.0) {
+        // Sub-threshold
+        cgb_meyer = 0.0 - vgst_m * oxideCap / (2.0 * tPhi);
+        cgs_meyer = vgst_m * oxideCap / (1.5 * tPhi) + oxideCap / 3.0;
+        // Split for linear
+        if (vds_m < vdsat_m) {
+            var vddif : Real = 2.0 * vdsat_m - vds_m;
+            var vddif1 : Real = vdsat_m - vds_m;
+            var vddif2 : Real = vddif * vddif;
+            if (vddif2 > 0.0) {
+                cgd_meyer = cgs_meyer * (1.0 - vdsat_m * vdsat_m / vddif2);
+                cgs_meyer = cgs_meyer * (1.0 - vddif1 * vddif1 / vddif2);
+            }
+        }
+    } else {
+        // Strong inversion (vgst_m > 0)
+        cgb_meyer = 0.0;
+        if (vds_m >= vdsat_m) {
+            // Saturation
+            cgs_meyer = oxideCap / 3.0;
+            cgd_meyer = 0.0;
+        } else {
+            // Linear
+            var vddif : Real = 2.0 * vdsat_m - vds_m;
+            var vddif1 : Real = vdsat_m - vds_m;
+            var vddif2 : Real = vddif * vddif;
+            if (vddif2 > 0.0) {
+                cgs_meyer = (oxideCap / 3.0) * (1.0 - vddif1 * vddif1 / vddif2);
+                cgd_meyer = (oxideCap / 3.0) * (1.0 - vdsat_m * vdsat_m / vddif2);
+            } else {
+                cgs_meyer = oxideCap / 3.0;
+            }
+        }
+    }
+
+    // Total Meyer capacitances (×2 for the averaging in transient)
+    var cgs_total : Real = 2.0 * cgs_meyer;
+    var cgd_total : Real = 2.0 * cgd_meyer;
+    var cgb_total : Real = 2.0 * cgb_meyer;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §10  DC contributions  (mos1load.c:882-936)
+    //  NOTE: ngspice bakes the multiplier m into Beta, the sat currents, the
+    //  caps and the conductances (mos1temp/mos1load), then stamps with NO extra
+    //  m.  So these contributions must NOT re-apply m — it is already inside the
+    //  coefficients (beta, drainSatCur, oxideCap, czb*, drainCond …).
+    // ════════════════════════════════════════════════════════════════════════
+    // Drain current (drain' → source')
+    I(dp, sp) <+ type * mode * cdrain;
+
+    // Bulk junction diodes
+    I(b, dp) <+ type * cbd;
+    I(b, sp) <+ type * cbs;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §11  Capacitive contributions  (mos1load.c:766-818)
+    //  Meyer (intrinsic) + overlap.  Mode swaps Cgs/Cgd assignment.
+    // ════════════════════════════════════════════════════════════════════════
+    if (mode == 1.0) {
+        I(g, sp) <+ cgs_total * ddt(V(g, sp)) + gsOverlapCap * ddt(V(g, sp));
+        I(g, dp) <+ cgd_total * ddt(V(g, dp)) + gdOverlapCap * ddt(V(g, dp));
+    } else {
+        I(g, dp) <+ cgs_total * ddt(V(g, dp)) + gdOverlapCap * ddt(V(g, dp));
+        I(g, sp) <+ cgd_total * ddt(V(g, sp)) + gsOverlapCap * ddt(V(g, sp));
+    }
+    I(g, b)  <+ cgb_total * ddt(V(g, b)) + gbOverlapCap * ddt(V(g, b));
+
+    // Bulk junction charges
+    I(b, dp) <+ type * ddt(qbd);
+    I(b, sp) <+ type * ddt(qbs);
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §12  Series resistances
+    // ════════════════════════════════════════════════════════════════════════
+    // ngspice collapses the internal nodes when RD/RS == 0 (mos1setup.c);
+    // PHDL keeps them and forces the series drop instead — `V = R·I` over the
+    // force's own branch is a series resistor, and R = 0 a perfect short.
+    // (A conditional `V <- 0` would lower to the JIT's penalty-conductance
+    // form, whose 1e12 stamp destroys current accuracy — same class of bug as
+    // the diode RS fix found by the diode_iv ngspice sweep.)
+    var rdrain : Real = if (drainCond > 0.0) { 1.0 / drainCond } else { 0.0 };
+    var rsource : Real = if (sourceCond > 0.0) { 1.0 / sourceCond } else { 0.0 };
+    V(d, dp) <- rdrain * I(d, dp);
+    V(s, sp) <- rsource * I(s, sp);
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §13  Noise  (mos1noi.c — 4 sources)
+    // ════════════════════════════════════════════════════════════════════════
+    // Thermal: RD, RS
+    if (drainCond > 0.0) { I(d, dp) <+ white_noise(4.0 * NG_K * t * drainCond); }
+    if (sourceCond > 0.0) { I(s, sp) <+ white_noise(4.0 * NG_K * t * sourceCond); }
+    // Channel: 4kT · (2/3) · |gm|  (gm already carries m via beta)
+    var gm_est : Real = beta * vgst;  // saturation gm (approximate for noise)
+    I(dp, sp) <+ white_noise(4.0 * NG_K * t * (2.0 / 3.0) * abs(gm_est));
+    // Flicker (mos1noi.c:138-143):
+    //   KF · |Id|^AF / (f · W · m · Leff · Cox²),  Id = mode·cdrain − cbd
+    if (model.kf > 0.0 && cox > 0.0) {
+        var cox2 : Real = cox * cox;
+        var cd_term : Real = mode * cdrain - cbd;
+        I(dp, sp) <+ flicker_noise(
+            model.kf * pow(abs(cd_term), model.af) / (w * m * l_eff * cox2),
+            1.0
+        );
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// NGSPICE faithful model — MOS Level 2.
+//
+// Source: ngspice/src/spicelib/devices/mos2/
+//   mos2defs.h  mos2set.c  mos2temp.c  mos2load.c  mos2noi.c
+//   devsup.c (DEVqmeyer)
+//
+// Over MOS1: narrow-channel threshold factor (DELTA), short-channel Vth
+// reduction (XJ), subthreshold conduction (NFS), mobility degradation
+// (UCRIT/UEXP), velocity saturation (VMAX — Baum's quartic), computed
+// channel-length modulation (XD from NSUB) with punch-through limit.
+//
+// Given-ness follows ngspice: a positive `kp`/`gamma`/`vto` is used as-is;
+// zero means "derive" (kp from u0·Cox, gamma from nsub, vto from the
+// flat-band work function). `tox = 0` maps to ngspice's 1e-7 default.
+// ════════════════════════════════════════════════════════════════════════════
+
+pub bundle Mos2Model {
+    // ── Type ──────────────────────────────────────────────────────────────────
+    nmos : Boolean = 1,           // 1 = NMOS, 0 = PMOS
+
+    // ── DC ────────────────────────────────────────────────────────────────────
+    vto    : Real = 0.0,          // threshold voltage (V); 0 = derive
+    kp     : Real = 0.0,          // transconductance (A/V²); 0 = derive from u0·Cox
+    gamma  : Real = 0.0,          // body-effect coefficient (V^½); 0 = derive from nsub
+    phi    : Real = 0.0,          // surface potential 2φf (V); 0 = derive (else 0.6)
+    lambda : Real = 0.0,          // channel-length modulation (1/V)
+
+    // ── Level-2 physics ───────────────────────────────────────────────────────
+    delta  : Real = 0.0,          // narrow-channel threshold factor
+    nfs    : Real = 0.0,          // fast surface state density (cm⁻²)
+    ucrit  : Real = 1.0e4,        // critical field for mobility degradation (V/cm)
+    uexp   : Real = 0.0,          // critical field exponent
+    vmax   : Real = 0.0,          // max carrier drift velocity (m/s)
+    xj     : Real = 0.0,          // junction depth (m)
+    neff   : Real = 1.0,          // channel charge coefficient
+
+    // ── Series resistances ────────────────────────────────────────────────────
+    rd     : Real = 0.0,
+    rs     : Real = 0.0,
+    rsh    : Real = 0.0,
+
+    // ── Bulk junction ─────────────────────────────────────────────────────────
+    cbd    : Real = 0.0,
+    cbs    : Real = 0.0,
+    is     : Real = 1.0e-14,
+    js     : Real = 0.0,
+    pb     : Real = 0.8,
+    cj     : Real = 0.0,
+    mj     : Real = 0.5,
+    cjsw   : Real = 0.0,
+    mjsw   : Real = 0.33,          // ngspice mos2 default (mos1 uses 0.5)
+    fc     : Real = 0.5,
+
+    // ── Overlap capacitance ───────────────────────────────────────────────────
+    cgso   : Real = 0.0,
+    cgdo   : Real = 0.0,
+    cgbo   : Real = 0.0,
+
+    // ── Process ───────────────────────────────────────────────────────────────
+    tox    : Real = 0.0,          // oxide thickness (m); 0 = ngspice's 1e-7
+    ld     : Real = 0.0,
+    u0     : Real = 600.0,        // surface mobility (cm²/V·s)
+    nsub   : Real = 0.0,          // substrate doping (cm⁻³)
+    tpg    : Real = 1.0,          // gate material: 1 = opp of sub, -1 = same, 0 = Al
+    nss    : Real = 0.0,          // surface state density (cm⁻²)
+
+    // ── Temperature ───────────────────────────────────────────────────────────
+    tnom   : Real = 300.15,
+
+    // ── Noise ─────────────────────────────────────────────────────────────────
+    kf     : Real = 0.0,
+    af     : Real = 1.0,
+}
+
+pub mod mos2 (
+    inout d : Electrical,
+    inout g : Electrical,
+    inout s : Electrical,
+    inout b : Electrical,
+) {
+    param model : Mos2Model = Mos2Model {};
+    param w     : Real = 100.0e-6;
+    param l     : Real = 100.0e-6;
+    param ad    : Real = 0.0;
+    param as    : Real = 0.0;
+    param pd    : Real = 0.0;
+    param ps    : Real = 0.0;
+    param nrd   : Real = 1.0;
+    param nrs   : Real = 1.0;
+    param m     : Real = 1.0;
+    param temp  : Real = 0.0;
+    param dtemp : Real = 0.0;
+    param off   : Boolean = 0;
+
+    wire dp : Electrical;
+    wire sp : Electrical;
+}
+
+pub analog mos2 {
+    // ════════════════════════════════════════════════════════════════════════
+    //  §0  Type and geometry
+    // ════════════════════════════════════════════════════════════════════════
+    var type : Real = if (model.nmos) { 1.0 } else { -1.0 };
+    var l_eff : Real = l - 2.0 * model.ld;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §1  Derived model parameters  (mos2set.c, mos2temp.c:44-121)
+    // ════════════════════════════════════════════════════════════════════════
+    // Cox: always defined in mos2 (tox defaults to 1e-7 — mos2temp.c:62-66).
+    var cox : Real = NG_EPS_SIO2 / if (model.tox > 0.0) { model.tox } else { 1.0e-7 };
+
+    // KP: given wins, else u0·Cox·1e-4 (mos2temp.c:69-72).
+    var kp_eff : Real = if (model.kp > 0.0) { model.kp } else { model.u0 * cox * 1.0e-4 };
+
+    // PHI/GAMMA/VTO: given wins, else derived from NSUB (mos2temp.c:73-114).
+    var phi_eff : Real = model.phi;
+    var gamma_eff : Real = model.gamma;
+    var vto_eff : Real = model.vto;
+    var xd : Real = 0.0;          // depletion-width coefficient (mos2temp.c:107)
+    if (model.nsub * 1.0e6 > NG_NI_SI) {
+        var vtnom0 : Real = $vt(model.tnom);
+        if (phi_eff <= 0.0) {
+            phi_eff = 2.0 * vtnom0 * ln(model.nsub * 1.0e6 / NG_NI_SI);
+            if (phi_eff < 0.1) { phi_eff = 0.1; }
+        }
+        if (gamma_eff <= 0.0) {
+            gamma_eff = sqrt(2.0 * NG_EPS_SI * NG_Q * model.nsub * 1.0e6) / cox;
+        }
+        if (vto_eff <= 0.0) {
+            var fermis : Real = type * 0.5 * phi_eff;
+            var eg_tnom : Real = ng_egfet(model.tnom);
+            // mos2temp.c:82-88: wkfng = 3.2 when tpg == 0 (not 3.25).
+            var fermig : Real = if (model.tpg != 0.0) { type * model.tpg * 0.5 * eg_tnom } else { 0.0 };
+            var wkfng : Real = if (model.tpg != 0.0) { 3.25 + 0.5 * eg_tnom - fermig } else { 3.2 };
+            var wkfngs : Real = wkfng - (3.25 + 0.5 * eg_tnom + fermis);
+            var vfb : Real = wkfngs - model.nss * 1.0e4 * NG_Q / cox;
+            vto_eff = vfb + type * (gamma_eff * sqrt(phi_eff) + phi_eff);
+        }
+        xd = sqrt(2.0 * NG_EPS_SI / (NG_Q * model.nsub * 1.0e6));
+    }
+    if (phi_eff <= 0.0) { phi_eff = 0.6; }   // ngspice default (mos2set.c)
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §2  Temperature preprocessing  (mos2temp.c:145-249)
+    // ════════════════════════════════════════════════════════════════════════
+    var t : Real = if (temp > 0.0) { temp } else { $temperature() + dtemp };
+    var dt : Real = t - model.tnom;
+    var vt : Real = $vt(t);
+    var vtnom : Real = $vt(model.tnom);
+    var ratio4 : Real = pow(t / model.tnom, 1.5);
+
+    var tTransconductance : Real = kp_eff / ratio4;
+    // ngspice quirk (faithful): mos2temp computes tSurfMob = u0/ratio4 but the
+    // DC path in mos2load.c uses the RAW surfaceMobility for ueff — so do we.
+
+    var fact1 : Real = model.tnom / NG_REFTEMP;
+    var fact2 : Real = t / NG_REFTEMP;
+    var egfet1 : Real = ng_egfet(model.tnom);
+    var arg1 : Real = 0.0 - egfet1 / (2.0 * NG_K * model.tnom) + 1.1150877 / (2.0 * NG_K * NG_REFTEMP);
+    var pbfact1 : Real = 0.0 - 2.0 * vtnom * (1.5 * ln(fact1) + NG_Q * arg1);
+    var egfet : Real = ng_egfet(t);
+    var arg : Real = 0.0 - egfet / (2.0 * NG_K * t) + 1.1150877 / (2.0 * NG_K * NG_REFTEMP);
+    var pbfact : Real = 0.0 - 2.0 * vt * (1.5 * ln(fact2) + NG_Q * arg);
+
+    var phio : Real = (phi_eff - pbfact1) / fact1;
+    var tPhi : Real = fact2 * phio + pbfact;
+
+    var tVbi : Real = vto_eff - type * gamma_eff * sqrt(phi_eff)
+                      + 0.5 * (egfet1 - egfet)
+                      + type * 0.5 * (tPhi - phi_eff);
+    var tVto : Real = tVbi + type * gamma_eff * sqrt(tPhi);
+
+    var tSatCur : Real = model.is * exp(0.0 - ng_egfet(t) / vt + ng_egfet(model.tnom) / vtnom);
+
+    var pbo : Real = (model.pb - pbfact1) / fact1;
+    var gmaold : Real = (model.pb - pbo) / pbo;
+    var tBulkPot : Real = pbfact + fact2 * pbo;
+    var gmanew : Real = (tBulkPot - pbo) / pbo;
+    var tDepCap : Real = model.fc * tBulkPot;
+
+    var tCbd : Real = model.cbd / (1.0 + model.mj * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCbd = tCbd * (1.0 + model.mj * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+    var tCbs : Real = model.cbs / (1.0 + model.mj * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCbs = tCbs * (1.0 + model.mj * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+    var tCj : Real = model.cj / (1.0 + model.mj * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCj = tCj * (1.0 + model.mj * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+    var tCjsw : Real = model.cjsw / (1.0 + model.mjsw * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCjsw = tCjsw * (1.0 + model.mjsw * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §3  Per-instance derived quantities  (mos2load.c:126-148)
+    // ════════════════════════════════════════════════════════════════════════
+    var beta : Real = tTransconductance * m * w / l_eff;
+    var oxideCap : Real = cox * l_eff * m * w;
+
+    var gsOverlapCap : Real = model.cgso * m * w;
+    var gdOverlapCap : Real = model.cgdo * m * w;
+    var gbOverlapCap : Real = model.cgbo * m * l_eff;
+
+    var tSatCurDens : Real = model.js * exp(0.0 - egfet / vt + egfet1 / vtnom);
+    var use_dens : Boolean = model.js > 0.0 && ad > 0.0 && as > 0.0;
+    var drainSatCur : Real = if (use_dens) { tSatCurDens * m * ad } else { m * tSatCur };
+    var sourceSatCur : Real = if (use_dens) { tSatCurDens * m * as } else { m * tSatCur };
+
+    var czbd : Real = if (model.cbd > 0.0) { m * tCbd } else if (model.cj > 0.0 && ad > 0.0) { m * tCj * ad } else { 0.0 };
+    var czbs : Real = if (model.cbs > 0.0) { m * tCbs } else if (model.cj > 0.0 && as > 0.0) { m * tCj * as } else { 0.0 };
+    var czbdsw : Real = if (model.cjsw > 0.0 && pd > 0.0) { m * tCjsw * pd } else { 0.0 };
+    var czbssw : Real = if (model.cjsw > 0.0 && ps > 0.0) { m * tCjsw * ps } else { 0.0 };
+
+    var drainCond : Real = if (model.rd > 0.0) { m / model.rd }
+                           else if (model.rsh > 0.0 && nrd > 0.0) { m / (model.rsh * nrd) }
+                           else { 0.0 };
+    var sourceCond : Real = if (model.rs > 0.0) { m / model.rs }
+                            else if (model.rsh > 0.0 && nrs > 0.0) { m / (model.rsh * nrs) }
+                            else { 0.0 };
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §4  Voltages  (mos2load.c:220-244, 388-390)
+    // ════════════════════════════════════════════════════════════════════════
+    var vgs : Real = type * V(g, sp);
+    var vgd : Real = type * V(g, dp);
+    var vds : Real = vgs - vgd;
+    var vbs : Real = type * V(b, sp);
+    var vbd : Real = type * V(b, dp);
+    var vgb : Real = type * V(g, b);
+
+    var mode : Real = if (vds >= 0.0) { 1.0 } else { -1.0 };
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §5  Local quantities + threshold  (mos2load.c:556-683)
+    // ════════════════════════════════════════════════════════════════════════
+    var lvbs : Real = if (mode == 1.0) { vbs } else { vbd };
+    var lvds : Real = mode * vds;
+    var lvgs : Real = if (mode == 1.0) { vgs } else { vgd };
+    var phiMinVbs : Real = tPhi - lvbs;
+
+    // sarg/barg with the first derivatives the subthreshold coefficient
+    // needs (dsrgdb/dbrgdb → dbargs/dbargd → dgddvb → `cdonco`; the d2
+    // terms feed only ngspice's analytic Jacobian, which auto-diff replaces).
+    var sphi : Real = sqrt(tPhi);
+    var sphi3 : Real = tPhi * sphi;
+    var sarg : Real = 0.0;
+    var dsrgdb : Real = 0.0;
+    if (lvbs <= 0.0) {
+        sarg = sqrt(phiMinVbs);
+        dsrgdb = 0.0 - 0.5 / sarg;
+    } else {
+        sarg = sphi / (1.0 + 0.5 * lvbs / tPhi);
+        dsrgdb = 0.0 - 0.5 * sarg * sarg / sphi3;
+    }
+    var barg : Real = 0.0;
+    var dbrgdb : Real = 0.0;
+    if (lvbs - lvds <= 0.0) {
+        barg = sqrt(phiMinVbs + lvds);
+        dbrgdb = 0.0 - 0.5 / barg;
+    } else {
+        barg = sphi / (1.0 + 0.5 * (lvbs - lvds) / tPhi);
+        dbrgdb = 0.0 - 0.5 * barg * barg / sphi3;
+    }
+
+    // Narrow-channel factor + short-channel (xj) threshold reduction.
+    var factor : Real = 0.125 * model.delta * 6.283185307179586 * NG_EPS_SI / oxideCap * l_eff;
+    var eta : Real = 1.0 + factor;
+    var vbin : Real = tVbi * type + factor * phiMinVbs;
+    // ngspice reads the post-derivation gamma (mos2temp writes it back into
+    // the model struct) — so gamma_eff, never the raw model.gamma.
+    var gamasd : Real = gamma_eff;
+    var dgddvb : Real = 0.0;
+    if (gamma_eff > 0.0 || model.nsub > 0.0) {
+        var xwd : Real = xd * barg;
+        var xws : Real = xd * sarg;
+        var argss : Real = 0.0;
+        var argsd : Real = 0.0;
+        var dbargs : Real = 0.0;
+        var dbargd : Real = 0.0;
+        if (model.xj > 0.0) {
+            var argxs : Real = 1.0 + xws * 2.0 / model.xj;
+            var argxd : Real = 1.0 + xwd * 2.0 / model.xj;
+            var args : Real = sqrt(argxs);
+            var argd : Real = sqrt(argxd);
+            var tmpj : Real = 0.5 * model.xj / l_eff;
+            argss = tmpj * (args - 1.0);
+            argsd = tmpj * (argd - 1.0);
+            var tmph : Real = 0.5 / l_eff;
+            dbargs = tmph * xd * dsrgdb / args;
+            dbargd = tmph * xd * dbrgdb / argd;
+        }
+        gamasd = gamma_eff * (1.0 - argss - argsd);
+        dgddvb = 0.0 - gamma_eff * (dbargs + dbargd);
+    }
+    var von : Real = vbin + gamasd * sarg;
+
+    // Subthreshold (nfs): von shifts by vt·xn, argg = 1/(vt·xn).
+    var xn : Real = 0.0;
+    var argg : Real = 0.0;
+    var has_nfs : Boolean = model.nfs != 0.0 && oxideCap != 0.0;
+    if (has_nfs) {
+        var cfs : Real = NG_Q * model.nfs * 1.0e4;
+        var cdonco : Real = 0.0 - (gamasd * dsrgdb + dgddvb * sarg) + factor;
+        xn = 1.0 + cfs / oxideCap * m * w * l_eff + cdonco;
+        var tmpn : Real = vt * xn;
+        von = von + tmpn;
+        argg = 1.0 / tmpn;
+    }
+    var vgst : Real = lvgs - von;
+
+    var sarg3 : Real = sarg * sarg * sarg;
+    var sbiarg : Real = sqrt(tBulkPot);
+    var body : Real = barg * barg * barg - sarg3;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §6  Mobility degradation + vdsat  (mos2load.c:706-825)
+    // ════════════════════════════════════════════════════════════════════════
+    var ufact : Real = 1.0;
+    var ueff : Real = model.u0 * 1.0e-4;   // raw mobility (ngspice quirk, §2)
+    if (oxideCap > 0.0) {
+        var udenom : Real = vgst;
+        var tmpx : Real = model.ucrit * 100.0 * NG_EPS_SI / cox;
+        if (udenom > tmpx) {
+            ufact = exp(model.uexp * ln(tmpx / udenom));
+            ueff = model.u0 * 1.0e-4 * ufact;
+        }
+    }
+
+    // Grove-Frohman saturation voltage.
+    var vgsx : Real = lvgs;
+    var gammad_eta : Real = gamasd / eta;
+    if (has_nfs) { vgsx = max(lvgs, von); }
+    var vdsat : Real = 0.0;
+    if (gammad_eta > 0.0) {
+        var gammd2 : Real = gammad_eta * gammad_eta;
+        var argv : Real = (vgsx - vbin) / eta + phiMinVbs;
+        if (argv > 0.0) {
+            var argq : Real = sqrt(1.0 + 4.0 * argv / gammd2);
+            vdsat = (vgsx - vbin) / eta + gammd2 * (1.0 - argq) / 2.0;
+            if (vdsat < 0.0) { vdsat = 0.0; }
+        }
+    } else {
+        vdsat = (vgsx - vbin) / eta;
+        if (vdsat < 0.0) { vdsat = 0.0; }
+    }
+
+    // Baum's velocity-saturation quartic (mos2load.c:756-825): the smallest
+    // positive root within |poly| ≤ 1e-6 replaces the Grove-Frohman value.
+    if (model.vmax > 0.0) {
+        var v1q : Real = (vgsx - vbin) / eta + phiMinVbs;
+        var v2q : Real = phiMinVbs;
+        var xvq : Real = model.vmax * l_eff / ueff;
+        var a1q : Real = gammad_eta / 0.75;
+        var b1q : Real = 0.0 - 2.0 * (v1q + xvq);
+        var c1q : Real = 0.0 - 2.0 * gammad_eta * xvq;
+        var d1q : Real = 2.0 * v1q * (v2q + xvq) - v2q * v2q - 4.0 / 3.0 * gammad_eta * sarg3;
+        var aq : Real = 0.0 - b1q;
+        var bq : Real = a1q * c1q - 4.0 * d1q;
+        var cq : Real = 0.0 - d1q * (a1q * a1q - 4.0 * b1q) - c1q * c1q;
+        var rq : Real = 0.0 - aq * aq / 3.0 + bq;
+        var sq : Real = 2.0 * aq * aq * aq / 27.0 - aq * bq / 3.0 + cq;
+        var r3q : Real = rq * rq * rq;
+        var s2q : Real = sq * sq;
+        var pq : Real = s2q / 4.0 + r3q / 27.0;
+        var p0q : Real = abs(pq);
+        var p2q : Real = sqrt(p0q);
+        var y3 : Real = 0.0;
+        if (pq < 0.0) {
+            var ro : Real = sqrt(s2q / 4.0 + p0q);
+            ro = exp(ln(ro) / 3.0);
+            var fi : Real = atan(0.0 - 2.0 * p2q / sq);
+            y3 = 2.0 * ro * cos(fi / 3.0) - aq / 3.0;
+        } else {
+            var p3q : Real = exp(ln(abs(0.0 - sq / 2.0 + p2q)) / 3.0);
+            var p4q : Real = exp(ln(abs(0.0 - sq / 2.0 - p2q)) / 3.0);
+            y3 = p3q + p4q - aq / 3.0;
+        }
+        var a3q : Real = sqrt(a1q * a1q / 4.0 - b1q + y3);
+        var b3q : Real = sqrt(y3 * y3 / 4.0 - d1q);
+
+        // Four (a4, b4) pairs — sig1 = [1,-1,1,-1], sig2 = [1,1,-1,-1] —
+        // unrolled (PHDL has no loop-carried arrays), each contributing two
+        // candidate roots; the smallest positive one with |poly4| ≤ 1e-6 wins.
+        var xvalid : Real = 0.0;
+        var jknt : Real = 0.0;
+
+        var a4p : Real = a1q / 2.0 + a3q;
+        var b4p : Real = y3 / 2.0 + b3q;
+        var dlt : Real = a4p * a4p / 4.0 - b4p;
+        if (dlt >= 0.0) {
+            var sd : Real = sqrt(dlt);
+            var xr : Real = 0.0 - a4p / 2.0 + sd;
+            if (xr > 0.0) {
+                var pl : Real = xr * xr * xr * xr + a1q * xr * xr * xr + b1q * xr * xr + c1q * xr + d1q;
+                if (abs(pl) <= 1.0e-6) {
+                    if (jknt == 0.0 || xr < xvalid) { xvalid = xr; }
+                    jknt = jknt + 1.0;
+                }
+            }
+            xr = 0.0 - a4p / 2.0 - sd;
+            if (xr > 0.0) {
+                var pl2 : Real = xr * xr * xr * xr + a1q * xr * xr * xr + b1q * xr * xr + c1q * xr + d1q;
+                if (abs(pl2) <= 1.0e-6) {
+                    if (jknt == 0.0 || xr < xvalid) { xvalid = xr; }
+                    jknt = jknt + 1.0;
+                }
+            }
+        }
+        a4p = a1q / 2.0 - a3q;
+        dlt = a4p * a4p / 4.0 - b4p;
+        if (dlt >= 0.0) {
+            var sd2 : Real = sqrt(dlt);
+            var xr2 : Real = 0.0 - a4p / 2.0 + sd2;
+            if (xr2 > 0.0) {
+                var pl3 : Real = xr2 * xr2 * xr2 * xr2 + a1q * xr2 * xr2 * xr2 + b1q * xr2 * xr2 + c1q * xr2 + d1q;
+                if (abs(pl3) <= 1.0e-6) {
+                    if (jknt == 0.0 || xr2 < xvalid) { xvalid = xr2; }
+                    jknt = jknt + 1.0;
+                }
+            }
+            xr2 = 0.0 - a4p / 2.0 - sd2;
+            if (xr2 > 0.0) {
+                var pl4 : Real = xr2 * xr2 * xr2 * xr2 + a1q * xr2 * xr2 * xr2 + b1q * xr2 * xr2 + c1q * xr2 + d1q;
+                if (abs(pl4) <= 1.0e-6) {
+                    if (jknt == 0.0 || xr2 < xvalid) { xvalid = xr2; }
+                    jknt = jknt + 1.0;
+                }
+            }
+        }
+        a4p = a1q / 2.0 + a3q;
+        b4p = y3 / 2.0 - b3q;
+        dlt = a4p * a4p / 4.0 - b4p;
+        if (dlt >= 0.0) {
+            var sd3 : Real = sqrt(dlt);
+            var xr3 : Real = 0.0 - a4p / 2.0 + sd3;
+            if (xr3 > 0.0) {
+                var pl5 : Real = xr3 * xr3 * xr3 * xr3 + a1q * xr3 * xr3 * xr3 + b1q * xr3 * xr3 + c1q * xr3 + d1q;
+                if (abs(pl5) <= 1.0e-6) {
+                    if (jknt == 0.0 || xr3 < xvalid) { xvalid = xr3; }
+                    jknt = jknt + 1.0;
+                }
+            }
+            xr3 = 0.0 - a4p / 2.0 - sd3;
+            if (xr3 > 0.0) {
+                var pl6 : Real = xr3 * xr3 * xr3 * xr3 + a1q * xr3 * xr3 * xr3 + b1q * xr3 * xr3 + c1q * xr3 + d1q;
+                if (abs(pl6) <= 1.0e-6) {
+                    if (jknt == 0.0 || xr3 < xvalid) { xvalid = xr3; }
+                    jknt = jknt + 1.0;
+                }
+            }
+        }
+        a4p = a1q / 2.0 - a3q;
+        dlt = a4p * a4p / 4.0 - b4p;
+        if (dlt >= 0.0) {
+            var sd4 : Real = sqrt(dlt);
+            var xr4 : Real = 0.0 - a4p / 2.0 + sd4;
+            if (xr4 > 0.0) {
+                var pl7 : Real = xr4 * xr4 * xr4 * xr4 + a1q * xr4 * xr4 * xr4 + b1q * xr4 * xr4 + c1q * xr4 + d1q;
+                if (abs(pl7) <= 1.0e-6) {
+                    if (jknt == 0.0 || xr4 < xvalid) { xvalid = xr4; }
+                    jknt = jknt + 1.0;
+                }
+            }
+            xr4 = 0.0 - a4p / 2.0 - sd4;
+            if (xr4 > 0.0) {
+                var pl8 : Real = xr4 * xr4 * xr4 * xr4 + a1q * xr4 * xr4 * xr4 + b1q * xr4 * xr4 + c1q * xr4 + d1q;
+                if (abs(pl8) <= 1.0e-6) {
+                    if (jknt == 0.0 || xr4 < xvalid) { xvalid = xr4; }
+                    jknt = jknt + 1.0;
+                }
+            }
+        }
+        if (jknt > 0.0) {
+            vdsat = xvalid * xvalid - phiMinVbs;
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §7  Channel-length modulation + punch-through  (mos2load.c:829-904)
+    // ════════════════════════════════════════════════════════════════════════
+    var xlamda : Real = model.lambda;
+    var bsarg : Real = 0.0;
+    var bodys : Real = 0.0;
+    if (lvds != 0.0) {
+        if (lvbs - vdsat <= 0.0) {
+            bsarg = sqrt(vdsat + phiMinVbs);
+        } else {
+            bsarg = sphi / (1.0 + 0.5 * (lvbs - vdsat) / tPhi);
+        }
+        bodys = bsarg * bsarg * bsarg - sarg3;
+        if (model.vmax <= 0.0) {
+            if (model.nsub != 0.0 && xlamda <= 0.0) {
+                var argv4 : Real = (lvds - vdsat) / 4.0;
+                var sargv : Real = sqrt(1.0 + argv4 * argv4);
+                var argl : Real = sqrt(argv4 + sargv);
+                var xlfact : Real = xd / (l_eff * lvds);
+                xlamda = xlfact * argl;
+            }
+        } else {
+            var xdv : Real = xd / sqrt(model.neff);
+            var xlv : Real = model.vmax * xdv / (2.0 * ueff);
+            if (model.nsub != 0.0 && xlamda <= 0.0) {
+                var argv5 : Real = lvds - vdsat;
+                if (argv5 < 0.0) { argv5 = 0.0; }
+                var xls : Real = sqrt(xlv * xlv + argv5);
+                var xlf2 : Real = xdv / (l_eff * lvds);
+                xlamda = xlf2 * (xls - xlv);
+            }
+        }
+    }
+
+    var xwb : Real = xd * sbiarg;
+    var xld : Real = l_eff - xwb;
+    var clfact : Real = 1.0 - xlamda * lvds;
+    var xleff : Real = l_eff * clfact;
+    var deltal : Real = xlamda * lvds * l_eff;
+    if (model.nsub == 0.0) { xwb = 0.25e-6; }
+    if (xleff < xwb) {
+        xleff = xwb / (1.0 + (deltal - xld) / xwb);
+        clfact = xleff / l_eff;
+    }
+    var beta1 : Real = beta * ufact / clfact;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §8  Drain current branches  (mos2load.c:908-1017)
+    // ════════════════════════════════════════════════════════════════════════
+    var cdrain : Real = 0.0;
+    if (lvds > 1.0e-10) {
+        var strong : Boolean = if (has_nfs) { lvgs > von } else { lvgs > vbin };
+        if (strong) {
+            if (lvds <= vdsat) {
+                // Linear region.
+                cdrain = beta1 * ((lvgs - vbin - eta * lvds / 2.0) * lvds - gamasd * body / 1.5);
+            } else {
+                // Saturation region.
+                cdrain = beta1 * ((lvgs - vbin - eta * vdsat / 2.0) * vdsat - gamasd * bodys / 1.5);
+            }
+        } else if (has_nfs && vdsat > 0.0) {
+            // Subthreshold region (mos2load.c:936-966).
+            var vdson : Real = min(vdsat, lvds);
+            if (lvds > vdsat) {
+                barg = bsarg;
+                body = bodys;
+            }
+            var cdson : Real = beta1 * ((von - vbin - eta * vdson * 0.5) * vdson - gamasd * body / 1.5);
+            cdrain = cdson * exp(argg * (lvgs - von));
+        }
+        // else cutoff: cdrain = 0.
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §9  Bulk junction diodes  (mos2load.c:397-412 — same shape as mos1)
+    // ════════════════════════════════════════════════════════════════════════
+    var gmin : Real = $simparam("gmin", 1.0e-12);
+    var cbd : Real = if (vbd <= 0.0 - 3.0 * vt) {
+        0.0 - drainSatCur
+    } else {
+        drainSatCur * (limexp(vbd / vt) - 1.0)
+    };
+    cbd = cbd + gmin * vbd;
+
+    var cbs : Real = if (vbs <= 0.0 - 3.0 * vt) {
+        0.0 - sourceSatCur
+    } else {
+        sourceSatCur * (limexp(vbs / vt) - 1.0)
+    };
+    cbs = cbs + gmin * vbs;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §10  Bulk junction charges  (mos2load.c:1042-1147 — same as mos1)
+    // ════════════════════════════════════════════════════════════════════════
+    var arg0 : Real = 1.0 - model.fc;
+    var sarg0_bd : Real = exp(0.0 - model.mj * ln(arg0));
+    var sargsw0_bd : Real = exp(0.0 - model.mjsw * ln(arg0));
+
+    var f2_bd : Real = czbd * (1.0 - model.fc * (1.0 + model.mj)) * sarg0_bd / arg0
+                     + czbdsw * (1.0 - model.fc * (1.0 + model.mjsw)) * sargsw0_bd / arg0;
+    var f3_bd : Real = (czbd * model.mj * sarg0_bd / arg0 + czbdsw * model.mjsw * sargsw0_bd / arg0) / tBulkPot;
+    var f4_bd : Real = czbd * tBulkPot * (1.0 - arg0 * sarg0_bd) / (1.0 - model.mj)
+                     + czbdsw * tBulkPot * (1.0 - arg0 * sargsw0_bd) / (1.0 - model.mjsw)
+                     - (f3_bd * 0.5) * tDepCap * tDepCap - tDepCap * f2_bd;
+
+    var qbd : Real;
+    if (vbd < tDepCap) {
+        var a : Real = 1.0 - vbd / tBulkPot;
+        var sj : Real = exp(0.0 - model.mj * ln(a));
+        var ssw : Real = exp(0.0 - model.mjsw * ln(a));
+        qbd = tBulkPot * (czbd * (1.0 - a * sj) / (1.0 - model.mj) + czbdsw * (1.0 - a * ssw) / (1.0 - model.mjsw));
+    } else {
+        qbd = f4_bd + vbd * (f2_bd + vbd * f3_bd * 0.5);
+    }
+
+    var f2_bs : Real = czbs * (1.0 - model.fc * (1.0 + model.mj)) * sarg0_bd / arg0
+                     + czbssw * (1.0 - model.fc * (1.0 + model.mjsw)) * sargsw0_bd / arg0;
+    var f3_bs : Real = (czbs * model.mj * sarg0_bd / arg0 + czbssw * model.mjsw * sargsw0_bd / arg0) / tBulkPot;
+    var f4_bs : Real = czbs * tBulkPot * (1.0 - arg0 * sarg0_bd) / (1.0 - model.mj)
+                     + czbssw * tBulkPot * (1.0 - arg0 * sargsw0_bd) / (1.0 - model.mjsw)
+                     - (f3_bs * 0.5) * tDepCap * tDepCap - tDepCap * f2_bs;
+
+    var qbs : Real;
+    if (vbs < tDepCap) {
+        var a : Real = 1.0 - vbs / tBulkPot;
+        var sj : Real = exp(0.0 - model.mj * ln(a));
+        var ssw : Real = exp(0.0 - model.mjsw * ln(a));
+        qbs = tBulkPot * (czbs * (1.0 - a * sj) / (1.0 - model.mj) + czbssw * (1.0 - a * ssw) / (1.0 - model.mjsw));
+    } else {
+        qbs = f4_bs + vbs * (f2_bs + vbs * f3_bs * 0.5);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §11  Meyer gate capacitances  (DEVqmeyer — same as mos1, with mos2's
+    //  own von/vdsat)
+    // ════════════════════════════════════════════════════════════════════════
+    var vgst_m : Real = vgs - von;
+    var vds_m : Real = vds;
+    var vdsat_m : Real = if (vdsat > 0.025) { vdsat } else { 0.025 };
+
+    var cgs_meyer : Real = 0.0;
+    var cgd_meyer : Real = 0.0;
+    var cgb_meyer : Real = 0.0;
+
+    if (vgst_m <= 0.0 - tPhi) {
+        cgb_meyer = oxideCap * 0.5;
+    } else if (vgst_m <= 0.0 - tPhi * 0.5) {
+        cgb_meyer = 0.0 - vgst_m * oxideCap / (2.0 * tPhi);
+    } else if (vgst_m <= 0.0) {
+        cgb_meyer = 0.0 - vgst_m * oxideCap / (2.0 * tPhi);
+        cgs_meyer = vgst_m * oxideCap / (1.5 * tPhi) + oxideCap / 3.0;
+        if (vds_m < vdsat_m) {
+            var vddif : Real = 2.0 * vdsat_m - vds_m;
+            var vddif1 : Real = vdsat_m - vds_m;
+            var vddif2 : Real = vddif * vddif;
+            if (vddif2 > 0.0) {
+                cgd_meyer = cgs_meyer * (1.0 - vdsat_m * vdsat_m / vddif2);
+                cgs_meyer = cgs_meyer * (1.0 - vddif1 * vddif1 / vddif2);
+            }
+        }
+    } else {
+        cgb_meyer = 0.0;
+        if (vds_m >= vdsat_m) {
+            cgs_meyer = oxideCap / 3.0;
+            cgd_meyer = 0.0;
+        } else {
+            var vddif : Real = 2.0 * vdsat_m - vds_m;
+            var vddif1 : Real = vdsat_m - vds_m;
+            var vddif2 : Real = vddif * vddif;
+            if (vddif2 > 0.0) {
+                cgs_meyer = (oxideCap / 3.0) * (1.0 - vddif1 * vddif1 / vddif2);
+                cgd_meyer = (oxideCap / 3.0) * (1.0 - vdsat_m * vdsat_m / vddif2);
+            } else {
+                cgs_meyer = oxideCap / 3.0;
+            }
+        }
+    }
+
+    var cgs_total : Real = 2.0 * cgs_meyer;
+    var cgd_total : Real = 2.0 * cgd_meyer;
+    var cgb_total : Real = 2.0 * cgb_meyer;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §12  DC contributions
+    // ════════════════════════════════════════════════════════════════════════
+    I(dp, sp) <+ type * mode * cdrain;
+    I(b, dp) <+ type * cbd;
+    I(b, sp) <+ type * cbs;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §13  Capacitive contributions  (same as mos1)
+    // ════════════════════════════════════════════════════════════════════════
+    if (mode == 1.0) {
+        I(g, sp) <+ cgs_total * ddt(V(g, sp)) + gsOverlapCap * ddt(V(g, sp));
+        I(g, dp) <+ cgd_total * ddt(V(g, dp)) + gdOverlapCap * ddt(V(g, dp));
+    } else {
+        I(g, dp) <+ cgs_total * ddt(V(g, dp)) + gdOverlapCap * ddt(V(g, dp));
+        I(g, sp) <+ cgd_total * ddt(V(g, sp)) + gsOverlapCap * ddt(V(g, sp));
+    }
+    I(g, b)  <+ cgb_total * ddt(V(g, b)) + gbOverlapCap * ddt(V(g, b));
+
+    I(b, dp) <+ type * ddt(qbd);
+    I(b, sp) <+ type * ddt(qbs);
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §14  Series resistances  (same form as mos1)
+    // ════════════════════════════════════════════════════════════════════════
+    var rdrain : Real = if (drainCond > 0.0) { 1.0 / drainCond } else { 0.0 };
+    var rsource : Real = if (sourceCond > 0.0) { 1.0 / sourceCond } else { 0.0 };
+    V(d, dp) <- rdrain * I(d, dp);
+    V(s, sp) <- rsource * I(s, sp);
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §15  Noise  (mos2noi.c — same four sources as mos1)
+    // ════════════════════════════════════════════════════════════════════════
+    if (drainCond > 0.0) { I(d, dp) <+ white_noise(4.0 * NG_K * t * drainCond); }
+    if (sourceCond > 0.0) { I(s, sp) <+ white_noise(4.0 * NG_K * t * sourceCond); }
+    var gm_est : Real = beta * vgst;
+    I(dp, sp) <+ white_noise(4.0 * NG_K * t * (2.0 / 3.0) * abs(gm_est));
+    if (model.kf > 0.0 && cox > 0.0) {
+        var cox2 : Real = cox * cox;
+        var cd_term : Real = mode * cdrain - cbd;
+        I(dp, sp) <+ flicker_noise(
+            model.kf * pow(abs(cd_term), model.af) / (w * m * l_eff * cox2),
+            1.0
+        );
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// NGSPICE faithful model — MOS Level 3 (semi-empirical short-channel).
+//
+// Source: ngspice/src/spicelib/devices/mos3/
+//   mos3defs.h  mos3set.c  mos3temp.c  mos3load.c  mos3noi.c
+//   devsup.c (DEVqmeyer)
+//
+// Over MOS2: empirical short-channel factor (fshort — XJ), narrow-channel
+// body factor (DELTA over effective width), static drain feedback (ETA),
+// gate-field mobility modulation (THETA), smooth velocity-saturation vdsat
+// (VMAX), KAPPA channel-length modulation with punch-through limit, DELVT0
+// threshold shift. The `badMos3` compatibility mode is NOT implemented —
+// this is ngspice's default (corrected) formulation.
+//
+// Given-ness follows ngspice: positive `kp`/`gamma`/`vto`/`phi` are used
+// as-is; zero means "derive" (kp from u0·Cox; gamma/phi/vto from NSUB when
+// nsub·1e6 exceeds the temperature-corrected intrinsic concentration).
+// `tox = 0` maps to ngspice's 1e-7 default.
+// ════════════════════════════════════════════════════════════════════════════
+
+pub bundle Mos3Model {
+    // ── Type ──────────────────────────────────────────────────────────────────
+    nmos : Boolean = 1,           // 1 = NMOS, 0 = PMOS
+
+    // ── DC ────────────────────────────────────────────────────────────────────
+    vto    : Real = 0.0,          // threshold voltage (V); 0 = derive
+    kp     : Real = 0.0,          // transconductance (A/V²); 0 = derive from u0·Cox
+    gamma  : Real = 0.0,          // body-effect coefficient (V^½); 0 = derive from nsub
+    phi    : Real = 0.0,          // surface potential 2φf (V); 0 = derive (else 0.6)
+
+    // ── Level-3 physics ───────────────────────────────────────────────────────
+    delta  : Real = 0.0,          // width effect on threshold
+    eta    : Real = 0.0,          // static feedback on threshold
+    theta  : Real = 0.0,          // mobility modulation (1/V)
+    kappa  : Real = 0.2,          // saturation field factor (CLM)
+    nfs    : Real = 0.0,          // fast surface state density (cm⁻²)
+    vmax   : Real = 0.0,          // max carrier drift velocity (m/s)
+    xj     : Real = 0.0,          // junction depth (m)
+    delvt0 : Real = 0.0,          // threshold adjustment (V)
+    xl     : Real = 0.0,          // mask length adjustment (m)
+    xw     : Real = 0.0,          // mask width adjustment (m)
+    wd     : Real = 0.0,          // width narrowing per side (m)
+
+    // ── Series resistances ────────────────────────────────────────────────────
+    rd     : Real = 0.0,
+    rs     : Real = 0.0,
+    rsh    : Real = 0.0,
+
+    // ── Bulk junction ─────────────────────────────────────────────────────────
+    cbd    : Real = 0.0,
+    cbs    : Real = 0.0,
+    is     : Real = 1.0e-14,
+    js     : Real = 0.0,
+    pb     : Real = 0.8,
+    cj     : Real = 0.0,
+    mj     : Real = 0.5,
+    cjsw   : Real = 0.0,
+    mjsw   : Real = 0.33,
+    fc     : Real = 0.5,
+
+    // ── Overlap capacitance ───────────────────────────────────────────────────
+    cgso   : Real = 0.0,
+    cgdo   : Real = 0.0,
+    cgbo   : Real = 0.0,
+
+    // ── Process ───────────────────────────────────────────────────────────────
+    tox    : Real = 0.0,          // oxide thickness (m); 0 = ngspice's 1e-7
+    ld     : Real = 0.0,
+    u0     : Real = 600.0,        // surface mobility (cm²/V·s)
+    nsub   : Real = 0.0,          // substrate doping (cm⁻³)
+    tpg    : Real = 1.0,          // gate material: 1 = opp of sub, -1 = same, 0 = Al
+    nss    : Real = 0.0,          // surface state density (cm⁻²)
+
+    // ── Temperature ───────────────────────────────────────────────────────────
+    tnom   : Real = 300.15,
+
+    // ── Noise ─────────────────────────────────────────────────────────────────
+    kf     : Real = 0.0,
+    af     : Real = 1.0,
+}
+
+pub mod mos3 (
+    inout d : Electrical,
+    inout g : Electrical,
+    inout s : Electrical,
+    inout b : Electrical,
+) {
+    param model : Mos3Model = Mos3Model {};
+    param w     : Real = 100.0e-6;
+    param l     : Real = 100.0e-6;
+    param ad    : Real = 0.0;
+    param as    : Real = 0.0;
+    param pd    : Real = 0.0;
+    param ps    : Real = 0.0;
+    param nrd   : Real = 1.0;
+    param nrs   : Real = 1.0;
+    param m     : Real = 1.0;
+    param temp  : Real = 0.0;
+    param dtemp : Real = 0.0;
+    param off   : Boolean = 0;
+
+    wire dp : Electrical;
+    wire sp : Electrical;
+}
+
+pub analog mos3 {
+    // ════════════════════════════════════════════════════════════════════════
+    //  §0  Type and geometry  (mos3load.c:130-133)
+    // ════════════════════════════════════════════════════════════════════════
+    var type : Real = if (model.nmos) { 1.0 } else { -1.0 };
+    var l_eff : Real = l - 2.0 * model.ld + model.xl;
+    var w_eff : Real = w - 2.0 * model.wd + model.xw;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §1  Derived model parameters  (mos3temp.c:44-114)
+    // ════════════════════════════════════════════════════════════════════════
+    var cox : Real = NG_EPS_SIO2 / if (model.tox > 0.0) { model.tox } else { 1.0e-7 };
+    var kp_eff : Real = if (model.kp > 0.0) { model.kp } else { model.u0 * cox * 1.0e-4 };
+
+    // Temperature-corrected intrinsic concentration at tnom (mos3temp.c:51-54).
+    var egfet1 : Real = ng_egfet(model.tnom);
+    var vtnom : Real = $vt(model.tnom);
+    var nifact : Real = (model.tnom / 300.0) * sqrt(model.tnom / 300.0)
+                      * exp(0.5 * egfet1 * (1.0 / 300.0 - 1.0 / model.tnom) * NG_Q / NG_K);
+    var ni_temp : Real = 1.45e16 * nifact;
+
+    var phi_eff : Real = model.phi;
+    var gamma_eff : Real = model.gamma;
+    var vto_eff : Real = model.vto;
+    var alpha_m : Real = 0.0;     // MOS3alpha = 2·εSi/(q·NSUB) (mos3temp.c:102)
+    var xd : Real = 0.0;          // coeffDepLayWidth = √alpha (mos3temp.c:104)
+    if (model.nsub * 1.0e6 > ni_temp) {
+        if (phi_eff <= 0.0) {
+            phi_eff = 2.0 * vtnom * ln(model.nsub * 1.0e6 / ni_temp);
+            if (phi_eff < 0.1) { phi_eff = 0.1; }
+        }
+        if (gamma_eff <= 0.0) {
+            gamma_eff = sqrt(2.0 * NG_EPS_SI * NG_Q * model.nsub * 1.0e6) / cox;
+        }
+        if (vto_eff <= 0.0) {
+            var fermis : Real = type * 0.5 * phi_eff;
+            var fermig : Real = if (model.tpg != 0.0) { type * model.tpg * 0.5 * egfet1 } else { 0.0 };
+            var wkfng : Real = if (model.tpg != 0.0) { 3.25 + 0.5 * egfet1 - fermig } else { 3.2 };
+            var wkfngs : Real = wkfng - (3.25 + 0.5 * egfet1 + fermis);
+            var vfb : Real = wkfngs - model.nss * 1.0e4 * NG_Q / cox;
+            vto_eff = vfb + type * (gamma_eff * sqrt(phi_eff) + phi_eff);
+        }
+        alpha_m = (NG_EPS_SI + NG_EPS_SI) / (NG_Q * model.nsub * 1.0e6);
+        xd = sqrt(alpha_m);
+    }
+    if (phi_eff <= 0.0) { phi_eff = 0.6; }   // ngspice default (mos3set.c)
+
+    // narrowFactor = DELTA·0.5·π·εSi/Cox (mos3temp.c:113-114).
+    var narrowFactor : Real = model.delta * 0.5 * 3.141592653589793 * NG_EPS_SI / cox;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §2  Temperature preprocessing  (mos3temp.c:138-251)
+    // ════════════════════════════════════════════════════════════════════════
+    var t : Real = if (temp > 0.0) { temp } else { $temperature() + dtemp };
+    var vt : Real = $vt(t);
+    var ratio4 : Real = pow(t / model.tnom, 1.5);
+
+    var tTransconductance : Real = kp_eff / ratio4;
+    var tSurfMob : Real = model.u0 / ratio4;   // mos3 DC uses the scaled mobility
+
+    var fact1 : Real = model.tnom / NG_REFTEMP;
+    var fact2 : Real = t / NG_REFTEMP;
+    var arg1 : Real = 0.0 - egfet1 / (2.0 * NG_K * model.tnom) + 1.1150877 / (2.0 * NG_K * NG_REFTEMP);
+    var pbfact1 : Real = 0.0 - 2.0 * vtnom * (1.5 * ln(fact1) + NG_Q * arg1);
+    var egfet : Real = ng_egfet(t);
+    var arg : Real = 0.0 - egfet / (2.0 * NG_K * t) + 1.1150877 / (2.0 * NG_K * NG_REFTEMP);
+    var pbfact : Real = 0.0 - 2.0 * vt * (1.5 * ln(fact2) + NG_Q * arg);
+
+    var phio : Real = (phi_eff - pbfact1) / fact1;
+    var tPhi : Real = fact2 * phio + pbfact;
+
+    // tVbi includes DELVT0 (mos3temp.c:219-224).
+    var tVbi : Real = model.delvt0 + vto_eff - type * gamma_eff * sqrt(phi_eff)
+                      + 0.5 * (egfet1 - egfet)
+                      + type * 0.5 * (tPhi - phi_eff);
+    var tVto : Real = tVbi + type * gamma_eff * sqrt(tPhi);
+
+    var tSatCur : Real = model.is * exp(0.0 - egfet / vt + egfet1 / vtnom);
+
+    var pbo : Real = (model.pb - pbfact1) / fact1;
+    var gmaold : Real = (model.pb - pbo) / pbo;
+    var tBulkPot : Real = pbfact + fact2 * pbo;
+    var gmanew : Real = (tBulkPot - pbo) / pbo;
+    var tDepCap : Real = model.fc * tBulkPot;
+
+    var tCbd : Real = model.cbd / (1.0 + model.mj * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCbd = tCbd * (1.0 + model.mj * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+    var tCbs : Real = model.cbs / (1.0 + model.mj * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCbs = tCbs * (1.0 + model.mj * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+    var tCj : Real = model.cj / (1.0 + model.mj * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCj = tCj * (1.0 + model.mj * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+    var tCjsw : Real = model.cjsw / (1.0 + model.mjsw * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+    tCjsw = tCjsw * (1.0 + model.mjsw * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §3  Per-instance derived quantities  (mos3load.c:135-155)
+    // ════════════════════════════════════════════════════════════════════════
+    var beta : Real = tTransconductance * m * w_eff / l_eff;
+    var oxideCap : Real = cox * l_eff * m * w_eff;
+
+    // mos3 overlap caps scale with the EFFECTIVE width (mos3load.c:146-151).
+    var gsOverlapCap : Real = model.cgso * m * w_eff;
+    var gdOverlapCap : Real = model.cgdo * m * w_eff;
+    var gbOverlapCap : Real = model.cgbo * m * l_eff;
+
+    var tSatCurDens : Real = model.js * exp(0.0 - egfet / vt + egfet1 / vtnom);
+    var use_dens : Boolean = model.js > 0.0 && ad > 0.0 && as > 0.0;
+    var drainSatCur : Real = if (use_dens) { tSatCurDens * m * ad } else { m * tSatCur };
+    var sourceSatCur : Real = if (use_dens) { tSatCurDens * m * as } else { m * tSatCur };
+
+    var czbd : Real = if (model.cbd > 0.0) { m * tCbd } else if (model.cj > 0.0 && ad > 0.0) { m * tCj * ad } else { 0.0 };
+    var czbs : Real = if (model.cbs > 0.0) { m * tCbs } else if (model.cj > 0.0 && as > 0.0) { m * tCj * as } else { 0.0 };
+    var czbdsw : Real = if (model.cjsw > 0.0 && pd > 0.0) { m * tCjsw * pd } else { 0.0 };
+    var czbssw : Real = if (model.cjsw > 0.0 && ps > 0.0) { m * tCjsw * ps } else { 0.0 };
+
+    var drainCond : Real = if (model.rd > 0.0) { m / model.rd }
+                           else if (model.rsh > 0.0 && nrd > 0.0) { m / (model.rsh * nrd) }
+                           else { 0.0 };
+    var sourceCond : Real = if (model.rs > 0.0) { m / model.rs }
+                            else if (model.rsh > 0.0 && nrs > 0.0) { m / (model.rsh * nrs) }
+                            else { 0.0 };
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §4  Voltages
+    // ════════════════════════════════════════════════════════════════════════
+    var vgs : Real = type * V(g, sp);
+    var vgd : Real = type * V(g, dp);
+    var vds : Real = vgs - vgd;
+    var vbs : Real = type * V(b, sp);
+    var vbd : Real = type * V(b, dp);
+
+    var mode : Real = if (vds >= 0.0) { 1.0 } else { -1.0 };
+    var lvbs : Real = if (mode == 1.0) { vbs } else { vbd };
+    var lvds : Real = mode * vds;
+    var lvgs : Real = if (mode == 1.0) { vgs } else { vgd };
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §5  moseq3 — square-root term, fshort, body factor  (mos3load.c:559-611)
+    // ════════════════════════════════════════════════════════════════════════
+    var coeff0 : Real = 0.0631353;
+    var coeff1 : Real = 0.8013292;
+    var coeff2 : Real = 0.0 - 0.01110777;
+    var oneoverxl : Real = 1.0 / l_eff;
+    var eta_l : Real = model.eta * 8.15e-22 / (cox * l_eff * l_eff * l_eff);
+
+    var phibs : Real = 0.0;
+    var sqphbs : Real = 0.0;
+    var dsqdvb : Real = 0.0;
+    if (lvbs <= 0.0) {
+        phibs = tPhi - lvbs;
+        sqphbs = sqrt(phibs);
+        dsqdvb = 0.0 - 0.5 / sqphbs;
+    } else {
+        var sqphis : Real = sqrt(tPhi);
+        var sqphs3 : Real = tPhi * sqphis;
+        sqphbs = sqphis / (1.0 + lvbs / (tPhi + tPhi));
+        phibs = sqphbs * sqphbs;
+        dsqdvb = 0.0 - phibs / (sqphs3 + sqphs3);
+    }
+
+    var fshort : Real = 1.0;
+    var dfsdvb : Real = 0.0;
+    if (model.xj != 0.0 && xd != 0.0) {
+        var wps : Real = xd * sqphbs;
+        var oneoverxj : Real = 1.0 / model.xj;
+        var xjonxl : Real = model.xj * oneoverxl;
+        var djonxj : Real = model.ld * oneoverxj;
+        var wponxj : Real = wps * oneoverxj;
+        var wconxj : Real = coeff0 + coeff1 * wponxj + coeff2 * wponxj * wponxj;
+        var arga : Real = wconxj + djonxj;
+        var argc : Real = wponxj / (1.0 + wponxj);
+        var argb : Real = sqrt(1.0 - argc * argc);
+        fshort = 1.0 - xjonxl * (arga * argb - djonxj);
+        var dwpdvb : Real = xd * dsqdvb;
+        var dadvb : Real = (coeff1 + coeff2 * (wponxj + wponxj)) * dwpdvb * oneoverxj;
+        var dbdvb : Real = 0.0 - argc * argc * (1.0 - argc) * dwpdvb / (argb * wps);
+        dfsdvb = 0.0 - xjonxl * (dadvb * argb + arga * dbdvb);
+    }
+
+    var gammas : Real = gamma_eff * fshort;
+    var fbodys : Real = 0.5 * gammas / (sqphbs + sqphbs);
+    var fbody : Real = fbodys + narrowFactor / w_eff;
+    var onfbdy : Real = 1.0 / (1.0 + fbody);
+    var qbonco : Real = gammas * sqphbs + narrowFactor * phibs / w_eff;
+    var dqbdvb : Real = gammas * dsqdvb + gamma_eff * dfsdvb * sqphbs - narrowFactor / w_eff;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §6  Threshold + weak/strong inversion joint  (mos3load.c:612-651)
+    // ════════════════════════════════════════════════════════════════════════
+    var vbix : Real = tVbi * type - eta_l * lvds;
+    var vth : Real = vbix + qbonco;
+
+    var von : Real = vth;
+    var xn : Real = 0.0;
+    var has_nfs : Boolean = model.nfs != 0.0;
+    if (has_nfs) {
+        var csonco : Real = NG_Q * model.nfs * 1.0e4 * l_eff * w_eff * m / oxideCap;
+        var cdonco : Real = qbonco / (phibs + phibs);
+        xn = 1.0 + csonco + cdonco;
+        von = vth + vt * xn;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §7  Mobility, vdsat, drain current  (mos3load.c:651-866)
+    // ════════════════════════════════════════════════════════════════════════
+    var cdrain : Real = 0.0;
+    var vdsat : Real = 0.0;
+    var conducting : Boolean = has_nfs || lvgs > von;
+    if (conducting) {
+        var vgsx : Real = max(lvgs, von);
+
+        // Mobility modulation by gate field (THETA).
+        var onfg : Real = 1.0 + model.theta * (vgsx - vth);
+        var fgate : Real = 1.0 / onfg;
+        var us : Real = tSurfMob * 1.0e-4 * fgate;
+
+        // Saturation voltage — smooth VMAX form (mos3load.c:664-679).
+        vdsat = (vgsx - vth) * onfbdy;
+        var onvdsc : Real = 0.0;
+        if (model.vmax > 0.0) {
+            var vdsc : Real = l_eff * model.vmax / us;
+            onvdsc = 1.0 / vdsc;
+            var argav : Real = (vgsx - vth) * onfbdy;
+            var argbv : Real = sqrt(argav * argav + vdsc * vdsc);
+            vdsat = argav + vdsc - argbv;
+        }
+
+        var vdsx : Real = min(lvds, vdsat);
+        if (vdsx != 0.0) {
+            // Normalized drain current, then gate-field + velocity factors.
+            var cdo : Real = vgsx - vth - 0.5 * (1.0 + fbody) * vdsx;
+            var cdnorm : Real = cdo * vdsx;
+            var beta1 : Real = beta * fgate;
+            cdrain = beta1 * cdnorm;
+            var fdrain : Real = 0.0;
+            if (model.vmax > 0.0) {
+                fdrain = 1.0 / (1.0 + vdsx * onvdsc);
+                cdrain = fdrain * cdrain;
+            }
+
+            // Channel-length modulation (KAPPA/alpha — default, non-badMos3
+            // formulation; mos3load.c:727-826). ngspice skips CLM entirely
+            // when alpha == 0 (no NSUB): delxl would be sqrt(0), whose
+            // symbolic derivative is 0/0 = NaN, so the guard is required.
+            var delxl : Real = 0.0;
+            var apply_clm : Boolean = 0;
+            if (alpha_m == 0.0) {
+                // no CLM — xlfact stays 1 (mos3load.c goto line700)
+            } else if (lvds <= vdsat) {
+                if (model.vmax <= 0.0) {
+                    var argr : Real = lvds / vdsat;
+                    delxl = sqrt(model.kappa * alpha_m * vdsat / 8.0);
+                    delxl = delxl * argr * argr * argr * argr;
+                    apply_clm = 1;
+                }
+            } else if (model.vmax <= 0.0) {
+                delxl = sqrt(model.kappa * alpha_m * (lvds - vdsat + vdsat / 8.0));
+                apply_clm = 1;
+            } else {
+                var cdsat : Real = cdrain;
+                var gdsat : Real = cdsat * (1.0 - fdrain) * onvdsc;
+                if (gdsat < 1.0e-12) { gdsat = 1.0e-12; }
+                var emax : Real = model.kappa * cdsat * oneoverxl / gdsat;
+                var argae : Real = 0.5 * emax * alpha_m;
+                var argbe : Real = sqrt(argae * argae + model.kappa * alpha_m * (lvds - vdsat));
+                delxl = argbe - argae;
+                apply_clm = 1;
+            }
+            if (apply_clm) {
+                // Punch-through limit (mos3load.c:799-809).
+                if (delxl > 0.5 * l_eff) {
+                    delxl = l_eff - l_eff * l_eff / (4.0 * delxl);
+                }
+                var xlfact : Real = 1.0 / (1.0 - delxl * oneoverxl);
+                cdrain = cdrain * xlfact;
+            }
+
+            // Weak inversion (mos3load.c:831-849).
+            if (has_nfs && lvgs < von) {
+                cdrain = cdrain * exp((lvgs - von) / (vt * xn));
+            }
+        }
+        // vdsx == 0 → cdrain stays 0 (mos3load.c:857-866).
+    }
+    // else cutoff (nfs == 0, lvgs <= von): cdrain = 0.
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §8  Bulk junction diodes  (mos3load.c:414-433 — cubic continuation
+    //  below −3·vt, ngspice's smoothed reverse leg)
+    // ════════════════════════════════════════════════════════════════════════
+    var gmin : Real = $simparam("gmin", 1.0e-12);
+    var cbd : Real = 0.0;
+    if (vbd <= 0.0 - 3.0 * vt) {
+        var argd : Real = 3.0 * vt / (vbd * 2.718281828459045);
+        argd = argd * argd * argd;
+        cbd = 0.0 - drainSatCur * (1.0 + argd) + gmin * vbd;
+    } else {
+        cbd = drainSatCur * (limexp(vbd / vt) - 1.0) + gmin * vbd;
+    }
+    var cbs : Real = 0.0;
+    if (vbs <= 0.0 - 3.0 * vt) {
+        var args : Real = 3.0 * vt / (vbs * 2.718281828459045);
+        args = args * args * args;
+        cbs = 0.0 - sourceSatCur * (1.0 + args) + gmin * vbs;
+    } else {
+        cbs = sourceSatCur * (limexp(vbs / vt) - 1.0) + gmin * vbs;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §9  Bulk junction charges  (same shape as mos1/mos2)
+    // ════════════════════════════════════════════════════════════════════════
+    var arg0 : Real = 1.0 - model.fc;
+    var sarg0_bd : Real = exp(0.0 - model.mj * ln(arg0));
+    var sargsw0_bd : Real = exp(0.0 - model.mjsw * ln(arg0));
+
+    var f2_bd : Real = czbd * (1.0 - model.fc * (1.0 + model.mj)) * sarg0_bd / arg0
+                     + czbdsw * (1.0 - model.fc * (1.0 + model.mjsw)) * sargsw0_bd / arg0;
+    var f3_bd : Real = (czbd * model.mj * sarg0_bd / arg0 + czbdsw * model.mjsw * sargsw0_bd / arg0) / tBulkPot;
+    var f4_bd : Real = czbd * tBulkPot * (1.0 - arg0 * sarg0_bd) / (1.0 - model.mj)
+                     + czbdsw * tBulkPot * (1.0 - arg0 * sargsw0_bd) / (1.0 - model.mjsw)
+                     - (f3_bd * 0.5) * tDepCap * tDepCap - tDepCap * f2_bd;
+
+    var qbd : Real;
+    if (vbd < tDepCap) {
+        var a : Real = 1.0 - vbd / tBulkPot;
+        var sj : Real = exp(0.0 - model.mj * ln(a));
+        var ssw : Real = exp(0.0 - model.mjsw * ln(a));
+        qbd = tBulkPot * (czbd * (1.0 - a * sj) / (1.0 - model.mj) + czbdsw * (1.0 - a * ssw) / (1.0 - model.mjsw));
+    } else {
+        qbd = f4_bd + vbd * (f2_bd + vbd * f3_bd * 0.5);
+    }
+
+    var f2_bs : Real = czbs * (1.0 - model.fc * (1.0 + model.mj)) * sarg0_bd / arg0
+                     + czbssw * (1.0 - model.fc * (1.0 + model.mjsw)) * sargsw0_bd / arg0;
+    var f3_bs : Real = (czbs * model.mj * sarg0_bd / arg0 + czbssw * model.mjsw * sargsw0_bd / arg0) / tBulkPot;
+    var f4_bs : Real = czbs * tBulkPot * (1.0 - arg0 * sarg0_bd) / (1.0 - model.mj)
+                     + czbssw * tBulkPot * (1.0 - arg0 * sargsw0_bd) / (1.0 - model.mjsw)
+                     - (f3_bs * 0.5) * tDepCap * tDepCap - tDepCap * f2_bs;
+
+    var qbs : Real;
+    if (vbs < tDepCap) {
+        var a : Real = 1.0 - vbs / tBulkPot;
+        var sj : Real = exp(0.0 - model.mj * ln(a));
+        var ssw : Real = exp(0.0 - model.mjsw * ln(a));
+        qbs = tBulkPot * (czbs * (1.0 - a * sj) / (1.0 - model.mj) + czbssw * (1.0 - a * ssw) / (1.0 - model.mjsw));
+    } else {
+        qbs = f4_bs + vbs * (f2_bs + vbs * f3_bs * 0.5);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §10  Meyer gate capacitances  (DEVqmeyer with mos3's von/vdsat)
+    // ════════════════════════════════════════════════════════════════════════
+    var vgst_m : Real = vgs - von;
+    var vds_m : Real = vds;
+    var vdsat_m : Real = if (vdsat > 0.025) { vdsat } else { 0.025 };
+
+    var cgs_meyer : Real = 0.0;
+    var cgd_meyer : Real = 0.0;
+    var cgb_meyer : Real = 0.0;
+
+    if (vgst_m <= 0.0 - tPhi) {
+        cgb_meyer = oxideCap * 0.5;
+    } else if (vgst_m <= 0.0 - tPhi * 0.5) {
+        cgb_meyer = 0.0 - vgst_m * oxideCap / (2.0 * tPhi);
+    } else if (vgst_m <= 0.0) {
+        cgb_meyer = 0.0 - vgst_m * oxideCap / (2.0 * tPhi);
+        cgs_meyer = vgst_m * oxideCap / (1.5 * tPhi) + oxideCap / 3.0;
+        if (vds_m < vdsat_m) {
+            var vddif : Real = 2.0 * vdsat_m - vds_m;
+            var vddif1 : Real = vdsat_m - vds_m;
+            var vddif2 : Real = vddif * vddif;
+            if (vddif2 > 0.0) {
+                cgd_meyer = cgs_meyer * (1.0 - vdsat_m * vdsat_m / vddif2);
+                cgs_meyer = cgs_meyer * (1.0 - vddif1 * vddif1 / vddif2);
+            }
+        }
+    } else {
+        cgb_meyer = 0.0;
+        if (vds_m >= vdsat_m) {
+            cgs_meyer = oxideCap / 3.0;
+            cgd_meyer = 0.0;
+        } else {
+            var vddif : Real = 2.0 * vdsat_m - vds_m;
+            var vddif1 : Real = vdsat_m - vds_m;
+            var vddif2 : Real = vddif * vddif;
+            if (vddif2 > 0.0) {
+                cgs_meyer = (oxideCap / 3.0) * (1.0 - vddif1 * vddif1 / vddif2);
+                cgd_meyer = (oxideCap / 3.0) * (1.0 - vdsat_m * vdsat_m / vddif2);
+            } else {
+                cgs_meyer = oxideCap / 3.0;
+            }
+        }
+    }
+
+    var cgs_total : Real = 2.0 * cgs_meyer;
+    var cgd_total : Real = 2.0 * cgd_meyer;
+    var cgb_total : Real = 2.0 * cgb_meyer;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §11  DC contributions
+    // ════════════════════════════════════════════════════════════════════════
+    I(dp, sp) <+ type * mode * cdrain;
+    I(b, dp) <+ type * cbd;
+    I(b, sp) <+ type * cbs;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §12  Capacitive contributions  (same as mos1/mos2)
+    // ════════════════════════════════════════════════════════════════════════
+    if (mode == 1.0) {
+        I(g, sp) <+ cgs_total * ddt(V(g, sp)) + gsOverlapCap * ddt(V(g, sp));
+        I(g, dp) <+ cgd_total * ddt(V(g, dp)) + gdOverlapCap * ddt(V(g, dp));
+    } else {
+        I(g, dp) <+ cgs_total * ddt(V(g, dp)) + gdOverlapCap * ddt(V(g, dp));
+        I(g, sp) <+ cgd_total * ddt(V(g, sp)) + gsOverlapCap * ddt(V(g, sp));
+    }
+    I(g, b)  <+ cgb_total * ddt(V(g, b)) + gbOverlapCap * ddt(V(g, b));
+
+    I(b, dp) <+ type * ddt(qbd);
+    I(b, sp) <+ type * ddt(qbs);
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §13  Series resistances
+    // ════════════════════════════════════════════════════════════════════════
+    var rdrain : Real = if (drainCond > 0.0) { 1.0 / drainCond } else { 0.0 };
+    var rsource : Real = if (sourceCond > 0.0) { 1.0 / sourceCond } else { 0.0 };
+    V(d, dp) <- rdrain * I(d, dp);
+    V(s, sp) <- rsource * I(s, sp);
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §14  Noise  (mos3noi.c — same four sources as mos1/mos2)
+    // ════════════════════════════════════════════════════════════════════════
+    if (drainCond > 0.0) { I(d, dp) <+ white_noise(4.0 * NG_K * t * drainCond); }
+    if (sourceCond > 0.0) { I(s, sp) <+ white_noise(4.0 * NG_K * t * sourceCond); }
+    var gm_est : Real = beta * (lvgs - von);
+    I(dp, sp) <+ white_noise(4.0 * NG_K * t * (2.0 / 3.0) * abs(gm_est));
+    if (model.kf > 0.0 && cox > 0.0) {
+        var cox2 : Real = cox * cox;
+        var cd_term : Real = mode * cdrain - cbd;
+        I(dp, sp) <+ flicker_noise(
+            model.kf * pow(abs(cd_term), model.af) / (w_eff * m * l_eff * cox2),
+            1.0
+        );
+    }
+}

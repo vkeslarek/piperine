@@ -1,6 +1,6 @@
 // Coulomb counter: battery state-of-charge as the running integral (`idt`)
 // of the load current. 100 C capacity discharged at 1 A drops 1 %/s; the
-// bench validates the ramp and the time of the 95 % crossing.
+// python twin validates the ramp and the time of the 95 % crossing.
 
 discipline Electrical {
     potential v : Real;
@@ -32,15 +32,3 @@ mod Gauge() {
     probe : Resistor(.p = soc, .n = gnd);     // high-impedance meter
 }
 
-bench Gauge {
-
-    fn test_discharge_ramp() {
-        var t = $tran(TranConfig { .stop = 10.0, .step = 0.05 });
-        var soc = t.v(soc, gnd);
-        $assert(abs(soc.at(0.0) - 1.0) < 1e-6, "starts full");
-        $assert(abs(soc.at(10.0) - 0.9) < 5e-3, "1 A for 10 s burns 10% of 100 C");
-        var t95 = soc.cross(0.95);
-        $assert(t95.is_some(), "the 95% level is crossed");
-        $assert(abs(t95.unwrap() - 5.0) < 0.2, "95% is reached at t = 5 s");
-    }
-}

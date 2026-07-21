@@ -1,3 +1,6 @@
+//! `CircularArrayBuffer2` — a fixed-capacity circular history of solution
+//! rows: the integration scheme's time window with zero hot-path
+//! allocation.
 use ndarray::{Array2, ArrayView1, ArrayViewMut1};
 use num_traits::Zero;
 

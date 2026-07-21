@@ -1,12 +1,12 @@
 //! Process-backend gates (Plugin plan Phase 5): the rc-parasitics case
 //! served by a child process over stdio JSON-RPC passes the same divider
-//! gate, guest bench tasks dispatch, and a crashed/exited guest is a loud
-//! error — the isolation boundary the process tier exists for.
+//! gate, and a crashed/exited guest is a loud error — the isolation
+//! boundary the process tier exists for. Driven through the root host API.
 
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use piperine_bench::{BenchOutcome, BenchRunner};
+use piperine::{NetRef, SimSession, SolverConfig};
 use piperine_lang::SourceMap;
 use piperine_plugin::{PluginHost, TrustMode};
 
@@ -59,27 +59,19 @@ const DIVIDER: &str = "
         src : VoltageSource (.p = vin, .n = gnd) { .voltage = 5.0 };
         r1  : Resistor (.p = vin, .n = out);
     }
-    bench Top {
-        fn divider() {
-            var r = $op();
-            $assert(r.v(out, gnd) > 2.49, \"divider low\");
-            $assert(r.v(out, gnd) < 2.51, \"divider high\");
-        }
-        fn task_roundtrip() {
-            $assert($pgain() == 42.0, \"guest task value\");
-        }
-    }
 ";
 
-fn run(host: Rc<PluginHost>, entry: &str) -> BenchOutcome {
+/// An operating point of `Top` through a session wired with the process host.
+fn run_top_op(host: Rc<PluginHost>) -> f64 {
     let design = piperine_lang::parse_and_elaborate_seeded(DIVIDER, &SourceMap::dummy(), |ctx| {
         host.seed_schemas(ctx);
     })
     .expect("elaborate");
-    BenchRunner::new(&design)
-        .with_device_provider(host.clone())
-        .with_plugins(host)
-        .run_entry("Top", entry)
+    let mut session = SimSession::new(design, "Top".to_string());
+    session.set_device_provider(host.clone());
+    session.set_hooks(host);
+    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    op.v(&NetRef { name: "out".to_string() }, None).expect("v(out)")
 }
 
 #[test]
@@ -87,19 +79,10 @@ fn process_parasitics_passes_the_divider_gate() {
     let artifact = guest_bin();
     let dir = tempfile::tempdir().unwrap();
     project_with_guest(dir.path(), &artifact);
-    let host =
-        Rc::new(PluginHost::load_for_project(dir.path(), TrustMode::AcceptAll).expect("load"));
+    let host = Rc::new(PluginHost::load_for_project(dir.path(), TrustMode::AcceptAll).expect("load"));
 
-    match run(host.clone(), "divider") {
-        BenchOutcome::Passed => {}
-        BenchOutcome::Failed(m) => panic!("bench assert failed: {m}"),
-        BenchOutcome::Error(m) => panic!("bench errored: {m}"),
-    }
-    match run(host, "task_roundtrip") {
-        BenchOutcome::Passed => {}
-        BenchOutcome::Failed(m) => panic!("bench assert failed: {m}"),
-        BenchOutcome::Error(m) => panic!("bench errored: {m}"),
-    }
+    let out = run_top_op(host);
+    assert!(out > 2.49 && out < 2.51, "divider at 2.5 V, got {out}");
 }
 
 #[test]

@@ -7,8 +7,7 @@ use std::collections::HashMap;
 
 use piperine_codegen::device::PluginDeviceSpec;
 use piperine_lang::elab::registry::AttrField;
-use piperine_lang::Value;
-use piperine_solver::core::element::Element;
+use piperine_solver::abi::Element;
 
 use crate::capability::HostCtx;
 use crate::error::PluginError;
@@ -30,13 +29,6 @@ pub trait DeviceFactory: Send + Sync {
     fn instantiate(&self, spec: &PluginDeviceSpec) -> Result<Box<dyn Element>, String>;
 }
 
-/// A plugin-contributed bench task (`$name(...)`, SPEC Part VI §6).
-/// Same `run(args, cx)` shape as the builtin `BenchTask`, but capability-gated through
-/// [`HostCtx`] instead of holding the session.
-pub trait PluginBenchTask: Send + Sync {
-    fn run(&self, args: Vec<Value>, cx: &mut HostCtx) -> Result<Value, String>;
-}
-
 /// A plugin-contributed CLI subcommand (SPEC Part VI §10).
 pub trait ScriptHandler: Send + Sync {
     /// Run the script with its CLI arguments; the return value becomes the
@@ -52,8 +44,6 @@ pub struct Contributions {
     pub schemas: HashMap<String, (String, Vec<AttrField>)>,
     /// device type id → (owning plugin, factory).
     pub devices: HashMap<String, (String, Box<dyn DeviceFactory>)>,
-    /// bench task name (no `$`) → (owning plugin, task).
-    pub bench_tasks: HashMap<String, (String, Box<dyn PluginBenchTask>)>,
     /// script (CLI subcommand) name → (owning plugin, handler).
     pub scripts: HashMap<String, (String, Box<dyn ScriptHandler>)>,
 }
@@ -90,28 +80,6 @@ impl<'a> Registrar<'a> {
             return;
         }
         self.contributions.schemas.insert(name.to_string(), (self.plugin.clone(), fields));
-    }
-
-    /// Contribute a bench task callable as `$name(...)` from bench fns
-    /// (SPEC Part VI §6). Builtin task names cannot be shadowed.
-    pub fn bench_task(&mut self, name: &str, task: Box<dyn PluginBenchTask>) {
-        if piperine_lang::eval::tasks::bench_task_implemented(name) {
-            self.errors.push(PluginError::SchemaConflict {
-                schema: format!("bench task `${name}`"),
-                existing: "the builtin task set".into(),
-                plugin: self.plugin.clone(),
-            });
-            return;
-        }
-        if let Some((existing, _)) = self.contributions.bench_tasks.get(name) {
-            self.errors.push(PluginError::SchemaConflict {
-                schema: format!("bench task `${name}`"),
-                existing: existing.clone(),
-                plugin: self.plugin.clone(),
-            });
-            return;
-        }
-        self.contributions.bench_tasks.insert(name.to_string(), (self.plugin.clone(), task));
     }
 
     /// Contribute a CLI subcommand (SPEC Part VI §10): `piperine <name> …`

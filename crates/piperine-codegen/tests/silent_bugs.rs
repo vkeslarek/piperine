@@ -5,14 +5,14 @@ use std::collections::HashMap;
 
 use piperine_codegen::SimCtx;
 use piperine_lang::parse_and_elaborate;
-use piperine_codegen::ir::LoweredBody;
+use piperine_codegen::resolve::LoweredBody;
 use piperine_codegen::{CircuitCompiler, DigitalKernel};
 
 // ── A.5 — Neg in digital still works (POM path) ─────────────────────────────
 
 #[test]
 fn a5_neg_in_digital_still_works() {
-    use piperine_codegen::ir::{DigitalBody, Domain, Type};
+    use piperine_codegen::resolve::{DigitalBody, Domain, Type};
     use piperine_lang::parse::ast::{BindOp, Expr, Stmt, UnaryOp};
 
     let mut module = LoweredBody::new("neg_fsm");
@@ -36,7 +36,7 @@ fn a5_neg_in_digital_still_works() {
 
 #[test]
 fn a6_from_ir_propagates_child_compile_error_not_silent_skip() {
-    use piperine_codegen::ir::{AnalogBody, NatureKind};
+    use piperine_codegen::resolve::{AnalogBody, NatureKind};
     use piperine_lang::parse::ast::{BindOp, Expr, Stmt};
 
     // `vsource` exists in the POM (so the top's instance connection/port
@@ -50,7 +50,7 @@ fn a6_from_ir_propagates_child_compile_error_not_silent_skip() {
         mod top (inout a: Electrical, inout b: Electrical) { u1 : vsource(.p = a, .n = b); }
     ";
     let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elab");
-    let mut bodies = piperine_codegen::ir::lower_bodies(&design).expect("lowering failed");
+    let mut bodies = piperine_codegen::resolve::lower_bodies(&design).expect("lowering failed");
 
     let vsource = bodies.get_mut("vsource").expect("vsource lowered");
     let _nature_i = vsource.symbols.add_nature("I", NatureKind::Flow);
@@ -84,7 +84,7 @@ fn a7_capacitor_compiles_through_ir_path() {
         analog Cap { I(p, n) <+ c * ddt(V(p, n)); }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
-    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
     let dev = ir_analog_to_device(&bodies, "Cap").expect("capacitor compiles through IR path");
     assert!(dev.has_reactive(), "capacitor must have reactive contributions");
 }
@@ -100,7 +100,7 @@ fn d5_user_fn_inlined_at_call_site_in_contribution() {
         analog Resistor { I(p, n) <+ scale_v(V(p, n)) / r; }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses + elaborates");
-    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
     let dev = ir_analog_to_device(&bodies, "Resistor").expect("D.5: user-fn inlining must compile");
     let params = [1.0e3_f64];
     let v = [0.5_f64, 0.0_f64];
@@ -119,7 +119,7 @@ fn d5_user_fn_call_to_nonbuiltin_is_inlined_not_silently_zero() {
         analog Gain { I(p, n) <+ amp(V(p, n), g); }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses");
-    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
     let dev = ir_analog_to_device(&bodies, "Gain").expect("D.5: user fn must compile");
     let params = [2.0_f64];
     let v = [0.5_f64, 0.0_f64];
@@ -136,7 +136,7 @@ fn d5_user_fn_missing_still_errors() {
         analog Bad { I(p, n) <+ no_such_fn(V(p, n)); }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses");
-    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
     let result = ir_analog_to_device(&bodies, "Bad");
     let err = result.err().expect("D.5: missing fn must fail loudly");
     let msg = format!("{err:?}").to_lowercase();
@@ -154,7 +154,7 @@ fn d5_spec_diode_with_user_fn_compiles() {
         analog Diode { I(a, c) <+ is_sat * (exp(V(a, c) / thermal_voltage(temp)) - 1.0); }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("Diode model parses");
-    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
     let dev = ir_analog_to_device(&bodies, "Diode").expect("Diode compiles");
     let params = [1.0e-14_f64, 300.0_f64];
     let v = [0.5_f64, 0.0_f64];
@@ -175,7 +175,7 @@ fn d2_idt_in_contribution_lowers_to_integrator() {
         analog Inductor { I(p, n) <+ idt(V(p, n)) / L; }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("PHDL parses");
-    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
     let dev = ir_analog_to_device(&bodies, "Inductor").expect("D.2: idt must compile");
     // idt is a runtime-serviced integrator (state + dt·x), not a charge.
     assert_eq!(dev.runtime_states().len(), 1, "D.2: idt allocates one integrator state");
@@ -210,7 +210,7 @@ fn d1_voltage_force_compiles_with_force_residual() {
         analog VSource { V(p, n) <- dc; }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("VSource parses");
-    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
     let dev = ir_analog_to_device(&bodies, "VSource").expect("D.1: VSource compiles");
     assert!(dev.num_forces() > 0, "D.1: must have force function");
     let params = [1.5_f64];
@@ -230,7 +230,7 @@ fn d1_op_amp_with_force_compiles() {
         analog OpAmp { V(out) <- gain * V(inp, inn); }
     "#;
     let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("OpAmp parses");
-    let bodies = piperine_codegen::ir::lower_bodies(&elab).expect("lowering failed");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");
     let dev = ir_analog_to_device(&bodies, "OpAmp").expect("D.1: OpAmp compiles");
     assert!(dev.num_forces() > 0, "D.1: OpAmp must have force function");
 }

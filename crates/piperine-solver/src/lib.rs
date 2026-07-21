@@ -1,10 +1,11 @@
-pub mod analysis;
-pub mod analog;
-pub mod core;
-pub mod digital;
-pub mod error;
-pub mod math;
+pub(crate) mod analyses;
+pub(crate) mod analog;
+pub(crate) mod core;
+pub(crate) mod digital;
+pub(crate) mod error;
+pub(crate) mod math;
+pub mod abi;
 pub mod prelude;
-pub mod result;
-pub mod solver;
-pub mod util;
+pub(crate) mod result;
+
+pub use prelude::*;

@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/piperine-bench",
+    "crates/piperine-api",
     "crates/piperine-cli",
     "crates/piperine-codegen",
     "crates/piperine-lang",
@@ -9,6 +9,7 @@ members = [
     "crates/piperine-solver",
     "crates/piperine-plugin",
     "crates/piperine-plugin-wasm",
+    "crates/piperine-python",
 ]
 
 [workspace.package]
@@ -21,20 +22,19 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-dirs = "5.0"
-serde = { workspace = true }
-bincode = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-piperine-cli = { version = "0.1.1", path = "crates/piperine-cli" }
-piperine-project = { version = "0.1.1", path = "crates/piperine-project" }
+piperine-api = { version = "0.1.1", path = "crates/piperine-api" }
 
+# The tests of record stay on this crate importing `piperine::…` — they are
+# the proof the shell re-exports the full host surface. run_examples drives
+# the .py examples through the embedded-CPython host.
 [dev-dependencies]
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-
-[build-dependencies]
-bindgen = "0.72.1"
+piperine-python = { path = "crates/piperine-python" }
+# The suites also reach lang/codegen directly (SourceMap setup, kernel
+# introspection) — dev-only edges, not part of the shell's public story.
+piperine-lang = { path = "crates/piperine-lang" }
+piperine-codegen = { path = "crates/piperine-codegen" }
+piperine-solver = { path = "crates/piperine-solver" }
+num-complex = { workspace = true }
 
 [profile.dev.package.faer]
 opt-level = 3
@@ -48,7 +48,7 @@ codegen-units = 1
 
 [workspace.dependencies]
 tracing = "0.1.44"
-tracing-subscriber = "0.3.22"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 serde = { version = "1.0", features = ["derive"] }
 bincode = "1.3"
 thiserror = "2.0"

@@ -4,14 +4,14 @@
 //! has a dependency whose whole tree compiles to `wasm32-unknown-unknown`
 //! (no wasmtime, no host machinery), and to host the gate example.
 //!
-//! A WASM plugin implements [`WirePlugin`] and hand-writes five thin
+//! A WASM plugin implements [`WirePlugin`] and hand-writes four thin
 //! exports — plain functions, no macros:
 //!
 //! ```ignore
 //! use piperine_plugin_wasm as sdk;
 //!
 //! struct MyPlugin;
-//! impl sdk::WirePlugin for MyPlugin { /* hooks, tasks */ }
+//! impl sdk::WirePlugin for MyPlugin { /* hooks */ }
 //!
 //! #[unsafe(no_mangle)]
 //! pub extern "C" fn pp_abi_version() -> i32 { sdk::wasm_abi_version() }
@@ -21,8 +21,6 @@
 //! pub extern "C" fn pp_register() -> i64 { sdk::wasm_register(&MyPlugin) }
 //! #[unsafe(no_mangle)]
 //! pub extern "C" fn pp_hook(ptr: i32, len: i32) -> i64 { sdk::wasm_hook(&MyPlugin, ptr, len) }
-//! #[unsafe(no_mangle)]
-//! pub extern "C" fn pp_task(ptr: i32, len: i32) -> i64 { sdk::wasm_task(&MyPlugin, ptr, len) }
 //! ```
 //!
 //! Compile with `--target wasm32-unknown-unknown`, crate-type `cdylib`.

@@ -47,7 +47,9 @@ pub enum Item {
     ImplDecl(ImplDecl),
     FnDecl(FnDecl),
     ConstDecl(ConstDecl),
-    BenchDecl(BenchDecl),
+    /// An `extern` declaration — see [`ExternDecl`]. Signature-only by
+    /// construction (SPEC "declared language surface" P2).
+    ExternDecl(ExternDecl),
 }
 
 impl Item {
@@ -65,12 +67,14 @@ impl Item {
             Item::ImplDecl(i) => i.is_pub,
             Item::FnDecl(f) => f.is_pub,
             Item::ConstDecl(c) => c.is_pub,
-            Item::BenchDecl(b) => b.is_pub,
+            // `extern` declarations have no `pub` modifier (SPEC P2) — a
+            // header's extern decls are always visible where the header is used.
+            Item::ExternDecl(_) => false,
         }
     }
 
     /// The declared name of this item, if it has one (`use` and `impl`
-    /// declarations don't). A behavior/bench names the module it attaches to.
+    /// declarations don't). A behavior names the module it attaches to.
     pub fn name(&self) -> Option<&str> {
         match self {
             Item::UseDecl(_) | Item::ImplDecl(_) => None,
@@ -82,22 +86,95 @@ impl Item {
             Item::CapabilityDecl(c) => Some(&c.name),
             Item::FnDecl(f) => Some(&f.sig.name),
             Item::ConstDecl(c) => Some(&c.name),
-            Item::BenchDecl(b) => Some(&b.name),
+            Item::ExternDecl(e) => Some(e.name()),
         }
     }
 }
 
-/// `bench ModName { fn ... }` — the effectful post-elaboration scripting
-/// layer attached to a module by name (piperine-bench/docs/SPEC.md §2), the same way
-/// `analog`/`digital` attach via [`BehaviorDecl`]. Bodies use the ordinary
-/// `fn` grammar; only the runtime context differs (piperine-bench/docs/SPEC.md §1/§3).
+// ─────────────────────────────── Extern declarations ─────────────────────────
+
+/// An `extern <kind> ...;` declaration — the textual home for a name whose
+/// *implementation* is a native Rust registry entry (math functions, system
+/// tasks, runtime operators, attribute schemas, primitive types, and native
+/// type methods). Every variant is signature-only: giving any `extern`
+/// declaration (or an individual method inside `Impl`) a body is a parse
+/// error (SPEC "declared language surface" P2-AC7).
+///
+/// See `.specs/features/declared-language-surface/spec.md` P2 and
+/// `design.md`'s "Grammar: extern modifier" component.
 #[derive(Debug, Clone)]
-pub struct BenchDecl {
+pub enum ExternDecl {
+    /// `extern type Name;` — a primitive value type, no body.
+    Type { span: Option<miette::SourceSpan>, name: String },
+    /// `extern fn name(params) -> RetType;` — a native function, signature
+    /// only (the body is a compiler-side registry entry, e.g. `math.rs`).
+    Fn(ExternSig),
+    /// `extern task $name(params) -> RetType;` — a system task; `sig.name`
+    /// retains the `$`-prefixed form.
+    Task(ExternSig),
+    /// `extern operator name(params) -> RetType;` — a runtime operator
+    /// (`ddt`, `delay`, `slew`, …).
+    Operator(ExternSig),
+    /// `extern attribute name { field: Type, ... }` — an attribute schema
+    /// (`@device`, `@port`, plugin-contributed ones).
+    Attribute { span: Option<miette::SourceSpan>, name: String, fields: Vec<ExternAttrField> },
+    /// `extern impl [Capability for] TypeName { fn method(self, ...) ->
+    /// Ret; ... }` — native methods on a type. `capability` is `Some` for
+    /// `extern impl Capability for TypeName`, `None` for inherent methods
+    /// (mirrors [`ImplDecl`]'s `impl [Capability for] TypeRef` shape). Each
+    /// method in `methods` carries its own `decl_span`, in addition to the
+    /// block's own `decl_span` in `span`.
+    Impl {
+        span: Option<miette::SourceSpan>,
+        capability: Option<String>,
+        target: String,
+        methods: Vec<ExternSig>,
+    },
+}
+
+impl ExternDecl {
+    /// The `decl_span` covering the whole declaration — the LSP
+    /// go-to-definition target for the declaration itself.
+    pub fn span(&self) -> Option<miette::SourceSpan> {
+        match self {
+            ExternDecl::Type { span, .. } | ExternDecl::Attribute { span, .. } | ExternDecl::Impl { span, .. } => *span,
+            ExternDecl::Fn(sig) | ExternDecl::Task(sig) | ExternDecl::Operator(sig) => sig.span,
+        }
+    }
+
+    /// The declared name (the type/attribute-schema name for `extern
+    /// type`/`extern attribute`; the target type's name for `extern impl`;
+    /// the function/task/operator name — `$`-prefixed for `extern task` —
+    /// otherwise).
+    pub fn name(&self) -> &str {
+        match self {
+            ExternDecl::Type { name, .. } | ExternDecl::Attribute { name, .. } => name,
+            ExternDecl::Fn(sig) | ExternDecl::Task(sig) | ExternDecl::Operator(sig) => &sig.name,
+            ExternDecl::Impl { target, .. } => target,
+        }
+    }
+}
+
+/// One field of an `extern attribute` schema — same name/type shape as a
+/// bundle field, with its own `decl_span` so a field name (e.g. `plugin`
+/// inside `@device(plugin = ...)`) resolves independently of the schema name.
+#[derive(Debug, Clone)]
+pub struct ExternAttrField {
     pub span: Option<miette::SourceSpan>,
-    pub attrs: Vec<Attribute>,
-    pub is_pub: bool,
     pub name: String,
-    pub fns: Vec<FnDecl>,
+    pub ty: Type,
+}
+
+/// A signature-only declaration shared by `extern fn`/`extern task`/
+/// `extern operator` and each individual method inside `extern impl` — no
+/// body, `decl_span` covers the declaration line. `name` retains any
+/// `$`-prefix for `extern task` (system-task identifier form).
+#[derive(Debug, Clone)]
+pub struct ExternSig {
+    pub span: Option<miette::SourceSpan>,
+    pub name: String,
+    pub params: Vec<FnParam>,
+    pub ret: Type,
 }
 
 /// A `::`-separated module path, e.g. `devices::passives::Resistor`.
@@ -444,8 +521,8 @@ pub struct Block {
 #[derive(Debug, Clone)]
 pub enum Stmt {
     /// `var name [: Type] = expr;` — the type annotation is optional here
-    /// (unlike a `mod`-body `var`): a `bench`/interpreted fn never needs a
-    /// static type, so an omitted `ty` infers from `default` at runtime.
+    /// (unlike a `mod`-body `var`): an omitted `ty` infers from `default`
+    /// at runtime.
     /// A statically-elaborated fn/method body (an `impl` or global `fn`)
     /// still requires an explicit type (SPEC Part I §9) — the elaborator
     /// enforces that, not the parser.
@@ -501,19 +578,6 @@ impl Block {
         }
     }
 
-    /// Collect every `$name(...)` system-task call reachable from this
-    /// block. Used to validate a `bench` fn against the system-task
-    /// availability table (piperine-bench/docs/SPEC.md §7/§11) before it is ever
-    /// interpreted — an unimplemented task is a fail-loud elaboration
-    /// error, not a runtime surprise.
-    pub fn collect_syscalls(&self, out: &mut Vec<String>) {
-        self.walk_exprs(&mut |e| {
-            if let Expr::SysCall(name, _) = e {
-                out.push(name.clone());
-            }
-            Walk::Continue
-        });
-    }
 }
 
 impl Stmt {
@@ -676,7 +740,7 @@ impl EventSpec {
     /// recursively through `Or`).
     pub fn walk_exprs(&self, f: &mut impl FnMut(&Expr) -> Walk) {
         match self {
-            EventSpec::Named { arg, .. } => arg.walk(f),
+            EventSpec::Named { args, .. } => args.iter().for_each(|a| a.walk(f)),
             EventSpec::Initial | EventSpec::Final => {}
             EventSpec::Or(specs) => specs.iter().for_each(|s| s.walk_exprs(f)),
         }
@@ -686,7 +750,7 @@ impl EventSpec {
     /// recursively through `Or`).
     pub fn walk_exprs_mut(&mut self, f: &mut impl FnMut(&mut Expr) -> Walk) {
         match self {
-            EventSpec::Named { arg, .. } => arg.walk_mut(f),
+            EventSpec::Named { args, .. } => args.iter_mut().for_each(|a| a.walk_mut(f)),
             EventSpec::Initial | EventSpec::Final => {}
             EventSpec::Or(specs) => specs.iter_mut().for_each(|s| s.walk_exprs_mut(f)),
         }
@@ -725,11 +789,13 @@ pub enum Pattern {
 /// elaborator resolves `name` against the [`EventRegistry`][crate::elab::event::EventRegistry],
 /// which means new event kinds can be added at any time without changing the
 /// parser or AST. Built-in names: `posedge`, `negedge`, `change`, `cross`,
-/// `above`.
+/// `name(arg)` or `name(arg, arg, ...)` — any identifier looked up in the
+/// event registry at elaboration. Multiple arguments support events like
+/// `@timer(period, phase)`; single-arg events (`cross`, `above`) use
+/// `args[0]`.
 #[derive(Debug, Clone)]
 pub enum EventSpec {
-    /// `name(arg)` — any identifier looked up in the event registry at elaboration.
-    Named { name: String, arg: Expr },
+    Named { name: String, args: Vec<Expr> },
     /// `initial` — fires once at simulation start.
     Initial,
     /// `final` — fires once at simulation end.
@@ -765,8 +831,8 @@ pub enum Expr {
     /// `(e)` with no comma is a parenthesized group, not a 1-tuple.
     Tuple(Vec<Expr>),
     BundleLit { ty: Type, fields: Vec<(String, Expr)> },
-    /// A `Map { k: v, ... }` literal (piperine-bench/docs/SPEC.md §5.1 — `Map<K, V>`,
-    /// used for `ic`/`nodeset` per-node hints). `Map {}` is the empty map.
+    /// A `Map { k: v, ... }` literal (`Map<K, V>`, used for `ic`/`nodeset`
+    /// per-node hints). `Map {}` is the empty map.
     MapLit(Vec<(Expr, Expr)>),
     /// A `Set { a, b, c }` literal. `Set {}` is the empty set.
     SetLit(Vec<Expr>),
@@ -900,17 +966,6 @@ impl Expr {
         }
     }
 
-    /// Collect every `$name(...)` system-task call reachable from this
-    /// expression (lambda bodies included — unlike `subst_const`, a syscall
-    /// inside a lambda is still reachable).
-    pub fn collect_syscalls(&self, out: &mut Vec<String>) {
-        self.walk(&mut |e| {
-            if let Expr::SysCall(name, _) = e {
-                out.push(name.clone());
-            }
-            Walk::Continue
-        });
-    }
 
     /// Substitute every `Ident(name)` matching `var` with `Literal::Int(value)`.
     /// Used during behavioral `for` unrolling to replace the loop variable

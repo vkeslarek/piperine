@@ -93,7 +93,46 @@ impl<'a> Resolver<'a> {
     /// Items always in scope, loaded from prelude_path if provided.
     pub fn prelude_items(&mut self) -> Vec<ast::Item> {
         let mut items = Vec::new();
-        
+
+        // `types` (declared-language-surface DLS-17) loads first — the
+        // seven primitive value types every other header's field/param
+        // types refer to. Embedded via `include_str!` (not the on-disk,
+        // `SourceMap`-relative `load_source` used below) because these
+        // types must be load-bearing everywhere regardless of the caller's
+        // working directory or `SourceMap` configuration — unlike
+        // capabilities/collections/prelude, which are optional stdlib
+        // sugar today, every module in the workspace implicitly depends on
+        // `Real`/`Integer`/etc. resolving. The embedded text is the exact
+        // on-disk `headers/types.phdl` (kept in sync by the compiler).
+        if let Ok(source) = parse_str(include_str!("../headers/types.phdl")) {
+            items.extend(source.items);
+        }
+
+        // `math` (declared-language-surface DLS-18) — the libm intrinsics
+        // (`sin`, `pow`, …). Embedded the same way as `types` above: math
+        // functions are called pervasively across every stdlib device
+        // model (`headers/spice/*.phdl`), so they must resolve regardless
+        // of the caller's working directory, not just when `SourceMap`
+        // happens to resolve the on-disk `piperine::math` path.
+        if let Ok(source) = parse_str(include_str!("../headers/math.phdl")) {
+            items.extend(source.items);
+        }
+
+        // `tasks` (declared-language-surface DLS-19) — system tasks
+        // (`$display`, `$temperature`, …), same embedding rationale as
+        // `types`/`math` above (called from any analog/digital body).
+        if let Ok(source) = parse_str(include_str!("../headers/tasks.phdl")) {
+            items.extend(source.items);
+        }
+
+        // `operators` (declared-language-surface DLS-20) — runtime
+        // operators (`ddt`, `delay`, `white_noise`, …), same embedding
+        // rationale as `types`/`math`/`tasks` above (called from any
+        // analog behavior body across every stdlib device model).
+        if let Ok(source) = parse_str(include_str!("../headers/operators.phdl")) {
+            items.extend(source.items);
+        }
+
         // Load the standard library built-ins dynamically if they resolve.
         // We ignore errors so that a bare-bones SourceMap doesn't panic.
         let cap_key = vec!["piperine".to_string(), "capabilities".to_string()];

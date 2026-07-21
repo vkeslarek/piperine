@@ -6,16 +6,16 @@
 
 use std::collections::BinaryHeap;
 
-use piperine_solver::core::circuit::CircuitInstance;
+use piperine_solver::prelude::CircuitInstance;
 fn make_instance(title: &str) -> CircuitInstance {
-    CircuitInstance::from_devices_and_netlist(title, vec![], piperine_solver::analog::Netlist::new())
+    CircuitInstance::from_devices_and_netlist(title, vec![], piperine_solver::abi::Netlist::new())
 }
-use piperine_solver::core::element::{Element, ElementCapabilities};
-use piperine_solver::digital::{LogicValue, DigitalNet, DigitalEvent};
-use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink, QueueSink};
-use piperine_solver::digital::scheduler::{DigitalState, DigitalTopology};
-use piperine_solver::analysis::transient::TransientAnalysisOptions;
-use piperine_solver::solver::Context;
+use piperine_solver::abi::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
+use piperine_solver::abi::{LogicValue, DigitalNet, DigitalEvent};
+use piperine_solver::abi::{DigitalPorts, EvalCtx, EventSink, QueueSink};
+use piperine_solver::abi::{DigitalState, DigitalTopology};
+use piperine_solver::prelude::TransientAnalysisOptions;
+use piperine_solver::prelude::Context;
 
 #[path = "helpers/mod.rs"]
 mod helpers;
@@ -27,9 +27,9 @@ use helpers::{A2DState, D2ADevice};
 
 struct Inverter { input: DigitalNet, output: DigitalNet, delay: f64, _id: usize }
 
-impl Element for Inverter {
-    fn name(&self) -> &str { "inverter" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+impl AnalogDevice for Inverter {}
+
+impl DigitalDevice for Inverter {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: std::slice::from_ref(&self.input), outputs: std::slice::from_ref(&self.output) }
     }
@@ -44,16 +44,22 @@ impl Element for Inverter {
         };
         sink.emit(self.output, out, self.delay);
     }
+}
 
+impl Introspect for Inverter {}
+
+impl Element for Inverter {
+    fn name(&self) -> &str { "inverter" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
 }
 
 
 
 struct NorGate { inputs: [DigitalNet; 2], output: DigitalNet, delay: f64, _id: usize }
 
-impl Element for NorGate {
-    fn name(&self) -> &str { "nor_gate" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+impl AnalogDevice for NorGate {}
+
+impl DigitalDevice for NorGate {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &self.inputs, outputs: std::slice::from_ref(&self.output) }
     }
@@ -64,16 +70,22 @@ impl Element for NorGate {
         let out = if self.inputs.iter().any(|n| ctx.nets[n.0] == LogicValue::One) { LogicValue::Zero } else { LogicValue::One };
         sink.emit(self.output, out, self.delay);
     }
+}
 
+impl Introspect for NorGate {}
+
+impl Element for NorGate {
+    fn name(&self) -> &str { "nor_gate" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
 }
 
 
 
 struct AndGate { inputs: [DigitalNet; 2], output: DigitalNet, delay: f64, _id: usize }
 
-impl Element for AndGate {
-    fn name(&self) -> &str { "and_gate" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+impl AnalogDevice for AndGate {}
+
+impl DigitalDevice for AndGate {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &self.inputs, outputs: std::slice::from_ref(&self.output) }
     }
@@ -84,7 +96,13 @@ impl Element for AndGate {
         let out = if self.inputs.iter().all(|n| ctx.nets[n.0] == LogicValue::One) { LogicValue::One } else { LogicValue::Zero };
         sink.emit(self.output, out, self.delay);
     }
+}
 
+impl Introspect for AndGate {}
+
+impl Element for AndGate {
+    fn name(&self) -> &str { "and_gate" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
 }
 
 
@@ -103,9 +121,9 @@ impl DFF {
     }
 }
 
-impl Element for DFF {
-    fn name(&self) -> &str { "dff" }
-    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
+impl AnalogDevice for DFF {}
+
+impl DigitalDevice for DFF {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts { inputs: &self.inputs, outputs: std::slice::from_ref(&self.q) }
     }
@@ -120,7 +138,13 @@ impl Element for DFF {
         }
         self.last_clk = clk;
     }
+}
 
+impl Introspect for DFF {}
+
+impl Element for DFF {
+    fn name(&self) -> &str { "dff" }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::DIGITAL }
 }
 
 

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::parse::ast::{BundleDecl, CapabilityDecl, DisciplineDecl, EnumDecl};
-use crate::pom::{BenchBlock, ElabError, ElabErrorKind, Function, ImplBlock, Module, OverrideMap, Value};
+use crate::pom::{ElabError, ElabErrorKind, Function, ImplBlock, Module, OverrideMap, Value};
 
 /// A typed staging failure (SPEC Part VI §8.2–§8.4): the plugin layer maps
 /// `UndeclaredType` to P0005 ("type not declared") and `Conflict` to P0008.
@@ -63,6 +63,15 @@ impl Project {
     }
 }
 
+/// A resolved `@rfport(num, z0)` attribute instance (SP-01): the node it
+/// decorates, its 1-based port index, and its reference impedance.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RfPort {
+    pub num: u64,
+    pub z0: f64,
+    pub node: String,
+}
+
 /// The complete output of elaboration — the POM root.
 ///
 /// Fields are `pub(crate)`; external consumers use the public accessor
@@ -73,7 +82,7 @@ impl Project {
 /// reflection surface: `modules` (with their ports, params, wires,
 /// instances, connections, attributes), `consts`, `project`, and
 /// `top_module`. Fields that are compiled ASTs (declarations, functions,
-/// behaviors, benches) or live host state (the staging area) are skipped —
+/// behaviors) or live host state (the staging area) are skipped —
 /// they are not reflection data and a deserialized `Design` carries their
 /// empty defaults. If the reflection surface cannot express something the
 /// language has, the POM is incomplete and gets extended — never shadowed.
@@ -94,8 +103,6 @@ pub struct Design {
     #[serde(skip)]
     pub(crate) impls: Vec<ImplBlock>,
     pub(crate) consts: HashMap<String, Value>,
-    #[serde(skip)]
-    pub(crate) benches: Vec<BenchBlock>,
     /// Project metadata (name, version, dependencies).
     pub(crate) project: Project,
     /// Staged parameter overrides — the single mutation surface in POM.
@@ -117,7 +124,6 @@ impl Design {
             functions: HashMap::new(),
             impls: Vec::new(),
             consts: HashMap::new(),
-            benches: Vec::new(),
             project: Project::default(),
             overrides: Rc::new(RefCell::new(OverrideMap::new())),
             top_module: None,
@@ -281,14 +287,61 @@ impl Design {
     /// Every impl block.
     pub fn impls(&self) -> &[ImplBlock] { &self.impls }
 
-    /// Every `bench` block.
-    pub fn benches(&self) -> impl Iterator<Item = &BenchBlock> {
-        self.benches.iter()
-    }
-
-    /// The `bench` rooted at `module`, if one exists.
-    pub fn bench(&self, module: &str) -> Option<&BenchBlock> {
-        self.benches.iter().find(|b| b.module == module)
+    /// Resolve every `@rfport(num, z0)` attribute declared on a wire or port
+    /// of `module_name` into a [`RfPort`] (SP-01) — the `.sp` port
+    /// declaration path (Part VI attribute-schema machinery, no new device
+    /// kind). Fails loud (SP-05): an unknown module, a non-positive `z0`, or
+    /// a duplicate port `num`.
+    pub fn rfports(&self, module_name: &str) -> Result<Vec<RfPort>, ElabError> {
+        let module = self.modules.get(module_name).ok_or_else(|| {
+            ElabError::from(ElabErrorKind::Other(format!(
+                "@rfport: unknown module `{module_name}`"
+            )))
+        })?;
+        let field_err = |field: &str, reason: String| {
+            ElabError::from(ElabErrorKind::AttrSchemaField {
+                schema: "rfport".into(),
+                field: field.into(),
+                reason,
+            })
+        };
+        let candidates = module
+            .wires
+            .iter()
+            .map(|w| (w.name.as_str(), w.attributes.as_slice()))
+            .chain(module.ports.iter().map(|p| (p.name.as_str(), p.attributes.as_slice())));
+        let mut ports = Vec::new();
+        let mut seen_nums = std::collections::HashSet::new();
+        for (node, attrs) in candidates {
+            for attr in attrs {
+                if attr.schema() != "rfport" {
+                    continue;
+                }
+                let num = match attr.field("num") {
+                    Some(Value::Nat(n)) => *n,
+                    Some(Value::Int(n)) if *n >= 0 => *n as u64,
+                    other => {
+                        return Err(field_err(
+                            "num",
+                            format!("expected a non-negative integer port number, got {other:?}"),
+                        ));
+                    }
+                };
+                let z0 = match attr.field("z0") {
+                    Some(Value::Real(v)) => *v,
+                    Some(Value::Nat(n)) => *n as f64,
+                    other => return Err(field_err("z0", format!("expected a real z0, got {other:?}"))),
+                };
+                if z0 <= 0.0 {
+                    return Err(field_err("z0", format!("z0 must be positive, got {z0}")));
+                }
+                if !seen_nums.insert(num) {
+                    return Err(field_err("num", format!("duplicate port number {num}")));
+                }
+                ports.push(RfPort { num, z0, node: node.to_string() });
+            }
+        }
+        Ok(ports)
     }
 
     // ── Staging layer ─────────────────────────────────────────────────────
@@ -316,10 +369,10 @@ impl Design {
 
     /// Stage an instance injection into `parent` (SPEC Part VI §8.2). The
     /// spec's module must be a type declared in this design — a plugin (or
-    /// bench) cannot invent a type that was never declared (no-netlist-magic,
+    /// cannot invent a type that was never declared (no-netlist-magic,
     /// Part VI §2). A duplicate label with a different spec is a typed
     /// [`StageError::Conflict`] naming both writers; `staged_by` identifies
-    /// this writer (a plugin name, or `"bench"`).
+    /// this writer (a plugin name).
     pub fn stage_instance(
         &self,
         parent: &str,
@@ -370,9 +423,9 @@ impl Design {
     }
 
     /// An independent copy with its own, empty staging area — every other
-    /// field is a cheap structural clone. Used to give each `bench` entry
-    /// point a fresh view (piperine-bench/docs/SPEC.md §9: staged overrides never leak
-    /// between entry points).
+    /// field is a cheap structural clone. Used to give each host entry
+    /// point a fresh view (staged overrides never leak between entry
+    /// points).
     pub fn fork(&self) -> Design {
         Design { overrides: Rc::new(RefCell::new(OverrideMap::new())), ..self.clone() }
     }
@@ -381,21 +434,19 @@ impl Design {
     /// with them applied to `root_module`'s instances (and, for an empty
     /// path, the module's own params). Non-structural only: the module set
     /// and topology are unchanged, only `Value` defaults are patched —
-    /// exactly the effect `ppr_to_ir` would see from a differently-written
-    /// source (piperine-bench/docs/SPEC.md §6.2 "the engine decides"; milestone 1 always
-    /// treats a param write as non-structural).
+    /// exactly the effect a differently-written source would have (a param
+    /// write is always treated as non-structural).
     ///
     /// The override path is the target instance's bare label within
-    /// `root_module` (piperine-bench/docs/SPEC.md §3 name resolution — benches address a
-    /// flat, already-monomorphized netlist, so no hierarchical path is
-    /// needed). An override naming an unknown instance or param is a
-    /// fail-loud error, never a silent no-op.
+    /// `root_module` (hosts address a flat, already-monomorphized netlist,
+    /// so no hierarchical path is needed). An override naming an unknown
+    /// instance or param is a fail-loud error, never a silent no-op.
     pub fn with_overrides_applied(&self, root_module: &str) -> Result<Design, ElabError> {
         let mut design = self.clone();
         let overrides: Vec<(String, String, Value)> =
             self.overrides.borrow().iter().map(|(p, n, v)| (p.clone(), n.clone(), v.clone())).collect();
         let module = design.modules.get_mut(root_module).ok_or_else(|| {
-            ElabError::from(ElabErrorKind::Other(format!("bench root module `{root_module}` not found")))
+            ElabError::from(ElabErrorKind::Other(format!("root module `{root_module}` not found")))
         })?;
         for (path, param, value) in overrides {
             if !value.is_const_scalar() {
@@ -503,11 +554,6 @@ impl Design {
     pub(crate) fn consts_map_mut(&mut self) -> &mut HashMap<String, Value> {
         &mut self.consts
     }
-    /// Mutable access to the bench blocks vec. For internal elaboration use.
-    pub(crate) fn benches_vec_mut(&mut self) -> &mut Vec<BenchBlock> {
-        &mut self.benches
-    }
-
     /// Insert a module by name. Test-only: the selector unit tests build
     /// synthetic designs without running the elaborator.
     #[cfg(test)]

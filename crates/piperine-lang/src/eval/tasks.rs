@@ -1,10 +1,7 @@
 //! System tasks available in every context: `$assert`, the diagnostic
 //! family, and (via the interpreter's `Call` handling, not this registry)
-//! the bare-name math catalog.
-//!
-//! Bench-only tasks (`$op`, ...) live in `piperine-bench`, implementing
-//! their own `BenchTask` trait and falling back to [`dispatch_pure`] for
-//! anything not effectful.
+//! the bare-name math catalog — the pure system-task surface the const
+//! evaluator dispatches.
 
 use std::collections::HashMap;
 
@@ -17,20 +14,10 @@ pub trait Task {
     fn eval(&self, args: Vec<Value>) -> Result<Value, EvalError>;
 }
 
-/// Names reachable from a pure fn/method body (bench spec §1/§11):
-/// diagnostics, asserts, and `$display`, but never an analysis or staging
-/// task.
+/// Names reachable from a pure fn/method body: diagnostics, asserts, and
+/// `$display` — never an effectful task.
 pub fn is_pure(name: &str) -> bool {
     matches!(name, "assert" | "info" | "warn" | "error" | "fatal" | "display")
-}
-
-/// Names a `bench` may call today (bench spec §7/§11 availability table):
-/// the pure diagnostics plus the four analyses and `$write`. What remains
-/// (`$plot`, `extract`) is recognized syntax but not yet implemented —
-/// elaboration rejects a bench that calls it (fail-loud, never a silent
-/// no-op).
-pub fn bench_task_implemented(name: &str) -> bool {
-    is_pure(name) || matches!(name, "op" | "tran" | "ac" | "noise" | "write")
 }
 
 struct Assert;
@@ -136,6 +123,15 @@ impl TaskRegistry {
 
     pub fn lookup(&self, name: &str) -> Option<&dyn Task> {
         self.0.get(name).map(|b| b.as_ref())
+    }
+
+    /// Every registered task name — declared-language-surface T27's
+    /// regression guard iterates this to assert each entry has a matching
+    /// `extern task` declaration, so a new task added without a textual
+    /// declaration fails loud (rather than silently becoming "magic"
+    /// again).
+    pub fn names(&self) -> impl Iterator<Item = &'static str> {
+        self.0.keys().copied()
     }
 }
 

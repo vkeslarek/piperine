@@ -1,0 +1,10 @@
+* N-JFET self-bias
+Vdd vdd 0 DC 5
+Rd vdd d 1k
+J1 d 0 0 JMOD
+.model JMOD NJF (vto=-2 beta=1e-3 lambda=0)
+.control
+op
+print v(d)
+.endc
+.end

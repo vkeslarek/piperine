@@ -12,7 +12,6 @@ impl WirePlugin for Parasitics {
     fn register(&self) -> Registration {
         Registration {
             schemas: Vec::new(),
-            bench_tasks: vec!["pgain".into()],
             scripts: Vec::new(),
         }
     }
@@ -28,13 +27,6 @@ impl WirePlugin for Parasitics {
             ports: vec!["out".into(), "gnd".into()],
             params: vec![("r".into(), Value::Real(1e3))],
         }])
-    }
-
-    fn bench_task(&self, name: &str, _args: Vec<Value>) -> Result<Value, String> {
-        match name {
-            "pgain" => Ok(Value::Real(42.0)),
-            other => Err(format!("unknown task `{other}`")),
-        }
     }
 }
 

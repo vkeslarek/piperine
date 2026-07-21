@@ -1,0 +1,43 @@
+// First-order RC step response: a 1 V source steps the input at t=0 (the
+// transient starts there), and the capacitor — forced to 0 V through
+// `TranConfig.ic` — charges through R following V_out(t) = 1 − e^(−t/τ),
+// τ = RC. The python twin checks the classic 1τ / 2τ / 5τ landmarks.
+
+discipline Electrical {
+    potential v : Real;
+    flow i : Real;
+}
+
+mod VoltageSource(inout p : Electrical, inout n : Electrical) {
+    param voltage : Real = 1.0;
+}
+
+analog VoltageSource {
+    V(p, n) <- voltage;
+}
+
+mod Resistor(inout p : Electrical, inout n : Electrical) {
+    param r : Real = 1e3;
+}
+
+analog Resistor {
+    I(p, n) <+ V(p, n) / r;
+}
+
+mod Capacitor(inout p : Electrical, inout n : Electrical) {
+    param c : Real = 100e-9;
+}
+
+analog Capacitor {
+    I(p, n) <+ c * ddt(V(p, n));
+}
+
+mod RcStep() {
+    wire gnd : Electrical;
+    wire vin : Electrical;
+    wire out : Electrical;
+    src : VoltageSource(.p = vin, .n = gnd) { .voltage = 1.0 };
+    r1   : Resistor(.p = vin, .n = out) { .r = 1e3 };          // τ = RC = 100 µs
+    c1   : Capacitor(.p = out, .n = gnd) { .c = 100e-9 };
+}
+

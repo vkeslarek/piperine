@@ -1,3 +1,4 @@
+use piperine_lang::elab::registry::{ElabContext, TypeDefKind};
 use piperine_lang::pom::Design;
 use miette::SourceSpan;
 
@@ -11,11 +12,21 @@ pub enum SymbolKind {
     Instance,
     Function,
     Behavior,
-    Bench,
     Enum,
     Bundle,
     Discipline,
     Capability,
+    /// An `extern type` declaration (declared-language-surface T14) — the
+    /// primitives/discipline/enum/bundle cases above already resolve
+    /// through `design.disciplines()`/`enums()`/`bundles()`; this variant
+    /// is specifically for `extern type` names, which have no POM-level
+    /// counterpart of their own.
+    Type,
+    /// An `extern operator` declaration (`ddt`, `delay`, …).
+    Operator,
+    /// An `extern attribute` schema name (as opposed to `SymbolKind::Bundle`
+    /// for a bundle-backed schema).
+    AttrSchema,
 }
 
 #[derive(Debug, Clone)]
@@ -26,7 +37,12 @@ pub struct Resolution {
     pub type_info: Option<String>,
 }
 
-pub fn resolve_at(design: &Design, source: &str, byte_offset: usize) -> Option<Resolution> {
+pub fn resolve_at(
+    design: &Design,
+    source: &str,
+    byte_offset: usize,
+    ctx: Option<&ElabContext>,
+) -> Option<Resolution> {
     // 1. Identify what we are hovering over.
     // For now, we just find the word under the cursor.
     let word = crate::text_pos::word_at_position(
@@ -107,17 +123,6 @@ pub fn resolve_at(design: &Design, source: &str, byte_offset: usize) -> Option<R
         }
     }
     
-    for b in design.benches() {
-        if b.module == word {
-            return Some(Resolution {
-                kind: SymbolKind::Bench,
-                name: b.module.clone(),
-                decl_span: b.span,
-                type_info: None,
-            });
-        }
-    }
-
     for (name, e) in design.enums() {
         if *name == word {
             return Some(Resolution {
@@ -173,6 +178,63 @@ pub fn resolve_at(design: &Design, source: &str, byte_offset: usize) -> Option<R
                 });
             }
         }
+    }
+
+    // declared-language-surface T14: every name resolved so far came
+    // straight off the POM, which carries only *plain* declarations —
+    // `extern`-declared names (types, fns/tasks, operators, attribute
+    // schemas, impl methods) live in the `ElabContext` registries
+    // populated at elaboration time (T11-T13's real lookup path) and have
+    // no POM-level counterpart of their own. This is the first time these
+    // registries have any LSP-facing consumer.
+    let ctx = ctx?;
+
+    if let Some(c) = ctx.callables.lookup(&word)
+        && let Some(decl_span) = c.decl_span() {
+        return Some(Resolution {
+            kind: SymbolKind::Function,
+            name: word,
+            decl_span: Some(decl_span),
+            type_info: None,
+        });
+    }
+
+    if let Some(TypeDefKind::Extern { decl_span, .. }) = ctx.types.lookup(&word) {
+        return Some(Resolution {
+            kind: SymbolKind::Type,
+            name: word,
+            decl_span: *decl_span,
+            type_info: None,
+        });
+    }
+
+    if let Some(c) = ctx.operators.lookup(&word)
+        && let Some(decl_span) = c.decl_span() {
+        return Some(Resolution {
+            kind: SymbolKind::Operator,
+            name: word,
+            decl_span: Some(decl_span),
+            type_info: None,
+        });
+    }
+
+    if let Some(decl_span) = ctx.schemas.decl_span(&word) {
+        return Some(Resolution {
+            kind: SymbolKind::AttrSchema,
+            name: word,
+            decl_span: Some(decl_span),
+            type_info: None,
+        });
+    }
+
+    if let Some(c) = ctx.impl_methods.find_by_method_name(&word)
+        && let Some(decl_span) = c.decl_span() {
+        return Some(Resolution {
+            kind: SymbolKind::Function,
+            name: word,
+            decl_span: Some(decl_span),
+            type_info: None,
+        });
     }
 
     None

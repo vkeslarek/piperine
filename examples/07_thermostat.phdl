@@ -1,6 +1,6 @@
 // Bang-bang thermostat: a thermal RC plant (ambient 20 °C, τ = 10 ms in
 // simulation seconds) heated by a controlled source; `@above` events flip
-// the heater off at 25 °C and back on at 22 °C. The bench uses a
+// the heater off at 25 °C and back on at 22 °C. The python twin uses a
 // delayed-start transient (`TranConfig.start`) to skip the warm-up and
 // asserts the steady limit cycle stays inside the hysteresis band.
 
@@ -47,15 +47,3 @@ mod Thermostat() {
     ctrl  : Controller(.temp = temp, .gnd = gnd);
 }
 
-bench Thermostat {
-
-    fn test_limit_cycle_holds_the_band() {
-        // Record only after 50 ms (5 τ) — the initial approach is skipped.
-        var t = $tran(TranConfig { .stop = 0.2, .step = 1e-4, .start = 0.05 });
-        var temp = t.v(temp, gnd);
-        $display("cycling range:", temp.min(), "to", temp.max());
-        $assert(temp.min() > 20.5, "heater turns on before falling to ambient");
-        $assert(temp.max() < 26.5, "heater turns off near the top threshold");
-        $assert(temp.peak_to_peak() > 1.0, "the controller actually cycles");
-    }
-}

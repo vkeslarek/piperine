@@ -13,14 +13,14 @@ use piperine_plugin::{
     entry, Abi, DeviceFactory, DeviceKind, Manifest, Permissions, Plugin, PluginDeviceSpec,
     PluginPort, PortBinding, Registrar,
 };
-use piperine_solver::analog::AnalogReference;
-use piperine_solver::analysis::dc::DcAnalysisState;
-use piperine_solver::analysis::transient::{TransientAnalysisContext, TransientAnalysisState};
-use piperine_solver::core::element::{Element, ElementCapabilities};
-use piperine_solver::digital::interface::{DigitalPorts, EvalCtx, EventSink};
-use piperine_solver::digital::{DigitalNet, LogicValue};
-use piperine_solver::math::linear::Stamp;
-use piperine_solver::solver::Context;
+use piperine_solver::abi::AnalogReference;
+use piperine_solver::abi::DcAnalysisState;
+use piperine_solver::abi::{TransientAnalysisContext, TransientAnalysisState};
+use piperine_solver::abi::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
+use piperine_solver::abi::{DigitalPorts, EvalCtx, EventSink};
+use piperine_solver::abi::{DigitalNet, LogicValue};
+use piperine_solver::abi::Stamp;
+use piperine_solver::prelude::Context;
 
 pub struct FixturePlugin {
     manifest: Manifest,
@@ -129,15 +129,7 @@ impl PluginResistor {
     }
 }
 
-impl Element for PluginResistor {
-    fn name(&self) -> &str {
-        &self.label
-    }
-
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::ANALOG
-    }
-
+impl AnalogDevice for PluginResistor {
     fn load_dc(
         &mut self,
         _state: &DcAnalysisState<'_>,
@@ -153,6 +145,20 @@ impl Element for PluginResistor {
         _context: &Context,
     ) -> Vec<Stamp<AnalogReference, f64>> {
         self.stamps()
+    }
+}
+
+impl DigitalDevice for PluginResistor {}
+
+impl Introspect for PluginResistor {}
+
+impl Element for PluginResistor {
+    fn name(&self) -> &str {
+        &self.label
+    }
+
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG
     }
 }
 
@@ -187,15 +193,9 @@ struct PluginInverter {
     output: DigitalNet,
 }
 
-impl Element for PluginInverter {
-    fn name(&self) -> &str {
-        &self.label
-    }
+impl AnalogDevice for PluginInverter {}
 
-    fn capabilities(&self) -> ElementCapabilities {
-        ElementCapabilities::DIGITAL
-    }
-
+impl DigitalDevice for PluginInverter {
     fn boundary(&self) -> DigitalPorts<'_> {
         DigitalPorts {
             inputs: std::slice::from_ref(&self.input),
@@ -212,5 +212,17 @@ impl Element for PluginInverter {
             _ => LogicValue::X,
         };
         sink.emit(self.output, out, 0.0);
+    }
+}
+
+impl Introspect for PluginInverter {}
+
+impl Element for PluginInverter {
+    fn name(&self) -> &str {
+        &self.label
+    }
+
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::DIGITAL
     }
 }

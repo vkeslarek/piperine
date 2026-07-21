@@ -59,8 +59,7 @@ impl Parse for FnSig {
             parser.expect(&Tok::RParen)?;
         }
         // `-> RetType` is optional; an omitted return type is `Unit` (the
-        // common case for a `bench` entry point, which is a procedure, not
-        // a value computation — piperine-bench/docs/SPEC.md §2).
+        // common case for a procedure, not a value computation).
         let ret = if parser.eat(&Tok::Arrow) {
             Type::parse(parser)?
         } else {

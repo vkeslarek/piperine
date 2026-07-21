@@ -1,9 +1,11 @@
+//! The solver's contracts: the `Element` ABI every simulated participant
+//! implements (`element.rs`), the instantiated circuit that owns them
+//! (`circuit.rs`), the unified `Net` naming layer (`net.rs`), typed ports
+//! (`port.rs`), and OSDI-style introspection metadata (`introspect.rs`).
+
+pub mod builder;
 pub mod circuit;
 pub mod element;
 pub mod introspect;
 pub mod net;
 pub mod port;
-pub use circuit::CircuitInstance;
-pub use element::{Element, ElementCapabilities};
-pub use net::{Net, NetKind};
-pub use port::Port;

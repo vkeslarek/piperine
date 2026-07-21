@@ -18,9 +18,9 @@ pub struct SolveResultView {
 }
 
 /// The mutable surface of the `transform_design` hook (SPEC Part VI §8.2):
-/// mutations go through the design's staging layer — the same rails bench
-/// writes ride — and are consumed by the next pure re-elaboration. A plugin
-/// never receives `&mut Design`; reads go through the real POM.
+/// mutations go through the design's staging layer and are consumed by the
+/// next pure re-elaboration. A plugin never receives `&mut Design`; reads go
+/// through the real POM.
 pub struct DesignStaging<'a> {
     design: &'a Design,
     /// The writer these stagings are attributed to (P0008 provenance).
@@ -39,7 +39,7 @@ impl<'a> DesignStaging<'a> {
     }
 
     /// Stage a parameter override on `instance` (empty label = the module's
-    /// own params) — same semantics as a bench `inst.r = …` write.
+    /// own params) — same semantics as a host `set` write.
     pub fn set_param(&self, instance: &str, param: &str, value: Value) {
         self.design.set_param(instance, param, value);
     }

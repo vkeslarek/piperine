@@ -1,0 +1,9 @@
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+mod Top() {
+    wire gnd: Electrical; wire vin: Electrical; wire mid: Electrical;
+    v1: vsrc (.p=vin,.n=gnd) { .dc = 10.0 };
+    r1: res  (.p=vin,.n=mid) { .r = 1.0e3 };
+    r2: res  (.p=mid,.n=gnd) { .r = 3.0e3 };
+}

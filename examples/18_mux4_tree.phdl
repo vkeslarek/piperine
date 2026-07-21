@@ -42,25 +42,3 @@ mod Mux4() {
     mroot : Mux2(.a = lo, .b = hi, .sel = sel1, .y = out);
 }
 
-bench Mux4 {
-
-    fn test_exhaustive_selection() {
-        var bits = [0.0, 1.0];
-        for v0 in bits { for v1 in bits { for v2 in bits { for v3 in bits {
-            for s0 in bits { for s1 in bits {
-                d0.level = v0; d1.level = v1; d2.level = v2; d3.level = v3;
-                ds0.level = s0; ds1.level = s1;
-
-                var r = $op();
-                // Expected: index = sel1*2 + sel0 selects one input (one-hot
-                // product form, all Real — no branching needed).
-                var expected = v0 * (1.0 - s0) * (1.0 - s1)
-                             + v1 * s0 * (1.0 - s1)
-                             + v2 * (1.0 - s0) * s1
-                             + v3 * s0 * s1;
-                $assert(abs(r.v(out) - expected) < 1e-9,
-                        "4:1 mux picks input [sel1,sel0] through two module levels");
-            }}
-        }}}}
-    }
-}

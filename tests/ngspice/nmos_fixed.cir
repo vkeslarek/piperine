@@ -1,0 +1,11 @@
+* NMOS fixed gate bias, Rd load — isolates the drain-current equation
+Vdd vdd 0 DC 10
+Vg  g   0 DC 2
+Rd  vdd d 100k
+M1  d g 0 0 NMOD L=2u W=10u
+.model NMOD NMOS (level=1 vto=1 kp=2e-5 lambda=0 tox=0)
+.control
+op
+print v(d) v(g)
+.endc
+.end

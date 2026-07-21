@@ -1,0 +1,467 @@
+// NGSPICE faithful model — diode.
+//
+// Source: ngspice/src/spicelib/devices/dio/
+//   diodefs.h   diotemp.c   dioload.c   dioparam.c   diompar.c   dionoise.c
+//
+// Includes: series resistance (internal node), bottom + sidewall junctions,
+// tunneling, breakdown, high-level injection (IKF/IKR), depletion + diffusion
+// charge, temperature dependence (tlev/tlevc), shot + flicker noise.
+//
+// All equations are translated line-by-line from the C source.
+// ════════════════════════════════════════════════════════════════════════════
+
+use piperine::constants;
+use piperine::disciplines;
+use spice::constants;
+
+// One step of the ngspice breakdown fixed-point iteration (diotemp.c:232-238):
+//   xbv = tBv - nbv*vt*ln(cbv/csat + 1 - xbv/vt)
+pub fn ng_dio_bv_step(tbv: Real, nbvvt: Real, cbv: Real, csat: Real, vt: Real, xbv: Real) -> Real {
+    return tbv - nbvvt * ln(cbv / csat + 1.0 - xbv / vt);
+}
+
+pub bundle DioModel {
+    // ── DC transfer ──────────────────────────────────────────────────────────
+    is     : Real = 1.0e-14,    // saturation current (A)
+    n      : Real = 1.0,        // emission coefficient
+    rs     : Real = 0.0,        // ohmic series resistance (Ω)
+    ikf    : Real = 0.0,        // forward knee current (A) — high-level injection
+    ikr    : Real = 0.0,        // reverse knee current (A)
+    ns     : Real? = none,      // sidewall emission coefficient (given ⇒ own sidewall diode)
+    jsw    : Real = 0.0,        // sidewall saturation current (A)
+    nbv    : Real? = none,      // breakdown emission coefficient — absent = use n
+
+    // ── Breakdown ────────────────────────────────────────────────────────────
+    bv     : Real? = none,      // breakdown voltage (V)
+    ibv    : Real = 1.0e-3,     // breakdown current (A)
+
+    // ── Charge storage ───────────────────────────────────────────────────────
+    tt     : Real = 0.0,        // transit time (s)
+    cjo    : Real = 0.0,        // zero-bias junction cap (F)
+    vj     : Real = 1.0,        // junction potential (V)
+    m      : Real = 0.5,        // grading coefficient
+    cjsw   : Real = 0.0,        // sidewall junction cap (F)
+    vjsw   : Real = 1.0,        // sidewall junction potential (V)
+    mjsw   : Real = 0.33,       // sidewall grading coefficient (ngspice default 0.33)
+    fc     : Real = 0.5,        // depletion cap coeff (forward-bias fit)
+    fcs    : Real = 0.5,        // sidewall depletion cap coeff
+
+    // ── Tunneling ────────────────────────────────────────────────────────────
+    jtun   : Real = 0.0,        // tunneling saturation current (A)
+    jtunsw : Real = 0.0,        // sidewall tunneling saturation current (A)
+    ntun   : Real = 30.0,       // tunneling emission coefficient (ngspice default 30)
+    xtitun : Real = 3.0,        // tunneling sat-current temp exponent
+    keg    : Real = 1.0,        // EG correction factor for tunneling
+
+    // ── Temperature ──────────────────────────────────────────────────────────
+    eg     : Real = 1.11,       // activation energy (eV)
+    xti    : Real = 3.0,        // sat-current temp exponent
+    tnom   : Real = 300.15,     // nominal temperature (K)
+    tlev   : Real = 0.0,        // temp-equation selector (0,1,3)
+    tlevc  : Real = 0.0,        // cap/potential temp-equation selector (0,1)
+    tcv    : Real = 0.0,        // breakdown voltage temp coefficient
+    cta    : Real = 0.0,        // area junction cap temp coeff (tlevc=1)
+    ctp    : Real = 0.0,        // perimeter junction cap temp coeff (tlevc=1)
+    tpb    : Real = 0.0,        // area junction potential temp coeff (tlevc=1)
+    tphp   : Real = 0.0,        // perimeter junction potential temp coeff (tlevc=1)
+    tm1    : Real = 0.0,        // grading coeff 1st temp coeff
+    tm2    : Real = 0.0,        // grading coeff 2nd temp coeff
+    ttt1   : Real = 0.0,        // transit time 1st temp coeff
+    ttt2   : Real = 0.0,        // transit time 2nd temp coeff
+    trs1   : Real = 0.0,        // series resistance 1st temp coeff
+    trs2   : Real = 0.0,        // series resistance 2nd temp coeff
+
+    // ── Noise ────────────────────────────────────────────────────────────────
+    kf     : Real = 0.0,        // flicker noise coefficient
+    af     : Real = 1.0,        // flicker noise exponent
+
+    // ── SOA ──────────────────────────────────────────────────────────────────
+    fv_max : Real? = none,    // none = no forward SOA limit
+    bv_max : Real? = none,    // none = no reverse SOA limit
+}
+
+pub mod dio ( inout p : Electrical, inout n : Electrical ) {
+    param model : DioModel = DioModel {};
+    param area  : Real = 1.0;      // area factor
+    param pj    : Real = 0.0;      // perimeter
+    param m     : Real = 1.0;      // parallel multiplier
+    param temp  : Real = 0.0;      // absolute temp (K); 0 = ambient
+    param dtemp : Real = 0.0;      // delta temp (K)
+    param ic    : Real = 0.0;      // initial voltage (V)
+    param off   : Boolean = 0;     // initially off
+
+    // Internal node for series resistance (diodefs.h: DIOposPrimeNode)
+    wire pp : Electrical;
+}
+
+pub analog dio {
+    // ════════════════════════════════════════════════════════════════════════
+    //  §1  Temperature preprocessing  (diotemp.c)
+    // ════════════════════════════════════════════════════════════════════════
+    var t : Real = if (temp > 0.0) { temp } else { $temperature() + dtemp };
+    var dt : Real = t - model.tnom;
+    var vt : Real = $vt(t);
+    var vtnom : Real = $vt(model.tnom);
+
+    // Parameter clamps (diotemp.c:41-68)
+    var eg_c  : Real = max(model.eg, 0.1);    // activation energy min 0.1
+    var fc_c  : Real = min(model.fc, 0.95);   // depletion cap coeff max 0.95
+    var fcs_c : Real = min(model.fcs, 0.95);  // sidewall depletion cap coeff max 0.95
+    var nbv_eff : Real = model.nbv.get_or(model.n);
+
+    // m folded into area and perimeter (parallel diodes)
+    var area_eff : Real = area * m;
+    var pj_eff   : Real = pj * m;
+
+    // Bandgap / pbfact precomputation (diotemp.c:107-118)
+    var fact1  : Real = model.tnom / NG_REFTEMP;
+    var fact2  : Real = t / NG_REFTEMP;
+    var egfet  : Real = ng_egfet(t);
+    var egfet1 : Real = ng_egfet(model.tnom);
+    var arg    : Real = 0.0 - egfet / (2.0 * NG_K * t) + 1.1150877 / (2.0 * NG_K * NG_REFTEMP);
+    var pbfact : Real = 0.0 - 2.0 * vt * (1.5 * ln(fact2) + NG_Q * arg);
+    var arg1   : Real = 0.0 - egfet1 / (2.0 * NG_K * model.tnom) + 1.1150877 / (2.0 * NG_K * NG_REFTEMP);
+    var pbfact1: Real = 0.0 - 2.0 * vtnom * (1.5 * ln(fact1) + NG_Q * arg1);
+
+    var xfc  : Real = ln(1.0 - fc_c);
+    var xfcs : Real = ln(1.0 - fcs_c);
+
+    // ── Grading coefficient temp adjust (diotemp.c:41-47, 90-102) ────────────
+    var m0 : Real = min(model.m, 0.9);   // base grading coeff clamped to 0.9
+    var tM : Real = m0 * (1.0 + model.tm1 * dt + model.tm2 * dt * dt);
+    if (tM > 0.9) { tM = 0.9; }  // temperature-adjusted value clamped too
+
+    // ── Bottom junction cap/potential (diotemp.c:120-129, tlevc=0) ──────────
+    var tJctPot : Real;
+    var tJctCap : Real;
+    if (model.tlevc == 0.0) {
+        var pbo : Real = (model.vj - pbfact1) / fact1;
+        var gmaold : Real = (model.vj - pbo) / pbo;
+        tJctCap = model.cjo * area_eff / (1.0 + tM * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaold));
+        tJctPot = pbfact + fact2 * pbo;
+        var gmanew : Real = (tJctPot - pbo) / pbo;
+        tJctCap = tJctCap * (1.0 + tM * (4.0e-4 * (t - NG_REFTEMP) - gmanew));
+    } else {
+        tJctPot = model.vj - model.tpb * (t - NG_REFTEMP);
+        tJctCap = model.cjo * area_eff * (1.0 + model.cta * (t - NG_REFTEMP));
+    }
+
+    // ── Sidewall junction cap/potential (diotemp.c:136-150, tlevc=0) ────────
+    var tJctSWPot : Real;
+    var tJctSWCap : Real;
+    if (model.tlevc == 0.0) {
+        var pboSW : Real = (model.vjsw - pbfact1) / fact1;
+        var gmaSWold : Real = (model.vjsw - pboSW) / pboSW;
+        tJctSWCap = model.cjsw * pj_eff / (1.0 + model.mjsw * (4.0e-4 * (model.tnom - NG_REFTEMP) - gmaSWold));
+        tJctSWPot = pbfact + fact2 * pboSW;
+        var gmaSWnew : Real = (tJctSWPot - pboSW) / pboSW;
+        tJctSWCap = tJctSWCap * (1.0 + model.mjsw * (4.0e-4 * (t - NG_REFTEMP) - gmaSWnew));
+    } else {
+        tJctSWPot = model.vjsw - model.tphp * (t - NG_REFTEMP);
+        tJctSWCap = model.cjsw * pj_eff * (1.0 + model.ctp * (t - NG_REFTEMP));
+    }
+
+    // ── Saturation currents (diotemp.c:152-172) ──────────────────────────────
+    var tSatCur : Real = model.is * area_eff * exp(
+        ((t / model.tnom) - 1.0) * eg_c / (model.n * vt) +
+        model.xti / model.n * ln(t / model.tnom)
+    );
+    var tSatSWCur : Real = model.jsw * pj_eff * exp(
+        ((t / model.tnom) - 1.0) * eg_c / (model.ns.get_or(1.0) * vt) +
+        model.xti / model.ns.get_or(1.0) * ln(t / model.tnom)
+    );
+    var tTunSatCur : Real = model.jtun * area_eff * exp(
+        ((t / model.tnom) - 1.0) * model.keg * eg_c / vt +
+        model.xtitun * ln(t / model.tnom)
+    );
+    var tTunSatSWCur : Real = model.jtunsw * pj_eff * exp(
+        ((t / model.tnom) - 1.0) * model.keg * eg_c / vt +
+        model.xtitun * ln(t / model.tnom)
+    );
+
+    // ── Capacitance precomputation (diotemp.c:176-183, 260-265) ─────────────
+    // NOTE: ngspice computes only ONE tF1 (from the bottom junction); the
+    // sidewall depletion charge reuses it (dioload.c:328).
+    var tF1       : Real = tJctPot * (1.0 - exp((1.0 - tM) * xfc)) / (1.0 - tM);
+    var tDepCap   : Real = fc_c * tJctPot;
+    var tDepSWCap : Real = fcs_c * tJctSWPot;
+
+    // ── Vcrit (diotemp.c:185-187) ────────────────────────────────────────────
+    var vte : Real = model.n * vt;
+    var tVcrit : Real = vte * ln(vte / (NG_SQRT2 * tSatCur));
+
+    // ── Junction potential limits (diotemp.c:189-204) ────────────────────────
+    // Limit VJ so that FC*VJ ≤ 1 (and the same for the sidewall).
+    if (tDepCap > 1.0) {
+        tJctPot = 1.0 / fc_c;
+        tDepCap = fc_c * tJctPot;
+    }
+    if (tDepSWCap > 1.0) {
+        tJctSWPot = 1.0 / fcs_c;
+        tDepSWCap = fcs_c * tJctSWPot;
+    }
+
+    // ── F2/F3 factors (diotemp.c:260-265) ────────────────────────────────────
+    var tF2   : Real = exp((1.0 + tM) * xfc);
+    var tF3   : Real = 1.0 - fc_c * (1.0 + tM);
+    var tF2SW : Real = exp((1.0 + model.mjsw) * xfcs);
+    var tF3SW : Real = 1.0 - fcs_c * (1.0 + model.mjsw);
+
+    // ── Transit time temp adjust (diotemp.c:248-250) ─────────────────────────
+    var tTransitTime : Real = model.tt * (1.0 + model.ttt1 * dt + model.ttt2 * dt * dt);
+
+    // ── Series resistance temp adjust (diotemp.c:253-258) ────────────────────
+    var tConductance : Real = 0.0;
+    if (model.rs > 0.0) {
+        var rs_factor : Real = 1.0 + model.trs1 * dt + model.trs2 * dt * dt;
+        tConductance = (1.0 / model.rs) / rs_factor;
+    }
+    var gspr : Real = tConductance * area_eff;
+
+    // ── Breakdown voltage temp adjust (diotemp.c:208-244) ────────────────────
+    // ngspice matches the forward and reverse regions with a fixed-point
+    // iteration (25 steps max).  PHDL has no loops, so the iteration is
+    // unrolled through ng_dio_bv_step — extra steps past convergence are
+    // no-ops on the fixed point.
+    var tBrkdwnV : Real = 0.0;   // set from bv when present; unread otherwise
+    if (model.bv.is_present()) {
+        var tBv : Real = if (model.tlev == 0.0) {
+            model.bv.get_or(0.0) - model.tcv * dt
+        } else {
+            model.bv.get_or(0.0) * (1.0 - model.tcv * dt)
+        };
+        var cbv : Real = model.ibv;  // level 1
+        if (cbv < tSatCur * tBv / vt) {
+            // cbv raised to tSatCur*tBv/vt; xbv = tBv (diotemp.c:219-226)
+            tBrkdwnV = tBv;
+        } else {
+            var xbv : Real = tBv - nbv_eff * vt * ln(1.0 + cbv / tSatCur);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            xbv = ng_dio_bv_step(tBv, nbv_eff * vt, cbv, tSatCur, vt, xbv);
+            tBrkdwnV = xbv;
+        }
+    }
+
+    var vtebrk : Real = nbv_eff * vt;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §2  Series resistance  (dioload.c:422-428)
+    // ════════════════════════════════════════════════════════════════════════
+    // ngspice collapses the internal node when RS == 0 (diosetup.c); PHDL
+    // keeps the node and forces the series drop instead — `V = R·I` over the
+    // force's own branch is a series resistor, and R = 0 a perfect short.
+    // (A conditional `V(p,pp) <- 0` would lower to the JIT's penalty-
+    // conductance form, whose 1e12 stamp destroys current accuracy below
+    // ~1e-4 A — found by the diode_iv ngspice sweep.)
+    var rseries : Real = if (model.rs > 0.0) { 1.0 / gspr } else { 0.0 };
+    V(p, pp) <- rseries * I(p, pp);
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §3  Junction voltage  (dioload.c:148-191)
+    // ════════════════════════════════════════════════════════════════════════
+    var vd : Real = V(pp, n);
+
+    // Voltage limiting for convergence (dioload.c:180-191, DEVpnjlim)
+    if (model.bv.is_present() && vd < min(0.0, 0.0 - tBrkdwnV + 10.0 * vtebrk)) {
+        vd = 0.0 - ($limit("pnjlim", 0.0 - (vd + tBrkdwnV), 0.0, vtebrk, tVcrit) + tBrkdwnV);
+    } else {
+        vd = $limit("pnjlim", vd, 0.0, vte, tVcrit);
+    }
+
+    var gmin : Real = $simparam("gmin", 1.0e-12);
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §4  Sidewall diode current  (dioload.c:196-230)
+    //  ngspice: the sidewall gets its OWN characteristic only when NS was
+    //  explicitly given; otherwise the sidewall saturation current is merged
+    //  into the bottom diode (csat += csatsw) and follows the bottom's N.
+    //  (limexp == exp inside the pnjlim'd voltage range; it only guards the
+    //  Newton iterations before limiting kicks in.)
+    // ════════════════════════════════════════════════════════════════════════
+    var csat : Real = tSatCur;
+    var csatsw : Real = tSatSWCur;
+    var cdsw : Real = 0.0;
+    var gdsw : Real = 0.0;
+
+    if (model.jsw > 0.0) {
+        if (model.ns.is_present()) {
+            // Sidewall with its own characteristic (dioload.c:198-222)
+            var vtesw : Real = model.ns.get_or(1.0) * vt;
+
+            if (vd >= 0.0 - 3.0 * vtesw) {
+                var evd : Real = limexp(vd / vtesw);
+                cdsw = csatsw * (evd - 1.0);
+                gdsw = csatsw * evd / vtesw;
+            } else if (!model.bv.is_present() || vd >= 0.0 - tBrkdwnV) {
+                var argsw : Real = 3.0 * vtesw / (vd * NG_E);
+                argsw = argsw * argsw * argsw;
+                cdsw = 0.0 - csatsw * (1.0 + argsw);
+                gdsw = csatsw * 3.0 * argsw / vd;
+            } else {
+                var evrev : Real = limexp(0.0 - (tBrkdwnV + vd) / vtebrk);
+                cdsw = 0.0 - csatsw * evrev;
+                gdsw = csatsw * evrev / vtebrk;
+            }
+        } else {
+            // Merge into the bottom diode (dioload.c:224-228)
+            csat = csat + csatsw;
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §5  Bottom diode current  (dioload.c:232-252)
+    // ════════════════════════════════════════════════════════════════════════
+    var cdb : Real = 0.0;
+    var gdb : Real = 0.0;
+
+    if (vd >= 0.0 - 3.0 * vte) {
+        // Forward region
+        var evd : Real = limexp(vd / vte);
+        cdb = csat * (evd - 1.0);
+        gdb = csat * evd / vte;
+    } else if (!model.bv.is_present() || vd >= 0.0 - tBrkdwnV) {
+        // Reverse region — cubic extension (dioload.c:241-244)
+        var arg : Real = 3.0 * vte / (vd * NG_E);
+        arg = arg * arg * arg;
+        cdb = 0.0 - csat * (1.0 + arg);
+        gdb = csat * 3.0 * arg / vd;
+    } else {
+        // Breakdown region (dioload.c:246-250)
+        var evrev : Real = limexp(0.0 - (tBrkdwnV + vd) / vtebrk);
+        cdb = 0.0 - csat * evrev;
+        gdb = csat * evrev / vtebrk;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §6  Tunneling currents  (dioload.c:254-272)
+    // ════════════════════════════════════════════════════════════════════════
+    if (model.jtunsw > 0.0) {
+        var vtetun : Real = model.ntun * vt;
+        var evd : Real = limexp(0.0 - vd / vtetun);
+        cdsw = cdsw - tTunSatSWCur * (evd - 1.0);
+        gdsw = gdsw + tTunSatSWCur * evd / vtetun;
+    }
+
+    if (model.jtun > 0.0) {
+        var vtetun : Real = model.ntun * vt;
+        var evd : Real = limexp(0.0 - vd / vtetun);
+        cdb = cdb - tTunSatCur * (evd - 1.0);
+        gdb = gdb + tTunSatCur * evd / vtetun;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §7  Total current + knee current + gmin  (dioload.c:274-301)
+    // ════════════════════════════════════════════════════════════════════════
+    var cd : Real = cdb + cdsw;
+    var gd : Real = gdb + gdsw;
+
+    // ngspice scales IKF/IKR by area·m (diosetup.c:193-194)
+    var ikf_area_m : Real = model.ikf * area_eff;
+    var ikr_area_m : Real = model.ikr * area_eff;
+
+    if (vd >= 0.0 - 3.0 * vte) {
+        // Forward — IKF high-level injection (dioload.c:279-283)
+        if (model.ikf > 0.0 && cd > 1.0e-18) {
+            var sqrt_ikf : Real = sqrt(cd / ikf_area_m);
+            cd = cd / (1.0 + sqrt_ikf) + gmin * vd;
+        } else {
+            cd = cd + gmin * vd;
+        }
+    } else {
+        // Reverse — IKR (dioload.c:291-295)
+        if (model.ikr > 0.0 && cd < 0.0 - 1.0e-18) {
+            var sqrt_ikr : Real = sqrt(cd / (0.0 - ikr_area_m));
+            cd = cd / (1.0 + sqrt_ikr) + gmin * vd;
+        } else {
+            cd = cd + gmin * vd;
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §8  Charge storage  (dioload.c:303-341)
+    // ════════════════════════════════════════════════════════════════════════
+    // Bottom depletion charge
+    var qdepl : Real;
+    if (vd < tDepCap) {
+        var arg : Real = 1.0 - vd / tJctPot;
+        var sarg : Real = exp(0.0 - tM * ln(arg));
+        qdepl = tJctPot * tJctCap * (1.0 - arg * sarg) / (1.0 - tM);
+    } else {
+        var czof2 : Real = tJctCap / tF2;
+        qdepl = tJctCap * tF1 + czof2 * (
+            tF3 * (vd - tDepCap) +
+            (tM / (tJctPot + tJctPot)) * (vd * vd - tDepCap * tDepCap)
+        );
+    }
+
+    // Sidewall depletion charge — always stamped when CJSW > 0 (dioload.c:320-331).
+    // NOTE: ngspice reuses the BOTTOM junction's tF1 here (there is no tF1SW).
+    var qdeplSW : Real = 0.0;
+    if (model.cjsw > 0.0) {
+        if (vd < tDepSWCap) {
+            var argSW : Real = 1.0 - vd / tJctSWPot;
+            var sargSW : Real = exp(0.0 - model.mjsw * ln(argSW));
+            qdeplSW = tJctSWPot * tJctSWCap * (1.0 - argSW * sargSW) / (1.0 - model.mjsw);
+        } else {
+            var czof2SW : Real = tJctSWCap / tF2SW;
+            qdeplSW = tJctSWCap * tF1 + czof2SW * (
+                tF3SW * (vd - tDepSWCap) +
+                (model.mjsw / (tJctSWPot + tJctSWPot)) * (vd * vd - tDepSWCap * tDepSWCap)
+            );
+        }
+    }
+
+    // Diffusion charge (dioload.c:333-334)
+    var qdiff : Real = tTransitTime * (cdb + cdsw);
+
+    var qtotal : Real = qdiff + qdepl + qdeplSW;
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §9  Contributions  (dioload.c:416-428)
+    // ════════════════════════════════════════════════════════════════════════
+    // DC current + capacitive current
+    I(pp, n) <+ cd;
+    I(pp, n) <+ ddt(qtotal);
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  §10  Noise  (dionoise.c:104-117)
+    // ════════════════════════════════════════════════════════════════════════
+    // Series-resistance thermal noise: 4kT · tConductance·area·m² — ngspice
+    // multiplies the (already m-scaled) area by m again here; replicated as-is.
+    if (model.rs > 0.0) {
+        I(p, pp) <+ white_noise(4.0 * NG_K * t * gspr * m);
+    }
+    // Shot noise: 2*q*|Id|
+    I(pp, n) <+ white_noise(2.0 * NG_Q * abs(cd));
+    // Flicker noise: m · KF · |Id/m|^AF / f  (dionoise.c:111-117)
+    if (model.kf > 0.0) {
+        I(pp, n) <+ flicker_noise(m * model.kf * pow(abs(cd / m), model.af), 1.0);
+    }
+
+    // ── Initial condition (diogetic.c) ───────────────────────────────────────
+    // `ic` seeds the UIC start voltage. Reserved until the JIT can force a
+    // branch inside `@ initial` (see piperine ROADMAP).
+}

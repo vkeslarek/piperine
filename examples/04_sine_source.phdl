@@ -1,5 +1,5 @@
 // Time-domain sine source built on `$abstime`, loaded by a resistor.
-// The bench validates the waveform numerically — amplitude at the quarter
+// The python twin validates the waveform numerically — amplitude at the quarter
 // period, RMS = A/√2, zero mean, first rising zero-crossing at one full
 // period — and `$display`s the sampled table plus the DC operating point.
 
@@ -35,33 +35,3 @@ mod SineDemo() {
     r_load : Resistor(.p = mid, .n = gnd) { .r = 1e3 };
 }
 
-bench SineDemo {
-
-    fn test_sine_shape() {
-        // Two full 1 kHz periods, 100 samples per period.
-        var t = $tran(TranConfig { .stop = 2e-3, .step = 1e-5 });
-        var v = t.v(out, gnd);
-        $display("v(out) samples:", v);
-
-        $assert(abs(v.at(0.25e-3) - 2.0) < 0.01, "peak amplitude A at t = T/4");
-        $assert(abs(v.at(0.75e-3) + 2.0) < 0.01, "negative peak at t = 3T/4");
-        $assert(abs(v.rms() - 1.4142) < 0.05, "RMS of a sine is A/sqrt(2)");
-        $assert(abs(v.mean()) < 0.05, "a full number of periods averages to zero");
-        $assert(abs(v.peak_to_peak() - 4.0) < 0.05, "peak-to-peak is 2A");
-    }
-
-    fn test_load_current_follows_ohm() {
-        var t = $tran(TranConfig { .stop = 1e-3, .step = 1e-5 });
-        var i = t.i(r_load.p, r_load.n);
-        // i(t) = v(t)/(R+R): 2 V peak into 2 kΩ → 1 mA peak.
-        $assert(abs(i.max() - 1e-3) < 1e-5, "peak string current is A/(2R)");
-        // And the divider halves the sine: 1 V peak at the midpoint.
-        $assert(abs(t.v(mid, gnd).max() - 1.0) < 0.01, "midpoint peak is A/2");
-    }
-
-    fn test_dc_point_is_zero() {
-        var r = $op();
-        $display(r);
-        $assert(abs(r.v(out, gnd)) < 1e-9, "sin(0) = 0: the DC point sits at 0 V");
-    }
-}

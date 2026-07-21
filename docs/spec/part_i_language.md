@@ -157,7 +157,6 @@ PHDL's construct kinds, each with a distinct role (the full top-level item list 
 | `capability` | A named contract of function signatures. Operators desugar to capabilities. Satisfied via `impl Cap for T`. |
 | `impl` | Provides method bodies for a bundle, or an implementation of a capability. |
 | `analog` / `digital` | Behavior blocks: the continuous and discrete engines that run during solve. |
-| `bench` | An interpreted testbench attached to a module. Uses the same `fn`-body grammar; covered in Part III. |
 
 Metadata attaches to any declaration via `@` attributes (§8). Attributes are inert —
 they do not affect elaboration or simulation. They carry tool-specific intent (layout,
@@ -176,8 +175,8 @@ The location of a construct determines when it runs:
   controls elaboration structure: you cannot write a `for` loop whose bound depends on
   a voltage. Runtime topology (a switch opening and closing) is expressed as a switch
   branch over a fixed node set, not as structural change.
-- A **`bench` body** runs at **interpretation time** — after elaboration, tree-walked
-  over the elaborated design. Part III covers this context.
+Verification and measurement are **host** concerns, not language constructs —
+the Python/Rust host APIs (Part VIII) drive analyses over the elaborated design.
 
 This phase separation is what makes PHDL statically analyzable: the structure is known
 before any current flows.
@@ -230,7 +229,7 @@ The following identifiers are reserved at the parser level — they cannot be us
 variable, field, or type names because the parser interprets them as keywords in the
 positions where they are expected:
 
-`above`, `analog`, `bench`, `bundle`, `capability`, `change`, `const`, `cross`,
+`above`, `analog`, `bundle`, `capability`, `change`, `const`, `cross`,
 `digital`, `discipline`, `else`, `enum`, `final`, `flow`, `fn`, `for`, `if`, `impl`,
 `in`, `initial`, `inout`, `input`, `match`, `mod`, `negedge`, `none`, `output`,
 `param`, `posedge`, `potential`, `pub`, `resolve`, `return`, `self`, `Self`,
@@ -272,6 +271,7 @@ Path      ::= Ident { "::" Ident }
 Item      ::= { Attribute } [ "pub" ] ItemKind
 ItemKind  ::= ModDecl | BehaviorDecl | DisciplineDecl | BundleDecl | EnumDecl
              | CapabilityDecl | ImplDecl | FnDecl | ConstDecl | BenchDecl
+             | ExternDecl
 ConstDecl ::= "const" Ident ":" Type "=" Expr ";"
 ```
 
@@ -288,7 +288,7 @@ ConstDecl ::= "const" Ident ":" Type "=" Expr ";"
 | `mod` | module shape (§7) |
 | `analog`/`digital` | module behavior (§10) |
 | `impl` | bundle methods / capability impl (§6.5–§6.6) |
-| `bench` | interpreted testbench (Part III) |
+| `extern` | signature-only native declaration (§5.4, MD-24) |
 
 ### 5.3 Packages and visibility
 
@@ -311,6 +311,34 @@ items are always exported regardless of `pub`, matching the prelude injection mo
 
 A `const NAME : T = expr;` declares a global compile-time constant, evaluated at
 elaboration and usable wherever a param or literal is expected.
+
+### 5.4 `extern` declarations (MD-24 — declared language surface)
+
+A declaration marked `extern` is signature-only (no body); its implementation defers
+to a native registry reached only after the declaration resolves the call. Seven
+forms, one keyword:
+
+| Form | Purpose | Stdlib home |
+|------|---------|-------------|
+| `extern type Real;` | primitive value type | `headers/types.phdl` |
+| `extern fn sin(x: Real) -> Real;` | libm intrinsic | `headers/math.phdl` |
+| `extern task $display() -> Unit;` | system task (`$`-prefixed name) | `headers/tasks.phdl` |
+| `extern operator ddt(x: Real) -> Real;` | runtime operator | `headers/operators.phdl` |
+| `extern attribute device { plugin: String, type: String }` | attribute schema | `headers/device_port.phdl` (+ plugin `extern.phdl` stubs) |
+| `extern impl TypeName { fn method(self, ...) -> Ret; ... }` | type methods (signature only per method) | `headers/types.phdl` (casts) |
+| `extern impl Capability for TypeName { ... }` | capability impl (reserved for future primitive capability dispatch) | (none today) |
+
+A body on any `extern` declaration (or on any method inside an `extern impl` block)
+is a parse error — `extern` is signature-only by construction, never a body with a
+native escape hatch.
+
+`extern impl` methods (inherent or capability-gated) participate in **overload
+resolution** by argument type: `extern impl Real { fn from(x: Integer) -> Real; fn
+from(x: Boolean) -> Real; }` resolves `Real::from(b)` to the Boolean candidate. Zero
+candidates matching → fail loud naming every candidate tried; more than one matching
+→ fail loud as ambiguous. This is the surface that replaced the former bare-name cast
+exception (`real(x)`/`int(x)`/`bit(x)`/`Boolean(x)`/`Quad(x)` — deleted, not migrated;
+casts are now ordinary declared `Real::from(x)`-shaped associated-function calls).
 
 **Validation.** An unresolved `use` import is stored and deferred; a reference to an
 unknown item at a use-site is E2002 (`UndefinedType`) or E2003 (`UndefinedModule`).
@@ -357,7 +385,7 @@ narrowing and no implicit `Integer`/`Natural` → `Real` — write `real(x)`.
 *Note (roadmap):* the widening table is intended to become explicit `impl From<T>`
 capability declarations in the prelude, replacing the compiler-internal table.
 
-**Collections and composites** (interpreted `fn`-body grammar — bench and const-eval):
+**Collections and composites** (the `fn`-body value layer, const-eval included):
 
 - **Tuples** `(a, b, ...)` — indexed `.0`/`.1`/...; `(e)` with no comma is a
   parenthesized group, not a 1-tuple.
@@ -751,10 +779,9 @@ Arguments pass by value (basic types) or read-only reference (bundles). `mod` is
 unit of reusable structure; `fn` is the unit of reusable value computation.
 
 This `fn`-body grammar — `var`, `if`/`else`, `match`, `for`, `return`, expressions,
-lambdas — is **the same grammar** used everywhere in PHDL: bundle `impl` methods,
-`bench` fns (Part III), and analog/digital behavior bodies. The statements and
-expressions are uniform; what changes by context is purity, effect availability, and
-the system-task set.
+lambdas — is **the same grammar** used everywhere in PHDL: bundle `impl` methods
+and analog/digital behavior bodies. The statements and expressions are uniform;
+what changes by context is purity, effect availability, and the system-task set.
 
 ### 9.1 Default parameter values
 
@@ -923,7 +950,10 @@ Event sources (Part V §5 for the full table):
   crossing).
 - **Lifecycle:** `initial` (fires once at start), `final` (fires once at end;
   diagnostics only).
-- **Periodic:** `timer(period)` (analog only).
+- **Periodic:** `timer(period)` or `timer(period, phase)` (analog only). The
+  optional `phase` offsets the first fire to `phase` (fires at `phase`,
+  `phase+period`, … instead of `period`, `2·period`, …); a source declares
+  both its rise and fall edges with two phased timers.
 
 Combine events with OR via `|`: `@ (posedge(a) | posedge(b))`. The `when (cond)` clause
 gates on a level. An analog crossing may drive digital state (domain coupling — the
@@ -966,8 +996,7 @@ Part V):
    `$abstime`, `$analysis`, `$random`, ...) and control (`$bound_step`, `$finish`,
    `$discontinuity`). Available in `analog`/`digital` bodies only.
 
-3. **Interpreted context (bench):** analyses (`$op`, `$tran`, `$ac`, `$noise`) and
-   artifact writers (`$write`, `$plot`). Available in `bench` fns only.
+Analyses are driven by the host APIs (Part VIII), not by `$`-syscalls.
 
 The syscall set is open — new syscalls register through the layer-2 extension mechanism
 (§14). This section gives the grammar; Part V gives the exhaustive tables.
@@ -980,9 +1009,8 @@ The syscall set is open — new syscalls register through the layer-2 extension 
 |-------|-------|------|
 | Elaboration | `mod` body, type annotations, structural control | resolved once into a fixed netlist |
 | Solve | `analog` / `digital` | evaluated by the NR / event-driven engine |
-| Interpreted | `bench` | tree-walked over the elaborated design |
 
-Hardware is neither created nor destroyed during solve or interpretation. Runtime
+Hardware is neither created nor destroyed during solve. Runtime
 topology — a switch opening, a MOSFET entering cutoff — is a switch branch over a
 static node set, not structural change. This is the fundamental contract: the structure
 is fixed before any current flows, and the solver specializes itself to that structure.
@@ -1002,7 +1030,29 @@ electrothermal resistor with both `Electrical` and `Thermal` ports) needs no con
 because no single net crosses a boundary — the coupling happens inside the device's own
 `analog` block.
 
-**Validation.** E2013 (`WidthMismatch`); E2014 (`DisciplineCrossing`).
+### 13.1 Declared-first name resolution
+
+A companion rule, locked as project decision MD-24, governs *name resolution*: every
+referenceable PHDL name — primitive type, math function, system task, runtime operator,
+attribute schema, type method — resolves to a **textual declaration** in the project's
+headers/source (or a loaded plugin's published `extern.phdl` stub). Name lookup that
+finds no textual declaration is a compile error, never a silent fallback into a
+Rust-native registry. A declaration marked `extern` (§5.4) is the only case allowed to
+defer its *implementation* to a native registry — its full *shape* (params, types,
+return type) is 100% textual, so LSP go-to-definition always lands on a real
+declaration line.
+
+This rule generalizes the original No-Magic rule (which governed only net connections)
+to the entire name-resolution surface. A regression guard
+(`crates/piperine-lang/tests/extern_coverage_guard.rs`) iterates every native
+implementation table (`MATH_FNS`, `TaskRegistry`, the operator contract, the 7
+primitive types, the `@device`/`@port` schemas) and asserts a matching `extern`
+declaration exists, so the mechanism can't silently regress back into "magic" after a
+future change.
+
+**Validation.** E2013 (`WidthMismatch`); E2014 (`DisciplineCrossing`); an unresolved
+identifier at any reference site is a fail-loud `ElabErrorKind::Other` naming the
+identifier and use site.
 
 ---
 
@@ -1016,7 +1066,7 @@ The core grammar (layer 0) is closed. Growth happens above it, through five laye
 | 2 | Compiler registries (trait + registry) | Analog operators, `$`-syscalls, `@`-event kinds |
 | 3 | Attribute schemas | Typed per-declaration metadata (layout, routing, ...) |
 | 4 | POM + selector + plugins | Reflection, overrides, annotations — the design-closure loop |
-| 5 | Interpreted context (bench) | Orchestration, sweeps, verification, closure loops |
+| 5 | Host APIs (Part VIII) | Orchestration, sweeps, verification, closure loops |
 
 New value types (layer 1) and new operators/syscalls/events (layer 2) never touch the
 grammar — they register at startup and the existing grammar productions (function

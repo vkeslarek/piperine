@@ -1,0 +1,64 @@
+// NGSPICE faithful models — transmission lines.
+//
+// Source: ngspice/src/spicelib/devices/tra/  (lossless line, Branin method)
+//         ngspice/src/spicelib/devices/urc/  (uniform distributed RC)
+//
+// The ideal lossless line uses Branin's traveling-wave companion: each port
+// is a Thévenin equivalent — a series resistor Z0 to an internal node, with a
+// voltage source (internal node → return) carrying the delayed wave that left
+// the far port one transit time (td) ago. The `delay` runtime operator
+// supplies the retarded quantity.
+//
+// Derivation (lossless line, forward wave f: port1→port2, backward g):
+//   v1 = f(t)   + g(t),      Z0·i1 = f(t)   − g(t)     [i = current INTO line]
+//   v2 = f(t−td)+ g(t+td),   Z0·i2 = g(t+td)− f(t−td)
+//   ⇒  v1(t) = Z0·i1(t) + Es1,   Es1 = [ v2 + Z0·i2 ](t−td)
+//      v2(t) = Z0·i2(t) + Es2,   Es2 = [ v1 + Z0·i1 ](t−td)
+//
+// The wave leaving a port, v + Z0·i, is expressed with the internal source
+// node k: since v(p,n) = Z0·i + v(k,n) (resistor Z0 from p to k, source k→n),
+// the current i = (v(p)−v(k))/Z0, so  v + Z0·i = 2·v(p,n) − v(k,n) — a pure
+// node-voltage combination the delay operator can sample without reading any
+// branch current.
+// ════════════════════════════════════════════════════════════════════════════
+
+use piperine::disciplines;
+
+// ════════════════════════════════════════════════════════════════════════════
+//  tline — ideal lossless transmission line  (T element, Branin companion)
+//
+//  Two ports (p1,n1) and (p2,n2); z0 = characteristic impedance, td = one-way
+//  transit delay. Each port branch is a resistor z0 in series with the delayed
+//  far-end wave.
+// ════════════════════════════════════════════════════════════════════════════
+
+pub mod tline (
+    inout p1 : Electrical,
+    inout n1 : Electrical,
+    inout p2 : Electrical,
+    inout n2 : Electrical,
+) {
+    param z0 : Real = 50.0;    // characteristic impedance (Ω)
+    param td : Real = 1.0e-9;  // one-way transit delay (s)
+
+    $assert(z0 > 0.0, "tline: z0 (characteristic impedance) must be > 0");
+    $assert(td > 0.0, "tline: td (transit delay) must be > 0");
+
+    wire k1 : Electrical;      // port-1 internal source node
+    wire k2 : Electrical;      // port-2 internal source node
+}
+
+pub analog tline {
+    // Series resistor Z0 from each external port to its internal source node.
+    I(p1, k1) <+ V(p1, k1) / z0;
+    I(p2, k2) <+ V(p2, k2) / z0;
+
+    // Wave leaving each port = 2·v(port) − v(internal) = v + Z0·i (node-only).
+    var wave1 : Real = 2.0 * V(p1, n1) - V(k1, n1);
+    var wave2 : Real = 2.0 * V(p2, n2) - V(k2, n2);
+
+    // The Thévenin source at each port carries the far port's wave, retarded
+    // by one transit time.
+    V(k1, n1) <- delay(wave2, td);
+    V(k2, n2) <- delay(wave1, td);
+}
