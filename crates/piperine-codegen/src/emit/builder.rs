@@ -298,20 +298,6 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         }
     }
 
-    /// Resolve a branch destination `V(p,n)` or `I(p,n)` to (plus_node, minus_node).
-    pub fn resolve_branch(&mut self, dest: &Expr) -> Result<(NodeId, NodeId), CodegenError> {
-        if let Expr::Call(func, args) = dest
-            && let Expr::Ident(_) = func.as_ref()
-        {
-            let plus_name = ident_from_expr(args.first()).unwrap_or_else(|| "?".into());
-            let minus_name = ident_from_expr(args.get(1)).unwrap_or_else(|| "0".into());
-            let plus = self.resolve_node(&plus_name)?;
-            let minus = self.resolve_node(&minus_name)?;
-            return Ok((plus, minus));
-        }
-        Err(CodegenError::Invalid("expected V(p,n) or I(p,n) branch access".into()))
-    }
-
     pub(crate) fn resolve_node(&self, name: &str) -> Result<NodeId, CodegenError> {
         if piperine_lang::pom::is_ground(name) {
             return Ok(NodeId::GROUND);

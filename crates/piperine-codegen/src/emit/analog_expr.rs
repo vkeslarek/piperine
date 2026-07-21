@@ -592,11 +592,6 @@ impl<'a, 'f, 'm> Builder<'a, 'f, 'm> {
         self.cse_op3(T_SELECT, flag, one, zero, |b| b.ins().select(flag, one, zero))
     }
 
-    /// Cached f64 constant (analog context).
-    pub fn analog_f64const(&mut self, v: f64) -> Value {
-        self.cse_const(v)
-    }
-
     /// `out[idx] = value` (f64 array store).
     pub fn store_f64(&mut self, value: Value, ptr: Value, idx: usize) {
         self.builder.ins().store(MemFlags::trusted(), value, ptr, (idx * 8) as i32);
