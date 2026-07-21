@@ -69,9 +69,26 @@ impl Elaborator {
                     self.syms.const_decls.insert(c.name.clone(), c.clone());
                 }
                 Item::UseDecl(_) => {} // already expanded by Resolver
+                // `extern type Name;` registers into TypeRegistry alongside
+                // plain types (declared-language-surface T7, DLS-01
+                // groundwork). Types are not overloadable — a name already
+                // taken by any type declaration (plain or extern) is an
+                // ordinary duplicate-declaration error (SPEC Edge Cases: no
+                // shadowing of an `extern` declaration).
+                Item::ExternDecl(crate::parse::ast::ExternDecl::Type { span, name }) => {
+                    if self.ctx.types.lookup(name).is_some() {
+                        return Err(ElabError::from(crate::pom::ElabErrorKind::Other(format!(
+                            "type `{name}` is already declared (duplicate `extern type`/type declaration)"
+                        ))).with_span(*span));
+                    }
+                    self.ctx.types.register(crate::elab::registry::TypeDefKind::Extern {
+                        name: name.clone(),
+                        decl_span: *span,
+                    });
+                }
                 // Grammar only for now (declared-language-surface Phase 1:
-                // T1-T6) — registry wiring into TypeRegistry/CallableRegistry/
-                // OperatorRegistry/SchemaRegistry lands in a later phase (T7+).
+                // T1-T6) — registry wiring for the remaining extern forms
+                // (fn/task/operator/attribute/impl) lands in T9/T10.
                 Item::ExternDecl(_) => {}
             }
         }

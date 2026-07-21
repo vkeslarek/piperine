@@ -11,6 +11,11 @@ pub enum TypeDefKind {
     Discipline(DisciplineDecl),
     Enum(EnumDecl),
     Bundle(BundleDecl),
+    /// An `extern type Name;` declaration (SPEC declared-language-surface
+    /// DLS-08) — a type whose shape is a native Rust registry entry, but
+    /// whose *name* has a textual `decl_span` an LSP can resolve to. Types
+    /// are not overloadable (one type per name), unlike callables.
+    Extern { name: String, decl_span: Option<miette::SourceSpan> },
 }
 
 impl TypeDefKind {
@@ -20,6 +25,7 @@ impl TypeDefKind {
             TypeDefKind::Discipline(d) => &d.name,
             TypeDefKind::Enum(e) => &e.name,
             TypeDefKind::Bundle(b) => &b.name,
+            TypeDefKind::Extern { name, .. } => name,
         }
     }
 
@@ -31,6 +37,14 @@ impl TypeDefKind {
             TypeDefKind::Bundle(_) => Err(ElabError::from(ElabErrorKind::Other(
                 "Bundles are flattened and do not resolve to a simple TypeRef".into()
             ))),
+            // Groundwork only (T7): `extern type` declares a textual name/
+            // decl_span, but its native value-type binding is populated by
+            // the P4 primitive-type migration (T16), not by this task —
+            // resolving one here before then is a distinct, DLS-05-style
+            // "extern declared but no registry binding" failure.
+            TypeDefKind::Extern { name, .. } => Err(ElabError::from(ElabErrorKind::Other(format!(
+                "extern type `{name}` has no native value-type binding registered yet"
+            )))),
         }
     }
 
