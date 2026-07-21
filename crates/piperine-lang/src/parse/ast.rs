@@ -115,6 +115,9 @@ pub enum ExternDecl {
     /// `extern operator name(params) -> RetType;` — a runtime operator
     /// (`ddt`, `delay`, `slew`, …).
     Operator(ExternSig),
+    /// `extern attribute name { field: Type, ... }` — an attribute schema
+    /// (`@device`, `@port`, plugin-contributed ones).
+    Attribute { span: Option<miette::SourceSpan>, name: String, fields: Vec<ExternAttrField> },
 }
 
 impl ExternDecl {
@@ -122,20 +125,30 @@ impl ExternDecl {
     /// go-to-definition target for the declaration itself.
     pub fn span(&self) -> Option<miette::SourceSpan> {
         match self {
-            ExternDecl::Type { span, .. } => *span,
+            ExternDecl::Type { span, .. } | ExternDecl::Attribute { span, .. } => *span,
             ExternDecl::Fn(sig) | ExternDecl::Task(sig) | ExternDecl::Operator(sig) => sig.span,
         }
     }
 
-    /// The declared name (the type name for `extern type`; the
-    /// function/task/operator name — `$`-prefixed for `extern task` —
-    /// otherwise).
+    /// The declared name (the type/attribute-schema name for `extern
+    /// type`/`extern attribute`; the function/task/operator name —
+    /// `$`-prefixed for `extern task` — otherwise).
     pub fn name(&self) -> &str {
         match self {
-            ExternDecl::Type { name, .. } => name,
+            ExternDecl::Type { name, .. } | ExternDecl::Attribute { name, .. } => name,
             ExternDecl::Fn(sig) | ExternDecl::Task(sig) | ExternDecl::Operator(sig) => &sig.name,
         }
     }
+}
+
+/// One field of an `extern attribute` schema — same name/type shape as a
+/// bundle field, with its own `decl_span` so a field name (e.g. `plugin`
+/// inside `@device(plugin = ...)`) resolves independently of the schema name.
+#[derive(Debug, Clone)]
+pub struct ExternAttrField {
+    pub span: Option<miette::SourceSpan>,
+    pub name: String,
+    pub ty: Type,
 }
 
 /// A signature-only declaration shared by `extern fn`/`extern task`/

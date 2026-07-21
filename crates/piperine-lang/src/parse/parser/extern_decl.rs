@@ -81,6 +81,30 @@ pub(crate) fn parse_extern_operator(parser: &mut Parser) -> Result<ExternDecl, P
     Ok(ExternDecl::Operator(ExternSig { span: Some((start, end - start).into()), name, params, ret }))
 }
 
+/// `extern attribute name { field: Type, ... }`
+pub(crate) fn parse_extern_attribute(parser: &mut Parser) -> Result<ExternDecl, ParseError> {
+    let start = parser.current_span_start();
+    parser.expect_ident_str("extern")?;
+    parser.expect_ident_str("attribute")?;
+    let name = parser.parse_ident()?;
+    parser.expect(&Tok::LBrace)?;
+    let mut fields = Vec::new();
+    while !parser.eat(&Tok::RBrace) {
+        let f_start = parser.current_span_start();
+        let f_name = parser.parse_ident()?;
+        parser.expect(&Tok::Colon)?;
+        let ty = Type::parse(parser)?;
+        let f_end = parser.previous_span_end();
+        fields.push(ExternAttrField { span: Some((f_start, f_end - f_start).into()), name: f_name, ty });
+        if !parser.eat(&Tok::Comma) {
+            parser.expect(&Tok::RBrace)?;
+            break;
+        }
+    }
+    let end = parser.previous_span_end();
+    Ok(ExternDecl::Attribute { span: Some((start, end - start).into()), name, fields })
+}
+
 /// Parses `(params) -> RetType` — the tail shared by every `extern`
 /// signature form (`fn`/`task`/`operator`, and each `extern impl` method).
 /// Mirrors [`FnSig::parse`]'s parameter-list grammar (no defaults — not

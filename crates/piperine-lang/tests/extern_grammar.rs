@@ -119,3 +119,27 @@ fn extern_operator_with_body_is_a_parse_error_naming_the_declaration() {
     let msg = err.to_string();
     assert!(msg.contains("extern operator ddt"), "error should name the offending declaration, got: {msg}");
 }
+
+// ─────────────────────────── T5: extern attribute (DLS-12) ─────────────────
+
+#[test]
+fn extern_attribute_parses_with_field_decl_spans() {
+    let src = "extern attribute device { plugin: String, type: String }";
+    let decl = parse_one_extern(src);
+    let ExternDecl::Attribute { span, name, fields } = &decl else {
+        panic!("expected ExternDecl::Attribute, got {decl:?}");
+    };
+    assert_eq!(name, "device");
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name, "plugin");
+    assert_eq!(fields[0].ty.name, "String");
+    assert_eq!(fields[1].name, "type");
+    assert_eq!(fields[1].ty.name, "String");
+    // Each field carries its own decl_span, distinct from the schema's.
+    let schema_span = span.expect("extern attribute must carry a decl_span");
+    for field in fields {
+        let field_span = field.span.expect("each field must carry its own decl_span");
+        assert_ne!(field_span.offset(), schema_span.offset(), "field span should not equal the schema's span");
+        assert!(field_span.offset() >= schema_span.offset() && field_span.offset() < schema_span.offset() + schema_span.len());
+    }
+}
