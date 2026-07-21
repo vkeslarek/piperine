@@ -25,6 +25,14 @@ use crate::Plugin;
 struct LoadedPlugin {
     manifest: Manifest,
     instance: PluginInstance,
+    /// The plugin's published `extern.phdl` stub (declared-language-surface
+    /// T24, DLS-22 groundwork), parsed once at load time — `None` for
+    /// `from_plugins`-loaded (in-process/test) plugins, which have no
+    /// filesystem location a stub could live at, and for `load_for_project`
+    /// plugins that simply don't publish one (T24 imposes no requirement
+    /// yet; T25 is where "no stub" becomes load-time-fatal for a plugin
+    /// that also contributes a schema).
+    extern_stub: Option<Vec<piperine_lang::parse::ast::Item>>,
 }
 
 impl LoadedPlugin {
@@ -83,7 +91,10 @@ impl PluginHost {
         let mut host = Self::empty();
         for plugin in plugins {
             let manifest = plugin.manifest().clone();
-            host.register_one(&manifest.name.clone(), PluginInstance::InProcess(plugin), manifest)?;
+            // No filesystem location exists for an in-process plugin, so
+            // there is nowhere an `extern.phdl` stub could live — always
+            // `None` (declared-language-surface T24).
+            host.register_one(&manifest.name.clone(), PluginInstance::InProcess(plugin), manifest, None)?;
         }
         host.sort();
         Ok(host)
@@ -132,10 +143,31 @@ impl PluginHost {
                     PluginInstance::InProcess(crate::backend::process::load(&manifest, &artifact)?)
                 }
             };
-            host.register_one(&manifest.name.clone(), instance, manifest)?;
+            let extern_stub = Self::load_extern_stub(&manifest.name, plugin_root)?;
+            host.register_one(&manifest.name.clone(), instance, manifest, extern_stub)?;
         }
         host.sort();
         Ok(host)
+    }
+
+    /// Parse `extern.phdl` alongside a loaded plugin's manifest, if it
+    /// publishes one (declared-language-surface T24, DLS-22 groundwork).
+    /// `Ok(None)` when no stub file exists — T24 imposes no requirement
+    /// that one does; a malformed stub (a real authoring bug, not a
+    /// "plugin didn't publish one" case) fails loud naming the plugin.
+    fn load_extern_stub(
+        plugin_name: &str,
+        plugin_root: &Path,
+    ) -> PluginResult<Option<Vec<piperine_lang::parse::ast::Item>>> {
+        let stub_path = plugin_root.join("extern.phdl");
+        let Ok(text) = std::fs::read_to_string(&stub_path) else {
+            return Ok(None);
+        };
+        let source = piperine_lang::parse::parse_str(&text).map_err(|e| PluginError::Other {
+            plugin: plugin_name.to_string(),
+            message: format!("malformed extern stub `{}`: {e}", stub_path.display()),
+        })?;
+        Ok(Some(source.items))
     }
 
     fn sort(&mut self) {
@@ -149,6 +181,7 @@ impl PluginHost {
         name: &str,
         instance: PluginInstance,
         manifest: Manifest,
+        extern_stub: Option<Vec<piperine_lang::parse::ast::Item>>,
     ) -> PluginResult<()> {
         let plugin: &dyn Plugin = match &instance {
             PluginInstance::Native(n) => n.plugin.as_ref(),
@@ -159,7 +192,7 @@ impl PluginHost {
         if let Some(err) = errors.into_iter().next() {
             return Err(err);
         }
-        self.plugins.push(LoadedPlugin { manifest, instance });
+        self.plugins.push(LoadedPlugin { manifest, instance, extern_stub });
         Ok(())
     }
 
@@ -264,27 +297,46 @@ impl PluginHost {
         if let Ok(source) = piperine_lang::parse::parse_str(include_str!(
             "../../piperine-lang/headers/device_port.phdl"
         )) {
-            for item in source.items {
-                if let piperine_lang::parse::ast::Item::ExternDecl(
-                    piperine_lang::parse::ast::ExternDecl::Attribute { span, name, fields },
-                ) = item
-                {
-                    let attr_fields = fields
-                        .into_iter()
-                        .map(|f| AttrField {
-                            name: f.name,
-                            ty: f.ty.name,
-                            required: !f.ty.optional,
-                            default: None,
-                            decl_span: f.span,
-                        })
-                        .collect();
-                    ctx.schemas.register_declared(&name, attr_fields, span);
-                }
+            Self::register_attribute_items(ctx, &source.items);
+        }
+        // Each loaded plugin's own published `extern.phdl` stub (T24,
+        // DLS-22 groundwork) — auto-imported, no explicit `use` required
+        // (mirrors `headers/spice/`'s availability). Ctrl+click on a
+        // stub-declared `@name(...)` resolves to the stub's own
+        // `decl_span`, exactly like any other `extern attribute`.
+        for loaded in &self.plugins {
+            if let Some(items) = &loaded.extern_stub {
+                Self::register_attribute_items(ctx, items);
             }
         }
         for (name, (_owner, fields)) in &self.contributions.schemas {
             ctx.schemas.register_declared(name, fields.clone(), None);
+        }
+    }
+
+    /// Register every `extern attribute` item's schema into `ctx.schemas` —
+    /// shared by `@device`/`@port`'s own header and each plugin's
+    /// `extern.phdl` stub (T23/T24). Non-attribute items are ignored (a
+    /// stub could in principle carry other `extern` kinds; only attribute
+    /// schemas are this feature's concern here).
+    fn register_attribute_items(ctx: &mut ElabContext, items: &[piperine_lang::parse::ast::Item]) {
+        for item in items {
+            if let piperine_lang::parse::ast::Item::ExternDecl(
+                piperine_lang::parse::ast::ExternDecl::Attribute { span, name, fields },
+            ) = item
+            {
+                let attr_fields = fields
+                    .iter()
+                    .map(|f| AttrField {
+                        name: f.name.clone(),
+                        ty: f.ty.name.clone(),
+                        required: !f.ty.optional,
+                        default: None,
+                        decl_span: f.span,
+                    })
+                    .collect();
+                ctx.schemas.register_declared(name, attr_fields, *span);
+            }
         }
     }
 }
