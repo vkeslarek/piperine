@@ -95,6 +95,7 @@ impl Plugin for WireHosted {
                         ty: f.ty.clone(),
                         required: f.required,
                         default: None,
+                        decl_span: None,
                     })
                     .collect(),
             );

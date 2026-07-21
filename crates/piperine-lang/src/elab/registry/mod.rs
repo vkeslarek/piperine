@@ -3,11 +3,15 @@ pub mod components;
 pub mod callables;
 pub mod impls;
 pub mod schemas;
+pub mod operators;
+pub mod impl_methods;
 
 pub use types::{TypeRegistry, TypeDefKind};
 pub use components::{ComponentRegistry, ComponentDef};
 pub use callables::{CallableRegistry, CallableDef};
 pub use schemas::{AttrField, SchemaRegistry, SchemaShape};
+pub use operators::{OperatorRegistry, ExternOperatorDecl};
+pub use impl_methods::ImplMethodTable;
 
 use crate::elab::event::EventRegistry;
 use crate::value::Value;
@@ -18,6 +22,14 @@ pub struct ElabContext {
     pub callables: CallableRegistry,
     pub events: EventRegistry,
     pub schemas: SchemaRegistry,
+    /// Runtime operators (`ddt`, `delay`, `slew`, …) — declared-language-
+    /// surface T10 groundwork; real `extern operator` declarations land in
+    /// T22.
+    pub operators: OperatorRegistry,
+    /// Native methods declared via `extern impl TypeName { fn ...; }`,
+    /// keyed by `(type_name, method_name)` — T10 groundwork; the first real
+    /// consumer is the cast migration (T17).
+    pub impl_methods: ImplMethodTable,
 }
 
 impl Default for ElabContext {
@@ -52,12 +64,13 @@ impl ElabContext {
         schemas.register_declared(
             "rfport",
             vec![
-                AttrField { name: "num".into(), ty: "Integer".into(), required: true, default: None },
+                AttrField { name: "num".into(), ty: "Integer".into(), required: true, default: None, decl_span: None },
                 AttrField {
                     name: "z0".into(),
                     ty: "Real".into(),
                     required: false,
                     default: Some(Value::Real(50.0)),
+                    decl_span: None,
                 },
             ],
         );
@@ -68,6 +81,8 @@ impl ElabContext {
             callables: CallableRegistry::new(),
             events: EventRegistry::with_builtins(),
             schemas,
+            operators: OperatorRegistry::new(),
+            impl_methods: ImplMethodTable::new(),
         }
     }
 }

@@ -256,12 +256,14 @@ impl PluginHost {
             ty: ty.into(),
             required: true,
             default: None,
+            decl_span: None,
         };
         let opt = |name: &str, ty: &str| AttrField {
             name: name.into(),
             ty: ty.into(),
             required: false,
             default: None,
+            decl_span: None,
         };
         ctx.schemas.register_declared("device", vec![req("plugin", "String"), req("type", "String")]);
         ctx.schemas.register_declared("port", vec![req("name", "String"), opt("kind", "String")]);

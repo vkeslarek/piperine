@@ -20,6 +20,12 @@ pub struct AttrField {
     /// take `default` when omitted.
     pub required: bool,
     pub default: Option<crate::value::Value>,
+    /// The declaration span of this field's own name, so `@device(plugin =
+    /// ...)`'s `plugin` field resolves independently of the schema name
+    /// (declared-language-surface DLS-13/14 groundwork — populated once a
+    /// field originates from a textual `extern attribute` declaration;
+    /// `None` for host/plugin-registered fields with no textual source).
+    pub decl_span: Option<miette::SourceSpan>,
 }
 
 /// What backs a registered schema name.
