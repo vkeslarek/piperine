@@ -114,14 +114,20 @@ impl Elaborator {
                 // (T12) — `@name(...)` attribute validation (`elab/lower/
                 // attrs.rs`) already fails loud (`UnknownAttrSchema`) for
                 // any name not registered here, so this wiring alone closes
-                // DLS-04 for the attribute-schema category.
+                // DLS-04 for the attribute-schema category. A field's own
+                // trailing `?` (`Type::optional`, the same optional-type
+                // marker used everywhere else in PHDL) makes it an
+                // optional schema field (T23, DLS-21) — omission at a use
+                // site is fine, no default substituted; a field without
+                // `?` is required, matching bundle-backed schemas' own
+                // "no default = required" rule.
                 Item::ExternDecl(crate::parse::ast::ExternDecl::Attribute { span, name, fields }) => {
                     let attr_fields = fields
                         .iter()
                         .map(|f| crate::elab::registry::AttrField {
                             name: f.name.clone(),
                             ty: f.ty.name.clone(),
-                            required: true,
+                            required: !f.ty.optional,
                             default: None,
                             decl_span: f.span,
                         })

@@ -1,0 +1,23 @@
+// declared-language-surface P4 sub-phase (DLS-21) — the plugin system's
+// own `@device`/`@port` attribute schemas, textually declared so ctrl+click
+// on `@device(plugin = ..., type = ...)`/`@port(...)` resolves to a real
+// declaration instead of `piperine-plugin/src/host.rs`'s former hardcoded
+// `register_declared("device", …)`/`register_declared("port", …)` calls.
+// Unlike `types.phdl`/`math.phdl`/`tasks.phdl`/`operators.phdl`, this file
+// is NOT part of every project's prelude — `@device`/`@port` are only
+// meaningful once a plugin is loaded (unchanged: `PluginHost::seed_schemas`
+// still gates registration on `!self.is_empty()`), so `piperine-plugin`
+// parses this header directly at seed time rather than `piperine-lang`
+// embedding it unconditionally for every compilation unit.
+//
+// `kind: String?` uses PHDL's ordinary optional-type marker (the same `?`
+// any `param`/binding uses) to preserve `@port`'s pre-existing optional
+// `kind` field — omitting it at a use site is not an error.
+extern attribute device {
+    plugin: String,
+    type: String,
+}
+extern attribute port {
+    name: String,
+    kind: String?,
+}

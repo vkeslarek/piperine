@@ -245,28 +245,44 @@ impl PluginHost {
     /// system's own `@device`/`@port` schemas, plus every plugin-declared
     /// schema. Called by whoever drives elaboration (CLI, hosts, tests)
     /// through `parse_and_elaborate_seeded`.
+    ///
+    /// `@device`/`@port`'s shape (declared-language-surface T23, DLS-21)
+    /// comes from `headers/device_port.phdl`'s `extern attribute`
+    /// declarations, not a hand-rolled `AttrField` list — ctrl+click on
+    /// either name now resolves to that header exactly like any other
+    /// `extern attribute`. This header is parsed here (not embedded into
+    /// every compilation unit like `piperine-lang`'s own
+    /// `types.phdl`/`math.phdl`/etc.) because `@device`/`@port` are only
+    /// meaningful once a plugin is loaded — unchanged: still gated on
+    /// `!self.is_empty()` below.
     pub fn seed_schemas(&self, ctx: &mut ElabContext) {
         if self.is_empty() {
             return;
         }
         // The @device/@port schemas belong to the plugin *system*, not to
         // any single plugin — two device plugins must not collide on them.
-        let req = |name: &str, ty: &str| AttrField {
-            name: name.into(),
-            ty: ty.into(),
-            required: true,
-            default: None,
-            decl_span: None,
-        };
-        let opt = |name: &str, ty: &str| AttrField {
-            name: name.into(),
-            ty: ty.into(),
-            required: false,
-            default: None,
-            decl_span: None,
-        };
-        ctx.schemas.register_declared("device", vec![req("plugin", "String"), req("type", "String")], None);
-        ctx.schemas.register_declared("port", vec![req("name", "String"), opt("kind", "String")], None);
+        if let Ok(source) = piperine_lang::parse::parse_str(include_str!(
+            "../../piperine-lang/headers/device_port.phdl"
+        )) {
+            for item in source.items {
+                if let piperine_lang::parse::ast::Item::ExternDecl(
+                    piperine_lang::parse::ast::ExternDecl::Attribute { span, name, fields },
+                ) = item
+                {
+                    let attr_fields = fields
+                        .into_iter()
+                        .map(|f| AttrField {
+                            name: f.name,
+                            ty: f.ty.name,
+                            required: !f.ty.optional,
+                            default: None,
+                            decl_span: f.span,
+                        })
+                        .collect();
+                    ctx.schemas.register_declared(&name, attr_fields, span);
+                }
+            }
+        }
         for (name, (_owner, fields)) in &self.contributions.schemas {
             ctx.schemas.register_declared(name, fields.clone(), None);
         }
