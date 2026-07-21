@@ -847,6 +847,57 @@ sub-phase per design.md's ordering (most codegen/typecheck-entangled).
 - [ ] Full gate passes; workspace test count ≥ prior baseline.
 **Tests**: regression (existing suite) · **Gate**: full
 **Commit**: `feat(lang): migrate remaining native type methods to extern impl (DLS-24)`
+**Status**: ✅ Complete — no code change, documented "none found"
+finding per the task's explicit escape hatch ("or a documented 'none
+found, operators are structurally special-cased and out of this
+feature's reach' finding if the investigation turns up nothing — never
+fabricate a migration target"). Full investigation findings:
+
+1. **Binary operators (`+`/`-`/`*`/`/`/`==`/`<`/etc.) are pure
+   grammar**, dispatched structurally in three places
+   (`elab/typecheck.rs:646-653`, `elab/lower/behavior.rs:34-42`,
+   `codegen/{flatten/analog.rs, device/digital.rs, resolve/diff.rs,
+   resolve/pom/analog_ops.rs}`) — never through any capability lookup.
+   Per `spec.md` Out of Scope: "Textual declaration for
+   keywords/control flow/operators (`if`, `for`, `mod`, `bundle`, `+`,
+   `-`) | These are syntax, not referenceable identifiers with a
+   distinct definition site." Authoring `extern impl Add for Real`
+   would be a dead declaration no PHDL code references — `Real.add(x)`
+   is never written, `1.0 + 2.0` is grammar. Fabricating these would
+   violate the task's "never fabricate a migration target" rule.
+
+2. **Capability declarations** (`Add`/`Sub`/`Mul`/`Div`/`Eq`/`Ord`/
+   `BitAnd`/`BitOr`/`BitXor`/`Not`/`Number`) live in
+   `headers/capabilities.phdl` as ordinary textual capability
+   declarations (T1's grammar work; already ctrl+click-able). They're
+   a mechanism for USER code to impl on USER types (e.g.
+   `impl Add for UInt[N]` in `tests/examples/capabilities.phdl:18`),
+   not a primitive-type native-method surface.
+
+3. **`ImplMethodTable` starts empty** and is populated exclusively by
+   the `Register` pass walking parsed `extern impl` blocks
+   (`elab/lower/register.rs:142-150`); no built-in seeding anywhere
+   (`elab/registry/mod.rs:42-80`'s `ElabContext::new()`).
+
+4. **The only `extern impl` declarations on primitive types today are
+   the four `from` cast blocks** in `headers/types.phdl:26-49` (Real,
+   Integer, Quad, Boolean — already shipped in T17). `Natural`,
+   `Complex`, `String` have no `extern impl` because they have no
+   cast forms (T17 collapsed `bit`/`Quad` into one Quad block; no
+   `natural(x)`/`complex(x)`/`string(x)` bare-cast form ever existed).
+
+5. **Dispatch path is fail-loud and primitive-agnostic**:
+   `elab/resolve.rs:258-292`'s `resolve_path_call` consults
+   `ImplMethodTable` uniformly; `"Real"`/`"Integer"`/etc. are never
+   special-cased. No future primitive method needs compiler machinery
+   — author an `extern impl` block and it's wired.
+
+Net result: T17's `from` declarations were the complete primitive
+method surface. The "candidates confirmed at Design: capability impls
+like `Add`/`Sub`/`Eq` for `Real`/`Integer`/etc" hypothesis
+(tasks.md:831-832) was investigated and falsified — those capability
+impls are structurally special-cased AND explicitly out of scope per
+spec.md, not a missing migration target.
 
 ---
 
