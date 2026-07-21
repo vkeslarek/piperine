@@ -106,6 +106,9 @@ impl Item {
 pub enum ExternDecl {
     /// `extern type Name;` — a primitive value type, no body.
     Type { span: Option<miette::SourceSpan>, name: String },
+    /// `extern fn name(params) -> RetType;` — a native function, signature
+    /// only (the body is a compiler-side registry entry, e.g. `math.rs`).
+    Fn(ExternSig),
 }
 
 impl ExternDecl {
@@ -114,15 +117,30 @@ impl ExternDecl {
     pub fn span(&self) -> Option<miette::SourceSpan> {
         match self {
             ExternDecl::Type { span, .. } => *span,
+            ExternDecl::Fn(sig) => sig.span,
         }
     }
 
-    /// The declared name (the type name for `extern type`).
+    /// The declared name (the type name for `extern type`; the function
+    /// name for `extern fn`).
     pub fn name(&self) -> &str {
         match self {
             ExternDecl::Type { name, .. } => name,
+            ExternDecl::Fn(sig) => &sig.name,
         }
     }
+}
+
+/// A signature-only declaration shared by `extern fn`/`extern task`/
+/// `extern operator` and each individual method inside `extern impl` — no
+/// body, `decl_span` covers the declaration line. `name` retains any
+/// `$`-prefix for `extern task` (system-task identifier form).
+#[derive(Debug, Clone)]
+pub struct ExternSig {
+    pub span: Option<miette::SourceSpan>,
+    pub name: String,
+    pub params: Vec<FnParam>,
+    pub ret: Type,
 }
 
 /// A `::`-separated module path, e.g. `devices::passives::Resistor`.

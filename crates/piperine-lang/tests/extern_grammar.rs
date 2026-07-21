@@ -25,7 +25,9 @@ fn parse_one_extern(src: &str) -> ExternDecl {
 fn extern_type_parses_with_correct_decl_span() {
     let src = "extern type Real;";
     let decl = parse_one_extern(src);
-    let ExternDecl::Type { span, name } = &decl;
+    let ExternDecl::Type { span, name } = &decl else {
+        panic!("expected ExternDecl::Type, got {decl:?}");
+    };
     assert_eq!(name, "Real");
     let span = span.expect("extern type must carry a decl_span");
     // decl_span covers the full `extern type Real;` declaration.
@@ -39,4 +41,29 @@ fn extern_type_with_body_is_a_parse_error_naming_the_declaration() {
     let err = parse_str(src).expect_err("a body on `extern type` must be a parse error");
     let msg = err.to_string();
     assert!(msg.contains("extern type Real"), "error should name the offending declaration, got: {msg}");
+}
+
+// ─────────────────────────── T2: extern fn (DLS-09) ────────────────────────
+
+#[test]
+fn extern_fn_parses_with_correct_decl_span() {
+    let src = "extern fn sin(x: Real) -> Real;";
+    let decl = parse_one_extern(src);
+    let ExternDecl::Fn(sig) = &decl else {
+        panic!("expected ExternDecl::Fn, got {decl:?}");
+    };
+    assert_eq!(sig.name, "sin");
+    assert_eq!(sig.params.len(), 1);
+    assert_eq!(sig.ret.name, "Real");
+    let span = sig.span.expect("extern fn must carry a decl_span");
+    assert_eq!(span.offset(), 0);
+    assert_eq!(span.offset() + span.len(), src.len());
+}
+
+#[test]
+fn extern_fn_with_body_is_a_parse_error_naming_the_declaration() {
+    let src = "extern fn sin(x: Real) -> Real { x }";
+    let err = parse_str(src).expect_err("a body on `extern fn` must be a parse error");
+    let msg = err.to_string();
+    assert!(msg.contains("extern fn sin"), "error should name the offending declaration, got: {msg}");
 }
