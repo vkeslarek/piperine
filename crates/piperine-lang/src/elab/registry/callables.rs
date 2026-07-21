@@ -30,6 +30,19 @@ pub trait CallableDef: Send + Sync {
     }
 
     fn is_capability(&self) -> bool { false }
+
+    /// A human-readable signature, used in overload-resolution error
+    /// messages (SPEC DLS-07: "naming every candidate signature tried").
+    fn signature_desc(&self) -> String {
+        match self.param_types() {
+            Some(params) => format!(
+                "{}({})",
+                self.name(),
+                params.iter().map(|t| format!("{t:?}")).collect::<Vec<_>>().join(", "),
+            ),
+            None => format!("{}(..)", self.name()),
+        }
+    }
 }
 
 pub struct CallableRegistry {
@@ -73,5 +86,44 @@ impl CallableRegistry {
     /// Walk a program and resolve calls.
     pub fn resolve_calls(&self, design: &mut crate::pom::Design) -> Result<(), ElabError> {
         crate::elab::resolve::resolve_calls(design)
+    }
+
+    /// Overload resolution (SPEC DLS-07): pick the candidate registered for
+    /// `name` whose declared parameter types structurally match
+    /// `arg_types` exactly (no implicit widening — a candidate's arity is
+    /// simply `param_types().len()`, so an arity mismatch is just a
+    /// structural type mismatch, no separate arity step is needed).
+    ///
+    /// - Zero matching candidates → fail loud, naming every original
+    ///   candidate's signature (so the author sees what *was* available).
+    /// - Exactly one matching candidate → that's the resolution.
+    /// - More than one matching candidate → fail loud as an ambiguous call,
+    ///   naming every matching candidate (only possible with a duplicate
+    ///   signature registered twice — a defensive backstop).
+    pub fn resolve(&self, name: &str, arg_types: &[ValueType]) -> Result<&dyn CallableDef, ElabError> {
+        let candidates = self.candidates(name);
+
+        let matching: Vec<&dyn CallableDef> = candidates
+            .iter()
+            .map(|c| c.as_ref())
+            .filter(|c| match c.param_types() {
+                Some(params) => params == arg_types,
+                None => true,
+            })
+            .collect();
+
+        match matching.len() {
+            0 => Err(ElabError::from(ElabErrorKind::Other(format!(
+                "no overload of `{name}` matches argument types ({}); candidates tried: [{}]",
+                arg_types.iter().map(|t| format!("{t:?}")).collect::<Vec<_>>().join(", "),
+                candidates.iter().map(|c| c.signature_desc()).collect::<Vec<_>>().join(", "),
+            )))),
+            1 => Ok(matching[0]),
+            _ => Err(ElabError::from(ElabErrorKind::Other(format!(
+                "ambiguous call to `{name}` with argument types ({}); matching candidates: [{}]",
+                arg_types.iter().map(|t| format!("{t:?}")).collect::<Vec<_>>().join(", "),
+                matching.iter().map(|c| c.signature_desc()).collect::<Vec<_>>().join(", "),
+            )))),
+        }
     }
 }
