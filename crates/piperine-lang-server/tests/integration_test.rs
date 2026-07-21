@@ -221,16 +221,21 @@ fn extern_impl_method_use_site_resolves_to_its_own_decl_span() {
 /// DLS-15: an `extern operator` use site resolves to its own `decl_span`.
 #[test]
 fn extern_operator_use_site_resolves_to_its_decl_span() {
-    let src = "extern operator ddt(x: Real) -> Real;\nmod Top() {}\ndigital Top { var y: Real = ddt(1.0); }";
+    // A distinct name (not one of `headers/operators.phdl`'s real DLS-20
+    // declarations, e.g. `ddt`) — reusing a real name here would register
+    // a second, ambiguous overload candidate now that `ddt` has a genuine
+    // global declaration (DLS-20/T22), rather than testing this fixture's
+    // own local decl_span in isolation.
+    let src = "extern operator my_op(x: Real) -> Real;\nmod Top() {}\ndigital Top { var y: Real = my_op(1.0); }";
     let doc = analyzed(src);
     assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
 
-    let use_site = src.rfind("ddt(1.0)").expect("call site must be present");
-    let resolution = doc.resolve_at(use_site).expect("`ddt` use site must resolve");
+    let use_site = src.rfind("my_op(1.0)").expect("call site must be present");
+    let resolution = doc.resolve_at(use_site).expect("`my_op` use site must resolve");
 
     assert_eq!(resolution.kind, SymbolKind::Operator);
     let decl_span = resolution.decl_span.expect("extern operator must carry a decl_span");
-    let decl_start = src.find("extern operator ddt").expect("declaration must be present");
+    let decl_start = src.find("extern operator my_op").expect("declaration must be present");
     assert_eq!(decl_span.offset(), decl_start);
 }
 

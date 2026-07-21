@@ -161,7 +161,7 @@ fn resolve_declared_call(
 ) -> Result<(), ElabError> {
     let candidates = ctx.callables.candidates(name);
     if candidates.is_empty() {
-        return Ok(());
+        return resolve_operator_call(name, args, module_name, ctx, locals);
     }
     let resolved: &dyn CallableDef = if candidates.len() == 1 {
         candidates[0].as_ref()
@@ -196,6 +196,58 @@ fn resolve_declared_call(
             .with_span(resolved.decl_span()));
         }
     }
+    Ok(())
+}
+
+/// Declared-first resolution for a runtime-operator call (T22, DLS-20):
+/// `ddt`, `idt`, `ddx`, `delay`, `transition`, `slew`, `white_noise`,
+/// `flicker_noise` are `Expr::Call`-shaped exactly like a plain function
+/// call, so once a bare identifier misses `CallableRegistry` entirely
+/// (`resolve_declared_call`'s only caller of this function), it's checked
+/// against `OperatorRegistry` next — same dispatch shape, different table.
+/// A name found in *neither* registry is left untouched (Ok), preserving
+/// `resolve_declared_call`'s existing progressive-enforcement behavior for
+/// every other still-undeclared bare identifier.
+///
+/// Not reached here: `cross`/`above`/`timer` are `EventSpec::Named`
+/// specifiers (`@ above(x) { ... }`), a distinct grammar construct resolved
+/// through `elab/event.rs`'s `EventRegistry`, never an `Expr::Call`; `$limit`
+/// lexes as `Expr::SysCall`, which — like every other syscall-expression
+/// form (T20's finding) — has no existence-check surface in `piperine-lang`
+/// today. All three are still declared in `headers/operators.phdl` for
+/// textual/LSP visibility; see that file's comments for why this pass
+/// cannot enforce them without scope beyond T22.
+fn resolve_operator_call(
+    name: &str,
+    args: &[Expr],
+    module_name: &str,
+    ctx: &ElabContext,
+    locals: &HashMap<String, ValueType>,
+) -> Result<(), ElabError> {
+    let candidates = ctx.operators.candidates(name);
+    if candidates.is_empty() {
+        return Ok(());
+    }
+    let resolved: &dyn CallableDef = if candidates.len() == 1 {
+        candidates[0].as_ref()
+    } else {
+        let arg_types = infer_arg_types(args, name, module_name, locals)?;
+        ctx.operators.resolve(name, &arg_types)?
+    };
+    // Best-effort signature validation, same reasoning as
+    // `resolve_declared_call`'s single-candidate path.
+    if let Some(arg_types) = try_infer_arg_types(args, locals) {
+        resolved.validate_call(&arg_types)?;
+    }
+    // No native-binding ("missing extern binding") check here, unlike
+    // `resolve_declared_call`'s math-function case: an operator's native
+    // implementation lives downstream in `piperine-codegen`
+    // (`resolve/pom/analog_ops.rs`, `flatten/analog.rs`) — a crate
+    // `piperine-lang` has no dependency on and must not reach into (that
+    // would invert the workspace's dependency graph). Codegen keeps
+    // recognizing these names by its own unchanged string-match; if it
+    // ever doesn't, codegen fails loud on its own terms, unaffected by
+    // this pass.
     Ok(())
 }
 
