@@ -12,6 +12,7 @@ mod analog;
 mod builder;
 mod circuit;
 mod digital;
+mod fusion;
 mod provider;
 
 use std::cmp::Reverse;
