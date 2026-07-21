@@ -35,12 +35,16 @@ fn test_b5_implicit_cast_rejected() {
 
 #[test]
 fn test_b5_explicit_cast_allowed() {
+    // declared-language-surface T18 (DLS-23): the bare-name cast form
+    // `real(a)` is deleted — `Real::from(a)` (an `extern impl` associated
+    // function, resolved by argument type via T17's overload mechanism)
+    // is the sanctioned replacement.
     let src = "
     mod B5_Explicit() {}
     digital B5_Explicit {
         var a: Integer = 1;
         var b: Real = 1.0;
-        b = real(a);
+        b = Real::from(a);
     }
     ";
     let _prog = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).unwrap();
