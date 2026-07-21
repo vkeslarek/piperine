@@ -108,6 +108,16 @@ impl<'a> Resolver<'a> {
             items.extend(source.items);
         }
 
+        // `math` (declared-language-surface DLS-18) — the libm intrinsics
+        // (`sin`, `pow`, …). Embedded the same way as `types` above: math
+        // functions are called pervasively across every stdlib device
+        // model (`headers/spice/*.phdl`), so they must resolve regardless
+        // of the caller's working directory, not just when `SourceMap`
+        // happens to resolve the on-disk `piperine::math` path.
+        if let Ok(source) = parse_str(include_str!("../headers/math.phdl")) {
+            items.extend(source.items);
+        }
+
         // Load the standard library built-ins dynamically if they resolve.
         // We ignore errors so that a bare-bones SourceMap doesn't panic.
         let cap_key = vec!["piperine".to_string(), "capabilities".to_string()];

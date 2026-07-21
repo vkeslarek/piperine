@@ -1,8 +1,14 @@
 //! Declared-first, fail-loud call resolution (declared-language-surface
-//! T11, DLS-02/03/04). Small, self-contained PHDL fixtures only — per
-//! design.md's "per-category progressive enforcement," no real stdlib
-//! header declares any `extern fn`/`extern impl` yet, so these tests prove
-//! the rule in isolation rather than exercising `headers/`.
+//! T11, DLS-02/03/04). Small, self-contained PHDL fixtures only. At the
+//! time T11 landed, no real stdlib header declared any `extern fn`/`extern
+//! impl` yet, so the DLS-03 fixtures below locally re-declared
+//! `extern fn sin(x: Real) -> Real;` themselves to test in isolation; T19
+//! (DLS-18) has since made `sin` a real, globally-declared `extern fn`
+//! (`headers/math.phdl`, auto-loaded into every compilation unit's
+//! prelude) — re-declaring it locally would now collide (two structurally
+//! identical `sin` candidates, an ambiguous-overload error instead of the
+//! intended DLS-03 assertion), so the fixtures below call the real,
+//! globally-declared `sin` directly instead of re-declaring it.
 //!
 //! Scope proven here:
 //! - A plain `fn` call resolves exactly as before this task (DLS-02).
@@ -34,13 +40,13 @@ fn plain_fn_call_resolves_unchanged() {
 
 /// DLS-03: an `extern fn` call dispatches with its declared signature
 /// validated against the call site — a matching call site elaborates
-/// cleanly (the `extern fn` here is backed by `math.rs`'s `MATH_FNS` table,
-/// so it also demonstrates a real, existing native binding, not just DLS-05's
-/// missing-binding path).
+/// cleanly. Uses the real, globally-declared `sin` (`headers/math.phdl`,
+/// DLS-18) rather than a local re-declaration (see module doc) — it's
+/// backed by `math.rs`'s `MATH_FNS` table, so it also demonstrates a real,
+/// existing native binding, not just DLS-05's missing-binding path.
 #[test]
 fn extern_fn_call_with_matching_signature_and_native_binding_resolves() {
     let src = "
-        extern fn sin(x: Real) -> Real;
         mod Top() {}
         digital Top {
             var y: Real = sin(1.0);
@@ -52,11 +58,13 @@ fn extern_fn_call_with_matching_signature_and_native_binding_resolves() {
 
 /// DLS-03 (negative half): an `extern fn` call whose argument type doesn't
 /// match the declared signature is a normal type/arity error — `extern`
-/// does not weaken argument checking (spec Edge Cases).
+/// does not weaken argument checking (spec Edge Cases). Uses the real,
+/// globally-declared `sin` (see module doc) — a single candidate, so this
+/// still exercises DLS-03's `validate_call` mismatch path directly rather
+/// than DLS-07's separate 0-match-overload path.
 #[test]
 fn extern_fn_call_with_mismatched_signature_fails_loud() {
     let src = "
-        extern fn sin(x: Real) -> Real;
         mod Top() {}
         digital Top {
             var z: Real = sin(\"nope\");

@@ -148,9 +148,24 @@ fn analyzed(source: &str) -> DocumentState {
 /// the `extern fn` declaration's own `decl_span` — the same
 /// `Resolution.decl_span` shape `goto_def.rs` already forwards for every
 /// ordinary declaration (module/param/wire/…), no special-casing needed.
+///
+/// Uses the real, globally-declared `sin` (`headers/math.phdl`, T19/
+/// DLS-18, auto-loaded into every compilation unit's prelude) rather than
+/// a local re-declaration: a local `extern fn sin` would now collide with
+/// the real one (two structurally identical candidates — an ambiguous
+/// overload, correctly rejected), and any *other* locally-declared name
+/// would correctly fail as DLS-05's "extern with no native binding" case,
+/// since every `MATH_FNS`-backed name now already has its own extern
+/// declaration. This is arguably the more faithful proof of P3's actual
+/// acceptance bar ("`sin(x)` in a stdlib header … returns a Location
+/// inside the relevant extern declaration") — the `decl_span` now points
+/// into the real `headers/math.phdl` text (embedded identically via
+/// `include_str!` here and in `piperine-lang`'s own prelude loading, so
+/// the expected offset can be computed precisely without reading the file
+/// from disk at test time).
 #[test]
 fn extern_fn_use_site_resolves_to_its_decl_span() {
-    let src = "extern fn sin(x: Real) -> Real;\nmod Top() {}\ndigital Top { var y: Real = sin(1.0); }";
+    let src = "mod Top() {}\ndigital Top { var y: Real = sin(1.0); }";
     let doc = analyzed(src);
     assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
 
@@ -159,8 +174,13 @@ fn extern_fn_use_site_resolves_to_its_decl_span() {
 
     assert_eq!(resolution.kind, SymbolKind::Function);
     let decl_span = resolution.decl_span.expect("extern fn must carry a decl_span");
-    let decl_start = src.find("extern fn sin").expect("declaration must be present");
-    assert_eq!(decl_span.offset(), decl_start, "decl_span must point at the extern fn declaration, not the call site");
+
+    let math_header = include_str!("../../piperine-lang/headers/math.phdl");
+    let decl_start = math_header.find("extern fn sin(").expect("declaration must be present in headers/math.phdl");
+    assert_eq!(
+        decl_span.offset(), decl_start,
+        "decl_span must point at headers/math.phdl's `extern fn sin` declaration, not the call site"
+    );
 }
 
 /// DLS-15: an `extern type` use site (the type name itself) resolves to the
