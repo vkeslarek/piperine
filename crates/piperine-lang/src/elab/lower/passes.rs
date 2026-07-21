@@ -182,7 +182,7 @@ impl ElabPass for AttachBehaviors {
 struct ResolveCalls;
 impl ElabPass for ResolveCalls {
     fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
-        elab.ctx.callables.resolve_calls(design)
+        elab.ctx.resolve_calls(design)
     }
 }
 

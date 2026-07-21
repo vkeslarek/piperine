@@ -8,7 +8,7 @@ pub mod impl_methods;
 
 pub use types::{TypeRegistry, TypeDefKind};
 pub use components::{ComponentRegistry, ComponentDef};
-pub use callables::{CallableRegistry, CallableDef};
+pub use callables::{CallableRegistry, CallableDef, ExternFnDecl};
 pub use schemas::{AttrField, SchemaRegistry, SchemaShape};
 pub use operators::{OperatorRegistry, ExternOperatorDecl};
 pub use impl_methods::ImplMethodTable;
@@ -84,5 +84,13 @@ impl ElabContext {
             operators: OperatorRegistry::new(),
             impl_methods: ImplMethodTable::new(),
         }
+    }
+
+    /// Entry point for the `ResolveCalls` elaboration pass
+    /// (declared-language-surface T11) — needs the whole `ElabContext`
+    /// (not just `CallableRegistry`) since resolution also consults
+    /// `impl_methods` for `Type::method(...)` calls.
+    pub fn resolve_calls(&self, design: &mut crate::pom::Design) -> Result<(), crate::pom::ElabError> {
+        crate::elab::resolve::resolve_calls(design, self)
     }
 }

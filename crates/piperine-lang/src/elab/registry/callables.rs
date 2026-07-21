@@ -31,6 +31,20 @@ pub trait CallableDef: Send + Sync {
 
     fn is_capability(&self) -> bool { false }
 
+    /// Whether this candidate came from an `extern` declaration (plain
+    /// `fn`/`impl` methods return `false`, the default) — declared-
+    /// language-surface T11 uses this to route extern-declared calls
+    /// through the native-binding check (DLS-05), never plain declarations
+    /// (DLS-02, which never had a native table to check in the first place).
+    fn is_extern(&self) -> bool { false }
+
+    /// The declaration's own `decl_span`, when known — `None` for
+    /// candidates with no textual source (legacy/untyped registrations).
+    /// Populated by `extern fn`/`extern task`/`extern impl` method
+    /// candidates and plain `fn` declarations alike, so LSP indexing
+    /// (T14) and DLS-05's error message can both point at real source.
+    fn decl_span(&self) -> Option<miette::SourceSpan> { None }
+
     /// A human-readable signature, used in overload-resolution error
     /// messages (SPEC DLS-07: "naming every candidate signature tried").
     fn signature_desc(&self) -> String {
@@ -83,11 +97,6 @@ impl CallableRegistry {
         self.callables.get(name).and_then(|v| v.first()).map(|c| c.as_ref())
     }
 
-    /// Walk a program and resolve calls.
-    pub fn resolve_calls(&self, design: &mut crate::pom::Design) -> Result<(), ElabError> {
-        crate::elab::resolve::resolve_calls(design)
-    }
-
     /// Overload resolution (SPEC DLS-07): pick the candidate registered for
     /// `name` whose declared parameter types structurally match
     /// `arg_types` exactly (no implicit widening — a candidate's arity is
@@ -126,4 +135,22 @@ impl CallableRegistry {
             )))),
         }
     }
+}
+
+/// A registered `extern fn`/`extern task`/`extern impl` method — wraps the
+/// parsed signature plus its param types, resolved once at registration
+/// time (the declared types must already be registered by then), so it can
+/// be stored as a `CallableDef` candidate in `CallableRegistry` or
+/// `ImplMethodTable`'s overload sets (declared-language-surface T11,
+/// DLS-01/03/05).
+pub struct ExternFnDecl {
+    pub sig: crate::parse::ast::ExternSig,
+    pub param_types: Vec<ValueType>,
+}
+
+impl CallableDef for ExternFnDecl {
+    fn name(&self) -> &str { &self.sig.name }
+    fn param_types(&self) -> Option<&[ValueType]> { Some(&self.param_types) }
+    fn is_extern(&self) -> bool { true }
+    fn decl_span(&self) -> Option<miette::SourceSpan> { self.sig.span }
 }

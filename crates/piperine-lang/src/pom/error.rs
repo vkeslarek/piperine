@@ -171,6 +171,14 @@ pub enum ElabErrorKind {
         field: String,
         reason: String,
     },
+    /// declared-language-surface DLS-05: a call resolved to an `extern`
+    /// declaration (found in the registry — not a DLS-04 "no declaration"
+    /// case), but that declaration's native Rust-side implementation table
+    /// has no matching entry — a stdlib-authoring bug, distinct from a
+    /// PHDL-user referencing an undeclared name.
+    #[error("`extern` declaration `{name}` (used in module `{module}`) has no matching native implementation registered")]
+    #[diagnostic(code(E2025))]
+    ExternMissingBinding { name: String, module: String },
     /// A catch-all for other elaboration errors.
     #[error("{0}")]
     #[diagnostic(code(E2999))]

@@ -24,6 +24,8 @@ impl CallableDef for ExternOperatorDecl {
     // resolvable param types) land in T22's migration; until then every
     // candidate is permissively "always matches" (the `CallableDef` default),
     // consistent with `FnDecl`'s current (pre-T16/T22) scope.
+    fn is_extern(&self) -> bool { true }
+    fn decl_span(&self) -> Option<miette::SourceSpan> { self.0.span }
 }
 
 pub struct OperatorRegistry {
