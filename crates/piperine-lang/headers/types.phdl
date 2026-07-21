@@ -1,0 +1,13 @@
+// declared-language-surface P4 sub-phase (DLS-17) — the seven primitive
+// value types, textually declared so ctrl+click on `Real`/`Integer`/etc.
+// resolves to a real declaration instead of falling back to a hardcoded
+// Rust list (`ElabContext::new()`'s former `prims` vec). The native
+// `ValueType` binding each name dispatches to lives in
+// `elab/registry/types.rs`'s implementation table.
+extern type Real;
+extern type Natural;
+extern type Integer;
+extern type Complex;
+extern type Boolean;
+extern type Quad;
+extern type String;

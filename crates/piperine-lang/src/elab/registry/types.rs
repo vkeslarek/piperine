@@ -37,14 +37,18 @@ impl TypeDefKind {
             TypeDefKind::Bundle(_) => Err(ElabError::from(ElabErrorKind::Other(
                 "Bundles are flattened and do not resolve to a simple TypeRef".into()
             ))),
-            // Groundwork only (T7): `extern type` declares a textual name/
-            // decl_span, but its native value-type binding is populated by
-            // the P4 primitive-type migration (T16), not by this task —
-            // resolving one here before then is a distinct, DLS-05-style
-            // "extern declared but no registry binding" failure.
-            TypeDefKind::Extern { name, .. } => Err(ElabError::from(ElabErrorKind::Other(format!(
-                "extern type `{name}` has no native value-type binding registered yet"
-            )))),
+            // `extern type` dispatches to the native value-type binding
+            // table below (declared-language-surface T16, DLS-17) — an
+            // `extern type` with no matching native entry is a distinct,
+            // DLS-05-style "extern declared but no registry binding"
+            // failure, same class as `extern fn`'s missing-`MATH_FNS`-entry
+            // case.
+            TypeDefKind::Extern { name, .. } => match native_extern_val_type(name) {
+                Some(val_type) => Ok(TypeRef::Value(val_type)),
+                None => Err(ElabError::from(ElabErrorKind::Other(format!(
+                    "extern type `{name}` has no native value-type binding registered yet"
+                )))),
+            },
         }
     }
 
@@ -54,6 +58,26 @@ impl TypeDefKind {
             _ => None,
         }
     }
+}
+
+/// Native `ValueType` binding for each `extern type`-declared primitive
+/// name — the implementation table `TypeDefKind::Extern::resolve` dispatches
+/// to, mirroring `math.rs`'s `MATH_FNS` pattern for `extern fn` (declared-
+/// language-surface T16, DLS-17). The seven entries are the same primitives
+/// `ElabContext::new()` used to hardcode directly as `TypeDefKind::Primitive`
+/// before this migration; `headers/types.phdl` is now their sole textual
+/// declaration.
+fn native_extern_val_type(name: &str) -> Option<ValueType> {
+    Some(match name {
+        "Real" => ValueType::Real,
+        "Natural" => ValueType::Natural,
+        "Integer" => ValueType::Integer,
+        "Complex" => ValueType::Complex,
+        "Boolean" => ValueType::Boolean,
+        "Quad" => ValueType::Quad,
+        "String" => ValueType::Str,
+        _ => return None,
+    })
 }
 
 pub struct TypeRegistry {

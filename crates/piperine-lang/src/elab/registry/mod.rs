@@ -40,21 +40,13 @@ impl Default for ElabContext {
 
 impl ElabContext {
     pub fn new() -> Self {
-        let mut types = TypeRegistry::new();
-        use crate::pom::ValueType;
-        use self::types::TypeDefKind;
-        let prims = vec![
-            ("Real", ValueType::Real),
-            ("Natural", ValueType::Natural),
-            ("Integer", ValueType::Integer),
-            ("Complex", ValueType::Complex),
-            ("Boolean", ValueType::Boolean),
-            ("Quad", ValueType::Quad),
-            ("String", ValueType::Str),
-        ];
-        for (name, val_type) in prims {
-            types.register(TypeDefKind::Primitive { name: name.to_string(), val_type });
-        }
+        // The seven primitives (`Real`, `Natural`, `Integer`, `Complex`,
+        // `Boolean`, `Quad`, `String`) are no longer hardcoded here — they
+        // register via `extern type` declarations parsed from
+        // `headers/types.phdl` (declared-language-surface T16, DLS-17),
+        // routed through the ordinary `Register` pass exactly like any
+        // other top-level item.
+        let types = TypeRegistry::new();
 
         let mut schemas = SchemaRegistry::new();
         // `@rfport(num, z0)` — stdlib-reserved attribute marking a node/wire
