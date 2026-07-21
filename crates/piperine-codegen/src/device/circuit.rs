@@ -77,7 +77,7 @@ pub struct CircuitCompiler<'p> {
     kernels: HashMap<String, Arc<CompiledModule>>,
     /// Builds `@device`-annotated instances (SPEC Part VI §7). `None` means
     /// no plugin host is wired — a `@device` instance then fails loud.
-    pub(super) provider: Option<&'p dyn super::provider::DeviceProvider>,
+    pub(super) provider: Option<&'p dyn super::plugin::DeviceProvider>,
     /// Fuse connected pure-combinational digital cones into single
     /// `DigitalNetwork` elements (Verilator-style whole-cone evaluation).
     /// `false` keeps every digital instance on the per-device path — the
@@ -97,7 +97,7 @@ impl<'p> CircuitCompiler<'p> {
     }
 
     /// Wire a plugin host as the builder for `@device` instances.
-    pub fn with_device_provider(mut self, provider: &'p dyn super::provider::DeviceProvider) -> Self {
+    pub fn with_device_provider(mut self, provider: &'p dyn super::plugin::DeviceProvider) -> Self {
         self.provider = Some(provider);
         self
     }

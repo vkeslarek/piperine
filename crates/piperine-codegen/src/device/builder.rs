@@ -31,7 +31,7 @@ pub(super) struct InstanceBuilder<'c, 'p> {
     top: &'p Module,
     top_body: &'p LoweredBody,
     top_params: Vec<f64>,
-    netlist: Netlist,
+    pub(super) netlist: Netlist,
     pub(super) devices: Vec<Box<dyn Element>>,
     pub(super) digital_nets: HashMap<NodeId, DigitalNet>,
     /// Fresh ids for module-internal analog nodes (top node ids come first).
@@ -85,7 +85,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
     /// this module's `NodeId`s — the structural work `lower_bodies` used to
     /// do once for every module's `IrInstance.connections`; now done here,
     /// once per instantiation, directly from the POM.
-    fn resolve_connections(&self, instance: &Instance) -> Result<Vec<NodeId>, CodegenError> {
+    pub(super) fn resolve_connections(&self, instance: &Instance) -> Result<Vec<NodeId>, CodegenError> {
         instance
             .ports()
             .iter()
@@ -302,107 +302,6 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
         Ok(())
     }
 
-    /// Build a `@device`-annotated instance through the wired
-    /// [`DeviceProvider`](super::provider::DeviceProvider) (SPEC Part VI §7):
-    /// resolve each port into an analog netlist reference or a digital
-    /// scheduler net (per its `@port(kind = …)` or its discipline), hand the
-    /// spec to the provider, and inject the returned `Element` as-is.
-    fn add_plugin_instance(
-        &mut self,
-        instance: &Instance,
-        child: &'p Module,
-        dev_attr: &piperine_lang::pom::module::Attribute,
-    ) -> Result<(), CodegenError> {
-        use piperine_lang::Value;
-        let provider = self.compiler.provider.ok_or_else(|| {
-            CodegenError::unsupported(format!(
-                "instance `{}` is a plugin device (`@device`) but no plugin host is wired",
-                instance.name()
-            ))
-        })?;
-        let str_field = |attr: &piperine_lang::pom::module::Attribute, field: &str| -> Option<String> {
-            match attr.field(field) {
-                Some(Value::Str(s)) => Some(s.clone()),
-                _ => None,
-            }
-        };
-        let plugin = str_field(dev_attr, "plugin").ok_or_else(|| {
-            CodegenError::Invalid(format!("instance `{}`: @device needs a `plugin` string", instance.name()))
-        })?;
-        let type_id = str_field(dev_attr, "type").ok_or_else(|| {
-            CodegenError::Invalid(format!("instance `{}`: @device needs a `type` string", instance.name()))
-        })?;
-        if instance.ports().len() != child.ports().len() {
-            return Err(CodegenError::Invalid(format!(
-                "instance `{}` connects {} nets, module `{}` has {} ports",
-                instance.name(), instance.ports().len(), child.name(), child.ports().len()
-            )));
-        }
-        let connections = self.resolve_connections(instance)?;
-
-        let mut ports = Vec::with_capacity(child.ports().len());
-        for (i, port) in child.ports().iter().enumerate() {
-            let port_attr = port.attributes().iter().find(|a| a.schema() == "port");
-            let logical = port_attr
-                .and_then(|a| str_field(a, "name"))
-                .unwrap_or_else(|| port.name().to_string());
-            // `@port(kind = …)` wins; otherwise the port's discipline decides
-            // (digital storage disciplines → scheduler net, else MNA node).
-            let kind = port_attr
-                .and_then(|a| str_field(a, "kind"))
-                .unwrap_or_else(|| {
-                    match port.ty.discipline_name() {
-                        "Bit" | "Logic" | "DDiscrete" => "digital".to_string(),
-                        _ => "analog".to_string(),
-                    }
-                });
-            let parent = connections[i];
-            let binding = match kind.as_str() {
-                "digital" => {
-                    let next = self.digital_nets.len();
-                    super::provider::PortBinding::Digital(
-                        *self.digital_nets.entry(parent).or_insert(DigitalNet(next)),
-                    )
-                }
-                "analog" => {
-                    let node = self.node_identifier(parent);
-                    super::provider::PortBinding::Analog(self.netlist.connect_node(node))
-                }
-                other => {
-                    return Err(CodegenError::Invalid(format!(
-                        "instance `{}` port `{}`: unknown @port kind `{other}` (analog|digital)",
-                        instance.name(), port.name()
-                    )));
-                }
-            };
-            ports.push(super::provider::PluginPort {
-                logical,
-                phdl_name: port.name().to_string(),
-                direction: port.direction.clone(),
-                binding,
-            });
-        }
-
-        let mut attributes: Vec<piperine_lang::pom::module::Attribute> = child.attributes().to_vec();
-        attributes.extend(instance.attributes().iter().cloned());
-        let spec = super::provider::PluginDeviceSpec {
-            plugin,
-            type_id: type_id.clone(),
-            instance_label: instance.name().to_string(),
-            attributes,
-            ports,
-            params: instance.params().iter().map(|(n, v)| (n.clone(), v.clone())).collect(),
-        };
-        let device = provider.build(spec).map_err(|e| {
-            CodegenError::Invalid(format!(
-                "plugin device `{type_id}` (instance `{}`): {e}",
-                instance.name()
-            ))
-        })?;
-        self.devices.push(device);
-        Ok(())
-    }
-
     /// Compile the top module's own behavior bodies into a device (SPEC
     /// §7.3, B.1, B.10). The top's analog/digital blocks contribute to
     /// the child instance nodes — parasitic loads, coupling, trim. The
@@ -494,7 +393,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
     /// Map a top-module node to a solver identifier. Digital-domain nodes
     /// also pass through here for mixed instances; the analog side sees them
     /// as ordinary nodes.
-    fn node_identifier(&self, node: NodeId) -> NodeIdentifier {
+    pub(super) fn node_identifier(&self, node: NodeId) -> NodeIdentifier {
         if node.is_ground() {
             NodeIdentifier::Gnd
         } else {
