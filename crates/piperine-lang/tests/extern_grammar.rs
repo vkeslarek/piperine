@@ -94,3 +94,28 @@ fn extern_task_with_body_is_a_parse_error_naming_the_declaration() {
     let msg = err.to_string();
     assert!(msg.contains("extern task $temperature"), "error should name the offending declaration, got: {msg}");
 }
+
+// ─────────────────────────── T4: extern operator (DLS-11) ──────────────────
+
+#[test]
+fn extern_operator_parses_with_correct_decl_span() {
+    let src = "extern operator ddt(x: Real) -> Real;";
+    let decl = parse_one_extern(src);
+    let ExternDecl::Operator(sig) = &decl else {
+        panic!("expected ExternDecl::Operator, got {decl:?}");
+    };
+    assert_eq!(sig.name, "ddt");
+    assert_eq!(sig.params.len(), 1);
+    assert_eq!(sig.ret.name, "Real");
+    let span = sig.span.expect("extern operator must carry a decl_span");
+    assert_eq!(span.offset(), 0);
+    assert_eq!(span.offset() + span.len(), src.len());
+}
+
+#[test]
+fn extern_operator_with_body_is_a_parse_error_naming_the_declaration() {
+    let src = "extern operator ddt(x: Real) -> Real { x }";
+    let err = parse_str(src).expect_err("a body on `extern operator` must be a parse error");
+    let msg = err.to_string();
+    assert!(msg.contains("extern operator ddt"), "error should name the offending declaration, got: {msg}");
+}

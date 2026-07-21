@@ -64,6 +64,23 @@ pub(crate) fn parse_extern_task(parser: &mut Parser) -> Result<ExternDecl, Parse
     Ok(ExternDecl::Task(ExternSig { span: Some((start, end - start).into()), name, params, ret }))
 }
 
+/// `extern operator name(params) -> RetType;`
+pub(crate) fn parse_extern_operator(parser: &mut Parser) -> Result<ExternDecl, ParseError> {
+    let start = parser.current_span_start();
+    parser.expect_ident_str("extern")?;
+    parser.expect_ident_str("operator")?;
+    let name = parser.parse_ident()?;
+    let (params, ret) = parse_sig_tail(parser)?;
+    if parser.peek() == Some(&Tok::LBrace) {
+        return Err(parser.make_error(format!(
+            "`extern operator {name}` may not have a body — extern declarations are signature-only"
+        )));
+    }
+    parser.expect(&Tok::Semi)?;
+    let end = parser.previous_span_end();
+    Ok(ExternDecl::Operator(ExternSig { span: Some((start, end - start).into()), name, params, ret }))
+}
+
 /// Parses `(params) -> RetType` — the tail shared by every `extern`
 /// signature form (`fn`/`task`/`operator`, and each `extern impl` method).
 /// Mirrors [`FnSig::parse`]'s parameter-list grammar (no defaults — not

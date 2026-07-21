@@ -112,6 +112,9 @@ pub enum ExternDecl {
     /// `extern task $name(params) -> RetType;` — a system task; `sig.name`
     /// retains the `$`-prefixed form.
     Task(ExternSig),
+    /// `extern operator name(params) -> RetType;` — a runtime operator
+    /// (`ddt`, `delay`, `slew`, …).
+    Operator(ExternSig),
 }
 
 impl ExternDecl {
@@ -120,16 +123,17 @@ impl ExternDecl {
     pub fn span(&self) -> Option<miette::SourceSpan> {
         match self {
             ExternDecl::Type { span, .. } => *span,
-            ExternDecl::Fn(sig) | ExternDecl::Task(sig) => sig.span,
+            ExternDecl::Fn(sig) | ExternDecl::Task(sig) | ExternDecl::Operator(sig) => sig.span,
         }
     }
 
     /// The declared name (the type name for `extern type`; the
-    /// function/task name — `$`-prefixed for `extern task` — otherwise).
+    /// function/task/operator name — `$`-prefixed for `extern task` —
+    /// otherwise).
     pub fn name(&self) -> &str {
         match self {
             ExternDecl::Type { name, .. } => name,
-            ExternDecl::Fn(sig) | ExternDecl::Task(sig) => &sig.name,
+            ExternDecl::Fn(sig) | ExternDecl::Task(sig) | ExternDecl::Operator(sig) => &sig.name,
         }
     }
 }
