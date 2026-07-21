@@ -271,6 +271,7 @@ Path      ::= Ident { "::" Ident }
 Item      ::= { Attribute } [ "pub" ] ItemKind
 ItemKind  ::= ModDecl | BehaviorDecl | DisciplineDecl | BundleDecl | EnumDecl
              | CapabilityDecl | ImplDecl | FnDecl | ConstDecl | BenchDecl
+             | ExternDecl
 ConstDecl ::= "const" Ident ":" Type "=" Expr ";"
 ```
 
@@ -287,6 +288,7 @@ ConstDecl ::= "const" Ident ":" Type "=" Expr ";"
 | `mod` | module shape (§7) |
 | `analog`/`digital` | module behavior (§10) |
 | `impl` | bundle methods / capability impl (§6.5–§6.6) |
+| `extern` | signature-only native declaration (§5.4, MD-24) |
 
 ### 5.3 Packages and visibility
 
@@ -309,6 +311,34 @@ items are always exported regardless of `pub`, matching the prelude injection mo
 
 A `const NAME : T = expr;` declares a global compile-time constant, evaluated at
 elaboration and usable wherever a param or literal is expected.
+
+### 5.4 `extern` declarations (MD-24 — declared language surface)
+
+A declaration marked `extern` is signature-only (no body); its implementation defers
+to a native registry reached only after the declaration resolves the call. Seven
+forms, one keyword:
+
+| Form | Purpose | Stdlib home |
+|------|---------|-------------|
+| `extern type Real;` | primitive value type | `headers/types.phdl` |
+| `extern fn sin(x: Real) -> Real;` | libm intrinsic | `headers/math.phdl` |
+| `extern task $display() -> Unit;` | system task (`$`-prefixed name) | `headers/tasks.phdl` |
+| `extern operator ddt(x: Real) -> Real;` | runtime operator | `headers/operators.phdl` |
+| `extern attribute device { plugin: String, type: String }` | attribute schema | `headers/device_port.phdl` (+ plugin `extern.phdl` stubs) |
+| `extern impl TypeName { fn method(self, ...) -> Ret; ... }` | type methods (signature only per method) | `headers/types.phdl` (casts) |
+| `extern impl Capability for TypeName { ... }` | capability impl (reserved for future primitive capability dispatch) | (none today) |
+
+A body on any `extern` declaration (or on any method inside an `extern impl` block)
+is a parse error — `extern` is signature-only by construction, never a body with a
+native escape hatch.
+
+`extern impl` methods (inherent or capability-gated) participate in **overload
+resolution** by argument type: `extern impl Real { fn from(x: Integer) -> Real; fn
+from(x: Boolean) -> Real; }` resolves `Real::from(b)` to the Boolean candidate. Zero
+candidates matching → fail loud naming every candidate tried; more than one matching
+→ fail loud as ambiguous. This is the surface that replaced the former bare-name cast
+exception (`real(x)`/`int(x)`/`bit(x)`/`Boolean(x)`/`Quad(x)` — deleted, not migrated;
+casts are now ordinary declared `Real::from(x)`-shaped associated-function calls).
 
 **Validation.** An unresolved `use` import is stored and deferred; a reference to an
 unknown item at a use-site is E2002 (`UndefinedType`) or E2003 (`UndefinedModule`).
@@ -1000,7 +1030,29 @@ electrothermal resistor with both `Electrical` and `Thermal` ports) needs no con
 because no single net crosses a boundary — the coupling happens inside the device's own
 `analog` block.
 
-**Validation.** E2013 (`WidthMismatch`); E2014 (`DisciplineCrossing`).
+### 13.1 Declared-first name resolution
+
+A companion rule, locked as project decision MD-24, governs *name resolution*: every
+referenceable PHDL name — primitive type, math function, system task, runtime operator,
+attribute schema, type method — resolves to a **textual declaration** in the project's
+headers/source (or a loaded plugin's published `extern.phdl` stub). Name lookup that
+finds no textual declaration is a compile error, never a silent fallback into a
+Rust-native registry. A declaration marked `extern` (§5.4) is the only case allowed to
+defer its *implementation* to a native registry — its full *shape* (params, types,
+return type) is 100% textual, so LSP go-to-definition always lands on a real
+declaration line.
+
+This rule generalizes the original No-Magic rule (which governed only net connections)
+to the entire name-resolution surface. A regression guard
+(`crates/piperine-lang/tests/extern_coverage_guard.rs`) iterates every native
+implementation table (`MATH_FNS`, `TaskRegistry`, the operator contract, the 7
+primitive types, the `@device`/`@port` schemas) and asserts a matching `extern`
+declaration exists, so the mechanism can't silently regress back into "magic" after a
+future change.
+
+**Validation.** E2013 (`WidthMismatch`); E2014 (`DisciplineCrossing`); an unresolved
+identifier at any reference site is a fail-loud `ElabErrorKind::Other` naming the
+identifier and use site.
 
 ---
 

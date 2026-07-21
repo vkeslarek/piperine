@@ -970,6 +970,33 @@ test" as a binding project convention (per design.md's flagged candidate).
 - [ ] Build gate passes.
 **Tests**: none · **Gate**: build
 **Commit**: `docs: extern language surface mechanism + convention (MD-NNN)`
+**Status**: ✅ Complete — this commit. Five doc surfaces updated:
+- **`CLAUDE.md`**: new "Declared language surface (MD-24)" section between
+  Naming & conventions and Files not to edit casually, listing all seven
+  `extern` forms with their stdlib-header home and the cast-deletion
+  rationale, plus the plugin-stub fail-loud enforcement.
+- **`docs/spec/part_i_language.md` §5**: top-level items table gains the
+  `extern` row; new §5.4 documents the seven `extern` forms exhaustively
+  with a per-form table (purpose, stdlib home) and the overload-resolution
+  rule for `extern impl` methods (which is what replaced the deleted
+  bare-name cast exception).
+- **`docs/spec/part_i_language.md` §13.1**: new subsection under No-Magic
+  generalizes the rule from "net connections only" to the entire
+  name-resolution surface; cites MD-24 and the regression-guard fixture.
+- **`docs/spec/part_v_builtins.md` §0**: new section at the top, ahead of
+  the existing alias policy — maps every builtin catalog (math/operators/
+  syscalls/diagnostics/schemas/primitive types/casts/plugin stubs) to the
+  specific `extern`-declaration header that backs it.
+- **`.specs/STATE.md`**: MD-24 ("Declared language surface") appended after
+  MD-23, locked; the Handoff Snapshot bumped to record the feature's
+  delivery (666 passed, 0 failed, 5 ignored, 0 rustc warnings).
+
+Also tracked at this commit: the three feature-spec files themselves
+(`spec.md`, `context.md`, `design.md`) — they were never `git add`ed
+during the earlier T1–T27 work (an oversight by the prior batch); this
+commit brings them under version control so the feature has a complete
+paper trail. (T28 is the natural home — these are documentation
+artifacts, the spec the rest of the feature references.)
 
 ---
 

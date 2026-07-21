@@ -132,6 +132,34 @@ both a package and the workspace) — always pass `--workspace`.
 - PHDL pre-folds param defaults during elaboration; `fn` default parameters are elaboration
   constants honored by both the interpreter and codegen's fn inliner (`flatten/analog.rs`).
 
+## Declared language surface (MD-24)
+
+Every referenceable PHDL name resolves to a **textual declaration** in
+`crates/piperine-lang/headers/` (or a plugin's published `extern.phdl`
+stub). Name lookup that finds no declaration is a fail-loud compile error,
+never a silent fallback into a Rust-native registry. The seven `extern`
+forms cover every previously-magic surface:
+
+- `extern type Real;` — primitive value types (`headers/types.phdl`).
+- `extern fn sin(x: Real) -> Real;` — libm intrinsics (`headers/math.phdl`).
+- `extern task $display() -> Unit;` — system tasks (`headers/tasks.phdl`).
+- `extern operator ddt(x: Real) -> Real;` — runtime operators
+  (`headers/operators.phdl`).
+- `extern attribute device { plugin: String, type: String }` — plugin
+  system's own `@device`/`@port` schemas (`headers/device_port.phdl`).
+- `extern impl Real { fn from(x: Integer) -> Real; ... }` — type methods
+  (T17's cast-replacement surface; overload-resolved by argument type).
+- `extern impl Capability for TypeName { ... }` — capability impls
+  (reserved for future native capability dispatch on primitives; binary
+  operators are pure grammar, not dispatched through capabilities today).
+
+A loaded plugin publishes its own attribute schemas via an `extern.phdl`
+stub auto-imported at load time; a schema-contributing plugin that
+publishes no stub fails loud at `PluginHost::load_for_project`
+(`PluginError::MissingExternStub`).
+
+Permanent regression guard: `crates/piperine-lang/tests/extern_coverage_guard.rs`.
+
 ## Files not to edit casually
 
 - `crates/piperine-lang/src/parse/` — hand-written recursive-descent parsers; changes

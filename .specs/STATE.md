@@ -263,11 +263,80 @@ modules: name by pipeline stage, narrow visibility by evidence not habit.
 
 ---
 
+### MD-24: Declared language surface — every name resolves to a textual declaration
+
+Every referenceable PHDL name — primitive type, math function, system task,
+runtime operator, attribute schema, type method — resolves to a textual
+declaration in the project's headers/source (or a loaded plugin's published
+`extern.phdl` stub). Name lookup that finds no textual declaration is a
+compile error (`ElabErrorKind::Other`), never a silent fallback into a
+Rust-native registry. A declaration marked `extern` is the only case allowed
+to defer its *implementation* to a native registry — its full *shape*
+(params, types, return type) is 100% textual, so LSP go-to-definition always
+lands on a real declaration.
+
+The seven `extern` forms (`extern type`/`fn`/`task`/`operator`/`attribute`/
+`impl`) cover every previously-magic surface: the 7 primitive value types
+(T16), libm intrinsics (T19), system tasks (T20), runtime operators (T22),
+the plugin system's own `@device`/`@port` schemas (T23), and plugin-
+contributed schemas via auto-imported `extern.phdl` stubs (T24/T25). Bare-
+name casts (`real(x)`/`int(x)`/`bit(x)`/`Boolean(x)`/`Quad(x)`) are deleted
+as a language exception (T17/T18) — replaced by ordinary overloaded
+`extern impl TypeName { fn from(x: SourceType) -> TypeName; }` associated
+functions, resolved by argument type (T9's overload resolution).
+
+A permanent regression guard
+(`crates/piperine-lang/tests/extern_coverage_guard.rs`, T27) iterates every
+native table (`MATH_FNS`, `TaskRegistry`, the operator contract, primitive
+types, schemas) and asserts a matching `extern` declaration exists — catches
+the mechanism silently regressing back into "magic" after a future change.
+
+**Status:** Locked (user, 2026-07-21 — `declared-language-surface` feature,
+T1–T29 delivered). The stdlib's own native surface is fully migrated; third-
+party/example plugins beyond the stdlib's own `@device`/`@port` migrate
+on-demand (Out of Scope for this feature, follow-up). Binary operators
+(`+`/`-`/`*`/`/`/`==`/`<`/etc.) are pure grammar (Out of Scope per spec) —
+`Add`/`Sub`/`Eq`/etc. capability declarations remain user-type machinery,
+not primitive-type native methods (T26's documented "none found" finding).
+
+---
+
 ## Handoff Snapshot
 
-**Last updated:** 2026-07-19 — `spectral-analyses` DELIVERED (T1–T16);
-`solver-simplification` batches 1–5 (P0–P8) DONE, batch 6 remaining.
-`cargo test --workspace`: 582 passed, 0 failed, 5 ignored, 0 rustc warnings.
+**Last updated:** 2026-07-21 — `declared-language-surface` DELIVERED
+(T1–T29); MD-24 locked. `cargo test --workspace`: 666 passed, 0 failed,
+5 ignored, 0 rustc warnings.
+
+### Feature — `declared-language-surface` (DELIVERED 2026-07-21)
+
+Spec/design/tasks in `.specs/features/declared-language-surface/`. Every
+referenceable PHDL name now resolves to a textual declaration in stdlib
+headers or a plugin's published `extern.phdl` stub — name lookup that finds
+no declaration is a fail-loud compile error, never a silent fallback into a
+Rust-native registry (MD-24). The seven `extern` forms (`type`/`fn`/`task`/
+`operator`/`attribute`/`impl`) cover every previously-magic surface: the 7
+primitive value types (`headers/types.phdl`), libm intrinsics
+(`headers/math.phdl`), system tasks (`headers/tasks.phdl`), runtime
+operators (`headers/operators.phdl`), `@device`/`@port` schemas
+(`headers/device_port.phdl`, parsed by `PluginHost::seed_schemas`), and
+plugin-contributed schemas (auto-imported `extern.phdl` stub, fail-loud
+`PluginError::MissingExternStub` when a schema-contributing plugin
+publishes none). Bare-name casts deleted entirely (T17) — replaced by
+overloaded `extern impl TypeName { fn from(...) -> TypeName; }` associated
+functions, resolved by argument type via T9's new overload resolution
+mechanism.
+
+Permanent regression guard at
+`crates/piperine-lang/tests/extern_coverage_guard.rs` (T27) — iterates
+every native table and asserts a matching `extern` declaration exists, so
+the mechanism can't silently regress back into "magic" after a future
+change. Discrimination sensor verified by hand: deleting `extern fn cos`
+from `headers/math.phdl` produces the named failure.
+
+**Next for this feature:** none — delivered. If the broader ecosystem
+(third-party plugins beyond the stdlib's own) ever needs migration, the
+mechanism is in place; author an `extern.phdl` stub alongside each plugin
+and the existing auto-import path wires it up.
 
 ### Feature — `spectral-analyses` (DELIVERED 2026-07-19)
 

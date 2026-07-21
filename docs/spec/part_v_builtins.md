@@ -5,6 +5,33 @@ functions, analog operators, `$`-syscalls, diagnostic tasks, `@`-events, and the
 always-in-scope prelude. This reference is **normative** for the builtin set;
 operators, syscalls, and events are extensible via the layer-2 registries (Part I §14).
 
+## §0 Declared surface (MD-24)
+
+Every name listed in this Part is a **textual declaration** in a stdlib header, marked
+`extern` (Part I §5.4), not a Rust-only registry entry. The implementation backing
+each declaration lives in a Rust table consulted *only after* the declaration resolves
+the call — so LSP go-to-definition (ctrl+click) on `sin`, `$temperature`, `ddt`,
+`@device`, `Real`, or `Real::from` lands on a real declaration line, never silently
+dead-ends.
+
+| Section | Header | Form |
+|---------|--------|------|
+| §1 Math functions | `crates/piperine-lang/headers/math.phdl` | `extern fn` |
+| §2 Analog operators (the `Expr::Call`-shaped 8) | `crates/piperine-lang/headers/operators.phdl` | `extern operator` |
+| §2 Analog operators (the `EventSpec::Named` 3: `cross`/`above`/`timer`) | same | `extern operator` (textual presence only; resolved by `EventRegistry`) |
+| §3 `$`-syscalls (the value-returning analog-context set) | `crates/piperine-lang/headers/tasks.phdl` | `extern task` |
+| §4 Diagnostic / control tasks | `crates/piperine-lang/headers/tasks.phdl` | `extern task` |
+| `@device`/`@port` attribute schemas | `crates/piperine-lang/headers/device_port.phdl` | `extern attribute` (parsed by `PluginHost::seed_schemas`, not part of every project's prelude) |
+| Primitive value types (Part I §6.1) | `crates/piperine-lang/headers/types.phdl` | `extern type` |
+| Cast associated functions (`Real::from` etc.) | `crates/piperine-lang/headers/types.phdl` | `extern impl TypeName { fn from(...) -> TypeName; ... }` |
+| Plugin-contributed attribute schemas | each plugin's `extern.phdl` stub | `extern attribute` (auto-imported at load time; a schema-contributing plugin that publishes no stub fails loud `PluginError::MissingExternStub`) |
+
+A permanent regression guard
+(`crates/piperine-lang/tests/extern_coverage_guard.rs`) iterates every native
+implementation table and asserts a matching `extern` declaration exists, so a future
+commit adding an entry to `MATH_FNS` or `TaskRegistry::with_builtins()` without
+authoring the matching declaration fails this test by name.
+
 ## Alias policy
 
 The native canonical spelling is one per meaning: `|` for event OR, `ln` for natural
