@@ -70,9 +70,9 @@ Six pillars. V1 ships when all six are green.
 ## P1 — Solver complete
 
 The merged open-gaps audit (ngspice-46 vs the native solver). **CLOSED
-2026-07-18** (feature `p1-solver-complete`): every checkbox below is done or
-moved to the named backlog table at the end of the section (`urc` blocked on
-`codegen-parametric-devices`; `laplace_*`/`zi_*` stay fail-loud).
+2026-07-18** (feature `p1-solver-complete`); `urc` shipped 2026-07-22 via
+`hierarchy-flattening`; `laplace_*`/`zi_*` stay fail-loud. Every checkbox
+below is done or in the named backlog table at the end of the section.
 
 ### Analyses
 
@@ -89,9 +89,17 @@ moved to the named backlog table at the end of the section (`urc` blocked on
       anti-false-fixed-point guard, digital k·T diagnostic,
       `estimated_settle_time` from the monodromy eigenvalue; uniform hosts
       (`run_pss` / `module.pss`, MD-22) validated on a full-wave rectifier.
-- [ ] `.four` — Python host post-processing (numpy FFT on `Waveform`), not a
-      solver analysis (tracked in P3).
-- [ ] `.pz`, `.disto`, `.sp` — MISSING, niche, post-V1.
+- [x] **`.four`/`.pz`/`.disto`/`.sp` — DONE 2026-07-19** (feature
+      `spectral-analyses`, T1–T16): `.four` is `Waveform::fourier`
+      post-processing (Rust direct-DFT, Python numpy, parity-tested), no
+      solver analysis. `.pz` (poles via QZ on `(G,C)`, zeros via the
+      Rosenbrock bordered pencil), `.sp` (per-port Thévenin excitation +
+      power-wave S-matrix, ports declared via the `@rfport` attribute — no
+      new device kind), and `.disto` (full Volterra HD2/HD3/IM2/IM3 from
+      symbolic `disto2`/`disto3` JIT kernels) all ship on both hosts
+      (MD-22). ngspice cross-checked for `.four`/`.pz`/`.disto`
+      (`tests/ngspice_validation.rs`); `.sp` has no ngspice reference to
+      cross-check against (documented Out of Scope).
 
 ### Transient
 
@@ -161,11 +169,22 @@ lossless tline, xfmr — the old MOS1 1.5×/JFET 15 mV discrepancies were fixed
       goldens per region, live.
 - [x] Lossless transmission line — DONE (T15, `6bfc50f`): Branin model over
       the `delay` runtime operator; matched/open termination cases green.
-- [ ] `urc` lumped RC line — **BLOCKED on codegen** (T16): parametric
-      devices need hierarchy flattening / const-args-into-behavior /
-      array-node expansion — tracked as the `codegen-parametric-devices`
-      feature. LTRA (lossy tline, full convolution) — **backlog**: urc
-      covers the practical lossy case.
+- [x] `urc` lumped RC line — DONE (`hierarchy-flattening` feature,
+      `c15048d`…`a8ef83a`): authored as pure-structural fixed-N modules
+      (`urc2`/`urc5`/`urc10` in `headers/spice/urc.phdl`) over a reusable
+      `urc_seg` mid-level submodule. The `FlattenHierarchy` elaboration pass
+      (non-destructive — writes only `Design::flat_modules`, never
+      `Design::modules`) inlines the 3-level hierarchy
+      (Top → urcN → urc_seg → res/cap) into the leaf-only flat netlist
+      codegen consumes, so `circuit.rs:389`'s "nested hierarchy" guard is
+      unreachable for valid input. ngspice cross-checked at lump 2/5/10
+      (`tests/ngspice_validation.rs`); monomorph/restamp regression guards
+      in `tests/urc_compile_count.rs`. The parametric `urc[N]` +
+      `StructuralFor` route (cleaner per-shape monomorph) is deferred behind
+      gap-3 (array-net expansion in flatten, fail-loud today) — the fixed-N
+      route exercises the same 3-level inlining and ships now. LTRA (lossy
+      tline, full convolution) — **backlog**: urc covers the practical
+      lossy case.
 - [x] Combined transformer block — DONE (T17, `678dcfe`): `xfmr(l1, l2, k)`
       over the mutual-flux engine; AC ratio and coupled-LC energy transfer
       validated.
@@ -174,7 +193,22 @@ lossless tline, xfmr — the old MOS1 1.5×/JFET 15 mV discrepancies were fixed
 - [ ] BSIM-class models — hand-ported to PHDL like everything else (user
       decision 2026-07-18: **all** models are native PHDL; OSDI is an interop
       path for external models, never the home of the stdlib). Big, phased:
-      start from the ngspice C sources, one level at a time.
+      start from the ngspice C sources, one level at a time. Two codegen
+      needs surfaced while scoping BSIM, both now correctly framed:
+      - **Internal nodes** (series-R, NQS, thermal) — **DONE at the codegen
+        level**: a non-port `wire` already gets a fresh MNA unknown
+        (`circuit.rs:419`); the BJT ships 3 (`cp/bp/ep`). No allocation work
+        needed for PHDL devices.
+      - **Self-heating** (`rth0`/`cth0`) — **authorable today**, not blocked:
+        internal thermal `wire` + `ddt` cap + `Pdiss` current source +
+        `V(thermal)` fed back into temp-dep params, all existing primitives;
+        the electro-thermal coupling Jacobian is auto-derived by symbolic
+        diff. Just needs a model + validation — tracked as `self-heating`.
+      - **Multi-segment / NQS structure** (variable segment count) — needs
+        `hierarchy-flattening` (see Devices above): the MVP flatten pass, plus
+        two deferred sub-gaps (const-arg-into-behavior, array-net expansion)
+        that bite only certain authoring routes. This is the real codegen
+        work — structural monomorphization (`mod Foo[N]`) already exists.
 
 ### Performance
 
@@ -215,9 +249,8 @@ transient predictor (CP-16 first-order Newton seed). Remaining:
 | Autonomous-oscillator PSS | period detection needs phase conditions; backlog |
 | AC `.sens` | DC ships; AC follow-up if the optimizer needs it |
 | Exact-symbolic `∂R/∂p` sens | FD direct ships; upgrade behind the same API |
-| `urc` | blocked on `codegen-parametric-devices` (T16) |
+| `urc` | DELIVERED via `hierarchy-flattening` — fixed-N pure-structural modules, ngspice cross-checked at lump 2/5/10 |
 | Clocked digital fusing | comb cones fused; NBA-semantics follow-up |
-| `.four`, `.pz`, `.disto`, `.sp` | niche, post-V1 |
 
 ---
 
@@ -230,10 +263,16 @@ mixed-signal-first; OSDI wrappers are one client.
 
 **V1 blockers**
 
-- [ ] **Internal-unknown allocation — MISSING, the P2 blocker.** External
-      models need auxiliary nodes/branches allocated pre-finalization. Blocks
+- [ ] **Plugin/OSDI internal-unknown allocation — MISSING, the P2 blocker.**
+      External (compiled) models need auxiliary nodes/branches allocated
+      pre-finalization via the solver's `HAS_INTERNAL_UNKNOWNS` seam. Blocks
       the `@device(plugin = "osdi", …)` PHDL seam (factory fails loud today;
-      the `piperine_osdi` Rust API works meanwhile).
+      the `piperine_osdi` Rust API works meanwhile). NOTE: this is the
+      **plugin** path only — PHDL-authored devices already allocate internal
+      nodes fine (non-port `wire` → anonymous MNA unknown, `circuit.rs:419`;
+      the BJT ships 3). The two were once conflated; the PHDL half is done,
+      and PHDL self-heating is a modeling task (`self-heating` feature), not
+      a blocker.
 - [ ] **Model/instance separation — MISSING.** `ModelHandle` (shared card) vs
       `ElementInstance` (terminals, instance params, state); gives sweeps a
       clean rebuild rule.

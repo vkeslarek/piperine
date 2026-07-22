@@ -301,11 +301,84 @@ not primitive-type native methods (T26's documented "none found" finding).
 
 ---
 
+### MD-25: POM navigability mirrors the source — flatten is non-destructive
+
+POM navigability reflects the structure of the original code, never the
+internal structure of elaboration. A device author reads back their own
+modules, instances, and hierarchy from the POM exactly as written;
+internal transforms (flattening above all) are codegen concerns they must
+never have to know about.
+
+Concretely: the `FlattenHierarchy` elaboration pass writes ONLY
+`Design::flat_modules` (a `#[serde(skip)]` derived map); `Design::modules`
+is never mutated. The flat form is a leaf-only, memoized, rebuildable
+artifact consumed solely by codegen (`CircuitCompiler` reads the root via
+`design.flat_module(root)`); the authored hierarchy in `modules` stays
+navigable as written, by tools, hosts, and the LSP. This is the LOCKED
+invariant every future pass that *could* collapse the module tree must
+uphold — the first such pass (`FlattenHierarchy`) was the precise one the
+rule was drafted against, and the audit in
+`.specs/features/hierarchy-flattening/design.md` confirmed every existing
+pass already honors it.
+
+**Status:** Locked (user, 2026-07-20 — `hierarchy-flattening` feature
+design review; the rule was the user's "UNBREAKABLE RULE" override that
+rejected an in-place destructive flatten design). MD-13 (binding Rust
+idiom rules) governs *how* the pass is written; MD-25 governs *what* it is
+allowed to touch.
+
+---
+
 ## Handoff Snapshot
 
-**Last updated:** 2026-07-21 — `declared-language-surface` DELIVERED
-(T1–T29); MD-24 locked. `cargo test --workspace`: 666 passed, 0 failed,
+**Last updated:** 2026-07-22 — `hierarchy-flattening` DELIVERED (T1–T10);
+MD-25 locked. `cargo test --workspace`: 705 passed, 0 failed,
 5 ignored, 0 rustc warnings.
+
+### Feature — `hierarchy-flattening` (DELIVERED 2026-07-22)
+
+Spec/design/tasks in `.specs/features/hierarchy-flattening/`. A new
+`FlattenHierarchy` elaboration pass (last in `PASSES`, after `Typecheck`)
+inlines a mid-level module's sub-instances, wires, and connections into
+the parent's flat netlist, recursively, so codegen only ever sees leaf
+devices — `device/circuit.rs:389`'s "nested hierarchy" error is now
+unreachable for well-formed input. The pass is **non-destructive**
+(MD-25): it writes only `Design::flat_modules` (a `#[serde(skip)]`
+side map, consumed only by codegen via `design.flat_module(root)`); the
+authored hierarchy in `Design::modules` is never mutated, preserving
+POM navigability for tools, hosts, and the LSP. The net-rename map binds
+child ports to parent nets and lifts child wires to path-prefixed
+`inst.wirename` collision-free labels; nesting composes (`u1.s0.r1`).
+Cycle detection, dangling-net detection, and indexed-`NetRef` (array-net,
+gap-3 deferred) all fail loud. `with_overrides_applied` retargets to
+`flat_modules[root]` so the flat-label host contract survives the
+inlining depth.
+
+End-to-end proof: the ngspice URC lumped RC line ships as pure-structural
+fixed-N modules (`urc2`/`urc5`/`urc10` over a reusable `urc_seg`
+submodule in `headers/spice/urc.phdl`). Each module exercises the same
+3-level inlining a parametric `urc[N]` would (Top → urcN → urc_seg →
+res/cap); the fixed-N route stays inside the MVP flatten boundary (no
+array nets, no const-arg-into-behavior). ngspice cross-checked at lump
+2/5/10 against an equivalent discrete-R/C ladder (`tests/ngspice/urc_*`,
+`tests/ngspice_validation.rs` — DC operating point, each lump value
+yields a distinct Vout so the test is discriminating). Monomorph and
+restamp regression guards in `tests/urc_compile_count.rs`: every urcN
+shape compiles the same leaf-kernel count, and a 20-point `.r` sweep
+JITs exactly one build (MD-18), not one per point.
+
+**Authoring note (deferred routes).** The natural `mod urc[N]` +
+`StructuralFor` over N segments using an array wire `tap : Electrical[N+1]`
+is BLOCKED behind gap-3 — `tap[i]` becomes an indexed `NetRef` and the
+flatten pass fails loud (array-net → flat-net expansion is deferred). The
+fixed-N modules ship the practical capability now; a future gap-3 follow-
+up (per-shape monomorph kernel distinction via `urc__N`) is tracked in
+the spec's "Out of Scope" table.
+
+**Next for this feature:** none — delivered. The deferred gaps (2:
+const-arg substitution into a monomorph's analog body; 3: array-net
+expansion in flatten) are individually tracked and fail-loud today, not
+blocking any in-tree device.
 
 ### Feature — `declared-language-surface` (DELIVERED 2026-07-21)
 
