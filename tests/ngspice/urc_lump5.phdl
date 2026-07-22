@@ -1,0 +1,17 @@
+use piperine::disciplines;
+use spice::passives;
+use spice::sources;
+use spice::urc;
+
+// PHDL twin of urc_lump5.cir: 5-segment lumped RC line (the same ladder
+// topology, built structurally from the `urc5` mid-level module). The
+// flatten pass inlines Top → urc5 → urc_seg → {res, cap} so codegen only
+// sees leaf devices; the host reads v(vin)/v(vout) off the flat netlist.
+mod Top () {
+    wire gnd : Electrical;
+    wire vin : Electrical;
+    wire vout : Electrical;
+    v1 : vsrc (.p=vin, .n=gnd) { .dc = 5.0 };
+    u1 : urc5 (.p=vin, .n=vout, .g=gnd) { .r = 100.0, .c = 1.0e-9 };
+    rl : res  (.p=vout, .n=gnd) { .r = 1.0e3 };
+}

@@ -1,0 +1,16 @@
+* urc lumped RC line equivalent, 2 segments — DC cross-check vs PHDL urc2.
+* N=2 series R (100Ω each) + 2 shunt C (1n each, at tap and output).
+* V1=5V DC source, Rload=1k from vout to gnd. At DC, caps are open → the
+* ladder is a pure resistive divider: Vout = 5 * 1000/(200+1000) = 4.1667V.
+* Drops/segments matter: dropping one would give 5 * 1000/(100+1000) = 4.545V.
+V1 vin 0 DC 5
+Rs1 vin t1 100
+Rs2 t1 vout 100
+Csh1 t1 0 1n
+Csh2 vout 0 1n
+Rload vout 0 1k
+.control
+op
+print v(vin) v(vout)
+.endc
+.end
