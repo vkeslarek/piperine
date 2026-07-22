@@ -24,6 +24,7 @@ use crate::value::Value;
 use crate::pom::{ElabError, ElabErrorKind, Design, Module};
 
 mod behavior;
+mod flatten;
 mod module;
 mod mono;
 mod passes;
