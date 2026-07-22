@@ -137,3 +137,116 @@ fn two_mid_level_instances_produce_distinct_spliced_labels() {
     assert!(info.nets.contains_key("a.mid"), "lifted wire a.mid");
     assert!(info.nets.contains_key("b.mid"), "lifted wire b.mid — distinct from a.mid");
 }
+
+// ── FLAT-03: host overrides target the flat netlist ──────────────────────────
+//
+// with_overrides_applied patches the FLAT form (module_for_override_mut),
+// so an override on a spliced label like `x.r1` resolves and restamps.
+// For 2-level designs (no hierarchy) the flat form equals the authored
+// form, so existing override semantics are unchanged (verified by the
+// compile_once_sweep / session suites staying green).
+
+/// An override on a flattened instance label (`x.r1`) lands on the flat
+/// form's spliced instance and restamps the simulated value.
+#[test]
+fn override_on_spliced_label_restamps_flat_instance() {
+    let src = r#"
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod Resistor (inout p : Electrical, inout n : Electrical) { param r : Real = 1.0e3; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Vsrc (inout p : Electrical, inout n : Electrical) { param dc : Real = 1.0; }
+        analog Vsrc { V(p, n) <- dc; }
+        mod Seg (inout p : Electrical, inout n : Electrical) {
+            wire mid : Electrical;
+            r1 : Resistor(.p = p,   .n = mid);
+            r2 : Resistor(.p = mid, .n = n);
+        }
+        mod Top () {
+            wire gnd : Electrical;
+            wire in  : Electrical;
+            wire out : Electrical;
+            v1 : Vsrc(.p = in, .n = gnd);
+            x  : Seg(.p = in, .n = out);
+            rl : Resistor(.p = out, .n = gnd);
+        }
+    "#;
+    let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
+
+    // Baseline: all resistors 1k → v(out) = 1/3 V (verified in T5).
+    let base_bodies = piperine_codegen::resolve::lower_bodies(&design).expect("baseline lowers");
+    let mut base_compiler = CircuitCompiler::new(&design, &base_bodies);
+    let (mut base_circuit, base_info) = base_compiler.build_circuit_mapped("Top").expect("builds");
+    let base_result = base_circuit.dc(Context::default()).unwrap().solve().unwrap();
+    let out_id = base_info.nets.get("out").expect("net out").clone();
+    let base_v_out = base_result.get_node(&out_id).expect("v(out)");
+    assert!((base_v_out - 1.0 / 3.0).abs() < 1e-9, "baseline v(out) = 1/3 V, got {base_v_out}");
+
+    // Stage an override on the SPLICED label `x.r1` (inside Seg, inlined
+    // into Top by the flatten pass). Restamp r1 from 1k → 4k.
+    design.set_param("x.r1", "r", piperine_lang::pom::Value::Real(4.0e3));
+    let staged = design.with_overrides_applied("Top").expect("flat-label override applies");
+
+    // The override landed on the flat form: the staged Top's flat_module
+    // has x.r1 with r=4k (the authored Top has no x.r1 — it has x:Seg).
+    let staged_top = staged.flat_module("Top").expect("staged Top flat form");
+    let x_r1 = staged_top
+        .instances
+        .iter()
+        .find(|i| i.label.as_deref() == Some("x.r1"))
+        .expect("x.r1 is in the flat form");
+    let (_, r_val) = x_r1.params.iter().find(|(n, _)| n == "r").expect("r param");
+    match r_val {
+        piperine_lang::pom::Value::Real(v) => assert!(
+            (*v - 4.0e3).abs() < 1e-9,
+            "override landed on flat x.r1.r: expected 4k, got {v}"
+        ),
+        other => panic!("expected Real, got {other:?}"),
+    }
+
+    // The staged circuit reflects the override: r1=4k shifts the divider.
+    // The ladder is a single series string: r1(4k) → r2(1k) → rl(1k) = 6k.
+    // v(out) = 1V · rl/total = 1V · 1k/6k = 1/6 V.
+    let staged_bodies = piperine_codegen::resolve::lower_bodies(&staged).expect("staged lowers");
+    let mut staged_compiler = CircuitCompiler::new(&staged, &staged_bodies);
+    let (mut staged_circuit, staged_info) =
+        staged_compiler.build_circuit_mapped("Top").expect("staged builds");
+    let staged_result = staged_circuit.dc(Context::default()).unwrap().solve().unwrap();
+    let staged_out = staged_info.nets.get("out").expect("net out").clone();
+    let staged_v_out = staged_result.get_node(&staged_out).expect("v(out)");
+    assert!(
+        (staged_v_out - 1.0 / 6.0).abs() < 1e-9,
+        "restamped v(out) = 1/6 V (r1=4k, series 6k), got {staged_v_out}"
+    );
+}
+
+/// An override on an unknown spliced label fails loud — never a silent
+/// no-op. This is the fail-loud contract from FLAT-03 extended to flat
+/// labels.
+#[test]
+fn override_on_unknown_spliced_label_fails_loud() {
+    let src = r#"
+        discipline Electrical { potential v : Real; flow i : Real; }
+        mod Resistor (inout p : Electrical, inout n : Electrical) { param r : Real = 1.0e3; }
+        analog Resistor { I(p, n) <+ V(p, n) / r; }
+        mod Seg (inout p : Electrical, inout n : Electrical) {
+            wire mid : Electrical;
+            r1 : Resistor(.p = p, .n = mid);
+        }
+        mod Top () {
+            wire gnd : Electrical;
+            wire in  : Electrical;
+            x  : Seg(.p = in, .n = gnd);
+        }
+    "#;
+    let design = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
+    design.set_param("x.nonexistent", "r", piperine_lang::pom::Value::Real(2.0e3));
+    let err = design
+        .with_overrides_applied("Top")
+        .err()
+        .expect("unknown spliced label must fail loud");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("x.nonexistent") && msg.contains("unknown instance"),
+        "error names the unknown spliced label: {msg}"
+    );
+}
