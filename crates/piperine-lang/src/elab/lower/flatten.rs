@@ -23,7 +23,6 @@ use super::Elaborator;
 /// `Design::flat_modules`. Runs as the last elaboration pass (after
 /// `Typecheck`) so it sees the fully resolved, monomorphized, for-unrolled
 /// module set.
-#[allow(dead_code)] // wired into PASSES in T4
 pub(super) struct FlattenHierarchy;
 
 impl ElabPass for FlattenHierarchy {
@@ -36,7 +35,6 @@ impl FlattenHierarchy {
     /// Flatten every module in `design.modules` into `design.flat_modules`.
     /// The authored `modules` map is never mutated — only `flat_modules` is
     /// written. Entry point for the pass driver and for unit tests.
-    #[allow(dead_code)] // wired into PASSES in T4
     pub(super) fn flatten_design(design: &mut Design) -> Result<(), ElabError> {
         let names: Vec<String> = design.modules.keys().cloned().collect();
         let mut in_progress = HashSet::new();
@@ -48,7 +46,6 @@ impl FlattenHierarchy {
 
     /// True when `m` is a leaf — no sub-instances. The recursion base case:
     /// a leaf module's flat form equals its authored form.
-    #[allow(dead_code)] // wired into PASSES in T4
     fn is_leaf(m: &Module) -> bool {
         m.instances.is_empty()
     }
@@ -60,7 +57,6 @@ impl FlattenHierarchy {
     ///
     /// `in_progress` is the recursion stack — a module appearing in it is a
     /// recursive cycle and fails loud.
-    #[allow(dead_code)] // wired into PASSES in T4
     fn flatten_module(
         name: &str,
         design: &mut Design,

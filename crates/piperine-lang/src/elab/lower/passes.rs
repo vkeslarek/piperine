@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use crate::elab::const_eval::ConstEnv;
 use crate::pom::{Design, ElabError, ElabErrorKind};
 
+use super::flatten::FlattenHierarchy;
 use super::Elaborator;
 
 /// One elaboration stage. `run` mutates the shared `Elaborator` state and
@@ -31,6 +32,7 @@ pub(crate) const PASSES: &[&dyn ElabPass] = &[
     &AttachBehaviors,
     &ResolveCalls,
     &Typecheck,
+    &FlattenHierarchy,
 ];
 
 /// Index every top-level item into the elaborator's symbol tables.
