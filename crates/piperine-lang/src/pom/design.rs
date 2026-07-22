@@ -90,6 +90,15 @@ pub struct RfPort {
 #[serde(default)]
 pub struct Design {
     pub(crate) modules: HashMap<String, Module>,
+    /// Flattened (leaf-only) form of each module — populated by the
+    /// `FlattenHierarchy` elaboration pass and consumed only by codegen.
+    /// The authored hierarchy lives in `modules` and is never mutated by
+    /// flattening (POM navigability mirrors the source); this map is a
+    /// derived artifact rebuilt every elaboration, so it is skipped on
+    /// serialize — a deserialized `Design` carries an empty `flat_modules`
+    /// and the pass is re-runnable.
+    #[serde(skip)]
+    pub(crate) flat_modules: HashMap<String, Module>,
     #[serde(skip)]
     pub(crate) disciplines: HashMap<String, DisciplineDecl>,
     #[serde(skip)]
@@ -117,6 +126,7 @@ impl Design {
     pub fn new() -> Self {
         Self {
             modules: HashMap::new(),
+            flat_modules: HashMap::new(),
             disciplines: HashMap::new(),
             bundles: HashMap::new(),
             enums: HashMap::new(),
@@ -186,6 +196,15 @@ impl Design {
     /// Look up a module by name.
     pub fn module(&self, name: &str) -> Option<&Module> {
         self.modules.get(name)
+    }
+
+    /// The flattened (leaf-only) form of module `name`, for codegen. Falls
+    /// back to the authored module when no flat form is recorded — a leaf
+    /// module's flat form is its authored form, so the pass does not record
+    /// one. Returns `None` when `name` is neither a known module nor a
+    /// flattened one.
+    pub fn flat_module(&self, name: &str) -> Option<&Module> {
+        self.flat_modules.get(name).or_else(|| self.modules.get(name))
     }
 
     /// Every elaborated (monomorphized) module.
@@ -560,8 +579,91 @@ impl Design {
     pub(crate) fn insert_module(&mut self, name: String, module: Module) {
         self.modules.insert(name, module);
     }
+    /// Insert a flat module by name. Test-only: the flatten unit tests build
+    /// synthetic `flat_modules` maps without running the pass.
+    #[cfg(test)]
+    pub(crate) fn insert_flat_module(&mut self, name: String, module: Module) {
+        self.flat_modules.insert(name, module);
+    }
 }
 
 impl Default for Design {
     fn default() -> Self { Self::new() }
+}
+
+#[cfg(test)]
+mod flat_module_tests {
+    use super::*;
+    use crate::pom::{Module, NetType, Wire};
+
+    fn leaf_module(name: &str) -> Module {
+        Module::new(
+            name.to_string(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+    }
+
+    fn module_with_wire(name: &str, wire: &str) -> Module {
+        Module::new(
+            name.to_string(),
+            Vec::new(),
+            Vec::new(),
+            vec![Wire {
+                span: None,
+                attributes: Vec::new(),
+                name: wire.to_string(),
+                ty: NetType::Discipline("Electrical".to_string()),
+            }],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+    }
+
+    /// `flat_module` falls back to `modules` when no flat form is recorded —
+    /// a leaf module's flat form is its authored form.
+    #[test]
+    fn flat_module_falls_back_to_authored_when_absent() {
+        let mut design = Design::new();
+        design.insert_module("Foo".to_string(), leaf_module("Foo"));
+        let flat = design.flat_module("Foo").expect("Foo present in modules");
+        assert_eq!(flat.name(), "Foo");
+        assert!(design.flat_modules.is_empty(), "no flat form recorded");
+    }
+
+    /// `flat_module` prefers the flat form over the authored form when both
+    /// are present — codegen consumes the flattened netlist.
+    #[test]
+    fn flat_module_prefers_flat_form_when_present() {
+        let mut design = Design::new();
+        design.insert_module("Foo".to_string(), leaf_module("Foo"));
+        design.insert_flat_module("Foo".to_string(), module_with_wire("Foo", "internal"));
+        let returned = design.flat_module("Foo").expect("Foo present");
+        assert_eq!(returned.wires.len(), 1, "flat form preferred over authored");
+        assert_eq!(returned.wires[0].name, "internal");
+    }
+
+    /// `flat_module` returns `None` when the name is neither authored nor
+    /// flattened — a fail-loud signal, never a silent default.
+    #[test]
+    fn flat_module_returns_none_when_unknown() {
+        let design = Design::new();
+        assert!(design.flat_module("Missing").is_none());
+    }
+
+    /// `flat_module` resolves a name present only in `flat_modules` — the
+    /// authored map need not contain it (a fully-synthetic flat module).
+    #[test]
+    fn flat_module_resolves_flat_only_name() {
+        let mut design = Design::new();
+        design.insert_flat_module("Synth".to_string(), leaf_module("Synth"));
+        let flat = design.flat_module("Synth").expect("Synth in flat_modules");
+        assert_eq!(flat.name(), "Synth");
+        assert!(design.modules.get("Synth").is_none());
+    }
 }

@@ -80,3 +80,21 @@ fn runtime_handles_fail_loud() {
     }));
     serde_json::to_string(&closure).expect_err("closure serialization must fail loud");
 }
+
+#[test]
+fn flat_modules_is_skipped_on_serialize() {
+    // The flat netlist is a derived artifact (rebuilt every elaboration by
+    // the FlattenHierarchy pass) — never part of the wire contract. A
+    // round-trip carries the authored hierarchy only.
+    let design =
+        parse_and_elaborate(CIRCUIT, &piperine_lang::SourceMap::dummy()).expect("elaborate");
+    let json = serde_json::to_string(&design).expect("serialize design");
+    assert!(
+        !json.contains("flat_modules"),
+        "flat_modules must be #[serde(skip)]; got: {json}"
+    );
+    let back: piperine_lang::Design = serde_json::from_str(&json).expect("deserialize design");
+    // Authored hierarchy survives.
+    assert!(back.module("Divider").is_some(), "authored Divider survives");
+    assert!(back.module("Resistor").is_some(), "authored Resistor survives");
+}
