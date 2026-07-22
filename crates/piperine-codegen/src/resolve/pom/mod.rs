@@ -316,10 +316,21 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
     let mut bodies: Vec<LoweredBody> = Vec::new();
     let mut errors: Vec<LowerError> = Vec::new();
 
+    // Snapshot module names once — both passes and the final zip use the
+    // same iteration order. Each name resolves to the module's FLAT form
+    // (codegen-facing): `Design::flat_module` falls back to the authored
+    // module for leaves, so leaf bodies are unchanged. A flattened root's
+    // body carries nodes for the lifted wires and spliced instance ports
+    // that codegen reads via `CircuitCompiler::flat_module` (FLAT-01).
+    let names: Vec<String> = prog.modules().map(|m| m.name().to_string()).collect();
+
     // Pass 1: build the symbol table + resolved ports for every module.
-    for m in prog.modules() {
+    for name in &names {
+        let m = prog.flat_module(name).expect(
+            "flat_module falls back to modules; name came from modules() so this is an internal bug",
+        );
         let (symbols, ports) = build_symbols_and_ports(m, prog);
-        bodies.push(LoweredBody { name: m.name().to_string(), symbols, ports, analog: None, digital: None });
+        bodies.push(LoweredBody { name: name.clone(), symbols, ports, analog: None, digital: None });
     }
 
     // Pass 1.5: Add non-generic functions to each module's symbol table.
@@ -359,8 +370,13 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
         }
     }
 
-    // Pass 2: Lower behaviors using the built SymbolTables.
-    for (i, m) in prog.modules().enumerate() {
+    // Pass 2: Lower behaviors using the built SymbolTables — flat module
+    // form (lifted wires + spliced instance ports are already in the symbol
+    // table from Pass 1; the authored module's behaviors are unchanged).
+    for (i, name) in names.iter().enumerate() {
+        let m = prog.flat_module(name).expect(
+            "flat_module falls back to modules; name came from modules() so this is an internal bug",
+        );
         // Build the instance-port map (SPEC §7.3): for each named instance,
         // map `"label.port_name"` → parent NodeId. This lets the parent's
         // analog body reference child ports (`I(load.p, gnd) <+ …`).
@@ -543,5 +559,5 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
         return Err(LowerErrors(errors));
     }
 
-    Ok(prog.modules().map(|m| m.name().to_string()).zip(bodies).collect())
+    Ok(names.into_iter().zip(bodies).collect())
 }

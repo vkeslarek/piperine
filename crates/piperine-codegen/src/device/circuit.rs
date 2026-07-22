@@ -115,6 +115,17 @@ impl<'p> CircuitCompiler<'p> {
         self.design.module(name).ok_or_else(|| CodegenError::ModuleNotFound(name.to_string()))
     }
 
+    /// The flattened (leaf-only) form of module `name`, for codegen's ROOT
+    /// lookup. `Design::flat_module` falls back to the authored module when
+    /// no flat form is recorded — a leaf's flat form equals its authored
+    /// form, so existing two-level circuits are unchanged. A mid-level root
+    /// (one that instantiates sub-modules) resolves to its spliced-flat form
+    /// here, making the `builder.rs` nested-hierarchy guard unreachable for
+    /// valid flattened input. FLAT-01.
+    pub(super) fn flat_module(&self, name: &str) -> Result<&'p Module, CodegenError> {
+        self.design.flat_module(name).ok_or_else(|| CodegenError::ModuleNotFound(name.to_string()))
+    }
+
     pub(super) fn body(&self, name: &str) -> Result<&'p LoweredBody, CodegenError> {
         self.bodies.get(name).ok_or_else(|| CodegenError::ModuleNotFound(name.to_string()))
     }
@@ -147,7 +158,12 @@ impl<'p> CircuitCompiler<'p> {
         &mut self,
         top: &str,
     ) -> Result<(CircuitInstance, CircuitBuildInfo), CodegenError> {
-        let top_module = self.module(top)?;
+        // The root comes from the FLAT netlist (`Design::flat_modules`) — a
+        // mid-level module's sub-instances have been spliced into its flat
+        // form by `FlattenHierarchy`, so the root seen here contains only
+        // leaf devices. Leaf children are still read via `module()` (their
+        // flat form equals their authored form). FLAT-01.
+        let top_module = self.flat_module(top)?;
         let top_body = self.body(top)?;
 
         let top_params = Self::param_values(top_body, &[])?;

@@ -207,6 +207,19 @@ impl Design {
         self.flat_modules.get(name).or_else(|| self.modules.get(name))
     }
 
+    /// The mutable module to patch when applying an override — the FLAT form
+    /// when present (codegen reads `flat_module` via `lower_bodies`), else
+    /// the authored form. For a two-level design the flat form equals the
+    /// authored form, so existing override semantics are unchanged; a
+    /// flattened root's spliced instance list is what hosts address.
+    pub(crate) fn module_for_override_mut(&mut self, name: &str) -> Option<&mut Module> {
+        if self.flat_modules.contains_key(name) {
+            self.flat_modules.get_mut(name)
+        } else {
+            self.modules.get_mut(name)
+        }
+    }
+
     /// Every elaborated (monomorphized) module.
     pub fn modules(&self) -> impl Iterator<Item = &Module> {
         self.modules.values()
@@ -464,7 +477,12 @@ impl Design {
         let mut design = self.clone();
         let overrides: Vec<(String, String, Value)> =
             self.overrides.borrow().iter().map(|(p, n, v)| (p.clone(), n.clone(), v.clone())).collect();
-        let module = design.modules.get_mut(root_module).ok_or_else(|| {
+        // Patch the FLAT form when present (codegen reads `flat_module` via
+        // `lower_bodies`); fall back to authored. For a two-level design the
+        // flat form equals the authored form, so existing override semantics
+        // are unchanged. A flattened root's spliced instance list is what
+        // hosts address (e.g. `x.seg0`). FLAT-03.
+        let module = design.module_for_override_mut(root_module).ok_or_else(|| {
             ElabError::from(ElabErrorKind::Other(format!("root module `{root_module}` not found")))
         })?;
         for (path, param, value) in overrides {
@@ -496,14 +514,15 @@ impl Design {
         }
         // Apply staged instance/connection injections (SPEC Part VI §8.2).
         // The type/arity checks ran at staging time; here the specs become
-        // ordinary POM nodes on the parent module.
+        // ordinary POM nodes on the parent module — patched into the flat
+        // form when present (same retarget as the root override above).
         let staged_instances: Vec<crate::pom::staging::StagedInstance> =
             self.overrides.borrow().added_instances().to_vec();
         let staged_connections: Vec<(String, crate::pom::staging::ConnectionSpec)> =
             self.overrides.borrow().added_connections().to_vec();
         for staged in staged_instances {
             let (parent, spec) = (staged.parent, staged.spec);
-            let module = design.modules.get_mut(&parent).ok_or_else(|| {
+            let module = design.module_for_override_mut(&parent).ok_or_else(|| {
                 ElabError::from(ElabErrorKind::Other(format!(
                     "staged instance `{}`: parent module `{parent}` not found",
                     spec.label
@@ -525,7 +544,7 @@ impl Design {
             });
         }
         for (parent, spec) in staged_connections {
-            let module = design.modules.get_mut(&parent).ok_or_else(|| {
+            let module = design.module_for_override_mut(&parent).ok_or_else(|| {
                 ElabError::from(ElabErrorKind::Other(format!(
                     "staged connection: parent module `{parent}` not found"
                 )))
