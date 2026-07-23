@@ -27,7 +27,7 @@
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 
-use crate::digital::DigitalNet;
+use crate::digital::{DigitalEvent, DigitalNet};
 
 // ── enums: kind, priority, source, rollback ────────────────────────────────
 
@@ -269,6 +269,19 @@ impl EventQueue {
     /// so this is O(log n).
     pub fn push(&mut self, entry: EventEntry) {
         self.heap.push(Reverse(entry));
+    }
+
+    /// Push a digital scheduler event into the unified queue (ABI-37).
+    /// Adapts [`DigitalEvent`] → [`EventEntry::digital`]: `kind=Digital`,
+    /// `priority=Exact`, `rollback=Restore`. The source label is the
+    /// emitting element's name (or `DigitalState::label_or_default` when
+    /// no element-level name is available).
+    pub fn push_digital_event(
+        &mut self,
+        event: &DigitalEvent,
+        source_label: impl Into<String>,
+    ) {
+        self.push(EventEntry::digital(event.time, event.net, source_label));
     }
 
     /// The earliest event time, or `+inf` when the queue is empty. The

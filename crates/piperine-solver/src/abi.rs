@@ -37,6 +37,9 @@ pub use crate::digital::state::DigitalState;
 pub use crate::digital::topology::DigitalTopology;
 // Run config + results device code touches
 pub use crate::analyses::{Context, Policy, Tolerances};
+pub use crate::analyses::events::{
+    EventEntry, EventKind, EventPriority, EventQueue, EventSource, EventTarget, RollbackBehavior,
+};
 pub use crate::result::{NoiseContribution, Result, SolverStats};
 pub use crate::error::{Error, SolverDomain};
 // Element lifecycle allocator (ABI-09)
