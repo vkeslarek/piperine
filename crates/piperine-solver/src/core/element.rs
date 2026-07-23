@@ -83,6 +83,27 @@ bitflags::bitflags! {
         /// model only sets this when its stamps are a pure function of
         /// terminal voltages (linear devices, settled logic).
         const BYPASS_OK = 1 << 11;
+
+        // ── Jacobian / derivative capability (ABI-23) ───────────────────────
+        /// The model provides analytic second derivatives — the `.disto`
+        /// Hessian compiled from symbolic differentiation (DISTO-03). The
+        /// `.disto` driver checks this before solving for HD2; a device
+        /// without it contributes no second-order nonlinear current. Every
+        /// in-tree JIT device that compiles a `.disto` 2nd-derivative kernel
+        /// sets this (ABI-26).
+        const HAS_DISTO2 = 1 << 12;
+        /// The model provides analytic third derivatives — the `.disto`
+        /// third-order Hessian compiled from symbolic differentiation
+        /// (DISTO-03). The `.disto` driver checks this before solving for
+        /// HD3; a device without it contributes no third-order nonlinear
+        /// current.
+        const HAS_DISTO3 = 1 << 13;
+        /// The model's Jacobian is finite-difference (numeric), not analytic
+        /// — e.g., a plugin that perturbs its residual to fill the Jacobian.
+        /// Analyses that require analytic derivatives (`.disto`) fail loud
+        /// on these devices (ABI-25): the method of nonlinear currents
+        /// needs the exact Hessian, never a numeric perturbation.
+        const NUMERIC_JACOBIAN = 1 << 14;
     }
 }
 

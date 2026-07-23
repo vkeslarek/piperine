@@ -49,6 +49,22 @@ fn documented_consumer(flag_name: &str) -> Option<&'static str> {
              on rejection (analyses/transient.rs, analyses/convergence.rs)"
         }
         "SUPPORTS_QUERIES" => "reserved: host query-metadata hint; no solver consumer today (SS-11 audit)",
+        // ── Jacobian / derivative capability (ABI-23) ───────────────────────
+        "HAS_DISTO2" => {
+            "consumed: .disto driver pre-scan — a device declaring this \
+             contributes second-order nonlinear currents (HD2); the driver \
+             warns when no device sets it (analyses/disto.rs, ABI-24)"
+        }
+        "HAS_DISTO3" => {
+            "consumed: .disto driver pre-scan — a device declaring this \
+             contributes third-order nonlinear currents (HD3); the driver \
+             warns when no device sets it (analyses/disto.rs, ABI-24)"
+        }
+        "NUMERIC_JACOBIAN" => {
+            "consumed: .disto driver pre-scan fail-loud — a device declaring \
+             this has a finite-difference Jacobian and cannot provide the \
+             analytic Hessian .disto requires; the driver errors (analyses/disto.rs, ABI-25)"
+        }
         _ => return None,
     })
 }
@@ -78,4 +94,39 @@ fn removed_write_only_flags_stay_gone() {
             .any(|(name, _)| name == gone);
         assert!(!present, "removed write-only flag `{gone}` reappeared on ElementCapabilities");
     }
+}
+
+/// ABI-23: the Jacobian/derivative capability bits occupy the documented bit
+/// positions (`1 << 12`, `1 << 13`, `1 << 14`), compose with the existing
+/// participation flags without collision, and are independently testable
+/// through `contains`.
+#[test]
+fn jacobian_capability_bits_compose_correctly() {
+    use piperine_solver::abi::ElementCapabilities as EC;
+
+    // The three new bits are distinct and at the documented positions.
+    assert_eq!(EC::HAS_DISTO2.bits(), 1u32 << 12);
+    assert_eq!(EC::HAS_DISTO3.bits(), 1u32 << 13);
+    assert_eq!(EC::NUMERIC_JACOBIAN.bits(), 1u32 << 14);
+
+    // They compose with each other and with the prior flags.
+    let analytic_nonlinear = EC::ANALOG | EC::LOADS_DC | EC::HAS_DISTO2 | EC::HAS_DISTO3;
+    assert!(analytic_nonlinear.contains(EC::HAS_DISTO2));
+    assert!(analytic_nonlinear.contains(EC::HAS_DISTO3));
+    assert!(!analytic_nonlinear.contains(EC::NUMERIC_JACOBIAN));
+
+    // A numeric-only device declares the numeric bit but not the disto bits.
+    let numeric = EC::ANALOG | EC::NUMERIC_JACOBIAN;
+    assert!(numeric.contains(EC::NUMERIC_JACOBIAN));
+    assert!(!numeric.contains(EC::HAS_DISTO2));
+    assert!(!numeric.contains(EC::HAS_DISTO3));
+
+    // A purely linear device (resistor) declares none of the derivative bits.
+    let linear = EC::ANALOG | EC::LOADS_DC;
+    assert!(!linear.contains(EC::HAS_DISTO2));
+    assert!(!linear.contains(EC::HAS_DISTO3));
+    assert!(!linear.contains(EC::NUMERIC_JACOBIAN));
+
+    // No overlap with the highest prior bit (BYPASS_OK = 1 << 11).
+    assert_eq!(EC::BYPASS_OK.bits() & (EC::HAS_DISTO2 | EC::HAS_DISTO3 | EC::NUMERIC_JACOBIAN).bits(), 0);
 }
