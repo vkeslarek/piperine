@@ -93,6 +93,11 @@ pub struct AnalogInstance {
     last_volts: Vec<f64>,
     /// Limits capability: `$limit` voltage-limiting runtime state.
     limiter: Limiter,
+    /// Cached `LimitingReport` rebuilt each load (ABI-09/12): `limiting_report`
+    /// is read by the solver AFTER `load_dc`/`load_transient` (in
+    /// `apply_limiting_reports`), so the load caches the current clamped
+    /// node/value here. `None` when the limiter is inactive.
+    limit_report: Option<piperine_solver::abi::LimitingReport>,
 }
 
 impl AnalogInstance {
@@ -234,6 +239,7 @@ impl AnalogInstance {
             vars: vec![0.0; num_vars],
             last_volts: vec![0.0; n],
             limiter: Limiter::new(num_limits),
+            limit_report: None,
         };
         instance.fire_initial_events();
         instance.limiter.seed(&instance.kernel, n, &instance.params, &mut instance.state, &instance.vars, &instance.sim);
@@ -362,12 +368,50 @@ impl AnalogInstance {
         let mut stamps = self.nodal_stamps(&rhs, &jac);
         stamps.extend(self.forces.stamp(&self.ctx(), &volts, state.src_scale));
         self.limiter.update(&self.kernel, &volts, &self.params, &mut self.state, &self.vars, &self.sim);
+        self.rebuild_limit_report(&volts, &veff);
         stamps
     }
 
-    /// Whether junction voltage limiting is still moving (see `Limiter::update`).
-    pub fn limiting_active(&self) -> bool {
-        self.limiter.active()
+    /// The cached limiting report (ABI-09/12): `Some` when the junction
+    /// voltage limiter (`pnjlim`/`fetlim` lineage) is still clamping this
+    /// iteration, naming the clamped node, the proposed vs limited node
+    /// voltage, and which limiter fired. The solver gates Newton convergence
+    /// on `is_some()` and applies `limited_value` to `net`.
+    pub fn limiting_report(&self) -> Option<piperine_solver::abi::LimitingReport> {
+        self.limit_report.clone()
+    }
+
+    /// Rebuild the cached limiting report from the current limiter state +
+    /// the clamped node voltages this load computed. Called at the end of
+    /// each load (after `Limiter::update` sets `active`), passing the `veff`
+    /// computed BEFORE the update advanced the vold slot — recomputing after
+    /// would see no clamp (the vold caught up). Picks the first active
+    /// limit's clamped node — the same node `Limiter::limited_volts` moved.
+    fn rebuild_limit_report(&mut self, volts: &[f64], veff: &[f64]) {
+        self.limit_report = None;
+        if !self.limiter.active() || self.kernel.num_limits() == 0 {
+            return;
+        }
+        for (i, branch) in self.kernel.limit_branches().iter().enumerate() {
+            let Some((plus, minus)) = branch else { continue };
+            if i >= self.kernel.num_limits() {
+                break;
+            }
+            // The clamped node matches `Limiter::limited_volts`: the minus
+            // node moves when it is a real node, otherwise the plus node.
+            let Some(term) = (*minus).or(*plus) else { continue };
+            let Some(Some(net)) = self.node_refs.get(term).cloned() else { continue };
+            let proposed = volts.get(term).copied().unwrap_or(0.0);
+            let limited_value = veff.get(term).copied().unwrap_or(0.0);
+            self.limit_report = Some(piperine_solver::abi::LimitingReport {
+                net,
+                proposed,
+                limited_value,
+                limiter_name: "pnjlim",
+                reason: piperine_solver::abi::LimitReason::VoltageStep,
+            });
+            return;
+        }
     }
 
     /// Whether this instance carries a `$limit` limiter with mutable state
@@ -601,6 +645,7 @@ impl AnalogInstance {
             stamps.extend(self.force_flux_stamps(&volts, states, tran_ctx));
         }
         self.limiter.update(&self.kernel, &volts, &self.params, &mut self.state, &self.vars, &self.sim);
+        self.rebuild_limit_report(&volts, &veff);
         stamps
     }
 

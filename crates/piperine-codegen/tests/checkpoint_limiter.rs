@@ -9,8 +9,10 @@ use std::collections::HashMap;
 use piperine_lang::parse_and_elaborate;
 use piperine_codegen::resolve::LoweredBody;
 use piperine_codegen::CircuitCompiler;
-use piperine_solver::abi::{ElementCapabilities, ElementCheckpoint};
-use piperine_solver::prelude::CircuitInstance;
+use piperine_solver::abi::{
+    CircularArrayBuffer2, DcAnalysisState, ElementCapabilities, ElementCheckpoint, LimitReason,
+};
+use piperine_solver::prelude::{CircuitInstance, Context};
 
 fn from_ir(design: &piperine_lang::pom::Design, bodies: &HashMap<String, LoweredBody>, top: &str) -> CircuitInstance {
     let mut c = CircuitCompiler::new(design, bodies);
@@ -88,7 +90,8 @@ fn limiter_state_round_trips_through_checkpoint_restore() {
     let ckpt0 = dev.checkpoint_state().expect("$limit device checkpoints");
     let vold0 = dev.runtime_banks().0.to_vec();
     assert!(!vold0.is_empty(), "limiter vold slots are seeded at construction");
-    let active0 = dev.limiting_active();
+    // The active flag is the first real_state entry of the limiter checkpoint.
+    let active0 = ckpt0.real_state.first().copied().unwrap_or(0.0);
 
     // Simulate a rejected attempt dirtying the limiter: flip `active` and
     // overwrite the vold slot. Built from ckpt0's layout so the seed is kept.
@@ -99,17 +102,24 @@ fn limiter_state_round_trips_through_checkpoint_restore() {
     }
     let dirty = ElementCheckpoint { int_state: Vec::new(), real_state: dirty_real };
     dev.restore_state(&dirty);
-    assert!(dev.limiting_active(), "dirty restore flipped the active flag");
+    // Observe via a fresh checkpoint (the active flag is not load-cached here).
+    let dirty_ckpt = dev.checkpoint_state().expect("re-checkpoint after dirty");
     assert_eq!(
-        dev.runtime_banks().0.last(),
+        *dirty_ckpt.real_state.first().unwrap(),
+        1.0,
+        "dirty restore flipped the active flag"
+    );
+    assert_eq!(
+        dirty_ckpt.real_state.last(),
         Some(&99.0),
         "dirty restore overwrote the vold slot"
     );
 
     // Restore the pre-attempt checkpoint — the limiter must rewind exactly.
     dev.restore_state(&ckpt0);
+    let restored_ckpt = dev.checkpoint_state().expect("re-checkpoint after restore");
     assert_eq!(
-        dev.limiting_active(),
+        restored_ckpt.real_state.first().copied().unwrap_or(0.0),
         active0,
         "active flag restored to pre-attempt"
     );
@@ -144,3 +154,68 @@ fn checkpoint_after_restore_recaptures_clean_state() {
     assert_eq!(ckpt1.real_state, ckpt0.real_state, "re-checkpoint matches pre-attempt");
     assert_eq!(dev.runtime_banks().0, vold0.as_slice(), "vold stable after round-trip");
 }
+
+// ── T8: PiperineDevice produces a LimitingReport (ABI-09/12) ───────────────
+//
+// When the `$limit` limiter clamps during a load, `limiting_report()` returns
+// a structured report naming the clamped node, the proposed vs limited value,
+// the limiter name (`pnjlim`), and the reason (`VoltageStep`).
+
+/// Spec ABI-09/12: a `$limit` device driven through a load that clamps
+/// produces a `LimitingReport` with the documented fields. The report is read
+/// AFTER `load_dc` (the load caches it; the solver reads it in
+/// `apply_limiting_reports`).
+#[test]
+fn piperine_device_produces_limiting_report_when_clamping() {
+    let mut ci = limiter_circuit();
+    let dev = &mut ci.all_devices_mut()[0];
+
+    // The limiter (limvds, vto=1.0) seeds its vold slot to vcrit near turn-on.
+    // A load at a large Vds (5 V) clamps well below the raw proposal, so
+    // `Limiter::update` flags active and the report is cached.
+    // Node layout: Top instantiates L(a, b) → d=node a (idx 0), s=node b (idx 1).
+    let mut buf = CircularArrayBuffer2::new(1, 2);
+    let guess = ndarray::arr1(&[5.0, 0.0]);
+    buf.push(&guess.view());
+    let dc_state = DcAnalysisState::new(&buf, &[], 1.0);
+    let _ = dev.load_dc(&dc_state, &Context::default());
+
+    let report = dev
+        .limiting_report()
+        .expect("limiter produced a report while clamping");
+    assert_eq!(report.limiter_name, "pnjlim");
+    assert_eq!(report.reason, LimitReason::VoltageStep);
+    assert!(
+        report.net.idx().is_some(),
+        "report names a real MNA unknown"
+    );
+    // The limiter moved the clamped node off its raw value to reduce the
+    // branch voltage — the limited node voltage differs from the proposed.
+    assert_ne!(
+        report.limited_value, report.proposed,
+        "limited ({}) must differ from proposed ({}) while clamping",
+        report.limited_value,
+        report.proposed
+    );
+}
+
+/// Spec ABI-11: a device whose limiter has NOT clamped reports `None` — the
+/// gate stays open and the host sees no false diagnostic.
+#[test]
+fn piperine_device_reports_none_when_limiter_idle() {
+    let mut ci = limiter_circuit();
+    let dev = &mut ci.all_devices_mut()[0];
+
+    // A load at Vds = 0: the limiter (limvds) does not clamp (0 V is within
+    // the seed), so no report is cached.
+    let mut buf = CircularArrayBuffer2::new(1, 2);
+    let guess = ndarray::arr1(&[0.0, 0.0]);
+    buf.push(&guess.view());
+    let dc_state = DcAnalysisState::new(&buf, &[], 1.0);
+    let _ = dev.load_dc(&dc_state, &Context::default());
+    assert!(
+        dev.limiting_report().is_none(),
+        "idle limiter reports None"
+    );
+}
+

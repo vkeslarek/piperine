@@ -131,7 +131,14 @@ fn combined_limiter_and_digital_round_trip() {
         real_state: dirty_real,
     };
     dev.restore_state(&dirty);
-    assert!(dev.limiting_active(), "limiter active flag flipped by dirty restore");
+    // Observe the limiter active flag via a fresh checkpoint (the report cache
+    // is load-populated; the active flag itself is packed into real_state[0]).
+    let dirty_ckpt = dev.checkpoint_state().expect("re-checkpoint after dirty");
+    assert_eq!(
+        *dirty_ckpt.real_state.first().unwrap(),
+        1.0,
+        "limiter active flag flipped by dirty restore"
+    );
     let dirty_hidden = dev.digital_hidden_snapshot().expect("registers");
     assert!(dirty_hidden.0.iter().all(|&v| v == 777), "registers overwritten");
 

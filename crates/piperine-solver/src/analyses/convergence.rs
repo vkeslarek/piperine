@@ -63,7 +63,7 @@ pub trait NewtonStrategy: Send + Sync {
     );
 
     /// Converged if: update test passes AND residual test passes.
-    /// Device limiting (`limiting_active()`) is NOT checked here — the driver
+    /// Device limiting (`limiting_report()`) is NOT checked here — the driver
     /// gates on it separately after solve returns. This keeps the strategy
     /// borrowing only the netlist, not the device vector.
     fn is_converged(

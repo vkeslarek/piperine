@@ -126,7 +126,7 @@ impl Limiter {
         // A junction is "still limiting" iff pnjlim actually clamped this
         // iteration — the limited value differs from the raw branch voltage
         // (ngspice's `Check == 1`). While that holds, the Newton loop must not
-        // declare convergence (see PiperineDevice::limiting_active): a clamped
+        // declare convergence (see PiperineDevice::limiting_report): a clamped
         // junction can momentarily satisfy KCL at a non-solution voltage. Tiny
         // Newton jitter once limiting is off (vnew ≈ vlim) must NOT veto, hence
         // the tolerance below.

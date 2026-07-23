@@ -151,10 +151,14 @@ impl PiperineDevice {
 }
 
 impl AnalogDevice for PiperineDevice {
-    fn limiting_active(&self) -> bool {
+    /// Structured limiting feedback (ABI-09/12): the cached report from the
+    /// last `load_dc`/`load_transient` — `Some` when the junction limiter is
+    /// clamping. The solver both gates Newton convergence on `is_some()` and
+    /// steers the guess from `limited_value`.
+    fn limiting_report(&self) -> Option<piperine_solver::abi::LimitingReport> {
         self.analog
             .as_ref()
-            .is_some_and(AnalogInstance::limiting_active)
+            .and_then(AnalogInstance::limiting_report)
     }
 
     fn bound_step_hint(&self) -> f64 {
