@@ -405,8 +405,8 @@ impl Introspect for PiperineDevice {
     /// module-internal nodes referenced by the body (a series-R/thermal
     /// `wire`, an `idt` accumulator's hidden probe, …) are
     /// [`TerminalKind::Internal`]. Digital-domain terminal pairs from the
-    /// digital kernel are appended by T16; analog-only devices surface no
-    /// digital terminals here.
+    /// digital kernel are appended (ABI-28): one descriptor per input +
+    /// per output, carrying [`Domain::Digital`] + the matching direction.
     fn list_terminals(&self) -> Vec<TerminalDescriptor> {
         let mut out = Vec::new();
         if let Some(analog) = &self.analog {
@@ -425,6 +425,27 @@ impl Introspect for PiperineDevice {
                 } else {
                     TerminalKind::Internal
                 };
+                out.push(desc);
+            }
+        }
+        if let Some(digital) = &self.digital {
+            let kernel = digital.kernel();
+            for (i, _) in kernel.inputs().iter().enumerate() {
+                let mut desc = TerminalDescriptor::new(
+                    kernel.input_name(i),
+                    Domain::Digital,
+                    Direction::In,
+                );
+                desc.kind = TerminalKind::External;
+                out.push(desc);
+            }
+            for (i, _) in kernel.outputs().iter().enumerate() {
+                let mut desc = TerminalDescriptor::new(
+                    kernel.output_name(i),
+                    Domain::Digital,
+                    Direction::Out,
+                );
+                desc.kind = TerminalKind::External;
                 out.push(desc);
             }
         }

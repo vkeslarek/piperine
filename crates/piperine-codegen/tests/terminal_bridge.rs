@@ -156,3 +156,118 @@ fn two_port_resistor_lists_only_external_terminals() {
     assert_eq!(terms.len(), 2, "resistor surfaces 2 ports, got {terms:?}");
     assert!(terms.iter().all(|(_, k, _)| *k == TerminalKind::External));
 }
+
+/// ABI-28: a digital-only device's `list_terminals()` returns one descriptor
+/// per digital input (Direction::In) and per output (Direction::Out),
+/// carrying [`Domain::Digital`] and [`TerminalKind::External`]. A 2-input
+/// NAND gate surfaces `a`/`b` as inputs and `y` as the output.
+#[test]
+fn digital_kernel_terminals_bridge_inputs_and_outputs() {
+    let circuit = build(
+        "
+        discipline Bit { storage Boolean; }
+        mod Nand ( input a : Bit, input b : Bit, output y : Bit ) {
+            var t : Bit = 0;
+        }
+        digital Nand { t = !(a && b); y <- t; }
+        mod TopNand ( input a : Bit, input b : Bit, output y : Bit ) { Nand(a, b, y); }
+        ",
+        "TopNand",
+    );
+    let terms = terminals_of(&circuit, 0);
+    // 2 inputs + 1 output = 3 digital terminals (no analog body here).
+    assert_eq!(terms.len(), 3, "NAND surfaces 3 digital terminals, got {terms:?}");
+    let by_name: std::collections::HashMap<&str, (TerminalKind, Domain)> = terms
+        .iter()
+        .map(|(n, k, d)| (n.as_str(), (*k, *d)))
+        .collect();
+    for input in ["a", "b"] {
+        assert_eq!(
+            by_name.get(input),
+            Some(&(TerminalKind::External, Domain::Digital)),
+            "NAND input `{input}` must be External/Digital, got {by_name:?}"
+        );
+    }
+    assert_eq!(
+        by_name.get("y"),
+        Some(&(TerminalKind::External, Domain::Digital)),
+        "NAND output `y` must be External/Digital, got {by_name:?}"
+    );
+    // All digital — no analog terminals leaked in.
+    assert!(terms.iter().all(|(_, _, d)| *d == Domain::Digital));
+}
+
+/// ABI-28 direction mapping: digital inputs are `Direction::In`, outputs
+/// are `Direction::Out` (not the analog ports' `Inout`). A D-flip-flop
+/// (clk/d inputs, q output) is the canonical case.
+#[test]
+fn digital_kernel_directions_are_in_for_inputs_out_for_outputs() {
+    use piperine_solver::abi::Direction;
+    let circuit = build(
+        "
+        discipline Bit { storage Boolean; }
+        mod Dff ( input clk : Bit, input d : Bit, output q : Bit ) {
+            var st : Bit = 0;
+        }
+        digital Dff { q <- st; @ (posedge(clk)) { st = d; } }
+        mod TopDff ( input clk : Bit, input d : Bit, output q : Bit ) { Dff(clk, d, q); }
+        ",
+        "TopDff",
+    );
+    let dev = &circuit.all_devices()[0];
+    let terms = dev.list_terminals();
+    let direction_of = |name: &str| -> Direction {
+        terms.iter().find(|t| t.name == name).map(|t| t.direction).unwrap_or_else(|| panic!("missing terminal `{name}`"))
+    };
+    assert_eq!(direction_of("clk"), Direction::In, "clk is an input");
+    assert_eq!(direction_of("d"), Direction::In, "d is an input");
+    assert_eq!(direction_of("q"), Direction::Out, "q is an output");
+}
+
+/// ABI-27 + ABI-28 union: a mixed-signal device (one with BOTH an analog
+/// body and a digital body) surfaces both analog and digital terminals in
+/// one `list_terminals()` call. A DAC that takes a digital `d` input,
+/// drives an internal register, and emits an analog output through an
+/// `I(out, gnd) <- …` contribution exercises both kernel paths on the same
+/// device object.
+#[test]
+fn mixed_signal_device_lists_analog_and_digital_terminals() {
+    let circuit = build(
+        "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        discipline Bit { storage Boolean; }
+        mod MixedDac ( input d : Bit, inout out : Electrical, inout gnd : Electrical ) {
+            var reg : Bit = 0;
+        }
+        digital MixedDac { @ (change(d)) { reg = d; } }
+        analog MixedDac { I(out, gnd) <+ if (reg) { 1.0e-3 } else { 0.0 }; }
+        mod TopMix ( input d : Bit, inout out : Electrical, inout gnd : Electrical ) {
+            MixedDac(d, out, gnd);
+        }
+        ",
+        "TopMix",
+    );
+    let terms = terminals_of(&circuit, 0);
+    let by_name: std::collections::HashMap<&str, (TerminalKind, Domain)> = terms
+        .iter()
+        .map(|(n, k, d)| (n.as_str(), (*k, *d)))
+        .collect();
+    // The mixed-signal DAC surfaces 3 external terminals: `d` is digital
+    // (the register input); `out`/`gnd` are analog (the contribution
+    // terminals). Both domains present in one catalog.
+    assert_eq!(
+        by_name.get("d"),
+        Some(&(TerminalKind::External, Domain::Digital)),
+        "digital input `d` must be External/Digital, got {by_name:?}"
+    );
+    assert_eq!(
+        by_name.get("out"),
+        Some(&(TerminalKind::External, Domain::Analog)),
+        "analog port `out` must be External/Analog, got {by_name:?}"
+    );
+    assert_eq!(
+        by_name.get("gnd"),
+        Some(&(TerminalKind::External, Domain::Analog)),
+        "analog port `gnd` must be External/Analog, got {by_name:?}"
+    );
+}
