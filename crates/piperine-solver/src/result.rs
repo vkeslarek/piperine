@@ -413,6 +413,13 @@ pub struct DistoResult {
     /// Intermodulation ratio at `2F1∓F2`/`2F2∓F1` relative to the
     /// fundamental (two-tone, DISTO-02).
     pub im3: Option<f64>,
+    /// Named capability diagnostics from the `.disto` pre-scan (ABI-24): a
+    /// purely linear circuit yields a zero HD2/HD3 result legitimately, but
+    /// the host must not be left with a silent zero — each entry names the
+    /// missing derivative order (`"Element: no device provides disto2
+    /// capability; HD2 results will be zero"`). Empty when at least one
+    /// device contributes each order.
+    pub warnings: Vec<String>,
 }
 
 impl std::fmt::Display for TransferType {
