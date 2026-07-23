@@ -98,6 +98,14 @@ pub struct AnalogInstance {
     /// `apply_limiting_reports`), so the load caches the current clamped
     /// node/value here. `None` when the limiter is inactive.
     limit_report: Option<piperine_solver::abi::LimitingReport>,
+    /// Cached effective instance temperature (ABI-21): the value received
+    /// from the last `set_temperature(t_ambient + dtemp)` call. `None` until
+    /// the solver's setup path or a host temperature sweep seeds it. The
+    /// kernel still reads `$temperature` from `sim.temperature` (set by
+    /// `sync_sim` from `Context.tolerances.temperature`); this cache is the
+    /// device-author surface for overrides that compute temperature-dependent
+    /// constants at the seam rather than at eval time.
+    cached_temperature: Option<f64>,
 }
 
 impl AnalogInstance {
@@ -240,6 +248,7 @@ impl AnalogInstance {
             last_volts: vec![0.0; n],
             limiter: Limiter::new(num_limits),
             limit_report: None,
+            cached_temperature: None,
         };
         instance.fire_initial_events();
         instance.limiter.seed(&instance.kernel, n, &instance.params, &mut instance.state, &instance.vars, &instance.sim);
@@ -418,6 +427,27 @@ impl AnalogInstance {
     /// worth checkpointing (ABI-04).
     pub fn has_limiter(&self) -> bool {
         self.kernel.num_limits() > 0
+    }
+
+    /// Cache the effective instance temperature (ABI-21): the value the
+    /// solver's setup path or a host temperature sweep passed to
+    /// `set_temperature` — already composed with this instance's `dtemp`
+    /// by the caller (`CircuitInstance::set_temperature`). The kernel's
+    /// `$temperature()` syscall continues to read `sim.temperature` (set
+    /// from `Context.tolerances.temperature` in `sync_sim`); this cache is
+    /// the surface a host or opvar reporter reads to learn the device's
+    /// effective temperature without re-deriving it from the ambient + the
+    /// instance `dtemp`.
+    pub fn set_temperature(&mut self, t_effective: f64) {
+        self.cached_temperature = Some(t_effective);
+    }
+
+    /// The cached effective instance temperature (ABI-21): `Some(t_eff)`
+    /// after `set_temperature` ran, `None` until then. Equals
+    /// `t_ambient + dtemp_instance` — the value the device's temperature-
+    /// dependent parameter evaluation should use.
+    pub fn cached_temperature(&self) -> Option<f64> {
+        self.cached_temperature
     }
 
     /// Checkpoint the limiter's non-accept-gated state (ABI-04): the `active`

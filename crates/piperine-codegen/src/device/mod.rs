@@ -151,6 +151,25 @@ impl PiperineDevice {
 }
 
 impl AnalogDevice for PiperineDevice {
+    /// Compose the per-instance effective temperature (ABI-21): the solver
+    /// or a host temperature sweep passes the ambient/nominal temperature
+    /// (`t_nominal`); this override adds the instance `dtemp` (SPICE
+    /// convention — an instance param defaulting to 0) and caches
+    /// `t_effective = t_nominal + dtemp` on the analog instance. Keeping
+    /// the composition in the device keeps the solver's
+    /// `CircuitInstance::set_temperature` generic (no param-name
+    /// knowledge). The kernel's `$temperature()` syscall still reads
+    /// `sim.temperature` (set by `sync_sim` from
+    /// `Context.tolerances.temperature`), so the model's own
+    /// `var t = $temperature() + dtemp` produces the same effective value
+    /// at eval time — the cache is the host/opvar-readable surface.
+    fn set_temperature(&mut self, t_nominal: f64) {
+        if let Some(analog) = self.analog.as_mut() {
+            let dtemp = analog.param("dtemp").unwrap_or(0.0);
+            analog.set_temperature(t_nominal + dtemp);
+        }
+    }
+
     /// Structured limiting feedback (ABI-09/12): the cached report from the
     /// last `load_dc`/`load_transient` — `Some` when the junction limiter is
     /// clamping. The solver both gates Newton convergence on `is_some()` and
