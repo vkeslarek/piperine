@@ -62,9 +62,13 @@ bitflags::bitflags! {
         /// before analysis, but the loader needs this flag to know the element
         /// took the allocation seam.
         const HAS_INTERNAL_UNKNOWNS = 1 << 8;
-        /// Reserved: the commit/rollback lifecycle is owned by the
-        /// `solver-commit-rollback` follow-up. No method is promised here — the
-        /// `Element` trait exposes no checkpoint/rollback/commit hooks today.
+        /// The model checkpoints its mutable non-accept-gated state for
+        /// rollback on a rejected step. The solver calls
+        /// [`Element::checkpoint_state`] before every candidate attempt
+        /// (transient `attempt_step`, DC homotopy before each strategy) and
+        /// [`Element::restore_state`] on rejection; on acceptance the
+        /// checkpoint is dropped. A device that returns `None` (default) is
+        /// stateless and pays nothing.
         const SUPPORTS_ROLLBACK = 1 << 9;
         /// Reserved: a host hint that the model overrides `list_queries`/`query`
         /// with typed metadata beyond the `read_opvars` default. No solver path
@@ -80,6 +84,20 @@ bitflags::bitflags! {
         /// voltages (linear devices, settled logic).
         const BYPASS_OK = 1 << 11;
     }
+}
+
+/// Opaque device-state checkpoint for rollback on rejected timesteps
+/// (ABI-01). Devices pack whatever mutable non-accept-gated state they own
+/// into the `(int, real)` carrier — the same shape as
+/// [`DigitalDevice::digital_hidden_snapshot`]'s carrier, deliberately, so
+/// per-step rollback and PSS full-state re-entry stay compatible. A default
+/// `None` from [`Element::checkpoint_state`] means stateless (zero cost).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ElementCheckpoint {
+    /// Integer state: digital registers, edge-detection memory.
+    pub int_state: Vec<i64>,
+    /// Real state: limiter (`active`, `seeds`) and vold slots, analog vars.
+    pub real_state: Vec<f64>,
 }
 
 /// A device limiter's structured feedback: which unknown it clamped and to
@@ -409,4 +427,22 @@ pub trait Element: AnalogDevice + DigitalDevice + Introspect {
     fn runtime_banks(&self) -> (&[f64], &[f64]) {
         (&[], &[])
     }
+
+    /// Snapshot the device's mutable non-accept-gated state for rollback on a
+    /// rejected step (ABI-01). The solver calls this before every candidate
+    /// attempt (transient `attempt_step`, DC homotopy before each strategy);
+    /// on rejection it calls [`restore_state`](Element::restore_state) with
+    /// the snapshot, on acceptance the snapshot is dropped. Default `None` =
+    /// stateless (the solver skips the restore — zero cost). Accept-gated
+    /// state (operators, event detectors, `last_volts`) is advanced only in
+    /// [`accept_timestep`](Element::accept_timestep) and is naturally safe —
+    /// never checkpoint it.
+    fn checkpoint_state(&self) -> Option<ElementCheckpoint> { None }
+
+    /// Restore device state from a snapshot produced by
+    /// [`checkpoint_state`](Element::checkpoint_state) (ABI-02). Called before
+    /// a retry after the previous attempt was rejected, so the retry starts
+    /// from the last accepted device state — not the dirty rejected-attempt
+    /// state. Default: no-op (stateless device).
+    fn restore_state(&mut self, _checkpoint: &ElementCheckpoint) {}
 }

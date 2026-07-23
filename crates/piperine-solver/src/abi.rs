@@ -3,7 +3,8 @@
 
 // The contract
 pub use crate::core::element::{
-    AnalogDevice, ConvergenceHint, DigitalDevice, Element, ElementCapabilities, Introspect,
+    AnalogDevice, ConvergenceHint, DigitalDevice, Element, ElementCapabilities,
+    ElementCheckpoint, Introspect,
 };
 pub use crate::core::circuit::CircuitInstance;
 pub use crate::core::introspect::{

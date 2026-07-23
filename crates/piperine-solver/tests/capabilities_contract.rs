@@ -43,7 +43,11 @@ fn documented_consumer(flag_name: &str) -> Option<&'static str> {
         }
         // ── Reserved bits owned by a named follow-up feature ─────────────────
         "BYPASS_OK" => "reserved: solver-performance owns stamp bypass",
-        "SUPPORTS_ROLLBACK" => "reserved: solver-commit-rollback owns the lifecycle",
+        "SUPPORTS_ROLLBACK" => {
+            "consumed: transient reject path + DC homotopy retry call \
+             Element::checkpoint_state before each attempt and restore_state \
+             on rejection (analyses/transient.rs, analyses/convergence.rs)"
+        }
         "SUPPORTS_QUERIES" => "reserved: host query-metadata hint; no solver consumer today (SS-11 audit)",
         _ => return None,
     })
