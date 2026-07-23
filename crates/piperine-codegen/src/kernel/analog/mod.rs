@@ -125,6 +125,11 @@ struct AnalogCore {
     /// Terminal order: module ports first, then internal analog nodes
     /// referenced by the body. `terminals[i]` is the node driving `volts[i]`.
     terminals: Vec<NodeId>,
+    /// Source-level names parallel to [`terminals`](Self::terminals), looked
+    /// up from the symbol table at compile time. Surfaced through
+    /// [`AnalogKernel::terminal_name`] so the introspection bridge (ABI-27)
+    /// returns names, not positional indices.
+    terminal_names: Vec<String>,
     /// `digital_terminals[i]` is `true` when `terminals[i]` is a
     /// digital-domain node (a `Bit`/`Logic` port read by bare name inside
     /// this analog body, not through `V`/`I`). Such a terminal is never an
@@ -267,6 +272,27 @@ impl AnalogKernel {
     /// All terminals: ports first, then internal nodes.
     pub fn terminals(&self) -> &[NodeId] {
         &self.core.terminals
+    }
+
+    /// The source-level name of terminal `i`, in
+    /// [`terminals`](Self::terminals) order (ABI-27). Panics on out-of-range
+    /// `i` — every caller is internal and bounds the index via
+    /// [`num_terminals`](Self::num_terminals) first.
+    pub fn terminal_name(&self, i: usize) -> &str {
+        &self.core.terminal_names[i]
+    }
+
+    /// Source-level name of `node`, looking it up through the terminal order
+    /// used by [`terminals`](Self::terminals) (ABI-27). Returns `None` for
+    /// a `NodeId` not in the kernel's terminal set — internal-only callers
+    /// treat that as "no name to surface" (e.g., a force/noise pair whose
+    /// terminal was pruned).
+    pub fn name_of_node(&self, node: NodeId) -> Option<&str> {
+        self.core
+            .terminals
+            .iter()
+            .position(|&t| t == node)
+            .map(|i| self.terminal_name(i))
     }
 
     /// `true` when terminal `i` is digital-domain (never an MNA unknown —

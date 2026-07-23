@@ -28,8 +28,9 @@ use piperine_solver::abi::Noise;
 use piperine_solver::abi::{TransientAnalysisContext, TransientAnalysisState};
 use piperine_solver::abi::{AnalogDevice, DigitalDevice, Element, ElementCapabilities, Introspect};
 use piperine_solver::abi::{
-    Bounds, Invalidation, ParamDescriptor, ParamError, ParamScope, Value, ValueKind,
+    Bounds, Direction, Domain, Invalidation, ParamDescriptor, ParamError, ParamScope, Value, ValueKind,
 };
+use piperine_solver::abi::{TerminalDescriptor, TerminalKind};
 use piperine_solver::abi::DigitalEvent;
 use piperine_solver::abi::{DigitalPorts, EvalCtx, EventSink};
 use piperine_solver::abi::CircularArrayBuffer2;
@@ -396,6 +397,38 @@ impl Introspect for PiperineDevice {
             }
         }
         Err(ParamError::Unknown(name.to_string()))
+    }
+
+    /// Bridge the analog kernel's terminal catalog to the introspection
+    /// surface (ABI-27): one [`TerminalDescriptor`] per kernel terminal,
+    /// named from the symbol table. Ports are [`TerminalKind::External`];
+    /// module-internal nodes referenced by the body (a series-R/thermal
+    /// `wire`, an `idt` accumulator's hidden probe, …) are
+    /// [`TerminalKind::Internal`]. Digital-domain terminal pairs from the
+    /// digital kernel are appended by T16; analog-only devices surface no
+    /// digital terminals here.
+    fn list_terminals(&self) -> Vec<TerminalDescriptor> {
+        let mut out = Vec::new();
+        if let Some(analog) = &self.analog {
+            let kernel = analog.kernel();
+            let num_ports = kernel.num_ports();
+            for (i, _) in kernel.terminals().iter().enumerate() {
+                let name = kernel.terminal_name(i);
+                let direction = if i < num_ports {
+                    Direction::Inout
+                } else {
+                    Direction::Out
+                };
+                let mut desc = TerminalDescriptor::new(name, Domain::Analog, direction);
+                desc.kind = if i < num_ports {
+                    TerminalKind::External
+                } else {
+                    TerminalKind::Internal
+                };
+                out.push(desc);
+            }
+        }
+        out
     }
 }
 

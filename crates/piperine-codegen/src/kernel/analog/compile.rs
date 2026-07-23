@@ -669,11 +669,17 @@ impl<'m> AnalogCompiler<'m> {
             .collect();
         let param_names: Vec<String> =
             self.module.symbols.params().map(|(_, p)| p.name.clone()).collect();
+        let terminal_names: Vec<String> = self
+            .terminals
+            .iter()
+            .map(|&id| self.module.symbols.node(id).name.clone())
+            .collect();
         let terminals = std::mem::take(&mut self.terminals);
 
         let core = AnalogCore {
             name: self.module.name.clone(),
             terminals,
+            terminal_names,
             digital_terminals,
             read_bounds,
             param_names,
