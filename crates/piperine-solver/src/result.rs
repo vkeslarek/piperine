@@ -195,6 +195,13 @@ impl TransientStep {
         self.device_state.get(label)
     }
 
+    /// The labels of devices recorded into this step's `device_state`. Used
+    /// by the selective-recording contract (ABI-34): a `ProbeSelection`
+    /// requesting one device yields exactly that device's label here.
+    pub fn device_state_keys(&self) -> impl Iterator<Item = &str> {
+        self.device_state.keys().map(String::as_str)
+    }
+
     /// This step's hidden digital state for the device labelled `label`
     /// (always recorded), or `None` when the device is stateless/unknown.
     pub fn digital_hidden(&self, label: &str) -> Option<&(Vec<i64>, Vec<f64>)> {

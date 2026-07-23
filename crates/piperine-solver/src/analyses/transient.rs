@@ -89,8 +89,20 @@ pub struct TransientAnalysisOptions {
     /// enabling it clones the stateful devices' banks per accepted step.
     /// With it on, `Trace.i` recomputes currents of state-reading devices
     /// (`delay`/`transition`/`idt`); with it off, that read stays a loud
-    /// error.
+    /// error. When on, this is the shorthand for "record every observable
+    /// on every device" — equivalent to a `probe_selection` enumerating
+    /// every device's full observable catalog (ABI-34).
     pub record_device_state: bool,
+
+    /// Per-device observable requests for selective recording (ABI-33/34).
+    /// Empty by default (no selective recording — the prior all-or-nothing
+    /// behavior stays controlled by `record_device_state`). When non-empty,
+    /// `collect_device_banks` records only the requested observables for
+    /// each device — a host running a long transient with one probe pays
+    /// `O(requested)` memory, not `O(devices × steps)`. Validation
+    /// (`list_observables` membership for every request) runs once at
+    /// solver setup (ABI-35).
+    pub probe_selection: crate::core::introspect::ProbeSelection,
 }
 
 impl TransientAnalysisOptions {
@@ -105,6 +117,7 @@ impl TransientAnalysisOptions {
             record_from: 0.0,
             start_time: 0.0,
             record_device_state: false,
+            probe_selection: crate::core::introspect::ProbeSelection::new(),
         }
     }
 
@@ -129,6 +142,20 @@ impl TransientAnalysisOptions {
     /// Set the earliest recorded time (`TranConfig.start`).
     pub fn with_record_from(mut self, record_from: f64) -> Self {
         self.record_from = record_from;
+        self
+    }
+
+    /// Set the per-device observable selection (ABI-33). When non-empty,
+    /// `collect_device_banks` records only the requested observables
+    /// (instead of the full `(state, vars)` banks every step). An empty
+    /// selection leaves the prior behavior in place: nothing recorded
+    /// unless `record_device_state = true`. Unknown device/observable
+    /// requests fail loud at solver setup (ABI-35).
+    pub fn with_probe_selection(
+        mut self,
+        selection: crate::core::introspect::ProbeSelection,
+    ) -> Self {
+        self.probe_selection = selection;
         self
     }
 }
@@ -1032,10 +1059,14 @@ impl<'a> TransientSolver<'a> {
     /// Record an accepted step's snapshot when it falls inside the
     /// `record_from` window. Runtime banks committed by the digital settle
     /// (idt/operator state) post-date the in-step snapshot — re-attach so
-    /// the recorded state matches this point.
+    /// the recorded state matches this point. Device-state recording is
+    /// gated by either `record_device_state` (full-bank shorthand) or a
+    /// non-empty `probe_selection` (selective recording — ABI-34).
     fn record_step(&self, steps: &mut Vec<TransientStep>, t_next: f64, snapshot: TransientStep) {
         if t_next >= self.options.record_from {
-            let snapshot = if self.options.record_device_state {
+            let snapshot = if self.options.record_device_state
+                || !self.options.probe_selection.requests.is_empty()
+            {
                 snapshot.with_device_state(self.collect_device_banks())
             } else {
                 snapshot
@@ -1284,7 +1315,9 @@ impl<'a> TransientSolver<'a> {
         let step = TransientStep::new(time, values)
             .with_digital(self.system.circuit.digital_state.nets.clone())
             .with_digital_hidden(self.collect_digital_hidden());
-        if !self.options.record_device_state {
+        if !self.options.record_device_state
+            && self.options.probe_selection.requests.is_empty()
+        {
             return step;
         }
         step.with_device_state(self.collect_device_banks())
@@ -1303,13 +1336,48 @@ impl<'a> TransientSolver<'a> {
         hidden
     }
 
-    /// Clone each stateful device's runtime banks (opt-in recording; see
-    /// `TransientAnalysisOptions::record_device_state`).
+    /// Clone each stateful device's runtime banks — either the full
+    /// `(state, vars)` banks (when `record_device_state` is on, the
+    /// "record everything" shorthand — ABI-34) or only the slices the
+    /// `probe_selection` requested (when non-empty). Empty
+    /// `probe_selection` + `record_device_state = false` records nothing
+    /// (today's default-off). The selection is consulted per-(device,
+    /// observable): only requested observables land in the returned map.
     fn collect_device_banks(&self) -> HashMap<String, (Vec<f64>, Vec<f64>)> {
         let mut device_state = HashMap::new();
+        let selection = &self.options.probe_selection;
+        let selective = !selection.requests.is_empty();
         for dev in &self.system.circuit.devices {
             let (state, vars) = dev.runtime_banks();
-            if !state.is_empty() || !vars.is_empty() {
+            if selective {
+                let label = dev.name();
+                if !selection.requests.iter().any(|(d, _)| d == label) {
+                    continue;
+                }
+                let (mut filt_state, mut filt_vars) = (Vec::new(), Vec::new());
+                for (i, slot) in dev.list_observables().into_iter().enumerate() {
+                    if !selection.contains(label, &slot.name) {
+                        continue;
+                    }
+                    match slot.kind {
+                        crate::core::introspect::ObservableKind::State
+                        | crate::core::introspect::ObservableKind::Charge
+                        | crate::core::introspect::ObservableKind::Flux => {
+                            if i < state.len() {
+                                filt_state.push(state[i]);
+                            }
+                        }
+                        crate::core::introspect::ObservableKind::Var => {
+                            let vi = i.saturating_sub(state.len());
+                            if vi < vars.len() {
+                                filt_vars.push(vars[vi]);
+                            }
+                        }
+                        crate::core::introspect::ObservableKind::BranchCurrent => {}
+                    }
+                }
+                device_state.insert(label.to_string(), (filt_state, filt_vars));
+            } else if !state.is_empty() || !vars.is_empty() {
                 device_state.insert(dev.name().to_string(), (state.to_vec(), vars.to_vec()));
             }
         }
