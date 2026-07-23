@@ -426,6 +426,23 @@ impl Element for PiperineDevice {
         {
             caps |= ElementCapabilities::SUPPORTS_ROLLBACK;
         }
+        // ABI-26: a JIT device declares the analytic derivative orders its
+        // kernel compiled — symbolic differentiation always produces one, so
+        // every nonlinear JIT device sets the matching bit(s). The `.disto`
+        // driver checks these before solving for HD2/HD3 (ABI-24); a fully
+        // linear device (resistor) compiles no disto kernels and sets
+        // neither. `NUMERIC_JACOBIAN` is never set by the JIT (its Jacobian
+        // is always analytic) — that bit is reserved for finite-difference
+        // plugins.
+        if let Some(analog) = &self.analog {
+            let kernel = analog.kernel();
+            if kernel.has_disto2() {
+                caps |= ElementCapabilities::HAS_DISTO2;
+            }
+            if kernel.has_disto3() {
+                caps |= ElementCapabilities::HAS_DISTO3;
+            }
+        }
         caps
     }
 
