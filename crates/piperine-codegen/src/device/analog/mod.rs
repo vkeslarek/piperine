@@ -401,22 +401,32 @@ impl AnalogInstance {
 
     /// Restore the limiter state from a checkpoint produced by
     /// [`checkpoint_limiter`](Self::checkpoint_limiter) (ABI-04): rewinds
-    /// `active`, `seeds`, and the vold slots.
+    /// `active`, `seeds`, and the vold slots. Reads exactly its own slice
+    /// (`real_state[..1 + 2·num_limits]`) so a combined limiter+digital
+    /// checkpoint can carry digital real state after it.
     pub fn restore_limiter(&mut self, checkpoint: &piperine_solver::abi::ElementCheckpoint) {
         let nl = self.kernel.num_limits();
         if nl == 0 {
             return;
         }
-        let limiter_len = 1 + nl;
-        if checkpoint.real_state.len() < limiter_len {
+        let total = 1 + 2 * nl;
+        if checkpoint.real_state.len() < total {
             return;
         }
-        self.limiter.unpack(&checkpoint.real_state[..limiter_len]);
-        let vold = &checkpoint.real_state[limiter_len..];
+        self.limiter.unpack(&checkpoint.real_state[..1 + nl]);
+        let vold = &checkpoint.real_state[1 + nl..1 + 2 * nl];
         let base = self.kernel.limit_base();
-        if vold.len() == nl && base + nl <= self.state.len() {
+        if base + nl <= self.state.len() {
             self.state[base..base + nl].clone_from_slice(vold);
         }
+    }
+
+    /// Length of this limiter's slice within a combined checkpoint's
+    /// `real_state` (`1 + 2·num_limits`: active flag + seeds + vold). `0`
+    /// when the device has no `$limit`.
+    pub fn limiter_checkpoint_len(&self) -> usize {
+        let nl = self.kernel.num_limits();
+        if nl == 0 { 0 } else { 1 + 2 * nl }
     }
 
     /// Runtime banks read by the kernel — `(state, vars)` — exposed for

@@ -395,10 +395,12 @@ impl Element for PiperineDevice {
                 caps |= ElementCapabilities::SAMPLES_ANALOG;
             }
         }
-        // ABI-04: a device with a `$limit` limiter owns mutable non-accept-
-        // gated state (the active flag, seeds, vold slots) that the solver
-        // must checkpoint/restore around rejected steps.
-        if self.analog.as_ref().is_some_and(AnalogInstance::has_limiter) {
+        // ABI-04/ABI-05: a device with a `$limit` limiter or stateful digital
+        // registers owns mutable non-accept-gated state the solver must
+        // checkpoint/restore around rejected steps.
+        if self.analog.as_ref().is_some_and(AnalogInstance::has_limiter)
+            || self.digital.as_ref().is_some_and(DigitalInstance::has_registers)
+        {
             caps |= ElementCapabilities::SUPPORTS_ROLLBACK;
         }
         caps
@@ -436,17 +438,53 @@ impl Element for PiperineDevice {
         self.analog.as_ref().map(|a| a.runtime_banks()).unwrap_or((&[], &[]))
     }
 
-    /// Checkpoint the limiter's non-accept-gated state (ABI-04). Returns
-    /// `None` when the device has no `$limit` (or no analog instance).
+    /// Checkpoint the device's mutable non-accept-gated state (ABI-04/05):
+    /// the limiter (active, seeds, vold) from the analog instance and the
+    /// register banks (vars_int, vars_real, prev_watch) from the digital
+    /// instance. Returns `None` when the device owns no such state.
+    /// Layout: `int_state` carries the digital registers; `real_state` is
+    /// `[limiter_pack..., digital_vars_real...]`.
     fn checkpoint_state(&self) -> Option<piperine_solver::abi::ElementCheckpoint> {
-        self.analog.as_ref().and_then(AnalogInstance::checkpoint_limiter)
+        let limiter = self.analog.as_ref().and_then(AnalogInstance::checkpoint_limiter);
+        let digital = self
+            .digital
+            .as_ref()
+            .and_then(DigitalInstance::checkpoint_registers);
+        match (limiter, digital) {
+            (None, None) => None,
+            (Some(lim), None) => Some(lim),
+            (None, Some((dig_int, dig_real))) => Some(piperine_solver::abi::ElementCheckpoint {
+                int_state: dig_int,
+                real_state: dig_real,
+            }),
+            (Some(mut lim), Some((dig_int, dig_real))) => {
+                // Limiter's real_state goes first; digital real vars follow.
+                lim.real_state.extend(dig_real);
+                lim.int_state = dig_int;
+                Some(lim)
+            }
+        }
     }
 
-    /// Restore the limiter state from a checkpoint produced by
-    /// [`checkpoint_state`](Self::checkpoint_state) (ABI-04).
+    /// Restore device state from a checkpoint produced by
+    /// [`checkpoint_state`](Self::checkpoint_state) (ABI-04/05): rewinds the
+    /// limiter (reading its own leading slice of `real_state`) and the
+    /// digital registers (`int_state` + the trailing `real_state`).
     fn restore_state(&mut self, checkpoint: &piperine_solver::abi::ElementCheckpoint) {
+        let limiter_len = self
+            .analog
+            .as_ref()
+            .map_or(0, AnalogInstance::limiter_checkpoint_len);
         if let Some(analog) = self.analog.as_mut() {
             analog.restore_limiter(checkpoint);
+        }
+        if let Some(digital) = self.digital.as_mut() {
+            let dig_real = if checkpoint.real_state.len() > limiter_len {
+                &checkpoint.real_state[limiter_len..]
+            } else {
+                &[]
+            };
+            digital.restore_registers(&checkpoint.int_state, dig_real);
         }
     }
 }
