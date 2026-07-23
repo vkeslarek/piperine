@@ -163,6 +163,22 @@ impl EventEntry {
         }
     }
 
+    /// Build a scheduled live-set entry (LIVE-06): a host-scheduled
+    /// parameter write due at `time`. Same landing semantics as a
+    /// breakpoint (`kind=Breakpoint`, `priority=Exact`) but `Restore` on
+    /// rejection — a pending write does not vanish because the step that
+    /// would apply it was rejected; it stays pending for the retry.
+    pub fn scheduled_set(time: f64) -> Self {
+        Self {
+            kind: EventKind::Breakpoint,
+            time,
+            target: EventTarget::Advisory,
+            priority: EventPriority::Exact,
+            source: EventSource::ScheduledSet,
+            rollback: RollbackBehavior::Restore,
+        }
+    }
+
     /// Build a `$bound_step` advisory entry: `kind=StepHint`,
     /// `priority=Advisory`, `rollback=Discard`.
     pub fn step_hint(time: f64, source: impl Into<String>) -> Self {
@@ -284,6 +300,36 @@ impl EventQueue {
         self.push(EventEntry::digital(event.time, event.net, source_label));
     }
 
+    /// Push an analog breakpoint declared via
+    /// [`Element::next_breakpoints`](crate::core::element::AnalogDevice::next_breakpoints)
+    /// (ABI-38). Adapts a polled time into [`EventEntry::breakpoint`]:
+    /// `kind=Breakpoint`, `priority=Exact`, `rollback=RePoll` (breakpoints
+    /// are stateless — re-declared each step).
+    pub fn push_breakpoint(
+        &mut self,
+        time: f64,
+        source_index: usize,
+        source_label: impl Into<String>,
+    ) {
+        self.push(EventEntry::breakpoint(time, source_index, source_label));
+    }
+
+    /// Push a scheduled live-parameter set (LIVE-06) into the unified queue
+    /// (ABI-38). Same landing semantics as a breakpoint (`kind=Breakpoint`,
+    /// `priority=Exact`) but `Restore` on rejection — a pending write stays
+    /// pending through a rejected step.
+    pub fn push_scheduled_set(&mut self, time: f64) {
+        self.push(EventEntry::scheduled_set(time));
+    }
+
+    /// Push a `$bound_step` advisory hint (ABI-39). Adapts the device's
+    /// `bound_step_hint()` into [`EventEntry::step_hint`]:
+    /// `kind=StepHint`, `priority=Advisory`, `rollback=Discard` (the
+    /// device re-emits next attempt).
+    pub fn push_step_hint(&mut self, time: f64, source_label: impl Into<String>) {
+        self.push(EventEntry::step_hint(time, source_label));
+    }
+
     /// The earliest event time, or `+inf` when the queue is empty. The
     /// transient driver's `predict_step` reads this to choose its landing
     /// point.
@@ -380,6 +426,7 @@ impl EventQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::digital::LogicValue;
 
     fn entry(time: f64, priority: EventPriority, kind: EventKind) -> EventEntry {
         EventEntry {
@@ -456,15 +503,84 @@ mod tests {
         assert_eq!(bp.priority, EventPriority::Exact);
         assert_eq!(bp.rollback, RollbackBehavior::RePoll);
 
-        let hint = EventEntry::step_hint(3e-6, "x1");
+        let set = EventEntry::scheduled_set(3e-6);
+        assert_eq!(set.kind, EventKind::Breakpoint);
+        assert_eq!(set.priority, EventPriority::Exact);
+        assert_eq!(set.rollback, RollbackBehavior::Restore);
+        assert_eq!(set.source, EventSource::ScheduledSet);
+
+        let hint = EventEntry::step_hint(4e-6, "x1");
         assert_eq!(hint.kind, EventKind::StepHint);
         assert_eq!(hint.priority, EventPriority::Advisory);
         assert_eq!(hint.rollback, RollbackBehavior::Discard);
 
-        let crossing = EventEntry::crossing(4e-6, "cmp");
+        let crossing = EventEntry::crossing(5e-6, "cmp");
         assert_eq!(crossing.kind, EventKind::Crossing);
         assert_eq!(crossing.priority, EventPriority::Advisory);
         assert_eq!(crossing.rollback, RollbackBehavior::Discard);
+    }
+
+    /// ABI-38/39: the four event sources (digital, breakpoint, scheduled
+    /// set, step hint) coexist in the unified queue. At equal times,
+    /// `Exact` (digital/breakpoint/set) outranks `Advisory` (step hint).
+    #[test]
+    fn all_four_sources_coexist_in_unified_queue() {
+        let mut queue = EventQueue::new();
+        queue.push_digital_event(
+            &DigitalEvent {
+                time: 2e-6,
+                net: DigitalNet(0),
+                value: LogicValue::One,
+                source: 0,
+                seq: 0,
+            },
+            "u0",
+        );
+        queue.push_breakpoint(1e-6, 0, "vpulse");
+        queue.push_scheduled_set(3e-6);
+        queue.push_step_hint(1e-6, "x1");
+
+        // Earliest time = 1e-6; at that time, Exact (breakpoint) outranks
+        // Advisory (step hint).
+        let front = queue.peek().expect("non-empty");
+        assert_eq!(front.kind, EventKind::Breakpoint);
+        assert_eq!(front.priority, EventPriority::Exact);
+        assert!((front.time - 1e-6).abs() < f64::MIN_POSITIVE);
+    }
+
+    /// Per-source rollback behavior on rejection: digital and scheduled
+    /// sets return (Restore); breakpoints and step hints stay out
+    /// (RePoll/Discard).
+    #[test]
+    fn rollback_honors_per_source_rollback_behavior() {
+        let mut queue = EventQueue::new();
+        queue.push_digital_event(
+            &DigitalEvent {
+                time: 1e-6,
+                net: DigitalNet(0),
+                value: LogicValue::One,
+                source: 0,
+                seq: 0,
+            },
+            "u0",
+        );
+        queue.push_breakpoint(1e-6, 0, "vpulse");
+        queue.push_scheduled_set(1e-6);
+        queue.push_step_hint(1e-6, "x1");
+
+        queue.checkpoint();
+        let drained = queue.drain_due(1e-6);
+        assert_eq!(drained.len(), 4);
+
+        queue.rollback();
+        // Digital + scheduled set return; breakpoint + step hint stay out.
+        let mut kinds: Vec<EventKind> = Vec::new();
+        while let Some(Reverse(e)) = queue.heap.pop() {
+            kinds.push(e.kind);
+        }
+        assert_eq!(kinds.len(), 2, "only Restore-tagged entries return");
+        assert!(kinds.contains(&EventKind::Digital));
+        assert!(kinds.contains(&EventKind::Breakpoint), "scheduled set maps to Breakpoint kind");
     }
 
     /// One-deep checkpoint: snapshot before drain, restore brings back the
