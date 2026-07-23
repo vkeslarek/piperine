@@ -4,11 +4,14 @@
 //! scheduled parameter sets.
 #![allow(dead_code)]
 use crate::analog::AnalogReference;
-use crate::analyses::Context;
 use crate::analyses::dc::DcSolver;
+use crate::analyses::events::{
+    EventEntry, EventKind, EventQueue, EventSource,
+};
+use crate::analyses::Context;
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::ElementCheckpoint;
-use crate::digital::LogicValue;
+use crate::digital::{DigitalNet, LogicValue};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
 use crate::math::integration::{TrBdf2, TrBdf2Phase};
@@ -773,36 +776,68 @@ impl<'a> TransientSolver<'a> {
     /// the Milne-LTE gate: the LTE would otherwise see the intentional
     /// source jump (e.g. V(in) 0→5 at a pulse edge) as a huge error and
     /// reject, thrashing the integrator against the edge it already hit.
+    ///
+    /// The four ad-hoc sources merge through a single [`EventQueue`]
+    /// (ABI-36): digital events, analog breakpoints, scheduled live sets,
+    /// and `$bound_step` hints each enter the queue with their own
+    /// [`RollbackBehavior`](crate::analyses::events::RollbackBehavior);
+    /// `predict_step` reads the earliest from one place.
     fn predict_step(&self, st: &TimeLoop) -> StepPrediction {
-        let t_next_event = self.system.circuit.digital_state.peek_next_event_time();
         let pi_target = st.current_time + st.dt;
         let mut t_next = pi_target.min(self.options.stop_time);
         let mut landed_on_breakpoint = false;
-        if t_next_event < t_next {
-            t_next = t_next_event;
-            landed_on_breakpoint = true;
+
+        // Unified event queue (ABI-36/T26): one read path for all four
+        // time-discontinuity sources. The queue is built fresh each
+        // prediction — the underlying storage (digital scheduler's heap,
+        // device-declared breakpoints, set queue) remains the source of
+        // truth; this is the read-side unification.
+        let mut queue = EventQueue::new();
+
+        // Digital events — peek the scheduler's heap.
+        let t_digital = self.system.circuit.digital_state.peek_next_event_time();
+        if t_digital.is_finite() {
+            queue.push(EventEntry::digital(t_digital, DigitalNet(0), "scheduler"));
         }
-        for dev in self.system.circuit.devices.iter() {
+
+        // Analog breakpoints (pulse edges, PWL corners, `@timer` fires).
+        for (idx, dev) in self.system.circuit.devices.iter().enumerate() {
             for bp in dev.next_breakpoints(st.current_time, st.dt) {
-                if bp > st.current_time && bp < t_next {
-                    t_next = bp;
-                    landed_on_breakpoint = true;
+                if bp > st.current_time {
+                    queue.push_breakpoint(bp, idx, dev.name());
                 }
             }
         }
-        // Scheduled live sets (LIVE-06): each pending set time is a
-        // declared discontinuity — land exactly on it so the write
-        // applies at its scheduled time with the edge rules (skip LTE,
-        // reset prev_h). The relative-epsilon snap absorbs float
-        // accumulation: a proposal one ulp shy of the set time
-        // stretches onto it instead of leaving a ~1e-22 s sliver step.
+
+        // Scheduled live sets (LIVE-06) — host-scheduled parameter writes.
         if let Some(ts) = self.sets.next_breakpoint(st.current_time) {
-            let snap = 1e-9 * ts.abs().max(f64::MIN_POSITIVE);
-            if ts <= t_next + snap {
-                t_next = ts;
-                landed_on_breakpoint = true;
+            queue.push_scheduled_set(ts);
+        }
+
+        // One read path: peek the earliest event. Per-source semantics:
+        // digital/breakpoints use strict `<`; sets additionally snap
+        // within a float tolerance (LIVE-06 — absolute scheduled times
+        // accumulate ulp drift across long runs).
+        if let Some(front) = queue.peek() {
+            let time = front.time;
+            if time > st.current_time {
+                let is_set = matches!(front.source, EventSource::ScheduledSet);
+                let snap = 1e-9 * time.abs().max(f64::MIN_POSITIVE);
+                let lands = if is_set {
+                    time <= t_next + snap
+                } else {
+                    time < t_next
+                };
+                if lands {
+                    t_next = time;
+                    landed_on_breakpoint = matches!(
+                        front.kind,
+                        EventKind::Digital | EventKind::Breakpoint
+                    );
+                }
             }
         }
+
         StepPrediction {
             t_next,
             dt_actual: t_next - st.current_time,
