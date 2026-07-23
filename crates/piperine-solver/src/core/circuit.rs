@@ -332,12 +332,34 @@ impl CircuitInstance {
     pub(crate) fn setup_all(&mut self, ctx: &Context) -> crate::result::Result<()> {
         if self.is_set_up { return Ok(()); }
         for d in self.devices.iter_mut() { d.setup(ctx)?; }
+        // ABI-19: seed every element with the run's nominal temperature during
+        // setup, after `allocate_unknowns` (run in `CircuitBuilder::build`)
+        // and before the first `load_*`. Subsequent runs short-circuit on
+        // `is_set_up`; a temperature sweep re-seeds through `set_temperature`.
+        self.set_temperature(ctx.tolerances.temperature);
         self.is_set_up = true;
         Ok(())
     }
 
     pub fn update_all(&mut self, state: &CircularArrayBuffer2<f64>, context: &Context) {
         self.devices.iter_mut().for_each(|d| d.update(state, context));
+    }
+
+    /// Set the instance temperature on every element (ABI-19/20): each
+    /// element's `set_temperature` recomputes its temperature-dependent
+    /// constants; the next load restamps naturally. The return value is
+    /// always [`Invalidation::Temperature`] — temperature changes never
+    /// leave the matrix shape untouched at a higher level than restamp
+    /// (a structural `Rebuild` from a temperature change is the same
+    /// fail-loud path as a parameter `Rebuild`, surfaced by `set_param`).
+    /// Default no-op devices (no `set_temperature` override) are
+    /// unaffected — they keep reading `$temperature` at eval time
+    /// (backward compatible).
+    pub fn set_temperature(&mut self, t: f64) -> crate::core::introspect::Invalidation {
+        for d in self.devices.iter_mut() {
+            d.set_temperature(t);
+        }
+        crate::core::introspect::Invalidation::Temperature
     }
 
     /// Solver-level restamp path (MD-18): set a parameter on the built
