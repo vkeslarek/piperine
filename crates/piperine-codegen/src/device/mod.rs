@@ -395,6 +395,12 @@ impl Element for PiperineDevice {
                 caps |= ElementCapabilities::SAMPLES_ANALOG;
             }
         }
+        // ABI-04: a device with a `$limit` limiter owns mutable non-accept-
+        // gated state (the active flag, seeds, vold slots) that the solver
+        // must checkpoint/restore around rejected steps.
+        if self.analog.as_ref().is_some_and(AnalogInstance::has_limiter) {
+            caps |= ElementCapabilities::SUPPORTS_ROLLBACK;
+        }
         caps
     }
 
@@ -428,6 +434,20 @@ impl Element for PiperineDevice {
 
     fn runtime_banks(&self) -> (&[f64], &[f64]) {
         self.analog.as_ref().map(|a| a.runtime_banks()).unwrap_or((&[], &[]))
+    }
+
+    /// Checkpoint the limiter's non-accept-gated state (ABI-04). Returns
+    /// `None` when the device has no `$limit` (or no analog instance).
+    fn checkpoint_state(&self) -> Option<piperine_solver::abi::ElementCheckpoint> {
+        self.analog.as_ref().and_then(AnalogInstance::checkpoint_limiter)
+    }
+
+    /// Restore the limiter state from a checkpoint produced by
+    /// [`checkpoint_state`](Self::checkpoint_state) (ABI-04).
+    fn restore_state(&mut self, checkpoint: &piperine_solver::abi::ElementCheckpoint) {
+        if let Some(analog) = self.analog.as_mut() {
+            analog.restore_limiter(checkpoint);
+        }
     }
 }
 

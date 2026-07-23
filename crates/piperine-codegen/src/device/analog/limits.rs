@@ -51,6 +51,27 @@ impl Limiter {
         self.active
     }
 
+    /// Pack the limiter's own state (the `active` flag + the vcrit `seeds`)
+    /// for a checkpoint (ABI-04). The vold slots live in the analog
+    /// instance's `state` bank and are packed by the caller alongside this.
+    /// Layout: `[active_as_f64, seed_0, seed_1, …]`.
+    pub(super) fn pack(&self) -> Vec<f64> {
+        let mut v = Vec::with_capacity(1 + self.seeds.len());
+        v.push(if self.active { 1.0 } else { 0.0 });
+        v.extend_from_slice(&self.seeds);
+        v
+    }
+
+    /// Restore the limiter's own state from a pack produced by
+    /// [`pack`](Self::pack) (ABI-04). No-op when the layout is too short.
+    pub(super) fn unpack(&mut self, packed: &[f64]) {
+        let Some((&a, rest)) = packed.split_first() else { return };
+        self.active = a != 0.0;
+        if rest.len() == self.seeds.len() {
+            self.seeds.clone_from_slice(rest);
+        }
+    }
+
     /// Node voltages with each `$limit` junction branch replaced by its
     /// limited value `vlim` — the linearization point for the Norton
     /// transform when voltage limiting is active. Non-junction nodes are

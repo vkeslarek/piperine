@@ -370,6 +370,55 @@ impl AnalogInstance {
         self.limiter.active()
     }
 
+    /// Whether this instance carries a `$limit` limiter with mutable state
+    /// worth checkpointing (ABI-04).
+    pub fn has_limiter(&self) -> bool {
+        self.kernel.num_limits() > 0
+    }
+
+    /// Checkpoint the limiter's non-accept-gated state (ABI-04): the `active`
+    /// flag, the vcrit `seeds`, and the vold slots in `state`. Returns `None`
+    /// when the device has no `$limit`. Layout of `real_state`:
+    /// `[active, seed_0..seed_n, vold_0..vold_n]`.
+    pub fn checkpoint_limiter(
+        &self,
+    ) -> Option<piperine_solver::abi::ElementCheckpoint> {
+        let nl = self.kernel.num_limits();
+        if nl == 0 {
+            return None;
+        }
+        let base = self.kernel.limit_base();
+        let mut real = self.limiter.pack();
+        let end = (base + nl).min(self.state.len());
+        if end > base {
+            real.extend_from_slice(&self.state[base..end]);
+        }
+        Some(piperine_solver::abi::ElementCheckpoint {
+            int_state: Vec::new(),
+            real_state: real,
+        })
+    }
+
+    /// Restore the limiter state from a checkpoint produced by
+    /// [`checkpoint_limiter`](Self::checkpoint_limiter) (ABI-04): rewinds
+    /// `active`, `seeds`, and the vold slots.
+    pub fn restore_limiter(&mut self, checkpoint: &piperine_solver::abi::ElementCheckpoint) {
+        let nl = self.kernel.num_limits();
+        if nl == 0 {
+            return;
+        }
+        let limiter_len = 1 + nl;
+        if checkpoint.real_state.len() < limiter_len {
+            return;
+        }
+        self.limiter.unpack(&checkpoint.real_state[..limiter_len]);
+        let vold = &checkpoint.real_state[limiter_len..];
+        let base = self.kernel.limit_base();
+        if vold.len() == nl && base + nl <= self.state.len() {
+            self.state[base..base + nl].clone_from_slice(vold);
+        }
+    }
+
     /// Runtime banks read by the kernel — `(state, vars)` — exposed for
     /// opt-in per-step recording (the host's `Trace.i` recompute path).
     pub fn runtime_banks(&self) -> (&[f64], &[f64]) {
