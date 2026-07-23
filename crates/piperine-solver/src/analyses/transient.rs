@@ -8,6 +8,7 @@ use crate::analyses::Context;
 use crate::analyses::convergence::StepperStrategy;
 use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
+use crate::core::element::ElementCheckpoint;
 use crate::digital::LogicValue;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::faer::FaerSparseLinearSystem;
@@ -429,6 +430,9 @@ struct StepAttempt {
     outcome: crate::result::Result<Option<TransientStep>>,
     /// Analog history checkpoint, restored on rejection.
     analog_history: CircularArrayBuffer2<f64>,
+    /// Per-element device-state checkpoints (ABI-02): restored on rejection,
+    /// dropped on acceptance. `None` entries = stateless devices.
+    device_checkpoints: Vec<Option<ElementCheckpoint>>,
 }
 
 /// Phase 3 output — the Milne-LTE accept-gate verdict for a converged
@@ -793,11 +797,15 @@ impl<'a> TransientSolver<'a> {
         prediction: StepPrediction,
     ) -> crate::result::Result<StepAttempt> {
         self.system.circuit.digital_state.checkpoint();
+        // Per-element checkpoint (ABI-01): snapshot each device's mutable
+        // non-accept-gated state BEFORE the digital settle + Newton solve can
+        // dirty it, so a rejected attempt restores to the last accepted state.
+        let device_checkpoints = self.snapshot_device_checkpoints();
         let analog_history = self.solver.state_snapshot();
         self.system.circuit.run_digital_at(prediction.t_next)?;
         let outcome =
             self.execute_timestep(st.current_time, prediction.dt_actual, st.last_step_accepted);
-        Ok(StepAttempt { prediction, outcome, analog_history })
+        Ok(StepAttempt { prediction, outcome, analog_history, device_checkpoints })
     }
 
     /// Phase 3 — assess: the global Milne-LTE accept gate (TRB-05/06). The
@@ -1072,6 +1080,7 @@ impl<'a> TransientSolver<'a> {
         prediction: &StepPrediction,
         milne: f64,
         analog_history: CircularArrayBuffer2<f64>,
+        device_checkpoints: Vec<Option<ElementCheckpoint>>,
     ) -> bool {
         if self.policy.trace.transient {
             eprintln!(
@@ -1095,6 +1104,9 @@ impl<'a> TransientSolver<'a> {
         }
         st.steps_rejected += 1;
         st.last_step_accepted = false;
+        // Restore device-internal state (limiter/digital registers) so the
+        // retry starts from the pre-attempt checkpoint (ABI-02).
+        self.restore_device_checkpoints(&device_checkpoints);
         self.solver.restore_state(analog_history);
         false
     }
@@ -1107,10 +1119,14 @@ impl<'a> TransientSolver<'a> {
         st: &mut TimeLoop,
         dt_proposed: f64,
         analog_history: CircularArrayBuffer2<f64>,
+        device_checkpoints: Vec<Option<ElementCheckpoint>>,
     ) {
         st.steps_rejected += 1;
         st.last_step_accepted = false;
         self.system.circuit.digital_state.rollback();
+        // Restore device-internal state (limiter/digital registers) so the
+        // retry starts from the pre-attempt checkpoint (ABI-02).
+        self.restore_device_checkpoints(&device_checkpoints);
         self.solver.restore_state(analog_history);
         st.dt = self.stepper.reject_dt(dt_proposed, &self.options);
     }
@@ -1125,18 +1141,20 @@ impl<'a> TransientSolver<'a> {
             // Whether this step's Milne window spans a live-set value jump
             // (consumed here; re-armed below when new sets apply).
             let post_set_step = st.sets_just_applied;
-            let StepAttempt { prediction, outcome, analog_history } = attempt;
+            let StepAttempt { prediction, outcome, analog_history, device_checkpoints } = attempt;
 
             if let Ok(Some(snapshot)) = outcome {
                 // Both Newton phases converged.
                 let assessment = self.assess_step(&prediction, post_set_step, &node_indices);
                 if assessment.accept {
+                    // ABI-03: discard the checkpoints — accept_timestep advances
+                    // accept-gated state, the non-accept-gated state is kept.
                     self.accept_step(
                         &mut st, &mut steps, prediction, snapshot,
                         assessment.milne, post_set_step,
                     )?;
                 } else if self.reject_lte_step(
-                    &mut st, &prediction, assessment.milne, analog_history,
+                    &mut st, &prediction, assessment.milne, analog_history, device_checkpoints,
                 ) {
                     // dt floor: accept the step as-is rather than stall.
                     self.accept_step(
@@ -1146,7 +1164,7 @@ impl<'a> TransientSolver<'a> {
                 }
             } else {
                 // Either phase failed to converge — reject the whole step.
-                self.reject_step(&mut st, prediction.dt_proposed, analog_history);
+                self.reject_step(&mut st, prediction.dt_proposed, analog_history, device_checkpoints);
                 if st.dt <= self.options.dt_min && let Err(e) = outcome {
                     return Err(e);
                 }
@@ -1200,6 +1218,28 @@ impl<'a> TransientSolver<'a> {
             }
         }
         device_state
+    }
+
+    /// Snapshot every element's non-accept-gated state for the rollback
+    /// checkpoint (ABI-01). Stateless devices return `None`; the Vec is
+    /// indexed parallel to `circuit.devices`.
+    fn snapshot_device_checkpoints(&self) -> Vec<Option<ElementCheckpoint>> {
+        self.system
+            .circuit
+            .devices
+            .iter()
+            .map(|d| d.checkpoint_state())
+            .collect()
+    }
+
+    /// Restore each element that produced a checkpoint before the rejected
+    /// attempt (ABI-02). `None` entries are skipped (stateless device).
+    fn restore_device_checkpoints(&mut self, checkpoints: &[Option<ElementCheckpoint>]) {
+        for (dev, ckpt) in self.system.circuit.devices.iter_mut().zip(checkpoints) {
+            if let Some(c) = ckpt {
+                dev.restore_state(c);
+            }
+        }
     }
 }
 
