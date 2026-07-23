@@ -168,6 +168,20 @@ pub enum Direction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SignConvention { IntoTerminal, OutOfTerminal }
 
+/// Whether a terminal is user-facing or internal (ABI-29). External ports
+/// appear in the module signature; internal terminals are non-port wires
+/// the kernel nonetheless surfaces (series-R, thermal, hidden probes); an
+/// auxiliary terminal is a diagnostic-only point a host hides by default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TerminalKind {
+    /// A port declared in the module signature (user-facing).
+    External,
+    /// An internal node (non-port `wire` — series-R, thermal, etc.).
+    Internal,
+    /// An auxiliary node (hidden, diagnostic-only — e.g., a probe point).
+    Auxiliary,
+}
+
 /// Metadata for one declared terminal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TerminalDescriptor {
@@ -179,6 +193,9 @@ pub struct TerminalDescriptor {
     pub required: bool,
     pub discipline: Option<String>,
     pub sign: SignConvention,
+    /// Whether the terminal is a user-facing port or an internal/auxiliary
+    /// node (ABI-29). Defaults to [`TerminalKind::External`].
+    pub kind: TerminalKind,
 }
 
 impl TerminalDescriptor {
@@ -186,6 +203,7 @@ impl TerminalDescriptor {
         Self {
             name: name.into(), domain, direction,
             required: true, discipline: None, sign: SignConvention::IntoTerminal,
+            kind: TerminalKind::External,
         }
     }
 }
@@ -320,6 +338,7 @@ mod tests {
         assert!(desc.required);
         assert_eq!(desc.discipline, None);
         assert_eq!(desc.sign, SignConvention::IntoTerminal);
+        assert_eq!(desc.kind, TerminalKind::External);
     }
 
     #[test]
@@ -327,8 +346,27 @@ mod tests {
         let mut desc = TerminalDescriptor::new("n", Domain::Analog, Direction::Inout);
         desc.discipline = Some("electrical".into());
         desc.sign = SignConvention::OutOfTerminal;
+        desc.kind = TerminalKind::Internal;
         
         assert_eq!(desc.discipline, Some("electrical".into()));
         assert_eq!(desc.sign, SignConvention::OutOfTerminal);
+        assert_eq!(desc.kind, TerminalKind::Internal);
+    }
+
+    #[test]
+    fn terminal_kind_distinguishes_external_internal_auxiliary() {
+        let ext = TerminalDescriptor::new("d", Domain::Analog, Direction::Inout);
+        let mut int = TerminalDescriptor::new("dp", Domain::Analog, Direction::Inout);
+        let mut aux = TerminalDescriptor::new("probe", Domain::Analog, Direction::Inout);
+        int.kind = TerminalKind::Internal;
+        aux.kind = TerminalKind::Auxiliary;
+        // ABI-29: the three kinds are distinct values; `External` is the
+        // default in `TerminalDescriptor::new`, the other two are opt-in.
+        assert_eq!(ext.kind, TerminalKind::External);
+        assert_eq!(int.kind, TerminalKind::Internal);
+        assert_eq!(aux.kind, TerminalKind::Auxiliary);
+        assert_ne!(ext.kind, int.kind);
+        assert_ne!(int.kind, aux.kind);
+        assert_ne!(ext.kind, aux.kind);
     }
 }
