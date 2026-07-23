@@ -564,6 +564,7 @@ impl<'a> TransientSolver<'a> {
     ) -> crate::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
+        Self::validate_probe_selection(circuit, &options.probe_selection)?;
 
         // Build DAG topology once before simulation begins
         circuit.rebuild_digital_topology();
@@ -602,6 +603,34 @@ impl<'a> TransientSolver<'a> {
     /// custom stepper; the driver delegates rejection/proposal to it.
     pub fn set_plan(&mut self, plan: crate::analyses::convergence::ConvergencePlan) {
         self.plan = plan;
+    }
+
+    /// Validate the `ProbeSelection` against the assembled circuit at setup
+    /// time (ABI-35). Each `(device_label, observable_name)` request must
+    /// name a device that exists and an observable that device declares —
+    /// otherwise fail loud with a named error before the run starts, not
+    /// silently record nothing. Runs once after `setup_all` so the device
+    /// catalog (`list_observables`) is populated.
+    fn validate_probe_selection(
+        circuit: &CircuitInstance,
+        selection: &crate::core::introspect::ProbeSelection,
+    ) -> crate::result::Result<()> {
+        for (label, observable) in &selection.requests {
+            let Some(dev) = circuit.devices.iter().find(|d| d.name() == label) else {
+                return Err(crate::error::Error::simple(
+                    crate::error::SolverDomain::Element,
+                    format!("device `{label}` not found"),
+                ));
+            };
+            let declared = dev.list_observables();
+            if !declared.iter().any(|d| &d.name == observable) {
+                return Err(crate::error::Error::simple(
+                    crate::error::SolverDomain::Element,
+                    format!("device `{label}` has no observable `{observable}`"),
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Read-only access to the convergence plan (e.g., for tests asserting

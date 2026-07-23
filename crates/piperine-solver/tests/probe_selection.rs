@@ -268,3 +268,68 @@ fn ten_devices_one_observable_records_only_that_device() {
         assert!(banks.1.is_empty(), "var[0] not requested");
     }
 }
+
+// ── ABI-35: fail-loud on unknown observable/device at setup ─────────────
+//
+// A `ProbeSelection` that requests a device that doesn't exist, or an
+// observable a known device doesn't declare, fails loud at solver setup
+// (before any step) — not silently records nothing. The error names the
+// offending device/observable so a host can pinpoint the typo.
+
+/// Build a transient solver against the stub circuit; returns the setup
+/// Result so the fail-loud validation paths can be asserted without
+/// driving a run.
+fn tran_setup_result(
+    opts: TransientAnalysisOptions,
+) -> piperine_solver::Result<()> {
+    let loads = Arc::new(AtomicUsize::new(0));
+    let dev = StatefulStub::new("stub", loads);
+    let netlist = Netlist::new();
+    let circuit =
+        CircuitInstance::from_devices_and_netlist("probe-sel", vec![Box::new(dev)], netlist);
+    let mut solver = Solver::new(circuit).with_tran_opts(opts).build();
+    solver.tran().map(|_| ())
+}
+
+/// ABI-35: requesting an observable a device doesn't declare fails loud
+/// at setup. The stub declares `state[0]` and `var[0]`; requesting
+/// `nonexistent` on it surfaces a named error.
+#[test]
+fn unknown_observable_fails_loud_at_setup() {
+    let opts = TransientAnalysisOptions::new(1e-6, 1e-7)
+        .with_probe_selection(ProbeSelection::new().request("stub", "nonexistent"));
+    let err = tran_setup_result(opts).expect_err("unknown observable should fail");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("device `stub` has no observable `nonexistent`"),
+        "expected named-observable error, got: {msg}"
+    );
+}
+
+/// ABI-35: requesting a device label that doesn't exist in the circuit
+/// fails loud at setup with a "device not found" error.
+#[test]
+fn unknown_device_fails_loud_at_setup() {
+    let opts = TransientAnalysisOptions::new(1e-6, 1e-7)
+        .with_probe_selection(ProbeSelection::new().request("ghost", "state[0]"));
+    let err = tran_setup_result(opts).expect_err("unknown device should fail");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("device `ghost` not found"),
+        "expected named-device error, got: {msg}"
+    );
+}
+
+/// ABI-35 happy path: a `ProbeSelection` that names only valid
+/// (device, observable) pairs must pass setup without error. Guards
+/// against the validation being over-eager.
+#[test]
+fn valid_probe_selection_passes_setup() {
+    let opts = TransientAnalysisOptions::new(1e-6, 1e-7)
+        .with_probe_selection(
+            ProbeSelection::new()
+                .request("stub", "state[0]")
+                .request("stub", "var[0]"),
+        );
+    tran_setup_result(opts).expect("valid selection must not fail setup");
+}
