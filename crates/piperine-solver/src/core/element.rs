@@ -114,6 +114,36 @@ pub struct ConvergenceHint {
     pub limited_value: f64,
 }
 
+/// Structured limiting feedback from a device limiter (ABI-09), replacing
+/// the bare `limiting_active()` veto + `convergence_hint()` carry. The
+/// `is_some()` gate still vetoes Newton convergence; `limited_value` applied
+/// to `net` steers the guess (the old hint behavior); `limiter_name` +
+/// `reason` are diagnostics for hosts.
+#[derive(Debug, Clone)]
+pub struct LimitingReport {
+    /// The unknown the limiter clamped (node voltage or branch current).
+    pub net: AnalogReference,
+    /// The raw Newton-proposed value before limiting.
+    pub proposed: f64,
+    /// The clamped value the solver should use.
+    pub limited_value: f64,
+    /// Which limiter fired (`"pnjlim"`, `"fetlim"`, `"limvds"`, …).
+    pub limiter_name: &'static str,
+    /// Why the limiter clamped (diagnostic, not behavioral).
+    pub reason: LimitReason,
+}
+
+/// Why a limiter clamped a value (diagnostic for hosts).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LimitReason {
+    /// Junction voltage step too large (pnjlim/fetlim).
+    VoltageStep,
+    /// Drain-source voltage step too large (limvds).
+    VdsStep,
+    /// Custom limiter reason (plugin-defined).
+    Other(&'static str),
+}
+
 /// Analog participation: MNA loading + the analog lifecycle/convergence hooks.
 ///
 /// Every method defaults to a no-op that contributes nothing, so an element
@@ -134,6 +164,13 @@ pub trait AnalogDevice: Send + Sync {
     /// keeps reporting through [`limiting_active`](AnalogDevice::limiting_active);
     /// a device that knows *what* it limited upgrades to a hint.
     fn convergence_hint(&self) -> Option<ConvergenceHint> { None }
+
+    /// Structured limiting feedback (ABI-09): when a device limiter clamps a
+    /// value, return a [`LimitingReport`] naming the clamped unknown, the
+    /// proposed vs limited value, and which limiter fired. The solver gates
+    /// Newton convergence on `is_some()` and applies `limited_value` to
+    /// `net`. Default `None` — a device that does not limit inherits this.
+    fn limiting_report(&self) -> Option<LimitingReport> { None }
 
     /// Largest timestep the element can tolerate from here (`$bound_step`).
     fn bound_step_hint(&self) -> f64 { f64::INFINITY }

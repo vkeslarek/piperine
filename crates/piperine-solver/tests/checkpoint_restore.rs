@@ -87,6 +87,14 @@ impl RecordingDevice {
     }
 }
 
+/// Spec ABI-09/11: the default `limiting_report` returns `None` — a device
+/// that does not limit inherits this (zero cost, no false convergence veto).
+#[test]
+fn default_limiting_report_is_none() {
+    let dev = StatelessStub;
+    assert!(dev.limiting_report().is_none());
+}
+
 /// A bare `Element` declares `SUPPORTS_ROLLBACK` and the trait surface
 /// exposes the checkpoint/restore pair — the capability bit and the hook
 /// exist together (ABI-01 wiring gate).
