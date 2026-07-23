@@ -397,18 +397,18 @@ impl CircuitInstance {
     }
 
     /// Steer the Newton guess with every device's structured limiting
-    /// feedback ([`AnalogDevice::convergence_hint`](crate::core::element::AnalogDevice::convergence_hint)):
-    /// the clamped unknown is set
-    /// to the limited value before the convergence test. The DC and
-    /// transient systems delegate here each iteration.
-    pub fn apply_convergence_hints(&self, mut guess: ndarray::ArrayViewMut1<f64>) {
+    /// feedback ([`AnalogDevice::limiting_report`](crate::core::element::AnalogDevice::limiting_report)):
+    /// each report's `limited_value` overwrites its `net` before the
+    /// convergence test (ABI-10). The DC and transient systems delegate here
+    /// each iteration.
+    pub fn apply_limiting_reports(&self, mut guess: ndarray::ArrayViewMut1<f64>) {
         use crate::math::linear::AsIndex;
         for dev in &self.devices {
-            if let Some(hint) = dev.convergence_hint()
-                && let Some(i) = hint.net.as_index()
+            if let Some(report) = dev.limiting_report()
+                && let Some(i) = report.net.as_index()
                 && i < guess.len()
             {
-                guess[i] = hint.limited_value;
+                guess[i] = report.limited_value;
             }
         }
     }

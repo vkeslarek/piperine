@@ -120,7 +120,7 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         // convergence gate. The cache is dropped by `invalidate_bypass`
         // whenever the stamps depend on anything besides the solution vector
         // (homotopy scale changes, digital settle).
-        if self.cache_valid && !self.any_limiting() {
+        if self.cache_valid && !self.any_limiting_report() {
             if let Some(curr) = state.latest() {
                 // Per-variable threshold (ngspice bypass semantics):
                 // |Δv_i| < vntol + reltol·max(|v_i|, |v_i_old|) for every
@@ -200,12 +200,12 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         self.circuit.netlist()
     }
 
-    fn any_limiting(&self) -> bool {
-        self.circuit.devices.iter().any(|d| d.limiting_active())
+    fn any_limiting_report(&self) -> bool {
+        self.circuit.devices.iter().any(|d| d.limiting_report().is_some())
     }
 
-    fn apply_convergence_hints(&self, guess: ndarray::ArrayViewMut1<f64>) {
-        self.circuit.apply_convergence_hints(guess);
+    fn apply_limiting_reports(&self, guess: ndarray::ArrayViewMut1<f64>) {
+        self.circuit.apply_limiting_reports(guess);
     }
 
     /// Called after successful convergence to check for Safe Operating Area violations.
