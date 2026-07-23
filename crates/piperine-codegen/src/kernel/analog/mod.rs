@@ -130,6 +130,12 @@ struct AnalogCore {
     /// [`AnalogKernel::terminal_name`] so the introspection bridge (ABI-27)
     /// returns names, not positional indices.
     terminal_names: Vec<String>,
+    /// Per-state-slot introspection names (ABI-47): one entry per slot in
+    /// `[0, num_state_slots)`. Runtime-serviced operators carry their kind
+    /// name plus slot id (`"ddt[3]"`, `"delay[5]"`, …); trailing `$limit`
+    /// vold slots are `"vold[k]"`. Surfaced through
+    /// [`AnalogKernel::state_slot_names`].
+    state_slot_names: Vec<String>,
     /// `digital_terminals[i]` is `true` when `terminals[i]` is a
     /// digital-domain node (a `Bit`/`Logic` port read by bare name inside
     /// this analog body, not through `V`/`I`). Such a terminal is never an
@@ -300,6 +306,42 @@ impl AnalogKernel {
             .iter()
             .position(|&t| t == node)
             .map(|i| self.terminal_name(i))
+    }
+
+    /// Per-slot names for the runtime state bank (ABI-47), one entry per
+    /// slot in `[0, num_state_slots)`. Used by the introspection bridge to
+    /// surface `.state` rows with readable names rather than positional
+    /// indices.
+    pub fn state_slot_names(&self) -> &[String] {
+        &self.core.state_slot_names
+    }
+
+    /// Named terminal pairs `(plus, minus)` per force branch (ABI-47),
+    /// looked up through [`name_of_node`](Self::name_of_node). Pairs whose
+    /// terminals aren't in the kernel's terminal set fall back to `"gnd"`
+    /// (matching the resolver's `NodeId::GROUND` convention).
+    pub fn force_terminal_name_pairs(&self) -> Vec<(String, String)> {
+        self.force_terminals()
+            .iter()
+            .map(|&(p, m)| {
+                let p_name = self.name_of_node(p).unwrap_or("gnd").to_string();
+                let m_name = self.name_of_node(m).unwrap_or("gnd").to_string();
+                (p_name, m_name)
+            })
+            .collect()
+    }
+
+    /// Named terminal pairs `(plus, minus)` per noise source (ABI-47),
+    /// looked up through [`name_of_node`](Self::name_of_node).
+    pub fn noise_terminal_name_pairs(&self) -> Vec<(String, String)> {
+        self.noise_terminals()
+            .iter()
+            .map(|&(p, m)| {
+                let p_name = self.name_of_node(p).unwrap_or("gnd").to_string();
+                let m_name = self.name_of_node(m).unwrap_or("gnd").to_string();
+                (p_name, m_name)
+            })
+            .collect()
     }
 
     /// `true` when terminal `i` is digital-domain (never an MNA unknown —

@@ -480,6 +480,49 @@ impl Introspect for PiperineDevice {
         }
         out
     }
+
+    /// Model identity (ABI-46): the kernel's module name as `type_id`, no
+    /// version (the language has no version declaration today — empty
+    /// string is the documented "unversioned" sentinel). A host uses this
+    /// to render family-specific UI without name-matching.
+    fn model_descriptor(&self) -> piperine_solver::abi::ModelDescriptor {
+        let type_id = self
+            .analog
+            .as_ref()
+            .map(|a| a.kernel().name().to_string())
+            .or_else(|| self.digital.as_ref().map(|d| d.kernel().name().to_string()))
+            .unwrap_or_default();
+        piperine_solver::abi::ModelDescriptor { type_id, version: String::new() }
+    }
+
+    /// Per-slot names for the analog kernel's runtime state bank (ABI-47):
+    /// runtime operators (`ddt`, `delay`, `idt`, …) named by kind + slot
+    /// id; trailing `$limit` vold slots named `vold[k]`. Empty for a
+    /// digital-only device.
+    fn list_state_slot_names(&self) -> Vec<String> {
+        self.analog
+            .as_ref()
+            .map(|a| a.kernel().state_slot_names().to_vec())
+            .unwrap_or_default()
+    }
+
+    /// Named `(plus, minus)` terminal pairs per force branch (ABI-47),
+    /// bridged from `AnalogKernel::force_terminals` via the symbol table.
+    fn list_force_terminal_pairs(&self) -> Vec<(String, String)> {
+        self.analog
+            .as_ref()
+            .map(|a| a.kernel().force_terminal_name_pairs())
+            .unwrap_or_default()
+    }
+
+    /// Named `(plus, minus)` terminal pairs per noise source (ABI-47),
+    /// bridged from `AnalogKernel::noise_terminals` via the symbol table.
+    fn list_noise_terminal_pairs(&self) -> Vec<(String, String)> {
+        self.analog
+            .as_ref()
+            .map(|a| a.kernel().noise_terminal_name_pairs())
+            .unwrap_or_default()
+    }
 }
 
 impl Element for PiperineDevice {

@@ -397,6 +397,30 @@ pub trait Introspect: Send + Sync {
     /// Declared terminals (name, domain, direction, required). Empty when the
     /// element does not describe its terminals.
     fn list_terminals(&self) -> Vec<TerminalDescriptor> { Vec::new() }
+
+    /// Model identity (ABI-46): type id + version, the family a host
+    /// renders against. Defaults to no identity — a host falls back to the
+    /// instance name.
+    fn model_descriptor(&self) -> crate::core::introspect::ModelDescriptor {
+        crate::core::introspect::ModelDescriptor::default()
+    }
+
+    /// Per-slot names for the runtime state bank (ABI-47): one entry per
+    /// state slot, in bank order. Empty when the device declares no
+    /// introspectable runtime state. A host uses this to render
+    /// `.state`/`.op` rows with kind names (`"ddt[0]"`, `"vold[1]"`, …)
+    /// rather than positional indices.
+    fn list_state_slot_names(&self) -> Vec<String> { Vec::new() }
+
+    /// Named terminal pairs `(plus, minus)` per force branch (ABI-47),
+    /// sourced from the kernel's `force_terminals` catalog. Empty for a
+    /// device with no `V(...) <- ...` potential forces.
+    fn list_force_terminal_pairs(&self) -> Vec<(String, String)> { Vec::new() }
+
+    /// Named terminal pairs `(plus, minus)` per noise source (ABI-47),
+    /// sourced from the kernel's `noise_terminals` catalog. Empty for a
+    /// device with no noise contributions.
+    fn list_noise_terminal_pairs(&self) -> Vec<(String, String)> { Vec::new() }
 }
 
 /// A single thing the solver simulates — the one contract over every

@@ -182,6 +182,36 @@ pub enum TerminalKind {
     Auxiliary,
 }
 
+/// Model identity and version for diagnostics + introspection (ABI-46). A
+/// host uses this to render model-specific UI (e.g., picking the right
+/// opvar table for `"mos"` vs `"diode"`) and to gate feature availability
+/// without name-matching. The default `{ type_id: "", version: "" }` is
+/// the conservative "no identity declared" — a host falls back to the
+/// instance name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelDescriptor {
+    /// Source-level type id (`"mos"`, `"diode"`, `"bjt"`, …). Empty when
+    /// the device does not declare a model family.
+    pub type_id: String,
+    /// Model version (`"3"`, `"3.1"`, …). Empty when unversioned.
+    pub version: String,
+}
+
+impl ModelDescriptor {
+    /// The "no identity declared" default — a host falls back to the
+    /// instance name from [`Element::name`](crate::core::element::Element::name).
+    pub const EMPTY: ModelDescriptor = ModelDescriptor {
+        type_id: String::new(),
+        version: String::new(),
+    };
+}
+
+impl Default for ModelDescriptor {
+    fn default() -> Self {
+        Self::EMPTY
+    }
+}
+
 /// Metadata for one declared terminal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TerminalDescriptor {
@@ -368,5 +398,28 @@ mod tests {
         assert_ne!(ext.kind, int.kind);
         assert_ne!(int.kind, aux.kind);
         assert_ne!(ext.kind, aux.kind);
+    }
+
+    #[test]
+    fn model_descriptor_default_is_empty_sentinel() {
+        // ABI-46: a host-built Element with no kernel inherits the empty
+        // descriptor — both fields empty, host falls back to instance name.
+        let r = Resistor { r: 1000.0 };
+        let descriptor = r.model_descriptor();
+        assert_eq!(descriptor.type_id, "");
+        assert_eq!(descriptor.version, "");
+        assert_eq!(ModelDescriptor::default(), ModelDescriptor::EMPTY);
+        assert_eq!(ModelDescriptor::EMPTY.type_id, "");
+        assert_eq!(ModelDescriptor::EMPTY.version, "");
+    }
+
+    #[test]
+    fn named_catalogs_default_empty_for_simple_element() {
+        // ABI-47: a plain analog-only device inherits empty named catalogs
+        // for state slots, force terminals, and noise terminals.
+        let r = Resistor { r: 1000.0 };
+        assert!(r.list_state_slot_names().is_empty());
+        assert!(r.list_force_terminal_pairs().is_empty());
+        assert!(r.list_noise_terminal_pairs().is_empty());
     }
 }

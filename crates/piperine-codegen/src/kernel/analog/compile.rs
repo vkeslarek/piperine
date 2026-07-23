@@ -693,12 +693,31 @@ impl<'m> AnalogCompiler<'m> {
             .iter()
             .map(|&id| self.module.symbols.node(id).name.clone())
             .collect();
+        // Per-state-slot introspection names (ABI-47): each runtime-serviced
+        // state kind gets `"<kind>[<id>]"`; the trailing `$limit` vold slots
+        // are `"vold[k]"`. Slots without a runtime state stay empty.
+        let num_state_slots = self.module.symbols.num_states() + self.limits.len();
+        let mut state_slot_names: Vec<String> = vec![String::new(); num_state_slots];
+        for (id, sv) in self.module.symbols.states() {
+            let idx = id.0 as usize;
+            if idx < state_slot_names.len() {
+                state_slot_names[idx] = format!("{}[{}]", sv.kind.name(), id.0);
+            }
+        }
+        let limit_base = self.module.symbols.num_states();
+        for k in 0..self.limits.len() {
+            let idx = limit_base + k;
+            if idx < state_slot_names.len() {
+                state_slot_names[idx] = format!("vold[{k}]");
+            }
+        }
         let terminals = std::mem::take(&mut self.terminals);
 
         let core = AnalogCore {
             name: self.module.name.clone(),
             terminals,
             terminal_names,
+            state_slot_names,
             digital_terminals,
             read_bounds,
             param_names,
