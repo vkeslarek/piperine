@@ -32,6 +32,7 @@ plugin device, and an external model are equivalent once they present the one
 - §16 Validation and failure rules
 - §17 Sensitivity analysis
 - §18 Periodic steady state
+- §19 Lifecycle contract — per-analysis hook chart
 
 ---
 
@@ -81,7 +82,7 @@ contracted responsibilities; every public method belongs to exactly one:
 | Circuit state | Read-only views of the built circuit: the analog netlist, the unified net list, digital labels, the capability union (the OR of every element's `ElementCapabilities`), and device access. |
 | Analysis entry | One uniform entry point per analysis — `dc`, `ac`, `transient`, `noise`, `transfer_function`, `sens`, `pss` — each handing a driver a borrow of the circuit plus a `Context`. |
 | Mixed-signal seam | The one place analog acceptance seeds digital events and the scheduler runs (§14): `init_digital`, `run_digital_at[_with_analog]`, `accept_and_run_digital`, `rebuild_digital_topology`. |
-| Live mutation | The restamp path (`set_element_param`, §10.5) plus the per-solve hooks (`setup_all`, `update_all`, `apply_convergence_hints`). |
+| Live mutation | The restamp path (`set_element_param`, §10.5) plus the per-solve hooks (`setup_all`, `update_all`, `apply_limiting_reports`). |
 | Construction | None — construction stays in the `CircuitBuilder`. |
 
 Construction is the builder's job. `CircuitBuilder::build` runs each element's
@@ -156,7 +157,7 @@ to select behavior: capability flags gate, as before.
 | `DEPENDS_ON_DIGITAL` | Analog load reads the digital net snapshot (D2A). Implies `ANALOG`; a D2A-ordering descriptor for the DC and transient drivers. |
 | `HAS_INTERNAL_UNKNOWNS` | The element allocated internal MNA unknowns (auxiliary branch currents, hidden states) through the `allocate_unknowns` seam during circuit construction. |
 | `BYPASS_OK` | Reserved: stamp bypass is owned by the `solver-performance` follow-up. The DC driver's stamp cache (§9) is global — gated on solution movement and limiting, not on this flag. |
-| `SUPPORTS_ROLLBACK` | Reserved: the commit/rollback lifecycle is owned by a follow-up feature. No method is promised — the `Element` contract exposes no checkpoint/rollback/commit hooks. |
+| `SUPPORTS_ROLLBACK` | The element overrides `checkpoint_state`/`restore_state` to snapshot/restore its mutable non-accept-gated state around rejected timesteps and DC homotopy retries (§3.1, §15.8). Default `checkpoint_state() = None` = stateless = zero cost. |
 | `SUPPORTS_QUERIES` | Reserved: a host-facing hint that the model overrides `list_queries`/`query` with typed metadata beyond the `read_opvars` default. No solver path reads this flag. |
 
 An element must declare its capabilities accurately; the solver gates analysis
@@ -181,15 +182,19 @@ sources, and may request convergence or timestep controls.
 
 | Method | Contract |
 |--------|----------|
-| `set_temperature(t)` | Set the device temperature for temperature-dependent parameters. `t` is absolute temperature in kelvin. |
+| `setup(context)` | One-time initialization before the first solve (identity-resolved cross-cutting hook; also on `Element`). |
+| `allocate_unknowns(alloc)` | Pre-freeze internal-unknown allocation, called once per element by the circuit builder before the matrix shape freezes (§5.2). Elements that allocate must declare `HAS_INTERNAL_UNKNOWNS`. Default no-op. |
+| `set_temperature(t)` | Set the device temperature for temperature-dependent parameters. `t` is absolute temperature in kelvin. Called once during circuit construction (default nominal temperature), re-seeded during `setup_all` with the run's actual `Tolerances.temperature` (§9), and re-driven on a temperature sweep (invalidation path). Default no-op — backward compatible for elements that read `$temperature` at eval time. |
 | `update(state, context)` | Refresh internal model state from the current analog solution history before loading stamps. |
 | `initial_conditions()` | Return requested initial branch voltages as `(plus, minus, value)` tuples. A missing terminal means ground. |
-| `limiting_active()` | Report that device-side limiting is still active; convergence must not be accepted while true. |
-| `convergence_hint()` | Structured limiting feedback: which unknown the limiter clamped, and to what value. The solver applies the limited value to the Newton guess before the convergence test, so the iteration continues from the clamped point. Default none. |
+| `limiting_report()` | Structured limiting feedback: `Option<LimitingReport { net, proposed, limited_value, limiter_name, reason }>`. `is_some()` gates Newton convergence (replaces the old `limiting_active: bool`); the solver applies `limited_value` to `net` in the Newton guess before the convergence test (replaces the old `convergence_hint`). Default none. |
+| `checkpoint_state()` | Return an opaque `ElementCheckpoint { int_state, real_state }` snapshot of the element's mutable non-accept-gated state (limiter active/seeds/vold, digital registers), taken before each transient attempt and each DC homotopy attempt. Restored on rejection; discarded on acceptance. Default `None` = stateless = zero cost. |
+| `restore_state(ckpt)` | Restore a snapshot previously produced by `checkpoint_state`. Called on every rejected transient step (LTE or Newton failure) and on every DC homotopy strategy fallthrough, before the retry. Default no-op. |
 | `bound_step_hint()` | Return the maximum desirable next timestep (`$bound_step` lineage). Infinity means no bound. |
 | `next_breakpoints(from, horizon)` | Absolute landing times this element requires the integrator to hit within `(from, from + horizon]` — `@timer` fires, source edges, PWL corners. Absolute times, so they survive step rollback. Default empty. |
-| `allocate_unknowns(alloc)` | Pre-freeze internal-unknown allocation, called once per element by the circuit builder before the matrix shape freezes (§5.2). Elements that allocate must declare `HAS_INTERNAL_UNKNOWNS`. Default no-op. |
 | `suggest_transient_step(state, time_history, context)` | LTE-driven timestep suggestion, consulted by the transient stepper after each accepted step; the proposal is clamped to the minimum over all suggestions. Default none (no bound). |
+| `accept_timestep(state, t, nets, sink)` | The analog→digital bridge hook (also on `Element`): called after each accepted solution point at time `t`; a mixed-signal element may emit digital events through `sink`. Advances accept-gated state (operators, event detectors, `last_volts`). |
+| `destroy()` | Teardown when the circuit instance is dropped (also on `Element`). |
 
 `context` carries only the immutable `Tolerances` (§3.3) — gmin, the
 convergence tolerances, temperature, and the circuit-wide shunt. Simulation
@@ -552,7 +557,7 @@ Two assembly-level details are normative:
 - **Stamp cache.** Between Newton iterations the DC driver reuses the previous
   iteration's assembled stamps when every unknown moved less than
   `vntol + reltol·max(|x|, |x_old|)` (ngspice bypass semantics), suppressed
-  while any device reports `limiting_active()`. The cache is dropped whenever
+  while any device reports a non-`None` `limiting_report()`. The cache is dropped whenever
   the stamps depend on anything besides the solution vector — a homotopy scale
   change or a digital settle — and on any parameter write.
 - **Shunt conductances.** The homotopy conductance (§15.5) and the optional
@@ -637,11 +642,16 @@ The time loop is a thin loop over named phase methods, with its mutable state
    - Propose the next timestep (`propose_dt`) — the PI controller from the
      global error, then clamped by every element's `suggest_transient_step`.
 5. **Reject.** On an LTE failure (`reject_lte_step`): roll back the digital
-   checkpoint and the analog history, reduce the proposed timestep
+   checkpoint and the analog history, call `restore_state` on every
+   checkpointed element (limiter/digital registers rewound to the pre-attempt
+   snapshot), roll back the unified `EventQueue` (honoring each entry's
+   rollback behavior — digital events restored, breakpoints re-polled, hints
+   discarded), reduce the proposed timestep via the convergence plan's stepper
    (÷8 backtracking), and reset the PI memory. At the minimum-timestep floor
    the step is **accepted as-is** rather than stalling — the accuracy
    concession is warned and counted in the run statistics. On a Newton failure
-   in either sub-step (`reject_step`): roll back both checkpoints, reduce the
+   in either sub-step (`reject_step`): roll back the digital + analog +
+   device-internal checkpoints, roll back the event queue, reduce the
    timestep, and retry; reaching the minimum timestep without convergence
    fails the analysis loud.
 
@@ -695,6 +705,13 @@ the failed step by 8 and resets the PI memory. With no usable error signal
 `dt_max`. All of these gains live in the typed `StepperGains` config (§15.4),
 not in the controller body. The Milne estimate is computed over node-voltage
 unknowns only (branch currents are KCL-derived).
+
+The PI controller is owned by the convergence plan (`ConvergencePlan::stepper`,
+§15.4) — the transient driver delegates `propose_dt` and `reject_dt` to the
+plan's stepper rather than holding its own stepper. The plan is the single
+strategy owner across analyses (Newton + Homotopy + Stepper). The unified
+event queue (§15.9) is the predict-step read path; `predict_step` peeks
+`EventQueue::peek_next_time()` instead of merging the four ad-hoc sources.
 
 ### 10.4 Results
 
@@ -921,12 +938,12 @@ Newton convergence requires both:
    The tolerance kind follows the unknown the row belongs to: node-voltage
    rows use voltage tolerance; branch-current rows use current tolerance.
 
-Device-side limiting is an additional gate: if any analog device reports
-`limiting_active()`, Newton convergence is false even when the numeric tests
-pass. Before the tests run, the solver applies every device's structured
-limiting feedback (`convergence_hint`, §3.1) to the Newton guess — the clamped
-unknown is set to the limited value, so the iteration continues from the
-clamped point instead of oscillating around it.
+Device-side limiting is an additional gate: if any analog device reports a
+non-`None` `limiting_report()`, Newton convergence is false even when the numeric
+tests pass. Before the tests run, the solver applies every device's structured
+limiting report (`limiting_report()`, §3.1) to the Newton guess — the clamped
+unknown is set to `limited_value`, so the iteration continues from the clamped
+point instead of oscillating around it.
 
 ### 15.2 Damping
 
@@ -944,14 +961,29 @@ The solver must not accept convergence while any device reports active limiting.
 
 ### 15.4 Convergence plan
 
-Homotopy escalation is **solver policy**, expressed as a composable convergence
-plan rather than inline branches in the DC driver. The plan runs plain Newton,
-then falls through an ordered list of homotopy strategies until one converges,
-returning the first converged solution or the last failure. The default plan is
-gmin stepping followed by source stepping. Each strategy is stateless: it drives
-the plain-Newton solve and sets the homotopy scales through a driver interface,
-and never reaches into the solver's internals. This is the seam at which an
-analysis or host selects a different escalation.
+Homotopy escalation and transient stepping are **solver policy**, expressed as a
+composable convergence plan rather than inline branches in the DC or transient
+driver. The plan owns three strategies:
+
+- **NewtonStrategy** (e.g. `DampedNewton`) — the inner loop's damping/limiting
+  policy.
+- **HomotopyStrategy** (`GminStepping`, `SourceStepping`) — the DC fallback
+  cascade; runs plain Newton, then falls through an ordered list of homotopy
+  strategies until one converges, returning the first converged solution or the
+  last failure. The default plan is gmin stepping followed by source stepping.
+  Each strategy is stateless: it drives the plain-Newton solve and sets the
+  homotopy scales through a driver interface, and never reaches into the
+  solver's internals.
+- **StepperStrategy** (`PiController`) — the transient timestep proposal/reject
+  policy. The transient driver delegates `propose_dt` and `reject_dt` to
+  `plan.stepper()`; the PI controller's behavior is unchanged (bit-identical
+  step sequence on the parity baselines). A custom stepper is plugged in by
+  constructing the plan with `with_stepper` — the driver routes accept/reject
+  callbacks through the plan without reimplementing the transient loop.
+
+This is the seam at which an analysis or host selects a different escalation or
+a different timestep policy. The plan is the single strategy owner across
+analyses (Newton + Homotopy + Stepper).
 
 Every behavior-affecting numeric lives in the solver's **config home** as a
 typed, defaulted, documented field — no magic literals in strategy or driver
@@ -1011,10 +1043,36 @@ multistep integration method needs a consistent starting history.
 
 ### 15.8 Timestep rejection and rollback
 
-Transient convergence failure rejects the candidate step. Rejection restores the
-digital state to the checkpoint taken before the candidate endpoint, reduces the
-timestep, and retries. A step is committed only after the analog solve succeeds
-and same-time digital acceptance has run.
+Transient convergence failure rejects the candidate step. The reject path is
+symmetric with the attempt's checkpoints — every snapshot taken before the
+candidate endpoint is restored:
+
+1. **Digital state** — `DigitalState::rollback()` rewinds the net snapshot and
+   the digital scheduler's pending events to the pre-attempt checkpoint.
+2. **Device-internal state** — `Element::restore_state(&checkpoint)` is called
+   on every element that produced a non-`None` `checkpoint_state()` snapshot:
+   the limiter (`active`, `seeds`, vold slots) and digital register banks
+   (`vars_int`, `vars_real`, `prev_watch`) rewind to the pre-attempt values.
+3. **Analog history** — the Newton solver's solution history (the rows the
+   rejected attempt left behind) is restored to the pre-attempt buffer.
+4. **Unified event queue** — `EventQueue::rollback()` honors each drained
+   entry's `RollbackBehavior`: `Restore` for digital events (re-fired on the
+   retry), `RePoll` for breakpoints (dropped — re-declared by `next_breakpoints`
+   next predict), `Discard` for step hints and crossings (re-emitted by the
+   device).
+
+The timestep is then reduced through the convergence plan's stepper
+(`ConvergencePlan::stepper_mut().reject_dt`). A step is committed only after
+the analog solve succeeds and same-time digital acceptance has run; the
+checkpoints are discarded on acceptance (no `restore_state` call —
+`accept_timestep` advances accept-gated state).
+
+The same checkpoint/restore pair guards DC homotopy retries (§9): before each
+homotopy strategy attempt the DC solver calls `checkpoint_state()` on every
+checkpointed element; on strategy fallthrough (failed attempt → next strategy)
+it calls `restore_state()` before the next strategy starts, so a failed
+gmin-stepping attempt does not leave a dirty limiter for the source-stepping
+attempt.
 
 ### 15.9 Timestep bounds and breakpoints
 
@@ -1024,13 +1082,19 @@ The step size is bounded from three directions. Elements declare
 largest step their charge/flux history tolerates through
 `suggest_transient_step`, consulted after every accepted step, with the
 proposal clamped to the minimum over all suggestions; and the PI proposal
-itself is clamped to the analysis options' `[dt_min, dt_max]`. The target time
-is the minimum of
-the PI-proposed timestep, the next declared breakpoint, the next pending
-digital event time, the next scheduled live set, and the stop time.
-Breakpoints are absolute, so they survive step rollback. (The ABI also carries
-`bound_step_hint` — the `$bound_step` lineage — which the current stepper does
-not consult; the enforced element-side bound is `suggest_transient_step`.)
+itself is clamped to the analysis options' `[dt_min, dt_max]`.
+
+The four time-discontinuity sources (digital events, analog breakpoints,
+scheduled live sets, `$bound_step` hints) flow through one **unified event
+queue** (`EventQueue<EventEntry>`). Each entry carries its kind
+(`Digital`/`Breakpoint`/`StepHint`/`Crossing`), its target, its time, its
+priority (`Exact`/`Advisory`), its source, and its `RollbackBehavior`
+(`Restore`/`RePoll`/`Discard`). `predict_step` reads the earliest time from
+`EventQueue::peek_next_time()` rather than merging the four sources by hand;
+the queue is checkpointed in `attempt_step` and rolled back on rejection so
+each entry's rollback behavior is honored (§15.8). The target time is the
+minimum of the PI-proposed timestep, the queue's next event time, and the stop
+time. Breakpoints are absolute, so they survive step rollback.
 
 Breakpoints come from two unified sources: (a) **analog** — each element's
 `@timer` fires (a phased `@timer(period, phase)` lets a source declare both
@@ -1139,3 +1203,319 @@ shooting diagnostics: iteration count, the final periodicity residual, and —
 when a Jacobian was computed and the orbit is stable — the estimated natural
 settling time from the dominant monodromy eigenvalue (power iteration on the
 shooting Jacobian).
+
+---
+
+## §19 Lifecycle contract — per-analysis hook chart
+
+This section is the **normative lifecycle contract**: for each analysis
+(`.dc`, `.ac`, `.tran`, `.noise`, `.pss`, `.sens`), the ordered sequence of
+`Element`/`AnalogDevice`/`DigitalDevice`/`Introspect` hooks with their
+preconditions and postconditions, plus a structured algorithm description
+covering the main loop, the phases within one iteration, the
+convergence/rejection criteria, and where each hook sits in that flow. An
+external device author reads this chart to know exactly **when** and **why**
+every hook fires — without reading the solver source.
+
+An executable contract test (`piperine-solver/tests/lifecycle.rs`)
+instruments a recording `Element` and asserts the hook ordering documented
+here for each analysis.
+
+### 19.1 Hook ordering legend
+
+The chart below uses these abbreviations for the hook methods documented in
+§3.1 and §4.2:
+
+| Abbreviation | Hook | Supertrait |
+|--------------|------|------------|
+| `setup` | `setup(context)` | `Element` |
+| `alloc` | `allocate_unknowns(alloc)` | `Element` (builder phase) |
+| `temp` | `set_temperature(t)` | `AnalogDevice` |
+| `update` | `update(state, context)` | `AnalogDevice` |
+| `load_dc` | `load_dc(state, context)` | `AnalogDevice` |
+| `load_ac` | `load_ac(dc_point, ac_ctx, context)` | `AnalogDevice` |
+| `load_tran` | `load_transient(state, tran_ctx, context)` | `AnalogDevice` |
+| `limit` | `limiting_report()` | `AnalogDevice` |
+| `ckpt` | `checkpoint_state()` | `Element` |
+| `restore` | `restore_state(ckpt)` | `Element` |
+| `accept` | `accept_timestep(state, t, nets, sink)` | `Element` |
+| `seq` | `seq_phase(ctx)` | `DigitalDevice` |
+| `comb` | `comb_phase(ctx, sink)` | `DigitalDevice` |
+| `init` | `init(sink)` | `DigitalDevice` |
+| `noise_psd` | `noise_current_psd(dc_point, ac_ctx)` | `AnalogDevice` |
+| `bp` | `next_breakpoints(from, horizon)` | `AnalogDevice` |
+| `suggest_dt` | `suggest_transient_step(...)` | `AnalogDevice` |
+| `opvars` | `read_opvars()` | `Introspect` |
+| `destroy` | `destroy()` | `Element` |
+
+Hooks with a default no-op are listed in brackets `[ ]`; they fire but a
+device that does not override them does nothing. Hooks that never fire in a
+given analysis are omitted from that analysis's chart.
+
+### 19.2 DC operating point (`.dc`)
+
+**Algorithm flow.** DC solves the nonlinear algebraic operating point at time
+zero. The driver runs a homotopy cascade through the convergence plan
+(§15.4): plain Newton first, then gmin stepping, then source stepping. Each
+homotopy strategy attempt is one Newton loop. Between strategy attempts —
+when one strategy falls through to the next — the checkpoint/restore pair
+fires so a failed attempt does not leave a dirty limiter for the next
+strategy. After the analog operating point converges, the mixed-signal DC
+settle loop (§14.1) alternates analog re-solve with digital evaluation until
+the digital state stops changing.
+
+**set_temperature position.** `set_temperature(tolerances.temperature)` is
+called once per element inside `setup_all` — after `allocate_unknowns`
+(builder phase, already done) and before the first `load_dc`. A temperature
+sweep re-calls `set_temperature(t_new)` and honors the returned
+`Invalidation::Temperature` (recompute constants → restamp).
+
+**limiting_report position.** Inside each Newton iteration: after `load_dc`
+assembles the stamps and the linear solve produces a candidate, the solver
+calls `limiting_report()` on every analog device. If any returns `Some`, the
+report's `limited_value` is applied to its `net` in the Newton guess
+(`apply_limiting_reports`) **before** the convergence test; convergence is
+then false (the limiter is still active). The DC bypass (stamp cache, §9) is
+also suppressed while any `limiting_report()` is non-`None`.
+
+**Checkpoint/restore position.** `checkpoint_state()` is called on every
+checkpointed element before each homotopy strategy's `ConvergencePlan::solve`;
+`restore_state(&ckpt)` is called on strategy fallthrough (failed attempt →
+next strategy) before the next strategy starts.
+
+**Hook ordering table:**
+
+| # | Hook | Precondition | Postcondition |
+|---|------|--------------|---------------|
+| 1 | `setup(ctx)` | Circuit built; `allocate_unknowns` done | Element initialized |
+| 2 | `temp(t_nom)` | After `setup`, before first load | Temperature constants seeded |
+| 3 | `init(sink)` | After `setup`; digital devices only | Initial digital events emitted |
+| — | **homotopy loop start** | | |
+| 4 | `ckpt()` | Before each strategy attempt | Per-element checkpoint stored |
+| 5 | `update(state, ctx)` | Each Newton iteration, before load | Internal state refreshed |
+| 6 | `load_dc(state, ctx)` | After `update` | DC stamps contributed |
+| 7 | `limit()` | After linear solve, before convergence test | Limiting report applied to guess; convergence gated |
+| — | *(converged? yes → settle; no → next Newton iter or strategy fallthrough)* | | |
+| 8 | `restore(ckpt)` | On strategy fallthrough, before next strategy | Pre-attempt state rewound |
+| — | **mixed-signal settle loop** (§14.1) | | |
+| 9 | `accept(state, t, nets, sink)` | Analog converged | A2D events seeded |
+| 10 | `seq(ctx)` / `comb(ctx, sink)` | After accept, per delta cycle | Digital nets updated |
+| 11 | `opvars()` | After final operating point | Operating variables readable |
+| 12 | `destroy()` | Circuit dropped | Element torn down |
+
+### 19.3 AC analysis (`.ac`)
+
+**Algorithm flow.** AC solves the DC operating point once (§19.2), then
+freezes the linearization. For each frequency in the sweep, the driver builds
+the AC context, asks each analog device for complex small-signal stamps
+linearized at the DC point, and solves the complex linear system. AC is
+linear at each frequency; the mixed-signal scheduler does not run during the
+sweep.
+
+**set_temperature position.** Inherited from the DC operating-point solve
+(§19.2); AC does not re-call `set_temperature`.
+
+**limiting_report position.** AC does not consult `limiting_report` — the
+operating point is already converged and frozen; small-signal analysis is
+linear.
+
+**Checkpoint/restore position.** None. AC has no iteration that can dirty
+state; the DC operating point was already accepted.
+
+**Hook ordering table:**
+
+| # | Hook | Precondition | Postcondition |
+|---|------|--------------|---------------|
+| 1–12 | *(DC operating point — §19.2)* | | |
+| 13 | `load_ac(dc_point, ac_ctx, ctx)` | DC OP converged; once per frequency | Complex small-signal stamps contributed |
+| 14 | `destroy()` | Circuit dropped | Element torn down |
+
+### 19.4 Transient analysis (`.tran`)
+
+**Algorithm flow.** The transient driver integrates from the start time to
+`stop_time` over a fixed circuit topology, using TR-BDF2 (§10.3) as the sole
+integration scheme. The time loop is a thin loop over named phase methods
+(predict → attempt → assess → accept/reject), each with a specific hook
+contract. The convergence plan owns the stepper (`propose_dt`/`reject_dt`
+delegate to `plan.stepper()`); the unified event queue (`EventQueue`) is the
+predict-step read path.
+
+**Main loop structure.** Per accepted step:
+
+1. **predict_step** — read the PI-proposed `dt` from the plan's stepper; build
+   the unified `EventQueue` from the four sources (digital peek, analog
+   `next_breakpoints`, scheduled sets, `$bound_step` hints); peek the earliest
+   event time and clamp the landing point.
+2. **attempt_step** — checkpoint the digital state, snapshot each element's
+   device-internal state (`checkpoint_state`), snapshot the analog history,
+   checkpoint the event queue; drain due events and run the digital settle
+   (`seq_phase`/`comb_phase`) at the target time; then `execute_timestep`
+   (TR-BDF2: TR Newton solve → BDF2 Newton solve).
+3. **assess_step** — Milne LTE over node-voltage unknowns; skip if the step
+   landed on a breakpoint or is the first step after a live set.
+4. **accept_step** (on pass) — run `accept_timestep` (A2D bridge) + digital
+   settle; commit the digital + event-queue checkpoints; **discard** the
+   device-internal checkpoints (no `restore_state`); record the step; apply
+   scheduled sets; advance the clock; `propose_dt` via the plan's stepper.
+5. **reject_lte_step** / **reject_step** (on failure) — restore the digital
+   checkpoint, **call `restore_state` on every checkpointed element**, restore
+   the analog history, **roll back the event queue** (per-entry
+   `RollbackBehavior`), reduce `dt` via the plan's stepper; at the dt floor,
+   accept as-is with a warning.
+
+**Phases within one iteration (TR-BDF2).** Each `execute_timestep` runs two
+Newton sub-steps:
+- **TR phase** — Trapezoidal over `γ·h` → `x_{n+γ}`. Each Newton iteration
+  calls `update` → `load_transient` → `limit` (limiting_report gates
+  convergence; `apply_limiting_reports` applies the clamped value before the
+  test). A first-order predictor warm-starts from the two newest accepted
+  rows when the previous step was accepted.
+- **BDF2 phase** — Backward differentiation over `(1−γ)·h` → `x_{n+1}`,
+  warm-started from `x_{n+γ}`. Same `update` → `load_transient` → `limit`
+  cycle. Either phase failing rejects the whole step.
+
+**Convergence/rejection criteria.** Newton convergence requires the update
+test + residual test + no active `limiting_report()` (§15.1). LTE rejection
+requires `milne > trtol` (and the step is not breakpoint-exempt). Newton
+failure in either TR or BDF2 phase rejects the whole step. At the dt floor,
+an LTE rejection is accepted as-is (warned); a Newton failure fails the run
+loud.
+
+**set_temperature position.** Called once per element inside `setup_all`,
+before the first `load_transient`. Not re-called during the run unless a
+temperature sweep is in flight.
+
+**limiting_report position.** Inside **both** Newton sub-steps (TR and BDF2):
+after each iteration's `load_transient` + linear solve, `limiting_report()` is
+consulted; `apply_limiting_reports` applies the clamped value to the guess
+before the convergence test; convergence is false while any report is `Some`.
+
+**Checkpoint/restore position.** `checkpoint_state()` is called on every
+checkpointed element in `attempt_step` before the digital settle and the
+TR-BDF2 solve. `restore_state(&ckpt)` is called in **both** `reject_lte_step`
+and `reject_step` before the retry. The checkpoints are discarded on
+acceptance (`accept_step`).
+
+**Hook ordering table:**
+
+| # | Hook | Precondition | Postcondition |
+|---|------|--------------|---------------|
+| 1 | `setup(ctx)` | Circuit built | Element initialized |
+| 2 | `temp(t_nom)` | After `setup`, before first load | Temperature constants seeded |
+| 3 | `init(sink)` | After `setup`; digital devices | Initial digital events emitted |
+| — | **initial operating point** (§19.2, steps 4–11) | | |
+| — | **time loop** (per step) | | |
+| 4 | `bp(from, horizon)` | In `predict_step` | Breakpoint times contributed to `EventQueue` |
+| 5 | `ckpt()` | In `attempt_step`, before settle + solve | Per-element checkpoint stored |
+| 6 | `seq(ctx)` | After due events drained, at target time | Register banks committed; clock edges detected |
+| 7 | `comb(ctx, sink)` | After `seq_phase` | Output events emitted |
+| 8 | `update(state, ctx)` | Each Newton iter (TR + BDF2), before load | Internal state refreshed |
+| 9 | `load_tran(state, tran_ctx, ctx)` | After `update` | Companion stamps contributed |
+| 10 | `limit()` | After linear solve, before convergence test | Limiting applied to guess; convergence gated |
+| — | *(TR + BDF2 converged? yes → assess; no → reject)* | | |
+| 11 | `restore(ckpt)` | On reject (LTE or Newton), before retry | Pre-attempt state rewound |
+| 12 | `accept(state, t, nets, sink)` | On accept, after settle | A2D events seeded; accept-gated state advanced |
+| 13 | `suggest_dt(...)` | After accept, before next predict | Per-element dt floor contributed |
+| 14 | `destroy()` | Circuit dropped | Element torn down |
+
+### 19.5 Noise analysis (`.noise`)
+
+**Algorithm flow.** Noise solves the DC operating point once (§19.2), builds
+the linearized small-signal matrix pattern, then sweeps frequency. For each
+frequency: assemble complex AC stamps, solve the adjoint system (transpose +
+unit excitation at the output), ask each analog device for current-noise PSD
+sources, and accumulate per-source output PSD. Finally integrate the output
+PSD over frequency (trapezoidal) for the RMS output noise.
+
+**set_temperature position.** Inherited from the DC operating-point solve;
+noise does not re-call `set_temperature`.
+
+**limiting_report position.** None. Noise is a small-signal analysis around
+the converged operating point; no Newton loop runs during the sweep.
+
+**Checkpoint/restore position.** None. Noise does not iterate; the operating
+point is frozen.
+
+**Hook ordering table:**
+
+| # | Hook | Precondition | Postcondition |
+|---|------|--------------|---------------|
+| 1–12 | *(DC operating point — §19.2)* | | |
+| 13 | `load_ac(dc_point, ac_ctx, ctx)` | DC OP converged; once per frequency | Complex small-signal stamps contributed |
+| 14 | `noise_psd(dc_point, ac_ctx)` | Once per frequency | Per-source current-noise PSD returned |
+| 15 | `destroy()` | Circuit dropped | Element torn down |
+
+### 19.6 Periodic steady state (`.pss`)
+
+**Algorithm flow.** PSS finds a periodic orbit by **single shooting**: Newton
+iteration on `g(x₀) = x(t₀+T) − x₀`, where each evaluation of `g` is one
+transient over one period re-entered from `x₀`. Per shot: construct a
+`TransientSolver` with full-state re-entry (`digital_hidden_restore` seeds
+hidden register state + analog solution + digital snapshot), run one period,
+compare the endpoint to `x₀`. The first Jacobian is finite-differenced (one
+extra shot per unknown); later iterations reuse it with Broyden updates. The
+Newton update is damped. Converge when `max_i |x_i(T) − x_i(0)|` is within the
+shooting tolerance. Then verify the orbit repeats and digital state is
+periodic.
+
+**set_temperature position.** Inherited from the operating-point solve that
+seeds the shooting (or the pre-roll transient); PSS itself does not re-call
+`set_temperature`.
+
+**limiting_report position.** Inside every shot's transient Newton sub-steps
+(TR + BDF2) — same as transient (§19.4). The shooting Newton loop itself does
+not consult `limiting_report` directly; it sees only the endpoint residual.
+
+**Checkpoint/restore position.** Inside every shot's transient run — same as
+transient (§19.4): `checkpoint_state` per attempt, `restore_state` per reject.
+The shooting re-entry uses `digital_hidden_restore` (full-state re-entry
+contract, §4.2) to seed each shot — that is a separate mechanism from
+per-step rollback (PSS records every step; per-step rollback fires on reject
+only).
+
+**Hook ordering table:**
+
+| # | Hook | Precondition | Postcondition |
+|---|------|--------------|---------------|
+| 1 | `setup(ctx)` | Circuit built | Element initialized |
+| 2 | `temp(t_nom)` | After `setup`, before first shot | Temperature constants seeded |
+| 3 | `init(sink)` | After `setup`; digital devices | Initial digital events emitted |
+| 4 | `restore_hidden(state)` | Per shot, before transient run | Hidden register state + snapshot seeded for re-entry |
+| — | **per-shot transient run** (§19.4 steps 4–13, one period) | | |
+| — | *(monodromy converged? yes → verify; no → damped Newton update → next shot)* | | |
+| 5 | `destroy()` | Circuit dropped | Element torn down |
+
+### 19.7 Sensitivity analysis (`.sens`)
+
+**Algorithm flow.** DC sensitivity computes `∂(output)/∂(param)` at the
+operating point over the restamp path (§10.5). The whole request is validated
+up front. Then for each `(element, parameter)` pair: perturb the parameter by
+a central-difference step (`±dp`), re-solve the DC operating point at each
+side on the same compiled circuit (each re-solve runs the full DC homotopy
+cascade, §19.2), and difference the requested outputs across the two points.
+
+**set_temperature position.** Inherited from each DC re-solve; `.sens` does
+not re-call `set_temperature` itself (the DC driver does, inside each
+operating-point solve).
+
+**limiting_report position.** Inside each DC re-solve's Newton iterations —
+same as DC (§19.2). `.sens` itself does not consult `limiting_report`.
+
+**Checkpoint/restore position.** Inside each DC re-solve's homotopy cascade —
+same as DC (§19.2). `.sens` itself does not checkpoint; it re-solves from
+scratch on each side of the central difference.
+
+**Hook ordering table:**
+
+| # | Hook | Precondition | Postcondition |
+|---|------|--------------|---------------|
+| 1 | `setup(ctx)` | Circuit built | Element initialized |
+| 2 | `temp(t_nom)` | After `setup`, before first DC solve | Temperature constants seeded |
+| — | **central-difference loop** (per param) | | |
+| 3 | `set_param(name, v+dp)` | Before `+dp` DC re-solve | Parameter restamped; invalidation returned |
+| 4 | *(DC operating point — §19.2 steps 4–11)* | | |
+| 5 | `set_param(name, v−dp)` | Before `−dp` DC re-solve | Parameter restamped |
+| 6 | *(DC operating point — §19.2 steps 4–11)* | | |
+| 7 | `set_param(name, v)` | After differencing | Parameter restored to nominal |
+| 8 | `opvars()` | After final operating point | Operating variables readable |
+| 9 | `destroy()` | Circuit dropped | Element torn down |
