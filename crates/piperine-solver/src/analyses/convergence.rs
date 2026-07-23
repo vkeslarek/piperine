@@ -246,6 +246,18 @@ pub trait HomotopyDriver {
     /// The smallest meaningful extra conductance — the real device gmin,
     /// floored — below which gmin stepping has effectively reached zero.
     fn gmin_floor(&self) -> f64;
+
+    /// Snapshot every element's non-accept-gated state before an attempt
+    /// (ABI-07): plain Newton or a homotopy strategy can dirty device-internal
+    /// state (the limiter) before failing; the next attempt must start from the
+    /// pre-failure checkpoint, not the dirty rejected-attempt state. Default
+    /// no-op — a driver whose devices have no `SUPPORTS_ROLLBACK` pays nothing.
+    fn checkpoint_devices(&mut self) {}
+
+    /// Restore elements to the snapshot from the last
+    /// [`checkpoint_devices`](Self::checkpoint_devices) before retrying with
+    /// the next homotopy parameter (ABI-07). Default no-op.
+    fn restore_devices(&mut self) {}
 }
 
 /// One homotopy: reshapes a hard operating-point problem into an easy one and
@@ -349,19 +361,27 @@ impl ConvergencePlan {
 
     /// Run the plan: plain Newton, then each homotopy in order. Returns the
     /// first converged solution (and which strategy found it), else the most
-    /// recent failure.
+    /// recent failure. Each attempt is bracketed by a device-state checkpoint
+    /// (ABI-07): a failed attempt restores device-internal state (limiter)
+    /// before the next strategy retries from the last accepted point.
     pub fn solve(&self, driver: &mut dyn HomotopyDriver) -> Result<PlanOutcome> {
+        driver.checkpoint_devices();
         let mut last = match driver.newton() {
             Ok(solution) => return Ok(PlanOutcome { solution, strategy: None }),
             Err(err) => err,
         };
+        driver.restore_devices();
         for strategy in &self.strategies {
+            driver.checkpoint_devices();
             match strategy.converge(driver, &self.schedules, self.trace) {
                 Ok(solution) => {
                     return Ok(PlanOutcome { solution, strategy: Some(strategy.name()) });
                 }
                 Err(err) => last = err,
             }
+            // Strategy fell through — restore device state before the next
+            // attempt so its limiter starts clean (ABI-07).
+            driver.restore_devices();
         }
         Err(last)
     }

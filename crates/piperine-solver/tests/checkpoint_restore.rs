@@ -337,3 +337,141 @@ fn transient_reject_drives_restore_accept_discards() {
     assert!(n_checkpoints >= res.stats.steps_accepted + res.stats.steps_rejected);
 }
 
+// ── T3: DC homotopy retry drives checkpoint/restore ────────────────────────
+//
+// Spec ABI-07: when a DC homotopy strategy falls through (failed attempt →
+// next strategy), the DC solver calls restore_state on checkpointed elements
+// before retrying. A stiff diode whose plain-Newton attempt is starved of
+// iterations (max_iter=4) falls through to gmin stepping, which converges.
+
+use piperine_solver::prelude::Policy;
+
+/// Ideal DC voltage source with its own branch-current unknown.
+struct TDcVsrc {
+    v: f64,
+    n1: AnalogReference,
+    n2: AnalogReference,
+    branch: AnalogReference,
+}
+
+impl AnalogDevice for TDcVsrc {
+    fn load_dc(
+        &mut self,
+        _s: &solver_abi::DcAnalysisState<'_>,
+        _c: &Context,
+    ) -> Vec<Stamp<AnalogReference, f64>> {
+        vec![
+            Stamp::Matrix(self.n1.clone(), self.branch.clone(), 1.0),
+            Stamp::Matrix(self.branch.clone(), self.n1.clone(), 1.0),
+            Stamp::Matrix(self.n2.clone(), self.branch.clone(), -1.0),
+            Stamp::Matrix(self.branch.clone(), self.n2.clone(), -1.0),
+            Stamp::Rhs(self.branch.clone(), self.v),
+        ]
+    }
+}
+
+impl DigitalDevice for TDcVsrc {}
+impl Introspect for TDcVsrc {}
+impl Element for TDcVsrc {
+    fn name(&self) -> &str { "v" }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG
+            | ElementCapabilities::LOADS_DC
+            | ElementCapabilities::HAS_INTERNAL_UNKNOWNS
+    }
+}
+
+/// Shockley diode — a stiff nonlinear load that plain Newton (starved of
+/// iterations) fails on, exercising the homotopy fallthrough.
+struct TDiode {
+    is: f64,
+    vt: f64,
+    n1: AnalogReference,
+    n2: AnalogReference,
+}
+
+impl AnalogDevice for TDiode {
+    fn load_dc(
+        &mut self,
+        s: &solver_abi::DcAnalysisState<'_>,
+        _c: &Context,
+    ) -> Vec<Stamp<AnalogReference, f64>> {
+        let v = |r: &AnalogReference| {
+            r.idx()
+                .and_then(|i| s.latest().and_then(|row| row.get(i).copied()))
+                .unwrap_or(0.0)
+        };
+        let vd = v(&self.n1) - v(&self.n2);
+        let ex = (vd / self.vt).exp();
+        let id = self.is * (ex - 1.0);
+        let gd = self.is / self.vt * ex;
+        let ieq = id - gd * vd;
+        vec![
+            Stamp::Matrix(self.n1.clone(), self.n1.clone(), gd),
+            Stamp::Matrix(self.n2.clone(), self.n2.clone(), gd),
+            Stamp::Matrix(self.n1.clone(), self.n2.clone(), -gd),
+            Stamp::Matrix(self.n2.clone(), self.n1.clone(), -gd),
+            Stamp::Rhs(self.n1.clone(), -ieq),
+            Stamp::Rhs(self.n2.clone(), ieq),
+        ]
+    }
+}
+
+impl DigitalDevice for TDiode {}
+impl Introspect for TDiode {}
+impl Element for TDiode {
+    fn name(&self) -> &str { "d" }
+    fn capabilities(&self) -> ElementCapabilities {
+        ElementCapabilities::ANALOG | ElementCapabilities::LOADS_DC
+    }
+}
+
+/// Spec ABI-07: plain Newton fails on the starved stiff diode and falls
+/// through to gmin stepping, which converges. The fallthrough fires
+/// `restore_state` on the recording element before the gmin retry — so the
+/// retry starts from the pre-attempt checkpoint, not the dirty failed-Newton
+/// limiter state.
+#[test]
+fn dc_homotopy_fallthrough_drives_restore_between_strategies() {
+    let checkpoints = Arc::new(AtomicUsize::new(0));
+    let restores = Arc::new(AtomicUsize::new(0));
+
+    let mut netlist = Netlist::new();
+    let src = netlist.connect_node(NodeIdentifier::Anonymous(10));
+    let anode = netlist.connect_node(NodeIdentifier::Anonymous(11));
+    let gnd = netlist.connect_node(NodeIdentifier::Gnd);
+    let vb = netlist.connect_branch(BranchIdentifier::from_component("v1"));
+
+    let elements: Vec<Box<dyn Element>> = vec![
+        Box::new(TDcVsrc { v: 1.0, n1: src.clone(), n2: gnd.clone(), branch: vb }),
+        Box::new(TResistor { r: 1000.0, n1: src.clone(), n2: anode.clone() }),
+        Box::new(TDiode { is: 1e-14, vt: 0.025_852, n1: anode.clone(), n2: gnd.clone() }),
+        Box::new(RecordingDevice::new(checkpoints.clone(), restores.clone())),
+    ];
+    let circuit = CircuitInstance::from_devices_and_netlist("diode-homotopy", elements, netlist);
+
+    // max_iter=4 starves plain Newton on the stiff diode so it falls through
+    // to gmin stepping (which converges from the easy high-gmin start).
+    let policy = Policy { max_iter: 4, ..Policy::default() };
+    let mut solver = Solver::new(circuit).with_policy(policy).build();
+    let res = solver.dc().unwrap().solve().unwrap();
+
+    // Plain Newton fell through to gmin stepping (the homotopy took over).
+    assert_eq!(
+        res.stats.homotopy_strategy.as_deref(),
+        Some("gmin-stepping"),
+        "plain Newton must fall through so the homotopy restore fires"
+    );
+    // ABI-07: the plain-Newton → gmin fallthrough restored the device state
+    // before the gmin retry. checkpoint fired once per attempt; the successful
+    // gmin attempt is NOT restored.
+    let n_restores = restores.load(Ordering::SeqCst);
+    let n_checkpoints = checkpoints.load(Ordering::SeqCst);
+    assert!(n_restores >= 1, "homotopy fallthrough must call restore_state");
+    assert!(
+        n_checkpoints > n_restores,
+        "the converging gmin attempt checkpoints but is not restored"
+    );
+}
+
+

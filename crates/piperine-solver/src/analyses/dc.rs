@@ -241,6 +241,10 @@ pub struct DcSolver<'a> {
     /// How many plain-Newton attempts the convergence plan drove (1 = no
     /// homotopy). `SolverStats::homotopy_levels` is this minus the first.
     newton_calls: usize,
+    /// One-deep device-state checkpoint (ABI-07): snapshotted before each
+    /// homotopy attempt, restored on strategy fallthrough so the limiter and
+    /// other non-accept-gated state start clean on the next retry.
+    device_checkpoint: Vec<Option<crate::core::element::ElementCheckpoint>>,
 }
 
 impl<'a> DcSolver<'a> {
@@ -265,7 +269,7 @@ impl<'a> DcSolver<'a> {
 
         let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
 
-        Ok(Self { system, solver, policy: Policy::default(), newton_calls: 0 })
+        Ok(Self { system, solver, policy: Policy::default(), newton_calls: 0, device_checkpoint: Vec::new() })
     }
 
     /// Seed the DC Newton initial guess with node-voltage hints (the host
@@ -406,5 +410,29 @@ impl HomotopyDriver for DcSolver<'_> {
 
     fn gmin_floor(&self) -> f64 {
         self.system.context.tolerances.gmin.max(1e-12)
+    }
+
+    fn checkpoint_devices(&mut self) {
+        self.device_checkpoint = self
+            .system
+            .circuit
+            .devices
+            .iter()
+            .map(|d| d.checkpoint_state())
+            .collect();
+    }
+
+    fn restore_devices(&mut self) {
+        for (dev, ckpt) in self
+            .system
+            .circuit
+            .devices
+            .iter_mut()
+            .zip(&self.device_checkpoint)
+        {
+            if let Some(c) = ckpt {
+                dev.restore_state(c);
+            }
+        }
     }
 }
