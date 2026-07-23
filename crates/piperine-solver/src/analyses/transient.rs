@@ -5,7 +5,6 @@
 #![allow(dead_code)]
 use crate::analog::AnalogReference;
 use crate::analyses::Context;
-use crate::analyses::convergence::StepperStrategy;
 use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
 use crate::core::element::ElementCheckpoint;
@@ -493,8 +492,11 @@ pub struct TransientSolver<'a> {
     /// state reflects them. Milestone-1: a seed (the companion model's
     /// first step may show a transient); full enforced-hold is deferred.
     initial_conditions: Vec<InitialValue<AnalogReference, f64>>,
-    /// Stateful PI timestep controller (TRB-07).
-    stepper: crate::analyses::convergence::PiController,
+    /// Convergence plan owning the timestep strategy (ABI-42). The transient
+    /// driver delegates `propose_dt`/`reject_dt` to `plan.stepper()` — the
+    /// plan is the single strategy owner across analyses (Newton +
+    /// Homotopy + Stepper).
+    plan: crate::analyses::convergence::ConvergencePlan,
     /// Convergence tunables for this analysis (MD-04). Defaults on
     /// construction; hosts override before [`solve`](Self::solve).
     pub policy: crate::analyses::Policy,
@@ -510,6 +512,18 @@ impl<'a> TransientSolver<'a> {
         circuit: &'a mut CircuitInstance,
         options: TransientAnalysisOptions,
         context: Context,
+    ) -> crate::result::Result<Self> {
+        Self::with_plan(circuit, options, context, crate::analyses::convergence::ConvergencePlan::default())
+    }
+
+    /// Build a transient solver with an explicit convergence plan (ABI-42):
+    /// the plan's stepper owns the timestep strategy; the driver delegates
+    /// `propose_dt`/`reject_dt` to it.
+    pub fn with_plan(
+        circuit: &'a mut CircuitInstance,
+        options: TransientAnalysisOptions,
+        context: Context,
+        plan: crate::analyses::convergence::ConvergencePlan,
     ) -> crate::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
@@ -539,11 +553,23 @@ impl<'a> TransientSolver<'a> {
             solver,
             options,
             initial_conditions: Vec::new(),
-            stepper: crate::analyses::convergence::PiController::default(),
+            plan,
             policy: crate::analyses::Policy::default(),
             sets: SetQueue::default(),
             reentry_state: None,
         })
+    }
+
+    /// Replace the convergence plan (ABI-42). The host plugs in a plan with a
+    /// custom stepper; the driver delegates rejection/proposal to it.
+    pub fn set_plan(&mut self, plan: crate::analyses::convergence::ConvergencePlan) {
+        self.plan = plan;
+    }
+
+    /// Read-only access to the convergence plan (e.g., for tests asserting
+    /// which strategy is wired).
+    pub fn plan(&self) -> &crate::analyses::convergence::ConvergencePlan {
+        &self.plan
     }
 
     /// Start the integration from a previously captured step — analog
@@ -979,7 +1005,7 @@ impl<'a> TransientSolver<'a> {
         let mut dt = if post_set_step {
             dt_proposed
         } else {
-            self.stepper.propose_dt(milne, dt_actual, &self.options)
+            self.plan.stepper_mut().propose_dt(milne, dt_actual, &self.options)
         };
         if sets_just_applied {
             dt = (1e-3 * dt_actual).max(self.options.dt_min);
@@ -1092,7 +1118,7 @@ impl<'a> TransientSolver<'a> {
             );
         }
         self.system.circuit.digital_state.rollback();
-        st.dt = self.stepper.reject_dt(prediction.dt_proposed, &self.options);
+        st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options);
         if st.dt <= self.options.dt_min {
             st.dt_min_floor_hits += 1;
             tracing::warn!(
@@ -1128,7 +1154,7 @@ impl<'a> TransientSolver<'a> {
         // retry starts from the pre-attempt checkpoint (ABI-02).
         self.restore_device_checkpoints(&device_checkpoints);
         self.solver.restore_state(analog_history);
-        st.dt = self.stepper.reject_dt(dt_proposed, &self.options);
+        st.dt = self.plan.stepper_mut().reject_dt(dt_proposed, &self.options);
     }
 
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {

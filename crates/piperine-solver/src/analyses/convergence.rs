@@ -284,9 +284,16 @@ pub trait HomotopyStrategy: Send + Sync {
 /// is the seam where an analysis or host selects a different escalation. Owns
 /// the [`Schedules`] every strategy reads its numeric ramp from, and the
 /// [`TraceFlags`] the driver seeds from its [`Policy`].
+///
+/// Completes the strategy composition triad (MD-28): the plan owns the
+/// [`NewtonStrategy`], the [`HomotopyStrategy`] escalation, and the
+/// [`StepperStrategy`] the transient driver delegates `propose_dt`/`reject_dt`
+/// to. Every analysis gets a uniform strategy surface — no inline rejection
+/// logic in the driver.
 pub struct ConvergencePlan {
     newton: Box<dyn NewtonStrategy>,
     strategies: Vec<Box<dyn HomotopyStrategy>>,
+    stepper: Box<dyn StepperStrategy>,
     limits: PlanLimits,
     schedules: Schedules,
     trace: TraceFlags,
@@ -295,11 +302,14 @@ pub struct ConvergencePlan {
 impl Default for ConvergencePlan {
     /// SPICE's standard escalation: [`GminStepping`] first (cheap, robust), then
     /// [`SourceStepping`] (finds the correct solution branch where gmin stepping
-    /// can settle on the wrong one — BJT/MOS amplifiers).
+    /// can settle on the wrong one — BJT/MOS amplifiers). The default stepper
+    /// is the [`PiController`] (TR-BDF2 adaptive timestep, ngspice-lineage
+    /// gains).
     fn default() -> Self {
         Self {
             newton: Box::new(DampedNewton),
             strategies: vec![Box::new(GminStepping), Box::new(SourceStepping)],
+            stepper: Box::new(PiController::default()),
             limits: PlanLimits::default(),
             schedules: Schedules::default(),
             trace: TraceFlags::default(),
@@ -313,6 +323,7 @@ impl ConvergencePlan {
         Self {
             newton: Box::new(DampedNewton),
             strategies,
+            stepper: Box::new(PiController::default()),
             limits: PlanLimits::default(),
             schedules: Schedules::default(),
             trace: TraceFlags::default(),
@@ -322,6 +333,14 @@ impl ConvergencePlan {
     /// Override the Newton strategy.
     pub fn with_newton(mut self, newton: Box<dyn NewtonStrategy>) -> Self {
         self.newton = newton;
+        self
+    }
+
+    /// Override the transient timestep strategy (ABI-42). The transient driver
+    /// delegates `propose_dt`/`reject_dt` to this strategy through the plan,
+    /// instead of owning one inline.
+    pub fn with_stepper(mut self, stepper: Box<dyn StepperStrategy>) -> Self {
+        self.stepper = stepper;
         self
     }
 
@@ -347,6 +366,18 @@ impl ConvergencePlan {
     /// The Newton iteration policy.
     pub fn newton(&self) -> &dyn NewtonStrategy {
         self.newton.as_ref()
+    }
+
+    /// The transient timestep strategy (ABI-42). Transient drivers delegate
+    /// `propose_dt`/`reject_dt` here; the plan is the single owner.
+    pub fn stepper(&self) -> &dyn StepperStrategy {
+        self.stepper.as_ref()
+    }
+
+    /// Mutable access to the stepper — the transient driver advances the
+    /// strategy's internal state across accepted/rejected steps.
+    pub fn stepper_mut(&mut self) -> &mut dyn StepperStrategy {
+        self.stepper.as_mut()
     }
 
     /// Numerical caps every driver should honor.
