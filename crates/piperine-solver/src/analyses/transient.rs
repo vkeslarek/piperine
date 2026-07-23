@@ -500,6 +500,13 @@ pub struct TransientSolver<'a> {
     /// plan is the single strategy owner across analyses (Newton +
     /// Homotopy + Stepper).
     plan: crate::analyses::convergence::ConvergencePlan,
+    /// Unified event queue (ABI-36..41). Populated each `predict_step`
+    /// from the four sources (digital peek, analog breakpoints, scheduled
+    /// sets, `$bound_step` hints). `attempt_step` checkpoints + drains
+    /// it; `accept_step` commits, `reject_step` / `reject_lte_step`
+    /// roll back — each entry's [`RollbackBehavior`] is honored (digital
+    /// restored, breakpoints re-polled, hints discarded).
+    event_queue: EventQueue,
     /// Convergence tunables for this analysis (MD-04). Defaults on
     /// construction; hosts override before [`solve`](Self::solve).
     pub policy: crate::analyses::Policy,
@@ -557,6 +564,7 @@ impl<'a> TransientSolver<'a> {
             options,
             initial_conditions: Vec::new(),
             plan,
+            event_queue: EventQueue::new(),
             policy: crate::analyses::Policy::default(),
             sets: SetQueue::default(),
             reentry_state: None,
@@ -782,16 +790,16 @@ impl<'a> TransientSolver<'a> {
     /// and `$bound_step` hints each enter the queue with their own
     /// [`RollbackBehavior`](crate::analyses::events::RollbackBehavior);
     /// `predict_step` reads the earliest from one place.
-    fn predict_step(&self, st: &TimeLoop) -> StepPrediction {
+    fn predict_step(&mut self, st: &TimeLoop) -> StepPrediction {
         let pi_target = st.current_time + st.dt;
         let mut t_next = pi_target.min(self.options.stop_time);
         let mut landed_on_breakpoint = false;
 
         // Unified event queue (ABI-36/T26): one read path for all four
-        // time-discontinuity sources. The queue is built fresh each
-        // prediction — the underlying storage (digital scheduler's heap,
-        // device-declared breakpoints, set queue) remains the source of
-        // truth; this is the read-side unification.
+        // time-discontinuity sources. The queue persists across the
+        // predict→attempt→reject cycle (ABI-40/41) so the reject path can
+        // honor each entry's `RollbackBehavior` (T27): digital events
+        // restored, breakpoints re-polled (dropped), hints discarded.
         let mut queue = EventQueue::new();
 
         // Digital events — peek the scheduler's heap.
@@ -814,11 +822,18 @@ impl<'a> TransientSolver<'a> {
             queue.push_scheduled_set(ts);
         }
 
+        // Stash the queue for the attempt/reject phases (T27). Replacing
+        // each prediction is correct: predict is the read-side authority,
+        // and the queue carries only the events predicted for THIS landing
+        // point. Per-entry rollback semantics fire on the queue snapshot
+        // taken by `attempt_step`.
+        self.event_queue = queue;
+
         // One read path: peek the earliest event. Per-source semantics:
         // digital/breakpoints use strict `<`; sets additionally snap
         // within a float tolerance (LIVE-06 — absolute scheduled times
         // accumulate ulp drift across long runs).
-        if let Some(front) = queue.peek() {
+        if let Some(front) = self.event_queue.peek() {
             let time = front.time;
             if time > st.current_time {
                 let is_set = matches!(front.source, EventSource::ScheduledSet);
@@ -863,6 +878,13 @@ impl<'a> TransientSolver<'a> {
         // dirty it, so a rejected attempt restores to the last accepted state.
         let device_checkpoints = self.snapshot_device_checkpoints();
         let analog_history = self.solver.state_snapshot();
+        // Unified event queue checkpoint (ABI-40/41): snapshot the queue
+        // before draining the events due at this landing point. On reject,
+        // `rollback()` honors each entry's `RollbackBehavior` — digital
+        // events restored, breakpoints dropped (re-polled next predict),
+        // hints discarded. On accept, `commit()` drops the snapshot.
+        self.event_queue.checkpoint();
+        let _due_events = self.event_queue.drain_due(prediction.t_next);
         self.system.circuit.run_digital_at(prediction.t_next)?;
         let outcome =
             self.execute_timestep(st.current_time, prediction.dt_actual, st.last_step_accepted);
@@ -925,6 +947,10 @@ impl<'a> TransientSolver<'a> {
         st.dt_min_seen = st.dt_min_seen.min(dt_actual);
         st.dt_max_seen = st.dt_max_seen.max(dt_actual);
         self.settle_digital(t_next)?;
+        // Unified event queue commit (ABI-40): the attempt's drained events
+        // fired; the snapshot is dropped. Predict rebuilds the queue next
+        // step from the live sources.
+        self.event_queue.commit();
         self.record_step(steps, t_next, snapshot);
         st.current_time = t_next;
         if self.apply_scheduled_sets(st, steps, dt_actual)? {
@@ -1153,6 +1179,12 @@ impl<'a> TransientSolver<'a> {
             );
         }
         self.system.circuit.digital_state.rollback();
+        // Unified event queue rollback (ABI-40/41): honor each drained
+        // entry's `RollbackBehavior` — digital events restored (re-fire
+        // on retry), scheduled sets restored (still pending), breakpoints
+        // dropped (re-declared by next_breakpoints next predict), step
+        // hints discarded (re-emitted by the device).
+        self.event_queue.rollback();
         st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options);
         if st.dt <= self.options.dt_min {
             st.dt_min_floor_hits += 1;
@@ -1190,6 +1222,9 @@ impl<'a> TransientSolver<'a> {
         self.restore_device_checkpoints(&device_checkpoints);
         self.solver.restore_state(analog_history);
         st.dt = self.plan.stepper_mut().reject_dt(dt_proposed, &self.options);
+        // Unified event queue rollback — same per-entry semantics as the
+        // LTE reject path (ABI-40/41).
+        self.event_queue.rollback();
     }
 
     pub fn solve(&mut self) -> crate::result::Result<TransientAnalysisResult> {
