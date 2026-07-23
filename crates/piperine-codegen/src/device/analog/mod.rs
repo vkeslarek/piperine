@@ -509,6 +509,34 @@ impl AnalogInstance {
         (&self.state, &self.vars)
     }
 
+    /// Evaluate the kernel's operating-point variables (ABI-30) against
+    /// the last accepted terminal voltages and the current state/var banks.
+    /// Returns `(name, value)` pairs in kernel order. Empty when the kernel
+    /// compiled no opvar path. The `read_opvars` ABI bridge calls this; a
+    /// host's `.op` query reads the post-solve values without recomputing
+    /// the residual.
+    pub fn eval_opvars(&self) -> Vec<(String, f64)> {
+        if !self.kernel.has_opvars() {
+            return Vec::new();
+        }
+        let n = self.kernel.opvar_names().len();
+        let mut out = vec![0.0; n];
+        self.kernel.eval_opvars(
+            &self.last_volts,
+            &self.params,
+            &self.state,
+            &self.vars,
+            &self.sim,
+            &mut out,
+        );
+        self.kernel
+            .opvar_names()
+            .iter()
+            .zip(out)
+            .map(|(n, v)| (n.clone(), v))
+            .collect()
+    }
+
     /// Instance parameter names, in kernel order (aligned with the values).
     pub fn param_names(&self) -> &[String] {
         self.kernel.param_names()

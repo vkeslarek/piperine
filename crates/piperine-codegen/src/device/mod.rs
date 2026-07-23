@@ -346,6 +346,35 @@ impl DigitalDevice for PiperineDevice {
 }
 
 impl Introspect for PiperineDevice {
+    /// Operating-point variables (ABI-30): the analog kernel's compiled
+    /// opvar-eval function evaluated against the last accepted terminal
+    /// voltages + state/var banks. Empty for a device whose kernel
+    /// compiled no opvar path (no analog vars, or no analog body at all).
+    fn read_opvars(&self) -> Vec<(String, f64)> {
+        self.analog
+            .as_ref()
+            .map_or_else(Vec::new, AnalogInstance::eval_opvars)
+    }
+
+    /// Declared query catalog (ABI-31): one `QueryDescriptor` per opvar,
+    /// typed as [`QueryKind::OperatingVariable`] with no unit/description
+    /// (the kernel's names are the source of truth). A model with richer
+    /// per-query metadata overrides this; the default here mirrors
+    /// `read_opvars` exactly so a bare `query(name)` works without further
+    /// plumbing.
+    fn list_queries(&self) -> Vec<piperine_solver::abi::QueryDescriptor> {
+        self.analog
+            .as_ref()
+            .and_then(|a| a.kernel().opvar_names().first().map(|_| a))
+            .map_or_else(Vec::new, |a| {
+                a.kernel()
+                    .opvar_names()
+                    .iter()
+                    .map(|n| piperine_solver::abi::QueryDescriptor::opvar(n.clone()))
+                    .collect()
+            })
+    }
+
     fn list_params(&self) -> Vec<ParamDescriptor> {
         let Some(analog) = &self.analog else { return Vec::new() };
         analog

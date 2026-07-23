@@ -162,6 +162,12 @@ pub struct FlatAnalog {
     /// seed the t=0 branch voltage (SPICE `.ic`/UIC). Empty when the module
     /// has no initial-condition force.
     pub initial_conditions: Vec<(NodeId, NodeId, PomExpr)>,
+    /// Module-level analog opvars (ABI-30): `(var_name, final_temp_id)` for
+    /// each non-shadow module `var` reachable at the end of flattening. The
+    /// compiler emits an opvar-evaluation `AnalogFn` from these — one row per
+    /// var reading its final temp (`__temp(id)`). A device without analog
+    /// vars leaves this empty (the opvar path is `None`, zero overhead).
+    pub module_var_temps: Vec<(String, u32)>,
 }
 
 impl FlatAnalog {
@@ -251,7 +257,7 @@ impl Scope {
 }
 
 /// A `__temp(id)` leaf — a reference to temporary `id` in [`FlatAnalog::temps`].
-fn temp_ref(id: u32) -> PomExpr {
+pub(crate) fn temp_ref(id: u32) -> PomExpr {
     PomExpr::Call(
         Box::new(PomExpr::Ident("__temp".into())),
         vec![PomExpr::Literal(Literal::Int(id as u64))],
@@ -375,6 +381,23 @@ impl<'m> AnalogFlattener<'m> {
             };
             self.out.noise.push((source.plus, source.minus, psd, exponent));
         }
+
+        // Capture the final module-var → temp-id mapping for the opvar
+        // compilation path (ABI-30). Only non-shadow module vars: a
+        // `__shadow_*` var is a D2A bridge plumbing leak the host never
+        // queries. The seeding loop in `new` placed every module var in
+        // scope; an analog-body reassignment shadows it with a later temp
+        // — so `scope.get` here reads the var's value at end of evaluation.
+        let is_node = |name: &str| self.module.symbols.nodes().any(|(_, n)| n.name == name);
+        for (_, v) in self.module.symbols.vars() {
+            if v.name.starts_with("__shadow_") || is_node(&v.name) {
+                continue;
+            }
+            if let Some(id) = self.scope.get(&v.name) {
+                self.out.module_var_temps.push((v.name.clone(), id));
+            }
+        }
+
         Ok(self.out)
     }
 

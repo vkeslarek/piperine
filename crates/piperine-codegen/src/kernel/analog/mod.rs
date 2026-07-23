@@ -225,6 +225,13 @@ pub struct AnalogKernel {
     /// `@initial` UIC seed terminal pairs and their (param-only) value rows.
     initial_condition_terminals: Vec<(NodeId, NodeId)>,
     initial_conditions: Option<AnalogFn>,
+    /// Operating-point variable evaluation (ABI-30): one row per non-shadow
+    /// module `var`, reading the same `state`/`vars` banks the residual
+    /// uses, evaluated against the final post-solve voltages. `None` when
+    /// the module declares no analog vars (zero overhead — no function
+    /// compiled, the eval call is a no-op).
+    opvars: Option<AnalogFn>,
+    opvar_names: Vec<String>,
 }
 
 // The JITModule is frozen after `finalize_definitions`; the function pointers
@@ -742,6 +749,31 @@ impl AnalogKernel {
         let nc = self.disto2_contribs.len();
         for (i, &f) in self.disto3.iter().enumerate() {
             Self::call(f, volts, params, state, vars, sim, &mut out[i * nc..(i + 1) * nc]);
+        }
+    }
+
+    /// Whether this kernel compiles an opvar-evaluation function (ABI-30).
+    /// `false` for a module with no non-shadow analog `var`s — the eval
+    /// path is absent and `read_opvars` returns empty.
+    pub fn has_opvars(&self) -> bool {
+        self.opvars.is_some()
+    }
+
+    /// Source-level names of the operating-point variables (ABI-30), in
+    /// `eval_opvars` row order. Empty when the kernel compiled no opvar
+    /// path.
+    pub fn opvar_names(&self) -> &[String] {
+        &self.opvar_names
+    }
+
+    /// Write each opvar's value to `out[0..opvar_names.len()]` (ABI-30),
+    /// evaluated against the final post-solve voltages and the same
+    /// `state`/`vars` banks the residual reads. No-op when the kernel
+    /// compiled no opvar path (zero overhead for devices without vars).
+    pub fn eval_opvars(&self, volts: &[f64], params: &[f64], state: &[f64], vars: &[f64], sim: &SimCtx, out: &mut [f64]) {
+        if let Some(f) = self.opvars {
+            self.check_input_lens(volts, params, state, vars);
+            Self::call(f, volts, params, state, vars, sim, out);
         }
     }
 }

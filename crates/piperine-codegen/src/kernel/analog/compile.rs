@@ -8,7 +8,7 @@ use cranelift_module::{FuncId, Linkage, Module};
 use crate::emit::{Builder, Resolver};
 use crate::resolve::{Domain, LoweredBody, StateKind, NodeId};
 
-use crate::flatten::analog::{visit_all, FlatAnalog, FlatContrib, FlatEventTrigger, FlatForce};
+use crate::flatten::analog::{visit_all, FlatAnalog, FlatContrib, FlatEventTrigger, FlatForce, temp_ref};
 use crate::error::CodegenError;
 use piperine_lang::math;
 
@@ -513,6 +513,24 @@ impl<'m> AnalogCompiler<'m> {
             Some(self.compile_rows("state_inputs", &rows)?)
         };
 
+        // Opvar compilation path (ABI-30): one row per non-shadow module
+        // var, reading its final temp (`__temp(id)`). When the module has
+        // no analog vars, the path is `None` (zero overhead — no function
+        // compiled, no eval call). The function shares the same state/var
+        // banks the residual reads, so a post-solve evaluation sees the
+        // same instance state a mid-Newton evaluation would.
+        let module_var_temps = std::mem::take(&mut self.flat.module_var_temps);
+        let (opvar_id, opvar_names): (Option<FuncId>, Vec<String>) = if module_var_temps.is_empty() {
+            (None, Vec::new())
+        } else {
+            let names: Vec<String> = module_var_temps.iter().map(|(n, _)| n.clone()).collect();
+            let rows: Vec<PomExpr> = module_var_temps
+                .iter()
+                .map(|(_, id)| temp_ref(*id))
+                .collect();
+            (Some(self.compile_rows("opvars", &rows)?), names)
+        };
+
         let events = std::mem::take(&mut self.flat.events);
         let (event_triggers_id, event_actions_id) = if events.is_empty() {
             (None, None)
@@ -660,6 +678,7 @@ impl<'m> AnalogCompiler<'m> {
             .collect();
         let disto2_charge_start = resistive.len();
         let initial_conditions = ic_values_id.map(|id| get(&self.jit, id));
+        let opvars = opvar_id.map(|id| get(&self.jit, id));
         let diagnostics = std::mem::take(&mut self.flat.diagnostics);
 
         let digital_terminals: Vec<bool> = self
@@ -717,6 +736,8 @@ impl<'m> AnalogCompiler<'m> {
             disto2_charge_start,
             initial_condition_terminals: ic_terminals,
             initial_conditions,
+            opvars,
+            opvar_names,
         })
     }
 
