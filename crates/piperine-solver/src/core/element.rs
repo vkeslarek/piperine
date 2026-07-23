@@ -12,7 +12,7 @@ use crate::analyses::noise::Noise;
 use crate::analyses::transient::{TransientAnalysisContext, TransientAnalysisState};
 use crate::analog::AnalogReference;
 use crate::core::introspect::{
-    Invalidation, ParamDescriptor, ParamError, QueryDescriptor, TerminalDescriptor, Value,
+    Invalidation, ObservableDescriptor, ParamDescriptor, ParamError, QueryDescriptor, TerminalDescriptor, Value,
 };
 use crate::digital::{DigitalNet, LogicValue};
 use crate::digital::interface::{DigitalPorts, EvalCtx, EventSink};
@@ -421,6 +421,15 @@ pub trait Introspect: Send + Sync {
     /// sourced from the kernel's `noise_terminals` catalog. Empty for a
     /// device with no noise contributions.
     fn list_noise_terminal_pairs(&self) -> Vec<(String, String)> { Vec::new() }
+
+    /// Device-declared observables a host may request for per-step
+    /// recording (ABI-32): branch currents, charge/flux/state slots, and
+    /// module vars — each with a relative cost hint. Default empty — a
+    /// stateless device declares nothing, so a `ProbeSelection`
+    /// referencing it fails loud at setup (ABI-35). A host pairs this
+    /// catalog with [`ProbeSelection`](crate::core::introspect::ProbeSelection)
+    /// to record only the observables it wants.
+    fn list_observables(&self) -> Vec<ObservableDescriptor> { Vec::new() }
 }
 
 /// A single thing the solver simulates — the one contract over every

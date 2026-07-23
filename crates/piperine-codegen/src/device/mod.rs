@@ -523,6 +523,48 @@ impl Introspect for PiperineDevice {
             .map(|a| a.kernel().noise_terminal_name_pairs())
             .unwrap_or_default()
     }
+
+    /// Device-declared observables for per-step recording (ABI-32): one
+    /// descriptor per kernel state slot (kind = `State`), per module var
+    /// slot (kind = `Var`, synthesized `var[k]` name when the kernel
+    /// exposes no source-level var names), and per force branch carrying
+    /// a series-R current term (kind = `BranchCurrent`, named
+    /// `i(<plus>,<minus>)`). The host pairs this catalog with a
+    /// [`ProbeSelection`](piperine_solver::abi::ProbeSelection) to record
+    /// a subset of these per step. Empty for a digital-only device.
+    fn list_observables(&self) -> Vec<piperine_solver::abi::ObservableDescriptor> {
+        use piperine_solver::abi::{ObservableDescriptor, ObservableKind};
+        let mut out = Vec::new();
+        let Some(analog) = &self.analog else { return out };
+        let kernel = analog.kernel();
+        for name in kernel.state_slot_names() {
+            if name.is_empty() {
+                continue;
+            }
+            out.push(ObservableDescriptor {
+                name: name.clone(),
+                kind: ObservableKind::State,
+                cost: 0.2,
+            });
+        }
+        for k in 0..kernel.num_vars() {
+            out.push(ObservableDescriptor {
+                name: format!("var[{k}]"),
+                kind: ObservableKind::Var,
+                cost: 0.1,
+            });
+        }
+        if kernel.has_force_current() {
+            for (plus, minus) in kernel.force_terminal_name_pairs() {
+                out.push(ObservableDescriptor {
+                    name: format!("i({plus},{minus})"),
+                    kind: ObservableKind::BranchCurrent,
+                    cost: 0.3,
+                });
+            }
+        }
+        out
+    }
 }
 
 impl Element for PiperineDevice {

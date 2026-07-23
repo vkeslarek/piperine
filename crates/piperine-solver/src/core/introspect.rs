@@ -206,6 +206,76 @@ impl ModelDescriptor {
     };
 }
 
+/// What kind of runtime quantity an [`ObservableDescriptor`] names
+/// (ABI-32). The kind tells a host how to interpret the recorded value
+/// (a branch current is a current; a state slot is operator-dependent)
+/// and lets it group probes by category in UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ObservableKind {
+    /// A branch current the device reports via a force branch (`V(...) <- …`
+    /// with a series-R term). The descriptor's `name` is the branch label.
+    BranchCurrent,
+    /// A charge-storing reactive state (`ddt` companion). The `name` is the
+    /// state slot name from the kernel catalog.
+    Charge,
+    /// A flux-storing reactive state (inductor companion).
+    Flux,
+    /// A runtime state slot (delay/transition/idt operator, `$limit` vold).
+    /// The `name` is the slot name from [`Introspect::list_state_slot_names`].
+    State,
+    /// A module-level persistent variable slot. The `name` is the var name
+    /// (or a synthesized `var[k]` when the kernel does not surface names).
+    Var,
+}
+
+/// A device-declared observable a host can request for per-step recording
+/// (ABI-32). The descriptor carries the source-level name, the kind (so a
+/// host can render/group probes), and a relative recording cost hint
+/// (0 = free, 1 = full bank clone) — letting a host budget recording
+/// against simulation cost.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObservableDescriptor {
+    /// Source-level name (matches the entry a `ProbeSelection` request
+    /// names). Unique within one device.
+    pub name: String,
+    /// What the recorded value represents.
+    pub kind: ObservableKind,
+    /// Relative recording cost (0 = free, 1 = full bank clone). A host
+    /// uses this to budget recording against simulation cost.
+    pub cost: f32,
+}
+
+/// Per-device observable requests for transient recording (ABI-33). Each
+/// entry is `(device_label, observable_name)`; the analysis driver filters
+/// `collect_device_banks` to record only the requested observables. An
+/// empty selection records nothing — today's default-off behavior. The
+/// global `TransientAnalysisOptions::record_device_state = true` remains
+/// the "record every observable on every device" shorthand.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProbeSelection {
+    /// `(device_label, observable_name)` pairs.
+    pub requests: Vec<(String, String)>,
+}
+
+impl ProbeSelection {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add one `(device_label, observable_name)` request.
+    pub fn request(mut self, device_label: impl Into<String>, observable: impl Into<String>) -> Self {
+        self.requests.push((device_label.into(), observable.into()));
+        self
+    }
+
+    /// Whether `device_label`/`observable_name` was requested.
+    pub fn contains(&self, device_label: &str, observable_name: &str) -> bool {
+        self.requests
+            .iter()
+            .any(|(d, o)| d == device_label && o == observable_name)
+    }
+}
+
 impl Default for ModelDescriptor {
     fn default() -> Self {
         Self::EMPTY
@@ -421,5 +491,35 @@ mod tests {
         assert!(r.list_state_slot_names().is_empty());
         assert!(r.list_force_terminal_pairs().is_empty());
         assert!(r.list_noise_terminal_pairs().is_empty());
+    }
+
+    #[test]
+    fn observable_catalog_defaults_empty_for_simple_element() {
+        // ABI-32: a plain analog-only device inherits an empty observable
+        // catalog — `list_observables()` defaults to nothing, so a host
+        // requesting anything on it fails loud at setup (ABI-35).
+        let r = Resistor { r: 1000.0 };
+        assert!(r.list_observables().is_empty());
+    }
+
+    #[test]
+    fn probe_selection_default_empty_and_contains_check_works() {
+        // ABI-33: an empty `ProbeSelection` is the default-off recording
+        // mode (no device/observable pairs requested). `contains` is the
+        // per-(device, observable) lookup the analysis driver uses to
+        // filter `collect_device_banks`.
+        let sel = ProbeSelection::new();
+        assert!(sel.requests.is_empty());
+        assert!(!sel.contains("r1", "i"));
+
+        let sel = ProbeSelection::new()
+            .request("r1", "i(p,n)")
+            .request("c1", "ddt[0]");
+        assert_eq!(sel.requests.len(), 2);
+        assert!(sel.contains("r1", "i(p,n)"));
+        assert!(sel.contains("c1", "ddt[0]"));
+        assert!(!sel.contains("r1", "ddt[0]"));
+        assert!(!sel.contains("c1", "i(p,n)"));
+        assert!(!sel.contains("missing", "i(p,n)"));
     }
 }
