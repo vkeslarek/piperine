@@ -41,7 +41,7 @@ Pillars. V1 ships when the V1-marked ones are green.
 |---|--------|--------------|
 | P1 | **Solver complete** | Every analysis a working SPICE user expects, plus PSS; engine gaps closed or explicitly documented as post-V1 |
 | P2 | **Low-level device ABI** | Element ABI maturity complete (rollback, limiting, lifecycle, events, introspection); PHDL introspection attributes are the follow-up |
-| P3 | **Python library polished** | `import piperine` is the single host: benches, validation, plugins scripting; documented, docstringed, stub-complete |
+| P3 | ✅ **Python library polished** — CLOSED 2026-07-24 | `import piperine` is the single host: benches, validation, plugins scripting; documented, docstringed, stub-complete |
 | P3b | **Blocking-bug fixes (post host-sanitization)** | The gap-catalog items that *block a simulation or full user use* — `piperine build` stub, digital-codegen completeness, `.tf` correctness. Lands after P3's host work. |
 | P4 | **Language server 100%** | Scope-aware resolution, project-wide navigation, attribute-schema + `///` doc-comment IDE support, protocol-level tests |
 | P5 | **Plugin interface simplified** | One clear extension story (attributes + devices + hooks + scripts); native + Python backends only; writing a plugin is a documented afternoon task |
@@ -382,64 +382,75 @@ the opvar-name vs observable-name inconsistency *dissolves* — one `@name` on a
 
 ---
 
-## P3 — Python library polished
+## P3 — Python library polished ✅ CLOSED (2026-07-24)
 
-**REFINED 2026-07-23 (ideal-first)** — feature `host-library`
+**DELIVERED 2026-07-24** — feature `host-library`
 (`.specs/features/host-library/`: `ideal.md` north-star, `delta.md` gap map,
-`spec.md` 6 stories / 28 requirements HOST-01..28; Design pending). The surface
-was designed greenfield ("the perfect `import piperine`") and then diffed
-against what ships. Governing rule **MD-22 — uniform host surface**: Python and
+`spec.md` 6 stories / 28 requirements HOST-01..28, `tasks.md` 30/30 tasks
+done, `validation.md` Verifier PASS). The surface was designed greenfield
+("the perfect `import piperine`"), diffed against what shipped, then closed
+task by task. Governing rule **MD-22 — uniform host surface**: Python and
 Rust are ONE API (same names, call shape, config/result types, errors),
-enforced by a parity test; Rust is designed *with* Python, never bolted on.
+enforced by a parity test (`tests/host_parity.rs`); Rust is designed *with*
+Python, never bolted on.
 
-Verified gap (2026-07-23): the engine ships far more than the host exposes. The
-Rust host runs `sens`/`pss`/`pz`/`sp`/`disto` but **Python has no typed result
-class** for them; `tf` exists only in the solver; the entire `element-abi`
-introspection catalog (opvars, observables, terminals+kind, model descriptor,
-limiting reports, per-source noise, param bounds) has **almost no host door** —
-so a designer cannot even read a component's computed `power` opvar to optimize
-efficiency (the `ideal.md` §0 driving scenario).
+Prior gap (verified 2026-07-23, now closed): the engine shipped far more than
+the host exposed. The Rust host ran `sens`/`pss`/`pz`/`sp`/`disto` but Python
+had no typed result class for them; `tf` existed only in the solver; the
+entire `element-abi` introspection catalog (opvars, observables, terminals+
+kind, model descriptor, limiting reports, per-source noise, param bounds) had
+almost no host door.
 
-The refinement replaces the old flat bullet list with the delta's workstreams
-(scope locked host-pure — `optimize`→P7, plugin-scripting→P5):
+All workstreams delivered (scope stayed host-pure — `optimize`→P7,
+plugin-scripting→P5):
 
-- [ ] **#1/#2 (P1 MVP) — compiled `Session` center + uniform analyses.**
+- [x] **#1/#2 (P1 MVP) — compiled `Session` center + uniform analyses.**
       `Session` is the host center on both hosts (Python `LiveSession`→`Session`;
-      build the Rust equivalent). Every analysis (`op`/`dc`/`tran`/`ac`/`noise`/
+      Rust equivalent built). Every analysis (`op`/`dc`/`tran`/`ac`/`noise`/
       `tf`/`sens`/`pss`/`pz`/`disto`/`sp`/`four`) ships on both hosts, kwargs-
-      first, typed result. Binds the Python-missing typed results + `tf`; closes
-      the MD-22 breach; parity test locks it.
-- [ ] **#4b (P2, highest leverage) — element-abi introspection door.**
+      first, typed result. MD-22 breach closed; parity test locks it
+      (`tests/host_parity.rs`).
+- [x] **#4b (P2, highest leverage) — element-abi introspection door.**
       `inst.opvar`/`opvars`/`observables`/`model`/`terminals`(+kind);
       `trace.opvar` via `probe=`; `op.stats.limiting`; noise `by_source`/
       `contributions`; `Param.bounds`/`unit`/`scope`. Unlocks the opvar/
       efficiency driving scenario, convergence debugging, probe discovery, and
-      auto knob-bounds for the P7 optimizer — read-only bridges, low risk.
-- [ ] **#5 (P2) — return-type consolidation.** `Trace[T]` generic; fold
+      auto knob-bounds for the P7 optimizer.
+- [x] **#5 (P2) — return-type consolidation.** `Trace<T>` generic; folded
       `AcTrace`/`NoiseTrace` (nine-type taxonomy, `ideal.md` §6).
-- [ ] **#4 (P3) — rich `Waveform`.** Measurements (`slew_rate`/`overshoot`/
-      `settling_time`/…), transforms (`fft`/`resample`/…), `ComplexWaveform`
-      margins/bandwidth, `plot`/`pip.plot`/`bode` (matplotlib-guarded).
-- [ ] **#3 (P3) — first-class sweeps.** Fluent `sweep()`, nested/named,
-      `SweepPoint`-as-`Session`, `.map()`→ndarray (compile-once, MD-18).
-- [ ] **#6/#7/#9 (P3) — configs, units, errors, discoverability, naming.**
-      Typed kwargs/`__init__`, canonical `Solver` knobs (nodeset,
-      `dc_damp_tolerance`), SI helpers (`pip.Hz`) + Rust typed-unit `Into`
-      (`Freq: From<&str>`), typed `SimulationError` hierarchy, `NetRef`
-      ergonomics, `cross`/`dir`/`scale` enums, `.pyi` stubs, property/method
-      consistency, `const`/`design[name]`/`load_str`, `pip.extract`.
-- [ ] **Docs — `docs/spec/part_viii_host_api.md` + `appendix_c` updated** to the
-      delivered surface (HOST-27/28).
+- [x] **#4 (P3) — rich `Waveform`.** Measurements (`slew_rate`/`rise_time`/
+      `fall_time`/`overshoot`/`settling_time`/`delay`), transforms
+      (`fft`/`resample`/`derivative`/`integral`/`clip`), `ComplexWaveform`
+      margins/bandwidth (`bandwidth_3db`/`gain_margin`/`phase_margin`/
+      `unity_gain_freq`), `plot`/`pip.plot`/`bode` (matplotlib-guarded).
+- [x] **#3 (P3) — first-class sweeps.** Fluent `Session::sweep()`,
+      nested/named `sweep_grid`, `SweepPoint`-as-`Session`, `Grid::map()`→
+      ndarray/nested-Vec (compile-once, MD-18).
+- [x] **#6/#7/#9 (P3) — configs, units, errors, discoverability, naming.**
+      Typed kwargs/`__init__` with `.with_()`, canonical `Solver` knobs
+      (nodeset, `dc_damp_tolerance`), SI unit newtypes (`Freq`/`Time`,
+      `From<&str>`) + Python `pip.Hz`/`ns`/`mV`/`C`, typed `SimulationError`
+      hierarchy, `NetRef` ergonomics, `CrossDirection`/`Scale` enums, complete
+      hand-written `.pyi` stubs, property/method consistency, `const`/
+      `design[name]`/`load_str`, `pip.extract`.
+- [x] **Docs — `docs/spec/part_viii_host_api.md` + `appendix_c` updated** to
+      the delivered surface (HOST-27/28).
 
-**Not in this feature (recorded):** `pip.optimize` (design centering) is **P7**;
-Python plugin scripting (`@pip.device`/`@pip.hook`, lifecycle-registry-to-Python)
-is **P5**. This feature makes the optimizer *feedable* (`Param.bounds`, opvar
-objectives) but does not implement the loop. `HookInput.solve` payloads for
-swept analyses fold into the introspection/hooks work. Packaging/PyPI stays
-post-V1 (keep the module layout PyPI-shaped).
+**Deferred (recorded, out of this feature's scope):** `pip.optimize` (design
+centering) stays **P7** — this feature made the optimizer *feedable*
+(`Param.bounds`, opvar objectives) but did not implement the loop. Python
+plugin scripting (`@pip.device`/`@pip.hook`, lifecycle-registry-to-Python)
+stays **P5**. `HookInput.solve` payloads for swept analyses fold into future
+introspection/hooks work. Packaging/PyPI stays post-V1 (module layout already
+PyPI-shaped). A handful of `SPEC_DEVIATION`s were recorded along the way
+(instance- vs module-scoped param access, dict-kwargs vs literal `a=`/`b=`
+sweep spelling in Python, `Session::set` structural-change behavior) — see
+`.specs/features/host-library/tasks.md` per-task Status notes and
+`validation.md` for the full list; none contradict a spec goal, all are
+phrasing-level.
 
 Post-V1 interactivity (oscilloscope, dashboards, sliders driving `Session.set`)
-builds here — see gallery.
+builds on this — see gallery.
 
 ---
 
