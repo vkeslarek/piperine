@@ -81,6 +81,9 @@ __all__ = [
     "TranConfig",
     "AcConfig",
     "NoiseConfig",
+    # plotting (HOST-17, matplotlib-guarded)
+    "plot",
+    "bode",
 ]
 
 
@@ -776,3 +779,95 @@ def load(path: str) -> Design:
     failure or an unreadable file — never a silent success.
     """
     return Design(_piperine.load(path))
+
+
+# ── plotting (HOST-17, matplotlib-guarded) ─────────────────────────────────
+#
+# matplotlib is never a hard dependency (spec Out-of-Scope / AC4): every
+# entry point below imports it lazily and raises a clear ``ImportError``
+# when it's absent, rather than failing at `import piperine` time or
+# silently no-op'ing. Figures are returned, not shown — a library call
+# forcing a blocking ``plt.show()`` would hang a headless/test process; the
+# caller decides whether/how to display or save the figure (``fig.show()``,
+# ``fig.savefig(...)``, or nothing at all in a notebook, which renders the
+# returned `Figure` inline).
+
+
+def _require_matplotlib():
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as e:
+        raise ImportError(
+            "piperine.plot/bode/Waveform.plot requires matplotlib — "
+            "install it with `pip install matplotlib`"
+        ) from e
+    return plt
+
+
+def plot(waveform: Waveform | dict[str, Waveform], **kwargs) -> "matplotlib.figure.Figure":  # noqa: F821
+    """Plot one real :class:`Waveform`, or several keyed by label
+    (``{"vout": wf1, "vin": wf2}``), on one axis (HOST-17). ``xlabel``/
+    ``ylabel``/``title`` kwargs label the axes; unrecognized kwargs are
+    ignored. Requires matplotlib — raises ``ImportError`` with an install
+    hint when it's not installed (no hard dependency, no silent no-op).
+    """
+    plt = _require_matplotlib()
+    fig, ax = plt.subplots()
+    if isinstance(waveform, dict):
+        for label, wf in waveform.items():
+            ax.plot(wf.axis, wf.values, label=label)
+        ax.legend()
+    else:
+        ax.plot(waveform.axis, waveform.values)
+    ax.set_xlabel(kwargs.get("xlabel", "axis"))
+    ax.set_ylabel(kwargs.get("ylabel", "value"))
+    if "title" in kwargs:
+        ax.set_title(kwargs["title"])
+    ax.grid(True)
+    return fig
+
+
+def bode(cw: ComplexWaveform, **kwargs) -> "matplotlib.figure.Figure":  # noqa: F821
+    """Bode plot (magnitude in dB + phase in degrees, log-frequency x-axis)
+    of a :class:`ComplexWaveform` (HOST-17). ``title`` kwarg labels the
+    figure. Requires matplotlib — raises ``ImportError`` with an install
+    hint when it's not installed.
+    """
+    import numpy as np
+
+    plt = _require_matplotlib()
+    fig, (ax_mag, ax_phase) = plt.subplots(2, 1, sharex=True)
+    freq = cw.axis
+    ax_mag.semilogx(freq, cw.db.values)
+    ax_mag.set_ylabel("Magnitude (dB)")
+    ax_mag.grid(True, which="both")
+    ax_phase.semilogx(freq, np.degrees(cw.phase.values))
+    ax_phase.set_ylabel("Phase (deg)")
+    ax_phase.set_xlabel("Frequency (Hz)")
+    ax_phase.grid(True, which="both")
+    if "title" in kwargs:
+        fig.suptitle(kwargs["title"])
+    return fig
+
+
+def _waveform_plot_method(self, **kwargs):
+    """``wf.plot()`` (HOST-17) — same as :func:`plot` bound onto
+    :class:`Waveform`."""
+    return plot(self, **kwargs)
+
+
+def _complex_waveform_plot_method(self, **kwargs):
+    """``cw.plot()`` (HOST-17) — a `ComplexWaveform`'s natural render is a
+    Bode plot; same as :func:`bode` bound onto :class:`ComplexWaveform`."""
+    return bode(self, **kwargs)
+
+
+# Bind `.plot()` onto the native pyclasses themselves (not just the facade
+# aliases above) — the native `_piperine._Waveform`/`_ComplexWaveform` types
+# PyO3 generates are ordinary heap types, so a plain class-attribute
+# assignment works exactly like it would on a pure-Python class; this is the
+# only way to add a method without threading a matplotlib dependency into
+# the Rust `piperine-python` crate itself (kept out per the spec's
+# "matplotlib as a hard dependency" Out-of-Scope entry).
+Waveform.plot = _waveform_plot_method
+ComplexWaveform.plot = _complex_waveform_plot_method
