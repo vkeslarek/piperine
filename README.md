@@ -155,9 +155,11 @@ Johnson–Nyquist noise of a resistor, integrated over a bandwidth:
 
 ### Compile-once live sessions — for optimization loops
 
-`design.compile()` gives a `LiveSession` that owns the compiled circuit. Every
+`design.compile()` gives a `Session` that owns the compiled circuit. Every
 `set` is a **solver-level restamp — no re-JIT, no re-elaboration** — so a fit
-loop runs one compilation for the whole sweep:
+loop runs one compilation for the whole sweep. `session.sweep(label, param,
+values)` is the fluent form of the same loop, and `sweep_grid({...})` +
+`.map(fn)` cover nested/named sweeps into a shaped array:
 
 ```python
 session = design.compile()
@@ -232,13 +234,51 @@ source-stepping homotopy — the hard nonlinear cases converge.
 
 ### Live & interactive — mid-run parameter changes
 
-Beyond compile-once sweeps, a `LiveSession` can **schedule parameter changes
+Beyond compile-once sweeps, a `Session` can **schedule parameter changes
 mid-transient**, landing exactly on the breakpoint:
 
 ```python
 session = design.compile()
 session.schedule_set(t=5e-6, label="v1", param="dc", value=1.8)   # step the supply at 5 µs
 trace = session.tran(piperine.TranConfig(stop=1e-5, step=1e-8))
+```
+
+### Read the device, not just the terminals — introspection
+
+Every instance exposes its computed operating-point variables, model
+descriptor, terminal/observable catalog, and param bounds — not just `v`/`i`
+at the pins. Useful for efficiency tuning, convergence debugging, and feeding
+an optimizer's knob bounds:
+
+```python
+op = m.op()
+q1 = op["q1"]
+print(q1.opvar("gm"), q1.opvar("power"))     # any opvar the device computes
+print(q1.model().name, q1.terminals())       # model descriptor + terminal catalog
+print(q1.param("r").bounds)                  # (min, max) the optimizer can trust
+print(op.stats.limiting)                     # $limit diagnostics, empty when nothing limited
+
+trace = m.tran(piperine.TranConfig(stop=1e-3, probe=["q1.power"]))  # record it over time
+
+nz = m.noise(piperine.NoiseConfig(...))
+nz.by_source()                                # {"r1/thermal": Waveform, ...}
+```
+
+### Typed errors, SI helpers, and a uniform surface
+
+Python and Rust are **one API** — same names, same call shape, same typed
+results, locked by a parity test (MD-22). Failures raise a typed
+`SimulationError` hierarchy (`ConvergenceError`, `ElaborationError`,
+`UnknownModule`, `UnknownNet`), not bare `ValueError`s. Frequencies and times
+take an optional SI-suffixed string:
+
+```python
+try:
+    m.ac(piperine.AcConfig(fstart=piperine.Hz("1k"), fstop=piperine.Hz("10M"), points=200))
+except piperine.ConvergenceError as e:
+    print(e.node, e.iteration, e.analysis)
+
+piperine.extract(trace, {"peak": lambda t: t.v("out").max(), "rms": lambda t: t.v("out").rms()})
 ```
 
 ### Batteries included
@@ -259,6 +299,12 @@ trace = session.tran(piperine.TranConfig(stop=1e-5, step=1e-8))
   @layout(min_width = 2.0e-6, layer = "m3")
   wire clk : Electrical;
   ```
+- **Rich `Waveform`** — measurements (`slew_rate`/`rise_time`/`fall_time`/
+  `overshoot`/`settling_time`/`delay`), transforms (`fft`/`resample`/
+  `derivative`/`integral`/`clip`), and `ComplexWaveform` margins
+  (`bandwidth_3db`/`gain_margin`/`phase_margin`/`unity_gain_freq`) on the Rust
+  host today; `wf.plot()`/`pip.plot(...)`/`pip.bode(...)` render on Python
+  when matplotlib is installed (no hard dependency).
 - **No-Magic philosophy** — type conversions and domain crossings are explicit;
   anything the toolchain cannot compile faithfully is a **named error**, never a
   silent zero.
@@ -398,7 +444,7 @@ tokens, references / rename, folding, and inlay hints (SI-literal expansion:
 | Document | What it covers |
 |----------|----------------|
 | `docs/spec/` (Parts I–VII + appendices) | The formal PHDL specification |
-| `docs/spec/part_viii_host_api.md` | The Python + Rust host APIs (load / Design / Module, analyses, LiveSession, CLI) |
+| `docs/spec/part_viii_host_api.md` | The Python + Rust host APIs (load / Design / Module / Session, uniform analyses, introspection, CLI) |
 | `CLAUDE.md` | Architecture overview (the pipeline, crate responsibilities) |
 | `ROADMAP.md` | Where it's going — the pillars to V1, and the post-V1 gallery |
 
