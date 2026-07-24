@@ -335,26 +335,53 @@ shipped `Introspect::list_params` ABI and the existing HOST-07 opvar pattern.
 **What**: `fft`/`resample`/`derivative`/`integral`/`clip` → new waveform.
 **Where**: `piperine-api/waveform.rs`. **Requirement**: HOST-15. **Depends on**: T1.
 **Done when**:
-- [ ] `fft` round-trips a known tone; `resample(grid)` interpolates; others correct
-- [ ] `cargo test -p piperine`
+- [x] `fft` round-trips a known tone; `resample(grid)` interpolates; others correct
+- [x] `cargo test -p piperine`
 **Tests**: integration · **Gate**: quick (api)
+**Status (2026-07-24)**: DONE, commit `9fb8834`. `fft` resamples onto the
+inclusive-endpoint uniform grid (`t0..t_end`, `n` points over `n-1`
+intervals — same grid `resample`/`derivative` use) and computes a direct
+DFT; verified against a single-tone sine at an exact bin index (peak =
+amplitude/2, mirror bin, DC ≈ 0, tolerance 1e-9). `derivative`/`integral`
+verified exact on linear/constant synthetic signals; `clip` verified
+saturating out-of-band values. `cargo test -p piperine`: 0 failed.
 
 #### T18: `ComplexWaveform` margins/bandwidth
 **What**: `bandwidth_3db`/`gain_margin`/`phase_margin`/`unity_gain_freq`.
 **Where**: `piperine-api/waveform.rs`. **Requirement**: HOST-16. **Depends on**: T1.
 **Done when**:
-- [ ] each returns the value on an AC fixture (known -3dB corner)
-- [ ] `cargo test -p piperine`
+- [x] each returns the value on an AC fixture (known -3dB corner)
+- [x] `cargo test -p piperine`
 **Tests**: integration · **Gate**: quick (api)
+**Status (2026-07-24)**: DONE, commit `95cc3d8`. `gain_margin` needed a
+phase-unwrap helper (`arg()` wraps to `(-π, π]`, but a real multi-pole
+rolloff's phase legitimately passes through -180° after wrapping) before
+searching for the -180° crossing. Verified against a synthetic 3-pole
+loop-gain fixture (`H(f) = A0/[(1+jf/f1)(1+jf/f2)(1+jf/f3)]`); every
+expected value derived independently via closed-form magnitude/phase +
+bisection root-finding in the test, not by reading the implementation.
+`cargo test -p piperine`: 0 failed.
 
 #### T19: `plot`/`pip.plot`/`bode` (matplotlib-guarded)
 **What**: Python plotting convenience. **Where**: `piperine-python`.
 **Requirement**: HOST-17. **Depends on**: T7.
 **Done when**:
-- [ ] `wf.plot()`/`pip.plot(...)`/`pip.bode(...)` render with matplotlib present
-- [ ] absent matplotlib → clear "install matplotlib" error (no hard dep, no no-op)
-- [ ] `cargo test -p piperine-python` / `piperine test`
+- [x] `wf.plot()`/`pip.plot(...)`/`pip.bode(...)` render with matplotlib present
+- [x] absent matplotlib → clear "install matplotlib" error (no hard dep, no no-op)
+- [x] `cargo test -p piperine-python` / `piperine test`
 **Tests**: integration · **Gate**: quick (python)
+**Status (2026-07-24)**: DONE, commit `0efd213`. `Waveform.plot()`/
+`ComplexWaveform.plot()` bound onto the native pyclasses from the
+pure-Python facade (no matplotlib dependency added to the Rust crate);
+`pip.plot(waveform_or_dict)`/`pip.bode(complex_waveform)` at module level.
+Every entry point returns the created `Figure` rather than calling
+`plt.show()` (a library call forcing a blocking show would hang a
+headless/test caller). One test exercises both the present-matplotlib
+render path and the absent-matplotlib fail-loud path (`sys.modules
+["matplotlib"] = None`, the documented CPython halted-import mechanism)
+sequentially in one script, since the embedded interpreter is
+process-global across parallel `#[test]`s. `cargo build -p piperine-python
+--features extension-module && cargo test -p piperine-python`: 0 failed.
 
 ---
 
@@ -365,18 +392,72 @@ shipped `Introspect::list_params` ABI and the existing HOST-07 opvar pattern.
 view). **Where**: `piperine-api/session.rs`, python. **Requirement**: HOST-18.
 **Depends on**: T4. **Reuses**: compile-once restamp (MD-18).
 **Done when**:
-- [ ] each `SweepPoint` runs any analysis; compile-once (one build)
-- [ ] structural param → rebuild + count (`rebuilds`), never wrong restamp
-- [ ] values match per-point fresh builds; `cargo test --workspace`
+- [x] each `SweepPoint` runs any analysis; compile-once (one build)
+- [x] structural param → rebuild + count (`rebuilds`), never wrong restamp
+- [x] values match per-point fresh builds; `cargo test --workspace`
 **Tests**: integration · **Gate**: full
+**Status (2026-07-24)**: DONE, commit `0f69401`. `Session::sweep(label,
+param, values) -> Sweep`: a streaming (lending) iterator — `Sweep::next
+(&mut self) -> Option<Result<SweepPoint, Error>>` instead of
+`std::iter::Iterator`, since each yielded `SweepPoint` mutably borrows the
+sweep's own `Session` and stable `Iterator` can't express an item
+borrowing from the iterator itself (no GAT lending-iterator in stable
+std). `SweepPoint` derefs to `Session`, so any analysis runs on it
+directly. A structural knob write auto-rebuilds the circuit in place via a
+new private `set_or_rebuild`/`rebuild` pair on `Session`, scoped to the
+sweep path only — `Session::set`'s general fail-loud behavior (T3's
+SPEC_DEVIATION) is untouched, since no existing test/caller depends on
+auto-rebuild being absent there and the sweep is the one place HOST-18
+explicitly asks for it. Verified against fresh-`Session::compile` ground
+truth on a presence-flipping optional-param fixture (structural: exactly
+one rebuild, then plain restamps) and a plain numeric param
+(non-structural: zero rebuilds), both matching per-point fresh builds
+within `1e-9` relative error. Python: `Session.sweep` backed by a new
+native `_Session.sweep -> _Sweep` iterator (owned `Py<_Session>`, the
+standard PyO3 shape for a parent-mutating iterator) so the facade method
+has a real native counterpart, satisfying `facade_hygiene`'s native-parity
+gate — Python's `_Session::set` already auto-rebuilds (LIVE-14), so the
+native `_Sweep` just drives it per point. `cargo test --workspace`: 0
+failed (one pre-existing, unrelated flaky test in `piperine-plugin`'s
+`process_smoke::dead_guest_is_a_loud_error`, confirmed to pass standalone;
+root cause was the environment's `/home` partition being nearly full,
+triggering an `lld` crash on a parallel link — resolved by clearing
+`target/debug/incremental`, unrelated to this task's scope).
 
 #### T21: Nested/named sweep + `map()`→ndarray
 **What**: `sweep(a=[…], b=[…])` grid; `grid.map(fn)` shaped array.
 **Where**: `piperine-api`, python. **Requirement**: HOST-19. **Depends on**: T20.
 **Done when**:
-- [ ] nested grid iterates all combinations; `map` returns axis-shaped ndarray (py) / nested Vec (rust)
-- [ ] `cargo test --workspace`
+- [x] nested grid iterates all combinations; `map` returns axis-shaped ndarray (py) / nested Vec (rust)
+- [x] `cargo test --workspace`
 **Tests**: integration · **Gate**: full
+**Status (2026-07-24)**: DONE, commit `319a96c`. `Session::sweep_grid
+(axes) -> Grid` visits the cartesian product of named `(label, param,
+values)` axes in row-major order; `Grid::map(f)` restamps (or rebuilds,
+reusing T20's `set_or_rebuild`) each axis before calling `f` and collects
+results into `Nested<R>` (`Branch` per outer axis, `Leaf` at the deepest
+axis) shaped like `Grid::shape()` — the "nested Vec" the task asks for,
+generic over the mapped result type rather than a fixed 2D `Vec<Vec<_>>`.
+A mapped-function or restamp failure is wrapped with the failing
+combination's coordinates (spec edge case). Verified against a
+two-resistor divider's closed-form voltage (`mid = 10·r2/(r1+r2)`) at
+every `(r1, r2)` combination of a 2×3 grid. Python:
+`Session.sweep_grid({"label.param": [...], ...}) -> Grid`, backed by a new
+native `_Session.sweep_grid -> _Grid` iterator (same owned-`Py<_Session>`
+shape as T20's `_Sweep`); `Grid.map(fn)` returns an axis-shaped
+`numpy.ndarray`. SPEC_DEVIATION: the literal spec/ideal example
+`sweep(a=[...], b=[...])` (bare kwargs) isn't directly implementable —
+PHDL parameters are addressed by flat instance label (`"label.param"`,
+the same scheme `sweep`/`set`/`probe=` already use), and a dotted path is
+not a valid Python identifier, so `sweep_grid` takes a `dict[str,
+list[float]]` keyed by `"label.param"` instead; the grid iteration/nesting
+semantics match the spec. Also fixed `Sweep`/`Grid`'s Python `__iter__` to
+build a fresh native iterator per call instead of reusing one exhausted
+after a single pass (caught by this task's ndarray test — `map()`
+iterating a `Grid` left it exhausted for a second use — but the same bug
+existed in T20's `Sweep`, fixed here too since both share the pattern).
+`cargo test --workspace`: 0 failed (same pre-existing flaky
+`process_smoke` test as T20, unrelated).
 
 ---
 
