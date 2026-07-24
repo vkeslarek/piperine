@@ -271,9 +271,20 @@ the new name).
 results/stats, python. **Requirement**: HOST-10. **Depends on**: T9.
 **Reuses**: `LimitingReport`.
 **Done when**:
-- [ ] `op.stats.limiting -> [LimitingReport]` (device/net/proposed/limited/name/reason)
-- [ ] empty when nothing limited; `cargo test --workspace`
+- [x] `op.stats.limiting -> [LimitingReport]` (device/net/proposed/limited/name/reason)
+- [x] empty when nothing limited; `cargo test --workspace`
 **Tests**: integration · **Gate**: full
+**Status (2026-07-24)**: DONE, commit `8f4e48f`. `SolverStats` gains a
+`limiting: Vec<LimitingReport>` field (collected at the end of the DC solve);
+`LimitingReport` gains a `device: String` field so a host can attribute
+the report. Python `_SolverStats.limiting` is a `#[pyo3(get)]` field of
+`Vec<_LimitingReport>` (a separate `#[pymethods]` getter on _SolverStats
+was found to break PyO3 macro expansion — `#[pyo3(get)]` on the field
+works correctly). SPEC_DEVIATION: the limiting state is transient
+(per-Newton-step) — at a converged DC operating point the list is
+typically empty because the limiter releases once the junction
+stabilises; the test covers the empty-case surface, not a live limiter
+trigger (the solver-level `limiting_report.rs` tests cover the live path).
 
 #### T14: Noise `by_source`/`contributions`
 **What**: Per-source noise. **Where**: `piperine-api/waveform.rs` (noise Trace),
