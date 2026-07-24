@@ -430,6 +430,14 @@ impl AnalogKernel {
         self.limits.as_ref().map_or(&[], |l| &l.branches)
     }
 
+    /// Per-slot `(limiter_name, reason)` catalog (phdl-introspection-attributes
+    /// PIA-15/16), in slot order. The name is the `$limit` call-site `kind`;
+    /// the reason is inferred from the kind. Read by the device's
+    /// `limiting_report` to name the slot that clamped.
+    pub fn limit_catalog(&self) -> &[(&'static str, piperine_solver::abi::LimitReason)] {
+        self.limits.as_ref().map_or(&[], |l| &l.catalog)
+    }
+
     /// Branch terminals `(plus, minus)` per force row.
     pub fn force_terminals(&self) -> &[(NodeId, NodeId)] {
         self.forces.as_ref().map_or(&[], |f| &f.terminals)

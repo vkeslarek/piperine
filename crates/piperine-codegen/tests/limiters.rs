@@ -141,3 +141,58 @@ fn fetlim_matches_ngspice_reference() {
         );
     }
 }
+
+// ── phdl-introspection-attributes PIA-15/16 (T7, kernel side) ──────────────
+// The per-slot `(limiter_name, reason)` catalog is collected from each
+// `$limit` call-site `kind`, in slot order. `limvds` → VdsStep; the junction
+// limiters (pnjlim/fetlim) → VoltageStep. The device-side report (T8) reads
+// this catalog to name the slot that clamped.
+
+/// PIA-15: `limit_catalog()` carries the call-site kind per slot.
+#[test]
+fn limit_catalog_records_kind_per_slot() {
+    use piperine_solver::abi::LimitReason;
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod L (inout d: Electrical, inout s: Electrical) { param vto: Real = 1.0; }
+        analog L {
+            I(d, s) <+ $limit(\"fetlim\", V(d, s), 0.0, vto, 0.0);
+            I(d, s) <+ $limit(\"limvds\", V(d, s), 0.0, vto, 0.0);
+        }
+    ";
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
+    let kernel = AnalogKernel::compile(&bodies["L"]).expect("compile two-limiter device");
+    let catalog = kernel.limit_catalog();
+    assert_eq!(catalog.len(), 2, "two $limit slots, got {catalog:?}");
+    // The catalog names each limiter by its call-site kind (PIA-15) — never a
+    // hardcoded "pnjlim".
+    let has_fetlim = catalog.iter().any(|(n, r)| *n == "fetlim" && *r == LimitReason::VoltageStep);
+    let has_limvds = catalog.iter().any(|(n, r)| *n == "limvds" && *r == LimitReason::VdsStep);
+    assert!(has_fetlim, "fetlim slot must be named `fetlim`/VoltageStep, got {catalog:?}");
+    assert!(has_limvds, "limvds slot must be named `limvds`/VdsStep, got {catalog:?}");
+    assert!(
+        catalog.iter().all(|(n, _)| *n != "pnjlim"),
+        "no hardcoded pnjlim when the device uses fetlim/limvds, got {catalog:?}"
+    );
+}
+
+/// PIA-16/18: a `pnjlim` site infers `VoltageStep` (today's default reason),
+/// and a single-limiter device reports exactly one catalog entry — the
+/// `$limit` signature is unchanged.
+#[test]
+fn limit_catalog_pnjlim_infers_voltage_step() {
+    use piperine_solver::abi::LimitReason;
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod D (inout p: Electrical, inout n: Electrical) {}
+        analog D { I(p, n) <+ $limit(\"pnjlim\", V(p, n), 0.0, 0.7, 0.7); }
+    ";
+    let elab = parse_and_elaborate(src, &piperine_lang::SourceMap::dummy()).expect("elaborates");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
+    let kernel = AnalogKernel::compile(&bodies["D"]).expect("compile pnjlim device");
+    let catalog = kernel.limit_catalog();
+    assert_eq!(catalog.len(), 1);
+    assert_eq!(catalog[0].0, "pnjlim");
+    assert_eq!(catalog[0].1, LimitReason::VoltageStep, "omitted reason infers VoltageStep (PIA-16)");
+}

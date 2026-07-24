@@ -479,6 +479,28 @@ impl<'m> AnalogCompiler<'m> {
                 })
             })
             .collect();
+        // Per-slot `(limiter_name, reason)` catalog (phdl-introspection-
+        // attributes PIA-15/16): the `$limit` call-site `kind` (arg 0) per
+        // slot, mapped to its `(&'static str, LimitReason)` entry. Read by the
+        // device's `limiting_report` to name the slot that clamped.
+        let limit_catalog: Vec<(&'static str, piperine_solver::abi::LimitReason)> = self
+            .limits
+            .iter()
+            .map(|l| {
+                let kind = match l {
+                    PomExpr::SysCall(name, args)
+                        if name.trim_start_matches('$') == "limit" && !args.is_empty() =>
+                    {
+                        match &args[0] {
+                            PomExpr::Literal(piperine_lang::parse::ast::Literal::String(s)) => s.as_str(),
+                            _ => "",
+                        }
+                    }
+                    _ => "",
+                };
+                super::Limits::catalog_entry_for_kind(kind)
+            })
+            .collect();
         let ac_stims = std::mem::take(&mut self.flat.ac_stims);
         let (ac_stim_mag_id, ac_stim_phase_id) = if ac_stims.is_empty() {
             (None, None)
@@ -651,6 +673,7 @@ impl<'m> AnalogCompiler<'m> {
                 seed: get(&self.jit, seed),
                 vnew: get(&self.jit, vnew),
                 branches: limit_branches,
+                catalog: limit_catalog,
             });
         let noise_cap = noise_id.map(|id| Noise {
             source: get(&self.jit, id),
