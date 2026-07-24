@@ -16,6 +16,92 @@ pub struct NetRef {
     pub name: String,
 }
 
+/// `.tf` result (HOST-03): DC small-signal transfer characteristics from
+/// unit excitations on the system linearized at the operating point — a
+/// typed api wrapper over the solver's existing `.tf` driver (no new solver
+/// math, MD-14: voltage-source input only).
+#[derive(Debug, Clone, Copy)]
+pub struct TfResult {
+    /// `d(output)/d(input)` — dimensionless (voltage/current gain) or an
+    /// impedance/admittance, depending on the input/output kind.
+    pub gain: f64,
+    /// Resistance seen by the input source.
+    pub z_in: f64,
+    /// Thévenin/Norton equivalent resistance at the output.
+    pub z_out: f64,
+}
+
+impl TfResult {
+    /// Wired by `Session::tf` (T5); unused until then.
+    #[allow(dead_code)]
+    pub(crate) fn from_solver(r: piperine_solver::prelude::TransferFunctionAnalysisResult) -> Self {
+        Self { gain: r.gain, z_in: r.input_resistance, z_out: r.output_resistance }
+    }
+}
+
+/// `.pz` result (HOST-04): poles (and, when an input source is given,
+/// transmission zeros) of the linearized input→output transfer function, in
+/// rad/s — the uniform host shape (MD-22), same field names on both hosts.
+#[derive(Debug, Clone, Default)]
+pub struct PzResult {
+    pub poles: Vec<num_complex::Complex64>,
+    pub zeros: Vec<num_complex::Complex64>,
+}
+
+impl From<piperine_solver::prelude::PoleZeroResult> for PzResult {
+    fn from(r: piperine_solver::prelude::PoleZeroResult) -> Self {
+        Self { poles: r.poles, zeros: r.zeros }
+    }
+}
+
+/// `.disto` result (HOST-04): small-signal Volterra distortion at the DC
+/// operating point. Single-tone runs report `hd2`/`hd3`; two-tone runs
+/// `im2`/`im3` — the uniform host shape (MD-22).
+#[derive(Debug, Clone, Default)]
+pub struct DistoResult {
+    pub hd2: Option<f64>,
+    pub hd3: Option<f64>,
+    pub im2: Option<f64>,
+    pub im3: Option<f64>,
+    /// Named capability diagnostics from the `.disto` pre-scan (ABI-24) —
+    /// see the solver's `DistoResult::warnings` for the full contract.
+    pub warnings: Vec<String>,
+}
+
+impl From<piperine_solver::prelude::DistoResult> for DistoResult {
+    fn from(r: piperine_solver::prelude::DistoResult) -> Self {
+        Self { hd2: r.hd2, hd3: r.hd3, im2: r.im2, im3: r.im3, warnings: r.warnings }
+    }
+}
+
+/// `.sp` result (HOST-04): the N-port scattering matrix over a frequency
+/// sweep — the uniform host shape (MD-22), same field names as the solver's
+/// `SpResult`. `s(k, i, j)` reads `S_ij` at swept point `k` without indexing
+/// the raw `ndarray` matrix by hand.
+#[derive(Debug, Clone, Default)]
+pub struct SParamResult {
+    pub frequencies: Vec<f64>,
+    /// `s[k]` is the `n_ports × n_ports` matrix at `frequencies[k]`,
+    /// `s[k][[i, j]] = S_ij` (port `i` response / port `j` excitation).
+    pub s: Vec<ndarray::Array2<num_complex::Complex64>>,
+    /// Reference impedance of each port, indexed by port position.
+    pub z0: Vec<f64>,
+    pub n_ports: usize,
+}
+
+impl SParamResult {
+    /// `S_ij` at swept point `k` — a named accessor over the raw matrix.
+    pub fn s(&self, k: usize, i: usize, j: usize) -> num_complex::Complex64 {
+        self.s[k][[i, j]]
+    }
+}
+
+impl From<piperine_solver::prelude::SpResult> for SParamResult {
+    fn from(r: piperine_solver::prelude::SpResult) -> Self {
+        Self { frequencies: r.frequencies, s: r.s, z0: r.z0, n_ports: r.n_ports }
+    }
+}
+
 /// `.sens` result: `∂V(output)/∂(param)` keyed by
 /// `(output net name, "label.param")` — the uniform host shape (MD-22; the
 /// Python binding exposes the same map and the same `get`).

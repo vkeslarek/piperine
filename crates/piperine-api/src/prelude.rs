@@ -5,7 +5,7 @@
 pub use crate::error::Error;
 pub use crate::fourier::{FourierComponent, FourierResult};
 pub use crate::hooks::SimHooks;
-pub use crate::results::{NetRef, OpResult, PssResult, SensResult};
+pub use crate::results::{DistoResult, NetRef, OpResult, PssResult, PzResult, SParamResult, SensResult, TfResult};
 pub use crate::session::{SimSession, SolverConfig};
 pub use crate::waveform::{AcTrace, ComplexWaveform, NoiseTrace, Trace, Waveform};
 pub use piperine_codegen::device::{CircuitBuildInfo, CircuitCompiler, DeviceProvider};

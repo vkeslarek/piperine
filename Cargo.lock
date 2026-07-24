@@ -1944,6 +1944,7 @@ dependencies = [
 name = "piperine-api"
 version = "0.1.1"
 dependencies = [
+ "ndarray 0.17.2",
  "num-complex",
  "piperine-codegen",
  "piperine-lang",

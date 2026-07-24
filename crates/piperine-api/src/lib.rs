@@ -24,7 +24,6 @@ pub mod waveform;
 pub use error::Error;
 pub use fourier::{FourierComponent, FourierResult};
 pub use hooks::SimHooks;
-pub use piperine_solver::prelude::{PoleZeroResult, SpResult};
-pub use results::{NetRef, OpResult, PssResult, SensResult};
+pub use results::{DistoResult, NetRef, OpResult, PssResult, PzResult, SParamResult, SensResult, TfResult};
 pub use session::{SimSession, SolverConfig};
 pub use waveform::{AcTrace, ComplexWaveform, NoiseTrace, Trace, Waveform};

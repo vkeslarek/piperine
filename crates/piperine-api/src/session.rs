@@ -236,7 +236,7 @@ impl SimSession {
         output: &str,
         output_ref: Option<&str>,
         config: &SolverConfig,
-    ) -> Result<piperine_solver::prelude::PoleZeroResult, Error> {
+    ) -> Result<crate::results::PzResult, Error> {
         let (mut circuit, info) = self.build_circuit(false)?;
         let output_node = resolve_net(&info, output)?;
         let output_ref_node = output_ref.map(|r| resolve_net(&info, r)).transpose()?;
@@ -249,7 +249,7 @@ impl SimSession {
         let poles = solver.poles()?;
         let zeros = solver.zeros()?;
         self.fire_after_solve("pz", &[])?;
-        Ok(piperine_solver::prelude::PoleZeroResult { poles, zeros })
+        Ok(piperine_solver::prelude::PoleZeroResult { poles, zeros }.into())
     }
 
     /// Run an N-port S-parameter analysis (`.sp`): the scattering matrix
@@ -268,7 +268,7 @@ impl SimSession {
         points: usize,
         logarithmic: bool,
         config: &SolverConfig,
-    ) -> Result<piperine_solver::prelude::SpResult, Error> {
+    ) -> Result<crate::results::SParamResult, Error> {
         let (mut circuit, info) = self.build_circuit(false)?;
         let rfports = self.design.rfports(&self.module)?;
         let mut ports = Vec::with_capacity(rfports.len());
@@ -288,7 +288,7 @@ impl SimSession {
         let mut solver = circuit.sp(options, config.to_context())?;
         let result = solver.solve_sweep()?;
         self.fire_after_solve("sp", &[])?;
-        Ok(result)
+        Ok(result.into())
     }
 
     /// Run a distortion analysis (`.disto`): small-signal Volterra
@@ -310,7 +310,7 @@ impl SimSession {
         output: &str,
         output_ref: Option<&str>,
         config: &SolverConfig,
-    ) -> Result<piperine_solver::prelude::DistoResult, Error> {
+    ) -> Result<crate::results::DistoResult, Error> {
         let (mut circuit, info) = self.build_circuit(true)?;
         let output_node = resolve_net(&info, output)?;
         let output_ref_node = output_ref.map(|r| resolve_net(&info, r)).transpose()?;
@@ -324,7 +324,7 @@ impl SimSession {
         let mut solver = circuit.disto(options, config.to_context())?;
         let result = solver.solve()?;
         self.fire_after_solve("disto", &[])?;
-        Ok(result)
+        Ok(result.into())
     }
 
     /// Run a DC operating-point analysis. `nodeset` (net name → volts) seeds
