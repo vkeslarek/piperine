@@ -80,6 +80,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: SS-14 / crates/piperine-solver/src/error.rs:1,result.rs:1 (piperine-solver)
 - last seen: 2026-07-19T16:34:44Z
 
+### L-012 — When a metadata sidecar is resolved at the POM/lang layer and consumed at the codegen layer, attributes attached to POM nodes that do not surface in codegen's runtime catalogs (e.g. a var shadowed/never-assigned so the kernel omits it from opvar_names) must be cross-checked at the codegen boundary — silently dropping the orphan metadata violates fail-loud.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `piperine-lang/pom, piperine-codegen/device, fail-loud` · harmful: 0
+- features: phdl-introspection-attributes
+- evidence: .specs/features/phdl-introspection-attributes/validation.md Edge Cases bullet 3 (orphan @unit/@description on shadowed var); pom/design.rs:469-500; device/mod.rs:428-440 (piperine-lang/pom, piperine-codegen/device, fail-loud)
+- last seen: 2026-07-24T02:29:17Z
+
 ## Quarantined (failed when applied — ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

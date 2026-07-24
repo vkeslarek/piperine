@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 12,
+  "next_id": 13,
   "lessons": [
     {
       "id": "L-001",
@@ -202,6 +202,24 @@
       ],
       "created": "2026-07-19T16:34:44Z",
       "last_seen": "2026-07-19T16:34:44Z"
+    },
+    {
+      "id": "L-012",
+      "key": "ac_gap::when a metadata sidecar is resolved at the pom lang layer and consumed at the codegen layer attributes attached to pom nodes that do not surface in codegen s runtime catalogs e g a var shadowed never assigned so the kernel omits it from opvar names must be cross checked at the codegen boundary silently dropping the orphan metadata violates fail loud",
+      "text": "When a metadata sidecar is resolved at the POM/lang layer and consumed at the codegen layer, attributes attached to POM nodes that do not surface in codegen's runtime catalogs (e.g. a var shadowed/never-assigned so the kernel omits it from opvar_names) must be cross-checked at the codegen boundary — silently dropping the orphan metadata violates fail-loud.",
+      "signal": "ac_gap",
+      "scope": "piperine-lang/pom, piperine-codegen/device, fail-loud",
+      "status": "candidate",
+      "features": [
+        "phdl-introspection-attributes"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        ".specs/features/phdl-introspection-attributes/validation.md Edge Cases bullet 3 (orphan @unit/@description on shadowed var); pom/design.rs:469-500; device/mod.rs:428-440 (piperine-lang/pom, piperine-codegen/device, fail-loud)"
+      ],
+      "created": "2026-07-24T02:29:17Z",
+      "last_seen": "2026-07-24T02:29:17Z"
     }
   ]
 }

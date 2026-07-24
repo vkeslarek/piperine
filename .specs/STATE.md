@@ -417,9 +417,43 @@ completeness) and applies to all new tests going forward.
 
 ## Handoff Snapshot
 
-**Last updated:** 2026-07-22 — `hierarchy-flattening` DELIVERED (T1–T10);
-MD-25 locked. `cargo test --workspace`: 705 passed, 0 failed,
-5 ignored, 0 rustc warnings.
+**Last updated:** 2026-07-23 — `phdl-introspection-attributes` DELIVERED
+(T1–T8); independent Verifier PASS. `cargo test --workspace`: 849 passed,
+0 failed, 5 ignored, 0 rustc warnings.
+
+### Feature — `phdl-introspection-attributes` (DELIVERED 2026-07-23)
+
+Spec/design/tasks/validation in `.specs/features/phdl-introspection-attributes/`.
+Makes the reflective ABI bridge (delivered by `element-abi-maturity`)
+**declarative**: device authors control the introspection catalogs from PHDL
+with small composable atomic attributes (`@model`/`@name`/`@unit`/
+`@description`/`@kind`, MD-26) instead of codegen-derived defaults. The five
+schemas ship as a textual `extern attribute` prelude header
+(`crates/piperine-lang/headers/introspection.phdl`, MD-24 — LSP go-to-def
+inherited). `Design::introspection_meta` resolves them into an
+`IntrospectionMeta` sidecar (validated strings, not solver enums — lang's
+library is solver-independent), threaded through `CircuitCompiler` →
+`PiperineDevice`; each `Introspect` bridge method prefers the sidecar and
+falls back to the derived default when absent (zero regression). The
+opvar-name vs observable-name inconsistency dissolves at the source — one
+`@name` per var feeds both catalogs via a shared `var_display_name` helper
++ a new `AnalogKernel::var_names()` catalog. `$limit`'s limiter naming
+(PIA-15..18) is an operator-arg concern: a per-slot
+`(name, LimitReason)` catalog on `AnalogKernel` (collected at compile from
+each call-site `kind`, reason inferred — `limvds`→VdsStep, else VoltageStep)
++ per-slot active tracking in the device `Limiter` let `limiting_report()`
+name the limiter that actually fired (no more hardcoded `"pnjlim"`).
+Attribute grammar is keyed-only, so single-field schemas use `value: String`
+(authors write `@name(value = "i_d")`) — recorded SPEC_DEVIATION, user-approved.
+
+**Verifier:** independent sub-agent PASS — 19/20 ACs spec-anchored (PIA-16's
+optional-reason-arg half is a design-approved MVP deferral — no stdlib model
+needs a non-default reason today), 3/3 discrimination mutations killed, gate
+849/0. One Minor spec Edge Case gap logged (lesson L-012): `@unit`/
+`@description` on a shadowed/non-opvar var is silently accepted by the lang
+resolver (shadowing is a codegen concept, unknowable at elaboration) and
+dropped by codegen — a codegen-boundary orphan check is the tracked remedy,
+not a correctness bug.
 
 ### Feature — `hierarchy-flattening` (DELIVERED 2026-07-22)
 
