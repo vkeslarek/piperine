@@ -252,10 +252,19 @@ catalogs). Python `_Module::tran` / `_Session::tran` mirror with
 **Where**: `piperine-api/results.rs`, python. **Requirement**: HOST-09.
 **Depends on**: T9.
 **Done when**:
-- [ ] `inst.model` (type/version), `inst.terminals` (with `TerminalKind`),
+- [x] `inst.model` (type/version), `inst.terminals` (with `TerminalKind`),
       `inst.observables()` (name/kind/cost)
-- [ ] `cargo test --workspace`
+- [x] `cargo test --workspace`
 **Tests**: integration · **Gate**: full
+**Status (2026-07-24)**: DONE, commit `f572d3e`. `InstanceView` gains
+`model()`/`terminals()`/`observables()` over eagerly-snapshotted
+`model_descriptor`/`list_terminals`/`list_observables` catalogs (same
+shape as T10's opvar snapshot). Python PY-13 connectivity `terminals()`
+renamed to `terminal_connections()` to free the `terminals` property name
+for HOST-09 descriptors (SPEC_DEVIATION: a rename of an existing Python
+method — justified by MD-22's normative `inst.terminals` property shape
+from ideal.md §6.5; the old method's semantics are fully preserved under
+the new name).
 
 #### T13: `op.stats.limiting` (`LimitingReport`)
 **What**: Expose limiting diagnostics on stats. **Where**: `piperine-api`
