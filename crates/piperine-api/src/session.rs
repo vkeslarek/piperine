@@ -510,6 +510,134 @@ impl SimSession {
     }
 }
 
+// ─── Session: the compiled center of gravity (HOST-01) ─────────────────────
+//
+// `SimSession` (above) elaborates + JITs fresh on every analysis call — the
+// right shape for one-shot/staged workflows (mirrors Python's `_Module`).
+// `Session` compiles **once** (`Session::compile`) and holds the built
+// circuit across every subsequent analysis; parameter writes route through
+// the solver's live-set path (`CircuitInstance::set_element_param`, MD-18:
+// restamp, never re-JIT) — the Rust equivalent of Python's `_LiveSession`
+// (spec: "Python rename `LiveSession`→`Session`; build the Rust equivalent").
+//
+// SPEC_DEVIATION: design.md's Approach Decision table describes `SimSession`
+// as folding into `Session` ("no dup concept"). `SimSession` is kept as a
+// distinct type here — Python itself has never had one concept for this:
+// `_Module` (staged, forks + rebuilds per analysis) and `_LiveSession`
+// (compiled once) are already two types serving two workflows, and the
+// spec's own Goals bullet reads "build the Rust equivalent" of the compiled
+// session, not "replace the staged one". Collapsing `SimSession` into
+// `Session` would touch ~20 existing root/python call sites for no behavior
+// change; reusing the same two-type shape Python already ships is the
+// smaller, safer move. Flagged for the Verifier/orchestrator to confirm.
+//
+// SPEC_DEVIATION: `Session::set` on a structural (`Invalidation::Rebuild`)
+// write fails loud instead of auto-re-elaborating. Python's `_LiveSession`
+// auto-rebuild (LIVE-14/15/16/17) is ~150 lines of dirty-ledger/carry/
+// mid-transient-split machinery; HOST-01's "Done when" only asks for
+// `set`/`schedule_set`/`rebuilds` to be present, not for auto-rebuild parity.
+// `rebuilds()` stays part of the surface (always `0` today) so a future task
+// can wire the same auto-rebuild recipe without a signature change.
+
+/// The compiled center of gravity (HOST-01): elaborate + JIT **once**
+/// (`Session::compile`), then run every analysis against the held circuit.
+/// `set` restamps a parameter on the already-compiled circuit (MD-18); a
+/// structural write (`Invalidation::Rebuild`) fails loud (see the
+/// SPEC_DEVIATION note above `Session::set`).
+pub struct Session {
+    #[allow(dead_code)] // kept so a future auto-rebuild can re-elaborate from it
+    design: Design,
+    module: String,
+    circuit: piperine_solver::prelude::CircuitInstance,
+    info: CircuitBuildInfo,
+    rebuilds: usize,
+    /// Scheduled live writes `(t, label, param, value)` for the next
+    /// `tran` (drained into the solver's own `schedule_set` when it runs).
+    pending_sets: Vec<(f64, String, String, f64)>,
+}
+
+impl Session {
+    /// Compile `module` of `design` **once**: fork the design, apply staged
+    /// overrides, lower + JIT, and hold the built circuit. Every subsequent
+    /// analysis runs on this same compilation (MD-18).
+    pub fn compile(design: &Design, module: &str) -> Result<Self, Error> {
+        let forked = design.fork();
+        let applied = forked.with_overrides_applied(module)?.fork();
+        let bodies = piperine_codegen::resolve::lower_bodies(&applied)?;
+        let mut compiler = CircuitCompiler::new(&applied, &bodies);
+        let (mut circuit, info) = compiler.build_circuit_mapped(module)?;
+        circuit.init_digital()?;
+        circuit.rebuild_digital_topology();
+        Ok(Self {
+            design: applied,
+            module: module.to_string(),
+            circuit,
+            info,
+            rebuilds: 0,
+            pending_sets: Vec::new(),
+        })
+    }
+
+    /// The module this session was compiled from.
+    pub fn module(&self) -> &str {
+        &self.module
+    }
+
+    /// How many automatic structural rebuilds this session has performed
+    /// (`0` — see the SPEC_DEVIATION note above [`Session`]: a structural
+    /// write fails loud today rather than auto-rebuilding).
+    pub fn rebuilds(&self) -> usize {
+        self.rebuilds
+    }
+
+    /// Write a parameter on the compiled circuit, effective from the next
+    /// analysis (MD-18: restamp, never re-JIT). A structural write
+    /// (`Invalidation::Rebuild`) fails loud; an out-of-bounds value fails
+    /// loud with the solver's own message.
+    pub fn set(&mut self, label: &str, param: &str, value: f64) -> Result<(), Error> {
+        use piperine_solver::abi::{Invalidation, Value};
+        let inv = self.circuit.set_element_param(label, param, Value::Real(value))?;
+        if inv >= Invalidation::Rebuild {
+            return Err(Error::Measurement(format!(
+                "structural set `{label}`.`{param}` would rebuild the circuit — \
+                 Session does not auto-rebuild (use a fresh SimSession/Session::compile)"
+            )));
+        }
+        // Mirror into the build info so device-internal current readbacks
+        // (`.i(a, b)` on force-less two-terminal devices) see the new value
+        // (same mirror as `SimSession::run_op_sweep`).
+        if let Some(inst) = self.info.instances.iter_mut().find(|i| i.label == label)
+            && let Some(pidx) = inst.kernel.param_names().iter().position(|n| n == param)
+        {
+            inst.params[pidx] = value;
+        }
+        Ok(())
+    }
+
+    /// Schedule a live parameter write at simulation time `t` for the next
+    /// `tran` run: the integrator lands exactly on `t` and the write applies
+    /// there (last-write-wins per param at the same `t`).
+    pub fn schedule_set(&mut self, t: f64, label: &str, param: &str, value: f64) {
+        self.pending_sets.push((t, label.to_string(), param.to_string(), value));
+    }
+
+    /// Run a DC operating-point analysis on the held circuit (HOST-01/02).
+    pub fn op(
+        &mut self,
+        config: &SolverConfig,
+        nodeset: Option<&HashMap<String, f64>>,
+    ) -> Result<OpResult, Error> {
+        let ivs = build_ivs(&self.info, nodeset, self.circuit.netlist())?;
+        let mut dc = self.circuit.dc(config.to_context())?;
+        dc.policy = config.to_policy();
+        dc.apply_initial_conditions(ivs);
+        let result = dc.solve()?;
+        drop(dc);
+        let digital = SimSession::snapshot_digital(&self.info, &self.circuit);
+        Ok(OpResult::new(result, digital, Rc::new(self.info.clone())))
+    }
+}
+
 /// Resolve a host-visible net name to a solver node identifier.
 fn resolve_net(
     info: &CircuitBuildInfo,
