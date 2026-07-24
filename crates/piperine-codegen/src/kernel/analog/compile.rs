@@ -711,6 +711,19 @@ impl<'m> AnalogCompiler<'m> {
                 state_slot_names[idx] = format!("vold[{k}]");
             }
         }
+        // Per-var-bank-slot source names (phdl-introspection-attributes PIA-06):
+        // aligned with `0..num_vars`, one entry per persistent var slot. Empty
+        // for slots without a source name. The observable catalog reads this
+        // to match an `@name`/`@kind` sidecar entry to its slot; absent
+        // `@name` keeps the positional `var[k]` fallback (PIA-08).
+        let num_vars = self.module.symbols.vars().count();
+        let mut var_names = vec![String::new(); num_vars];
+        for (id, v) in self.module.symbols.vars() {
+            let idx = id.0 as usize;
+            if idx < var_names.len() {
+                var_names[idx] = v.name.clone();
+            }
+        }
         let terminals = std::mem::take(&mut self.terminals);
 
         let core = AnalogCore {
@@ -725,7 +738,7 @@ impl<'m> AnalogCompiler<'m> {
             num_ports: self.num_ports,
             num_params: self.module.symbols.num_params(),
             num_state_slots: self.module.symbols.num_states() + self.limits.len(),
-            num_vars: self.module.symbols.vars().count(),
+            num_vars,
             residual: get(&self.jit, residual_id),
             jacobian: get(&self.jit, jacobian_id),
             state_inputs: state_inputs_id.map(|id| get(&self.jit, id)),
@@ -757,6 +770,7 @@ impl<'m> AnalogCompiler<'m> {
             initial_conditions,
             opvars,
             opvar_names,
+            var_names,
         })
     }
 

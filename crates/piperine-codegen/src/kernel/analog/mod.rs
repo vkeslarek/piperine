@@ -236,8 +236,14 @@ pub struct AnalogKernel {
     /// uses, evaluated against the final post-solve voltages. `None` when
     /// the module declares no analog vars (zero overhead — no function
     /// compiled, the eval call is a no-op).
-    opvars: Option<AnalogFn>,
+     opvars: Option<AnalogFn>,
     opvar_names: Vec<String>,
+    /// Source-level names of the persistent-var bank slots (PIA-06), aligned
+    /// with `0..num_vars`. Empty for slots without a source name. The
+    /// observable catalog reads this to match an `@name`/`@kind` sidecar
+    /// entry to its var-bank slot; absent `@name` keeps the positional
+    /// `var[k]` fallback (PIA-08, no regression).
+    var_names: Vec<String>,
 }
 
 // The JITModule is frozen after `finalize_definitions`; the function pointers
@@ -806,6 +812,12 @@ impl AnalogKernel {
     /// path.
     pub fn opvar_names(&self) -> &[String] {
         &self.opvar_names
+    }
+
+    /// Source-level names of the persistent-var bank slots (PIA-06), aligned
+    /// with `0..num_vars`. Empty string for a slot with no source name.
+    pub fn var_names(&self) -> &[String] {
+        &self.var_names
     }
 
     /// Write each opvar's value to `out[0..opvar_names.len()]` (ABI-30),

@@ -169,6 +169,22 @@ impl PiperineDevice {
             .and_then(|m| m.name.clone())
             .unwrap_or_else(|| kernel_name.to_string())
     }
+
+    /// Map a validated `@kind(value)` canonical string (lowercased
+    /// `ObservableKind` variant name, see `pom::introspection::VAR_KINDS`)
+    /// onto the solver enum. The `_` arm is unreachable post-resolution
+    /// (the lang resolver rejects values outside `VAR_KINDS`); `Var` is the
+    /// defensive fallback so a future enum drift never silently panics.
+    fn observable_kind_from_str(s: &str) -> piperine_solver::abi::ObservableKind {
+        use piperine_solver::abi::ObservableKind;
+        match s {
+            "branchcurrent" => ObservableKind::BranchCurrent,
+            "charge" => ObservableKind::Charge,
+            "flux" => ObservableKind::Flux,
+            "state" => ObservableKind::State,
+            _ => ObservableKind::Var,
+        }
+    }
 }
 
 impl AnalogDevice for PiperineDevice {
@@ -592,9 +608,24 @@ impl Introspect for PiperineDevice {
             });
         }
         for k in 0..kernel.num_vars() {
+            // PIA-06/07: a var carrying `@name`/`@kind` surfaces in the
+            // observable catalog by that name and kind (NOT positional
+            // `var[k]`). The same `@name` used by `list_queries`/
+            // `read_opvars` is read here — one declaration, both catalogs.
+            // Absent `@name` keeps today's positional `var[k]` (PIA-08).
+            let src_name = kernel.var_names().get(k).map(|s| s.as_str()).unwrap_or("");
+            let (name, kind) = self
+                .meta
+                .vars
+                .get(src_name)
+                .and_then(|m| m.name.as_ref().map(|label| (label.clone(), m.kind.as_deref())))
+                .map(|(label, kind)| {
+                    (label, kind.map_or(ObservableKind::Var, Self::observable_kind_from_str))
+                })
+                .unwrap_or_else(|| (format!("var[{k}]"), ObservableKind::Var));
             out.push(ObservableDescriptor {
-                name: format!("var[{k}]"),
-                kind: ObservableKind::Var,
+                name,
+                kind,
                 cost: 0.1,
             });
         }

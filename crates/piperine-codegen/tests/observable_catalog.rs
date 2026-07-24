@@ -176,3 +176,79 @@ fn observable_costs_are_in_unit_range() {
         );
     }
 }
+
+// ── phdl-introspection-attributes PIA-06/07/09 (T5) ────────────────────────
+// A var carrying @name/@kind surfaces in the observable catalog by that name
+// and kind (NOT positional var[k]); the SAME @name feeds the opvar-query
+// catalog too (one declaration, both catalogs).
+
+/// PIA-06: `@name`/`@kind` on a var → `ObservableDescriptor` named and kinded
+/// by the attributes, NOT a positional `var[k]`.
+#[test]
+fn observable_named_and_kinded_by_at_name_and_at_kind() {
+    let circuit = build(
+        "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod R (inout p: Electrical, inout n: Electrical) {
+            param r: Real = 1.0e3;
+            @name(value = \"i_d\") @kind(value = \"State\")
+            var id : Real = 0.0;
+        }
+        analog R {
+            id = V(p, n) / r;
+            I(p, n) <+ id;
+        }
+        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
+        ",
+        "TopR",
+    );
+    let dev = &circuit.all_devices()[0];
+    let observables = dev.list_observables();
+    // Named by @name, NOT the positional `var[k]` or the kernel id `id`.
+    let id_obs = observables
+        .iter()
+        .find(|o| o.name == "i_d")
+        .expect("observable named `i_d` via @name");
+    assert_eq!(id_obs.kind, ObservableKind::State, "@kind(State) sets the observable kind");
+    assert!(
+        !observables.iter().any(|o| o.name.starts_with("var[")),
+        "a var with @name must NOT fall back to positional `var[k]`: {observables:?}"
+    );
+}
+
+/// PIA-07: the SAME `@name(value)` is the name in BOTH `list_queries` and
+/// `list_observables` — one declaration, two consistent catalogs (the
+/// inconsistency is structurally impossible).
+#[test]
+fn at_name_feeds_both_query_and_observable_catalogs() {
+    let circuit = build(
+        "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod R (inout p: Electrical, inout n: Electrical) {
+            param r: Real = 1.0e3;
+            @name(value = \"gm\") @unit(value = \"S\")
+            var g : Real = 0.0;
+        }
+        analog R {
+            g = 1.0 / r;
+            I(p, n) <+ g * V(p, n);
+        }
+        mod TopR (inout a: Electrical, inout b: Electrical) { R(a, b); }
+        ",
+        "TopR",
+    );
+    let dev = &circuit.all_devices()[0];
+    let query_has_gm = dev.list_queries().iter().any(|q| q.name == "gm");
+    let observable_has_gm = dev.list_observables().iter().any(|o| o.name == "gm");
+    assert!(query_has_gm, "the @name `gm` must appear in the query catalog");
+    assert!(observable_has_gm, "the @name `gm` must appear in the observable catalog");
+    // Neither catalog leaks the kernel id `g` once @name is set.
+    assert!(
+        dev.list_queries().iter().all(|q| q.name != "g"),
+        "query catalog must not surface the kernel id `g` once @name is set"
+    );
+    assert!(
+        dev.list_observables().iter().all(|o| o.name != "g"),
+        "observable catalog must not surface the kernel id `g` once @name is set"
+    );
+}
