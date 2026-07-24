@@ -1,6 +1,12 @@
 //! HOST-01 — `Session`: the compiled center of gravity. `module.compile()`'s
 //! Rust equivalent — elaborate + JIT once, then `set` + re-run without
 //! recompiling (MD-18). `cargo test -p piperine` (Phase 1 / T3 quick gate).
+//!
+//! Single `#[test]` in its own binary (mirrors `tests/dc_host_proof.rs`): the
+//! process-global `AnalogKernel::compile_count` delta this test asserts on
+//! would be polluted by any other test compiling a kernel concurrently in
+//! the same process (see `tests/session_analyses.rs` for the rest of the
+//! `Session` surface).
 
 use std::path::PathBuf;
 
@@ -79,13 +85,4 @@ fn session_compiles_once_and_set_op_matches_fresh_builds() {
             .expect("v(mid)");
         assert!((live - fresh).abs() < 1e-9, "r_top = {r}: live {live} V vs fresh build {fresh} V");
     }
-}
-
-/// An unknown parameter fails loud with the solver's own message — no
-/// partial apply, no silent success.
-#[test]
-fn session_set_on_unknown_param_is_a_loud_error() {
-    let mut session = Session::compile(&divider_design(), "Divider").expect("session compiles");
-    let err = session.set("r_top", "bogus", 1.0).expect_err("unknown param must fail");
-    assert!(format!("{err}").contains("bogus"));
 }

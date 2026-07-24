@@ -545,7 +545,6 @@ impl SimSession {
 /// structural write (`Invalidation::Rebuild`) fails loud (see the
 /// SPEC_DEVIATION note above `Session::set`).
 pub struct Session {
-    #[allow(dead_code)] // kept so a future auto-rebuild can re-elaborate from it
     design: Design,
     module: String,
     circuit: piperine_solver::prelude::CircuitInstance,
@@ -635,6 +634,238 @@ impl Session {
         drop(dc);
         let digital = SimSession::snapshot_digital(&self.info, &self.circuit);
         Ok(OpResult::new(result, digital, Rc::new(self.info.clone())))
+    }
+
+    /// Run a transient analysis on the held circuit (HOST-02). Pending
+    /// `schedule_set` entries at `t <= 0` are idle sets applied before the
+    /// run; entries at `t > 0` land on the solver's own forced breakpoints.
+    /// A *structural* scheduled set fails loud (see the SPEC_DEVIATION note
+    /// above [`Session`] — no mid-run auto-rebuild in this session type).
+    pub fn tran(
+        &mut self,
+        stop: f64,
+        step: Option<f64>,
+        start: f64,
+        config: &SolverConfig,
+        ic: Option<&HashMap<String, f64>>,
+        record_device_state: bool,
+    ) -> Result<Trace<Waveform>, Error> {
+        let mut scheduled = Vec::new();
+        for (t, label, param, value) in std::mem::take(&mut self.pending_sets) {
+            if t <= 0.0 {
+                self.set(&label, &param, value)?;
+            } else {
+                scheduled.push((t, label, param, value));
+            }
+        }
+        let ivs = build_ivs(&self.info, ic, self.circuit.netlist())?;
+        let mut opts = match step {
+            Some(dt) if dt > 0.0 => piperine_solver::prelude::TransientAnalysisOptions::new(stop, dt),
+            _ => piperine_solver::prelude::TransientAnalysisOptions::new(stop, stop * 1e-3),
+        }
+        .with_record_from(start);
+        opts.record_device_state = record_device_state;
+        let mut solver = self.circuit.transient(opts, config.to_context())?;
+        solver.policy = config.to_policy();
+        solver.apply_initial_conditions(ivs);
+        for (t, label, param, value) in &scheduled {
+            solver.schedule_set(*t, label, param, piperine_solver::abi::Value::Real(*value));
+        }
+        let result = solver.solve()?;
+        drop(solver);
+        for (_, label, param, value) in &scheduled {
+            if let Some(inst) = self.info.instances.iter_mut().find(|i| i.label == *label)
+                && let Some(pidx) = inst.kernel.param_names().iter().position(|n| n == param)
+            {
+                inst.params[pidx] = *value;
+            }
+        }
+        Ok(Trace::<Waveform>::new(result, Rc::new(self.info.clone())))
+    }
+
+    /// Run an AC small-signal sweep on the held circuit (HOST-02).
+    pub fn ac(
+        &mut self,
+        fstart: f64,
+        fstop: f64,
+        points: usize,
+        logarithmic: bool,
+        config: &SolverConfig,
+    ) -> Result<AcTrace, Error> {
+        let opts = piperine_solver::prelude::AcSweepAnalysisOptions {
+            start_frequency: fstart,
+            stop_frequency: fstop,
+            steps: points,
+            logarithmic,
+        };
+        let mut ac = self.circuit.ac(config.to_context())?;
+        ac.policy = config.to_policy();
+        let result = ac.solve_sweep(opts)?;
+        Ok(AcTrace::new(result, Rc::new(self.info.clone())))
+    }
+
+    /// Run an output-referred noise analysis on the held circuit (HOST-02).
+    pub fn noise(
+        &mut self,
+        out: &str,
+        reference: &str,
+        fstart: f64,
+        fstop: f64,
+        points: usize,
+        logarithmic: bool,
+        config: &SolverConfig,
+    ) -> Result<NoiseTrace, Error> {
+        let out = resolve_net(&self.info, out)?;
+        let reference = resolve_net(&self.info, reference)?;
+        let opts = piperine_solver::prelude::NoiseAnalysisOptions {
+            sweep_options: piperine_solver::prelude::AcSweepAnalysisOptions {
+                start_frequency: fstart,
+                stop_frequency: fstop,
+                steps: points,
+                logarithmic,
+            },
+            output_node: out,
+            reference_node: reference,
+            input_source_name: None,
+        };
+        let result = self.circuit.noise(opts, config.to_context())?.solve()?;
+        Ok(NoiseTrace::new(result))
+    }
+
+    /// Run a DC sensitivity analysis (`.sens`) on the held circuit
+    /// (HOST-02): `∂V(output)/∂(param)` at the operating point for every
+    /// requested `(label, param)` pair, by central finite difference.
+    pub fn sens(
+        &mut self,
+        outputs: &[&str],
+        params: &[(String, String)],
+        dp_rel: f64,
+        config: &SolverConfig,
+    ) -> Result<crate::results::SensResult, Error> {
+        let mut nets = Vec::with_capacity(outputs.len());
+        for name in outputs {
+            let node = resolve_net(&self.info, name)?;
+            let var = piperine_solver::abi::AnalogVariable::Node(node);
+            let net = self
+                .circuit
+                .nets()
+                .into_iter()
+                .find(|n| n.analog_variable().map(|v| **v == var).unwrap_or(false))
+                .ok_or_else(|| Error::Measurement(format!("net `{name}` is not a solved analog net")))?;
+            nets.push(((*name).to_string(), net));
+        }
+        let opts = piperine_solver::prelude::SensAnalysisOptions {
+            outputs: nets.iter().map(|(_, n)| n.clone()).collect(),
+            params: params.to_vec(),
+            dp_rel,
+        };
+        let mut solver = self.circuit.sens(opts, config.to_context())?;
+        solver.policy = config.to_policy();
+        let inner = solver.solve()?;
+        let mut d = HashMap::new();
+        for (name, net) in &nets {
+            for (label, param) in params {
+                if let Some(v) = inner.get(net.label(), label, param) {
+                    d.insert((name.clone(), format!("{label}.{param}")), v);
+                }
+            }
+        }
+        Ok(crate::results::SensResult { d })
+    }
+
+    /// Run a periodic-steady-state analysis (single shooting) on the held
+    /// circuit (HOST-02).
+    pub fn pss(
+        &mut self,
+        period: f64,
+        tstab: f64,
+        config: &SolverConfig,
+    ) -> Result<crate::results::PssResult, Error> {
+        let opts = piperine_solver::prelude::PssAnalysisOptions::new(period).with_tstab(tstab);
+        let mut solver = self.circuit.pss(opts, config.to_context())?;
+        solver.policy = config.to_policy();
+        let inner = solver.solve()?;
+        Ok(crate::results::PssResult {
+            trace: Trace::<Waveform>::new(inner.trace, Rc::new(self.info.clone())),
+            stats: inner.stats,
+        })
+    }
+
+    /// Run a pole-zero analysis (`.pz`) on the held circuit (HOST-02).
+    pub fn pz(
+        &mut self,
+        input_source: &str,
+        output: &str,
+        output_ref: Option<&str>,
+        config: &SolverConfig,
+    ) -> Result<crate::results::PzResult, Error> {
+        let output_node = resolve_net(&self.info, output)?;
+        let output_ref_node = output_ref.map(|r| resolve_net(&self.info, r)).transpose()?;
+        let options = piperine_solver::prelude::PoleZeroOptions {
+            input_source: piperine_solver::abi::BranchIdentifier::new(input_source, "force0"),
+            output: piperine_solver::abi::AnalogVariable::Node(output_node),
+            output_ref: output_ref_node,
+        };
+        let solver = self.circuit.pz(options, config.to_context())?;
+        let poles = solver.poles()?;
+        let zeros = solver.zeros()?;
+        Ok(piperine_solver::prelude::PoleZeroResult { poles, zeros }.into())
+    }
+
+    /// Run a distortion analysis (`.disto`) on the held circuit (HOST-02).
+    #[allow(clippy::too_many_arguments)]
+    pub fn disto(
+        &mut self,
+        f1: f64,
+        f2: Option<f64>,
+        amplitude: f64,
+        output: &str,
+        output_ref: Option<&str>,
+        config: &SolverConfig,
+    ) -> Result<crate::results::DistoResult, Error> {
+        let output_node = resolve_net(&self.info, output)?;
+        let output_ref_node = output_ref.map(|r| resolve_net(&self.info, r)).transpose()?;
+        let options = piperine_solver::prelude::DistoOptions {
+            f1,
+            f2,
+            amplitude,
+            output: piperine_solver::abi::AnalogVariable::Node(output_node),
+            output_ref: output_ref_node,
+        };
+        let mut solver = self.circuit.disto(options, config.to_context())?;
+        let result = solver.solve()?;
+        Ok(result.into())
+    }
+
+    /// Run an N-port S-parameter analysis (`.sp`) on the held circuit
+    /// (HOST-02): ports come from the design's `@rfport(num, z0)` attributes
+    /// on `self.module`.
+    pub fn sp(
+        &mut self,
+        fstart: f64,
+        fstop: f64,
+        points: usize,
+        logarithmic: bool,
+        config: &SolverConfig,
+    ) -> Result<crate::results::SParamResult, Error> {
+        let rfports = self.design.rfports(&self.module)?;
+        let mut ports = Vec::with_capacity(rfports.len());
+        for p in &rfports {
+            let node = resolve_net(&self.info, &p.node)?;
+            ports.push(piperine_solver::prelude::SpPort { num: p.num as usize, node, z0: p.z0 });
+        }
+        let options = piperine_solver::prelude::SpOptions {
+            ports,
+            sweep: piperine_solver::prelude::AcSweepAnalysisOptions {
+                start_frequency: fstart,
+                stop_frequency: fstop,
+                steps: points,
+                logarithmic,
+            },
+        };
+        let mut solver = self.circuit.sp(options, config.to_context())?;
+        let result = solver.solve_sweep()?;
+        Ok(result.into())
     }
 }
 
