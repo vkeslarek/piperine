@@ -156,6 +156,19 @@ impl PiperineDevice {
     pub fn digital(&self) -> Option<&DigitalInstance> {
         self.digital.as_ref()
     }
+
+    /// The display name for the var identified by `kernel_name`: the author-
+    /// declared `@name(value)` when present, else the kernel var id. ONE
+    /// `@name` feeds both the opvar-query catalog and the observable catalog
+    /// (PIA-07 — the inconsistency is dissolved at the source). Absent
+    /// `@name` → kernel id unchanged (PIA-08, no regression).
+    fn var_display_name(&self, kernel_name: &str) -> String {
+        self.meta
+            .vars
+            .get(kernel_name)
+            .and_then(|m| m.name.clone())
+            .unwrap_or_else(|| kernel_name.to_string())
+    }
 }
 
 impl AnalogDevice for PiperineDevice {
@@ -357,29 +370,43 @@ impl Introspect for PiperineDevice {
     /// opvar-eval function evaluated against the last accepted terminal
     /// voltages + state/var banks. Empty for a device whose kernel
     /// compiled no opvar path (no analog vars, or no analog body at all).
+    /// The surfaced name is the author-declared `@name(value)` when present,
+    /// else the kernel var id (PIA-07); the value is always looked up by the
+    /// kernel id (renaming the label never breaks the value fetch).
     fn read_opvars(&self) -> Vec<(String, f64)> {
-        self.analog
-            .as_ref()
-            .map_or_else(Vec::new, AnalogInstance::eval_opvars)
+        self.analog.as_ref().map_or_else(Vec::new, |a| {
+            a.eval_opvars()
+                .into_iter()
+                .map(|(name, value)| (self.var_display_name(&name), value))
+                .collect()
+        })
     }
 
-    /// Declared query catalog (ABI-31): one `QueryDescriptor` per opvar,
-    /// typed as [`QueryKind::OperatingVariable`] with no unit/description
-    /// (the kernel's names are the source of truth). A model with richer
-    /// per-query metadata overrides this; the default here mirrors
-    /// `read_opvars` exactly so a bare `query(name)` works without further
-    /// plumbing.
+    /// Declared query catalog (ABI-31 / PIA-05): one `QueryDescriptor` per
+    /// opvar, typed [`QueryKind::OperatingVariable`]. The name is the author-
+    /// declared `@name(value)` when present (PIA-07); `@unit`/`@description`
+    /// annotate the descriptor when declared. Absent attributes → the bare
+    /// `QueryDescriptor::opvar(name)` shape (PIA-08, no regression).
     fn list_queries(&self) -> Vec<piperine_solver::abi::QueryDescriptor> {
-        self.analog
-            .as_ref()
-            .and_then(|a| a.kernel().opvar_names().first().map(|_| a))
-            .map_or_else(Vec::new, |a| {
-                a.kernel()
-                    .opvar_names()
-                    .iter()
-                    .map(|n| piperine_solver::abi::QueryDescriptor::opvar(n.clone()))
-                    .collect()
+        let Some(a) = &self.analog else { return Vec::new() };
+        let names = a.kernel().opvar_names();
+        if names.is_empty() {
+            return Vec::new();
+        }
+        names
+            .iter()
+            .map(|n| {
+                let Some(meta) = self.meta.vars.get(n) else {
+                    return piperine_solver::abi::QueryDescriptor::opvar(n.clone());
+                };
+                piperine_solver::abi::QueryDescriptor {
+                    name: meta.name.clone().unwrap_or_else(|| n.clone()),
+                    kind: piperine_solver::abi::QueryKind::OperatingVariable,
+                    unit: meta.unit.clone(),
+                    description: meta.description.clone(),
+                }
             })
+            .collect()
     }
 
     fn list_params(&self) -> Vec<ParamDescriptor> {
