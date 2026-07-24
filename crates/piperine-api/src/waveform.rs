@@ -842,6 +842,105 @@ impl ComplexWaveform {
     }
 }
 
+// ─── ComplexWaveform margins/bandwidth (HOST-16) ────────────────────────────
+
+impl ComplexWaveform {
+    /// -3 dB bandwidth (HOST-16): the frequency where `|H(f)|` first falls
+    /// to `1/√2` of the reference magnitude — `|H|` at the trace's first
+    /// (lowest-frequency) sample, the conventional DC/low-frequency gain
+    /// reference for a Bode magnitude plot. Fails loud when the reference
+    /// magnitude is non-positive (no meaningful -3dB level) or the
+    /// magnitude never falls to that level.
+    pub fn bandwidth_3db(&self) -> Result<f64, Error> {
+        let mag = self.mag();
+        let ref_mag = mag
+            .points()
+            .first()
+            .map(|&(_, m)| m)
+            .ok_or_else(|| Error::Measurement("bandwidth_3db: empty AC trace".into()))?;
+        if ref_mag <= 0.0 {
+            return Err(Error::Measurement(format!(
+                "bandwidth_3db: reference (first-sample) magnitude must be positive, got {ref_mag:.6e}"
+            )));
+        }
+        let target = ref_mag / std::f64::consts::SQRT_2;
+        mag.cross(target, "Falling").ok_or_else(|| {
+            Error::Measurement(format!(
+                "bandwidth_3db: |H(f)| never falls to -3dB of the reference magnitude ({target:.6e})"
+            ))
+        })
+    }
+
+    /// Unity-gain frequency (HOST-16): the frequency where `|H(f)|` first
+    /// crosses `1` (`0 dB`). Fails loud when the magnitude never crosses
+    /// unity.
+    pub fn unity_gain_freq(&self) -> Result<f64, Error> {
+        self.mag().cross(1.0, "Falling").ok_or_else(|| {
+            Error::Measurement("unity_gain_freq: |H(f)| never crosses 1 (0 dB)".into())
+        })
+    }
+
+    /// Phase margin in degrees (HOST-16): `180° + phase(f_ug)`, where `f_ug`
+    /// is [`Self::unity_gain_freq`] and phase is read in the trace's own
+    /// (wrapped, `arg()`-range) convention — the conventional definition for
+    /// a well-behaved (single unity-gain crossing) loop-gain trace. Fails
+    /// loud when there is no unity-gain crossing (propagates
+    /// `unity_gain_freq`'s error).
+    pub fn phase_margin(&self) -> Result<f64, Error> {
+        let f_ug = self.unity_gain_freq()?;
+        Ok(180.0 + self.phase().at(f_ug).to_degrees())
+    }
+
+    /// Gain margin in dB (HOST-16): `-20·log10(|H(f_180)|)`, where `f_180`
+    /// is the frequency at which the **unwrapped** phase first crosses
+    /// `-180°` — phase is unwrapped (accumulating ±360° jumps) before the
+    /// crossing search since `arg()` is range-limited to `(-π, π]` and a
+    /// multi-pole rolloff's phase legitimately passes through `-180°` after
+    /// wrapping past `-180°`/`+180°` more than once. Fails loud when the
+    /// (unwrapped) phase never reaches `-180°` (e.g. a single-pole rolloff,
+    /// asymptotic to `-90°`) or the magnitude there is non-positive.
+    pub fn gain_margin(&self) -> Result<f64, Error> {
+        let unwrapped = self.unwrapped_phase_deg();
+        let f180 = unwrapped.cross(-180.0, "Falling").ok_or_else(|| {
+            Error::Measurement("gain_margin: (unwrapped) phase never crosses -180°".into())
+        })?;
+        let mag_at_180 = self.mag().at(f180);
+        if mag_at_180 <= 0.0 {
+            return Err(Error::Measurement(format!(
+                "gain_margin: |H(f_180)| must be positive, got {mag_at_180:.6e}"
+            )));
+        }
+        Ok(-20.0 * mag_at_180.log10())
+    }
+
+    /// Phase in degrees, unwrapped by accumulating a running ±360° offset
+    /// whenever consecutive samples jump by more than 180° — undoes `arg()`
+    /// range-wrapping so a monotonically-rolling-off phase (e.g. a 3-pole
+    /// system crossing -180°, -270°, …) reads as a continuous curve instead
+    /// of resetting into `(-180°, 180°]` every half-turn.
+    fn unwrapped_phase_deg(&self) -> Waveform {
+        let mut out = Vec::with_capacity(self.points.len());
+        let mut offset = 0.0_f64;
+        let mut prev: Option<f64> = None;
+        for &(f, c) in &self.points {
+            let mut p = c.arg().to_degrees() + offset;
+            if let Some(prev_p) = prev {
+                while p - prev_p > 180.0 {
+                    offset -= 360.0;
+                    p -= 360.0;
+                }
+                while p - prev_p < -180.0 {
+                    offset += 360.0;
+                    p += 360.0;
+                }
+            }
+            out.push((f, p));
+            prev = Some(p);
+        }
+        Waveform::new(out)
+    }
+}
+
 impl Trace<ComplexWaveform> {
     /// Build an AC-sweep trace (the pre-HOST-13 `AcTrace::new` shape, kept
     /// for existing call sites).
