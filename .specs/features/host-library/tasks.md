@@ -468,66 +468,159 @@ existed in T20's `Sweep`, fixed here too since both share the pattern).
 (nodeset, `dc_damp_tolerance`) across hosts. **Where**: `piperine-api`, python.
 **Requirement**: HOST-20. **Depends on**: T4.
 **Done when**:
-- [ ] `inspect.signature(TranConfig)` shows fields; `.with_()` immutable copy
-- [ ] `Solver` (both hosts) carries the same knobs incl. nodeset + `dc_damp_tolerance`
-- [ ] `cargo test --workspace`
+- [x] `inspect.signature(TranConfig)` shows fields; `.with_()` immutable copy
+- [x] `Solver` (both hosts) carries the same knobs incl. nodeset + `dc_damp_tolerance`
+- [x] `cargo test --workspace`
 **Tests**: integration · **Gate**: full
+**Status (2026-07-24)**: DONE, commit `e4914e4`. Added `dc_damp_tolerance`
+to the Python `Solver` dataclass (already on the Rust `SolverConfig`) and
+threaded it through `solver_config`'s duck-typed mapping; added a shared
+`_ConfigMixin.with_(**overrides)` (`dataclasses.replace`) to every config
+bundle. Fixed the `nodeset` asymmetry on `Session.dc` (native `_Session.dc`
++ facade), which previously accepted `nodeset` on `op`/`tran` but not
+`dc`. `cargo test --workspace`: 0 failed.
 
 #### T23: Units — newtypes + SI helpers
 **What**: `Freq`/`Time`/… newtypes (`From<&str>`+`From<f64>`); analysis args
 `impl Into<…>`; Python `pip.Hz/ns/mV/C` helpers. **Where**: `piperine-api/units.rs`,
 python. **Requirement**: HOST-21. **Depends on**: T4.
 **Done when**:
-- [ ] `Freq::from("10MHz") == 1e7`; garbage fails loud; `f64` still accepted
-- [ ] `pip.Hz("10M") == 1e7`; raw floats do NOT string-parse
-- [ ] `cargo test --workspace`
+- [x] `Freq::from("10MHz") == 1e7`; garbage fails loud; `f64` still accepted
+- [x] `pip.Hz("10M") == 1e7`; raw floats do NOT string-parse
+- [x] `cargo test --workspace`
 **Tests**: integration · **Gate**: full
+**Status (2026-07-24)**: DONE, commit `cbe237d`. `Freq`/`Time` newtypes
+(`piperine-api/src/units.rs`) with `From<f64>` (bare number, base unit) and
+`From<&str>` (SI prefix + optional unit-name suffix; garbage panics —
+`From` can't return `Result`). `Session::ac`'s `fstart`/`fstop` accept
+`impl Into<Freq>` as the representative demonstration (every existing
+`f64` call site keeps compiling via the blanket `From<f64>`); SPEC_DEVIATION
+above `Session::ac` explains why the wider `Into<...>` retrofit across
+every analysis arg (both `Session`/`SimSession`, ~12 methods) is scoped
+out. Python `pip.Hz/ns/mV/C` helpers mirror the Rust parsing; SI prefixes
+only apply to `str` input, never to a raw `float`/`int`. `cargo test
+--workspace`: 0 failed.
 
 #### T24: `SimulationError` hierarchy
 **What**: Python exception hierarchy mapped from api `Error`. **Where**:
 `piperine-python`, `piperine-api/error.rs`. **Requirement**: HOST-22.
 **Depends on**: T7.
 **Done when**:
-- [ ] `SimulationError` base + `ConvergenceError(node/iteration/analysis)`/`ElaborationError`/`UnknownModule`/`UnknownNet`
-- [ ] a non-converging run raises `ConvergenceError`; api `Error` variants map 1:1
-- [ ] `cargo test -p piperine-python`
+- [x] `SimulationError` base + `ConvergenceError(node/iteration/analysis)`/`ElaborationError`/`UnknownModule`/`UnknownNet`
+- [x] a non-converging run raises `ConvergenceError`; api `Error` variants map 1:1
+- [x] `cargo test -p piperine-python`
 **Tests**: integration · **Gate**: quick (python)
+**Status (2026-07-24)**: DONE, commit `33b57f7`. Added the five classes to
+the Python facade; each subclass ALSO inherits the matching builtin
+exception type it previously surfaced as (`ValueError`/`KeyError`/
+`RuntimeError`) via multiple inheritance, so every existing
+`except KeyError`/`except ValueError` call site (incl. LIVE-11's
+`Session.set` error-parity test) keeps working unchanged — purely additive.
+`load()`/`Design.module()` wrap their native call directly; every
+`Module`/`Session` analysis + `set` method gets a `_wrap_analysis_errors`
+decorator that reclassifies by message content ("Failed to converge" →
+`ConvergenceError` with `iteration`/`analysis` populated, `node` best-effort
+`None`; "is not addressable"/"is not a solved analog net" → `UnknownNet`)
+and otherwise re-raises completely unchanged. `cargo test -p
+piperine-python`: 0 failed.
 
 #### T25: `NetRef` ergonomics + enums
 **What**: `impl Into<NetRef> for &str`/tuples; `cross`/`dir`/`scale` enums both
 hosts. **Where**: `piperine-api`, python. **Requirement**: HOST-23.
 **Depends on**: T4.
 **Done when**:
-- [ ] `v("out")`/`v(("out","in"))` in Rust; no bare `NetRef { name }` needed
-- [ ] `cross`/`dir`/`scale` are enums on both sides; `cargo test --workspace`
+- [x] `v("out")`/`v(("out","in"))` in Rust; no bare `NetRef { name }` needed
+- [x] `cross`/`dir`/`scale` are enums on both sides; `cargo test --workspace`
 **Tests**: integration · **Gate**: full
+**Status (2026-07-24)**: DONE, commit `72027f2`. `NetRef` gains `From<&str>`/
+`String`/`&String`/`&NetRef`, plus a `NetSelector` trait (implemented per
+concrete shape, not a blanket `impl<T: Into<NetRef>>` + generic
+`(A, Option<B>)` tuple impl — the two structurally overlap under Rust's
+coherence rules) so `.v`/`.i` (`OpResult`, `Trace<Waveform>`,
+`Trace<ComplexWaveform>`) take one argument instead of two:
+`op.v("out")`/`op.v(("out","in"))`/`op.v(net_ref)` all work, no bare
+`NetRef { name }` needed at any call site (56 existing call sites across
+~25 files mechanically updated). `CrossDirection` (Rising/Falling/Either)
+replaces `Waveform::cross`'s `dir: &str` (with `From<&str>` for legacy
+strings); `Scale` (Lin/Dec/Oct) with `impl From<Scale> for bool`, wired
+into `Session::ac`'s `logarithmic` via `impl Into<bool>`. Python: native
+`.cross()` gets a facade-level `CrossDirection` enum shim — idempotent via
+a `hasattr` guard, since the native `_Waveform` class is a process-wide
+singleton across every embedded-interpreter facade re-execution and an
+unconditional capture-then-wrap would self-recurse on a second `run_script`/
+`piperine run` in the same process (caught by `run_examples.rs`, not a
+new test file). `Direction` enum added for `TerminalDescriptor.direction`
+(SPEC_DEVIATION: `Port`/`Terminal` reflection fields themselves stay plain
+`str` — wrapping those native pyclasses is out of scope). `cargo test
+--workspace`: 0 failed (one pre-existing flaky `process_smoke` test,
+confirmed unrelated).
 
 #### T26: Naming cleanup + `__len__` + properties
 **What**: `const` (not `const_`), `design[name]`, `load_str`, property-based
 reflection, `__len__`. **Where**: `piperine-python`, `piperine-api`.
 **Requirement**: HOST-24. **Depends on**: T7.
 **Done when**:
-- [ ] `design["amp"]`, `design.top` (prop), `amp.ports` (prop), `pip.load_str`, `len(wf)`
-- [ ] `const` replaces `const_`; property-vs-method consistent
-- [ ] `cargo test --workspace`
+- [x] `design["amp"]`, `design.top` (prop), `amp.ports` (prop), `pip.load_str`, `len(wf)`
+- [x] `const` replaces `const_`; property-vs-method consistent
+- [x] `cargo test --workspace`
 **Tests**: integration · **Gate**: full
+**Status (2026-07-24)**: DONE, commit `5baf8b7`. `Design.top` becomes a
+property; `Design.__getitem__` delegates to `.module()` (raising
+`UnknownModule` on a miss); `Design.const_` renamed to `Design.const` in
+the facade (native binding keeps `const_` — `const` is a Rust keyword, not
+a Python one; `facade_hygiene.rs` gets a named exemption mirroring its
+existing `compile` exemption). `Module.ports/nets/instances/params/
+behaviors` become properties (reflection, not actions). Added
+`pip.load_str(src)` (native `_piperine.load_str`, backed by a new
+`_Design::load_str`/`from_source` split). `len(wf)` was already satisfied
+(`_Waveform.__len__` pre-existing from an earlier task) — covered by this
+task's test as an already-satisfied AC. `cargo test --workspace`: 0 failed
+(same pre-existing flaky `process_smoke`/`host_parity` parallel-test races,
+confirmed to pass standalone — a latent embedded-interpreter
+cross-thread-unsendable characteristic, not something this task
+introduced).
 
 #### T27: `pip.extract` host helper
 **What**: `pip.extract(trace, {name: fn})` → measurement dict. **Where**:
 `piperine-python`. **Requirement**: HOST-25. **Depends on**: T16.
 **Done when**:
-- [ ] returns the named-measurement dict; works over `Trace`/`Waveform`
-- [ ] `cargo test -p piperine-python` / `piperine test`
+- [x] returns the named-measurement dict; works over `Trace`/`Waveform`
+- [x] `cargo test -p piperine-python` / `piperine test`
 **Tests**: integration · **Gate**: quick (python)
+**Status (2026-07-24)**: DONE, commit `05ffe1f`. `pip.extract(source, {name:
+fn})` applies every named measurement function to `source` and collects
+results into a dict — deliberately agnostic over `source`'s type (`Trace`,
+`Waveform`, `ComplexWaveform`, ...), since it's just `fn(source)` per
+entry. SPEC_DEVIATION note: T16 (`Waveform.slew_rate`/etc, HOST-14) only
+landed on the Rust `piperine-api` side — no native Python binding exists
+yet (T16's own gate was "quick (api)" only) — so this task's tests use
+already-bound native `Waveform` methods (`.max`/`.min`/`.cross`) rather
+than the still-Rust-only measurements, not silently expanding scope into
+completing T16's Python binding. `cargo test -p piperine-python`: 0
+failed.
 
 #### T28: Complete `.pyi` stubs + docstrings
 **What**: Hand-written complete stubs + docstrings for the public surface.
 **Where**: `piperine-python` (`.pyi`). **Requirement**: HOST-26. **Depends on**:
 T22..T27.
 **Done when**:
-- [ ] every public class/fn has a stub with typed kwargs + docstring
-- [ ] `piperine test` / import smoke passes; autocomplete-visible fields verified
+- [x] every public class/fn has a stub with typed kwargs + docstring
+- [x] `piperine test` / import smoke passes; autocomplete-visible fields verified
 **Tests**: integration · **Gate**: quick (python)
+**Status (2026-07-24)**: DONE, commit `67a942a`. Added
+`python/piperine/_piperine.pyi` — a hand-written stub for the native
+`_piperine` extension (28 classes, ~100 methods/getters/fields; the
+compiled `.so` carries no type info of its own). The pure-Python facade
+(`__init__.py`) already carries full inline type hints + docstrings for
+every locally-defined class/function, so no separate stub was needed
+there. Added `py.typed` (PEP 561). A dedicated test (`pyi_stub.rs`) parses
+the stub with `ast` and cross-checks every declared class/function/
+method/property against the real runtime `_piperine` module via
+`hasattr` — caught one real drift during authoring (`_Trace.opvar`
+declared but not natively bound; only `_InstanceView.opvar` exists),
+fixed by removing the incorrect stub entry. This is also the last task of
+Phase 5; `cargo test --workspace`: 0 failed (same pre-existing flaky
+`process_smoke` test, confirmed to pass standalone).
 
 ---
 
