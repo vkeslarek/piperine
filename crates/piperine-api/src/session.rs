@@ -8,6 +8,7 @@ use std::rc::Rc;
 
 use piperine_codegen::device::{CircuitBuildInfo, CircuitCompiler};
 use piperine_lang::Design;
+use piperine_solver::abi::SolverStats;
 use piperine_solver::prelude::{Context, Policy};
 
 use crate::error::Error;
@@ -890,6 +891,45 @@ impl Session {
         let mut solver = self.circuit.transfer_function(options, config.to_context())?;
         let result = solver.solve()?;
         Ok(crate::results::TfResult::from_solver(result))
+    }
+
+    /// Run a compile-once DC sweep (`.dc`, HOST-05): restamp `label.param`
+    /// on the already-compiled circuit (MD-18) for each of `values`, solving
+    /// an operating point per point, and return the swept result as a
+    /// `Trace<Waveform>` over the swept axis (not a bare `Vec<OpResult>`) —
+    /// the same generic container `tran`/`pss` use (HOST-13), read the same
+    /// way (`.v`/`.i`/`.axis`/`.stats`).
+    pub fn dc(
+        &mut self,
+        label: &str,
+        param: &str,
+        values: &[f64],
+        config: &SolverConfig,
+        nodeset: Option<&HashMap<String, f64>>,
+    ) -> Result<Trace<Waveform>, Error> {
+        use piperine_solver::abi::Value;
+        let mut points = Vec::with_capacity(values.len());
+        let mut digital = Vec::with_capacity(values.len());
+        let mut stats = SolverStats { converged: true, ..Default::default() };
+        for &v in values {
+            self.circuit.set_element_param(label, param, Value::Real(v))?;
+            if let Some(inst) = self.info.instances.iter_mut().find(|i| i.label == label)
+                && let Some(pidx) = inst.kernel.param_names().iter().position(|n| n == param)
+            {
+                inst.params[pidx] = v;
+            }
+            let ivs = build_ivs(&self.info, nodeset, self.circuit.netlist())?;
+            let mut dc = self.circuit.dc(config.to_context())?;
+            dc.policy = config.to_policy();
+            dc.apply_initial_conditions(ivs);
+            let result = dc.solve()?;
+            drop(dc);
+            stats.converged &= result.stats.converged;
+            stats.newton_iterations += result.stats.newton_iterations;
+            digital.push(SimSession::snapshot_digital(&self.info, &self.circuit));
+            points.push(result);
+        }
+        Ok(Trace::<Waveform>::from_dc_sweep(values.to_vec(), points, digital, Rc::new(self.info.clone()), stats))
     }
 }
 
