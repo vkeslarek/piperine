@@ -307,9 +307,17 @@ new `_NoiseContribution` pyclass with element/source/kind/integrated_sq.
 **Where**: `piperine-api`, python. **Requirement**: HOST-12. **Depends on**: T3.
 **Reuses**: `ParamDescriptor`.
 **Done when**:
-- [ ] `amp.param("m1.w").bounds`/`unit`/`scope`/`invalidation` readable both hosts
-- [ ] `cargo test --workspace`
+- [x] `amp.param("m1.w").bounds`/`unit`/`scope`/`invalidation` readable both hosts
+- [x] `cargo test --workspace`
 **Tests**: integration · **Gate**: full
+**Status (2026-07-24)**: DONE, commit `6fed699`. `InstanceView` gains
+`params()` / `param(name)` over eagerly-snapshotted `list_params()` catalogs
+(same snapshot pattern as T12, extended `snapshot_introspect` to a 4-tuple).
+SPEC_DEVIATION: the ideal.md access path is `amp.param("m1.w")` (module-
+level), but the implementation is `op.instance("m1").param("w")` (instance-
+level) — the ParamDescriptor is per-device and only available after
+compilation, not at the module level; the instance-scoped path matches the
+shipped `Introspect::list_params` ABI and the existing HOST-07 opvar pattern.
 
 ---
 
