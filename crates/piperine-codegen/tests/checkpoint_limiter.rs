@@ -159,11 +159,14 @@ fn checkpoint_after_restore_recaptures_clean_state() {
 //
 // When the `$limit` limiter clamps during a load, `limiting_report()` returns
 // a structured report naming the clamped node, the proposed vs limited value,
-// the limiter name (`pnjlim`), and the reason (`VoltageStep`).
+// the limiter name, and the reason. Since phdl-introspection-attributes PIA-15,
+// the name/reason come from the call-site `$limit` kind via the kernel's
+// per-slot catalog (here `limvds` → `"limvds"`/`VdsStep`), not the former
+// hardcoded `"pnjlim"`/`VoltageStep`.
 
-/// Spec ABI-09/12: a `$limit` device driven through a load that clamps
-/// produces a `LimitingReport` with the documented fields. The report is read
-/// AFTER `load_dc` (the load caches it; the solver reads it in
+/// Spec ABI-09/12 + PIA-15/16: a `$limit` device driven through a load that
+/// clamps produces a `LimitingReport` with the documented fields. The report
+/// is read AFTER `load_dc` (the load caches it; the solver reads it in
 /// `apply_limiting_reports`).
 #[test]
 fn piperine_device_produces_limiting_report_when_clamping() {
@@ -183,8 +186,10 @@ fn piperine_device_produces_limiting_report_when_clamping() {
     let report = dev
         .limiting_report()
         .expect("limiter produced a report while clamping");
-    assert_eq!(report.limiter_name, "pnjlim");
-    assert_eq!(report.reason, LimitReason::VoltageStep);
+    // PIA-15: the name is the call-site kind (`limvds`), not hardcoded "pnjlim".
+    assert_eq!(report.limiter_name, "limvds");
+    // PIA-16: limvds infers VdsStep (not the default VoltageStep).
+    assert_eq!(report.reason, LimitReason::VdsStep);
     assert!(
         report.net.idx().is_some(),
         "report names a real MNA unknown"

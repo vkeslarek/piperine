@@ -394,33 +394,37 @@ impl AnalogInstance {
     /// the clamped node voltages this load computed. Called at the end of
     /// each load (after `Limiter::update` sets `active`), passing the `veff`
     /// computed BEFORE the update advanced the vold slot — recomputing after
-    /// would see no clamp (the vold caught up). Picks the first active
-    /// limit's clamped node — the same node `Limiter::limited_volts` moved.
+    /// would see no clamp (the vold caught up). Reports the active slot's
+    /// clamped node + that slot's `(limiter_name, reason)` from the kernel
+    /// catalog (PIA-15/17) — never the hardcoded `"pnjlim"`.
     fn rebuild_limit_report(&mut self, volts: &[f64], veff: &[f64]) {
         self.limit_report = None;
         if !self.limiter.active() || self.kernel.num_limits() == 0 {
             return;
         }
-        for (i, branch) in self.kernel.limit_branches().iter().enumerate() {
-            let Some((plus, minus)) = branch else { continue };
-            if i >= self.kernel.num_limits() {
-                break;
-            }
-            // The clamped node matches `Limiter::limited_volts`: the minus
-            // node moves when it is a real node, otherwise the plus node.
-            let Some(term) = (*minus).or(*plus) else { continue };
-            let Some(Some(net)) = self.node_refs.get(term).cloned() else { continue };
-            let proposed = volts.get(term).copied().unwrap_or(0.0);
-            let limited_value = veff.get(term).copied().unwrap_or(0.0);
-            self.limit_report = Some(piperine_solver::abi::LimitingReport {
-                net,
-                proposed,
-                limited_value,
-                limiter_name: "pnjlim",
-                reason: piperine_solver::abi::LimitReason::VoltageStep,
-            });
+        // PIA-15/17: name the limiter that actually clamped. The active slot
+        // selects both the clamped node (its branch) and the catalog entry.
+        let Some(slot) = self.limiter.active_slot() else { return };
+        let branches = self.kernel.limit_branches();
+        let catalog = self.kernel.limit_catalog();
+        if slot >= branches.len() || slot >= catalog.len() {
             return;
         }
+        let Some((plus, minus)) = branches[slot] else { return };
+        // The clamped node matches `Limiter::limited_volts`: the minus node
+        // moves when it is a real node, otherwise the plus node.
+        let Some(term) = minus.or(plus) else { return };
+        let Some(Some(net)) = self.node_refs.get(term).cloned() else { return };
+        let proposed = volts.get(term).copied().unwrap_or(0.0);
+        let limited_value = veff.get(term).copied().unwrap_or(0.0);
+        let (limiter_name, reason) = catalog[slot];
+        self.limit_report = Some(piperine_solver::abi::LimitingReport {
+            net,
+            proposed,
+            limited_value,
+            limiter_name,
+            reason,
+        });
     }
 
     /// Whether this instance carries a `$limit` limiter with mutable state
