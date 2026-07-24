@@ -10,7 +10,7 @@ activated, STOP and tell the user.**
 **Design**: `.specs/features/host-library/design.md`
 **Spec**: `.specs/features/host-library/spec.md`
 **North star / gap**: `ideal.md` / `delta.md`
-**Status**: Draft
+**Status**: Complete — all 30 tasks delivered (T1-T15/T16-T21/T22-T30 across 3 batches)
 
 ---
 
@@ -631,20 +631,43 @@ Phase 5; `cargo test --workspace`: 0 failed (same pre-existing flaky
 hosts). **Where**: `docs/spec/part_viii_host_api.md`. **Requirement**: HOST-27.
 **Depends on**: T1..T28.
 **Done when**:
-- [ ] describes `Session`-centric model, uniform analyses + typed results,
+- [x] describes `Session`-centric model, uniform analyses + typed results,
       introspection door, nine-type taxonomy, configs/units/errors
-- [ ] no stale `LiveSession`/`AcTrace`; mentions `Session`/`tf`/`opvar`/`Trace<T>`/`SimulationError`
-- [ ] build/review gate
+- [x] no stale `LiveSession`/`AcTrace`; mentions `Session`/`tf`/`opvar`/`Trace<T>`/`SimulationError`
+- [x] build/review gate
 **Tests**: none · **Gate**: build
+**Status (2026-07-24)**: DONE, commit `ce34960`. Rewrote the doc top to
+bottom against the shipped surface, verified claim-by-claim against
+`piperine-api/src/{session,results,waveform,units,error}.rs` and
+`crates/piperine-python/python/piperine/{__init__.py,_piperine.pyi}` (not
+from memory). Documents the two-tier `Module`/`SimSession` (staged) vs.
+`Session` (compiled-once, HOST-01) model, the full uniform analysis set,
+the introspection door (§6), the nine-type taxonomy with an explicit
+SPEC_DEVIATION note (Python `_AcTrace`/`_NoiseTrace` stay distinct native
+pyclasses — PyO3 has no generic pyclass — while Rust's are true
+`Trace<T>` aliases), configs/units/`Solver` knobs, and the
+`SimulationError`/`Error` taxonomy. §9 calls out the one tracked
+Rust-only gap (HOST-14/15/16 have no Python binding yet) rather than
+overclaiming full parity on non-analysis methods.
 
 #### T30: Refresh `appendix_c_host_surface.md`
 **What**: Regenerate the flat reference; resolve/remove §3 asymmetries + §4
 review sheet. **Where**: `docs/spec/appendix_c_host_surface.md`. **Requirement**:
 HOST-28. **Depends on**: T29.
 **Done when**:
-- [ ] flat inventory matches the delivered surface; §3 asymmetries gone
-- [ ] cross-checks against the parity test; build/review gate
+- [x] flat inventory matches the delivered surface; §3 asymmetries gone
+- [x] cross-checks against the parity test; build/review gate
 **Tests**: none · **Gate**: build
+**Status (2026-07-24)**: DONE, commit `d84eeca`. Regenerated the flat
+Python/Rust inventory from the actual `__all__`/`.pyi`/`piperine-api`
+public surface (verified against source, not the stale 2026-07-18
+snapshot). New §3 cross-checks against `tests/host_parity.rs`'s
+`ANALYSES` oracle (compile-time Rust proof + runtime Python `hasattr`
+probe) and explicitly notes the one intentional non-parity gap (Rust-only
+`Waveform` measurements/transforms/margins). New §4 replaces the old
+"known asymmetries" + "review sheet" with a resolution table mapping
+each of the twelve original review items to the task (T3/T4/T9/T10/
+T16-25/T26) that closed it — nothing left open in this feature's scope.
 
 ---
 
