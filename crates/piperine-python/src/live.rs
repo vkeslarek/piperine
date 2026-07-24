@@ -26,6 +26,24 @@ use piperine_solver::prelude::{CircuitInstance, NodeIdentifier};
 use crate::instance::InstanceResolver;
 use crate::results::{_AcTrace, _NoiseTrace, _OpResult, _Trace};
 
+/// Build a `ProbeSelection` from host `"instance.name"` paths (HOST-08's
+/// `tran(probe = [...])`). Mirrors `piperine_api::session::build_probe_selection`
+/// — kept local rather than promoted to `pub` to avoid widening the api's
+/// private surface; the proper MD-13 home (a `ProbeSelection::from_host_paths`
+/// inherent method) is a Phase 5 ergonomics cleanup.
+fn build_probe_selection(probe: &[String]) -> Result<piperine_solver::prelude::ProbeSelection, piperine_api::Error> {
+    let mut selection = piperine_solver::prelude::ProbeSelection::new();
+    for path in probe {
+        let (label, name) = path.split_once('.').ok_or_else(|| {
+            piperine_api::Error::Measurement(format!(
+                "probe path `{path}` must be `instance.name` (got no `.`)"
+            ))
+        })?;
+        selection = selection.request(label, name);
+    }
+    Ok(selection)
+}
+
 /// `_Session` — a compiled circuit held live across analyses (LIVE-10).
 ///
 /// Owns the applied [`Design`] (the POM the circuit was compiled from — the
@@ -414,8 +432,11 @@ impl _Session {
     /// there — same absolute clock (`start_time`), carried node state as
     /// initial conditions — and the recorded segments stitch into one
     /// continuous trace. `record_device_state` opts into per-step device
-    /// runtime-bank recording (`Trace.i` on state-reading devices).
-    #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None, record_device_state=false))]
+    /// runtime-bank recording (`Trace.i` on state-reading devices). `probe`
+    /// (HOST-08) names `"instance.opvar_name"` observables to record
+    /// selectively (read back via `Trace.opvar`); an unknown device or
+    /// observable fails loud at setup (ABI-35).
+    #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None, record_device_state=false, probe=Vec::new()))]
     fn tran(
         &mut self,
         stop: f64,
@@ -424,8 +445,11 @@ impl _Session {
         ic: Option<HashMap<String, f64>>,
         solver: Option<&Bound<'_, PyAny>>,
         record_device_state: bool,
+        probe: Vec<String>,
     ) -> PyResult<_Trace> {
         let config = crate::module::_Module::solver_config(solver)?;
+        let probe_selection = build_probe_selection(&probe)
+            .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?;
         let dt = match step {
             Some(dt) if dt > 0.0 => dt,
             _ => stop * 1e-3,
@@ -470,6 +494,7 @@ impl _Session {
                 .with_start(seg_start)
                 .with_record_from(start);
             opts.record_device_state = record_device_state;
+            opts.probe_selection = probe_selection.clone();
             let ivs = self.ivs(user_ic.take())?;
             let mut tran = self
                 .circuit

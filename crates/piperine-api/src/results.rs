@@ -274,6 +274,17 @@ impl OpResult {
     }
 }
 
+/// Split a dotted probe/opvar path (`"x1.p_out"`) into its instance label and
+/// observable/opvar name (HOST-08). Shared by `Session::tran`'s `probe`
+/// wiring (label the `ProbeSelection` request needs) and `Trace::opvar`
+/// (label to look up in the build info's instance catalog). Splits on the
+/// *first* `.` — instance labels are flat identifiers with no `.` in them.
+pub(crate) fn split_probe_path(path: &str) -> Result<(&str, &str), Error> {
+    path.split_once('.').ok_or_else(|| {
+        Error::Measurement(format!("probe path `{path}` must be `instance.name` (got no `.`)"))
+    })
+}
+
 /// Net resolution over the built circuit — the one place host-visible net
 /// names map to solver nodes. Ground-family names (`gnd`/`GND`/`vss`/`VSS`)
 /// resolve to the reference node; everything else through the net map.

@@ -230,11 +230,22 @@ by design).
 **Requirement**: HOST-08. **Depends on**: T10. **Reuses**: `ProbeSelection`,
 `record_device_state`, `eval_opvars`.
 **Done when**:
-- [ ] `tran(probe=["x1.p_out"])` records it; `trace.opvar("x1.p_out") -> Waveform`
-- [ ] unknown probe target fails loud at setup (ABI-35 path)
-- [ ] `.mean()` on the recorded opvar matches a static DC opvar at a held point
-- [ ] `cargo test --workspace`
+- [x] `tran(probe=["x1.p_out"])` records it; `trace.opvar("x1.p_out") -> Waveform`
+- [x] unknown probe target fails loud at setup (ABI-35 path)
+- [x] `.mean()` on the recorded opvar matches a static DC opvar at a held point
+- [x] `cargo test --workspace`
 **Tests**: integration · **Gate**: full
+**Status (2026-07-24)**: DONE, commit `TBD`. `SimSession::run_tran` /
+`Session::tran` take a `probe: &[&str]` arg (each `"instance.name"`); the
+path is split, mapped to a `ProbeSelection`, and the solver's existing
+`validate_probe_selection` (ABI-35) fails loud on unknown device /
+observable at setup. `Trace::opvar(path)` recomputes the opvar per step
+from the recorded `(state, vars)` bank via `eval_opvars` (same path
+`OpResult::instance(label).opvar(name)` walks at a point); the opvar
+index is found by the host-visible `@name(value)` display name carried
+on `BuiltInstanceInfo::opvar_display_names` (PIA-07 — one name, both
+catalogs). Python `_Module::tran` / `_Session::tran` mirror with
+`probe=Vec<String>` kwargs.
 
 #### T12: `inst.model`/`terminals`(+kind)/`observables()`
 **What**: Surface model descriptor, terminals with kind, observable catalog.

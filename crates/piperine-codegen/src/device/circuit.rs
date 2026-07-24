@@ -64,6 +64,13 @@ pub struct BuiltInstanceInfo {
     /// nonzero count means the current is already a solver variable and
     /// should be read via `DcAnalysisResult::get_branch`, not recomputed.
     pub num_forces: usize,
+    /// The host-visible name for each entry of `kernel.opvar_names()`, in
+    /// the same order (host-library HOST-08): the `@name(value)` label when
+    /// the module var declares one, else the kernel id unchanged — the same
+    /// resolution `PiperineDevice::read_opvars`/`var_display_name` applies,
+    /// mirrored here so a recorded trace can address an opvar by the same
+    /// name a live `OpResult::instance(...).opvar(...)` read would use.
+    pub opvar_display_names: Vec<String>,
 }
 
 /// Compiles a POM [`Design`] into solver circuits. `bodies` is every

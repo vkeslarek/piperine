@@ -419,7 +419,7 @@ impl NgspiceHarness {
 
         let session = self.piperine_session(circuit).unwrap_or_else(|e| panic!("{e}"));
         let trace = session
-            .run_tran(stop, None, 0.0, &SolverConfig::default(), None, false)
+            .run_tran(stop, None, 0.0, &SolverConfig::default(), None, false, &[])
             .unwrap_or_else(|e| panic!("{circuit}: piperine transient failed: {e}"));
         let wf = trace
             .v(&NetRef { name: "out".to_string() }, None)

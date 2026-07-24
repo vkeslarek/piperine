@@ -440,7 +440,10 @@ impl SimSession {
     /// volts) seeds the t=0 node voltages. `record_device_state` opts into
     /// per-step device runtime-bank recording, unlocking `Trace.i` on
     /// state-reading devices (`delay`/`transition`/`idt`); off it stays a
-    /// loud error (and costs nothing per step).
+    /// loud error (and costs nothing per step). `probe` (HOST-08) names
+    /// `"instance.opvar_name"` observables to record selectively — unknown
+    /// device/observable requests fail loud at setup (ABI-35); the recorded
+    /// values are read back with `Trace::opvar`.
     pub fn run_tran(
         &self,
         stop: f64,
@@ -449,6 +452,7 @@ impl SimSession {
         config: &SolverConfig,
         ic: Option<&HashMap<String, f64>>,
         record_device_state: bool,
+        probe: &[&str],
     ) -> Result<Trace, Error> {
         let (mut circuit, info) = self.build_circuit(false)?;
         let ivs = build_ivs(&info, ic, circuit.netlist())?;
@@ -464,6 +468,7 @@ impl SimSession {
         }
         .with_record_from(start);
         opts.record_device_state = record_device_state;
+        opts.probe_selection = build_probe_selection(probe)?;
         let mut solver = circuit.transient(opts, config.to_context())?;
         solver.policy = config.to_policy();
         solver.apply_initial_conditions(ivs);
@@ -660,6 +665,7 @@ impl Session {
     /// run; entries at `t > 0` land on the solver's own forced breakpoints.
     /// A *structural* scheduled set fails loud (see the SPEC_DEVIATION note
     /// above [`Session`] — no mid-run auto-rebuild in this session type).
+    #[allow(clippy::too_many_arguments)]
     pub fn tran(
         &mut self,
         stop: f64,
@@ -668,6 +674,7 @@ impl Session {
         config: &SolverConfig,
         ic: Option<&HashMap<String, f64>>,
         record_device_state: bool,
+        probe: &[&str],
     ) -> Result<Trace<Waveform>, Error> {
         let mut scheduled = Vec::new();
         for (t, label, param, value) in std::mem::take(&mut self.pending_sets) {
@@ -684,6 +691,7 @@ impl Session {
         }
         .with_record_from(start);
         opts.record_device_state = record_device_state;
+        opts.probe_selection = build_probe_selection(probe)?;
         let mut solver = self.circuit.transient(opts, config.to_context())?;
         solver.policy = config.to_policy();
         solver.apply_initial_conditions(ivs);
@@ -949,6 +957,21 @@ impl Session {
         }
         Ok(Trace::<Waveform>::from_dc_sweep(values.to_vec(), points, digital, Rc::new(self.info.clone()), stats))
     }
+}
+
+/// Build a [`piperine_solver::prelude::ProbeSelection`] from `"instance.name"`
+/// paths (HOST-08's `tran(probe = [...])`). Malformed paths (no `.`) fail
+/// loud here; unknown device/observable pairs fail loud at solver setup
+/// (ABI-35, `CircuitInstance::transient`).
+fn build_probe_selection(
+    probe: &[&str],
+) -> Result<piperine_solver::prelude::ProbeSelection, Error> {
+    let mut selection = piperine_solver::prelude::ProbeSelection::new();
+    for &path in probe {
+        let (label, name) = crate::results::split_probe_path(path)?;
+        selection = selection.request(label, name);
+    }
+    Ok(selection)
 }
 
 /// Resolve a host-visible net name to a solver node identifier.

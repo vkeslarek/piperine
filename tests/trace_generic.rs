@@ -72,7 +72,7 @@ fn transient_is_real_and_ac_is_complex_on_the_same_container() {
     let s = session();
     let out = NetRef { name: "out".into() };
 
-    let tran = s.run_tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false).expect("tran solves");
+    let tran = s.run_tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &[]).expect("tran solves");
     let w = tran.v(&out, None).expect("v(out) real");
     assert!(w.len() > 1);
 

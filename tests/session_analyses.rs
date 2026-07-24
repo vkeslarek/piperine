@@ -119,7 +119,7 @@ fn session_tran_ac_noise_return_typed_traces() {
     let mut session = Session::compile(&design, "Top").expect("session compiles");
     let out = NetRef { name: "out".into() };
 
-    let tran = session.tran(5e-3, Some(1e-4), 0.0, &SolverConfig::default(), None, false).expect("tran solves");
+    let tran = session.tran(5e-3, Some(1e-4), 0.0, &SolverConfig::default(), None, false, &[]).expect("tran solves");
     let w = tran.v(&out, None).expect("v(out)");
     assert!(w.at(5e-3) > 4.9, "RC settles near 5 V, got {}", w.at(5e-3));
 

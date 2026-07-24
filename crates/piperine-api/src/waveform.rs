@@ -456,6 +456,65 @@ impl Trace<Waveform> {
         Ok(Waveform::new(out))
     }
 
+    /// A recorded device opvar over time (HOST-08): `path` is
+    /// `"instance.opvar_name"` — the same instance label and (renamed, when
+    /// `@name` is declared) opvar name `OpResult::instance(label).opvar(name)`
+    /// reads at a single point. Requires the instance's observable to have
+    /// been requested via `probe=` (or `record_device_state = true`) on the
+    /// `tran` that produced this trace; a step with no recorded bank fails
+    /// loud, mirroring [`Self::i`]'s state-reading-device error.
+    pub fn opvar(&self, path: &str) -> Result<Waveform, Error> {
+        match &self.backend {
+            TraceBackend::Transient { result, info } => Self::opvar_transient(result, info, path),
+            TraceBackend::DcSweep { .. } => Err(Error::Measurement(
+                "opvar() over time is a transient-only feature; a DC sweep has no per-step \
+                 device-state recording — read `OpResult::instance(label).opvar(name)` per point instead"
+                    .into(),
+            )),
+            TraceBackend::Ac { .. } | TraceBackend::Noise { .. } => {
+                unreachable!("Trace<Waveform> is only built from Transient/DcSweep data")
+            }
+        }
+    }
+
+    fn opvar_transient(
+        result: &TransientAnalysisResult,
+        info: &CircuitBuildInfo,
+        path: &str,
+    ) -> Result<Waveform, Error> {
+        let (label, name) = crate::results::split_probe_path(path)?;
+        let instance = info
+            .instances
+            .iter()
+            .find(|i| i.label == label)
+            .ok_or_else(|| Error::Measurement(format!("no element labeled `{label}`")))?;
+        let j = instance.opvar_display_names.iter().position(|n| n == name).ok_or_else(|| {
+            Error::Measurement(format!(
+                "instance `{label}` has no opvar `{name}`; available: {}",
+                instance.opvar_display_names.join(", ")
+            ))
+        })?;
+        let sim = piperine_codegen::SimCtx::default();
+        let mut points = Vec::with_capacity(result.len());
+        for step in result.iter() {
+            let volts: Vec<f64> = instance
+                .terminals
+                .iter()
+                .map(|t| if *t == NodeIdentifier::Gnd { 0.0 } else { step.get_node(t).unwrap_or(0.0) })
+                .collect();
+            let (state, vars): (&[f64], &[f64]) = step.device_state(&instance.label).map(|(s, v)| (s.as_slice(), v.as_slice())).ok_or_else(|| {
+                Error::Measurement(format!(
+                    "opvar `{path}` is not recorded: rerun `tran` with `probe = [\"{path}\"]` \
+                     (or `record_device_state = true`)"
+                ))
+            })?;
+            let mut out = vec![0.0; instance.opvar_display_names.len()];
+            instance.kernel.eval_opvars(&volts, &instance.params, state, vars, &sim, &mut out);
+            points.push((step.time(), out[j]));
+        }
+        Ok(Waveform::new(points))
+    }
+
     /// The trace's own axis (simulated time for a transient, the swept value
     /// for a DC sweep) as a real waveform (identity `(x, x)` pairs).
     pub fn axis(&self) -> Waveform {

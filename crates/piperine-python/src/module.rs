@@ -303,7 +303,10 @@ impl _Module {
     /// `record_device_state` opts into per-step device runtime-bank
     /// recording, unlocking `Trace.i` on state-reading devices
     /// (`delay`/`transition`/`idt`); off, that read stays a loud error.
-    #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None, record_device_state=false))]
+    /// `probe` (HOST-08) names `"instance.opvar_name"` observables to record
+    /// selectively — read back via `Trace.opvar`; an unknown device or
+    /// observable fails loud at setup (ABI-35).
+    #[pyo3(signature = (stop, step=None, start=0.0, ic=None, solver=None, record_device_state=false, probe=Vec::new()))]
     fn tran(
         &self,
         stop: f64,
@@ -312,10 +315,12 @@ impl _Module {
         ic: Option<HashMap<String, f64>>,
         solver: Option<&Bound<'_, PyAny>>,
         record_device_state: bool,
+        probe: Vec<String>,
     ) -> PyResult<_Trace> {
         let session = self.session()?;
+        let probe_refs: Vec<&str> = probe.iter().map(String::as_str).collect();
         let result = session
-            .run_tran(stop, step, start, &Self::solver_config(solver)?, ic.as_ref(), record_device_state)
+            .run_tran(stop, step, start, &Self::solver_config(solver)?, ic.as_ref(), record_device_state, &probe_refs)
             .map_err(Self::analysis_err)?;
         Ok(_Trace::new(result).with_resolver(self.instance_resolver()))
     }

@@ -130,7 +130,7 @@ fn rc_session() -> SimSession {
 fn tran_delayed_start_records_from_start_not_zero() {
     let session = rc_session();
     let trace = session
-        .run_tran(5e-3, None, 2.5e-3, &SolverConfig::default(), None, false)
+        .run_tran(5e-3, None, 2.5e-3, &SolverConfig::default(), None, false, &[])
         .expect("tran solves");
     let axis = trace.axis();
     assert!(axis.len() > 1, "delayed-start trace still has samples");
@@ -162,7 +162,7 @@ fn op_nodeset_hint_is_accepted() {
 fn trace_i_over_time_recomputes_a_resistor_current() {
     let session = divider_session();
     let trace = session
-        .run_tran(1e-3, Some(1e-4), 0.0, &SolverConfig::default(), None, false)
+        .run_tran(1e-3, Some(1e-4), 0.0, &SolverConfig::default(), None, false, &[])
         .expect("tran solves");
     let vin = NetRef { name: "vin".into() };
     let mid = NetRef { name: "mid".into() };
@@ -183,7 +183,7 @@ fn trace_i_over_time_recomputes_a_resistor_current() {
 fn trace_i_over_time_exercises_the_reactive_path() {
     let session = rc_session();
     let trace = session
-        .run_tran(1e-3, Some(1e-4), 0.0, &SolverConfig::default(), None, false)
+        .run_tran(1e-3, Some(1e-4), 0.0, &SolverConfig::default(), None, false, &[])
         .expect("tran solves");
     let vsrc = NetRef { name: "vsrc".into() };
     let out = NetRef { name: "out".into() };
@@ -239,7 +239,7 @@ fn rl_idt_session() -> SimSession {
 fn trace_i_on_stateful_device_recomputes_when_recording_enabled() {
     let session = rl_idt_session();
     let trace = session
-        .run_tran(60e-6, Some(0.5e-6), 0.0, &SolverConfig::default(), None, true)
+        .run_tran(60e-6, Some(0.5e-6), 0.0, &SolverConfig::default(), None, true, &[])
         .expect("tran solves");
     let vin = NetRef { name: "vin".into() };
     let mid = NetRef { name: "mid".into() };
@@ -274,7 +274,7 @@ fn trace_i_on_stateful_device_recomputes_when_recording_enabled() {
 fn trace_i_on_stateful_device_fails_loud_when_recording_disabled() {
     let session = rl_idt_session();
     let trace = session
-        .run_tran(60e-6, Some(0.5e-6), 0.0, &SolverConfig::default(), None, false)
+        .run_tran(60e-6, Some(0.5e-6), 0.0, &SolverConfig::default(), None, false, &[])
         .expect("tran solves");
     let mid = NetRef { name: "mid".into() };
     let gnd = NetRef { name: "gnd".into() };
