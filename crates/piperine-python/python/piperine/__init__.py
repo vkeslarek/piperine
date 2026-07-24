@@ -93,6 +93,7 @@ __all__ = [
     # plotting (HOST-17, matplotlib-guarded)
     "plot",
     "bode",
+    "extract",
     # SI unit helpers (HOST-21)
     "Hz",
     "ns",
@@ -1144,6 +1145,34 @@ def load_str(src: str) -> Design:
         return Design(_piperine.load_str(src))
     except Exception as exc:
         raise ElaborationError(str(exc)) from exc
+
+
+# ── extract (HOST-25, the removed bench's measurement-dict shape) ──────────
+
+
+def extract(
+    source: typing.Any,
+    measurements: dict[str, typing.Callable[[typing.Any], typing.Any]],
+) -> dict[str, typing.Any]:
+    """Apply every named measurement function in `measurements` to `source`,
+    collecting the results into a dict (HOST-25) — the named-measurement
+    shape the removed PHDL bench construct used to provide::
+
+        m = pip.extract(trace, {
+            "slew":      lambda tr: tr.v("out").slew_rate(),
+            "overshoot": lambda tr: tr.v("out").overshoot(),
+        })
+
+    `source` is whatever each measurement function expects to receive — a
+    :class:`Trace` (each function reads `tr.v(net)`/`tr.i(net)` itself, as
+    above) or a bare :class:`Waveform`/:class:`ComplexWaveform` (each
+    function reads it directly, e.g. ``lambda w: w.slew_rate()``); `extract`
+    itself is agnostic — it just calls ``fn(source)`` for each entry. A
+    measurement function's own failure (e.g. a fail-loud `Waveform`
+    measurement on a flat signal) propagates unchanged — `extract` does not
+    swallow or wrap it.
+    """
+    return {name: fn(source) for name, fn in measurements.items()}
 
 
 # ── SI unit helpers (HOST-21) ────────────────────────────────────────────────
