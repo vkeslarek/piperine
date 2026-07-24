@@ -1006,6 +1006,129 @@ impl Session {
         }
         Ok(Trace::<Waveform>::from_dc_sweep(values.to_vec(), points, digital, Rc::new(self.info.clone()), stats))
     }
+
+    /// A fluent single-knob sweep over `label.param` (HOST-18): iterate with
+    /// `while let Some(point) = sweep.next() { ... }` — each `point` is a
+    /// [`SweepPoint`], a `Session` view at that knob value (`Deref`/
+    /// `DerefMut` to `Session`, so every analysis method is callable
+    /// directly on it). A non-structural value restamps on the one
+    /// compilation (MD-18); a structural value rebuilds the circuit in
+    /// place and increments [`Self::rebuilds`] — see [`Sweep::next`].
+    pub fn sweep<'a>(&'a mut self, label: &str, param: &str, values: &[f64]) -> Sweep<'a> {
+        Sweep { session: self, label: label.to_string(), param: param.to_string(), values: values.to_vec(), idx: 0 }
+    }
+
+    /// Write `label.param` on the compiled circuit, restamping when the
+    /// write is non-structural (MD-18, same as [`Self::set`]) or rebuilding
+    /// the circuit in place (HOST-18) and incrementing [`Self::rebuilds`]
+    /// when it is structural (`Invalidation::Rebuild`) — never silently
+    /// restamps a structural change onto stale kernel-compiled state.
+    fn set_or_rebuild(&mut self, label: &str, param: &str, value: f64) -> Result<(), Error> {
+        use piperine_solver::abi::{Invalidation, Value};
+        let inv = self.circuit.set_element_param(label, param, Value::Real(value))?;
+        if inv >= Invalidation::Rebuild {
+            return self.rebuild(label, param, value);
+        }
+        if let Some(inst) = self.info.instances.iter_mut().find(|i| i.label == label)
+            && let Some(pidx) = inst.kernel.param_names().iter().position(|n| n == param)
+        {
+            inst.params[pidx] = value;
+        }
+        Ok(())
+    }
+
+    /// Re-stage `label.param = value` on this session's design and rebuild
+    /// the circuit from scratch (fork → apply overrides → lower → JIT),
+    /// replacing the held `design`/`circuit`/`info` in place and
+    /// incrementing [`Self::rebuilds`] — the HOST-18 sweep escape hatch for
+    /// a structural (rebuild-invalidating) knob, unlike [`Self::set`]'s
+    /// unconditional fail-loud.
+    fn rebuild(&mut self, label: &str, param: &str, value: f64) -> Result<(), Error> {
+        self.design.set_param(label, param, piperine_lang::Value::Real(value));
+        let applied = self.design.with_overrides_applied(&self.module)?.fork();
+        let bodies = piperine_codegen::resolve::lower_bodies(&applied)?;
+        let mut compiler = CircuitCompiler::new(&applied, &bodies);
+        let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
+        circuit.init_digital()?;
+        circuit.rebuild_digital_topology();
+        self.design = applied;
+        self.circuit = circuit;
+        self.info = info;
+        self.rebuilds += 1;
+        Ok(())
+    }
+}
+
+// ─── Sweep / SweepPoint (HOST-18) ───────────────────────────────────────────
+
+/// A `Session` view at one sweep coordinate (HOST-18): `Deref`/`DerefMut` to
+/// [`Session`], so `point.op(...)`/`point.tran(...)`/… — every analysis —
+/// runs directly on it, at the knob value the [`Sweep`] just restamped
+/// (or rebuilt) onto the held circuit.
+pub struct SweepPoint<'a> {
+    session: &'a mut Session,
+    /// The knob value this point was set to.
+    pub value: f64,
+    /// This point's position in the sweep's `values` slice.
+    pub index: usize,
+}
+
+impl std::ops::Deref for SweepPoint<'_> {
+    type Target = Session;
+    fn deref(&self) -> &Session {
+        self.session
+    }
+}
+
+impl std::ops::DerefMut for SweepPoint<'_> {
+    fn deref_mut(&mut self) -> &mut Session {
+        self.session
+    }
+}
+
+/// A fluent single-knob sweep (HOST-18, [`Session::sweep`]): a streaming
+/// (lending) iterator — `next(&mut self) -> Option<Result<SweepPoint<'_>, Error>>`
+/// instead of `std::iter::Iterator`, since each yielded [`SweepPoint`]
+/// mutably borrows the sweep's own `Session` and Rust's stable `Iterator`
+/// trait cannot express an item borrowing from the iterator itself. Drive it
+/// with `while let Some(point) = sweep.next() { let point = point?; … }`.
+pub struct Sweep<'a> {
+    session: &'a mut Session,
+    label: String,
+    param: String,
+    values: Vec<f64>,
+    idx: usize,
+}
+
+impl Sweep<'_> {
+    /// The number of points in this sweep.
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    /// `true` when the sweep has no points.
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    /// Restamp (or rebuild, for a structural knob) the session onto the next
+    /// sweep value and yield the resulting [`SweepPoint`]; `None` once every
+    /// value has been visited. A structural knob transparently rebuilds the
+    /// circuit and counts it in [`Session::rebuilds`] (HOST-18) rather than
+    /// failing loud the way a bare [`Session::set`] does.
+    #[allow(clippy::should_implement_trait)]
+    pub fn next(&mut self) -> Option<Result<SweepPoint<'_>, Error>> {
+        if self.idx >= self.values.len() {
+            return None;
+        }
+        let value = self.values[self.idx];
+        let index = self.idx;
+        self.idx += 1;
+        if let Err(e) = self.session.set_or_rebuild(&self.label, &self.param, value) {
+            return Some(Err(e));
+        }
+        Some(Ok(SweepPoint { session: self.session, value, index }))
+    }
 }
 
 /// Build a [`piperine_solver::prelude::ProbeSelection`] from `"instance.name"`

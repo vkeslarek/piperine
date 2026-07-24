@@ -35,7 +35,7 @@ use pyo3::prelude::*;
 
 use design::{_Design, _Node, _Selection};
 use instance::{_InstanceView, _ModelDescriptor, _ObservableDescriptor, _ParamDescriptor, _Terminal, _TerminalDescriptor};
-use live::_Session;
+use live::{_Session, _Sweep};
 use module::_Module;
 use module::{_Behavior, _Instance, _Net, _Param, _Port};
 use results::_AcTrace;
@@ -91,6 +91,7 @@ pub(crate) fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_ObservableDescriptor>()?;
     m.add_class::<_ParamDescriptor>()?;
     m.add_class::<_Session>()?;
+    m.add_class::<_Sweep>()?;
     m.add_class::<_TfResult>()?;
     Ok(())
 }

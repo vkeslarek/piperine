@@ -32,5 +32,5 @@ pub use piperine_solver::abi::NoiseContribution;
 pub use results::{
     DistoResult, InstanceView, NetRef, OpResult, PssResult, PzResult, SParamResult, SensResult, TfResult,
 };
-pub use session::{Session, SimSession, SolverConfig};
+pub use session::{Session, SimSession, SolverConfig, Sweep, SweepPoint};
 pub use waveform::{AcTrace, ComplexWaveform, NoiseTrace, Trace, Waveform};

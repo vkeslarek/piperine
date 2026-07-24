@@ -859,6 +859,58 @@ impl _Session {
         );
         Ok(_Trace::new(trace).with_resolver(self.instance_resolver()))
     }
+
+    /// A fluent single-knob sweep over `label.param` (HOST-18): the
+    /// returned `_Sweep` iterates `(value, index)` per point, restamping
+    /// (or rebuilding, same as `set`) the held circuit before each is
+    /// yielded. The facade's `Session.sweep` wraps each step into a
+    /// `SweepPoint` view of the *same* `Session` object.
+    fn sweep(slf: Py<Self>, label: String, param: String, values: Vec<f64>) -> _Sweep {
+        _Sweep { session: slf, label, param, values, idx: 0 }
+    }
+}
+
+/// `_Sweep` — the native half of HOST-18's fluent sweep
+/// ([`_Session::sweep`]): a Python iterator yielding `(value, index)` per
+/// sweep point. Holds an owned `Py<_Session>` (not a borrow) so the
+/// returned object can outlive the `sweep()` call that created it — the
+/// standard PyO3 shape for an iterator that mutates its parent on each
+/// step.
+#[pyclass(module = "piperine", unsendable)]
+pub struct _Sweep {
+    session: Py<_Session>,
+    label: String,
+    param: String,
+    values: Vec<f64>,
+    idx: usize,
+}
+
+#[pymethods]
+impl _Sweep {
+    /// Number of points in this sweep.
+    fn __len__(&self) -> usize {
+        self.values.len()
+    }
+
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    /// Restamp (or rebuild) the session onto the next value and yield
+    /// `(value, index)`; `None` once every value has been visited.
+    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python<'_>) -> PyResult<Option<(f64, usize)>> {
+        if slf.idx >= slf.values.len() {
+            return Ok(None);
+        }
+        let value = slf.values[slf.idx];
+        let index = slf.idx;
+        slf.idx += 1;
+        let label = slf.label.clone();
+        let param = slf.param.clone();
+        let session = slf.session.clone_ref(py);
+        session.borrow_mut(py).set(&label, &param, value)?;
+        Ok(Some((value, index)))
+    }
 }
 
 #[cfg(test)]

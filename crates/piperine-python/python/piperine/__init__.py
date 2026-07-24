@@ -59,6 +59,8 @@ __all__ = [
     "NoiseContribution",
     # live session (compile once, set, re-run)
     "Session",
+    "Sweep",
+    "SweepPoint",
     # analyses
     "OpResult",
     "Trace",
@@ -766,6 +768,60 @@ class Session:
         same way as :meth:`tran`/:meth:`pss` (``.v``/``.i``/``.axis``).
         """
         return self._native.dc(label, param, list(values), solver)
+
+    def sweep(self, label: str, param: str, values: list[float]) -> "Sweep":
+        """A fluent single-knob sweep over ``label.param`` (HOST-18):
+        ``for point in session.sweep("r1", "r", [1e3, 2e3, 3e3]): point.op()``.
+
+        Each ``point`` is a :class:`SweepPoint` — a ``Session`` view at that
+        knob value (every :class:`Session` method is available directly on
+        it via attribute delegation). Reuses :meth:`set`'s compile-once
+        restamp (MD-18); a structural knob auto-rebuilds and counts it in
+        :attr:`rebuilds` (LIVE-14), same as a bare :meth:`set` — the sweep
+        adds no separate rebuild path. The native ``_Session.sweep`` does
+        the restamping; this wrapper turns each native ``(value, index)``
+        step into a :class:`SweepPoint` view of *this* ``Session``.
+        """
+        return Sweep(self, self._native.sweep(label, param, list(values)))
+
+
+class SweepPoint:
+    """A :class:`Session` view at one sweep coordinate (HOST-18/19).
+
+    Every :class:`Session` method/property (``op``/``tran``/``ac``/…) is
+    reachable directly via attribute delegation to the underlying session —
+    ``point.op()`` runs on the session restamped (or rebuilt) to this
+    point's value. ``.value``/``.index`` name the sweep coordinate: a
+    single ``float``/``int`` for a :class:`Sweep`, a ``tuple`` (one entry
+    per axis) for a :class:`Grid`.
+    """
+
+    def __init__(self, session: Session, value, index) -> None:
+        self._session = session
+        self.value = value
+        self.index = index
+
+    def __getattr__(self, name: str):
+        return getattr(self._session, name)
+
+
+class Sweep:
+    """A fluent single-knob sweep (HOST-18, :meth:`Session.sweep`):
+    iterating yields one :class:`SweepPoint` per value, in order, restamped
+    (or rebuilt, for a structural knob) onto the session's one compilation.
+    Wraps the native ``_Sweep`` iterator (which does the actual restamping).
+    """
+
+    def __init__(self, session: Session, native_sweep) -> None:
+        self._session = session
+        self._native = native_sweep
+
+    def __len__(self) -> int:
+        return len(self._native)
+
+    def __iter__(self):
+        for value, index in self._native:
+            yield SweepPoint(self._session, value, index)
 
 
 # ── load ──────────────────────────────────────────────────────────────────────
