@@ -19,7 +19,7 @@ use pyo3::exceptions::{PyKeyError, PyRuntimeError};
 use pyo3::prelude::*;
 
 use num_complex::Complex64;
-use piperine_api::{AcTrace, ComplexWaveform, FourierResult, NetRef, NoiseTrace, OpResult, Trace, Waveform};
+use piperine_api::{AcTrace, ComplexWaveform, FourierResult, NoiseTrace, OpResult, Trace, Waveform};
 use piperine_solver::abi::SolverStats;
 
 use crate::instance::InstanceResolver;
@@ -206,13 +206,6 @@ impl _OpResult {
         Rc::clone(&self.inner)
     }
 
-    /// Build a [`NetRef`] from a Python `str` — the typed handle every host
-    /// readout takes. Kept as a struct method (MD-13: no loose `fn`).
-    fn net(name: &str) -> NetRef {
-        NetRef {
-            name: name.to_string(),
-        }
-    }
 }
 
 #[pymethods]
@@ -220,11 +213,15 @@ impl _OpResult {
     /// Node voltage of `a` minus `b` (ground-referenced when `b` is omitted)
     /// — spec AC4. A digital `Bit`/`Logic` net reads its logic value (0/1,
     /// NaN for X/Z). An unaddressable net raises `KeyError` (fail loud).
+    /// HOST-23: `a`/`b` resolve through `NetRef`'s `Into` ergonomics — no
+    /// bare `NetRef { name }` construction needed.
     #[pyo3(signature = (a, b=None))]
     fn v(&self, a: &str, b: Option<&str>) -> PyResult<f64> {
-        let net_a = Self::net(a);
-        let net_b = b.map(Self::net);
-        self.inner.v(&net_a, net_b.as_ref()).map_err(readout_err)
+        match b {
+            Some(b) => self.inner.v((a, b)),
+            None => self.inner.v(a),
+        }
+        .map_err(readout_err)
     }
 
     /// Branch current from terminal `a` to `b` (ground-referenced when `b`
@@ -233,9 +230,11 @@ impl _OpResult {
     /// `RuntimeError` for an ambiguous branch.
     #[pyo3(signature = (a, b=None))]
     fn i(&self, a: &str, b: Option<&str>) -> PyResult<f64> {
-        let net_a = Self::net(a);
-        let net_b = b.map(Self::net);
-        self.inner.i(&net_a, net_b.as_ref()).map_err(readout_err)
+        match b {
+            Some(b) => self.inner.i((a, b)),
+            None => self.inner.i(a),
+        }
+        .map_err(readout_err)
     }
 
     /// Per-analysis convergence + performance statistics.
@@ -302,34 +301,32 @@ impl _Trace {
         Rc::clone(&self.inner)
     }
 
-    /// Build a [`NetRef`] from a Python `str` — the typed handle every host
-    /// readout takes. Kept as a struct method (MD-13).
-    fn net(name: &str) -> NetRef {
-        NetRef {
-            name: name.to_string(),
-        }
-    }
 }
 
 #[pymethods]
 impl _Trace {
     /// Net voltage `a` minus `b` (ground-referenced when `b` is omitted) over
     /// time — spec AC7. A digital net reads its logic value per step. An
-    /// unaddressable net raises `KeyError` (fail loud).
+    /// unaddressable net raises `KeyError` (fail loud). HOST-23: `a`/`b`
+    /// resolve through `NetRef`'s `Into` ergonomics.
     #[pyo3(signature = (a, b=None))]
     fn v(&self, a: &str, b: Option<&str>) -> PyResult<_Waveform> {
-        let net_a = Self::net(a);
-        let net_b = b.map(Self::net);
-        let wf = self.inner.v(&net_a, net_b.as_ref()).map_err(readout_err)?;
+        let wf = match b {
+            Some(b) => self.inner.v((a, b)),
+            None => self.inner.v(a),
+        }
+        .map_err(readout_err)?;
         Ok(_Waveform::new(wf))
     }
 
     /// Branch current from `a` to `b` over time — spec AC7.
     #[pyo3(signature = (a, b=None))]
     fn i(&self, a: &str, b: Option<&str>) -> PyResult<_Waveform> {
-        let net_a = Self::net(a);
-        let net_b = b.map(Self::net);
-        let wf = self.inner.i(&net_a, net_b.as_ref()).map_err(readout_err)?;
+        let wf = match b {
+            Some(b) => self.inner.i((a, b)),
+            None => self.inner.i(a),
+        }
+        .map_err(readout_err)?;
         Ok(_Waveform::new(wf))
     }
 
@@ -440,10 +437,11 @@ impl _Waveform {
 
     /// First axis value where the waveform crosses `level` in direction
     /// `dir` (`"Rising"`/`"Falling"`/`"Either"`), or `None`. Uniform-shape
-    /// (host `Waveform::cross`).
+    /// (host `Waveform::cross`). HOST-23: the facade's `CrossDirection`
+    /// enum's `.value` is exactly one of these three strings.
     #[pyo3(signature = (level, dir="Either"))]
     fn cross(&self, level: f64, dir: &str) -> Option<f64> {
-        self.inner.cross(level, dir)
+        self.inner.cross(level, dir.into())
     }
 
     /// Number of samples — equal to `.values` length.
@@ -619,25 +617,21 @@ impl _AcTrace {
         Self { inner }
     }
 
-    /// Build a [`NetRef`] from a Python `str` — the typed handle every host
-    /// readout takes. Kept as a struct method (MD-13).
-    fn net(name: &str) -> NetRef {
-        NetRef {
-            name: name.to_string(),
-        }
-    }
 }
 
 #[pymethods]
 impl _AcTrace {
     /// Net voltage `a` minus `b` (ground-referenced when `b` is omitted) over
     /// the AC frequency sweep — spec AC8. An unaddressable net raises
-    /// `KeyError` (fail loud).
+    /// `KeyError` (fail loud). HOST-23: `a`/`b` resolve through `NetRef`'s
+    /// `Into` ergonomics.
     #[pyo3(signature = (a, b=None))]
     fn v(&self, a: &str, b: Option<&str>) -> PyResult<_ComplexWaveform> {
-        let net_a = Self::net(a);
-        let net_b = b.map(Self::net);
-        let cw = self.inner.v(&net_a, net_b.as_ref()).map_err(readout_err)?;
+        let cw = match b {
+            Some(b) => self.inner.v((a, b)),
+            None => self.inner.v(a),
+        }
+        .map_err(readout_err)?;
         Ok(_ComplexWaveform::new(cw))
     }
 

@@ -120,11 +120,11 @@ fn session_tran_ac_noise_return_typed_traces() {
     let out = NetRef { name: "out".into() };
 
     let tran = session.tran(5e-3, Some(1e-4), 0.0, &SolverConfig::default(), None, false, &[]).expect("tran solves");
-    let w = tran.v(&out, None).expect("v(out)");
+    let w = tran.v(&out).expect("v(out)");
     assert!(w.at(5e-3) > 4.9, "RC settles near 5 V, got {}", w.at(5e-3));
 
     let ac = session.ac(1.0, 1e6, 5, true, &SolverConfig::default()).expect("ac solves");
-    let cw = ac.v(&out, None).expect("v(out) complex");
+    let cw = ac.v(&out).expect("v(out) complex");
     assert!(cw.len() == 5);
 
     let nz = session.noise("out", "gnd", 1.0, 1e6, 5, true, &SolverConfig::default()).expect("noise solves");
@@ -143,7 +143,7 @@ fn session_sens_pss_pz_disto_sp_return_typed_results() {
     assert!(sens.get("out", "r1", "r").is_some());
 
     let pss = rc_session.pss(1e-3, 0.0, &SolverConfig::default()).expect("pss solves");
-    assert!(pss.trace.v(&NetRef { name: "out".into() }, None).is_ok());
+    assert!(pss.trace.v("out").is_ok());
 
     let rlc_design = elaborate(RLC_PHDL);
     let mut rlc_session = Session::compile(&rlc_design, "Top").expect("session compiles");

@@ -13,7 +13,7 @@
 //! directly in the PHDL source (never touching `Sweep`/`SweepPoint`) — the
 //! spec's own "values match per-point fresh builds" acceptance criterion.
 
-use piperine::{NetRef, Session, SolverConfig};
+use piperine::{Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 const DIVIDER_TEMPLATE: &str = "\
@@ -46,7 +46,7 @@ fn elaborate(r2_override: &str) -> piperine_lang::Design {
 }
 
 fn mid_voltage(session: &mut Session) -> f64 {
-    session.op(&SolverConfig::default(), None).expect("op solves").v(&NetRef { name: "mid".into() }, None).expect("v(mid)")
+    session.op(&SolverConfig::default(), None).expect("op solves").v("mid").expect("v(mid)")
 }
 
 /// A fresh, independent `Session::compile` with `ns` supplied directly in

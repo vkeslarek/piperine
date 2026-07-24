@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{NetRef, SimSession, SolverConfig};
+use piperine::{SimSession, SolverConfig};
 use piperine_codegen::AnalogKernel;
 use piperine_lang::Value;
 use piperine_lang::SourceMap;
@@ -37,7 +37,7 @@ fn sweep_compiles_once_and_matches_the_staged_path() {
     let values: Vec<f64> = (0..=12).map(|i| -0.6 + 0.1 * i as f64).collect();
     let config = SolverConfig::default();
     let read_i = |op: &piperine::OpResult| {
-        op.i(&NetRef { name: branch_a.into() }, Some(&NetRef { name: branch_b.into() }))
+        op.i((branch_a, branch_b))
             .expect("current readback")
     };
 

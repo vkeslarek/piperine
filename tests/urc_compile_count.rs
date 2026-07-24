@@ -25,7 +25,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{NetRef, SimSession, SolverConfig};
+use piperine::{SimSession, SolverConfig};
 use piperine_codegen::AnalogKernel;
 use piperine_lang::{SourceMap, Value};
 
@@ -64,7 +64,7 @@ fn urc_session(urc_mod: &str) -> SimSession {
 }
 
 fn v_out(op: &piperine::OpResult) -> f64 {
-    op.v(&NetRef { name: "vout".into() }, None).expect("v(vout) readback")
+    op.v("vout").expect("v(vout) readback")
 }
 
 /// FLAT-05/06/07: flatten does not regress the per-shape kernel keying

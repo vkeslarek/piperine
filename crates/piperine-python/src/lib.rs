@@ -451,7 +451,7 @@ mod Divider() {
     #[test]
     fn stage_overrides_next_analysis() -> PyResult<()> {
         use pyo3::types::PyAnyMethods;
-        use piperine_api::{NetRef, OpResult as HostOpResult};
+        use piperine_api::OpResult as HostOpResult;
 
         let path = std::env::temp_dir().join("piperine_python_p6_stage_test.phdl");
         std::fs::write(&path, ANALYSIS_PHDL)?;
@@ -467,11 +467,10 @@ mod Divider() {
             let mid_voltage = |module: &Bound<'_, PyAny>| -> PyResult<f64> {
                 let op_obj = module.getattr("op")?.call0()?;
                 let pyref = op_obj.extract::<pyo3::PyRef<'_, super::_OpResult>>()?;
-                let mid_ref = NetRef {
-                    name: "mid".to_string(),
-                };
-                // `inner` is `Rc<OpResult>`; deref through Rc to call `v`.
-                let v = HostOpResult::v(&*pyref.inner, &mid_ref, None)
+                // `inner` is `Rc<OpResult>`; deref through Rc to call `v`
+                // (HOST-23: `"mid"` resolves through `NetRef`'s `Into`
+                // ergonomics — no bare `NetRef { name }` needed).
+                let v = HostOpResult::v(&*pyref.inner, "mid")
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?;
                 Ok(v)
             };
@@ -500,10 +499,7 @@ mod Divider() {
             let v_fresh = {
                 let op_obj = fresh_module.getattr("op")?.call0()?;
                 let pyref = op_obj.extract::<pyo3::PyRef<'_, super::_OpResult>>()?;
-                let mid_ref = NetRef {
-                    name: "mid".to_string(),
-                };
-                HostOpResult::v(&*pyref.inner, &mid_ref, None)
+                HostOpResult::v(&*pyref.inner, "mid")
                     .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{e}")))?
             };
             assert!(

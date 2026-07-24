@@ -5,7 +5,7 @@
 //! (r1+r2)`, a closed form independent of the implementation, evaluated
 //! directly in the test as the ground truth for every combination.
 
-use piperine::{Nested, NetRef, Session, SolverConfig};
+use piperine::{Nested, Session, SolverConfig};
 use piperine_lang::SourceMap;
 
 const DIVIDER_PHDL: &str = "\
@@ -54,7 +54,7 @@ fn nested_grid_visits_every_combination_shaped_like_the_axes() {
 
     let nested = grid
         .map(|s, coord| {
-            let mid = s.op(&SolverConfig::default(), None)?.v(&NetRef { name: "mid".into() }, None)?;
+            let mid = s.op(&SolverConfig::default(), None)?.v("mid")?;
             Ok((coord.to_vec(), mid))
         })
         .expect("grid map solves");
@@ -91,7 +91,7 @@ fn map_failure_surfaces_with_the_combinations_coordinates() {
 
     let err = grid
         .map(|s, _coord| {
-            s.op(&SolverConfig::default(), None)?.v(&NetRef { name: "nope".into() }, None)
+            s.op(&SolverConfig::default(), None)?.v("nope")
         })
         .expect_err("unknown net must fail loud");
     let msg = format!("{err}");

@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use piperine::{NetRef, OpResult, SimSession, SolverConfig};
+use piperine::{OpResult, SimSession, SolverConfig};
 use piperine_lang::SourceMap;
 
 /// The piperine-vs-ngspice comparison harness. Owns detection of the ngspice
@@ -157,7 +157,7 @@ impl NgspiceHarness {
         let golden = self.ngspice_op(circuit).unwrap_or_else(|e| panic!("{e}"));
         let op = self.piperine_op(circuit).unwrap_or_else(|e| panic!("{e}"));
         Self::compare_op(circuit, &golden, |node| {
-            op.v(&NetRef { name: node.to_string() }, None).ok()
+            op.v(node.to_string()).ok()
         })
         .unwrap_or_else(|e| panic!("{e}"));
         eprintln!("PASS {circuit} ({} golden nodes)", golden.len());
@@ -245,7 +245,7 @@ impl NgspiceHarness {
         let mut mismatches = Vec::new();
         for ((x, i_golden), op) in golden.iter().zip(&ops) {
             let i_piperine = op
-                .i(&NetRef { name: branch_a.to_string() }, Some(&NetRef { name: branch_b.to_string() }))
+                .i((branch_a.to_string(), branch_b.to_string()))
                 .unwrap_or_else(|e| panic!("{circuit}: current readback failed at {source}={x}: {e:?}"));
             if !Self::within_tolerance(*i_golden, i_piperine, abstol) {
                 mismatches.push(format!(
@@ -422,7 +422,7 @@ impl NgspiceHarness {
             .run_tran(stop, None, 0.0, &SolverConfig::default(), None, false, &[])
             .unwrap_or_else(|e| panic!("{circuit}: piperine transient failed: {e}"));
         let wf = trace
-            .v(&NetRef { name: "out".to_string() }, None)
+            .v("out".to_string())
             .unwrap_or_else(|e| panic!("{circuit}: no v(out) waveform: {e}"));
         let result = wf
             .fourier(f0, 10)
@@ -837,8 +837,8 @@ fn ngspice_wrdata_parsed_strictly() {
 fn ngspice_series_junctions_are_self_consistent() {
     let harness_less = NgspiceHarness { exe: PathBuf::new() };
     let op = harness_less.piperine_op("diode_series").unwrap_or_else(|e| panic!("{e}"));
-    let va = op.v(&NetRef { name: "a".to_string() }, None).unwrap();
-    let vb = op.v(&NetRef { name: "b".to_string() }, None).unwrap();
+    let va = op.v("a".to_string()).unwrap();
+    let vb = op.v("b".to_string()).unwrap();
     let d1 = va - vb;
     let d2 = vb;
     assert!(

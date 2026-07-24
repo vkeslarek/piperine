@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use piperine::{NetRef, OpResult, SimSession, SolverConfig};
+use piperine::{OpResult, SimSession, SolverConfig};
 use piperine_lang::{SourceMap, Value};
 use piperine_plugin::{
     Abi, Design, DesignStaging, HostCtx, Manifest, Plugin, PluginError, PluginHost, PluginResult,
@@ -42,7 +42,7 @@ fn run_top_op(host: Rc<PluginHost>, src: &str) -> Result<OpResult, piperine::Err
 }
 
 fn v(op: &OpResult, net: &str) -> f64 {
-    op.v(&NetRef { name: net.to_string() }, None).expect("net readable")
+    op.v(net.to_string()).expect("net readable")
 }
 
 /// r1 dangles until the plugin injects `r_par` from `out` to `gnd`,

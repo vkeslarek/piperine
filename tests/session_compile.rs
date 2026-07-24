@@ -61,14 +61,14 @@ fn session_compiles_once_and_set_op_matches_fresh_builds() {
     assert_eq!(session.rebuilds(), 0, "no structural set yet");
 
     let op0 = session.op(&SolverConfig::default(), None).expect("baseline op");
-    assert!((op0.v(&mid, None).expect("v(mid)") - 2.0).abs() < 1e-9);
+    assert!((op0.v(&mid).expect("v(mid)") - 2.0).abs() < 1e-9);
 
     // The live set/op loop, measured in isolation (MD-18: zero JITs).
     let before = AnalogKernel::compile_count();
     let mut live_values = Vec::new();
     for r in [1e3, 2e3, 4e3, 6e3] {
         session.set("r_top", "r", r).expect("restamp set");
-        live_values.push(session.op(&SolverConfig::default(), None).expect("op").v(&mid, None).expect("v(mid)"));
+        live_values.push(session.op(&SolverConfig::default(), None).expect("op").v(&mid).expect("v(mid)"));
     }
     let sweep_compiles = AnalogKernel::compile_count() - before;
     assert_eq!(sweep_compiles, 0, "the set/op loop must never re-JIT (MD-18), got {sweep_compiles}");
@@ -81,7 +81,7 @@ fn session_compiles_once_and_set_op_matches_fresh_builds() {
         let fresh = fresh_session
             .run_op(&SolverConfig::default(), None)
             .expect("fresh op")
-            .v(&mid, None)
+            .v(&mid)
             .expect("v(mid)");
         assert!((live - fresh).abs() < 1e-9, "r_top = {r}: live {live} V vs fresh build {fresh} V");
     }

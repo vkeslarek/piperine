@@ -83,14 +83,14 @@ fn rectifier_ripple_matches_settled_transient() {
 
     let s = session("Rectifier");
     let pss = s.run_pss(period, 0.0, &config).expect("pss orbit");
-    let w_pss = pss.trace.v(&out, None).expect("v(out) over the orbit");
+    let w_pss = pss.trace.v(&out).expect("v(out) over the orbit");
 
     // Reference: 14 periods of plain transient (tau = R*C = 2 ms = 2T, so
     // 12 periods is a 0.25% settle), statistics on the last one.
     let long = s
         .run_tran(14.0 * period, Some(period / 100.0), 13.0 * period, &config, None, false, &[])
         .expect("settled tran");
-    let w_ref = long.v(&out, None).expect("v(out) settled");
+    let w_ref = long.v(&out).expect("v(out) settled");
 
     let tol = 10.0 * config.reltol * w_ref.mean().abs().max(1.0);
     assert!(
@@ -122,9 +122,9 @@ fn tstab_equivalence_and_settle_estimate() {
     let a = s.run_pss(period, 0.0, &config).expect("tstab=0");
     let b = s.run_pss(period, 2.0 * period, &config).expect("tstab=2T");
     let amp_a =
-        a.trace.v(&out, None).expect("v out").max().abs();
+        a.trace.v(&out).expect("v out").max().abs();
     let amp_b =
-        b.trace.v(&out, None).expect("v out").max().abs();
+        b.trace.v(&out).expect("v out").max().abs();
     assert!(
         (amp_a - amp_b).abs() < 1.0e-9 + 1.0e-3 * amp_a.abs(),
         "tstab equivalence: {amp_a} vs {amp_b}"

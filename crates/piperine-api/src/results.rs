@@ -19,6 +19,81 @@ pub struct NetRef {
     pub name: String,
 }
 
+impl From<&str> for NetRef {
+    fn from(name: &str) -> Self {
+        NetRef { name: name.to_string() }
+    }
+}
+
+impl From<String> for NetRef {
+    fn from(name: String) -> Self {
+        NetRef { name }
+    }
+}
+
+impl From<&String> for NetRef {
+    fn from(name: &String) -> Self {
+        NetRef { name: name.clone() }
+    }
+}
+
+impl From<&NetRef> for NetRef {
+    fn from(r: &NetRef) -> Self {
+        r.clone()
+    }
+}
+
+/// Anything `.v`/`.i` (HOST-23) can resolve into one net or a differential
+/// pair — a bare name (`&str`/`String`/`NetRef`), or a `(a, b)` tuple for a
+/// differential read: `op.v("out")` / `op.v(("out", "in"))`. No bare
+/// `NetRef { name }` construction is needed at a call site anymore (though
+/// it still works — `NetRef` itself implements `NetSelector`).
+///
+/// Deliberately *not* a blanket `impl<T: Into<NetRef>> NetSelector for T`
+/// plus a generic `(A, Option<B>)` tuple impl: the two would structurally
+/// overlap under Rust's coherence rules (a `(A, Option<B>)` value also
+/// matches the blanket tuple pattern with `B' = Option<B>`), so each single-
+/// value and tuple shape is implemented directly instead.
+pub trait NetSelector {
+    fn resolve(self) -> (NetRef, Option<NetRef>);
+}
+
+impl NetSelector for &str {
+    fn resolve(self) -> (NetRef, Option<NetRef>) {
+        (self.into(), None)
+    }
+}
+
+impl NetSelector for String {
+    fn resolve(self) -> (NetRef, Option<NetRef>) {
+        (self.into(), None)
+    }
+}
+
+impl NetSelector for &String {
+    fn resolve(self) -> (NetRef, Option<NetRef>) {
+        (self.into(), None)
+    }
+}
+
+impl NetSelector for NetRef {
+    fn resolve(self) -> (NetRef, Option<NetRef>) {
+        (self, None)
+    }
+}
+
+impl NetSelector for &NetRef {
+    fn resolve(self) -> (NetRef, Option<NetRef>) {
+        (self.clone(), None)
+    }
+}
+
+impl<A: Into<NetRef>, B: Into<NetRef>> NetSelector for (A, B) {
+    fn resolve(self) -> (NetRef, Option<NetRef>) {
+        (self.0.into(), Some(self.1.into()))
+    }
+}
+
 /// `.tf` result (HOST-03): DC small-signal transfer characteristics from
 /// unit excitations on the system linearized at the operating point — a
 /// typed api wrapper over the solver's existing `.tf` driver (no new solver
@@ -308,7 +383,9 @@ impl OpResult {
     /// Node voltage of net `a` minus net `b` (ground-referenced when `b` is
     /// `None`). A single-ended digital `Bit`/`Logic` net reads its logic
     /// value (0/1; NaN for X/Z).
-    pub fn v(&self, a: &NetRef, b: Option<&NetRef>) -> Result<f64, Error> {
+    pub fn v(&self, sel: impl NetSelector) -> Result<f64, Error> {
+        let (a, b) = sel.resolve();
+        let (a, b) = (&a, b.as_ref());
         if b.is_none()
             && let Some(v) = self.digital.get(&a.name)
         {
@@ -332,7 +409,9 @@ impl OpResult {
     /// voltages. The two-net form names the unique two-terminal instance
     /// whose ports connect exactly to `(a, b)` and errors on any ambiguity
     /// (use the instance-port form instead).
-    pub fn i(&self, a: &NetRef, b: Option<&NetRef>) -> Result<f64, Error> {
+    pub fn i(&self, sel: impl NetSelector) -> Result<f64, Error> {
+        let (a, b) = sel.resolve();
+        let (a, b) = (&a, b.as_ref());
         let node_a = self.node_or_err(&a.name)?;
         let node_b = match b {
             Some(nb) => self.node_or_err(&nb.name)?,

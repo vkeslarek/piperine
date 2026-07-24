@@ -58,9 +58,9 @@ fn tline_matched_no_reflection() {
         .expect("matched tran solves");
     let b = NetRef { name: "b".into() };
 
-    let v_before = trace.v(&b, None).expect("v(b)").at(0.5e-9);
-    let v_after = trace.v(&b, None).expect("v(b)").at(2.0e-9);
-    let v_late = trace.v(&b, None).expect("v(b)").at(3.5e-9);
+    let v_before = trace.v(&b).expect("v(b)").at(0.5e-9);
+    let v_after = trace.v(&b).expect("v(b)").at(2.0e-9);
+    let v_late = trace.v(&b).expect("v(b)").at(3.5e-9);
 
     assert!(v_before.abs() < 0.02, "far end quiet before td: {v_before}");
     assert!((v_after - 0.5).abs() < 0.02, "far end at half-amplitude after td: {v_after}");
@@ -78,8 +78,8 @@ fn tline_open_termination_doubles() {
         .expect("open tran solves");
     let b = NetRef { name: "b".into() };
 
-    let v_before = trace.v(&b, None).expect("v(b)").at(0.5e-9);
-    let v_doubled = trace.v(&b, None).expect("v(b)").at(2.0e-9);
+    let v_before = trace.v(&b).expect("v(b)").at(0.5e-9);
+    let v_doubled = trace.v(&b).expect("v(b)").at(2.0e-9);
 
     assert!(v_before.abs() < 0.02, "far end quiet before td: {v_before}");
     // Incident 0.5 V + fully reflected 0.5 V = 1.0 V at the open end.

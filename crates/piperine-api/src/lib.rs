@@ -31,8 +31,9 @@ pub use piperine_solver::prelude::{
 };
 pub use piperine_solver::abi::NoiseContribution;
 pub use results::{
-    DistoResult, InstanceView, NetRef, OpResult, PssResult, PzResult, SParamResult, SensResult, TfResult,
+    DistoResult, InstanceView, NetRef, NetSelector, OpResult, PssResult, PzResult, SParamResult, SensResult,
+    TfResult,
 };
-pub use session::{Grid, Nested, Session, SimSession, SolverConfig, Sweep, SweepPoint};
+pub use session::{Grid, Nested, Scale, Session, SimSession, SolverConfig, Sweep, SweepPoint};
 pub use units::{Freq, Time};
-pub use waveform::{AcTrace, ComplexWaveform, NoiseTrace, Trace, Waveform};
+pub use waveform::{AcTrace, ComplexWaveform, CrossDirection, NoiseTrace, Trace, Waveform};

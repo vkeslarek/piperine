@@ -57,7 +57,7 @@ fn rc_step_response() -> piperine::Waveform {
         .tran(10.0 * tau, Some(tau / 50.0), 0.0, &SolverConfig::default(), Some(&ic), false, &[])
         .expect("tran solves");
     let out = NetRef { name: "out".into() };
-    trace.v(&out, None).expect("v(out)")
+    trace.v(&out).expect("v(out)")
 }
 
 /// HOST-14 AC1: `rise_time` on the RC step matches the analytic

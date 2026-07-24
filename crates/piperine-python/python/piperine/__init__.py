@@ -82,6 +82,8 @@ __all__ = [
     "NoiseTrace",
     # config bundles (mirror headers/prelude.phdl)
     "Scale",
+    "CrossDirection",
+    "Direction",
     "Solver",
     "OpConfig",
     "TranConfig",
@@ -211,6 +213,36 @@ class Scale(Enum):
     Oct = "Oct"
 
 
+class CrossDirection(Enum):
+    """Threshold-crossing search direction (HOST-23) for
+    :meth:`Waveform.cross`/:meth:`ComplexWaveform.mag`'s crossing helpers:
+    ``wf.cross(1.0, CrossDirection.Rising)``. Its ``.value`` is exactly the
+    string the native `.cross()` still accepts, so either spelling works.
+    """
+
+    Rising = "Rising"
+    Falling = "Falling"
+    Either = "Either"
+
+
+class Direction(Enum):
+    """Port/terminal signal direction (HOST-23): ``Direction(port.
+    direction)`` turns the native ``str`` reflection field
+    (``"in"``/``"out"``/``"inout"``) into a real enum for symbolic
+    comparison (``d is Direction.In`` instead of comparing strings).
+
+    ``Port.direction``/``Terminal.direction`` themselves stay plain ``str``
+    (unchanged, HOST-23 SPEC_DEVIATION — see the ``Direction`` note near
+    the class registrations below) since they are `#[pyclass]` fields
+    reflected straight off the POM/ABI with no Python-level wrapper to
+    intercept; this enum is the ergonomic typed handle layered on top.
+    """
+
+    In = "in"
+    Out = "out"
+    Inout = "inout"
+
+
 class _ConfigMixin:
     """Shared ``.with_(**overrides)`` immutable-copy helper (HOST-20) for the
     config-bundle dataclasses below: ``cfg.with_(reltol=1e-6)`` returns a new
@@ -305,6 +337,16 @@ class NoiseConfig(_ConfigMixin):
 # .direction / .ty / etc. on every reflected child. These are the runtime
 # types — at runtime, ``module.ports()[0]`` IS a ``_piperine._Port``; the
 # alias makes the type name match the public vocabulary.
+#
+# SPEC_DEVIATION (HOST-23): `.direction` on `Port`/`Terminal` stays a plain
+# `str` (`"in"`/`"out"`/`"inout"`) rather than becoming the `Direction` enum
+# directly — these are native `#[pyclass]` fields set from Rust, with no
+# Python-level wrapper class here to intercept the getter (unlike
+# `Waveform.cross`, which is a plain attribute-assignable method on an
+# already-Python-visible class). Wrap with `Direction(port.direction)` for
+# the typed enum. Reason: rewriting `_Port`/`_Terminal` as native-backed
+# Python wrapper classes to intercept every reflection getter is a much
+# larger, separable change than HOST-23's scope; flagged for the Verifier.
 
 Port = _piperine._Port
 Net = _piperine._Net
@@ -1233,12 +1275,45 @@ def _complex_waveform_plot_method(self, **kwargs):
     return bode(self, **kwargs)
 
 
-# Bind `.plot()` onto the native pyclasses themselves (not just the facade
-# aliases above) — the native `_piperine._Waveform`/`_ComplexWaveform` types
-# PyO3 generates are ordinary heap types, so a plain class-attribute
-# assignment works exactly like it would on a pure-Python class; this is the
-# only way to add a method without threading a matplotlib dependency into
-# the Rust `piperine-python` crate itself (kept out per the spec's
-# "matplotlib as a hard dependency" Out-of-Scope entry).
+# Save the native `.cross()` (still string-keyed) before overwriting it
+# below (HOST-23) — the same class-attribute-assignment technique `.plot()`
+# uses, so `Waveform.cross` accepts the typed `CrossDirection` enum while
+# still accepting a bare string for backward compatibility with any
+# existing caller.
+#
+# `Waveform` is the native `_piperine._Waveform` *class object itself*
+# (shared/cached across every embedded-interpreter re-materialization of
+# this facade module — `piperine run`/`run_script` re-executes this file's
+# top level on every call in the same process, e.g. once per example in
+# `run_examples.rs`). Capturing `Waveform.cross` unconditionally on every
+# re-execution would, on the *second* execution, capture the *already-
+# wrapped* `_waveform_cross_enum` from the first — infinite recursion the
+# first time a wrapped `.cross()` calls what it thinks is "the native
+# method". The `hasattr` guard makes the capture idempotent: only the
+# first execution in a process captures the true native method.
+if not hasattr(Waveform, "_host_cross_native"):
+    Waveform._host_cross_native = Waveform.cross
+
+
+def _waveform_cross_enum(self, level: float, dir: CrossDirection | str = CrossDirection.Either) -> float | None:
+    """``wf.cross(level, dir)`` (HOST-23): `dir` accepts a
+    :class:`CrossDirection` enum member (or the legacy string spelling) —
+    the first axis value where the waveform crosses `level` in that
+    direction, or ``None``.
+    """
+    value = dir.value if isinstance(dir, CrossDirection) else dir
+    return Waveform._host_cross_native(self, level, value)
+
+
+# Bind `.plot()`/`.cross()` onto the native pyclasses themselves (not just
+# the facade aliases above) — the native `_piperine._Waveform`/
+# `_ComplexWaveform` types PyO3 generates are ordinary heap types, so a
+# plain class-attribute assignment works exactly like it would on a
+# pure-Python class; this is the only way to add `.plot()` without
+# threading a matplotlib dependency into the Rust `piperine-python` crate
+# itself (kept out per the spec's "matplotlib as a hard dependency"
+# Out-of-Scope entry), and the same technique layers the typed
+# `CrossDirection` enum over `.cross()` without a native signature change.
+Waveform.cross = _waveform_cross_enum
 Waveform.plot = _waveform_plot_method
 ComplexWaveform.plot = _complex_waveform_plot_method

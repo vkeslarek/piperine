@@ -17,7 +17,7 @@ use piperine_solver::prelude::{
 };
 
 use crate::error::Error;
-use crate::results::{NetLookup, NetRef};
+use crate::results::{NetLookup, NetRef, NetSelector};
 
 /// A series of `(axis, value)` samples — one measured quantity over an
 /// analysis axis. Points are assumed sorted by axis (true for every analysis
@@ -128,23 +128,49 @@ impl Waveform {
     }
 
     /// First axis value where the waveform crosses `level`, in direction
-    /// `dir` (`"Rising"`/`"Falling"`/`"Either"`). `None` if it never does.
-    pub fn cross(&self, level: f64, dir: &str) -> Option<f64> {
+    /// `dir`. `None` if it never does.
+    pub fn cross(&self, level: f64, dir: CrossDirection) -> Option<f64> {
         for pair in self.points.windows(2) {
             let (t0, v0) = pair[0];
             let (t1, v1) = pair[1];
             let rising = v0 < level && v1 >= level;
             let falling = v0 > level && v1 <= level;
             let hit = match dir {
-                "Rising" => rising,
-                "Falling" => falling,
-                _ => rising || falling,
+                CrossDirection::Rising => rising,
+                CrossDirection::Falling => falling,
+                CrossDirection::Either => rising || falling,
             };
             if hit && v1 != v0 {
                 return Some(t0 + (t1 - t0) * (level - v0) / (v1 - v0));
             }
         }
         None
+    }
+}
+
+/// The threshold-crossing search direction `Waveform::cross` (HOST-23)
+/// accepts — a real enum, not a free-form `&str`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CrossDirection {
+    Rising,
+    Falling,
+    #[default]
+    Either,
+}
+
+impl From<&str> for CrossDirection {
+    /// Accepts the legacy string spellings (`"Rising"`/`"Falling"`/
+    /// `"Either"`) for callers migrating from the pre-HOST-23 `&str` API;
+    /// anything else panics (fail loud — `From` cannot return `Result`).
+    fn from(s: &str) -> Self {
+        match s {
+            "Rising" => CrossDirection::Rising,
+            "Falling" => CrossDirection::Falling,
+            "Either" => CrossDirection::Either,
+            other => panic!(
+                "invalid CrossDirection `{other}` (expected \"Rising\"/\"Falling\"/\"Either\")"
+            ),
+        }
     }
 }
 
@@ -189,17 +215,21 @@ impl Waveform {
         let rising = swing > 0.0;
         let low_level = initial + 0.1 * swing;
         let high_level = initial + 0.9 * swing;
-        let dir = if rising { "Rising" } else { "Falling" };
+        let (dir, dir_str) = if rising {
+            (CrossDirection::Rising, "Rising")
+        } else {
+            (CrossDirection::Falling, "Falling")
+        };
         let t_low = self.cross(low_level, dir).ok_or_else(|| {
             Error::Measurement(format!(
                 "step measurement: signal never crosses its 10% level ({low_level:.6e}) \
-                 in the {dir} direction"
+                 in the {dir_str} direction"
             ))
         })?;
         let t_high = self.cross(high_level, dir).ok_or_else(|| {
             Error::Measurement(format!(
                 "step measurement: signal never crosses its 90% level ({high_level:.6e}) \
-                 in the {dir} direction"
+                 in the {dir_str} direction"
             ))
         })?;
         if t_high < t_low {
@@ -299,12 +329,12 @@ impl Waveform {
     /// direction) and `other` crossing `level`. Positive when `other` lags
     /// this signal. Fails loud if either waveform never crosses `level`.
     pub fn delay(&self, other: &Waveform, level: f64) -> Result<f64, Error> {
-        let t_self = self.cross(level, "Either").ok_or_else(|| {
+        let t_self = self.cross(level, CrossDirection::Either).ok_or_else(|| {
             Error::Measurement(format!(
                 "delay: this waveform never crosses level {level:.6e}"
             ))
         })?;
-        let t_other = other.cross(level, "Either").ok_or_else(|| {
+        let t_other = other.cross(level, CrossDirection::Either).ok_or_else(|| {
             Error::Measurement(format!(
                 "delay: `other` waveform never crosses level {level:.6e}"
             ))
@@ -517,7 +547,9 @@ impl Trace<Waveform> {
     /// a DC sweep). A digital net read returns its logic value (0/1, NaN for
     /// X/Z) on a transient trace; a DC sweep reads through the per-point
     /// digital snapshot the same way.
-    pub fn v(&self, a: &NetRef, b: Option<&NetRef>) -> Result<Waveform, Error> {
+    pub fn v(&self, sel: impl NetSelector) -> Result<Waveform, Error> {
+        let (a, b) = sel.resolve();
+        let (a, b) = (&a, b.as_ref());
         match &self.backend {
             TraceBackend::Transient { result, info } => Self::v_transient(result, info, a, b),
             TraceBackend::DcSweep { axis, points, digital, info, .. } => {
@@ -612,7 +644,9 @@ impl Trace<Waveform> {
     /// branch vs kernel-recomputed resistive/reactive current). The DC-sweep
     /// variant reads the same way per point, without a reactive (`dQ/dt`)
     /// term — every point is its own independent operating point.
-    pub fn i(&self, a: &NetRef, b: Option<&NetRef>) -> Result<Waveform, Error> {
+    pub fn i(&self, sel: impl NetSelector) -> Result<Waveform, Error> {
+        let (a, b) = sel.resolve();
+        let (a, b) = (&a, b.as_ref());
         match &self.backend {
             TraceBackend::Transient { result, info } => Self::i_transient(result, info, a, b),
             TraceBackend::DcSweep { axis, points, info, .. } => Self::i_dc_sweep(axis, points, info, a, b),
@@ -864,7 +898,7 @@ impl ComplexWaveform {
             )));
         }
         let target = ref_mag / std::f64::consts::SQRT_2;
-        mag.cross(target, "Falling").ok_or_else(|| {
+        mag.cross(target, CrossDirection::Falling).ok_or_else(|| {
             Error::Measurement(format!(
                 "bandwidth_3db: |H(f)| never falls to -3dB of the reference magnitude ({target:.6e})"
             ))
@@ -875,7 +909,7 @@ impl ComplexWaveform {
     /// crosses `1` (`0 dB`). Fails loud when the magnitude never crosses
     /// unity.
     pub fn unity_gain_freq(&self) -> Result<f64, Error> {
-        self.mag().cross(1.0, "Falling").ok_or_else(|| {
+        self.mag().cross(1.0, CrossDirection::Falling).ok_or_else(|| {
             Error::Measurement("unity_gain_freq: |H(f)| never crosses 1 (0 dB)".into())
         })
     }
@@ -901,7 +935,7 @@ impl ComplexWaveform {
     /// asymptotic to `-90°`) or the magnitude there is non-positive.
     pub fn gain_margin(&self) -> Result<f64, Error> {
         let unwrapped = self.unwrapped_phase_deg();
-        let f180 = unwrapped.cross(-180.0, "Falling").ok_or_else(|| {
+        let f180 = unwrapped.cross(-180.0, CrossDirection::Falling).ok_or_else(|| {
             Error::Measurement("gain_margin: (unwrapped) phase never crosses -180°".into())
         })?;
         let mag_at_180 = self.mag().at(f180);
@@ -957,10 +991,11 @@ impl Trace<ComplexWaveform> {
 
     /// Net voltage `a` minus `b` (ground-referenced when `b` is `None`) over
     /// the AC frequency sweep.
-    pub fn v(&self, a: &NetRef, b: Option<&NetRef>) -> Result<ComplexWaveform, Error> {
+    pub fn v(&self, sel: impl NetSelector) -> Result<ComplexWaveform, Error> {
+        let (a, b) = sel.resolve();
         let (result, info) = self.ac_parts();
         let node_a = node_or_err(info, &a.name)?;
-        let node_b = match b {
+        let node_b = match &b {
             Some(nb) => Some(node_or_err(info, &nb.name)?),
             None => None,
         };

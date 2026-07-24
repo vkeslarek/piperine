@@ -53,11 +53,11 @@ fn session_ac_accepts_f64_and_si_string_identically() {
 
     let mut session_f64 = Session::compile(&design, "Top").expect("session compiles");
     let ac_f64 = session_f64.ac(1.0, 1e6, 5, true, &SolverConfig::default()).expect("ac(f64) solves");
-    let cw_f64 = ac_f64.v(&out, None).expect("v(out)");
+    let cw_f64 = ac_f64.v(&out).expect("v(out)");
 
     let mut session_str = Session::compile(&design, "Top").expect("session compiles");
     let ac_str = session_str.ac("1Hz", "1M", 5, true, &SolverConfig::default()).expect("ac(&str) solves");
-    let cw_str = ac_str.v(&out, None).expect("v(out)");
+    let cw_str = ac_str.v(&out).expect("v(out)");
 
     let mag_f64 = cw_f64.mag();
     let mag_str = cw_str.mag();

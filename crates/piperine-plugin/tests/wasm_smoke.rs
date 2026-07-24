@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use piperine::{NetRef, SimSession, SolverConfig};
+use piperine::{SimSession, SolverConfig};
 use piperine_lang::SourceMap;
 use piperine_plugin::{PluginHost, TrustMode};
 
@@ -95,7 +95,7 @@ fn run_top_op(host: Rc<PluginHost>, src: &str) -> Result<f64, String> {
     let op = session
         .run_op(&SolverConfig::default(), None)
         .map_err(|e| e.to_string())?;
-    op.v(&NetRef { name: "out".to_string() }, None).map_err(|e| e.to_string())
+    op.v("out".to_string()).map_err(|e| e.to_string())
 }
 
 #[test]

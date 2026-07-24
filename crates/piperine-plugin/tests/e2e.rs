@@ -63,11 +63,11 @@ const ANALOG: &str = "
 #[test]
 fn plugin_resistor_solves_dc() {
     let op = run_op(ANALOG, "Top").expect("op solves");
-    let vin = op.v(&net("vin"), Some(&net("gnd"))).expect("v(vin)");
+    let vin = op.v((net("vin"), net("gnd"))).expect("v(vin)");
     assert!((4.999..5.001).contains(&vin), "vin must sit at 5 V, got {vin}");
     // 5 V across the plugin's default 100R: |I| through the source branch
     // must be 50 mA.
-    let i = op.i(&net("vin"), Some(&net("gnd"))).expect("i(vin,gnd)");
+    let i = op.i((net("vin"), net("gnd"))).expect("i(vin,gnd)");
     assert!((0.0024..0.0026).contains(&(i * i)), "|i| ~ 50 mA, got {i}");
 }
 
@@ -79,7 +79,7 @@ fn plugin_resistor_honors_param_override() {
         "r1     : PluginResistor (.p = vin, .n = gnd) { .r = 50.0 };",
     );
     let op = run_op(&src, "Top").expect("op solves");
-    let i = op.i(&net("vin"), Some(&net("gnd"))).expect("i(vin,gnd)");
+    let i = op.i((net("vin"), net("gnd"))).expect("i(vin,gnd)");
     assert!((0.0099..0.0101).contains(&(i * i)), "|i| ~ 100 mA, got {i}");
 }
 
@@ -106,8 +106,8 @@ const DIGITAL: &str = "
 #[test]
 fn plugin_inverter_runs_through_scheduler() {
     let op = run_op(DIGITAL, "DTop").expect("op solves");
-    assert_eq!(op.v(&net("a"), None).expect("v(a)"), 1.0, "driver output high");
-    assert_eq!(op.v(&net("y"), None).expect("v(y)"), 0.0, "plugin inverter output low");
+    assert_eq!(op.v(net("a")).expect("v(a)"), 1.0, "driver output high");
+    assert_eq!(op.v(net("y")).expect("v(y)"), 0.0, "plugin inverter output low");
 }
 
 #[test]

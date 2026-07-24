@@ -255,11 +255,19 @@ impl _InstanceView {
         let (net_a, net_b) = self.resolve_pair(port_a, port_b)?;
         Python::with_gil(|py| match &self.inner {
             InstanceResult::Op(op) => {
-                let f = op.v(&net_a, net_b.as_ref()).map_err(readout_err)?;
+                let f = match net_b {
+                    Some(b) => op.v((net_a, b)),
+                    None => op.v(net_a),
+                }
+                .map_err(readout_err)?;
                 Ok(f.into_pyobject(py)?.into_any().unbind())
             }
             InstanceResult::Trace(trace) => {
-                let w = trace.v(&net_a, net_b.as_ref()).map_err(readout_err)?;
+                let w = match net_b {
+                    Some(b) => trace.v((net_a, b)),
+                    None => trace.v(net_a),
+                }
+                .map_err(readout_err)?;
                 Ok(Py::new(py, _Waveform::new(w))?.into_any())
             }
         })
@@ -275,11 +283,19 @@ impl _InstanceView {
         let (net_a, net_b) = self.resolve_pair(port_a, port_b)?;
         Python::with_gil(|py| match &self.inner {
             InstanceResult::Op(op) => {
-                let f = op.i(&net_a, net_b.as_ref()).map_err(readout_err)?;
+                let f = match net_b {
+                    Some(b) => op.i((net_a, b)),
+                    None => op.i(net_a),
+                }
+                .map_err(readout_err)?;
                 Ok(f.into_pyobject(py)?.into_any().unbind())
             }
             InstanceResult::Trace(trace) => {
-                let w = trace.i(&net_a, net_b.as_ref()).map_err(readout_err)?;
+                let w = match net_b {
+                    Some(b) => trace.i((net_a, b)),
+                    None => trace.i(net_a),
+                }
+                .map_err(readout_err)?;
                 Ok(Py::new(py, _Waveform::new(w))?.into_any())
             }
         })

@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use piperine::{NetRef, SimSession, SolverConfig};
+use piperine::{SimSession, SolverConfig};
 use piperine_lang::SourceMap;
 use piperine_plugin::{PluginHost, TrustMode};
 
@@ -71,7 +71,7 @@ fn run_top_op(host: Rc<PluginHost>) -> f64 {
     session.set_device_provider(host.clone());
     session.set_hooks(host);
     let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
-    op.v(&NetRef { name: "out".to_string() }, None).expect("v(out)")
+    op.v("out".to_string()).expect("v(out)")
 }
 
 #[test]

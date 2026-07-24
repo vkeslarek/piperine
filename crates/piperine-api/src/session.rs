@@ -15,6 +15,34 @@ use crate::error::Error;
 use crate::results::{NetLookup, OpResult};
 use crate::waveform::{AcTrace, NoiseTrace, Trace, Waveform};
 
+/// Frequency-sweep geometry (HOST-23): `Lin` steps `points` values evenly
+/// over `[fstart, fstop]`; `Dec`/`Oct` step logarithmically (decade/octave
+/// per `points`) — the same three-way choice the prelude's `enum Scale`
+/// (and the Python facade's `Scale`) already name. `impl Into<bool>` lets an
+/// analysis's `logarithmic` argument accept either a bare `bool` (unchanged
+/// for every existing caller — `bool: Into<bool>` via the identity `From`)
+/// or a `Scale` value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scale {
+    Lin,
+    Dec,
+    Oct,
+}
+
+impl Scale {
+    /// `true` for `Dec`/`Oct` (a logarithmic sweep), `false` for `Lin` —
+    /// the boolean every sweep-options struct actually stamps.
+    pub fn is_logarithmic(&self) -> bool {
+        !matches!(self, Scale::Lin)
+    }
+}
+
+impl From<Scale> for bool {
+    fn from(s: Scale) -> bool {
+        s.is_logarithmic()
+    }
+}
+
 /// Analysis configuration (tolerances + convergence tunables) read before an
 /// analysis runs.
 #[derive(Debug, Clone)]
@@ -781,14 +809,14 @@ impl Session {
         fstart: impl Into<crate::units::Freq>,
         fstop: impl Into<crate::units::Freq>,
         points: usize,
-        logarithmic: bool,
+        logarithmic: impl Into<bool>,
         config: &SolverConfig,
     ) -> Result<AcTrace, Error> {
         let opts = piperine_solver::prelude::AcSweepAnalysisOptions {
             start_frequency: fstart.into().0,
             stop_frequency: fstop.into().0,
             steps: points,
-            logarithmic,
+            logarithmic: logarithmic.into(),
         };
         let mut ac = self.circuit.ac(config.to_context())?;
         ac.policy = config.to_policy();

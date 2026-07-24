@@ -51,7 +51,7 @@ fn dc_sweep_returns_a_trace_over_the_swept_axis_matching_fresh_builds() {
         assert!((axis.at(v) - v).abs() < 1e-9 || axis.points()[i].0 == v, "axis must carry the swept value");
     }
 
-    let w = trace.v(&mid, None).expect("v(mid) over the sweep");
+    let w = trace.v(&mid).expect("v(mid) over the sweep");
     assert_eq!(w.len(), values.len());
     for (i, &v_dc) in values.iter().enumerate() {
         let live = w.points()[i].1;
@@ -60,7 +60,7 @@ fn dc_sweep_returns_a_trace_over_the_swept_axis_matching_fresh_builds() {
         let fresh = fresh_session
             .run_op(&SolverConfig::default(), None)
             .expect("fresh op")
-            .v(&mid, None)
+            .v(&mid)
             .expect("v(mid)");
         assert!((live - fresh).abs() < 1e-9, "v1.dc = {v_dc}: swept v(mid)={live} vs fresh build {fresh}");
     }

@@ -73,11 +73,11 @@ fn transient_is_real_and_ac_is_complex_on_the_same_container() {
     let out = NetRef { name: "out".into() };
 
     let tran = s.run_tran(1e-3, Some(1e-5), 0.0, &SolverConfig::default(), None, false, &[]).expect("tran solves");
-    let w = tran.v(&out, None).expect("v(out) real");
+    let w = tran.v(&out).expect("v(out) real");
     assert!(w.len() > 1);
 
     let ac = s.run_ac(1.0, 1e6, 5, true, &SolverConfig::default()).expect("ac solves");
-    let cw = ac.v(&out, None).expect("v(out) complex");
+    let cw = ac.v(&out).expect("v(out) complex");
     assert!(cw.len() > 1);
     // A genuinely complex sample away from DC (nonzero imaginary part
     // somewhere in the sweep) — proves this is not just a real value

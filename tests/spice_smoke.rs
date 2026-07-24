@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use piperine::{NetRef, OpResult, SimSession, SolverConfig};
+use piperine::{OpResult, SimSession, SolverConfig};
 use piperine_lang::{Design, SourceMap};
 
 /// A source map rooted at the real stdlib headers, mirroring what
@@ -36,7 +36,7 @@ fn op(design: &Design, module: &str) -> OpResult {
 
 /// Ground-referenced node voltage by net name.
 fn v(op: &OpResult, net: &str) -> f64 {
-    op.v(&NetRef { name: net.to_string() }, None)
+    op.v(net.to_string())
         .unwrap_or_else(|e| panic!("v({net}): {e}"))
 }
 
@@ -91,7 +91,7 @@ fn spice_rc_lowpass_corner() {
         .run_ac(1.0e3, 1.0e6, 40, true, &SolverConfig::default())
         .unwrap_or_else(|e| panic!("RcLowpass: ac failed: {e}"));
     let mag = trace
-        .v(&NetRef { name: "out".to_string() }, None)
+        .v("out".to_string())
         .unwrap_or_else(|e| panic!("RcLowpass: v(out): {e}"))
         .mag();
     let at_1k = mag.at(1.0e3);

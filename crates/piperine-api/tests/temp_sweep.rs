@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use piperine_api::{NetRef, SimSession, SolverConfig};
+use piperine_api::{SimSession, SolverConfig};
 use piperine_lang::SourceMap;
 
 /// 5 V through 1 kΩ into a default-model silicon diode (IS = 1e-14): the
@@ -49,7 +49,7 @@ fn vf_at(t_kelvin: f64) -> f64 {
     session
         .run_op(&config, None)
         .expect("op solves")
-        .v(&NetRef { name: "vd".into() }, None)
+        .v("vd")
         .expect("v(vd)")
 }
 
