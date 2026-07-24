@@ -343,8 +343,9 @@ impl SimSession {
         let result = dc.solve()?;
         drop(dc);
         let digital = Self::snapshot_digital(&info, &circuit);
+        let opvars = Self::snapshot_opvars(&circuit);
         self.fire_after_solve("op", &node_voltages(&info, &result))?;
-        Ok(OpResult::new(result, digital, Rc::new(info)))
+        Ok(OpResult::new(result, digital, opvars, Rc::new(info)))
     }
 
     /// Compile-once DC sweep (MD-18): elaborate/JIT the circuit **once**,
@@ -387,8 +388,9 @@ impl SimSession {
             let result = dc.solve()?;
             drop(dc);
             let digital = Self::snapshot_digital(&info, &circuit);
+            let opvars = Self::snapshot_opvars(&circuit);
             self.fire_after_solve("op", &node_voltages(&info, &result))?;
-            results.push(OpResult::new(result, digital, Rc::new(info.clone())));
+            results.push(OpResult::new(result, digital, opvars, Rc::new(info.clone())));
         }
         Ok(results)
     }
@@ -412,6 +414,21 @@ impl SimSession {
                 };
                 (name.clone(), v)
             })
+            .collect()
+    }
+
+    /// Every device's `read_opvars()` snapshot (HOST-07), keyed by instance
+    /// label — the eager-at-solve-time capture `OpResult::instance` reads
+    /// back through, since the compiled circuit does not outlive the
+    /// analysis call. Public: hosts that drive `CircuitInstance` directly
+    /// (the Python live session) build the same snapshot.
+    pub fn snapshot_opvars(
+        circuit: &piperine_solver::prelude::CircuitInstance,
+    ) -> HashMap<String, Vec<(String, f64)>> {
+        circuit
+            .all_devices()
+            .iter()
+            .map(|d| (d.name().to_string(), d.read_opvars()))
             .collect()
     }
 
@@ -634,7 +651,8 @@ impl Session {
         let result = dc.solve()?;
         drop(dc);
         let digital = SimSession::snapshot_digital(&self.info, &self.circuit);
-        Ok(OpResult::new(result, digital, Rc::new(self.info.clone())))
+        let opvars = SimSession::snapshot_opvars(&self.circuit);
+        Ok(OpResult::new(result, digital, opvars, Rc::new(self.info.clone())))
     }
 
     /// Run a transient analysis on the held circuit (HOST-02). Pending

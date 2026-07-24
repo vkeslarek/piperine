@@ -128,6 +128,44 @@ impl std::fmt::Debug for PssResult {
     }
 }
 
+/// A per-instance introspection view (HOST-07): one device's computed
+/// operating-point variables, addressed by instance label —
+/// `op.instance("x1")?.opvar("gm")` / `.opvars()`. Borrows the snapshot
+/// [`OpResult::instance`] took eagerly at solve time (the compiled circuit
+/// itself does not outlive the analysis call, so a snapshot of
+/// `Introspect::read_opvars` — not a live device borrow — is what a host
+/// reads back; ABI-30).
+#[derive(Debug)]
+pub struct InstanceView<'a> {
+    label: &'a str,
+    opvars: &'a [(String, f64)],
+}
+
+impl InstanceView<'_> {
+    /// The instance label this view projects.
+    pub fn label(&self) -> &str {
+        self.label
+    }
+
+    /// The device's computed operating-point variable `name` (ABI-30). Fails
+    /// loud — never `None`/`NaN` — when the device declares no such opvar,
+    /// naming the instance and listing the opvars it does have.
+    pub fn opvar(&self, name: &str) -> Result<f64, Error> {
+        self.opvars.iter().find(|(n, _)| n == name).map(|(_, v)| *v).ok_or_else(|| {
+            Error::Measurement(format!(
+                "instance `{}` has no opvar `{name}`; available: {}",
+                self.label,
+                self.opvars.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(", ")
+            ))
+        })
+    }
+
+    /// Every opvar this device declared, as `(name, value)` pairs.
+    pub fn opvars(&self) -> Vec<(String, f64)> {
+        self.opvars.to_vec()
+    }
+}
+
 /// The immutable snapshot returned by an operating-point analysis: DC node
 /// potentials and branch currents, read by name through [`CircuitBuildInfo`].
 pub struct OpResult {
@@ -135,6 +173,12 @@ pub struct OpResult {
     /// Digital net values at the solved point (0/1, NaN for X/Z) — read by
     /// `.v(bit_net)` so pure-digital designs need no analog readback stage.
     digital: HashMap<String, f64>,
+    /// Every device's `read_opvars()` snapshot, keyed by instance label
+    /// (HOST-07), taken while the circuit was still live inside the
+    /// analysis call (mirrors `digital`'s eager-snapshot shape — the
+    /// `CircuitInstance` does not outlive the call that produced this
+    /// result).
+    opvars: HashMap<String, Vec<(String, f64)>>,
     info: Rc<CircuitBuildInfo>,
 }
 
@@ -145,13 +189,29 @@ impl std::fmt::Debug for OpResult {
 }
 
 impl OpResult {
-    pub fn new(dc: DcAnalysisResult, digital: HashMap<String, f64>, info: Rc<CircuitBuildInfo>) -> Self {
-        Self { dc, digital, info }
+    pub fn new(
+        dc: DcAnalysisResult,
+        digital: HashMap<String, f64>,
+        opvars: HashMap<String, Vec<(String, f64)>>,
+        info: Rc<CircuitBuildInfo>,
+    ) -> Self {
+        Self { dc, digital, opvars, info }
     }
 
     /// Per-analysis convergence + performance statistics.
     pub fn stats(&self) -> &piperine_solver::abi::SolverStats {
         &self.dc.stats
+    }
+
+    /// The introspection view over instance `label` (HOST-07):
+    /// `op.instance("x1")?.opvar("gm")`. Fails loud when no device carries
+    /// that label.
+    pub fn instance(&self, label: &str) -> Result<InstanceView<'_>, Error> {
+        let (name, vars) = self
+            .opvars
+            .get_key_value(label)
+            .ok_or_else(|| Error::Measurement(format!("no element labeled `{label}`")))?;
+        Ok(InstanceView { label: name.as_str(), opvars: vars.as_slice() })
     }
 
     /// Resolve a host-visible net name to a solver node.

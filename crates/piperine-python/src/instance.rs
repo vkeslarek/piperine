@@ -288,6 +288,32 @@ impl _InstanceView {
     fn __getitem__(&self, port: &str) -> PyResult<PyObject> {
         self.v(port, None)
     }
+
+    /// The device's computed operating-point variable `name` (HOST-07):
+    /// reads the `read_opvars` snapshot taken when the parent `.op()`
+    /// solved. Fails loud — never `None`/`NaN` — on an unknown opvar or on
+    /// a trace view (recorded observables use `trace.opvar(path)` instead,
+    /// HOST-08).
+    fn opvar(&self, name: &str) -> PyResult<f64> {
+        match &self.inner {
+            InstanceResult::Op(op) => {
+                op.instance(&self.label).and_then(|v| v.opvar(name)).map_err(readout_err)
+            }
+            InstanceResult::Trace(_) => Err(PyRuntimeError::new_err(
+                "opvar() is not available on a trace view; use trace.opvar(path) instead",
+            )),
+        }
+    }
+
+    /// Every opvar this device declared, as `(name, value)` pairs (HOST-07).
+    fn opvars(&self) -> PyResult<Vec<(String, f64)>> {
+        match &self.inner {
+            InstanceResult::Op(op) => op.instance(&self.label).map(|v| v.opvars()).map_err(readout_err),
+            InstanceResult::Trace(_) => Err(PyRuntimeError::new_err(
+                "opvars() is not available on a trace view; use trace.opvar(path) instead",
+            )),
+        }
+    }
 }
 
 /// Construct a host [`piperine_api::NetRef`] from a net name — the typed
