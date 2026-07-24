@@ -6,7 +6,7 @@ use crate::analyses::noise::NoiseAnalysisOptions;
 use crate::analyses::tf::TransferFunctionAnalysisOptions;
 use crate::analyses::transient::TransientAnalysisOptions;
 use crate::analog::Netlist;
-use crate::core::element::{Element, ElementCapabilities};
+use crate::core::element::{Element, ElementCapabilities, Introspect};
 use crate::digital::{DigitalState, DigitalTopology};
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::analyses::Context;
@@ -95,6 +95,21 @@ impl CircuitInstance {
 
     pub fn all_devices(&self) -> &[Box<dyn Element>] { &self.devices }
     pub fn all_devices_mut(&mut self) -> &mut [Box<dyn Element>] { &mut self.devices }
+
+    /// Reach one device's [`Introspect`] surface by its source-level label
+    /// (host-library HOST-07..12 enabling seam). `None` when no element
+    /// carries that label — every device is nameable via [`Element::name`],
+    /// so this is the same addressing [`set_element_param`](Self::set_element_param)
+    /// uses, just read-only and returning the whole introspection surface
+    /// (opvars, params, terminals, model descriptor, observables) instead of
+    /// one parameter. No solver-math change — a pure trait-object upcast
+    /// over the already-shipped `Element: Introspect` supertrait.
+    pub fn device_introspect(&self, label: &str) -> Option<&dyn Introspect> {
+        self.devices
+            .iter()
+            .find(|d| d.name() == label)
+            .map(|d| d.as_ref() as &dyn Introspect)
+    }
 
     // ── Analysis entry ───────────────────────────────────────────────────────
     //
