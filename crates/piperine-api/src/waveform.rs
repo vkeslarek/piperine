@@ -148,6 +148,171 @@ impl Waveform {
     }
 }
 
+// ─── Real Waveform measurements (HOST-14) ──────────────────────────────────
+
+/// Description of the step transition captured by a real [`Waveform`] — the
+/// shared analysis backing every step measurement (`slew_rate`/`rise_time`/
+/// `fall_time`/`overshoot`/`settling_time`). Private: the measurement methods
+/// below are the public surface; this struct is the cached intermediate.
+struct StepAnalysis {
+    initial: f64,
+    settled: f64,
+    low_level: f64,
+    high_level: f64,
+    rising: bool,
+    t_low: f64,
+    t_high: f64,
+}
+
+impl Waveform {
+    /// Analyze the step transition recorded in this waveform (first sample →
+    /// last sample). Establishes the 10%/90% thresholds, the step direction,
+    /// and the threshold-crossing times shared by every step measurement.
+    /// Fails loud when the signal is flat (initial == settled) or the
+    /// 10%/90% level is never crossed in the step direction.
+    fn step_analysis(&self) -> Result<StepAnalysis, Error> {
+        let points = self.points();
+        if points.len() < 2 {
+            return Err(Error::Measurement(format!(
+                "step measurement requires at least 2 samples, got {}",
+                points.len()
+            )));
+        }
+        let initial = points[0].1;
+        let settled = points[points.len() - 1].1;
+        let swing = settled - initial;
+        if swing.abs() <= f64::EPSILON {
+            return Err(Error::Measurement(format!(
+                "step measurement requires a non-flat signal: initial == settled == {initial}"
+            )));
+        }
+        let rising = swing > 0.0;
+        let low_level = initial + 0.1 * swing;
+        let high_level = initial + 0.9 * swing;
+        let dir = if rising { "Rising" } else { "Falling" };
+        let t_low = self.cross(low_level, dir).ok_or_else(|| {
+            Error::Measurement(format!(
+                "step measurement: signal never crosses its 10% level ({low_level:.6e}) \
+                 in the {dir} direction"
+            ))
+        })?;
+        let t_high = self.cross(high_level, dir).ok_or_else(|| {
+            Error::Measurement(format!(
+                "step measurement: signal never crosses its 90% level ({high_level:.6e}) \
+                 in the {dir} direction"
+            ))
+        })?;
+        if t_high < t_low {
+            return Err(Error::Measurement(format!(
+                "step measurement: 90% crossing (t={t_high:.6e}) precedes 10% crossing \
+                 (t={t_low:.6e}) — not a monotonic step"
+            )));
+        }
+        Ok(StepAnalysis { initial, settled, low_level, high_level, rising, t_low, t_high })
+    }
+
+    /// Average slew rate between the 10% and 90% thresholds of the step
+    /// (V/s, HOST-14). Sign-preserving: positive for a rising step, negative
+    /// for a falling step. Fails loud on a flat signal or when the signal
+    /// never crosses both thresholds in the step direction.
+    pub fn slew_rate(&self) -> Result<f64, Error> {
+        let s = self.step_analysis()?;
+        Ok((s.high_level - s.low_level) / (s.t_high - s.t_low))
+    }
+
+    /// 10%→90% rise time of a rising step (seconds, HOST-14). A falling step
+    /// fails loud — use [`fall_time`](Self::fall_time). Fails loud on a flat
+    /// signal.
+    pub fn rise_time(&self) -> Result<f64, Error> {
+        let s = self.step_analysis()?;
+        if !s.rising {
+            return Err(Error::Measurement(
+                "rise_time: this signal falls (initial > settled); use fall_time instead".into(),
+            ));
+        }
+        Ok(s.t_high - s.t_low)
+    }
+
+    /// 90%→10% fall time of a falling step (seconds, HOST-14). A rising step
+    /// fails loud — use [`rise_time`](Self::rise_time). Fails loud on a flat
+    /// signal.
+    pub fn fall_time(&self) -> Result<f64, Error> {
+        let s = self.step_analysis()?;
+        if s.rising {
+            return Err(Error::Measurement(
+                "fall_time: this signal rises (initial < settled); use rise_time instead".into(),
+            ));
+        }
+        Ok(s.t_high - s.t_low)
+    }
+
+    /// Peak overshoot as a fraction of the step
+    /// `(peak - settled) / |settled - initial|` (dimensionless, HOST-14):
+    /// `0.0` for a critically/over-damped response, `~0.1..0.3` typical for
+    /// an under-damped second-order step. Reported as a fraction (multiply
+    /// by 100 for percent). Fails loud on a flat signal (no step magnitude).
+    pub fn overshoot(&self) -> Result<f64, Error> {
+        let s = self.step_analysis()?;
+        let peak_beyond_settled = if s.rising { self.max() - s.settled } else { s.settled - self.min() };
+        Ok(peak_beyond_settled / (s.settled - s.initial).abs())
+    }
+
+    /// Time at which the signal enters and remains within `tol` (absolute,
+    /// same units as the signal) of the settled (last-sample) value
+    /// (seconds, HOST-14). Returns the first sample strictly after the last
+    /// out-of-band excursion, or the first sample time if the signal never
+    /// leaves the band. Fails loud if the signal never settles within `tol`
+    /// by the end of the recording, or if `tol < 0`.
+    pub fn settling_time(&self, tol: f64) -> Result<f64, Error> {
+        if tol < 0.0 {
+            return Err(Error::Measurement(format!(
+                "settling_time: tolerance must be non-negative, got {tol}"
+            )));
+        }
+        let points = self.points();
+        if points.is_empty() {
+            return Err(Error::Measurement("settling_time: empty waveform".into()));
+        }
+        let settled = points[points.len() - 1].1;
+        let last_outside = points
+            .iter()
+            .rev()
+            .find(|(_, v)| (v - settled).abs() > tol)
+            .map(|(t, _)| *t);
+        match last_outside {
+            None => Ok(points[0].0),
+            Some(t_out) => points
+                .iter()
+                .find(|(t, _)| *t > t_out)
+                .map(|(t, _)| *t)
+                .ok_or_else(|| {
+                    Error::Measurement(format!(
+                        "settling_time: signal never settles within {tol} of {settled:.6e} \
+                         (last out-of-band sample at t={t_out:.6e} is the final recorded sample)"
+                    ))
+                }),
+        }
+    }
+
+    /// Propagation delay from this waveform to `other` at `level` (seconds,
+    /// HOST-14): the time between this signal crossing `level` (either
+    /// direction) and `other` crossing `level`. Positive when `other` lags
+    /// this signal. Fails loud if either waveform never crosses `level`.
+    pub fn delay(&self, other: &Waveform, level: f64) -> Result<f64, Error> {
+        let t_self = self.cross(level, "Either").ok_or_else(|| {
+            Error::Measurement(format!(
+                "delay: this waveform never crosses level {level:.6e}"
+            ))
+        })?;
+        let t_other = other.cross(level, "Either").ok_or_else(|| {
+            Error::Measurement(format!(
+                "delay: `other` waveform never crosses level {level:.6e}"
+            ))
+        })?;
+        Ok(t_other - t_self)
+    }
+}
+
 // ─── Trace<T>: the generic swept-analysis container ────────────────────────
 
 /// Zero-sized discriminator selecting the noise instantiation of
