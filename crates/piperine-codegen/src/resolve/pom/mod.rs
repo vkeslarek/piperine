@@ -426,6 +426,7 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
                 LowerCtx::new(&mut bodies[i].symbols, m.name().to_string(), is_digital, module_vars);
             ctx.instance_ports = instance_ports.clone();
             ctx.enum_values = prog.enum_value_map();
+            let enum_values_for_digital = ctx.enum_values.clone();
             ctx.consts = LowerCtx::const_irs(prog);
             ctx.fn_bundle_sigs = structure::fn_bundle_signatures(prog);
             // Module bundle params (flattened at elaboration) — resolvable
@@ -504,6 +505,9 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
 
                 let mut all_stmts = reg_decls;
                 all_stmts.extend(behavior.body().iter().cloned());
+                for stmt in &mut all_stmts {
+                    resolve_enum_patterns_in_stmt(stmt, &enum_values_for_digital);
+                }
 
                 bodies[i].digital = Some(DigitalBody {
                     inputs,
@@ -560,4 +564,52 @@ pub fn lower_bodies(prog: &Design) -> Result<HashMap<String, LoweredBody>, Lower
     }
 
     Ok(names.into_iter().zip(bodies).collect())
+}
+
+/// Pre-resolve `Pattern::Path` (enum-variant patterns, e.g. `State::Idle`)
+/// in a digital `match` into `Pattern::Literal(discriminant)` — the emit-
+/// time `Codegen`/`Builder` path (`emit/stmt.rs::pattern_flag`) already
+/// handles `Pattern::Literal` (a `match` on a bit-literal), so resolving the
+/// variant name here (the same way `resolve_expr`'s `Expr::Path` case
+/// resolves an enum value for the analog path — bare name first, then
+/// `A::B` joined) reuses that path instead of teaching emit a second,
+/// symbol-table-dependent resolution step. Digital bodies keep the raw POM
+/// `Stmt`/`Expr` (SPEC-verified: no `resolve_expr` pass runs over them, see
+/// `lower_bodies`'s `is_digital` branch above) — an unresolvable path is
+/// left as-is, so the caller's original "enum pattern ... not yet wired"
+/// error still fires for a genuinely unknown variant (fail loud, not a
+/// silent match-nothing).
+fn resolve_enum_patterns_in_stmt(stmt: &mut PomStmt, enum_values: &HashMap<String, i64>) {
+    use piperine_lang::parse::ast::{Block, Pattern};
+    fn resolve_pattern(pat: &mut Pattern, enum_values: &HashMap<String, i64>) {
+        if let Pattern::Path(p) = pat {
+            let joined = p.segments.join("::");
+            let bare = p.segments.last().cloned().unwrap_or_default();
+            if let Some(&value) = enum_values.get(&joined).or_else(|| enum_values.get(&bare)) {
+                *pat = Pattern::Literal(value as u64);
+            }
+        }
+    }
+    fn resolve_block(block: &mut Block, enum_values: &HashMap<String, i64>) {
+        for s in &mut block.stmts {
+            resolve_enum_patterns_in_stmt(s, enum_values);
+        }
+    }
+    match stmt {
+        PomStmt::Match { arms, .. } => {
+            for arm in arms {
+                resolve_pattern(&mut arm.pat, enum_values);
+                resolve_block(&mut arm.body, enum_values);
+            }
+        }
+        PomStmt::If { then_body, else_body, .. } => {
+            resolve_block(then_body, enum_values);
+            if let Some(b) = else_body {
+                resolve_block(b, enum_values);
+            }
+        }
+        PomStmt::Event { body, .. } => resolve_block(body, enum_values),
+        PomStmt::For { body, .. } => resolve_block(body, enum_values),
+        _ => {}
+    }
 }
