@@ -28,6 +28,7 @@ Numpy arrays: ``Waveform.values`` / ``.axis`` are real ``np.ndarray``;
 
 from __future__ import annotations
 
+import dataclasses
 import typing
 from dataclasses import dataclass, field
 from enum import Enum
@@ -101,12 +102,30 @@ class Scale(Enum):
     Oct = "Oct"
 
 
+class _ConfigMixin:
+    """Shared ``.with_(**overrides)`` immutable-copy helper (HOST-20) for the
+    config-bundle dataclasses below: ``cfg.with_(reltol=1e-6)`` returns a new
+    instance with the named fields replaced, leaving ``cfg`` untouched —
+    ``dataclasses.replace`` under the hood. Every field is discoverable via
+    ``inspect.signature(TranConfig)`` (a plain dataclass ``__init__``), so no
+    hand-written stub is needed to keep the two in sync.
+    """
+
+    def with_(self, **overrides: typing.Any) -> typing.Self:
+        """Return an immutable copy with the named fields replaced
+        (``dataclasses.replace``); the original instance is untouched."""
+        return dataclasses.replace(self, **overrides)
+
+
 @dataclass
-class Solver:
+class Solver(_ConfigMixin):
     """Solver tolerance + iteration config (prelude ``bundle Solver``).
 
     Field defaults mirror ``headers/prelude.phdl`` exactly; the solver's own
-    defaults (``Context::default``) are the source of truth on the Rust side.
+    defaults (``Context::default``/``Policy::default``) are the source of
+    truth on the Rust side. ``dc_damp_tolerance`` (DC damping/homotopy
+    threshold) is the same knob the Rust ``SolverConfig`` carries — HOST-20
+    canonicalizes the two hosts on one name (``Solver``) and one field set.
     """
 
     temperature: float = 300.15
@@ -114,10 +133,11 @@ class Solver:
     abstol: float = 1e-12
     gmin: float = 1e-12
     max_iter: int = 100
+    dc_damp_tolerance: float = 0.5
 
 
 @dataclass
-class OpConfig:
+class OpConfig(_ConfigMixin):
     """DC operating-point config (prelude ``bundle OpConfig``)."""
 
     solver: Solver = field(default_factory=Solver)
@@ -125,7 +145,7 @@ class OpConfig:
 
 
 @dataclass
-class TranConfig:
+class TranConfig(_ConfigMixin):
     """Transient analysis config (prelude ``bundle TranConfig``).
 
     ``step = 0.0`` selects the adaptive stepper (initial ``dt = stop/1000``).
@@ -143,7 +163,7 @@ class TranConfig:
 
 
 @dataclass
-class AcConfig:
+class AcConfig(_ConfigMixin):
     """AC small-signal sweep config (prelude ``bundle AcConfig``).
 
     ``scale`` selects the sweep geometry: ``Dec``/``Oct`` → logarithmic,
@@ -158,7 +178,7 @@ class AcConfig:
 
 
 @dataclass
-class NoiseConfig:
+class NoiseConfig(_ConfigMixin):
     """Output-referred noise analysis config (prelude ``bundle NoiseConfig``)."""
 
     out: str
@@ -761,14 +781,19 @@ class Session:
         label: str,
         param: str,
         values: list[float],
+        nodeset: dict[str, float] | None = None,
         solver: Solver | None = None,
     ) -> Trace:
         """Run a compile-once DC sweep (``.dc``, HOST-05): restamp
         ``label``'s ``param`` for each of ``values`` on the one compilation
         (MD-18), returning a swept :class:`Trace` over the axis — read the
         same way as :meth:`tran`/:meth:`pss` (``.v``/``.i``/``.axis``).
+
+        ``nodeset`` seeds the Newton initial guess at every swept point
+        (same knob :meth:`op`/:meth:`tran` accept — HOST-20 nodeset parity
+        with the Rust ``Session::dc``).
         """
-        return self._native.dc(label, param, list(values), solver)
+        return self._native.dc(label, param, list(values), nodeset or None, solver)
 
     def sweep(self, label: str, param: str, values: list[float]) -> "Sweep":
         """A fluent single-knob sweep over ``label.param`` (HOST-18):

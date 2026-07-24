@@ -107,6 +107,7 @@ impl _Module {
             sc.abstol = obj.getattr("abstol")?.extract()?;
             sc.gmin = obj.getattr("gmin")?.extract()?;
             sc.max_iter = obj.getattr("max_iter")?.extract()?;
+            sc.dc_damp_tolerance = obj.getattr("dc_damp_tolerance")?.extract()?;
         }
         Ok(sc)
     }

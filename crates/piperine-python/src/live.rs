@@ -823,12 +823,15 @@ impl _Session {
     /// Run a compile-once DC sweep (`.dc`, HOST-05) on the held circuit:
     /// restamp `label.param` for each of `values` (MD-18), returning a
     /// `_Trace` over the swept axis — read the same way as `tran`/`pss`.
-    #[pyo3(signature = (label, param, values, solver=None))]
+    /// `nodeset` seeds the Newton initial guess at every point (same knob
+    /// `op`/`tran` accept — HOST-20 nodeset parity).
+    #[pyo3(signature = (label, param, values, nodeset=None, solver=None))]
     fn dc(
         &mut self,
         label: &str,
         param: &str,
         values: Vec<f64>,
+        nodeset: Option<HashMap<String, f64>>,
         solver: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<_Trace> {
         use piperine_solver::abi::Value;
@@ -839,7 +842,7 @@ impl _Session {
         for &v in &values {
             self.circuit.set_element_param(label, param, Value::Real(v)).map_err(Self::set_err)?;
             self.note_applied(label, param, v);
-            let ivs = self.ivs(None)?;
+            let ivs = self.ivs(nodeset.clone())?;
             let mut dc = self.circuit.dc(config.to_context()).map_err(Self::analysis_err)?;
             dc.policy = config.to_policy();
             dc.apply_initial_conditions(ivs);
