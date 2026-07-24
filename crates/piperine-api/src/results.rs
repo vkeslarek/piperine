@@ -32,7 +32,7 @@ pub struct TfResult {
 }
 
 impl TfResult {
-    pub(crate) fn from_solver(r: piperine_solver::prelude::TransferFunctionAnalysisResult) -> Self {
+    pub fn from_solver(r: piperine_solver::prelude::TransferFunctionAnalysisResult) -> Self {
         Self { gain: r.gain, z_in: r.input_resistance, z_out: r.output_resistance }
     }
 }

@@ -52,7 +52,7 @@ __all__ = [
     "Terminal",
     "SolverStats",
     # live session (compile once, set, re-run)
-    "LiveSession",
+    "Session",
     # analyses
     "OpResult",
     "Trace",
@@ -61,6 +61,7 @@ __all__ = [
     "SensResult",
     "PoleZeroResult",
     "SpResult",
+    "TfResult",
     "Waveform",
     "ComplexWaveform",
     "FourierComponent",
@@ -244,8 +245,8 @@ class Design:
         """
         return self._native.select(path)
 
-    def compile(self, module: str | None = None) -> LiveSession:
-        """Compile a module **once** into a :class:`LiveSession`.
+    def compile(self, module: str | None = None) -> Session:
+        """Compile a module **once** into a :class:`Session`.
 
         ``module = None`` compiles the design's top module (raises
         ``ValueError`` when no unambiguous top exists). The session holds the
@@ -354,6 +355,22 @@ class DistoResult:
     hd3: float | None
     im2: float | None
     im3: float | None
+
+
+@dataclass
+class TfResult:
+    """``.tf`` result (HOST-03): DC small-signal transfer characteristics
+    from unit excitations on the system linearized at the operating point.
+
+    The uniform host shape (MD-22): same field names as the Rust
+    ``TfResult { gain, z_in, z_out }``. Binds the existing solver ``.tf``
+    driver — no new solver math; voltage-source input only (documented
+    limit, not a gap).
+    """
+
+    gain: float
+    z_in: float
+    z_out: float
 
 
 class Module:
@@ -545,21 +562,21 @@ class Module:
         The next analysis on this module uses ``value`` for the instance
         ``label``'s ``param``. Setting is pure — the held ``Design`` is not
         mutated; overrides replay onto each analysis's fork. Sweeps are
-        native Python ``for`` loops. Same verb as :meth:`LiveSession.set`:
+        native Python ``for`` loops. Same verb as :meth:`Session.set`:
         both mean "subsequent analyses see the new value".
         """
         self._native.set(label, param, value)
 
-    def compile(self) -> LiveSession:
-        """Compile this module **once** into a :class:`LiveSession`.
+    def compile(self) -> Session:
+        """Compile this module **once** into a :class:`Session`.
 
         Currently staged overrides are baked into the compilation; the
         parent :class:`Design` stays untouched.
         """
-        return LiveSession(self._native.compile())
+        return Session(self._native.compile())
 
 
-class LiveSession:
+class Session:
     """A compiled circuit held live across analyses (compile once, set,
     re-run — the optimization-loop primitive).
 
@@ -574,7 +591,7 @@ class LiveSession:
     types, same readouts).
     """
 
-    def __init__(self, _native: _piperine._LiveSession) -> None:
+    def __init__(self, _native: _piperine._Session) -> None:
         self._native = _native
 
     @property
@@ -643,6 +660,97 @@ class LiveSession:
             logarithmic,
             config.solver,
         )
+
+    def sens(
+        self,
+        outputs: list[str],
+        params: list[tuple[str, str]],
+        dp_rel: float = 1.0e-6,
+        solver: Solver | None = None,
+    ) -> SensResult:
+        """Run a DC sensitivity analysis (``.sens``) on the held circuit
+        (HOST-02), same shape as :meth:`Module.sens`."""
+        return SensResult(self._native.sens(outputs, params, dp_rel, solver))
+
+    def pss(
+        self,
+        period: float,
+        tstab: float = 0.0,
+        solver: Solver | None = None,
+    ) -> PssResult:
+        """Run a periodic-steady-state analysis on the held circuit
+        (HOST-02), same shape as :meth:`Module.pss`."""
+        trace, iters, residual, settle = self._native.pss(period, tstab, solver)
+        return PssResult(trace, PssStats(iters, residual, settle))
+
+    def pz(
+        self,
+        input_source: str,
+        output: str,
+        output_ref: str | None = None,
+        solver: Solver | None = None,
+    ) -> PoleZeroResult:
+        """Run a pole-zero analysis (``.pz``) on the held circuit
+        (HOST-02), same shape as :meth:`Module.pz`."""
+        poles, zeros = self._native.pz(input_source, output, output_ref, solver)
+        return PoleZeroResult(poles=list(poles), zeros=list(zeros))
+
+    def disto(
+        self,
+        f1: float,
+        amplitude: float,
+        output: str,
+        f2: float | None = None,
+        output_ref: str | None = None,
+        solver: Solver | None = None,
+    ) -> DistoResult:
+        """Run a distortion analysis (``.disto``) on the held circuit
+        (HOST-02), same shape as :meth:`Module.disto`."""
+        hd2, hd3, im2, im3 = self._native.disto(f1, amplitude, output, f2, output_ref, solver)
+        return DistoResult(hd2=hd2, hd3=hd3, im2=im2, im3=im3)
+
+    def sp(
+        self,
+        fstart: float,
+        fstop: float,
+        points: int = 100,
+        logarithmic: bool = True,
+        solver: Solver | None = None,
+    ) -> SpResult:
+        """Run an N-port S-parameter analysis (``.sp``) on the held circuit
+        (HOST-02), same shape as :meth:`Module.sp`."""
+        frequencies, s, z0, n_ports = self._native.sp(fstart, fstop, points, logarithmic, solver)
+        return SpResult(frequencies=list(frequencies), s=s, z0=list(z0), n_ports=n_ports)
+
+    def tf(
+        self,
+        output: str,
+        input_source: str,
+        output_ref: str | None = None,
+        solver: Solver | None = None,
+    ) -> TfResult:
+        """Run a transfer-function analysis (``.tf``, HOST-03) on the held
+        circuit: DC small-signal gain, input resistance, and output
+        resistance from unit excitations on the system linearized at the
+        operating point. Binds the existing solver ``.tf`` driver — no new
+        solver math (voltage-source input only, MD-14).
+        """
+        native = self._native.tf(output, input_source, output_ref, solver)
+        return TfResult(gain=native.gain, z_in=native.z_in, z_out=native.z_out)
+
+    def dc(
+        self,
+        label: str,
+        param: str,
+        values: list[float],
+        solver: Solver | None = None,
+    ) -> Trace:
+        """Run a compile-once DC sweep (``.dc``, HOST-05): restamp
+        ``label``'s ``param`` for each of ``values`` on the one compilation
+        (MD-18), returning a swept :class:`Trace` over the axis — read the
+        same way as :meth:`tran`/:meth:`pss` (``.v``/``.i``/``.axis``).
+        """
+        return self._native.dc(label, param, list(values), solver)
 
 
 # ── load ──────────────────────────────────────────────────────────────────────

@@ -598,3 +598,23 @@ impl _NoiseTrace {
         self.inner.total()
     }
 }
+
+/// `_TfResult` — the `.tf` result (HOST-03): DC small-signal gain, input
+/// resistance, and output resistance from unit excitations on the system
+/// linearized at the operating point. Uniform-shape (MD-22): same field
+/// names as the api's `TfResult`, on both hosts.
+#[pyclass(module = "piperine")]
+pub struct _TfResult {
+    #[pyo3(get)]
+    pub gain: f64,
+    #[pyo3(get)]
+    pub z_in: f64,
+    #[pyo3(get)]
+    pub z_out: f64,
+}
+
+impl _TfResult {
+    pub(crate) fn from_solver(r: piperine_api::TfResult) -> Self {
+        Self { gain: r.gain, z_in: r.z_in, z_out: r.z_out }
+    }
+}

@@ -35,7 +35,7 @@ use pyo3::prelude::*;
 
 use design::{_Design, _Node, _Selection};
 use instance::{_InstanceView, _Terminal};
-use live::_LiveSession;
+use live::_Session;
 use module::_Module;
 use module::{_Behavior, _Instance, _Net, _Param, _Port};
 use results::_AcTrace;
@@ -45,6 +45,7 @@ use results::_FourierResult;
 use results::_NoiseTrace;
 use results::_SolverStats;
 use results::_OpResult;
+use results::_TfResult;
 use results::_Trace;
 use results::_Waveform;
 
@@ -81,7 +82,8 @@ pub(crate) fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_SolverStats>()?;
     m.add_class::<_InstanceView>()?;
     m.add_class::<_Terminal>()?;
-    m.add_class::<_LiveSession>()?;
+    m.add_class::<_Session>()?;
+    m.add_class::<_TfResult>()?;
     Ok(())
 }
 

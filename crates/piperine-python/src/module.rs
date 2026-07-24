@@ -98,7 +98,7 @@ impl _Module {
     /// Duck-typed (reads the prelude `bundle Solver` fields by attribute) so
     /// the facade needs no mirrored pyclass; `None` keeps the defaults.
     /// A missing/mistyped attribute fails loud, never a silent default.
-    /// Shared with [`crate::live::_LiveSession`] (LIVE-13: one config mapping).
+    /// Shared with [`crate::live::_Session`] (LIVE-13: one config mapping).
     pub(crate) fn solver_config(solver: Option<&Bound<'_, PyAny>>) -> PyResult<SolverConfig> {
         let mut sc = SolverConfig::default();
         if let Some(obj) = solver {
@@ -379,13 +379,13 @@ impl _Module {
     }
 
     /// Compile this module **once** into a live session (LIVE-10): the
-    /// returned [`crate::live::_LiveSession`] holds the elaborated design and
+    /// returned [`crate::live::_Session`] holds the elaborated design and
     /// the JIT-compiled circuit; `set` + re-run analyses never recompile
     /// (MD-18). Currently staged overrides are baked into the compilation
     /// (same replay as [`Self::session`]); the parent `_Design` stays
     /// untouched.
-    fn compile(&self) -> PyResult<crate::live::_LiveSession> {
-        crate::live::_LiveSession::from_design(&self.design, &self.name, &self.staged.borrow())
+    fn compile(&self) -> PyResult<crate::live::_Session> {
+        crate::live::_Session::from_design(&self.design, &self.name, &self.staged.borrow())
     }
 }
 

@@ -61,7 +61,7 @@ for n in dir(_piperine):
             failures.append(f"native function {n} not surfaced on piperine")
 
 # ── parity: every facade wrapper method forwards to a real native method ──
-for facade_cls, native_cls in [("Design", "_Design"), ("Module", "_Module"), ("LiveSession", "_LiveSession")]:
+for facade_cls, native_cls in [("Design", "_Design"), ("Module", "_Module"), ("Session", "_Session")]:
     f = getattr(piperine, facade_cls)
     n = getattr(_piperine, native_cls)
     for mname in dir(f):
