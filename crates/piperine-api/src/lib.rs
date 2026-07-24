@@ -28,6 +28,7 @@ pub use piperine_solver::prelude::{
     Bounds, Invalidation, ModelDescriptor, ObservableDescriptor, ObservableKind, ParamDescriptor,
     ParamScope, TerminalDescriptor, TerminalKind,
 };
+pub use piperine_solver::abi::NoiseContribution;
 pub use results::{
     DistoResult, InstanceView, NetRef, OpResult, PssResult, PzResult, SParamResult, SensResult, TfResult,
 };

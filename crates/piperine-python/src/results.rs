@@ -63,6 +63,40 @@ impl _LimitingReport {
     }
 }
 
+/// `_NoiseContribution` — one noise source's contribution to the output
+/// noise (HOST-11 / ABI): element label, source name, noise kind, and the
+/// integrated mean-square value. Uniform-shape (MD-22): mirrors the api.
+#[pyclass(module = "piperine")]
+#[derive(Clone)]
+pub struct _NoiseContribution {
+    #[pyo3(get)]
+    pub element: String,
+    #[pyo3(get)]
+    pub source: String,
+    #[pyo3(get)]
+    pub kind: String,
+    #[pyo3(get)]
+    pub integrated_sq: f64,
+}
+
+impl _NoiseContribution {
+    pub(crate) fn from_solver(c: &piperine_api::NoiseContribution) -> Self {
+        use piperine_solver::prelude::NoiseKind;
+        let kind = match c.kind {
+            NoiseKind::Thermal => "thermal",
+            NoiseKind::Shot => "shot",
+            NoiseKind::Flicker => "flicker",
+            NoiseKind::Other => "other",
+        };
+        Self {
+            element: c.element.clone(),
+            source: c.source.clone(),
+            kind: kind.to_string(),
+            integrated_sq: c.integrated_sq,
+        }
+    }
+}
+
 /// `_SolverStats` — per-analysis convergence + performance diagnostics
 /// (CP-09). Every field from the solver's `SolverStats` is exposed as a
 /// typed Python attribute.
@@ -638,6 +672,27 @@ impl _NoiseTrace {
     /// Integrated total noise (RMS) — spec AC9.
     fn total(&self) -> f64 {
         self.inner.total()
+    }
+
+    /// Per-source noise PSD as `_Waveform`s (HOST-11): keyed
+    /// `"element/source"` (e.g. `"r1/thermal"`). Each waveform is the PSD
+    /// contribution of that source alone.
+    fn by_source(&self) -> std::collections::HashMap<String, _Waveform> {
+        self.inner
+            .by_source()
+            .into_iter()
+            .map(|(k, w)| (k, _Waveform::new(w)))
+            .collect()
+    }
+
+    /// The full per-source contribution catalog (HOST-11): each entry is a
+    /// `_NoiseContribution` with `element`/`source`/`kind`/`integrated_sq`.
+    fn contributions(&self) -> Vec<_NoiseContribution> {
+        self.inner
+            .contributions()
+            .iter()
+            .map(_NoiseContribution::from_solver)
+            .collect()
     }
 }
 

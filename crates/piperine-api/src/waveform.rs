@@ -640,6 +640,32 @@ impl Trace<NoiseSample> {
     pub fn total(&self) -> f64 {
         self.noise().integrated_noise
     }
+
+    /// Per-source noise PSD as `Waveform`s (HOST-11): keyed
+    /// `"element/source"` (e.g. `"r1/thermal"`, `"m1/flicker"`). Each
+    /// waveform's points are `(frequency, v²/Hz)` — the PSD contribution
+    /// of that source alone to the output noise. Sum of per-source PSDs
+    /// at any frequency reconciles with [`psd`](Self::psd) (conservation).
+    pub fn by_source(&self) -> std::collections::HashMap<String, Waveform> {
+        let result = self.noise();
+        result
+            .contributions
+            .iter()
+            .map(|c| {
+                let key = format!("{}/{}", c.element, c.source);
+                let points = result.frequencies.iter().zip(&c.psd).map(|(f, v)| (*f, *v)).collect();
+                (key, Waveform::new(points))
+            })
+            .collect()
+    }
+
+    /// The full per-source contribution catalog (HOST-11): each entry
+    /// carries `element`/`source`/`kind`/`psd`/`integrated_sq` — beyond the
+    /// scalar [`total`](Self::total). Sum of `integrated_sq` across all
+    /// entries reconciles with `total()²` (conservation).
+    pub fn contributions(&self) -> &[piperine_solver::abi::NoiseContribution] {
+        &self.noise().contributions
+    }
 }
 
 /// The pre-HOST-13 name for the noise instantiation of the generic container
