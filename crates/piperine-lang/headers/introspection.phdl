@@ -1,0 +1,43 @@
+// phdl-introspection-attributes (PIA-04) — the device-introspection metadata
+// attribute schemas, textually declared so ctrl+click on `@model`/`@name`/
+// `@unit`/`@description`/`@kind` resolves to a real declaration (MD-24) and
+// the names exist as first-class schema entries in every compilation unit's
+// `SchemaRegistry` (the LSP's `SymbolKind::AttrSchema` arm reads the
+// `decl_span` `register.rs` threads through from this header).
+//
+// Per MD-26 these are small, single-purpose, composable attributes — not
+// role-shaped bundles (`@opvar`/`@observable`/`@terminal`). Model identity is
+// the one deliberate pair: `@model(type, version)` carries both fields (a
+// model type is meaningless without its version). The atomic `@kind` is
+// placement-resolved: on a `var` it names an `ObservableKind`, on a port/wire
+// a `TerminalKind` (the resolver in `pom/design.rs::introspection_meta` picks
+// the target enum by POM node type).
+//
+// The PHDL attribute-argument grammar is keyed-only (`parse_attributes` in
+// `parse/parser/attributes.rs` parses `ident = expr` pairs), so each
+// single-field schema declares its value under a `value: String` field and
+// authors write e.g. `@name(value = "i_d")` (user decision 2026-07-23). Every
+// attribute is optional — omission yields the codegen-derived default, never
+// an error (zero regression on existing stdlib models).
+//
+// Embedded unconditionally into every project's prelude (`resolve.rs`
+// `prelude_items`, alongside `types`/`math`/`tasks`/`operators`) — unlike
+// `device_port.phdl` (plugin-gated), introspection metadata is a stdlib
+// concern every project needs. Loaded after `types.phdl` because the field
+// types reference the primitive `String`.
+extern attribute model {
+    type: String,
+    version: String,
+}
+extern attribute name {
+    value: String,
+}
+extern attribute unit {
+    value: String,
+}
+extern attribute description {
+    value: String,
+}
+extern attribute kind {
+    value: String,
+}

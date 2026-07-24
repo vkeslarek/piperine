@@ -133,6 +133,19 @@ impl<'a> Resolver<'a> {
             items.extend(source.items);
         }
 
+        // `introspection` (phdl-introspection-attributes PIA-04) — the
+        // device-introspection metadata schemas (`@model`/`@name`/`@unit`/
+        // `@description`/`@kind`), textually declared (MD-24) so LSP
+        // go-to-definition lands on this header. Embedded the same way as
+        // `types`/`math`/`tasks`/`operators`: introspection metadata is a
+        // stdlib concern every project needs (every device author can name
+        // a var or classify a terminal), not a plugin-gated surface like
+        // `device_port.phdl`. Loaded after `types.phdl` because the field
+        // types reference the primitive `String`.
+        if let Ok(source) = parse_str(include_str!("../headers/introspection.phdl")) {
+            items.extend(source.items);
+        }
+
         // Load the standard library built-ins dynamically if they resolve.
         // We ignore errors so that a bare-bones SourceMap doesn't panic.
         let cap_key = vec!["piperine".to_string(), "capabilities".to_string()];
