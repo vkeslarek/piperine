@@ -12,7 +12,7 @@ use piperine_solver::prelude::{Context, Policy};
 
 use crate::error::Error;
 use crate::results::{NetLookup, OpResult};
-use crate::waveform::{AcTrace, NoiseTrace, Trace};
+use crate::waveform::{AcTrace, NoiseTrace, Trace, Waveform};
 
 /// Analysis configuration (tolerances + convergence tunables) read before an
 /// analysis runs.
@@ -216,7 +216,7 @@ impl SimSession {
         let inner = solver.solve()?;
         self.fire_after_solve("pss", &[])?;
         Ok(crate::results::PssResult {
-            trace: crate::waveform::Trace::new(inner.trace, Rc::new(info)),
+            trace: crate::waveform::Trace::<crate::waveform::Waveform>::new(inner.trace, Rc::new(info)),
             stats: inner.stats,
         })
     }
@@ -451,7 +451,7 @@ impl SimSession {
         solver.apply_initial_conditions(ivs);
         let result = solver.solve()?;
         self.fire_after_solve("tran", &[])?;
-        Ok(Trace::new(result, Rc::new(info)))
+        Ok(Trace::<Waveform>::new(result, Rc::new(info)))
     }
 
     /// Run an AC small-signal sweep.

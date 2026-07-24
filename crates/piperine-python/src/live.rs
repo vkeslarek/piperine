@@ -540,7 +540,8 @@ impl _LiveSession {
 
         let mut result = piperine_solver::prelude::TransientAnalysisResult::new(steps);
         result.set_stats(agg);
-        let trace = piperine_api::Trace::new(result, Rc::new(self.info.clone()));
+        let trace =
+            piperine_api::Trace::<piperine_api::Waveform>::new(result, Rc::new(self.info.clone()));
         Ok(_Trace::new(trace).with_resolver(self.instance_resolver()))
     }
 

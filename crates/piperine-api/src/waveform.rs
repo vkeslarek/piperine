@@ -1,20 +1,29 @@
-//! [`Waveform`] and the swept-analysis traces — a transient/AC/noise
-//! analysis returns a trace, and `.v`/`.i` on it read out a [`Waveform`]
-//! over the analysis axis (time or frequency).
+//! [`Waveform`] and the generic [`Trace`] container — every swept analysis
+//! (transient, AC, DC sweep) returns a `Trace<T>` over its own axis; `.v`/`.i`
+//! read out a `Waveform<T>` per net (HOST-13: one generic container folds the
+//! former `AcTrace` — `Trace<ComplexWaveform>` — and `NoiseTrace` —
+//! `Trace<NoiseSample>`, a zero-sized discriminator since noise has no
+//! per-net `v`/`i`, only `psd`/`total`).
 
+use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 use piperine_codegen::device::CircuitBuildInfo;
-use piperine_solver::prelude::{BranchIdentifier, NodeIdentifier, TransientAnalysisResult};
+use piperine_solver::abi::SolverStats;
+use piperine_solver::prelude::{
+    AcAnalysisResult, BranchIdentifier, DcAnalysisResult, NodeIdentifier, NoiseAnalysisResult,
+    TransientAnalysisResult,
+};
 
 use crate::error::Error;
 use crate::results::{NetLookup, NetRef};
 
 /// A series of `(axis, value)` samples — one measured quantity over an
 /// analysis axis. Points are assumed sorted by axis (true for every analysis
-/// the session runs). `Waveform` (= `Waveform<f64>`) is the transient real
-/// surface; [`ComplexWaveform`] (= `Waveform<Complex64>`) is the AC surface —
-/// one struct, two instantiations.
+/// the session runs). `Waveform` (= `Waveform<f64>`) is the transient/DC-sweep
+/// real surface; [`ComplexWaveform`] (= `Waveform<Complex64>`) is the AC
+/// surface — one struct, two instantiations.
 #[derive(Debug, Clone)]
 pub struct Waveform<T = f64> {
     points: Vec<(f64, T)>,
@@ -139,45 +148,117 @@ impl Waveform {
     }
 }
 
-/// The result of a transient analysis: a swept result, read by name into a
-/// [`Waveform`] per branch/node.
-pub struct Trace {
-    result: TransientAnalysisResult,
-    info: Rc<CircuitBuildInfo>,
+// ─── Trace<T>: the generic swept-analysis container ────────────────────────
+
+/// Zero-sized discriminator selecting the noise instantiation of
+/// [`Trace<T>`]: noise has no per-net `v`/`i` (frequency-domain PSD only), so
+/// it takes its own marker instead of a sample type — `Trace<NoiseSample>`
+/// (aliased [`NoiseTrace`]) carries `psd`/`total` instead.
+#[derive(Debug, Clone, Copy)]
+pub struct NoiseSample;
+
+/// The data actually backing a [`Trace`] — one variant per analysis kind that
+/// produces a swept result. `Trace<T>`'s public methods are implemented per
+/// `T` (below), each reading only the variant its `T` was constructed from.
+enum TraceBackend {
+    Transient { result: TransientAnalysisResult, info: Rc<CircuitBuildInfo> },
+    Ac { result: AcAnalysisResult, info: Rc<CircuitBuildInfo> },
+    /// A compile-once DC sweep (`Session::dc`, HOST-05/MD-18): one
+    /// [`DcAnalysisResult`] + digital snapshot per swept axis value, over the
+    /// same [`CircuitBuildInfo`] as a transient trace — `v`/`i` read exactly
+    /// like [`crate::results::OpResult`], keyed by sweep index instead of
+    /// simulated time.
+    DcSweep {
+        axis: Vec<f64>,
+        points: Vec<DcAnalysisResult>,
+        digital: Vec<HashMap<String, f64>>,
+        info: Rc<CircuitBuildInfo>,
+        stats: SolverStats,
+    },
+    Noise { result: NoiseAnalysisResult },
 }
 
-impl std::fmt::Debug for Trace {
+/// The result of a swept analysis: transient (`Trace<Waveform>`), DC sweep
+/// (`Trace<Waveform>`), AC (`Trace<ComplexWaveform>`, formerly `AcTrace`), or
+/// noise (`Trace<NoiseSample>`, formerly `NoiseTrace`) — one generic
+/// container (HOST-13), `T` selecting which analysis constructed it and
+/// which methods below apply.
+pub struct Trace<T = Waveform> {
+    backend: TraceBackend,
+    _marker: PhantomData<T>,
+}
+
+impl<T> std::fmt::Debug for Trace<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Trace").finish_non_exhaustive()
     }
 }
 
-impl Trace {
+/// Resolve a host-visible net name to a solver node — shared by every
+/// backend.
+fn node_or_err(info: &CircuitBuildInfo, name: &str) -> Result<NodeIdentifier, Error> {
+    info.net_node(name).ok_or_else(|| Error::Measurement(format!("net `{name}` is not addressable")))
+}
+
+// ─── Transient + DC sweep: `Trace<Waveform>` ───────────────────────────────
+
+impl Trace<Waveform> {
+    /// Build a transient trace (the pre-HOST-13 `Trace::new` shape, kept for
+    /// existing call sites).
     pub fn new(result: TransientAnalysisResult, info: Rc<CircuitBuildInfo>) -> Self {
-        Self { result, info }
+        Self { backend: TraceBackend::Transient { result, info }, _marker: PhantomData }
+    }
+
+    /// Build a DC-sweep trace (`Session::dc`, HOST-05): one point per swept
+    /// axis value, produced on the same compiled circuit (MD-18 restamp).
+    pub fn from_dc_sweep(
+        axis: Vec<f64>,
+        points: Vec<DcAnalysisResult>,
+        digital: Vec<HashMap<String, f64>>,
+        info: Rc<CircuitBuildInfo>,
+        stats: SolverStats,
+    ) -> Self {
+        Self {
+            backend: TraceBackend::DcSweep { axis, points, digital, info, stats },
+            _marker: PhantomData,
+        }
     }
 
     /// Per-analysis convergence + performance statistics.
-    pub fn stats(&self) -> &piperine_solver::abi::SolverStats {
-        &self.result.stats
-    }
-
-    /// Resolve a host-visible net name to a solver node.
-    fn node_or_err(&self, name: &str) -> Result<NodeIdentifier, Error> {
-        self.info
-            .net_node(name)
-            .ok_or_else(|| Error::Measurement(format!("net `{name}` is not addressable")))
+    pub fn stats(&self) -> &SolverStats {
+        match &self.backend {
+            TraceBackend::Transient { result, .. } => &result.stats,
+            TraceBackend::DcSweep { stats, .. } => stats,
+            _ => unreachable!("Trace<Waveform> is only built from Transient/DcSweep data"),
+        }
     }
 
     /// Net voltage `a` minus `b` (ground-referenced when `b` is `None`) over
-    /// time. A digital net read returns its logic value (0/1, NaN for X/Z) —
-    /// the transient records a digital snapshot per step, so sequential
-    /// logic is observable where a stateless operating point cannot.
+    /// the trace's axis (simulated time for a transient, the swept value for
+    /// a DC sweep). A digital net read returns its logic value (0/1, NaN for
+    /// X/Z) on a transient trace; a DC sweep reads through the per-point
+    /// digital snapshot the same way.
     pub fn v(&self, a: &NetRef, b: Option<&NetRef>) -> Result<Waveform, Error> {
-        if let Some(&idx) = self.info.digital_nets.get(&a.name) {
+        match &self.backend {
+            TraceBackend::Transient { result, info } => Self::v_transient(result, info, a, b),
+            TraceBackend::DcSweep { axis, points, digital, info, .. } => {
+                Self::v_dc_sweep(axis, points, digital, info, a, b)
+            }
+            TraceBackend::Ac { .. } | TraceBackend::Noise { .. } => {
+                unreachable!("Trace<Waveform> is only built from Transient/DcSweep data")
+            }
+        }
+    }
+
+    fn v_transient(
+        result: &TransientAnalysisResult,
+        info: &CircuitBuildInfo,
+        a: &NetRef,
+        b: Option<&NetRef>,
+    ) -> Result<Waveform, Error> {
+        if let Some(&idx) = info.digital_nets.get(&a.name) {
             use piperine_solver::prelude::LogicValue;
-            let points = self
-                .result
+            let points = result
                 .iter()
                 .map(|step| {
                     let v = match step.digital(idx) {
@@ -190,13 +271,12 @@ impl Trace {
                 .collect();
             return Ok(Waveform::new(points));
         }
-        let node_a = self.node_or_err(&a.name)?;
+        let node_a = node_or_err(info, &a.name)?;
         let node_b = match b {
-            Some(nb) => Some(self.node_or_err(&nb.name)?),
+            Some(nb) => Some(node_or_err(info, &nb.name)?),
             None => None,
         };
-        let points = self
-            .result
+        let points = result
             .iter()
             .map(|step| {
                 let va = if node_a == NodeIdentifier::Gnd { 0.0 } else { step.get_node(&node_a).unwrap_or(0.0) };
@@ -211,25 +291,73 @@ impl Trace {
         Ok(Waveform::new(points))
     }
 
-    /// A branch current over time. Ideal sources (`<-`, `num_forces > 0`)
-    /// read the exact MNA branch unknown per step. Other two-terminal
-    /// devices (resistors, capacitors, nonlinear) are recomputed per step
-    /// from the solved terminal voltages: the resistive part via
-    /// `eval_residual`, the reactive part via `dQ/dt` of `eval_charge`
-    /// (backward-Euler differentiation, consistent with the solver's own
-    /// companion). Devices whose residual reads runtime state/vars (not
-    /// recorded per step) fail loud.
-    pub fn i(&self, a: &NetRef, b: Option<&NetRef>) -> Result<Waveform, Error> {
-        let node_a = self.node_or_err(&a.name)?;
+    fn v_dc_sweep(
+        axis: &[f64],
+        points: &[DcAnalysisResult],
+        digital: &[HashMap<String, f64>],
+        info: &CircuitBuildInfo,
+        a: &NetRef,
+        b: Option<&NetRef>,
+    ) -> Result<Waveform, Error> {
+        if info.digital_nets.contains_key(&a.name) {
+            let out = axis
+                .iter()
+                .zip(digital)
+                .map(|(&x, snap)| (x, snap.get(&a.name).copied().unwrap_or(f64::NAN)))
+                .collect();
+            return Ok(Waveform::new(out));
+        }
+        let node_a = node_or_err(info, &a.name)?;
         let node_b = match b {
-            Some(nb) => self.node_or_err(&nb.name)?,
+            Some(nb) => Some(node_or_err(info, &nb.name)?),
+            None => None,
+        };
+        let out = axis
+            .iter()
+            .zip(points)
+            .map(|(&x, dc)| {
+                let va = if node_a == NodeIdentifier::Gnd { 0.0 } else { dc.get_node(&node_a).unwrap_or(0.0) };
+                let vb = match &node_b {
+                    Some(nb) if *nb == NodeIdentifier::Gnd => 0.0,
+                    Some(nb) => dc.get_node(nb).unwrap_or(0.0),
+                    None => 0.0,
+                };
+                (x, va - vb)
+            })
+            .collect();
+        Ok(Waveform::new(out))
+    }
+
+    /// A branch current over the trace's axis. See the pre-HOST-13
+    /// `Trace::i` doc for the transient recompute recipe (ideal-source force
+    /// branch vs kernel-recomputed resistive/reactive current). The DC-sweep
+    /// variant reads the same way per point, without a reactive (`dQ/dt`)
+    /// term — every point is its own independent operating point.
+    pub fn i(&self, a: &NetRef, b: Option<&NetRef>) -> Result<Waveform, Error> {
+        match &self.backend {
+            TraceBackend::Transient { result, info } => Self::i_transient(result, info, a, b),
+            TraceBackend::DcSweep { axis, points, info, .. } => Self::i_dc_sweep(axis, points, info, a, b),
+            TraceBackend::Ac { .. } | TraceBackend::Noise { .. } => {
+                unreachable!("Trace<Waveform> is only built from Transient/DcSweep data")
+            }
+        }
+    }
+
+    fn i_transient(
+        result: &TransientAnalysisResult,
+        info: &CircuitBuildInfo,
+        a: &NetRef,
+        b: Option<&NetRef>,
+    ) -> Result<Waveform, Error> {
+        let node_a = node_or_err(info, &a.name)?;
+        let node_b = match b {
+            Some(nb) => node_or_err(info, &nb.name)?,
             None => NodeIdentifier::Gnd,
         };
-        let instance = crate::results::find_two_terminal_instance(&self.info, node_a.clone(), node_b.clone())?;
+        let instance = crate::results::find_two_terminal_instance(info, node_a.clone(), node_b.clone())?;
         if instance.num_forces > 0 {
             let branch = BranchIdentifier::new(instance.label.clone(), "force0".to_string());
-            let points = self
-                .result
+            let points = result
                 .iter()
                 .map(|step| (step.time(), step.get_branch(branch.clone()).unwrap_or(0.0)))
                 .collect();
@@ -241,9 +369,7 @@ impl Trace {
         // state, so R/C/nonlinear devices pass; `idt`/`delay` read state.
         let (_, state_read, vars_read) = instance.kernel.read_bounds();
         let needs_banks = state_read > 0 || vars_read > 0;
-        if needs_banks
-            && !self.result.iter().all(|s| s.device_state(&instance.label).is_some())
-        {
+        if needs_banks && !result.iter().all(|s| s.device_state(&instance.label).is_some()) {
             return Err(Error::Measurement(format!(
                 "`i()` over time on `{}` is not recorded: the device reads runtime state/vars not captured per step (rerun with record_device_state = true)",
                 instance.label
@@ -254,39 +380,30 @@ impl Trace {
         // is `sign * residual[0]` (same convention as `OpResult::i`).
         let sign = if instance.terminals[0] == node_a { 1.0 } else { -1.0 };
         let sim = piperine_codegen::SimCtx::default();
-        let n = self.result.len();
+        let n = result.len();
         let mut t_series = Vec::with_capacity(n);
         let mut i_res = Vec::with_capacity(n);
         let mut q0 = Vec::with_capacity(n);
-        for step in self.result.iter() {
+        for step in result.iter() {
             let volts: Vec<f64> = instance
                 .terminals
                 .iter()
                 .map(|t| if *t == NodeIdentifier::Gnd { 0.0 } else { step.get_node(t).unwrap_or(0.0) })
                 .collect();
-            // Recorded runtime banks when present (stateful devices, opt-in
-            // recording); empty banks otherwise — exactly what the kernel
-            // reads for stateless devices.
             let (state, vars): (&[f64], &[f64]) = step
                 .device_state(&instance.label)
                 .map(|(s, v)| (s.as_slice(), v.as_slice()))
                 .unwrap_or((&[], &[]));
             let mut residual = vec![0.0; instance.terminals.len()];
-            instance
-                .kernel
-                .eval_residual(&volts, &instance.params, state, vars, &sim, &mut residual);
+            instance.kernel.eval_residual(&volts, &instance.params, state, vars, &sim, &mut residual);
             let mut charge = vec![0.0; instance.terminals.len()];
-            instance
-                .kernel
-                .eval_charge(&volts, &instance.params, state, vars, &sim, &mut charge);
+            instance.kernel.eval_charge(&volts, &instance.params, state, vars, &sim, &mut charge);
             i_res.push(residual[0]);
             q0.push(charge[0]);
             t_series.push(step.time());
         }
         let mut points = Vec::with_capacity(n);
         for k in 0..n {
-            // Backward-Euler dQ_0/dt; the first sample has no predecessor —
-            // reuse the forward difference (or 0 for a single-step trace).
             let dq_dt = if k == 0 {
                 if n > 1 && (t_series[1] - t_series[0]) > 0.0 {
                     (q0[1] - q0[0]) / (t_series[1] - t_series[0])
@@ -303,14 +420,62 @@ impl Trace {
         Ok(Waveform::new(points))
     }
 
-    /// The time axis as a real waveform.
+    fn i_dc_sweep(
+        axis: &[f64],
+        points: &[DcAnalysisResult],
+        info: &CircuitBuildInfo,
+        a: &NetRef,
+        b: Option<&NetRef>,
+    ) -> Result<Waveform, Error> {
+        let node_a = node_or_err(info, &a.name)?;
+        let node_b = match b {
+            Some(nb) => node_or_err(info, &nb.name)?,
+            None => NodeIdentifier::Gnd,
+        };
+        let instance = crate::results::find_two_terminal_instance(info, node_a.clone(), node_b)?;
+        let sim = piperine_codegen::SimCtx::default();
+        let out = axis
+            .iter()
+            .zip(points)
+            .map(|(&x, dc)| {
+                let volts: Vec<f64> = instance
+                    .terminals
+                    .iter()
+                    .map(|t| if *t == NodeIdentifier::Gnd { 0.0 } else { dc.get_node(t).unwrap_or(0.0) })
+                    .collect();
+                if instance.num_forces > 0 {
+                    let branch = BranchIdentifier::new(instance.label.clone(), "force0".to_string());
+                    return (x, dc.get_branch(branch).unwrap_or(0.0));
+                }
+                let mut residual = vec![0.0; instance.terminals.len()];
+                instance.kernel.eval_residual(&volts, &instance.params, &[], &[], &sim, &mut residual);
+                let current = if instance.terminals[0] == node_a { residual[0] } else { -residual[0] };
+                (x, current)
+            })
+            .collect();
+        Ok(Waveform::new(out))
+    }
+
+    /// The trace's own axis (simulated time for a transient, the swept value
+    /// for a DC sweep) as a real waveform (identity `(x, x)` pairs).
     pub fn axis(&self) -> Waveform {
-        let points = self.result.iter().map(|step| (step.time(), step.time())).collect();
-        Waveform::new(points)
+        match &self.backend {
+            TraceBackend::Transient { result, .. } => {
+                Waveform::new(result.iter().map(|step| (step.time(), step.time())).collect())
+            }
+            TraceBackend::DcSweep { axis, .. } => Waveform::new(axis.iter().map(|&x| (x, x)).collect()),
+            TraceBackend::Ac { .. } | TraceBackend::Noise { .. } => {
+                unreachable!("Trace<Waveform> is only built from Transient/DcSweep data")
+            }
+        }
     }
 }
 
-// ─── AC: complex waveforms ─────────────────────────────────────────────────────
+/// The pre-HOST-13 transient-only name, kept as the concrete transient/DC
+/// instantiation of the generic container.
+pub type TranTrace = Trace<Waveform>;
+
+// ─── AC: `Trace<ComplexWaveform>` (formerly `AcTrace`) ─────────────────────
 
 impl ComplexWaveform {
     fn project(&self, f: impl Fn(&num_complex::Complex64) -> f64) -> Waveform {
@@ -339,42 +504,31 @@ impl ComplexWaveform {
     }
 }
 
-/// The result of an AC small-signal sweep: a frequency sweep whose `.v`
-/// reads out complex waveforms.
-pub struct AcTrace {
-    result: piperine_solver::prelude::AcAnalysisResult,
-    info: Rc<CircuitBuildInfo>,
-}
-
-impl std::fmt::Debug for AcTrace {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AcTrace").finish_non_exhaustive()
-    }
-}
-
-impl AcTrace {
-    pub fn new(result: piperine_solver::prelude::AcAnalysisResult, info: Rc<CircuitBuildInfo>) -> Self {
-        Self { result, info }
+impl Trace<ComplexWaveform> {
+    /// Build an AC-sweep trace (the pre-HOST-13 `AcTrace::new` shape, kept
+    /// for existing call sites).
+    pub fn new(result: AcAnalysisResult, info: Rc<CircuitBuildInfo>) -> Self {
+        Self { backend: TraceBackend::Ac { result, info }, _marker: PhantomData }
     }
 
-    /// Resolve a host-visible net name to a solver node.
-    fn node_or_err(&self, name: &str) -> Result<NodeIdentifier, Error> {
-        self.info
-            .net_node(name)
-            .ok_or_else(|| Error::Measurement(format!("net `{name}` is not addressable")))
+    fn ac_parts(&self) -> (&AcAnalysisResult, &CircuitBuildInfo) {
+        match &self.backend {
+            TraceBackend::Ac { result, info } => (result, info),
+            _ => unreachable!("Trace<ComplexWaveform> is only built from AC data"),
+        }
     }
 
     /// Net voltage `a` minus `b` (ground-referenced when `b` is `None`) over
     /// the AC frequency sweep.
     pub fn v(&self, a: &NetRef, b: Option<&NetRef>) -> Result<ComplexWaveform, Error> {
-        let node_a = self.node_or_err(&a.name)?;
+        let (result, info) = self.ac_parts();
+        let node_a = node_or_err(info, &a.name)?;
         let node_b = match b {
-            Some(nb) => Some(self.node_or_err(&nb.name)?),
+            Some(nb) => Some(node_or_err(info, &nb.name)?),
             None => None,
         };
         let zero = num_complex::Complex64::default();
-        let points = self
-            .result
+        let points = result
             .iter()
             .map(|step| {
                 let va = if node_a == NodeIdentifier::Gnd { zero } else { step.get_node(&node_a).copied().unwrap_or(zero) };
@@ -391,44 +545,46 @@ impl AcTrace {
 
     /// The frequency axis as a real waveform.
     pub fn axis(&self) -> Waveform {
-        let points = self.result.iter().map(|s| (s.frequency, s.frequency)).collect();
+        let (result, _) = self.ac_parts();
+        let points = result.iter().map(|s| (s.frequency, s.frequency)).collect();
         Waveform::new(points)
     }
 }
 
-// ─── Noise ─────────────────────────────────────────────────────────────────────
+/// The pre-HOST-13 name for the AC-sweep instantiation of the generic
+/// container (HOST-13: no separate `AcTrace` struct — same `Trace<T>`).
+pub type AcTrace = Trace<ComplexWaveform>;
 
-/// The result of an output-referred noise analysis: noise PSD over frequency
-/// plus the integrated total.
-pub struct NoiseTrace {
-    result: piperine_solver::prelude::NoiseAnalysisResult,
-}
+// ─── Noise: `Trace<NoiseSample>` (formerly `NoiseTrace`) ───────────────────
 
-impl std::fmt::Debug for NoiseTrace {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NoiseTrace").finish_non_exhaustive()
+impl Trace<NoiseSample> {
+    /// Build a noise trace (the pre-HOST-13 `NoiseTrace::new` shape, kept for
+    /// existing call sites).
+    pub fn new(result: NoiseAnalysisResult) -> Self {
+        Self { backend: TraceBackend::Noise { result }, _marker: PhantomData }
     }
-}
 
-impl NoiseTrace {
-    pub fn new(result: piperine_solver::prelude::NoiseAnalysisResult) -> Self {
-        Self { result }
+    fn noise(&self) -> &NoiseAnalysisResult {
+        match &self.backend {
+            TraceBackend::Noise { result } => result,
+            _ => unreachable!("Trace<NoiseSample> is only built from noise data"),
+        }
     }
 
     /// Output-referred noise PSD as `(frequency, v²/Hz)` samples.
     pub fn psd(&self) -> Waveform {
-        Waveform::new(
-            self.result
-                .frequencies
-                .iter()
-                .zip(&self.result.out_noise_sq)
-                .map(|(f, v)| (*f, *v))
-                .collect(),
-        )
+        let result = self.noise();
+        Waveform::new(result.frequencies.iter().zip(&result.out_noise_sq).map(|(f, v)| (*f, *v)).collect())
     }
 
     /// The integrated total noise (RMS).
     pub fn total(&self) -> f64 {
-        self.result.integrated_noise
+        self.noise().integrated_noise
     }
 }
+
+/// The pre-HOST-13 name for the noise instantiation of the generic container
+/// (HOST-13: no separate `NoiseTrace` struct — same `Trace<T>`, discriminated
+/// by the zero-sized [`NoiseSample`] marker since noise has no per-net
+/// `v`/`i`).
+pub type NoiseTrace = Trace<NoiseSample>;
