@@ -126,10 +126,12 @@ pub struct ElementCheckpoint {
 /// limiter fired. `is_some()` gates Newton convergence (a clamped junction
 /// can momentarily satisfy KCL at a non-solution voltage); `limited_value`
 /// applied to `net` steers the Newton guess to the clamped point
-/// (pnjlim/fetlim lineage); `limiter_name` + `reason` are diagnostics for
-/// hosts.
+/// (pnjlim/fetlim lineage); `device` + `limiter_name` + `reason` are
+/// diagnostics for hosts (HOST-10 — surfaced on `op.stats.limiting`).
 #[derive(Debug, Clone)]
 pub struct LimitingReport {
+    /// The instance label of the device whose limiter fired (HOST-10).
+    pub device: String,
     /// The unknown the limiter clamped (node voltage or branch current).
     pub net: AnalogReference,
     /// The raw Newton-proposed value before limiting.

@@ -229,6 +229,10 @@ impl AnalogDevice for PiperineDevice {
         self.analog
             .as_ref()
             .and_then(AnalogInstance::limiting_report)
+            .map(|mut r| {
+                r.device = self.label.clone();
+                r
+            })
     }
 
     fn bound_step_hint(&self) -> f64 {

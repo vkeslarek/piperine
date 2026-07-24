@@ -376,6 +376,16 @@ impl<'a> DcSolver<'a> {
         result.stats.homotopy_levels = self.newton_calls.saturating_sub(1);
         result.stats.assembly_time_ns = self.solver.assembly_time_ns();
         result.stats.solve_time_ns = self.solver.solve_time_ns();
+        // HOST-10: collect each device's final limiting state — the
+        // structured diagnostics a host reads via `op.stats.limiting`.
+        // Mirrors `apply_limiting_reports`'s iteration over devices.
+        result.stats.limiting = self
+            .system
+            .circuit
+            .all_devices()
+            .iter()
+            .filter_map(|d| d.limiting_report())
+            .collect();
         Ok(result)
     }
 }

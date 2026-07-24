@@ -44,6 +44,7 @@ use results::_FourierComponent;
 use results::_FourierResult;
 use results::_NoiseTrace;
 use results::_SolverStats;
+use results::_LimitingReport;
 use results::_OpResult;
 use results::_TfResult;
 use results::_Trace;
@@ -80,6 +81,7 @@ pub(crate) fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_AcTrace>()?;
     m.add_class::<_NoiseTrace>()?;
     m.add_class::<_SolverStats>()?;
+    m.add_class::<_LimitingReport>()?;
     m.add_class::<_InstanceView>()?;
     m.add_class::<_Terminal>()?;
     m.add_class::<_ModelDescriptor>()?;

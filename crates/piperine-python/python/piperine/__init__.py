@@ -54,6 +54,7 @@ __all__ = [
     "TerminalDescriptor",
     "ObservableDescriptor",
     "SolverStats",
+    "LimitingReport",
     # live session (compile once, set, re-run)
     "Session",
     # analyses
@@ -185,6 +186,7 @@ ModelDescriptor = _piperine._ModelDescriptor
 TerminalDescriptor = _piperine._TerminalDescriptor
 ObservableDescriptor = _piperine._ObservableDescriptor
 SolverStats = _piperine._SolverStats
+LimitingReport = _piperine._LimitingReport
 
 # Analysis-result types — no config-bundle translation needed, so they are
 # plain re-exports of the native pyclasses. Their methods (.v/.i/.values/

@@ -36,6 +36,10 @@ pub struct SolverStats {
     // Timing (nanoseconds)
     pub assembly_time_ns: u64,
     pub solve_time_ns: u64,
+    // HOST-10: structured limiting diagnostics from the final Newton step —
+    // one entry per device whose limiter clamped a value. Empty when no
+    // device limited (the common case for linear / well-converged circuits).
+    pub limiting: Vec<crate::core::element::LimitingReport>,
 }
 
 #[derive(Debug)]

@@ -44,6 +44,7 @@ impl AnalogDevice for StepLimiter {
         // and report active (vetoing convergence until it lands).
         if (v - self.lim).abs() > 0.05 {
             self.report = Some(LimitingReport {
+                device: self.name().to_string(),
                 net: self.node.clone(),
                 proposed: v,
                 limited_value: self.lim,
@@ -175,6 +176,7 @@ fn active_limiter_vetoes_newton_convergence() {
             self.0.guesses.lock().unwrap().push(v);
             // Always active — clamp to lim regardless of proximity.
             self.0.report = Some(LimitingReport {
+                device: self.name().to_string(),
                 net: self.0.node.clone(),
                 proposed: v,
                 limited_value: self.0.lim,

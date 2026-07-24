@@ -419,6 +419,7 @@ impl AnalogInstance {
         let limited_value = veff.get(term).copied().unwrap_or(0.0);
         let (limiter_name, reason) = catalog[slot];
         self.limit_report = Some(piperine_solver::abi::LimitingReport {
+            device: String::new(),
             net,
             proposed,
             limited_value,

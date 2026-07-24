@@ -24,6 +24,45 @@ use piperine_solver::abi::SolverStats;
 
 use crate::instance::InstanceResolver;
 
+/// `_LimitingReport` — one device's structured limiting diagnostic (HOST-10 /
+/// ABI-09): which device clamped what value, by which limiter, and why.
+/// Uniform-shape (MD-22): mirrors the solver's `LimitingReport` field names.
+#[pyclass(module = "piperine")]
+#[derive(Clone)]
+pub struct _LimitingReport {
+    #[pyo3(get)]
+    pub device: String,
+    #[pyo3(get)]
+    pub net: String,
+    #[pyo3(get)]
+    pub proposed: f64,
+    #[pyo3(get)]
+    pub limited_value: f64,
+    #[pyo3(get)]
+    pub limiter_name: String,
+    #[pyo3(get)]
+    pub reason: String,
+}
+
+impl _LimitingReport {
+    pub(crate) fn from_solver(r: &piperine_solver::abi::LimitingReport) -> Self {
+        use piperine_solver::abi::LimitReason;
+        let reason = match r.reason {
+            LimitReason::VoltageStep => "voltage_step",
+            LimitReason::VdsStep => "vds_step",
+            LimitReason::Other(s) => s,
+        };
+        Self {
+            device: r.device.clone(),
+            net: format!("{:?}", r.net),
+            proposed: r.proposed,
+            limited_value: r.limited_value,
+            limiter_name: r.limiter_name.to_string(),
+            reason: reason.to_string(),
+        }
+    }
+}
+
 /// `_SolverStats` — per-analysis convergence + performance diagnostics
 /// (CP-09). Every field from the solver's `SolverStats` is exposed as a
 /// typed Python attribute.
@@ -55,6 +94,8 @@ pub struct _SolverStats {
     pub assembly_time_ns: u64,
     #[pyo3(get)]
     pub solve_time_ns: u64,
+    #[pyo3(get)]
+    pub limiting: Vec<_LimitingReport>,
 }
 
 impl _SolverStats {
@@ -73,6 +114,7 @@ impl _SolverStats {
             homotopy_levels: s.homotopy_levels,
             assembly_time_ns: s.assembly_time_ns,
             solve_time_ns: s.solve_time_ns,
+            limiting: s.limiting.iter().map(_LimitingReport::from_solver).collect(),
         }
     }
 }
