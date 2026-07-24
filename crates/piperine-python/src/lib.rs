@@ -58,12 +58,21 @@ fn load(path: &str) -> PyResult<_Design> {
     _Design::load(path)
 }
 
+/// `_piperine.load_str(src) -> _Design` (HOST-24). Thin FFI shim
+/// delegating to [`_Design::load_str`] — elaborates `src` directly, no
+/// filesystem read.
+#[pyfunction]
+fn load_str(src: &str) -> PyResult<_Design> {
+    _Design::load_str(src)
+}
+
 /// The `_piperine` native extension module. Registered by the facade and, for
 /// `piperine run`, appended to the embedded interpreter's init table
 /// ([`embed::run_script`], PY-15).
 #[pymodule]
 pub(crate) fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(load, m)?)?;
+    m.add_function(wrap_pyfunction!(load_str, m)?)?;
     m.add_class::<_Design>()?;
     m.add_class::<_Module>()?;
     m.add_class::<_Port>()?;

@@ -72,6 +72,11 @@ for facade_cls, native_cls in [("Design", "_Design"), ("Module", "_Module"), ("S
             continue
         if mname == "compile" and facade_cls == "Design":
             continue  # facade-level convenience over Module.compile
+        if mname == "const" and facade_cls == "Design":
+            continue  # HOST-24: `const` is a Rust keyword, so the native
+            # binding stays `const_`; the facade drops the underscore since
+            # `const` is not reserved in Python. Deliberate name mismatch,
+            # not a parity gap (mirrors the `compile` exemption above).
         if not hasattr(n, mname):
             failures.append(f"{facade_cls}.{mname} has no native {native_cls}.{mname}")
 

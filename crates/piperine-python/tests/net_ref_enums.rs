@@ -48,7 +48,7 @@ fn cross_direction_and_scale_enums() {
 import piperine as pip
 
 design = pip.load("{phdl}")
-module = design.top()
+module = design.top
 module.set("v1", "dc", 1.0)
 # Force a genuine 0 -> 1V step (without `ic`, the transient's initial
 # condition is the DC steady state, which for this lowpass is already 1V —

@@ -92,7 +92,7 @@ fn solver_dc_damp_tolerance_reaches_the_analysis() {
 import piperine
 
 design = piperine.load("{phdl}")
-module = design.top()
+module = design.top
 
 solver = piperine.Solver(dc_damp_tolerance=0.1)
 op = module.op(piperine.OpConfig(solver=solver))

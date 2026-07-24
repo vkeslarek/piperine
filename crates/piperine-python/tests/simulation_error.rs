@@ -139,7 +139,7 @@ fn non_converging_run_raises_convergence_error() {
 import piperine as pip
 
 design = pip.load("{phdl}")
-module = design.top()
+module = design.top
 solver = pip.Solver(max_iter=0)
 raised = None
 analysis = None

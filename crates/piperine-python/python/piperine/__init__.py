@@ -40,6 +40,7 @@ import _piperine
 __all__ = [
     # load
     "load",
+    "load_str",
     # reflection
     "Design",
     "Module",
@@ -335,7 +336,7 @@ class NoiseConfig(_ConfigMixin):
 # The native _piperine extension returns these as #[pyclass] objects with the
 # listed attributes; the facade re-exports them so the IDE offers .name /
 # .direction / .ty / etc. on every reflected child. These are the runtime
-# types — at runtime, ``module.ports()[0]`` IS a ``_piperine._Port``; the
+# types — at runtime, ``module.ports[0]`` IS a ``_piperine._Port``; the
 # alias makes the type name match the public vocabulary.
 #
 # SPEC_DEVIATION (HOST-23): `.direction` on `Port`/`Terminal` stays a plain
@@ -396,18 +397,21 @@ NoiseTrace = _piperine._NoiseTrace
 class Design:
     """A loaded, elaborated POM design (spec AC1/2).
 
-    Obtain one via :func:`load`. Reflect the top module (``design.top()``),
-    look up a module by name (``design.module("Amp")``), enumerate modules
-    (``design.modules()``), read constants (``design.const_("PI")``), or
-    resolve a hierarchical selector path (``design.select("/r1/port::p")``).
+    Obtain one via :func:`load`/:func:`load_str`. Reflect the top module
+    (``design.top``, a property), look up a module by name (``design
+    ["Amp"]`` or ``design.module("Amp")``), enumerate modules (``design.
+    modules()``), read constants (``design.const("PI")``), or resolve a
+    hierarchical selector path (``design.select("/r1/port::p")``).
     Read-only — the only mutation is :meth:`Module.set`.
     """
 
     def __init__(self, _native: _piperine._Design) -> None:
         self._native = _native
 
+    @property
     def top(self) -> Module | None:
-        """The elaborated top module, if one is set (spec AC2)."""
+        """The elaborated top module, if one is set (spec AC2, HOST-24:
+        a property — reflection, not an action)."""
         m = self._native.top()
         return Module(m) if m is not None else None
 
@@ -419,12 +423,20 @@ class Design:
         except Exception as exc:
             raise UnknownModule(str(exc)) from exc
 
+    def __getitem__(self, name: str) -> Module:
+        """``design[name]`` (HOST-24) — same as :meth:`module`, the
+        ideal.md-normative access form."""
+        return self.module(name)
+
     def modules(self) -> list[Module]:
         """Every elaborated module."""
         return [Module(m) for m in self._native.modules()]
 
-    def const_(self, name: str) -> typing.Any:
-        """A global constant by name, or ``None`` if unknown."""
+    def const(self, name: str) -> typing.Any:
+        """A global constant by name, or ``None`` if unknown (HOST-24:
+        renamed from ``const_`` — ``const`` is not a Python keyword, only a
+        Rust one, so the facade drops the trailing underscore the native
+        binding needs)."""
         return self._native.const_(name)
 
     def select(self, path: str) -> Selection:
@@ -447,7 +459,7 @@ class Design:
         """
         if module is not None:
             return self.module(module).compile()
-        top = self.top()
+        top = self.top
         if top is None:
             raise ValueError("design has no unambiguous top module; pass a module name")
         return top.compile()
@@ -584,22 +596,28 @@ class Module:
         """The module's declared name."""
         return self._native.name
 
+    @property
     def ports(self) -> list[Port]:
-        """The module's ports (name, direction, discipline type)."""
+        """The module's ports (name, direction, discipline type). HOST-24:
+        a property — reflection, not an action."""
         return list(self._native.ports())
 
+    @property
     def nets(self) -> list[Net]:
         """The module's ``wire`` declarations (name, discipline type)."""
         return list(self._native.nets())
 
+    @property
     def instances(self) -> list[Instance]:
         """The module's submodule instances (label, module name)."""
         return list(self._native.instances())
 
+    @property
     def params(self) -> list[Param]:
         """The module's params (name, type, default value)."""
         return list(self._native.params())
 
+    @property
     def behaviors(self) -> list[Behavior]:
         """The module's ``analog``/``digital`` behavior blocks."""
         return list(self._native.behaviors())
@@ -1110,6 +1128,20 @@ def load(path: str) -> Design:
     """
     try:
         return Design(_piperine.load(path))
+    except Exception as exc:
+        raise ElaborationError(str(exc)) from exc
+
+
+def load_str(src: str) -> Design:
+    """Elaborate PHDL/PPR source text directly into a :class:`Design`
+    (HOST-24) — no filesystem read, no project discovery (a standalone/
+    self-contained design, same as a project-less :func:`load`).
+
+    Raises :class:`ElaborationError` (a ``ValueError`` subclass, HOST-22)
+    with the diagnostic on a parse/elaboration failure.
+    """
+    try:
+        return Design(_piperine.load_str(src))
     except Exception as exc:
         raise ElaborationError(str(exc)) from exc
 

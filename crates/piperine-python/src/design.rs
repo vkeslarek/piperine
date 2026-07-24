@@ -50,7 +50,21 @@ impl _Design {
             Some(root) => piperine_project::project_source_map(&root),
             None => SourceMap::dummy(),
         };
-        let mut design = parse_and_elaborate(&source, &source_map)
+        Self::from_source(&source, source_map)
+    }
+
+    /// Elaborate `src` directly (HOST-24, `pip.load_str`) — no filesystem
+    /// read, no project discovery (a standalone/self-contained design, the
+    /// same `SourceMap::dummy()` a project-less `load` falls back to).
+    /// Parse/elaboration failures surface as `ValueError`, same as `load`.
+    pub(crate) fn load_str(src: &str) -> PyResult<Self> {
+        Self::from_source(src, SourceMap::dummy())
+    }
+
+    /// Shared elaborate + top-inference recipe behind [`Self::load`] and
+    /// [`Self::load_str`].
+    fn from_source(source: &str, source_map: SourceMap) -> PyResult<Self> {
+        let mut design = parse_and_elaborate(source, &source_map)
             .map_err(|e| PyValueError::new_err(format!("{e}")))?;
         if let Some(top) = Self::infer_top(&design) {
             design.set_top(&top);
