@@ -235,7 +235,7 @@ by design).
 - [x] `.mean()` on the recorded opvar matches a static DC opvar at a held point
 - [x] `cargo test --workspace`
 **Tests**: integration · **Gate**: full
-**Status (2026-07-24)**: DONE, commit `TBD`. `SimSession::run_tran` /
+**Status (2026-07-24)**: DONE, commit `086fc10`. `SimSession::run_tran` /
 `Session::tran` take a `probe: &[&str]` arg (each `"instance.name"`); the
 path is split, mapped to a `ProbeSelection`, and the solver's existing
 `validate_probe_selection` (ABI-35) fails loud on unknown device /
