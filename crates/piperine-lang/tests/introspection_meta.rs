@@ -227,6 +227,30 @@ fn at_unit_on_port_fails_loud() {
     assert!(err.contains("unit") && err.contains("port"), "error should name schema+node: {err}");
 }
 
+#[test]
+fn any_introspection_attr_on_param_fails_loud() {
+    // PIA-19: none of the five introspection schemas target a param. Each is
+    // a placement error on a param.
+    for schema in ["model", "name", "unit", "description", "kind"] {
+        let arg = if schema == "model" {
+            "(type = \"x\", version = \"1\")".to_string()
+        } else {
+            "(value = \"x\")".to_string()
+        };
+        let src = format!(
+            "
+            {DISCIPLINE}
+            mod M ( inout p : Electrical ) {{ @{schema}{arg} param r : Real = 1.0; }}
+            "
+        );
+        let err = resolve_err(&src, "M");
+        assert!(
+            err.contains(schema) && err.contains("param"),
+            "@{schema} on a param must fail loud naming schema+param: {err}"
+        );
+    }
+}
+
 // ── PIA-20: duplicate @name on vars fails loud ─────────────────────────────
 
 #[test]

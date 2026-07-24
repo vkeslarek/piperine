@@ -451,6 +451,19 @@ impl Design {
             }
         }
 
+        // None of the five introspection schemas target a `param` — any of them
+        // here is a placement error (PIA-19). Params carry only their own value.
+        for p in &module.params {
+            for attr in &p.attributes {
+                match attr.schema() {
+                    "model" | "name" | "unit" | "description" | "kind" => {
+                        return Err(place_err(attr.schema(), "param"));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         // vars: @name/@unit/@description/@kind legal; @model misplaced. The
         // @kind target enum on a var is ObservableKind (VAR_KINDS).
         for v in &module.vars {

@@ -87,7 +87,7 @@ fn test_purely_resistive_device_capabilities() {
     let mut netlist = piperine_solver::abi::Netlist::new();
     let terms = vec![piperine_solver::abi::NodeIdentifier::Anonymous(1), piperine_solver::abi::NodeIdentifier::Anonymous(2)];
     let a_inst = piperine_codegen::device::AnalogInstance::new("testR", kernel, &terms, vec![1000.0], 1, &mut netlist).unwrap();
-    let dev = piperine_codegen::device::PiperineDevice::new("testR", Some(a_inst), None);
+    let dev = piperine_codegen::device::PiperineDevice::new("testR", Some(a_inst), None, piperine_lang::pom::IntrospectionMeta::default());
     
     let caps = dev.capabilities();
     // A purely resistive analog device advertises the analog engine and no
@@ -109,7 +109,7 @@ fn test_reactive_device_capabilities() {
     let mut netlist = piperine_solver::abi::Netlist::new();
     let terms = vec![piperine_solver::abi::NodeIdentifier::Anonymous(1), piperine_solver::abi::NodeIdentifier::Anonymous(2)];
     let a_inst = piperine_codegen::device::AnalogInstance::new("testC", kernel, &terms, vec![1e-9], 1, &mut netlist).unwrap();
-    let dev = piperine_codegen::device::PiperineDevice::new("testC", Some(a_inst), None);
+    let dev = piperine_codegen::device::PiperineDevice::new("testC", Some(a_inst), None, piperine_lang::pom::IntrospectionMeta::default());
     
     let caps = dev.capabilities();
     // A reactive analog device still advertises just the analog engine —

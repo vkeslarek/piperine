@@ -60,7 +60,7 @@ fn dtemp_instance_composes_into_effective_temperature() {
 
     assert_eq!(a_inst.param("dtemp"), Some(10.0));
 
-    let mut dev = PiperineDevice::new("r1", Some(a_inst), None);
+    let mut dev = PiperineDevice::new("r1", Some(a_inst), None, piperine_lang::pom::IntrospectionMeta::default());
 
     // The override receives the AMBIENT temperature (the value the solver
     // passes); it composes `t_nominal + dtemp` internally.
@@ -104,7 +104,7 @@ fn no_dtemp_param_caches_received_temperature() {
 
     assert!(a_inst.param("dtemp").is_none(), "no dtemp param declared");
 
-    let mut dev = PiperineDevice::new("r1", Some(a_inst), None);
+    let mut dev = PiperineDevice::new("r1", Some(a_inst), None, piperine_lang::pom::IntrospectionMeta::default());
     let tnom = 325.0;
     dev.set_temperature(tnom);
     let cached = dev

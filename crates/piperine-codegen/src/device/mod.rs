@@ -99,6 +99,11 @@ pub struct PiperineDevice {
     label: String,
     analog: Option<AnalogInstance>,
     digital: Option<DigitalInstance>,
+    /// Author-declared introspection metadata resolved from POM attributes
+    /// (phdl-introspection-attributes). The `Introspect` bridge prefers a
+    /// sidecar field over the codegen-derived default and falls back when
+    /// absent (PIA-02/08/12). Empty for a module with no introspection attrs.
+    meta: piperine_lang::pom::IntrospectionMeta,
     /// Analog terminal netlist references for digital-only devices (devices
     /// with analog input ports but no analog body). Used by the A2D bridge
     /// to read analog voltages when there's no `AnalogInstance` to track
@@ -118,11 +123,13 @@ impl PiperineDevice {
         label: impl Into<String>,
         analog: Option<AnalogInstance>,
         digital: Option<DigitalInstance>,
+        meta: piperine_lang::pom::IntrospectionMeta,
     ) -> Self {
         Self {
             label: label.into(),
             analog,
             digital,
+            meta,
             analog_terminal_refs: Vec::new(),
             analog_terminal_node_ids: Vec::new(),
             last_analog_voltages: Vec::new(),
@@ -486,6 +493,16 @@ impl Introspect for PiperineDevice {
     /// string is the documented "unversioned" sentinel). A host uses this
     /// to render family-specific UI without name-matching.
     fn model_descriptor(&self) -> piperine_solver::abi::ModelDescriptor {
+        // PIA-01: an author-declared `@model(type, version)` on the module
+        // populates the descriptor from the sidecar. PIA-02: absent `@model`
+        // falls back to today's module-name echo with empty version — no
+        // regression for stdlib models that carry no `@model`.
+        if let Some(model) = &self.meta.model {
+            return piperine_solver::abi::ModelDescriptor {
+                type_id: model.type_id.clone(),
+                version: model.version.clone(),
+            };
+        }
         let type_id = self
             .analog
             .as_ref()

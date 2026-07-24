@@ -50,6 +50,62 @@ fn model_descriptor_carries_kernel_module_name() {
     assert_eq!(descriptor.version, "", "no version declaration → empty string");
 }
 
+/// PIA-01: an author-declared `@model(type, version)` on a module populates
+/// `ModelDescriptor` from the attribute (not the module-name echo). The full
+/// parse→POM→codegen→ABI path: the sidecar resolved by `CircuitCompiler`
+/// reaches `model_descriptor()`.
+#[test]
+fn model_descriptor_reads_at_model_attribute() {
+    let circuit = build(
+        "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        @model(type = \"mos\", version = \"3\")
+        mod Mos (inout d: Electrical, inout s: Electrical) {
+            param r: Real = 1.0e3;
+        }
+        analog Mos {
+            I(d, s) <+ V(d, s) / r;
+        }
+        mod Top (inout a: Electrical, inout b: Electrical) { Mos(a, b); }
+        ",
+        "Top",
+    );
+    let dev = &circuit.all_devices()[0];
+    let descriptor = dev.model_descriptor();
+    assert_eq!(descriptor.type_id, "mos", "@model type populates type_id, not the module name");
+    assert_eq!(descriptor.version, "3", "@model version populates the version field");
+    // The module name ("Mos") must NOT leak into type_id when @model is present.
+    assert_ne!(descriptor.type_id, "Mos", "module-name echo must be overridden by @model");
+}
+
+/// PIA-01 negative placement: `@model` on a param fails loud at circuit build
+/// (the sidecar resolver rejects the misplacement, surfacing as a
+/// `CodegenError::Invalid`).
+#[test]
+fn at_model_on_param_fails_loud_at_build() {
+    let elab = parse_and_elaborate(
+        "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod R (inout p: Electrical, inout n: Electrical) {
+            @model(type = \"r\", version = \"1\") param r: Real = 1.0e3;
+        }
+        analog R {
+            I(p, n) <+ V(p, n) / r;
+        }
+        mod Top (inout a: Electrical, inout b: Electrical) { R(a, b); }
+        ",
+        &piperine_lang::SourceMap::dummy(),
+    )
+    .expect("elaborates");
+    let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering");
+    let err = CircuitCompiler::new(&elab, &bodies)
+        .build_circuit("Top")
+        .err()
+        .expect("@model on a param must fail loud at build");
+    let msg = err.to_string();
+    assert!(msg.contains("model"), "error should name the misplaced schema: {msg}");
+}
+
 /// ABI-46 default: a host-built Element with no kernel (the composed
 /// surface's Resistor test device) returns the empty descriptor — a host
 /// falls back to the instance name in this case.

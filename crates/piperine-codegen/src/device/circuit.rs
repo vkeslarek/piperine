@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use piperine_lang::pom::{Design, Module};
+use piperine_lang::pom::{Design, IntrospectionMeta, Module};
 
 use piperine_solver::abi::NodeIdentifier;
 use piperine_solver::abi::CircuitInstance;
@@ -75,6 +75,12 @@ pub struct CircuitCompiler<'p> {
     design: &'p Design,
     bodies: &'p HashMap<String, LoweredBody>,
     kernels: HashMap<String, Arc<CompiledModule>>,
+    /// Resolved device-introspection metadata sidecars, one per module name
+    /// (phdl-introspection-attributes). Cached like `kernels` so a module
+    /// instantiated many times resolves its `@model`/`@name`/`@unit`/
+    /// `@description`/`@kind` attributes once. Built from POM attributes by
+    /// [`Design::introspection_meta`][piperine_lang::pom::Design::introspection_meta].
+    meta: HashMap<String, IntrospectionMeta>,
     /// Builds `@device`-annotated instances (SPEC Part VI §7). `None` means
     /// no plugin host is wired — a `@device` instance then fails loud.
     pub(super) provider: Option<&'p dyn super::plugin::DeviceProvider>,
@@ -93,7 +99,7 @@ pub struct CircuitCompiler<'p> {
 
 impl<'p> CircuitCompiler<'p> {
     pub fn new(design: &'p Design, bodies: &'p HashMap<String, LoweredBody>) -> Self {
-        Self { design, bodies, kernels: HashMap::new(), provider: None, fuse_digital_cones: true, compile_disto: true }
+        Self { design, bodies, kernels: HashMap::new(), meta: HashMap::new(), provider: None, fuse_digital_cones: true, compile_disto: true }
     }
 
     /// Wire a plugin host as the builder for `@device` instances.
@@ -139,6 +145,25 @@ impl<'p> CircuitCompiler<'p> {
         let compiled = Arc::new(CompiledModule::compile_with_options(body, self.compile_disto)?);
         self.kernels.insert(name.to_string(), compiled.clone());
         Ok(compiled)
+    }
+
+    /// Resolve (and cache) the device-introspection metadata sidecar for
+    /// `module_name` — author-declared `@model`/`@name`/`@unit`/`@description`/
+    /// `@kind` attributes read off the POM module. A bad attribute (placement
+    /// error, `@kind` value outside its target enum, duplicate `@name`) fails
+    /// loud here as a [`CodegenError::Invalid`], mirroring how the `@rfport`
+    /// resolver surfaces its validation failures at the consumer boundary.
+    /// Cached so a module instantiated many times resolves once.
+    pub(super) fn introspection_meta(&mut self, module_name: &str) -> Result<IntrospectionMeta, CodegenError> {
+        if let Some(m) = self.meta.get(module_name) {
+            return Ok(m.clone());
+        }
+        let m = self
+            .design
+            .introspection_meta(module_name)
+            .map_err(|e| CodegenError::Invalid(e.to_string()))?;
+        self.meta.insert(module_name.to_string(), m.clone());
+        Ok(m)
     }
 
     /// Build the circuit rooted at module `top`. The top may have both

@@ -258,6 +258,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
             instance.name().to_string(),
             analog,
             digital,
+            self.compiler.introspection_meta(instance.module_name())?,
         );
 
         // For digital-only devices with analog input ports (e.g. a
@@ -355,6 +356,7 @@ impl<'c, 'p> InstanceBuilder<'c, 'p> {
             format!("{}__top", self.top.name()),
             analog,
             digital,
+            self.compiler.introspection_meta(self.top.name())?,
         );
 
         // A2D bridge for digital-only top behavior with analog port reads.
