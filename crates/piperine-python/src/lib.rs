@@ -34,7 +34,7 @@ mod value_bridge;
 use pyo3::prelude::*;
 
 use design::{_Design, _Node, _Selection};
-use instance::{_InstanceView, _Terminal};
+use instance::{_InstanceView, _ModelDescriptor, _ObservableDescriptor, _Terminal, _TerminalDescriptor};
 use live::_Session;
 use module::_Module;
 use module::{_Behavior, _Instance, _Net, _Param, _Port};
@@ -82,6 +82,9 @@ pub(crate) fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_SolverStats>()?;
     m.add_class::<_InstanceView>()?;
     m.add_class::<_Terminal>()?;
+    m.add_class::<_ModelDescriptor>()?;
+    m.add_class::<_TerminalDescriptor>()?;
+    m.add_class::<_ObservableDescriptor>()?;
     m.add_class::<_Session>()?;
     m.add_class::<_TfResult>()?;
     Ok(())
@@ -711,9 +714,11 @@ mod Divider() {
             );
 
             // Terminals: Resistor declares (p, n); r_top binds p→vin, n→mid.
-            // Port-declaration order is preserved.
+            // Port-declaration order is preserved. (PY-13 connectivity —
+            // renamed from `terminals()` to `terminal_connections()` so the
+            // HOST-09 descriptor property can take the `terminals` name.)
             let terminals: Vec<(String, String)> = view
-                .getattr("terminals")?
+                .getattr("terminal_connections")?
                 .call0()?
                 .try_iter()?
                 .map(|t| {

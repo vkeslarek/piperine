@@ -50,6 +50,9 @@ __all__ = [
     # instance sub-views + solver statistics
     "InstanceView",
     "Terminal",
+    "ModelDescriptor",
+    "TerminalDescriptor",
+    "ObservableDescriptor",
     "SolverStats",
     # live session (compile once, set, re-run)
     "Session",
@@ -178,6 +181,9 @@ Node = _piperine._Node
 # objects; ``.stats`` on any analysis result is a ``SolverStats``.
 InstanceView = _piperine._InstanceView
 Terminal = _piperine._Terminal
+ModelDescriptor = _piperine._ModelDescriptor
+TerminalDescriptor = _piperine._TerminalDescriptor
+ObservableDescriptor = _piperine._ObservableDescriptor
 SolverStats = _piperine._SolverStats
 
 # Analysis-result types — no config-bundle translation needed, so they are

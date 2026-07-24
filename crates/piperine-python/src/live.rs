@@ -411,7 +411,16 @@ impl _Session {
         self.record_voltages(|node| result.get_node(node).unwrap_or(0.0));
         let digital = SimSession::snapshot_digital(&self.info, &self.circuit);
         let opvars = SimSession::snapshot_opvars(&self.circuit);
-        let op = OpResult::new(result, digital, opvars, Rc::new(self.info.clone()));
+        let (models, terminals, observables) = SimSession::snapshot_introspect(&self.circuit);
+        let op = OpResult::new(
+            result,
+            digital,
+            opvars,
+            models,
+            terminals,
+            observables,
+            Rc::new(self.info.clone()),
+        );
         Ok(_OpResult::new(op).with_resolver(self.instance_resolver()))
     }
 

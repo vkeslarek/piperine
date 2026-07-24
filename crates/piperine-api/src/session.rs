@@ -344,8 +344,9 @@ impl SimSession {
         drop(dc);
         let digital = Self::snapshot_digital(&info, &circuit);
         let opvars = Self::snapshot_opvars(&circuit);
+        let (models, terminals, observables) = Self::snapshot_introspect(&circuit);
         self.fire_after_solve("op", &node_voltages(&info, &result))?;
-        Ok(OpResult::new(result, digital, opvars, Rc::new(info)))
+        Ok(OpResult::new(result, digital, opvars, models, terminals, observables, Rc::new(info)))
     }
 
     /// Compile-once DC sweep (MD-18): elaborate/JIT the circuit **once**,
@@ -389,8 +390,17 @@ impl SimSession {
             drop(dc);
             let digital = Self::snapshot_digital(&info, &circuit);
             let opvars = Self::snapshot_opvars(&circuit);
+            let (models, terminals, observables) = Self::snapshot_introspect(&circuit);
             self.fire_after_solve("op", &node_voltages(&info, &result))?;
-            results.push(OpResult::new(result, digital, opvars, Rc::new(info.clone())));
+            results.push(OpResult::new(
+                result,
+                digital,
+                opvars,
+                models,
+                terminals,
+                observables,
+                Rc::new(info.clone()),
+            ));
         }
         Ok(results)
     }
@@ -430,6 +440,31 @@ impl SimSession {
             .iter()
             .map(|d| (d.name().to_string(), d.read_opvars()))
             .collect()
+    }
+
+    /// Every device's static introspection catalogs (HOST-09), keyed by
+    /// instance label — model descriptor, terminal descriptors (with
+    /// `TerminalKind`), and observable catalog. Snapshotted eagerly at solve
+    /// time alongside `snapshot_opvars` (the circuit does not outlive the
+    /// analysis call). Public: hosts that drive `CircuitInstance` directly
+    /// (the Python live session) build the same snapshot.
+    pub fn snapshot_introspect(
+        circuit: &piperine_solver::prelude::CircuitInstance,
+    ) -> (
+        HashMap<String, piperine_solver::prelude::ModelDescriptor>,
+        HashMap<String, Vec<piperine_solver::prelude::TerminalDescriptor>>,
+        HashMap<String, Vec<piperine_solver::prelude::ObservableDescriptor>>,
+    ) {
+        let mut models = HashMap::new();
+        let mut terminals = HashMap::new();
+        let mut observables = HashMap::new();
+        for d in circuit.all_devices() {
+            let label = d.name().to_string();
+            models.insert(label.clone(), d.model_descriptor());
+            terminals.insert(label.clone(), d.list_terminals());
+            observables.insert(label, d.list_observables());
+        }
+        (models, terminals, observables)
     }
 
     /// Run a transient analysis: same elaborate-and-solve recipe as
@@ -657,7 +692,16 @@ impl Session {
         drop(dc);
         let digital = SimSession::snapshot_digital(&self.info, &self.circuit);
         let opvars = SimSession::snapshot_opvars(&self.circuit);
-        Ok(OpResult::new(result, digital, opvars, Rc::new(self.info.clone())))
+        let (models, terminals, observables) = SimSession::snapshot_introspect(&self.circuit);
+        Ok(OpResult::new(
+            result,
+            digital,
+            opvars,
+            models,
+            terminals,
+            observables,
+            Rc::new(self.info.clone()),
+        ))
     }
 
     /// Run a transient analysis on the held circuit (HOST-02). Pending
