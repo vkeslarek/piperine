@@ -14,7 +14,7 @@ without it.**
 ---
 
 **Design**: `.specs/features/spectral-analyses/design.md`
-**Status**: Draft
+**Status**: T1–T14 committed; T15 (ngspice cross-checks) gate in progress; T16 (docs) next
 
 ---
 
@@ -366,10 +366,10 @@ frequencies
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] cubic VCCS `i=g1 v+g2 v²+g3 v³` at bias → `HD2=½(g2/g1)A` (≤1e-3 rel)
-- [ ] `//!` doc documents the nonlinear-currents (Volterra) algorithm
-- [ ] Gate passes: `cargo test -p piperine-solver` + `cargo test -p piperine disto`
-- [ ] Test count: ≥1 new test passes
+- [x] cubic VCCS `i=g1 v+g2 v²+g3 v³` at bias → `HD2=½(g2/g1)A` (≤1e-3 rel)
+- [x] `//!` doc documents the nonlinear-currents (Volterra) algorithm
+- [x] Gate passes: `cargo test -p piperine-solver` + `cargo test -p piperine disto`
+- [x] Test count: ≥1 new test passes
 
 **Tests**: unit · **Gate**: full
 **Commit**: `feat(solver): .disto single-tone HD2 (DISTO-01)`
@@ -390,10 +390,10 @@ with the 3rd-order nonlinear current `(1/6)f'''X1³ + ½f''(2 X1⊙X2)`, solve a
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] cubic VCCS → `HD3=¼(g3/g1)A²` (≤1e-3 rel, DISTO-05)
-- [ ] `disto3` kernel value-for-value on the polynomial device
-- [ ] Gate passes: `cargo test --workspace`
-- [ ] Test count: ≥2 new tests pass
+- [x] cubic VCCS → `HD3=¼(g3/g1)A²` (≤1e-3 rel, DISTO-05)
+- [x] `disto3` kernel value-for-value on the polynomial device
+- [x] Gate passes: `cargo test --workspace`
+- [x] Test count: ≥2 new tests pass
 
 **Tests**: unit · **Gate**: full
 **Commit**: `feat(solver,codegen): .disto HD3 via 3rd derivative (DISTO-01,05)`
@@ -413,10 +413,10 @@ first-order at F1 & F2, mix currents at `F1±F2` (IM2) and `2F1±F2`/`2F2±F1`
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] two-tone polynomial stage → analytic IM2/IM3 (≤1e-3 rel)
-- [ ] `//!` doc documents the intermod product bookkeeping
-- [ ] Gate passes: `cargo test -p piperine-solver` + `cargo test -p piperine disto`
-- [ ] Test count: ≥1 new test passes
+- [x] two-tone polynomial stage → analytic IM2/IM3 (≤1e-3 rel)
+- [x] `//!` doc documents the intermod product bookkeeping
+- [x] Gate passes: `cargo test -p piperine-solver` + `cargo test -p piperine disto`
+- [x] Test count: ≥1 new test passes
 
 **Tests**: unit · **Gate**: full
 **Commit**: `feat(solver): .disto two-tone IM2/IM3 (DISTO-02)`
@@ -436,10 +436,10 @@ first-order at F1 & F2, mix currents at `F1±F2` (IM2) and `2F1±F2`/`2F2±F1`
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `.disto` callable both hosts, same shape (MD-22, DISTO-06)
-- [ ] Parity test Rust==Python on the cubic stage (≤1e-9)
-- [ ] Gate passes: `cargo test --workspace`
-- [ ] Test count: ≥2 new tests pass
+- [x] `.disto` callable both hosts, same shape (MD-22, DISTO-06)
+- [x] Parity test Rust==Python on the cubic stage (≤1e-9)
+- [x] Gate passes: `cargo test --workspace`
+- [x] Test count: ≥2 new tests pass
 
 **Tests**: integration · **Gate**: full
 **Commit**: `feat(api,python): .disto uniform host surface (DISTO-06)`
@@ -459,10 +459,26 @@ gracefully if the local ngspice lacks it.
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `.four`/`.disto`/`.pz` piperine-vs-ngspice within tolerance (or the
+- [x] `.four`/`.disto`/`.pz` piperine-vs-ngspice within tolerance (or the
       guarded skip when ngspice absent, matching existing `detect()`)
-- [ ] Gate passes: `cargo test -p piperine ngspice`
-- [ ] Test count: ≥3 new cross-checks pass (or skip cleanly)
+- [x] Gate passes: `cargo test -p piperine ngspice`
+- [x] Test count: ≥3 new cross-checks pass (or skip cleanly)
+
+**Note (2026-07-19):** the `nmos2`/`nmos3` op-point cases in this same suite
+surfaced a real regression from the DISTO-01..06 work: `compile_disto2`/
+`compile_disto3` unrolled every controlling-branch combination into one
+Cranelift function, which never terminated compiling for a many-branch
+device (MOSFET). Fixed alongside T15 (not a separate task — found by this
+gate, per the tlc-spec-driven Execute discipline): symbolic redundancy
+removed (`d_dv_once_more_named`/`d_dv_thrice_from_twice` in `diff.rs`), one
+Cranelift function per branch combination instead of one unrolled function,
+a dev-profile `opt-level = 3` override for the `cranelift-*` crates
+(Cargo.toml — Cranelift's own codegen is prohibitively slow unoptimized),
+and a `compile_disto: bool` flag threaded `AnalogKernel` →
+`CompiledModule` → `CircuitCompiler` → `SimSession::build_circuit`
+(default skip; only `run_disto` opts in) so non-`.disto` analyses pay zero
+cost for kernels they never use. Full ngspice suite: 370s (bounded but
+slow) → 5s. `cargo test --workspace`: 582 passed, 0 failed, 5 ignored.
 
 **Tests**: integration · **Gate**: full
 **Commit**: `test(ngspice): cross-check .four/.pz/.disto (Success Criteria)`
@@ -482,9 +498,9 @@ to `.specs/STATE.md`; note `@rfport` as a reserved stdlib attribute.
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] ROADMAP P1 Analyses row updated; backlog table row removed/updated
-- [ ] STATE.md handoff snapshot added
-- [ ] Gate passes: `cargo build --workspace` (zero warnings) + `cargo test --workspace`
+- [x] ROADMAP P1 Analyses row updated; backlog table row removed/updated
+- [x] STATE.md handoff snapshot added
+- [x] Gate passes: `cargo build --workspace` (zero warnings) + `cargo test --workspace`
 
 **Tests**: none · **Gate**: build
 **Commit**: `docs(specs): spectral-analyses done — ROADMAP P1 + STATE`

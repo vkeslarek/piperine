@@ -1,4 +1,11 @@
-# Solver OSDI-inspired ABI Completion
+# Solver OSDI-inspired ABI Completion — SUPERSEDED
+
+> **Superseded 2026-07-22 by `.specs/features/element-abi-maturity/spec.md`.**
+> The goals listed below were audited: internal-unknown allocation shipped
+> (`solver-abi` feature), model/instance separation was rejected (user
+> 2026-07-16), noise metadata shipped, parameter invalidation shipped (core),
+> and the remaining items are specced in the new feature with grounded
+> file:line evidence. This stub is preserved for git history.
 
 **Implements:** MD-11 (OSDI as checklist), MD-12 (ABI vs policy classification)
 **SOLVER_GAPS reference:** §1 OSDI-inspired, §1 model/instance separation, §1 parameter/query (partial)

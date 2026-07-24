@@ -28,7 +28,7 @@ real circuits. `.sens` additionally feeds the P6 optimizer.
       `zi_*` stay fail-loud).
 - [x] Fused digital-network JIT active in real circuits.
 - [x] Model set: MOS 2/3, lossless tline, transformer block; stdlib off
-      sentinel params. (`urc` blocked on `codegen-parametric-devices` — T16.)
+      sentinel params. (`urc` blocked on `hierarchy-flattening` — T16.)
 - [x] fetlim/limvds real; UIC hold enforced; temperature flow uniform;
       vestigial `IntegrationMethod` gone; hygiene leftovers cleared.
 
@@ -269,7 +269,7 @@ fusion active.
 | SC-13 | P1 digital network fused + identical results | T12 | Verified |
 | SC-14 | P1 MOS2 + MOS3 ngspice parity | T13+T14 | Verified |
 | SC-15 | P1 tline ideal | T15 | Verified |
-| SC-16 | P1 urc | T16 | **Blocked** — needs `codegen-parametric-devices` (see tasks.md T16) |
+| SC-16 | P1 urc | T16 | **Blocked** — needs `hierarchy-flattening` (see tasks.md T16) |
 | SC-17 | P1 transformer block | T17 | Verified |
 | SC-18 | P1 stdlib off sentinels (T?) | T18 | Verified |
 | SC-19 | P2 fetlim/limvds | T19 | Verified |
@@ -283,7 +283,7 @@ fusion active.
 
 **Coverage:** 26 total — 25 Verified (independent Verifier, round 2 PASS:
 spec-anchored evidence + discrimination sensor 6/6 killed), 1 blocked (SC-16,
-external `codegen-parametric-devices` feature).
+external `hierarchy-flattening` feature).
 
 ## Success Criteria
 

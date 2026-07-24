@@ -11,8 +11,8 @@ host surfaces (`run_sens`/`run_pss`) are born in `piperine-api`.
 
 **Design**: `.specs/features/p1-solver-complete/design.md`
 **Status**: Complete — T1–T15, T17–T27 done; T16 BLOCKED (external dep:
-`codegen-parametric-devices` feature, see below). Awaiting Verifier,
-2026-07-18
+`hierarchy-flattening` feature — flatten pass, not monomorph; see below).
+Awaiting Verifier, 2026-07-18
 **Baseline**: whatever `api-crate` closes at (≥449 passed / 5 ignored)
 
 ---
@@ -255,9 +255,12 @@ does not exist. Three distinct gaps found while attempting it:
    stays one array-typed net; `node[i]` in `V()/I()` cannot resolve (the node
    table has no `node[0]`). Needs array-net expansion + index→net mapping in
    the flattener.
-Each is a real codegen feature, not a stdlib-model task. **Recommend a
-separate `codegen-parametric-devices` feature** (flatten pass OR array-node
-support + the const-arg-into-behavior fix). See [[urc-codegen-gaps]].
+Each is a real codegen feature, not a stdlib-model task. Tracked as the
+**`hierarchy-flattening` feature** (gap 1 = the MVP flatten pass; gaps 2/3 —
+const-arg-into-behavior + array-node expansion — logged there as deferred,
+bite only certain authoring routes). NOTE: structural monomorphization
+(`mod Foo[N]` → distinct kernels) already works; these three are the
+*remaining* codegen gaps, not monomorph. See [[urc-codegen-gaps]].
 
 ### T17: ✅ DONE — Transformer block
 **What**: `xfmr(l1, l2, k)` combined two-winding device in

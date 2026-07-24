@@ -121,7 +121,11 @@ impl SimSession {
     }
 
     /// Apply staged overrides, lower to resolved bodies, build the circuit.
-    fn build_circuit(&self) -> Result<(piperine_solver::prelude::CircuitInstance, CircuitBuildInfo), Error> {
+    /// `compile_disto` gates the `.disto` 2nd/3rd-derivative kernels
+    /// (`CircuitCompiler::with_disto`) — every caller but [`Self::run_disto`]
+    /// passes `false`: those kernels are a real per-branch-combination
+    /// Cranelift compile cost that only `.disto` itself needs.
+    fn build_circuit(&self, compile_disto: bool) -> Result<(piperine_solver::prelude::CircuitInstance, CircuitBuildInfo), Error> {
         // `transform_design`: hooks stage their mutations, then the pure
         // re-elaboration below consumes them like any staged write.
         if let Some(h) = &self.hooks {
@@ -132,8 +136,8 @@ impl SimSession {
         if let Some(h) = &self.hooks {
             h.before_lower(&applied).map_err(Error::Plugin)?;
         }
-        let bodies = piperine_codegen::ir::lower_bodies(&applied)?;
-        let mut compiler = CircuitCompiler::new(&applied, &bodies);
+        let bodies = piperine_codegen::resolve::lower_bodies(&applied)?;
+        let mut compiler = CircuitCompiler::new(&applied, &bodies).with_disto(compile_disto);
         if let Some(provider) = &self.provider {
             compiler = compiler.with_device_provider(provider.as_ref());
         }
@@ -157,7 +161,7 @@ impl SimSession {
         config: &SolverConfig,
     ) -> Result<crate::results::SensResult, Error> {
         use crate::results::NetLookup;
-        let (mut circuit, info) = self.build_circuit()?;
+        let (mut circuit, info) = self.build_circuit(false)?;
         // Resolve host names → solver `Net`s (keyed back to the host name
         // after the solve — solver-side labels are internal ids).
         let mut nets = Vec::with_capacity(outputs.len());
@@ -205,7 +209,7 @@ impl SimSession {
         tstab: f64,
         config: &SolverConfig,
     ) -> Result<crate::results::PssResult, Error> {
-        let (mut circuit, info) = self.build_circuit()?;
+        let (mut circuit, info) = self.build_circuit(false)?;
         let opts = piperine_solver::prelude::PssAnalysisOptions::new(period).with_tstab(tstab);
         let mut solver = circuit.pss(opts, config.to_context())?;
         solver.policy = config.to_policy();
@@ -233,7 +237,7 @@ impl SimSession {
         output_ref: Option<&str>,
         config: &SolverConfig,
     ) -> Result<piperine_solver::prelude::PoleZeroResult, Error> {
-        let (mut circuit, info) = self.build_circuit()?;
+        let (mut circuit, info) = self.build_circuit(false)?;
         let output_node = resolve_net(&info, output)?;
         let output_ref_node = output_ref.map(|r| resolve_net(&info, r)).transpose()?;
         let options = piperine_solver::prelude::PoleZeroOptions {
@@ -265,7 +269,7 @@ impl SimSession {
         logarithmic: bool,
         config: &SolverConfig,
     ) -> Result<piperine_solver::prelude::SpResult, Error> {
-        let (mut circuit, info) = self.build_circuit()?;
+        let (mut circuit, info) = self.build_circuit(false)?;
         let rfports = self.design.rfports(&self.module)?;
         let mut ports = Vec::with_capacity(rfports.len());
         for p in &rfports {
@@ -307,7 +311,7 @@ impl SimSession {
         output_ref: Option<&str>,
         config: &SolverConfig,
     ) -> Result<piperine_solver::prelude::DistoResult, Error> {
-        let (mut circuit, info) = self.build_circuit()?;
+        let (mut circuit, info) = self.build_circuit(true)?;
         let output_node = resolve_net(&info, output)?;
         let output_ref_node = output_ref.map(|r| resolve_net(&info, r)).transpose()?;
         let options = piperine_solver::prelude::DistoOptions {
@@ -330,7 +334,7 @@ impl SimSession {
         config: &SolverConfig,
         nodeset: Option<&HashMap<String, f64>>,
     ) -> Result<OpResult, Error> {
-        let (mut circuit, info) = self.build_circuit()?;
+        let (mut circuit, info) = self.build_circuit(false)?;
         let ivs = build_ivs(&info, nodeset, circuit.netlist())?;
         let mut dc = circuit.dc(config.to_context())?;
         dc.policy = config.to_policy();
@@ -360,7 +364,7 @@ impl SimSession {
         config: &SolverConfig,
         nodeset: Option<&HashMap<String, f64>>,
     ) -> Result<Vec<OpResult>, Error> {
-        let (mut circuit, mut info) = self.build_circuit()?;
+        let (mut circuit, mut info) = self.build_circuit(false)?;
         let mut results = Vec::with_capacity(values.len());
         for &v in values {
             circuit.set_element_param(
@@ -428,7 +432,7 @@ impl SimSession {
         ic: Option<&HashMap<String, f64>>,
         record_device_state: bool,
     ) -> Result<Trace, Error> {
-        let (mut circuit, info) = self.build_circuit()?;
+        let (mut circuit, info) = self.build_circuit(false)?;
         let ivs = build_ivs(&info, ic, circuit.netlist())?;
         let mut opts = match step {
             // SPICE is always adaptive; `step` is the initial dt for the
@@ -459,7 +463,7 @@ impl SimSession {
         logarithmic: bool,
         config: &SolverConfig,
     ) -> Result<AcTrace, Error> {
-        let (mut circuit, info) = self.build_circuit()?;
+        let (mut circuit, info) = self.build_circuit(false)?;
         let opts = piperine_solver::prelude::AcSweepAnalysisOptions {
             start_frequency: fstart,
             stop_frequency: fstop,
@@ -486,7 +490,7 @@ impl SimSession {
         logarithmic: bool,
         config: &SolverConfig,
     ) -> Result<NoiseTrace, Error> {
-        let (mut circuit, info) = self.build_circuit()?;
+        let (mut circuit, info) = self.build_circuit(false)?;
         let out = resolve_net(&info, out)?;
         let reference = resolve_net(&info, reference)?;
         let opts = piperine_solver::prelude::NoiseAnalysisOptions {

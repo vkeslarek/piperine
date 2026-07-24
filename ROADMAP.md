@@ -35,16 +35,18 @@ support builds on that host, not on a revived in-language bench.
 
 ## V1 — definition of done
 
-Six pillars. V1 ships when all six are green.
+Pillars. V1 ships when the V1-marked ones are green.
 
 | # | Pillar | One-line bar |
 |---|--------|--------------|
 | P1 | **Solver complete** | Every analysis a working SPICE user expects, plus PSS; engine gaps closed or explicitly documented as post-V1 |
-| P2 | **Low-level device ABI** | External compiled devices load via `libloading` and bind with a PHDL `@device` declaration — OSDI is the first client |
+| P2 | **Low-level device ABI** | Element ABI maturity complete (rollback, limiting, lifecycle, events, introspection); PHDL introspection attributes are the follow-up |
 | P3 | **Python library polished** | `import piperine` is the single host: benches, validation, plugins scripting; documented, docstringed, stub-complete |
-| P4 | **Language server 100%** | Scope-aware resolution, project-wide navigation, attribute-schema IDE support, protocol-level tests |
+| P3b | **Blocking-bug fixes (post host-sanitization)** | The gap-catalog items that *block a simulation or full user use* — `piperine build` stub, digital-codegen completeness, `.tf` correctness. Lands after P3's host work. |
+| P4 | **Language server 100%** | Scope-aware resolution, project-wide navigation, attribute-schema + `///` doc-comment IDE support, protocol-level tests |
 | P5 | **Plugin interface simplified** | One clear extension story (attributes + devices + hooks + scripts); native + Python backends only; writing a plugin is a documented afternoon task |
-| P6 | **Optimizer** | Design-centering-capable optimization loop on the live-params engine; shape under study — PSS and `.sens` land first as its feeders |
+| P6 | **Cleanup & completeness** | Test sanitization (~800 tests → unit-inline, integration-grouped, dedupe), dead-flag/ignored-test removal, non-blocking codegen/interpreter completeness. Not all V1 — triage in the gap catalog. |
+| P7 | **Optimizer** | Design-centering-capable optimization loop on the live-params engine; shape under study — PSS and `.sens` land first as its feeders |
 
 ### Architecture decisions
 
@@ -62,7 +64,7 @@ Six pillars. V1 ships when all six are green.
   transparently on load.
 - **Optimizer shape — open study (user).** Not a V1 blocker to decide now.
   Design centering is the target; library-first on `LiveSession` vs
-  language-baked `@optimize` stays a To-Do design item under P6. PSS and
+  language-baked `@optimize` stays a To-Do design item under P7. PSS and
   `.sens` are needed regardless and land in P1.
 
 ---
@@ -263,110 +265,273 @@ mixed-signal-first; OSDI wrappers are one client.
 
 **V1 blockers**
 
-- [ ] **Plugin/OSDI internal-unknown allocation — MISSING, the P2 blocker.**
-      External (compiled) models need auxiliary nodes/branches allocated
-      pre-finalization via the solver's `HAS_INTERNAL_UNKNOWNS` seam. Blocks
-      the `@device(plugin = "osdi", …)` PHDL seam (factory fails loud today;
-      the `piperine_osdi` Rust API works meanwhile). NOTE: this is the
-      **plugin** path only — PHDL-authored devices already allocate internal
-      nodes fine (non-port `wire` → anonymous MNA unknown, `circuit.rs:419`;
-      the BJT ships 3). The two were once conflated; the PHDL half is done,
-      and PHDL self-heating is a modeling task (`self-heating` feature), not
-      a blocker.
-- [ ] **Model/instance separation — MISSING.** `ModelHandle` (shared card) vs
-      `ElementInstance` (terminals, instance params, state); gives sweeps a
-      clean rebuild rule.
-- [ ] **Explicit lifecycle — MISSING.** Ordered hooks: model setup → instance
-      setup → temperature preprocess → load/evaluate → accept/commit →
-      rollback → destroy. One chart per analysis.
-- [ ] Artifact distribution — prebuilt plugin binaries per target triple from
-      git releases (today the artifact must pre-exist).
+- [x] **Explicit lifecycle — DELIVERED 2026-07-23** (feature
+      `element-abi-maturity`, 30 commits, 814 tests, Verifier PASS). Rollback
+      checkpoint/restore on the `Element` trait (limiter + digital registers
+      rewound on rejected steps — proven correctness bug fixed); formal
+      `LimitingReport` API (replaced `limiting_active`/`convergence_hint`);
+      lifecycle contract documented in Part VII §19 (hook chart + algorithm
+      flow per analysis) + enforced by executable contract test.
 
-**Element ABI maturity checklist (schedule with the first client that needs
-each)**
+**Not blockers (recorded to prevent re-litigation)**
 
-- [ ] **Commit/rollback for all mixed-signal state.** Rejected timesteps must
-      restore every stateful participant (A2D crossings, D2A latches, co-sim
-      state), not only the digital net array. Hard requirement for the MCU
-      co-sim plugin (gallery #1).
-- [ ] **Unified event model — PARTIAL.** The unified *breakpoint* table
-      (TRB-11, `Element::next_breakpoints`) landed; full unification of
-      digital events, analog crossings, timers, and `$bound_step` hints under
-      one queue (kind, target, time, priority, source, rollback behavior) is
-      still open.
-- [ ] Richer terminal descriptors — domain, direction, required/optional,
-      sign convention, external/internal/auxiliary.
-- [ ] Opvar catalog — declared names/types/units/owner for `gm`, `vbe`,
-      register state; uniform query path.
-- [ ] Noise metadata — per-source names/types/terminal pairs; per-source
-      contribution reporting (today total PSD only).
-- [ ] Temperature protocol — nominal/instance/delta separation; declare
-      whether a change means recompute constants, restamp, or rebuild.
-- [ ] Parameter invalidation rules — partially landed
-      (`ParamDescriptor::invalidation`); wire sweeps/optimizer to honor them.
-- [ ] Formal limiting API — proposed/limited values, limiter name, active
-      state, reason (today `limiting_active` bool).
-- [ ] Jacobian/stamp capability declaration — analytic vs numeric vs missing;
-      validation error for analyses that need what's absent.
-- [ ] Save/probe selection — devices declare observables + cost; record only
-      what the host asked.
-- [ ] `NewtonStrategy`/`StepperStrategy` — fold Newton damping/limiting and
-      transient step rejection into the `ConvergencePlan` composition
-      (homotopy half is done).
-- [ ] Introspect leftovers: model descriptor (type id/version), real
-      opvar/terminal catalogs from the kernel (indices exist, names don't).
+- **Internal-unknown allocation (`HAS_INTERNAL_UNKNOWNS`):** the
+  `allocate_unknowns` seam + capability flag are **implemented and tested**
+  (`element.rs:149`, `builder.rs:144-160`; solver tests `parity_baseline.rs`,
+  `composed_element.rs`, `live_params.rs`). Any `Element` returned by
+  `DeviceProvider::build` (`plugin.rs:63`) allocates internal nodes through the
+  standard builder path — identical to a native element. `@device(plugin =
+  "osdi")` works once an OSDI `DeviceProvider` is wired; the only "fail loud
+  today" is "no provider wired" (`plugin.rs:78`) — the plugin's job, not a
+  solver gap. The stale `solver-osdi-abi-completion` spec listed this as
+  pending; superseded by the shipped `solver-abi` feature.
+- **PHDL internal nodes:** non-port `wire` → anonymous MNA unknown
+  (`circuit.rs:419`); the BJT ships 3. These never touch
+  `HAS_INTERNAL_UNKNOWNS` — that path is solver-native elements only. PHDL
+  self-heating is a modeling task (`self-heating` feature), not a blocker.
+- **Model/instance separation:** **rejected for the solver** (user decision
+  2026-07-16, `solver-abi/spec.md:57`). It is a SPICE concept (shared `.model`
+  card); Piperine is HDL-centric — the module is the model, each instance is a
+  compilation/restamp. The sweep rebuild rule is owned by
+  `ParamDescriptor::invalidation` (partially landed) + compile-once/restamp
+  (MD-18). The OSDI wrapper (`piperine_osdi`, external) handles model/instance
+  internally; the solver never sees the distinction.
+
+**Element ABI maturity checklist — DELIVERED 2026-07-23** (feature
+`element-abi-maturity`, `.specs/features/element-abi-maturity/`). Full spec
+(48 requirements, 10 stories), design (12 tech decisions), tasks (32 atomic),
+validation (PASS — 48/48 ACs, 5/5 sensor). The codegen bridge is complete
+(`PiperineDevice` overrides every `Introspect` method with real kernel data).
+The PHDL language declarations are a follow-up (bottom of this section).
+
+- [x] **Commit/rollback for all mixed-signal state — DONE.**
+      `ElementCheckpoint` + `checkpoint_state`/`restore_state` on `Element`;
+      wired into transient reject path + DC homotopy retry; limiter + digital
+      registers rewound. Accept-gated state naturally safe.
+- [x] **Formal limiting API — DONE.** `LimitingReport { net, proposed,
+      limited_value, limiter_name, reason }` replaces `limiting_active` +
+      `convergence_hint` (both removed, zero dead refs). Codegen Limiter
+      produces the report; Newton gate + DC bypass consume it.
+- [x] **Lifecycle contract — DONE.** Part VII §19: per-analysis hook chart +
+      algorithm flow (DC/AC/tran/noise/PSS/`.sens`); executable contract test
+      in `lifecycle.rs` asserts ordering.
+- [x] **Temperature protocol — DONE.** `set_temperature` wired into
+      `CircuitBuilder::build`; per-instance `dtemp` composed into effective
+      temp; `Invalidation::Temperature` driven by sweeps.
+- [x] **Jacobian/stamp capability declaration — DONE.** `HAS_DISTO2`/
+      `HAS_DISTO3`/`NUMERIC_JACOBIAN` bits; `.disto` warns when no device
+      contributes, fails loud for numeric-only.
+- [x] **Terminal/opvar catalogs — DONE (ABI bridge).** `TerminalKind` added;
+      `PiperineDevice::list_terminals` bridges kernel terminals (positional
+      External/Internal); `read_opvars`/`list_queries` bridge compiled var-eval
+      path. `ModelDescriptor { type_id, version }` on Introspect.
+- [x] **Save/probe selection — DONE.** `ObservableDescriptor` +
+      `ProbeSelection`; `collect_device_banks` filters per-observable; fail-loud
+      on unknown observable.
+- [x] **Unified event model — DONE.** `EventQueue<EventEntry>` (BinaryHeap);
+      four sources adapted (digital, breakpoints, scheduled sets, `$bound_step`);
+      `predict_step` reads from unified queue; per-entry `RollbackBehavior`.
+- [x] **`StepperStrategy` fold — DONE.** `ConvergencePlan` owns stepper
+      alongside Newton + Homotopy; transient delegates; parity baselines
+      bit-identical.
+- [x] **Introspect leftovers — DONE (ABI).** `ModelDescriptor`; kernel named
+      catalogs (state/force/noise terminals) surfaced through the ABI.
+- [x] **Noise metadata — DONE.** `Noise { name, kind }` +
+      `NoiseContribution { element, source, kind, psd, integrated_sq }`;
+      per-source reporting end-to-end with conservation test
+      (`noise.rs:437-502`).
+- [x] **Parameter invalidation — DONE (core).** `ParamDescriptor::invalidation`
+      wired through `CircuitInstance::set_element_param`, DC restamps, transient
+      `apply_scheduled_sets`, `.sens` rebuild gate, Python host auto-rebuild.
+- [x] **`NewtonStrategy` fold — DONE.** Already in `ConvergencePlan::newton`;
+      `DampedNewton` wired.
+
+**Follow-up: PHDL introspection attributes (language declarations) —
+SPEC'D 2026-07-23** (feature `phdl-introspection-attributes`,
+`.specs/features/phdl-introspection-attributes/spec.md`; 4 stories, 20
+requirements PIA-01..20; Design pending). The ABI/codegen bridge above is
+reflective (host reads kernel data), not declarative (device author cannot
+control it from PHDL). This feature adds the language surface.
+
+**Design shape (user 2026-07-23): atomic single-purpose attributes, not role
+bundles.** Metadata is expressed with small composable attributes — `@name`,
+`@unit`, `@description`, `@kind`, `@model`, `@version` — each legal on multiple
+declaration kinds, rather than one bundled `@opvar(...)`/`@observable(...)`/
+`@terminal(...)` per role. Model identity is the one deliberate pair —
+`@model(type, version)` carries both fields together. Every attribute is
+optional (zero regression) and a
+textual `extern attribute` declaration (MD-24, LSP go-to-definition). Payoff:
+the opvar-name vs observable-name inconsistency *dissolves* — one `@name` on a
+`var` feeds both catalogs, nothing to unify; `@kind` is placement-resolved
+(`var` → `ObservableKind`, terminal → `TerminalKind`).
+
+- [ ] **Model identity** — `@model(type = "mos", version = "3")` on modules
+      populates `ModelDescriptor` instead of echoing the module name (PIA-01..04).
+- [ ] **Var metadata** — `@name`/`@unit`/`@description`/`@kind` on vars name and
+      annotate the opvar query catalog AND the observable catalog from one
+      declaration; replaces positional `ddt[k]` observable naming (PIA-05..09).
+- [ ] **Terminal classification** — `@name`/`@kind`/`@description` on ports and
+      internal wires feed `TerminalDescriptor` (external/internal/auxiliary).
+      A **new** attribute family, NOT `@port` (plugin device-wiring, plugin-only
+      scope) and NOT `@rfport` (RF S-param ports) — distinct purpose, distinct
+      surface (PIA-10..14).
+- [ ] **Named limiters** — thread the existing `$limit(kind, ...)` `kind` (plus
+      an optional reason) into `LimitingReport.limiter_name`/`reason` so a MOSFET
+      distinguishes `fetlim` from `limvds`; currently hardcoded `"pnjlim"`/
+      `VoltageStep`. An operator argument, not an attribute (PIA-15..18).
 
 ---
 
 ## P3 — Python library polished
 
-Facade is docstringed and parity-tested (bench-removal). Governing rule:
-**MD-22 — uniform host surface**: Python and Rust are one API; every item
-below lands on both sides with the same shape.
+**REFINED 2026-07-23 (ideal-first)** — feature `host-library`
+(`.specs/features/host-library/`: `ideal.md` north-star, `delta.md` gap map,
+`spec.md` 6 stories / 28 requirements HOST-01..28; Design pending). The surface
+was designed greenfield ("the perfect `import piperine`") and then diffed
+against what ships. Governing rule **MD-22 — uniform host surface**: Python and
+Rust are ONE API (same names, call shape, config/result types, errors),
+enforced by a parity test; Rust is designed *with* Python, never bolted on.
 
-- [ ] **`uniform-host-api` feature (MD-22):** Rust gains the object model
-      (`load` → `Design` → `Module` → analyses, `compile()` →
-      `LiveSession`, `InstanceView` indexing, bundle-shaped configs);
-      Python gains the Rust-only knobs (nodeset, `dc_damp_tolerance`);
-      naming unified (`Solver` vs `SolverConfig`, `const_`, `cross`
-      direction enum). Working sheet: `docs/spec/appendix_c_host_surface.md`
-      §4.
+Verified gap (2026-07-23): the engine ships far more than the host exposes. The
+Rust host runs `sens`/`pss`/`pz`/`sp`/`disto` but **Python has no typed result
+class** for them; `tf` exists only in the solver; the entire `element-abi`
+introspection catalog (opvars, observables, terminals+kind, model descriptor,
+limiting reports, per-source noise, param bounds) has **almost no host door** —
+so a designer cannot even read a component's computed `power` opvar to optimize
+efficiency (the `ideal.md` §0 driving scenario).
 
-Remaining:
+The refinement replaces the old flat bullet list with the delta's workstreams
+(scope locked host-pure — `optimize`→P7, plugin-scripting→P5):
 
-- [ ] `piperine.plot(waveform, ...)` convenience (matplotlib wrapper).
-- [ ] `.four`-style post-processing helpers (`waveform.fft()`, etc.).
-- [ ] `waveform.resample(grid)` — `.tran tstep`-style print-grid
-      interpolation (decision 2026-07-18: host feature, not solver;
-      `Waveform.at` already interpolates point queries).
-- [ ] `extract` / `.attach` / `.meta`-class helpers as Python host-API
-      functions (the plugin bench-task surface died with the bench).
-- [ ] Ergonomics pass driven by real bench-writing (error messages, numpy
-      seams, keyword defaults).
-- [ ] `HookInput.solve` payloads for swept analyses (tran/ac/noise hand hooks
-      the analysis name only; op carries node voltages).
-- [ ] Packaging/PyPI: post-V1, but keep the module layout PyPI-shaped.
+- [ ] **#1/#2 (P1 MVP) — compiled `Session` center + uniform analyses.**
+      `Session` is the host center on both hosts (Python `LiveSession`→`Session`;
+      build the Rust equivalent). Every analysis (`op`/`dc`/`tran`/`ac`/`noise`/
+      `tf`/`sens`/`pss`/`pz`/`disto`/`sp`/`four`) ships on both hosts, kwargs-
+      first, typed result. Binds the Python-missing typed results + `tf`; closes
+      the MD-22 breach; parity test locks it.
+- [ ] **#4b (P2, highest leverage) — element-abi introspection door.**
+      `inst.opvar`/`opvars`/`observables`/`model`/`terminals`(+kind);
+      `trace.opvar` via `probe=`; `op.stats.limiting`; noise `by_source`/
+      `contributions`; `Param.bounds`/`unit`/`scope`. Unlocks the opvar/
+      efficiency driving scenario, convergence debugging, probe discovery, and
+      auto knob-bounds for the P7 optimizer — read-only bridges, low risk.
+- [ ] **#5 (P2) — return-type consolidation.** `Trace[T]` generic; fold
+      `AcTrace`/`NoiseTrace` (nine-type taxonomy, `ideal.md` §6).
+- [ ] **#4 (P3) — rich `Waveform`.** Measurements (`slew_rate`/`overshoot`/
+      `settling_time`/…), transforms (`fft`/`resample`/…), `ComplexWaveform`
+      margins/bandwidth, `plot`/`pip.plot`/`bode` (matplotlib-guarded).
+- [ ] **#3 (P3) — first-class sweeps.** Fluent `sweep()`, nested/named,
+      `SweepPoint`-as-`Session`, `.map()`→ndarray (compile-once, MD-18).
+- [ ] **#6/#7/#9 (P3) — configs, units, errors, discoverability, naming.**
+      Typed kwargs/`__init__`, canonical `Solver` knobs (nodeset,
+      `dc_damp_tolerance`), SI helpers (`pip.Hz`) + Rust typed-unit `Into`
+      (`Freq: From<&str>`), typed `SimulationError` hierarchy, `NetRef`
+      ergonomics, `cross`/`dir`/`scale` enums, `.pyi` stubs, property/method
+      consistency, `const`/`design[name]`/`load_str`, `pip.extract`.
+- [ ] **Docs — `docs/spec/part_viii_host_api.md` + `appendix_c` updated** to the
+      delivered surface (HOST-27/28).
 
-Post-V1 interactivity (oscilloscope, dashboards, sliders driving
-`LiveSession.set`) builds here — see gallery.
+**Not in this feature (recorded):** `pip.optimize` (design centering) is **P7**;
+Python plugin scripting (`@pip.device`/`@pip.hook`, lifecycle-registry-to-Python)
+is **P5**. This feature makes the optimizer *feedable* (`Param.bounds`, opvar
+objectives) but does not implement the loop. `HookInput.solve` payloads for
+swept analyses fold into the introspection/hooks work. Packaging/PyPI stays
+post-V1 (keep the module layout PyPI-shaped).
+
+Post-V1 interactivity (oscilloscope, dashboards, sliders driving `Session.set`)
+builds here — see gallery.
+
+---
+
+## P3b — Blocking-bug fixes (post host-sanitization)
+
+The gap-catalog rows that **block a simulation or full user use** — promoted out
+of the triage sheet because they are bugs, not features. Lands after P3's host
+work (and the P6 test-sanitization that makes regressions visible). Each is
+`file:line`-evidenced in the gap catalog.
+
+- [ ] **`piperine build` is a stub** — `build.rs:33` sets up headers, prints
+      "Building…", and never calls the compiler/elaborator. A build command that
+      does not build blocks the core CLI workflow. **V1.**
+- [ ] **Digital codegen completeness** (analog has these, digital rejects them,
+      so valid-looking digital designs fail to compile):
+      - user-`fn` inlining in a digital body (`emit/builder.rs:334`)
+      - enum-pattern resolution / `match` on enums in digital (`emit/stmt.rs:234`)
+      - real ↔ 4-state conversion in digital (`emit/builder.rs:679`)
+      - (`for` in a digital body — `emit/stmt.rs:98` — is niche; parked in P6)
+- [ ] **`.tf` input impedance for a current-source input** returns a placeholder
+      `1e20` (`analyses/tf.rs:394`) — a wrong number a user can read as real.
+      Small, correctness-shaped. **V1.**
+
+> Framing (user 2026-07-23): "super important" = blocks a simulation OR causes a
+> bug that prevents full user use. Everything else from the catalog is P6.
 
 ---
 
 ## P4 — Language server 100%
 
-- [ ] True scope-aware name resolution (elaborator name→id maps exposed as a
-      query; today first-match global lookup).
-- [ ] Resolver-driven references/rename/highlight (today word-occurrence
-      scans; comments/strings match).
-- [ ] Project-unit elaboration (`ServerState.projects`), cross-file
-      goto/rename, per-file diagnostic fan-out.
-- [ ] Error-accumulating elaboration (today first `ElabError` stops analysis
-      — one error at a time in the editor).
-- [ ] Attribute-schema IDE support: completion of `@schema` names, in-editor
-      argument validation, hover→schema fields, goto→`@attribute`
-      declaration, outline entries.
-- [ ] Protocol-level tests over `Connection::memory()` (init → didOpen →
-      hover/completion round-trips).
+**SPEC'D 2026-07-23 (code-audited)** — feature `language-server`
+(`.specs/features/language-server/spec.md`; 7 stories, 26 requirements
+LSP-01..26; Design pending). Audit finding: the server advertises 17 LSP
+capabilities but the **depth** is thin — resolution is word-based global lookup
+(`symbol_index.rs:53`), references/rename are text scans (`references.rs:23`/
+`rename.rs:29`, matching comments/strings + all scopes), there is no project-wide
+symbol index, elaboration stops at the first error (`state.rs:80`), and PHDL has
+no doc comments. The refinement deepens the existing capabilities; it does not
+add new ones.
+
+**"100%"** = the editor understands PHDL as well as the compiler does: names
+resolve by scope (not first-match), navigation works across the whole project,
+every diagnostic shows at once, attribute schemas and **doc comments** drive
+hover/completion, and the whole thing is protocol-tested. Grouped by concern
+(MVP = scope-aware resolution core + `///` doc comments):
+
+### Resolver correctness (the engine the IDE reads)
+
+- [ ] **Scope-aware name resolution** — expose the elaborator's name→id maps as
+      a query; today the server does first-match global lookup, so a shadowed
+      local resolves to the wrong declaration.
+- [ ] **Resolver-driven references/rename/highlight** — today word-occurrence
+      scans (comments/strings falsely match). Rename/highlight must ride the
+      resolver's binding graph, not text.
+- [ ] **Error-accumulating elaboration** — today the first `ElabError` stops
+      analysis, so the editor shows one error at a time. Accumulate + fan out
+      per file.
+
+### Project-wide navigation
+
+- [ ] **Project-unit elaboration** (`ServerState.projects`): cross-file
+      goto/rename, per-file diagnostic fan-out — the server elaborates the whole
+      project, not one open buffer.
+
+### IDE features (hover / completion / outline)
+
+- [ ] **Attribute-schema IDE support**: completion of `@schema` names, in-editor
+      argument validation, hover→schema fields, goto→`@attribute` declaration,
+      outline entries. (Lands with the `phdl-introspection-attributes` schemas
+      + `@rfport`/`@device`/`@port`.)
+- [ ] **PHDL doc comments, Rust-style `///` — the last missing language piece.**
+      Today comments are lexed-and-discarded (no token) and POM declarations
+      carry no documentation, so hover shows only type/kind
+      (`lookup_hover_info`). Add the full pipeline:
+      - **Lexer** (`parse/lexer.rs`, hand-written — edit with care): recognize
+        `///` line doc comments (and `/** */` block form?), attach each run to
+        the **following** declaration; ordinary `//` stays discarded.
+      - **POM** (MD-25 non-destructive — additive only): a `doc: Option<String>`
+        field on module/port/param/var/instance/net declarations, populated by
+        elaboration from the attached doc runs. Never overwrites authored
+        structure; `#[serde]`-carried so hosts/tools read it.
+      - **LSP hover** (`handlers/hover.rs`): `lookup_hover_info` prepends the
+        declaration's `doc` (Markdown) above the type/kind line.
+      - **Reach**: the same `doc` field feeds the P3 host reflection
+        (`Module.doc`, `Param.doc`) and future `@schematic`/doc-gen — one source
+        of truth for "what does this thing do", authored in-language.
+
+### Tests
+
+- [ ] **Protocol-level tests** over `Connection::memory()` (init → didOpen →
+      hover/completion/goto round-trips), including a doc-comment hover assertion
+      and a scope-shadowing resolution assertion.
 
 ---
 
@@ -381,12 +546,50 @@ scripts). V1 is **reduction and polish** under MD-21:
       (same isolation as benches), with the **lifecycle registry exposed to
       Python** — self-registration of attribute schemas, hooks, scripts, and
       devices on load.
+- [ ] **Artifact distribution** — prebuilt plugin binaries per target triple
+      from git releases (today the plugin artifact must pre-exist at a known
+      path). Lands with the include/dependency-resolution rework so the plugin
+      loader can fetch + verify a declared artifact instead of requiring a
+      hand-placed one.
 - [ ] One "write a plugin" document with a worked example per extension kind
       (attribute schema, device, hook, script) × per tier (native, Python).
 
 ---
 
-## P6 — Optimizer
+## P6 — Cleanup & completeness
+
+The gap-catalog residue: non-blocking hygiene and completeness. Not all V1 —
+triage per row. Headlined by test sanitization (the user's addition,
+2026-07-23).
+
+- [ ] **Test sanitization (~800 tests, possibly mis-allocated).** The bar
+      (**MD-28**, `.specs/STATE.md`):
+      - **Unit tests live inline** with the implementation
+        (`#[cfg(test)] mod tests` in the same `.rs`), not in a distant file.
+      - **Integration tests are grouped by functionality**, not scattered by
+        accident of authoring.
+      - **Redundant tests are deleted** — coverage, not count, is the metric.
+      Do it crate by crate; the suite must stay green throughout. This makes
+      every later refactor's regressions visible (a P3b/P6 prerequisite).
+- [ ] **`#[ignore]`d test cleanup** — 28 ignored, incl. the whole
+      `piperine-codegen/tests/ppr_ir.rs` ("pending POM Stmt rewrite"). Fix or
+      delete the stale `.ppr`/IR test path; ignored tests rot silently.
+- [ ] **Dead capability flags** — `SUPPORTS_QUERIES` has no solver consumer
+      (`core/element.rs:74`, audit SS-11): drop it or wire it. Same disposition
+      as the already-logged `bound_step_hint` (P1 minor) and Part VII §16
+      unenforced failure rows — decide enforce-or-remove for each.
+- [ ] **Non-blocking language/interpreter completeness** — slice expressions
+      outside analog/digital bodies (`eval/interp.rs:448`); `for` in a digital
+      body (`emit/stmt.rs:98`); selector complex-exprs / field-less match
+      (`pom/selector/*` — overlaps the language-backlog selector-axes item,
+      decide as one). None blocks common use; schedule on demand.
+
+> The clear-V1 subset here is test sanitization + ignored-test + dead-flag
+> cleanup (hygiene). The completeness items are post-V1 unless a user hits them.
+
+---
+
+## P7 — Optimizer
 
 Target use case: **design centering** (maximize yield over process/tolerance
 spread). Foundations in place: compile-once restamp sweeps (MD-18),
@@ -401,22 +604,111 @@ spread). Foundations in place: compile-once restamp sweeps (MD-18),
 
 ---
 
-## Post-V1 — plugin gallery (priority order sketch)
+## Gap catalog — V1 triage (candidates, to discuss)
 
-1. **MCU co-simulation** — inject event-driven digital devices simulating
-   AVR/ESP32-class MCUs (engines: Renode and/or Wokwi cores — possibly both,
-   per target family); rides the P2 device ABI + commit/rollback.
-2. **Yosys bridge** — translate digital PHDL to Yosys for synthesis +
-   open-source programmer flows.
-3. **Python interactivity** — digital oscilloscope, dashboards with
-   buttons/sliders bound to `LiveSession` params, general ergonomics.
-4. **Schematic generation** — `@schematic(...)` attributes → rendered
+> **Added 2026-07-23** from a full codebase sweep (TODO/FIXME, `todo!`,
+> fail-loud `Unsupported`, provisional "for now/not yet" markers, `#[ignore]`d
+> tests, dead flags). The tree is clean — **1 `TODO`, zero `todo!()`/
+> `unimplemented!()`** — so these are the real remaining gaps, each with
+> `file:line` evidence and a **proposed** disposition. Nothing here is decided;
+> this is the sheet to sort **V1 / post-V1 / drop** against.
+
+### A. Tooling / CLI
+
+| Gap | Evidence | Proposed |
+|-----|----------|----------|
+| **`piperine build` is a stub** — sets up headers, prints "Building…", but never calls the compiler/elaborator | `piperine-cli/commands/build.rs:33` (`// TODO: call compiler/elaborator`) | **V1** — a build command that doesn't build is a hole |
+| **28 `#[ignore]`d tests**, incl. the whole `ppr_ir.rs` "pending POM Stmt rewrite" | `piperine-codegen/tests/ppr_ir.rs` (10×), + 18 others | **V1 decide** — fix or delete the stale `.ppr`/IR test path; ignored tests rot |
+
+### B. Digital codegen completeness (analog has it, digital doesn't)
+
+| Gap | Evidence | Proposed |
+|-----|----------|----------|
+| User-`fn` inlining in a **digital** body (analog path works) | `codegen/emit/builder.rs:334` | V1? — parity with analog `fn` inlining |
+| Enum-pattern resolution in digital | `codegen/emit/stmt.rs:234` (`enum resolution not yet wired`) | V1? — `match` on enums in digital |
+| `for` loops in digital emit | `codegen/emit/stmt.rs:98` | post-V1? — structural `for` exists; body-`for` niche |
+| real ↔ 4-state conversion in digital | `codegen/emit/builder.rs:679` | decide — how often needed? |
+
+### C. Language / interpreter / selector
+
+| Gap | Evidence | Proposed |
+|-----|----------|----------|
+| Slice expressions outside analog/digital bodies (interpreter) | `piperine-lang/eval/interp.rs:448` | post-V1? |
+| Selector: complex exprs skipped, field-less match returns false, `AxisNotImplemented` | `pom/selector/{parse.rs:141,eval.rs:122}`, `pom/error.rs:235` | overlaps the language-backlog selector-axes item; **decide as one** |
+| `laplace_*` / `zi_*` operators (fail-loud) | already P1 backlog | post-V1 (locked) |
+| Array-net expansion (`gap-3`) — blocks parametric `urc[N]` + some BSIM authoring | `elab/lower/flatten.rs:193` | tied to BSIM (P1); post-V1 unless BSIM needs it |
+
+### D. Analyses edge cases
+
+| Gap | Evidence | Proposed |
+|-----|----------|----------|
+| `.tf` input impedance for a **current-source** input returns a placeholder (`1e20`) | `piperine-solver/analyses/tf.rs:394` | V1? — small, correctness-shaped |
+| Clocked-member network fusion (comb-only cones today) | `codegen/kernel/digital/compile.rs:487` | already P1 backlog (NBA semantics) |
+
+### E. ABI / solver leftovers (some already logged under P1/P2)
+
+| Gap | Evidence | Proposed |
+|-----|----------|----------|
+| `SUPPORTS_QUERIES` capability flag — **no solver consumer** | `solver/core/element.rs:74` | drop or wire (audit SS-11) |
+| `bound_step_hint` producer, no consumer | `codegen/device/mod.rs` (P1 minor-refactor list) | already logged — enforce or remove |
+| Part VII §16 failure rows unenforced at runtime | (P1 minor-refactor list) | already logged — enforce or drop |
+| Plugin **scripts** not runnable on out-of-host tiers | `pom/wire.rs:44` | folds into MD-21 (WASM/process tiers removed anyway) |
+
+**Assigned homes (user 2026-07-23):**
+- **→ P3b** (blocks simulation/full use): A `piperine build` stub · B digital
+  codegen completeness (fn-inline, enum-pattern, real↔4-state) · D `.tf`
+  current-source Zin.
+- **→ P6** (cleanup & completeness): **test sanitization** (new) · A ignored-test
+  cleanup · E `SUPPORTS_QUERIES`/`bound_step_hint`/§16 dead-flag triage ·
+  C slice-outside-bodies + digital `for` + selector complex-exprs.
+- **Already tracked** (leave in place): laplace/zi, LTRA, clocked fusing,
+  array-net `gap-3`, BSIM (P1 backlog); selector axes (language backlog);
+  plugin out-of-host scripts (folds into MD-21/P5).
+
+Rows are still *candidates* — the pillar home is where each will be
+checkbox-triaged for V1 vs post-V1, not a commitment to build.
+
+---
+
+## Post-V1 — plugin gallery (priority order, user 2026-07-23)
+
+Priority: **MCU co-simulation → Python interactivity → schematic → PCB → the
+rest** (OpenEMS EM cosim lives at the back — distinct from MCU cosim).
+
+1. **MCU co-simulation** (top priority) — inject event-driven digital devices
+   simulating AVR/ESP32-class MCUs (engines: Renode and/or Wokwi cores —
+   possibly both, per target family); rides the P2 device ABI + commit/rollback.
+2. **Python interactivity** — digital oscilloscope, dashboards with
+   buttons/sliders bound to `Session` params, general ergonomics. **Built on a
+   live-sim engine** (needs a solver/host capability, see below):
+   - **Live-sim mode** — `tran` runs *continuously*, streaming per-step results
+     to the host so a plot / "virtual oscilloscope" updates fluidly *while the
+     simulation advances* — not batch-then-render.
+   - **Stepping mode** — `tran` *waits for a host command* to advance (single
+     step / run-to-time), for interactive inspection.
+   - **Knobs-while-running** — the user drags a slider (`Session.set`) and the
+     running live-sim reflects it on the next streamed step — play with the
+     circuit as the scope updates. This is the interactivity payoff.
+   - *Foundation needed:* a streaming/stepping transient driver that yields
+     control to the host per accepted step (pausable/resumable), extending
+     `LiveSession`/`Session` (`set`/`schedule_set` already exist). Post-V1 but
+     the enabling engine work is the gating item.
+3. **Schematic generation** — `@schematic(...)` attributes → rendered
    schematics from the POM (adoption driver).
-5. **OpenROAD / OpenFASoC integration** — design params declared in-language
-   via attributes; manage the flow from the HDL.
-6. **Richer SPICE interop** — `@spice(symbol = "N", ...)` custom attributes.
-7. **PCB export** — `@socket(socket = "DIP", ...)`-style attributes feeding a
+4. **PCB export** — `@socket(socket = "DIP", ...)`-style attributes feeding a
    PCB generator/exporter.
+5. **The rest:**
+   - **Yosys bridge** — translate digital PHDL to Yosys for synthesis +
+     open-source programmer flows.
+   - **OpenROAD / OpenFASoC integration** — design params declared in-language
+     via attributes; manage the flow from the HDL.
+   - **Richer SPICE interop** — `@spice(symbol = "N", ...)` custom attributes.
+   - **OpenEMS EM co-simulation** (deep backlog — distinct from MCU cosim) —
+     couple the field solver for antenna/PCB/interconnect EM: OpenEMS computes
+     the electromagnetic behavior, Piperine drives the terminal excitation and
+     folds the extracted S-params/impedance back into the circuit solve (the
+     `.sp`/`@rfport` surface is the seam). An EM block is one more `Element`
+     client of the P2 device ABI.
 
 ---
 

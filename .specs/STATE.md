@@ -327,6 +327,92 @@ rejected an in-place destructive flatten design). MD-13 (binding Rust
 idiom rules) governs *how* the pass is written; MD-25 governs *what* it is
 allowed to touch.
 
+### MD-26: Introspection metadata = atomic attributes, not role bundles
+
+PHDL device-introspection metadata is declared with small, single-purpose
+attributes that compose on any declaration — `@name`, `@unit`,
+`@description`, `@kind` — rather than role-shaped bundles
+(`@opvar(...)`/`@observable(...)`/`@terminal(...)`). Model identity is the
+one deliberate pair: `@model(type, version)` carries both fields in one
+attribute (a model type is meaningless without noting its version; user
+2026-07-23). Consequences:
+
+- The opvar-name vs observable-name inconsistency dissolves at the root: a
+  `var` carries ONE `@name`, read by both the opvar query catalog and the
+  observable catalog — nothing to "unify".
+- `@kind` is placement-resolved: on a `var` it names an `ObservableKind`,
+  on a port/wire a `TerminalKind`. One attribute, interpreted by what it
+  annotates.
+- Terminal classification gets its OWN attribute surface — never `@port`
+  (plugin device-wiring, plugin-scope only) nor `@rfport` (RF S-param
+  ports). Distinct purpose, distinct surface.
+- Every attribute is optional (zero regression on existing stdlib models)
+  and a textual `extern attribute` declaration (MD-24 — LSP go-to-def).
+
+`$limit`'s limiter naming stays an **operator argument** (thread the
+existing `$limit(kind, ...)` `kind` + optional reason into
+`LimitingReport`), not an attribute — it is a call-site concern, outside
+the metadata-attribute family.
+
+**Status:** Locked (user, 2026-07-23 — `phdl-introspection-attributes`
+Specify phase; spec in `.specs/features/phdl-introspection-attributes/`,
+PIA-01..20, Design pending). Makes the reflective ABI bridge delivered by
+`element-abi-maturity` declarative (author-controlled from PHDL).
+
+### MD-27: Host library — ideal-first, host-pure, api-canonical, parity-enforced
+
+The P3 host library (`import piperine` + the Rust `piperine-api` surface) is
+designed **ideal-first**: the perfect surface is drawn greenfield
+(`.specs/features/host-library/ideal.md`) and only then diffed against what
+ships (`delta.md`). Four locked constraints govern the build:
+
+1. **api-canonical.** `piperine-api` (Rust) is the single source of truth;
+   `piperine-python` is a thin wrapper. Every capability lands in the api
+   first; Python binding is mechanical after. This kills host drift by
+   construction (the exact bug found 2026-07-23: Rust ran `sens`/`pss`/`pz`/
+   `sp`/`disto` while Python had no typed result).
+2. **MD-22 enforced by a parity test.** Uniformity is not intent — a
+   `tests/host_parity.rs` enumerates both public surfaces and fails loud on
+   any name/shape/result-type/enum/error divergence. "Rust too, in principle"
+   means the Rust mirror is designed *with* Python, never bolted on.
+3. **Host-pure scope.** The feature delivers host surface only —
+   `Session`-centric analyses, the element-abi introspection door (opvars/
+   observables/limiting/param-bounds), rich Waveform, sweeps, configs/units/
+   errors. `pip.optimize` (design centering) is **P6**; Python plugin
+   scripting is **P5**. The feature makes the optimizer *feedable*
+   (`Param.bounds`, opvar objectives) but does not implement the loop.
+4. **Return-type taxonomy: separate if ops differ, unify if only data
+   differs.** Nine types survive; `Trace<T>` is generic (folds `AcTrace`/
+   `NoiseTrace`); `Waveform`/`ComplexWaveform` stay split; structured results
+   stay distinct. Reshaped once (Phase 1), never build-then-remove.
+
+**Status:** Locked (user, 2026-07-23 — `host-library` Specify+Design+Tasks;
+`.specs/features/host-library/`, HOST-01..28, 30 tasks, Execute pending).
+Refines ROADMAP P3.
+
+### MD-28: Test placement standard — unit inline, integration grouped by feature
+
+Every test lives where its scope says it should:
+
+1. **Unit tests live inline with the implementation** — a `#[cfg(test)] mod
+   tests` block in the *same* `.rs` as the code under test, never a distant
+   file. A unit test that references private items or one function's branches
+   belongs next to that function.
+2. **Integration tests are grouped by functionality** — one `tests/<feature>.rs`
+   per behavior/feature area, not scattered by accident of authoring. Tests
+   that exercise a crate's public surface across modules are integration tests
+   and belong in `tests/`, named for the feature they prove.
+3. **Redundant tests are deleted** — coverage is the metric, not count. Two
+   tests asserting the same behavior are one test; delete the weaker.
+
+Governs the P6 "test sanitization" workstream (~800 tests, crate by crate,
+suite green throughout) and every future test authored. The `tlc-spec-driven`
+Test Coverage Matrix already encodes this per layer; MD-28 is the durable
+project-wide rule the matrix instantiates.
+
+**Status:** Locked (user, 2026-07-23). Feeds ROADMAP P6 (Cleanup &
+completeness) and applies to all new tests going forward.
+
 ---
 
 ## Handoff Snapshot

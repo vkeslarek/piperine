@@ -39,6 +39,24 @@ num-complex = { workspace = true }
 [profile.dev.package.faer]
 opt-level = 3
 
+# Cranelift's own register allocator/codegen is prohibitively slow at
+# opt-level 0 — the JIT backend used by every analog kernel compile
+# (including `.disto`'s per-branch-combination kernels) needs release-speed
+# codegen even in dev/test builds, or symbolic-differentiation-heavy
+# devices (many controlling branches) compile too slowly to test.
+[profile.dev.package.cranelift-codegen]
+opt-level = 3
+[profile.dev.package.cranelift-jit]
+opt-level = 3
+[profile.dev.package.cranelift-module]
+opt-level = 3
+[profile.dev.package.cranelift-frontend]
+opt-level = 3
+[profile.dev.package.cranelift-native]
+opt-level = 3
+[profile.dev.package.regalloc2]
+opt-level = 3
+
 [profile.release]
 debug = true
 opt-level = 3

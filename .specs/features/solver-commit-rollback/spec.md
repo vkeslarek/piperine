@@ -1,4 +1,9 @@
-# Solver Commit/Rollback Lifecycle
+# Solver Commit/Rollback Lifecycle — SUPERSEDED
+
+> **Superseded 2026-07-22 by `.specs/features/element-abi-maturity/spec.md`**
+> (Stories P1 + P2 + P3). That spec covers rollback, formal limiting API, and
+> the lifecycle contract — with a full audit of what exists vs what's missing.
+> This stub is preserved for git history.
 
 **Implements:** MD-12 (ABI vs policy)
 **SOLVER_GAPS reference:** §1 commit/rollback, §1 per-element hidden-state vector
