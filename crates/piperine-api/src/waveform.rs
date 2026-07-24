@@ -313,6 +313,120 @@ impl Waveform {
     }
 }
 
+// ─── Real Waveform transforms (HOST-17 spec, HOST-15 task) ─────────────────
+//
+// Each transform returns a **new** `Waveform` — the source is never mutated
+// (matches the measurement methods' read-only style).
+
+impl Waveform {
+    /// Resample onto an explicit `grid` of axis values via linear
+    /// interpolation ([`Self::at`]) — the same interpolation the transient
+    /// stepper's non-uniform grid already relies on elsewhere (`fourier`'s
+    /// window resample, `Trace::at`). HOST-15.
+    pub fn resample(&self, grid: &[f64]) -> Waveform {
+        Waveform::new(grid.iter().map(|&x| (x, self.at(x))).collect())
+    }
+
+    /// First derivative `dv/dx` (central difference at interior samples,
+    /// one-sided at the two endpoints) — same axis, one sample per input
+    /// sample. HOST-15. Fails loud on fewer than 2 samples (no slope is
+    /// defined).
+    pub fn derivative(&self) -> Result<Waveform, Error> {
+        let pts = self.points();
+        let n = pts.len();
+        if n < 2 {
+            return Err(Error::Measurement(format!(
+                "derivative: requires at least 2 samples, got {n}"
+            )));
+        }
+        let mut out = Vec::with_capacity(n);
+        for i in 0..n {
+            let d = if i == 0 {
+                (pts[1].1 - pts[0].1) / (pts[1].0 - pts[0].0)
+            } else if i == n - 1 {
+                (pts[n - 1].1 - pts[n - 2].1) / (pts[n - 1].0 - pts[n - 2].0)
+            } else {
+                (pts[i + 1].1 - pts[i - 1].1) / (pts[i + 1].0 - pts[i - 1].0)
+            };
+            out.push((pts[i].0, d));
+        }
+        Ok(Waveform::new(out))
+    }
+
+    /// Cumulative trapezoidal integral `∫v dx`, `0` at the first sample's
+    /// axis value — same axis, one running-sum sample per input sample.
+    /// HOST-15. An empty waveform integrates to an empty waveform.
+    pub fn integral(&self) -> Waveform {
+        let pts = self.points();
+        if pts.is_empty() {
+            return Waveform::new(Vec::new());
+        }
+        let mut out = Vec::with_capacity(pts.len());
+        let mut acc = 0.0_f64;
+        out.push((pts[0].0, acc));
+        for w in pts.windows(2) {
+            let dt = w[1].0 - w[0].0;
+            acc += dt * 0.5 * (w[0].1 + w[1].1);
+            out.push((w[1].0, acc));
+        }
+        Waveform::new(out)
+    }
+
+    /// Clamp every sample value into `[lo, hi]` — same axis, values outside
+    /// the band saturate at the nearer bound. HOST-15.
+    pub fn clip(&self, lo: f64, hi: f64) -> Waveform {
+        Waveform::new(self.points().iter().map(|&(t, v)| (t, v.clamp(lo, hi))).collect())
+    }
+
+    /// Discrete Fourier transform of the waveform as a full complex spectrum
+    /// (HOST-15): resamples onto `n` uniform points over the recorded span
+    /// (`n` = the input sample count; same inclusive-endpoint grid
+    /// [`Self::resample`]/[`Self::derivative`] use, so the adaptive
+    /// transient grid doesn't leak into the spectrum) and computes the
+    /// direct DFT `X_k = (1/n)·Σ_m x_m·exp(−j·2π·k·m/n)`, `k = 0..n-1` — a
+    /// full (not single-sided) spectrum, frequency axis `k·fs/n` with
+    /// `fs = (n-1)/span`. A real single-tone input round-trips: the bin
+    /// nearest the tone frequency carries magnitude ≈ amplitude/2 (energy
+    /// split with its mirror bin at `n−k`), a mirror of [`Self::fourier`]'s
+    /// harmonic-doubling convention. Fails loud on fewer than 2 samples or a
+    /// non-positive span.
+    pub fn fft(&self) -> Result<ComplexWaveform, Error> {
+        let pts = self.points();
+        let n = pts.len();
+        if n < 2 {
+            return Err(Error::Measurement(format!("fft: requires at least 2 samples, got {n}")));
+        }
+        let t0 = pts[0].0;
+        let t_end = pts[n - 1].0;
+        let span = t_end - t0;
+        if span <= 0.0 {
+            return Err(Error::Measurement(format!(
+                "fft: waveform span must be positive, got {span:.6e}"
+            )));
+        }
+        // `n` uniform samples over `n-1` intervals, `t0..t_end` inclusive —
+        // the same grid `resample`/`derivative` use.
+        let dt = span / (n as f64 - 1.0);
+        let samples: Vec<f64> = (0..n).map(|i| self.at(t0 + dt * i as f64)).collect();
+        let fs = 1.0 / dt;
+        let mut out = Vec::with_capacity(n);
+        for k in 0..n {
+            let mut re = 0.0_f64;
+            let mut im = 0.0_f64;
+            for (m, &x) in samples.iter().enumerate() {
+                let theta = -2.0 * std::f64::consts::PI * (k as f64) * (m as f64) / (n as f64);
+                re += x * theta.cos();
+                im += x * theta.sin();
+            }
+            re /= n as f64;
+            im /= n as f64;
+            let freq = k as f64 * fs / n as f64;
+            out.push((freq, num_complex::Complex64::new(re, im)));
+        }
+        Ok(ComplexWaveform::new(out))
+    }
+}
+
 // ─── Trace<T>: the generic swept-analysis container ────────────────────────
 
 /// Zero-sized discriminator selecting the noise instantiation of
