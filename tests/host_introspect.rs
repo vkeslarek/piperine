@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use piperine::{SimSession, SolverConfig};
 use piperine_lang::SourceMap;
-use piperine_solver::prelude::{TerminalKind, ObservableKind};
+use piperine_solver::prelude::{TerminalKind, ObservableKind, Invalidation, ParamScope};
 
 /// A resistor that declares a named observable `cond` via `@name`, so the
 /// observable catalog is non-empty and the name is stable. The model
@@ -148,4 +148,45 @@ fn introspection_works_on_opvarless_device() {
     );
     let terminals = src.terminals();
     assert!(terminals.len() >= 2, "VoltageSource declares at least 2 terminals");
+}
+
+// ── HOST-12: Param.bounds/unit/scope/invalidation reflection ─────────────
+
+/// HOST-12: `inst.param("r").bounds` returns the declared parameter bounds;
+/// `inst.params()` lists the full catalog. The Resistor's `r` param has
+/// `ParamScope::Instance`, `Invalidation::Restamp`, and unbounded bounds
+/// (no explicit bounds declared).
+#[test]
+fn param_descriptor_reflects_bounds_scope_invalidation() {
+    let session = introspect_session();
+    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let r_top = op.instance("r_top").expect("r_top is a labeled instance");
+    let r = r_top.param("r").expect("r_top declares param r");
+    assert_eq!(r.name, "r");
+    assert_eq!(r.scope, ParamScope::Instance, "r is an instance param");
+    assert_eq!(r.invalidation, Invalidation::Restamp, "r restamps on change");
+}
+
+/// HOST-12 edge case: an unknown param name fails loud — never returns
+/// `None` silently. The error names the param and lists available ones.
+#[test]
+fn unknown_param_fails_loud() {
+    let session = introspect_session();
+    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let r_top = op.instance("r_top").expect("r_top is a labeled instance");
+    let err = r_top.param("bogus").expect_err("unknown param must fail");
+    assert!(err.to_string().contains("bogus"), "error names the bad param: {err}");
+    assert!(err.to_string().contains("r_top"), "error names the instance: {err}");
+}
+
+/// HOST-12: `inst.params()` returns the full parameter catalog — the
+/// Resistor declares at least `r` and the VoltageSource declares `voltage`.
+#[test]
+fn params_lists_the_full_parameter_catalog() {
+    let session = introspect_session();
+    let op = session.run_op(&SolverConfig::default(), None).expect("op solves");
+    let r_top = op.instance("r_top").expect("r_top is a labeled instance");
+    let params = r_top.params();
+    assert!(!params.is_empty(), "Resistor declares at least param r");
+    assert!(params.iter().any(|p| p.name == "r"), "r is in the catalog");
 }

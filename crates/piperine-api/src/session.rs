@@ -344,9 +344,9 @@ impl SimSession {
         drop(dc);
         let digital = Self::snapshot_digital(&info, &circuit);
         let opvars = Self::snapshot_opvars(&circuit);
-        let (models, terminals, observables) = Self::snapshot_introspect(&circuit);
+        let (models, terminals, observables, params) = Self::snapshot_introspect(&circuit);
         self.fire_after_solve("op", &node_voltages(&info, &result))?;
-        Ok(OpResult::new(result, digital, opvars, models, terminals, observables, Rc::new(info)))
+        Ok(OpResult::new(result, digital, opvars, models, terminals, observables, params, Rc::new(info)))
     }
 
     /// Compile-once DC sweep (MD-18): elaborate/JIT the circuit **once**,
@@ -390,7 +390,7 @@ impl SimSession {
             drop(dc);
             let digital = Self::snapshot_digital(&info, &circuit);
             let opvars = Self::snapshot_opvars(&circuit);
-            let (models, terminals, observables) = Self::snapshot_introspect(&circuit);
+            let (models, terminals, observables, params) = Self::snapshot_introspect(&circuit);
             self.fire_after_solve("op", &node_voltages(&info, &result))?;
             results.push(OpResult::new(
                 result,
@@ -399,6 +399,7 @@ impl SimSession {
                 models,
                 terminals,
                 observables,
+                params,
                 Rc::new(info.clone()),
             ));
         }
@@ -454,17 +455,20 @@ impl SimSession {
         HashMap<String, piperine_solver::prelude::ModelDescriptor>,
         HashMap<String, Vec<piperine_solver::prelude::TerminalDescriptor>>,
         HashMap<String, Vec<piperine_solver::prelude::ObservableDescriptor>>,
+        HashMap<String, Vec<piperine_solver::prelude::ParamDescriptor>>,
     ) {
         let mut models = HashMap::new();
         let mut terminals = HashMap::new();
         let mut observables = HashMap::new();
+        let mut params = HashMap::new();
         for d in circuit.all_devices() {
             let label = d.name().to_string();
             models.insert(label.clone(), d.model_descriptor());
             terminals.insert(label.clone(), d.list_terminals());
-            observables.insert(label, d.list_observables());
+            observables.insert(label.clone(), d.list_observables());
+            params.insert(label, d.list_params());
         }
-        (models, terminals, observables)
+        (models, terminals, observables, params)
     }
 
     /// Run a transient analysis: same elaborate-and-solve recipe as
@@ -692,7 +696,7 @@ impl Session {
         drop(dc);
         let digital = SimSession::snapshot_digital(&self.info, &self.circuit);
         let opvars = SimSession::snapshot_opvars(&self.circuit);
-        let (models, terminals, observables) = SimSession::snapshot_introspect(&self.circuit);
+        let (models, terminals, observables, params) = SimSession::snapshot_introspect(&self.circuit);
         Ok(OpResult::new(
             result,
             digital,
@@ -700,6 +704,7 @@ impl Session {
             models,
             terminals,
             observables,
+            params,
             Rc::new(self.info.clone()),
         ))
     }

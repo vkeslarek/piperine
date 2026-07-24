@@ -34,7 +34,7 @@ mod value_bridge;
 use pyo3::prelude::*;
 
 use design::{_Design, _Node, _Selection};
-use instance::{_InstanceView, _ModelDescriptor, _ObservableDescriptor, _Terminal, _TerminalDescriptor};
+use instance::{_InstanceView, _ModelDescriptor, _ObservableDescriptor, _ParamDescriptor, _Terminal, _TerminalDescriptor};
 use live::_Session;
 use module::_Module;
 use module::{_Behavior, _Instance, _Net, _Param, _Port};
@@ -89,6 +89,7 @@ pub(crate) fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_ModelDescriptor>()?;
     m.add_class::<_TerminalDescriptor>()?;
     m.add_class::<_ObservableDescriptor>()?;
+    m.add_class::<_ParamDescriptor>()?;
     m.add_class::<_Session>()?;
     m.add_class::<_TfResult>()?;
     Ok(())

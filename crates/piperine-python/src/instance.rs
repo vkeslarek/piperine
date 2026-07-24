@@ -364,6 +364,35 @@ impl _InstanceView {
             )),
         }
     }
+
+    /// The device's parameter descriptor for `name` (HOST-12): `bounds`,
+    /// `unit`, `scope`, `invalidation`. Fails loud on an unknown param.
+    fn param(&self, name: &str) -> PyResult<_ParamDescriptor> {
+        match &self.inner {
+            InstanceResult::Op(op) => {
+                let view = op.instance(&self.label).map_err(readout_err)?;
+                let p = view.param(name).map_err(readout_err)?;
+                Ok(_ParamDescriptor::from_solver(p.clone()))
+            }
+            InstanceResult::Trace(_) => Err(PyRuntimeError::new_err(
+                "param() is not available on a trace view",
+            )),
+        }
+    }
+
+    /// The device's full parameter descriptor catalog (HOST-12): `bounds`/
+    /// `unit`/`scope`/`invalidation` for each declared parameter.
+    fn params(&self) -> PyResult<Vec<_ParamDescriptor>> {
+        match &self.inner {
+            InstanceResult::Op(op) => {
+                let p = op.instance(&self.label).map_err(readout_err)?.params().to_vec();
+                Ok(p.into_iter().map(_ParamDescriptor::from_solver).collect())
+            }
+            InstanceResult::Trace(_) => Err(PyRuntimeError::new_err(
+                "params() is not available on a trace view",
+            )),
+        }
+    }
 }
 
 /// Construct a host [`piperine_api::NetRef`] from a net name — the typed
@@ -491,6 +520,48 @@ impl _ObservableDescriptor {
             name: o.name,
             kind: kind.to_string(),
             cost: o.cost,
+        }
+    }
+}
+
+/// `_ParamDescriptor` — one parameter's metadata (HOST-12): `bounds`,
+/// `unit`, `scope`, `invalidation`. The `.bounds` is a `(min, max)` tuple
+/// (either may be `None` = unbounded). Uniform-shape (MD-22): mirrors the
+/// api `ParamDescriptor`.
+#[pyclass(module = "piperine")]
+pub struct _ParamDescriptor {
+    #[pyo3(get)]
+    name: String,
+    #[pyo3(get)]
+    bounds: (Option<f64>, Option<f64>),
+    #[pyo3(get)]
+    unit: Option<String>,
+    #[pyo3(get)]
+    scope: String,
+    #[pyo3(get)]
+    invalidation: String,
+}
+
+impl _ParamDescriptor {
+    pub(crate) fn from_solver(p: piperine_solver::prelude::ParamDescriptor) -> Self {
+        use piperine_solver::prelude::{Invalidation, ParamScope};
+        let scope = match p.scope {
+            ParamScope::Model => "model",
+            ParamScope::Instance => "instance",
+        };
+        let invalidation = match p.invalidation {
+            Invalidation::None => "none",
+            Invalidation::Restamp => "restamp",
+            Invalidation::Temperature => "temperature",
+            Invalidation::OperatingPoint => "operating_point",
+            Invalidation::Rebuild => "rebuild",
+        };
+        Self {
+            name: p.name,
+            bounds: (p.bounds.min, p.bounds.max),
+            unit: p.unit,
+            scope: scope.to_string(),
+            invalidation: invalidation.to_string(),
         }
     }
 }

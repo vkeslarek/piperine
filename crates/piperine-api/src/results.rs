@@ -8,7 +8,7 @@ use std::rc::Rc;
 use piperine_codegen::device::CircuitBuildInfo;
 use piperine_solver::prelude::{
     BranchIdentifier, DcAnalysisResult, ModelDescriptor, NodeIdentifier, ObservableDescriptor,
-    TerminalDescriptor,
+    ParamDescriptor, TerminalDescriptor,
 };
 
 use crate::error::Error;
@@ -146,6 +146,7 @@ pub struct InstanceView<'a> {
     model: ModelDescriptor,
     terminals: Vec<TerminalDescriptor>,
     observables: Vec<ObservableDescriptor>,
+    params: Vec<ParamDescriptor>,
 }
 
 impl InstanceView<'_> {
@@ -175,6 +176,25 @@ impl InstanceView<'_> {
     /// The name matches the observable name a `ProbeSelection` request uses.
     pub fn observables(&self) -> &[ObservableDescriptor] {
         &self.observables
+    }
+
+    /// The device's parameter descriptor catalog (ABI / HOST-12):
+    /// `bounds`/`unit`/`scope`/`invalidation` for each declared parameter.
+    pub fn params(&self) -> &[ParamDescriptor] {
+        &self.params
+    }
+
+    /// The parameter descriptor for `name` (HOST-12): `bounds`, `unit`,
+    /// `scope`, `invalidation`. Fails loud when the device declares no such
+    /// parameter, naming the instance and listing available params.
+    pub fn param(&self, name: &str) -> Result<&ParamDescriptor, Error> {
+        self.params.iter().find(|p| p.name == name).ok_or_else(|| {
+            Error::Measurement(format!(
+                "instance `{}` has no param `{name}`; available: {}",
+                self.label,
+                self.params.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", ")
+            ))
+        })
     }
 
     /// The device's computed operating-point variable `name` (ABI-30). Fails
@@ -218,6 +238,10 @@ pub struct OpResult {
     /// Every device's `list_observables()` snapshot, keyed by instance label
     /// (HOST-09) — observable catalog for `probe=` discovery.
     observables: HashMap<String, Vec<ObservableDescriptor>>,
+    /// Every device's `list_params()` snapshot, keyed by instance label
+    /// (HOST-12) — parameter descriptors carrying `bounds`/`unit`/`scope`/
+    /// `invalidation`.
+    params: HashMap<String, Vec<ParamDescriptor>>,
     info: Rc<CircuitBuildInfo>,
 }
 
@@ -235,9 +259,10 @@ impl OpResult {
         models: HashMap<String, ModelDescriptor>,
         terminals: HashMap<String, Vec<TerminalDescriptor>>,
         observables: HashMap<String, Vec<ObservableDescriptor>>,
+        params: HashMap<String, Vec<ParamDescriptor>>,
         info: Rc<CircuitBuildInfo>,
     ) -> Self {
-        Self { dc, digital, opvars, models, terminals, observables, info }
+        Self { dc, digital, opvars, models, terminals, observables, params, info }
     }
 
     /// Per-analysis convergence + performance statistics.
@@ -262,12 +287,14 @@ impl OpResult {
         let model = self.models.get(name).cloned().unwrap_or_default();
         let terminals = self.terminals.get(name).cloned().unwrap_or_default();
         let observables = self.observables.get(name).cloned().unwrap_or_default();
+        let params = self.params.get(name).cloned().unwrap_or_default();
         Ok(InstanceView {
             label: name.as_str(),
             opvars: vars.as_slice(),
             model,
             terminals,
             observables,
+            params,
         })
     }
 

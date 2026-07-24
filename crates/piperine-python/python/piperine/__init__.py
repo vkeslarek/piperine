@@ -53,6 +53,7 @@ __all__ = [
     "ModelDescriptor",
     "TerminalDescriptor",
     "ObservableDescriptor",
+    "ParamDescriptor",
     "SolverStats",
     "LimitingReport",
     "NoiseContribution",
@@ -186,6 +187,7 @@ Terminal = _piperine._Terminal
 ModelDescriptor = _piperine._ModelDescriptor
 TerminalDescriptor = _piperine._TerminalDescriptor
 ObservableDescriptor = _piperine._ObservableDescriptor
+ParamDescriptor = _piperine._ParamDescriptor
 SolverStats = _piperine._SolverStats
 LimitingReport = _piperine._LimitingReport
 NoiseContribution = _piperine._NoiseContribution
