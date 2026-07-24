@@ -5,7 +5,10 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::parse::ast::{BundleDecl, CapabilityDecl, DisciplineDecl, EnumDecl};
-use crate::pom::{ElabError, ElabErrorKind, Function, ImplBlock, Module, OverrideMap, Value};
+use crate::pom::{
+    ElabError, ElabErrorKind, Function, ImplBlock, IntrospectionMeta, ModelId, Module,
+    OverrideMap, TermMeta, VAR_KINDS, Value, VarMeta, TERMINAL_KINDS,
+};
 
 /// A typed staging failure (SPEC Part VI §8.2–§8.4): the plugin layer maps
 /// `UndeclaredType` to P0005 ("type not declared") and `Conflict` to P0008.
@@ -374,6 +377,151 @@ impl Design {
             }
         }
         Ok(ports)
+    }
+
+    /// Resolve the device-introspection metadata sidecar for `module_name`
+    /// (phdl-introspection-attributes) — author-declared `@model`/`@name`/
+    /// `@unit`/`@description`/`@kind` attributes read off POM nodes into an
+    /// [`IntrospectionMeta`] bundle. Mirrors [`Design::rfports`]: iterate the
+    /// module's nodes, match each introspection schema, read its fields via
+    /// [`Attribute::field`](crate::pom::module::Attribute::field), and fail
+    /// loud through [`ElabErrorKind::AttrSchemaField`] (field/enum validation)
+    /// or [`ElabErrorKind::Other`] (placement errors) on any violation.
+    ///
+    /// Every attribute is optional — a module with none yields an empty sidecar
+    /// and codegen falls back to its derived defaults (PIA-02/08/12, zero
+    /// regression). Placement matrix, `@kind` enum membership, and duplicate
+    /// `@name` are validated here so codegen never sees malformed metadata:
+    ///
+    /// | schema    | module | var | port | wire | enum resolved at this site |
+    /// |-----------|:------:|:---:|:----:|:----:|-----------------------------|
+    /// | `@model`  | ✓      |     |      |      | —                           |
+    /// | `@name`   |        | ✓   | ✓    | ✓    | —                           |
+    /// | `@unit`   |        | ✓   |      |      | —                           |
+    /// | `@description` | | ✓   | ✓    | ✓    | —                     |
+    /// | `@kind`   |        | ✓   | ✓    | ✓    | var→ObservableKind, port/wire→TerminalKind |
+    pub fn introspection_meta(&self, module_name: &str) -> Result<IntrospectionMeta, ElabError> {
+        let module = self.modules.get(module_name).ok_or_else(|| {
+            ElabError::from(ElabErrorKind::Other(format!(
+                "introspection: unknown module `{module_name}`"
+            )))
+        })?;
+        let mut meta = IntrospectionMeta::default();
+
+        // Helpers (local closures, scoped to this method): one builds an
+        // `AttrSchemaField` error for field/value violations, the other an
+        // `Other` error for placement violations — matching `rfports`'s split
+        // (AttrSchemaField for field values, Other for the unknown-module case).
+        let field_err = |schema: &str, field: &str, reason: String| {
+            ElabError::from(ElabErrorKind::AttrSchemaField {
+                schema: schema.into(),
+                field: field.into(),
+                reason,
+            })
+        };
+        let place_err = |schema: &str, node: &str| {
+            ElabError::from(ElabErrorKind::Other(format!(
+                "`@{schema}` is not valid on a {node} (placement error)"
+            )))
+        };
+        // Read a single-field schema's `value` as a string.
+        let str_value = |attr: &crate::pom::module::Attribute, schema: &str| -> Result<String, ElabError> {
+            match attr.field("value") {
+                Some(Value::Str(s)) => Ok(s.clone()),
+                other => Err(field_err(schema, "value", format!("expected a String, got {other:?}"))),
+            }
+        };
+
+        // @model is legal on the Module only; the other four schemas misplaced here.
+        for attr in &module.attributes {
+            match attr.schema() {
+                "model" => {
+                    let type_id = match attr.field("type") {
+                        Some(Value::Str(s)) => s.clone(),
+                        other => return Err(field_err("model", "type", format!("expected a String, got {other:?}"))),
+                    };
+                    let version = match attr.field("version") {
+                        Some(Value::Str(s)) => s.clone(),
+                        other => return Err(field_err("model", "version", format!("expected a String, got {other:?}"))),
+                    };
+                    meta.model = Some(ModelId { type_id, version });
+                }
+                "name" | "unit" | "description" | "kind" => return Err(place_err(attr.schema(), "module")),
+                _ => {}
+            }
+        }
+
+        // vars: @name/@unit/@description/@kind legal; @model misplaced. The
+        // @kind target enum on a var is ObservableKind (VAR_KINDS).
+        for v in &module.vars {
+            let mut vm = VarMeta::default();
+            for attr in &v.attributes {
+                match attr.schema() {
+                    "name" => vm.name = Some(str_value(attr, "name")?),
+                    "unit" => vm.unit = Some(str_value(attr, "unit")?),
+                    "description" => vm.description = Some(str_value(attr, "description")?),
+                    "kind" => {
+                        let raw = str_value(attr, "kind")?;
+                        let canonical = raw.to_ascii_lowercase();
+                        if !VAR_KINDS.contains(&canonical.as_str()) {
+                            return Err(field_err("kind", "value", format!(
+                                "`{raw}` is not a valid var @kind (expected one of {VAR_KINDS:?} — an ObservableKind)"
+                            )));
+                        }
+                        vm.kind = Some(canonical);
+                    }
+                    "model" => return Err(place_err("model", "var")),
+                    _ => {}
+                }
+            }
+            if vm.has_any() {
+                if let Some(name) = &vm.name {
+                    if meta.vars.values().any(|existing| existing.name.as_ref() == Some(name)) {
+                        return Err(field_err("name", "value", format!(
+                            "duplicate introspection name `{name}` (names must be unique within a module's var catalog)"
+                        )));
+                    }
+                }
+                meta.vars.insert(v.name.clone(), vm);
+            }
+        }
+
+        // ports + wires: @name/@description/@kind legal; @unit/@model misplaced.
+        // The @kind target enum on a terminal is TerminalKind (TERMINAL_KINDS).
+        let mut collect_terminal = |node_name: &str, attrs: &[crate::pom::module::Attribute], node_kind: &str| -> Result<(), ElabError> {
+            let mut tm = TermMeta::default();
+            for attr in attrs {
+                match attr.schema() {
+                    "name" => tm.name = Some(str_value(attr, "name")?),
+                    "description" => tm.description = Some(str_value(attr, "description")?),
+                    "kind" => {
+                        let raw = str_value(attr, "kind")?;
+                        let canonical = raw.to_ascii_lowercase();
+                        if !TERMINAL_KINDS.contains(&canonical.as_str()) {
+                            return Err(field_err("kind", "value", format!(
+                                "`{raw}` is not a valid terminal @kind (expected one of {TERMINAL_KINDS:?} — a TerminalKind)"
+                            )));
+                        }
+                        tm.kind = Some(canonical);
+                    }
+                    "unit" => return Err(place_err("unit", node_kind)),
+                    "model" => return Err(place_err("model", node_kind)),
+                    _ => {}
+                }
+            }
+            if tm.has_any() {
+                meta.terminals.insert(node_name.to_string(), tm);
+            }
+            Ok(())
+        };
+        for p in &module.ports {
+            collect_terminal(&p.name, &p.attributes, "port")?;
+        }
+        for w in &module.wires {
+            collect_terminal(&w.name, &w.attributes, "wire")?;
+        }
+
+        Ok(meta)
     }
 
     // ── Staging layer ─────────────────────────────────────────────────────
