@@ -19,6 +19,7 @@ pub mod hooks;
 pub mod prelude;
 pub mod results;
 pub mod session;
+pub mod units;
 pub mod waveform;
 
 pub use error::Error;
@@ -33,4 +34,5 @@ pub use results::{
     DistoResult, InstanceView, NetRef, OpResult, PssResult, PzResult, SParamResult, SensResult, TfResult,
 };
 pub use session::{Grid, Nested, Session, SimSession, SolverConfig, Sweep, SweepPoint};
+pub use units::{Freq, Time};
 pub use waveform::{AcTrace, ComplexWaveform, NoiseTrace, Trace, Waveform};

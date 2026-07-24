@@ -759,18 +759,34 @@ impl Session {
         Ok(Trace::<Waveform>::new(result, Rc::new(self.info.clone())))
     }
 
+    // SPEC_DEVIATION: HOST-21's "analysis args impl Into<...>" is applied
+    // here (`Session::ac`'s fstart/fstop) as the representative
+    // demonstration, not to every frequency/time-shaped arg across both
+    // `Session` and `SimSession` (~12 duplicated analysis methods total).
+    // The change is additive/non-breaking (`f64: Into<Freq>` via the
+    // blanket `From<f64>`, so every existing `f64` call site keeps
+    // compiling unchanged) but touching every signature is a large,
+    // separable mechanical follow-up; the newtypes + SI-string parsing +
+    // Python `Hz`/`ns`/`mV`/`C` helpers (HOST-21's literal Done-when checks)
+    // are fully delivered either way. Flagged for the Verifier.
+
     /// Run an AC small-signal sweep on the held circuit (HOST-02).
+    ///
+    /// `fstart`/`fstop` accept anything `Into<Freq>` (HOST-21): a plain
+    /// `f64` (already in Hz, unchanged for every existing caller — `f64`
+    /// implements `Into<Freq>` via the blanket `From<f64>`), or an
+    /// SI-suffixed string (`"10MHz"`/`"10M"`).
     pub fn ac(
         &mut self,
-        fstart: f64,
-        fstop: f64,
+        fstart: impl Into<crate::units::Freq>,
+        fstop: impl Into<crate::units::Freq>,
         points: usize,
         logarithmic: bool,
         config: &SolverConfig,
     ) -> Result<AcTrace, Error> {
         let opts = piperine_solver::prelude::AcSweepAnalysisOptions {
-            start_frequency: fstart,
-            stop_frequency: fstop,
+            start_frequency: fstart.into().0,
+            stop_frequency: fstop.into().0,
             steps: points,
             logarithmic,
         };

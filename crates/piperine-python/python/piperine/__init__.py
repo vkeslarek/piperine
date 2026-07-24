@@ -88,6 +88,11 @@ __all__ = [
     # plotting (HOST-17, matplotlib-guarded)
     "plot",
     "bode",
+    # SI unit helpers (HOST-21)
+    "Hz",
+    "ns",
+    "mV",
+    "C",
 ]
 
 
@@ -930,6 +935,86 @@ def load(path: str) -> Design:
     failure or an unreadable file — never a silent success.
     """
     return Design(_piperine.load(path))
+
+
+# ── SI unit helpers (HOST-21) ────────────────────────────────────────────────
+#
+# Mirror the Rust `Freq`/`Time` newtypes' string parsing (`units.rs`): a
+# string value takes an optional SI prefix (f/p/n/u(µ)/m/k/M/G/T) and an
+# optional trailing unit-name suffix; a non-string value is taken as already
+# being in the function's base unit — SI prefixes never apply to a raw
+# `float`/`int` (a bare number is not re-parsed as a string).
+
+_SI_PREFIXES = {
+    "f": 1e-15,
+    "p": 1e-12,
+    "n": 1e-9,
+    "u": 1e-6,
+    "µ": 1e-6,
+    "m": 1e-3,
+    "k": 1e3,
+    "M": 1e6,
+    "G": 1e9,
+    "T": 1e12,
+}
+
+
+def _parse_si(value: str, unit_suffix: str) -> float:
+    """Parse `value` as `<number><optional SI prefix>`, with an optional
+    trailing `unit_suffix` stripped first if present (e.g. `_parse_si
+    ("10MHz", "Hz")` and `_parse_si("10M", "Hz")` both yield `1e7`). Raises
+    ``ValueError`` on anything else (fail loud, no silent default)."""
+    trimmed = value.strip()
+    body = trimmed[: -len(unit_suffix)] if trimmed.endswith(unit_suffix) else trimmed
+    if not body:
+        raise ValueError(f"`{trimmed}` has no numeric part")
+    mult = 1.0
+    if body[-1] in _SI_PREFIXES:
+        mult = _SI_PREFIXES[body[-1]]
+        body = body[:-1]
+    try:
+        return float(body) * mult
+    except ValueError as e:
+        raise ValueError(
+            f"cannot parse `{trimmed}` as a number (expected `<number>` optionally followed by "
+            f"an SI prefix (k/M/G/m/u/n/p/f) and/or the `{unit_suffix}` suffix)"
+        ) from e
+
+
+def Hz(value: float | str) -> float:
+    """A frequency in Hz (HOST-21): ``Hz(1e6) == 1e6``,
+    ``Hz("10M") == 1e7``, ``Hz("10MHz") == 1e7``. SI prefixes only apply
+    when ``value`` is a ``str`` — a raw ``float``/``int`` is returned as-is,
+    never re-parsed as a string.
+    """
+    if isinstance(value, str):
+        return _parse_si(value, "Hz")
+    return float(value)
+
+
+def ns(value: float | str) -> float:
+    """A duration in nanoseconds, converted to seconds (HOST-21):
+    ``ns(10) == 10e-9``, ``ns("10n") == 10e-9``, ``ns("10ns") == 10e-9``.
+    """
+    if isinstance(value, str):
+        return _parse_si(value, "s")
+    return float(value) * 1e-9
+
+
+def mV(value: float | str) -> float:
+    """A voltage in millivolts, converted to volts (HOST-21):
+    ``mV(300) == 0.3``, ``mV("300m") == 0.3``.
+    """
+    if isinstance(value, str):
+        return _parse_si(value, "V")
+    return float(value) * 1e-3
+
+
+def C(value: float) -> float:
+    """A temperature in degrees Celsius, converted to Kelvin (HOST-21) — the
+    unit ``Solver.temperature`` expects: ``C(27) == 300.15``.
+    """
+    return float(value) + 273.15
 
 
 # ── plotting (HOST-17, matplotlib-guarded) ─────────────────────────────────
