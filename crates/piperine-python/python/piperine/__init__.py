@@ -29,6 +29,8 @@ Numpy arrays: ``Waveform.values`` / ``.axis`` are real ``np.ndarray``;
 from __future__ import annotations
 
 import dataclasses
+import functools
+import re
 import typing
 from dataclasses import dataclass, field
 from enum import Enum
@@ -93,7 +95,109 @@ __all__ = [
     "ns",
     "mV",
     "C",
+    # exception hierarchy (HOST-22)
+    "SimulationError",
+    "ElaborationError",
+    "UnknownModule",
+    "UnknownNet",
+    "ConvergenceError",
 ]
+
+
+# ── exception hierarchy (HOST-22) ──────────────────────────────────────────
+#
+# Every subclass also inherits the matching builtin exception type
+# (`KeyError`/`ValueError`/`RuntimeError`) so existing `except KeyError`-style
+# code (including LIVE-11's `Session.set` error-parity contract) keeps
+# working completely unchanged — these are additive, more specific types
+# layered over the same builtin taxonomy, not a replacement for it.
+
+
+class SimulationError(Exception):
+    """Base exception for every host-facing simulation failure (HOST-22).
+
+    A raw native failure that doesn't fit a more specific subclass below is
+    never silently swallowed — it propagates as its original builtin type
+    (`KeyError`/`ValueError`/`RuntimeError`) unchanged; this hierarchy only
+    adds sharper types for the failure modes it can positively identify.
+    """
+
+
+class ElaborationError(SimulationError, ValueError):
+    """PHDL elaboration failed (parse / const-eval / instantiation) —
+    raised by :func:`load` on a bad source file."""
+
+
+class UnknownModule(SimulationError, ValueError):
+    """A referenced module name does not exist in the design — raised by
+    :meth:`Design.module` (a ``ValueError`` subclass: the native lookup
+    already raises ``ValueError``, so this stays compatible with existing
+    ``except ValueError`` code)."""
+
+
+class UnknownNet(SimulationError, KeyError):
+    """A referenced net/instance/param name is not addressable in the
+    compiled circuit."""
+
+
+class ConvergenceError(SimulationError, RuntimeError):
+    """The Newton solver failed to converge.
+
+    ``node``/``iteration``/``analysis`` are best-effort diagnostics: parsed
+    from the underlying solver message when present, ``None`` otherwise —
+    the solver's convergence-failure message does not always name the
+    offending node.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        node: str | None = None,
+        iteration: int | None = None,
+        analysis: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.node = node
+        self.iteration = iteration
+        self.analysis = analysis
+
+
+def _classify_analysis_error(exc: Exception, analysis: str) -> Exception | None:
+    """Map a raw native analysis exception onto the [`SimulationError`]
+    hierarchy (HOST-22) by message content, or return ``None`` to leave it
+    unchanged (unmatched — passes through as its original builtin type).
+    """
+    if isinstance(exc, SimulationError):
+        return None
+    msg = str(exc)
+    if "Failed to converge" in msg:
+        match = re.search(r"after (\d+) iterations", msg)
+        iteration = int(match.group(1)) if match else None
+        return ConvergenceError(msg, iteration=iteration, analysis=analysis)
+    if "is not addressable" in msg or "is not a solved analog net" in msg:
+        return UnknownNet(msg)
+    return None
+
+
+def _wrap_analysis_errors(fn):
+    """Decorator (HOST-22): call `fn`, reclassifying any raised exception
+    through :func:`_classify_analysis_error`; an unmatched exception
+    re-raises completely unchanged (same type, same traceback) — this is
+    purely additive, never a behavior change for an already-tested raise
+    site.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            mapped = _classify_analysis_error(exc, fn.__name__)
+            if mapped is not None:
+                raise mapped from exc
+            raise
+
+    return wrapper
 
 
 # ── config bundles (mirror crates/piperine-lang/headers/prelude.phdl) ─────────
@@ -266,8 +370,12 @@ class Design:
         return Module(m) if m is not None else None
 
     def module(self, name: str) -> Module:
-        """Look up a module by name; raises ``ValueError`` if absent."""
-        return Module(self._native.module(name))
+        """Look up a module by name; raises :class:`UnknownModule` (a
+        ``ValueError`` subclass, HOST-22) if absent."""
+        try:
+            return Module(self._native.module(name))
+        except Exception as exc:
+            raise UnknownModule(str(exc)) from exc
 
     def modules(self) -> list[Module]:
         """Every elaborated module."""
@@ -456,6 +564,7 @@ class Module:
 
     # ── analyses (spec AC3/6/8/9) ──────────────────────────────────────────
 
+    @_wrap_analysis_errors
     def op(self, config: OpConfig | None = None) -> OpResult:
         """Run a DC operating-point analysis (spec AC3).
 
@@ -467,6 +576,7 @@ class Module:
         nodeset = config.nodeset if config.nodeset else None
         return self._native.op(nodeset, config.solver)
 
+    @_wrap_analysis_errors
     def sens(
         self,
         outputs: list[str],
@@ -483,6 +593,7 @@ class Module:
         """
         return SensResult(self._native.sens(outputs, params, dp_rel, solver))
 
+    @_wrap_analysis_errors
     def pss(
         self,
         period: float,
@@ -499,6 +610,7 @@ class Module:
         trace, iters, residual, settle = self._native.pss(period, tstab, solver)
         return PssResult(trace, PssStats(iters, residual, settle))
 
+    @_wrap_analysis_errors
     def pz(
         self,
         input_source: str,
@@ -518,6 +630,7 @@ class Module:
         poles, zeros = self._native.pz(input_source, output, output_ref, solver)
         return PoleZeroResult(poles=list(poles), zeros=list(zeros))
 
+    @_wrap_analysis_errors
     def sp(
         self,
         fstart: float,
@@ -537,6 +650,7 @@ class Module:
         frequencies, s, z0, n_ports = self._native.sp(fstart, fstop, points, logarithmic, solver)
         return SpResult(frequencies=list(frequencies), s=s, z0=list(z0), n_ports=n_ports)
 
+    @_wrap_analysis_errors
     def disto(
         self,
         f1: float,
@@ -559,6 +673,7 @@ class Module:
         hd2, hd3, im2, im3 = self._native.disto(f1, amplitude, output, f2, output_ref, solver)
         return DistoResult(hd2=hd2, hd3=hd3, im2=im2, im3=im3)
 
+    @_wrap_analysis_errors
     def tran(self, config: TranConfig) -> Trace:
         """Run a transient analysis (spec AC6).
 
@@ -573,6 +688,7 @@ class Module:
             config.stop, step, config.start, ic, config.solver, config.record_device_state
         )
 
+    @_wrap_analysis_errors
     def ac(self, config: AcConfig) -> AcTrace:
         """Run an AC small-signal sweep (spec AC8).
 
@@ -584,6 +700,7 @@ class Module:
             config.fstart, config.fstop, config.points, logarithmic, config.solver
         )
 
+    @_wrap_analysis_errors
     def noise(self, config: NoiseConfig) -> NoiseTrace:
         """Run an output-referred noise analysis (spec AC9)."""
         logarithmic = config.scale in (Scale.Dec, Scale.Oct)
@@ -599,6 +716,7 @@ class Module:
 
     # ── staging (spec AC11/12) ─────────────────────────────────────────────
 
+    @_wrap_analysis_errors
     def set(self, label: str, param: str, value: float) -> None:
         """Set a parameter override for the next analysis (spec AC11/12).
 
@@ -643,6 +761,7 @@ class Session:
         (``0`` until a structural set lands)."""
         return self._native.rebuilds
 
+    @_wrap_analysis_errors
     def set(self, label: str, param: str, value: float) -> None:
         """Write a parameter on the compiled circuit, effective from the
         next analysis run.
@@ -653,6 +772,7 @@ class Session:
         """
         self._native.set(label, param, value)
 
+    @_wrap_analysis_errors
     def schedule_set(self, t: float, label: str, param: str, value: float) -> None:
         """Schedule ``set`` at simulation time ``t`` for the next
         :meth:`tran` run.
@@ -666,6 +786,7 @@ class Session:
 
     # ── analyses on the held circuit (same shapes as Module's) ─────────────
 
+    @_wrap_analysis_errors
     def op(self, config: OpConfig | None = None) -> OpResult:
         """Run a DC operating point on the held circuit (spec AC3 shape)."""
         if config is None:
@@ -673,6 +794,7 @@ class Session:
         nodeset = config.nodeset if config.nodeset else None
         return self._native.op(nodeset, config.solver)
 
+    @_wrap_analysis_errors
     def tran(self, config: TranConfig) -> Trace:
         """Run a transient on the held circuit (spec AC6 shape), honoring
         any pending :meth:`schedule_set` entries."""
@@ -682,6 +804,7 @@ class Session:
             config.stop, step, config.start, ic, config.solver, config.record_device_state
         )
 
+    @_wrap_analysis_errors
     def ac(self, config: AcConfig) -> AcTrace:
         """Run an AC small-signal sweep on the held circuit (spec AC8
         shape)."""
@@ -690,6 +813,7 @@ class Session:
             config.fstart, config.fstop, config.points, logarithmic, config.solver
         )
 
+    @_wrap_analysis_errors
     def noise(self, config: NoiseConfig) -> NoiseTrace:
         """Run an output-referred noise analysis on the held circuit (spec
         AC9 shape)."""
@@ -704,6 +828,7 @@ class Session:
             config.solver,
         )
 
+    @_wrap_analysis_errors
     def sens(
         self,
         outputs: list[str],
@@ -715,6 +840,7 @@ class Session:
         (HOST-02), same shape as :meth:`Module.sens`."""
         return SensResult(self._native.sens(outputs, params, dp_rel, solver))
 
+    @_wrap_analysis_errors
     def pss(
         self,
         period: float,
@@ -726,6 +852,7 @@ class Session:
         trace, iters, residual, settle = self._native.pss(period, tstab, solver)
         return PssResult(trace, PssStats(iters, residual, settle))
 
+    @_wrap_analysis_errors
     def pz(
         self,
         input_source: str,
@@ -738,6 +865,7 @@ class Session:
         poles, zeros = self._native.pz(input_source, output, output_ref, solver)
         return PoleZeroResult(poles=list(poles), zeros=list(zeros))
 
+    @_wrap_analysis_errors
     def disto(
         self,
         f1: float,
@@ -752,6 +880,7 @@ class Session:
         hd2, hd3, im2, im3 = self._native.disto(f1, amplitude, output, f2, output_ref, solver)
         return DistoResult(hd2=hd2, hd3=hd3, im2=im2, im3=im3)
 
+    @_wrap_analysis_errors
     def sp(
         self,
         fstart: float,
@@ -765,6 +894,7 @@ class Session:
         frequencies, s, z0, n_ports = self._native.sp(fstart, fstop, points, logarithmic, solver)
         return SpResult(frequencies=list(frequencies), s=s, z0=list(z0), n_ports=n_ports)
 
+    @_wrap_analysis_errors
     def tf(
         self,
         output: str,
@@ -781,6 +911,7 @@ class Session:
         native = self._native.tf(output, input_source, output_ref, solver)
         return TfResult(gain=native.gain, z_in=native.z_in, z_out=native.z_out)
 
+    @_wrap_analysis_errors
     def dc(
         self,
         label: str,
@@ -931,10 +1062,14 @@ def load(path: str) -> Design:
     """Load + elaborate a ``.phdl``/``.ppr`` file into a :class:`Design`
     (spec AC1).
 
-    Raises ``ValueError`` (with the diagnostic) on a parse/elaboration
-    failure or an unreadable file — never a silent success.
+    Raises :class:`ElaborationError` (a ``ValueError`` subclass, HOST-22)
+    with the diagnostic on a parse/elaboration failure or an unreadable
+    file — never a silent success.
     """
-    return Design(_piperine.load(path))
+    try:
+        return Design(_piperine.load(path))
+    except Exception as exc:
+        raise ElaborationError(str(exc)) from exc
 
 
 # ── SI unit helpers (HOST-21) ────────────────────────────────────────────────
