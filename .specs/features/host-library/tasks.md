@@ -291,10 +291,16 @@ trigger (the solver-level `limiting_report.rs` tests cover the live path).
 python. **Requirement**: HOST-11. **Depends on**: T1. **Reuses**:
 `NoiseContribution`.
 **Done when**:
-- [ ] `nz.by_source() -> {name: Waveform}`, `nz.contributions() -> [NoiseContribution]`
-- [ ] sum of contributions reconciles with `total()` (conservation)
-- [ ] `cargo test --workspace`
+- [x] `nz.by_source() -> {name: Waveform}`, `nz.contributions() -> [NoiseContribution]`
+- [x] sum of contributions reconciles with `total()` (conservation)
+- [x] `cargo test --workspace`
 **Tests**: integration · **Gate**: full
+**Status (2026-07-24)**: DONE, commit `3ba3b60`. `NoiseTrace` (= `Trace<NoiseSample>`)
+gains `by_source()` (HashMap of `"element/source"` → PSD `Waveform`) and
+`contributions()` (`&[NoiseContribution]`) over the shipped solver
+`NoiseAnalysisResult.contributions` catalog. Conservation test confirms
+`sum(integrated_sq) ≈ total()²`. Python `_NoiseTrace` mirrors both methods;
+new `_NoiseContribution` pyclass with element/source/kind/integrated_sq.
 
 #### T15: `Param.bounds`/`unit`/`scope`/`invalidation` reflection
 **What**: Surface the shipped `ParamDescriptor` fields on the host `Param`.
