@@ -61,6 +61,7 @@ __all__ = [
     "Session",
     "Sweep",
     "SweepPoint",
+    "Grid",
     # analyses
     "OpResult",
     "Trace",
@@ -778,11 +779,30 @@ class Session:
         it via attribute delegation). Reuses :meth:`set`'s compile-once
         restamp (MD-18); a structural knob auto-rebuilds and counts it in
         :attr:`rebuilds` (LIVE-14), same as a bare :meth:`set` — the sweep
-        adds no separate rebuild path. The native ``_Session.sweep`` does
-        the restamping; this wrapper turns each native ``(value, index)``
+        adds no separate rebuild path. Each iteration builds a fresh native
+        ``_Session.sweep`` iterator (so a :class:`Sweep` can be iterated
+        more than once); this wrapper turns each native ``(value, index)``
         step into a :class:`SweepPoint` view of *this* ``Session``.
         """
-        return Sweep(self, self._native.sweep(label, param, list(values)))
+        return Sweep(self, label, param, list(values))
+
+    def sweep_grid(self, axes: dict[str, list[float]]) -> "Grid":
+        """A named multi-axis sweep grid (HOST-19):
+        ``session.sweep_grid({"r1.r": [1e3, 2e3], "c1.c": [1e-9, 2e-9]})``
+        iterates every combination in row-major (outer-axis-first) order;
+        :meth:`Grid.map` collects results into an axis-shaped
+        ``numpy.ndarray``.
+
+        Each key is a ``"label.param"`` path (the same addressing
+        :meth:`sweep`/:meth:`set`/``probe=`` use) — not a bare kwarg name —
+        since PHDL parameters are addressed by flat instance label, and a
+        dotted path is not a valid Python identifier.
+        """
+        parsed: list[tuple[str, str, list[float]]] = []
+        for path, values in axes.items():
+            label, param = path.split(".", 1)
+            parsed.append((label, param, list(values)))
+        return Grid(self, parsed)
 
 
 class SweepPoint:
@@ -809,19 +829,69 @@ class Sweep:
     """A fluent single-knob sweep (HOST-18, :meth:`Session.sweep`):
     iterating yields one :class:`SweepPoint` per value, in order, restamped
     (or rebuilt, for a structural knob) onto the session's one compilation.
-    Wraps the native ``_Sweep`` iterator (which does the actual restamping).
+
+    Each ``for point in sweep`` builds a fresh native ``_Session.sweep``
+    iterator (which does the actual restamping) — a :class:`Sweep` is a
+    reusable recipe, not a single-use iterator, so it can be iterated more
+    than once.
     """
 
-    def __init__(self, session: Session, native_sweep) -> None:
+    def __init__(self, session: Session, label: str, param: str, values: list[float]) -> None:
         self._session = session
-        self._native = native_sweep
+        self._label = label
+        self._param = param
+        self._values = values
 
     def __len__(self) -> int:
-        return len(self._native)
+        return len(self._values)
 
     def __iter__(self):
-        for value, index in self._native:
+        native_sweep = self._session._native.sweep(self._label, self._param, self._values)
+        for value, index in native_sweep:
             yield SweepPoint(self._session, value, index)
+
+
+class Grid:
+    """A named multi-axis sweep grid (HOST-19, :meth:`Session.sweep_grid`):
+    iterating yields one :class:`SweepPoint` per row-major combination;
+    :meth:`map` collects results into an axis-shaped ``numpy.ndarray``.
+
+    Each ``for point in grid`` builds a fresh native ``_Session.sweep_grid``
+    iterator (which does the actual restamping) — a :class:`Grid` is a
+    reusable recipe, not a single-use iterator (:meth:`map` iterates it
+    internally, but a `Grid` can still be iterated again afterward).
+    """
+
+    def __init__(self, session: Session, axes: list[tuple[str, str, list[float]]]) -> None:
+        self._session = session
+        self._axes = axes
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        """The grid's shape — one length per axis, outer axis first."""
+        return tuple(len(values) for _, _, values in self._axes)
+
+    def __len__(self) -> int:
+        n = 1
+        for size in self.shape:
+            n *= size
+        return n
+
+    def __iter__(self):
+        native_grid = self._session._native.sweep_grid(self._axes)
+        for coord, index in native_grid:
+            yield SweepPoint(self._session, tuple(coord), tuple(index))
+
+    def map(self, fn) -> "np.ndarray":  # noqa: F821
+        """Apply ``fn(point)`` at every grid combination (row-major) and
+        return the results as a ``numpy.ndarray`` shaped like :attr:`shape`
+        (HOST-19) — ``result[i, j, ...] == fn(point at axis values
+        (axes[0][i], axes[1][j], ...))``.
+        """
+        import numpy as np
+
+        values = [fn(point) for point in self]
+        return np.array(values).reshape(self.shape)
 
 
 # ── load ──────────────────────────────────────────────────────────────────────

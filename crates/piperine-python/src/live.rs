@@ -868,6 +868,14 @@ impl _Session {
     fn sweep(slf: Py<Self>, label: String, param: String, values: Vec<f64>) -> _Sweep {
         _Sweep { session: slf, label, param, values, idx: 0 }
     }
+
+    /// A named multi-axis sweep grid (HOST-19): `axes` is
+    /// `[(label, param, values), ...]`; the returned `_Grid` iterates
+    /// `(coord, index)` per row-major combination, restamping (or
+    /// rebuilding) every axis before each is yielded.
+    fn sweep_grid(slf: Py<Self>, axes: Vec<(String, String, Vec<f64>)>) -> _Grid {
+        _Grid { session: slf, axes, idx: 0 }
+    }
 }
 
 /// `_Sweep` — the native half of HOST-18's fluent sweep
@@ -910,6 +918,57 @@ impl _Sweep {
         let session = slf.session.clone_ref(py);
         session.borrow_mut(py).set(&label, &param, value)?;
         Ok(Some((value, index)))
+    }
+}
+
+/// `_Grid` — the native half of HOST-19's named multi-axis sweep
+/// ([`_Session::sweep_grid`]): a Python iterator yielding `(coord, index)`
+/// per row-major combination of the axes' values. Same owned-`Py<_Session>`
+/// shape as [`_Sweep`].
+#[pyclass(module = "piperine", unsendable)]
+pub struct _Grid {
+    session: Py<_Session>,
+    axes: Vec<(String, String, Vec<f64>)>,
+    idx: usize,
+}
+
+#[pymethods]
+impl _Grid {
+    /// Total number of grid points (product of every axis's length).
+    fn __len__(&self) -> usize {
+        self.axes.iter().map(|(_, _, v)| v.len()).product()
+    }
+
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    /// Restamp (or rebuild) every axis onto the next row-major combination
+    /// and yield `(coord, index)` — `coord`/`index` are one entry per axis,
+    /// outer axis first; `None` once the grid is exhausted.
+    fn __next__(mut slf: PyRefMut<'_, Self>, py: Python<'_>) -> PyResult<Option<(Vec<f64>, Vec<usize>)>> {
+        let shape: Vec<usize> = slf.axes.iter().map(|(_, _, v)| v.len()).collect();
+        let total: usize = shape.iter().product();
+        if total == 0 || slf.idx >= total {
+            return Ok(None);
+        }
+        // Row-major unravel of the flat `idx` over `shape`.
+        let mut rem = slf.idx;
+        let mut index = vec![0usize; shape.len()];
+        for d in (0..shape.len()).rev() {
+            index[d] = rem % shape[d];
+            rem /= shape[d];
+        }
+        slf.idx += 1;
+        let axes = slf.axes.clone();
+        let session = slf.session.clone_ref(py);
+        let mut coord = Vec::with_capacity(shape.len());
+        for (d, (label, param, values)) in axes.iter().enumerate() {
+            let v = values[index[d]];
+            session.borrow_mut(py).set(label, param, v)?;
+            coord.push(v);
+        }
+        Ok(Some((coord, index)))
     }
 }
 

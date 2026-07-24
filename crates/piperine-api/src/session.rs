@@ -1131,6 +1131,103 @@ impl Sweep<'_> {
     }
 }
 
+// ─── Grid / Nested (HOST-19) ────────────────────────────────────────────────
+
+/// A nested (axis-shaped) result tree (HOST-19): [`Grid::map`]'s return
+/// shape — `Leaf` at the deepest axis, `Branch` at every outer axis. Mirrors
+/// a numpy ndarray's shape without pulling an `ndarray`/ad hoc flat-index
+/// dependency into a generic-`R` result type; the tree's depth equals the
+/// grid's axis count and each `Branch`'s length equals that axis's value
+/// count (i.e. `Grid::shape()`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Nested<R> {
+    Leaf(R),
+    Branch(Vec<Nested<R>>),
+}
+
+/// A named multi-axis sweep grid (HOST-19, [`Session::sweep_grid`]): each
+/// axis is `(label, param, values)`; [`Grid::map`] visits the cartesian
+/// product in row-major (outer-axis-first) order, restamping (or
+/// rebuilding, per axis write — same [`Session::set_or_rebuild`] escape
+/// hatch [`Sweep`] uses) each axis's value before calling the mapped
+/// function, and collects the results into a [`Nested`] tree shaped like
+/// [`Grid::shape`].
+pub struct Grid<'a> {
+    session: &'a mut Session,
+    axes: Vec<(String, String, Vec<f64>)>,
+}
+
+impl Session {
+    /// A named multi-axis sweep grid (HOST-19): `axes` is
+    /// `[(label, param, values), ...]`, outer axis first. Iterate with
+    /// [`Grid::map`].
+    pub fn sweep_grid<'a>(&'a mut self, axes: &[(&str, &str, &[f64])]) -> Grid<'a> {
+        Grid {
+            session: self,
+            axes: axes.iter().map(|&(l, p, v)| (l.to_string(), p.to_string(), v.to_vec())).collect(),
+        }
+    }
+}
+
+impl Grid<'_> {
+    /// The grid's shape — one length per axis, outer axis first.
+    pub fn shape(&self) -> Vec<usize> {
+        self.axes.iter().map(|(_, _, v)| v.len()).collect()
+    }
+
+    /// The total number of grid points (product of [`Self::shape`]).
+    pub fn len(&self) -> usize {
+        self.axes.iter().map(|(_, _, v)| v.len()).product()
+    }
+
+    /// `true` when any axis has no values (an empty grid).
+    pub fn is_empty(&self) -> bool {
+        self.axes.iter().any(|(_, _, v)| v.is_empty())
+    }
+
+    /// Visit every combination in the grid (row-major, outer axis first),
+    /// restamping (or rebuilding) each axis's value on the held session
+    /// before calling `f` with the session and this point's coordinates
+    /// (one value per axis, outer axis first), and collect the results into
+    /// a [`Nested`] tree shaped like [`Self::shape`]. A `f` error
+    /// propagates with the failing combination's coordinates prefixed (the
+    /// spec's edge case: a sweep-point failure surfaces with the point's
+    /// coordinates, not a bare error).
+    pub fn map<R>(
+        &mut self,
+        mut f: impl FnMut(&mut Session, &[f64]) -> Result<R, Error>,
+    ) -> Result<Nested<R>, Error> {
+        let axes = self.axes.clone();
+        let mut coord = Vec::with_capacity(axes.len());
+        Self::map_axis(self.session, &axes, 0, &mut coord, &mut f)
+    }
+
+    fn map_axis<R>(
+        session: &mut Session,
+        axes: &[(String, String, Vec<f64>)],
+        depth: usize,
+        coord: &mut Vec<f64>,
+        f: &mut impl FnMut(&mut Session, &[f64]) -> Result<R, Error>,
+    ) -> Result<Nested<R>, Error> {
+        if depth == axes.len() {
+            let value = f(session, coord)
+                .map_err(|e| Error::Measurement(format!("sweep_grid at {coord:?}: {e}")))?;
+            return Ok(Nested::Leaf(value));
+        }
+        let (label, param, values) = &axes[depth];
+        let mut branch = Vec::with_capacity(values.len());
+        for &v in values {
+            session.set_or_rebuild(label, param, v).map_err(|e| {
+                Error::Measurement(format!("sweep_grid at {coord:?} + [{label}.{param}={v}]: {e}"))
+            })?;
+            coord.push(v);
+            branch.push(Self::map_axis(session, axes, depth + 1, coord, f)?);
+            coord.pop();
+        }
+        Ok(Nested::Branch(branch))
+    }
+}
+
 /// Build a [`piperine_solver::prelude::ProbeSelection`] from `"instance.name"`
 /// paths (HOST-08's `tran(probe = [...])`). Malformed paths (no `.`) fail
 /// loud here; unknown device/observable pairs fail loud at solver setup
