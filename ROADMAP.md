@@ -42,7 +42,7 @@ Pillars. V1 ships when the V1-marked ones are green.
 | P1 | **Solver complete** | Every analysis a working SPICE user expects, plus PSS; engine gaps closed or explicitly documented as post-V1 |
 | P2 | **Low-level device ABI** | Element ABI maturity complete (rollback, limiting, lifecycle, events, introspection); PHDL introspection attributes are the follow-up |
 | P3 | ✅ **Python library polished** — CLOSED 2026-07-24 | `import piperine` is the single host: benches, validation, plugins scripting; documented, docstringed, stub-complete |
-| P3b | **Blocking-bug fixes (post host-sanitization)** | The gap-catalog items that *block a simulation or full user use* — `piperine build` stub, digital-codegen completeness, `.tf` correctness. Lands after P3's host work. |
+| P3b | ✅ **Blocking-bug fixes** — CLOSED 2026-07-24 | The gap-catalog items that *block a simulation or full user use* — `piperine build` stub, digital-codegen completeness, `.tf` correctness. |
 | P4 | **Language server 100%** | Scope-aware resolution, project-wide navigation, attribute-schema + `///` doc-comment IDE support, protocol-level tests |
 | P5 | **Plugin interface simplified** | One clear extension story (attributes + devices + hooks + scripts); native + Python backends only; writing a plugin is a documented afternoon task |
 | P6 | **Cleanup & completeness** | Test sanitization (~800 tests → unit-inline, integration-grouped, dedupe), dead-flag/ignored-test removal, non-blocking codegen/interpreter completeness. Not all V1 — triage in the gap catalog. |
@@ -454,25 +454,48 @@ builds on this — see gallery.
 
 ---
 
-## P3b — Blocking-bug fixes (post host-sanitization)
+## P3b — Blocking-bug fixes (post host-sanitization) ✅ CLOSED (2026-07-24)
 
-The gap-catalog rows that **block a simulation or full user use** — promoted out
-of the triage sheet because they are bugs, not features. Lands after P3's host
-work (and the P6 test-sanitization that makes regressions visible). Each is
-`file:line`-evidenced in the gap catalog.
+**DELIVERED 2026-07-24** — feature `p3b-blocking-fixes`
+(`.specs/features/p3b-blocking-fixes/`: `spec.md` 8 requirements PB-01..08,
+`tasks.md` 5/5 tasks done, `validation.md` Verifier PASS). The gap-catalog
+rows that **block a simulation or full user use** — bugs, not features.
+Every `file:line` claim was re-verified against current source before
+fixing (code had moved since the gap catalog was written); one claim
+(`.tf`'s "wrong number") turned out to be **stale** — see the correction
+below.
 
-- [ ] **`piperine build` is a stub** — `build.rs:33` sets up headers, prints
-      "Building…", and never calls the compiler/elaborator. A build command that
-      does not build blocks the core CLI workflow. **V1.**
-- [ ] **Digital codegen completeness** (analog has these, digital rejects them,
-      so valid-looking digital designs fail to compile):
-      - user-`fn` inlining in a digital body (`emit/builder.rs:334`)
-      - enum-pattern resolution / `match` on enums in digital (`emit/stmt.rs:234`)
-      - real ↔ 4-state conversion in digital (`emit/builder.rs:679`)
-      - (`for` in a digital body — `emit/stmt.rs:98` — is niche; parked in P6)
-- [ ] **`.tf` input impedance for a current-source input** returns a placeholder
-      `1e20` (`analyses/tf.rs:394`) — a wrong number a user can read as real.
-      Small, correctness-shaped. **V1.**
+- [x] **`piperine build` was a stub** — now elaborates the target file(s)
+      and runs the full codegen pipeline (`lower_bodies` +
+      `CircuitCompiler::build_circuit`) on every zero-port module (the
+      only structural "circuit root" signal available — no `top` marker
+      exists in `Piperine.toml` or PHDL); elaboration/codegen failures both
+      exit non-zero, attributed to their module. Commit `2fa0e69`.
+- [x] **Digital codegen completeness** (analog had these, digital rejected
+      them — valid-looking digital designs now compile):
+      - user-`fn` inlining in a digital body — tree substitution mirroring
+        the analog inliner.
+      - enum-pattern `match` in digital — a lowering-time pre-resolution
+        pass rewrites the pattern into the discriminant literal, reusing
+        the existing `Pattern::Literal` emission path.
+      - real ↔ 4-state (`Quad`) conversion in digital — `Quad -> Real`
+        reuses the existing route unchanged; `Real -> Quad` checks
+        truthiness directly (SPEC_DEVIATION: the literally-specified
+        `Real -> Int -> Quad` route would truncate a fractional nonzero
+        value like `0.5` to `0` first, contradicting its own stated
+        semantics).
+      - (`for` in a digital body — still niche; stays parked in P6.)
+      Commit `dae7e71`.
+- [x] **`.tf` "wrong number" claim — corrected, not fixed as described.**
+      Re-verification traced the call graph and found the `1e20`
+      current-source placeholder was **provably unreachable**:
+      `calculate_gain` runs first and already fails loud on any
+      non-voltage input, so `calculate_input_resistance`'s dead `else`
+      branch could never execute — no user could hit a live wrong number.
+      Removed the dead branch and asserted the invariant
+      (`debug_assert_eq!`) so a future refactor that reintroduces a
+      current-source path here fails loud instead of silently reviving the
+      wrong `1e20`. Commit `b600700`.
 
 > Framing (user 2026-07-23): "super important" = blocks a simulation OR causes a
 > bug that prevents full user use. Everything else from the catalog is P6.
