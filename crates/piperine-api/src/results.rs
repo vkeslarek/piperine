@@ -32,8 +32,6 @@ pub struct TfResult {
 }
 
 impl TfResult {
-    /// Wired by `Session::tf` (T5); unused until then.
-    #[allow(dead_code)]
     pub(crate) fn from_solver(r: piperine_solver::prelude::TransferFunctionAnalysisResult) -> Self {
         Self { gain: r.gain, z_in: r.input_resistance, z_out: r.output_resistance }
     }

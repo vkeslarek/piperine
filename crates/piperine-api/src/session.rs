@@ -867,6 +867,30 @@ impl Session {
         let result = solver.solve_sweep()?;
         Ok(result.into())
     }
+
+    /// Run a transfer-function analysis (`.tf`, HOST-03): DC small-signal
+    /// gain, input resistance, and output resistance from unit excitations
+    /// on the system linearized at the operating point. Binds the existing
+    /// solver `.tf` driver — no new solver math (MD-14: voltage-source input
+    /// only). `output_ref` differentially references a voltage output.
+    pub fn tf(
+        &mut self,
+        output: &str,
+        output_ref: Option<&str>,
+        input_source: &str,
+        config: &SolverConfig,
+    ) -> Result<crate::results::TfResult, Error> {
+        let output_node = resolve_net(&self.info, output)?;
+        let output_ref_node = output_ref.map(|r| resolve_net(&self.info, r)).transpose()?;
+        let options = piperine_solver::prelude::TransferFunctionAnalysisOptions {
+            output: piperine_solver::abi::AnalogVariable::Node(output_node),
+            output_ref: output_ref_node,
+            input_source: piperine_solver::abi::BranchIdentifier::new(input_source, "force0"),
+        };
+        let mut solver = self.circuit.transfer_function(options, config.to_context())?;
+        let result = solver.solve()?;
+        Ok(crate::results::TfResult::from_solver(result))
+    }
 }
 
 /// Resolve a host-visible net name to a solver node identifier.
