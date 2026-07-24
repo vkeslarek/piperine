@@ -202,19 +202,27 @@ by `cargo clean`, unrelated to this task's scope).
 **Where**: `piperine-solver/core/circuit.rs`. **Requirement**: HOST-07 (support).
 **Depends on**: T3. **Reuses**: shipped `Element::Introspect`.
 **Done when**:
-- [ ] `CircuitInstance::device_introspect(label) -> Option<&dyn Introspect>` (or equiv)
-- [ ] no solver-math change; `cargo test -p piperine-solver`
+- [x] `CircuitInstance::device_introspect(label) -> Option<&dyn Introspect>` (or equiv)
+- [x] no solver-math change; `cargo test -p piperine-solver`
 **Tests**: integration · **Gate**: quick (solver)
+**Status (2026-07-24)**: DONE, commit `c244992`. Read-only accessor by
+instance label, no solver-math change.
 
 #### T10: `InstanceView::opvar`/`opvars` (both hosts)
 **What**: opvar host access. **Where**: `piperine-api/results.rs`,
 `piperine-python/instance.rs`. **Requirement**: HOST-07. **Depends on**: T9.
 **Reuses**: `read_opvars`.
 **Done when**:
-- [ ] `op["x1"].opvar("gm")`/`opvars()` return values (api + python)
-- [ ] unknown opvar → fail loud (`UnknownNet`-class), not None/NaN
-- [ ] `cargo test --workspace`
+- [x] `op["x1"].opvar("gm")`/`opvars()` return values (api + python)
+- [x] unknown opvar → fail loud (`UnknownNet`-class), not None/NaN
+- [x] `cargo test --workspace`
 **Tests**: integration · **Gate**: full
+**Status (2026-07-24)**: DONE, commit `3fc21ef`. `OpResult` snapshots each
+device's `read_opvars()` eagerly at solve time (mirrors the existing
+digital-net snapshot); `OpResult::instance(label) -> InstanceView` exposes
+`.opvar(name)`/`.opvars()`. Python `_InstanceView` gains matching methods
+(the `Trace.opvar` recorded-over-time case is T11's scope, deferred there
+by design).
 
 #### T11: `probe=` + `Trace.opvar` (recorded observable over time)
 **What**: `tran(probe=[…])` sets `ProbeSelection`; `Trace.opvar(path)` returns a
