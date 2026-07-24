@@ -185,6 +185,20 @@ impl PiperineDevice {
             _ => ObservableKind::Var,
         }
     }
+
+    /// Map a validated terminal `@kind(value)` canonical string (lowercased
+    /// `TerminalKind` variant, see `pom::introspection::TERMINAL_KINDS`) onto
+    /// the solver enum. The `_` arm is unreachable post-resolution; the
+    /// position-inferred kind is the caller's responsibility (passed in), so
+    /// this only runs when the author declared a `@kind`.
+    fn terminal_kind_from_str(s: &str) -> piperine_solver::abi::TerminalKind {
+        use piperine_solver::abi::TerminalKind;
+        match s {
+            "external" => TerminalKind::External,
+            "internal" => TerminalKind::Internal,
+            _ => TerminalKind::Auxiliary,
+        }
+    }
 }
 
 impl AnalogDevice for PiperineDevice {
@@ -492,18 +506,31 @@ impl Introspect for PiperineDevice {
             let kernel = analog.kernel();
             let num_ports = kernel.num_ports();
             for (i, _) in kernel.terminals().iter().enumerate() {
-                let name = kernel.terminal_name(i);
+                let kernel_name = kernel.terminal_name(i);
                 let direction = if i < num_ports {
                     Direction::Inout
                 } else {
                     Direction::Out
                 };
-                let mut desc = TerminalDescriptor::new(name, Domain::Analog, direction);
-                desc.kind = if i < num_ports {
+                // PIA-10..14: @name/@kind on a port or internal wire override
+                // the position-inferred name/kind. The author declaration wins
+                // over inference (e.g. @kind("external") on a wire is legal);
+                // absent attributes keep the position-inferred default
+                // (port→External, non-port wire→Internal, PIA-12).
+                let inferred_kind = if i < num_ports {
                     TerminalKind::External
                 } else {
                     TerminalKind::Internal
                 };
+                let (name, kind) = match self.meta.terminals.get(kernel_name) {
+                    Some(tm) => (
+                        tm.name.clone().unwrap_or_else(|| kernel_name.to_string()),
+                        tm.kind.as_deref().map_or(inferred_kind, Self::terminal_kind_from_str),
+                    ),
+                    None => (kernel_name.to_string(), inferred_kind),
+                };
+                let mut desc = TerminalDescriptor::new(name, Domain::Analog, direction);
+                desc.kind = kind;
                 out.push(desc);
             }
         }

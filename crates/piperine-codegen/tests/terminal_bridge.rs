@@ -271,3 +271,103 @@ fn mixed_signal_device_lists_analog_and_digital_terminals() {
         "analog port `gnd` must be External/Analog, got {by_name:?}"
     );
 }
+
+// ── phdl-introspection-attributes PIA-10..14 (T6) ──────────────────────────
+// @name/@kind on a port or internal wire override the position-inferred
+// terminal name/kind; the author declaration wins over inference.
+
+/// PIA-10: a port carrying `@kind("auxiliary")` classifies its terminal as
+/// `TerminalKind::Auxiliary` (not the position-inferred External).
+#[test]
+fn port_at_kind_auxiliary_classifies_terminal() {
+    let circuit = build(
+        "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod Dev ( @kind(value = \"auxiliary\") inout t : Electrical, inout s : Electrical ) {
+            param r: Real = 1.0e3;
+        }
+        analog Dev {
+            I(t, s) <+ V(t, s) / r;
+        }
+        mod Top (inout a: Electrical, inout b: Electrical) { Dev(a, b); }
+        ",
+        "Top",
+    );
+    let terms = terminals_of(&circuit, 0);
+    let by_name: HashMap<&str, (TerminalKind, Domain)> = terms
+        .iter()
+        .map(|(n, k, d)| (n.as_str(), (*k, *d)))
+        .collect();
+    assert_eq!(
+        by_name.get("t"),
+        Some(&(TerminalKind::Auxiliary, Domain::Analog)),
+        "port `t` with @kind(auxiliary) must be Auxiliary, got {by_name:?}"
+    );
+    // The un-annotated port keeps the position-inferred External (PIA-12).
+    assert_eq!(
+        by_name.get("s"),
+        Some(&(TerminalKind::External, Domain::Analog)),
+        "un-annotated port `s` stays External, got {by_name:?}"
+    );
+}
+
+/// PIA-11: an internal `wire` with `@kind("internal") @name("cp")` classifies
+/// the terminal Internal and names it `cp` (author-declared, overridable).
+#[test]
+fn internal_wire_at_kind_internal_named_cp() {
+    let circuit = build(
+        "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod RC (inout p: Electrical, inout n: Electrical) {
+            param r1: Real = 1.0e3;
+            param r2: Real = 1.0e3;
+            @name(value = \"cp\") @kind(value = \"internal\") wire mid : Electrical;
+        }
+        analog RC {
+            I(p, mid) <+ V(p, mid) / r1;
+            I(mid, n) <+ V(mid, n) / r2;
+        }
+        mod Top (inout a: Electrical, inout b: Electrical) { RC(a, b); }
+        ",
+        "Top",
+    );
+    let terms = terminals_of(&circuit, 0);
+    // The wire is renamed `cp` (the @name) and stays Internal.
+    assert!(
+        terms.iter().any(|(n, k, _)| n == "cp" && *k == TerminalKind::Internal),
+        "internal wire with @name(cp) @kind(internal) must surface as `cp`/Internal, got {terms:?}"
+    );
+    // The source wire name `mid` no longer appears once @name renames it.
+    assert!(
+        !terms.iter().any(|(n, _, _)| n == "mid"),
+        "the wire id `mid` must not surface once @name(cp) is set, got {terms:?}"
+    );
+}
+
+/// PIA (explicit over inferred): `@kind("external")` on an internal wire is
+/// legal — the author declaration wins over the position-inferred Internal.
+#[test]
+fn at_kind_external_on_wire_wins_over_inferred() {
+    let circuit = build(
+        "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod RC (inout p: Electrical, inout n: Electrical) {
+            param r1: Real = 1.0e3;
+            param r2: Real = 1.0e3;
+            @kind(value = \"external\") wire mid : Electrical;
+        }
+        analog RC {
+            I(p, mid) <+ V(p, mid) / r1;
+            I(mid, n) <+ V(mid, n) / r2;
+        }
+        mod Top (inout a: Electrical, inout b: Electrical) { RC(a, b); }
+        ",
+        "Top",
+    );
+    let terms = terminals_of(&circuit, 0);
+    let mid = terms
+        .iter()
+        .find(|(n, _, _)| n == "mid")
+        .expect("internal wire `mid` present");
+    assert_eq!(mid.1, TerminalKind::External, "explicit @kind(external) on a wire wins over inferred Internal");
+}
