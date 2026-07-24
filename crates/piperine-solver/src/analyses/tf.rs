@@ -365,33 +365,37 @@ impl<'a> TransferFunctionSolver<'a> {
         Ok((gain, solution))
     }
 
-    /// Calculates input resistance from the gain solution.
+    /// Calculates input resistance from the gain solution: R_in = V_source
+    /// / I_source = 1V / I_branch.
     ///
-    /// For voltage source: R_in = V_source / I_source = 1V / I_branch
-    /// For current source: R_in = V_across / I_source
+    /// PB-08 (P3b): `calculate_gain` (called before this, `run`'s call
+    /// order at the top of this impl) already fails loud whenever
+    /// `input_is_voltage_source()` is not `Some(true)` — so by construction
+    /// this function only ever runs for a voltage-source input. The
+    /// previous code carried a dead `if input_is_voltage { .. } else {
+    /// current-source placeholder returning 1e20 }` branch that could never
+    /// execute (re-verified 2026-07-24, see `.specs/features/
+    /// p3b-blocking-fixes/spec.md` Finding #3) — removed, with the
+    /// invariant asserted so a future refactor that reintroduces a
+    /// current-source path here fails loud instead of silently resurrecting
+    /// the dead branch's wrong `1e20`.
     fn calculate_input_resistance(&self, solution: &Array1<f64>) -> crate::result::Result<f64> {
-        // `calculate_gain` already rejected anything that is not a voltage
-        // source; if we got here the input is a `V…` branch by construction.
-        let input_is_voltage = true;
-
-        if input_is_voltage {
-            // Voltage source: R_in = -1.0 / I_branch
-            // The current through voltage source branch tells us input current
-            if let Some(idx) = self.input_branch_ref.idx() {
-                let i_source = solution[idx];
-
-                if i_source.abs() < 1e-20 {
-                    // Open circuit - infinite resistance
-                    Ok(1e20)
-                } else {
-                    // R_in = V / I, where V = 1.0 was applied
-                    Ok(-1.0 / i_source)
-                }
-            } else {
-                Ok(1e20) // No valid index
-            }
+        debug_assert_eq!(
+            self.input_is_voltage_source(),
+            Some(true),
+            "calculate_input_resistance reached with a non-voltage input — \
+             calculate_gain should have already rejected this (D5)"
+        );
+        // Voltage source: R_in = -1.0 / I_branch. The current through the
+        // voltage-source branch tells us the input current.
+        let Some(idx) = self.input_branch_ref.idx() else {
+            return Ok(1e20); // No valid index — open circuit.
+        };
+        let i_source = solution[idx];
+        if i_source.abs() < 1e-20 {
+            Ok(1e20) // Open circuit - infinite resistance
         } else {
-            Ok(1e20) // current source input: placeholder
+            Ok(-1.0 / i_source) // R_in = V / I, where V = 1.0 was applied
         }
     }
 
