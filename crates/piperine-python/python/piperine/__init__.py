@@ -99,6 +99,13 @@ __all__ = [
     "ns",
     "mV",
     "C",
+    # plugin decorators (plugin-interface v2, PLG-06/10/11)
+    "script",
+    "hook",
+    "device",
+    "Ctx",
+    "Staging",
+    "HOOK_PHASES",
     # exception hierarchy (HOST-22)
     "SimulationError",
     "ElaborationError",
@@ -1378,3 +1385,126 @@ def _waveform_cross_enum(self, level: float, dir: CrossDirection | str = CrossDi
 Waveform.cross = _waveform_cross_enum
 Waveform.plot = _waveform_plot_method
 ComplexWaveform.plot = _complex_waveform_plot_method
+
+
+# ── plugin decorators (plugin-interface v2, PLG-06/10/11) ─────────────────
+#
+# The declaration-coupled contribution surface, name-identical to the Rust
+# `#[pip::…]` macros (MD-22 literal parity): `@pip.script("name")` declares
+# AND binds a CLI subcommand, `@pip.hook.<phase>` a lifecycle hook for one
+# of the five frozen phases, `@pip.device("Type")` marks an `@device`
+# binding for a Python-glue plugin. Decorated functions land in a per-load
+# registration table the embedded host reads back (via `_take_registry`)
+# after exec-ing the plugin's `python` entry — declaration and registration
+# are one decorator, never an imperative register call.
+
+HOOK_PHASES = ("after_parse", "after_elaborate", "transform_design", "before_lower", "after_solve")
+"""The five frozen lifecycle hook phases (D8) — the only phase names
+:attr:`hook` accepts, spelled identically to the Rust `#[pip::hook(…)]`
+arguments."""
+
+Ctx = _piperine._Ctx
+Staging = _piperine._Staging
+
+_registry = {"scripts": {}, "hooks": {phase: [] for phase in HOOK_PHASES}, "devices": {}}
+
+
+def script(name: str):
+    """Declare a CLI subcommand (PLG-06/10): ``piperine <name> …``
+    dispatches to the decorated function with ``(args, ctx)``; its return
+    value becomes the process exit code::
+
+        @pip.script("lint")
+        def lint(args, ctx):
+            ...
+            return 0
+
+    Re-declaring an occupied name raises ``ValueError`` (declaration-time
+    conflict, never a silent shadow).
+    """
+
+    def deco(fn):
+        if name in _registry["scripts"]:
+            raise ValueError(f"script {name!r} is already declared")
+        _registry["scripts"][name] = fn
+        return fn
+
+    return deco
+
+
+class _HookDecorators:
+    """The `@pip.hook.<phase>` decorator namespace (PLG-06/11): one
+    attribute per frozen phase — ``after_parse``, ``after_elaborate``,
+    ``transform_design``, ``before_lower``, ``after_solve``. Any other
+    attribute name raises ``AttributeError`` (the catalog is frozen at
+    five). The decorated function's payload matches its phase:
+    ``after_parse`` receives ``(ctx, source)``, the design hooks ``(ctx)``
+    with ``ctx.design()``, ``transform_design`` ``(ctx, staging)``, and
+    ``after_solve`` ``(ctx, result)``.
+    """
+
+    def __getattr__(self, phase: str):
+        if phase not in HOOK_PHASES:
+            raise AttributeError(
+                f"unknown hook phase {phase!r} — the five frozen phases are: "
+                + ", ".join(HOOK_PHASES)
+            )
+
+        def deco(fn):
+            _registry["hooks"][phase].append(fn)
+            return fn
+
+        return deco
+
+
+hook = _HookDecorators()
+"""Lifecycle hook decorators (PLG-06/11): ``@pip.hook.after_elaborate``
+declares AND binds a hook for that phase — the five frozen phases only."""
+
+
+def device(type_id: str):
+    """Mark an ``@device`` binding for a Python-glue plugin (PLG-05/06):
+    the decorated class is recorded under the `type` id the plugin's PHDL
+    names in ``@device(type = …)``. The solver `Element` itself comes from
+    the device binary — this decorator marks the binding, it does not
+    construct elements. Re-declaring an occupied type id raises
+    ``ValueError``.
+    """
+
+    def deco(cls):
+        if type_id in _registry["devices"]:
+            raise ValueError(f"device {type_id!r} is already declared")
+        _registry["devices"][type_id] = cls
+        return cls
+
+    return deco
+
+
+def _take_registry() -> dict[str, list[str]]:
+    """Read back AND RESET the per-load registration table — the embedded
+    host's post-exec protocol (each plugin load starts from a fresh
+    table). Returns ``{"scripts": [...], "hooks": [...], "devices": [...]}``
+    of declared names, sorted for determinism.
+    """
+    table = {
+        "scripts": sorted(_registry["scripts"]),
+        "hooks": sorted(phase for phase, fns in _registry["hooks"].items() if fns),
+        "devices": sorted(_registry["devices"]),
+    }
+    _registry["scripts"].clear()
+    _registry["devices"].clear()
+    for fns in _registry["hooks"].values():
+        fns.clear()
+    return table
+
+
+def _registered_script(name: str):
+    """The function declared for script `name` in this load, or ``None``
+    (embedded-host dispatch protocol)."""
+    return _registry["scripts"].get(name)
+
+
+def _registered_hooks(phase: str) -> list:
+    """The functions declared for hook `phase` in this load, in declaration
+    order (embedded-host dispatch protocol)."""
+    return list(_registry["hooks"][phase])

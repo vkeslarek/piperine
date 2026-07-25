@@ -28,6 +28,7 @@ mod error;
 mod host;
 mod manifest;
 mod registry;
+mod scripted;
 mod trust;
 mod view;
 
@@ -44,6 +45,7 @@ pub use manifest::{DeviceSource, Manifest, Permissions, PluginShape};
 pub use registry::{
     DeviceRegistration, HookCall, HookPhase, HookRegistration, Registry, ScriptRegistration,
 };
+pub use scripted::ScriptedHost;
 pub use trust::{artifact_hash, ensure_trusted as trust_check, TrustMode};
 pub use view::{DesignStaging, SolveResultView};
 

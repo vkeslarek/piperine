@@ -1725,6 +1725,7 @@ dependencies = [
  "piperine-api",
  "piperine-codegen",
  "piperine-lang",
+ "piperine-plugin",
  "piperine-project",
  "piperine-solver",
  "pyo3",

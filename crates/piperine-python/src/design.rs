@@ -29,6 +29,12 @@ pub struct _Design {
 }
 
 impl _Design {
+    /// Wrap an already-elaborated, shared design (the plugin hook bridge
+    /// hands hook contexts the design the host is working on).
+    pub(crate) fn from_shared(design: Rc<Design>) -> Self {
+        Self { design }
+    }
+
     /// Load + elaborate the PHDL at `path` into a `_Design` (PY-01).
     ///
     /// The `SourceMap` is project-aware: when a `Piperine.toml` root is found

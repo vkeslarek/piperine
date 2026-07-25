@@ -42,21 +42,9 @@ const FACADE_SRC: &str = include_str!("../python/piperine/__init__.py");
 // equivalent and works in both CLI (fresh) and test (pre-initialized) paths.
 pub fn run_script(path: &str) -> PyResult<()> {
     Python::with_gil(|py| {
-        // 1. Build + register `_piperine` in sys.modules so the facade's
-        //    `import _piperine` resolves (no pip install, spec AC16).
-        let native = PyModule::new(py, "_piperine")?;
-        _piperine(&native)?;
-        let modules = py.import("sys")?.getattr("modules")?;
-        modules.set_item("_piperine", &native)?;
-
-        // 2. Materialize the facade as `piperine` and register it in
-        //    sys.modules so the user's `import piperine` resolves. The
-        //    facade re-exports the native classes + adds the config
-        //    dataclasses (uniform surface, PY-16).
-        let facade_src = CString::new(FACADE_SRC)
-            .map_err(|_| pyo3::exceptions::PyValueError::new_err("facade source contains nul bytes"))?;
-        let facade = PyModule::from_code(py, &facade_src, c"piperine/__init__.py", c"piperine")?;
-        modules.set_item("piperine", facade)?;
+        // 1./2. Register `_piperine` + a freshly materialized `piperine`
+        //    facade in sys.modules (see register_modules).
+        register_modules(py)?;
 
         // 3. Read + run the user's script. Set `__file__` so the script can
         //    locate sibling files (e.g. a `.phdl` fixture next to the script).
@@ -74,6 +62,30 @@ pub fn run_script(path: &str) -> PyResult<()> {
     })
 }
 
+/// Register the native `_piperine` extension and a **freshly materialized**
+/// `piperine` facade in `sys.modules`, returning the facade module. Each
+/// call re-executes the facade source, so per-load state (the plugin
+/// decorator registry, plugin-interface v2) starts clean for every
+/// `run_script`/plugin load.
+pub(crate) fn register_modules(py: Python<'_>) -> PyResult<Bound<'_, PyModule>> {
+    // 1. Build + register `_piperine` in sys.modules so the facade's
+    //    `import _piperine` resolves (no pip install, spec AC16).
+    let native = PyModule::new(py, "_piperine")?;
+    _piperine(&native)?;
+    let modules = py.import("sys")?.getattr("modules")?;
+    modules.set_item("_piperine", &native)?;
+
+    // 2. Materialize the facade as `piperine` and register it in
+    //    sys.modules so the user's `import piperine` resolves. The
+    //    facade re-exports the native classes + adds the config
+    //    dataclasses (uniform surface, PY-16).
+    let facade_src = CString::new(FACADE_SRC)
+        .map_err(|_| pyo3::exceptions::PyValueError::new_err("facade source contains nul bytes"))?;
+    let facade = PyModule::from_code(py, &facade_src, c"piperine/__init__.py", c"piperine")?;
+    modules.set_item("piperine", &facade)?;
+    Ok(facade)
+}
+
 /// Interactive Python REPL with `import piperine` pre-loaded (PY-15
 /// interactive variant). Optionally pre-loads a `.phdl` design as `design`
 /// so the user can immediately explore (`design.module("X").op().v("out")`).
@@ -85,15 +97,7 @@ pub fn run_script(path: &str) -> PyResult<()> {
 pub fn run_interactive(maybe_design_path: Option<&str>) -> PyResult<()> {
     Python::with_gil(|py| {
         // Register `_piperine` + the facade (same as run_script).
-        let native = PyModule::new(py, "_piperine")?;
-        _piperine(&native)?;
-        let modules = py.import("sys")?.getattr("modules")?;
-        modules.set_item("_piperine", &native)?;
-
-        let facade_src = CString::new(FACADE_SRC)
-            .map_err(|_| pyo3::exceptions::PyValueError::new_err("facade nul bytes"))?;
-        let facade = PyModule::from_code(py, &facade_src, c"piperine/__init__.py", c"piperine")?;
-        modules.set_item("piperine", facade)?;
+        register_modules(py)?;
 
         // Pre-load a design if a path was given; otherwise just import piperine.
         let banner = match maybe_design_path {

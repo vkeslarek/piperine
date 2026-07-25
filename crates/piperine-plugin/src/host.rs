@@ -92,8 +92,26 @@ impl PluginHost {
 
     /// Discover, verify, and load every `[plugins]` entry of the project at
     /// `root` (SPEC Part VI §5): resolve sources, parse manifests (P0006),
-    /// hash artifacts, run TOFU (P0001/P0007), dlopen, register (P0003).
+    /// hash artifacts, run TOFU (P0001/P0007), dlopen, register (P0003). A
+    /// scripted (`python = "…"`) plugin needs an embedded-Python host —
+    /// [`Self::load_for_project_scripted`]; without one it is a loud error,
+    /// never a silent skip.
     pub fn load_for_project(root: &Path, trust: TrustMode) -> PluginResult<Self> {
+        Self::load(root, trust, None)
+    }
+
+    /// [`Self::load_for_project`] with a scripted host for `python = "…"`
+    /// plugins (PLG-06/10 — the embedded-Python bridge execs the entry and
+    /// reads back its decorator declarations).
+    pub fn load_for_project_scripted(
+        root: &Path,
+        trust: TrustMode,
+        scripted: &dyn crate::ScriptedHost,
+    ) -> PluginResult<Self> {
+        Self::load(root, trust, Some(scripted))
+    }
+
+    fn load(root: &Path, trust: TrustMode, scripted: Option<&dyn crate::ScriptedHost>) -> PluginResult<Self> {
         let toml_path = root.join("Piperine.toml");
         let Ok(toml) = PiperineToml::load(&toml_path) else {
             return Ok(Self::empty());
@@ -116,45 +134,51 @@ impl PluginHost {
         for name in names {
             let plugin_root = &resolved[name];
             let manifest = Manifest::load(name, plugin_root)?;
-            let Some(device) = manifest.device.clone() else {
-                // No binary to load: a pure-PHDL plugin is a code library
-                // (its `pub` items resolve via `use`, nothing runs); a
-                // scripted plugin's Python entry is not loadable until the
-                // `@pip` decorator surface lands (Phase 2) — fail loud,
-                // never a silent no-op.
-                if manifest.python.is_some() {
-                    return Err(PluginError::Other {
-                        plugin: manifest.name.clone(),
-                        message: "scripted (Python) plugins are not loadable yet — the `@pip` \
-                                  decorator surface lands with plugin-interface v2 Phase 2"
-                            .into(),
-                    });
-                }
-                continue;
-            };
-            let artifact = match &device.path {
-                Some(rel) => plugin_root.join(rel),
-                None => {
-                    return Err(PluginError::Other {
-                        plugin: manifest.name.clone(),
-                        message: format!(
-                            "device release `{}`: release fetching (github release + triple + \
-                             TOFU) lands with plugin-interface v2 Phase 4",
-                            device.release.unwrap_or_default()
-                        ),
-                    });
-                }
-            };
-            let hash = artifact_hash(&artifact)?;
             let source = toml
                 .plugins
                 .get(name)
                 .map(|s| format!("{s:?}"))
                 .unwrap_or_else(|| plugin_root.display().to_string());
-            ensure_trusted(root, &manifest, &source, &hash, trust)?;
-            let instance = PluginInstance::Native(native::load(&manifest.name, &artifact)?);
-            let plugin_name = manifest.name.clone();
-            host.register_one(&plugin_name, instance, manifest)?;
+            if let Some(device) = &manifest.device {
+                let artifact = match &device.path {
+                    Some(rel) => plugin_root.join(rel),
+                    None => {
+                        return Err(PluginError::Other {
+                            plugin: manifest.name.clone(),
+                            message: format!(
+                                "device release `{}`: release fetching (github release + triple \
+                                 + TOFU) lands with plugin-interface v2 Phase 4",
+                                device.release.clone().unwrap_or_default()
+                            ),
+                        });
+                    }
+                };
+                let hash = artifact_hash(&artifact)?;
+                ensure_trusted(root, &manifest, &source, &hash, trust)?;
+                let instance = PluginInstance::Native(native::load(&manifest.name, &artifact)?);
+                let plugin_name = manifest.name.clone();
+                host.register_one(&plugin_name, instance, manifest.clone())?;
+            }
+            if let Some(python) = &manifest.python {
+                let Some(bridge) = scripted else {
+                    return Err(PluginError::Other {
+                        plugin: manifest.name.clone(),
+                        message: "scripted (Python) plugin declared, but no embedded-Python host \
+                                  is wired (load through PluginHost::load_for_project_scripted)"
+                            .into(),
+                    });
+                };
+                let entry = plugin_root.join(python);
+                let hash = artifact_hash(&entry)?;
+                ensure_trusted(root, &manifest, &source, &hash, trust)?;
+                let plugin = bridge.load_scripted(plugin_root, &manifest).map_err(|e| {
+                    PluginError::Other { plugin: manifest.name.clone(), message: e }
+                })?;
+                let plugin_name = manifest.name.clone();
+                host.register_one(&plugin_name, PluginInstance::InProcess(plugin), manifest.clone())?;
+            }
+            // Neither key: a pure-PHDL plugin is a code library — its `pub`
+            // items resolve via `use`, nothing runs.
         }
         host.sort();
         Ok(host)

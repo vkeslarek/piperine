@@ -467,3 +467,52 @@ class _Grid:
     def __len__(self) -> int: ...
     def __iter__(self) -> Iterator[tuple[list[float], list[int]]]: ...
     def __next__(self) -> tuple[list[float], list[int]]: ...
+
+class _Ctx:
+    """The native hook/script context behind the facade's `Ctx` (plugin-
+    interface v2, PLG-06/11) — name-parity with the Rust
+    `piperine_plugin::Ctx`."""
+
+    def design(self) -> _Design:
+        """The elaborated design, read-only — available in the
+        `after_elaborate`/`transform_design`/`before_lower` hooks only."""
+        ...
+    def project_root(self) -> str:
+        """The project root (where `Piperine.toml` lives)."""
+        ...
+    def log(self, message: str) -> None:
+        """Route a message to the host logger."""
+        ...
+    def fs_read(self, path: str) -> str:
+        """Read a project file (capability-gated; P0002 on denial)."""
+        ...
+    def fs_write(self, path: str, contents: str) -> None:
+        """Write a project file (capability-gated; P0002 on denial)."""
+        ...
+
+class _Staging:
+    """The native mutable staging surface behind the facade's `Staging`
+    (plugin-interface v2, PLG-06/11) — name-parity with the Rust
+    `piperine_plugin::DesignStaging`."""
+
+    def design(self) -> _Design:
+        """The design being transformed, read-only."""
+        ...
+    def set_param(self, instance: str, param: str, value: float) -> None:
+        """Stage a parameter override on `instance` (empty label = the
+        module's own params)."""
+        ...
+    def add_instance(
+        self,
+        parent: str,
+        label: str,
+        module: str,
+        ports: list[str],
+        params: list[tuple[str, float]],
+    ) -> None:
+        """Stage an instance injection into `parent` (an undeclared module
+        or conflicting label raises)."""
+        ...
+    def add_connection(self, parent: str, lhs: str, rhs: str) -> None:
+        """Stage a net connection into `parent`."""
+        ...

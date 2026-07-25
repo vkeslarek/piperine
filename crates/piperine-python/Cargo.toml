@@ -12,6 +12,7 @@ piperine-codegen = { path = "../piperine-codegen" }
 piperine-api = { path = "../piperine-api" }
 piperine-solver = { path = "../piperine-solver" }
 piperine-project = { path = "../piperine-project" }
+piperine-plugin = { path = "../piperine-plugin" }
 
 [lib]
 # `cdylib` → the importable `_piperine.so` (maturin wheel enables the

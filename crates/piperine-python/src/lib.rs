@@ -29,6 +29,7 @@ mod instance;
 mod live;
 mod module;
 mod results;
+pub mod scripted;
 mod value_bridge;
 
 use pyo3::prelude::*;
@@ -50,6 +51,7 @@ use results::_OpResult;
 use results::_TfResult;
 use results::_Trace;
 use results::_Waveform;
+use scripted::{_Ctx, _Staging};
 
 /// `_piperine.load(path) -> _Design` (PY-01). Thin FFI shim delegating to
 /// [`_Design::load`].
@@ -103,6 +105,8 @@ pub(crate) fn _piperine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<_Sweep>()?;
     m.add_class::<_Grid>()?;
     m.add_class::<_TfResult>()?;
+    m.add_class::<_Ctx>()?;
+    m.add_class::<_Staging>()?;
     Ok(())
 }
 
