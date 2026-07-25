@@ -12,7 +12,7 @@ tell the user.**
 **Spec:** `.specs/features/plugin-interface-v2/spec.md` (PLG-01..26)
 **Context (locked decisions D1–D14):** `.specs/features/plugin-interface-v2/context.md`
 **Design:** `.specs/features/plugin-interface-v2/design.md`
-**Status:** Draft
+**Status:** In Progress (Execute started 2026-07-25, branch `feature/bench-removal`)
 
 ---
 
@@ -99,10 +99,10 @@ workspace/`backend/mod.rs` references.
 **Reuses:** —
 **Tools:** MCP: NONE · Skill: NONE
 **Done when:**
-- [ ] `crates/piperine-plugin-wasm` no longer exists; not in workspace members.
-- [ ] `backend/wasm.rs` gone; `backend/mod.rs` has no `wasm` module.
-- [ ] `wasm_smoke.rs` test deleted.
-- [ ] `cargo test --workspace` green (no dangling refs).
+- [x] `crates/piperine-plugin-wasm` no longer exists; not in workspace members.
+- [x] `backend/wasm.rs` gone; `backend/mod.rs` has no `wasm` module.
+- [x] `wasm_smoke.rs` test deleted.
+- [x] `cargo test --workspace` green (no dangling refs).
 **Tests:** integration (existing suite stays green) · **Gate:** full
 
 ### T2: Delete the process backend
@@ -112,9 +112,9 @@ workspace/`backend/mod.rs` references.
 **Reuses:** —
 **Tools:** MCP: NONE · Skill: NONE
 **Done when:**
-- [ ] `process.rs`/`wire_hosted.rs` gone; `backend/mod.rs` keeps only `native`.
-- [ ] `process_smoke.rs` deleted.
-- [ ] `cargo test -p piperine-plugin` green.
+- [x] `process.rs`/`wire_hosted.rs` gone; `backend/mod.rs` keeps only `native`.
+- [x] `process_smoke.rs` deleted.
+- [x] `cargo test -p piperine-plugin` green.
 **Tests:** integration · **Gate:** quick (plugin)
 
 ### T3: Manifest shape inference (drop `abi`/`entry`, add `python`/`device`)
@@ -126,11 +126,11 @@ targeted `PluginError::RemovedBackend`.
 **Depends on:** T2. **Requirement:** PLG-02, PLG-21.
 **Reuses:** existing `Manifest`/`Permissions` structs.
 **Done when:**
-- [ ] No `abi`/`entry` field; `Abi` enum deleted.
-- [ ] `python` present → scripted; `device` present → device; neither → pure-PHDL — a `Manifest::shape()` returns the inferred shape.
-- [ ] `abi = "wasm"` manifest → `RemovedBackend` error (message names the removed backend), NOT a generic unknown-field error.
-- [ ] `manifest.rs` tests updated + a new shape-inference + RemovedBackend test.
-- [ ] `cargo test -p piperine-plugin` green.
+- [x] No `abi`/`entry` field; `Abi` enum deleted.
+- [x] `python` present → scripted; `device` present → device; neither → pure-PHDL — a `Manifest::shape()` returns the inferred shape.
+- [x] `abi = "wasm"` manifest → `RemovedBackend` error (message names the removed backend), NOT a generic unknown-field error.
+- [x] `manifest.rs` tests updated + a new shape-inference + RemovedBackend test.
+- [x] `cargo test -p piperine-plugin` green.
 **Tests:** integration · **Gate:** quick (plugin)
 
 ### T4: Delete the plugin-schema surface + extern-stub loader
@@ -142,11 +142,11 @@ stdlib `@device`/`@port` from `headers/device_port.phdl`.
 **Depends on:** T3. **Requirement:** PLG-07, PLG-08, PLG-09.
 **Reuses:** `seed_schemas`, `device_port.phdl` (kept).
 **Done when:**
-- [ ] No `attr_schema` / `Contributions.schemas` / `load_extern_stub` / `MissingExternStub`.
-- [ ] A plugin fixture carrying an `extern.phdl` is inert / rejected (no per-plugin stub loaded).
-- [ ] `seed_schemas` still seeds `@device`/`@port` (a device fixture still validates its `@device`).
-- [ ] `extern_stub.rs`/`schema_stub.rs` tests removed or rewritten to the new (no-plugin-schema) behavior.
-- [ ] `cargo test -p piperine-plugin` green.
+- [x] No `attr_schema` / `Contributions.schemas` / `load_extern_stub` / `MissingExternStub`.
+- [x] A plugin fixture carrying an `extern.phdl` is inert / rejected (no per-plugin stub loaded).
+- [x] `seed_schemas` still seeds `@device`/`@port` (a device fixture still validates its `@device`).
+- [x] `extern_stub.rs`/`schema_stub.rs` tests removed or rewritten to the new (no-plugin-schema) behavior.
+- [x] `cargo test -p piperine-plugin` green.
 **Tests:** integration · **Gate:** quick (plugin)
 
 ### T5: Scaffold `piperine-plugin-macros` + `#[pip::device]`

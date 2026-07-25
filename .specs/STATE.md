@@ -413,6 +413,22 @@ project-wide rule the matrix instantiates.
 **Status:** Locked (user, 2026-07-23). Feeds ROADMAP P6 (Cleanup &
 completeness) and applies to all new tests going forward.
 
+### MD-29: Plugin contributions are declaration-coupled (revises MD-21)
+
+MD-21 (locked 2026-07-18) said the lifecycle registry is "exposed to Python
+so a plugin self-registers (attribute schemas, hooks, scripts, devices)."
+Revised by `plugin-interface-v2`: there is **no imperative attribute-schema
+self-registration and no per-plugin `extern.phdl`**. Hooks, scripts, and
+devices are still contributed, but only via declaration-coupled decorators
+(`#[pip::…]` in Rust, `@pip.…` in Python) and the `@device` attribute —
+never a hidden `Registrar` call. The stdlib `@device`/`@port` schemas stay
+seeded from `headers/device_port.phdl` (MD-24 unchanged). Backends remain
+native dlopen + embedded Python only (MD-21's backend half is untouched).
+
+**Status:** Locked (user, 2026-07-25 — `plugin-interface-v2` Execute start,
+spec PLG-01..26, context D1–D14). Records the revision the feature's
+context.md ("Supersedes / tensions") prescribes.
+
 ---
 
 ## Handoff Snapshot
