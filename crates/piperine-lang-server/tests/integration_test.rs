@@ -1465,3 +1465,51 @@ fn standalone_document_diagnostics_still_publish() {
     });
     assert!(!diags.is_empty(), "the standalone document's own error must still be published (LSP-17 fallback)");
 }
+
+// ── T17: diagnostic severity + structured codes (LSP-19) ──────────────────
+
+/// An undeclared-discipline error (`ElabErrorKind::UndefinedType`, coded
+/// `E2002` in `piperine_lang::pom::error`) must publish with that exact
+/// code and `ERROR` severity — not the old blanket `"parse-error"` string.
+#[test]
+fn diagnostic_carries_the_structured_elab_error_code() {
+    let uri: Uri = "file:///t17_elab_code.phdl".parse().unwrap();
+    let src = "mod Top (inout p: Nonexistent) {}\n";
+
+    let by_uri = lsp_collect_diagnostics(&uri, src, 800);
+    let diags = by_uri.get(&uri).expect("expected a PublishDiagnostics notification");
+    assert!(!diags.is_empty(), "the undefined-type error must be published");
+
+    let d = &diags[0];
+    assert_eq!(
+        d.code,
+        Some(lsp_types::NumberOrString::String("E2002".into())),
+        "expected the ElabErrorKind::UndefinedType code E2002, got: {:?}",
+        d.code
+    );
+    assert_eq!(d.severity, Some(lsp_types::DiagnosticSeverity::ERROR));
+}
+
+/// A parser-level syntax error carries its own distinct code family
+/// (`E1xxx`, `piperine_lang::parse::error::ParseError`) — proving the
+/// lexer/parser path and the elaboration path each surface their real
+/// code, not a single shared placeholder.
+#[test]
+fn diagnostic_carries_the_structured_parse_error_code() {
+    let uri: Uri = "file:///t17_parse_code.phdl".parse().unwrap();
+    // Malformed module header — a parser-level syntax error, not elaboration.
+    let src = "mod Top ( this is not valid phdl\n";
+
+    let by_uri = lsp_collect_diagnostics(&uri, src, 800);
+    let diags = by_uri.get(&uri).expect("expected a PublishDiagnostics notification");
+    assert!(!diags.is_empty(), "the syntax error must be published");
+
+    let d = &diags[0];
+    let code = match &d.code {
+        Some(lsp_types::NumberOrString::String(s)) => s.clone(),
+        other => panic!("expected a string code, got: {other:?}"),
+    };
+    assert!(code.starts_with("E1"), "expected an E1xxx parser code, got: {code}");
+    assert_ne!(code, "parse-error", "the blanket placeholder must be gone");
+    assert_eq!(d.severity, Some(lsp_types::DiagnosticSeverity::ERROR));
+}

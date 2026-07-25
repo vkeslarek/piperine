@@ -113,12 +113,31 @@ fn parse_error_to_diagnostic(source: &str, error: &ParseError) -> Diagnostic {
 
     Diagnostic {
         range,
-        severity: Some(DiagnosticSeverity::ERROR),
-        code: Some(NumberOrString::String("parse-error".into())),
+        severity: Some(severity_for_code(error.code.as_deref())),
+        code: error
+            .code
+            .clone()
+            .map(NumberOrString::String)
+            .or_else(|| Some(NumberOrString::String("parse-error".into()))),
         source: Some("piperine".into()),
         message: error.message.clone(),
         ..Default::default()
     }
+}
+
+/// Map a structured diagnostic code (T17/LSP-19) to its LSP severity.
+///
+/// SPEC_DEVIATION: every code currently defined across
+/// `piperine_lang::parse::error::ParseError` (E1001..E1004) and
+/// `piperine_lang::pom::error::ElabErrorKind` (E2001..E2025, E2999) is a
+/// genuine hard failure — elaboration/compilation cannot proceed past any
+/// of them, so none is warning-class today (verified by reading every
+/// variant in both enums; no lint/deprecation-style kind exists yet). This
+/// function still exists as the single seam a future non-blocking kind
+/// (e.g. a deprecation warning) would extend with one match arm, rather
+/// than inventing a downgrade for a code that doesn't warrant one.
+fn severity_for_code(_code: Option<&str>) -> DiagnosticSeverity {
+    DiagnosticSeverity::ERROR
 }
 
 /// Extract a byte range from an error message. Test-support surface: the
@@ -136,6 +155,7 @@ pub fn extract_error_range(source: &str, error: &str) -> Range {
                     .and_then(|n| n.parse::<usize>().ok())
             })
             .map(|offset| miette::SourceSpan::new(offset.into(), 1)),
+        code: None,
     };
     parse_error_to_diagnostic(source, &pe).range
 }

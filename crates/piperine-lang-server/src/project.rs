@@ -95,7 +95,10 @@ impl ProjectUnit {
             let (source_file, parse_errors) = piperine_lang::parse::parse_str_tolerant(&body);
             let mut file_errors: Vec<crate::state::ParseError> = parse_errors
                 .into_iter()
-                .map(|e| crate::state::ParseError { message: e.to_string(), span: e.span() })
+                .map(|e| {
+                    let code = miette::Diagnostic::code(&e).map(|c| c.to_string());
+                    crate::state::ParseError { message: e.to_string(), span: e.span(), code }
+                })
                 .collect();
 
             match source_file.elaborate_with_index(source_map) {
@@ -105,7 +108,10 @@ impl ProjectUnit {
                     designs.insert(path.clone(), design);
                 }
                 Err(e) => {
-                    file_errors.push(crate::state::ParseError { message: e.to_string(), span: e.span });
+                    // `ElabError::kind` carries the `#[diagnostic(code(...))]`,
+                    // not `ElabError` itself — see state.rs's matching comment.
+                    let code = miette::Diagnostic::code(&e.kind).map(|c| c.to_string());
+                    file_errors.push(crate::state::ParseError { message: e.to_string(), span: e.span, code });
                 }
             }
 

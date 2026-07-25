@@ -55,6 +55,14 @@ pub struct ParseError {
     pub message: String,
     /// Span in the source.
     pub span: Option<miette::SourceSpan>,
+    /// The structured diagnostic code (T17/LSP-19), e.g. `"E2002"` for
+    /// `ElabErrorKind::UndefinedType` or `"E1002"` for a parser
+    /// `UnexpectedTok` — both error enums already carry one per variant via
+    /// `#[diagnostic(code(...))]` (`miette::Diagnostic::code()`). `None`
+    /// only for an error kind that genuinely predates that derive (should
+    /// not happen for `piperine_lang::parse::error::ParseError`/`ElabError`
+    /// today — both enums are fully coded).
+    pub code: Option<String>,
 }
 
 impl ServerState {
@@ -128,7 +136,8 @@ impl DocumentState {
             piperine_lang::parse::parse_str_tolerant(&self.source);
 
         for e in parse_errors {
-            self.errors.push(ParseError { message: e.to_string(), span: e.span() });
+            let code = miette::Diagnostic::code(&e).map(|c| c.to_string());
+            self.errors.push(ParseError { message: e.to_string(), span: e.span(), code });
         }
 
         // LSP-18/T16: accumulates every independent elaboration error
@@ -147,7 +156,11 @@ impl DocumentState {
             // Record every error but keep the previous design alive so
             // language features (hover, go-to-def, outline) keep working.
             for e in elab_errors {
-                self.errors.push(ParseError { message: e.to_string(), span: e.span });
+                // `ElabError::kind` (not `ElabError` itself) carries the
+                // `#[diagnostic(code(...))]` — `#[diagnostic_source]`
+                // forwards `.diagnostic_source()`/`.source()`, not `.code()`.
+                let code = miette::Diagnostic::code(&e.kind).map(|c| c.to_string());
+                self.errors.push(ParseError { message: e.to_string(), span: e.span, code });
             }
             // `self.design`/`self.ctx` intentionally left unchanged
             // (stale-but-valid).
