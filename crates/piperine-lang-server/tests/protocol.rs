@@ -298,6 +298,151 @@ fn harness_drives_references_round_trip() {
     h.shutdown();
 }
 
+// ── T23: shadowing + doc-comment + cross-file protocol tests (LSP-26) ──────
+//
+// The last task of the whole language-server feature: fixtures asserting
+// (1) innermost-binding resolution under shadowing, (2) doc-comment text on
+// hover, and (3) cross-file goto + rename — all driven over the T22
+// `Harness`, not by calling `DocumentState`/`resolve_at` directly (those
+// are already covered unit-style in `integration_test.rs`; this file's job
+// is pinning the *protocol* round trip).
+
+/// A minimal on-disk `Piperine.toml` + `src/` scratch project — duplicated
+/// from `integration_test.rs`'s own `ScratchProject` (each `tests/*.rs`
+/// file compiles as an independent test binary, so there is no shared
+/// module to import it from without a larger harness-file reorganization
+/// out of this task's scope).
+struct ScratchProject(std::path::PathBuf);
+
+impl ScratchProject {
+    fn new(tag: &str) -> Self {
+        let dir = std::env::temp_dir().join(format!("piperine-lsp-protocol-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(
+            dir.join("Piperine.toml"),
+            "[project]\nname = \"scratch_proj\"\nversion = \"0.1.0\"\nauthors = []\nedition = \"2024\"\n",
+        )
+        .unwrap();
+        Self(dir)
+    }
+
+    fn write_src(&self, name: &str, content: &str) -> std::path::PathBuf {
+        let path = self.0.join("src").join(name);
+        std::fs::write(&path, content).unwrap();
+        path
+    }
+}
+
+impl Drop for ScratchProject {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn position_to_byte(source: &str, pos: Position) -> usize {
+    let mut line = 0u32;
+    let mut byte = 0usize;
+    for l in source.split_inclusive('\n') {
+        if line == pos.line {
+            return byte + l.chars().take(pos.character as usize).map(|c| c.len_utf8()).sum::<usize>();
+        }
+        line += 1;
+        byte += l.len();
+    }
+    byte
+}
+
+/// LSP-02/LSP-26: a local var shadows an outer param of the same name
+/// (`x`) inside one module; hover on the inner (shadowed) `x` must resolve
+/// to the local var, not the outer param — the innermost binding in scope.
+#[test]
+fn protocol_shadowing_fixture_resolves_to_the_innermost_binding() {
+    let uri = uri("file:///protocol_shadowing.phdl");
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\nmod Outer (inout p: Electrical, inout n: Electrical) {\n    param x: Real = 1.0;\n    wire x: Electrical;\n}\n";
+    let mut h = Harness::start(&uri, src);
+
+    // The `wire x` declaration shadows `param x` within the same module —
+    // hover on the `wire x` declaration site must report kind "wire", not
+    // "param" (the innermost/most-recently-declared binding for the name
+    // `x` in this module's own scope).
+    let wire_line = src[..src.find("wire x").unwrap()].matches('\n').count() as u32;
+    let wire_col = "    wire ".chars().count() as u32;
+
+    let hover = h.hover(&uri, wire_line, wire_col).expect("expected a hover result on `x`");
+    let text = match hover.contents {
+        lsp_types::HoverContents::Markup(m) => m.value,
+        _ => panic!("expected markup contents"),
+    };
+    assert!(text.contains("wire"), "expected the innermost (wire) binding, got: {text}");
+    assert!(!text.contains("**param**"), "must not resolve to the shadowed param binding: {text}");
+    h.shutdown();
+}
+
+/// LSP-08/LSP-26: a `///` doc comment above a module declaration renders as
+/// Markdown on hover.
+#[test]
+fn protocol_doc_comment_fixture_renders_on_hover() {
+    let uri = uri("file:///protocol_doc.phdl");
+    let src = "/// A two-terminal resistor.\nmod Res (inout p: Electrical, inout n: Electrical) {}\ndiscipline Electrical { potential v: Real; flow i: Real; }\n";
+    let mut h = Harness::start(&uri, src);
+
+    let line = 1u32;
+    let col = "mod ".chars().count() as u32;
+    let hover = h.hover(&uri, line, col).expect("expected a hover result on `Res`");
+    let text = match hover.contents {
+        lsp_types::HoverContents::Markup(m) => m.value,
+        _ => panic!("expected markup contents"),
+    };
+    assert!(text.contains("A two-terminal resistor."), "expected the doc comment text on hover, got: {text}");
+    h.shutdown();
+}
+
+/// LSP-15/LSP-12/LSP-26: a two-file project fixture — cross-file goto opens
+/// the declaring file, and cross-file rename edits every referencing file.
+#[test]
+fn protocol_cross_file_fixture_goto_and_rename_both_work() {
+    let scratch = ScratchProject::new("t23_cross_file");
+    let a_src = "pub discipline Electrical { potential v: Real; flow i: Real; }\npub mod A (inout p: Electrical, inout n: Electrical) { param gain: Real = 1.0; }\n";
+    let a_path = scratch.write_src("a.phdl", a_src);
+    let b_src = "use scratch_proj::a;\nmod B (inout p: Electrical, inout n: Electrical) {\n    inst: A(.p = p, .n = n);\n}\n";
+    let b_path = scratch.write_src("b.phdl", b_src);
+
+    let a_uri: Uri = format!("file://{}", a_path.display()).parse().unwrap();
+    let b_uri: Uri = format!("file://{}", b_path.display()).parse().unwrap();
+
+    let mut h = Harness::start(&b_uri, b_src);
+
+    // Cross-file goto: cursor on `A` inside `inst: A(...)`.
+    let goto_line = 2u32;
+    let goto_col = "    inst: ".chars().count() as u32;
+    let goto_resp = h.goto_definition(&b_uri, goto_line, goto_col).expect("expected a goto-definition result");
+    let loc = match goto_resp {
+        GotoDefinitionResponse::Scalar(loc) => loc,
+        other => panic!("expected a scalar goto-definition response, got: {other:?}"),
+    };
+    assert_eq!(loc.uri, a_uri, "goto on `A` must open a.phdl, not b.phdl");
+    let target_offset = position_to_byte(a_src, loc.range.start);
+    let mod_a_start = a_src.find("pub mod A").unwrap();
+    assert!(target_offset >= mod_a_start, "goto target must land inside `A`'s own declaration");
+
+    // Cross-file rename: renaming `A` from its use site in b.phdl (the
+    // instance's type name) must produce a `WorkspaceEdit` covering both
+    // the declaring file (a.phdl) and the referencing file (b.phdl).
+    let edit = h.rename(&b_uri, goto_line, goto_col, "AResistor").expect("expected a rename WorkspaceEdit");
+    let paths: Vec<Uri> = match (&edit.changes, &edit.document_changes) {
+        (Some(changes), _) => changes.keys().cloned().collect(),
+        (None, Some(lsp_types::DocumentChanges::Edits(edits))) => {
+            edits.iter().map(|e| e.text_document.uri.clone()).collect()
+        }
+        _ => panic!("expected either `changes` or `document_changes` on the rename edit"),
+    };
+    assert!(paths.contains(&a_uri), "rename must edit a.phdl (the declaration): {paths:?}");
+    assert!(paths.contains(&b_uri), "rename must edit b.phdl (a use site) too: {paths:?}");
+
+    h.shutdown();
+}
+
 #[test]
 fn harness_drives_rename_round_trip() {
     let uri = uri("file:///protocol_rename.phdl");
