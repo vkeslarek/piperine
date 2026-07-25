@@ -2,11 +2,12 @@ use lsp_server::{Connection, Message, Request, RequestId, Notification};
 use lsp_types::{
     Position, Uri, HoverParams, TextDocumentPositionParams, TextDocumentIdentifier,
     DidOpenTextDocumentParams, TextDocumentItem, GotoDefinitionParams, GotoDefinitionResponse,
-    Location, WorkspaceEdit, PrepareRenameResponse, DocumentChanges,
+    Location, WorkspaceEdit, PrepareRenameResponse, DocumentChanges, PublishDiagnosticsParams,
 };
 use lsp_types::notification::Notification as _;
 use lsp_types::request::Request as _;
 use std::time::Duration;
+use std::collections::HashMap;
 use crossbeam_channel::Receiver;
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -46,6 +47,25 @@ fn test_extract_error_range_unknown_position() {
 
 fn recv_timeout(rx: &Receiver<Message>, timeout_ms: u64) -> Message {
     rx.recv_timeout(Duration::from_millis(timeout_ms)).expect("did not receive message in time")
+}
+
+/// Wait for the `Message::Response` matching `id`, draining and discarding
+/// any `Notification`s received first — T15's per-file diagnostic fan-out
+/// (LSP-16) can publish more than one `PublishDiagnostics` notification per
+/// analysis (one per project file), so a response is no longer guaranteed
+/// to be the very next message after a request.
+fn recv_response(rx: &Receiver<Message>, id: RequestId, timeout_ms: u64) -> lsp_server::Response {
+    let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let msg = rx.recv_timeout(remaining).expect("did not receive the expected response in time");
+        match msg {
+            Message::Response(resp) if resp.id == id => return resp,
+            Message::Response(other) => panic!("expected response id {id:?}, got {:?}", other.id),
+            Message::Notification(_) => continue,
+            Message::Request(req) => panic!("unexpected request from server: {req:?}"),
+        }
+    }
 }
 
 #[test]
@@ -514,14 +534,9 @@ fn lsp_goto_definition(source: &str, line: u32, character: u32) -> GotoDefinitio
         params: serde_json::to_value(goto_params).unwrap(),
     })).unwrap();
 
-    let msg = recv_timeout(&client_conn.receiver, 1000);
-    let response = if let Message::Response(resp) = msg {
-        assert_eq!(resp.id, RequestId::from(1));
-        let val = resp.result.expect("goto response must have a result");
-        serde_json::from_value(val).expect("goto result must deserialize")
-    } else {
-        panic!("expected a goto-definition response");
-    };
+    let resp = recv_response(&client_conn.receiver, RequestId::from(1), 1000);
+    let val = resp.result.expect("goto response must have a result");
+    let response = serde_json::from_value(val).expect("goto result must deserialize");
 
     client_conn.sender.send(Message::Request(Request {
         id: RequestId::from(99),
@@ -803,13 +818,8 @@ fn lsp_rename(source: &str, line: u32, character: u32, new_name: &str) -> Option
         params: serde_json::to_value(rename_params).unwrap(),
     })).unwrap();
 
-    let msg = recv_timeout(&client_conn.receiver, 1000);
-    let response = if let Message::Response(resp) = msg {
-        assert_eq!(resp.id, RequestId::from(1));
-        resp.result.and_then(|val| serde_json::from_value(val).ok())
-    } else {
-        panic!("expected a rename response");
-    };
+    let resp = recv_response(&client_conn.receiver, RequestId::from(1), 1000);
+    let response = resp.result.and_then(|val| serde_json::from_value(val).ok());
 
     client_conn.sender.send(Message::Request(Request {
         id: RequestId::from(99),
@@ -1184,14 +1194,9 @@ fn lsp_goto_definition_at(uri: &Uri, source: &str, line: u32, character: u32) ->
         params: serde_json::to_value(goto_params).unwrap(),
     })).unwrap();
 
-    let msg = recv_timeout(&client_conn.receiver, 1000);
-    let response = if let Message::Response(resp) = msg {
-        assert_eq!(resp.id, RequestId::from(1));
-        let val = resp.result.expect("goto response must have a result");
-        serde_json::from_value(val).expect("goto result must deserialize")
-    } else {
-        panic!("expected a goto-definition response");
-    };
+    let resp = recv_response(&client_conn.receiver, RequestId::from(1), 1000);
+    let val = resp.result.expect("goto response must have a result");
+    let response = serde_json::from_value(val).expect("goto result must deserialize");
 
     client_conn.sender.send(Message::Request(Request {
         id: RequestId::from(99),
@@ -1288,13 +1293,8 @@ fn lsp_rename_at(uri: &Uri, source: &str, line: u32, character: u32, new_name: &
         params: serde_json::to_value(rename_params).unwrap(),
     })).unwrap();
 
-    let msg = recv_timeout(&client_conn.receiver, 1000);
-    let response = if let Message::Response(resp) = msg {
-        assert_eq!(resp.id, RequestId::from(1));
-        resp.result.and_then(|val| serde_json::from_value(val).ok())
-    } else {
-        panic!("expected a rename response");
-    };
+    let resp = recv_response(&client_conn.receiver, RequestId::from(1), 1000);
+    let response = resp.result.and_then(|val| serde_json::from_value(val).ok());
 
     client_conn.sender.send(Message::Request(Request {
         id: RequestId::from(99),
@@ -1367,4 +1367,101 @@ fn cross_file_rename_edits_every_referencing_file() {
     });
     let a_name_offset = a_src.find("pub mod A").unwrap() + "pub mod ".len();
     assert_eq!(a_edit_start, a_name_offset, "a.phdl's edit must target `A`'s own name token");
+}
+
+// ── T15: per-file diagnostic fan-out + single-file fallback (LSP-16/17) ──
+
+/// Open `uri` (already written to disk as part of a project) and collect
+/// every `PublishDiagnostics` notification received within `timeout_ms`,
+/// keyed by the URI they were published against — T15's fan-out publishes
+/// one notification per project file, not just the opened document's.
+fn lsp_collect_diagnostics(uri: &Uri, source: &str, timeout_ms: u64) -> HashMap<Uri, Vec<lsp_types::Diagnostic>> {
+    let (client_conn, server_conn) = Connection::memory();
+
+    std::thread::spawn(move || {
+        let mut server = piperine_lang_server::server::LanguageServer::new(server_conn);
+        server.run().unwrap();
+    });
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "phdl".to_string(),
+            version: 1,
+            text: source.to_string(),
+        },
+    };
+    client_conn.sender.send(Message::Notification(Notification {
+        method: lsp_types::notification::DidOpenTextDocument::METHOD.to_string(),
+        params: serde_json::to_value(did_open_params).unwrap(),
+    })).unwrap();
+
+    let mut by_uri = HashMap::new();
+    let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms);
+    while let Ok(msg) = client_conn.receiver.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+        if let Message::Notification(not) = msg
+            && not.method == lsp_types::notification::PublishDiagnostics::METHOD
+            && let Ok(params) = serde_json::from_value::<PublishDiagnosticsParams>(not.params) {
+                by_uri.insert(params.uri, params.diagnostics);
+            }
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
+    }
+
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(99),
+        method: "shutdown".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+    let _ = client_conn.receiver.recv_timeout(Duration::from_millis(500));
+    client_conn.sender.send(Message::Notification(Notification {
+        method: "exit".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+
+    by_uri
+}
+
+/// LSP-16 Independent Test: an error in `a.phdl` publishes against
+/// `a.phdl`'s own URI, not the document that was actually opened
+/// (`b.phdl`, which is itself error-free and doesn't even reference `a`).
+#[test]
+fn cross_file_diagnostics_fan_out_to_the_erroring_file() {
+    let scratch = ScratchProject::new("diag_fan_out");
+    // References an undeclared discipline — a genuine elaboration error.
+    let a_src = "pub mod A (inout p: Nonexistent, inout n: Nonexistent) {}\n";
+    scratch.write_src("a.phdl", a_src);
+    let b_src = "discipline Electrical { potential v: Real; flow i: Real; }\nmod B (inout p: Electrical, inout n: Electrical) {}\n";
+    let b_path = scratch.write_src("b.phdl", b_src);
+
+    let a_uri: Uri = format!("file://{}", scratch.0.join("src").join("a.phdl").display()).parse().unwrap();
+    let b_uri: Uri = format!("file://{}", b_path.display()).parse().unwrap();
+
+    let by_uri = lsp_collect_diagnostics(&b_uri, b_src, 800);
+
+    let a_diags = by_uri.get(&a_uri).unwrap_or_else(|| {
+        panic!("expected a PublishDiagnostics notification for a.phdl, got URIs: {:?}", by_uri.keys().collect::<Vec<_>>())
+    });
+    assert!(!a_diags.is_empty(), "a.phdl's own undeclared-discipline error must be published against a.phdl");
+
+    let b_diags = by_uri.get(&b_uri).expect("b.phdl must also get a (empty) diagnostics publish");
+    assert!(b_diags.is_empty(), "b.phdl elaborates cleanly and must not inherit a.phdl's error");
+}
+
+/// LSP-17 Independent Test (fallback half): a standalone document outside
+/// any `Piperine.toml` still gets its own diagnostics published — the
+/// single-file path is unaffected by T15's project fan-out.
+#[test]
+fn standalone_document_diagnostics_still_publish() {
+    let uri: Uri = "file:///standalone_diag_test.phdl".parse().unwrap();
+    // Undeclared discipline — a genuine elaboration error, no project.
+    let src = "mod Top (inout p: Nonexistent) {}\n";
+
+    let by_uri = lsp_collect_diagnostics(&uri, src, 800);
+
+    let diags = by_uri.get(&uri).unwrap_or_else(|| {
+        panic!("expected a PublishDiagnostics notification for the standalone file, got URIs: {:?}", by_uri.keys().collect::<Vec<_>>())
+    });
+    assert!(!diags.is_empty(), "the standalone document's own error must still be published (LSP-17 fallback)");
 }

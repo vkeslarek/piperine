@@ -62,12 +62,20 @@ impl ProjectContext {
 /// one; the actual LSP-14 payload — one binding-identity index spanning
 /// every file — is delivered in full via `index`.
 ///
-/// A file that fails to elaborate is skipped here; that file's own
-/// diagnostics remain a per-document (T15) concern, not this unit's.
+/// A file that fails to elaborate has no entry in `designs`; its
+/// parse/elaboration error(s) are captured in `errors` instead — the
+/// source per-file diagnostic fan-out (T15/LSP-16) publishes from, so
+/// every project file's own errors surface against its own URI even when
+/// only a *different* file changed.
 pub struct ProjectUnit {
     pub root: PathBuf,
     pub designs: HashMap<PathBuf, piperine_lang::Design>,
     pub index: ResolutionIndex,
+    /// Every discovered `.phdl` file's parse/elaboration errors — empty for
+    /// a file that elaborated cleanly. Keyed by the same paths as
+    /// `designs`'s keys would be for a failing file (a path is in exactly
+    /// one of `designs` or `errors` with a non-empty vec, never both).
+    pub errors: HashMap<PathBuf, Vec<crate::state::ParseError>>,
 }
 
 impl ProjectUnit {
@@ -76,20 +84,37 @@ impl ProjectUnit {
     pub fn build(root: &Path, source_map: &SourceMap) -> Self {
         let mut designs = HashMap::new();
         let mut index = ResolutionIndex::default();
+        let mut errors = HashMap::new();
 
         for path in discover_phdl_files(root) {
             let Ok(body) = std::fs::read_to_string(&path) else { continue };
-            let Ok((design, mut file_index)) =
-                piperine_lang::parse_and_elaborate_with_index(&body, source_map)
-            else {
-                continue;
-            };
-            file_index.set_file(path.display().to_string());
-            index.merge(file_index);
-            designs.insert(path, design);
+            // Mirrors `DocumentState::analyze`'s own pipeline (parse
+            // errors, then elaboration) so a project file's errors surface
+            // through the same `ParseError` shape a directly-opened
+            // document's do.
+            let (source_file, parse_errors) = piperine_lang::parse::parse_str_tolerant(&body);
+            let mut file_errors: Vec<crate::state::ParseError> = parse_errors
+                .into_iter()
+                .map(|e| crate::state::ParseError { message: e.to_string(), span: e.span() })
+                .collect();
+
+            match source_file.elaborate_with_index(source_map) {
+                Ok((design, mut file_index)) => {
+                    file_index.set_file(path.display().to_string());
+                    index.merge(file_index);
+                    designs.insert(path.clone(), design);
+                }
+                Err(e) => {
+                    file_errors.push(crate::state::ParseError { message: e.to_string(), span: e.span });
+                }
+            }
+
+            if !file_errors.is_empty() {
+                errors.insert(path, file_errors);
+            }
         }
 
-        Self { root: root.to_path_buf(), designs, index }
+        Self { root: root.to_path_buf(), designs, index, errors }
     }
 }
 

@@ -32,11 +32,59 @@ pub fn publish_diagnostics(state: &ServerState, uri: &lsp_types::Uri, connection
         .map(|e| parse_error_to_diagnostic(&doc.source, e))
         .collect();
 
-    let params = PublishDiagnosticsParams {
-        uri: uri.clone(),
-        diagnostics,
-        version: Some(doc.version),
-    };
+    send_diagnostics(connection, uri.clone(), diagnostics, Some(doc.version));
+}
+
+/// Per-file diagnostic fan-out (T15/LSP-16): publish every project file's
+/// own errors against its own URI — not just `uri`'s document. Called
+/// instead of [`publish_diagnostics`] whenever the analyzed document
+/// belongs to a project (`doc.project_root.is_some()`); standalone
+/// documents keep going through `publish_diagnostics` unchanged (LSP-17).
+///
+/// A file currently open in the editor uses its own live `DocumentState`
+/// (`state.documents`) — its buffer may hold unsaved edits `ProjectUnit`'s
+/// on-disk snapshot doesn't see. Every other project file's errors come
+/// from `ProjectUnit.errors` (captured by `ProjectUnit::build` against the
+/// same on-disk text `designs`/`index` were built from).
+pub fn publish_project_diagnostics(state: &ServerState, root: &std::path::Path, connection: &Connection) {
+    let Some(unit) = state.projects.get(root) else { return };
+
+    let mut files: std::collections::HashSet<std::path::PathBuf> =
+        unit.designs.keys().cloned().collect();
+    files.extend(unit.errors.keys().cloned());
+
+    for path in files {
+        let Ok(file_uri) = format!("file://{}", path.display()).parse::<lsp_types::Uri>() else {
+            continue;
+        };
+
+        if let Some(doc) = state.documents.get(&file_uri) {
+            // Live buffer — its own errors/version are authoritative.
+            let diagnostics: Vec<Diagnostic> =
+                doc.errors.iter().map(|e| parse_error_to_diagnostic(&doc.source, e)).collect();
+            send_diagnostics(connection, file_uri, diagnostics, Some(doc.version));
+            continue;
+        }
+
+        // Not open — diagnostics come from ProjectUnit's own build against
+        // the on-disk text.
+        let Ok(source) = std::fs::read_to_string(&path) else { continue };
+        let diagnostics: Vec<Diagnostic> = unit
+            .errors
+            .get(&path)
+            .map(|errs| errs.iter().map(|e| parse_error_to_diagnostic(&source, e)).collect())
+            .unwrap_or_default();
+        send_diagnostics(connection, file_uri, diagnostics, None);
+    }
+}
+
+fn send_diagnostics(
+    connection: &Connection,
+    uri: lsp_types::Uri,
+    diagnostics: Vec<Diagnostic>,
+    version: Option<i32>,
+) {
+    let params = PublishDiagnosticsParams { uri, diagnostics, version };
 
     let not = Notification {
         method: lsp_types::notification::PublishDiagnostics::METHOD.into(),

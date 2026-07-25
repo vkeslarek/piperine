@@ -127,11 +127,24 @@ impl LanguageServer {
                                         sender: conn_sender.clone(),
                                         receiver: crossbeam_channel::never(),
                                     };
-                                    crate::handlers::diagnostics::publish_diagnostics(
-                                        &state,
-                                        &uri,
-                                        &dummy_conn,
-                                    );
+                                    // Per-file fan-out (T15/LSP-16) when the
+                                    // document belongs to a project — every
+                                    // file's own errors publish against its
+                                    // own URI, not just `uri`'s. Standalone
+                                    // documents keep the single-file path
+                                    // (LSP-17).
+                                    match state.documents.get(&uri).and_then(|d| d.project_root.clone()) {
+                                        Some(root) => crate::handlers::diagnostics::publish_project_diagnostics(
+                                            &state,
+                                            &root,
+                                            &dummy_conn,
+                                        ),
+                                        None => crate::handlers::diagnostics::publish_diagnostics(
+                                            &state,
+                                            &uri,
+                                            &dummy_conn,
+                                        ),
+                                    }
 
                                     // Drain requests again — a hover might have
                                     // arrived while we were elaborating.
