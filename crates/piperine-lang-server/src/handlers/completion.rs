@@ -9,6 +9,7 @@ use lsp_types::{
 use super::{ConnectionExt, RequestExt};
 use crate::state::{DocumentState, ServerState};
 use piperine_lang::elab::registry::ElabContext;
+use piperine_lang::parse::lexer::Tok;
 use piperine_lang::parse::predict::{ExpectedSyntax, IdentRole};
 
 pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
@@ -127,7 +128,27 @@ pub fn build_completions_predictive(expected: &[ExpectedSyntax], design: Option<
     if expected.is_empty() {
         add_top_level_completions(&mut items);
     }
-    
+
+    // BUG-4 (LSB-11..13): cursor sitting immediately after a module's
+    // closing `}` makes `check_cursor()` intercept every subsequent
+    // `peek()`/`eat_ident()` attempt in the mod-body statement dispatcher,
+    // snowballing `expected` into every possible body-statement
+    // continuation (including behavior-only keywords like `for`) with no
+    // signal that the block is actually closing. The confirmed repro's
+    // signature — `Punctuation(RBrace)` together with a module-body-only
+    // keyword (`param`/`wire`) both present — is the "likely a block
+    // boundary" heuristic (scoped to this exact signature, not a general
+    // claim about every `}` position; see design.md). `if`/`var` are
+    // deliberately not suppressed — both are valid inside a `mod{}` body
+    // too, so suppressing them would be a new false negative.
+    let has_rbrace = expected.iter().any(|e| matches!(e, ExpectedSyntax::Punctuation(Tok::RBrace)));
+    let has_mod_body_only = expected.iter().any(|e| matches!(e, ExpectedSyntax::Keyword(k) if k == "param" || k == "wire"));
+    if has_rbrace && has_mod_body_only {
+        let behavior_only = ["for", "match", "return", "when"];
+        items.retain(|it| !behavior_only.contains(&it.label.as_str()));
+        add_top_level_completions(&mut items);
+    }
+
     // Deduplicate items based on label
     items.sort_by(|a, b| a.label.cmp(&b.label));
     items.dedup_by(|a, b| a.label == b.label);
