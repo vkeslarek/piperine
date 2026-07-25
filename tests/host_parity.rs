@@ -75,12 +75,16 @@ fn python_missing_analyses(out_path: &std::path::Path) {
     let script = format!(
         r#"
 import piperine
-design = piperine.load({phdl:?})
-session = design.compile()
-names = [{names}]
-missing = [n for n in names if not hasattr(session, n)]
-with open({out:?}, "w") as f:
-    f.write(" ".join(missing))
+
+def _probe():
+    design = piperine.load({phdl:?})
+    session = design.compile()
+    names = [{names}]
+    missing = [n for n in names if not hasattr(session, n)]
+    with open({out:?}, "w") as f:
+        f.write(" ".join(missing))
+
+_probe()
 "#,
         phdl = phdl_path.to_str().unwrap(),
         names = names_py,
@@ -125,11 +129,15 @@ fn host_parity_probe_flags_a_synthetic_missing_analysis() {
     let script = format!(
         r#"
 import piperine
-design = piperine.load({phdl:?})
-session = design.compile()
-missing = [] if hasattr(session, {bogus:?}) else [{bogus:?}]
-with open({out:?}, "w") as f:
-    f.write(" ".join(missing))
+
+def _probe():
+    design = piperine.load({phdl:?})
+    session = design.compile()
+    missing = [] if hasattr(session, {bogus:?}) else [{bogus:?}]
+    with open({out:?}, "w") as f:
+        f.write(" ".join(missing))
+
+_probe()
 "#,
         phdl = phdl_path.to_str().unwrap(),
         bogus = bogus,

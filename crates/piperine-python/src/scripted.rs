@@ -57,6 +57,7 @@ impl RegistrationTable {
     /// Exec the plugin entry (fresh module namespace, fresh facade
     /// registry) and read back `piperine._take_registry()`.
     fn read(entry: &Path) -> Result<Self, String> {
+        let _facade = crate::embed::facade_lock();
         Python::with_gil(|py| -> PyResult<Self> {
             let facade = crate::embed::register_modules(py)?;
             exec_entry(py, entry)?;
@@ -113,6 +114,7 @@ impl ScriptedPlugin {
         if !self.hooks.contains(&phase) {
             return Ok(());
         }
+        let _facade = crate::embed::facade_lock();
         Python::with_gil(|py| -> PyResult<()> {
             let facade = crate::embed::register_modules(py)?;
             exec_entry(py, &self.entry)?;
@@ -212,6 +214,7 @@ struct PythonScript {
 
 impl ScriptHandler for PythonScript {
     fn invoke(&self, args: &[String], cx: &mut HostCtx) -> Result<i32, String> {
+        let _facade = crate::embed::facade_lock();
         Python::with_gil(|py| -> PyResult<i32> {
             let facade = crate::embed::register_modules(py)?;
             exec_entry(py, &self.entry)?;

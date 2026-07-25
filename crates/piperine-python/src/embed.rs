@@ -22,6 +22,21 @@ use crate::_piperine;
 /// resolves without a pip install (spec AC16).
 const FACADE_SRC: &str = include_str!("../python/piperine/__init__.py");
 
+/// Serializes facade swaps: `register_modules` replaces
+/// `sys.modules["piperine"]` (process-global interpreter state), and a
+/// scripted-plugin dispatch then exec's an entry whose `import piperine`
+/// must resolve to THAT fresh facade — a concurrent swap would register
+/// the entry's `@pip` declarations into the wrong per-load registry.
+/// Every `register_modules` + exec + readback critical section holds this
+/// lock (the interpreter is already process-global; this matches it).
+pub(crate) static FACADE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Lock the facade-swap critical section, surviving poisoning (a panicked
+/// dispatch must not wedge later ones).
+pub(crate) fn facade_lock() -> std::sync::MutexGuard<'static, ()> {
+    FACADE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Embedded-interpreter runner (PY-15). Registers `_piperine` + the
 /// `piperine` facade in `sys.modules`, then runs the Python script at
 /// `path`. `import piperine` works with no pip install (spec AC16). A
@@ -41,6 +56,7 @@ const FACADE_SRC: &str = include_str!("../python/piperine/__init__.py");
 // append_to_inittab can run; sys.modules registration is functionally
 // equivalent and works in both CLI (fresh) and test (pre-initialized) paths.
 pub fn run_script(path: &str) -> PyResult<()> {
+    let _facade = facade_lock();
     Python::with_gil(|py| {
         // 1./2. Register `_piperine` + a freshly materialized `piperine`
         //    facade in sys.modules (see register_modules).
@@ -95,6 +111,7 @@ pub(crate) fn register_modules(py: Python<'_>) -> PyResult<Bound<'_, PyModule>> 
 /// it. The REPL shares `__main__.__dict__` so variables persist across
 /// statements for the session.
 pub fn run_interactive(maybe_design_path: Option<&str>) -> PyResult<()> {
+    let _facade = facade_lock();
     Python::with_gil(|py| {
         // Register `_piperine` + the facade (same as run_script).
         register_modules(py)?;
