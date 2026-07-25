@@ -722,6 +722,8 @@ impl Design {
             }
             module.instances.push(crate::pom::module::Instance {
                 span: None,
+                label_span: None,
+                type_span: None,
                 attributes: Vec::new(),
                 doc: None,
                 label: Some(spec.label),

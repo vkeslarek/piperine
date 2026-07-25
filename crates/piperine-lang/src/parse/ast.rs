@@ -314,6 +314,13 @@ pub enum ModuleStatement {
         span: Option<miette::SourceSpan>,
         attrs: Vec<Attribute>,
         doc: Option<String>,
+        /// Byte span of the label-identifier token (`src` in `src : Type(...)`),
+        /// captured before the `:`. `None` for unlabeled instances (LSB-07..10).
+        label_span: Option<miette::SourceSpan>,
+        /// Byte span of the module-type-identifier token — `Type` in the
+        /// labeled `: Type` form, or the single identifier in the unlabeled
+        /// bare form (LSB-07..10).
+        type_span: Option<miette::SourceSpan>,
         name: Option<String>,
         array_index: Option<Expr>,
         module: String,

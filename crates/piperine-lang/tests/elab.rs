@@ -10,7 +10,6 @@
 /// - `use` declarations are resolved
 /// - function and impl bodies are lowered to `BehaviorStmt`
 use piperine_lang::{
-    elab::registry::CallableDef,
     pom::{BehaviorStmt, NetType, ValueType},
     parse_and_elaborate, parse_str,
     resolve::Resolver,
@@ -1155,4 +1154,57 @@ fn test_resolution_index_module_doc_carried_on_binding() {
     let info = idx.binding(id).expect("binding present");
     assert!(matches!(info.kind, BindingKind::Module));
     assert_eq!(info.doc.as_deref(), Some("A two-terminal resistor."));
+}
+
+// ─────────────────────── instance token-level spans (LSB-07..10, T7) ──────────
+
+/// A labeled instance's `label_span` covers exactly the label token's bytes
+/// and `type_span` covers exactly the type-name token's bytes — not the
+/// whole 56-byte multi-line statement. Fixture mirrors spec.md's exact
+/// reported repro shape.
+#[test]
+fn test_labeled_instance_label_and_type_spans_are_token_tight() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\n\
+               mod RampSource ( inout p : Electrical, inout n : Electrical ) { param slope: Real = 0.0; }\n\
+               mod Top ( inout vin : Electrical, inout gnd : Electrical ) {\n\
+                   src : RampSource(.p = vin, .n = gnd) { .slope = 4.0e5 };\n\
+               }";
+    let design = elab(src);
+    let top = design.module("Top").expect("Top exists");
+    let inst = top.instance("src").expect("instance src exists");
+
+    let label_span = inst.label_span.expect("labeled instance has a label_span");
+    assert_eq!(label_span.len(), 3, "label_span should cover only `src` (3 bytes)");
+    assert_eq!(&src[label_span.offset()..label_span.offset() + label_span.len()], "src");
+
+    let type_span = inst.type_span.expect("labeled instance has a type_span");
+    assert_eq!(type_span.len(), 10, "type_span should cover only `RampSource` (10 bytes)");
+    assert_eq!(
+        &src[type_span.offset()..type_span.offset() + type_span.len()],
+        "RampSource"
+    );
+}
+
+/// An unlabeled instance has no `label_span`, and its `type_span` is tight
+/// to the single identifier token (not the whole statement).
+#[test]
+fn test_unlabeled_instance_has_no_label_span_and_tight_type_span() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\n\
+               mod RampSource ( inout p : Electrical, inout n : Electrical ) { param slope: Real = 0.0; }\n\
+               mod Top ( inout vin : Electrical, inout gnd : Electrical ) {\n\
+                   RampSource(.p = vin, .n = gnd);\n\
+               }";
+    let design = elab(src);
+    let top = design.module("Top").expect("Top exists");
+    let inst = top.instances().first().expect("Top has exactly one instance");
+    assert_eq!(inst.label, None, "instance should be unlabeled");
+
+    assert_eq!(inst.label_span, None, "unlabeled instance must have no label_span");
+
+    let type_span = inst.type_span.expect("unlabeled instance still has a type_span");
+    assert_eq!(type_span.len(), 10, "type_span should cover only `RampSource` (10 bytes)");
+    assert_eq!(
+        &src[type_span.offset()..type_span.offset() + type_span.len()],
+        "RampSource"
+    );
 }

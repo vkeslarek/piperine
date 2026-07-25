@@ -101,8 +101,11 @@ impl<'a> Parser<'a> {
         }
 
         // InstanceOrConnect — leading Ident, then branch on next token.
+        let name_start = self.current_span_start();
         let name = self.parse_ident()?;
+        let name_span: miette::SourceSpan = (name_start, self.previous_span_end() - name_start).into();
         let mut module_name = name.clone();
+        let mut module_name_span = name_span;
         let mut is_named_instance = false;
 
         let mut array_index: Option<Expr> = None;
@@ -124,7 +127,9 @@ impl<'a> Parser<'a> {
 
         if self.eat(&Tok::Colon) {
             is_named_instance = true;
+            let type_start = self.current_span_start();
             module_name = self.parse_ident()?;
+            module_name_span = (type_start, self.previous_span_end() - type_start).into();
         }
 
         let mut const_args = Vec::new();
@@ -198,6 +203,8 @@ impl<'a> Parser<'a> {
             span: Some((start, end - start).into()),
             attrs,
             doc,
+            label_span: if is_named_instance { Some(name_span) } else { None },
+            type_span: Some(module_name_span),
             name: if is_named_instance { Some(name) } else { None },
             array_index,
             module: module_name,

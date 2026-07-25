@@ -430,11 +430,14 @@ impl Elaborator {
         out: &mut Vec<ModBodyItem>,
     ) -> Result<(), ElabError> {
         let ModuleStatement::Instance {
-            name, array_index, module, const_args, ports, params, span, attrs, doc, ..
+            name, array_index, module, const_args, ports, params, span, attrs, doc,
+            label_span, type_span, ..
         } = stmt else {
             unreachable!("lower_instance called on a non-Instance statement");
         };
         let span = *span;
+        let label_span = *label_span;
+        let type_span = *type_span;
         let label = if let Some(n) = name {
             if let Some(idx_expr) = array_index {
                 let idx = env.eval_nat(idx_expr).map_err(|e| ElabErrorKind::ConstEval {
@@ -526,6 +529,8 @@ impl Elaborator {
 
         out.push(ModBodyItem::Inst(Instance {
             span,
+            label_span,
+            type_span,
             attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?,
             doc: doc.clone(),
             label,

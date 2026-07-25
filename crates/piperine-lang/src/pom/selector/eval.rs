@@ -287,12 +287,12 @@ mod tests {
             "Child".into(),
             vec![], vec![], vec![], vec![], vec![], vec![]
         );
-        let inst1 = crate::pom::Instance { span: None, attributes: vec![], doc: None, label: Some("c1".into()),
+        let inst1 = crate::pom::Instance { span: None, label_span: None, type_span: None, attributes: vec![], doc: None, label: Some("c1".into()),
             module: "Child".into(),
             ports: vec![],
             params: vec![],
         };
-        let inst2 = crate::pom::Instance { span: None, attributes: vec![], doc: None, label: Some("c2".into()),
+        let inst2 = crate::pom::Instance { span: None, label_span: None, type_span: None, attributes: vec![], doc: None, label: Some("c2".into()),
             module: "Child".into(),
             ports: vec![],
             params: vec![],

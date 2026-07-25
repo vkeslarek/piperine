@@ -158,6 +158,8 @@ impl FlattenHierarchy {
                 .collect::<Result<Vec<_>, _>>()?;
             spliced_instances.push(Instance {
                 span: s.span,
+                label_span: None,
+                type_span: None,
                 attributes: s.attributes.clone(),
                 doc: s.doc.clone(),
                 label: Some(new_label),
@@ -255,6 +257,8 @@ mod tests {
     fn instance(label: &str, module: &str) -> Instance {
         Instance {
             span: None,
+            label_span: None,
+            type_span: None,
             attributes: Vec::new(),
             doc: None,
             label: Some(label.to_string()),
@@ -267,6 +271,8 @@ mod tests {
     fn instance_ports(label: &str, module: &str, ports: &[&str]) -> Instance {
         Instance {
             span: None,
+            label_span: None,
+            type_span: None,
             attributes: Vec::new(),
             doc: None,
             label: Some(label.to_string()),
@@ -673,6 +679,8 @@ mod tests {
             vec![wire("bus")],
             vec![Instance {
                 span: None,
+                label_span: None,
+                type_span: None,
                 attributes: Vec::new(),
                 doc: None,
                 label: Some("r1".to_string()),

@@ -130,6 +130,13 @@ impl Kinded for Wire { fn kind(&self) -> Kind { Kind::Wire } }
 pub struct Instance {
     #[serde(skip)]
     pub span: Option<miette::SourceSpan>,
+    /// Byte span of just the label token (`src` in `src : Type(...)`), if
+    /// the instance is labeled (LSB-07..10).
+    #[serde(skip)]
+    pub label_span: Option<miette::SourceSpan>,
+    /// Byte span of just the module-type-identifier token (LSB-07..10).
+    #[serde(skip)]
+    pub type_span: Option<miette::SourceSpan>,
     pub attributes: Vec<Attribute>,
     /// Attached `///` doc comment, if any (MD-25 — additive, LSP-07).
     #[serde(default)]
