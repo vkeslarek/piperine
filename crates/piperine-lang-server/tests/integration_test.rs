@@ -1661,3 +1661,44 @@ fn goto_definition_on_attr_schema_use_opens_its_extern_attribute_decl() {
     let decl_start = src.find("extern attribute widget_meta").expect("declaration must be present");
     assert_eq!(target, decl_start, "goto must open the `extern attribute widget_meta` declaration");
 }
+
+// ── T21: attribute outline entries (LSP-24) ─────────────────────────────────
+
+use piperine_lang_server::handlers::symbols::extract_symbols;
+
+/// A `@rfport`-annotated wire shows the attribute as a nested outline entry
+/// on the wire's own declaration.
+#[test]
+fn attribute_instance_appears_as_outline_entry_on_its_declaration() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\nmod M ( inout p : Electrical ) {\n@rfport(num = 1, z0 = 50) wire rf_in : Electrical;\n}\n";
+    let doc = analyzed(src);
+    let design = doc.design.as_ref().expect("source must elaborate cleanly");
+
+    let symbols = extract_symbols(design, src);
+    let module_sym = symbols.iter().find(|s| s.name == "M").expect("module `M` must be in the outline");
+    let wire_children = module_sym.children.as_ref().expect("module must have children");
+    let wire_sym = wire_children.iter().find(|s| s.name.starts_with("rf_in")).expect("wire `rf_in` must be in the outline");
+
+    let attr_children = wire_sym.children.as_ref().expect("wire with an attribute must have outline children");
+    assert!(
+        attr_children.iter().any(|c| c.name == "@rfport"),
+        "expected an `@rfport` outline entry, got: {:?}",
+        attr_children.iter().map(|c| &c.name).collect::<Vec<_>>()
+    );
+}
+
+/// A wire with no attribute has no attribute children in the outline (no
+/// regression / no spurious entries).
+#[test]
+fn outline_entry_without_attribute_has_no_attribute_children() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\nmod M ( inout p : Electrical ) {\nwire plain : Electrical;\n}\n";
+    let doc = analyzed(src);
+    let design = doc.design.as_ref().expect("source must elaborate cleanly");
+
+    let symbols = extract_symbols(design, src);
+    let module_sym = symbols.iter().find(|s| s.name == "M").expect("module `M` must be in the outline");
+    let wire_children = module_sym.children.as_ref().expect("module must have children");
+    let wire_sym = wire_children.iter().find(|s| s.name.starts_with("plain")).expect("wire `plain` must be in the outline");
+
+    assert!(wire_sym.children.is_none(), "an un-attributed wire must not carry outline children");
+}

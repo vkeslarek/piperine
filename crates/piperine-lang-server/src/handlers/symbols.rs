@@ -19,8 +19,31 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
     connection.respond(id, DocumentSymbolResponse::Nested(symbols));
 }
 
+/// Outline entries for a node's `@schema(...)` attribute instances
+/// (T21/LSP-24) — nested under the node's own outline entry, at the node's
+/// own span (the POM `Attribute` carries no span of its own; the owning
+/// declaration's span is the closest anchor an outline entry can point at).
 #[allow(deprecated)]
-fn extract_symbols(design: &piperine_lang::Design, source: &str) -> Vec<DocumentSymbol> {
+fn attribute_children(attrs: &[piperine_lang::pom::module::Attribute], range: Range) -> Vec<DocumentSymbol> {
+    attrs
+        .iter()
+        .map(|attr| DocumentSymbol {
+            name: format!("@{}", attr.schema()),
+            detail: Some("attribute".into()),
+            kind: SymbolKind::PROPERTY,
+            range,
+            selection_range: range,
+            children: None,
+            tags: None,
+            deprecated: None,
+        })
+        .collect()
+}
+
+/// Builds the outline for `design`'s source text — pub so tests can drive
+/// it directly against a `Design` without a full LSP round trip (T21).
+#[allow(deprecated)]
+pub fn extract_symbols(design: &piperine_lang::Design, source: &str) -> Vec<DocumentSymbol> {
     let mut symbols = Vec::new();
 
     for module in design.modules() {
@@ -29,13 +52,14 @@ fn extract_symbols(design: &piperine_lang::Design, source: &str) -> Vec<Document
         // Ports
         for port in module.ports() {
             if let Some(range) = span_to_range(source, port.span) {
+                let attr_children = attribute_children(port.attributes(), range);
                 children.push(DocumentSymbol {
                     name: format!("{} ({})", port.name(), port.net_type().discipline_name()),
                     detail: Some(format!("{:?}", port.direction())),
                     kind: SymbolKind::PROPERTY,
                     range,
                     selection_range: range,
-                    children: None,
+                    children: (!attr_children.is_empty()).then_some(attr_children),
                     tags: None,
                     deprecated: None
                 });
@@ -45,13 +69,14 @@ fn extract_symbols(design: &piperine_lang::Design, source: &str) -> Vec<Document
         // Params
         for param in module.params() {
             if let Some(range) = span_to_range(source, param.span) {
+                let attr_children = attribute_children(param.attributes(), range);
                 children.push(DocumentSymbol {
                     name: param.name().to_string(),
                     detail: Some(format!("{:?}", param.value_type())),
                     kind: SymbolKind::VARIABLE,
                     range,
                     selection_range: range,
-                    children: None,
+                    children: (!attr_children.is_empty()).then_some(attr_children),
                     tags: None,
                     deprecated: None
                 });
@@ -61,13 +86,14 @@ fn extract_symbols(design: &piperine_lang::Design, source: &str) -> Vec<Document
         // Wires
         for wire in module.wires() {
             if let Some(range) = span_to_range(source, wire.span) {
+                let attr_children = attribute_children(wire.attributes(), range);
                 children.push(DocumentSymbol {
                     name: wire.name().to_string(),
                     detail: Some(wire.net_type().discipline_name().to_string()),
                     kind: SymbolKind::FIELD,
                     range,
                     selection_range: range,
-                    children: None,
+                    children: (!attr_children.is_empty()).then_some(attr_children),
                     tags: None,
                     deprecated: None
                 });
@@ -94,13 +120,14 @@ fn extract_symbols(design: &piperine_lang::Design, source: &str) -> Vec<Document
         // Instances
         for inst in module.instances() {
             if let Some(range) = span_to_range(source, inst.span) {
+                let attr_children = attribute_children(inst.attributes(), range);
                 children.push(DocumentSymbol {
                     name: inst.name().to_string(),
                     detail: Some(format!("instance of {}", inst.module_name())),
                     kind: SymbolKind::OBJECT,
                     range,
                     selection_range: range,
-                    children: None,
+                    children: (!attr_children.is_empty()).then_some(attr_children),
                     tags: None,
                     deprecated: None
                 });
@@ -108,13 +135,17 @@ fn extract_symbols(design: &piperine_lang::Design, source: &str) -> Vec<Document
         }
 
         if let Some(range) = span_to_range(source, module.span) {
+            // The module's own attribute instances (T21/LSP-24) go first,
+            // ahead of ports/params/wires/behaviors/instances.
+            let mut module_children = attribute_children(module.attributes(), range);
+            module_children.extend(children);
             symbols.push(DocumentSymbol {
                 name: module.name().to_string(),
                 detail: Some(format!("{} ports, {} params", module.ports().len(), module.params().len())),
                 kind: SymbolKind::MODULE,
                 range,
                 selection_range: range,
-                children: Some(children),
+                children: Some(module_children),
                 tags: None,
                 deprecated: None
             });
