@@ -89,7 +89,7 @@ impl Elaborator {
                 source: e,
             }))?;
             let vt = self.resolve_value_type(&field.ty, env)?;
-            out.push(ModBodyItem::Param(Param { span: None, attributes: Vec::new(),
+            out.push(ModBodyItem::Param(Param { span: None, attributes: Vec::new(), doc: None,
                 name: format!("{pname}_{}", field.name),
                 ty: vt,
                 default: Some(val),
@@ -168,7 +168,7 @@ impl Elaborator {
             }
         }
 
-        Ok(Module { span: decl.span, attributes: super::attrs::convert_attributes(&decl.attrs, &self.ctx.schemas, &self.syms.bundles)?, name: decl.name.clone(), ports, params, wires, vars, instances, connections, behaviors: vec![], origin: None })
+        Ok(Module { span: decl.span, attributes: super::attrs::convert_attributes(&decl.attrs, &self.ctx.schemas, &self.syms.bundles)?, doc: None, name: decl.name.clone(), ports, params, wires, vars, instances, connections, behaviors: vec![], origin: None })
     }
 
     /// Lowers a slice of `ModuleStatement`s, appending the resulting
@@ -262,7 +262,7 @@ impl Elaborator {
                 if let Some(v) = &def {
                     env.define(name.clone(), v.clone());
                 }
-                out.push(ModBodyItem::Param(Param { span: *span, attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?,
+                out.push(ModBodyItem::Param(Param { span: *span, attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?, doc: None,
                     name: name.clone(),
                     ty: vt,
                     default: def,
@@ -277,7 +277,7 @@ impl Elaborator {
                         let wire_attrs = super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?;
                         for field in &bundle.fields {
                             let field_ty = self.resolve_net_type(&field.ty, env, type_subst)?;
-                            out.push(ModBodyItem::Wire(Wire { span: *span, attributes: wire_attrs.clone(),
+                            out.push(ModBodyItem::Wire(Wire { span: *span, attributes: wire_attrs.clone(), doc: None,
                                 name: format!("{}_{}", name, field.name),
                                 ty: field_ty,
                             }));
@@ -285,7 +285,7 @@ impl Elaborator {
                         return Ok(());
                     }
                 let nt = self.resolve_net_type(ty, env, type_subst)?;
-                out.push(ModBodyItem::Wire(Wire { span: *span, attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?, name: name.clone(), ty: nt }));
+                out.push(ModBodyItem::Wire(Wire { span: *span, attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?, doc: None, name: name.clone(), ty: nt }));
             }
 
             ModuleStatement::VarDecl { name, ty, default, span, attrs, .. } => {
@@ -333,6 +333,7 @@ impl Elaborator {
                 out.push(ModBodyItem::ModVar(Var {
                     span: *span,
                     attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?,
+                    doc: None,
                     name: name.clone(),
                     ty: vt,
                     init,
@@ -526,6 +527,7 @@ impl Elaborator {
         out.push(ModBodyItem::Inst(Instance {
             span,
             attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?,
+            doc: None,
             label,
             module: mono_name,
             ports: elab_ports,

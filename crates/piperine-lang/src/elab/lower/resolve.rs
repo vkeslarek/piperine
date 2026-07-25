@@ -228,6 +228,7 @@ impl Elaborator {
                 out.push(Port {
                     span: None,
                     attributes: port_attrs.clone(),
+                    doc: None,
                     direction: port.direction.clone(),
                     name: format!("{}_{}", port.name, field.name),
                     ty: field_ty,
@@ -240,6 +241,7 @@ impl Elaborator {
         Ok(vec![Port {
             span: None,
             attributes: super::attrs::convert_attributes(&port.attrs, &self.ctx.schemas, &self.syms.bundles)?,
+            doc: None,
             direction: port.direction.clone(),
             name: port.name.clone(),
             ty: net_ty,

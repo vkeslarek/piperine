@@ -698,6 +698,7 @@ impl Design {
             module.instances.push(crate::pom::module::Instance {
                 span: None,
                 attributes: Vec::new(),
+                doc: None,
                 label: Some(spec.label),
                 module: spec.module,
                 ports: spec.ports.iter().map(|n| crate::pom::net_type::NetRef::simple(n.clone())).collect(),
@@ -796,6 +797,7 @@ mod flat_module_tests {
             vec![Wire {
                 span: None,
                 attributes: Vec::new(),
+                doc: None,
                 name: wire.to_string(),
                 ty: NetType::Discipline("Electrical".to_string()),
             }],

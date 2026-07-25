@@ -141,6 +141,7 @@ impl FlattenHierarchy {
             lifted_wires.push(Wire {
                 span: None,
                 attributes: w.attributes.clone(),
+                doc: w.doc.clone(),
                 name: fresh,
                 ty: w.ty.clone(),
             });
@@ -158,6 +159,7 @@ impl FlattenHierarchy {
             spliced_instances.push(Instance {
                 span: s.span,
                 attributes: s.attributes.clone(),
+                doc: s.doc.clone(),
                 label: Some(new_label),
                 module: s.module.clone(),
                 ports: new_ports,
@@ -221,6 +223,7 @@ mod tests {
         Port {
             span: None,
             attributes: Vec::new(),
+            doc: None,
             direction: Direction::Inout,
             name: name.to_string(),
             ty: elec(),
@@ -231,6 +234,7 @@ mod tests {
         Wire {
             span: None,
             attributes: Vec::new(),
+            doc: None,
             name: name.to_string(),
             ty: elec(),
         }
@@ -252,6 +256,7 @@ mod tests {
         Instance {
             span: None,
             attributes: Vec::new(),
+            doc: None,
             label: Some(label.to_string()),
             module: module.to_string(),
             ports: Vec::new(),
@@ -263,6 +268,7 @@ mod tests {
         Instance {
             span: None,
             attributes: Vec::new(),
+            doc: None,
             label: Some(label.to_string()),
             module: module.to_string(),
             ports: ports.iter().map(|p| NetRef::simple(*p)).collect(),
@@ -668,6 +674,7 @@ mod tests {
             vec![Instance {
                 span: None,
                 attributes: Vec::new(),
+                doc: None,
                 label: Some("r1".to_string()),
                 module: "Resistor".to_string(),
                 ports: vec![NetRef::indexed("bus", 0), NetRef::simple("p")],

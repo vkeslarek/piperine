@@ -274,7 +274,7 @@ mod tests {
     fn scalar(name: &str) -> crate::pom::Module {
         crate::pom::Module::new(
             "T".into(),
-            vec![crate::pom::module::Port { span: None, attributes: vec![],
+            vec![crate::pom::module::Port { span: None, attributes: vec![], doc: None,
                 direction: crate::parse::ast::Direction::Inout,
                 name: "p".into(),
                 ty: ty(name),
@@ -296,14 +296,14 @@ mod tests {
         // entry's index difference.
         let bad_mod = crate::pom::Module::new(
             "T".into(),
-            vec![crate::pom::module::Port { span: None, attributes: vec![],
+            vec![crate::pom::module::Port { span: None, attributes: vec![], doc: None,
                 direction: crate::parse::ast::Direction::Inout,
                 name: "p".into(),
                 ty: NetType::Array(Box::new(ty("Bit")), 8),
             }],
             vec![],
             vec![
-                crate::pom::module::Wire { span: None, attributes: vec![], name: "w".into(), ty: NetType::Array(Box::new(ty("Bit")), 4) },
+                crate::pom::module::Wire { span: None, attributes: vec![], doc: None, name: "w".into(), ty: NetType::Array(Box::new(ty("Bit")), 4) },
             ],
             vec![],
             vec![crate::pom::module::Connection { span: None,
@@ -326,8 +326,8 @@ mod tests {
             vec![],
             vec![],
             vec![
-                crate::pom::module::Wire { span: None, attributes: vec![], name: "a".into(), ty: NetType::Array(Box::new(ty("Bit")), 8) },
-                crate::pom::module::Wire { span: None, attributes: vec![], name: "b".into(), ty: NetType::Array(Box::new(ty("Bit")), 4) },
+                crate::pom::module::Wire { span: None, attributes: vec![], doc: None, name: "a".into(), ty: NetType::Array(Box::new(ty("Bit")), 8) },
+                crate::pom::module::Wire { span: None, attributes: vec![], doc: None, name: "b".into(), ty: NetType::Array(Box::new(ty("Bit")), 4) },
             ],
             vec![],
             vec![crate::pom::module::Connection { span: None,
@@ -349,12 +349,12 @@ mod tests {
         let bad_mod = crate::pom::Module::new(
             "T".into(),
             vec![
-                crate::pom::module::Port { span: None, attributes: vec![],
+                crate::pom::module::Port { span: None, attributes: vec![], doc: None,
                     direction: crate::parse::ast::Direction::Inout,
                     name: "e".into(),
                     ty: ty("Electrical"),
                 },
-                crate::pom::module::Port { span: None, attributes: vec![],
+                crate::pom::module::Port { span: None, attributes: vec![], doc: None,
                     direction: crate::parse::ast::Direction::Inout,
                     name: "t".into(),
                     ty: ty("Thermal"),
@@ -383,8 +383,8 @@ mod tests {
             vec![],
             vec![],
             vec![
-                crate::pom::module::Wire { span: None, attributes: vec![], name: "a".into(), ty: ty("Electrical") },
-                crate::pom::module::Wire { span: None, attributes: vec![], name: "b".into(), ty: ty("Electrical") },
+                crate::pom::module::Wire { span: None, attributes: vec![], doc: None, name: "a".into(), ty: ty("Electrical") },
+                crate::pom::module::Wire { span: None, attributes: vec![], doc: None, name: "b".into(), ty: ty("Electrical") },
             ],
             vec![],
             vec![crate::pom::module::Connection { span: None,
@@ -406,15 +406,15 @@ mod tests {
             vec![],
             vec![],
             vec![
-                crate::pom::module::Wire { span: None, attributes: vec![], name: "w".into(), ty: ty("Bit") },
+                crate::pom::module::Wire { span: None, attributes: vec![], doc: None, name: "w".into(), ty: ty("Bit") },
             ],
             vec![
-                crate::pom::Instance { span: None, attributes: vec![], label: Some("u1".into()),
+                crate::pom::Instance { span: None, attributes: vec![], doc: None, label: Some("u1".into()),
                     module: "Driver".into(),
                     ports: vec![crate::pom::net_type::NetRef::simple("w")],
                     params: vec![],
                 },
-                crate::pom::Instance { span: None, attributes: vec![], label: Some("u2".into()),
+                crate::pom::Instance { span: None, attributes: vec![], doc: None, label: Some("u2".into()),
                     module: "Driver".into(),
                     ports: vec![crate::pom::net_type::NetRef::simple("w")],
                     params: vec![],
@@ -426,7 +426,7 @@ mod tests {
         let driver_mod = crate::pom::Module::new(
             "Driver".into(),
             vec![
-                crate::pom::module::Port { span: None, attributes: vec![],
+                crate::pom::module::Port { span: None, attributes: vec![], doc: None,
                     direction: crate::parse::ast::Direction::Output,
                     name: "o".into(),
                     ty: ty("Bit"),
