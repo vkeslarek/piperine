@@ -13,21 +13,19 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
     let locations = state
         .documents
         .get(&uri)
-        .and_then(|doc| {
+        .map(|doc| {
             let offset = crate::text_pos::position_to_byte(&doc.source, pos);
-            let word = crate::text_pos::word_at_position(&doc.source, pos)?;
-            // Only report references for something that resolves to a symbol.
-            doc.resolve_at(offset)?;
-
-            Some(
-                doc.word_occurrences(&word)
-                    .into_iter()
-                    .map(|(start, end)| Location {
-                        uri: uri.clone(),
-                        range: crate::text_pos::byte_range(&doc.source, start, end),
-                    })
-                    .collect::<Vec<_>>(),
-            )
+            // occurrences_at (T8) already gates on symbol resolution and
+            // returns only the binding's own recorded uses — no text scan,
+            // so comments/strings/other-scope same-spelled identifiers
+            // never appear (LSP-10).
+            doc.occurrences_at(offset)
+                .into_iter()
+                .map(|(start, end)| Location {
+                    uri: uri.clone(),
+                    range: crate::text_pos::byte_range(&doc.source, start, end),
+                })
+                .collect::<Vec<_>>()
         })
         .unwrap_or_default();
 
