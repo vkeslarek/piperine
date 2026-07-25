@@ -37,6 +37,7 @@ pub mod lower;
 pub mod typecheck;
 pub mod resolve;
 pub mod registry;
+pub mod resolution;
 
 use crate::pom::{Design, ElabError, ElabErrorKind};
 pub use lower::Elaborator;
@@ -103,5 +104,21 @@ impl SourceFile {
         let mut design = elaborator.elaborate(augmented)?;
         design.set_origins(resolver.take_origins());
         Ok((design, elaborator.ctx))
+    }
+
+    /// Like [`elaborate`](Self::elaborate), but also returns a
+    /// [`ResolutionIndex`][crate::elab::resolution::ResolutionIndex] built
+    /// over the resulting `Design` (LSP-03/05) — the side artifact the
+    /// language server reads for binding-identity-aware resolution instead
+    /// of a word-based global scan. Additive: `Design` itself is unchanged,
+    /// and existing `elaborate*` entry points are untouched (no call-site
+    /// churn for hosts that don't need the index yet).
+    pub fn elaborate_with_index(
+        self,
+        source_map: &SourceMap,
+    ) -> Result<(Design, crate::elab::resolution::ResolutionIndex), ElabError> {
+        let design = self.elaborate(source_map)?;
+        let index = crate::elab::resolution::index_design(&design);
+        Ok((design, index))
     }
 }

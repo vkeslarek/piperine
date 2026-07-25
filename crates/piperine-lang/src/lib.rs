@@ -61,6 +61,7 @@ pub use pom::{
 pub use parse::{parse_str, Lexed, Lexer, Tok};
 pub use resolve::{ResolveError, Resolver};
 pub use source_map::SourceMap;
+pub use elab::resolution::{BindingId, BindingInfo, BindingKind, ResolutionIndex};
 
 /// Parse a PHDL source string and run the full elaboration pipeline.
 pub fn parse_and_elaborate(input: &str, source_map: &SourceMap) -> Result<Design, miette::Report> {
@@ -79,5 +80,18 @@ pub fn parse_and_elaborate_seeded(
     let mut resolver = Resolver::new(source_map);
     source
         .elaborate_seeded(&mut resolver, seed)
+        .map_err(|e| miette::Report::from(e).with_source_code(input.to_string()))
+}
+
+/// Like [`parse_and_elaborate`], but also returns a [`ResolutionIndex`]
+/// built over the resulting `Design` (LSP-03/05) — see
+/// [`parse::SourceFile::elaborate_with_index`].
+pub fn parse_and_elaborate_with_index(
+    input: &str,
+    source_map: &SourceMap,
+) -> Result<(Design, ResolutionIndex), miette::Report> {
+    let source = parse_str(input).map_err(|e| miette::miette!("{}", e).with_source_code(input.to_string()))?;
+    source
+        .elaborate_with_index(source_map)
         .map_err(|e| miette::Report::from(e).with_source_code(input.to_string()))
 }

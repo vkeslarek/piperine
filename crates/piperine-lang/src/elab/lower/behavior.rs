@@ -53,7 +53,7 @@ impl Elaborator {
         let mut env = ConstEnv::new();
         let mut var_types = HashMap::new();
         let body = self.lower_behavior_stmts(&beh.body, beh.kind.clone(), &mut env, &mut var_types)?;
-        Ok(Behavior { span: None, doc: beh.doc.clone(), name: beh.name.clone(), kind: beh.kind.clone(), body, var_types })
+        Ok(Behavior { span: beh.span, doc: beh.doc.clone(), name: beh.name.clone(), kind: beh.kind.clone(), body, var_types })
     }
 
     /// Fold/unroll a slice of behavior statements, recording resolved

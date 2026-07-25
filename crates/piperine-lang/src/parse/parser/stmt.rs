@@ -211,14 +211,15 @@ impl<'a> Parser<'a> {
     // ─────────────────────────── §7  Behavior ────────────────────────────────
 
     /// Parses an `analog Name { ... }` or `digital Name { ... }` behavior block.
-    pub(crate) fn parse_behavior(&mut self, attrs: Vec<Attribute>, doc: Option<String>, is_pub: bool, kind: BehaviorKind) -> Result<BehaviorDecl, crate::parse::error::ParseError> {
+    pub(crate) fn parse_behavior(&mut self, start: usize, attrs: Vec<Attribute>, doc: Option<String>, is_pub: bool, kind: BehaviorKind) -> Result<BehaviorDecl, crate::parse::error::ParseError> {
         let name = self.parse_ident()?;
         self.expect(&Tok::LBrace)?;
         let mut body = Vec::new();
         while !self.eat(&Tok::RBrace) {
             body.push(self.parse_behavior_stmt()?);
         }
-        Ok(BehaviorDecl { span: None, attrs, doc, is_pub, kind, name, body })
+        let end = self.previous_span_end();
+        Ok(BehaviorDecl { span: Some((start, end - start).into()), attrs, doc, is_pub, kind, name, body })
     }
 
     /// Parses a single statement inside an `analog`/`digital` behavior
@@ -521,11 +522,11 @@ impl Parse for ModuleStatement {
 
 impl Parse for BehaviorDecl {
     fn parse(parser: &mut Parser) -> Result<Self, crate::parse::error::ParseError> {
-        let _start = parser.current_span_start();
+        let start = parser.current_span_start();
         let doc = parser.current_doc();
         let attrs = parser.parse_attributes()?;
         let is_pub = parser.eat_ident("pub");
         let kind = if parser.eat_ident("analog") { BehaviorKind::Analog } else if parser.eat_ident("digital") { BehaviorKind::Digital } else { return Err("Expected analog or digital".into()); };
-        parser.parse_behavior(attrs, doc, is_pub, kind)
+        parser.parse_behavior(start, attrs, doc, is_pub, kind)
     }
 }

@@ -891,3 +891,109 @@ fn test_doc_run_not_immediately_before_a_decl_is_ignored_no_crash_or_misattach()
     let m = design.module("Resistor").expect("Resistor elaborates fine despite the dangling run");
     assert_eq!(m.doc, None);
 }
+
+// ─────────────────────── `ResolutionIndex` (LSP-03/05) ────────────────────────
+
+use piperine_lang::{BindingKind, ResolutionIndex};
+
+const RESOLUTION_SRC: &str = "
+    discipline Electrical { potential v: Real; flow i: Real; }
+    /// A two-terminal resistor.
+    mod Resistor(inout p: Electrical, inout n: Electrical) {
+        /// The resistance in ohms.
+        param r: Real = 1.0;
+    }
+    analog Resistor { I(p, n) <+ V(p, n) / r; }
+    mod Top(inout a: Electrical, inout b: Electrical) {
+        wire mid: Electrical;
+        r1 : Resistor(.p = a, .n = mid) { .r = 1e3 };
+    }
+";
+
+fn elab_with_index(src: &str) -> (piperine_lang::pom::Design, ResolutionIndex) {
+    parse_str(src)
+        .expect("parse failed")
+        .elaborate_with_index(&piperine_lang::SourceMap::dummy())
+        .expect("elaborate_with_index failed")
+}
+
+#[test]
+fn test_elaborate_with_index_design_matches_plain_elaborate() {
+    // Additive: the Design half of elaborate_with_index must be identical
+    // to what plain elaborate() produces for the same source.
+    let plain = elab(RESOLUTION_SRC);
+    let (indexed, _idx) = elab_with_index(RESOLUTION_SRC);
+    assert_eq!(indexed.module_count(), plain.module_count());
+    let mut plain_snapshot: Vec<String> = plain.modules().map(|m| format!("{m:?}")).collect();
+    let mut indexed_snapshot: Vec<String> = indexed.modules().map(|m| format!("{m:?}")).collect();
+    plain_snapshot.sort();
+    indexed_snapshot.sort();
+    assert_eq!(indexed_snapshot, plain_snapshot, "Design unchanged by elaborate_with_index");
+}
+
+#[test]
+fn test_resolution_index_records_decl_span_kind_doc_and_use_span() {
+    let (design, idx) = elab_with_index(RESOLUTION_SRC);
+    let resistor = design.module("Resistor").expect("Resistor exists");
+    let param_r = resistor.param("r").expect("param r exists");
+    let r_span = param_r.span.expect("param r has a span");
+
+    // The cursor landing anywhere inside the param's own decl span resolves
+    // to a binding carrying the right kind/name/doc/decl_span.
+    let offset = r_span.offset() + 1;
+    let id = idx.resolve_at(offset).expect("resolves at param r's decl span");
+    let info = idx.binding(id).expect("binding info present");
+    assert!(matches!(info.kind, BindingKind::Param));
+    assert_eq!(info.name, "r");
+    assert_eq!(info.doc.as_deref(), Some("The resistance in ohms."));
+    assert_eq!(info.decl_span.offset(), r_span.offset());
+    assert_eq!(info.decl_span.len(), r_span.len());
+}
+
+#[test]
+fn test_resolution_index_decl_and_use_share_one_binding_id() {
+    // LSP-03: the declaration span and its own (reflexive) use span must
+    // resolve to the *same* BindingId — occurrences() returns that span.
+    let (design, idx) = elab_with_index(RESOLUTION_SRC);
+    let resistor = design.module("Resistor").expect("Resistor exists");
+    let param_r = resistor.param("r").expect("param r exists");
+    let r_span = param_r.span.expect("param r has a span");
+
+    let decl_id = idx.resolve_at(r_span.offset()).expect("resolve at decl span start");
+    let occ = idx.occurrences(decl_id);
+    assert_eq!(occ.len(), 1, "decl site is recorded as a use of itself");
+    assert_eq!(occ[0].offset(), r_span.offset());
+}
+
+#[test]
+fn test_resolution_index_covers_module_port_param_wire_instance_behavior() {
+    let (_design, idx) = elab_with_index(RESOLUTION_SRC);
+    let kinds: std::collections::HashSet<_> = idx
+        .bindings()
+        .map(|(_, info)| std::mem::discriminant(&info.kind))
+        .collect();
+    for expected in [
+        BindingKind::Module,
+        BindingKind::Port,
+        BindingKind::Param,
+        BindingKind::Wire,
+        BindingKind::Instance,
+        BindingKind::Behavior,
+    ] {
+        assert!(
+            kinds.contains(&std::mem::discriminant(&expected)),
+            "ResolutionIndex missing a binding of kind {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn test_resolution_index_module_doc_carried_on_binding() {
+    let (design, idx) = elab_with_index(RESOLUTION_SRC);
+    let resistor = design.module("Resistor").expect("Resistor exists");
+    let m_span = resistor.span.expect("module has a span");
+    let id = idx.resolve_at(m_span.offset()).expect("resolves at module decl span");
+    let info = idx.binding(id).expect("binding present");
+    assert!(matches!(info.kind, BindingKind::Module));
+    assert_eq!(info.doc.as_deref(), Some("A two-terminal resistor."));
+}

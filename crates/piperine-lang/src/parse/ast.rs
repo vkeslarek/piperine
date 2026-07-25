@@ -232,6 +232,7 @@ pub struct TypeParam {
 /// The elaborator validates net-capability and expands bundles to flat fields.
 #[derive(Debug, Clone)]
 pub struct Port {
+    pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
     /// A `///` doc-comment run attached immediately before this port
     /// (LSP-06/07), if any.
