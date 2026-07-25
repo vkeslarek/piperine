@@ -1,7 +1,7 @@
 use lsp_server::{Connection, Message, Request, RequestId, Notification};
 use lsp_types::{
     Position, Uri, HoverParams, TextDocumentPositionParams, TextDocumentIdentifier,
-    DidOpenTextDocumentParams, TextDocumentItem,
+    DidOpenTextDocumentParams, TextDocumentItem, GotoDefinitionParams, GotoDefinitionResponse,
 };
 use lsp_types::notification::Notification as _;
 use lsp_types::request::Request as _;
@@ -463,6 +463,128 @@ mod Inner (inout p: Electrical, inout n: Electrical) {\n\
     assert!(
         decl_span.offset() >= inner_start,
         "cursor inside Inner must resolve to Inner's own `gain`, not Outer's (first-declared)"
+    );
+}
+
+// ── T7: goto-definition rides the resolved binding (LSP-04) ─────────────────
+
+/// Drives a `Connection::memory()` round trip and returns the goto-definition
+/// response for `(line, character)` in `source`.
+fn lsp_goto_definition(source: &str, line: u32, character: u32) -> GotoDefinitionResponse {
+    let (client_conn, server_conn) = Connection::memory();
+
+    std::thread::spawn(move || {
+        let mut server = piperine_lang_server::server::LanguageServer::new(server_conn);
+        server.run().unwrap();
+    });
+
+    let uri: Uri = "file:///goto_def_test.phdl".parse().unwrap();
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "phdl".to_string(),
+            version: 1,
+            text: source.to_string(),
+        },
+    };
+    client_conn.sender.send(Message::Notification(Notification {
+        method: lsp_types::notification::DidOpenTextDocument::METHOD.to_string(),
+        params: serde_json::to_value(did_open_params).unwrap(),
+    })).unwrap();
+
+    for _ in 0..5 {
+        if let Ok(Message::Notification(not)) = client_conn.receiver.recv_timeout(Duration::from_millis(500))
+            && not.method == lsp_types::notification::PublishDiagnostics::METHOD {
+                break;
+            }
+    }
+
+    let goto_params = GotoDefinitionParams {
+        text_document_position_params: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position { line, character },
+        },
+        work_done_progress_params: Default::default(),
+        partial_result_params: Default::default(),
+    };
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(1),
+        method: lsp_types::request::GotoDefinition::METHOD.to_string(),
+        params: serde_json::to_value(goto_params).unwrap(),
+    })).unwrap();
+
+    let msg = recv_timeout(&client_conn.receiver, 1000);
+    let response = if let Message::Response(resp) = msg {
+        assert_eq!(resp.id, RequestId::from(1));
+        let val = resp.result.expect("goto response must have a result");
+        serde_json::from_value(val).expect("goto result must deserialize")
+    } else {
+        panic!("expected a goto-definition response");
+    };
+
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(99),
+        method: "shutdown".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+    recv_timeout(&client_conn.receiver, 500);
+    client_conn.sender.send(Message::Notification(Notification {
+        method: "exit".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+
+    response
+}
+
+fn goto_target_offset(resp: &GotoDefinitionResponse, source: &str) -> usize {
+    let loc = match resp {
+        GotoDefinitionResponse::Scalar(loc) => loc,
+        other => panic!("expected a scalar goto-definition response, got: {other:?}"),
+    };
+    position_to_byte(source, loc.range.start)
+}
+
+// Mirrors `piperine_lang_server::text_pos::position_to_byte` for the test's
+// own use (that module is crate-private to the server crate).
+fn position_to_byte(source: &str, pos: Position) -> usize {
+    let mut byte = 0usize;
+    for (i, line) in source.split('\n').enumerate() {
+        if i as u32 == pos.line {
+            let col_bytes: usize = line.chars().take(pos.character as usize).map(|c| c.len_utf8()).sum();
+            return byte + col_bytes;
+        }
+        byte += line.len() + 1;
+    }
+    byte
+}
+
+/// LSP-04 independent test: two modules each declare a `param` of the same
+/// name. goto-definition on the *use* site inside `Inner`'s own declaration
+/// (i.e. the cursor position that resolve_at now resolves via cursor
+/// context, T6) must land inside `Inner`, never inside the textually-first
+/// `Outer` — proving goto rides the resolved binding, not a same-named
+/// match anywhere in the file.
+#[test]
+fn goto_definition_on_shadowed_name_lands_on_the_correct_declaration() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\n\
+mod Outer (inout p: Electrical, inout n: Electrical) {\n\
+    param gain: Real = 1.0;\n\
+}\n\
+mod Inner (inout p: Electrical, inout n: Electrical) {\n\
+    param gain: Real = 9.0;\n\
+}\n";
+
+    let inner_line = src[..src.find("mod Inner").unwrap()].matches('\n').count() as u32 + 1;
+    // `    param gain: Real = 9.0;` — character offset of `gain`.
+    let character = "    param ".chars().count() as u32;
+
+    let response = lsp_goto_definition(src, inner_line, character);
+    let target_offset = goto_target_offset(&response, src);
+
+    let inner_start = src.find("mod Inner").unwrap();
+    assert!(
+        target_offset >= inner_start,
+        "goto-definition on Inner's own `gain` must land inside Inner (offset {target_offset}), not Outer (which starts before offset {inner_start})"
     );
 }
 
