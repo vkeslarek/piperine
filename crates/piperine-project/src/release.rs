@@ -5,6 +5,8 @@
 //! build-from-source (D6). The HTTP layer is the [`ReleaseClient`] trait
 //! so tests stub it; the fetch/cache/TOFU flow builds on this (T13+).
 
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -131,6 +133,167 @@ pub trait ReleaseClient {
     fn list_assets(&self, release: &ReleaseRef) -> Result<Vec<String>, ReleaseError>;
     /// The bytes of one asset.
     fn download_asset(&self, release: &ReleaseRef, asset: &str) -> Result<Vec<u8>, ReleaseError>;
+}
+
+/// One fetched release asset: the cached file plus its content identity.
+#[derive(Debug, Clone)]
+pub struct FetchedAsset {
+    /// The cached artifact on disk.
+    pub path: PathBuf,
+    /// `sha256:<hex>` of the artifact's bytes.
+    pub content_hash: String,
+    /// The target triple the artifact was selected for.
+    pub triple: String,
+    /// The release asset name that was fetched.
+    pub asset: String,
+}
+
+/// The per-user device-binary cache (design §4: `<dir>/<content-hash>.<ext>`)
+/// — content-addressed, so a lockfile pin names the exact cached file and a
+/// pinned entry loads without touching the network.
+pub struct PluginCache {
+    dir: PathBuf,
+}
+
+impl PluginCache {
+    /// A cache rooted at `dir`.
+    pub fn new(dir: PathBuf) -> Self {
+        Self { dir }
+    }
+
+    /// The per-user default: `$PIPERINE_PLUGIN_CACHE`, else
+    /// `$XDG_CACHE_HOME/piperine/plugins`, else `~/.cache/piperine/plugins`.
+    pub fn default_dir() -> PathBuf {
+        if let Some(dir) = std::env::var_os("PIPERINE_PLUGIN_CACHE") {
+            return PathBuf::from(dir);
+        }
+        if let Some(xdg) = std::env::var_os("XDG_CACHE_HOME") {
+            return PathBuf::from(xdg).join("piperine").join("plugins");
+        }
+        if let Some(home) = std::env::var_os("HOME") {
+            return PathBuf::from(home).join(".cache").join("piperine").join("plugins");
+        }
+        std::env::temp_dir().join("piperine-plugins")
+    }
+
+    /// The cache file a content hash names for `triple`.
+    pub fn pinned_path(&self, content_hash: &str, triple: &str) -> PathBuf {
+        let hex = content_hash.strip_prefix("sha256:").unwrap_or(content_hash);
+        self.dir.join(format!("{hex}.{}", ReleaseRef::asset_extension(triple)))
+    }
+
+    /// `sha256:<hex>` of `bytes` — the same digest format as the plugin
+    /// host's `artifact_hash`.
+    fn hash_bytes(bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+        format!("sha256:{:x}", Sha256::digest(bytes))
+    }
+
+    /// Fetch `release`'s asset for `triple` into the cache. A `pinned`
+    /// hash short-circuits: the cached file it names loads with no
+    /// network at all (offline-after-first-fetch); a cached file whose
+    /// bytes no longer match the pin is corruption and fails loud.
+    /// Otherwise the release is listed, the triple's asset selected, and
+    /// the download hashed + written to the cache.
+    pub fn fetch(
+        &self,
+        client: &dyn ReleaseClient,
+        release: &ReleaseRef,
+        triple: &str,
+        pinned: Option<&str>,
+    ) -> Result<FetchedAsset, ReleaseError> {
+        if let Some(hash) = pinned {
+            let path = self.pinned_path(hash, triple);
+            if path.is_file() {
+                let bytes = std::fs::read(&path)?;
+                let actual = Self::hash_bytes(&bytes);
+                if actual != hash {
+                    return Err(ReleaseError::Fetch {
+                        release: release.coordinate().to_string(),
+                        reason: format!(
+                            "cached artifact {} is corrupt (expected {hash}, got {actual})",
+                            path.display()
+                        ),
+                    });
+                }
+                return Ok(FetchedAsset {
+                    path,
+                    content_hash: actual,
+                    triple: triple.to_string(),
+                    asset: release.asset_name(triple),
+                });
+            }
+        }
+        let assets = client.list_assets(release)?;
+        let asset = release.select_asset(&assets, triple)?;
+        let bytes = client.download_asset(release, &asset)?;
+        let content_hash = Self::hash_bytes(&bytes);
+        std::fs::create_dir_all(&self.dir)?;
+        let path = self.pinned_path(&content_hash, triple);
+        std::fs::write(&path, &bytes)?;
+        Ok(FetchedAsset { path, content_hash, triple: triple.to_string(), asset })
+    }
+}
+
+/// The real GitHub release client. Tests never construct it — they stub
+/// [`ReleaseClient`].
+pub struct GitHubClient;
+
+impl GitHubClient {
+    /// One GET as text, mapping any failure to a loud fetch error.
+    fn get_string(url: &str, release: &ReleaseRef) -> Result<String, ReleaseError> {
+        ureq::get(url)
+            .set("User-Agent", "piperine")
+            .set("Accept", "application/vnd.github+json")
+            .call()
+            .map_err(|e| ReleaseError::Fetch {
+                release: release.coordinate().to_string(),
+                reason: e.to_string(),
+            })?
+            .into_string()
+            .map_err(|e| ReleaseError::Fetch {
+                release: release.coordinate().to_string(),
+                reason: e.to_string(),
+            })
+    }
+}
+
+impl ReleaseClient for GitHubClient {
+    fn list_assets(&self, release: &ReleaseRef) -> Result<Vec<String>, ReleaseError> {
+        let body = Self::get_string(&release.api_url(), release)?;
+        let json: serde_json::Value =
+            serde_json::from_str(&body).map_err(|e| ReleaseError::Fetch {
+                release: release.coordinate().to_string(),
+                reason: format!("bad release payload: {e}"),
+            })?;
+        json.get("assets")
+            .and_then(|a| a.as_array())
+            .map(|assets| {
+                assets
+                    .iter()
+                    .filter_map(|a| a.get("name").and_then(|n| n.as_str()).map(str::to_string))
+                    .collect()
+            })
+            .ok_or_else(|| ReleaseError::Fetch {
+                release: release.coordinate().to_string(),
+                reason: "release payload carries no asset list".to_string(),
+            })
+    }
+
+    fn download_asset(&self, release: &ReleaseRef, asset: &str) -> Result<Vec<u8>, ReleaseError> {
+        let response = ureq::get(&release.download_url(asset))
+            .set("User-Agent", "piperine")
+            .call()
+            .map_err(|e| ReleaseError::Fetch {
+                release: release.coordinate().to_string(),
+                reason: e.to_string(),
+            })?;
+        let mut bytes = Vec::new();
+        let mut reader = response.into_reader();
+        let mut limited = std::io::Read::take(&mut reader, 1 << 30);
+        std::io::Read::read_to_end(&mut limited, &mut bytes)?;
+        Ok(bytes)
+    }
 }
 
 #[cfg(test)]

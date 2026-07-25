@@ -54,6 +54,12 @@ pub enum PluginError {
     #[diagnostic(code(P0012))]
     NoAssetForTriple { plugin: String, triple: String, release: String },
 
+    /// Plugin-interface v2 (PLG-18): the fetched asset's hash does not
+    /// match the manifest's `verify` hash — a hard fail, never a prompt.
+    #[error("plugin `{plugin}`: fetched asset for `{release}` does not match the manifest's `verify` hash")]
+    #[diagnostic(code(P0013))]
+    VerifyMismatch { plugin: String, release: String },
+
     #[error("plugin `{plugin}`: {message}")]
     #[diagnostic(code(P0099))]
     Other { plugin: String, message: String },

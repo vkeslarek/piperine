@@ -8,6 +8,8 @@ use piperine::SimHooks;
 use piperine_codegen::device::{DeviceProvider, PluginDeviceSpec};
 use piperine_lang::elab::registry::{AttrField, ElabContext};
 use piperine_lang::Design;
+use piperine_project::lockfile::PiperineLock;
+use piperine_project::release::{GitHubClient, PluginCache, ReleaseError, ReleaseRef};
 use piperine_project::resolver::Resolver;
 use piperine_project::PiperineToml;
 use piperine_solver::abi::Element;
@@ -18,9 +20,20 @@ use crate::contributions::Contributions;
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::Manifest;
 use crate::registry::{HookCall, HookPhase};
-use crate::trust::{artifact_hash, ensure_trusted, TrustMode};
+use crate::trust::{artifact_hash, ensure_release_trusted, ensure_trusted, TrustMode};
 use crate::view::{DesignStaging, SolveResultView};
 use crate::Plugin;
+
+/// Map a release-fetch failure onto the plugin error catalog — the
+/// unsupported-triple case keeps its own typed error (P0012, PLG-19).
+fn release_error(plugin: &str, e: ReleaseError) -> PluginError {
+    match e {
+        ReleaseError::NoAssetForTriple { triple, release } => {
+            PluginError::NoAssetForTriple { plugin: plugin.to_string(), triple, release }
+        }
+        other => PluginError::Other { plugin: plugin.to_string(), message: other.to_string() },
+    }
+}
 
 /// One loaded plugin: its manifest plus the (backend-owning) instance.
 struct LoadedPlugin {
@@ -143,14 +156,34 @@ impl PluginHost {
                 let artifact = match &device.path {
                     Some(rel) => plugin_root.join(rel),
                     None => {
-                        return Err(PluginError::Other {
+                        // Release distribution (plugin-interface v2,
+                        // PLG-16..18): resolve the triple-matched asset,
+                        // fetch + cache it, then verify/TOFU-pin
+                        // `(release-url, triple, content-hash)`.
+                        let coord = device.release.clone().unwrap_or_default();
+                        let release = ReleaseRef::parse(&coord).map_err(|e| PluginError::Other {
                             plugin: manifest.name.clone(),
-                            message: format!(
-                                "device release `{}`: release fetching (github release + triple \
-                                 + TOFU) lands with plugin-interface v2 Phase 4",
-                                device.release.clone().unwrap_or_default()
-                            ),
-                        });
+                            message: e.to_string(),
+                        })?;
+                        let triple = ReleaseRef::host_triple();
+                        let pinned = PiperineLock::load(&root.join("Piperine.lock"))
+                            .ok()
+                            .flatten()
+                            .and_then(|l| l.plugin_entry(&manifest.name).and_then(|e| e.content_hash.clone()));
+                        let cache = PluginCache::new(PluginCache::default_dir());
+                        let fetched = cache
+                            .fetch(&GitHubClient, &release, &triple, pinned.as_deref())
+                            .map_err(|e| release_error(&manifest.name, e))?;
+                        ensure_release_trusted(
+                            root,
+                            &manifest,
+                            &coord,
+                            &fetched.content_hash,
+                            &fetched.triple,
+                            device.verify.as_deref(),
+                            trust,
+                        )?;
+                        fetched.path
                     }
                 };
                 let hash = artifact_hash(&artifact)?;

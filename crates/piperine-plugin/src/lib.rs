@@ -46,7 +46,7 @@ pub use registry::{
     DeviceRegistration, HookCall, HookPhase, HookRegistration, Registry, ScriptRegistration,
 };
 pub use scripted::ScriptedHost;
-pub use trust::{artifact_hash, ensure_trusted as trust_check, TrustMode};
+pub use trust::{artifact_hash, ensure_release_trusted, ensure_trusted as trust_check, TrustMode};
 pub use view::{DesignStaging, SolveResultView};
 
 // Re-exported so plugin authors depend on one crate for the whole contract.
