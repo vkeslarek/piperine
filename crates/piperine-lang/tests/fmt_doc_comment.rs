@@ -89,6 +89,31 @@ fn doc_comment_above_pub_mod_stays_attached_and_pub_mod_stays_together() {
     );
 }
 
+/// Healing case: a file already has a blank line between a `///` doc block
+/// and its declaration (source-authored, or left over from a previous
+/// buggy formatter run) — fmt must COLLAPSE it, not just avoid adding a
+/// new one. Mirrors the real `examples/10_pwm_dimmer.phdl` repro.
+#[test]
+fn existing_blank_line_between_doc_and_decl_gets_collapsed() {
+    let src = "/// Doc do moc\n\nmod PwmSwitch(inout sw: Electrical, inout gnd: Electrical) { }\n";
+    let out = format(src);
+    assert!(
+        out.contains("/// Doc do moc\nmod PwmSwitch"),
+        "a pre-existing blank line between /// and its decl must be collapsed, got:\n{out}"
+    );
+}
+
+/// Same healing case for a file-level doc block above `discipline`.
+#[test]
+fn existing_blank_line_between_doc_and_discipline_gets_collapsed() {
+    let src = "/// A file header.\n\ndiscipline Electrical { potential v: Real; flow i: Real; }\n";
+    let out = format(src);
+    assert!(
+        out.contains("/// A file header.\ndiscipline Electrical"),
+        "a pre-existing blank line between /// and discipline must be collapsed, got:\n{out}"
+    );
+}
+
 /// Two consecutive top-level declarations, the second `pub`, still get
 /// their normal blank-line separation — the `pub`-continuation exemption
 /// must not suppress the ordinary between-declarations blank line.

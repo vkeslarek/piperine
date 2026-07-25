@@ -24,25 +24,34 @@ impl FormatRule for BlockRule {
                             return;
                         }
 
-                        let mut newline_count = 0;
-                        for c in output.chars().rev() {
-                            if c == '\n' {
-                                newline_count += 1;
-                            } else if c != ' ' && c != '\t' {
-                                break;
-                            }
-                        }
                         // A `///` doc comment directly above this declaration
                         // must stay directly above it — the lexer drops a
-                        // pending doc run on a blank line, so forcing one
-                        // here would silently strip the doc from every
-                        // declaration a formatter run touches.
-                        let preceded_by_doc_comment = output
-                            .trim_end_matches(['\n', ' ', '\t'])
+                        // pending doc run on a blank line. Detect it BEFORE
+                        // touching `output`: strip every trailing newline/
+                        // space/tab (however many blank lines already
+                        // accumulated — source-authored or left over from a
+                        // previous, buggy formatter run) and check whether
+                        // the line left behind is a `///` line.
+                        let trimmed = output.trim_end_matches(['\n', ' ', '\t']);
+                        let preceded_by_doc_comment = trimmed
                             .rsplit('\n')
                             .next()
                             .is_some_and(|line| line.trim_start().starts_with("///"));
-                        if !preceded_by_doc_comment {
+                        if preceded_by_doc_comment {
+                            // Collapse back to exactly one newline — heals
+                            // an already-blank-separated doc comment, not
+                            // just avoids introducing a new one.
+                            output.truncate(trimmed.len());
+                            state.push_newline(output);
+                        } else {
+                            let mut newline_count = 0;
+                            for c in output.chars().rev() {
+                                if c == '\n' {
+                                    newline_count += 1;
+                                } else if c != ' ' && c != '\t' {
+                                    break;
+                                }
+                            }
                             while newline_count < 2 {
                                 state.push_newline(output);
                                 newline_count += 1;
