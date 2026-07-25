@@ -60,3 +60,44 @@ fn plain_comment_still_gets_blank_line_before_mod() {
         "a plain `//` comment should still get the usual blank-line separation, got:\n{out}"
     );
 }
+
+/// `pub mod` must stay on one line — `pub` is not a fresh item boundary
+/// when `mod` immediately follows it on the same line, so `mod` must not
+/// force a blank line between them (a pre-existing bug, independent of
+/// doc comments: the original blank-line rule didn't know `pub` already
+/// started this same declaration).
+#[test]
+fn pub_mod_stays_on_one_line() {
+    let src = "pub mod Resistor(inout p: Electrical, inout n: Electrical) { }\n";
+    let out = format(src);
+    assert!(
+        out.contains("pub mod Resistor"),
+        "`pub` and `mod` must stay on the same line, got:\n{out}"
+    );
+}
+
+/// A `///` doc comment above a `pub mod` must stay attached, and `pub mod`
+/// must stay on one line — both fixes composed together (the exact
+/// real-world case that surfaced the `pub` gap).
+#[test]
+fn doc_comment_above_pub_mod_stays_attached_and_pub_mod_stays_together() {
+    let src = "/// A resistor.\npub mod Resistor(inout p: Electrical, inout n: Electrical) { }\n";
+    let out = format(src);
+    assert!(
+        out.contains("/// A resistor.\npub mod Resistor"),
+        "doc must stay attached AND `pub mod` must stay together, got:\n{out}"
+    );
+}
+
+/// Two consecutive top-level declarations, the second `pub`, still get
+/// their normal blank-line separation — the `pub`-continuation exemption
+/// must not suppress the ordinary between-declarations blank line.
+#[test]
+fn blank_line_between_declarations_unaffected_by_pub_fix() {
+    let src = "mod A() { }\npub mod B() { }\n";
+    let out = format(src);
+    assert!(
+        out.contains("mod A() { }\n\npub mod B"),
+        "normal blank-line separation between declarations must be unaffected, got:\n{out}"
+    );
+}

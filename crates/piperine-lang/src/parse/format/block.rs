@@ -7,8 +7,23 @@ impl FormatRule for BlockRule {
     fn before_token(&mut self, t: &Lexed, _next: Option<&Lexed>, state: &mut FormatState, output: &mut String) {
         match &t.tok {
             Tok::Ident(s) => {
-                if matches!(s.as_str(), "mod" | "fn" | "discipline" | "bundle" | "enum" | "capability" | "impl" | "const" | "use" | "analog" | "digital")
+                if matches!(s.as_str(), "pub" | "mod" | "fn" | "discipline" | "bundle" | "enum" | "capability" | "impl" | "const" | "use" | "analog" | "digital")
                     && state.brace_depth <= 1 && !output.is_empty() {
+                        // A pre-existing declaration keyword (`mod`, `fn`, …)
+                        // that directly continues a `pub` on the SAME line
+                        // (`pub mod Foo`) is not a fresh item boundary — `pub`
+                        // already is (or would be) the trigger for this same
+                        // declaration. Forcing a blank line here would split
+                        // `pub` from its keyword onto separate lines.
+                        let continues_pub_on_this_line = output
+                            .trim_end_matches([' ', '\t'])
+                            .rsplit('\n')
+                            .next()
+                            .is_some_and(|line| line.trim() == "pub");
+                        if continues_pub_on_this_line {
+                            return;
+                        }
+
                         let mut newline_count = 0;
                         for c in output.chars().rev() {
                             if c == '\n' {
