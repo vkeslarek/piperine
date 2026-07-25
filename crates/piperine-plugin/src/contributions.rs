@@ -2,11 +2,14 @@
 //! a passive [`Contributions`] snapshot through a [`Registrar`]. No plugin
 //! code runs during elaboration or solve — the host consults the snapshot
 //! (Plugin plan D2).
+//!
+//! Plugin-interface v2 (PLG-08): plugins contribute **no attribute
+//! schemas** — `@device`/`@port` (stdlib, `headers/device_port.phdl`) are
+//! the only plugin-facing schema names.
 
 use std::collections::HashMap;
 
 use piperine_codegen::device::PluginDeviceSpec;
-use piperine_lang::elab::registry::AttrField;
 use piperine_solver::abi::Element;
 
 use crate::capability::HostCtx;
@@ -40,8 +43,6 @@ pub trait ScriptHandler: Send + Sync {
 /// contribute. Owned by the host; queried at pipeline boundaries.
 #[derive(Default)]
 pub struct Contributions {
-    /// schema name → (owning plugin, declared fields).
-    pub schemas: HashMap<String, (String, Vec<AttrField>)>,
     /// device type id → (owning plugin, factory).
     pub devices: HashMap<String, (String, Box<dyn DeviceFactory>)>,
     /// script (CLI subcommand) name → (owning plugin, handler).
@@ -65,21 +66,6 @@ impl<'a> Registrar<'a> {
         errors: &'a mut Vec<PluginError>,
     ) -> Self {
         Self { plugin: plugin.to_string(), contributions, errors }
-    }
-
-    /// Contribute an attribute schema (SPEC Part VI §11). The name joins the
-    /// same registry `@attribute(schema = …)` bundles use; a collision with
-    /// another plugin (or the builtin `device`/`port` schemas) is P0003.
-    pub fn attr_schema(&mut self, name: &str, fields: Vec<AttrField>) {
-        if let Some((existing, _)) = self.contributions.schemas.get(name) {
-            self.errors.push(PluginError::SchemaConflict {
-                schema: name.to_string(),
-                existing: existing.clone(),
-                plugin: self.plugin.clone(),
-            });
-            return;
-        }
-        self.contributions.schemas.insert(name.to_string(), (self.plugin.clone(), fields));
     }
 
     /// Contribute a CLI subcommand (SPEC Part VI §10): `piperine <name> …`

@@ -25,14 +25,6 @@ use crate::Plugin;
 struct LoadedPlugin {
     manifest: Manifest,
     instance: PluginInstance,
-    /// The plugin's published `extern.phdl` stub (declared-language-surface
-    /// T24, DLS-22 groundwork), parsed once at load time — `None` for
-    /// `from_plugins`-loaded (in-process/test) plugins, which have no
-    /// filesystem location a stub could live at, and for `load_for_project`
-    /// plugins that simply don't publish one (T24 imposes no requirement
-    /// yet; T25 is where "no stub" becomes load-time-fatal for a plugin
-    /// that also contributes a schema).
-    extern_stub: Option<Vec<piperine_lang::parse::ast::Item>>,
 }
 
 impl LoadedPlugin {
@@ -91,10 +83,7 @@ impl PluginHost {
         let mut host = Self::empty();
         for plugin in plugins {
             let manifest = plugin.manifest().clone();
-            // No filesystem location exists for an in-process plugin, so
-            // there is nowhere an `extern.phdl` stub could live — always
-            // `None` (declared-language-surface T24).
-            host.register_one(&manifest.name.clone(), PluginInstance::InProcess(plugin), manifest, None)?;
+            host.register_one(&manifest.name.clone(), PluginInstance::InProcess(plugin), manifest)?;
         }
         host.sort();
         Ok(host)
@@ -163,49 +152,11 @@ impl PluginHost {
                 .unwrap_or_else(|| plugin_root.display().to_string());
             ensure_trusted(root, &manifest, &source, &hash, trust)?;
             let instance = PluginInstance::Native(native::load(&manifest.name, &artifact)?);
-            let extern_stub = Self::load_extern_stub(&manifest.name, plugin_root)?;
             let plugin_name = manifest.name.clone();
-            let has_stub = extern_stub.is_some();
-            host.register_one(&plugin_name, instance, manifest, extern_stub)?;
-            // T25 (DLS-22): a plugin that contributes an attribute schema
-            // but publishes no stub fails loud here — never silently kept
-            // reachable through the old dynamic-registration path (spec
-            // Edge Cases). `from_plugins` (in-process/test plugins) is
-            // deliberately exempt — see `LoadedPlugin::extern_stub`'s doc.
-            if !has_stub {
-                if let Some((schema, _)) =
-                    host.contributions.schemas.iter().find(|(_, (owner, _))| owner == &plugin_name)
-                {
-                    return Err(PluginError::MissingExternStub {
-                        plugin: plugin_name.clone(),
-                        schema: schema.clone(),
-                        expected_path: plugin_root.join("extern.phdl").display().to_string(),
-                    });
-                }
-            }
+            host.register_one(&plugin_name, instance, manifest)?;
         }
         host.sort();
         Ok(host)
-    }
-
-    /// Parse `extern.phdl` alongside a loaded plugin's manifest, if it
-    /// publishes one (declared-language-surface T24, DLS-22 groundwork).
-    /// `Ok(None)` when no stub file exists — T24 imposes no requirement
-    /// that one does; a malformed stub (a real authoring bug, not a
-    /// "plugin didn't publish one" case) fails loud naming the plugin.
-    fn load_extern_stub(
-        plugin_name: &str,
-        plugin_root: &Path,
-    ) -> PluginResult<Option<Vec<piperine_lang::parse::ast::Item>>> {
-        let stub_path = plugin_root.join("extern.phdl");
-        let Ok(text) = std::fs::read_to_string(&stub_path) else {
-            return Ok(None);
-        };
-        let source = piperine_lang::parse::parse_str(&text).map_err(|e| PluginError::Other {
-            plugin: plugin_name.to_string(),
-            message: format!("malformed extern stub `{}`: {e}", stub_path.display()),
-        })?;
-        Ok(Some(source.items))
     }
 
     fn sort(&mut self) {
@@ -219,7 +170,6 @@ impl PluginHost {
         name: &str,
         instance: PluginInstance,
         manifest: Manifest,
-        extern_stub: Option<Vec<piperine_lang::parse::ast::Item>>,
     ) -> PluginResult<()> {
         let plugin: &dyn Plugin = match &instance {
             PluginInstance::Native(n) => n.plugin.as_ref(),
@@ -230,7 +180,7 @@ impl PluginHost {
         if let Some(err) = errors.into_iter().next() {
             return Err(err);
         }
-        self.plugins.push(LoadedPlugin { manifest, instance, extern_stub });
+        self.plugins.push(LoadedPlugin { manifest, instance });
         Ok(())
     }
 
@@ -274,7 +224,7 @@ impl PluginHost {
         self.fire("after_elaborate", |p, cx| p.after_elaborate(cx, design))
     }
 
-    /// The plugin system's own `piperine plugin list` view: name, abi,
+    /// The plugin system's own `piperine plugin list` view: name, shape,
     /// and contribution counts.
     pub fn describe(&self) -> Vec<String> {
         self.plugins
@@ -282,7 +232,6 @@ impl PluginHost {
             .map(|l| {
                 let name = &l.manifest.name;
                 let devices = self.contributions.devices.values().filter(|(o, _)| o == name).count();
-                let schemas = self.contributions.schemas.values().filter(|(o, _)| o == name).count();
                 let scripts: Vec<&str> = self
                     .contributions
                     .scripts
@@ -291,7 +240,7 @@ impl PluginHost {
                     .map(|(n, _)| n.as_str())
                     .collect();
                 format!(
-                    "{name} ({}): {devices} device(s), {schemas} schema(s), scripts: [{}]",
+                    "{name} ({}): {devices} device(s), scripts: [{}]",
                     l.manifest.shape().as_str(),
                     scripts.join(", ")
                 )
@@ -313,8 +262,10 @@ impl PluginHost {
     }
 
     /// Seed the elaboration registries (Plugin plan D2): the plugin
-    /// system's own `@device`/`@port` schemas, plus every plugin-declared
-    /// schema. Called by whoever drives elaboration (CLI, hosts, tests)
+    /// system's own `@device`/`@port` schemas — the ONLY plugin-facing
+    /// schema names (plugin-interface v2, PLG-08/09: plugins contribute
+    /// no schemas; the per-plugin `extern.phdl` stub mechanism is
+    /// deleted). Called by whoever drives elaboration (CLI, hosts, tests)
     /// through `parse_and_elaborate_seeded`.
     ///
     /// `@device`/`@port`'s shape (declared-language-surface T23, DLS-21)
@@ -337,32 +288,11 @@ impl PluginHost {
         )) {
             Self::register_attribute_items(ctx, &source.items);
         }
-        // Each loaded plugin's own published `extern.phdl` stub (T24/T25,
-        // DLS-22) — auto-imported, no explicit `use` required (mirrors
-        // `headers/spice/`'s availability). Ctrl+click on a stub-declared
-        // `@name(...)` resolves to the stub's own `decl_span`, exactly like
-        // any other `extern attribute`. This is now the **only** path a
-        // plugin-contributed schema is reachable through: the old dynamic
-        // `register_declared(name, fields_from_registrar, None)` fallback
-        // is gone (T25) — `load_for_project` already refuses to load a
-        // plugin that contributes a schema (`Registrar::attr_schema`) with
-        // no published stub (`PluginError::MissingExternStub`), so by the
-        // time a `PluginHost` exists, every `contributions.schemas` entry
-        // either came from a `from_plugins`-loaded (in-process/test)
-        // plugin that never elaborates real PHDL against it, or has a
-        // stub already imported here.
-        for loaded in &self.plugins {
-            if let Some(items) = &loaded.extern_stub {
-                Self::register_attribute_items(ctx, items);
-            }
-        }
     }
 
-    /// Register every `extern attribute` item's schema into `ctx.schemas` —
-    /// shared by `@device`/`@port`'s own header and each plugin's
-    /// `extern.phdl` stub (T23/T24). Non-attribute items are ignored (a
-    /// stub could in principle carry other `extern` kinds; only attribute
-    /// schemas are this feature's concern here).
+    /// Register every `extern attribute` item's schema into `ctx.schemas`
+    /// (T23) — used for `@device`/`@port`'s own header. Non-attribute
+    /// items are ignored.
     fn register_attribute_items(ctx: &mut ElabContext, items: &[piperine_lang::parse::ast::Item]) {
         for item in items {
             if let piperine_lang::parse::ast::Item::ExternDecl(

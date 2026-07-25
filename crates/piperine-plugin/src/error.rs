@@ -41,15 +41,6 @@ pub enum PluginError {
     #[diagnostic(code(P0009))]
     UnknownScript(String),
 
-    /// Declared-language-surface T25 (DLS-22): a plugin contributes an
-    /// attribute schema (`Registrar::attr_schema`) but publishes no
-    /// `extern.phdl` stub — the schema would otherwise only be reachable
-    /// through the old dynamic-registration path, which is no longer a
-    /// silent fallback (spec Edge Cases).
-    #[error("plugin `{plugin}` contributes attribute schema `{schema}` but publishes no `extern.phdl` stub (expected at `{expected_path}`) — every plugin-contributed schema needs a textual declaration")]
-    #[diagnostic(code(P0010))]
-    MissingExternStub { plugin: String, schema: String, expected_path: String },
-
     /// Plugin-interface v2 (PLG-02): a manifest declaring a removed
     /// backend (`abi = "wasm"|"process"`) gets a targeted removal error —
     /// never a generic unknown-field/unknown-value one.

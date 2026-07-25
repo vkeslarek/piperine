@@ -27,10 +27,3 @@ tempfile.workspace = true
 [[example]]
 name = "fixture_plugin"
 crate-type = ["cdylib", "rlib"]
-
-# T25 (DLS-22) fixture: a plugin contributing its own custom attribute
-# schema (`widget_meta`), separate from `fixture_plugin` so its stub
-# requirement doesn't affect the stub-less fixture's own tests.
-[[example]]
-name = "fixture_schema_plugin"
-crate-type = ["cdylib", "rlib"]

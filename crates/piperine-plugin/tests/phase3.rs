@@ -248,25 +248,39 @@ fn read_only_hooks_observe_the_pipeline() {
 }
 
 /// Registration-time collision surface: two plugins contributing the same
-/// schema name is P0003 (kept from the contribution registry's contract).
+/// device `type` id is a loud P0003 conflict (spec Edge Cases — unchanged
+/// SchemaConflict-class behavior).
 #[test]
-fn schema_collisions_are_p0003() {
-    struct SchemaPlugin {
+fn device_type_collisions_are_p0003() {
+    struct StubFactory;
+    impl piperine_plugin::DeviceFactory for StubFactory {
+        fn kind(&self) -> piperine_plugin::DeviceKind {
+            piperine_plugin::DeviceKind::Analog
+        }
+        fn instantiate(
+            &self,
+            _spec: &piperine_plugin::PluginDeviceSpec,
+        ) -> Result<Box<dyn piperine_solver::abi::Element>, String> {
+            Err("stub factory: never instantiated".into())
+        }
+    }
+
+    struct DupDevicePlugin {
         manifest: Manifest,
     }
-    impl Plugin for SchemaPlugin {
+    impl Plugin for DupDevicePlugin {
         fn manifest(&self) -> &Manifest {
             &self.manifest
         }
         fn register(&self, r: &mut Registrar) {
-            r.attr_schema("dup", vec![]);
+            r.device("Dup::Device", Box::new(StubFactory));
         }
     }
     let err = PluginHost::from_plugins(vec![
-        Box::new(SchemaPlugin { manifest: manifest("a") }),
-        Box::new(SchemaPlugin { manifest: manifest("b") }),
+        Box::new(DupDevicePlugin { manifest: manifest("a") }),
+        Box::new(DupDevicePlugin { manifest: manifest("b") }),
     ])
     .map(|_| ())
-    .expect_err("duplicate schema must fail");
+    .expect_err("duplicate device type id must fail");
     assert!(matches!(err, PluginError::SchemaConflict { .. }), "{err}");
 }
