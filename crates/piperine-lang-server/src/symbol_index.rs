@@ -35,6 +35,8 @@ pub struct Resolution {
     pub name: String,
     pub decl_span: Option<SourceSpan>,
     pub type_info: Option<String>,
+    /// The declaration's `///` doc comment, if any (LSP-07/08).
+    pub doc: Option<String>,
 }
 
 pub fn resolve_at(
@@ -59,6 +61,7 @@ pub fn resolve_at(
                 name: m.name.clone(),
                 decl_span: m.span,
                 type_info: None,
+                doc: m.doc.clone(),
             });
         }
         for p in &m.ports {
@@ -68,6 +71,7 @@ pub fn resolve_at(
                     name: p.name.clone(),
                     decl_span: p.span,
                     type_info: Some(format!("{:?}", p.direction)), // Basic type info
+                    doc: p.doc.clone(),
                 });
             }
         }
@@ -78,6 +82,7 @@ pub fn resolve_at(
                     name: p.name.clone(),
                     decl_span: p.span,
                     type_info: Some(format!("{:?}", p.ty)),
+                    doc: p.doc.clone(),
                 });
             }
         }
@@ -88,6 +93,7 @@ pub fn resolve_at(
                     name: w.name.clone(),
                     decl_span: w.span,
                     type_info: Some(format!("{:?}", w.ty)),
+                    doc: w.doc.clone(),
                 });
             }
         }
@@ -98,6 +104,7 @@ pub fn resolve_at(
                     name: v.name.clone(),
                     decl_span: v.span,
                     type_info: Some(format!("{:?}", v.ty)),
+                    doc: v.doc.clone(),
                 });
             }
         }
@@ -108,6 +115,7 @@ pub fn resolve_at(
                     name: i.label.clone().unwrap_or_else(|| i.module.clone()),
                     decl_span: i.span,
                     type_info: Some(format!("instance of {}", i.module)),
+                    doc: i.doc.clone(),
                 });
             }
         }
@@ -118,6 +126,7 @@ pub fn resolve_at(
                     name: b.name.clone(),
                     decl_span: b.span,
                     type_info: Some(format!("{:?}", b.kind)),
+                    doc: b.doc.clone(),
                 });
             }
         }
@@ -130,6 +139,7 @@ pub fn resolve_at(
                 name: name.clone(),
                 decl_span: e.span,
                 type_info: None,
+                doc: None,
             });
         }
     }
@@ -141,6 +151,7 @@ pub fn resolve_at(
                 name: name.clone(),
                 decl_span: b.span,
                 type_info: None,
+                doc: None,
             });
         }
     }
@@ -152,6 +163,7 @@ pub fn resolve_at(
                 name: name.clone(),
                 decl_span: d.span,
                 type_info: None,
+                doc: None,
             });
         }
     }
@@ -163,6 +175,7 @@ pub fn resolve_at(
                 name: name.clone(),
                 decl_span: c.span,
                 type_info: None,
+                doc: None,
             });
         }
     }
@@ -175,6 +188,7 @@ pub fn resolve_at(
                     name: format!("{}::{}", i.ty, m.name),
                     decl_span: m.span,
                     type_info: Some(format!("impl method for {}", i.ty)),
+                    doc: None,
                 });
             }
         }
@@ -196,6 +210,7 @@ pub fn resolve_at(
             name: word,
             decl_span: Some(decl_span),
             type_info: None,
+            doc: None,
         });
     }
 
@@ -205,6 +220,7 @@ pub fn resolve_at(
             name: word,
             decl_span: *decl_span,
             type_info: None,
+            doc: None,
         });
     }
 
@@ -215,6 +231,7 @@ pub fn resolve_at(
             name: word,
             decl_span: Some(decl_span),
             type_info: None,
+            doc: None,
         });
     }
 
@@ -224,6 +241,7 @@ pub fn resolve_at(
             name: word,
             decl_span: Some(decl_span),
             type_info: None,
+            doc: None,
         });
     }
 
@@ -234,6 +252,7 @@ pub fn resolve_at(
             name: word,
             decl_span: Some(decl_span),
             type_info: None,
+            doc: None,
         });
     }
 

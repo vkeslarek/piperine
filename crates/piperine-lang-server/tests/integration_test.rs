@@ -289,4 +289,109 @@ fn non_identifier_position_returns_no_location() {
     assert!(resolution.is_none(), "a numeric literal is not a resolvable symbol");
 }
 
+// ── T4: hover renders `doc` as Markdown (LSP-08/09) ─────────────────────────
+
+/// Drives a real `Connection::memory()` round trip (init-free, matching the
+/// existing `test_e2e_lsp_server_memory_connection` pattern): open `source`,
+/// wait for the server's post-open diagnostics, request hover at
+/// `(line, character)`, and return the response's Markdown contents.
+fn lsp_hover_markdown(source: &str, line: u32, character: u32) -> String {
+    let (client_conn, server_conn) = Connection::memory();
+
+    std::thread::spawn(move || {
+        let mut server = piperine_lang_server::server::LanguageServer::new(server_conn);
+        server.run().unwrap();
+    });
+
+    let uri: Uri = "file:///hover_doc_test.phdl".parse().unwrap();
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "phdl".to_string(),
+            version: 1,
+            text: source.to_string(),
+        },
+    };
+    client_conn.sender.send(Message::Notification(Notification {
+        method: lsp_types::notification::DidOpenTextDocument::METHOD.to_string(),
+        params: serde_json::to_value(did_open_params).unwrap(),
+    })).unwrap();
+
+    for _ in 0..5 {
+        if let Ok(Message::Notification(not)) = client_conn.receiver.recv_timeout(Duration::from_millis(500))
+            && not.method == lsp_types::notification::PublishDiagnostics::METHOD {
+                break;
+            }
+    }
+
+    let hover_params = HoverParams {
+        text_document_position_params: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position { line, character },
+        },
+        work_done_progress_params: Default::default(),
+    };
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(1),
+        method: lsp_types::request::HoverRequest::METHOD.to_string(),
+        params: serde_json::to_value(hover_params).unwrap(),
+    })).unwrap();
+
+    let msg = recv_timeout(&client_conn.receiver, 1000);
+    let contents = if let Message::Response(resp) = msg {
+        assert_eq!(resp.id, RequestId::from(1));
+        let val = resp.result.expect("hover response must have a result");
+        let hover: lsp_types::Hover = serde_json::from_value(val).expect("hover result must deserialize");
+        match hover.contents {
+            lsp_types::HoverContents::Markup(m) => m.value,
+            _ => panic!("expected markup contents"),
+        }
+    } else {
+        panic!("expected a hover response");
+    };
+
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(99),
+        method: "shutdown".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+    recv_timeout(&client_conn.receiver, 500);
+    client_conn.sender.send(Message::Notification(Notification {
+        method: "exit".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+
+    contents
+}
+
+/// LSP-08: hovering a `///`-documented declaration prepends the doc text as
+/// Markdown above the `**kind** \`name\`` line.
+#[test]
+fn hover_on_documented_module_renders_doc_as_markdown() {
+    let source = "discipline Electrical { potential v: Real; flow i: Real; }\n/// A two-terminal resistor.\nmod R (inout p: Electrical, inout n: Electrical) {}";
+    // line 2 is `mod R (...)`; character 4 lands on `R`.
+    let contents = lsp_hover_markdown(source, 2, 4);
+    assert!(
+        contents.contains("A two-terminal resistor."),
+        "hover contents must include the doc text, got: {contents}"
+    );
+    assert!(contents.contains("**module** `R`"), "hover must still render the kind/name line, got: {contents}");
+    // The doc text must precede the kind line (LSP-08: "prepend ... above").
+    let doc_pos = contents.find("A two-terminal resistor.").unwrap();
+    let kind_pos = contents.find("**module** `R`").unwrap();
+    assert!(doc_pos < kind_pos, "doc text must be prepended above the kind/type line");
+}
+
+/// LSP-09: a declaration with no `///` run renders exactly as before —
+/// hover is unchanged, no stray doc section appears.
+#[test]
+fn hover_on_undocumented_module_is_unchanged() {
+    let source = "discipline Electrical { potential v: Real; flow i: Real; }\nmod R (inout p: Electrical, inout n: Electrical) {}";
+    let contents = lsp_hover_markdown(source, 1, 4);
+    assert!(contents.contains("**module** `R`"), "hover must render the kind/name line, got: {contents}");
+    // No regression: the contents are exactly the kind line (no leading doc
+    // paragraph / blank-line-separated section before it).
+    assert_eq!(contents, "**module** `R`");
+}
+
 

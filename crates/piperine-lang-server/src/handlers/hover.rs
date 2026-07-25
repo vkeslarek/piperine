@@ -36,7 +36,12 @@ fn resolve_hover(doc: &DocumentState, position: lsp_types::Position) -> Option<H
         SymbolKind::Operator => "operator",
         SymbolKind::AttrSchema => "attribute schema",
     };
-    let mut info = format!("**{kind}** `{}`", resolution.name);
+    let mut info = String::new();
+    if let Some(doc) = &resolution.doc {
+        info.push_str(doc);
+        info.push_str("\n\n");
+    }
+    info.push_str(&format!("**{kind}** `{}`", resolution.name));
     if let Some(ty) = &resolution.type_info {
         info.push_str("\n\n");
         info.push_str(ty);
