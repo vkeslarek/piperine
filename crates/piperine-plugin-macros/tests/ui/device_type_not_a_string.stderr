@@ -1,0 +1,5 @@
+error: expected string literal
+ --> tests/ui/device_type_not_a_string.rs:3:34
+  |
+3 | #[piperine_plugin_macros::device(123)]
+  |                                  ^^^

@@ -32,6 +32,18 @@ pub trait DeviceFactory: Send + Sync {
     fn instantiate(&self, spec: &PluginDeviceSpec) -> Result<Box<dyn Element>, String>;
 }
 
+/// The declaration target of `#[pip::device("Type")]` (plugin-interface v2,
+/// PLG-05): the annotated `Element` type implements this to build one solver
+/// element from a `@device` instance's resolved ports/params. The macro
+/// generates the [`DeviceFactory`] adapter and the registry submission —
+/// declaration and registration are one attribute, never an imperative call.
+pub trait PluginDevice: Element + Sized + 'static {
+    /// Analog/digital/mixed — surfaced through the generated factory.
+    const KIND: DeviceKind;
+    /// Build one solver element from the `@device` instance's spec.
+    fn from_spec(spec: &PluginDeviceSpec) -> Result<Self, String>;
+}
+
 /// A plugin-contributed CLI subcommand (SPEC Part VI §10).
 pub trait ScriptHandler: Send + Sync {
     /// Run the script with its CLI arguments; the return value becomes the

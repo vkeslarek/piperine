@@ -23,15 +23,19 @@ mod contributions;
 mod error;
 mod host;
 mod manifest;
+mod registry;
 mod trust;
 mod view;
 
 pub use backend::native::ABI_VERSION;
 pub use capability::HostCtx;
-pub use contributions::{Contributions, DeviceFactory, DeviceKind, Registrar, ScriptHandler};
+pub use contributions::{
+    Contributions, DeviceFactory, DeviceKind, PluginDevice, Registrar, ScriptHandler,
+};
 pub use error::{PluginError, PluginResult};
 pub use host::PluginHost;
 pub use manifest::{DeviceSource, Manifest, Permissions, PluginShape};
+pub use registry::{DeviceRegistration, Registry};
 pub use trust::{artifact_hash, ensure_trusted as trust_check, TrustMode};
 pub use view::{DesignStaging, SolveResultView};
 
@@ -39,6 +43,14 @@ pub use view::{DesignStaging, SolveResultView};
 pub use piperine_codegen::device::{PluginDeviceSpec, PluginPort, PortBinding};
 pub use piperine_lang::elab::registry::ElabContext;
 pub use piperine_lang::pom::Design;
+pub use piperine_solver::abi::Element;
+
+/// Implementation details the `#[pip::…]` macro expansions reference. Not
+/// public API — no stability guarantee across versions.
+#[doc(hidden)]
+pub mod __private {
+    pub use inventory::submit;
+}
 
 /// The plugin contract (SPEC Part VI §6/§8). Every contribution and hook is
 /// optional; hooks default to no-ops. Read-only hooks receive **the real

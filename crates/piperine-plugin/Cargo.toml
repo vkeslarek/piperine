@@ -16,6 +16,7 @@ serde.workspace = true
 toml = "1.1.2"
 sha2 = "0.10"
 libloading.workspace = true
+inventory.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

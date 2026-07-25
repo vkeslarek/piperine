@@ -1,0 +1,19 @@
+[package]
+name = "piperine-plugin-macros"
+version.workspace = true
+edition.workspace = true
+description = "The `#[pip::…]` declaration-coupled plugin surface: device/script/hook attribute macros"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+
+[dev-dependencies]
+piperine-plugin = { path = "../piperine-plugin" }
+piperine-lang = { path = "../piperine-lang" }
+piperine-solver = { path = "../piperine-solver" }
+trybuild = "1"
