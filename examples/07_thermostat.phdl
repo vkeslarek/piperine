@@ -4,16 +4,16 @@
 // delayed-start transient (`TranConfig.start`) to skip the warm-up and
 // asserts the steady limit cycle stays inside the hysteresis band.
 
-discipline Electrical {
-    potential v : Real;
-    flow i : Real;
-}
+use piperine::disciplines;
 
 // Heat capacity + leak to ambient: 1 V ≡ 1 °C.
+
 mod ThermalPlant(inout temp : Electrical, inout gnd : Electrical) {
     param tamb : Real = 20.0;
-    param rth : Real = 10.0;      // °C per W
-    param cth : Real = 1e-3;      // τ = rth·cth = 10 ms
+    param rth : Real = 10.0;
+    // °C per W
+    param cth : Real = 1e-3;
+    // τ = rth·cth = 10 ms
 }
 
 analog ThermalPlant {
@@ -23,10 +23,12 @@ analog ThermalPlant {
 
 // The controller injects heat while `heater` is on; the events implement
 // the hysteresis comparator.
+
 mod Controller(inout temp : Electrical, inout gnd : Electrical) {
     param t_high : Real = 25.0;
     param t_low : Real = 22.0;
-    param power : Real = 1.0;     // W → +10 °C above ambient when always-on
+    param power : Real = 1.0;
+    // W → +10 °C above ambient when always-on
     var heater : Real = 1.0;
 }
 
@@ -43,7 +45,7 @@ analog Controller {
 mod Thermostat() {
     wire gnd : Electrical;
     wire temp : Electrical;
-    plant : ThermalPlant(.temp = temp, .gnd = gnd);
-    ctrl  : Controller(.temp = temp, .gnd = gnd);
+    plant : ThermalPlant(.temp = temp,.gnd = gnd);
+    ctrl : Controller(.temp = temp,.gnd = gnd);
 }
 

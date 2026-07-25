@@ -2,10 +2,7 @@
 // resistors in parallel (250 Ω equivalent) as the bottom leg of a divider.
 // v(mid) = 5 · 250/(1000+250) = 1 V, string current 4 mA split evenly.
 
-discipline Electrical {
-    potential v : Real;
-    flow i : Real;
-}
+use piperine::disciplines;
 
 mod VoltageSource(inout p : Electrical, inout n : Electrical) {
     param voltage : Real = 5.0;
@@ -27,10 +24,10 @@ mod ParallelBank() {
     wire gnd : Electrical;
     wire top : Electrical;
     wire mid : Electrical;
-    src   : VoltageSource(.p = top, .n = gnd);
-    r_top : Resistor(.p = top, .n = mid);
+    src : VoltageSource(.p = top,.n = gnd);
+    r_top : Resistor(.p = top,.n = mid);
     for i in 0 .. 4 {
-        bank[i] : Resistor(.p = mid, .n = gnd);
+        bank[i] : Resistor(.p = mid,.n = gnd);
     }
 }
 

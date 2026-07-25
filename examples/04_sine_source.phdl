@@ -3,12 +3,10 @@
 // period, RMS = A/√2, zero mean, first rising zero-crossing at one full
 // period — and `$display`s the sampled table plus the DC operating point.
 
-discipline Electrical {
-    potential v : Real;
-    flow i : Real;
-}
+use piperine::disciplines;
 
 // v(t) = A·sin(2π·f·t)
+
 mod SineSource(inout p : Electrical, inout n : Electrical) {
     param amplitude : Real = 2.0;
     param freq : Real = 1e3;
@@ -30,8 +28,14 @@ mod SineDemo() {
     wire gnd : Electrical;
     wire out : Electrical;
     wire mid : Electrical;
-    src    : SineSource(.p = out, .n = gnd) { .amplitude = 2.0, .freq = 1e3 };
-    r_top  : Resistor(.p = out, .n = mid) { .r = 1e3 };
-    r_load : Resistor(.p = mid, .n = gnd) { .r = 1e3 };
+    src : SineSource(.p = out,.n = gnd) {
+        .amplitude = 2.0,.freq = 1e3
+    };
+    r_top : Resistor(.p = out,.n = mid) {
+        .r = 1e3
+    };
+    r_load : Resistor(.p = mid,.n = gnd) {
+        .r = 1e3
+    };
 }
 

@@ -9,57 +9,78 @@
 // The transient records a digital snapshot per step, so `tr.v(bit_net)` returns
 // the logic value (0/1) as a waveform; `.at(t)` samples it.
 
-discipline Electrical {
-    potential v : Real;
-    flow i : Real;
-}
-discipline Bit {
-    storage Boolean;
-}
+use piperine::disciplines;
 
 // Analog square-wave clock: low in the first half of each period, high in the
 // second. Period defaults to 1 µs (rising edges at 0.5, 1.5, 2.5, … µs).
+
 mod ClockSrc(inout clk_a : Electrical, inout gnd : Electrical) {
     param period : Real = 1.0e-6;
 }
+
 analog ClockSrc {
     var ph : Real = $abstime - period * floor($abstime / period);
-    V(clk_a, gnd) <- if (ph > period * 0.5) { 1.0 } else { 0.0 };
+    V(clk_a, gnd) <- if (ph > period * 0.5) {
+        1.0
+    } else {
+        0.0
+    };
 }
 
 // Constant logic-1 driver (a fixed analog level through a comparator).
+
 mod HighSrc(inout h_a : Electrical, inout gnd : Electrical) { }
-analog HighSrc { V(h_a, gnd) <- 1.0; }
+
+analog HighSrc {
+    V(h_a, gnd) <- 1.0;
+}
 
 // A2D comparator: analog level → Bit.
+
 mod Comparator(input a : Electrical, input n : Electrical, output y : Bit) { }
-digital Comparator { y <- V(a, n) > 0.5; }
+
+digital Comparator {
+    y <- V(a, n) > 0.5;
+}
 
 // Rising-edge D flip-flop.
+
 mod Dff(input clk : Bit, input d : Bit, output q : Bit) {
     var st : Bit = 0;
 }
+
 digital Dff {
     q <- st;
-    @ (posedge(clk)) { st = d; }
+    @(posedge(clk)) {
+        st = d;
+    }
 }
 
 mod ShiftTran() {
     wire gnd : Electrical;
-    wire clk_a : Electrical;   // analog clock rail
-    wire high_a : Electrical;  // analog logic-1 rail
-    wire clk : Bit;            // digital clock
-    wire din : Bit;            // digital serial-in (constant 1)
-    wire q0 : Bit; wire q1 : Bit; wire q2 : Bit; wire q3 : Bit;
+    wire clk_a : Electrical;
+    // analog clock rail
+    wire high_a : Electrical;
+    // analog logic-1 rail
+    wire clk : Bit;
+    // digital clock
+    wire din : Bit;
+    // digital serial-in (constant 1)
+    wire q0 : Bit;
+    wire q1 : Bit;
+    wire q2 : Bit;
+    wire q3 : Bit;
 
-    clkgen : ClockSrc(.clk_a = clk_a, .gnd = gnd) { .period = 1.0e-6 };
-    highgen : HighSrc(.h_a = high_a, .gnd = gnd);
-    ccmp : Comparator(.a = clk_a, .n = gnd, .y = clk);
-    dcmp : Comparator(.a = high_a, .n = gnd, .y = din);
+    clkgen : ClockSrc(.clk_a = clk_a,.gnd = gnd) {
+        .period = 1.0e-6
+    };
+    highgen : HighSrc(.h_a = high_a,.gnd = gnd);
+    ccmp : Comparator(.a = clk_a,.n = gnd,.y = clk);
+    dcmp : Comparator(.a = high_a,.n = gnd,.y = din);
 
-    f0 : Dff(.clk = clk, .d = din, .q = q0);
-    f1 : Dff(.clk = clk, .d = q0,  .q = q1);
-    f2 : Dff(.clk = clk, .d = q1,  .q = q2);
-    f3 : Dff(.clk = clk, .d = q2,  .q = q3);
+    f0 : Dff(.clk = clk,.d = din,.q = q0);
+    f1 : Dff(.clk = clk,.d = q0,.q = q1);
+    f2 : Dff(.clk = clk,.d = q1,.q = q2);
+    f3 : Dff(.clk = clk,.d = q2,.q = q3);
 }
 

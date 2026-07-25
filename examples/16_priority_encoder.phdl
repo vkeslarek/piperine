@@ -3,9 +3,7 @@
 // 2-bit code plus a valid flag. The python twin reads the output Bit nets
 // straight off `$op` results — no analog readback stage.
 
-discipline Bit {
-    storage Boolean;
-}
+use piperine::disciplines;
 
 mod BitDriver(output q : Bit) {
     param level : Real = 0.0;
@@ -25,18 +23,28 @@ mod PriorityEncoder(input r0 : Bit, input r1 : Bit, input r2 : Bit, input r3 : B
 
 digital PriorityEncoder {
     if (r3 == 1) {
-        o1 = 1; o0 = 1; ok = 1;
+        o1 = 1;
+        o0 = 1;
+        ok = 1;
     } else {
         if (r2 == 1) {
-            o1 = 1; o0 = 0; ok = 1;
+            o1 = 1;
+            o0 = 0;
+            ok = 1;
         } else {
             if (r1 == 1) {
-                o1 = 0; o0 = 1; ok = 1;
+                o1 = 0;
+                o0 = 1;
+                ok = 1;
             } else {
                 if (r0 == 1) {
-                    o1 = 0; o0 = 0; ok = 1;
+                    o1 = 0;
+                    o0 = 0;
+                    ok = 1;
                 } else {
-                    o1 = 0; o0 = 0; ok = 0;
+                    o1 = 0;
+                    o0 = 0;
+                    ok = 0;
                 }
             }
         }
@@ -58,6 +66,6 @@ mod IrqBoard() {
     d1 : BitDriver(.q = n1);
     d2 : BitDriver(.q = n2);
     d3 : BitDriver(.q = n3);
-    enc : PriorityEncoder(.r0 = n0, .r1 = n1, .r2 = n2, .r3 = n3, .y1 = y1, .y0 = y0, .valid = ok);
+    enc : PriorityEncoder(.r0 = n0,.r1 = n1,.r2 = n2,.r3 = n3,.y1 = y1,.y0 = y0,.valid = ok);
 }
 

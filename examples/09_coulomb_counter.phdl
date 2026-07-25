@@ -2,15 +2,15 @@
 // of the load current. 100 C capacity discharged at 1 A drops 1 %/s; the
 // python twin validates the ramp and the time of the 95 % crossing.
 
-discipline Electrical {
-    potential v : Real;
-    flow i : Real;
-}
+use piperine::disciplines;
 
 // soc(t) = 1 − ∫i_load·dt / q_full, exposed as a voltage (1 V ≡ 100 %).
+
 mod BatteryGauge(inout soc : Electrical, inout gnd : Electrical) {
-    param i_load : Real = 1.0;     // A, constant discharge
-    param q_full : Real = 100.0;   // coulombs
+    param i_load : Real = 1.0;
+    // A, constant discharge
+    param q_full : Real = 100.0;
+    // coulombs
 }
 
 analog BatteryGauge {
@@ -28,7 +28,8 @@ analog Resistor {
 mod Gauge() {
     wire gnd : Electrical;
     wire soc : Electrical;
-    cell : BatteryGauge(.soc = soc, .gnd = gnd);
-    probe : Resistor(.p = soc, .n = gnd);     // high-impedance meter
+    cell : BatteryGauge(.soc = soc,.gnd = gnd);
+    probe : Resistor(.p = soc,.n = gnd);
+    // high-impedance meter
 }
 

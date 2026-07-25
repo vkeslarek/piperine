@@ -1,13 +1,26 @@
 use std::fs;
 use std::path::PathBuf;
 
+/// The stdlib `SourceMap` the examples project resolves against (headers
+/// under the `piperine`/`spice` namespaces) — an example's
+/// `use piperine::disciplines;` needs it, exactly as the CLI does via
+/// `project_source_map`. `CARGO_MANIFEST_DIR` here is `crates/piperine-lang`,
+/// so the headers dir is a direct child.
+fn examples_source_map() -> piperine_lang::SourceMap {
+    let headers = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("headers");
+    let mut map = piperine_lang::SourceMap::new(headers.clone()).with_prelude(headers.join("prelude.phdl"));
+    map.add_namespace("piperine", headers.clone());
+    map.add_namespace("spice", headers.join("spice"));
+    map
+}
+
 #[test]
 fn test_all_examples_compile() {
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent().unwrap()
         .parent().unwrap()
         .to_path_buf();
-    
+
     let examples_dir = workspace_root.join("examples");
     
     let mut phdl_files = Vec::new();
@@ -31,7 +44,7 @@ fn test_all_examples_compile() {
     for file in phdl_files {
         println!("Testing {:?}", file);
         let body = fs::read_to_string(&file).unwrap();
-        match piperine_lang::parse_and_elaborate(&body, &piperine_lang::SourceMap::dummy()) {
+        match piperine_lang::parse_and_elaborate(&body, &examples_source_map()) {
             Ok(elab) => {
                 // Lower every module to its resolved body.
                 let bodies = piperine_codegen::resolve::lower_bodies(&elab).expect("lowering failed");

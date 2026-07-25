@@ -4,10 +4,7 @@
 // bisection — the LIVE-12 optimization-loop scenario (examples/live_optimize.py
 // drives it through the Python LiveSession: compile once, set + op per point).
 
-discipline Electrical {
-    potential v : Real;
-    flow i : Real;
-}
+use piperine::disciplines;
 
 mod Vsrc(inout p : Electrical, inout n : Electrical) {
     param dc : Real = 5.0;
@@ -38,8 +35,8 @@ mod Fitter() {
     wire gnd : Electrical;
     wire vin : Electrical;
     wire out : Electrical;
-    v1 : Vsrc(.p = vin, .n = gnd) {};
-    r1 : Resistor(.p = vin, .n = out) {};
-    d1 : Diode(.p = out, .n = gnd) {};
+    v1 : Vsrc(.p = vin,.n = gnd) { };
+    r1 : Resistor(.p = vin,.n = out) { };
+    d1 : Diode(.p = out,.n = gnd) { };
 }
 
