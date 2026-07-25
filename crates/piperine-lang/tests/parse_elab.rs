@@ -1,6 +1,7 @@
 use piperine_lang::parse_str;
 use piperine_lang::parse::ast::*;
 use piperine_lang::parse::ast::SourceFile;
+use piperine_lang::{Lexer, Tok};
 
 /// Flatten a SourceFile into categorized lists (replaces the old model::Document).
 struct Document {
@@ -457,6 +458,64 @@ fn test_default_param_parses_when_trailing() {
 fn test_error_on_missing_semicolon() {
     let result = parse_str("use foo::bar");
     assert!(result.is_err());
+}
+
+// ─────────────────────────── Lexer `///` doc-comment capture (LSP-06) ──────
+
+#[test]
+fn test_doc_run_before_decl_is_captured() {
+    let src = "/// A two-terminal resistor.\nmodule res(a, b) {}";
+    let toks = Lexer::new(src).tokenize().unwrap();
+    // First surviving token is the `module` identifier.
+    let first = &toks[0];
+    assert!(matches!(&first.tok, Tok::Ident(s) if s == "module"));
+    assert_eq!(first.doc.as_deref(), Some("A two-terminal resistor."));
+}
+
+#[test]
+fn test_multiline_doc_run_joins_with_newline() {
+    let src = "/// Line one.\n/// Line two.\nmodule res(a, b) {}";
+    let toks = Lexer::new(src).tokenize().unwrap();
+    let first = &toks[0];
+    assert_eq!(first.doc.as_deref(), Some("Line one.\nLine two."));
+}
+
+#[test]
+fn test_plain_line_comment_is_discarded_not_captured_as_doc() {
+    let src = "// just a note\nmodule res(a, b) {}";
+    let toks = Lexer::new(src).tokenize().unwrap();
+    let first = &toks[0];
+    assert!(matches!(&first.tok, Tok::Ident(s) if s == "module"));
+    assert_eq!(first.doc, None, "plain `//` must never attach as doc trivia");
+}
+
+#[test]
+fn test_triple_slash_inside_plain_comment_line_is_not_special() {
+    // The whole line is lexed as a single `//` comment token starting with
+    // `//`, not `///` — the `///` occurring mid-line must not trigger doc
+    // capture.
+    let src = "// see /// for details\nmodule res(a, b) {}";
+    let toks = Lexer::new(src).tokenize().unwrap();
+    let first = &toks[0];
+    assert_eq!(first.doc, None);
+}
+
+#[test]
+fn test_dangling_doc_run_with_no_following_decl_is_ignored() {
+    // A `///` run at end-of-file with nothing after it must not crash and
+    // must not appear anywhere in the (empty) result.
+    let src = "/// orphaned doc comment\n";
+    let toks = Lexer::new(src).tokenize().unwrap();
+    assert!(toks.is_empty());
+}
+
+#[test]
+fn test_doc_run_separated_by_blank_line_does_not_attach() {
+    // Only the run immediately adjacent to the declaration attaches.
+    let src = "/// stale comment\n\nmodule res(a, b) {}";
+    let toks = Lexer::new(src).tokenize().unwrap();
+    let first = &toks[0];
+    assert_eq!(first.doc, None);
 }
 
 // ─────────────────────────── Use declarations ─────────────────────────────
