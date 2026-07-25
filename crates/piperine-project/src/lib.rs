@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 pub mod git;
 pub mod lockfile;
+pub mod release;
 pub mod resolver;
 pub mod source_map;
 

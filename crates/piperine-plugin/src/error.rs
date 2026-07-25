@@ -48,6 +48,12 @@ pub enum PluginError {
     #[diagnostic(code(P0011))]
     RemovedBackend { plugin: String, backend: String },
 
+    /// Plugin-interface v2 (PLG-19): no release asset matches the host
+    /// target triple — prebuilt-binary only, no build-from-source (D6).
+    #[error("plugin `{plugin}`: no release asset for target triple `{triple}` in release `{release}` (prebuilt-binary only)")]
+    #[diagnostic(code(P0012))]
+    NoAssetForTriple { plugin: String, triple: String, release: String },
+
     #[error("plugin `{plugin}`: {message}")]
     #[diagnostic(code(P0099))]
     Other { plugin: String, message: String },
