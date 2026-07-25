@@ -929,6 +929,104 @@ fn prepare_rename_declines_on_literal() {
     assert!(response.is_none(), "prepare-rename must decline on a numeric literal, got: {response:?}");
 }
 
+// ── T11: document-highlight rides binding occurrences (LSP-13) ─────────────
+
+/// Drives a `Connection::memory()` round trip and returns the
+/// `textDocument/documentHighlight` response for `(line, character)`.
+fn lsp_document_highlight(source: &str, line: u32, character: u32) -> Vec<lsp_types::DocumentHighlight> {
+    let (client_conn, server_conn) = Connection::memory();
+
+    std::thread::spawn(move || {
+        let mut server = piperine_lang_server::server::LanguageServer::new(server_conn);
+        server.run().unwrap();
+    });
+
+    let uri: Uri = "file:///highlight_test.phdl".parse().unwrap();
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "phdl".to_string(),
+            version: 1,
+            text: source.to_string(),
+        },
+    };
+    client_conn.sender.send(Message::Notification(Notification {
+        method: lsp_types::notification::DidOpenTextDocument::METHOD.to_string(),
+        params: serde_json::to_value(did_open_params).unwrap(),
+    })).unwrap();
+
+    for _ in 0..5 {
+        if let Ok(Message::Notification(not)) = client_conn.receiver.recv_timeout(Duration::from_millis(500))
+            && not.method == lsp_types::notification::PublishDiagnostics::METHOD {
+                break;
+            }
+    }
+
+    let params = lsp_types::DocumentHighlightParams {
+        text_document_position_params: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position { line, character },
+        },
+        work_done_progress_params: Default::default(),
+        partial_result_params: Default::default(),
+    };
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(1),
+        method: lsp_types::request::DocumentHighlightRequest::METHOD.to_string(),
+        params: serde_json::to_value(params).unwrap(),
+    })).unwrap();
+
+    let msg = recv_timeout(&client_conn.receiver, 1000);
+    let response = if let Message::Response(resp) = msg {
+        assert_eq!(resp.id, RequestId::from(1));
+        let val = resp.result.expect("documentHighlight response must have a result");
+        serde_json::from_value(val).unwrap_or_default()
+    } else {
+        panic!("expected a documentHighlight response");
+    };
+
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(99),
+        method: "shutdown".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+    recv_timeout(&client_conn.receiver, 500);
+    client_conn.sender.send(Message::Notification(Notification {
+        method: "exit".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+
+    response
+}
+
+/// LSP-13: highlighting module A's `power` must never highlight module B's
+/// own unrelated `power` declaration or a `// power` comment mention —
+/// same binding-identity source as references (T9), not a text scan.
+#[test]
+fn document_highlight_excludes_other_scope_and_comment_matches() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\n\
+mod A (inout p: Electrical, inout n: Electrical) {\n\
+    // power is computed elsewhere\n\
+    param power: Real = 1.0;\n\
+}\n\
+mod B (inout p: Electrical, inout n: Electrical) {\n\
+    param power: Real = 2.0;\n\
+}\n";
+
+    let a_line = src[..src.find("param power").unwrap()].matches('\n').count() as u32;
+    let character = "    param ".chars().count() as u32;
+    let comment_line = src[..src.find("power is computed").unwrap()].matches('\n').count() as u32;
+    let b_line = src[..src.find("mod B").unwrap()].matches('\n').count() as u32;
+
+    let highlights = lsp_document_highlight(src, a_line, character);
+
+    assert!(!highlights.is_empty(), "highlight must return at least the declaration site");
+    for h in &highlights {
+        assert_ne!(h.range.start.line, comment_line, "a `// power` comment must never be highlighted");
+        assert!(h.range.start.line < b_line, "module B's own `power` must never be highlighted from A's cursor");
+    }
+}
+
 /// LSP-10/13 base edge case: a cursor on a non-symbol (a numeric literal)
 /// yields no occurrences at all.
 #[test]
