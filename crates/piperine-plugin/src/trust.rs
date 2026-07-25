@@ -72,7 +72,9 @@ pub fn ensure_trusted(
         hash: content_hash.to_string(),
         kind: EntryKind::Plugin,
         content_hash: Some(content_hash.to_string()),
-        abi: Some(manifest.abi.as_str().to_string()),
+        // The device binary's target triple lands here with the
+        // release-fetch (plugin-interface v2 Phase 4, design §4).
+        abi: None,
         trusted_at: Some(now_rfc3339()),
     });
     lock.save(&lock_path)
@@ -87,7 +89,7 @@ fn prompt(manifest: &Manifest, source: &str, content_hash: &str) -> bool {
         return false;
     }
     eprintln!();
-    eprintln!("  Plugin '{}' ({}) loaded from:", manifest.name, manifest.abi.as_str());
+    eprintln!("  Plugin '{}' ({}) loaded from:", manifest.name, manifest.shape().as_str());
     eprintln!("    {source}");
     if !manifest.permissions.filesystem.is_empty() {
         eprintln!("    filesystem    : {}", manifest.permissions.filesystem.join(", "));

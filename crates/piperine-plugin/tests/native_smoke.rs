@@ -34,7 +34,7 @@ fn project_with_fixture(dir: &std::path::Path, artifact: &std::path::Path) {
     std::fs::copy(artifact, plugin_dir.join(entry)).unwrap();
     std::fs::write(
         plugin_dir.join("piperine-plugin.toml"),
-        format!("[plugin]\nname = \"fixture\"\nabi = \"native\"\nentry = \"{entry}\"\n"),
+        format!("[plugin]\nname = \"fixture\"\ndevice = {{ path = \"{entry}\" }}\n"),
     )
     .unwrap();
     std::fs::write(

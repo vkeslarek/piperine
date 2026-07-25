@@ -50,6 +50,13 @@ pub enum PluginError {
     #[diagnostic(code(P0010))]
     MissingExternStub { plugin: String, schema: String, expected_path: String },
 
+    /// Plugin-interface v2 (PLG-02): a manifest declaring a removed
+    /// backend (`abi = "wasm"|"process"`) gets a targeted removal error —
+    /// never a generic unknown-field/unknown-value one.
+    #[error("plugin `{plugin}`: the `{backend}` backend was removed — plugins are native + Python only (MD-21); a device plugin declares `device = {{ … }}`, a scripted plugin `python = \"…\"`")]
+    #[diagnostic(code(P0011))]
+    RemovedBackend { plugin: String, backend: String },
+
     #[error("plugin `{plugin}`: {message}")]
     #[diagnostic(code(P0099))]
     Other { plugin: String, message: String },

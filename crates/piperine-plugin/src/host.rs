@@ -16,7 +16,7 @@ use crate::backend::native::{self, NativePlugin};
 use crate::capability::HostCtx;
 use crate::contributions::{Contributions, Registrar};
 use crate::error::{PluginError, PluginResult};
-use crate::manifest::{Abi, Manifest};
+use crate::manifest::Manifest;
 use crate::trust::{artifact_hash, ensure_trusted, TrustMode};
 use crate::view::{DesignStaging, SolveResultView};
 use crate::Plugin;
@@ -126,7 +126,35 @@ impl PluginHost {
         for name in names {
             let plugin_root = &resolved[name];
             let manifest = Manifest::load(name, plugin_root)?;
-            let artifact = plugin_root.join(&manifest.entry);
+            let Some(device) = manifest.device.clone() else {
+                // No binary to load: a pure-PHDL plugin is a code library
+                // (its `pub` items resolve via `use`, nothing runs); a
+                // scripted plugin's Python entry is not loadable until the
+                // `@pip` decorator surface lands (Phase 2) — fail loud,
+                // never a silent no-op.
+                if manifest.python.is_some() {
+                    return Err(PluginError::Other {
+                        plugin: manifest.name.clone(),
+                        message: "scripted (Python) plugins are not loadable yet — the `@pip` \
+                                  decorator surface lands with plugin-interface v2 Phase 2"
+                            .into(),
+                    });
+                }
+                continue;
+            };
+            let artifact = match &device.path {
+                Some(rel) => plugin_root.join(rel),
+                None => {
+                    return Err(PluginError::Other {
+                        plugin: manifest.name.clone(),
+                        message: format!(
+                            "device release `{}`: release fetching (github release + triple + \
+                             TOFU) lands with plugin-interface v2 Phase 4",
+                            device.release.unwrap_or_default()
+                        ),
+                    });
+                }
+            };
             let hash = artifact_hash(&artifact)?;
             let source = toml
                 .plugins
@@ -134,23 +162,7 @@ impl PluginHost {
                 .map(|s| format!("{s:?}"))
                 .unwrap_or_else(|| plugin_root.display().to_string());
             ensure_trusted(root, &manifest, &source, &hash, trust)?;
-            let instance = match manifest.abi {
-                Abi::Native => PluginInstance::Native(native::load(&manifest.name, &artifact)?),
-                Abi::Wasm => {
-                    return Err(PluginError::Other {
-                        plugin: manifest.name.clone(),
-                        message: "the WASM backend was removed — plugins are native + Python only (MD-21)"
-                            .into(),
-                    });
-                }
-                Abi::Process => {
-                    return Err(PluginError::Other {
-                        plugin: manifest.name.clone(),
-                        message: "the process backend was removed — plugins are native + Python only (MD-21)"
-                            .into(),
-                    });
-                }
-            };
+            let instance = PluginInstance::Native(native::load(&manifest.name, &artifact)?);
             let extern_stub = Self::load_extern_stub(&manifest.name, plugin_root)?;
             let plugin_name = manifest.name.clone();
             let has_stub = extern_stub.is_some();
@@ -280,7 +292,7 @@ impl PluginHost {
                     .collect();
                 format!(
                     "{name} ({}): {devices} device(s), {schemas} schema(s), scripts: [{}]",
-                    l.manifest.abi.as_str(),
+                    l.manifest.shape().as_str(),
                     scripts.join(", ")
                 )
             })

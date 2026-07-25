@@ -10,7 +10,7 @@
 //! source in-process via `#[path]`.
 
 use piperine_plugin::{
-    entry, Abi, DeviceFactory, DeviceKind, Manifest, Permissions, Plugin, PluginDeviceSpec,
+    entry, DeviceFactory, DeviceKind, Manifest, Permissions, Plugin, PluginDeviceSpec,
     PluginPort, PortBinding, Registrar,
 };
 use piperine_solver::abi::AnalogReference;
@@ -31,9 +31,9 @@ impl FixturePlugin {
         Self {
             manifest: Manifest {
                 name: "fixture".into(),
-                abi: Abi::Native,
-                entry: String::new(),
                 description: Some("test fixture devices".into()),
+                python: None,
+                device: None,
                 permissions: Permissions::default(),
             },
         }

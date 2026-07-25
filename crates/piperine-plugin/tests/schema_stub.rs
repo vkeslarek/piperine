@@ -41,7 +41,7 @@ fn project_with_schema_fixture(dir: &std::path::Path, artifact: &std::path::Path
     std::fs::copy(artifact, plugin_dir.join(entry)).unwrap();
     std::fs::write(
         plugin_dir.join("piperine-plugin.toml"),
-        format!("[plugin]\nname = \"schema-fixture\"\nabi = \"native\"\nentry = \"{entry}\"\n"),
+        format!("[plugin]\nname = \"schema-fixture\"\ndevice = {{ path = \"{entry}\" }}\n"),
     )
     .unwrap();
     if let Some(text) = stub {

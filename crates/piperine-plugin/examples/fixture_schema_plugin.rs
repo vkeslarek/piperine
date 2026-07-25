@@ -11,7 +11,7 @@
 //! schema) so `native_smoke.rs`/`extern_stub.rs`'s existing, stub-less
 //! fixture-plugin projects are unaffected by T25's enforcement.
 
-use piperine_plugin::{entry, Abi, AttrField, Manifest, Permissions, Plugin, Registrar};
+use piperine_plugin::{entry, AttrField, Manifest, Permissions, Plugin, Registrar};
 
 pub struct SchemaPlugin {
     manifest: Manifest,
@@ -22,9 +22,9 @@ impl SchemaPlugin {
         Self {
             manifest: Manifest {
                 name: "schema-fixture".into(),
-                abi: Abi::Native,
-                entry: String::new(),
                 description: Some("test fixture: a plugin-contributed attribute schema".into()),
+                python: None,
+                device: None,
                 permissions: Permissions::default(),
             },
         }

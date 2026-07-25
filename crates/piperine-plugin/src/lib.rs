@@ -6,9 +6,9 @@
 //! scripts through the
 //! [`Registrar`]. The host ([`PluginHost`]) discovers plugins from
 //! `Piperine.toml [plugins]`, verifies them (TOFU + content hash), loads
-//! them (native dlopen today; WASM/process later), and answers the
-//! pipeline's queries: schema seeding at elaboration, device construction
-//! at circuit build.
+//! them (native dlopen; MD-21 — the WASM/process backends are removed),
+//! and answers the pipeline's queries: schema seeding at elaboration,
+//! device construction at circuit build.
 //!
 //! The device ABI is Piperine's own unified `Element` trait — one contract that
 //! declares analog and/or digital capabilities — never OSDI or any external
@@ -28,7 +28,7 @@ pub use capability::HostCtx;
 pub use contributions::{Contributions, DeviceFactory, DeviceKind, Registrar, ScriptHandler};
 pub use error::{PluginError, PluginResult};
 pub use host::PluginHost;
-pub use manifest::{Abi, Manifest, Permissions};
+pub use manifest::{DeviceSource, Manifest, Permissions, PluginShape};
 pub use trust::{artifact_hash, ensure_trusted as trust_check, TrustMode};
 pub use view::{DesignStaging, SolveResultView};
 

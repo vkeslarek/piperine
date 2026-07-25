@@ -3,14 +3,14 @@
 
 use std::path::Path;
 
-use piperine_plugin::{artifact_hash, Abi, Manifest, Permissions, PluginError, TrustMode};
+use piperine_plugin::{artifact_hash, Manifest, Permissions, PluginError, TrustMode};
 
 fn manifest(name: &str) -> Manifest {
     Manifest {
         name: name.into(),
-        abi: Abi::Native,
-        entry: "lib.so".into(),
         description: None,
+        python: None,
+        device: None,
         permissions: Permissions::default(),
     }
 }

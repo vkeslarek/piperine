@@ -10,16 +10,16 @@ use std::sync::Arc;
 use piperine::{OpResult, SimSession, SolverConfig};
 use piperine_lang::{SourceMap, Value};
 use piperine_plugin::{
-    Abi, Design, DesignStaging, HostCtx, Manifest, Plugin, PluginError, PluginHost, PluginResult,
+    Design, DesignStaging, HostCtx, Manifest, Plugin, PluginError, PluginHost, PluginResult,
     Registrar, ScriptHandler, SolveResultView,
 };
 
 fn manifest(name: &str) -> Manifest {
     Manifest {
         name: name.into(),
-        abi: Abi::Native,
-        entry: String::new(),
         description: None,
+        python: None,
+        device: None,
         permissions: Default::default(),
     }
 }
