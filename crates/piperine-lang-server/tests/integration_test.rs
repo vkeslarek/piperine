@@ -604,6 +604,93 @@ mod Inner (inout p: Electrical, inout n: Electrical) {\n\
     );
 }
 
+// ── BUG-1 (LSB-01..03): extern goto lands on the real declaring file ────────
+
+/// spec.md's Independent Test for P1 (BUG-1): goto on `ddt` inside an analog
+/// body must return a `Location` whose URI is the real declaring file
+/// (`headers/operators.phdl`) and whose range covers the real
+/// `extern operator ddt` text there — not the current document.
+#[test]
+fn goto_definition_on_ddt_lands_on_operators_header() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\n\
+mod Cap (inout p: Electrical, inout n: Electrical) {\n\
+    param c: Real = 1.0;\n\
+    analog Behave { I(p, n) <+ c * ddt(V(p, n)); }\n\
+}\n";
+
+    let ddt_call_offset = src.find("ddt(V").unwrap();
+    let mut line = 0u32;
+    let mut last_nl = 0usize;
+    for (i, ch) in src[..ddt_call_offset].char_indices() {
+        if ch == '\n' {
+            line += 1;
+            last_nl = i + 1;
+        }
+    }
+    let character = src[last_nl..ddt_call_offset].chars().count() as u32;
+
+    let response = lsp_goto_definition(src, line, character);
+    let loc = match response {
+        GotoDefinitionResponse::Scalar(loc) => loc,
+        other => panic!("expected a scalar goto-definition response, got: {other:?}"),
+    };
+
+    let uri_str = loc.uri.as_str();
+    assert!(
+        uri_str.ends_with("headers/operators.phdl"),
+        "goto on `ddt` must land on headers/operators.phdl, got {uri_str}"
+    );
+    let path = url::Url::parse(uri_str).unwrap().to_file_path().unwrap();
+    assert!(path.is_file(), "{} must exist on disk", path.display());
+
+    let header_text = std::fs::read_to_string(&path).unwrap();
+    let expected_offset = header_text.find("extern operator ddt").unwrap();
+    let expected_offset_byte = position_to_byte(&header_text, loc.range.start);
+    assert_eq!(
+        expected_offset_byte, expected_offset,
+        "goto range must cover the real `extern operator ddt` declaration text"
+    );
+}
+
+/// spec.md P1 AC3 (no regression): when the `extern` name is declared in
+/// the *current* document (a user's own `extern` stub), goto-definition
+/// must still resolve there — the file-based branch must not divert it
+/// elsewhere.
+#[test]
+fn goto_definition_on_same_file_extern_decl_still_works() {
+    let src = "extern operator my_op(x: Real) -> Real;\n\
+discipline Electrical { potential v: Real; flow i: Real; }\n\
+mod Cap (inout p: Electrical, inout n: Electrical) {\n\
+    analog Behave { I(p, n) <+ my_op(V(p, n)); }\n\
+}\n";
+
+    let call_offset = src.find("my_op(V").unwrap();
+    let mut line = 0u32;
+    let mut last_nl = 0usize;
+    for (i, ch) in src[..call_offset].char_indices() {
+        if ch == '\n' {
+            line += 1;
+            last_nl = i + 1;
+        }
+    }
+    let character = src[last_nl..call_offset].chars().count() as u32;
+
+    let response = lsp_goto_definition(src, line, character);
+    let loc = match response {
+        GotoDefinitionResponse::Scalar(loc) => loc,
+        other => panic!("expected a scalar goto-definition response, got: {other:?}"),
+    };
+
+    assert_eq!(
+        loc.uri.as_str(),
+        "file:///goto_def_test.phdl",
+        "goto on a same-file extern decl must resolve within the current document, not another file"
+    );
+    let target_offset = position_to_byte(src, loc.range.start);
+    let decl_offset = src.find("extern operator my_op").unwrap();
+    assert_eq!(target_offset, decl_offset, "goto must land on my_op's own declaration");
+}
+
 // ── T8: occurrence engine from binding (LSP-10/13 base) ─────────────────────
 
 /// LSP-10/13 base: resolving a declared binding's own position returns

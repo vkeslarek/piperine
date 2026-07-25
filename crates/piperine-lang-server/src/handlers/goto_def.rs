@@ -55,6 +55,32 @@ fn cross_file_location(
 ) -> Option<Location> {
     let design = doc.design.as_ref()?;
 
+    // BUG-1 (LSB-01..03): extern-registry resolutions (Type/Operator/
+    // Function/AttrSchema) carry their own real on-disk declaring file
+    // directly on `Resolution` (a stdlib header today) — checked before
+    // the Module/Instance-only logic below, since extern items don't need
+    // cross-design lookup, just the file + the already-resolved decl_span.
+    if let Some(file) = &resolution.file {
+        let current_path = url::Url::parse(current_uri.as_str()).ok()?.to_file_path().ok()?;
+        let same_file = std::fs::canonicalize(file)
+            .ok()
+            .zip(std::fs::canonicalize(&current_path).ok())
+            .is_some_and(|(a, b)| a == b);
+        if same_file {
+            // Declared in the current document itself — fall through to
+            // the caller's same-file fallback (no regression: LSB-03).
+            return None;
+        }
+        let content = std::fs::read_to_string(file).ok()?;
+        let range = crate::text_pos::byte_range(
+            &content,
+            decl_span.offset(),
+            decl_span.offset() + decl_span.len(),
+        );
+        let uri: lsp_types::Uri = format!("file://{}", file.display()).parse().ok()?;
+        return Some(Location { uri, range });
+    }
+
     // `resolve_in_module`'s instance branch matches on either the
     // instance's label *or* its module type (`i.module == word`), so a
     // click on the type name inside `label: Type(...)` also comes back as

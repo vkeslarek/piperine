@@ -1,6 +1,7 @@
 use piperine_lang::elab::registry::{ElabContext, TypeDefKind};
 use piperine_lang::pom::Design;
 use miette::SourceSpan;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SymbolKind {
@@ -37,6 +38,14 @@ pub struct Resolution {
     pub type_info: Option<String>,
     /// The declaration's `///` doc comment, if any (LSP-07/08).
     pub doc: Option<String>,
+    /// The real on-disk file this declaration lives in, when it differs
+    /// from the current document (BUG-1/LSB-01..03) — populated only for
+    /// `extern`-registry resolutions (`Type`/`Operator`/`Function`/
+    /// `AttrSchema`) from `design.project().item_file(&word)`. POM-level
+    /// resolutions (module/port/param/etc.) leave this `None`; T13's
+    /// existing `ProjectUnit`/`cross_file_location` machinery already
+    /// handles those via a different path.
+    pub file: Option<PathBuf>,
 }
 
 /// Does `span` (a decl's own byte range) contain `offset`?
@@ -59,6 +68,7 @@ fn resolve_in_module(m: &piperine_lang::pom::Module, word: &str) -> Option<Resol
             decl_span: v.span,
             type_info: Some(format!("{:?}", v.ty)),
             doc: v.doc.clone(),
+            file: None,
         });
     }
     if let Some(w) = m.wires.iter().find(|w| w.name == word) {
@@ -68,6 +78,7 @@ fn resolve_in_module(m: &piperine_lang::pom::Module, word: &str) -> Option<Resol
             decl_span: w.span,
             type_info: Some(format!("{:?}", w.ty)),
             doc: w.doc.clone(),
+            file: None,
         });
     }
     if let Some(i) = m.instances.iter().find(|i| i.label.as_deref() == Some(word) || i.module == word) {
@@ -77,6 +88,7 @@ fn resolve_in_module(m: &piperine_lang::pom::Module, word: &str) -> Option<Resol
             decl_span: i.span,
             type_info: Some(format!("instance of {}", i.module)),
             doc: i.doc.clone(),
+            file: None,
         });
     }
     if let Some(p) = m.params.iter().find(|p| p.name == word) {
@@ -86,6 +98,7 @@ fn resolve_in_module(m: &piperine_lang::pom::Module, word: &str) -> Option<Resol
             decl_span: p.span,
             type_info: Some(format!("{:?}", p.ty)),
             doc: p.doc.clone(),
+            file: None,
         });
     }
     if let Some(p) = m.ports.iter().find(|p| p.name == word) {
@@ -95,6 +108,7 @@ fn resolve_in_module(m: &piperine_lang::pom::Module, word: &str) -> Option<Resol
             decl_span: p.span,
             type_info: Some(format!("{:?}", p.direction)),
             doc: p.doc.clone(),
+            file: None,
         });
     }
     if let Some(b) = m.behaviors.iter().find(|b| b.name == word) {
@@ -104,6 +118,7 @@ fn resolve_in_module(m: &piperine_lang::pom::Module, word: &str) -> Option<Resol
             decl_span: b.span,
             type_info: Some(format!("{:?}", b.kind)),
             doc: b.doc.clone(),
+            file: None,
         });
     }
     if m.name == word {
@@ -113,6 +128,7 @@ fn resolve_in_module(m: &piperine_lang::pom::Module, word: &str) -> Option<Resol
             decl_span: m.span,
             type_info: None,
             doc: m.doc.clone(),
+            file: None,
         });
     }
     None
@@ -190,6 +206,7 @@ pub fn resolve_at(
                 decl_span: m.span,
                 type_info: None,
                 doc: m.doc.clone(),
+                file: None,
             });
         }
     }
@@ -202,6 +219,7 @@ pub fn resolve_at(
                 decl_span: e.span,
                 type_info: None,
                 doc: None,
+                file: None,
             });
         }
     }
@@ -214,6 +232,7 @@ pub fn resolve_at(
                 decl_span: b.span,
                 type_info: None,
                 doc: None,
+                file: None,
             });
         }
     }
@@ -226,6 +245,7 @@ pub fn resolve_at(
                 decl_span: d.span,
                 type_info: None,
                 doc: None,
+                file: None,
             });
         }
     }
@@ -238,6 +258,7 @@ pub fn resolve_at(
                 decl_span: c.span,
                 type_info: None,
                 doc: None,
+                file: None,
             });
         }
     }
@@ -251,6 +272,7 @@ pub fn resolve_at(
                     decl_span: m.span,
                     type_info: Some(format!("impl method for {}", i.ty)),
                     doc: None,
+                    file: None,
                 });
             }
         }
@@ -265,6 +287,11 @@ pub fn resolve_at(
     // registries have any LSP-facing consumer.
     let ctx = ctx?;
 
+    // BUG-1 (LSB-01..03): extern-registry resolutions carry the real
+    // on-disk declaring file (a stdlib header today), so goto-definition
+    // can jump there instead of falling through to the same-file fallback.
+    let extern_file = design.project().item_file(&word).map(PathBuf::from);
+
     if let Some(c) = ctx.callables.lookup(&word)
         && let Some(decl_span) = c.decl_span() {
         return Some(Resolution {
@@ -273,6 +300,7 @@ pub fn resolve_at(
             decl_span: Some(decl_span),
             type_info: None,
             doc: None,
+            file: extern_file,
         });
     }
 
@@ -283,6 +311,7 @@ pub fn resolve_at(
             decl_span: *decl_span,
             type_info: None,
             doc: None,
+            file: extern_file,
         });
     }
 
@@ -294,6 +323,7 @@ pub fn resolve_at(
             decl_span: Some(decl_span),
             type_info: None,
             doc: None,
+            file: extern_file,
         });
     }
 
@@ -312,6 +342,7 @@ pub fn resolve_at(
             decl_span,
             type_info: None,
             doc: None,
+            file: extern_file,
         });
     }
 
@@ -323,6 +354,7 @@ pub fn resolve_at(
             decl_span: Some(decl_span),
             type_info: None,
             doc: None,
+            file: extern_file,
         });
     }
 
