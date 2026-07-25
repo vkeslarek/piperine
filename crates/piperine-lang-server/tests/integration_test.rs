@@ -2,7 +2,7 @@ use lsp_server::{Connection, Message, Request, RequestId, Notification};
 use lsp_types::{
     Position, Uri, HoverParams, TextDocumentPositionParams, TextDocumentIdentifier,
     DidOpenTextDocumentParams, TextDocumentItem, GotoDefinitionParams, GotoDefinitionResponse,
-    Location, WorkspaceEdit, PrepareRenameResponse,
+    Location, WorkspaceEdit, PrepareRenameResponse, DocumentChanges,
 };
 use lsp_types::notification::Notification as _;
 use lsp_types::request::Request as _;
@@ -1239,4 +1239,132 @@ fn cross_file_goto_opens_the_declaring_file() {
         target_offset >= mod_a_start,
         "goto target (offset {target_offset}) must land inside `A`'s own declaration (starting at {mod_a_start})"
     );
+}
+
+// ── T14: cross-file rename (LSP-12) ──────────────────────────────────────
+
+/// Drives a `Connection::memory()` rename round trip against a specific
+/// `uri` (the cross-file counterpart of `lsp_rename`, which always opens a
+/// hardcoded single-file uri).
+fn lsp_rename_at(uri: &Uri, source: &str, line: u32, character: u32, new_name: &str) -> Option<WorkspaceEdit> {
+    let (client_conn, server_conn) = Connection::memory();
+
+    std::thread::spawn(move || {
+        let mut server = piperine_lang_server::server::LanguageServer::new(server_conn);
+        server.run().unwrap();
+    });
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "phdl".to_string(),
+            version: 1,
+            text: source.to_string(),
+        },
+    };
+    client_conn.sender.send(Message::Notification(Notification {
+        method: lsp_types::notification::DidOpenTextDocument::METHOD.to_string(),
+        params: serde_json::to_value(did_open_params).unwrap(),
+    })).unwrap();
+
+    for _ in 0..5 {
+        if let Ok(Message::Notification(not)) = client_conn.receiver.recv_timeout(Duration::from_millis(500))
+            && not.method == lsp_types::notification::PublishDiagnostics::METHOD {
+                break;
+            }
+    }
+
+    let rename_params = lsp_types::RenameParams {
+        text_document_position: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position { line, character },
+        },
+        new_name: new_name.to_string(),
+        work_done_progress_params: Default::default(),
+    };
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(1),
+        method: lsp_types::request::Rename::METHOD.to_string(),
+        params: serde_json::to_value(rename_params).unwrap(),
+    })).unwrap();
+
+    let msg = recv_timeout(&client_conn.receiver, 1000);
+    let response = if let Message::Response(resp) = msg {
+        assert_eq!(resp.id, RequestId::from(1));
+        resp.result.and_then(|val| serde_json::from_value(val).ok())
+    } else {
+        panic!("expected a rename response");
+    };
+
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(99),
+        method: "shutdown".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+    recv_timeout(&client_conn.receiver, 500);
+    client_conn.sender.send(Message::Notification(Notification {
+        method: "exit".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+
+    response
+}
+
+/// LSP-12 Independent Test: renaming a module used across a two-file
+/// project (`b.phdl` `use`-imports and instantiates a module declared in
+/// `a.phdl`) edits both files via `WorkspaceEdit.document_changes` — the
+/// declaration in `a.phdl` and the instantiation's type name in `b.phdl`.
+#[test]
+fn cross_file_rename_edits_every_referencing_file() {
+    let scratch = ScratchProject::new("rename_cross_file");
+    let a_src = "pub discipline Electrical { potential v: Real; flow i: Real; }\npub mod A (inout p: Electrical, inout n: Electrical) { param gain: Real = 1.0; }\n";
+    let a_path = scratch.write_src("a.phdl", a_src);
+    let b_src = "use scratch_proj::a;\nmod B (inout p: Electrical, inout n: Electrical) {\n    inst: A(.p = p, .n = n);\n}\n";
+    let b_path = scratch.write_src("b.phdl", b_src);
+
+    let b_uri: Uri = format!("file://{}", b_path.display()).parse().unwrap();
+    // `    inst: A(...)` — cursor on the `A` type name.
+    let line = 2u32;
+    let character = "    inst: ".chars().count() as u32;
+
+    let edit = lsp_rename_at(&b_uri, b_src, line, character, "Amp")
+        .expect("renaming a cross-file module must produce a WorkspaceEdit");
+
+    let document_changes = match edit.document_changes {
+        Some(DocumentChanges::Edits(edits)) => edits,
+        other => panic!("expected document_changes edits, got: {other:?}"),
+    };
+    assert_eq!(
+        document_changes.len(), 2,
+        "cross-file rename must edit both the declaring file and the referencing file"
+    );
+
+    let a_uri: Uri = format!("file://{}", a_path.display()).parse().unwrap();
+
+    let a_edit = document_changes.iter().find(|e| e.text_document.uri == a_uri)
+        .expect("a.phdl (the declaring file) must have an edit");
+    assert_eq!(a_edit.edits.len(), 1, "a.phdl gets exactly one edit: the module's own name");
+    let a_new_text = match &a_edit.edits[0] {
+        lsp_types::OneOf::Left(te) => &te.new_text,
+        lsp_types::OneOf::Right(ate) => &ate.text_edit.new_text,
+    };
+    assert_eq!(a_new_text, "Amp");
+
+    let b_edit = document_changes.iter().find(|e| e.text_document.uri == b_uri)
+        .expect("b.phdl (the referencing file) must have an edit");
+    assert_eq!(b_edit.edits.len(), 1, "b.phdl gets exactly one edit: the instance's type name");
+    let b_new_text = match &b_edit.edits[0] {
+        lsp_types::OneOf::Left(te) => &te.new_text,
+        lsp_types::OneOf::Right(ate) => &ate.text_edit.new_text,
+    };
+    assert_eq!(b_new_text, "Amp");
+
+    // The edited range in a.phdl must fall on `A`'s own name, not
+    // anywhere else in the declaration (e.g. inside the port list).
+    let a_edit_start = position_to_byte(a_src, match &a_edit.edits[0] {
+        lsp_types::OneOf::Left(te) => te.range.start,
+        lsp_types::OneOf::Right(ate) => ate.text_edit.range.start,
+    });
+    let a_name_offset = a_src.find("pub mod A").unwrap() + "pub mod ".len();
+    assert_eq!(a_edit_start, a_name_offset, "a.phdl's edit must target `A`'s own name token");
 }

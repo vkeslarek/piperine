@@ -64,7 +64,7 @@ fn cross_file_location(
     // cross-file check below runs against the *type*, not the label.
     let target_name = match resolution.kind {
         SymbolKind::Module => resolution.name.clone(),
-        SymbolKind::Instance => instance_module_type_at(design, decl_span)?,
+        SymbolKind::Instance => crate::symbol_index::instance_module_type_at(design, decl_span)?,
         _ => return None,
     };
 
@@ -93,24 +93,6 @@ fn cross_file_location(
             crate::text_pos::byte_range(&content, span.offset(), span.offset() + span.len());
         let uri: lsp_types::Uri = format!("file://{}", path.display()).parse().ok()?;
         Some(Location { uri, range })
-    })
-}
-
-/// Find the `module` field of the POM `Instance` whose own `span` matches
-/// `decl_span` exactly, across every module in `design` — the type name a
-/// `SymbolKind::Instance` resolution names when the cursor was actually on
-/// the type, not the label.
-fn instance_module_type_at(
-    design: &piperine_lang::Design,
-    decl_span: miette::SourceSpan,
-) -> Option<String> {
-    design.modules().find_map(|m| {
-        m.instances
-            .iter()
-            .find(|i| {
-                i.span.is_some_and(|s| s.offset() == decl_span.offset() && s.len() == decl_span.len())
-            })
-            .map(|i| i.module.clone())
     })
 }
 

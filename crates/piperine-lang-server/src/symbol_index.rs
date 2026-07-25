@@ -118,6 +118,28 @@ fn resolve_in_module(m: &piperine_lang::pom::Module, word: &str) -> Option<Resol
     None
 }
 
+/// Find the `module` field of the POM `Instance` whose own `span` matches
+/// `decl_span` exactly, across every module in `design` — the type name a
+/// `SymbolKind::Instance` resolution names when the cursor was actually on
+/// the type, not the label (`resolve_in_module`'s instance branch matches
+/// on either). Shared by cross-file goto (T13) and cross-file rename
+/// (T14), both of which need to recover the *type* being referenced from
+/// an `Instance`-kind `Resolution`'s `decl_span` (the whole instance
+/// statement's span, not a token span).
+pub fn instance_module_type_at(
+    design: &piperine_lang::Design,
+    decl_span: miette::SourceSpan,
+) -> Option<String> {
+    design.modules().find_map(|m| {
+        m.instances
+            .iter()
+            .find(|i| {
+                i.span.is_some_and(|s| s.offset() == decl_span.offset() && s.len() == decl_span.len())
+            })
+            .map(|i| i.module.clone())
+    })
+}
+
 pub fn resolve_at(
     design: &Design,
     source: &str,
