@@ -346,7 +346,7 @@ impl PluginHost {
     fn register_attribute_items(ctx: &mut ElabContext, items: &[piperine_lang::parse::ast::Item]) {
         for item in items {
             if let piperine_lang::parse::ast::Item::ExternDecl(
-                piperine_lang::parse::ast::ExternDecl::Attribute { span, name, fields, .. },
+                piperine_lang::parse::ast::ExternDecl::Attribute { span, name, fields, doc },
             ) = item
             {
                 let attr_fields = fields
@@ -359,7 +359,7 @@ impl PluginHost {
                         decl_span: f.span,
                     })
                     .collect();
-                ctx.schemas.register_declared(name, attr_fields, *span);
+                ctx.schemas.register_declared(name, attr_fields, *span, doc.clone());
             }
         }
     }

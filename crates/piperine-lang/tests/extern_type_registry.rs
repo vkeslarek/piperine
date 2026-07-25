@@ -11,7 +11,7 @@ use piperine_lang::{parse_and_elaborate, SourceMap};
 fn extern_type_registers_with_its_decl_span() {
     let mut reg = TypeRegistry::new();
     let span = Some(miette::SourceSpan::from((0, 18)));
-    reg.register(TypeDefKind::Extern { name: "Real".into(), decl_span: span });
+    reg.register(TypeDefKind::Extern { name: "Real".into(), decl_span: span, doc: None });
 
     let found = reg.lookup("Real").expect("extern type should be registered");
     assert_eq!(found.name(), "Real");

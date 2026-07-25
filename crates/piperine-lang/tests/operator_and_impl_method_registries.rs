@@ -139,6 +139,7 @@ fn attr_field_carries_a_decl_span() {
             decl_span: Some(span),
         }],
         None,
+        None,
     );
 
     let SchemaShape::Declared(fields) = schemas.shape("device").expect("schema should be registered") else {

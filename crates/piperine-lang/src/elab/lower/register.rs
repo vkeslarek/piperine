@@ -75,7 +75,7 @@ impl Elaborator {
                 // taken by any type declaration (plain or extern) is an
                 // ordinary duplicate-declaration error (SPEC Edge Cases: no
                 // shadowing of an `extern` declaration).
-                Item::ExternDecl(crate::parse::ast::ExternDecl::Type { span, name, doc: _ }) => {
+                Item::ExternDecl(crate::parse::ast::ExternDecl::Type { span, name, doc }) => {
                     if self.ctx.types.lookup(name).is_some() {
                         return Err(ElabError::from(crate::pom::ElabErrorKind::Other(format!(
                             "type `{name}` is already declared (duplicate `extern type`/type declaration)"
@@ -84,6 +84,7 @@ impl Elaborator {
                     self.ctx.types.register(crate::elab::registry::TypeDefKind::Extern {
                         name: name.clone(),
                         decl_span: *span,
+                        doc: doc.clone(),
                     });
                 }
                 // `extern fn`/`extern task` register into `CallableRegistry`
@@ -128,7 +129,7 @@ impl Elaborator {
                 // site is fine, no default substituted; a field without
                 // `?` is required, matching bundle-backed schemas' own
                 // "no default = required" rule.
-                Item::ExternDecl(crate::parse::ast::ExternDecl::Attribute { span, name, fields, doc: _ }) => {
+                Item::ExternDecl(crate::parse::ast::ExternDecl::Attribute { span, name, fields, doc }) => {
                     let attr_fields = fields
                         .iter()
                         .map(|f| crate::elab::registry::AttrField {
@@ -139,7 +140,7 @@ impl Elaborator {
                             decl_span: f.span,
                         })
                         .collect();
-                    self.ctx.schemas.register_declared(name, attr_fields, *span);
+                    self.ctx.schemas.register_declared(name, attr_fields, *span, doc.clone());
                 }
                 // `extern impl TypeName { fn method(...) -> Ret; ... }`
                 // registers each method into the impl-method table (T10),

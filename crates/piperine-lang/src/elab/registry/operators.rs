@@ -31,6 +31,7 @@ impl CallableDef for ExternOperatorDecl {
     fn param_types(&self) -> Option<&[crate::pom::ValueType]> { Some(&self.param_types) }
     fn is_extern(&self) -> bool { true }
     fn decl_span(&self) -> Option<miette::SourceSpan> { self.sig.span }
+    fn doc(&self) -> Option<&str> { self.sig.doc.as_deref() }
 }
 
 pub struct OperatorRegistry {

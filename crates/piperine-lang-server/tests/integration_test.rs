@@ -415,6 +415,58 @@ fn hover_on_undocumented_module_is_unchanged() {
     assert_eq!(contents, "**module** `R`");
 }
 
+// ── BUG-2 (LSB-04..06): hover shows `///` docs for extern declarations ──────
+
+/// spec.md's Independent Test for P2 (BUG-2): hover on a `///`-documented
+/// `extern` use-site renders the doc as Markdown, same convention as an
+/// already-documented `mod`/`param` (mirrors
+/// `hover_on_documented_module_renders_doc_as_markdown`).
+#[test]
+fn hover_on_documented_extern_operator_renders_doc_as_markdown() {
+    let source = "/// Time derivative of its argument.\nextern operator my_ddt(x: Real) -> Real;\ndiscipline Electrical { potential v: Real; flow i: Real; }\nmod Cap (inout p: Electrical, inout n: Electrical) {\n    param c: Real = 1.0;\n    analog Behave { I(p, n) <+ c * my_ddt(V(p, n)); }\n}\n";
+
+    let call_offset = source.find("my_ddt(V").unwrap();
+    let mut line = 0u32;
+    let mut last_nl = 0usize;
+    for (i, ch) in source[..call_offset].char_indices() {
+        if ch == '\n' {
+            line += 1;
+            last_nl = i + 1;
+        }
+    }
+    let character = source[last_nl..call_offset].chars().count() as u32;
+
+    let contents = lsp_hover_markdown(source, line, character);
+    assert!(
+        contents.contains("Time derivative of its argument."),
+        "hover contents must include the extern operator's doc text, got: {contents}"
+    );
+}
+
+/// LSP-09-equivalent no-regression check for BUG-2: an `extern` declaration
+/// with no `///` run still hovers without a stray doc paragraph.
+#[test]
+fn hover_on_undocumented_extern_operator_is_unchanged() {
+    let source = "extern operator my_ddt(x: Real) -> Real;\ndiscipline Electrical { potential v: Real; flow i: Real; }\nmod Cap (inout p: Electrical, inout n: Electrical) {\n    param c: Real = 1.0;\n    analog Behave { I(p, n) <+ c * my_ddt(V(p, n)); }\n}\n";
+
+    let call_offset = source.find("my_ddt(V").unwrap();
+    let mut line = 0u32;
+    let mut last_nl = 0usize;
+    for (i, ch) in source[..call_offset].char_indices() {
+        if ch == '\n' {
+            line += 1;
+            last_nl = i + 1;
+        }
+    }
+    let character = source[last_nl..call_offset].chars().count() as u32;
+
+    let contents = lsp_hover_markdown(source, line, character);
+    assert!(
+        !contents.to_lowercase().contains("derivative"),
+        "no doc text should appear when there is no `///` run, got: {contents}"
+    );
+}
+
 // ── T6: `resolve_at` cursor-context + shadowing (LSP-01/02) ─────────────────
 
 /// LSP-01/02 independent test: two modules each declare a `param` of the

@@ -299,18 +299,18 @@ pub fn resolve_at(
             name: word,
             decl_span: Some(decl_span),
             type_info: None,
-            doc: None,
+            doc: c.doc().map(str::to_string),
             file: extern_file,
         });
     }
 
-    if let Some(TypeDefKind::Extern { decl_span, .. }) = ctx.types.lookup(&word) {
+    if let Some(TypeDefKind::Extern { decl_span, doc, .. }) = ctx.types.lookup(&word) {
         return Some(Resolution {
             kind: SymbolKind::Type,
             name: word,
             decl_span: *decl_span,
             type_info: None,
-            doc: None,
+            doc: doc.clone(),
             file: extern_file,
         });
     }
@@ -322,7 +322,7 @@ pub fn resolve_at(
             name: word,
             decl_span: Some(decl_span),
             type_info: None,
-            doc: None,
+            doc: c.doc().map(str::to_string),
             file: extern_file,
         });
     }
@@ -336,12 +336,13 @@ pub fn resolve_at(
     // goto-definition correctly declines instead of fabricating a location.
     if ctx.schemas.shape(&word).is_some() {
         let decl_span = ctx.schemas.decl_span(&word);
+        let doc = ctx.schemas.doc(&word).map(str::to_string);
         return Some(Resolution {
             kind: SymbolKind::AttrSchema,
             name: word,
             decl_span,
             type_info: None,
-            doc: None,
+            doc,
             file: extern_file,
         });
     }
@@ -353,7 +354,7 @@ pub fn resolve_at(
             name: word,
             decl_span: Some(decl_span),
             type_info: None,
-            doc: None,
+            doc: c.doc().map(str::to_string),
             file: extern_file,
         });
     }
