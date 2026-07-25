@@ -120,6 +120,33 @@ impl ResolutionIndex {
         self.bindings.get(&id).map(|b| b.use_spans.as_slice()).unwrap_or(&[])
     }
 
+    /// Stamp every binding currently recorded in this index with `file`
+    /// (multi-file project indexing, T12/LSP-14) — call once on a
+    /// single-file index (whose bindings all leave `file: None`, see the
+    /// module docs) before folding it into a project-wide index with
+    /// [`merge`](Self::merge).
+    pub fn set_file(&mut self, file: String) {
+        for info in self.bindings.values_mut() {
+            info.file = Some(file.clone());
+        }
+    }
+
+    /// Fold `other`'s uses and bindings into `self`, remapping `other`'s
+    /// [`BindingId`]s so they never collide with `self`'s own (each
+    /// single-file index independently numbers bindings from 0) —
+    /// multi-file project indexing (T12/LSP-14). `self.uses` stays sorted
+    /// by span offset afterward.
+    pub fn merge(&mut self, other: ResolutionIndex) {
+        let offset = self.bindings.keys().map(|id| id.0 + 1).max().unwrap_or(0);
+        for (span, id) in other.uses {
+            self.uses.push((span, BindingId(id.0 + offset)));
+        }
+        for (id, info) in other.bindings {
+            self.bindings.insert(BindingId(id.0 + offset), info);
+        }
+        self.uses.sort_by_key(|(span, _)| span.offset());
+    }
+
     fn insert(&mut self, next_id: &mut u32, kind: BindingKind, name: String, span: Option<miette::SourceSpan>, doc: Option<String>, owner_module: Option<String>) {
         let Some(span) = span else { return };
         let id = BindingId(*next_id);

@@ -123,11 +123,8 @@ pub fn handle_notification(state: &mut ServerState, not: Notification, conn_send
             // Re-elaborate all documents when a watched file changes
             let uris: Vec<_> = state.documents.keys().cloned().collect();
             for uri in uris {
-                if let Some(doc) = state.documents.get_mut(&uri) {
-                    let source_map = crate::project::ProjectContext::discover(&uri).source_map();
-                    doc.analyze(&source_map);
-                    crate::handlers::diagnostics::publish_diagnostics(state, &uri, &connection);
-                }
+                state.analyze_document(&uri);
+                crate::handlers::diagnostics::publish_diagnostics(state, &uri, &connection);
             }
         }
         "workspace/didChangeConfiguration" => {

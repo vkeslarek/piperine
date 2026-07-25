@@ -122,12 +122,7 @@ impl LanguageServer {
                                     }
 
                                     // Run elaboration (slow path).
-                                    if let Some(doc) = state.documents.get_mut(&uri) {
-                                        let source_map =
-                                            crate::project::ProjectContext::discover(&uri)
-                                                .source_map();
-                                        doc.analyze(&source_map);
-                                    }
+                                    state.analyze_document(&uri);
                                     let dummy_conn = lsp_server::Connection {
                                         sender: conn_sender.clone(),
                                         receiver: crossbeam_channel::never(),

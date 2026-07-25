@@ -1,6 +1,7 @@
 //! Per-document state: parsed design, errors, and version tracking.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use lsp_types::Uri;
 
 use piperine_lang::elab::registry::ElabContext;
@@ -10,6 +11,12 @@ use piperine_lang::Design;
 pub struct ServerState {
     /// Parsed designs keyed by document URI.
     pub documents: HashMap<Uri, DocumentState>,
+    /// Multi-file project units (T12/LSP-14), keyed by project root —
+    /// built lazily the first time a document belonging to that project is
+    /// analyzed (`analyze_document`), then reused. A document outside any
+    /// `Piperine.toml` never gets an entry here (`DocumentState::
+    /// project_root` stays `None`) — the single-file fallback, LSP-17.
+    pub projects: HashMap<PathBuf, crate::project::ProjectUnit>,
 }
 
 pub struct DocumentState {
@@ -31,6 +38,11 @@ pub struct DocumentState {
     /// lifecycle as `design`/`ctx` (`None` until the first successful
     /// `analyze()`).
     pub resolution_index: Option<piperine_lang::ResolutionIndex>,
+    /// The enclosing project's root directory (T12/LSP-14), when one was
+    /// discovered by walking up from this document to a `Piperine.toml`.
+    /// `None` for a standalone document — the single-file fallback
+    /// (LSP-17); set by `ServerState::analyze_document`.
+    pub project_root: Option<PathBuf>,
     /// The raw parsed AST.
     pub ast: Option<piperine_lang::parse::ast::SourceFile>,
     /// Parse/elaboration error messages if any.
@@ -47,13 +59,39 @@ pub struct ParseError {
 
 impl ServerState {
     pub fn new() -> Self {
-        Self { documents: HashMap::new() }
+        Self { documents: HashMap::new(), projects: HashMap::new() }
     }
 
     /// Create a ServerState for testing (no connection needed).
     #[allow(dead_code)]
     pub fn dummy() -> Self {
-        Self { documents: HashMap::new() }
+        Self { documents: HashMap::new(), projects: HashMap::new() }
+    }
+
+    /// Analyze the document at `uri`: discover its enclosing project (if
+    /// any), analyze it against that project's `SourceMap`, and — when a
+    /// project root was found — ensure `self.projects` holds a
+    /// `ProjectUnit` for that root (built once, then reused) and record it
+    /// on the document. This is the single seam every notification/request
+    /// handler that re-elaborates a document should call instead of
+    /// discovering the project and calling `DocumentState::analyze`
+    /// separately, so `projects`/`project_root` never drift out of sync
+    /// with `documents` (T12/LSP-14).
+    pub fn analyze_document(&mut self, uri: &Uri) {
+        let ctx = crate::project::ProjectContext::discover(uri);
+        let source_map = ctx.source_map();
+        let root = ctx.root().cloned();
+
+        if let Some(doc) = self.documents.get_mut(uri) {
+            doc.analyze(&source_map);
+            doc.project_root = root.clone();
+        }
+
+        if let Some(root) = root {
+            self.projects
+                .entry(root.clone())
+                .or_insert_with(|| crate::project::ProjectUnit::build(&root, &source_map));
+        }
     }
 }
 
@@ -66,7 +104,16 @@ impl Default for ServerState {
 impl DocumentState {
     /// A fresh document holding `source` at `version`, not yet analyzed.
     pub fn new(source: String, version: i32) -> Self {
-        Self { source, version, design: None, ctx: None, resolution_index: None, ast: None, errors: Vec::new() }
+        Self {
+            source,
+            version,
+            design: None,
+            ctx: None,
+            resolution_index: None,
+            project_root: None,
+            ast: None,
+            errors: Vec::new(),
+        }
     }
 
     /// Run the full lexer+parser+elaborator pipeline over the current
