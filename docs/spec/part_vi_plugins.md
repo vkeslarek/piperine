@@ -625,3 +625,237 @@ elaboration (`E2xxx`), and reflection (`E3xxx`).
 | §10.2 | no release asset for the host triple | P0012 `NoAssetForTriple` |
 | §10.3 | fetched asset fails the `verify` hash | P0013 `VerifyMismatch` |
 | §10.3 | changed release asset rejected at re-prompt | P0001 `Untrusted` |
+
+---
+
+## Appendix A — Writing a plugin: one worked example per shape
+
+Three complete plugins, smallest possible. Each is a repository with a
+`Piperine.toml`, a `piperine-plugin.toml`, and its contribution sources;
+each installs with `piperine add <git>` (§5.1) and is declared under
+`[plugins]` in the user's `Piperine.toml` (§5.2).
+
+### A.1 Pure-PHDL: a model library
+
+No code runs — the plugin is a code library whose `pub` items resolve via
+`use`.
+
+```
+bjt-models/
+├── Piperine.toml
+├── piperine-plugin.toml
+└── src/
+    └── lib.phdl
+```
+
+```toml
+# piperine-plugin.toml — [plugin] alone ⇒ pure-PHDL shape (§4)
+[plugin]
+name        = "bjt-models"
+description = "Gummel–Poon model library"
+```
+
+```phdl
+// src/lib.phdl
+pub mod GummelPoon(inout c: Electrical, inout b: Electrical, inout e: Electrical) {
+    param is:  Real = 1e-15;
+    param bf:  Real = 100.0;
+    // …
+}
+```
+
+```phdl
+// the user's design
+use bjt_models::GummelPoon;
+
+mod Amp() {
+    // …
+    q1 : GummelPoon (.c = vcc, .b = inp, .e = gnd);
+}
+```
+
+Nothing is registered, hashed, or prompted — importing resolves the `pub`
+items and that is all.
+
+### A.2 Scripted: a lint script + an elaboration hook
+
+The `python` key makes it scripted; the decorators declare AND bind each
+contribution in one place (§6). The Rust form is shown side by side — same
+names, same phases, same `ctx` (MD-22).
+
+```toml
+# piperine-plugin.toml
+[plugin]
+name   = "lintpack"
+python = "plugin.py"
+
+[permissions]
+filesystem = ["write *.phdl"]
+```
+
+<table>
+<tr><th>Python (<code>plugin.py</code>)</th><th>Rust (native equivalent)</th></tr>
+<tr><td>
+
+```python
+import piperine as pip
+
+@pip.script("lint")
+def lint(args, ctx):
+    issues = run_lint(args)
+    ctx.fs_write("lint-report.phdl", issues)
+    return 0
+
+@pip.hook.after_elaborate
+def check(ctx):
+    design = ctx.design()
+    assert design.module("Top") is not None
+
+@pip.hook.transform_design
+def inject(ctx, staging):
+    staging.add_instance(
+        "Top", "r_par", "Resistor",
+        ["out", "gnd"], [("r", 1e3)],
+    )
+```
+
+</td><td>
+
+```rust
+#[pip::script("lint")]
+fn lint(args: &[String], ctx: &Ctx)
+    -> Result<i32, String>
+{
+    let issues = run_lint(args);
+    ctx.fs_write("lint-report.phdl", &issues)
+        .map_err(|e| e.to_string())?;
+    Ok(0)
+}
+
+#[pip::hook(after_elaborate)]
+fn check(ctx: &Ctx) -> Result<(), String> {
+    let design = ctx.design();
+    assert!(design.module("Top").is_some());
+    Ok(())
+}
+
+#[pip::hook(transform_design)]
+fn inject(ctx: &Ctx, staging: &DesignStaging)
+    -> Result<(), String>
+{
+    staging.add_instance(
+        "Top", "r_par", "Resistor",
+        vec!["out".into(), "gnd".into()],
+        vec![("r".into(), Value::Real(1e3))],
+    )
+    .map_err(|e| e.to_string())
+}
+```
+
+</td></tr>
+</table>
+
+```
+$ piperine add acme/lintpack
+  Plugin 'lintpack' declares permissions:
+    filesystem    : write *.phdl
+  Grant these permissions? [y/N] y
+$ piperine lint src/main.phdl      # dispatches to @pip.script("lint")
+```
+
+### A.3 Device: a compiled binary + `@device` in the plugin's own PHDL
+
+Three pieces: the `Element` implementation with `#[pip::device]`, the
+`@device pub mod` in the plugin's **own** PHDL (D10), and the manifest
+pointing at a release (§10).
+
+```rust
+// src/lib.rs — the device binary (crate-type = ["cdylib"])
+use piperine_plugin::{entry, Plugin, PluginDevice, PluginDeviceSpec, /* … */};
+
+pub struct DiodePlugin { manifest: Manifest }
+impl Plugin for DiodePlugin {
+    fn manifest(&self) -> &Manifest { &self.manifest }
+    // contributions come from the #[pip::device] declaration below
+}
+
+#[pip::device("Spice::Diode")]
+struct Diode { label: String, a: AnalogReference, b: AnalogReference, is: f64 }
+
+impl PluginDevice for Diode {
+    const KIND: DeviceKind = DeviceKind::Analog;
+    fn from_spec(spec: &PluginDeviceSpec) -> Result<Self, String> { /* ports + params */ }
+}
+impl AnalogDevice for Diode { /* load_dc / load_transient stamps */ }
+impl DigitalDevice for Diode {}
+impl Introspect for Diode {}
+impl Element for Diode {
+    fn name(&self) -> &str { &self.label }
+    fn capabilities(&self) -> ElementCapabilities { ElementCapabilities::ANALOG }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn piperine_plugin_abi_version() -> u32 { piperine_plugin::ABI_VERSION }
+#[unsafe(no_mangle)]
+pub extern "C" fn piperine_plugin_entry() -> *mut core::ffi::c_void {
+    entry(DiodePlugin::new())
+}
+```
+
+```phdl
+// src/lib.phdl — the @device mod lives in the PLUGIN's PHDL; the user
+// never writes @device (D10).
+@device(plugin = "spice", type = "Spice::Diode")
+pub mod Diode(inout p: Electrical, inout n: Electrical) {
+    param is: Real = 1e-14;
+}
+```
+
+```toml
+# piperine-plugin.toml
+[plugin]
+name   = "spice"
+device = { release = "github:acme/spice@v1.2.0", verify = "sha256:9f3a…" }
+```
+
+The release carries one asset per supported host, named by the §10.2
+convention — CI builds and attaches them:
+
+```
+libspice-x86_64-unknown-linux-gnu.so
+libspice-aarch64-apple-darwin.dylib
+libspice-x86_64-pc-windows-msvc.dll
+```
+
+The user adds the plugin and instantiates the mod — no `@device` at the
+user site:
+
+```phdl
+use spice::Diode;
+
+mod Rectifier() {
+    // …
+    d1 : Diode (.p = out, .n = gnd) { .is = 1e-13 };
+}
+```
+
+On first load the asset for the user's triple is fetched, hashed, and
+TOFU-approved (or matched against `verify` with no prompt); the pin lands
+in `Piperine.lock`, and every later run — including offline ones — loads
+from the content-addressed cache (§10.4). A host triple with no matching
+asset is `P0012 NoAssetForTriple`, loud at load.
+
+### A.4 The decorator equivalence, consolidated
+
+| Contribution | Rust | Python |
+|--------------|------|--------|
+| Script `lint` | `#[pip::script("lint")]` | `@pip.script("lint")` |
+| Hook `after_parse` | `#[pip::hook(after_parse)]` | `@pip.hook.after_parse` |
+| Hook `after_elaborate` | `#[pip::hook(after_elaborate)]` | `@pip.hook.after_elaborate` |
+| Hook `transform_design` | `#[pip::hook(transform_design)]` | `@pip.hook.transform_design` |
+| Hook `before_lower` | `#[pip::hook(before_lower)]` | `@pip.hook.before_lower` |
+| Hook `after_solve` | `#[pip::hook(after_solve)]` | `@pip.hook.after_solve` |
+| Device `Type` | `#[pip::device("Type")]` | `@pip.device("Type")` (glue marker) |
+
+A name on one side without the other fails the cross-host parity test —
+this table is the contract the test locks (§6).
