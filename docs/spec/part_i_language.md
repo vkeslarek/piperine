@@ -309,6 +309,28 @@ use devices::passives;        // brings Resistor into scope; InternalHelper stay
 The standard library (`piperine::` namespace) is exempt from privacy filtering — its
 items are always exported regardless of `pub`, matching the prelude injection model.
 
+**Qualified module references (implicit `use`).** A module may be instantiated by its
+full `::`-qualified path with no `use` statement — the resolver auto-loads the prefix
+file exactly as an explicit `use` would. The path's final segment is the module name;
+everything before it is the file to load:
+
+```phdl
+// (a) explicit `use`, then a bare module name:
+use spice::passives;
+r1 : res ( .p = a, .n = gnd ) { .r = 1k };
+
+// (b) fully-qualified path, no `use` needed — equivalent to (a):
+r1 : spice::passives::res ( .p = a, .n = gnd ) { .r = 1k };
+```
+
+`spice::passives::res` loads the file `spice::passives` (exactly as `use
+spice::passives;` does) and instantiates its `res` module — the final path segment is
+the module name, the prefix is the file. The qualified form works for both labeled
+(`r1 : spice::passives::res(...)`) and anonymous (`spice::passives::res(...)`)
+instances. Mixing the two styles in one file is fine — the resolver dedups the file
+load. A qualified path whose prefix file does not exist is a fail-loud resolve error,
+never a silent bare-name fallback.
+
 A `const NAME : T = expr;` declares a global compile-time constant, evaluated at
 elaboration and usable wherever a param or literal is expected.
 

@@ -222,6 +222,16 @@ pub fn resolve_at(
     // names (ports/params/wires/vars/instances/behaviors) too, which step 2
     // above now resolves correctly (cursor-context-first) instead of
     // falling through to a global match on those kinds.
+    // A `use`-imported (or full-path-referenced) module/enum/bundle/... is
+    // inlined into `design` from another file; its `span` addresses that
+    // *origin* file, not this document. `Design::project().item_file(name)`
+    // records the real on-disk file every imported item came from — set it
+    // on `Resolution.file` so `goto_def` reads that file and applies the
+    // span there, instead of mis-applying it to the current document. A
+    // locally-declared item has no `item_file` entry → `None` → same-file
+    // goto (correct). Mirrors BUG-1's extern-goto mechanism.
+    let item_file = |name: &str| design.project().item_file(name).map(|p| p.to_path_buf());
+
     for m in design.modules() {
         if m.name == word {
             return Some(Resolution {
@@ -230,7 +240,7 @@ pub fn resolve_at(
                 decl_span: m.span,
                 type_info: None,
                 doc: m.doc.clone(),
-                file: None,
+                file: item_file(&m.name),
             });
         }
     }
@@ -243,7 +253,7 @@ pub fn resolve_at(
                 decl_span: e.span,
                 type_info: None,
                 doc: None,
-                file: None,
+                file: item_file(name),
             });
         }
     }
@@ -256,7 +266,7 @@ pub fn resolve_at(
                 decl_span: b.span,
                 type_info: None,
                 doc: None,
-                file: None,
+                file: item_file(name),
             });
         }
     }
@@ -269,7 +279,7 @@ pub fn resolve_at(
                 decl_span: d.span,
                 type_info: None,
                 doc: d.doc.clone(),
-                file: None,
+                file: item_file(name),
             });
         }
     }
@@ -282,7 +292,7 @@ pub fn resolve_at(
                 decl_span: c.span,
                 type_info: None,
                 doc: None,
-                file: None,
+                file: item_file(name),
             });
         }
     }

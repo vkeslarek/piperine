@@ -172,7 +172,52 @@ impl DocumentState {
     /// design and its registries (None when the document has no design or
     /// no symbol matches).
     pub fn resolve_at(&self, byte_offset: usize) -> Option<crate::symbol_index::Resolution> {
+        // Go-to-definition on a `use` statement's path opens the file it
+        // loads (`use spice::passives;` → `.../headers/spice/passives.phdl`).
+        if let Some(res) = self.resolve_use_path_at(byte_offset) {
+            return Some(res);
+        }
         crate::symbol_index::resolve_at(self.design.as_ref()?, &self.source, byte_offset, self.ctx.as_ref())
+    }
+
+    /// When `byte_offset` falls inside a `use <path>;` statement's path,
+    /// resolve to the on-disk file that path loads (from
+    /// `Design::project().use_file`). Returns a `Module`-kind resolution
+    /// carrying `file` + a `(0, 1)` `decl_span` so `goto_def` opens the
+    /// target file at its top. `None` when the cursor isn't on a `use` path
+    /// or the path never resolved.
+    fn resolve_use_path_at(&self, byte_offset: usize) -> Option<crate::symbol_index::Resolution> {
+        let design = self.design.as_ref()?;
+        let src = &self.source;
+        // The line containing byte_offset.
+        let line_start = src[..byte_offset.min(src.len())].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_end = src[line_start..].find('\n').map(|i| line_start + i).unwrap_or(src.len());
+        let line = &src[line_start..line_end];
+
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+        let rest = trimmed.strip_prefix("use ")?;
+        // The path runs from after `use ` up to the `;` (or end of line).
+        let path_str = rest.split(';').next()?.trim();
+        if path_str.is_empty() {
+            return None;
+        }
+        // Byte range of the path within the source.
+        let path_start = line_start + indent + "use ".len() + (rest.len() - rest.trim_start().len());
+        let path_end = path_start + path_str.len();
+        if byte_offset < path_start || byte_offset > path_end {
+            return None;
+        }
+        let segments: Vec<String> = path_str.split("::").map(|s| s.trim().to_string()).collect();
+        let file = design.project().use_file(&segments)?;
+        Some(crate::symbol_index::Resolution {
+            kind: crate::symbol_index::SymbolKind::Module,
+            name: segments.last().cloned().unwrap_or_default(),
+            decl_span: Some(miette::SourceSpan::new(0usize.into(), 1)),
+            type_info: None,
+            doc: None,
+            file: Some(file.to_path_buf()),
+        })
     }
 
     /// Byte ranges of every occurrence of the binding resolved at

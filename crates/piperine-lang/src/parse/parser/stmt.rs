@@ -106,7 +106,19 @@ impl<'a> Parser<'a> {
         let name_span: miette::SourceSpan = (name_start, self.previous_span_end() - name_start).into();
         let mut module_name = name.clone();
         let mut module_name_span = name_span;
+        let mut module_path: Vec<String> = Vec::new();
         let mut is_named_instance = false;
+
+        // Unlabeled instance with a qualified type:
+        // `spice::passives::res(...)` — the leading ident is the first path
+        // segment, not a label. The resolver auto-loads the prefix file as
+        // an implicit `use`; `module_name` becomes the final segment.
+        if self.peek() == Some(&Tok::DoubleColon) {
+            let (m, mp, mspan) = self.finish_module_path(name.clone(), name_start)?;
+            module_name = m;
+            module_name_span = mspan;
+            module_path = mp;
+        }
 
         let mut array_index: Option<Expr> = None;
         if self.eat(&Tok::LBrack) {
@@ -114,7 +126,7 @@ impl<'a> Parser<'a> {
             self.expect(&Tok::RBrack)?;
         }
 
-        if self.eat(&Tok::Assign) {
+        if module_path.is_empty() && self.eat(&Tok::Assign) {
             let mut lhs = Expr::Ident(name);
             if let Some(idx) = array_index {
                 lhs = Expr::Index(Box::new(lhs), Box::new(idx));
@@ -128,8 +140,12 @@ impl<'a> Parser<'a> {
         if self.eat(&Tok::Colon) {
             is_named_instance = true;
             let type_start = self.current_span_start();
-            module_name = self.parse_ident()?;
-            module_name_span = (type_start, self.previous_span_end() - type_start).into();
+            let first = self.parse_ident()?;
+            // The type after `:` may be a qualified path (`x : spice::passives::res(...)`).
+            let (m, mp, mspan) = self.finish_module_path(first, type_start)?;
+            module_name = m;
+            module_name_span = mspan;
+            module_path = mp;
         }
 
         let mut const_args = Vec::new();
@@ -208,11 +224,39 @@ impl<'a> Parser<'a> {
             name: if is_named_instance { Some(name) } else { None },
             array_index,
             module: module_name,
+            module_path,
             const_args,
             type_args,
             ports,
             params,
         })
+    }
+
+    /// Given the first path segment already parsed (`first`, starting at
+    /// byte `first_start`), consume any `:: ident` continuation of a
+    /// qualified module-type path. Returns `(module_name, module_path,
+    /// type_span)`: `module_name` is the final segment (the module),
+    /// `module_path` is the full segment list (`["spice","passives","res"]`)
+    /// when qualified or empty for a bare single-segment name, and
+    /// `type_span` covers the final segment token (the LSP goto/hover
+    /// target). See `ModuleStatement::Instance::module_path`.
+    fn finish_module_path(
+        &mut self,
+        first: String,
+        first_start: usize,
+    ) -> Result<(String, Vec<String>, miette::SourceSpan), crate::parse::error::ParseError> {
+        let mut segments = vec![first];
+        let mut last_start = first_start;
+        let mut last_end = self.previous_span_end();
+        while self.eat(&Tok::DoubleColon) {
+            last_start = self.current_span_start();
+            segments.push(self.parse_ident()?);
+            last_end = self.previous_span_end();
+        }
+        let module_name = segments.last().cloned().unwrap_or_default();
+        let module_path = if segments.len() > 1 { segments } else { Vec::new() };
+        let span: miette::SourceSpan = (last_start, last_end - last_start).into();
+        Ok((module_name, module_path, span))
     }
 
     // ─────────────────────────── §7  Behavior ────────────────────────────────

@@ -58,6 +58,15 @@ pub struct Project {
     /// tracked" (e.g. a native-only registry entry) — goto-definition
     /// declines rather than fabricating a location.
     pub item_files: HashMap<String, PathBuf>,
+    /// `use`-path segments → the real on-disk file they load
+    /// (`["spice","passives"]` → `.../headers/spice/passives.phdl`).
+    /// Recorded during resolution; the language server uses it for
+    /// go-to-definition on a `use` statement's path. `#[serde(skip)]`: a
+    /// `Vec<String>` map key is not JSON-serializable, and this is derived
+    /// resolution data (like `Design::flat_modules`), rebuilt every
+    /// elaboration — not authored reflection structure.
+    #[serde(skip)]
+    pub use_files: HashMap<Vec<String>, PathBuf>,
 }
 
 impl Project {
@@ -81,6 +90,12 @@ impl Project {
         }
         let base = name.split("__").next()?;
         self.item_files.get(base).map(PathBuf::as_path)
+    }
+
+    /// The real on-disk file a `use` path (its `::`-split segments) loads,
+    /// `None` if that path was never resolved (e.g. a bare unknown import).
+    pub fn use_file(&self, segments: &[String]) -> Option<&Path> {
+        self.use_files.get(segments).map(PathBuf::as_path)
     }
 }
 
@@ -193,6 +208,12 @@ impl Design {
     /// [`Self::set_origins`].
     pub(crate) fn set_item_files(&mut self, item_files: HashMap<String, PathBuf>) {
         self.project.item_files = item_files;
+    }
+
+    /// Record `use`-path → real on-disk file — called once by elaboration
+    /// with the resolver's record, alongside [`Self::set_item_files`].
+    pub(crate) fn set_use_files(&mut self, use_files: HashMap<Vec<String>, PathBuf>) {
+        self.project.use_files = use_files;
     }
 
     /// The elaborated top module, if set.

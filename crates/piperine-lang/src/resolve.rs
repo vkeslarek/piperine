@@ -110,6 +110,14 @@ impl<'a> Resolver<'a> {
         std::mem::take(&mut self.item_files)
     }
 
+    /// The `use`-path segments → real on-disk file recorded for every file
+    /// loaded during resolution (`use spice::passives;` →
+    /// `["spice","passives"]` → `.../headers/spice/passives.phdl`). The
+    /// language server uses it for go-to-definition on a `use` statement.
+    pub fn take_file_paths(&mut self) -> HashMap<Vec<String>, PathBuf> {
+        std::mem::take(&mut self.file_paths)
+    }
+
     /// Tag every named item in `items` with `path` in [`Self::item_files`].
     fn tag_item_files(&mut self, items: &[ast::Item], path: &str) {
         self.tag_item_files_owned(items, PathBuf::from(path));
@@ -242,7 +250,32 @@ impl<'a> Resolver<'a> {
     /// is always fully included — it is compiler-injected, not user-imported.
     pub fn expand(&mut self, source: SourceFile) -> Result<Vec<ast::Item>, ResolveError> {
         let mut seen: HashSet<Vec<String>> = HashSet::new();
-        self.expand_inner(source, &mut seen, None, None)
+        let mut result = self.expand_inner(source, &mut seen, None, None)?;
+
+        // Qualified instance types (`spice::passives::res(...)`) are an
+        // implicit `use` of their prefix file: no `use` statement is
+        // required. Auto-load every referenced file (the path minus its
+        // final module segment), transitively, until the fixpoint — a
+        // just-loaded file may itself reference further qualified types.
+        loop {
+            let mut needed: Vec<Vec<String>> = Vec::new();
+            collect_qualified_files(&result, &mut needed);
+            let fresh: Vec<Vec<String>> =
+                needed.into_iter().filter(|p| !seen.contains(p)).collect();
+            if fresh.is_empty() {
+                break;
+            }
+            for file_path in fresh {
+                seen.insert(file_path.clone());
+                let resolved = self.load_source(&file_path)?.clone();
+                let used_package = file_path.first().cloned().unwrap_or_default();
+                let used_file = self.file_paths.get(&file_path).cloned();
+                let expanded =
+                    self.expand_inner(resolved, &mut seen, Some(&used_package), used_file)?;
+                result.extend(expanded);
+            }
+        }
+        Ok(result)
     }
 
     /// Recursively expand `use` declarations in a source file, tracking
@@ -328,5 +361,41 @@ impl<'a> Resolver<'a> {
         self.file_paths.insert(path.to_vec(), file_path);
         self.cache.insert(path.to_vec(), source);
         Ok(self.cache.get(path).unwrap())
+    }
+}
+
+/// Collect the file paths every qualified instance type in `items` refers
+/// to — the path minus its final module segment (`spice::passives::res` →
+/// file `["spice", "passives"]`). Walks module bodies and nested
+/// structural `for`/`if` blocks. The resolver auto-loads each as an
+/// implicit `use` (see [`Resolver::expand`]).
+fn collect_qualified_files(items: &[ast::Item], out: &mut Vec<Vec<String>>) {
+    for item in items {
+        if let ast::Item::ModuleDeclaration(m) = item {
+            collect_in_stmts(&m.body, out);
+        }
+    }
+}
+
+fn collect_in_stmts(stmts: &[ast::ModuleStatement], out: &mut Vec<Vec<String>>) {
+    use ast::ModuleStatement as S;
+    for stmt in stmts {
+        match stmt {
+            S::Instance { module_path, .. } if module_path.len() > 1 => {
+                // File = every segment but the last (the module name).
+                let file: Vec<String> = module_path[..module_path.len() - 1].to_vec();
+                if !out.contains(&file) {
+                    out.push(file);
+                }
+            }
+            S::StructuralFor { body, .. } => collect_in_stmts(body, out),
+            S::StructuralIf { then_body, else_body, .. } => {
+                collect_in_stmts(then_body, out);
+                if let Some(eb) = else_body {
+                    collect_in_stmts(eb, out);
+                }
+            }
+            _ => {}
+        }
     }
 }

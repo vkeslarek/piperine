@@ -47,3 +47,74 @@ fn every_spice_header_elaborates() {
     }
     assert!(failures.is_empty(), "spice header(s) failed to elaborate:\n{}", failures.join("\n"));
 }
+
+// ── Qualified full-path instance types (no `use` required) ──────────────────
+
+/// A labeled instance may name its module by its full `::`-qualified path
+/// (`spice::passives::res`) with NO `use spice::passives;` statement — the
+/// resolver auto-loads the prefix file as an implicit `use`.
+#[test]
+fn full_path_labeled_instance_elaborates_without_use() {
+    let src = "
+        use piperine::disciplines;
+        mod Board() {
+            wire a: Electrical; wire gnd: Electrical;
+            r1: spice::passives::res(.p = a, .n = gnd) { .r = 1e3 };
+        }
+    ";
+    let design = piperine_lang::parse_and_elaborate(src, &SourceMap::dummy())
+        .expect("qualified full-path instance must elaborate without a `use`");
+    let board = design.module("Board").expect("Board elaborated");
+    let inst = board.instances.iter().find(|i| i.label.as_deref() == Some("r1")).expect("r1 present");
+    assert_eq!(inst.module, "res", "the instance's module resolves to the final path segment `res`");
+}
+
+/// An unlabeled instance may also use a full path.
+#[test]
+fn full_path_unlabeled_instance_elaborates_without_use() {
+    let src = "
+        use piperine::disciplines;
+        mod Board() {
+            wire a: Electrical; wire gnd: Electrical;
+            spice::passives::res(.p = a, .n = gnd) { .r = 1e3 };
+        }
+    ";
+    let design = piperine_lang::parse_and_elaborate(src, &SourceMap::dummy())
+        .expect("unlabeled qualified full-path instance must elaborate without a `use`");
+    assert!(design.module("Board").is_some());
+}
+
+/// The full-path form and an explicit `use` of the same file coexist (the
+/// resolver dedups the file load) — mixing the two styles is not an error.
+#[test]
+fn full_path_and_explicit_use_coexist() {
+    let src = "
+        use piperine::disciplines;
+        use spice::passives;
+        mod Board() {
+            wire a: Electrical; wire b: Electrical; wire gnd: Electrical;
+            r1: res(.p = a, .n = gnd) { .r = 1e3 };
+            r2: spice::passives::res(.p = b, .n = gnd) { .r = 2e3 };
+        }
+    ";
+    let design = piperine_lang::parse_and_elaborate(src, &SourceMap::dummy())
+        .expect("full-path + explicit use of the same file must coexist");
+    assert!(design.module("Board").is_some());
+}
+
+/// A full path whose prefix file does not exist fails loud (no silent
+/// fallthrough to a bare-name lookup that would mis-resolve).
+#[test]
+fn full_path_to_missing_file_fails_loud() {
+    let src = "
+        use piperine::disciplines;
+        mod Board() {
+            wire a: Electrical; wire gnd: Electrical;
+            r1: spice::nonexistent::foo(.p = a, .n = gnd) { };
+        }
+    ";
+    let err = piperine_lang::parse_and_elaborate(src, &SourceMap::dummy())
+        .expect_err("a full path to a missing file must fail loud");
+    let msg = format!("{err:?}");
+    assert!(msg.contains("nonexistent"), "error must name the missing file, got: {msg}");
+}

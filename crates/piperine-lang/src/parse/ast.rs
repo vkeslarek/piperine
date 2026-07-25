@@ -323,7 +323,15 @@ pub enum ModuleStatement {
         type_span: Option<miette::SourceSpan>,
         name: Option<String>,
         array_index: Option<Expr>,
+        /// The instantiated module's name (the last path segment for a
+        /// qualified reference, e.g. `res` in `spice::passives::res`).
         module: String,
+        /// The full qualified path when the instance type was written as a
+        /// `::`-path (`["spice", "passives", "res"]`), else empty. The
+        /// prefix (`spice::passives`) is the file the resolver auto-loads
+        /// as an implicit `use`; `module` is the final segment. Empty for a
+        /// bare, already-in-scope module name.
+        module_path: Vec<String>,
         const_args: Vec<Expr>,
         type_args: Vec<Type>,
         ports: Vec<PortConnection>,

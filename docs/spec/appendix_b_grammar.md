@@ -79,12 +79,19 @@ AssertStmt ::= "$assert" "(" Expr "," Expr ")" ";"
 Instances and connections, left-factored on `Ident { Indexer | Field }`:
 
 ```
-InstanceOrConnect ::= Ident { Indexer | Field } InstTail
+InstanceOrConnect ::= Ident [ "::" Ident { "::" Ident } ] { Indexer | Field } InstTail
 InstTail  ::= ":" ModuleRef PortArgs [ParamArgs] ";"     -- named instance
              | ConstArgs PortArgs [ParamArgs] ";"        -- anon w/ const args
              | PortArgs [ParamArgs] ";"                   -- anon
              | "=" Expr ";"                               -- net connection
-ModuleRef ::= Ident [ConstArgs] [TypeArgs]
+ModuleRef ::= Path [ConstArgs] [TypeArgs]
+Path      ::= Ident { "::" Ident }   -- a qualified module reference is an
+                                     -- implicit `use` of the prefix file;
+                                     -- the final segment is the module name
+                                     -- (`spice::passives::res` ⇒ load file
+                                     -- `spice::passives`, instantiate `res`).
+                                     -- A leading `Ident ::` on the anon form
+                                     -- is likewise a qualified module ref.
 ConstArgs ::= "[" Expr {"," Expr} "]"
 TypeArgs  ::= "<" Type {"," Type} ">"
 PortArgs  ::= "(" [ PortArg {"," PortArg} ] ")"
