@@ -1682,6 +1682,7 @@ dependencies = [
  "piperine",
  "piperine-codegen",
  "piperine-lang",
+ "piperine-plugin-macros",
  "piperine-project",
  "piperine-solver",
  "serde",

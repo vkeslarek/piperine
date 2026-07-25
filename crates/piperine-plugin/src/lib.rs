@@ -1,13 +1,16 @@
 //! Piperine plugin SDK + host (SPEC Part VI; engineering plan in
 //! `Plugin plan.md`).
 //!
-//! A plugin implements [`Plugin`]: a [`Manifest`] accessor plus a
-//! `register()` that contributes devices and CLI scripts through the
-//! [`Registrar`]. The host ([`PluginHost`]) discovers plugins from
-//! `Piperine.toml [plugins]`, verifies them (TOFU + content hash), loads
-//! them (native dlopen; MD-21 — the WASM/process backends are removed),
-//! and answers the pipeline's queries: schema seeding at elaboration,
-//! device construction at circuit build.
+//! A plugin implements [`Plugin`]: a [`Manifest`] accessor, optional
+//! lifecycle hooks, and — via the `#[pip::…]` attribute macros — declared
+//! devices, scripts, and hooks. Declaration and registration are coupled
+//! (plugin-interface v2, PLG-04): there is no imperative `register()` entry
+//! point; the host snapshots each plugin's declarations through
+//! [`Plugin::collect`] at load. The host ([`PluginHost`]) discovers plugins
+//! from `Piperine.toml [plugins]`, verifies them (TOFU + content hash),
+//! loads them (native dlopen; MD-21 — the WASM/process backends are
+//! removed), and answers the pipeline's queries: schema seeding at
+//! elaboration, device construction at circuit build.
 //!
 //! Plugins contribute **no attribute schemas** (plugin-interface v2,
 //! PLG-08): `@device`/`@port` (stdlib) are the only plugin-facing schema
@@ -31,7 +34,8 @@ mod view;
 pub use backend::native::ABI_VERSION;
 pub use capability::HostCtx;
 pub use contributions::{
-    Contributions, DeviceFactory, DeviceKind, PluginDevice, Registrar, ScriptHandler,
+    Contributions, Declared, DeclaredDevice, DeclaredScript, DeviceContribution, DeviceFactory,
+    DeviceKind, HookContribution, PluginDevice, ScriptContribution, ScriptHandler,
 };
 pub use ctx::Ctx;
 pub use error::{PluginError, PluginResult};
@@ -56,18 +60,22 @@ pub mod __private {
     pub use inventory::submit;
 }
 
-/// The plugin contract (SPEC Part VI §6/§8). Every contribution and hook is
-/// optional; hooks default to no-ops. Read-only hooks receive **the real
-/// POM** (`&Design`, SPEC Part IV) — no parallel view model; in-process
+/// The plugin contract (SPEC Part VI §6/§8). Every hook is optional;
+/// hooks default to no-ops. Read-only hooks receive **the real POM**
+/// (`&Design`, SPEC Part IV) — no parallel view model; in-process
 /// plugins reflect over the same structure the rest of the pipeline sees.
 /// `after_lower` is deliberately absent until a real consumer exists (D12).
 pub trait Plugin: Send + Sync {
     fn manifest(&self) -> &Manifest;
 
-    /// Contribute devices and scripts. Runs once at load time, before
-    /// elaboration.
-    fn register(&self, r: &mut Registrar) {
-        let _ = r;
+    /// The plugin's declared contributions (plugin-interface v2,
+    /// PLG-04/05/06). The default reads the `#[pip::…]` registry of the
+    /// binary this impl's code lives in — for a native cdylib, exactly its
+    /// own declarations (the default body is compiled into the plugin's
+    /// code and reached through the vtable). An embedded bridge (the
+    /// Python host) overrides this to surface its own declarations.
+    fn collect(&self) -> Declared {
+        Declared::from_registries()
     }
 
     /// Hook 1: after parsing, before elaboration — raw source, read-only.

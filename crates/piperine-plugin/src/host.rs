@@ -14,9 +14,10 @@ use piperine_solver::abi::Element;
 
 use crate::backend::native::{self, NativePlugin};
 use crate::capability::HostCtx;
-use crate::contributions::{Contributions, Registrar};
+use crate::contributions::Contributions;
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::Manifest;
+use crate::registry::{HookCall, HookPhase};
 use crate::trust::{artifact_hash, ensure_trusted, TrustMode};
 use crate::view::{DesignStaging, SolveResultView};
 use crate::Plugin;
@@ -163,23 +164,21 @@ impl PluginHost {
         self.plugins.sort_by(|a, b| a.manifest.name.cmp(&b.manifest.name));
     }
 
-    /// Run one plugin's `register()` and merge its contributions.
-    /// Contribution collisions surface here as P0003.
+    /// Merge one plugin's declared contributions (`Plugin::collect` — the
+    /// `#[pip::…]` registry of the plugin's own binary). Distinct
+    /// declarations colliding on a device type id or script name surface
+    /// here as P0003.
     fn register_one(
         &mut self,
         name: &str,
         instance: PluginInstance,
         manifest: Manifest,
     ) -> PluginResult<()> {
-        let plugin: &dyn Plugin = match &instance {
-            PluginInstance::Native(n) => n.plugin.as_ref(),
-            PluginInstance::InProcess(p) => p.as_ref(),
+        let declared = match &instance {
+            PluginInstance::Native(n) => n.plugin.collect(),
+            PluginInstance::InProcess(p) => p.collect(),
         };
-        let mut errors = Vec::new();
-        plugin.register(&mut Registrar::new(name, &mut self.contributions, &mut errors));
-        if let Some(err) = errors.into_iter().next() {
-            return Err(err);
-        }
+        self.contributions.merge(name, declared)?;
         self.plugins.push(LoadedPlugin { manifest, instance });
         Ok(())
     }
@@ -210,9 +209,50 @@ impl PluginHost {
         Ok(())
     }
 
+    /// Fire the `#[pip::hook(phase)]` declarations merged into the
+    /// contributions, in load order, each under its owning plugin's
+    /// capability facade. Trait-method hooks (fired by [`Self::fire`]) and
+    /// declared hooks coexist; both fail loud as P0005.
+    fn fire_declared(
+        &self,
+        phase: HookPhase,
+        source: Option<&str>,
+        design: Option<&Design>,
+        result: Option<&SolveResultView>,
+    ) -> Result<(), String> {
+        for entry in self.contributions.hooks.iter().filter(|h| h.phase == phase) {
+            let Some(owner) = self.plugins.iter().find(|l| l.manifest.name == entry.plugin) else {
+                return Err(format!(
+                    "hook `{}` declared by `{}`, which is not a loaded plugin",
+                    phase.as_str(),
+                    entry.plugin
+                ));
+            };
+            let cx = self.ctx_for(owner);
+            let staging = design.map(|d| DesignStaging::new(d, &entry.plugin));
+            let call = HookCall {
+                host: &cx,
+                source,
+                design,
+                staging: staging.as_ref(),
+                result,
+            };
+            (entry.invoke)(&call).map_err(|e| {
+                PluginError::HookFailed {
+                    hook: phase.as_str(),
+                    plugin: entry.plugin.clone(),
+                    message: e,
+                }
+                .to_string()
+            })?;
+        }
+        Ok(())
+    }
+
     /// Hook 1 — fired by whoever drives parsing (CLI), on the raw source.
     pub fn fire_after_parse(&self, source: &str) -> Result<(), String> {
-        self.fire("after_parse", |p, cx| p.after_parse(cx, source))
+        self.fire("after_parse", |p, cx| p.after_parse(cx, source))?;
+        self.fire_declared(HookPhase::AfterParse, Some(source), None, None)
     }
 
     /// Hook 2 — fired once the design elaborates. Native/in-process
@@ -221,7 +261,8 @@ impl PluginHost {
         if self.is_empty() {
             return Ok(());
         }
-        self.fire("after_elaborate", |p, cx| p.after_elaborate(cx, design))
+        self.fire("after_elaborate", |p, cx| p.after_elaborate(cx, design))?;
+        self.fire_declared(HookPhase::AfterElaborate, None, Some(design), None)
     }
 
     /// The plugin system's own `piperine plugin list` view: name, shape,
@@ -231,12 +272,13 @@ impl PluginHost {
             .iter()
             .map(|l| {
                 let name = &l.manifest.name;
-                let devices = self.contributions.devices.values().filter(|(o, _)| o == name).count();
+                let devices =
+                    self.contributions.devices.values().filter(|d| d.plugin == *name).count();
                 let scripts: Vec<&str> = self
                     .contributions
                     .scripts
                     .iter()
-                    .filter(|(_, (o, _))| o == name)
+                    .filter(|(_, s)| s.plugin == *name)
                     .map(|(n, _)| n.as_str())
                     .collect();
                 format!(
@@ -251,12 +293,12 @@ impl PluginHost {
     /// Run a plugin-contributed CLI script (SPEC Part VI §10). `None` when
     /// no loaded plugin registered `name`.
     pub fn run_script(&self, name: &str, args: &[String]) -> Option<Result<i32, PluginError>> {
-        let (owner, handler) = self.contributions.scripts.get(name)?;
-        let loaded = self.plugins.iter().find(|l| &l.manifest.name == owner)?;
+        let entry = self.contributions.scripts.get(name)?;
+        let loaded = self.plugins.iter().find(|l| l.manifest.name == entry.plugin)?;
         let mut cx = self.ctx_for(loaded);
-        Some(handler.invoke(args, &mut cx).map_err(|e| PluginError::HookFailed {
+        Some(entry.handler.invoke(args, &mut cx).map_err(|e| PluginError::HookFailed {
             hook: "script",
-            plugin: owner.clone(),
+            plugin: entry.plugin.clone(),
             message: e,
         }))
     }
@@ -340,14 +382,15 @@ impl SimHooks for PluginHost {
                     .to_string(),
                 })?;
         }
-        Ok(())
+        self.fire_declared(HookPhase::TransformDesign, None, Some(design), None)
     }
 
     fn before_lower(&self, design: &Design) -> Result<(), String> {
         if self.is_empty() {
             return Ok(());
         }
-        self.fire("before_lower", |p, cx| p.before_lower(cx, design))
+        self.fire("before_lower", |p, cx| p.before_lower(cx, design))?;
+        self.fire_declared(HookPhase::BeforeLower, None, Some(design), None)
     }
 
     fn after_solve(&self, analysis: &str, node_voltages: &[(String, f64)]) -> Result<(), String> {
@@ -358,7 +401,8 @@ impl SimHooks for PluginHost {
             analysis: analysis.to_string(),
             node_voltages: node_voltages.to_vec(),
         };
-        self.fire("after_solve", |p, cx| p.after_solve(cx, &result))
+        self.fire("after_solve", |p, cx| p.after_solve(cx, &result))?;
+        self.fire_declared(HookPhase::AfterSolve, None, None, Some(&result))
     }
 
 }
@@ -368,17 +412,17 @@ impl SimHooks for PluginHost {
 /// the solver `Element`.
 impl DeviceProvider for PluginHost {
     fn build(&self, spec: PluginDeviceSpec) -> Result<Box<dyn Element>, String> {
-        let (owner, factory) = self
+        let entry = self
             .contributions
             .devices
             .get(&spec.type_id)
             .ok_or_else(|| PluginError::DeviceNotRegistered(spec.type_id.clone()).to_string())?;
-        if *owner != spec.plugin {
+        if entry.plugin != spec.plugin {
             return Err(format!(
-                "device `{}` is registered by plugin `{owner}`, but @device names plugin `{}`",
-                spec.type_id, spec.plugin
+                "device `{}` is registered by plugin `{}`, but @device names plugin `{}`",
+                spec.type_id, entry.plugin, spec.plugin
             ));
         }
-        factory.instantiate(&spec)
+        entry.factory.instantiate(&spec)
     }
 }

@@ -20,6 +20,9 @@ inventory.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# The fixture declares its devices via `#[pip::device]` — the crate is
+# aliased `pip` so the attribute spells exactly like the Python decorator.
+pip = { package = "piperine-plugin-macros", path = "../piperine-plugin-macros" }
 
 # The fixture plugin (an analog resistor + a digital inverter) lives as an
 # example: `cargo build --example fixture_plugin` produces the cdylib the

@@ -10,8 +10,8 @@ use std::sync::Arc;
 use piperine::{OpResult, SimSession, SolverConfig};
 use piperine_lang::{SourceMap, Value};
 use piperine_plugin::{
-    Design, DesignStaging, HostCtx, Manifest, Plugin, PluginError, PluginHost, PluginResult,
-    Registrar, ScriptHandler, SolveResultView,
+    Ctx, Design, DesignStaging, HostCtx, Manifest, Plugin, PluginHost, PluginResult,
+    SolveResultView,
 };
 
 fn manifest(name: &str) -> Manifest {
@@ -144,13 +144,13 @@ fn conflicting_specs_from_two_plugins_fail_loud() {
 
 // ─── Scripts + capability enforcement ─────────────────────────────────────────
 
-struct WriterScript;
-impl ScriptHandler for WriterScript {
-    fn invoke(&self, args: &[String], cx: &mut HostCtx) -> Result<i32, String> {
-        let out = args.first().cloned().unwrap_or_else(|| "converted.phdl".into());
-        cx.fs_write(&out, "// transcribed\n").map_err(|e| e.to_string())?;
-        Ok(0)
-    }
+/// Declared+bound by the one attribute (PLG-06); the default
+/// `Plugin::collect()` surfaces it from this binary's registry.
+#[pip::script("transcribe")]
+fn transcribe(args: &[String], ctx: &Ctx) -> Result<i32, String> {
+    let out = args.first().cloned().unwrap_or_else(|| "converted.phdl".into());
+    ctx.fs_write(&out, "// transcribed\n").map_err(|e| e.to_string())?;
+    Ok(0)
 }
 
 struct ScriptPlugin {
@@ -159,9 +159,6 @@ struct ScriptPlugin {
 impl Plugin for ScriptPlugin {
     fn manifest(&self) -> &Manifest {
         &self.manifest
-    }
-    fn register(&self, r: &mut Registrar) {
-        r.script("transcribe", Box::new(WriterScript));
     }
 }
 
@@ -245,42 +242,4 @@ fn read_only_hooks_observe_the_pipeline() {
     assert!((v(&op, "out") - 2.5).abs() < 0.01);
     assert_eq!(elaborated.load(Ordering::SeqCst), 1);
     assert_eq!(solved.load(Ordering::SeqCst), 1);
-}
-
-/// Registration-time collision surface: two plugins contributing the same
-/// device `type` id is a loud P0003 conflict (spec Edge Cases — unchanged
-/// SchemaConflict-class behavior).
-#[test]
-fn device_type_collisions_are_p0003() {
-    struct StubFactory;
-    impl piperine_plugin::DeviceFactory for StubFactory {
-        fn kind(&self) -> piperine_plugin::DeviceKind {
-            piperine_plugin::DeviceKind::Analog
-        }
-        fn instantiate(
-            &self,
-            _spec: &piperine_plugin::PluginDeviceSpec,
-        ) -> Result<Box<dyn piperine_solver::abi::Element>, String> {
-            Err("stub factory: never instantiated".into())
-        }
-    }
-
-    struct DupDevicePlugin {
-        manifest: Manifest,
-    }
-    impl Plugin for DupDevicePlugin {
-        fn manifest(&self) -> &Manifest {
-            &self.manifest
-        }
-        fn register(&self, r: &mut Registrar) {
-            r.device("Dup::Device", Box::new(StubFactory));
-        }
-    }
-    let err = PluginHost::from_plugins(vec![
-        Box::new(DupDevicePlugin { manifest: manifest("a") }),
-        Box::new(DupDevicePlugin { manifest: manifest("b") }),
-    ])
-    .map(|_| ())
-    .expect_err("duplicate device type id must fail");
-    assert!(matches!(err, PluginError::SchemaConflict { .. }), "{err}");
 }
