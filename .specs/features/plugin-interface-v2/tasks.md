@@ -223,9 +223,9 @@ authored structure is never overwritten (MD-25).
 **Depends on:** T9. **Requirement:** PLG-13, PLG-14, PLG-15.
 **Reuses:** `DesignStaging::add_instance` (`view.rs:51`), the device provider path.
 **Done when:**
-- [ ] A hook injects a parasitic `@device` resistor into `Top`; the solve reflects it.
-- [ ] Injection to a non-existent parent/module errors loud.
-- [ ] `cargo test -p piperine-plugin` green.
+- [x] A hook injects a parasitic `@device` resistor into `Top`; the solve reflects it.
+- [x] Injection to a non-existent parent/module errors loud.
+- [x] `cargo test -p piperine-plugin` green.
 **Tests:** integration · **Gate:** quick (plugin)
 
 ### T11: Git-source resolver (Go-style)
@@ -236,9 +236,9 @@ used verbatim.
 **Depends on:** T10. **Requirement:** PLG-22.
 **Reuses:** the existing `piperine add` git-dependency resolver.
 **Done when:**
-- [ ] `add acme/bjt` resolves to `github.com/acme/bjt`; `add https://…`/`git@…` verbatim.
-- [ ] Unit tests for each form.
-- [ ] `cargo test -p piperine-project` green.
+- [x] `add acme/bjt` resolves to `github.com/acme/bjt`; `add https://…`/`git@…` verbatim.
+- [x] Unit tests for each form.
+- [x] `cargo test -p piperine-project` green.
 **Tests:** unit · **Gate:** quick (project)
 
 ### T12: Release-asset resolver by target triple
@@ -249,9 +249,9 @@ release asset whose name matches `lib<pkg>-<host-triple>.<ext>`; no match →
 **Depends on:** T11. **Requirement:** PLG-16, PLG-19.
 **Reuses:** target-triple detection (`env!`/`std`), the manifest `DeviceSource` (T3).
 **Done when:**
-- [ ] A stubbed release listing → the correct triple asset is selected.
-- [ ] A release with no matching triple → `NoAssetForTriple` naming triple + release.
-- [ ] `cargo test -p piperine-project` green.
+- [x] A stubbed release listing → the correct triple asset is selected.
+- [x] A release with no matching triple → `NoAssetForTriple` naming triple + release.
+- [x] `cargo test -p piperine-project` green.
 **Tests:** unit · **Gate:** quick (project)
 
 ### T13: Fetch + cache + TOFU-pin the device binary (+ `verify`)
@@ -263,9 +263,9 @@ content-hash)` in `Piperine.lock` (`EntryKind::Plugin`).
 **Depends on:** T12. **Requirement:** PLG-16, PLG-17, PLG-18.
 **Reuses:** `trust.rs::{artifact_hash,ensure_trusted}`, `lockfile` `EntryKind::Plugin`/`content_hash`/`abi`.
 **Done when:**
-- [ ] A fetched asset is hashed + pinned; a changed asset re-prompts.
-- [ ] `verify` mismatch hard-fails (no prompt); match loads without a prompt.
-- [ ] `cargo test -p piperine-project` (or `-p piperine-plugin`) green.
+- [x] A fetched asset is hashed + pinned; a changed asset re-prompts.
+- [x] `verify` mismatch hard-fails (no prompt); match loads without a prompt.
+- [x] `cargo test -p piperine-project` (or `-p piperine-plugin`) green.
 **Tests:** integration · **Gate:** full
 
 ### T14: `piperine add` permissions-consent gate
@@ -276,9 +276,9 @@ the install. Distinct from the artifact-hash TOFU (T13).
 **Depends on:** T13. **Requirement:** PLG-23.
 **Reuses:** `Permissions` (manifest), the interactive-prompt pattern in `trust.rs`.
 **Done when:**
-- [ ] Adding a plugin prints its permissions; an explicit deny aborts (nothing installed); accept proceeds.
-- [ ] `RejectUntrusted`/`AcceptAll` modes bypass the prompt deterministically.
-- [ ] `cargo test -p piperine-cli` green.
+- [x] Adding a plugin prints its permissions; an explicit deny aborts (nothing installed); accept proceeds.
+- [x] `RejectUntrusted`/`AcceptAll` modes bypass the prompt deterministically.
+- [x] `cargo test -p piperine-cli` green.
 **Tests:** integration · **Gate:** quick (cli)
 
 ### T15: Reproducible / offline-after-first fetch
@@ -289,9 +289,9 @@ prompt); a cached+pinned binary loads without network.
 **Depends on:** T14. **Requirement:** PLG-20.
 **Reuses:** the pin from T13.
 **Done when:**
-- [ ] A pre-populated lockfile + cache loads without a prompt or re-download.
-- [ ] A missing-network + cached path still loads.
-- [ ] `cargo test -p piperine-project` green.
+- [x] A pre-populated lockfile + cache loads without a prompt or re-download.
+- [x] A missing-network + cached path still loads.
+- [x] `cargo test -p piperine-project` green.
 **Tests:** integration · **Gate:** quick (project)
 
 ### T16: Rewrite `docs/spec/part_vi_plugins.md` to v2
@@ -302,8 +302,8 @@ release distribution, TOFU + permissions).
 **Depends on:** T15. **Requirement:** PLG-26.
 **Reuses:** the delivered surface (T1–T15).
 **Done when:**
-- [ ] No stale WASM/process/Registrar/extern-stub; describes the v2 model.
-- [ ] Build/review gate.
+- [x] No stale WASM/process/Registrar/extern-stub; describes the v2 model.
+- [x] Build/review gate.
 **Tests:** none · **Gate:** build
 
 ### T17: One "write a plugin" worked example per shape
@@ -313,8 +313,8 @@ showing the Rust/Python decorator equivalence side by side.
 **Depends on:** T16. **Requirement:** PLG-25.
 **Reuses:** the fixtures from T7/T8/T10.
 **Done when:**
-- [ ] One example per shape; Rust ≡ Python decorator equivalence shown.
-- [ ] Build/review gate.
+- [x] One example per shape; Rust ≡ Python decorator equivalence shown.
+- [x] Build/review gate.
 **Tests:** none · **Gate:** build
 
 ---
