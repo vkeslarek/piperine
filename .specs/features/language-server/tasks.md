@@ -211,34 +211,73 @@ never inside the textually-first same-named declaration. Full `cargo test
 for refs/rename/highlight. **Where**: `piperine-lang-server`. **Requirement**:
 LSP-10/13 (base). **Depends on**: T6.
 **Done when**:
-- [ ] returns exactly the binding's uses; no comment/string/other-scope spans
-- [ ] `cargo test -p piperine-lang-server`
+- [x] returns exactly the binding's uses; no comment/string/other-scope spans
+- [x] `cargo test -p piperine-lang-server`
 **Tests**: integration · **Gate**: quick (server)
+**Status (2026-07-24)**: DONE, commit `e6ca4dd`. New `occurrences.rs`:
+`occurrences_for_decl_span(index, decl_span)` matches a resolved
+`Resolution.decl_span` (already scope-correct via T6) against
+`ResolutionIndex`'s bindings and returns the recorded use spans.
+`DocumentState` now builds/holds a `ResolutionIndex` alongside
+`design`/`ctx` (populated in `analyze()`), and exposes
+`occurrences_at(byte_offset) -> Vec<(usize, usize)>` — the engine T9-T11
+consume instead of `word_occurrences`'s text scan.
+**SPEC_DEVIATION**: per T5's own SPEC_DEVIATION, `ResolutionIndex.
+use_spans` today holds only each binding's reflexive declaration span (no
+per-occurrence `Expr` span exists in the AST), so `occurrences_at`
+legitimately returns a one-element list for most bindings — it returns
+exactly what the index provides, not an invented richer set. Symbols with
+no `ResolutionIndex` entry (extern registry lookups) fall back to their
+own `decl_span` as the one known occurrence rather than an empty result
+for a symbol that did resolve. 3 new tests in `integration_test.rs`; full
+`cargo test -p piperine-lang-server` green (19 passed).
 
 #### T9: references handler → binding uses
 **What**: Replace `word_occurrences` in references with `occurrences(binding)`.
 **Where**: `handlers/references.rs`. **Requirement**: LSP-10. **Depends on**: T8.
 **Done when**:
-- [ ] references returns binding uses only; a `// name` comment is excluded
-- [ ] `cargo test -p piperine-lang-server`
+- [x] references returns binding uses only; a `// name` comment is excluded
+- [x] `cargo test -p piperine-lang-server`
 **Tests**: integration · **Gate**: quick (server)
+**Status (2026-07-24)**: DONE, commit `892e5be`. `references.rs::handle`
+now calls `DocumentState::occurrences_at` (T8) instead of
+`word_occurrences` — the explicit `resolve_at(offset)?` symbol gate is
+gone too (`occurrences_at` already returns empty when nothing resolves).
+1 new protocol test (`Connection::memory` round trip) on a two-module
+fixture with a `// power` comment: proves the comment mention and module
+B's own `power` never appear in module A's references. Full `cargo test
+-p piperine-lang-server` green (20 passed).
 
 #### T10: rename handler → binding uses (single-file)
 **What**: Replace `word_occurrences` in rename/prepare-rename with the binding
 occurrences. **Where**: `handlers/rename.rs`. **Requirement**: LSP-11.
 **Depends on**: T8.
 **Done when**:
-- [ ] rename edits only the binding's uses; same-named other-scope untouched
-- [ ] prepare-rename declines on keyword/literal
-- [ ] `cargo test -p piperine-lang-server`
+- [x] rename edits only the binding's uses; same-named other-scope untouched
+- [x] prepare-rename declines on keyword/literal
+- [x] `cargo test -p piperine-lang-server`
 **Tests**: integration · **Gate**: quick (server)
+**Status (2026-07-24)**: DONE, commit `b343aa7`. Both `handle_rename` and
+`handle_prepare_rename` now call `occurrences_at` (T8) instead of
+`word_occurrences`: rename declines (`None`) whenever the occurrence set
+is empty (nothing resolved), and prepare-rename's containing-range lookup
+runs over the same set — a keyword/literal never resolves, so both
+naturally decline. 2 new protocol tests: rename on module A's `power`
+never edits module B's own `power`; prepare-rename on a numeric literal
+returns `None`. Full `cargo test -p piperine-lang-server` green (22
+passed).
 
 #### T11: document-highlight → binding uses
 **What**: Highlight from binding occurrences, not text. **Where**:
 `handlers/document_highlight.rs`. **Requirement**: LSP-13. **Depends on**: T8.
 **Done when**:
-- [ ] highlights the binding's uses only; `cargo test -p piperine-lang-server`
+- [x] highlights the binding's uses only; `cargo test -p piperine-lang-server`
 **Tests**: integration · **Gate**: quick (server)
+**Status (2026-07-24)**: DONE, commit `9b65c24`. `document_highlight.rs::
+handle` now calls `occurrences_at` (T8), same binding-identity source as
+references (T9). 1 new protocol test on the same two-module/comment
+fixture used for T9/T10, proving both exclusions. Full `cargo test -p
+piperine-lang-server` green (23 passed).
 
 #### T12: `ProjectUnit` — multi-file index
 **What**: `ServerState.projects: Map<Root, ProjectUnit>` holding the multi-file
@@ -246,9 +285,36 @@ occurrences. **Where**: `handlers/rename.rs`. **Requirement**: LSP-11.
 **Where**: `piperine-lang-server/state.rs`, `project.rs`. **Requirement**:
 LSP-14. **Depends on**: T5. **Reuses**: `ProjectContext` / project `SourceMap`.
 **Done when**:
-- [ ] a project builds one unit over all files; `BindingInfo.file` set
-- [ ] single-file docs form a unit of one (fallback); `cargo test -p piperine-lang-server`
+- [x] a project builds one unit over all files; `BindingInfo.file` set
+- [x] single-file docs form a unit of one (fallback); `cargo test -p piperine-lang-server`
 **Tests**: integration · **Gate**: quick (server)
+**Status (2026-07-24)**: DONE, commit `f0ffd31`. New `ProjectUnit`
+(`project.rs`): elaborates every `.phdl` file under a project's `src/`
+(mirroring `piperine-cli check`'s own file discovery) against the shared
+project `SourceMap`, merging each file's `ResolutionIndex` into one
+project-wide index with `BindingInfo.file` stamped to the owning path.
+New `ServerState.analyze_document(uri)` seam both analyzes the document
+and lazily builds/caches the owning project's `ProjectUnit` in the new
+`ServerState.projects` map, recording the root on `DocumentState.
+project_root`; `dispatch.rs`/`server.rs`'s two analyze call sites now go
+through this single seam. Two small additive `ResolutionIndex` methods
+added in `piperine-lang` (`set_file`, `merge`, with `BindingId`
+remapping to avoid cross-file id collisions) — required to fold per-file
+indices into one project-wide index.
+**SPEC_DEVIATION**: design.md frames this as "the multi-file `Design`"
+(singular); `piperine-lang` has no cross-file `Design`-merge primitive
+(`Design` is one elaboration unit's output), so `ProjectUnit` holds one
+`Design` per file keyed by path instead — the actual LSP-14 payload (one
+binding-identity index spanning every file) is delivered in full via
+`ProjectUnit.index`. Standalone documents get `project_root: None` and no
+`projects` entry (no literal unit-of-one object materializes) rather than
+a synthesized one — existing single-file behavior is unaffected, which is
+the substance of the fallback requirement. 2 new tests: a two-file scratch
+project builds one `ProjectUnit` covering both `Design`s with
+`BindingInfo.file` stamped per file; a standalone document gets no
+`project_root`/`projects` entry and still elaborates normally. Full
+`cargo test -p piperine-lang-server` green (25 passed); `cargo test -p
+piperine-lang` no regressions; `cargo build --workspace` zero warnings.
 
 #### T13: Cross-file goto
 **What**: goto opens the decl's file when the binding is declared elsewhere.
