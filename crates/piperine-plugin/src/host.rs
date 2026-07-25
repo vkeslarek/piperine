@@ -144,7 +144,11 @@ impl PluginHost {
                     });
                 }
                 Abi::Process => {
-                    PluginInstance::InProcess(crate::backend::process::load(&manifest, &artifact)?)
+                    return Err(PluginError::Other {
+                        plugin: manifest.name.clone(),
+                        message: "the process backend was removed — plugins are native + Python only (MD-21)"
+                            .into(),
+                    });
                 }
             };
             let extern_stub = Self::load_extern_stub(&manifest.name, plugin_root)?;

@@ -2,5 +2,3 @@
 //! embedded Python; the WASM and process backends are removed).
 
 pub mod native;
-pub mod process;
-pub mod wire_hosted;
