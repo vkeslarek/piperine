@@ -7,7 +7,8 @@ use lsp_types::{
 };
 
 use super::{ConnectionExt, RequestExt};
-use crate::state::ServerState;
+use crate::state::{DocumentState, ServerState};
+use piperine_lang::elab::registry::ElabContext;
 use piperine_lang::parse::predict::{ExpectedSyntax, IdentRole};
 
 pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
@@ -21,13 +22,61 @@ pub fn handle(state: &mut ServerState, req: Request, connection: &Connection) {
         .get(&uri)
         .map(|doc| {
             let offset = crate::text_pos::position_to_byte(&doc.source, pos);
-            let expected = piperine_lang::parse::predict_at_cursor(&doc.source, offset);
-            build_completions_predictive(&expected, doc.design.as_ref())
+            completions_at(doc, offset)
         })
         .unwrap_or_default();
 
     let result = CompletionResponse::List(CompletionList { is_incomplete: false, items });
     connection.respond(id, result);
+}
+
+/// The completion items for `offset` in `doc` — either `@schema` completion
+/// (T18/LSP-20, when the cursor sits right after an `@` and an optional
+/// partial schema name) or the ordinary predictive-parser completions.
+/// Exposed as its own function (rather than inlined in `handle`) so tests
+/// can drive it directly against a `DocumentState` without a full LSP
+/// round trip.
+pub fn completions_at(doc: &DocumentState, offset: usize) -> Vec<CompletionItem> {
+    if let Some(prefix) = attr_schema_prefix(&doc.source, offset) {
+        return schema_completions(doc.ctx.as_ref(), &prefix);
+    }
+    let expected = piperine_lang::parse::predict_at_cursor(&doc.source, offset);
+    build_completions_predictive(&expected, doc.design.as_ref())
+}
+
+/// Whether `offset` sits right after an `@` (possibly with a partial
+/// identifier already typed, e.g. `@rf|`) — an attribute-schema-name
+/// completion position. Returns the partial identifier typed so far (empty
+/// string when the cursor is immediately after the bare `@`).
+fn attr_schema_prefix(source: &str, offset: usize) -> Option<&str> {
+    let bytes = source.as_bytes();
+    if offset > bytes.len() {
+        return None;
+    }
+    let mut i = offset;
+    while i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_') {
+        i -= 1;
+    }
+    if i > 0 && bytes[i - 1] == b'@' {
+        Some(&source[i..offset])
+    } else {
+        None
+    }
+}
+
+/// Only the in-scope schema names (`ctx.schemas` — the registry populated
+/// for this document's own compilation unit) whose name starts with
+/// `prefix`, as completion items (T18/LSP-20).
+fn schema_completions(ctx: Option<&ElabContext>, prefix: &str) -> Vec<CompletionItem> {
+    let Some(ctx) = ctx else { return Vec::new() };
+    let mut items: Vec<CompletionItem> = ctx
+        .schemas
+        .names()
+        .filter(|name| name.starts_with(prefix))
+        .map(|name| kw_item(name, "Attribute schema", CompletionItemKind::PROPERTY))
+        .collect();
+    items.sort_by(|a, b| a.label.cmp(&b.label));
+    items
 }
 
 

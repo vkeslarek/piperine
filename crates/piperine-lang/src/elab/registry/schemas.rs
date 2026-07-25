@@ -94,6 +94,12 @@ impl SchemaRegistry {
     pub fn decl_span(&self, schema_name: &str) -> Option<miette::SourceSpan> {
         self.decl_spans.get(schema_name).copied()
     }
+
+    /// Every registered schema name, in-scope for the compilation unit this
+    /// registry was built for (T18 — `@schema` completion).
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.schemas.keys().map(String::as_str)
+    }
 }
 
 impl Default for SchemaRegistry {

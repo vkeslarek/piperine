@@ -1513,3 +1513,58 @@ fn diagnostic_carries_the_structured_parse_error_code() {
     assert_ne!(code, "parse-error", "the blanket placeholder must be gone");
     assert_eq!(d.severity, Some(lsp_types::DiagnosticSeverity::ERROR));
 }
+
+// ── T18: `@schema` completion (LSP-20) ──────────────────────────────────────
+
+use piperine_lang_server::handlers::completion::completions_at;
+
+/// `@rf|` completes to `rfport` — the built-in `rfport` schema is always
+/// in-scope (registered unconditionally in `ElabContext::new()`).
+///
+/// Types `@rf` after a valid document, simulating the moment completion is
+/// triggered mid-edit: `doc.source` is updated but not re-analyzed, so
+/// `doc.ctx` still holds the last successful elaboration's registries — the
+/// pre-existing stale-but-valid resilience (`state.rs`) completion rides.
+#[test]
+fn schema_completion_after_at_sign_offers_in_scope_schema_names() {
+    let mut doc = DocumentState::new("mod Top() {}\n".to_string(), 1);
+    doc.analyze(&piperine_lang::SourceMap::dummy());
+    assert!(doc.ctx.is_some(), "must elaborate cleanly: {:?}", doc.errors);
+
+    doc.source = "mod Top() {}\n@rf".to_string();
+    let offset = doc.source.len();
+
+    let items = completions_at(&doc, offset);
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(labels.contains(&"rfport"), "expected `rfport` in {labels:?}");
+}
+
+/// Only schema names matching the typed prefix are offered — `@zz` must not
+/// include `rfport`.
+#[test]
+fn schema_completion_filters_by_typed_prefix() {
+    let mut doc = DocumentState::new("mod Top() {}\n".to_string(), 1);
+    doc.analyze(&piperine_lang::SourceMap::dummy());
+    assert!(doc.ctx.is_some());
+
+    doc.source = "mod Top() {}\n@zz".to_string();
+    let offset = doc.source.len();
+
+    let items = completions_at(&doc, offset);
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(!labels.contains(&"rfport"), "`@zz` must not offer `rfport`: {labels:?}");
+}
+
+/// Off the `@` position entirely, completion falls back to the ordinary
+/// predictive-parser completions — schema names are not injected everywhere.
+#[test]
+fn completion_off_attr_position_does_not_offer_schema_names() {
+    let mut doc = DocumentState::new("mod Top() {}\n".to_string(), 1);
+    doc.analyze(&piperine_lang::SourceMap::dummy());
+    assert!(doc.ctx.is_some());
+
+    let offset = doc.source.len();
+    let items = completions_at(&doc, offset);
+    let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+    assert!(!labels.contains(&"rfport"), "unrelated position must not offer schema names: {labels:?}");
+}
