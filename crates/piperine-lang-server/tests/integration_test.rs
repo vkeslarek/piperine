@@ -415,6 +415,43 @@ fn hover_on_undocumented_module_is_unchanged() {
     assert_eq!(contents, "**module** `R`");
 }
 
+/// A module that also has a same-named `analog`/`digital` behavior block
+/// (e.g. `mod PwmSwitch(...) {}` + `analog PwmSwitch { ... }`) — hover on
+/// the `mod` declaration's own name must resolve as the Module (with the
+/// module's own doc), not as the Behavior (whose `.name` is always the
+/// SAME string as the owning module's name, so a bare name match without
+/// position-awareness ambiguously prefers whichever comes first). Mirrors
+/// the exact real repro from `examples/10_pwm_dimmer.phdl`.
+#[test]
+fn hover_on_module_with_same_named_behavior_resolves_the_module_not_the_behavior() {
+    let source = "discipline Electrical { potential v: Real; flow i: Real; }\n\
+/// The switch.\n\
+mod PwmSwitch(inout sw: Electrical, inout gnd: Electrical) { var drive: Real = 0.0; }\n\
+analog PwmSwitch { V(sw, gnd) <- drive; }\n";
+    // line 2 (0-indexed) is `mod PwmSwitch(...)`; character 4 lands on `PwmSwitch`.
+    let contents = lsp_hover_markdown(source, 2, 4);
+    assert!(
+        contents.contains("The switch."),
+        "hover must show the MODULE's doc, not fall through to the same-named behavior (which has none), got: {contents}"
+    );
+    assert!(contents.contains("**module** `PwmSwitch`"), "hover must resolve as module, got: {contents}");
+}
+
+/// `discipline` declarations never got a `doc` field wired at all (a gap
+/// distinct from BUG-2's extern-declaration fix) — hover on a documented
+/// `discipline` must show its `///` doc, same as `mod`/`param`/etc.
+#[test]
+fn hover_on_documented_discipline_renders_doc_as_markdown() {
+    let source = "/// Electrical signals: voltage and current.\ndiscipline Electrical { potential v: Real; flow i: Real; }\n";
+    // line 1 is `discipline Electrical {...}`; character 13 lands on `Electrical`.
+    let contents = lsp_hover_markdown(source, 1, 13);
+    assert!(
+        contents.contains("Electrical signals: voltage and current."),
+        "hover must include the discipline's doc text, got: {contents}"
+    );
+    assert!(contents.contains("**discipline** `Electrical`"), "hover must resolve as discipline, got: {contents}");
+}
+
 // ── BUG-2 (LSB-04..06): hover shows `///` docs for extern declarations ──────
 
 /// spec.md's Independent Test for P2 (BUG-2): hover on a `///`-documented

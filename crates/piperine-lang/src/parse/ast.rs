@@ -385,6 +385,8 @@ pub struct Type {
 #[derive(Debug, Clone)]
 pub struct DisciplineDecl {
     pub span: Option<miette::SourceSpan>,
+    /// Attached `///` doc comment, if any (MD-25 — additive, LSP-07).
+    pub doc: Option<String>,
     pub attrs: Vec<Attribute>,
     pub is_pub: bool,
     pub name: String,

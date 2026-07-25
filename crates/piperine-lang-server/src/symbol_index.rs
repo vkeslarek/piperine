@@ -60,7 +60,17 @@ fn span_contains(span: Option<SourceSpan>, offset: usize) -> bool {
 /// (var, wire, instance, param, port, behavior, then the module's own
 /// name) — never across other modules (LSP-01/02: cursor context +
 /// shadowing, not a global first-match).
-fn resolve_in_module(m: &piperine_lang::pom::Module, word: &str) -> Option<Resolution> {
+///
+/// `byte_offset` disambiguates the behavior/module-name collision: every
+/// `Behavior::name` equals its OWNING module's name (`analog PwmSwitch { }`
+/// has `name == "PwmSwitch"`, same as the `mod PwmSwitch(...)` it attaches
+/// to) — so a bare name match alone can't tell "clicked the `mod`
+/// declaration's own name" from "clicked a same-named behavior's span".
+/// Only match a behavior when the offset is actually inside *that
+/// behavior's own* span; a click on the `mod` header itself never falls
+/// inside any behavior's (disjoint, later-declared) span, so it falls
+/// through to the module-name arm below instead.
+fn resolve_in_module(m: &piperine_lang::pom::Module, word: &str, byte_offset: usize) -> Option<Resolution> {
     if let Some(v) = m.vars.iter().find(|v| v.name == word) {
         return Some(Resolution {
             kind: SymbolKind::Var,
@@ -122,7 +132,7 @@ fn resolve_in_module(m: &piperine_lang::pom::Module, word: &str) -> Option<Resol
             file: None,
         });
     }
-    if let Some(b) = m.behaviors.iter().find(|b| b.name == word) {
+    if let Some(b) = m.behaviors.iter().find(|b| b.name == word && span_contains(b.span, byte_offset)) {
         return Some(Resolution {
             kind: SymbolKind::Behavior,
             name: b.name.clone(),
@@ -202,7 +212,7 @@ pub fn resolve_at(
     if let Some(m) = design
         .modules()
         .find(|m| design.project().origin_of(&m.name).is_none() && span_contains(m.span, byte_offset))
-        && let Some(res) = resolve_in_module(m, &word) {
+        && let Some(res) = resolve_in_module(m, &word, byte_offset) {
             return Some(res);
         }
 
@@ -259,7 +269,7 @@ pub fn resolve_at(
                 name: name.clone(),
                 decl_span: d.span,
                 type_info: None,
-                doc: None,
+                doc: d.doc.clone(),
                 file: None,
             });
         }
