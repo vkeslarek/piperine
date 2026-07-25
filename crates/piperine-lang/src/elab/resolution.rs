@@ -188,7 +188,18 @@ pub fn index_design(design: &Design) -> ResolutionIndex {
             idx.insert(&mut next_id, BindingKind::Var, v.name.clone(), v.span, v.doc.clone(), Some(m.name.clone()));
         }
         for i in &m.instances {
-            idx.insert(&mut next_id, BindingKind::Instance, i.name().to_string(), i.span, i.doc.clone(), Some(m.name.clone()));
+            // LSB-07..10 (T8): index by the same token-level span convention
+            // `symbol_index.rs`'s Instance resolve arm uses, so
+            // `occurrences_for_decl_span`'s exact offset+len match succeeds
+            // byte-for-byte — label_span when labeled, type_span when not,
+            // falling back to the whole-statement `i.span` only if the
+            // token-level span is genuinely absent.
+            let decl_span = if i.label.is_some() {
+                i.label_span.or(i.type_span).or(i.span)
+            } else {
+                i.type_span.or(i.span)
+            };
+            idx.insert(&mut next_id, BindingKind::Instance, i.name().to_string(), decl_span, i.doc.clone(), Some(m.name.clone()));
         }
         for b in &m.behaviors {
             idx.insert(&mut next_id, BindingKind::Behavior, b.name.clone(), b.span, b.doc.clone(), Some(m.name.clone()));
