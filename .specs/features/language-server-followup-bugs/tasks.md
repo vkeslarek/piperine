@@ -2,7 +2,7 @@
 
 **Spec**: `.specs/features/language-server-followup-bugs/spec.md`
 **Design**: `.specs/features/language-server-followup-bugs/design.md`
-**Status**: Draft
+**Status**: Complete — all 10 tasks / 13 requirements delivered, Verifier PASS
 
 ## Test Coverage Matrix
 
@@ -163,11 +163,23 @@ ddt` (`headers/operators.phdl`) and the primitive types
 **Where**: `crates/piperine-lang/headers/{operators,types}.phdl`.
 **Depends on**: T5.
 **Done when**:
-- [ ] hover on `ddt` in a real PHDL file shows its authored doc
-- [ ] every existing header/prelude test still elaborates (no `//`→`///`
+- [x] hover on `ddt` in a real PHDL file shows its authored doc
+- [x] every existing header/prelude test still elaborates (no `//`→`///`
       accidentally breaking a non-doc comment elsewhere in the file)
-- [ ] `cargo test -p piperine-lang`
+- [x] `cargo test -p piperine-lang`
 **Gate**: quick (lang)
+
+**Status (2026-07-25)**: DONE, commit `5d51952`. Converted the `//` block
+directly above `extern operator ddt` (5 lines, no blank-line break) and
+the `//` block directly above `extern type Real` (6 lines) to `///` —
+both blocks sit with no blank line between the comment and the
+declaration, so the lexer's attach rule picks them up whole. New test
+`test_ddt_doc_comes_from_the_real_header_content` elaborates a real
+`ddt(...)`-using analog body, looks up `ctx.operators.lookup("ddt")
+.doc()`, and asserts the returned string contains prose read straight
+from `headers/operators.phdl` on disk (not a hardcoded fixture string) —
+proving the pipeline end-to-end. Full `cargo test -p piperine-lang`
+green (61→64 tests across the suite, no regressions).
 
 #### T7 (LSB-07..10): instance token-level spans (AST/POM)
 **What**: `label_span`/`type_span: Option<SourceSpan>` on
@@ -177,10 +189,23 @@ AST→POM lowering.
 **Where**: `crates/piperine-lang/src/parse/ast.rs`,
 `parse/parser/stmt.rs`, `pom/module.rs`, elaboration's instance-lowering.
 **Done when**:
-- [ ] `label_span` covers only the label token; `type_span` only the type
+- [x] `label_span` covers only the label token; `type_span` only the type
       token; both `None`→fallback-safe if genuinely absent
-- [ ] `cargo test -p piperine-lang`
+- [x] `cargo test -p piperine-lang`
 **Gate**: quick (lang)
+
+**Status (2026-07-25)**: DONE, commit `c29fcb6`. Captured both spans in
+`parser/stmt.rs`'s instance-parsing function at the point each identifier
+is read (`current_span_start()`/`previous_span_end()` around
+`parse_ident()`), for both the labeled (`label : Type`) and unlabeled
+(bare `Type`) forms — unlabeled leaves `label_span: None`, `type_span`
+set to the single identifier's span. Mirrored onto `pom::Instance`
+(`#[serde(skip)]`, matching `span`), threaded through
+`elab/lower/module.rs::lower_instance`. Synthetic `Instance` construction
+sites with no source tokens (hierarchy-flattening splice, runtime-staged
+instances, and existing test fixtures in `flatten.rs`/`typecheck.rs`/
+`selector/eval.rs`) set both fields to `None`. New tests confirm exact
+3-byte/10-byte token spans on spec.md's reported fixture shape.
 
 #### T8 (LSB-07..10): symbol_index.rs + ResolutionIndex consistency
 **What**: `resolve_in_module`'s Instance arm picks `label_span`/`type_span`
@@ -191,12 +216,30 @@ required for `occurrences_for_decl_span`'s exact match).
 `crates/piperine-lang/src/elab/resolution.rs`.
 **Depends on**: T7.
 **Done when**:
-- [ ] highlighting the reported fixture's `"src"` returns a 3-byte range
-- [ ] highlighting `"RampSource"` on that same instance returns a
+- [x] highlighting the reported fixture's `"src"` returns a 3-byte range
+- [x] highlighting `"RampSource"` on that same instance returns a
       10-byte range (not the 56-byte whole statement)
-- [ ] unlabeled instance highlight unchanged/still-correct
-- [ ] `cargo test -p piperine-lang-server`
+- [x] unlabeled instance highlight unchanged/still-correct
+- [x] `cargo test -p piperine-lang-server`
 **Gate**: quick (server)
+
+**Status (2026-07-25)**: DONE, commit `38617ad`. `symbol_index.rs`'s
+Instance resolve arm now picks `label_span.or(i.span)`/`type_span.or
+(i.span)` per which word matched; `elab/resolution.rs::index_design`
+indexes `BindingKind::Instance` by the identical convention. Also fixed
+`symbol_index::instance_module_type_at` (previously matched only against
+the whole-statement `i.span`, now stale for a token-tight `decl_span`) to
+match against `span`/`label_span`/`type_span` — required to keep
+cross-file goto-definition on an instance's type name working (caught by
+the pre-existing `cross_file_goto_opens_the_declaring_file` regression
+test, which failed until this was fixed). New `instance_highlight.rs`
+integration tests reproduce spec.md's exact fixture. **Mandatory
+discrimination check performed as instructed**: reverted just
+`index_design`'s half of the fix (kept `i.span`), confirmed the new
+`resolved_decl_span_has_a_matching_binding_in_the_resolution_index` test
+(and only that one) failed, then restored the real fix and reconfirmed
+green — proving the two sides must actually agree, not that either fix
+alone happens to pass by coincidence.
 
 #### T9 (LSB-11..13): completion suppression heuristic
 **What**: `build_completions_predictive` suppresses `for`/`match`/`return`/
@@ -205,12 +248,21 @@ required for `occurrences_for_decl_span`'s exact match).
 present in `expected`.
 **Where**: `crates/piperine-lang-server/src/handlers/completion.rs`.
 **Done when**:
-- [ ] completion right after `mod A(...) { param r: Real = 1.0; }`'s `}`
+- [x] completion right after `mod A(...) { param r: Real = 1.0; }`'s `}`
       never includes `"for"`, does include `"mod"`
-- [ ] completion mid-behavior-body (genuine `for`-valid position) still
+- [x] completion mid-behavior-body (genuine `for`-valid position) still
       includes `"for"` — no regression
-- [ ] `cargo test -p piperine-lang-server`
+- [x] `cargo test -p piperine-lang-server`
 **Gate**: quick (server)
+
+**Status (2026-07-25)**: DONE, commit `a2324f7`. Added the post-pass
+exactly per design.md's pseudocode: when `expected` contains both
+`Punctuation(Tok::RBrace)` and a `Keyword("param")`/`Keyword("wire")`,
+drop `for`/`match`/`return`/`when` from `items` and merge in
+`add_top_level_completions`. `if`/`var` deliberately untouched. New
+`completion_suppression.rs` tests reproduce spec.md's exact fixture and
+confirm the mid-behavior-body case (a genuine `for`-valid position) is
+unaffected.
 
 #### T10: Full workspace gate + Verifier close-out
 **What**: `cargo test --workspace`; update this file's Status notes;
@@ -218,10 +270,20 @@ dispatch the standalone-fallback Verifier (spec-anchored check across all
 13 LSB requirements + discrimination sensor); write `validation.md`.
 **Depends on**: T1-T9.
 **Done when**:
-- [ ] `cargo test --workspace` green (or pre-existing unrelated flakes
+- [x] `cargo test --workspace` green (or pre-existing unrelated flakes
       confirmed, documented)
-- [ ] `validation.md` written, PASS
+- [x] `validation.md` written, PASS
 **Gate**: full
+
+**Status (2026-07-25)**: DONE. B2's batch worker committed T6-T9 cleanly
+and paused (session limit) before finishing this task's own gate/report;
+the orchestrator completed it as a standalone Verifier pass:
+`cargo test --workspace` confirmed green except the pre-existing,
+unrelated `piperine-plugin::process_smoke::dead_guest_is_a_loud_error`
+flake (passes single-threaded). Ran 2 independent discrimination-sensor
+mutations (BUG-1's `item_file` lookup, BUG-4's suppression condition —
+both killed) on top of T8's own inline sensor check, then wrote
+`validation.md` — **PASS**, all 13 LSB requirements evidence-checked.
 
 ---
 
