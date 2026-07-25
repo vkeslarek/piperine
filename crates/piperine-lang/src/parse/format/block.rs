@@ -17,9 +17,21 @@ impl FormatRule for BlockRule {
                                 break;
                             }
                         }
-                        while newline_count < 2 {
-                            state.push_newline(output);
-                            newline_count += 1;
+                        // A `///` doc comment directly above this declaration
+                        // must stay directly above it — the lexer drops a
+                        // pending doc run on a blank line, so forcing one
+                        // here would silently strip the doc from every
+                        // declaration a formatter run touches.
+                        let preceded_by_doc_comment = output
+                            .trim_end_matches(['\n', ' ', '\t'])
+                            .rsplit('\n')
+                            .next()
+                            .is_some_and(|line| line.trim_start().starts_with("///"));
+                        if !preceded_by_doc_comment {
+                            while newline_count < 2 {
+                                state.push_newline(output);
+                                newline_count += 1;
+                            }
                         }
                     }
             }
