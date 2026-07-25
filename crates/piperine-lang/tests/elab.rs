@@ -450,6 +450,65 @@ fn test_use_piperine_capabilities_explicit() {
 }
 
 #[test]
+fn test_prelude_items_map_to_real_header_paths() {
+    // LSB-01..03 (T1): every prelude item, including `ddt` (operators.phdl)
+    // and `Real` (types.phdl), must map to the real on-disk header file —
+    // the file goto-definition will eventually open.
+    let source_map = piperine_lang::SourceMap::dummy();
+    let mut resolver = Resolver::new(&source_map);
+    let _ = resolver.prelude_items();
+    let item_files = resolver.take_item_files();
+
+    let ddt_path = item_files.get("ddt").expect("ddt should have a tracked file");
+    assert!(
+        ddt_path.ends_with("headers/operators.phdl"),
+        "ddt should map to headers/operators.phdl, got {}",
+        ddt_path.display()
+    );
+    assert!(ddt_path.is_file(), "{} must exist on disk", ddt_path.display());
+
+    let real_path = item_files.get("Real").expect("Real should have a tracked file");
+    assert!(
+        real_path.ends_with("headers/types.phdl"),
+        "Real should map to headers/types.phdl, got {}",
+        real_path.display()
+    );
+    assert!(real_path.is_file(), "{} must exist on disk", real_path.display());
+}
+
+#[test]
+fn test_use_loaded_item_maps_to_real_on_disk_path() {
+    // LSB-01..03 (T1): items loaded via `use` must map to the real file
+    // they were read from (not a hardcoded/embedded path).
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().unwrap();
+    let lib_path = dir.path().join("mylib.phdl");
+    std::fs::write(
+        &lib_path,
+        "pub discipline MyNet { potential v: Real; flow i: Real; }",
+    )
+    .unwrap();
+
+    let src = "use mylib;\n mod M ( inout a : MyNet );";
+    let source = parse_str(src).expect("parse failed");
+    let source_map = piperine_lang::SourceMap::new(dir.path().to_path_buf());
+    let mut resolver = Resolver::new(&source_map);
+    let _ = resolver.prelude_items();
+    let _ = resolver.expand(source).expect("expand failed");
+    let item_files = resolver.take_item_files();
+
+    let mynet_path = item_files
+        .get("MyNet")
+        .expect("MyNet should have a tracked file");
+    assert_eq!(
+        std::fs::canonicalize(mynet_path).unwrap(),
+        std::fs::canonicalize(&lib_path).unwrap(),
+        "MyNet should map to the real mylib.phdl it was declared in"
+    );
+}
+
+#[test]
 fn test_use_transitive() {
     use tempfile::TempDir;
 

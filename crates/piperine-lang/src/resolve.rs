@@ -29,6 +29,7 @@
 //! file-based resolution.
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 use crate::parse::{ast, parse_str, SourceFile};
 use crate::source_map::SourceMap;
@@ -72,6 +73,17 @@ pub struct Resolver<'a> {
     /// items are not recorded — absence means "this project". Consumed by
     /// [`crate::pom::Project::origins`] after elaboration.
     origins: HashMap<String, String>,
+    /// Item-name → the real on-disk file it was declared in (BUG-1/
+    /// LSB-01..03). Populated for prelude items (hardcoded
+    /// `CARGO_MANIFEST_DIR`-relative paths for the embedded headers) and for
+    /// `use`-loaded items (the real path already computed by
+    /// [`Self::load_source`]). Consumed by
+    /// [`crate::pom::Project::item_file`] after elaboration.
+    item_files: HashMap<String, PathBuf>,
+    /// Resolved on-disk path for each `use`-path segment list already
+    /// loaded via [`Self::load_source`] — lets [`Self::expand_inner`] tag
+    /// [`Self::item_files`] without recomputing path resolution.
+    file_paths: HashMap<Vec<String>, PathBuf>,
 }
 
 impl<'a> Resolver<'a> {
@@ -81,6 +93,8 @@ impl<'a> Resolver<'a> {
             source_map,
             cache: HashMap::new(),
             origins: HashMap::new(),
+            item_files: HashMap::new(),
+            file_paths: HashMap::new(),
         }
     }
 
@@ -88,6 +102,27 @@ impl<'a> Resolver<'a> {
     /// (and by the prelude, recorded as `piperine`).
     pub fn take_origins(&mut self) -> HashMap<String, String> {
         std::mem::take(&mut self.origins)
+    }
+
+    /// The item-name → real on-disk declaring file recorded by
+    /// [`prelude_items`](Self::prelude_items) and [`expand`](Self::expand).
+    pub fn take_item_files(&mut self) -> HashMap<String, PathBuf> {
+        std::mem::take(&mut self.item_files)
+    }
+
+    /// Tag every named item in `items` with `path` in [`Self::item_files`].
+    fn tag_item_files(&mut self, items: &[ast::Item], path: &str) {
+        self.tag_item_files_owned(items, PathBuf::from(path));
+    }
+
+    /// Owned-`PathBuf` variant of [`Self::tag_item_files`] (avoids
+    /// re-parsing a `&str` path for dynamically-resolved on-disk files).
+    fn tag_item_files_owned(&mut self, items: &[ast::Item], path: PathBuf) {
+        for item in items {
+            if let Some(name) = item.name() {
+                self.item_files.insert(name.to_string(), path.clone());
+            }
+        }
     }
 
     /// Items always in scope, loaded from prelude_path if provided.
@@ -105,6 +140,7 @@ impl<'a> Resolver<'a> {
         // `Real`/`Integer`/etc. resolving. The embedded text is the exact
         // on-disk `headers/types.phdl` (kept in sync by the compiler).
         if let Ok(source) = parse_str(include_str!("../headers/types.phdl")) {
+            self.tag_item_files(&source.items, concat!(env!("CARGO_MANIFEST_DIR"), "/headers/types.phdl"));
             items.extend(source.items);
         }
 
@@ -115,6 +151,7 @@ impl<'a> Resolver<'a> {
         // of the caller's working directory, not just when `SourceMap`
         // happens to resolve the on-disk `piperine::math` path.
         if let Ok(source) = parse_str(include_str!("../headers/math.phdl")) {
+            self.tag_item_files(&source.items, concat!(env!("CARGO_MANIFEST_DIR"), "/headers/math.phdl"));
             items.extend(source.items);
         }
 
@@ -122,6 +159,7 @@ impl<'a> Resolver<'a> {
         // (`$display`, `$temperature`, …), same embedding rationale as
         // `types`/`math` above (called from any analog/digital body).
         if let Ok(source) = parse_str(include_str!("../headers/tasks.phdl")) {
+            self.tag_item_files(&source.items, concat!(env!("CARGO_MANIFEST_DIR"), "/headers/tasks.phdl"));
             items.extend(source.items);
         }
 
@@ -130,6 +168,7 @@ impl<'a> Resolver<'a> {
         // rationale as `types`/`math`/`tasks` above (called from any
         // analog behavior body across every stdlib device model).
         if let Ok(source) = parse_str(include_str!("../headers/operators.phdl")) {
+            self.tag_item_files(&source.items, concat!(env!("CARGO_MANIFEST_DIR"), "/headers/operators.phdl"));
             items.extend(source.items);
         }
 
@@ -143,6 +182,7 @@ impl<'a> Resolver<'a> {
         // `device_port.phdl`. Loaded after `types.phdl` because the field
         // types reference the primitive `String`.
         if let Ok(source) = parse_str(include_str!("../headers/introspection.phdl")) {
+            self.tag_item_files(&source.items, concat!(env!("CARGO_MANIFEST_DIR"), "/headers/introspection.phdl"));
             items.extend(source.items);
         }
 
@@ -150,17 +190,29 @@ impl<'a> Resolver<'a> {
         // We ignore errors so that a bare-bones SourceMap doesn't panic.
         let cap_key = vec!["piperine".to_string(), "capabilities".to_string()];
         if let Ok(src) = self.load_source(&cap_key) {
-            items.extend(src.items.clone());
+            let src_items = src.items.clone();
+            if let Some(fp) = self.file_paths.get(&cap_key).cloned() {
+                self.tag_item_files_owned(&src_items, fp);
+            }
+            items.extend(src_items);
         }
-        
+
         let col_key = vec!["piperine".to_string(), "collections".to_string()];
         if let Ok(src) = self.load_source(&col_key) {
-            items.extend(src.items.clone());
+            let src_items = src.items.clone();
+            if let Some(fp) = self.file_paths.get(&col_key).cloned() {
+                self.tag_item_files_owned(&src_items, fp);
+            }
+            items.extend(src_items);
         }
 
         let pre_key = vec!["piperine".to_string(), "prelude".to_string()];
         if let Ok(src) = self.load_source(&pre_key) {
-            items.extend(src.items.clone());
+            let src_items = src.items.clone();
+            if let Some(fp) = self.file_paths.get(&pre_key).cloned() {
+                self.tag_item_files_owned(&src_items, fp);
+            }
+            items.extend(src_items);
         }
 
         if let Some(prelude_path) = &self.source_map.prelude_path {
@@ -190,7 +242,7 @@ impl<'a> Resolver<'a> {
     /// is always fully included — it is compiler-injected, not user-imported.
     pub fn expand(&mut self, source: SourceFile) -> Result<Vec<ast::Item>, ResolveError> {
         let mut seen: HashSet<Vec<String>> = HashSet::new();
-        self.expand_inner(source, &mut seen, None)
+        self.expand_inner(source, &mut seen, None, None)
     }
 
     /// Recursively expand `use` declarations in a source file, tracking
@@ -206,6 +258,7 @@ impl<'a> Resolver<'a> {
         source: SourceFile,
         seen: &mut HashSet<Vec<String>>,
         package: Option<&str>,
+        current_file: Option<PathBuf>,
     ) -> Result<Vec<ast::Item>, ResolveError> {
         let mut result = Vec::new();
         for item in source.items {
@@ -217,7 +270,8 @@ impl<'a> Resolver<'a> {
                     seen.insert(path.segments.clone());
                     let resolved = self.load_source(&path.segments)?.clone();
                     let used_package = path.segments.first().cloned().unwrap_or_default();
-                    result.extend(self.expand_inner(resolved, seen, Some(&used_package))?);
+                    let used_file = self.file_paths.get(&path.segments).cloned();
+                    result.extend(self.expand_inner(resolved, seen, Some(&used_package), used_file)?);
                 }
                 other => {
                     // stdlib items are always exported; user items require `pub`.
@@ -230,6 +284,9 @@ impl<'a> Resolver<'a> {
                     }
                     if let (Some(pkg), Some(name)) = (package, other.name()) {
                         self.origins.insert(name.to_string(), pkg.to_string());
+                        if let Some(fp) = &current_file {
+                            self.item_files.insert(name.to_string(), fp.clone());
+                        }
                     }
                     result.push(other);
                 }
@@ -268,6 +325,7 @@ impl<'a> Resolver<'a> {
             .map_err(|e| ResolveError::IoError(format!("{}: {}", file_path.display(), e)))?;
         let source = parse_str(&src).map_err(|e| ResolveError::ParseError(e.to_string()))?;
 
+        self.file_paths.insert(path.to_vec(), file_path);
         self.cache.insert(path.to_vec(), source);
         Ok(self.cache.get(path).unwrap())
     }
