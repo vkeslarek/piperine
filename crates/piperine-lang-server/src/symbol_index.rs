@@ -134,7 +134,21 @@ pub fn resolve_at(
     // declaration span, resolve `word` against *that* module's scope first,
     // innermost-first (LSP-02) — never a blind scan over every module in
     // whatever order the POM happens to iterate them.
-    if let Some(m) = design.modules().find(|m| span_contains(m.span, byte_offset))
+    //
+    // A `use`-imported module's `span` holds byte offsets copied through
+    // unchanged from its *origin* file's own parse (`Resolver::expand`
+    // inlines the AST node as-is) — those numbers are meaningless against
+    // *this* document's buffer and can coincidentally overlap `byte_offset`
+    // purely by chance. `design.modules()` iterates a `HashMap`, so without
+    // this filter an imported module could non-deterministically outrace
+    // the current file's own enclosing module for `.find()`'s first match
+    // (T13/LSP-15: found via cross-file goto's flaky test). Excluding
+    // imported modules from this "cursor is inside my own declaration"
+    // check is correct regardless: their span can never actually contain a
+    // cursor position in the current document.
+    if let Some(m) = design
+        .modules()
+        .find(|m| design.project().origin_of(&m.name).is_none() && span_contains(m.span, byte_offset))
         && let Some(res) = resolve_in_module(m, &word) {
             return Some(res);
         }

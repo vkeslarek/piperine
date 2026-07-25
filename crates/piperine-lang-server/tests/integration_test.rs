@@ -1042,7 +1042,12 @@ impl ScratchProject {
         std::fs::create_dir_all(dir.join("src")).unwrap();
         std::fs::write(
             dir.join("Piperine.toml"),
-            "[project]\nname = \"scratch_proj\"\nversion = \"0.1.0\"\n",
+            // `authors`/`edition` are required (no `#[serde(default)]`,
+            // `piperine-project::PiperineToml`) — without them
+            // `PiperineToml::load` fails silently and `project_source_map`
+            // never registers the project's own namespace, breaking any
+            // same-project `use scratch_proj::…;` (T13/LSP-15).
+            "[project]\nname = \"scratch_proj\"\nversion = \"0.1.0\"\nauthors = []\nedition = \"2024\"\n",
         )
         .unwrap();
         Self(dir)
@@ -1131,4 +1136,107 @@ fn occurrences_at_on_non_symbol_is_empty() {
     assert!(doc.occurrences_at(literal_offset).is_empty());
 }
 
+// ── T13: cross-file goto (LSP-15) ────────────────────────────────────────
 
+/// Drives a `Connection::memory()` round trip against a specific `uri`
+/// (unlike `lsp_goto_definition`, which always opens a hardcoded
+/// single-file uri) — needed for cross-file scenarios where a second
+/// project file must already exist on disk before the request lands.
+fn lsp_goto_definition_at(uri: &Uri, source: &str, line: u32, character: u32) -> GotoDefinitionResponse {
+    let (client_conn, server_conn) = Connection::memory();
+
+    std::thread::spawn(move || {
+        let mut server = piperine_lang_server::server::LanguageServer::new(server_conn);
+        server.run().unwrap();
+    });
+
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "phdl".to_string(),
+            version: 1,
+            text: source.to_string(),
+        },
+    };
+    client_conn.sender.send(Message::Notification(Notification {
+        method: lsp_types::notification::DidOpenTextDocument::METHOD.to_string(),
+        params: serde_json::to_value(did_open_params).unwrap(),
+    })).unwrap();
+
+    for _ in 0..5 {
+        if let Ok(Message::Notification(not)) = client_conn.receiver.recv_timeout(Duration::from_millis(500))
+            && not.method == lsp_types::notification::PublishDiagnostics::METHOD {
+                break;
+            }
+    }
+
+    let goto_params = GotoDefinitionParams {
+        text_document_position_params: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position { line, character },
+        },
+        work_done_progress_params: Default::default(),
+        partial_result_params: Default::default(),
+    };
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(1),
+        method: lsp_types::request::GotoDefinition::METHOD.to_string(),
+        params: serde_json::to_value(goto_params).unwrap(),
+    })).unwrap();
+
+    let msg = recv_timeout(&client_conn.receiver, 1000);
+    let response = if let Message::Response(resp) = msg {
+        assert_eq!(resp.id, RequestId::from(1));
+        let val = resp.result.expect("goto response must have a result");
+        serde_json::from_value(val).expect("goto result must deserialize")
+    } else {
+        panic!("expected a goto-definition response");
+    };
+
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(99),
+        method: "shutdown".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+    recv_timeout(&client_conn.receiver, 500);
+    client_conn.sender.send(Message::Notification(Notification {
+        method: "exit".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+
+    response
+}
+
+/// LSP-15 Independent Test: a two-file project where `b.phdl` `use`-imports
+/// and instantiates a module declared in `a.phdl`; goto on the instance
+/// type opens `a.phdl` at the module's declaration, not a (wrong) span
+/// interpreted against `b.phdl`'s own buffer.
+#[test]
+fn cross_file_goto_opens_the_declaring_file() {
+    let scratch = ScratchProject::new("goto_cross_file");
+    let a_src = "pub discipline Electrical { potential v: Real; flow i: Real; }\npub mod A (inout p: Electrical, inout n: Electrical) { param gain: Real = 1.0; }\n";
+    let a_path = scratch.write_src("a.phdl", a_src);
+    let b_src = "use scratch_proj::a;\nmod B (inout p: Electrical, inout n: Electrical) {\n    inst: A(.p = p, .n = n);\n}\n";
+    let b_path = scratch.write_src("b.phdl", b_src);
+
+    let b_uri: Uri = format!("file://{}", b_path.display()).parse().unwrap();
+    // `    inst: A(...)` — cursor on the `A` type name.
+    let line = 2u32;
+    let character = "    inst: ".chars().count() as u32;
+
+    let response = lsp_goto_definition_at(&b_uri, b_src, line, character);
+    let loc = match response {
+        GotoDefinitionResponse::Scalar(loc) => loc,
+        other => panic!("expected a scalar goto-definition response, got: {other:?}"),
+    };
+
+    let a_uri: Uri = format!("file://{}", a_path.display()).parse().unwrap();
+    assert_eq!(loc.uri, a_uri, "goto on `A` must open a.phdl, not b.phdl");
+
+    let target_offset = position_to_byte(a_src, loc.range.start);
+    let mod_a_start = a_src.find("pub mod A").unwrap();
+    assert!(
+        target_offset >= mod_a_start,
+        "goto target (offset {target_offset}) must land inside `A`'s own declaration (starting at {mod_a_start})"
+    );
+}
