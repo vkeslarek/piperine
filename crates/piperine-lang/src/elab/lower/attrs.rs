@@ -72,13 +72,25 @@ pub(crate) fn convert_attribute(
     schemas: &SchemaRegistry,
     bundles: &HashMap<String, crate::parse::ast::BundleDecl>,
 ) -> Result<crate::pom::module::Attribute, ElabError> {
-    let fields = schema_fields(&attr.name, schemas, bundles)?;
-    let field_err = |field: &str, reason: String| {
-        ElabError::from(ElabErrorKind::AttrSchemaField {
+    let fields = schema_fields(&attr.name, schemas, bundles).map_err(|mut e| {
+        // `UnknownAttrSchema` has no per-argument site — point at the whole
+        // `@name(...)` attribute (T19/LSP-21).
+        if e.span.is_none() {
+            e.span = attr.span;
+        }
+        e
+    })?;
+    // `span` defaults to the offending argument's own span when one exists
+    // (unknown field / bad type), falling back to the whole attribute's
+    // span for schema-level errors with no single argument to blame
+    // (missing required field) — T19/LSP-21.
+    let field_err = |field: &str, reason: String, span: Option<miette::SourceSpan>| ElabError {
+        kind: ElabErrorKind::AttrSchemaField {
             schema: attr.name.clone(),
             field: field.to_string(),
             reason,
-        })
+        },
+        span: span.or(attr.span),
     };
     let mut data: HashMap<String, Value> = HashMap::new();
     for arg in &attr.args {
@@ -86,10 +98,10 @@ pub(crate) fn convert_attribute(
         let field = fields
             .iter()
             .find(|f| f.name == arg.name)
-            .ok_or_else(|| field_err(&arg.name, "not a field of this schema".into()))?;
+            .ok_or_else(|| field_err(&arg.name, "not a field of this schema".into(), arg.span))?;
         // Evaluate the argument expression to a Value and type-check it.
-        let value = eval_attr_value(&arg.expr).map_err(|reason| field_err(&arg.name, reason))?;
-        check_field_type(&field.ty, &value).map_err(|reason| field_err(&arg.name, reason))?;
+        let value = eval_attr_value(&arg.expr).map_err(|reason| field_err(&arg.name, reason, arg.span))?;
+        check_field_type(&field.ty, &value).map_err(|reason| field_err(&arg.name, reason, arg.span))?;
         data.insert(arg.name.clone(), value);
     }
     // Required fields must be provided; omitted fields with a default take
@@ -100,11 +112,11 @@ pub(crate) fn convert_attribute(
         }
         match &field.omit {
             FieldOmit::Required => {
-                return Err(field_err(&field.name, "required field not provided".into()));
+                return Err(field_err(&field.name, "required field not provided".into(), None));
             }
             FieldOmit::Optional => {}
             FieldOmit::Default(default) => {
-                let value = default.clone().map_err(|reason| field_err(&field.name, reason))?;
+                let value = default.clone().map_err(|reason| field_err(&field.name, reason, None))?;
                 data.insert(field.name.clone(), value);
             }
         }

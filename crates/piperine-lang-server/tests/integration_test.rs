@@ -1568,3 +1568,58 @@ fn completion_off_attr_position_does_not_offer_schema_names() {
     let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
     assert!(!labels.contains(&"rfport"), "unrelated position must not offer schema names: {labels:?}");
 }
+
+// ── T19: attribute-argument validation (LSP-21) ─────────────────────────────
+
+/// `@rfport(num = "x", ...)` — a bad-type argument value — must produce a
+/// diagnostic (structured `E2023` code, `AttrSchemaField`) whose span covers
+/// the specific offending argument (`num = "x"`), not the whole attribute
+/// or a `0:0` fallback.
+#[test]
+fn attr_arg_bad_type_diagnostic_points_at_the_specific_argument() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\nmod M ( inout p : Electrical ) {\n@rfport(num = \"x\", z0 = 50) wire rf_in : Electrical;\n}\n";
+    let doc = analyzed(src);
+    assert!(doc.design.is_none(), "a bad-type attribute argument must fail elaboration");
+    assert!(!doc.errors.is_empty(), "expected at least one elaboration error");
+
+    let err = doc.errors.iter().find(|e| e.code.as_deref() == Some("E2023"))
+        .expect("expected the AttrSchemaField (E2023) diagnostic");
+    let span = err.span.expect("diagnostic must carry a span");
+
+    let arg_start = src.find("num = \"x\"").expect("argument text must be present");
+    assert_eq!(span.offset(), arg_start, "span must point at `num = \"x\"`, not the whole attribute or 0:0");
+}
+
+/// An unknown field (`bogus`, not part of the `rfport` schema) must produce
+/// a diagnostic whose span covers that specific argument.
+#[test]
+fn attr_arg_unknown_field_diagnostic_points_at_the_specific_argument() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\nmod M ( inout p : Electrical ) {\n@rfport(num = 1, bogus = 2) wire rf_in : Electrical;\n}\n";
+    let doc = analyzed(src);
+    assert!(doc.design.is_none(), "an unknown attribute field must fail elaboration");
+
+    let err = doc.errors.iter().find(|e| e.code.as_deref() == Some("E2023"))
+        .expect("expected the AttrSchemaField (E2023) diagnostic");
+    let span = err.span.expect("diagnostic must carry a span");
+
+    let arg_start = src.find("bogus = 2").expect("argument text must be present");
+    assert_eq!(span.offset(), arg_start, "span must point at `bogus = 2`");
+}
+
+/// A missing required field (`num`, `rfport`'s only required field) — with
+/// no single argument to blame — must still produce a diagnostic, with its
+/// span falling back to the whole `@rfport(...)` attribute rather than
+/// `0:0`.
+#[test]
+fn attr_missing_required_field_diagnostic_points_at_the_attribute() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\nmod M ( inout p : Electrical ) {\n@rfport(z0 = 50) wire rf_in : Electrical;\n}\n";
+    let doc = analyzed(src);
+    assert!(doc.design.is_none(), "a missing required attribute field must fail elaboration");
+
+    let err = doc.errors.iter().find(|e| e.code.as_deref() == Some("E2023"))
+        .expect("expected the AttrSchemaField (E2023) diagnostic");
+    let span = err.span.expect("diagnostic must carry a span");
+
+    let attr_start = src.find("@rfport(z0 = 50)").expect("attribute text must be present");
+    assert_eq!(span.offset(), attr_start, "span must fall back to the whole attribute, not 0:0");
+}

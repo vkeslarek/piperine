@@ -384,12 +384,22 @@ pub enum ResolveKind {
 pub struct Attribute {
     pub name: String,
     pub args: Vec<AttrArg>,
+    /// The whole `@name(...)` span, from `@` through the closing `)` (or
+    /// just the name when there is no arg list) — T19/LSP-21: the fallback
+    /// diagnostic location for schema-level errors (unknown schema, a
+    /// missing required field) that have no single offending argument to
+    /// point at.
+    pub span: Option<miette::SourceSpan>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AttrArg {
     pub name: String,
     pub expr: Expr,
+    /// The `name = expr` span of this one argument — T19/LSP-21: lets
+    /// attribute-argument diagnostics (unknown field, bad type) point at
+    /// the specific argument instead of the whole attribute.
+    pub span: Option<miette::SourceSpan>,
 }
 
 // ─────────────────────────────── Bundles ─────────────────────────────────────
