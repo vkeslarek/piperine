@@ -20,6 +20,7 @@
 mod backend;
 mod capability;
 mod contributions;
+mod ctx;
 mod error;
 mod host;
 mod manifest;
@@ -32,10 +33,13 @@ pub use capability::HostCtx;
 pub use contributions::{
     Contributions, DeviceFactory, DeviceKind, PluginDevice, Registrar, ScriptHandler,
 };
+pub use ctx::Ctx;
 pub use error::{PluginError, PluginResult};
 pub use host::PluginHost;
 pub use manifest::{DeviceSource, Manifest, Permissions, PluginShape};
-pub use registry::{DeviceRegistration, Registry};
+pub use registry::{
+    DeviceRegistration, HookCall, HookPhase, HookRegistration, Registry, ScriptRegistration,
+};
 pub use trust::{artifact_hash, ensure_trusted as trust_check, TrustMode};
 pub use view::{DesignStaging, SolveResultView};
 

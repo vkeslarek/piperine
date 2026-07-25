@@ -28,7 +28,10 @@ pub struct DesignStaging<'a> {
 }
 
 impl<'a> DesignStaging<'a> {
-    pub(crate) fn new(design: &'a Design, plugin: &str) -> Self {
+    /// A staging handle over `design` attributed to `plugin` (P0008
+    /// provenance) — constructed by the host per `transform_design`
+    /// dispatch and by embedded bridges mirroring it.
+    pub fn new(design: &'a Design, plugin: &str) -> Self {
         Self { design, plugin: plugin.to_string() }
     }
 
