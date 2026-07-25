@@ -509,6 +509,23 @@ fn test_use_loaded_item_maps_to_real_on_disk_path() {
 }
 
 #[test]
+fn test_design_project_item_file_returns_real_header_path() {
+    // LSB-01..03 (T2): item_files threaded through elaboration onto
+    // Design::project() the same way origins already is.
+    let prog = elab("mod M ();");
+    let ddt_path = prog
+        .project()
+        .item_file("ddt")
+        .expect("ddt should be tracked on the elaborated design's project");
+    assert!(
+        ddt_path.ends_with("headers/operators.phdl"),
+        "ddt should map to headers/operators.phdl, got {}",
+        ddt_path.display()
+    );
+    assert!(ddt_path.is_file(), "{} must exist on disk", ddt_path.display());
+}
+
+#[test]
 fn test_use_transitive() {
     use tempfile::TempDir;
 

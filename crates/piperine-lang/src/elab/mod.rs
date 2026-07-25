@@ -79,6 +79,7 @@ impl SourceFile {
         seed(&mut elaborator.ctx);
         let mut design = elaborator.elaborate(augmented)?;
         design.set_origins(resolver.take_origins());
+        design.set_item_files(resolver.take_item_files());
         Ok(design)
     }
 
@@ -103,6 +104,7 @@ impl SourceFile {
         let mut elaborator = Elaborator::new();
         let mut design = elaborator.elaborate(augmented)?;
         design.set_origins(resolver.take_origins());
+        design.set_item_files(resolver.take_item_files());
         Ok((design, elaborator.ctx))
     }
 
@@ -161,6 +163,7 @@ impl SourceFile {
         let mut elaborator = Elaborator::new();
         let (mut design, errors) = elaborator.elaborate_accumulating(augmented);
         design.set_origins(resolver.take_origins());
+        design.set_item_files(resolver.take_item_files());
         (design, elaborator.ctx, errors)
     }
 }

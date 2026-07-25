@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use crate::parse::ast::{BundleDecl, CapabilityDecl, DisciplineDecl, EnumDecl};
@@ -51,6 +52,12 @@ pub struct Project {
     /// Item provenance: declared item name → the package it was imported
     /// from. Items declared in the project itself are absent.
     pub origins: HashMap<String, String>,
+    /// Item-name → the real on-disk file it was declared in (BUG-1/
+    /// LSB-01..03), recorded by [`crate::resolve::Resolver::item_files`]
+    /// during elaboration. Absence means "no textual declaration is
+    /// tracked" (e.g. a native-only registry entry) — goto-definition
+    /// declines rather than fabricating a location.
+    pub item_files: HashMap<String, PathBuf>,
 }
 
 impl Project {
@@ -63,6 +70,17 @@ impl Project {
         }
         let base = name.split("__").next()?;
         self.origins.get(base).map(String::as_str)
+    }
+
+    /// The real on-disk file `name` was declared in, `None` if untracked.
+    /// Monomorphized names (`Dac__8`) resolve through their base (`Dac`),
+    /// mirroring [`Self::origin_of`].
+    pub fn item_file(&self, name: &str) -> Option<&Path> {
+        if let Some(path) = self.item_files.get(name) {
+            return Some(path.as_path());
+        }
+        let base = name.split("__").next()?;
+        self.item_files.get(base).map(PathBuf::as_path)
     }
 }
 
@@ -168,6 +186,13 @@ impl Design {
     /// elaboration with the resolver's record.
     pub(crate) fn set_origins(&mut self, origins: HashMap<String, String>) {
         self.project.origins = origins;
+    }
+
+    /// Record item-name → real on-disk declaring file (BUG-1/LSB-01..03) —
+    /// called once by elaboration with the resolver's record, alongside
+    /// [`Self::set_origins`].
+    pub(crate) fn set_item_files(&mut self, item_files: HashMap<String, PathBuf>) {
+        self.project.item_files = item_files;
     }
 
     /// The elaborated top module, if set.
