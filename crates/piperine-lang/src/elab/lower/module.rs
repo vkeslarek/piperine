@@ -142,7 +142,7 @@ impl Elaborator {
         }
 
         for stmt in &decl.body {
-            if let ModuleStatement::WireDecl { name, ty, attrs: _, span: _ } = stmt {
+            if let ModuleStatement::WireDecl { name, ty, attrs: _, doc: _, span: _ } = stmt {
                 let resolved_name = type_subst.get(&ty.name).map(|s| s.as_str()).unwrap_or(&ty.name);
                 local_types.insert(name.clone(), resolved_name.to_string());
             }
@@ -168,7 +168,7 @@ impl Elaborator {
             }
         }
 
-        Ok(Module { span: decl.span, attributes: super::attrs::convert_attributes(&decl.attrs, &self.ctx.schemas, &self.syms.bundles)?, doc: None, name: decl.name.clone(), ports, params, wires, vars, instances, connections, behaviors: vec![], origin: None })
+        Ok(Module { span: decl.span, attributes: super::attrs::convert_attributes(&decl.attrs, &self.ctx.schemas, &self.syms.bundles)?, doc: decl.doc.clone(), name: decl.name.clone(), ports, params, wires, vars, instances, connections, behaviors: vec![], origin: None })
     }
 
     /// Lowers a slice of `ModuleStatement`s, appending the resulting
@@ -204,7 +204,7 @@ impl Elaborator {
         out: &mut Vec<ModBodyItem>,
     ) -> Result<(), ElabError> {
         match stmt {
-            ModuleStatement::ParamDecl { name, ty, default, span, attrs, .. } => {
+            ModuleStatement::ParamDecl { name, ty, default, span, attrs, doc, .. } => {
                 // GAPS §I.14 — a bundle-typed param (`param model : DioModel
                 // = DioModel {};`) is flattened here into one scalar param
                 // per bundle field, named `{name}_{field}`. This matches
@@ -262,7 +262,7 @@ impl Elaborator {
                 if let Some(v) = &def {
                     env.define(name.clone(), v.clone());
                 }
-                out.push(ModBodyItem::Param(Param { span: *span, attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?, doc: None,
+                out.push(ModBodyItem::Param(Param { span: *span, attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?, doc: doc.clone(),
                     name: name.clone(),
                     ty: vt,
                     default: def,
@@ -270,7 +270,7 @@ impl Elaborator {
                 }));
             }
 
-            ModuleStatement::WireDecl { name, ty, span, attrs, .. } => {
+            ModuleStatement::WireDecl { name, ty, span, attrs, doc, .. } => {
                 let resolved_name = type_subst.get(&ty.name).map(|s| s.as_str()).unwrap_or(&ty.name);
                 if let Some(bundle) = self.syms.bundles.get(resolved_name).cloned()
                     && self.is_net_capable_bundle(resolved_name) {
@@ -285,10 +285,10 @@ impl Elaborator {
                         return Ok(());
                     }
                 let nt = self.resolve_net_type(ty, env, type_subst)?;
-                out.push(ModBodyItem::Wire(Wire { span: *span, attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?, doc: None, name: name.clone(), ty: nt }));
+                out.push(ModBodyItem::Wire(Wire { span: *span, attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?, doc: doc.clone(), name: name.clone(), ty: nt }));
             }
 
-            ModuleStatement::VarDecl { name, ty, default, span, attrs, .. } => {
+            ModuleStatement::VarDecl { name, ty, default, span, attrs, doc, .. } => {
                 // §7.2 + §I.15 — a `var` declared directly in a `mod` body
                 // (as opposed to inside `analog`/`digital`) is persistent
                 // module-level state, e.g. `var sw_state : Real = 0.0;` in
@@ -333,7 +333,7 @@ impl Elaborator {
                 out.push(ModBodyItem::ModVar(Var {
                     span: *span,
                     attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?,
-                    doc: None,
+                    doc: doc.clone(),
                     name: name.clone(),
                     ty: vt,
                     init,
@@ -430,7 +430,7 @@ impl Elaborator {
         out: &mut Vec<ModBodyItem>,
     ) -> Result<(), ElabError> {
         let ModuleStatement::Instance {
-            name, array_index, module, const_args, ports, params, span, attrs, ..
+            name, array_index, module, const_args, ports, params, span, attrs, doc, ..
         } = stmt else {
             unreachable!("lower_instance called on a non-Instance statement");
         };
@@ -527,7 +527,7 @@ impl Elaborator {
         out.push(ModBodyItem::Inst(Instance {
             span,
             attributes: super::attrs::convert_attributes(attrs, &self.ctx.schemas, &self.syms.bundles)?,
-            doc: None,
+            doc: doc.clone(),
             label,
             module: mono_name,
             ports: elab_ports,

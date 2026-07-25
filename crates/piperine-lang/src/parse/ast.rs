@@ -205,6 +205,9 @@ pub struct ConstDecl {
 pub struct ModuleDeclaration {
     pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
+    /// A `///` doc-comment run attached immediately before this declaration
+    /// (LSP-06/07), if any.
+    pub doc: Option<String>,
     pub is_pub: bool,
     pub name: String,
     /// Compile-time Natural const parameters, e.g. `N` in `mod Foo[N]`.
@@ -230,6 +233,9 @@ pub struct TypeParam {
 #[derive(Debug, Clone)]
 pub struct Port {
     pub attrs: Vec<Attribute>,
+    /// A `///` doc-comment run attached immediately before this port
+    /// (LSP-06/07), if any.
+    pub doc: Option<String>,
     pub direction: Direction,
     pub name: String,
     /// Unresolved type — may be a bundle name, discipline name, or parameterized type.
@@ -269,14 +275,15 @@ impl ModuleStatement {
 
 #[derive(Debug, Clone)]
 pub enum ModuleStatement {
-    ParamDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, name: String, ty: Type, default: Option<Expr> },
-    WireDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, name: String, ty: Type },
-    VarDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, name: String, ty: Type, default: Option<Expr> },
+    ParamDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, doc: Option<String>, name: String, ty: Type, default: Option<Expr> },
+    WireDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, doc: Option<String>, name: String, ty: Type },
+    VarDecl { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, doc: Option<String>, name: String, ty: Type, default: Option<Expr> },
     StructuralFor { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, var: String, range: Range, body: Vec<ModuleStatement> },
     StructuralIf { span: Option<miette::SourceSpan>, attrs: Vec<Attribute>, cond: Expr, then_body: Vec<ModuleStatement>, else_body: Option<Vec<ModuleStatement>> },
     Instance {
         span: Option<miette::SourceSpan>,
         attrs: Vec<Attribute>,
+        doc: Option<String>,
         name: Option<String>,
         array_index: Option<Expr>,
         module: String,
@@ -720,6 +727,9 @@ pub struct StmtMatchArm {
 pub struct BehaviorDecl {
     pub span: Option<miette::SourceSpan>,
     pub attrs: Vec<Attribute>,
+    /// A `///` doc-comment run attached immediately before this behavior
+    /// block (LSP-06/07), if any.
+    pub doc: Option<String>,
     pub is_pub: bool,
     pub kind: BehaviorKind,
     pub name: String,

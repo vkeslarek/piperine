@@ -241,7 +241,7 @@ impl Elaborator {
         Ok(vec![Port {
             span: None,
             attributes: super::attrs::convert_attributes(&port.attrs, &self.ctx.schemas, &self.syms.bundles)?,
-            doc: None,
+            doc: port.doc.clone(),
             direction: port.direction.clone(),
             name: port.name.clone(),
             ty: net_ty,

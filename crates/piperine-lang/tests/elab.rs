@@ -811,3 +811,83 @@ fn flatten_pass_leaves_authored_modules_untouched() {
     assert_eq!(top.instances.len(), 1, "authored Top still has one instance (Seg)");
     assert_eq!(top.instances[0].module, "Seg", "authored Top instance is Seg, not a spliced leaf");
 }
+
+// ─────────────────────── `///` doc-comment attach (LSP-07/09) ─────────────────
+
+#[test]
+fn test_module_doc_attaches_from_triple_slash_run() {
+    let src = "
+        /// A two-terminal resistor.
+        mod Resistor(inout p: Electrical, inout n: Electrical) { param r: Real = 1.0; }
+        discipline Electrical { potential v: Real; flow i: Real; }
+    ";
+    let design = elab(src);
+    let m = design.module("Resistor").expect("Resistor exists");
+    assert_eq!(m.doc.as_deref(), Some("A two-terminal resistor."));
+}
+
+#[test]
+fn test_module_without_doc_comment_is_none_no_regression() {
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod Resistor(inout p: Electrical, inout n: Electrical) { param r: Real = 1.0; }
+    ";
+    let design = elab(src);
+    let m = design.module("Resistor").expect("Resistor exists");
+    assert_eq!(m.doc, None);
+}
+
+#[test]
+fn test_param_wire_var_instance_and_behavior_docs_attach() {
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        mod Leaf(inout p: Electrical, inout n: Electrical) {
+            /// The resistance in ohms.
+            param r: Real = 1.0;
+        }
+        analog Leaf { I(p, n) <+ V(p, n) / r; }
+        mod Top(inout a: Electrical, inout b: Electrical) {
+            /// An internal net.
+            wire mid: Electrical;
+            /// Persistent state.
+            var st: Real = 0.0;
+            /// The first leg.
+            leg1 : Leaf(.p = a, .n = mid) { .r = 1e3 };
+        }
+        /// The composite behavior.
+        analog Top {}
+    ";
+    let design = elab(src);
+    let leaf = design.module("Leaf").expect("Leaf exists");
+    let r = leaf.param("r").expect("param r exists");
+    assert_eq!(r.doc.as_deref(), Some("The resistance in ohms."));
+
+    let top = design.module("Top").expect("Top exists");
+    let mid = top.wire("mid").expect("wire mid exists");
+    assert_eq!(mid.doc.as_deref(), Some("An internal net."));
+
+    let st = top.vars().iter().find(|v| v.name == "st").expect("var st exists");
+    assert_eq!(st.doc.as_deref(), Some("Persistent state."));
+
+    let leg1 = top.instance("leg1").expect("instance leg1 exists");
+    assert_eq!(leg1.doc.as_deref(), Some("The first leg."));
+
+    let behavior = top.behaviors().iter().find(|b| b.is_analog()).expect("analog behavior exists");
+    assert_eq!(behavior.doc.as_deref(), Some("The composite behavior."));
+}
+
+#[test]
+fn test_doc_run_not_immediately_before_a_decl_is_ignored_no_crash_or_misattach() {
+    // A `///` run followed by a blank line, then the declaration: per the
+    // lexer's attach rule (T1), the run does not reach the declaration —
+    // elaboration must not crash and must not misattach it.
+    let src = "
+        discipline Electrical { potential v: Real; flow i: Real; }
+        /// stale, not adjacent
+
+        mod Resistor(inout p: Electrical, inout n: Electrical) { param r: Real = 1.0; }
+    ";
+    let design = elab(src);
+    let m = design.module("Resistor").expect("Resistor elaborates fine despite the dangling run");
+    assert_eq!(m.doc, None);
+}

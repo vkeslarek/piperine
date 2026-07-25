@@ -54,6 +54,15 @@ impl<'a> Parser<'a> {
         self.toks.get(self.pos).map(|l| l.start).unwrap_or(0)
     }
 
+    /// The `///` doc-comment run attached to the current (not-yet-consumed)
+    /// token, if any (LSP-06/07). Must be read *before* any attributes/
+    /// keywords of a declaration are consumed — the lexer attaches a doc run
+    /// to the first token following it, which for a declaration is its
+    /// leading `@attr`/keyword token.
+    pub fn current_doc(&self) -> Option<String> {
+        self.toks.get(self.pos).and_then(|l| l.doc.clone())
+    }
+
     pub fn previous_span_end(&self) -> usize {
         if self.pos > 0 {
             self.toks.get(self.pos - 1).map(|l| l.end).unwrap_or(0)
