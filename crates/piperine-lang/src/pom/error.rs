@@ -7,7 +7,7 @@ use crate::elab::const_eval::ConstEvalError;
 
 /// An error raised while elaborating a [`SourceFile`][crate::parse::SourceFile]
 /// into a [`Design`][super::Design].
-#[derive(Debug, Error, miette::Diagnostic)]
+#[derive(Debug, Clone, Error, miette::Diagnostic)]
 #[error("{kind}")]
 pub struct ElabError {
     #[source]
@@ -37,7 +37,7 @@ impl From<ElabErrorKind> for ElabError {
 
 /// An error raised while elaborating a [`SourceFile`][crate::parse::SourceFile]
 /// into a [`Design`][super::Design].
-#[derive(Debug, Error, miette::Diagnostic)]
+#[derive(Debug, Clone, Error, miette::Diagnostic)]
 pub enum ElabErrorKind {
     /// Constant evaluation failed in a given context.
     #[error("const eval error in `{context}`: {source}")]

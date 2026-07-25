@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 /// Errors that can occur during constant evaluation.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum ConstEvalError {
     /// The expression cannot be reduced to a compile-time constant.
     #[error("expression is not a compile-time constant: {0}")]

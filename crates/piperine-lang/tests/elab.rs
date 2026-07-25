@@ -100,6 +100,51 @@ fn test_undefined_type_error() {
     assert!(err.contains("NonExistent"), "error should name the undefined type");
 }
 
+// ──────────────────── T16/LSP-18: error-accumulating elaboration ──────────────
+
+/// Two independent modules, each with its own undefined-port-type error
+/// (the `ElabModules` pass — module elaboration is independent per
+/// module), must *both* appear in `elaborate_with_context_accumulating`'s
+/// returned `Vec<ElabError>`, not just the first.
+#[test]
+fn accumulating_elaboration_reports_two_independent_module_errors() {
+    let src = "mod M1 ( inout p : NonExistentOne );\nmod M2 ( inout p : NonExistentTwo );\n";
+    let source_file = parse_str(src).expect("parse failed");
+    let (_, _, errors) = source_file.elaborate_with_context_accumulating(&piperine_lang::SourceMap::dummy());
+
+    assert_eq!(errors.len(), 2, "both independent module errors must be reported, got: {errors:?}");
+    let combined = errors.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(" | ");
+    assert!(combined.contains("NonExistentOne"), "M1's error must be present: {combined}");
+    assert!(combined.contains("NonExistentTwo"), "M2's error must be present: {combined}");
+}
+
+/// A clean elaboration returns an empty error list from the accumulating
+/// entry point (no regression: the same source that `elaborate` accepts
+/// must still be accepted here).
+#[test]
+fn accumulating_elaboration_returns_no_errors_on_success() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\nmod M ( inout p : Electrical, inout n: Electrical ) {}\n";
+    let source_file = parse_str(src).expect("parse failed");
+    let (design, _, errors) = source_file.elaborate_with_context_accumulating(&piperine_lang::SourceMap::dummy());
+
+    assert!(errors.is_empty(), "a cleanly-elaborating source must report no errors, got: {errors:?}");
+    assert!(design.module("M").is_some(), "the design must still be fully built on success");
+}
+
+/// A failure in a genuinely order-dependent, fail-fast pass (here:
+/// `FoldGlobals` — an unresolvable global const, which every later pass
+/// depends on) still stops the pipeline with exactly one error, not a
+/// spurious accumulation — the accumulating driver only keeps going past
+/// a pass that recorded into `accumulated_errors` itself.
+#[test]
+fn accumulating_elaboration_still_stops_at_a_fail_fast_pass() {
+    let src = "const A : Natural = B; const B : Natural = A;\n";
+    let source_file = parse_str(src).expect("parse failed");
+    let (_, _, errors) = source_file.elaborate_with_context_accumulating(&piperine_lang::SourceMap::dummy());
+
+    assert_eq!(errors.len(), 1, "a fail-fast precondition pass must not multiply into several errors: {errors:?}");
+}
+
 // ──────────────────────────── bundle expansion ────────────────────────────────
 
 #[test]

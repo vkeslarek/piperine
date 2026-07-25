@@ -131,22 +131,27 @@ impl DocumentState {
             self.errors.push(ParseError { message: e.to_string(), span: e.span() });
         }
 
-        match source_file.clone().elaborate_with_context(source_map) {
-            Ok((d, ctx)) => {
-                // Update to the new valid design (+ its registries + the
-                // ResolutionIndex built over it — LSP-03/05/10/13).
-                self.resolution_index = Some(piperine_lang::elab::resolution::index_design(&d));
-                self.design = Some(d);
-                self.ctx = Some(ctx);
-            }
-            Err(e) => {
-                // Record the error but keep the previous design alive so
-                // language features (hover, go-to-def, outline) keep working.
+        // LSP-18/T16: accumulates every independent elaboration error
+        // instead of stopping at the first (see
+        // `Elaborator::elaborate_accumulating`'s docs for exactly which
+        // passes accumulate vs. fail fast).
+        let (design, ctx, elab_errors) =
+            source_file.clone().elaborate_with_context_accumulating(source_map);
+        if elab_errors.is_empty() {
+            // Update to the new valid design (+ its registries + the
+            // ResolutionIndex built over it — LSP-03/05/10/13).
+            self.resolution_index = Some(piperine_lang::elab::resolution::index_design(&design));
+            self.design = Some(design);
+            self.ctx = Some(ctx);
+        } else {
+            // Record every error but keep the previous design alive so
+            // language features (hover, go-to-def, outline) keep working.
+            for e in elab_errors {
                 self.errors.push(ParseError { message: e.to_string(), span: e.span });
-                // `self.design`/`self.ctx` intentionally left unchanged
-                // (stale-but-valid).
             }
-        };
+            // `self.design`/`self.ctx` intentionally left unchanged
+            // (stale-but-valid).
+        }
         self.ast = Some(source_file);
     }
 

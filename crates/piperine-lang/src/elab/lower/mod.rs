@@ -71,6 +71,13 @@ pub struct Elaborator {
     /// Items handed to `elaborate`, consumed by the `Register` pass.
     pending_items: Vec<crate::parse::ast::Item>,
     pub(crate) ctx: crate::elab::registry::ElabContext,
+    /// Errors accumulated by passes that don't abort on the first failure
+    /// (`ElabModules`, `Typecheck` — LSP-18/T16, see `passes.rs`'s module
+    /// docs for exactly which passes accumulate vs. fail fast). Empty for
+    /// the ordinary [`elaborate`](Self::elaborate) entry point's callers —
+    /// only [`elaborate_accumulating`](Self::elaborate_accumulating)
+    /// reads it.
+    pub(crate) accumulated_errors: Vec<ElabError>,
 }
 
 impl Elaborator {
@@ -81,6 +88,7 @@ impl Elaborator {
             syms: SymbolTable::new(),
             pending_items: Vec::new(),
             ctx: crate::elab::registry::ElabContext::new(),
+            accumulated_errors: Vec::new(),
         }
     }
 
@@ -131,6 +139,39 @@ impl Elaborator {
             pass.run(self, &mut design)?;
         }
         Ok(design)
+    }
+
+    /// Like [`elaborate`](Self::elaborate), but never aborts the pipeline
+    /// early on account of a pass that accumulates its own errors
+    /// internally (`ElabModules`, `Typecheck` today — LSP-18/T16): those
+    /// passes attempt every independent item they own (every module,
+    /// every module's typecheck) rather than stopping at the first
+    /// failure, recording each error in `self.accumulated_errors` while
+    /// still returning their *first* error to satisfy the ordinary
+    /// [`ElabPass::run`] contract other callers (`elaborate`) rely on.
+    /// This driver tells the two cases apart by whether
+    /// `accumulated_errors` actually grew during the failing pass: if it
+    /// did, the pass already recorded everything it could and the
+    /// pipeline continues with whatever partial `design` it left behind
+    /// (so a *later*, independent pass's error isn't silently swallowed
+    /// by the first); if it didn't, the pass is a genuine precondition
+    /// (`Register`, `ValidateEvents`, `FoldGlobals`, `ElabFns`,
+    /// `AttachBehaviors`, `ResolveCalls`, `FlattenHierarchy` — order-
+    /// dependent, each pass's output is the next's input) and the
+    /// pipeline stops there, same as `elaborate` would.
+    pub fn elaborate_accumulating(&mut self, source: SourceFile) -> (Design, Vec<ElabError>) {
+        self.pending_items = source.items;
+        let mut design = Design::new();
+        for pass in passes::PASSES {
+            let before = self.accumulated_errors.len();
+            if let Err(e) = pass.run(self, &mut design)
+                && self.accumulated_errors.len() == before
+            {
+                self.accumulated_errors.push(e);
+                break;
+            }
+        }
+        (design, std::mem::take(&mut self.accumulated_errors))
     }
 
 }

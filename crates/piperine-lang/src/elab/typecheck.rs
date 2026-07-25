@@ -22,18 +22,35 @@ use crate::pom::{Behavior, BehaviorStmt};
 use crate::parse::ast::Expr;
 use crate::pom::{ElabError, ElabErrorKind, Module as DesignModule};
 
-/// Run the typecheck pass over every module of the elaborated program.
+/// Run the typecheck pass over every module of the elaborated program,
+/// stopping at (and returning) the first module's error.
 ///
-/// Each module is checked independently. A failure in one module does
-/// not abort the check of the remaining modules — the first error wins
-/// (enumeration order is deterministic: declaration order in the AST).
+/// Delegates to [`typecheck_program_accumulating`] — same check, same
+/// per-module independence — and keeps only the first error, preserving
+/// this function's existing single-error contract for its callers.
 pub fn typecheck_program(
     design: &crate::pom::Design,
 ) -> Result<(), ElabError> {
-    for module in design.modules.values() {
-        check_module(module, design)?;
+    match typecheck_program_accumulating(design).into_iter().next() {
+        Some(e) => Err(e),
+        None => Ok(()),
     }
-    Ok(())
+}
+
+/// Run the typecheck pass over every module of the elaborated program,
+/// checking *every* module even after one fails (LSP-18/T16) — each
+/// module is checked independently, so one module's width/discipline
+/// error has no bearing on the correctness of any other module's check.
+/// Returns every error found, in module-declaration order; empty when the
+/// whole program typechecks cleanly.
+pub fn typecheck_program_accumulating(design: &crate::pom::Design) -> Vec<ElabError> {
+    let mut errors = Vec::new();
+    for module in design.modules.values() {
+        if let Err(e) = check_module(module, design) {
+            errors.push(e);
+        }
+    }
+    errors
 }
 
 /// Check a single module. Delegates to focused sub-checks.

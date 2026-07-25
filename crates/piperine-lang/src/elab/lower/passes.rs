@@ -123,19 +123,38 @@ impl ElabPass for ElabFns {
 /// Elaborate every non-generic module. Generic modules monomorphize on
 /// demand when an instance with const args is encountered
 /// (`lower_mod_stmt`); the cache drains in [`AttachBehaviors`].
+///
+/// LSP-18/T16: modules are independent elaboration units — one module
+/// failing has no bearing on any other module's correctness — so this
+/// pass attempts every module and accumulates every failure in
+/// `elab.accumulated_errors` instead of stopping at the first, while
+/// still returning the *first* error (same contract every other
+/// `ElabPass` honors, so `Elaborator::elaborate`'s existing fail-fast
+/// callers see identical behavior to before).
 struct ElabModules;
 impl ElabPass for ElabModules {
     fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
         let mod_names: Vec<String> = elab.syms.module_decls.keys().cloned().collect();
+        let mut first_err: Option<ElabError> = None;
         for name in &mod_names {
             let decl = elab.syms.module_decls[name].clone();
             if decl.const_params.is_empty() && decl.type_params.is_empty() {
                 let mut env = ConstEnv::with_globals(elab.syms.globals.clone());
-                let elab_mod = elab.elab_mod_inner(&decl, &mut env, &HashMap::new())?;
-                design.modules_map_mut().insert(name.clone(), elab_mod);
+                match elab.elab_mod_inner(&decl, &mut env, &HashMap::new()) {
+                    Ok(elab_mod) => {
+                        design.modules_map_mut().insert(name.clone(), elab_mod);
+                    }
+                    Err(e) => {
+                        elab.accumulated_errors.push(e.clone());
+                        first_err.get_or_insert(e);
+                    }
+                }
             }
         }
-        Ok(())
+        match first_err {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 }
 
@@ -190,9 +209,19 @@ impl ElabPass for ResolveCalls {
 
 /// GAPS §B.1 + §B.2 — connection width/discipline checks over the finished
 /// design, before codegen ever sees it.
+///
+/// LSP-18/T16: like `ElabModules`, each module's typecheck is independent
+/// of every other module's, so this pass accumulates every module's
+/// failure via `typecheck_program_accumulating` instead of stopping at
+/// the first (same first-error-return contract as `ElabModules`).
 struct Typecheck;
 impl ElabPass for Typecheck {
-    fn run(&self, _elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
-        crate::elab::typecheck::typecheck_program(design)
+    fn run(&self, elab: &mut Elaborator, design: &mut Design) -> Result<(), ElabError> {
+        let errors = crate::elab::typecheck::typecheck_program_accumulating(design);
+        let mut iter = errors.into_iter();
+        let Some(first) = iter.next() else { return Ok(()) };
+        elab.accumulated_errors.push(first.clone());
+        elab.accumulated_errors.extend(iter);
+        Err(first)
     }
 }
