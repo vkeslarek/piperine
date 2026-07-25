@@ -29,6 +29,10 @@ piperine-api = { version = "0.1.1", path = "crates/piperine-api" }
 # the .py examples through the embedded-CPython host.
 [dev-dependencies]
 piperine-python = { path = "crates/piperine-python" }
+piperine-plugin = { path = "crates/piperine-plugin" }
+# The `#[pip::…]` macros under their public spelling — the plugin_parity
+# test compile-proves the decorator names against the Python `@pip.…` side.
+pip = { package = "piperine-plugin-macros", path = "crates/piperine-plugin-macros" }
 # The suites also reach lang/codegen directly (SourceMap setup, kernel
 # introspection) — dev-only edges, not part of the shell's public story.
 piperine-lang = { path = "crates/piperine-lang" }
