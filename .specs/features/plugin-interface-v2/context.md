@@ -58,6 +58,16 @@ express the same plugin API identically (MD-22).
 - **D12 — version/ABI compat deferred.** v2 keeps only the device binary's
   `piperine_plugin_abi_version` check; the manifest `piperine=">=X"` compat
   field is a roadmap follow-up.
+- **D13 — device is Rust-ABI + binary delivery (not full C).** The device
+  ships as a prebuilt binary; the ABI crossing dlopen stays Rust
+  (`Box<dyn Plugin>`/`Box<dyn Element>`, same-compiler — the kept
+  `piperine_plugin_entry`/`ABI_VERSION`). A full C-ABI Element vtable
+  (100%-language-agnostic authoring) is an explicit follow-up, out of v2.
+- **D14 — Rust scripts/hooks cross as Rust trait-objects.** A `#[pip::hook]`
+  receives the real `&Design` directly (same-compiler), no opaque-handle C
+  accessors. Python has **name-level parity** (same decorator/phase/ctx-
+  method names) but a different mechanism (embedded-host decorators). The
+  MD-22 contract here is name parity, not a shared ABI.
 
 ## Agent's Discretion (locked by "recommended", refine in Design)
 

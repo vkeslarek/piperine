@@ -8,6 +8,34 @@
 > release-fetch): the device ABI, TOFU trust, `DesignStaging::add_instance`,
 > and the `EntryKind::Plugin` lockfile entry already exist.
 
+## Recheck findings (verified against the codebase 2026-07-25)
+
+Every design claim below was grep-verified in the tree:
+- `crates/piperine-plugin-wasm` **exists** (delete target valid);
+  `backend/{wasm,process,wire_hosted}.rs` **exist** (delete targets valid);
+  `backend/native.rs` stays.
+- The native ABI is **Rust trait-object today**: `piperine_plugin_entry` →
+  `Box<Box<dyn Plugin>>`, `ABI_VERSION = 1`, symbols `ENTRY_SYMBOL`/
+  `ABI_SYMBOL` (`backend/native.rs:27-52`). D13 **keeps** this — v2 does not
+  invent a C ABI.
+- `DesignStaging::add_instance` **exists** (`view.rs:51`) — reuse for
+  injection (PLG-13).
+- `@device`→codegen goes through `DeviceProvider::build(PluginDeviceSpec) ->
+  Box<dyn Element>` (`piperine-codegen/src/device/plugin.rs`); `PluginPort`/
+  `PluginDeviceSpec` are the spec types — reuse.
+- Script dispatch: CLI `External(Vec<String>)` `external_subcommand` →
+  `commands::plugin::script(args)` (`piperine-cli/src/lib.rs:91-94,151`) —
+  reuse; `#[pip::script]` populates the same handler table.
+- `seed_schemas` gates on `!is_empty()` and seeds `device_port.phdl`
+  (`host.rs:309-316`) — keep (only stdlib schemas, PLG-09).
+- Lockfile `EntryKind::Plugin` + `content_hash` + `abi` + `trusted_at`
+  **exist** (`lockfile.rs`) — reuse for the release-fetch pin (no schema
+  change).
+- Python facade is a single file `piperine-python/python/piperine/__init__.py`
+  — the decorators land there.
+- `inventory` is **not** a current dependency — Phase 2 adds it (or the
+  generated-impl fallback, §7).
+
 ## Component map
 
 | Component | Location | v2 action |
@@ -88,15 +116,16 @@ def inject(ctx, staging): staging.add_instance(...)
 **Rust** (`piperine-plugin` proc-macro crate — new
 `crates/piperine-plugin-macros`): attribute macros that emit registration
 into the same `Contributions` shape via a linker-section / inventory-style
-collector (so a native plugin's `.so` self-describes its scripts/hooks/
-devices without an imperative `register()` body):
+collector, so a native plugin's `.so` self-describes without an imperative
+`register()` body. Hooks receive the real `&Design` directly (D14 — Rust
+trait-object ABI, same-compiler; no opaque-handle C accessors):
 
 ```rust
 #[pip::script("lint")]
 fn lint(args: &[String], ctx: &Ctx) -> i32 { ... }
 
 #[pip::hook(after_elaborate)]
-fn check(ctx: &Ctx) -> Result<()> { ... }
+fn check(ctx: &Ctx) -> Result<()> { ... }        // ctx.design() -> &Design
 
 #[pip::device("GummelPoon")]
 pub struct GummelPoon { /* Element */ }
@@ -106,38 +135,51 @@ pub struct GummelPoon { /* Element */ }
 `transform_design`, `before_lower`, `after_solve` — the exact five the
 `Plugin` trait already defines. The decorators target these phases; the host
 dispatches by phase name. `ctx` (read hooks) exposes the real `&Design`
-(MD-25); `transform_design` additionally gets `&DesignStaging`.
+(MD-25, D14); `transform_design` additionally gets `&DesignStaging`. The
+Python side (D14) has **name parity** — the same decorator/phase/ctx-method
+names — and runs in the embedded CPython host over the same POM; it is *not*
+a separate ABI, so the parity is at the API-name level (PLG-12), the
+mechanism differs (Rust trait+macro vs. Python decorator+host).
 
 **Parity mechanism (PLG-12):** a `plugin_parity.rs` test (mirroring
 `tests/host_parity.rs`) enumerates the decorator names, the five hook phase
 names, and the `ctx`/`staging` method names on both hosts and asserts they
 are identical — a name added on one side without the other fails the test.
 
-## §3 Device binary: the exported C ABI (PLG-05/23, language-agnostic)
+## §3 Device binary: Rust-ABI + binary delivery (PLG-05/24; D13)
 
-A device binary exports (C ABI, `#[no_mangle]`/`extern "C"`):
+**Design decision D13 (user):** the device is a *prebuilt binary* (delivery-
+agnostic), but the ABI crossing dlopen stays **Rust** — the existing
+`piperine_plugin_entry` → `Box<dyn Plugin>` + `ABI_VERSION` check
+(`backend/native.rs`) is **kept**. The `Element` the device constructs
+crosses as `Box<dyn Element>` (Rust trait object, same-compiler: host +
+native plugin are built by the same Piperine toolchain). A **full C-ABI
+Element vtable** (language-100%-agnostic authoring) is an explicit
+**follow-up**, not v2. This keeps v2 aligned with "reduction" — no new ABI
+surface invented.
 
-```c
-uint32_t piperine_plugin_abi_version(void);      // kept — host checks == ABI_VERSION
-// A NUL-terminated table of (type_id, constructor) the host reads at load:
-const PiperineDeviceEntry* piperine_plugin_devices(size_t* out_len);
-// constructor: (const PluginDeviceSpec*) -> Box<dyn Element> (opaque handle)
-```
+What changes vs. today (the imperative `register()` body → macro-generated):
 
-- The **Rust `#[pip::device("Type")]` macro** collects each annotated
-  `Element` into `piperine_plugin_devices`'s table via `inventory` — the
-  author writes zero ABI boilerplate.
-- **Any other language** (C, Zig, an OSDI-compat shim) emits the same three
-  symbols by hand — the contract is the symbol table, not Rust (D5).
-- The host's native backend (`backend/native.rs`) dlopen's the library,
-  checks `piperine_plugin_abi_version`, reads `piperine_plugin_devices`, and
-  builds a `type`→`DeviceFactory` map — replacing the old imperative
-  `Registrar::device` calls.
+- `#[pip::device("GummelPoon")]` on an `Element` type → the proc-macro
+  registers it into the plugin's device table (a Rust `DeviceFactory` keyed
+  by `type`), surfaced through the kept `Plugin`-entry — **not** a new C
+  symbol, **not** an imperative `Registrar::device` call.
+- `backend/native.rs` still dlopen's, checks `ABI_VERSION`, and reads the
+  contribution tables — the loading mechanism is unchanged; only the
+  *authoring* surface (macros, not `register()`) and the *contents* (no
+  schemas) change.
 - **The `@device`-annotated `mod` lives in the plugin's OWN `.phdl`** (D10),
   shipped in the plugin repo. `piperine add` loads the plugin's PHDL
   (injecting every `@device pub mod` it declares) and resolves each mod's
-  `type` against the binary's map. The user just `use`s the plugin package
-  and instantiates the mod — no `@device` at the user site.
+  `type` against the plugin's device table. The user just `use`s the plugin
+  package and instantiates the mod — no `@device` at the user site.
+
+**Collection mechanism:** the macros populate the contribution table via
+`inventory` (life-before-main registration within the plugin cdylib) *or* a
+generated `Plugin`-trait impl the macros accumulate into — whichever proves
+robust across the dlopen boundary (both stay Rust-ABI, so the choice is
+internal, not an ABI commitment). `inventory` would be a new dependency
+(not currently used).
 
 ## §4 Release fetch + triple + TOFU (PLG-16..20)
 
@@ -202,14 +244,20 @@ the additive core. Phase 5 closes.
 
 ## §7 Risks / notes
 
-- **Rust proc-macro + `inventory`** is the one genuinely new mechanism
-  (self-describing native contributions without a `register()` body). If
-  `inventory` proves unworkable across the dlopen boundary, fall back to a
-  single generated `piperine_plugin_devices`/`_scripts`/`_hooks` export the
-  macro accumulates — same ABI, no inventory dependency. Design keeps the
-  ABI (§3) as the source of truth so the collection mechanism is swappable.
+- **Rust proc-macro + collection** is the one genuinely new mechanism
+  (self-describing native contributions without a `register()` body). The
+  ABI stays Rust (`Plugin`-entry, kept), so if `inventory` is awkward across
+  dlopen the macros can instead accumulate a generated `Plugin` trait impl —
+  an internal choice, not an ABI change. **This crate (`piperine-plugin-
+  macros`) is the highest-risk new piece; Phase 2 should spike it first.**
+- **Device/hook ABI is Rust, same-compiler (D13/D14).** The host and native
+  plugins are built by the same Piperine toolchain, so `Box<dyn Plugin>` /
+  `Box<dyn Element>` / `&Design` cross safely. A **full C-ABI Element
+  vtable** (100%-language-agnostic device authoring) is an explicit
+  follow-up, out of v2 (kept aligned with "reduction").
 - **MD-21 revision:** this design drops MD-21's "self-registers attribute
   schemas" clause (D2). A new `AD-NNN` Decisions-log entry records it when
   the spec is confirmed.
-- **Parity is a hard gate** (PLG-12) — the decorator/hook/ctx surface is the
-  MD-22 contract; the parity test is non-negotiable, like `host_parity.rs`.
+- **Parity is a hard gate** (PLG-12) — the decorator/hook/ctx *names* are the
+  MD-22 contract (name-level parity, D14; the underlying mechanism differs
+  Rust vs. Python). The parity test is non-negotiable, like `host_parity.rs`.
