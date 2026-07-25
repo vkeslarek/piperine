@@ -22,11 +22,15 @@ pub fn handle_rename(state: &mut ServerState, req: Request, connection: &Connect
 
     let result = state.documents.get(&uri).and_then(|doc| {
         let offset = crate::text_pos::position_to_byte(&doc.source, pos);
-        let word = crate::text_pos::word_at_position(&doc.source, pos)?;
-        doc.resolve_at(offset)?;
+        // occurrences_at (T8) already gates on symbol resolution and
+        // returns only the binding's own recorded uses — a same-named
+        // identifier in an unrelated scope is never in this set (LSP-11).
+        let occurrences = doc.occurrences_at(offset);
+        if occurrences.is_empty() {
+            return None;
+        }
 
-        let edits = doc
-            .word_occurrences(&word)
+        let edits = occurrences
             .into_iter()
             .map(|(start, end)| TextEdit {
                 range: crate::text_pos::byte_range(&doc.source, start, end),
@@ -55,12 +59,10 @@ pub fn handle_prepare_rename(state: &mut ServerState, req: Request, connection: 
 
     let result = state.documents.get(&uri).and_then(|doc| {
         let offset = crate::text_pos::position_to_byte(&doc.source, pos);
-        let word = crate::text_pos::word_at_position(&doc.source, pos)?;
-        doc.resolve_at(offset)?;
-
-        // The word under the cursor is the exact rename target; find its
-        // occurrence covering the cursor for the highlight range.
-        doc.word_occurrences(&word)
+        // A keyword/literal/comment never resolves to a symbol, so
+        // occurrences_at is empty and prepare-rename correctly declines
+        // (LSP-11 edge case: decline on keyword/literal).
+        doc.occurrences_at(offset)
             .into_iter()
             .find(|&(start, end)| offset >= start && offset <= end)
             .map(|(start, end)| {

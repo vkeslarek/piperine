@@ -2,7 +2,7 @@ use lsp_server::{Connection, Message, Request, RequestId, Notification};
 use lsp_types::{
     Position, Uri, HoverParams, TextDocumentPositionParams, TextDocumentIdentifier,
     DidOpenTextDocumentParams, TextDocumentItem, GotoDefinitionParams, GotoDefinitionResponse,
-    Location,
+    Location, WorkspaceEdit, PrepareRenameResponse,
 };
 use lsp_types::notification::Notification as _;
 use lsp_types::request::Request as _;
@@ -754,6 +754,179 @@ mod B (inout p: Electrical, inout n: Electrical) {\n\
         assert_ne!(loc.range.start.line, comment_line, "a `// power` comment must never appear in references");
         assert!(loc.range.start.line < b_line, "module B's own `power` must never appear in module A's references");
     }
+}
+
+// ── T10: rename handler rides binding occurrences (LSP-11) ─────────────────
+
+/// Drives a `Connection::memory()` round trip and returns the
+/// `textDocument/rename` response for `(line, character)` -> `new_name`.
+fn lsp_rename(source: &str, line: u32, character: u32, new_name: &str) -> Option<WorkspaceEdit> {
+    let (client_conn, server_conn) = Connection::memory();
+
+    std::thread::spawn(move || {
+        let mut server = piperine_lang_server::server::LanguageServer::new(server_conn);
+        server.run().unwrap();
+    });
+
+    let uri: Uri = "file:///rename_test.phdl".parse().unwrap();
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "phdl".to_string(),
+            version: 1,
+            text: source.to_string(),
+        },
+    };
+    client_conn.sender.send(Message::Notification(Notification {
+        method: lsp_types::notification::DidOpenTextDocument::METHOD.to_string(),
+        params: serde_json::to_value(did_open_params).unwrap(),
+    })).unwrap();
+
+    for _ in 0..5 {
+        if let Ok(Message::Notification(not)) = client_conn.receiver.recv_timeout(Duration::from_millis(500))
+            && not.method == lsp_types::notification::PublishDiagnostics::METHOD {
+                break;
+            }
+    }
+
+    let rename_params = lsp_types::RenameParams {
+        text_document_position: TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            position: Position { line, character },
+        },
+        new_name: new_name.to_string(),
+        work_done_progress_params: Default::default(),
+    };
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(1),
+        method: lsp_types::request::Rename::METHOD.to_string(),
+        params: serde_json::to_value(rename_params).unwrap(),
+    })).unwrap();
+
+    let msg = recv_timeout(&client_conn.receiver, 1000);
+    let response = if let Message::Response(resp) = msg {
+        assert_eq!(resp.id, RequestId::from(1));
+        resp.result.and_then(|val| serde_json::from_value(val).ok())
+    } else {
+        panic!("expected a rename response");
+    };
+
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(99),
+        method: "shutdown".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+    recv_timeout(&client_conn.receiver, 500);
+    client_conn.sender.send(Message::Notification(Notification {
+        method: "exit".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+
+    response
+}
+
+/// Drives a `Connection::memory()` round trip and returns the
+/// `textDocument/prepareRename` response for `(line, character)`.
+fn lsp_prepare_rename(source: &str, line: u32, character: u32) -> Option<PrepareRenameResponse> {
+    let (client_conn, server_conn) = Connection::memory();
+
+    std::thread::spawn(move || {
+        let mut server = piperine_lang_server::server::LanguageServer::new(server_conn);
+        server.run().unwrap();
+    });
+
+    let uri: Uri = "file:///prepare_rename_test.phdl".parse().unwrap();
+    let did_open_params = DidOpenTextDocumentParams {
+        text_document: TextDocumentItem {
+            uri: uri.clone(),
+            language_id: "phdl".to_string(),
+            version: 1,
+            text: source.to_string(),
+        },
+    };
+    client_conn.sender.send(Message::Notification(Notification {
+        method: lsp_types::notification::DidOpenTextDocument::METHOD.to_string(),
+        params: serde_json::to_value(did_open_params).unwrap(),
+    })).unwrap();
+
+    for _ in 0..5 {
+        if let Ok(Message::Notification(not)) = client_conn.receiver.recv_timeout(Duration::from_millis(500))
+            && not.method == lsp_types::notification::PublishDiagnostics::METHOD {
+                break;
+            }
+    }
+
+    let params = TextDocumentPositionParams {
+        text_document: TextDocumentIdentifier { uri: uri.clone() },
+        position: Position { line, character },
+    };
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(1),
+        method: lsp_types::request::PrepareRenameRequest::METHOD.to_string(),
+        params: serde_json::to_value(params).unwrap(),
+    })).unwrap();
+
+    let msg = recv_timeout(&client_conn.receiver, 1000);
+    let response = if let Message::Response(resp) = msg {
+        assert_eq!(resp.id, RequestId::from(1));
+        resp.result.and_then(|val| serde_json::from_value(val).ok())
+    } else {
+        panic!("expected a prepareRename response");
+    };
+
+    client_conn.sender.send(Message::Request(Request {
+        id: RequestId::from(99),
+        method: "shutdown".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+    recv_timeout(&client_conn.receiver, 500);
+    client_conn.sender.send(Message::Notification(Notification {
+        method: "exit".to_string(),
+        params: serde_json::Value::Null,
+    })).unwrap();
+
+    response
+}
+
+/// LSP-11: renaming a `power` param declared in module A must not edit
+/// module B's own unrelated `power` param.
+#[test]
+fn rename_edits_only_the_binding_uses_other_scope_untouched() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\n\
+mod A (inout p: Electrical, inout n: Electrical) {\n\
+    param power: Real = 1.0;\n\
+}\n\
+mod B (inout p: Electrical, inout n: Electrical) {\n\
+    param power: Real = 2.0;\n\
+}\n";
+
+    let a_line = src[..src.find("param power").unwrap()].matches('\n').count() as u32;
+    let character = "    param ".chars().count() as u32;
+    let b_line = src[..src.find("mod B").unwrap()].matches('\n').count() as u32;
+
+    let edit = lsp_rename(src, a_line, character, "gain").expect("rename on A's power must succeed");
+    let changes = edit.changes.expect("rename must produce changes");
+    let uri: Uri = "file:///rename_test.phdl".parse().unwrap();
+    let edits = changes.get(&uri).expect("changes must target the open document");
+
+    assert!(!edits.is_empty(), "at least the declaration site must be edited");
+    for e in edits {
+        assert_eq!(e.new_text, "gain");
+        assert!(e.range.start.line < b_line, "module B's own `power` must never be edited by A's rename");
+    }
+}
+
+/// LSP-11 edge case: prepare-rename declines (returns `None`) on a
+/// non-renameable token — here, a numeric literal.
+#[test]
+fn prepare_rename_declines_on_literal() {
+    let src = "mod Top() {}\ndigital Top { var y: Real = 1.0; }";
+    let line = src[..src.rfind("1.0").unwrap()].matches('\n').count() as u32;
+    let line_start = src[..src.rfind("1.0").unwrap()].rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let character = (src.rfind("1.0").unwrap() - line_start) as u32;
+
+    let response = lsp_prepare_rename(src, line, character);
+    assert!(response.is_none(), "prepare-rename must decline on a numeric literal, got: {response:?}");
 }
 
 /// LSP-10/13 base edge case: a cursor on a non-symbol (a numeric literal)
