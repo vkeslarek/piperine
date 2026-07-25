@@ -588,4 +588,83 @@ mod Inner (inout p: Electrical, inout n: Electrical) {\n\
     );
 }
 
+// ── T8: occurrence engine from binding (LSP-10/13 base) ─────────────────────
+
+/// LSP-10/13 base: resolving a declared binding's own position returns
+/// exactly the index's recorded uses for that binding — per T5's
+/// SPEC_DEVIATION, `ResolutionIndex.use_spans` today holds only the
+/// binding's own declaration span (a reflexive use), so this is a
+/// one-element list, not an invented richer occurrence set.
+#[test]
+fn occurrences_at_returns_exactly_the_indexed_uses() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\n\
+mod A (inout p: Electrical, inout n: Electrical) {\n\
+    param power: Real = 1.0;\n\
+}\n";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let power_offset = src.find("param power").unwrap() + "param ".len();
+    let occurrences = doc.occurrences_at(power_offset);
+
+    assert_eq!(
+        occurrences.len(),
+        1,
+        "the shipped ResolutionIndex only tracks the reflexive decl-site use; occurrences_at must not invent more, got: {occurrences:?}"
+    );
+    let (start, end) = occurrences[0];
+    assert!(
+        power_offset >= start && power_offset < end,
+        "the sole occurrence must cover the binding's own declaration site"
+    );
+}
+
+/// LSP-10/13 base edge case: occurrences must never include a same-spelled
+/// binding in another scope, nor a `// name` comment mention — both would
+/// be false positives under the old `word_occurrences` text scan.
+#[test]
+fn occurrences_at_excludes_other_scope_and_comment_matches() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\n\
+mod A (inout p: Electrical, inout n: Electrical) {\n\
+    // power is computed elsewhere\n\
+    param power: Real = 1.0;\n\
+}\n\
+mod B (inout p: Electrical, inout n: Electrical) {\n\
+    param power: Real = 2.0;\n\
+}\n";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let a_start = src.find("mod A").unwrap();
+    let b_start = src.find("mod B").unwrap();
+    let a_power_offset = src[a_start..].find("param power").unwrap() + a_start + "param ".len();
+    let occurrences = doc.occurrences_at(a_power_offset);
+
+    for (start, _end) in &occurrences {
+        assert!(
+            *start < b_start,
+            "occurrences of A's power must never include B's declaration (offset {start} >= {b_start})"
+        );
+    }
+    let comment_offset = src.find("power is computed").unwrap();
+    for (start, end) in &occurrences {
+        assert!(
+            !(comment_offset >= *start && comment_offset < *end || *start == comment_offset),
+            "occurrences must never point inside the `//` comment"
+        );
+    }
+}
+
+/// LSP-10/13 base edge case: a cursor on a non-symbol (a numeric literal)
+/// yields no occurrences at all.
+#[test]
+fn occurrences_at_on_non_symbol_is_empty() {
+    let src = "mod Top() {}\ndigital Top { var y: Real = 1.0; }";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let literal_offset = src.rfind("1.0").unwrap();
+    assert!(doc.occurrences_at(literal_offset).is_empty());
+}
+
 

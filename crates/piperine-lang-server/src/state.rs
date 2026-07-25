@@ -24,6 +24,13 @@ pub struct DocumentState {
     /// method's `decl_span` (declared-language-surface T14). `None` until
     /// the first successful `analyze()`, same lifecycle as `design`.
     pub ctx: Option<ElabContext>,
+    /// The `ResolutionIndex` built over `design` (LSP-03/05/10/13) — every
+    /// module/port/param/wire/var/instance/behavior binding keyed by a
+    /// stable `BindingId`, feeding the occurrence engine
+    /// (`occurrences_at`) that references/rename/highlight consume. Same
+    /// lifecycle as `design`/`ctx` (`None` until the first successful
+    /// `analyze()`).
+    pub resolution_index: Option<piperine_lang::ResolutionIndex>,
     /// The raw parsed AST.
     pub ast: Option<piperine_lang::parse::ast::SourceFile>,
     /// Parse/elaboration error messages if any.
@@ -59,7 +66,7 @@ impl Default for ServerState {
 impl DocumentState {
     /// A fresh document holding `source` at `version`, not yet analyzed.
     pub fn new(source: String, version: i32) -> Self {
-        Self { source, version, design: None, ctx: None, ast: None, errors: Vec::new() }
+        Self { source, version, design: None, ctx: None, resolution_index: None, ast: None, errors: Vec::new() }
     }
 
     /// Run the full lexer+parser+elaborator pipeline over the current
@@ -79,7 +86,9 @@ impl DocumentState {
 
         match source_file.clone().elaborate_with_context(source_map) {
             Ok((d, ctx)) => {
-                // Update to the new valid design (+ its registries).
+                // Update to the new valid design (+ its registries + the
+                // ResolutionIndex built over it — LSP-03/05/10/13).
+                self.resolution_index = Some(piperine_lang::elab::resolution::index_design(&d));
                 self.design = Some(d);
                 self.ctx = Some(ctx);
             }
@@ -99,6 +108,25 @@ impl DocumentState {
     /// no symbol matches).
     pub fn resolve_at(&self, byte_offset: usize) -> Option<crate::symbol_index::Resolution> {
         crate::symbol_index::resolve_at(self.design.as_ref()?, &self.source, byte_offset, self.ctx.as_ref())
+    }
+
+    /// Byte ranges of every occurrence of the binding resolved at
+    /// `byte_offset` (LSP-10/13's base engine, T8) — the binding-identity
+    /// source references/rename/highlight (T9-T11) read instead of
+    /// [`word_occurrences`](Self::word_occurrences)'s text scan. Empty when
+    /// nothing resolves at `byte_offset` (keyword/literal/comment — no
+    /// symbol, no occurrences).
+    pub fn occurrences_at(&self, byte_offset: usize) -> Vec<(usize, usize)> {
+        let Some(decl_span) = self.resolve_at(byte_offset).and_then(|r| r.decl_span) else {
+            return Vec::new();
+        };
+        let spans = self
+            .resolution_index
+            .as_ref()
+            .map(|idx| crate::occurrences::occurrences_for_decl_span(idx, decl_span))
+            .unwrap_or_default();
+        let spans = if spans.is_empty() { vec![decl_span] } else { spans };
+        spans.iter().map(|s| (s.offset(), s.offset() + s.len())).collect()
     }
 
     /// Byte ranges of every whole-word occurrence of `word` in the source.
