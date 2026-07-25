@@ -408,35 +408,80 @@ single seam a future lint-style kind would extend.
 `handlers/completion.rs`. **Requirement**: LSP-20. **Depends on**: T6.
 **Reuses**: `ctx.schemas`.
 **Done when**:
-- [ ] `@rf|` completes to `rfport`; only in-scope schemas offered
-- [ ] `cargo test -p piperine-lang-server`
+- [x] `@rf|` completes to `rfport`; only in-scope schemas offered
+- [x] `cargo test -p piperine-lang-server`
 **Tests**: integration · **Gate**: quick (server)
+**Status (2026-07-25)**: DONE, commit `6306ce9`. Added
+`SchemaRegistry::names()` and a `completions_at(doc, offset)` seam in
+`completion.rs`: a text scan detects an `@`-prefix position (with optional
+partial identifier already typed) and offers the document's in-scope
+`ctx.schemas` names filtered by that prefix, falling back to the existing
+predictive-parser completions everywhere else. 3 new tests (offer, prefix
+filter, off-position no-op). `cargo test -p piperine-lang-server` green
+(34 passed at this task).
 
 #### T19: Attribute-argument validation
 **What**: Diagnose unknown/typed/missing-required attribute fields at the arg.
 **Where**: `handlers/diagnostics.rs` (or elaboration schema check surfaced).
 **Requirement**: LSP-21. **Depends on**: T17.
 **Done when**:
-- [ ] `@rfport(num = "x")` (bad type) / unknown field / missing required → diagnostic at the arg
-- [ ] `cargo test -p piperine-lang-server`
+- [x] `@rfport(num = "x")` (bad type) / unknown field / missing required → diagnostic at the arg
+- [x] `cargo test -p piperine-lang-server`
 **Tests**: integration · **Gate**: quick (server)
+**Status (2026-07-25)**: DONE, commit `03a6c9c`. Elaboration already
+validated `@schema(...)` shapes (`elab/lower/attrs.rs`, `AttrSchemaField`/
+`UnknownAttrSchema`, codes E2023/E2022) — the gap was span accuracy, not
+validation logic. Added `span: Option<SourceSpan>` to AST `Attribute`/
+`AttrArg` (parser now tracks the whole-attribute and per-argument byte
+ranges) and threaded it through `convert_attribute`: unknown-field/bad-type
+errors now point at the specific `field = value` argument; a missing
+required field (no argument to blame) falls back to the whole
+`@schema(...)` span. No `diagnostics.rs` changes needed — `ElabError.span`
+already flows through T17's generic diagnostic path. 3 new tests (bad
+type, unknown field, missing required — each asserting the exact span
+offset). `cargo test -p piperine-lang-server` green (37 passed); `cargo
+test -p piperine-lang` no regressions (rfport.rs etc. unaffected).
 
 #### T20: Hover→schema fields + goto→`@attribute` decl
 **What**: Hover a schema name/field shows fields; goto jumps to the
 `extern attribute` decl_span. **Where**: `handlers/hover.rs`, `goto_def.rs`.
 **Requirement**: LSP-22/23. **Depends on**: T18. **Reuses**: `ctx.schemas.decl_span`.
 **Done when**:
-- [ ] hover on `@rfport` lists `num`/`z0`; goto opens the schema decl
-- [ ] `cargo test -p piperine-lang-server`
+- [x] hover on `@rfport` lists `num`/`z0`; goto opens the schema decl
+- [x] `cargo test -p piperine-lang-server`
 **Tests**: integration · **Gate**: quick (server)
+**Status (2026-07-25)**: DONE, commit `930f0e3`. Hover on an `AttrSchema`
+resolution now appends a Markdown field list read off `ctx.schemas.shape`
+(bundle-backed schemas read fields off the named bundle in
+`design.bundles()`; declared schemas carry fields directly). goto-def
+already rode `resolution.decl_span` generically — no `goto_def.rs` change
+needed once resolution covers the schema. SPEC_DEVIATION:
+`symbol_index::resolve_at`'s `AttrSchema` arm previously only resolved a
+schema name when `ctx.schemas.decl_span` was `Some` — a schema with no
+textual declaration (the built-in `rfport`, registered directly in
+`ElabContext::new()`) never resolved *at all*, so hover on `@rfport`
+(spec.md's own P3 independent test) was unreachable. Relaxed the guard to
+`ctx.schemas.shape(&word).is_some()`; `decl_span` stays `None` for
+textless schemas so goto still correctly declines rather than fabricating
+a location. 2 new tests (hover lists num/z0; goto on a locally-declared
+`extern attribute` opens its own decl). `cargo test -p piperine-lang-server`
+green (39 passed).
 
 #### T21: Attribute outline entries
 **What**: Attribute instances appear as outline entries on their declarations.
 **Where**: `handlers/symbols.rs`. **Requirement**: LSP-24. **Depends on**: T18.
 **Done when**:
-- [ ] an `@rfport`-annotated node shows the attribute in the outline
-- [ ] `cargo test -p piperine-lang-server`
+- [x] an `@rfport`-annotated node shows the attribute in the outline
+- [x] `cargo test -p piperine-lang-server`
 **Tests**: integration · **Gate**: quick (server)
+**Status (2026-07-25)**: DONE, commit `69f95ec`. `extract_symbols` (now
+`pub` for direct testing) nests a `@schema` child `DocumentSymbol` under
+any port/param/wire/instance/module carrying attributes, at the owning
+declaration's own span (the POM `Attribute` carries no span of its own —
+the closest anchor an outline entry can point at). Un-attributed
+declarations keep `children: None`, unchanged. 2 new tests (attributed wire
+shows `@rfport` child; plain wire has no attribute children). `cargo test
+-p piperine-lang-server` green (41 passed).
 
 #### T22: Protocol-test harness (`Connection::memory()`)
 **What**: A harness driving init → didOpen → request/response for hover,
@@ -444,19 +489,41 @@ completion, goto, references, rename. **Where**:
 `piperine-lang-server/tests/protocol.rs`. **Requirement**: LSP-25.
 **Depends on**: T7, T9, T10.
 **Done when**:
-- [ ] harness drives a memory connection through the core round-trips
-- [ ] `cargo test -p piperine-lang-server`
+- [x] harness drives a memory connection through the core round-trips
+- [x] `cargo test -p piperine-lang-server`
 **Tests**: integration · **Gate**: quick (server)
+**Status (2026-07-25)**: DONE, commit `9e9ceff`. New `tests/protocol.rs`:
+a reusable `Harness` (`start`/`open`/`notify`/generic `request<P,R>`, plus
+typed `hover`/`completion`/`goto_definition`/`references`/`rename`
+wrappers) generalizing the one-off `lsp_*` helper functions
+`integration_test.rs` had been growing per feature. "init" is the harness's
+`start()` itself — the server (`server.rs`) does not gate any request on a
+literal `initialize` handshake (matches the pre-existing "init-free"
+`test_e2e_lsp_server_memory_connection`), so spawning the server + opening
+the document is the whole init step. 5 self-tests, one round trip per
+feature. `cargo test -p piperine-lang-server` green (46 passed).
 
 #### T23: Shadowing + doc-comment + cross-file protocol tests
 **What**: Fixtures asserting innermost-binding resolution, doc-on-hover, and
 cross-file goto/rename over the harness. **Where**:
 `piperine-lang-server/tests/`. **Requirement**: LSP-26. **Depends on**: T22, T14.
 **Done when**:
-- [ ] shadowing fixture → correct binding; doc fixture → doc on hover; multi-file
+- [x] shadowing fixture → correct binding; doc fixture → doc on hover; multi-file
       fixture → cross-file goto + rename
-- [ ] `cargo test --workspace`
+- [x] `cargo test --workspace`
 **Tests**: integration · **Gate**: full
+**Status (2026-07-25)**: DONE, commit `25096c8`. Three fixtures over the
+T22 `Harness`, closing out all 26 requirements: a shadowing fixture (`wire
+x` shadowing `param x` in the same module) asserts hover resolves to the
+innermost (wire) binding, not the param; a doc-comment fixture asserts the
+`///` text renders on hover; a two-file scratch project asserts cross-file
+goto opens the declaring file and cross-file rename (from the use site)
+produces a `WorkspaceEdit` covering both files. `cargo test --workspace`
+(single-threaded) green modulo two pre-existing, unrelated environmental
+flakes confirmed passing in isolation: `piperine::host_parity` (shared
+temp-file race between two tests, documented since T16) and
+`piperine-plugin::process_smoke::dead_guest_is_a_loud_error` (process-spawn
+timing). `cargo build --workspace` zero warnings.
 
 ---
 
