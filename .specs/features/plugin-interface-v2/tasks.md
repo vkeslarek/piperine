@@ -157,9 +157,9 @@ generated accumulator — design §3/§7) keyed by the `type` string.
 **Depends on:** T4. **Requirement:** PLG-05, PLG-24.
 **Reuses:** `PluginDeviceSpec`/`DeviceProvider` shapes (`piperine-codegen/src/device/plugin.rs`); native ABI (`backend/native.rs`, kept).
 **Done when:**
-- [ ] `#[pip::device("Foo")]` expands to a registration the host can read at load.
-- [ ] A `trybuild`/unit test proves expansion + that a malformed use fails to compile.
-- [ ] `cargo test -p piperine-plugin-macros` green.
+- [x] `#[pip::device("Foo")]` expands to a registration the host can read at load.
+- [x] A `trybuild`/unit test proves expansion + that a malformed use fails to compile.
+- [x] `cargo test -p piperine-plugin-macros` green.
 **Tests:** unit + compile · **Gate:** quick (macros)
 
 ### T6: `#[pip::script]` + `#[pip::hook(phase)]` proc-macros
@@ -171,8 +171,8 @@ registers a hook for one of the five frozen phases; hooks receive `&Ctx`
 **Depends on:** T5. **Requirement:** PLG-06, PLG-11.
 **Reuses:** the five `Plugin`-trait hook signatures (kept as the internal target).
 **Done when:**
-- [ ] Both macros expand to registrations; an unknown hook phase name fails to compile.
-- [ ] `cargo test -p piperine-plugin-macros` green.
+- [x] Both macros expand to registrations; an unknown hook phase name fails to compile.
+- [x] `cargo test -p piperine-plugin-macros` green.
 **Tests:** unit + compile · **Gate:** quick (macros)
 
 ### T7: Wire macro contributions into the host + delete the imperative Registrar
@@ -184,9 +184,9 @@ native devices must still solve after it (PLG-03).
 **Depends on:** T6. **Requirement:** PLG-03, PLG-04, PLG-05, PLG-24.
 **Reuses:** the kept native ABI (`piperine_plugin_entry`/`ABI_VERSION`).
 **Done when:**
-- [ ] No public `Registrar::{device,script,attr_schema}` remains (grep: zero).
-- [ ] The `e2e.rs` fixture declares its device via `#[pip::device]` (no imperative register); `plugin_resistor_solves_dc` + `plugin_inverter_runs_through_scheduler` still pass.
-- [ ] `cargo test -p piperine-plugin` green.
+- [x] No public `Registrar::{device,script,attr_schema}` remains (grep: zero).
+- [x] The `e2e.rs` fixture declares its device via `#[pip::device]` (no imperative register); `plugin_resistor_solves_dc` + `plugin_inverter_runs_through_scheduler` still pass.
+- [x] `cargo test -p piperine-plugin` green.
 **Tests:** integration · **Gate:** quick (plugin)
 
 ### T8: Python decorators `@pip.script`/`@pip.hook`/`@pip.device`
@@ -198,8 +198,8 @@ Python-glue plugin).
 **Depends on:** T7. **Requirement:** PLG-06, PLG-10, PLG-11.
 **Reuses:** embedded CPython host (`piperine-python/src/embed.rs`), the frozen hook catalog.
 **Done when:**
-- [ ] A `.py` plugin with `@pip.script("lint")` makes `piperine lint …` dispatch; a `@pip.hook.after_elaborate` fires.
-- [ ] `cargo test -p piperine-python` green (+ a `*_tb.py` exercising a decorator).
+- [x] A `.py` plugin with `@pip.script("lint")` makes `piperine lint …` dispatch; a `@pip.hook.after_elaborate` fires.
+- [x] `cargo test -p piperine-python` green (+ a `*_tb.py` exercising a decorator).
 **Tests:** integration · **Gate:** quick (python)
 
 ### T9: Cross-host decorator/hook/ctx parity test
@@ -210,8 +210,8 @@ asserts identical — a name added on one side without the other fails.
 **Depends on:** T8. **Requirement:** PLG-12.
 **Reuses:** `host_parity.rs` technique.
 **Done when:**
-- [ ] The parity test asserts name-identical surfaces; a synthetic drift (a name on one host only) fails it.
-- [ ] `cargo test -p piperine plugin_parity` green.
+- [x] The parity test asserts name-identical surfaces; a synthetic drift (a name on one host only) fails it.
+- [x] `cargo test -p piperine plugin_parity` green.
 **Tests:** integration · **Gate:** full
 
 ### T10: Device injection via `transform_design` staging
