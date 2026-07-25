@@ -39,6 +39,85 @@ pub struct Resolution {
     pub doc: Option<String>,
 }
 
+/// Does `span` (a decl's own byte range) contain `offset`?
+fn span_contains(span: Option<SourceSpan>, offset: usize) -> bool {
+    match span {
+        Some(s) => offset >= s.offset() && offset < s.offset() + s.len(),
+        None => false,
+    }
+}
+
+/// Look up `word` among one module's own declarations — innermost-first
+/// (var, wire, instance, param, port, behavior, then the module's own
+/// name) — never across other modules (LSP-01/02: cursor context +
+/// shadowing, not a global first-match).
+fn resolve_in_module(m: &piperine_lang::pom::Module, word: &str) -> Option<Resolution> {
+    if let Some(v) = m.vars.iter().find(|v| v.name == word) {
+        return Some(Resolution {
+            kind: SymbolKind::Var,
+            name: v.name.clone(),
+            decl_span: v.span,
+            type_info: Some(format!("{:?}", v.ty)),
+            doc: v.doc.clone(),
+        });
+    }
+    if let Some(w) = m.wires.iter().find(|w| w.name == word) {
+        return Some(Resolution {
+            kind: SymbolKind::Wire,
+            name: w.name.clone(),
+            decl_span: w.span,
+            type_info: Some(format!("{:?}", w.ty)),
+            doc: w.doc.clone(),
+        });
+    }
+    if let Some(i) = m.instances.iter().find(|i| i.label.as_deref() == Some(word) || i.module == word) {
+        return Some(Resolution {
+            kind: SymbolKind::Instance,
+            name: i.label.clone().unwrap_or_else(|| i.module.clone()),
+            decl_span: i.span,
+            type_info: Some(format!("instance of {}", i.module)),
+            doc: i.doc.clone(),
+        });
+    }
+    if let Some(p) = m.params.iter().find(|p| p.name == word) {
+        return Some(Resolution {
+            kind: SymbolKind::Param,
+            name: p.name.clone(),
+            decl_span: p.span,
+            type_info: Some(format!("{:?}", p.ty)),
+            doc: p.doc.clone(),
+        });
+    }
+    if let Some(p) = m.ports.iter().find(|p| p.name == word) {
+        return Some(Resolution {
+            kind: SymbolKind::Port,
+            name: p.name.clone(),
+            decl_span: p.span,
+            type_info: Some(format!("{:?}", p.direction)),
+            doc: p.doc.clone(),
+        });
+    }
+    if let Some(b) = m.behaviors.iter().find(|b| b.name == word) {
+        return Some(Resolution {
+            kind: SymbolKind::Behavior,
+            name: b.name.clone(),
+            decl_span: b.span,
+            type_info: Some(format!("{:?}", b.kind)),
+            doc: b.doc.clone(),
+        });
+    }
+    if m.name == word {
+        return Some(Resolution {
+            kind: SymbolKind::Module,
+            name: m.name.clone(),
+            decl_span: m.span,
+            type_info: None,
+            doc: m.doc.clone(),
+        });
+    }
+    None
+}
+
 pub fn resolve_at(
     design: &Design,
     source: &str,
@@ -46,14 +125,27 @@ pub fn resolve_at(
     ctx: Option<&ElabContext>,
 ) -> Option<Resolution> {
     // 1. Identify what we are hovering over.
-    // For now, we just find the word under the cursor.
     let word = crate::text_pos::word_at_position(
         source,
         crate::text_pos::byte_to_position(source, byte_offset),
     )?;
 
-    // 2. Global lookup for now (until we build true scope resolution)
-    // to keep the handlers working but using the new Resolution API.
+    // 2. Cursor context (LSP-01): if the cursor sits inside a module's own
+    // declaration span, resolve `word` against *that* module's scope first,
+    // innermost-first (LSP-02) — never a blind scan over every module in
+    // whatever order the POM happens to iterate them.
+    if let Some(m) = design.modules().find(|m| span_contains(m.span, byte_offset))
+        && let Some(res) = resolve_in_module(m, &word) {
+            return Some(res);
+        }
+
+    // 3. Module *names* are genuinely global in PHDL (any instance anywhere
+    // may reference any module by name), so a cross-module scan for the
+    // module name itself is correct here, not the word-based global-lookup
+    // bug this replaces — that bug applied the same blind scan to *scoped*
+    // names (ports/params/wires/vars/instances/behaviors) too, which step 2
+    // above now resolves correctly (cursor-context-first) instead of
+    // falling through to a global match on those kinds.
     for m in design.modules() {
         if m.name == word {
             return Some(Resolution {
@@ -64,74 +156,8 @@ pub fn resolve_at(
                 doc: m.doc.clone(),
             });
         }
-        for p in &m.ports {
-            if p.name == word {
-                return Some(Resolution {
-                    kind: SymbolKind::Port,
-                    name: p.name.clone(),
-                    decl_span: p.span,
-                    type_info: Some(format!("{:?}", p.direction)), // Basic type info
-                    doc: p.doc.clone(),
-                });
-            }
-        }
-        for p in &m.params {
-            if p.name == word {
-                return Some(Resolution {
-                    kind: SymbolKind::Param,
-                    name: p.name.clone(),
-                    decl_span: p.span,
-                    type_info: Some(format!("{:?}", p.ty)),
-                    doc: p.doc.clone(),
-                });
-            }
-        }
-        for w in &m.wires {
-            if w.name == word {
-                return Some(Resolution {
-                    kind: SymbolKind::Wire,
-                    name: w.name.clone(),
-                    decl_span: w.span,
-                    type_info: Some(format!("{:?}", w.ty)),
-                    doc: w.doc.clone(),
-                });
-            }
-        }
-        for v in &m.vars {
-            if v.name == word {
-                return Some(Resolution {
-                    kind: SymbolKind::Var,
-                    name: v.name.clone(),
-                    decl_span: v.span,
-                    type_info: Some(format!("{:?}", v.ty)),
-                    doc: v.doc.clone(),
-                });
-            }
-        }
-        for i in &m.instances {
-            if i.label.as_deref() == Some(&word) || i.module == word {
-                return Some(Resolution {
-                    kind: SymbolKind::Instance,
-                    name: i.label.clone().unwrap_or_else(|| i.module.clone()),
-                    decl_span: i.span,
-                    type_info: Some(format!("instance of {}", i.module)),
-                    doc: i.doc.clone(),
-                });
-            }
-        }
-        for b in &m.behaviors {
-            if b.name == word {
-                return Some(Resolution {
-                    kind: SymbolKind::Behavior,
-                    name: b.name.clone(),
-                    decl_span: b.span,
-                    type_info: Some(format!("{:?}", b.kind)),
-                    doc: b.doc.clone(),
-                });
-            }
-        }
     }
-    
+
     for (name, e) in design.enums() {
         if *name == word {
             return Some(Resolution {
