@@ -297,11 +297,19 @@ pub fn resolve_at(
         });
     }
 
-    if let Some(decl_span) = ctx.schemas.decl_span(&word) {
+    // SPEC_DEVIATION (T20/LSP-22): previously gated on `decl_span.is_some()`,
+    // so a registered schema with no textual declaration (e.g. the built-in
+    // `rfport`, registered directly in `ElabContext::new()`) never resolved
+    // at all — hover on `@rfport` (spec.md's own P3 independent test)
+    // couldn't show its fields. Resolve any registered schema name;
+    // `decl_span` stays `None` when the schema has no textual source, so
+    // goto-definition correctly declines instead of fabricating a location.
+    if ctx.schemas.shape(&word).is_some() {
+        let decl_span = ctx.schemas.decl_span(&word);
         return Some(Resolution {
             kind: SymbolKind::AttrSchema,
             name: word,
-            decl_span: Some(decl_span),
+            decl_span,
             type_info: None,
             doc: None,
         });

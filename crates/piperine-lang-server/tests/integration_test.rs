@@ -1623,3 +1623,41 @@ fn attr_missing_required_field_diagnostic_points_at_the_attribute() {
     let attr_start = src.find("@rfport(z0 = 50)").expect("attribute text must be present");
     assert_eq!(span.offset(), attr_start, "span must fall back to the whole attribute, not 0:0");
 }
+
+// ── T20: hover -> schema fields, goto -> `@attribute` decl (LSP-22/23) ──────
+
+use piperine_lang_server::text_pos::byte_to_position;
+
+/// Hovering `@rfport` (a use site) lists its fields — `num` and `z0`
+/// (spec.md's own P3 independent test) — as Markdown.
+#[test]
+fn hover_on_attr_schema_use_lists_its_fields() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\nmod M ( inout p : Electrical ) {\n@rfport(num = 1, z0 = 50) wire rf_in : Electrical;\n}\n";
+    let doc = analyzed(src);
+    assert!(doc.design.is_some(), "source must elaborate cleanly: {:?}", doc.errors);
+
+    let use_site = src.find("rfport(num").expect("use site must be present");
+    let resolution = doc.resolve_at(use_site).expect("`@rfport` use site must resolve");
+    assert_eq!(resolution.kind, SymbolKind::AttrSchema);
+
+    let pos = byte_to_position(src, use_site);
+    let contents = lsp_hover_markdown(src, pos.line, pos.character);
+    assert!(contents.contains("num"), "expected `num` field in hover: {contents}");
+    assert!(contents.contains("z0"), "expected `z0` field in hover: {contents}");
+}
+
+/// Goto-definition on an `@name(...)` use site opens the schema's own
+/// `extern attribute` declaration. Uses a locally-declared schema
+/// (`widget_meta`) rather than the prelude-embedded `model`/`rfport` so the
+/// expected decl offset is computable against this document's own text.
+#[test]
+fn goto_definition_on_attr_schema_use_opens_its_extern_attribute_decl() {
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }\nextern attribute widget_meta { rating: Real }\nmod Top ( inout p : Electrical ) { @widget_meta(rating = 4.5) wire w : Electrical; }";
+    let use_site = src.rfind("widget_meta(rating").expect("use site must be present");
+    let pos = byte_to_position(src, use_site);
+
+    let response = lsp_goto_definition(src, pos.line, pos.character);
+    let target = goto_target_offset(&response, src);
+    let decl_start = src.find("extern attribute widget_meta").expect("declaration must be present");
+    assert_eq!(target, decl_start, "goto must open the `extern attribute widget_meta` declaration");
+}
