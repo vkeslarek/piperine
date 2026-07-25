@@ -320,46 +320,84 @@ piperine-lang` no regressions; `cargo build --workspace` zero warnings.
 **What**: goto opens the decl's file when the binding is declared elsewhere.
 **Where**: `handlers/goto_def.rs`. **Requirement**: LSP-15. **Depends on**: T12.
 **Done when**:
-- [ ] goto on an imported symbol opens its file at the decl
-- [ ] `cargo test -p piperine-lang-server`
+- [x] goto on an imported symbol opens its file at the decl
+- [x] `cargo test -p piperine-lang-server`
 **Tests**: integration · **Gate**: quick (server)
+**Status (2026-07-25)**: DONE, commit `dfa1339`. `goto_def.rs` rides
+`ProjectUnit`/`BindingInfo.file` (T12) to open the declaring file's URI when
+it differs from the requesting document.
 
 #### T14: Cross-file rename (`document_changes`)
 **What**: Rename emits a multi-file `WorkspaceEdit.document_changes` over every
 file with uses. **Where**: `handlers/rename.rs`. **Requirement**: LSP-12.
 **Depends on**: T12, T10.
 **Done when**:
-- [ ] renaming a project-wide symbol edits all referencing files
-- [ ] `cargo test -p piperine-lang-server`
+- [x] renaming a project-wide symbol edits all referencing files
+- [x] `cargo test -p piperine-lang-server`
 **Tests**: integration · **Gate**: quick (server)
+**Status (2026-07-25)**: DONE, commit `be0366a`. SPEC_DEVIATION (inherited
+from T5/T8): edits cover exactly what `occurrences_at`/`ResolutionIndex`
+tracks (mostly reflexive decl-span uses), not every textual in-expression
+occurrence — no per-occurrence span exists in the AST yet.
 
 #### T15: Per-file diagnostic fan-out + single-file fallback
 **What**: Publish each file's errors against its own URI; no project → single-file
 behavior. **Where**: `handlers/diagnostics.rs`, `state.rs`. **Requirement**:
 LSP-16/17. **Depends on**: T12.
 **Done when**:
-- [ ] an error in file A publishes against A's URI; standalone files still work
-- [ ] `cargo test -p piperine-lang-server`
+- [x] an error in file A publishes against A's URI; standalone files still work
+- [x] `cargo test -p piperine-lang-server`
 **Tests**: integration · **Gate**: quick (server)
+**Status (2026-07-25)**: DONE, commit `8f95b4c`. `publish_project_diagnostics`
+walks every file in the `ProjectUnit` (open buffers use their own live
+`DocumentState`; closed files re-read from disk against `ProjectUnit`'s own
+build) and publishes each against its own URI; standalone documents keep
+using the pre-existing `publish_diagnostics` path unchanged.
 
 #### T16: Error-accumulating elaboration
 **What**: Return `(Design, ResolutionIndex, Vec<ElabError>)`; accumulate in
 recoverable passes; adapt callers. **Where**: `piperine-lang/elab/`, `state.rs:80`.
 **Requirement**: LSP-18. **Depends on**: T5.
 **Done when**:
-- [ ] two independent elab errors both appear; unrecoverable passes documented
-- [ ] callers adapted (host first-error via `.first()`); `cargo test --workspace`
+- [x] two independent elab errors both appear; unrecoverable passes documented
+- [x] callers adapted (host first-error via `.first()`); `cargo test --workspace`
 **Tests**: unit + integration · **Gate**: full
+**Status (2026-07-25)**: DONE, commit `ccaf5d9`. New additive
+`elaborate_with_context_accumulating` entry point — every existing
+`elaborate`/`elaborate_with_context`/`elaborate_with_index` caller is
+untouched (no signature change to adapt). `ElabModules` and `Typecheck` are
+the two passes where independence genuinely holds (one module's failure
+doesn't affect another's correctness) — both now attempt every item and
+accumulate every error while still returning their first error, so
+`elaborate`'s existing fail-fast callers see identical behavior. Every other
+pass (`Register`, `FoldGlobals`, `ElabFns`, `AttachBehaviors`, `ResolveCalls`,
+`FlattenHierarchy`, `ValidateEvents`) stays fail-fast — each is a genuine
+precondition for the next pass, not an independent-item pass; documented in
+`lower/mod.rs::elaborate_accumulating`'s doc comment. `DocumentState::analyze`
+now records every returned error, not just the first. Full workspace gate
+green (one pre-existing, unrelated PyO3 cross-thread-unsendable flake in
+`piperine-python::simulation_error`, confirmed passing single-threaded).
 
 #### T17: Diagnostic severity + structured codes
 **What**: Map `ElabError` kind → `WARNING`/`ERROR` + a structured `code`.
 **Where**: `handlers/diagnostics.rs`, `ElabError`. **Requirement**: LSP-19.
 **Depends on**: T16.
 **Done when**:
-- [ ] warning-class shows `WARNING`; codes are specific (not blanket `parse-error`)
-- [ ] spans accurate (no `0:0` fallback where a span exists)
-- [ ] `cargo test -p piperine-lang-server`
+- [x] warning-class shows `WARNING`; codes are specific (not blanket `parse-error`)
+- [x] spans accurate (no `0:0` fallback where a span exists)
+- [x] `cargo test -p piperine-lang-server`
 **Tests**: integration · **Gate**: quick (server)
+**Status (2026-07-25)**: DONE, commit `d592d30`. Both
+`piperine_lang::parse::error::ParseError` (E1xxx) and
+`pom::error::ElabErrorKind` (E2xxx) already carried a real
+`#[diagnostic(code(...))]` per variant — surfaced via
+`miette::Diagnostic::code()` instead of the old blanket `"parse-error"`
+string (gotcha: `ElabError`'s `#[diagnostic_source]` forwards `.source()`,
+not `.code()` — the code has to be read off `ElabError::kind` directly).
+SPEC_DEVIATION: `severity_for_code()` maps everything to `ERROR` — verified
+every variant in both enums (E1001..E1004, E2001..E2025/E2999); none is
+non-blocking today, so nothing warrants `WARNING` yet. The function is the
+single seam a future lint-style kind would extend.
 
 ---
 
