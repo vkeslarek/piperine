@@ -10,11 +10,11 @@
 // design.md's explicit scope note; codegen still recognizes these names by
 // its own string-match exactly as before.
 
-// ── `Expr::Call`-shaped operators (8) ──
-// These appear as ordinary calls (`ddt(qtotal)`, `white_noise(pwr)`, …) —
-// `elab/resolve.rs`'s `resolve_operator_call` (T22) now checks
-// `OperatorRegistry` for these before codegen ever sees them, mirroring
-// `resolve_declared_call`'s existing extern-fn dispatch shape.
+/// ── `Expr::Call`-shaped operators (8) ──
+/// These appear as ordinary calls (`ddt(qtotal)`, `white_noise(pwr)`, …) —
+/// `elab/resolve.rs`'s `resolve_operator_call` (T22) now checks
+/// `OperatorRegistry` for these before codegen ever sees them, mirroring
+/// `resolve_declared_call`'s existing extern-fn dispatch shape.
 extern operator ddt(x: Real) -> Real;
 extern operator idt(x: Real) -> Real;
 extern operator ddx(x: Real, node: Real) -> Real;

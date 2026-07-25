@@ -10,6 +10,7 @@
 /// - `use` declarations are resolved
 /// - function and impl bodies are lowered to `BehaviorStmt`
 use piperine_lang::{
+    elab::registry::CallableDef,
     pom::{BehaviorStmt, NetType, ValueType},
     parse_and_elaborate, parse_str,
     resolve::Resolver,
@@ -523,6 +524,43 @@ fn test_design_project_item_file_returns_real_header_path() {
         ddt_path.display()
     );
     assert!(ddt_path.is_file(), "{} must exist on disk", ddt_path.display());
+}
+
+#[test]
+fn test_ddt_doc_comes_from_the_real_header_content() {
+    // LSB-04..06 (T6): `headers/operators.phdl`'s `//` prose directly above
+    // `extern operator ddt` was rewritten as `///` so the doc-comment
+    // pipeline (T4/T5) has real content to surface on hover, not just a
+    // synthetic fixture. Elaborate a real analog body using `ddt`, then
+    // confirm the registered `ddt` operator's `.doc()` returns the header's
+    // actual authored text (proving the elaborated result reads the real
+    // on-disk header, not a hardcoded string in the test).
+    let src = "discipline Electrical { potential v: Real; flow i: Real; }
+               mod Top ( inout p : Electrical ) { }
+               analog Top {
+                   I(p) <+ ddt(1.0);
+               }";
+    let source_file = parse_str(src).expect("parse failed");
+    let (_design, ctx) = source_file
+        .elaborate_with_context(&piperine_lang::SourceMap::dummy())
+        .expect("elaborate ddt-using module against stdlib prelude");
+
+    let ddt = ctx.operators.lookup("ddt").expect("ddt should be registered");
+    let doc = ddt.doc().expect("ddt should have a /// doc after T6's header edit");
+
+    let header_text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/headers/operators.phdl"
+    ))
+    .expect("headers/operators.phdl must exist on disk");
+    assert!(
+        header_text.contains("ddt(qtotal)"),
+        "sanity: header should still contain the authored prose this test checks for"
+    );
+    assert!(
+        doc.contains("ddt(qtotal)"),
+        "ddt's doc should contain the real header prose, got: {doc:?}"
+    );
 }
 
 #[test]
