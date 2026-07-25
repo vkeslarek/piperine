@@ -1594,6 +1594,8 @@ dependencies = [
  "piperine-api",
  "piperine-codegen",
  "piperine-lang",
+ "piperine-plugin",
+ "piperine-plugin-macros",
  "piperine-python",
  "piperine-solver",
 ]
