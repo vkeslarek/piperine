@@ -43,7 +43,7 @@ Pillars. V1 ships when the V1-marked ones are green.
 | P2 | **Low-level device ABI** | Element ABI maturity complete (rollback, limiting, lifecycle, events, introspection); PHDL introspection attributes are the follow-up |
 | P3 | ✅ **Python library polished** — CLOSED 2026-07-24 | `import piperine` is the single host: benches, validation, plugins scripting; documented, docstringed, stub-complete |
 | P3b | ✅ **Blocking-bug fixes** — CLOSED 2026-07-24 | The gap-catalog items that *block a simulation or full user use* — `piperine build` stub, digital-codegen completeness, `.tf` correctness. |
-| P4 | **Language server 100%** | Scope-aware resolution, project-wide navigation, attribute-schema + `///` doc-comment IDE support, protocol-level tests |
+| P4 | ✅ **Language server 100%** — CLOSED 2026-07-25 | Scope-aware resolution, project-wide navigation, attribute-schema + `///` doc-comment IDE support, protocol-level tests |
 | P5 | **Plugin interface simplified** | One clear extension story (attributes + devices + hooks + scripts); native + Python backends only; writing a plugin is a documented afternoon task |
 | P6 | **Cleanup & completeness** | Test sanitization (~800 tests → unit-inline, integration-grouped, dedupe), dead-flag/ignored-test removal, non-blocking codegen/interpreter completeness. Not all V1 — triage in the gap catalog. |
 | P7 | **Optimizer** | Design-centering-capable optimization loop on the live-params engine; shape under study — PSS and `.sens` land first as its feeders |
@@ -502,70 +502,63 @@ below.
 
 ---
 
-## P4 — Language server 100%
+## P4 — Language server 100% ✅ CLOSED (2026-07-25)
 
-**SPEC'D 2026-07-23 (code-audited)** — feature `language-server`
-(`.specs/features/language-server/spec.md`; 7 stories, 26 requirements
-LSP-01..26; Design pending). Audit finding: the server advertises 17 LSP
-capabilities but the **depth** is thin — resolution is word-based global lookup
-(`symbol_index.rs:53`), references/rename are text scans (`references.rs:23`/
-`rename.rs:29`, matching comments/strings + all scopes), there is no project-wide
-symbol index, elaboration stops at the first error (`state.rs:80`), and PHDL has
-no doc comments. The refinement deepens the existing capabilities; it does not
-add new ones.
+**DELIVERED 2026-07-25** — feature `language-server`
+(`.specs/features/language-server/spec.md`; 26 requirements LSP-01..26,
+`tasks.md` 23/23 tasks done, `validation.md` Verifier PASS). Audit finding
+(2026-07-23): the server advertised 17 LSP capabilities but the **depth**
+was thin — resolution was word-based global lookup, references/rename were
+text scans, there was no project-wide symbol index, elaboration stopped at
+the first error, and PHDL had no doc comments. The refinement deepened the
+existing capabilities rather than adding new ones.
 
 **"100%"** = the editor understands PHDL as well as the compiler does: names
 resolve by scope (not first-match), navigation works across the whole project,
 every diagnostic shows at once, attribute schemas and **doc comments** drive
-hover/completion, and the whole thing is protocol-tested. Grouped by concern
-(MVP = scope-aware resolution core + `///` doc comments):
+hover/completion, and the whole thing is protocol-tested.
 
 ### Resolver correctness (the engine the IDE reads)
 
-- [ ] **Scope-aware name resolution** — expose the elaborator's name→id maps as
-      a query; today the server does first-match global lookup, so a shadowed
-      local resolves to the wrong declaration.
-- [ ] **Resolver-driven references/rename/highlight** — today word-occurrence
-      scans (comments/strings falsely match). Rename/highlight must ride the
-      resolver's binding graph, not text.
-- [ ] **Error-accumulating elaboration** — today the first `ElabError` stops
-      analysis, so the editor shows one error at a time. Accumulate + fan out
-      per file.
+- [x] **Scope-aware name resolution** — `ResolutionIndex`/`BindingId` built as
+      an elaboration side artifact; `resolve_at` maps cursor offset → use span
+      → binding, replacing the old first-match global loop (deleted).
+- [x] **Resolver-driven references/rename/highlight** — a shared occurrence
+      engine (`occurrences(BindingId)`) backs references, rename, and
+      document-highlight; comment/string text matches no longer leak in.
+- [x] **Error-accumulating elaboration** — a new additive entry point
+      (`elaborate_with_context_accumulating`) attempts every independent item
+      in the two passes where independence genuinely holds (module
+      elaboration, typecheck) instead of stopping at the first error; every
+      other pass stays fail-fast (each is a real precondition for the next).
 
 ### Project-wide navigation
 
-- [ ] **Project-unit elaboration** (`ServerState.projects`): cross-file
-      goto/rename, per-file diagnostic fan-out — the server elaborates the whole
-      project, not one open buffer.
+- [x] **Project-unit elaboration** (`ServerState.projects`/`ProjectUnit`):
+      cross-file goto/rename, per-file diagnostic fan-out. SPEC_DEVIATION:
+      one `Design` per file (keyed by path), not a single merged multi-file
+      `Design` — no cross-file `Design`-merge primitive exists in
+      `piperine-lang`; the "one binding index spanning files" requirement is
+      delivered via a merged `ResolutionIndex`.
 
 ### IDE features (hover / completion / outline)
 
-- [ ] **Attribute-schema IDE support**: completion of `@schema` names, in-editor
-      argument validation, hover→schema fields, goto→`@attribute` declaration,
-      outline entries. (Lands with the `phdl-introspection-attributes` schemas
-      + `@rfport`/`@device`/`@port`.)
-- [ ] **PHDL doc comments, Rust-style `///` — the last missing language piece.**
-      Today comments are lexed-and-discarded (no token) and POM declarations
-      carry no documentation, so hover shows only type/kind
-      (`lookup_hover_info`). Add the full pipeline:
-      - **Lexer** (`parse/lexer.rs`, hand-written — edit with care): recognize
-        `///` line doc comments (and `/** */` block form?), attach each run to
-        the **following** declaration; ordinary `//` stays discarded.
-      - **POM** (MD-25 non-destructive — additive only): a `doc: Option<String>`
-        field on module/port/param/var/instance/net declarations, populated by
-        elaboration from the attached doc runs. Never overwrites authored
-        structure; `#[serde]`-carried so hosts/tools read it.
-      - **LSP hover** (`handlers/hover.rs`): `lookup_hover_info` prepends the
-        declaration's `doc` (Markdown) above the type/kind line.
-      - **Reach**: the same `doc` field feeds the P3 host reflection
-        (`Module.doc`, `Param.doc`) and future `@schematic`/doc-gen — one source
-        of truth for "what does this thing do", authored in-language.
+- [x] **Attribute-schema IDE support**: `@schema` completion, attribute-
+      argument validation (unknown/mistyped/missing-required field →
+      diagnostic at the arg), hover→schema fields, goto→`@attribute`
+      declaration, outline entries for attribute instances.
+- [x] **PHDL doc comments, Rust-style `///`.** Full pipeline landed: lexer
+      captures `///` runs as trivia attached to the next token; POM gained an
+      additive `doc: Option<String>` field (module/port/param/var/instance/
+      behavior, `#[serde]`-carried, MD-25-compliant); elaboration attaches the
+      captured doc; hover prepends it as Markdown above the type/kind line.
 
 ### Tests
 
-- [ ] **Protocol-level tests** over `Connection::memory()` (init → didOpen →
-      hover/completion/goto round-trips), including a doc-comment hover assertion
-      and a scope-shadowing resolution assertion.
+- [x] **Protocol-level tests** over `Connection::memory()`
+      (`tests/protocol.rs`): init → didOpen → hover/completion/goto/
+      references/rename round-trips, plus dedicated shadowing, doc-comment-
+      on-hover, and cross-file goto/rename fixtures.
 
 ---
 
