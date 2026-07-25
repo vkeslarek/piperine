@@ -137,7 +137,11 @@ impl PluginHost {
             let instance = match manifest.abi {
                 Abi::Native => PluginInstance::Native(native::load(&manifest.name, &artifact)?),
                 Abi::Wasm => {
-                    PluginInstance::InProcess(crate::backend::wasm::load(&manifest, &artifact)?)
+                    return Err(PluginError::Other {
+                        plugin: manifest.name.clone(),
+                        message: "the WASM backend was removed — plugins are native + Python only (MD-21)"
+                            .into(),
+                    });
                 }
                 Abi::Process => {
                     PluginInstance::InProcess(crate::backend::process::load(&manifest, &artifact)?)

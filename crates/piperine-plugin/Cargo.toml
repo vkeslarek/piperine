@@ -17,7 +17,6 @@ toml = "1.1.2"
 sha2 = "0.10"
 libloading.workspace = true
 serde_json = "1"
-wasmtime = { version = "46", default-features = false, features = ["runtime", "cranelift"] }
 
 [dev-dependencies]
 tempfile.workspace = true
