@@ -44,30 +44,40 @@ fn highlighting_labeled_instance_label_targets_only_the_label_token() {
     assert_eq!(&SRC[start..end], "src");
 }
 
-/// Highlighting the type name `"RampSource"` on the same instance returns
-/// a tight 10-byte range, not the whole-statement range.
+/// Clicking the type name `"RampSource"` on an instance resolves to the
+/// MODULE it references (not the instance) — so hover shows the module's
+/// doc and goto jumps to the module declaration. (This supersedes the
+/// earlier BUG-3 "tight type-token highlight" behavior: a type name is a
+/// reference to its module, and every IDE resolves it to that module —
+/// the actual BUG-3 defect was highlighting the whole 56-byte *statement*,
+/// which is fixed either way. See `symbol_index.rs`'s instance arm.)
 #[test]
-fn highlighting_labeled_instance_type_name_targets_only_the_type_token() {
+fn clicking_instance_type_name_resolves_to_the_module() {
     let doc = analyzed(SRC);
     let type_offset = SRC.find(": RampSource(").expect("type name present in fixture") + 2;
 
-    let ranges = doc.occurrences_at(type_offset);
-    assert!(!ranges.is_empty(), "clicking the type name should resolve to at least one occurrence");
-
-    let (start, end) = ranges
-        .iter()
-        .copied()
-        .find(|&(s, e)| s <= type_offset && type_offset < e)
-        .expect("one occurrence must cover the click site");
-    assert_eq!(end - start, 10, "type-name highlight range should be exactly 10 bytes (`RampSource`), got {}..{}", start, end);
-    assert_eq!(&SRC[start..end], "RampSource");
+    let res = doc.resolve_at(type_offset).expect("type name should resolve");
+    assert_eq!(
+        res.name, "RampSource",
+        "clicking the type name resolves to the module `RampSource`, got name `{}`",
+        res.name
+    );
+    // Its decl_span must be the module's own declaration (the `mod
+    // RampSource ...` at the top), NOT the 56-byte instance statement.
+    let decl_span = res.decl_span.expect("module resolution carries a decl_span");
+    let mod_decl_offset = SRC.find("mod RampSource").expect("module decl present");
+    assert!(
+        decl_span.offset() >= mod_decl_offset && decl_span.offset() < mod_decl_offset + 20,
+        "type-name click's decl_span must point at the `mod RampSource` declaration (offset ~{mod_decl_offset}), got offset {}",
+        decl_span.offset()
+    );
 }
 
-/// An unlabeled instance's type-name click still resolves, and its range
-/// is now tight to the type-name token instead of the whole statement
-/// (no regression — actually an improvement per AC3).
+/// An unlabeled instance's type-name click also resolves to the module
+/// (same as the labeled case — the label is irrelevant to what the type
+/// name references).
 #[test]
-fn highlighting_unlabeled_instance_still_resolves_and_is_tight_to_type_token() {
+fn clicking_unlabeled_instance_type_name_resolves_to_the_module() {
     let src = "discipline Electrical { potential v: Real; flow i: Real; }\n\
 mod RampSource ( inout p : Electrical, inout n : Electrical ) { param slope: Real = 0.0; }\n\
 mod Top ( inout vin : Electrical, inout gnd : Electrical ) {\n\
@@ -76,16 +86,15 @@ mod Top ( inout vin : Electrical, inout gnd : Electrical ) {\n\
     let doc = analyzed(src);
     let type_offset = src.find("RampSource(.p").expect("unlabeled instance present in fixture");
 
-    let ranges = doc.occurrences_at(type_offset);
-    assert!(!ranges.is_empty(), "clicking the unlabeled instance's type name should still resolve");
-
-    let (start, end) = ranges
-        .iter()
-        .copied()
-        .find(|&(s, e)| s <= type_offset && type_offset < e)
-        .expect("one occurrence must cover the click site");
-    assert_eq!(end - start, 10, "unlabeled instance highlight should be tight to `RampSource` (10 bytes), got {}..{}", start, end);
-    assert_eq!(&src[start..end], "RampSource");
+    let res = doc.resolve_at(type_offset).expect("type name should resolve");
+    assert_eq!(res.name, "RampSource", "unlabeled instance's type name resolves to the module");
+    let decl_span = res.decl_span.expect("module resolution carries a decl_span");
+    let mod_decl_offset = src.find("mod RampSource").expect("module decl present");
+    assert!(
+        decl_span.offset() >= mod_decl_offset && decl_span.offset() < mod_decl_offset + 20,
+        "must point at the `mod RampSource` declaration, got offset {}",
+        decl_span.offset()
+    );
 }
 
 /// Design.md's consistency requirement: `symbol_index.rs`'s `resolve_at`

@@ -91,22 +91,21 @@ fn resolve_in_module(m: &piperine_lang::pom::Module, word: &str, byte_offset: us
             file: None,
         });
     }
-    if let Some(i) = m.instances.iter().find(|i| i.label.as_deref() == Some(word) || i.module == word) {
-        // LSB-07..10 (T8): a labeled instance's decl_span targets just the
-        // clicked token — label_span when the match was on the label,
-        // type_span when the match was on the type name — not the whole
-        // multi-line instance statement. `.or(i.span)` is a defensive
-        // fallback that should never actually be needed once both are
-        // always captured (T7).
-        let decl_span = if i.label.as_deref() == Some(word) {
-            i.label_span.or(i.span)
-        } else {
-            i.type_span.or(i.span)
-        };
+    // A click on an instance's *label* resolves to the instance itself
+    // (the label names the instance). A click on the *type* name
+    // (`i.module == word`) is deliberately NOT matched here: the type name
+    // is a reference to the module, so it must fall through to the
+    // module-name resolution below (step 3 of `resolve_at`) and resolve as
+    // the Module — showing the module's own doc and jumping to its
+    // declaration, not the (usually doc-less) instance. LSB-07..10 (T8):
+    // the label's decl_span targets just the label token, not the whole
+    // multi-line instance statement (`.or(i.span)` is a defensive
+    // fallback).
+    if let Some(i) = m.instances.iter().find(|i| i.label.as_deref() == Some(word)) {
         return Some(Resolution {
             kind: SymbolKind::Instance,
             name: i.label.clone().unwrap_or_else(|| i.module.clone()),
-            decl_span,
+            decl_span: i.label_span.or(i.span),
             type_info: Some(format!("instance of {}", i.module)),
             doc: i.doc.clone(),
             file: None,
