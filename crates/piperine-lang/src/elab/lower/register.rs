@@ -75,7 +75,7 @@ impl Elaborator {
                 // taken by any type declaration (plain or extern) is an
                 // ordinary duplicate-declaration error (SPEC Edge Cases: no
                 // shadowing of an `extern` declaration).
-                Item::ExternDecl(crate::parse::ast::ExternDecl::Type { span, name }) => {
+                Item::ExternDecl(crate::parse::ast::ExternDecl::Type { span, name, doc: _ }) => {
                     if self.ctx.types.lookup(name).is_some() {
                         return Err(ElabError::from(crate::pom::ElabErrorKind::Other(format!(
                             "type `{name}` is already declared (duplicate `extern type`/type declaration)"
@@ -128,7 +128,7 @@ impl Elaborator {
                 // site is fine, no default substituted; a field without
                 // `?` is required, matching bundle-backed schemas' own
                 // "no default = required" rule.
-                Item::ExternDecl(crate::parse::ast::ExternDecl::Attribute { span, name, fields }) => {
+                Item::ExternDecl(crate::parse::ast::ExternDecl::Attribute { span, name, fields, doc: _ }) => {
                     let attr_fields = fields
                         .iter()
                         .map(|f| crate::elab::registry::AttrField {

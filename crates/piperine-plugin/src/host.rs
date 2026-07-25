@@ -346,7 +346,7 @@ impl PluginHost {
     fn register_attribute_items(ctx: &mut ElabContext, items: &[piperine_lang::parse::ast::Item]) {
         for item in items {
             if let piperine_lang::parse::ast::Item::ExternDecl(
-                piperine_lang::parse::ast::ExternDecl::Attribute { span, name, fields },
+                piperine_lang::parse::ast::ExternDecl::Attribute { span, name, fields, .. },
             ) = item
             {
                 let attr_fields = fields

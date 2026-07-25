@@ -25,7 +25,7 @@ fn parse_one_extern(src: &str) -> ExternDecl {
 fn extern_type_parses_with_correct_decl_span() {
     let src = "extern type Real;";
     let decl = parse_one_extern(src);
-    let ExternDecl::Type { span, name } = &decl else {
+    let ExternDecl::Type { span, name, .. } = &decl else {
         panic!("expected ExternDecl::Type, got {decl:?}");
     };
     assert_eq!(name, "Real");
@@ -33,6 +33,96 @@ fn extern_type_parses_with_correct_decl_span() {
     // decl_span covers the full `extern type Real;` declaration.
     assert_eq!(span.offset(), 0);
     assert_eq!(span.offset() + span.len(), src.len());
+}
+
+// ─────────────── BUG-2 (LSB-04..06): extern doc-comment capture ───────────
+
+#[test]
+fn extern_operator_preceded_by_doc_run_parses_with_doc_some() {
+    // LSB-04..06 (T4): `extern operator ddt` preceded by `///` parses with
+    // `doc: Some(...)` — spec.md's own repro case.
+    let src = "/// Time derivative.\nextern operator ddt(x: Real) -> Real;";
+    let decl = parse_one_extern(src);
+    let ExternDecl::Operator(sig) = &decl else {
+        panic!("expected ExternDecl::Operator, got {decl:?}");
+    };
+    assert_eq!(sig.doc.as_deref(), Some("Time derivative."));
+}
+
+#[test]
+fn extern_operator_without_doc_run_parses_with_doc_none() {
+    // LSB-04..06 (T4): no `///` → `doc: None`, no regression.
+    let src = "extern operator ddt(x: Real) -> Real;";
+    let decl = parse_one_extern(src);
+    let ExternDecl::Operator(sig) = &decl else {
+        panic!("expected ExternDecl::Operator, got {decl:?}");
+    };
+    assert_eq!(sig.doc, None);
+}
+
+#[test]
+fn extern_type_preceded_by_doc_run_parses_with_doc_some() {
+    let src = "/// A real number.\nextern type Real;";
+    let decl = parse_one_extern(src);
+    let ExternDecl::Type { doc, .. } = &decl else {
+        panic!("expected ExternDecl::Type, got {decl:?}");
+    };
+    assert_eq!(doc.as_deref(), Some("A real number."));
+}
+
+#[test]
+fn extern_fn_preceded_by_doc_run_parses_with_doc_some() {
+    let src = "/// Sine function.\nextern fn sin(x: Real) -> Real;";
+    let decl = parse_one_extern(src);
+    let ExternDecl::Fn(sig) = &decl else {
+        panic!("expected ExternDecl::Fn, got {decl:?}");
+    };
+    assert_eq!(sig.doc.as_deref(), Some("Sine function."));
+}
+
+#[test]
+fn extern_task_preceded_by_doc_run_parses_with_doc_some() {
+    let src = "/// Displays a message.\nextern task $display(msg: String) -> Unit;";
+    let decl = parse_one_extern(src);
+    let ExternDecl::Task(sig) = &decl else {
+        panic!("expected ExternDecl::Task, got {decl:?}");
+    };
+    assert_eq!(sig.doc.as_deref(), Some("Displays a message."));
+}
+
+#[test]
+fn extern_attribute_preceded_by_doc_run_parses_with_doc_some() {
+    let src = "/// Device metadata.\nextern attribute device { plugin: String }";
+    let decl = parse_one_extern(src);
+    let ExternDecl::Attribute { doc, .. } = &decl else {
+        panic!("expected ExternDecl::Attribute, got {decl:?}");
+    };
+    assert_eq!(doc.as_deref(), Some("Device metadata."));
+}
+
+#[test]
+fn extern_impl_block_preceded_by_doc_run_parses_with_doc_some_block_level_only() {
+    // Edge case (spec.md Edge Cases): a `///` run before the `extern impl`
+    // block attaches only to the block, not to an un-annotated method
+    // inside it.
+    let src = "/// Real arithmetic.\nextern impl Real { fn from(x: Integer) -> Real; }";
+    let decl = parse_one_extern(src);
+    let ExternDecl::Impl { doc, methods, .. } = &decl else {
+        panic!("expected ExternDecl::Impl, got {decl:?}");
+    };
+    assert_eq!(doc.as_deref(), Some("Real arithmetic."));
+    assert_eq!(methods[0].doc, None, "un-annotated method must not inherit the block-level doc");
+}
+
+#[test]
+fn extern_impl_method_preceded_by_doc_run_parses_with_its_own_doc() {
+    // Each method inside `extern impl` captures its own doc independently.
+    let src = "extern impl Real { /// Converts from Integer.\nfn from(x: Integer) -> Real; }";
+    let decl = parse_one_extern(src);
+    let ExternDecl::Impl { methods, .. } = &decl else {
+        panic!("expected ExternDecl::Impl, got {decl:?}");
+    };
+    assert_eq!(methods[0].doc.as_deref(), Some("Converts from Integer."));
 }
 
 #[test]
@@ -126,7 +216,7 @@ fn extern_operator_with_body_is_a_parse_error_naming_the_declaration() {
 fn extern_attribute_parses_with_field_decl_spans() {
     let src = "extern attribute device { plugin: String, type: String }";
     let decl = parse_one_extern(src);
-    let ExternDecl::Attribute { span, name, fields } = &decl else {
+    let ExternDecl::Attribute { span, name, fields, .. } = &decl else {
         panic!("expected ExternDecl::Attribute, got {decl:?}");
     };
     assert_eq!(name, "device");
@@ -150,7 +240,7 @@ fn extern_attribute_parses_with_field_decl_spans() {
 fn extern_impl_parses_block_and_each_method_with_distinct_decl_spans() {
     let src = "extern impl Real { fn from(x: Integer) -> Real; fn from(x: Boolean) -> Real; }";
     let decl = parse_one_extern(src);
-    let ExternDecl::Impl { span, capability, target, methods } = &decl else {
+    let ExternDecl::Impl { span, capability, target, methods, .. } = &decl else {
         panic!("expected ExternDecl::Impl, got {decl:?}");
     };
     assert_eq!(target, "Real");

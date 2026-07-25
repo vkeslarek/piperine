@@ -105,7 +105,13 @@ impl Item {
 #[derive(Debug, Clone)]
 pub enum ExternDecl {
     /// `extern type Name;` — a primitive value type, no body.
-    Type { span: Option<miette::SourceSpan>, name: String },
+    Type {
+        span: Option<miette::SourceSpan>,
+        name: String,
+        /// A `///` doc-comment run attached immediately before this
+        /// declaration (LSP-06/07/BUG-2), if any.
+        doc: Option<String>,
+    },
     /// `extern fn name(params) -> RetType;` — a native function, signature
     /// only (the body is a compiler-side registry entry, e.g. `math.rs`).
     Fn(ExternSig),
@@ -117,7 +123,14 @@ pub enum ExternDecl {
     Operator(ExternSig),
     /// `extern attribute name { field: Type, ... }` — an attribute schema
     /// (`@device`, `@port`, plugin-contributed ones).
-    Attribute { span: Option<miette::SourceSpan>, name: String, fields: Vec<ExternAttrField> },
+    Attribute {
+        span: Option<miette::SourceSpan>,
+        name: String,
+        fields: Vec<ExternAttrField>,
+        /// A `///` doc-comment run attached immediately before this
+        /// declaration (LSP-06/07/BUG-2), if any.
+        doc: Option<String>,
+    },
     /// `extern impl [Capability for] TypeName { fn method(self, ...) ->
     /// Ret; ... }` — native methods on a type. `capability` is `Some` for
     /// `extern impl Capability for TypeName`, `None` for inherent methods
@@ -129,6 +142,10 @@ pub enum ExternDecl {
         capability: Option<String>,
         target: String,
         methods: Vec<ExternSig>,
+        /// A `///` doc-comment run attached immediately before the `extern
+        /// impl` block itself (LSP-06/07/BUG-2), if any. Per-method docs
+        /// live on each method's own `ExternSig::doc`.
+        doc: Option<String>,
     },
 }
 
@@ -153,6 +170,15 @@ impl ExternDecl {
             ExternDecl::Impl { target, .. } => target,
         }
     }
+
+    /// The `///` doc-comment run attached immediately before this
+    /// declaration (LSP-06/07/BUG-2), if any.
+    pub fn doc(&self) -> Option<&str> {
+        match self {
+            ExternDecl::Type { doc, .. } | ExternDecl::Attribute { doc, .. } | ExternDecl::Impl { doc, .. } => doc.as_deref(),
+            ExternDecl::Fn(sig) | ExternDecl::Task(sig) | ExternDecl::Operator(sig) => sig.doc.as_deref(),
+        }
+    }
 }
 
 /// One field of an `extern attribute` schema — same name/type shape as a
@@ -175,6 +201,9 @@ pub struct ExternSig {
     pub name: String,
     pub params: Vec<FnParam>,
     pub ret: Type,
+    /// A `///` doc-comment run attached immediately before this declaration
+    /// (LSP-06/07/BUG-2), if any.
+    pub doc: Option<String>,
 }
 
 /// A `::`-separated module path, e.g. `devices::passives::Resistor`.
