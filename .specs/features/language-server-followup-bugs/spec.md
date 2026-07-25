@@ -224,12 +224,12 @@ labels, and does include `"mod"`.
 
 | Requirement ID | Story | Status |
 |---|---|---|
-| LSB-01 | P1 (BUG-1) AC1 | Pending |
-| LSB-02 | P1 (BUG-1) AC2 | Pending |
-| LSB-03 | P1 (BUG-1) AC3 | Pending |
-| LSB-04 | P2 (BUG-2) AC1 | Pending |
-| LSB-05 | P2 (BUG-2) AC2 | Pending |
-| LSB-06 | P2 (BUG-2) AC3 | Pending |
+| LSB-01 | P1 (BUG-1) AC1 | Done (T3, commit `4b4a5ae`) |
+| LSB-02 | P1 (BUG-1) AC2 | Done (T1, commit `96a0b1f`) |
+| LSB-03 | P1 (BUG-1) AC3 | Done (T3, commit `4b4a5ae`) |
+| LSB-04 | P2 (BUG-2) AC1 | Done (T5, commit `623c7e5`) |
+| LSB-05 | P2 (BUG-2) AC2 | Done (T5, commit `623c7e5`) |
+| LSB-06 | P2 (BUG-2) AC3 | Pending (T6 — real ddt/Real header docs not authored in this batch) |
 | LSB-07 | P3 (BUG-3) AC1 | Pending |
 | LSB-08 | P3 (BUG-3) AC2 | Pending |
 | LSB-09 | P3 (BUG-3) AC3 | Pending |

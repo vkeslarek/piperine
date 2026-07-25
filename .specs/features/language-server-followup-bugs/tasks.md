@@ -45,10 +45,21 @@ embedded headers) and `load_source()`/`expand_inner()` (the real path
 already computed there). `take_item_files()` mirrors `take_origins()`.
 **Where**: `crates/piperine-lang/src/resolve.rs`.
 **Done when**:
-- [ ] every prelude item (incl. `ddt`, `Real`) maps to its real header path
-- [ ] every `use`-loaded item maps to its real on-disk path
-- [ ] `cargo test -p piperine-lang`
+- [x] every prelude item (incl. `ddt`, `Real`) maps to its real header path
+- [x] every `use`-loaded item maps to its real on-disk path
+- [x] `cargo test -p piperine-lang`
 **Gate**: quick (lang)
+
+**Status (2026-07-25)**: DONE, commit `96a0b1f`. Added `Resolver.item_files:
+HashMap<String, PathBuf>` and `file_paths: HashMap<Vec<String>, PathBuf>`
+(a resolved-path cache so `expand_inner` can tag items without
+recomputing path resolution). The 5 embedded headers are tagged via
+`concat!(env!("CARGO_MANIFEST_DIR"), "/headers/X.phdl")`; the dynamically
+loaded `piperine::{capabilities,collections,prelude}` and every
+`use`-loaded file are tagged from `file_paths` at the point `origins` is
+already populated. `take_item_files()` mirrors `take_origins()`. Two new
+tests in `tests/elab.rs` verify `ddt`/`Real` map to real, existing files
+on disk, and a `use`-loaded item maps to its real tempdir path.
 
 #### T2 (LSB-01..03): Thread item_files into Design/Project
 **What**: `Project` gains `item_files: HashMap<String, PathBuf>` + a setter
@@ -58,9 +69,16 @@ already computed there). `take_item_files()` mirrors `take_origins()`.
 lives), `elab/mod.rs` (elaboration entry points call the new setter).
 **Depends on**: T1.
 **Done when**:
-- [ ] `design.project().item_file("ddt")` returns the real header path
-- [ ] `cargo test -p piperine-lang`
+- [x] `design.project().item_file("ddt")` returns the real header path
+- [x] `cargo test -p piperine-lang`
 **Gate**: quick (lang)
+
+**Status (2026-07-25)**: DONE, commit `06468c5`. Added `Project.item_files`
++ `Project::item_file(name) -> Option<&Path>` (mirrors `origin_of`'s
+`Dac__8`→`Dac` monomorphized-name fallback). `Design::set_item_files`
+called alongside `set_origins` at all three elaboration entry points in
+`elab/mod.rs`. One new test verifies `design.project().item_file("ddt")`
+resolves to the real, existing `headers/operators.phdl`.
 
 #### T3 (LSB-01..03): goto_def.rs extern cross-file resolution
 **What**: `Resolution.file: Option<PathBuf>` populated in `symbol_index.rs`'s
@@ -72,10 +90,24 @@ the existing Module/Instance branch.
 `handlers/goto_def.rs`.
 **Depends on**: T2.
 **Done when**:
-- [ ] goto on `ddt` returns a `Location` at `headers/operators.phdl`
-- [ ] goto on a same-file `extern` decl still works (no regression)
-- [ ] `cargo test -p piperine-lang-server`
+- [x] goto on `ddt` returns a `Location` at `headers/operators.phdl`
+- [x] goto on a same-file `extern` decl still works (no regression)
+- [x] `cargo test -p piperine-lang-server`
 **Gate**: quick (server)
+
+**Status (2026-07-25)**: DONE, commit `4b4a5ae`. Added `Resolution.file:
+Option<PathBuf>`, populated in `symbol_index.rs`'s extern-registry arms
+from `design.project().item_file(&word)`. `goto_def.rs::
+cross_file_location` gains a branch, checked before the existing
+Module/Instance logic: when `resolution.file` is set and (after
+canonicalization) differs from the current document, read that file's
+text directly and return its `Location`; when it's the same file, falls
+through to the existing same-file fallback (no regression). Verified:
+`goto_definition_on_ddt_lands_on_operators_header` opens the real
+`crates/piperine-lang/headers/operators.phdl` and asserts the returned
+range's byte offset exactly matches `header_text.find("extern operator
+ddt")` — confirmed against the actual file on disk, not just "code
+compiles."
 
 #### T4 (LSB-04..06): extern doc field (AST + parser)
 **What**: `doc: Option<String>` on `ExternSig` and `ExternDecl::{Type,
@@ -83,10 +115,20 @@ Attribute,Impl}`; each `parse_extern_*` captures `parser.current_doc()`.
 **Where**: `crates/piperine-lang/src/parse/ast.rs`,
 `parse/parser/extern_decl.rs`.
 **Done when**:
-- [ ] `extern operator ddt` preceded by `///` parses with `doc: Some(...)`
-- [ ] no `///` → `doc: None`
-- [ ] `cargo test -p piperine-lang`
+- [x] `extern operator ddt` preceded by `///` parses with `doc: Some(...)`
+- [x] no `///` → `doc: None`
+- [x] `cargo test -p piperine-lang`
 **Gate**: quick (lang)
+
+**Status (2026-07-25)**: DONE, commit `bab93d5`. Added `doc:
+Option<String>` to `ExternSig` and `ExternDecl::{Type,Attribute,Impl}`;
+each `parse_extern_*` function (including each individual method inside
+`extern impl`) captures `parser.current_doc()` at the same point every
+other decl parser does. `register.rs` and `piperine-plugin`'s
+extern-attribute scanner pattern-match the new field with `..`/`doc: _`
+for now (doc threading into the registries is T5). 8 new tests in
+`tests/extern_grammar.rs` cover all 6 `extern` forms plus the
+block-vs-per-method doc attachment edge case from spec.md.
 
 #### T5 (LSB-04..06): thread doc into registries + Resolution
 **What**: `doc: Option<String>` on `ExternOperatorDecl`/`TypeDefKind::
@@ -97,9 +139,22 @@ hardcoded `None`.
 callables,schemas}.rs`, `crates/piperine-lang-server/src/symbol_index.rs`.
 **Depends on**: T4.
 **Done when**:
-- [ ] hover on a `///`-documented `extern` shows the doc as Markdown
-- [ ] `cargo test -p piperine-lang-server`
+- [x] hover on a `///`-documented `extern` shows the doc as Markdown
+- [x] `cargo test -p piperine-lang-server`
 **Gate**: quick (server)
+
+**Status (2026-07-25)**: DONE, commit `623c7e5`. Added `CallableDef::doc()`
+default method (mirrors `decl_span()`), overridden on `ExternFnDecl`/
+`ExternOperatorDecl` to read `sig.doc`. Added `doc` to
+`TypeDefKind::Extern` and a `docs` store + `SchemaRegistry::doc()` to
+`SchemaRegistry`, populated in `register.rs` (and `piperine-plugin`'s
+extern-attribute-stub scanner) from the AST `doc` field captured in T4.
+`symbol_index.rs`'s 5 extern-registry `Resolution` arms now read
+`.doc()`/`.doc` instead of the hardcoded `None`. Verified with a
+synthetic `///`-documented `extern operator` fixture end-to-end through
+`Connection::memory()`: hover renders the doc as Markdown; an
+undocumented sibling still renders unchanged. Authoring the real
+`ddt`/`Real` header docs (`//` → `///`) is T6, not in this batch.
 
 #### T6 (LSB-04..06): author `///` docs on headers
 **What**: Convert the existing `//` prose directly above `extern operator
