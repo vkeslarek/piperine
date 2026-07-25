@@ -73,6 +73,13 @@ impl Default for Permissions {
     }
 }
 
+impl Permissions {
+    /// Nothing declared — no consent to ask for at `add` time (PLG-23).
+    pub fn is_default(&self) -> bool {
+        self.filesystem.is_empty() && !self.network && self.process_spawn.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ManifestFile {

@@ -127,6 +127,57 @@ fn decide(mode: TrustMode, manifest: &Manifest, source: &str, content_hash: &str
     }
 }
 
+/// Permissions consent at `add` (plugin-interface v2, PLG-23 / D11) —
+/// the FIRST of the two trust gates, distinct from the artifact-hash
+/// TOFU above: the declared `[plugin.permissions]` are printed and
+/// require an explicit accept/deny; a deny aborts the install
+/// ([`PluginError::PermissionsDenied`]). A manifest declaring no
+/// permissions needs no consent. The deterministic modes bypass:
+/// `AcceptAll` accepts, `RejectUntrusted` denies.
+pub fn ensure_permissions_consented(manifest: &Manifest, mode: TrustMode) -> PluginResult<()> {
+    if manifest.permissions.is_default() {
+        return Ok(());
+    }
+    print_permissions(manifest);
+    let approved = match mode {
+        TrustMode::AcceptAll => true,
+        TrustMode::RejectUntrusted => false,
+        TrustMode::Interactive => {
+            if !std::io::stdin().is_terminal() {
+                // Non-tty stdin denies — CI must opt in explicitly.
+                false
+            } else {
+                eprint!("  Grant these permissions? [y/N] ");
+                let mut line = String::new();
+                if std::io::stdin().read_line(&mut line).is_err() {
+                    return Err(PluginError::PermissionsDenied(manifest.name.clone()));
+                }
+                matches!(line.trim(), "y" | "Y" | "yes")
+            }
+        }
+    };
+    if !approved {
+        return Err(PluginError::PermissionsDenied(manifest.name.clone()));
+    }
+    Ok(())
+}
+
+/// Print the declared permissions — always, tty or not: the gate must
+/// show what it is asking about (PLG-23).
+fn print_permissions(manifest: &Manifest) {
+    eprintln!();
+    eprintln!("  Plugin '{}' declares permissions:", manifest.name);
+    if !manifest.permissions.filesystem.is_empty() {
+        eprintln!("    filesystem    : {}", manifest.permissions.filesystem.join(", "));
+    }
+    if manifest.permissions.network {
+        eprintln!("    network       : true");
+    }
+    if !manifest.permissions.process_spawn.is_empty() {
+        eprintln!("    process_spawn : {}", manifest.permissions.process_spawn.join(", "));
+    }
+}
+
 /// Record (or replace) the approved pin and persist the lockfile.
 fn pin(
     lock: &mut PiperineLock,

@@ -60,6 +60,12 @@ pub enum PluginError {
     #[diagnostic(code(P0013))]
     VerifyMismatch { plugin: String, release: String },
 
+    /// Plugin-interface v2 (PLG-23): the user denied the declared
+    /// `[plugin.permissions]` at `add` — the install aborts.
+    #[error("plugin `{0}`: declared permissions denied — install aborted")]
+    #[diagnostic(code(P0014))]
+    PermissionsDenied(String),
+
     #[error("plugin `{plugin}`: {message}")]
     #[diagnostic(code(P0099))]
     Other { plugin: String, message: String },
