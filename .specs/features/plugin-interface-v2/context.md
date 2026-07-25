@@ -43,6 +43,21 @@ express the same plugin API identically (MD-22).
 - **D8 — five hooks frozen.** `after_parse`/`after_elaborate`/
   `transform_design`/`before_lower`/`after_solve`; `transform_design` (via
   staging) is the sole device-injection point.
+- **D9 — plugin ≡ a contributing dependency.** No separate install path:
+  `piperine add <git>` (Go-style — bare `owner/repo` → GitHub, any full git
+  URL verbatim) adds a dependency; a dependency whose `Piperine.toml`
+  declares contributions loads them on import. A normal project can declare
+  the same — "plugin" is a role, not a distinct artifact kind.
+- **D10 — `@device` lives in the plugin's own PHDL; import injects it.** The
+  plugin author writes `@device pub mod …`; the user `use`s the package and
+  gets the device — no `@device` at the user site. Importing a device lib
+  injects all its declared devices.
+- **D11 — two explicit trust gates at `add`.** (1) permissions consent —
+  the user explicitly accepts/denies the declared `[plugin.permissions]`;
+  (2) source/binary TOFU hash pin — independent of the permissions consent.
+- **D12 — version/ABI compat deferred.** v2 keeps only the device binary's
+  `piperine_plugin_abi_version` check; the manifest `piperine=">=X"` compat
+  field is a roadmap follow-up.
 
 ## Agent's Discretion (locked by "recommended", refine in Design)
 
@@ -51,14 +66,14 @@ express the same plugin API identically (MD-22).
 - The exact `staging.add_instance(...)` device-injection API (parity with
   the existing `DesignStaging`).
 
-## Still Open (must resolve in spec — Q6)
+## Deferred to roadmap (not in v2)
 
-- How a plugin declares its target Piperine version / ABI compat now that
-  `Manifest.abi` is gone. Leaning: a `piperine = ">=X"` field in `[plugin]`
-  + keep the native `piperine_plugin_abi_version` check for the device
-  binary only.
+- **Version/ABI compat manifest field (Q6/D12).** A `[plugin] piperine =
+  ">=X.Y"` semver-compat field for the source/script surface. v2 relies only
+  on the device binary's exported `piperine_plugin_abi_version`. Add the
+  manifest field in a later pass — semantics are easy to bolt on.
 - Committed-in-repo device binary as an offline fallback (leaning v1 =
-  release-only; note as follow-up).
+  release-only).
 
 ---
 

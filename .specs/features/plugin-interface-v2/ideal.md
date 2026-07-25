@@ -50,6 +50,27 @@
 - **D8 — the five hooks are frozen.** `transform_design` (via staging) is
   the sole device-injection point. New hooks land only when a real consumer
   appears (same discipline that omitted `after_lower`).
+- **D9 — plugin ≡ a contributing dependency.** There is no separate "plugin"
+  install path. `piperine add <git>` (Go-style: bare `owner/repo` defaults
+  to GitHub, but any full git URL works) adds a dependency; if that
+  dependency's `Piperine.toml` declares scripts/devices/hooks/permissions,
+  importing it **loads those contributions into the importing project**. A
+  *normal project* can declare the same things — "plugin" is just the role a
+  contributing dependency plays, not a distinct artifact kind.
+- **D10 — `@device` lives in the plugin's own PHDL; import injects it.** The
+  plugin author writes `@device(...) mod GummelPoon(...)` in the plugin's
+  `.phdl`; the user writes `use acme::bjt;` and gets `bjt::GummelPoon` as a
+  usable device — **no `@device` at the user's call site**. Importing a
+  device library injects *all* the devices it declares (bound to its binary).
+- **D11 — two explicit trust gates.** TOFU on the source/binary
+  (content-hash pin, unchanged) **plus** an explicit **permissions consent**:
+  a plugin declares `[plugin.permissions]`; on first add the user must
+  explicitly accept or deny them (not a silent default). Permissions and
+  source-trust are separate consents.
+- **D12 — version/ABI compat (Q6) is deferred to a follow-up** (roadmap
+  note): the semantics are easy to add later. v2 keeps only the device
+  binary's existing `piperine_plugin_abi_version` check; the manifest
+  `piperine = ">=X"` field is NOT in v2 scope.
 
 ---
 
@@ -91,13 +112,14 @@ use acme::opamps;                 // resolves to the added package's headers
 x1 : opamps::TL072 ( .vp = a, .vn = b, .out = o ) { };
 ```
 
-No manifest `[plugin]` section, no `entry`, no trust prompt (it is *source*,
-reviewed like any dependency — same as a git `use`-dependency today). This
-is the existing `piperine add <git>` dependency mechanism; a "pure-PHDL
-plugin" is simply **a normal PHDL package** — the word "plugin" is almost a
-misnomer here. **Ideal: this needs no plugin machinery at all.** It IS the
-qualified-import / git-dependency path (just landed: `spice::passives::res`
-full-path refs + `use` resolution).
+No `entry`, no binary. This IS the dependency path (`piperine add <git>` +
+`use`, just landed: `spice::passives::res` full-path refs + `use`
+resolution). Per **D9**, a pure-PHDL plugin and a plain dependency are the
+*same thing* — "plugin" is only the role a dependency plays *when its
+`Piperine.toml` declares contributions*. A pure-PHDL library declares none,
+so it just resolves via `use`; a device/scripted library declares
+devices/scripts and importing it loads those too. One install path, one
+concept.
 
 ### 1b. Scripted plugin (Python, no binary)
 
@@ -134,20 +156,32 @@ fn check(ctx: &Ctx) -> Result<()> { ... }
 
 (MD-22: identical names, identical hook catalog, identical `ctx` surface.)
 
-### 1c. Device plugin (Python glue + a compiled binary)
+### 1c. Device plugin (a compiled binary + its own PHDL declarations)
 
-Ships an `Element` implementation as a compiled native library, referenced
-by `@device` in PHDL. **Declaration and injection are coupled** (§3): the
-PHDL `mod` declares the shape, `@device(plugin, type)` binds it to the
-plugin's factory — there is no imperative "register this device" call.
+Ships an `Element` implementation as a compiled native library. **The
+`@device`-annotated `mod` lives in the plugin's OWN `.phdl`** (D10) — the
+plugin author declares the device's shape + binds it to the binary; the
+*user never writes `@device`*. Importing the plugin injects all its declared
+devices.
 
 ```phdl
+// acme_bjt/models/bjt.phdl  (INSIDE the plugin, authored by the plugin)
 @device(plugin = "acme_bjt", type = "GummelPoon")
-mod BJT ( inout c: Electrical, inout b: Electrical, inout e: Electrical ) {
+pub mod GummelPoon ( inout c: Electrical, inout b: Electrical, inout e: Electrical ) {
     param is  : Real = 1e-16;
     param bf  : Real = 100.0;
 }
 ```
+
+```phdl
+// the USER's design — just imports and uses it, no @device anywhere
+use acme_bjt::bjt;
+q1 : bjt::GummelPoon ( .c = c, .b = b, .e = e ) { .bf = 200.0 };
+```
+
+`piperine add acme_bjt` loads the plugin's PHDL declarations (injecting every
+`@device` mod it declares) and binds them to the fetched binary. The user's
+site is pure PHDL — the coupling is entirely inside the plugin.
 
 The binary is **fetched from a GitHub release** per target triple (§5), TOFU-
 verified on first use, and cached. The device→constructor mapping lives
@@ -169,30 +203,48 @@ script or hook.
 
 ---
 
-## §2 — What a plugin is (manifest)
+## §2 — What a plugin is (manifest) + how it's added
 
-`Piperine.toml`, one `[plugin]` section, deliberately tiny:
+**Install (D9, Go-style):**
+
+```sh
+piperine add acme/bjt-models          # bare owner/repo → defaults to GitHub
+piperine add https://gitlab.com/x/y   # any full git URL works too
+```
+
+`add` is the *dependency* command; a dependency that declares contributions
+IS a plugin. The dependency's root `Piperine.toml`:
 
 ```toml
 [project]
 name = "acme_bjt"
 version = "1.2.0"
 
-[plugin]
-# Which shapes this package contributes. Absent = pure-PHDL (shape 1a).
-python = "plugin.py"          # scripted/hook entry (shape 1b/1c glue), optional
-device = { release = "github:acme/bjt-models", verify = "sha256" }  # shape 1c, optional
+[plugin]                      # present ⇒ this dependency contributes; absent ⇒ pure code
+python = "plugin.py"          # scripted/hook entry, optional
+device = { release = "github:acme/bjt-models@v1.2.0", verify = "sha256" }  # optional
 
-[plugin.permissions]          # deny-by-default, unchanged intent
+[plugin.permissions]          # deny-by-default; the USER must explicitly consent (D11)
 filesystem = ["read *.model"]
 network = false
 ```
 
 - No `abi = wasm|native|process` field — the *shape* is inferred from what's
-  present (`python` key → scripted; `device` key → device binary; neither →
-  pure-PHDL). WASM/process are gone (MD-21).
-- No `entry` symbol-name plumbing exposed to the author (the host knows the
-  native ABI symbol / the Python entry convention).
+  present (`python` → scripted; `device` → device binary; neither → pure
+  code). WASM/process are gone (MD-21).
+- No `abi`/`entry` symbol plumbing exposed (the host knows the native ABI
+  symbols / the Python entry convention).
+- **No `piperine = ">=X"` compat field in v2** (D12) — deferred to a
+  roadmap follow-up.
+
+**Two explicit trust gates on `add` (D11):**
+
+1. **Permissions consent.** `add` prints the plugin's declared
+   `[plugin.permissions]` and requires an explicit accept/deny — never a
+   silent default. Denied → not installed.
+2. **Source/binary TOFU.** The source content (or fetched device binary's
+   bytes) is hashed and pinned in `Piperine.lock`; first sight prompts, a
+   changed artifact re-prompts (§5). Independent of the permissions consent.
 
 ---
 
@@ -210,15 +262,17 @@ implementation:
 
 | Contribution | Declared where | Bound how | Imperative registration? |
 |---|---|---|---|
-| Device | user's `mod` + `@device(plugin, type)` | plugin's factory keyed by `type` | **No** — the `@device` attribute IS the coupling |
+| Device | **the plugin's own `.phdl`**: `@device(plugin, type) pub mod …` (D10) | plugin binary's `type`→ctor table | **No** — the `@device` attribute IS the coupling; importing the plugin injects the mod |
 | Script (`piperine <name>`) | plugin's `@pip.script("name")` decorator | that decorator | the decorator declares AND binds in one place — no separate stub |
 | Lifecycle hook | plugin's `@pip.hook.<phase>` decorator | that decorator | same — one place |
 | Attribute schema | **not contributable** — see §4 | — | — |
 
 The unifying rule: **there is no place where a plugin registers a name that
 has no visible declaration at the point of contribution.** A device's name
-is a `mod` the user wrote. A script's name is right there in the decorator.
-A hook has no name. Nothing is injected "behind" a stub.
+is a `pub mod` in the plugin's PHDL (the user imports it). A script's name
+is right there in the decorator. A hook has no name. Nothing is injected
+"behind" a stub, and the user's own design never carries `@device` — it just
+`use`s the plugin.
 
 `@device` and `@port` remain the *only* plugin-facing attribute schemas, and
 they are **stdlib-declared** (`headers/device_port.phdl`), not plugin-
@@ -353,13 +407,13 @@ real consumer appears.
 | Q3 | hook catalog | **D8** — freeze the five; `transform_design` sole injection point |
 | Q4 | "plugin" scope | **D1** — umbrella for all 3 shapes (pure-PHDL kept as a plugin) |
 | Q5 | Rust/Python parity | **D3** — literal decorator parity both sides |
-| Q6 | versioning/ABI compat | **still open** — how a plugin declares its target Piperine version now that `abi` is gone. Leaning: a `piperine = ">=X"` compat field in `[plugin]` + the native ABI version check (`piperine_plugin_abi_version`) kept for the device binary only. Pin in spec. |
+| Q6 | versioning/ABI compat | **D12 — deferred to a roadmap follow-up.** v2 keeps only the device binary's `piperine_plugin_abi_version` check; the manifest `piperine = ">=X"` compat field is out of v2 scope. |
 
 **Remaining for the spec phase (not blocking the ideal):**
 - Release-asset naming convention + the `github:owner/repo@tag` → asset URL
   resolution (Q2 tail).
-- The `[plugin]` compat/version field shape (Q6).
 - Whether a committed-in-repo device binary is an accepted offline fallback
   (leaning v1 = release-only).
 - The exact `staging.add_instance(...)` device-injection API surface (parity
   with the existing `DesignStaging`).
+- The permissions-consent prompt UX at `add` time (D11).

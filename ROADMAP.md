@@ -564,22 +564,46 @@ hover/completion, and the whole thing is protocol-tested.
 
 ## P5 — Plugin interface simplified
 
-Part VI is implemented (manifest, TOFU, attr schemas, `@device`, hooks,
-scripts). V1 is **reduction and polish** under MD-21:
+**REFINED 2026-07-25 (ideal-first)** — feature `plugin-interface-v2`
+(`.specs/features/plugin-interface-v2/`: `ideal.md` north-star, `context.md`
+12 locked decisions D1–D12, `spec.md` 26 requirements PLG-01..26, `design.md`
+5-phase plan). The refinement replaces the flat bullets below with a
+declaration-coupled, native+Python surface.
+
+**Locked shape (D1–D12):** a **plugin is a contributing dependency** —
+`piperine add <git>` (Go-style: bare `owner/repo`→GitHub, any full git URL)
+adds a dependency; if its `Piperine.toml` declares scripts/devices/hooks,
+importing it loads them (a normal project can declare the same). Three
+shapes under one umbrella: **pure-PHDL** (code lib), **scripted** (Python
+scripts/hooks, no binary), **device** (a language-agnostic C-ABI binary).
+Declaration + injection are coupled (no imperative `Registrar`): a device's
+`@device pub mod` lives in the **plugin's own PHDL** and importing injects it
+(the user never writes `@device`); scripts/hooks are declared+bound by a
+single decorator with **literal Rust/Python parity** (`#[pip::script]`/
+`@pip.script`, etc.). **No plugin `extern`/attribute schemas** (the
+`extern.phdl` stub mechanism is deleted). Device binaries distribute via
+**GitHub release + target-triple + TOFU** (`device = { release =
+"github:owner/repo@tag", verify = "sha256" }`); a missing triple is a loud
+error, `verify` is optional. Two explicit trust gates at `add`: **permissions
+consent** + source/binary TOFU. The **five lifecycle hooks are frozen**;
+`transform_design` (staging) is the sole device-injection point.
 
 - [ ] Remove the WASM (wasmtime) and process JSON-RPC backends +
-      `piperine-plugin-wasm`; native dlopen stays.
-- [ ] **Python plugin tier**: a `.py` plugin loaded through the embedded host
-      (same isolation as benches), with the **lifecycle registry exposed to
-      Python** — self-registration of attribute schemas, hooks, scripts, and
-      devices on load.
-- [ ] **Artifact distribution** — prebuilt plugin binaries per target triple
-      from git releases (today the plugin artifact must pre-exist at a known
-      path). Lands with the include/dependency-resolution rework so the plugin
-      loader can fetch + verify a declared artifact instead of requiring a
-      hand-placed one.
-- [ ] One "write a plugin" document with a worked example per extension kind
-      (attribute schema, device, hook, script) × per tier (native, Python).
+      `piperine-plugin-wasm`; native dlopen stays (MD-21).
+- [ ] Kill the imperative `Registrar` + per-plugin `extern.phdl` stubs;
+      contributions are declaration-coupled decorators / `@device`.
+- [ ] Decorator surface with literal Rust/Python parity + a parity test.
+- [ ] Device-binary distribution: git-source resolver, github-release +
+      triple match, TOFU pin, permissions-consent gate at `add`.
+- [ ] One "write a plugin" document per shape (pure-PHDL, scripted, device)
+      showing the Rust/Python decorator equivalence.
+
+**Deferred to a follow-up (D12):** a manifest `[plugin] piperine = ">=X.Y"`
+version-compat field for the source/script surface — v2 relies only on the
+device binary's exported `piperine_plugin_abi_version`; the manifest field's
+semantics are easy to bolt on later. Also deferred: a committed-in-repo
+device-binary offline fallback (v1 is release-only), and any hooks beyond
+the five.
 
 ---
 

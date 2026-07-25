@@ -25,34 +25,44 @@
 | `DesignStaging::add_instance` | `view.rs:51` | reuse (PLG-13/14/15) |
 | Hooks | `Plugin` trait (5 methods) | keep the five; re-express as the decorator target (PLG-11) |
 
-## §1 Manifest v2 (shape inference, no `abi`)
+## §1 `add` = unified install; manifest v2 (shape inference, no `abi`)
+
+**Install (PLG-22, D9):** `piperine add <git>` is the *dependency* command,
+Go-style: a bare `owner/repo` resolves to `github.com/owner/repo`; a full
+git URL (`https://…`, `git@…`) is used verbatim. A dependency whose root
+`Piperine.toml` has a `[plugin]` section contributes (device/scripts/hooks);
+importing it loads those contributions into the importing project. A plain
+dependency (no `[plugin]`) just resolves via `use`. Same path, one concept.
 
 ```toml
 [project]
 name = "acme_bjt"
 version = "1.2.0"
 
-[plugin]
-piperine = ">=0.2"                 # host-version compat (PLG-22); optional, default = any
-python  = "plugin.py"              # present ⇒ scripted/hook glue (shape 1b/1c)
+[plugin]                           # present ⇒ contributes; absent ⇒ pure code
+python  = "plugin.py"              # present ⇒ scripted/hook entry (optional)
 device  = { release = "github:acme/bjt-models@v1.2.0", verify = "sha256:ab…" }
 
-[plugin.permissions]               # unchanged, deny-by-default
+[plugin.permissions]               # deny-by-default; USER must explicitly consent (PLG-23)
 filesystem = ["read *.model"]
 network = false
 ```
 
-**Shape** = keys present:
-- `device` present → **device** plugin (fetch + load a binary).
-- `python` present → **scripted** plugin (embedded CPython entry).
-- neither → **pure-PHDL** plugin (a `pub`-item code library; nothing runs).
+**Shape** = keys present: `device`→device (fetch+load a binary);
+`python`→scripted; neither→pure code.
 
 `Manifest` struct: drop `abi: Abi` and `entry: String`; add
-`piperine: Option<semver::VersionReq>`, `python: Option<PathBuf>`,
-`device: Option<DeviceSource>`. `Abi` enum + `default_timeout` (WASM-only)
-removed. A manifest with `abi = "wasm"|"process"` → a targeted error
-(`PluginError::RemovedBackend`) so an old manifest gets a clear message
-(PLG-02), not `deny_unknown_fields`'s generic "unknown field `abi`".
+`python: Option<PathBuf>`, `device: Option<DeviceSource>`. `Abi` enum +
+`default_timeout` (WASM-only) removed. **No `piperine` compat field** (D12 —
+deferred). A manifest with `abi = "wasm"|"process"` → a targeted error
+(`PluginError::RemovedBackend`, PLG-02).
+
+**Two trust gates at `add` (PLG-23, D11):**
+1. **Permissions consent** — `add` prints `[plugin.permissions]` and requires
+   an explicit accept/deny; deny aborts. (A new `add`-time prompt distinct
+   from the artifact-hash TOFU.)
+2. **Source/binary TOFU** — content-hash pin in `Piperine.lock` (§4),
+   independent of the permissions consent.
 
 ## §2 Decorator surface + literal parity (PLG-06/10/11/12)
 
@@ -122,8 +132,12 @@ const PiperineDeviceEntry* piperine_plugin_devices(size_t* out_len);
 - The host's native backend (`backend/native.rs`) dlopen's the library,
   checks `piperine_plugin_abi_version`, reads `piperine_plugin_devices`, and
   builds a `type`→`DeviceFactory` map — replacing the old imperative
-  `Registrar::device` calls. `@device(plugin, type)` in PHDL resolves
-  `type` against this map.
+  `Registrar::device` calls.
+- **The `@device`-annotated `mod` lives in the plugin's OWN `.phdl`** (D10),
+  shipped in the plugin repo. `piperine add` loads the plugin's PHDL
+  (injecting every `@device pub mod` it declares) and resolves each mod's
+  `type` against the binary's map. The user just `use`s the plugin package
+  and instantiates the mod — no `@device` at the user site.
 
 ## §4 Release fetch + triple + TOFU (PLG-16..20)
 
@@ -171,14 +185,16 @@ const PiperineDeviceEntry* piperine_plugin_devices(size_t* out_len);
 Phase 1 — Reduction (PLG-01,02,03,04,07,08,09,21): delete backends/wasm crate,
           kill Registrar + extern-stub, manifest shape inference. The surface
           shrinks to native+Python before anything is added on top.
-Phase 2 — Decorator surface + parity (PLG-05,06,10,11,12,23): the pip::/@pip
-          decorators (both hosts), the device ABI export table, the parity
-          test.
-Phase 3 — Injection + version compat (PLG-13,14,15,22): transform_design
-          staging.add_instance device injection; piperine version check.
-Phase 4 — Release distribution (PLG-16,17,18,19,20): the github-release
-          resolver + triple match + TOFU pin.
-Phase 5 — Docs (PLG-24,25): part_vi rewrite + one worked example per shape.
+Phase 2 — Decorator surface + parity (PLG-05,06,10,11,12,24): the pip::/@pip
+          decorators (both hosts), the device ABI export table (with the
+          @device mod living in the plugin's PHDL, injected on import), the
+          parity test.
+Phase 3 — Injection (PLG-13,14,15): transform_design staging.add_instance
+          device injection.
+Phase 4 — Install + distribution (PLG-16,17,18,19,20,22,23): the git-source
+          resolver (Go-style), the github-release + triple match + TOFU pin,
+          the permissions-consent gate at add.
+Phase 5 — Docs (PLG-25,26): part_vi rewrite + one worked example per shape.
 ```
 
 Phase 1 is pure deletion (safe, big diff, no new concepts). Phases 2–4 are

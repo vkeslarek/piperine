@@ -27,8 +27,12 @@ distribution via GitHub releases + TOFU.
       hooks, no binary), **device** (a compiled binary referenced by
       `@device`).
 - [ ] **Declaration + injection are coupled** — no imperative `Registrar`.
-      A device is a user `mod` + `@device`; a script/hook is a decorator
-      that declares AND binds in one place.
+      A device's `@device pub mod` lives in the **plugin's own PHDL** and
+      importing injects it (the user never writes `@device`); a script/hook
+      is a decorator that declares AND binds in one place.
+- [ ] **`add` is the unified install** — `piperine add <git>` (Go-style),
+      with two explicit trust gates: permissions consent + source/binary
+      TOFU. A plugin is just a dependency that declares contributions.
 - [ ] **No plugin `extern`, no plugin attribute schemas** — the
       `extern.phdl` stub mechanism is deleted; `@device`/`@port` (stdlib)
       are the only plugin-facing schemas.
@@ -74,13 +78,15 @@ distribution via GitHub releases + TOFU.
 | Unsupported triple | loud error | D6 | y (user) |
 | `verify` hash | optional; TOFU is the floor | D7 | y (user) |
 | Hook catalog | frozen at five | D8 | y (user) |
-| **Version/ABI compat (Q6)** | `[plugin] piperine = ">=X.Y"` semver-compat field, checked at load; the device binary additionally exports `piperine_plugin_abi_version` (kept), checked against the host's `ABI_VERSION` | The manifest field guards the *source/script* surface (Python/PHDL) where there's no compiled ABI symbol; the exported symbol guards the *binary* surface. Two surfaces, two guards. | n (Design) |
+| Plugin ≡ contributing dependency | `piperine add <git>` (Go-style: bare `owner/repo`→GitHub, any full git URL); a dependency whose `[plugin]` declares contributions loads them on import; a normal project can declare the same | D9 (user) | y (user) |
+| Where `@device` lives | in the **plugin's own PHDL** (`@device pub mod …`); importing injects every declared device; the user never writes `@device` | D10 (user) | y (user) |
+| Trust gates | TWO explicit consents at `add`: (1) permissions accept/deny, (2) source/binary TOFU hash | D11 (user) | y (user) |
+| **Version/ABI compat (Q6)** | **deferred to a roadmap follow-up (D12).** v2 keeps ONLY the device binary's `piperine_plugin_abi_version` check; no manifest `piperine=">=X"` field | Semantics are easy to add later; not blocking v2 | y (user — deferred) |
 | Release-asset naming | `lib<pkg>-<target-triple>.<ext>` (`.so`/`.dll`/`.dylib`), matched case-sensitively against the release's assets | Predictable, script-generatable in CI; the resolver fails loud if no asset matches the host triple | n (Design) |
-| Manifest shape inference | shape = which keys present (`python`→scripted, `device`→device, neither→pure-PHDL); no `abi` field | D1 + MD-21 (WASM/process gone) | n (Design) |
+| Manifest shape inference | shape = which keys present (`python`→scripted, `device`→device, neither→pure code); no `abi` field | D1 + MD-21 (WASM/process gone) | n (Design) |
 
-**Open questions:** the three `n (Design)` rows (compat-field shape, asset
-naming, shape inference) are HOW-decisions for Design; they do not change
-WHAT.
+**Open questions:** the two `n (Design)` rows (asset naming, shape
+inference) are HOW-decisions for Design; they do not change WHAT.
 
 ---
 
@@ -123,16 +129,18 @@ and the extern ban depend on it.
 1. WHEN the plugin API is used THEN there SHALL be no public
    `Registrar::attr_schema` / `Registrar::script` / `Registrar::device`
    imperative-registration surface.
-2. WHEN a device is contributed THEN its ports/params SHALL be declared by a
-   user `mod` and coupled via `@device(plugin, type)` — the binary supplies
-   only the `type`→constructor factory, no schema.
+2. WHEN a device is contributed THEN its `@device`-annotated `mod` SHALL be
+   declared **in the plugin's own PHDL** (D10); importing the plugin SHALL
+   inject every such device, bound to the binary's `type`→constructor table.
+   The user's design references it via `use` and NEVER writes `@device`.
 3. WHEN a script or hook is contributed THEN it SHALL be declared AND bound
    by a single decorator (`@pip.script("name")` / `@pip.hook.<phase>`), with
    no separate registration or stub.
 
 **Independent Test:** grep proves `Registrar::{attr_schema,script,device}`
-are gone; a device plugin fixture works through `@device` + a
-`#[pip::device]`/`@pip.device` factory only.
+are gone; a device plugin fixture declares `@device pub mod` in its own
+`.phdl`, and a user design `use`s it and instantiates it with no `@device`
+at the user site.
 
 ---
 
@@ -231,25 +239,34 @@ it; a wrong-triple release errors; a `verify` mismatch hard-fails.
 
 ---
 
-### P2: Manifest shape inference + version compat
+### P2: `add` as the unified install + shape inference + two trust gates
 
-**User Story:** As a plugin author, I want the manifest to infer my plugin's
-shape from what I declare (no `abi` field) and to state which Piperine
-version I target.
+**User Story:** As a plugin user, I want `piperine add <git>` (Go-style: bare
+`owner/repo` → GitHub, any full git URL) to add a dependency; if it declares
+contributions it's a plugin, and adding it must require my explicit consent
+to its permissions AND trust its source.
 
 **Acceptance Criteria:**
-1. WHEN `[plugin]` has a `python` key THEN the plugin is scripted; a `device`
-   key THEN it is a device; neither THEN it is pure-PHDL — with no `abi`
-   field anywhere.
-2. WHEN `[plugin] piperine = ">=X.Y"` is set and the host version does not
-   satisfy it THEN loading SHALL fail with a version-mismatch error.
-3. WHEN a device binary's exported `piperine_plugin_abi_version` differs from
+1. WHEN `piperine add acme/bjt-models` runs THEN it SHALL resolve to
+   `github.com/acme/bjt-models`; a full git URL (`https://…`, `git@…`) SHALL
+   be used verbatim (D9).
+2. WHEN `[plugin]` has a `python` key THEN the dependency is scripted; a
+   `device` key THEN it is a device; neither THEN it is pure code — with no
+   `abi` field anywhere (D1).
+3. WHEN a dependency declaring `[plugin.permissions]` is added THEN `add`
+   SHALL print those permissions and require an explicit accept/deny — a
+   deny SHALL abort the install; there is no silent-accept default (D11).
+4. WHEN the source (or fetched device binary) is added THEN its content hash
+   SHALL be TOFU-pinned in `Piperine.lock` — independent of the permissions
+   consent (D11).
+5. WHEN a device binary's exported `piperine_plugin_abi_version` differs from
    the host `ABI_VERSION` THEN loading that binary SHALL fail loud (kept
-   check).
+   check — the ONLY version guard in v2; the manifest `piperine` compat
+   field is a deferred follow-up, D12).
 
-**Independent Test:** manifests exercising each shape load with the inferred
-shape; an incompatible `piperine = ">=99"` errors; an ABI-mismatched binary
-errors.
+**Independent Test:** `add owner/repo` resolves to GitHub, a full URL is
+verbatim; manifests exercising each shape infer correctly; a permissions
+deny aborts; an ABI-mismatched binary errors.
 
 ---
 
@@ -311,12 +328,15 @@ afternoon.
 | PLG-19 | P2 unsupported triple loud error | — | Pending |
 | PLG-20 | P2 reproducible from lockfile | — | Pending |
 | PLG-21 | P2 shape inference (no abi field) | — | Pending |
-| PLG-22 | P2 piperine version compat | — | Pending |
-| PLG-23 | P2 device ABI-version check kept | — | Pending |
-| PLG-24 | P3 docs per shape + parity | — | Pending |
-| PLG-25 | P3 part_vi rewrite to v2 | — | Pending |
+| PLG-22 | P2 git-source resolution (Go-style) | — | Pending |
+| PLG-23 | P2 permissions explicit consent at add | — | Pending |
+| PLG-24 | P2 device ABI-version check kept | — | Pending |
+| PLG-25 | P3 docs per shape + parity | — | Pending |
+| PLG-26 | P3 part_vi rewrite to v2 | — | Pending |
 
-25 requirements.
+26 requirements. (PLG-05 now reads "@device declared in the plugin's PHDL,
+injected on import"; the old "manifest piperine version compat" is deferred
+to a roadmap follow-up per D12 — not a requirement here.)
 
 ---
 
