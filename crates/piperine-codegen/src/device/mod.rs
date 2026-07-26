@@ -716,6 +716,13 @@ impl Element for PiperineDevice {
             if kernel.has_disto3() {
                 caps |= ElementCapabilities::HAS_DISTO3;
             }
+            // P6/CLN-12: opt into the DC stamp bypass only when this device's
+            // stamps are a pure function of its terminal voltages. A digital
+            // half disqualifies it — its stamps follow the digital snapshot,
+            // not the solution vector.
+            if self.digital.is_none() && kernel.dc_stamps_depend_only_on_terminal_voltages() {
+                caps |= ElementCapabilities::BYPASS_OK;
+            }
         }
         caps
     }

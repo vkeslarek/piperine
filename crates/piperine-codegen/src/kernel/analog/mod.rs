@@ -512,6 +512,22 @@ impl AnalogKernel {
     }
 
     /// Size of the runtime-state value array instances must provide.
+    /// Whether this kernel's **DC** stamps are a pure function of the terminal
+    /// voltages — the `ElementCapabilities::BYPASS_OK` contract.
+    ///
+    /// Everything that makes a stamp depend on something else disqualifies it:
+    /// a history-dependent operator slot (`delay`/`slew`/`transition`/`idt`),
+    /// a runtime event (whose action mutates state), a `$limit` limiter (whose
+    /// `vold` slot advances per evaluation), or a diagnostic (whose side effect
+    /// must not be skipped). A `ddt` contribution does **not** disqualify: charge
+    /// is not part of the DC stamp.
+    pub fn dc_stamps_depend_only_on_terminal_voltages(&self) -> bool {
+        self.runtime_states.is_empty()
+            && self.events.is_empty()
+            && self.limits.is_none()
+            && self.diagnostics.is_empty()
+    }
+
     pub fn num_state_slots(&self) -> usize {
         self.core.num_state_slots
     }

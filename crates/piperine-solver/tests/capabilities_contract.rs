@@ -42,7 +42,11 @@ fn documented_consumer(flag_name: &str) -> Option<&'static str> {
             "descriptor: analog load reads the digital snapshot (D2A ordering)"
         }
         // ── Reserved bits owned by a named follow-up feature ─────────────────
-        "BYPASS_OK" => "reserved: solver-performance owns stamp bypass",
+        "BYPASS_OK" => {
+            "consumed: the DC stamp-bypass cache is gated on every element declaring it \
+             (analyses/dc.rs `bypass_allowed`); codegen declares it only for devices whose \
+             DC stamps are a pure function of terminal voltages (P6/CLN-12)"
+        }
         "SUPPORTS_ROLLBACK" => {
             "consumed: transient reject path + DC homotopy retry call \
              Element::checkpoint_state before each attempt and restore_state \

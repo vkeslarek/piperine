@@ -99,6 +99,14 @@ pub struct DcSystem<'a> {
     stamp_cache: Vec<Stamp<AnalogReference, f64>>,
     last_solution: Vec<f64>,
     cache_valid: bool,
+    /// Whether **every** element in the circuit declares
+    /// [`ElementCapabilities::BYPASS_OK`] — the bypass's opt-in gate (P6/CLN-12).
+    /// One element whose stamps are not a pure function of its terminal
+    /// voltages disables the cache for the whole circuit: a stale stamp can
+    /// satisfy the convergence test and lock in a wrong operating point.
+    /// Computed once at construction; the element set cannot change during a
+    /// solve.
+    bypass_allowed: bool,
     pub bypass_hits: usize,
     pub bypass_misses: usize,
 }
@@ -114,13 +122,15 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
     ) -> crate::result::Result<Vec<Stamp<AnalogReference, f64>>> {
         // Device bypass: if the solution barely moved since the last
         // evaluation, reuse cached stamps instead of re-evaluating every
-        // device model (audit P4 — BYPASS_OK declared but never consulted).
-        // Suppressed while any device limiter is clamping — a bypassed
-        // `load_dc` would freeze the limiter's internal state and stall the
-        // convergence gate. The cache is dropped by `invalidate_bypass`
-        // whenever the stamps depend on anything besides the solution vector
-        // (homotopy scale changes, digital settle).
-        if self.cache_valid && !self.any_limiting_report() {
+        // device model. Gated on `bypass_allowed` — every element must have
+        // declared `BYPASS_OK`, the opt-in the flag has always documented
+        // (P6/CLN-12; before that the cache applied to devices that never
+        // opted in). Additionally suppressed while any device limiter is
+        // clamping — a bypassed `load_dc` would freeze the limiter's internal
+        // state and stall the convergence gate. The cache is dropped by
+        // `invalidate_bypass` whenever the stamps depend on anything besides
+        // the solution vector (homotopy scale changes, digital settle).
+        if self.bypass_allowed && self.cache_valid && !self.any_limiting_report() {
             if let Some(curr) = state.latest() {
                 // Per-variable threshold (ngspice bypass semantics):
                 // |Δv_i| < vntol + reltol·max(|v_i|, |v_i_old|) for every
@@ -254,6 +264,13 @@ impl<'a> DcSolver<'a> {
         let netlist = circuit.netlist();
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
 
+        // Opt-in gate: read once, before the borrow moves into the system.
+        let bypass_allowed = !circuit.devices.is_empty()
+            && circuit
+                .devices
+                .iter()
+                .all(|d| d.capabilities().contains(ElementCapabilities::BYPASS_OK));
+
         let mut system = DcSystem {
             circuit,
             context,
@@ -263,6 +280,7 @@ impl<'a> DcSolver<'a> {
             stamp_cache: Vec::new(),
             last_solution: Vec::new(),
             cache_valid: false,
+            bypass_allowed,
             bypass_hits: 0,
             bypass_misses: 0,
         };
