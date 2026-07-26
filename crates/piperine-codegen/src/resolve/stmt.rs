@@ -1,5 +1,5 @@
 //! Statement-level types used by the analog event/flattening machinery.
-//! These now carry POM `Expr` (not `IrExpr`) — the resolved-id form is gone.
+//! They carry POM `Expr` directly.
 
 use piperine_lang::parse::ast::Expr as PomExpr;
 use piperine_lang::parse::ast::Stmt as PomStmt;

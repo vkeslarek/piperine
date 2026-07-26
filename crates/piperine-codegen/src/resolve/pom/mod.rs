@@ -1,7 +1,7 @@
 //! Lower a POM `Design` (PPR/PHDL) straight into each module's resolved
-//! [`LoweredBody`] — no separate IR crate, no `IrModule`/`IrProgram`
-//! structural twin. Instance wiring (connections, param overrides) is left
-//! to `device::circuit`, which reads the POM directly.
+//! [`LoweredBody`]. Each body covers one module's own behavior; instance
+//! wiring (connections, param overrides) is left to `device::circuit`, which
+//! reads the POM directly.
 
 use std::collections::{HashMap, HashSet};
 
@@ -35,8 +35,7 @@ pub struct LoweredBody {
 }
 
 impl LoweredBody {
-    /// An empty resolved body — used by hand-built test fixtures (the old
-    /// `IrModule::new`).
+    /// An empty resolved body — used by hand-built test fixtures.
     pub fn new(name: impl Into<String>) -> Self {
         Self { name: name.into(), ..Default::default() }
     }

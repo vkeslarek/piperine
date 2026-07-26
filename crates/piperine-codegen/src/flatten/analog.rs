@@ -1,5 +1,5 @@
 //! Analog body flattening: from the POM `Stmt` tree to pure per-branch
-//! expressions. Operates entirely on POM `Expr`/`Stmt` — no `IrExpr`.
+//! expressions. Operates entirely on POM `Expr`/`Stmt`.
 //!
 //! - Variable assignments resolved symbolically (`Ident(name)` → scope value),
 //! - `If`/`Match` path conditions folded into contribution expressions,

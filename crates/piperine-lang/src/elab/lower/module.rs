@@ -208,9 +208,10 @@ impl Elaborator {
                 // GAPS §I.14 — a bundle-typed param (`param model : DioModel
                 // = DioModel {};`) is flattened here into one scalar param
                 // per bundle field, named `{name}_{field}`. This matches
-                // the lowering side, which already turns `model.rsh` field
-                // access into `IrExpr::Param("model_rsh")` — see
-                // `lowering/expr.rs`'s `Expr::Field` arm.
+                // codegen's resolve side, which already turns a `model.rsh`
+                // field access into the param name `model_rsh` — see the
+                // `Expr::Field` arm in
+                // `piperine-codegen/src/resolve/pom/expr.rs`.
                 if ty.dimensions.is_empty() && self.syms.bundles.contains_key(&ty.name)
                     && !self.is_net_capable_bundle(&ty.name)
                 {
