@@ -189,69 +189,69 @@ crates/piperine-lang-server/src/text_pos.rs	column_past_end_of_line_clamps	keep	
 crates/piperine-lang-server/src/text_pos.rs	line_past_eof_clamps	keep	inline	hint:unit
 crates/piperine-lang-server/src/text_pos.rs	non_ascii_columns_are_utf16	keep	inline	hint:unit
 crates/piperine-lang-server/src/text_pos.rs	word_at_handles_cursor_positions	keep	inline	hint:unit
+crates/piperine-lang-server/tests/completion_and_symbols.rs	attribute_instance_appears_as_outline_entry_on_its_declaration	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/completion_and_symbols.rs	completion_off_attr_position_does_not_offer_schema_names	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/completion_and_symbols.rs	outline_entry_without_attribute_has_no_attribute_children	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/completion_and_symbols.rs	schema_completion_after_at_sign_offers_in_scope_schema_names	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/completion_and_symbols.rs	schema_completion_filters_by_typed_prefix	regroup	tests	split out of integration_test.rs (P6 T14)
 crates/piperine-lang-server/tests/completion_suppression.rs	completion_mid_behavior_body_still_offers_for	keep	tests	hint:integration
 crates/piperine-lang-server/tests/completion_suppression.rs	completion_right_after_module_close_brace_never_offers_for_and_offers_mod	keep	tests	hint:integration
 crates/piperine-lang-server/tests/completion_suppression.rs	completion_right_after_module_close_brace_suppresses_all_behavior_only_keywords_but_keeps_if_and_var	keep	tests	hint:integration
+crates/piperine-lang-server/tests/diagnostics.rs	attr_arg_bad_type_diagnostic_points_at_the_specific_argument	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/diagnostics.rs	attr_arg_unknown_field_diagnostic_points_at_the_specific_argument	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/diagnostics.rs	attr_missing_required_field_diagnostic_points_at_the_attribute	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/diagnostics.rs	cross_file_diagnostics_fan_out_to_the_erroring_file	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/diagnostics.rs	diagnostic_carries_the_structured_elab_error_code	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/diagnostics.rs	diagnostic_carries_the_structured_parse_error_code	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/diagnostics.rs	standalone_document_diagnostics_still_publish	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/document_highlight.rs	document_highlight_excludes_other_scope_and_comment_matches	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/goto_definition.rs	cross_file_goto_opens_the_declaring_file	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/goto_definition.rs	extern_attribute_use_site_resolves_to_its_decl_span	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/goto_definition.rs	extern_fn_use_site_resolves_to_its_decl_span	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/goto_definition.rs	extern_impl_method_use_site_resolves_to_its_own_decl_span	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/goto_definition.rs	extern_operator_use_site_resolves_to_its_decl_span	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/goto_definition.rs	extern_type_use_site_resolves_to_its_decl_span	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/goto_definition.rs	goto_definition_on_attr_schema_use_opens_its_extern_attribute_decl	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/goto_definition.rs	goto_definition_on_ddt_lands_on_operators_header	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/goto_definition.rs	goto_definition_on_same_file_extern_decl_still_works	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/goto_definition.rs	goto_definition_on_shadowed_name_lands_on_the_correct_declaration	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/goto_definition.rs	non_identifier_position_returns_no_location	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/goto_definition.rs	undeclared_name_use_site_still_returns_no_location	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/hover.rs	hover_on_attr_schema_use_lists_its_fields	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/hover.rs	hover_on_documented_discipline_renders_doc_as_markdown	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/hover.rs	hover_on_documented_extern_operator_renders_doc_as_markdown	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/hover.rs	hover_on_documented_module_renders_doc_as_markdown	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/hover.rs	hover_on_module_with_same_named_behavior_resolves_the_module_not_the_behavior	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/hover.rs	hover_on_undocumented_extern_operator_is_unchanged	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/hover.rs	hover_on_undocumented_module_is_unchanged	regroup	tests	split out of integration_test.rs (P6 T14)
 crates/piperine-lang-server/tests/import_goto.rs	goto_on_use_path_and_imported_module	keep	tests	hint:integration
 crates/piperine-lang-server/tests/instance_highlight.rs	clicking_instance_type_name_resolves_to_the_module	keep	tests	hint:integration
 crates/piperine-lang-server/tests/instance_highlight.rs	clicking_unlabeled_instance_type_name_resolves_to_the_module	keep	tests	hint:integration
 crates/piperine-lang-server/tests/instance_highlight.rs	highlighting_labeled_instance_label_targets_only_the_label_token	keep	tests	hint:integration
 crates/piperine-lang-server/tests/instance_highlight.rs	resolved_decl_span_has_a_matching_binding_in_the_resolution_index	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	attr_arg_bad_type_diagnostic_points_at_the_specific_argument	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	attr_arg_unknown_field_diagnostic_points_at_the_specific_argument	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	attr_missing_required_field_diagnostic_points_at_the_attribute	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	attribute_instance_appears_as_outline_entry_on_its_declaration	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	completion_off_attr_position_does_not_offer_schema_names	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	cross_file_diagnostics_fan_out_to_the_erroring_file	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	cross_file_goto_opens_the_declaring_file	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	cross_file_rename_edits_every_referencing_file	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	diagnostic_carries_the_structured_elab_error_code	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	diagnostic_carries_the_structured_parse_error_code	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	document_highlight_excludes_other_scope_and_comment_matches	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	extern_attribute_use_site_resolves_to_its_decl_span	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	extern_fn_use_site_resolves_to_its_decl_span	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	extern_impl_method_use_site_resolves_to_its_own_decl_span	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	extern_operator_use_site_resolves_to_its_decl_span	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	extern_type_use_site_resolves_to_its_decl_span	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	goto_definition_on_attr_schema_use_opens_its_extern_attribute_decl	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	goto_definition_on_ddt_lands_on_operators_header	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	goto_definition_on_same_file_extern_decl_still_works	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	goto_definition_on_shadowed_name_lands_on_the_correct_declaration	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	hover_on_attr_schema_use_lists_its_fields	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	hover_on_documented_discipline_renders_doc_as_markdown	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	hover_on_documented_extern_operator_renders_doc_as_markdown	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	hover_on_documented_module_renders_doc_as_markdown	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	hover_on_module_with_same_named_behavior_resolves_the_module_not_the_behavior	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	hover_on_undocumented_extern_operator_is_unchanged	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	hover_on_undocumented_module_is_unchanged	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	non_identifier_position_returns_no_location	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	occurrences_at_excludes_other_scope_and_comment_matches	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	occurrences_at_on_non_symbol_is_empty	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	occurrences_at_returns_exactly_the_indexed_uses	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	outline_entry_without_attribute_has_no_attribute_children	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	prepare_rename_declines_on_literal	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	project_unit_builds_one_index_spanning_all_project_files	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	references_excludes_comment_and_other_scope_matches	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	rename_edits_only_the_binding_uses_other_scope_untouched	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	resolve_at_shadowed_name_resolves_to_innermost_not_first_declared	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	resolve_at_uses_cursor_context_not_global_first_match	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	schema_completion_after_at_sign_offers_in_scope_schema_names	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	schema_completion_filters_by_typed_prefix	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	standalone_document_diagnostics_still_publish	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	standalone_document_has_no_project_unit	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	test_e2e_lsp_server_memory_connection	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	test_extract_error_range_lexer_error	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	test_extract_error_range_unknown_position	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	test_server_capabilities_declared	keep	tests	hint:integration
-crates/piperine-lang-server/tests/integration_test.rs	undeclared_name_use_site_still_returns_no_location	keep	tests	hint:integration
-crates/piperine-lang-server/tests/protocol.rs	harness_drives_completion_round_trip	keep	tests	hint:integration
-crates/piperine-lang-server/tests/protocol.rs	harness_drives_goto_definition_round_trip	keep	tests	hint:integration
-crates/piperine-lang-server/tests/protocol.rs	harness_drives_hover_round_trip	keep	tests	hint:integration
-crates/piperine-lang-server/tests/protocol.rs	harness_drives_references_round_trip	keep	tests	hint:integration
-crates/piperine-lang-server/tests/protocol.rs	harness_drives_rename_round_trip	keep	tests	hint:integration
-crates/piperine-lang-server/tests/protocol.rs	protocol_cross_file_fixture_goto_and_rename_both_work	keep	tests	hint:integration
-crates/piperine-lang-server/tests/protocol.rs	protocol_doc_comment_fixture_renders_on_hover	keep	tests	hint:integration
-crates/piperine-lang-server/tests/protocol.rs	protocol_shadowing_fixture_resolves_to_the_innermost_binding	keep	tests	hint:integration
+crates/piperine-lang-server/tests/project_index.rs	project_unit_builds_one_index_spanning_all_project_files	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/project_index.rs	standalone_document_has_no_project_unit	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/protocol.rs	harness_drives_completion_round_trip	regroup	tests	absorbed the server-surface tests from integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/protocol.rs	harness_drives_goto_definition_round_trip	regroup	tests	absorbed the server-surface tests from integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/protocol.rs	harness_drives_hover_round_trip	regroup	tests	absorbed the server-surface tests from integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/protocol.rs	harness_drives_references_round_trip	regroup	tests	absorbed the server-surface tests from integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/protocol.rs	harness_drives_rename_round_trip	regroup	tests	absorbed the server-surface tests from integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/protocol.rs	protocol_cross_file_fixture_goto_and_rename_both_work	regroup	tests	absorbed the server-surface tests from integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/protocol.rs	protocol_doc_comment_fixture_renders_on_hover	regroup	tests	absorbed the server-surface tests from integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/protocol.rs	protocol_shadowing_fixture_resolves_to_the_innermost_binding	regroup	tests	absorbed the server-surface tests from integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/protocol.rs	test_e2e_lsp_server_memory_connection	regroup	tests	absorbed the server-surface tests from integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/protocol.rs	test_extract_error_range_lexer_error	regroup	tests	absorbed the server-surface tests from integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/protocol.rs	test_extract_error_range_unknown_position	regroup	tests	absorbed the server-surface tests from integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/protocol.rs	test_server_capabilities_declared	regroup	tests	absorbed the server-surface tests from integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/references_and_rename.rs	cross_file_rename_edits_every_referencing_file	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/references_and_rename.rs	prepare_rename_declines_on_literal	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/references_and_rename.rs	references_excludes_comment_and_other_scope_matches	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/references_and_rename.rs	rename_edits_only_the_binding_uses_other_scope_untouched	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/symbol_resolution.rs	occurrences_at_excludes_other_scope_and_comment_matches	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/symbol_resolution.rs	occurrences_at_on_non_symbol_is_empty	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/symbol_resolution.rs	occurrences_at_returns_exactly_the_indexed_uses	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/symbol_resolution.rs	resolve_at_shadowed_name_resolves_to_innermost_not_first_declared	regroup	tests	split out of integration_test.rs (P6 T14)
+crates/piperine-lang-server/tests/symbol_resolution.rs	resolve_at_uses_cursor_context_not_global_first_match	regroup	tests	split out of integration_test.rs (P6 T14)
 crates/piperine-lang/src/elab/lower/flatten.rs	flatten_detects_self_cycle	keep	inline	hint:unit
 crates/piperine-lang/src/elab/lower/flatten.rs	flatten_detects_transitive_cycle	keep	inline	hint:unit
 crates/piperine-lang/src/elab/lower/flatten.rs	flatten_is_idempotent	keep	inline	hint:unit

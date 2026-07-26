@@ -154,6 +154,30 @@ verified by the per-crate `-- --list` diff and the `//!`-header guard (T6).
 
 *(appended by T8–T16)*
 
+### T14 — `piperine-lang-server`
+
+The 1880-line `integration_test.rs` (47 items: 43 tests + 4 bespoke helpers)
+was named after a *level*, not a functionality — the clearest MD-28 rule-2
+violation in the tree. Split into feature suites, with the shared harness
+extracted:
+
+| New target | Tests | Covers |
+|---|---|---|
+| `tests/common/mod.rs` | — | the per-feature `lsp_*` connection helpers, `analyzed`, position arithmetic, `ScratchProject` |
+| `goto_definition.rs` | 12 | `extern` use sites → declaration spans, shadowed names, stdlib header targets, cross-file |
+| `hover.rs` | 7 | documented/undocumented modules, disciplines, `extern` operators, attr-schema uses |
+| `diagnostics.rs` | 7 | structured parse/elab codes, per-file fan-out, standalone docs, attribute-argument diagnostics |
+| `symbol_resolution.rs` | 5 | `resolve_at` cursor context, `occurrences_at` indexing |
+| `completion_and_symbols.rs` | 5 | schema completion after `@`, its suppression, outline entries |
+| `references_and_rename.rs` | 4 | find-references and rename over the same use index, incl. cross-file |
+| `project_index.rs` | 2 | one index spanning project files; the standalone case |
+| `document_highlight.rs` | 1 | same-scope occurrences, comments excluded |
+| `protocol.rs` (existing) | +4 | absorbed the server-surface cases (capabilities, error-range helper, one bespoke e2e) rather than leaving a second protocol suite |
+
+`cargo test -p piperine-lang-server`: **69 tests before, 69 after** — the split
+moved every test and deleted none. `--check piperine-lang-server`: 0 violations,
+zero warnings.
+
 ### T13 — `piperine-lang`
 
 | Change | Detail |
