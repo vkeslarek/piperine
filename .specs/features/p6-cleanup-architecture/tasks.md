@@ -14,7 +14,7 @@ without it.**
 
 **Design**: `.specs/features/p6-cleanup-architecture/design.md`
 **Spec**: `.specs/features/p6-cleanup-architecture/spec.md`
-**Status**: In Progress — Phases 1–3 DONE (T1–T19), Phase 4 next
+**Status**: In Progress — Phases 1–4 DONE (T1–T23), Phase 5 next
 
 ## Progress log
 
@@ -60,6 +60,40 @@ where the tree has `analyses/`. `solver-simplification` is genuinely delivered
   Each carries an in-file reason and is registered exhaustively in the guard, so a
   *new* exemption and a *stale* one both fail. The 60-line ceiling was not
   weakened. Phase 9 owns whether these get split.
+
+| 4 | 4 | T20–T23 ✅ | `e2cf67d`, `4689dd0`, `daf1319`, `62e240a` | 1164 passed / 0 failed / 4 ignored (−2 superseded duplicates, +1 guard). Doc warnings 46. Guard MD-28 proven able to fail. Root targets 37 → 34. |
+
+**Phase-4 findings and accepted deviations:**
+
+- **The worker followed `spec.md` over the orchestrator's briefing, and was right
+  to.** The briefing said a target driving codegen should stay at the root; AC7,
+  T20/T21 and `CLEANUP_PLAN.md` CL-03 all set the criterion as "never touches the
+  root `piperine` crate" and name `sens.rs`/`pss.rs`/`transient_reentry.rs`
+  explicitly. All three import codegen+lang+solver and none imports
+  `piperine`/`piperine_api`, so all three moved.
+- **Consequence, accepted:** `piperine-solver` now carries `piperine-lang` and
+  `piperine-codegen` as **dev-dependencies** — a dev-only cycle (codegen depends on
+  solver). Cargo resolves dev edges separately from the normal graph, the crate's
+  own `[dependencies]` are untouched, and the reason is recorded in
+  `crates/piperine-solver/Cargo.toml`. The alternative was leaving analysis-level
+  suites at the root in violation of MD-28.
+- **Two tests deleted, verified as superseded (orchestrator checked the diff).**
+  `pss.rs::non_positive_period_is_loud` and `negative_tstab_is_loud` are covered by
+  `crates/piperine-solver/tests/failure_rules.rs:183` and `:196`, which assert the
+  same failures *and* the typed `SolverDomain::Pss` — strictly stronger. `pss.rs`
+  carries a comment pointing at both replacements. This is the one deletion in the
+  feature so far; no assertion was weakened anywhere.
+- **T22 exceeded its declared `Where`,** justifiably: a 5th target
+  (`crates/piperine-python/tests/analyses.rs`) holds the six analysis/staging/
+  op-readout/stats/config/instance-view tests that the declared
+  `{design,waveform,ac,noise}.rs` set had no home for. Four `pub(crate)`→`pub`
+  widenings were forced by moving inline tests out of the crate (`_piperine`,
+  `mod results`, `_OpResult::inner`, `_Waveform::inner`); the crate does build an
+  `rlib`, so crate-type was never the blocker. All 13 moved tests still run.
+  `src/lib.rs` is now 111 lines.
+- **T23's guard enforces both readings** of the rule (crate-scoping and naming), so
+  the briefing/`tasks.md` divergence is moot. Its exemption registry is
+  deliberately empty and exhaustiveness fires if an entry appears without update.
 
 **Deferred (pre-existing, out of scope, surfaced by T13):** `mkdocs build` fails on
 a missing `material` theme; `docs/spec/appendix_c_host_surface.md` and
