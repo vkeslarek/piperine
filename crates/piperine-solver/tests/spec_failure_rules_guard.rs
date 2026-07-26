@@ -79,18 +79,39 @@ fn named_tests(enforcement: &str) -> Vec<(String, String)> {
     found
 }
 
+/// Whether an enforcement cell accounts for its rule: it names a test (or the
+/// suite that covers it) or states that nothing checks the rule yet.
+fn is_accounted_for(enforcement: &str) -> bool {
+    enforcement.contains("not yet enforced")
+        || !named_tests(enforcement).is_empty()
+        // A row may point at a whole suite (`root: sens.rs`) when the rule is
+        // covered by several of its cases.
+        || enforcement.contains(".rs")
+}
+
+/// The predicate is tested against fixtures, not only against a table that
+/// currently satisfies it: a guard whose input is already clean passes even
+/// when its check is broken (found by P6's discrimination sensor — mutant M4
+/// survived without this).
+#[test]
+fn the_accounting_predicate_recognises_an_unaccounted_row() {
+    for accounted in [
+        "`failure_rules.rs::section_15_a_non_finite_stamp_is_a_convergence_failure`",
+        "**not yet enforced** — no boundary snapshot is compared per analysis",
+        "root: `sens.rs`",
+    ] {
+        assert!(is_accounted_for(accounted), "must count as accounted: {accounted:?}");
+    }
+    for unaccounted in ["", "—", "TODO", "analysis error"] {
+        assert!(!is_accounted_for(unaccounted), "must count as unaccounted: {unaccounted:?}");
+    }
+}
+
 #[test]
 fn every_failure_rule_is_enforced_or_marked() {
     let unaccounted: Vec<String> = rules()
         .iter()
-        .filter(|r| {
-            let marked = r.enforcement.contains("not yet enforced");
-            let bound = !named_tests(&r.enforcement).is_empty()
-                // A row may point at a whole suite (`root: sens.rs`) when the
-                // rule is covered by several of its cases.
-                || r.enforcement.contains(".rs");
-            !marked && !bound
-        })
+        .filter(|r| !is_accounted_for(&r.enforcement))
         .map(|r| format!("{} — {}", r.section, r.rule))
         .collect();
 

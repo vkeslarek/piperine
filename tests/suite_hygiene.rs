@@ -76,23 +76,60 @@ fn integration_targets() -> Vec<(String, String)> {
 
 // ─── 1. No switched-off test code ─────────────────────────────────────────────
 
-/// A file or module compiled out of existence is worse than a missing test: it
-/// reads as coverage. `#![cfg(any())]`, `#[cfg(FALSE)]`, and a commented-out
-/// `#[test]` are all the same lie.
+/// Whether one source line switches test code off. A file or module compiled
+/// out of existence is worse than a missing test: it reads as coverage.
+/// `#![cfg(any())]`, `#[cfg(FALSE)]`, and a commented-out `#[test]` are all the
+/// same lie.
+fn is_disabled_marker(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.starts_with("#![cfg(any())]")
+        || trimmed.starts_with("#[cfg(any())]")
+        || trimmed.contains("cfg(FALSE)")
+        || trimmed.contains("cfg(false)")
+        || trimmed.starts_with("// #[test]")
+        || trimmed.starts_with("//#[test]")
+}
+
+/// Whether one source line ignores a test.
+fn is_ignore_attribute(line: &str) -> bool {
+    line.trim_start().starts_with("#[ignore")
+}
+
+/// The detectors are tested against fixtures, not only against a clean tree:
+/// a guard whose tree has no violations passes even when its detector is
+/// broken, so the detector needs its own positive cases (found by P6's
+/// discrimination sensor — mutants M3/M4 survived without this).
+#[test]
+fn the_detectors_recognise_what_they_forbid() {
+    for offender in [
+        "#![cfg(any())]",
+        "    #[cfg(any())]",
+        "#[cfg(FALSE)]",
+        "#[cfg(false)]",
+        "// #[test]",
+        "//#[test]",
+    ] {
+        assert!(is_disabled_marker(offender), "must be flagged as disabled code: {offender:?}");
+    }
+    for innocent in ["#[test]", "#[cfg(test)]", "let x = 1; // #[test] in a sentence", ""] {
+        assert!(!is_disabled_marker(innocent), "must not be flagged: {innocent:?}");
+    }
+
+    for offender in ["#[ignore]", "  #[ignore = \"flaky\"]"] {
+        assert!(is_ignore_attribute(offender), "must be flagged as ignored: {offender:?}");
+    }
+    for innocent in ["#[test]", "/// #[ignore] in a doc comment", "let ignore = 1;"] {
+        assert!(!is_ignore_attribute(innocent), "must not be flagged: {innocent:?}");
+    }
+}
+
 #[test]
 fn no_disabled_test_code() {
     let mut offences = Vec::new();
     for (path, text) in rust_sources() {
         for (index, line) in text.lines().enumerate() {
-            let trimmed = line.trim();
-            let disabled = trimmed.starts_with("#![cfg(any())]")
-                || trimmed.starts_with("#[cfg(any())]")
-                || trimmed.contains("cfg(FALSE)")
-                || trimmed.contains("cfg(false)")
-                || trimmed.starts_with("// #[test]")
-                || trimmed.starts_with("//#[test]");
-            if disabled {
-                offences.push(format!("{path}:{}: {trimmed}", index + 1));
+            if is_disabled_marker(line) {
+                offences.push(format!("{path}:{}: {}", index + 1, line.trim()));
             }
         }
     }
@@ -112,7 +149,7 @@ fn no_ignored_tests() {
     let mut offences = Vec::new();
     for (path, text) in rust_sources() {
         for (index, line) in text.lines().enumerate() {
-            if line.trim_start().starts_with("#[ignore") {
+            if is_ignore_attribute(line) {
                 offences.push(format!("{path}:{}", index + 1));
             }
         }
