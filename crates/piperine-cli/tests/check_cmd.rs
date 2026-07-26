@@ -1,4 +1,5 @@
-//! Phase 3 — CLI integration tests.
+//! `piperine check` on a real project: the command elaborates the target and
+//! reports the modules it found.
 //!
 //! Exercises the `check` command against small AMS and PHDL fixtures
 //! to confirm the front-door wiring (file detection + parse + summary).

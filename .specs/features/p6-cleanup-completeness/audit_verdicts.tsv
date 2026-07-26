@@ -25,8 +25,7 @@ crates/piperine-cli/tests/build_cmd.rs	elaboration_failure_exits_nonzero_with_er
 crates/piperine-cli/tests/build_cmd.rs	explicit_file_argument_overrides_default_discovery	keep	tests	hint:integration
 crates/piperine-cli/tests/build_cmd.rs	library_only_project_prints_note_and_exits_zero	keep	tests	hint:integration
 crates/piperine-cli/tests/build_cmd.rs	valid_zero_port_design_builds_and_exits_zero	keep	tests	hint:integration
-crates/piperine-cli/tests/cli_check.rs	check_ppr_resistor_extracts_module	regroup	tests	rename to check_cmd.rs — matches add_cmd/build_cmd; header names a plan phase
-crates/piperine-cli/tests/run_examples.rs	test_all_examples_compile	delete	tests	survivor: tests/run_examples.rs::every_example_phdl_elaborates (same layer, same assertion)
+crates/piperine-cli/tests/check_cmd.rs	check_ppr_resistor_extracts_module	regroup	tests	renamed from cli_check.rs (P6 T9): <command>_cmd.rs convention
 crates/piperine-cli/tests/test_tb.rs	discovery_finds_tb_files_and_skips_venv_and_target	keep	tests	hint:integration
 crates/piperine-cli/tests/test_tb.rs	explicit_file_runs_only_it	keep	tests	hint:integration
 crates/piperine-cli/tests/test_tb.rs	failing_testbench_shows_traceback_and_exits_one	keep	tests	hint:integration
@@ -1125,6 +1124,10 @@ tests/spice_smoke.rs	spice_jfet_bias_conducts	keep	tests	hint:integration
 tests/spice_smoke.rs	spice_mos1_diode_bias	keep	tests	hint:integration
 tests/spice_smoke.rs	spice_rc_lowpass_corner	keep	tests	hint:integration
 tests/spice_smoke.rs	spice_vcvs_gain	keep	tests	hint:integration
+tests/suite_hygiene.rs	every_ignored_doc_example_is_registered	keep	tests	hint:unit
+tests/suite_hygiene.rs	every_integration_target_declares_its_scope	keep	tests	hint:unit
+tests/suite_hygiene.rs	no_disabled_test_code	keep	tests	hint:unit
+tests/suite_hygiene.rs	no_ignored_tests	keep	tests	hint:unit
 tests/tline.rs	tline_bad_td_is_loud	keep	tests	hint:integration
 tests/tline.rs	tline_bad_z0_is_loud	keep	tests	hint:integration
 tests/tline.rs	tline_matched_no_reflection	keep	tests	hint:integration

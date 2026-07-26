@@ -154,6 +154,16 @@ verified by the per-crate `-- --list` diff and the `//!`-header guard (T6).
 
 *(appended by T8–T16)*
 
+### T9 — `piperine-cli`
+
+| Change | Detail |
+|---|---|
+| **deleted** `tests/run_examples.rs::test_all_examples_compile` | survivor `tests/run_examples.rs::every_example_phdl_elaborates` (root) — same layer, same assertion; the root copy additionally runs every `examples/*.py` |
+| **renamed** `tests/cli_check.rs` → `tests/check_cmd.rs` | matches the crate's own `<command>_cmd.rs` convention (`add_cmd`, `build_cmd`); its header said "Phase 3 — CLI integration tests", naming a plan phase instead of the functionality |
+
+`cargo test -p piperine-cli`: 23 passed (was 24). `-- --list` diff is exactly
+one line: `- test_all_examples_compile`. `--check piperine-cli`: 0 violations.
+
 ### T8 — `piperine-api` + `piperine-project`: nothing to move
 
 Both crates were already allocated correctly; the migration is a verification,
