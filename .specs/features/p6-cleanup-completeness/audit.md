@@ -210,7 +210,52 @@ here.
 
 ## 8. Capability-flag verdict evidence (CLN-11/12/15)
 
-*(T4)*
+Grep scope for every row below: `crates/**/*.rs` + `tests/**/*.rs` (whole
+workspace, excluding `target/`).
+
+### `SUPPORTS_QUERIES` (`1 << 10`) → **remove** (CLN-11)
+
+| Question | Evidence |
+|---|---|
+| Who declares it? | **Nobody.** The only mentions are its own definition (`core/element.rs:77`) and the registry entry (`tests/capabilities_contract.rs:51`). No device, fixture, or test sets it. |
+| Who reads it? | **Nobody.** No `contains(SUPPORTS_QUERIES)` anywhere. |
+| What does the bit claim? | `core/element.rs:71-77`: "Reserved: a host hint that the model overrides `list_queries`/`query` with typed metadata beyond the `read_opvars` default. No solver path reads this flag today (audit SS-11)." |
+| Why removal, not wiring? | `Introspect::list_queries` (`core/element.rs:382-388`) and `Introspect::query` (`:392-397`) both have working defaults derived from `read_opvars`, and consumers already call them unconditionally (`core/introspect.rs:425`, `piperine-codegen/tests/opvar_bridge.rs:169,244`). A hint bit adds nothing a host cannot ask for directly — there is no behavior to gate. |
+
+### `BYPASS_OK` (`1 << 11`) → **wire** (CLN-12)
+
+| Question | Evidence |
+|---|---|
+| Who declares it? | Only a **test** device: `piperine-solver/tests/live_params.rs:92` (its doc comment at `:12` says it declares the bit "so the DC device-bypass stamp cache applies to it"). No production device — `PiperineDevice::capabilities` never sets it. |
+| Who reads it? | **Nobody.** `analyses/dc.rs:114-145` decides bypass from a *global* per-variable "solution barely moved" test plus a limiter check; its own comment at `:117` admits the situation: "audit P4 — BYPASS_OK declared but never consulted". |
+| What does the bit claim? | `core/element.rs:78-85`: eligible for stamp bypass, "**Opt-in** — a model only sets this when its stamps are a pure function of terminal voltages". |
+| Why wiring, not removal? | The implementation is *broader* than the contract: every device is bypassed, including ones whose stamps are not a pure function of terminal voltages. Removing the bit would bless that; wiring it makes the code match the documented contract. The existing suppression seams (`any_limiting_report`, `invalidate_bypass`) stay untouched. |
+| Disqualifiers the codegen predicate must check (T19) | runtime operators (`delay`/`slew`/`idt`/`transition`), analog events, `$limit` limiters, `DEPENDS_ON_DIGITAL`/`SAMPLES_ANALOG`, history-dependent internal unknowns — each is already an `Option` capability sub-struct on `AnalogKernel`. |
+| Risk accepted | Circuits containing a stateful device lose bypass hits (extra Newton evaluations). User decision, 2026-07-25: wire it. |
+
+### `bound_step_hint` → **already enforced**, ROADMAP correction only (CLN-15)
+
+ROADMAP P6 groups it with the dead flags ("same disposition as the already-
+logged `bound_step_hint`"). That is stale — it has a producer, a consumer, and
+a test:
+
+| Role | Site |
+|---|---|
+| ABI default | `piperine-solver/src/core/element.rs:176` (`f64::INFINITY`) |
+| Producer | `piperine-codegen/src/device/mod.rs:238-241` → `AnalogInstance::bound_step_hint` (`device/analog/mod.rs:1204`) |
+| Consumer | `piperine-solver/src/analyses/events.rs:326` — folded into `EventEntry::step_hint` |
+| Test | `piperine-solver/tests/event_adapters.rs:119` |
+
+No code change; T24 corrects the ROADMAP text.
+
+### Registry sweep
+
+`documented_consumer` (`tests/capabilities_contract.rs:21-85`) has exactly two
+entries that name no live consumer — the two above (`"reserved: host query-
+metadata hint; no solver consumer today"`, `"reserved: solver-performance owns
+stamp bypass"`). Every other flag's entry names a branch-gate, a loader, or a
+driver. After T18–T20 the phrase "no consumer" cannot appear at all (T20 makes
+that an assertion).
 
 ## 9. Guard proofs (CLN-08)
 
