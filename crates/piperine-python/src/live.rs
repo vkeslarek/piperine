@@ -980,7 +980,7 @@ mod tests {
     use pyo3::prelude::*;
     use pyo3::types::PyModule;
 
-    /// The runnable divider fixture (mirrors `lib.rs::ANALYSIS_PHDL`):
+    /// The runnable divider fixture (mirrors `tests/common`'s `ANALYSIS_PHDL`):
     /// `mid = 5·r_bot/(r_top+r_bot)` — 3 k/2 k → 2.0 V; `r_top = 2e3` → 2.5 V.
     const DIVIDER: &str = "\
 discipline Electrical { potential v: Real; flow i: Real; }

@@ -180,7 +180,7 @@ pub(crate) fn readout_err<E: std::fmt::Display>(e: E) -> PyErr {
 /// tests that wrap a host `OpResult` directly).
 #[pyclass(module = "piperine", unsendable)]
 pub struct _OpResult {
-    pub(crate) inner: Rc<OpResult>,
+    pub inner: Rc<OpResult>,
     resolver: Option<InstanceResolver>,
 }
 
@@ -376,7 +376,7 @@ impl _Trace {
 /// host computes (PY-17). P7 introduced the wrapper; P8 lands numpy + stats.
 #[pyclass(module = "piperine", unsendable)]
 pub struct _Waveform {
-    pub(crate) inner: Waveform,
+    pub inner: Waveform,
 }
 
 impl _Waveform {
