@@ -318,7 +318,24 @@ that an assertion).
 
 ## 9. Guard proofs (CLN-08)
 
-*(T7)*
+Each of `tests/suite_hygiene.rs`'s four guards was made to fail by injecting
+exactly its violation, then the tree was restored (`git checkout --`) and the
+suite re-run green. A guard that cannot fail is not a guard.
+
+| Guard | Injected violation | Result |
+|---|---|---|
+| `no_disabled_test_code` | `#![cfg(any())]` prepended to `piperine-plugin/tests/trust.rs` | **FAILED**, naming `crates/piperine-plugin/tests/trust.rs:1: #![cfg(any())]` |
+| `no_ignored_tests` | `#[ignore = "temporary proof"]` added to every test in `piperine-project/tests/release.rs` | **FAILED**, naming `release.rs:60,74,89,103` |
+| `every_ignored_doc_example_is_registered` | an unregistered ```` ```ignore ```` fence added to `piperine-api/src/hooks.rs` | **FAILED**, naming `crates/piperine-api/src/hooks.rs` |
+| `every_integration_target_declares_its_scope` | the `//!` header stripped from `piperine-plugin/tests/inject.rs` | **FAILED**, naming `crates/piperine-plugin/tests/inject.rs` |
+
+After all four reverts: `cargo test -p piperine --test suite_hygiene` → 4
+passed, `git status` clean.
+
+Note: the `#[ignore]` guard is **stricter than spec AC CLN-08.1**, which asked
+for a reason string. The tree holds zero ignored tests after T5, so the guard
+holds the line at zero instead — an ignored test is work hidden from the gate
+whether or not it explains itself. Recorded as a deliberate tightening.
 
 ## 10. Final accounting (CLN-02/04/09)
 
