@@ -471,6 +471,19 @@ stamp bypass"`). Every other flag's entry names a branch-gate, a loader, or a
 driver. After T18–T20 the phrase "no consumer" cannot appear at all (T20 makes
 that an assertion).
 
+## 8b. Phase 3 outcome — capability flags (CLN-11..14)
+
+| Flag | Verdict | Landed |
+|---|---|---|
+| `SUPPORTS_QUERIES` | **removed** (T18) | bit deleted, `1 << 10` left vacant so `HAS_DISTO2/3`/`NUMERIC_JACOBIAN` keep their asserted positions; added to `removed_write_only_flags_stay_gone`; dropped from Part VII §4 and CLAUDE.md |
+| `BYPASS_OK` | **wired** (T19) | `DcSystem::bypass_allowed` gates the cache on every element declaring it; `AnalogKernel::dc_stamps_depend_only_on_terminal_voltages()` is the codegen predicate; registry entry names the consumer |
+| `bound_step_hint` | **already enforced** (T4 evidence) | no code change; ROADMAP corrected in T24 |
+
+Guard added (T20): `no_capability_flag_is_merely_reserved` fails when any
+registry entry starts with "reserved" or says "no consumer" — proven by
+temporarily rewriting `EMITS_NOISE`'s entry to `"reserved: nothing reads this
+yet"`, which failed the test naming the flag, then reverted.
+
 ## 9. Guard proofs (CLN-08)
 
 Each of `tests/suite_hygiene.rs`'s four guards was made to fail by injecting

@@ -134,3 +134,29 @@ fn jacobian_capability_bits_compose_correctly() {
     // No overlap with the highest prior bit (BYPASS_OK = 1 << 11).
     assert_eq!(EC::BYPASS_OK.bits() & (EC::HAS_DISTO2 | EC::HAS_DISTO3 | EC::NUMERIC_JACOBIAN).bits(), 0);
 }
+
+/// P6/CLN-13: no bit may sit on the ABI as "reserved" forever. Every registry
+/// entry must name a live consumer — a branch gate, a loader, a driver — so the
+/// state P6 ended (two bits nothing read) cannot quietly return.
+///
+/// The check is on the registry text because that text *is* the claim: an entry
+/// that cannot name where the solver reads the flag is describing an intention,
+/// not a contract.
+#[test]
+fn no_capability_flag_is_merely_reserved() {
+    let merely_reserved: Vec<String> = ElementCapabilities::all()
+        .iter_names()
+        .filter_map(|(name, _)| {
+            let entry = documented_consumer(name)?;
+            let lowered = entry.to_ascii_lowercase();
+            (lowered.starts_with("reserved") || lowered.contains("no consumer"))
+                .then(|| format!("{name}: {entry}"))
+        })
+        .collect();
+
+    assert!(
+        merely_reserved.is_empty(),
+        "capability flags claiming no live consumer (wire them or remove them — P6/CLN-13):\n  {}",
+        merely_reserved.join("\n  ")
+    );
+}
