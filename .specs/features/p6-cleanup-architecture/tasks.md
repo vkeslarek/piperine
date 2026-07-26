@@ -14,7 +14,7 @@ without it.**
 
 **Design**: `.specs/features/p6-cleanup-architecture/design.md`
 **Spec**: `.specs/features/p6-cleanup-architecture/spec.md`
-**Status**: In Progress — Phases 1–2 DONE (T1–T13), Phase 3 next
+**Status**: In Progress — Phases 1–3 DONE (T1–T19), Phase 4 next
 
 ## Progress log
 
@@ -31,6 +31,35 @@ sends the next reader to reimplement it. Also corrected: solver paths said `solv
 where the tree has `analyses/`. `solver-simplification` is genuinely delivered
 (Verifier PASS 18/18) — status corrected, no residue. `docs/manual/` removed with a
 `ROADMAP.md` P6 backlog line; `mkdocs.yml` nav re-validated.
+
+| 3 | 3 | T14–T19 ✅ | `f710b63`, `5c365b3`, `ca50d11`, `3272c2c`, `919d337`, `cdc129a` | 1165 passed / 0 failed / 4 ignored (+1 guard). Doc warnings 46, unchanged. Guard MD-34 proven able to fail. No function body changed in any of the six. |
+
+**Phase-3 findings and accepted deviations:**
+
+- **`Context::init_global` was NOT folded away, and that is correct.** T15's brief
+  said to fold the `Once` into `Solver::build` per MD-06, but MD-06's actual
+  criterion ("init happens in `Solver::build`, not on `Context::default`") already
+  held, and `crates/piperine-solver/tests/context_init.rs` already proves it.
+  Removing the entry point would have silently disabled tracing/faer init on the
+  nine driver constructors that call it directly *and* deleted that test's subject
+  — a behavior change inside a relocation-only phase. The `Once` moved out of
+  `mod.rs` together with `Context`, which is all the placement rule demanded.
+- **T15 added `analyses/solver.rs`, outside its declared `Where`.** "`mod.rs`
+  contains no type definition" forces `Solver` out too, and parking it in
+  `context.rs` would recreate the very name/content mismatch this phase removes.
+  `Tolerances`/`Policy`/`Context` went to a new `context.rs` rather than
+  `config.rs`, whose stated contract is "data — no logic beyond construction".
+- **T14 chose crate-root `analog.rs`** over `core/netlist.rs`, per the done-when wording.
+- **`pub(super)` appears throughout T16–T19.** A moved type became its readers'
+  sibling instead of their parent, so `pub(super)` restates the exact prior
+  visibility — it is not a widening.
+- **Seven `mod.rs` exemptions granted**, all pre-existing and none touched by any
+  p6 task: `piperine-lang` `parse/parser/mod.rs` (259), `elab/lower/mod.rs` (229),
+  `elab/mod.rs` (172), `parse/format/mod.rs` (148), `parse/mod.rs` (95),
+  `elab/registry/mod.rs` (90), and `piperine-codegen/src/resolve/mod.rs` (89).
+  Each carries an in-file reason and is registered exhaustively in the guard, so a
+  *new* exemption and a *stale* one both fail. The 60-line ceiling was not
+  weakened. Phase 9 owns whether these get split.
 
 **Deferred (pre-existing, out of scope, surfaced by T13):** `mkdocs build` fails on
 a missing `material` theme; `docs/spec/appendix_c_host_surface.md` and
