@@ -14,6 +14,11 @@
 //! | `behavior.rs` | `analog`/`digital` body → `Behavior` |
 //! | `mono.rs` | `fn`/`impl` elaboration, generic monomorphization |
 
+// hygiene-exempt: holds `SymbolTable` and the `Elaborator` god struct whose methods
+// are spread across the sibling files by concern — the header table above is the
+// map. Decomposing it into cooperating passes is named out of scope by the refactor
+// plan; moving the struct alone would only relocate the problem.
+
 use std::collections::HashMap;
 
 use crate::parse::ast::{

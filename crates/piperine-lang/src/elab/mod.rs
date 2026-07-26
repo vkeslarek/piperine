@@ -31,6 +31,10 @@
 //!    must have elaboration-constant bounds and are fully unrolled.
 //! 10. **Event validation** — event names looked up in the [`EventRegistry`].
 
+// hygiene-exempt: the elaboration phase contract is long-form prose (the pass list,
+// the SourceFile -> Design pipeline) plus `SourceFile`'s own impl. 72 of its 172
+// lines are that `//!` contract, which MD-34 explicitly allows in a `mod.rs`.
+
 pub mod const_eval;
 pub mod event;
 pub mod lower;

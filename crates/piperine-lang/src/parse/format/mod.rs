@@ -1,3 +1,7 @@
+// hygiene-exempt: holds `FormatOptions`/`FormatState`/`TokenFormatter` and the
+// `FormatRule` trait each sibling rule module implements — the formatter's shared
+// vocabulary. Part of the frozen `parse/` tree; not scheduled for a split.
+
 use crate::parse::lexer::{Lexed, Tok};
 
 pub mod blank_line;

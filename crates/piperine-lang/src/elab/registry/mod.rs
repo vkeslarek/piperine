@@ -1,3 +1,7 @@
+// hygiene-exempt: mostly the registry re-export list (seven sub-registries) plus
+// `ElabContext`, the bundle that owns one of each. Splitting `ElabContext` out would
+// leave a `mod.rs` of re-exports and a file holding a struct of those same fields.
+
 pub mod types;
 pub mod components;
 pub mod callables;

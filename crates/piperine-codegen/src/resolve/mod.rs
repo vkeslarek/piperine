@@ -8,6 +8,11 @@
 //! lambdas, bundles, or structural control — those are elaborated away
 //! before this layer.
 
+// hygiene-exempt: the resolved form's own vocabulary — `Type`, `AnalogBody`,
+// `DigitalBody`, `Direction`, `Port` — declared where the layer is introduced.
+// `crates/piperine-codegen/src/resolve/` is correctness-critical and named in
+// CLAUDE.md's "files not to edit casually"; no p6 task splits it.
+
 mod expr;
 mod stmt;
 mod symbols;

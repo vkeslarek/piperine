@@ -30,6 +30,10 @@
 //! # Ok::<(), String>(())
 //! ```
 
+// hygiene-exempt: 37 of its 95 lines are the phase contract; the rest are the three
+// public entry points (`parse_str`, `parse_str_tolerant`, `predict_at_cursor`) that
+// ARE the parse phase's surface. Part of the frozen `parse/` tree.
+
 pub mod ast;
 pub mod lexer;
 pub mod parser;

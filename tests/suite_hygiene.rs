@@ -171,6 +171,13 @@ fn the_detectors_recognise_what_they_forbid() {
             "must not be flagged: {innocent:?}"
         );
     }
+
+    for offender in ["// hygiene-exempt: the frozen parse tree", "  // hygiene-exempt: x"] {
+        assert!(is_hygiene_exemption(offender), "must be read as an exemption: {offender:?}");
+    }
+    for innocent in ["//! hygiene-exempt: in a doc header", "// hygiene exempt", "// exempt:", ""] {
+        assert!(!is_hygiene_exemption(innocent), "must not be read as an exemption: {innocent:?}");
+    }
 }
 
 #[test]
@@ -372,5 +379,101 @@ fn no_dead_architecture_identifiers() {
         notes_seen,
         vec!["crates/piperine-codegen/src/lib.rs".to_string()],
         "the registered historical note moved or vanished — update the registry"
+    );
+}
+
+// ─── 7. `mod.rs` declares, never implements (MD-34) ───────────────────────────
+
+/// MD-13 rule 4's golden rule: a file is named after what it holds. `mod.rs` is
+/// named after nothing — it is the module's table of contents, so it may hold
+/// declarations, re-exports and the layer's `//!` contract, and nothing else.
+/// P6 found four in `piperine-codegen` holding 1237/864/861/555 lines of
+/// implementation: `AnalogInstance`, `AnalogKernel`, `CompiledModule` +
+/// `PiperineDevice`, and `LoweredBody` all lived in a file whose name a reader
+/// cannot grep for.
+///
+/// The ceiling is a line count because that is what a scan can check; sixty
+/// lines is enough for a declaration list and a real contract, and too few for
+/// a type with an implementation.
+const MOD_RS_MAX_LINES: usize = 60;
+
+/// The exemption marker (design D8). It sits **inside** the `mod.rs` it
+/// excuses, carrying the reason where the debt is, so a reader who opens the
+/// oversized file learns why before they wonder. The scan counts exemptions and
+/// the registry below names them: debt stays visible instead of dissolving.
+fn is_hygiene_exemption(line: &str) -> bool {
+    line.trim_start().starts_with("// hygiene-exempt:")
+}
+
+/// Every `mod.rs` under a crate's `src` tree, as `(path, line count)`.
+fn mod_rs_files() -> Vec<(String, usize, String)> {
+    let files: Vec<(String, usize, String)> = library_sources()
+        .into_iter()
+        .filter(|(path, _)| path.ends_with("/mod.rs"))
+        .map(|(path, text)| {
+            let lines = text.lines().count();
+            (path, lines, text)
+        })
+        .collect();
+    assert!(
+        files.len() > 15,
+        "the walk found only {} `mod.rs` files — the layout moved and this guard is blind",
+        files.len()
+    );
+    files
+}
+
+/// The registry of `mod.rs` files allowed to exceed the ceiling: path → why the
+/// split is not this feature's work. Registry + exhaustiveness (the
+/// `capabilities_contract.rs` shape used by the other guards here): a new
+/// exemption fails until it is recorded, and an exemption that becomes
+/// unnecessary fails just as loudly, so the list cannot rot into a blanket.
+///
+/// All seven are pre-existing and outside `p6-cleanup-architecture`'s task
+/// list; the in-file `// hygiene-exempt:` line carries the per-file reason.
+fn registered_oversized_mod_rs(path: &str) -> Option<&'static str> {
+    Some(match path {
+        "crates/piperine-lang/src/parse/parser/mod.rs" => "`Parser` + the `Parse` trait; frozen parse tree",
+        "crates/piperine-lang/src/parse/format/mod.rs" => "formatter vocabulary + `FormatRule`; frozen parse tree",
+        "crates/piperine-lang/src/parse/mod.rs" => "phase contract + the three parse entry points",
+        "crates/piperine-lang/src/elab/lower/mod.rs" => "`SymbolTable` + the `Elaborator` god struct",
+        "crates/piperine-lang/src/elab/mod.rs" => "long-form elaboration phase contract",
+        "crates/piperine-lang/src/elab/registry/mod.rs" => "registry re-exports + `ElabContext`",
+        "crates/piperine-codegen/src/resolve/mod.rs" => "the resolved form's own vocabulary",
+        _ => return None,
+    })
+}
+
+#[test]
+fn mod_rs_declares_only() {
+    let mut offences = Vec::new();
+    let mut exempted = Vec::new();
+    for (path, lines, text) in mod_rs_files() {
+        if lines <= MOD_RS_MAX_LINES {
+            assert!(
+                registered_oversized_mod_rs(&path).is_none(),
+                "{path} is {lines} lines — within the {MOD_RS_MAX_LINES}-line ceiling, so its \
+                 exemption is stale. Remove the `// hygiene-exempt:` line and its registry entry."
+            );
+            continue;
+        }
+        if text.lines().any(is_hygiene_exemption) && registered_oversized_mod_rs(&path).is_some() {
+            exempted.push(format!("{path} ({lines} lines)"));
+        } else {
+            offences.push(format!("{path}: {lines} lines (ceiling {MOD_RS_MAX_LINES})"));
+        }
+    }
+    assert!(
+        offences.is_empty(),
+        "`mod.rs` files holding implementation (MD-34 — a `mod.rs` declares its \
+         modules, re-exports their surface and states the layer's contract; move \
+         the types into files named after them, or add a `// hygiene-exempt: \
+         <reason>` line and register the file in this test):\n  {}",
+        offences.join("\n  ")
+    );
+    assert_eq!(
+        exempted.len(),
+        7,
+        "the exempted set changed — update the registry and the count: {exempted:?}"
     );
 }
