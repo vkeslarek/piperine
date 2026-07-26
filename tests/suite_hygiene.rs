@@ -150,6 +150,27 @@ fn the_detectors_recognise_what_they_forbid() {
     for innocent in ["#[allow(dead_code)]", "    #[allow(dead_code)]", "// #![allow(dead_code)]"] {
         assert!(!is_file_scope_allow(innocent), "must not be flagged: {innocent:?}");
     }
+
+    for (offender, expected) in [
+        ("//! walks an [`crate::resolve::IrProgram`]'s top module", "IrProgram"),
+        ("/// no `IrModule` structural twin", "IrModule"),
+        ("//! dispatches on POM `Expr`, not `IrExpr`", "IrExpr"),
+        ("/// every module's `IrInstance.connections`", "IrInstance"),
+        ("//! formerly the standalone `piperine-ir` crate", "piperine-ir"),
+        ("use piperine_ir::Program;", "piperine_ir"),
+    ] {
+        assert_eq!(
+            dead_architecture_identifiers_in(offender),
+            vec![expected],
+            "must be flagged as dead architecture: {offender:?}"
+        );
+    }
+    for innocent in ["//! the POM `Design`/`Module`/`Instance`", "use piperine_lang::pom;", ""] {
+        assert!(
+            dead_architecture_identifiers_in(innocent).is_empty(),
+            "must not be flagged: {innocent:?}"
+        );
+    }
 }
 
 #[test]
@@ -290,5 +311,66 @@ fn no_file_scope_lint_suppression() {
         "file-scope lint suppression (MD-33 — move the exemption onto the item \
          it excuses and give it a one-line reason, or delete the item):\n  {}",
         offences.join("\n  ")
+    );
+}
+
+// ─── 6. No dead-architecture identifiers (MD-35) ──────────────────────────────
+
+/// The names of the deleted IR layer. There is no `piperine-ir` crate and no
+/// `IrProgram`/`IrModule`/`IrExpr`/`IrInstance` type: codegen resolves a POM
+/// `Design`/`Module`/`Instance` directly. P6 found sixteen comments defining the
+/// code by that dead architecture — two of them broken intra-doc links. A
+/// comment that can only be checked against a deleted crate cannot be checked
+/// at all.
+const DEAD_ARCHITECTURE_IDENTIFIERS: [&str; 6] =
+    ["IrProgram", "IrModule", "IrExpr", "IrInstance", "piperine-ir", "piperine_ir"];
+
+/// Which dead identifiers one source line mentions.
+fn dead_architecture_identifiers_in(line: &str) -> Vec<&'static str> {
+    DEAD_ARCHITECTURE_IDENTIFIERS.into_iter().filter(|id| line.contains(id)).collect()
+}
+
+/// The registry of deliberate historical notes: file → (identifier, why it
+/// survives). Exactly one is allowed — the note in `piperine-codegen`'s `lib.rs`
+/// where the pipeline is introduced, which is the one place a reader benefits
+/// from knowing the resolved layer used to be its own crate. Everything else
+/// describes the present. Registry + exhaustiveness (the
+/// `capabilities_contract.rs` shape): a note that disappears fails the test just
+/// as loudly as a new one appearing.
+fn registered_historical_note(path: &str) -> Option<(&'static str, &'static str)> {
+    match path {
+        "crates/piperine-codegen/src/lib.rs" => Some((
+            "piperine-ir",
+            "the pipeline overview names the crate the `resolve` stage was split out of",
+        )),
+        _ => None,
+    }
+}
+
+#[test]
+fn no_dead_architecture_identifiers() {
+    let mut offences = Vec::new();
+    let mut notes_seen = Vec::new();
+    for (path, text) in library_sources() {
+        for (index, line) in text.lines().enumerate() {
+            for id in dead_architecture_identifiers_in(line) {
+                match registered_historical_note(&path) {
+                    Some((allowed, _)) if allowed == id => notes_seen.push(path.clone()),
+                    _ => offences.push(format!("{path}:{}: `{id}`", index + 1)),
+                }
+            }
+        }
+    }
+    assert!(
+        offences.is_empty(),
+        "dead-architecture identifiers (MD-35 — say what the code does now; the \
+         IR crate and its `Ir*` types no longer exist, codegen resolves the POM \
+         `Design`/`Module`/`Instance` directly):\n  {}",
+        offences.join("\n  ")
+    );
+    assert_eq!(
+        notes_seen,
+        vec!["crates/piperine-codegen/src/lib.rs".to_string()],
+        "the registered historical note moved or vanished — update the registry"
     );
 }
