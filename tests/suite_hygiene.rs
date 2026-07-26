@@ -4,10 +4,25 @@
 //! P6 found 38 tests in two files that had been switched off with
 //! `#![cfg(any())]` — one of them named in `CLAUDE.md` as a test of record —
 //! looking like coverage while never compiling. A policy that lives only in a
-//! document cannot catch that; these four tests can.
+//! document cannot catch that; these tests can.
 //!
 //! Each walks the repository's own sources (never a hardcoded list of test
 //! names) so it cannot pass stale, and every failure names `file:line`.
+//!
+//! ## The root test-naming rule (MD-28 · CLA-13)
+//!
+//! The root package is a thin re-export shell (MD-20), so root `tests/` is for
+//! the shell's own proofs — nothing else. Two shapes, and only two:
+//!
+//! - **`host_*.rs` — a host-surface proof.** It exercises the published host
+//!   API, so it reaches the shell (`piperine::…`) or `piperine-api` directly.
+//! - **`<feature>.rs` — a shell or cross-crate proof.** It either reaches the
+//!   shell too, or it proves something no single crate owns by driving two or
+//!   more workspace crates together.
+//!
+//! A target that exercises exactly one non-root crate is neither, and belongs
+//! in `crates/<that-crate>/tests/`. `root_targets_match_the_naming_rule`
+//! enforces it.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -76,6 +91,24 @@ fn library_sources() -> Vec<(String, String)> {
         sources.len()
     );
     sources
+}
+
+/// Every root `tests/*.rs` target, as `(file name, contents)` — top level only,
+/// so a `tests/<dir>/` helper module is not mistaken for a target.
+fn root_targets() -> Vec<(String, String)> {
+    let targets: Vec<(String, String)> = integration_targets()
+        .into_iter()
+        .filter_map(|(path, text)| {
+            path.strip_prefix("tests/").map(|file| (file.to_string(), text))
+        })
+        .collect();
+    assert!(
+        targets.len() > 20,
+        "the walk found only {} root targets — the layout moved and the \
+         root-naming guard is blind",
+        targets.len()
+    );
+    targets
 }
 
 /// Every integration-test target: `crates/*/tests/*.rs` and root `tests/*.rs`
@@ -178,6 +211,45 @@ fn the_detectors_recognise_what_they_forbid() {
     for innocent in ["//! hygiene-exempt: in a doc header", "// hygiene exempt", "// exempt:", ""] {
         assert!(!is_hygiene_exemption(innocent), "must not be read as an exemption: {innocent:?}");
     }
+
+    for reaching in ["use piperine::prelude::*;", "let s = piperine_api::Session::compile(x);"] {
+        assert!(proves_host_surface(reaching), "must count as host surface: {reaching:?}");
+    }
+    for not_reaching in ["use piperine_solver::prelude::*;", "// piperine is the shell", ""] {
+        assert!(!proves_host_surface(not_reaching), "must not count as host surface: {not_reaching:?}");
+    }
+
+    // `piperine_lang_server` contains `piperine_lang`: matching on `<ident>::`
+    // is what keeps one import from counting as two crates.
+    assert_eq!(
+        workspace_crates_used("use piperine_lang_server::state::DocumentState;"),
+        vec!["piperine_lang_server"]
+    );
+    assert_eq!(
+        workspace_crates_used("use piperine_lang;\nuse piperine_solver::prelude::*;"),
+        vec!["piperine_lang", "piperine_solver"]
+    );
+    assert!(workspace_crates_used("use std::fs;").is_empty());
+
+    // The rule itself: a `host_*` target must reach the host surface; any other
+    // target must reach the shell or two crates; one crate alone is an offence
+    // that names the crate to move it to.
+    assert!(root_naming_offence("host_probe.rs", "use piperine::prelude::*;").is_none());
+    assert!(root_naming_offence("host_probe.rs", "use piperine_solver::prelude::*;").is_some());
+    assert!(root_naming_offence("session.rs", "use piperine::prelude::*;").is_none());
+    assert!(
+        root_naming_offence(
+            "plugin_parity.rs",
+            "use piperine_plugin::host::PluginHost;\nuse piperine_solver::prelude::*;"
+        )
+        .is_none()
+    );
+    let single = root_naming_offence("sens.rs", "use piperine_solver::prelude::Context;")
+        .expect("a single-crate root target is an offence");
+    assert!(
+        single.contains("crates/piperine-solver/tests/"),
+        "the failure must name where the target belongs: {single}"
+    );
 }
 
 #[test]
@@ -475,5 +547,121 @@ fn mod_rs_declares_only() {
         exempted.len(),
         7,
         "the exempted set changed — update the registry and the count: {exempted:?}"
+    );
+}
+
+// ─── 8. The root test-naming rule (MD-28 · CLA-13) ────────────────────────────
+
+/// A root target claiming to prove the host surface says so in its name.
+const HOST_TARGET_PREFIX: &str = "host_";
+
+/// Every non-root workspace crate, spelled as Rust source spells it. Order does
+/// not matter — [`workspace_crates_used`] matches on `<ident>::`, so
+/// `piperine_lang_server::` never counts as `piperine_lang`.
+const WORKSPACE_CRATE_IDENTS: [&str; 10] = [
+    "piperine_api",
+    "piperine_cli",
+    "piperine_codegen",
+    "piperine_lang",
+    "piperine_lang_server",
+    "piperine_plugin",
+    "piperine_plugin_macros",
+    "piperine_project",
+    "piperine_python",
+    "piperine_solver",
+];
+
+/// Whether a target reaches the host surface: the root shell's re-export face
+/// (`piperine::…`, MD-20) or `piperine-api` underneath it.
+fn proves_host_surface(text: &str) -> bool {
+    text.contains("piperine::") || text.contains("piperine_api::")
+}
+
+/// Which workspace crates a target names. A crate counts when the target
+/// addresses it by path (`piperine_solver::…`) or imports it whole
+/// (`use piperine_solver;`) — the two ways a target can depend on one.
+fn workspace_crates_used(text: &str) -> Vec<&'static str> {
+    WORKSPACE_CRATE_IDENTS
+        .into_iter()
+        .filter(|id| text.contains(&format!("{id}::")) || text.contains(&format!("use {id};")))
+        .collect()
+}
+
+/// The registry of root targets that prove neither the host surface nor a
+/// cross-crate seam: file → why it still belongs at the root. Registry +
+/// exhaustiveness (the shape the guards above use): an unregistered offender
+/// fails, and a registered entry that vanishes or stops needing its exemption
+/// fails just as loudly.
+///
+/// **Empty, deliberately.** Every root target today is a shell proof or a
+/// cross-crate proof. This file — the one root target that links no workspace
+/// crate — needs no entry because the walk already skips it as [`SELF`]. An
+/// entry added here must move the count in [`root_targets_match_the_naming_rule`]
+/// with it, so the exemption cannot be granted quietly.
+const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 0] = [];
+
+fn registered_root_exemption(file: &str) -> Option<&'static str> {
+    ROOT_TARGET_EXEMPTIONS.iter().find(|(name, _)| *name == file).map(|(_, why)| *why)
+}
+
+/// Why the offender fails the rule, in the words a reader needs to fix it.
+fn root_naming_offence(file: &str, text: &str) -> Option<String> {
+    let crates = workspace_crates_used(text);
+    if file.starts_with(HOST_TARGET_PREFIX) {
+        if proves_host_surface(text) {
+            return None;
+        }
+        return Some(format!(
+            "tests/{file}: named `{HOST_TARGET_PREFIX}*` but never reaches the host \
+             surface (no `piperine::` or `piperine_api::`) — prove the host API here, \
+             or rename it to `<feature>.rs`"
+        ));
+    }
+    if proves_host_surface(text) || crates.len() >= 2 {
+        return None;
+    }
+    Some(match crates.as_slice() {
+        [only] => format!(
+            "tests/{file}: exercises `{only}` alone — move it to \
+             `crates/{}/tests/` (MD-28: a target lives in the crate it exercises)",
+            only.replace('_', "-")
+        ),
+        _ => format!(
+            "tests/{file}: reaches no workspace crate and no host surface — root \
+             `tests/` is for the shell's proofs; say what it proves or move it"
+        ),
+    })
+}
+
+#[test]
+fn root_targets_match_the_naming_rule() {
+    let mut offences = Vec::new();
+    let mut exempted = Vec::new();
+    for (file, text) in root_targets() {
+        let offence = root_naming_offence(&file, &text);
+        match registered_root_exemption(&file) {
+            Some(_) => {
+                assert!(
+                    offence.is_some(),
+                    "tests/{file} now satisfies the root naming rule, so its exemption \
+                     is stale — remove its entry from `registered_root_exemption`"
+                );
+                exempted.push(file);
+            }
+            None => offences.extend(offence),
+        }
+    }
+    assert!(
+        offences.is_empty(),
+        "root targets breaking the naming rule (MD-28 — `host_*.rs` proves the host \
+         surface, `<feature>.rs` proves the shell or a cross-crate seam; anything \
+         exercising one crate alone lives in that crate):\n  {}",
+        offences.join("\n  ")
+    );
+    assert!(
+        exempted.is_empty(),
+        "the exempted root-target set grew — record the new exemption's reason in \
+         `ROOT_TARGET_EXEMPTIONS` and move this assertion's expected set with it: \
+         {exempted:?}"
     );
 }
