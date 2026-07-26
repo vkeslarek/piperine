@@ -31,15 +31,15 @@ PHDL (.phdl) ──parse_and_elaborate──► Design (POM)
                             hosts: `piperine-api` lib (Rust) / `import piperine` (Python)
 ```
 
-There is **no separate IR crate**. The POM (`Design`/`Module`, from `piperine-lang`) is the
-single object model; `piperine_codegen::resolve` (formerly the standalone `piperine-ir` crate,
-then `piperine-codegen/src/lower/`) is codegen's resolved form — expressions with
+The POM (`Design`/`Module`, from `piperine-lang`) is the single object model;
+`piperine_codegen::resolve` is codegen's own resolved form — expressions with
 interned ids, symbolic differentiation (`resolve/diff.rs`), the POM→resolved pass
 (`resolve/pom/`, `lower_bodies`). `resolve` stays `pub` (hosts/tests address it by deep path,
 e.g. `resolve::pom::LoweredBody`) but nothing outside `piperine-codegen` depends on its shape.
-`CircuitCompiler` walks the POM `Design`/`Module`/`Instance` directly for structure
-(connections, param overrides) — there is no `IrModule`/`IrInstance`/`IrProgram` structural
-twin. "100% coverage" means: every PHDL construct lowers to executable device code. When
+A resolved body covers one module's *own* behavior; `CircuitCompiler` reads all instance
+structure (connections, param overrides) straight from the POM
+`Design`/`Module`/`Instance` at circuit-build time.
+"100% coverage" means: every PHDL construct lowers to executable device code. When
 something cannot be faithfully lowered, **fail loud** (`CodegenError::Unsupported`) — never
 silently emit `0.0` or a no-op.
 
@@ -60,7 +60,7 @@ collapsed/flattened form (e.g. for codegen) produces a **separate side artifact*
 
 ```sh
 cargo build --workspace           # build all crates — zero warnings is the bar
-cargo test  --workspace           # the whole suite — 51 green targets
+cargo test  --workspace           # the whole suite (every crate's targets)
 cargo test -p piperine-solver     # one crate
 cargo test <name>                 # one test
 cargo test -- --nocapture         # see solver output
@@ -75,8 +75,8 @@ both a package and the workspace) — always pass `--workspace`.
 |-------|------|
 | `piperine-lang` | PHDL frontend: lexer/parser (`parse/`), elaboration → POM `Design` (`elab/`, `pom/`), const evaluator (`eval/`: `Interpreter`, `Host` trait, pure system tasks in `eval/tasks.rs`) — walks the POM/AST directly, no IR. `parse_and_elaborate` is the entry point. Builtin stdlib headers in `headers/` (prelude, disciplines, constants) and `headers/spice/` (the ngspice-faithful device models — `use spice::<file>;` works in any project, no dependency; a project package named `spice` shadows the builtin). |
 | `piperine-codegen` | POM → devices, one module per pipeline stage: `pom::Design ─▶ resolve ─▶ flatten ─▶ emit ─▶ kernel ─▶ device`. `resolve/` (resolved form: `expr.rs`/`stmt.rs`/`symbols.rs`, `diff.rs` symbolic differentiation, `pom/` `lower_bodies`). `flatten/` (resolved analog → `FlatAnalog`, crate-private). `emit/` (Cranelift emission machinery: `Builder`, `Codegen` trait, CSE, `SimCtx` ABI, crate-private). `kernel/`: `analog/` (`AnalogKernel`, capability sub-structs behind `Option`), `digital/`. `device/`: `analog/` (`AnalogInstance`, capability files `forces.rs`/`limits.rs`/`operators.rs`/`events.rs`), `digital.rs`, `circuit.rs`/`builder.rs`/`fusion.rs`/`plugin.rs` (`CircuitCompiler`) → `PiperineDevice` (implements `Element`). Public surface is a single `lib.rs` façade (MD-23) — `resolve`/`kernel`/`device` stay `pub`, `emit`/`flatten`/`error` are crate-private. |
-| `piperine-solver` | Native solver: DC/AC/transient/noise/TF (`solver/`), MNA/linear algebra (`math/`, faer), `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming layer (`core/net.rs`), OSDI-style introspection (`core/introspect.rs`), `ConvergencePlan` + `HomotopyStrategy` (`solver/convergence.rs`), `IntegrationMethod` + LTE (`math/integration.rs`), `prelude.rs`. Does **not** depend on codegen. OSDI is an external plugin. |
-| `piperine-api` | The library face (MD-20): `SimSession`/`SolverConfig` (`session.rs`), result objects (`results.rs`, `waveform.rs`), `SimHooks` lifecycle trait (`hooks.rs`), `prelude` re-exports. |
+| `piperine-solver` | Native solver: DC/AC/transient/noise/TF and the rest of the analysis family (`analyses/`), MNA/linear algebra (`math/`, faer), `Element` trait + `ElementCapabilities` (`core/element.rs`), `Net` naming layer (`core/net.rs`), OSDI-style introspection (`core/introspect.rs`), `ConvergencePlan` + `HomotopyStrategy` (`analyses/convergence.rs`), `IntegrationMethod` + LTE (`math/integration.rs`), `prelude.rs`. Does **not** depend on codegen. OSDI is an external plugin. |
+| `piperine-api` | The library face (MD-20): `Session`/`SimSession`/`SolverConfig` (`session.rs`), result objects (`results.rs`, `waveform.rs`, `fourier.rs`, `units.rs`), `SimHooks` lifecycle trait (`hooks.rs`), `prelude` re-exports. |
 | `piperine` (root) | Thin re-export shell over `piperine-api` (`pub use piperine_api::*`) — external Rust hosts keep `use piperine::…`; the tests of record live here as the shell's parity proof. The `piperine` binary target lives in `piperine-cli`. |
 | `piperine-plugin` | Plugin SDK + host (v2): native-dlopen + embedded-Python backends only, three shapes (pure-PHDL / scripted / device) inferred from the manifest keys, TOFU trust + permissions consent, `@device` loading, release-asset device binaries, CLI scripts. Plugins contribute **no** attribute schemas and no `extern`. |
 | `piperine-plugin-macros` | The `#[pip::device]` / `#[pip::script]` / `#[pip::hook(phase)]` proc-macros — declaration-coupled contributions (depend on it as `pip` so it spells like the Python `@pip.…`). |
@@ -106,9 +106,9 @@ both a package and the workspace) — always pass `--workspace`.
   No `Device` wrapper, no downcast.
 - **Naming:** `Net` (`core/net.rs`) unifies analog nodes, branch currents, digital nets,
   and pseudo variables under one public identity with stable labels.
-- **Convergence:** `ConvergencePlan` (`solver/convergence.rs`) composes `HomotopyStrategy`
-  (gmin stepping, source stepping) and `PlanLimits` (caps extracted from magic numbers).
-  `NewtonStrategy`/`StepperStrategy` are the next phase (see `.specs/`).
+- **Convergence:** `ConvergencePlan` (`analyses/convergence.rs`) composes `HomotopyStrategy`
+  (gmin stepping, source stepping), `NewtonStrategy`, `StepperStrategy`, and `PlanLimits`
+  (caps extracted from magic numbers).
 - **Integration:** `IntegrationMethod` (`math/integration.rs`) — Trapezoidal and Gear/BDF
   with unified `coeffs(dt, dt_prev, order)`. LTE-driven timestep via
   `Element::suggest_transient_step`.
@@ -120,13 +120,13 @@ both a package and the workspace) — always pass `--workspace`.
 
 - `laplace_*`, `zi_*` — **not declared at all** (`headers/operators.phdl` has no
   `extern operator` for either), so MD-24 stops a call at elaboration; they never reach
-  codegen. `transition` **is** implemented (`device/analog/operators.rs`) — the older
-  "no companion model yet" note was stale (found by P6/T5).
-- `ac_stim` in potential contributions is now supported; multiple `ac_stim` per contribution
-  is still fail-loud.
-- `$limit` (pnjlim/fetlim) is not lowered in the JIT.
-- `idt` contributes 0 in AC (no `1/jω` stamp).
-- Solver ABI refactor in progress — see `.specs/STATE.md` for macro decisions and
+  codegen. Language backlog, tracked in `ROADMAP.md`.
+- Everything else in that family is implemented and has a ROADMAP entry with its commit:
+  `transition` and the other runtime operators (`device/analog/operators.rs`), `table`,
+  `$limit`/pnjlim/fetlim (`kernel/analog/limits.rs` + `device/analog/limits.rs`),
+  `idt`'s AC `1/jω` admittance, and multiple `ac_stim` per contribution (phasor sum,
+  `flatten/analog.rs::split_ac_stim`).
+- Solver ABI work in progress — see `.specs/STATE.md` for the decision log and
   `.specs/features/` for feature specs.
 
 ## Naming & conventions
@@ -169,32 +169,30 @@ Permanent regression guard: `crates/piperine-lang/tests/extern_coverage_guard.rs
   ripple through all parsing.
 - `crates/piperine-codegen/src/resolve/` — the resolved expression/statement form and its
   symbolic differentiation; the correctness-critical core.
-- `crates/piperine-codegen/src/emit/analog_expr.rs` — the shared JIT residual/Jacobian skeleton
-  emission (formerly `jit/analog.rs`'s `emit_analog`).
+- `crates/piperine-codegen/src/emit/analog_expr.rs` — `emit_analog`, the shared JIT
+  residual/Jacobian skeleton emission.
 - `headers/`, `tests/fixtures*` — frozen test corpora.
 
-## Tests of record
+## Where the tests are
 
-- `piperine-codegen/tests/`: `analog_kernel.rs`, `digital_jit.rs` (kernel-level JIT);
-  `resolve_lowering.rs` (POM→resolved), `analog_device_numerics.rs`, `codegen_api.rs`,
-  `circuit_from_design.rs`, `silent_bugs.rs`, `bypass_capability.rs`.
-- `piperine-lang/tests/`: `parse_elab.rs`, `spec_simulation.rs`, `elab.rs`,
-  `bundle_param.rs`, `bundle_connections.rs`, `prelude.rs`, `type_casts.rs`, `pom_serde.rs`,
-  `bench_removed.rs` (the bench keyword is a syntax error).
-- `tests/` (root, host API): `session.rs`, `ngspice_validation.rs` (+`ngspice/`),
-  `spice_smoke.rs` (+`spice/`), `compile_once_sweep.rs`, `run_examples.rs` (every
-  `examples/*.phdl` elaborates + every `examples/*.py` runs — the **only** copy of
-  that gate), `suite_hygiene.rs` (no dead/ignored test code; every integration
-  target declares its scope in a `//!` header — MD-28).
-- `piperine-solver/tests/`: `digital_topology.rs`, `mixed_signal.rs`,
-  `capabilities_contract.rs` (every capability bit names a live consumer),
-  `failure_rules.rs` + `spec_failure_rules_guard.rs` (Part VII §16 is enforced or
-  explicitly marked), `stamp_bypass.rs` (`BYPASS_OK` is opt-in).
-- `piperine-plugin/tests/`: `e2e.rs`, `native_smoke.rs`, `inject.rs`, `staging.rs`,
-  `hooks.rs`, `scripts.rs`, `release_fetch.rs`, `macro_collisions.rs`, `extern_stub.rs`,
-  `trust.rs` (manifest tests are inline in `src/manifest.rs`);
-  `piperine-plugin-macros/tests/` (`registration.rs`, `script_hook.rs`, `compile_fail.rs` +
-  `ui/`); root `tests/plugin_parity.rs` (Rust ≡ Python decorator names).
+A hand-maintained list of test files goes stale silently (P6 found this file
+naming a target that had been switched off with `#![cfg(any())]`). So there is
+no list here — the tree is the list, and a guard keeps it honest.
+
+- **Enumerate**: `ls crates/*/tests/*.rs tests/*.rs`, or `cargo test --workspace`
+  (each `Running tests/<name>.rs` line is one target). Every target opens with a
+  `//!` header saying what it covers — read that first.
+- **Placement rule (MD-28)**: a target lives in the crate it exercises; root
+  `tests/` is for the host surface and cross-crate proofs. Integration tests are
+  grouped by functionality, one concern per target.
+- **The enforcing guard**: `tests/suite_hygiene.rs` walks the repo's own sources
+  and fails on switched-off test code, `#[ignore]`d tests, unregistered
+  ```` ```ignore ```` doc fences, a target with no `//!` scope header, file-scope
+  lint suppression (MD-33), and dead-architecture identifiers (MD-35).
+- **The numeric oracles**, worth knowing by name because a change must reproduce
+  them: root `tests/ngspice_validation.rs` (+`tests/ngspice/`) cross-checks
+  against ngspice; root `tests/run_examples.rs` is the **only** copy of the
+  "every `examples/*.phdl` elaborates and every `examples/*.py` runs" gate.
 
 ## Documentation
 
