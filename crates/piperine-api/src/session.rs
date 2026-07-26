@@ -391,13 +391,7 @@ impl SimSession {
                 param,
                 piperine_solver::abi::Value::Real(v),
             )?;
-            // Mirror the restamp into the build info: `.i()` recomputes a
-            // force-less two-terminal current from kernel + params.
-            if let Some(inst) = info.instances.iter_mut().find(|i| i.label == label)
-                && let Some(pidx) = inst.kernel.param_names().iter().position(|n| n == param)
-            {
-                inst.params[pidx] = v;
-            }
+            mirror_param(&mut info, label, param, v);
             let ivs = build_ivs(&info, nodeset, circuit.netlist())?;
             let mut dc = circuit.dc(config.to_context())?;
             dc.policy = config.to_policy();
@@ -632,6 +626,18 @@ impl Session {
         &self.design
     }
 
+    /// Fire the `after_solve` lifecycle hook (SPEC Part VI §8) for the
+    /// analysis that just solved. `node_voltages` carries the solved
+    /// `(net, volts)` pairs for operating points and is empty for every other
+    /// analysis — the payload rule the hook trait documents. A no-op when no
+    /// hooks are wired; a hook error fails the analysis loud.
+    fn fire_after_solve(&self, analysis: &str, node_voltages: &[(String, f64)]) -> Result<(), Error> {
+        if let Some(h) = &self.opts.hooks {
+            h.after_solve(analysis, node_voltages).map_err(Error::Plugin)?;
+        }
+        Ok(())
+    }
+
     /// The module this session was compiled from.
     pub fn module(&self) -> &str {
         &self.module
@@ -717,14 +723,7 @@ impl Session {
                  Session does not auto-rebuild (use a fresh SimSession/Session::compile)"
             )));
         }
-        // Mirror into the build info so device-internal current readbacks
-        // (`.i(a, b)` on force-less two-terminal devices) see the new value
-        // (same mirror as `SimSession::run_op_sweep`).
-        if let Some(inst) = self.info.instances.iter_mut().find(|i| i.label == label)
-            && let Some(pidx) = inst.kernel.param_names().iter().position(|n| n == param)
-        {
-            inst.params[pidx] = value;
-        }
+        mirror_param(&mut self.info, label, param, value);
         Ok(())
     }
 
@@ -747,9 +746,10 @@ impl Session {
         dc.apply_initial_conditions(ivs);
         let result = dc.solve()?;
         drop(dc);
-        let digital = SimSession::snapshot_digital(&self.info, &self.circuit);
-        let opvars = SimSession::snapshot_opvars(&self.circuit);
-        let introspect = SimSession::snapshot_introspect(&self.circuit);
+        let digital = Session::snapshot_digital(&self.info, &self.circuit);
+        let opvars = Session::snapshot_opvars(&self.circuit);
+        let introspect = Session::snapshot_introspect(&self.circuit);
+        self.fire_after_solve("op", &node_voltages(&self.info, &result))?;
         Ok(OpResult::new(
             result,
             digital,
@@ -800,12 +800,9 @@ impl Session {
         let result = solver.solve()?;
         drop(solver);
         for (_, label, param, value) in &scheduled {
-            if let Some(inst) = self.info.instances.iter_mut().find(|i| i.label == *label)
-                && let Some(pidx) = inst.kernel.param_names().iter().position(|n| n == param)
-            {
-                inst.params[pidx] = *value;
-            }
+            mirror_param(&mut self.info, label, param, *value);
         }
+        self.fire_after_solve("tran", &[])?;
         Ok(Trace::<Waveform>::new(result, Rc::new(self.info.clone())))
     }
 
@@ -843,6 +840,7 @@ impl Session {
         let mut ac = self.circuit.ac(config.to_context())?;
         ac.policy = config.to_policy();
         let result = ac.solve_sweep(opts)?;
+        self.fire_after_solve("ac", &[])?;
         Ok(AcTrace::new(result, Rc::new(self.info.clone())))
     }
 
@@ -871,6 +869,7 @@ impl Session {
             input_source_name: None,
         };
         let result = self.circuit.noise(opts, config.to_context())?.solve()?;
+        self.fire_after_solve("noise", &[])?;
         Ok(NoiseTrace::new(result))
     }
 
@@ -912,6 +911,7 @@ impl Session {
                 }
             }
         }
+        self.fire_after_solve("sens", &[])?;
         Ok(crate::results::SensResult { d })
     }
 
@@ -927,6 +927,7 @@ impl Session {
         let mut solver = self.circuit.pss(opts, config.to_context())?;
         solver.policy = config.to_policy();
         let inner = solver.solve()?;
+        self.fire_after_solve("pss", &[])?;
         Ok(crate::results::PssResult {
             trace: Trace::<Waveform>::new(inner.trace, Rc::new(self.info.clone())),
             stats: inner.stats,
@@ -951,6 +952,7 @@ impl Session {
         let solver = self.circuit.pz(options, config.to_context())?;
         let poles = solver.poles()?;
         let zeros = solver.zeros()?;
+        self.fire_after_solve("pz", &[])?;
         Ok(piperine_solver::prelude::PoleZeroResult { poles, zeros }.into())
     }
 
@@ -987,6 +989,7 @@ impl Session {
         };
         let mut solver = self.circuit.disto(options, config.to_context())?;
         let result = solver.solve()?;
+        self.fire_after_solve("disto", &[])?;
         Ok(result.into())
     }
 
@@ -1018,6 +1021,7 @@ impl Session {
         };
         let mut solver = self.circuit.sp(options, config.to_context())?;
         let result = solver.solve_sweep()?;
+        self.fire_after_solve("sp", &[])?;
         Ok(result.into())
     }
 
@@ -1042,6 +1046,7 @@ impl Session {
         };
         let mut solver = self.circuit.transfer_function(options, config.to_context())?;
         let result = solver.solve()?;
+        self.fire_after_solve("tf", &[])?;
         Ok(crate::results::TfResult::from_solver(result))
     }
 
@@ -1065,11 +1070,7 @@ impl Session {
         let mut stats = SolverStats { converged: true, ..Default::default() };
         for &v in values {
             self.circuit.set_element_param(label, param, Value::Real(v))?;
-            if let Some(inst) = self.info.instances.iter_mut().find(|i| i.label == label)
-                && let Some(pidx) = inst.kernel.param_names().iter().position(|n| n == param)
-            {
-                inst.params[pidx] = v;
-            }
+            mirror_param(&mut self.info, label, param, v);
             let ivs = build_ivs(&self.info, nodeset, self.circuit.netlist())?;
             let mut dc = self.circuit.dc(config.to_context())?;
             dc.policy = config.to_policy();
@@ -1078,7 +1079,8 @@ impl Session {
             drop(dc);
             stats.converged &= result.stats.converged;
             stats.newton_iterations += result.stats.newton_iterations;
-            digital.push(SimSession::snapshot_digital(&self.info, &self.circuit));
+            digital.push(Session::snapshot_digital(&self.info, &self.circuit));
+            self.fire_after_solve("op", &node_voltages(&self.info, &result))?;
             points.push(result);
         }
         Ok(Trace::<Waveform>::from_dc_sweep(values.to_vec(), points, digital, Rc::new(self.info.clone()), stats))
@@ -1106,11 +1108,7 @@ impl Session {
         if inv >= Invalidation::Rebuild {
             return self.rebuild(label, param, value);
         }
-        if let Some(inst) = self.info.instances.iter_mut().find(|i| i.label == label)
-            && let Some(pidx) = inst.kernel.param_names().iter().position(|n| n == param)
-        {
-            inst.params[pidx] = value;
-        }
+        mirror_param(&mut self.info, label, param, value);
         Ok(())
     }
 
@@ -1419,6 +1417,20 @@ impl Grid<'_> {
             coord.pop();
         }
         Ok(Nested::Branch(branch))
+    }
+}
+
+/// Mirror a parameter write into the build info: `.i(a, b)` on a force-less
+/// two-terminal device recomputes the branch current from kernel + params, so
+/// a restamp the info does not see reports the pre-write current. The single
+/// copy of this mirror — every restamp path (`Session::set`,
+/// `Session::set_or_rebuild`, `Session::dc`, `Session::tran`'s scheduled
+/// writes, and the staged sweep) goes through it.
+fn mirror_param(info: &mut CircuitBuildInfo, label: &str, param: &str, value: f64) {
+    if let Some(inst) = info.instances.iter_mut().find(|i| i.label == label)
+        && let Some(pidx) = inst.kernel.param_names().iter().position(|n| n == param)
+    {
+        inst.params[pidx] = value;
     }
 }
 

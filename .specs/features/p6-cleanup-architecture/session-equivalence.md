@@ -150,3 +150,25 @@ duplicated param mirror named in design Risks row 3:
 Every `SimSession` capability has a `Session` home once T25 and T26 land. No row
 requires a design change beyond the `SessionBuilder` the design already
 specifies, so **Phase 5 may proceed to T25**.
+
+---
+
+## 6. Post-T26 status — every row now reads *identical*
+
+T25 (`68b0378`) and T26 closed the matrix. Re-reading each verdict against the
+merged surface:
+
+| Rows | Was | Now |
+|---|---|---|
+| 6 (`module`) | identical | unchanged |
+| 2, 3, 5, 19, 20, 21 (`set_device_provider`, `set_hooks`, `design`, the three `snapshot_*`) | missing | **identical** — ported in T25 under the same names, signatures and `Result` shapes (`SessionBuilder::provider`/`hooks`; `Session::design`; `Session::snapshot_*`) |
+| 1, 7, 8 (construction, `stage`, `build_circuit`) | differs | **identical** — one `build_circuit` recipe serves both types, hook order verbatim; staging is `SessionBuilder::stage`, applied to the builder's own fork |
+| 4 (`after_solve`) | missing | **identical** — `Session::fire_after_solve` fires from all eleven analyses with the same analysis-name strings (`"op"`, `"tran"`, `"ac"`, `"noise"`, `"sens"`, `"pss"`, `"pz"`, `"sp"`, `"disto"`, plus `"tf"`, which `SimSession` had no analysis for), operating points carrying node voltages and everything else an empty slice |
+| 9, 11–17 (the nine analyses) | differs (hooks + re-elaboration) | **identical** — the re-elaboration difference *is* the lifecycle collapse: one `SessionBuilder::compile` per staged workflow, and rows 11/12's argument shapes are call-site rewrites carrying the same values to the same solver options |
+| 18 (`run_disto`) | differs (cost) | **identical** — `SessionBuilder::disto(bool)`; see §3.2 for the default |
+| 10 (`run_op_sweep`) | differs (3×) | **identical via `Session::sweep` + `point.op()`**, which is one build, one `OpResult` per point and `info` cloned per point. The (c) sub-row (`run_op_sweep`'s discarded `Invalidation`) is deliberately *not* carried over — see §3.5 |
+
+Also closed in T26 (design Risks row 3): the `info.instances` param mirror
+existed in four hand-inlined copies plus a fifth inside `SimSession`. There is
+now exactly one, the private `mirror_param(&mut CircuitBuildInfo, label, param,
+value)`, and every restamp path calls it.

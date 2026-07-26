@@ -153,6 +153,64 @@ fn builder_hooks_fire_around_the_build_in_order() {
     );
 }
 
+/// `after_solve` fires once per analysis on the compiled session, named for
+/// the analysis that ran, and carries the solved node voltages for an
+/// operating point (empty for the others) — the payload rule `SimHooks`
+/// documents.
+#[test]
+fn after_solve_fires_once_per_analysis_with_the_analysis_name() {
+    struct Solves {
+        seen: RefCell<Vec<(String, usize)>>,
+    }
+    impl SimHooks for Solves {
+        fn transform_design(&self, _design: &Design) -> Result<(), String> {
+            Ok(())
+        }
+        fn before_lower(&self, _design: &Design) -> Result<(), String> {
+            Ok(())
+        }
+        fn after_solve(&self, analysis: &str, node_voltages: &[(String, f64)]) -> Result<(), String> {
+            self.seen.borrow_mut().push((analysis.to_string(), node_voltages.len()));
+            Ok(())
+        }
+    }
+
+    let design = elaborate(DIVIDER_PHDL);
+    let hooks = Rc::new(Solves { seen: RefCell::new(Vec::new()) });
+    let mut session =
+        Session::builder(&design, "Divider").hooks(hooks.clone()).compile().expect("compiles");
+    let config = SolverConfig::default();
+
+    let op = session.op(&config, None).expect("op solves");
+    assert_eq!(
+        hooks.seen.borrow().len(),
+        1,
+        "one `after_solve` per analysis, got {:?}",
+        hooks.seen.borrow()
+    );
+    let (name, n_voltages) = hooks.seen.borrow()[0].clone();
+    assert_eq!(name, "op", "the hook is told which analysis solved");
+    assert!(
+        n_voltages >= 3,
+        "an operating point carries its solved node voltages (gnd/vin/mid at least), got {n_voltages}"
+    );
+    assert!((op.v(mid()).expect("v(mid)") - 2.0).abs() < 1e-9, "and the result is still correct");
+
+    session.tran(1e-3, Some(1e-4), 0.0, &config, None, false, &[]).expect("tran solves");
+    session.ac(1.0, 1e6, 5, true, &config).expect("ac solves");
+    let seen: Vec<(String, usize)> = hooks.seen.borrow().clone();
+    assert_eq!(
+        seen.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+        vec!["op", "tran", "ac"],
+        "each analysis fires the hook under its own name, in call order"
+    );
+    assert_eq!(
+        (seen[1].1, seen[2].1),
+        (0, 0),
+        "only operating points carry a node-voltage payload"
+    );
+}
+
 /// A hook failure aborts the build with the hook's own message, as
 /// `Error::Plugin` — never a partially-built session.
 #[test]
