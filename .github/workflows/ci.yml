@@ -21,6 +21,13 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # `tests/run_examples.rs` executes every `examples/*.py` in the embedded
+      # CPython host (PyO3 `auto-initialize`), so the deps must be installed
+      # for the *system* interpreter the build links against — not a venv.
+      # `--break-system-packages`: ubuntu-latest's python3 is PEP-668 marked.
+      - name: Install Python example dependencies
+        run: python3 -m pip install --break-system-packages -r examples/requirements.txt
+
       - name: Build Workspace
         run: cargo build --workspace
 
