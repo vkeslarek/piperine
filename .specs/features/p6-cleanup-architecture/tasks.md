@@ -14,7 +14,20 @@ without it.**
 
 **Design**: `.specs/features/p6-cleanup-architecture/design.md`
 **Spec**: `.specs/features/p6-cleanup-architecture/spec.md`
-**Status**: Draft
+**Status**: In Progress — Phase 1 DONE (T1–T7), Phase 2 next
+
+## Progress log
+
+| Batch | Phase | Tasks | Commits | Result |
+|---|---|---|---|---|
+| 1 | 1 | T1–T7 ✅ | `e82e9ef`, `db2869c`, `213a9d6`, `2d25d26`, `6ca2fee`, `b9b60f3`, `c6d9cba`, `3a2a49c` | 1163 passed / 0 failed / 4 ignored (net 0: −1 deleted `Port` enum test, +1 guard). clippy clean. Guard MD-33 proven able to fail. |
+
+**Phase-1 findings that changed later tasks:** T46's scope grew by three
+functions (the census said 4 >200-line functions, the truth is 7); the doc gate
+excludes two crates (pre-existing `numpy` rustdoc ICE); `CARGO_PROFILE_DEV_DEBUG=0`
+is mandatory (disk). T4's two done-when criteria were in conflict (grep-empty vs
+keep-a-legibility-note) and were resolved in favour of the notes. T6 found an
+8th item-scope allow the brief missed (`solver/src/digital/events.rs:86`).
 
 ---
 
@@ -52,7 +65,21 @@ without it.**
 |---|---|---|
 | Quick | Task touching exactly one crate's internals | `cargo test -p <crate>` |
 | Full | Task touching the host surface, Python, or more than one crate | `cargo test --workspace` |
-| Build | Phase completion, doc-only tasks, guard tasks | `cargo build --workspace && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo doc --workspace --no-deps` |
+| Build | Phase completion, doc-only tasks, guard tasks | `cargo build --workspace && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && cargo doc --workspace --no-deps --exclude piperine-python --exclude piperine-cli` |
+
+**Two corrections from Phase 1's execution (binding on every later batch):**
+
+1. **`CARGO_PROFILE_DEV_DEBUG=0` is mandatory for every gate.** The default
+   dev profile's `debuginfo=2` makes the workspace test build ~63 GB across 166
+   targets, which filled `/home` and failed T5's first gate with
+   `No space left on device`. With the env var (no repo file changed) `target/`
+   is ~6.8 GB. Run `df -h /home` before any full gate; stop and report if free
+   space drops under ~10 GB.
+2. **The doc gate excludes `piperine-python` and `piperine-cli`.** A rustdoc ICE
+   inside `numpy 0.23.0` makes `cargo doc` exit 101 for those two crates at
+   baseline — pre-existing, not this feature's. Baseline is **47 warnings**
+   across the four documenting crates (see `baseline.md` §3.1). CLA-06's
+   zero-broken-intra-doc-links criterion is scoped to those four crates.
 
 **Baseline (captured by T1):** `cargo test --workspace` passed-count, ignored
 count, clippy warning count (expected 0), `cargo doc` warning count. Every later
@@ -1082,7 +1109,15 @@ T47 → T48 → T49 → T50
 ### T46: Bring the 100–200 band under the ceiling + guard 200 lines
 
 **What**: Trim the remaining >100-line functions where it costs nothing, then add `no_function_over_200_lines` (brace-balance scan over `crates/*/src`).
-**Where**: the twelve functions listed in `design.md` §C5; `tests/suite_hygiene.rs`
+**Where**: the twelve functions listed in `design.md` §C5; **plus the three >200-line functions the original census missed** (`baseline.md` §5, found in Phase 1): `crates/piperine-codegen/src/kernel/analog/compile.rs::compile` (581 lines — the largest function in the workspace), `crates/piperine-lang/src/elab/lower/module.rs::lower_mod_stmt` (223), `crates/piperine-lang-server/src/symbol_index.rs::resolve_at` (215); `tests/suite_hygiene.rs`
+
+**Scope note (added by the orchestrator after Phase 1):** the feature brief said
+four functions exceed 200 lines; the measured count is **seven**. The three above
+were in no task's `Where`, so T46 could not have passed as written. They are now
+in scope. `compile.rs::compile` at 581 lines is the heaviest single item in this
+phase — decompose it into named phase methods (the `analyses/transient.rs`
+pattern) and keep `analog_device_numerics.rs`/`silent_bugs.rs` plus the ngspice
+numerics as the oracle.
 **Depends on**: T45
 **Reuses**: T7/T10/T19/T41's scan helper
 **Requirement**: CLA-25

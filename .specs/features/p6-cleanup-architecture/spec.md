@@ -398,11 +398,11 @@ in value.
 
 | ID | Story | Finding | Phase | Status |
 |---|---|---|---|---|
-| CLA-01 | P1 Dead surface | CL-06 | A | Pending |
-| CLA-02 | P1 Dead surface | CL-06, CL-07 | A | Pending |
-| CLA-03 | P1 Dead surface | CL-06 (whole files) | A | Pending |
-| CLA-04 | P1 Dead surface | CL-06 (traits/contexts, D2) | A | Pending |
-| CLA-05 | P1 Dead surface | CL-06.4 (guard, MD-33) | A | Pending |
+| CLA-01 ✅ | P1 Dead surface | CL-06 | A | Verified |
+| CLA-02 ✅ | P1 Dead surface | CL-06, CL-07 | A | Verified |
+| CLA-03 ✅ | P1 Dead surface | CL-06 (whole files) | A | Verified |
+| CLA-04 ✅ | P1 Dead surface | CL-06 (traits/contexts, D2) | A | Verified |
+| CLA-05 ✅ | P1 Dead surface | CL-06.4 (guard, MD-33) | A | Verified |
 | CLA-06 | P1 Comments/docs | CL-08 (broken links) | A | Pending |
 | CLA-07 | P1 Comments/docs | CL-08, CL-09, CL-10 | A | Pending |
 | CLA-08 | P1 Comments/docs | CL-08 (guard, MD-35) | A | Pending |
