@@ -494,4 +494,51 @@ whether or not it explains itself. Recorded as a deliberate tightening.
 
 ## 10. Final accounting (CLN-02/04/09)
 
-*(T17)*
+### Gate
+
+```
+cargo test --workspace   →  1144 passed, 0 failed, 4 ignored (all doctests)
+audit_tests.py --check   →  0 violations, every crate (11/11)
+```
+
+### Every delta from the 1123 baseline is accounted for
+
+| Δ | Count | What |
+|---|---|---|
+| **+20** | restored | the two dead suites, rewritten against today's API: `resolve_lowering.rs` (14), `analog_kernel.rs` (6) — T5 |
+| **+4** | added | the hygiene guards in `tests/suite_hygiene.rs` — T6 |
+| **−1** | deleted | `piperine-cli/tests/run_examples.rs::test_all_examples_compile` → survivor `tests/run_examples.rs::every_example_phdl_elaborates` — T9 |
+| **−1** | deleted | `piperine-lang/tests/run_examples.rs::test_all_examples_compile` → same survivor (the triplicate's third copy) — T13 |
+| **−1** | deleted | `piperine-plugin/tests/phase3.rs::undeclared_type_fails_loud` → survivor `inject.rs::injection_of_an_undeclared_module_fails_loud` — T10 |
+| | **1123 + 20 + 4 − 3 = 1144** | ✅ |
+
+18 further tests disappeared from the *tree* in T5 without touching the gate:
+they lived in the never-compiled files, so they were never in the 1123. Each is
+listed with its survivor in §6b.
+
+### Scanner totals, before → after
+
+| | before | after |
+|---|---|---|
+| `#[test]` functions in the tree | 1159 | 1142 |
+| of those, never compiled | 38 | **0** |
+| inline (`#[cfg(test)]` in `src/`) | 222 | 236 |
+| in `tests/` targets | 937 | 906 |
+| `#[ignore]` attributes | 27 | **0** |
+| integration targets with no `//!` header | 13 | **0** |
+
+(1142 tree tests + 2 passing doctests = 1144.)
+
+### Placement moves
+
+| Move | Where |
+|---|---|
+| 14 tests `tests/` → inline | `piperine-plugin` manifest suite → `src/manifest.rs` (T10) |
+| 43 tests regrouped across 9 new targets | `piperine-lang-server` `integration_test.rs` split (T14) |
+| 5 tests regrouped across 3 new targets | `piperine-plugin` `phase3.rs` split (T10) |
+| 4 targets renamed | `cli_check`→`check_cmd` (T9), `codegen_ir`→`analog_device_numerics`, `from_ir`→`circuit_from_design` (T12), plus `protocol_surface` folded into `protocol` (T14) |
+
+The heuristic still reports 295 hint/placement conflicts. That is expected and
+recorded in §2: `--check` enforces the **verdicts**, and the conflicts are
+concentrated exactly where the reasoning says the hint is wrong
+(`piperine-solver` 181, root 19, `piperine-lang` 33).
