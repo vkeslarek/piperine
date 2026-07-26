@@ -498,7 +498,7 @@ impl<'m> AnalogCompiler<'m> {
                     }
                     _ => "",
                 };
-                super::Limits::catalog_entry_for_kind(kind)
+                super::limits::Limits::catalog_entry_for_kind(kind)
             })
             .collect();
         let ac_stims = std::mem::take(&mut self.flat.ac_stims);
