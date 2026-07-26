@@ -118,7 +118,10 @@ both a package and the workspace) — always pass `--workspace`.
 
 ## Known gaps (all fail loud — see `ROADMAP.md`)
 
-- `transition`, `laplace_*`, `zi_*` — recognised in the resolved form, no companion model yet.
+- `laplace_*`, `zi_*` — **not declared at all** (`headers/operators.phdl` has no
+  `extern operator` for either), so MD-24 stops a call at elaboration; they never reach
+  codegen. `transition` **is** implemented (`device/analog/operators.rs`) — the older
+  "no companion model yet" note was stale (found by P6/T5).
 - `ac_stim` in potential contributions is now supported; multiple `ac_stim` per contribution
   is still fail-loud.
 - `$limit` (pnjlim/fetlim) is not lowered in the JIT.
@@ -172,17 +175,24 @@ Permanent regression guard: `crates/piperine-lang/tests/extern_coverage_guard.rs
 
 ## Tests of record
 
-- `piperine-codegen/tests/`: `analog_jit.rs`, `digital_jit.rs` (kernel-level JIT);
-  `codegen_ir.rs`, `codegen_api.rs`, `from_ir.rs`, `silent_bugs.rs` (POM→resolved + circuit).
+- `piperine-codegen/tests/`: `analog_kernel.rs`, `digital_jit.rs` (kernel-level JIT);
+  `resolve_lowering.rs` (POM→resolved), `analog_device_numerics.rs`, `codegen_api.rs`,
+  `circuit_from_design.rs`, `silent_bugs.rs`, `bypass_capability.rs`.
 - `piperine-lang/tests/`: `parse_elab.rs`, `spec_simulation.rs`, `elab.rs`,
   `bundle_param.rs`, `bundle_connections.rs`, `prelude.rs`, `type_casts.rs`, `pom_serde.rs`,
   `bench_removed.rs` (the bench keyword is a syntax error).
 - `tests/` (root, host API): `session.rs`, `ngspice_validation.rs` (+`ngspice/`),
   `spice_smoke.rs` (+`spice/`), `compile_once_sweep.rs`, `run_examples.rs` (every
-  `examples/*.phdl` elaborates + every `examples/*.py` runs).
-- `piperine-solver/tests/`: `digital_topology.rs`, `mixed_signal.rs`.
-- `piperine-plugin/tests/`: `e2e.rs`, `native_smoke.rs`, `phase3.rs`, `inject.rs`,
-  `release_fetch.rs`, `macro_collisions.rs`, `extern_stub.rs`, `trust.rs`, `manifest.rs`;
+  `examples/*.phdl` elaborates + every `examples/*.py` runs — the **only** copy of
+  that gate), `suite_hygiene.rs` (no dead/ignored test code; every integration
+  target declares its scope in a `//!` header — MD-28).
+- `piperine-solver/tests/`: `digital_topology.rs`, `mixed_signal.rs`,
+  `capabilities_contract.rs` (every capability bit names a live consumer),
+  `failure_rules.rs` + `spec_failure_rules_guard.rs` (Part VII §16 is enforced or
+  explicitly marked), `stamp_bypass.rs` (`BYPASS_OK` is opt-in).
+- `piperine-plugin/tests/`: `e2e.rs`, `native_smoke.rs`, `inject.rs`, `staging.rs`,
+  `hooks.rs`, `scripts.rs`, `release_fetch.rs`, `macro_collisions.rs`, `extern_stub.rs`,
+  `trust.rs` (manifest tests are inline in `src/manifest.rs`);
   `piperine-plugin-macros/tests/` (`registration.rs`, `script_hook.rs`, `compile_fail.rs` +
   `ui/`); root `tests/plugin_parity.rs` (Rust ≡ Python decorator names).
 

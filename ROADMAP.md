@@ -614,34 +614,64 @@ the five.
 
 ## P6 — Cleanup & completeness
 
-The gap-catalog residue: non-blocking hygiene and completeness. Not all V1 —
-triage per row. Headlined by test sanitization (the user's addition,
-2026-07-23).
+**HYGIENE SUBSET DELIVERED 2026-07-26** — feature `p6-cleanup-completeness`
+(`.specs/features/p6-cleanup-completeness/`: spec CLN-01..21, `audit.md` is the
+measurement, `validation.md` the evidence). The numbers this section used to
+quote were stale; corrected below.
 
-- [ ] **Test sanitization (~800 tests, possibly mis-allocated).** The bar
-      (**MD-28**, `.specs/STATE.md`):
-      - **Unit tests live inline** with the implementation
-        (`#[cfg(test)] mod tests` in the same `.rs`), not in a distant file.
-      - **Integration tests are grouped by functionality**, not scattered by
-        accident of authoring.
-      - **Redundant tests are deleted** — coverage, not count, is the metric.
-      Do it crate by crate; the suite must stay green throughout. This makes
-      every later refactor's regressions visible (a P3b/P6 prerequisite).
-- [ ] **`#[ignore]`d test cleanup** — 28 ignored, incl. the whole
-      `piperine-codegen/tests/ppr_ir.rs` ("pending POM Stmt rewrite"). Fix or
-      delete the stale `.ppr`/IR test path; ignored tests rot silently.
-- [ ] **Dead capability flags** — `SUPPORTS_QUERIES` has no solver consumer
-      (`core/element.rs:74`, audit SS-11): drop it or wire it. Same disposition
-      as the already-logged `bound_step_hint` (P1 minor) and Part VII §16
-      unenforced failure rows — decide enforce-or-remove for each.
+- [x] **Test sanitization.** The real inventory was **1123 passing tests / 179
+      targets**, not ~800. Applied crate by crate against **MD-28**, suite green
+      after every commit: the plugin manifest suite moved inline (14),
+      `lang-server`'s 1880-line `integration_test.rs` split into nine
+      feature suites (43 tests, shared harness in `tests/common/`),
+      `plugin/tests/phase3.rs` split into staging/hooks/scripts, four targets
+      renamed off dead vocabulary (`codegen_ir`→`analog_device_numerics`,
+      `from_ir`→`circuit_from_design`, `cli_check`→`check_cmd`,
+      `protocol_surface` folded into `protocol`), and the example-elaboration
+      gate — which existed in **three** same-layer copies — reduced to the root
+      one. Every deletion names its surviving equivalent.
+- [x] **Dead / ignored test cleanup.** The "28 ignored" claim was wrong in a
+      worse way than stale: those attributes sat inside
+      `piperine-codegen/tests/ppr_ir.rs`, whose first line is `#![cfg(any())]`,
+      so the file **never compiled** — and `analog_jit.rs` (412 lines, 11
+      tests, listed in `CLAUDE.md` as a test of record) was dark the same way.
+      38 dead tests → 20 restored against today's API (`resolve_lowering.rs`,
+      `analog_kernel.rs`), 18 deleted with survivors named. The tree now holds
+      **zero** `#[ignore]` attributes and zero switched-off test code; the only
+      ignores left are 4 illustrative doctest fences, each registered with its
+      reason. `tests/suite_hygiene.rs` guards all of it (and requires every
+      integration target to declare its scope in a `//!` header).
+- [x] **Dead capability flags.** `SUPPORTS_QUERIES` had zero declarers and zero
+      readers → **removed** (`1 << 10` left vacant). `BYPASS_OK` was declared by
+      one *test* device and never consulted, while the DC bypass cached stamps
+      for every circuit → **wired**: the cache is now gated on every element
+      declaring it, and codegen declares it only when a device's DC stamps are a
+      pure function of its terminal voltages. `capabilities_contract.rs` now
+      fails on any entry that says "reserved" or "no consumer".
+      **`bound_step_hint` was never dead** — producer in `codegen/device/mod.rs`,
+      consumer at `analyses/events.rs:326`, test in `event_adapters.rs`.
+- [x] **Part VII §16 failure rows.** The table has **16** rows and now carries an
+      *Enforcement* column: 8 name the test that trips them (§9, §12 ×2, §15 and
+      §18's validation half are new in `failure_rules.rs`), 8 are marked
+      *not yet enforced* — reachable but unchecked, listed below as residue.
+      `spec_failure_rules_guard.rs` fails if a row is neither bound nor marked,
+      or names a test that no longer exists.
+- [ ] **§16 residue — the eight unenforced rules.** §2 (a no-capability element
+      is silently inert; two fixtures rely on that), §4 ×2 (no per-analysis
+      boundary snapshot; an out-of-range digital net is not constructible), §6
+      (an unmapped `AnalogReference` is not constructible), §8, §10 (`dt_min`
+      floor untested), §11 (singular AC point untested), §14 (non-settling delta
+      cycle untested). Each is a behaviour addition or a fixture that P6's
+      hygiene scope deliberately did not take on.
 - [ ] **Non-blocking language/interpreter completeness** — slice expressions
       outside analog/digital bodies (`eval/interp.rs:448`); `for` in a digital
       body (`emit/stmt.rs:98`); selector complex-exprs / field-less match
       (`pom/selector/*` — overlaps the language-backlog selector-axes item,
-      decide as one). None blocks common use; schedule on demand.
+      decide as one). None blocks common use; schedule on demand. **Post-V1.**
 
-> The clear-V1 subset here is test sanitization + ignored-test + dead-flag
-> cleanup (hygiene). The completeness items are post-V1 unless a user hits them.
+> Delivered: test sanitization + dead/ignored-test cleanup + dead-flag triage +
+> §16 enforcement. Remaining: the §16 residue and the completeness items, both
+> post-V1 unless a user hits them.
 
 ---
 
@@ -705,9 +735,9 @@ spread). Foundations in place: compile-once restamp sweeps (MD-18),
 
 | Gap | Evidence | Proposed |
 |-----|----------|----------|
-| `SUPPORTS_QUERIES` capability flag — **no solver consumer** | `solver/core/element.rs:74` | drop or wire (audit SS-11) |
-| `bound_step_hint` producer, no consumer | `codegen/device/mod.rs` (P1 minor-refactor list) | already logged — enforce or remove |
-| Part VII §16 failure rows unenforced at runtime | (P1 minor-refactor list) | already logged — enforce or drop |
+| ~~`SUPPORTS_QUERIES` capability flag~~ | — | **done (P6)**: removed; zero declarers, zero readers |
+| ~~`bound_step_hint` producer, no consumer~~ | `analyses/events.rs:326` | **not a gap (P6)**: it has a consumer and a test — the note was wrong |
+| Part VII §16 failure rows unenforced at runtime | `docs/spec/part_vii_solver.md` §16 | **partly done (P6)**: 8/16 bound to tests, 8 marked *not yet enforced* + guarded |
 | Plugin **scripts** not runnable on out-of-host tiers | `pom/wire.rs:44` | folds into MD-21 (WASM/process tiers removed anyway) |
 
 **Assigned homes (user 2026-07-23):**
