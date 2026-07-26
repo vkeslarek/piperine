@@ -1,12 +1,14 @@
 import os, sys, math, piperine
+
+HAS_MPL = True
 try:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    import numpy as np
 except ImportError:
-    print("matplotlib not installed — skipping plot")
-    sys.exit(0)
-import numpy as np
+    HAS_MPL = False
+    import numpy as np
 
 P = os.path.join(os.path.dirname(__file__), "08_johnson_noise.phdl")
 m = piperine.load(P).module("NoiseCell")
@@ -24,25 +26,28 @@ FC = 1.0 / (2 * math.pi * 1e3 * 1e-9)
 PLATEAU = math.sqrt(1.657e-17)
 
 # ── PNG (log-log, nV/√Hz) ────────────────────────────────────────────────
-fig, ax = plt.subplots(figsize=(10, 5.5))
-ax.loglog(freqs, psd_vrthz * 1e9, linewidth=2.2, color="#1f77b4", label="Piperine (adjoint)")
-ax.axhline(PLATEAU * 1e9, color="#d62728", linestyle="--", alpha=0.7,
-           label=f"Plateau √(4kTR) = {PLATEAU*1e9:.2f} nV/√Hz")
-ax.axvline(FC, color="#2ca02c", linestyle=":", alpha=0.7, label=f"fc = {FC/1e3:.0f} kHz")
-ax.fill_between(freqs, 1e-3, psd_vrthz * 1e9, where=(freqs <= FC), alpha=0.06, color="#1f77b4")
-ax.annotate(f"Integrated noise = {total_rms*1e6:.2f} µVrms\n(√(kT/C))",
-            xy=(FC*0.02, PLATEAU*1e9*0.4), fontsize=10, color="#333333",
-            bbox=dict(boxstyle="round,pad=0.4", fc="#fff3cd", ec="#cca700"))
-ax.set_xlabel("Frequency (Hz)", fontsize=12)
-ax.set_ylabel("Spectral density (nV/√Hz)", fontsize=12)
-ax.set_title("Johnson–Nyquist Noise — 1 kΩ Resistor ‖ 1 nF  (T = 300 K)", fontsize=13)
-ax.legend(loc="lower left", fontsize=10)
-ax.set_ylim(0.01, 20)
-ax.grid(True, which="both", alpha=0.25)
-fig.tight_layout()
-out = os.path.join(os.path.dirname(__file__), "08_johnson_noise_plot.png")
-fig.savefig(out, dpi=150)
-print(f"Plot saved to {out}\n")
+if HAS_MPL:
+    fig, ax = plt.subplots(figsize=(10, 5.5))
+    ax.loglog(freqs, psd_vrthz * 1e9, linewidth=2.2, color="#1f77b4", label="Piperine (adjoint)")
+    ax.axhline(PLATEAU * 1e9, color="#d62728", linestyle="--", alpha=0.7,
+               label=f"Plateau √(4kTR) = {PLATEAU*1e9:.2f} nV/√Hz")
+    ax.axvline(FC, color="#2ca02c", linestyle=":", alpha=0.7, label=f"fc = {FC/1e3:.0f} kHz")
+    ax.fill_between(freqs, 1e-3, psd_vrthz * 1e9, where=(freqs <= FC), alpha=0.06, color="#1f77b4")
+    ax.annotate(f"Integrated noise = {total_rms*1e6:.2f} µVrms\n(√(kT/C))",
+                xy=(FC*0.02, PLATEAU*1e9*0.4), fontsize=10, color="#333333",
+                bbox=dict(boxstyle="round,pad=0.4", fc="#fff3cd", ec="#cca700"))
+    ax.set_xlabel("Frequency (Hz)", fontsize=12)
+    ax.set_ylabel("Spectral density (nV/√Hz)", fontsize=12)
+    ax.set_title("Johnson–Nyquist Noise — 1 kΩ Resistor ‖ 1 nF  (T = 300 K)", fontsize=13)
+    ax.legend(loc="lower left", fontsize=10)
+    ax.set_ylim(0.01, 20)
+    ax.grid(True, which="both", alpha=0.25)
+    fig.tight_layout()
+    out = os.path.join(os.path.dirname(__file__), "08_johnson_noise_plot.png")
+    fig.savefig(out, dpi=150)
+    print(f"Plot saved to {out}\n")
+else:
+    print("matplotlib not installed — skipping plot\n")
 
 # ── ASCII log-log plot in the terminal ───────────────────────────────────
 print("Johnson noise — PSD (nV/√Hz) vs freq (log)   █ = Piperine   ┊ = √(4kTR)")
