@@ -154,6 +154,25 @@ verified by the per-crate `-- --list` diff and the `//!`-header guard (T6).
 
 *(appended by T8–T16)*
 
+### T11 — `piperine-python`: nothing to move
+
+All 59 tests keep their placement. The 16 inline cases in `src/lib.rs` and
+`src/live.rs` are the PyO3 module's **own** subject — they exec Python through
+`embed::run_script` under the GIL and the facade lock, which is what those
+files implement; the heuristic flags them `integration` only because the
+fixture reaches a session. Moving them into `tests/` would separate the
+bindings from the tests that prove them, against MD-28 rule 1.
+
+`--check piperine-python`: 0 violations. All 24 targets already carry a `//!`
+scope header. `cargo test -p piperine-python`: 59 passed, 0 failed; the
+facade-lock suites (`live_session`, `session_analyses`) were run twice
+back-to-back with identical results, so CLN-10's serialization holds.
+
+**Environment note (not a code finding):** a full build+test cycle writes ~67 GB
+into `target/`, which filled the disk mid-task and surfaced as an *lld crash*
+("PLEASE submit a bug report to llvm"), not as a disk error. `cargo clean` plus
+`CARGO_INCREMENTAL=0` for the remaining runs is the workaround.
+
 ### T10 — `piperine-plugin` + `piperine-plugin-macros`
 
 | Change | Detail |
