@@ -34,6 +34,6 @@ pub use results::{
     DistoResult, InstanceView, NetRef, NetSelector, OpResult, PssResult, PzResult, SParamResult, SensResult,
     TfResult,
 };
-pub use session::{Grid, Nested, Scale, Session, SimSession, SolverConfig, Sweep, SweepPoint};
+pub use session::{Grid, Nested, Scale, Session, SessionBuilder, SimSession, SolverConfig, Sweep, SweepPoint};
 pub use units::{Freq, Time};
 pub use waveform::{AcTrace, ComplexWaveform, CrossDirection, NoiseTrace, Trace, Waveform};

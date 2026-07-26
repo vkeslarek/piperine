@@ -155,24 +155,12 @@ impl SimSession {
     /// passes `false`: those kernels are a real per-branch-combination
     /// Cranelift compile cost that only `.disto` itself needs.
     fn build_circuit(&self, compile_disto: bool) -> Result<(piperine_solver::prelude::CircuitInstance, CircuitBuildInfo), Error> {
-        // `transform_design`: hooks stage their mutations, then the pure
-        // re-elaboration below consumes them like any staged write.
-        if let Some(h) = &self.hooks {
-            h.transform_design(&self.design).map_err(Error::Plugin)?;
-        }
-        let applied = self.design.with_overrides_applied(&self.module)?;
-        // `before_lower`: read-only view of the applied design.
-        if let Some(h) = &self.hooks {
-            h.before_lower(&applied).map_err(Error::Plugin)?;
-        }
-        let bodies = piperine_codegen::resolve::lower_bodies(&applied)?;
-        let mut compiler = CircuitCompiler::new(&applied, &bodies).with_disto(compile_disto);
-        if let Some(provider) = &self.provider {
-            compiler = compiler.with_device_provider(provider.as_ref());
-        }
-        let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
-        circuit.init_digital()?;
-        circuit.rebuild_digital_topology();
+        let opts = BuildOptions {
+            provider: self.provider.clone(),
+            hooks: self.hooks.clone(),
+            disto: compile_disto,
+        };
+        let (circuit, info, _applied) = build_circuit(&self.design, &self.module, &opts)?;
         Ok((circuit, info))
     }
 
@@ -439,18 +427,7 @@ impl SimSession {
         info: &CircuitBuildInfo,
         circuit: &piperine_solver::prelude::CircuitInstance,
     ) -> HashMap<String, f64> {
-        use piperine_solver::prelude::LogicValue;
-        info.digital_nets
-            .iter()
-            .map(|(name, &idx)| {
-                let v = match circuit.digital_state.nets.get(idx) {
-                    Some(LogicValue::Zero) => 0.0,
-                    Some(LogicValue::One) => 1.0,
-                    _ => f64::NAN,
-                };
-                (name.clone(), v)
-            })
-            .collect()
+        Session::snapshot_digital(info, circuit)
     }
 
     /// Every device's `read_opvars()` snapshot (HOST-07), keyed by instance
@@ -461,11 +438,7 @@ impl SimSession {
     pub fn snapshot_opvars(
         circuit: &piperine_solver::prelude::CircuitInstance,
     ) -> HashMap<String, Vec<(String, f64)>> {
-        circuit
-            .all_devices()
-            .iter()
-            .map(|d| (d.name().to_string(), d.read_opvars()))
-            .collect()
+        Session::snapshot_opvars(circuit)
     }
 
     /// Every device's static introspection catalogs (HOST-09), keyed by
@@ -477,18 +450,7 @@ impl SimSession {
     pub fn snapshot_introspect(
         circuit: &piperine_solver::prelude::CircuitInstance,
     ) -> IntrospectSnapshot {
-        let mut models = HashMap::new();
-        let mut terminals = HashMap::new();
-        let mut observables = HashMap::new();
-        let mut params = HashMap::new();
-        for d in circuit.all_devices() {
-            let label = d.name().to_string();
-            models.insert(label.clone(), d.model_descriptor());
-            terminals.insert(label.clone(), d.list_terminals());
-            observables.insert(label.clone(), d.list_observables());
-            params.insert(label, d.list_params());
-        }
-        (models, terminals, observables, params)
+        Session::snapshot_introspect(circuit)
     }
 
     /// Run a transient analysis: same elaborate-and-solve recipe as
@@ -635,33 +597,104 @@ pub struct Session {
     /// Scheduled live writes `(t, label, param, value)` for the next
     /// `tran` (drained into the solver's own `schedule_set` when it runs).
     pending_sets: Vec<(f64, String, String, f64)>,
+    /// The build-time options this session was compiled with, remembered so
+    /// an in-place rebuild ([`Sweep`]'s structural escape hatch) reuses the
+    /// same provider, hooks and kernel set.
+    opts: BuildOptions,
 }
 
 impl Session {
     /// Compile `module` of `design` **once**: fork the design, apply staged
     /// overrides, lower + JIT, and hold the built circuit. Every subsequent
-    /// analysis runs on this same compilation (MD-18).
+    /// analysis runs on this same compilation (MD-18). The no-options
+    /// shorthand for [`Self::builder`]`(design, module).compile()`.
     pub fn compile(design: &Design, module: &str) -> Result<Self, Error> {
-        let forked = design.fork();
-        let applied = forked.with_overrides_applied(module)?.fork();
-        let bodies = piperine_codegen::resolve::lower_bodies(&applied)?;
-        let mut compiler = CircuitCompiler::new(&applied, &bodies);
-        let (mut circuit, info) = compiler.build_circuit_mapped(module)?;
-        circuit.init_digital()?;
-        circuit.rebuild_digital_topology();
-        Ok(Self {
-            design: applied,
+        Self::builder(design, module).compile()
+    }
+
+    /// Configure a compilation before it happens: a device provider, hooks,
+    /// staged parameter overrides, or opting out of the `.disto` kernels.
+    /// Staging belongs here rather than on the compiled session — a write
+    /// that changes what gets *built* has to precede the build (the compiled
+    /// session's own live-write path is [`Self::set`]).
+    pub fn builder<'a>(design: &'a Design, module: &str) -> SessionBuilder<'a> {
+        SessionBuilder {
+            design,
             module: module.to_string(),
-            circuit,
-            info,
-            rebuilds: 0,
-            pending_sets: Vec::new(),
-        })
+            opts: BuildOptions::default(),
+            staged: Vec::new(),
+        }
+    }
+
+    /// The design this session was compiled from — the fork carrying its
+    /// staged overrides, not the caller's original.
+    pub fn design(&self) -> &Design {
+        &self.design
     }
 
     /// The module this session was compiled from.
     pub fn module(&self) -> &str {
         &self.module
+    }
+
+    /// The top module's digital net values as reals (0/1; X/Z read as NaN so
+    /// an assertion on an undriven net fails loud, never silently passes).
+    /// Public: hosts that drive `CircuitInstance` directly (the Python live
+    /// session) build the same [`OpResult`] digital snapshot.
+    pub fn snapshot_digital(
+        info: &CircuitBuildInfo,
+        circuit: &piperine_solver::prelude::CircuitInstance,
+    ) -> HashMap<String, f64> {
+        use piperine_solver::prelude::LogicValue;
+        info.digital_nets
+            .iter()
+            .map(|(name, &idx)| {
+                let v = match circuit.digital_state.nets.get(idx) {
+                    Some(LogicValue::Zero) => 0.0,
+                    Some(LogicValue::One) => 1.0,
+                    _ => f64::NAN,
+                };
+                (name.clone(), v)
+            })
+            .collect()
+    }
+
+    /// Every device's `read_opvars()` snapshot (HOST-07), keyed by instance
+    /// label — the eager-at-solve-time capture `OpResult::instance` reads
+    /// back through, since the compiled circuit does not outlive the
+    /// analysis call. Public: hosts that drive `CircuitInstance` directly
+    /// (the Python live session) build the same snapshot.
+    pub fn snapshot_opvars(
+        circuit: &piperine_solver::prelude::CircuitInstance,
+    ) -> HashMap<String, Vec<(String, f64)>> {
+        circuit
+            .all_devices()
+            .iter()
+            .map(|d| (d.name().to_string(), d.read_opvars()))
+            .collect()
+    }
+
+    /// Every device's static introspection catalogs (HOST-09), keyed by
+    /// instance label — model descriptor, terminal descriptors (with
+    /// `TerminalKind`), and observable catalog. Snapshotted eagerly at solve
+    /// time alongside `snapshot_opvars` (the circuit does not outlive the
+    /// analysis call). Public: hosts that drive `CircuitInstance` directly
+    /// (the Python live session) build the same snapshot.
+    pub fn snapshot_introspect(
+        circuit: &piperine_solver::prelude::CircuitInstance,
+    ) -> IntrospectSnapshot {
+        let mut models = HashMap::new();
+        let mut terminals = HashMap::new();
+        let mut observables = HashMap::new();
+        let mut params = HashMap::new();
+        for d in circuit.all_devices() {
+            let label = d.name().to_string();
+            models.insert(label.clone(), d.model_descriptor());
+            terminals.insert(label.clone(), d.list_terminals());
+            observables.insert(label.clone(), d.list_observables());
+            params.insert(label, d.list_params());
+        }
+        (models, terminals, observables, params)
     }
 
     /// How many automatic structural rebuilds this session has performed
@@ -922,6 +955,10 @@ impl Session {
     }
 
     /// Run a distortion analysis (`.disto`) on the held circuit (HOST-02).
+    /// Fails loud when this session was compiled with
+    /// [`SessionBuilder::disto`]`(false)` — the 2nd/3rd-derivative kernels
+    /// `.disto` reads were never emitted, so there is nothing to solve
+    /// against.
     #[allow(clippy::too_many_arguments)]
     pub fn disto(
         &mut self,
@@ -932,6 +969,13 @@ impl Session {
         output_ref: Option<&str>,
         config: &SolverConfig,
     ) -> Result<crate::results::DistoResult, Error> {
+        if !self.opts.disto {
+            return Err(Error::Measurement(
+                "`.disto` needs the 2nd/3rd-derivative kernels, and this session was \
+                 compiled with `SessionBuilder::disto(false)` — recompile without it"
+                    .to_string(),
+            ));
+        }
         let output_node = resolve_net(&self.info, output)?;
         let output_ref_node = output_ref.map(|r| resolve_net(&self.info, r)).transpose()?;
         let options = piperine_solver::prelude::DistoOptions {
@@ -1078,18 +1122,135 @@ impl Session {
     /// unconditional fail-loud.
     fn rebuild(&mut self, label: &str, param: &str, value: f64) -> Result<(), Error> {
         self.design.set_param(label, param, piperine_lang::Value::Real(value));
-        let applied = self.design.with_overrides_applied(&self.module)?.fork();
-        let bodies = piperine_codegen::resolve::lower_bodies(&applied)?;
-        let mut compiler = CircuitCompiler::new(&applied, &bodies);
-        let (mut circuit, info) = compiler.build_circuit_mapped(&self.module)?;
-        circuit.init_digital()?;
-        circuit.rebuild_digital_topology();
+        let (circuit, info, applied) = build_circuit(&self.design, &self.module, &self.opts)?;
         self.design = applied;
         self.circuit = circuit;
         self.info = info;
         self.rebuilds += 1;
         Ok(())
     }
+}
+
+// ─── SessionBuilder (CLA-14) ────────────────────────────────────────────────
+
+/// The build-time options a [`Session`] is compiled with, kept together so
+/// the compiled session can reproduce its own build (`Session::rebuild`).
+#[derive(Clone)]
+struct BuildOptions {
+    /// Builds `@device`-annotated instances (SPEC Part VI §7).
+    provider: Option<Rc<dyn piperine_codegen::device::DeviceProvider>>,
+    /// Lifecycle hooks (SPEC Part VI §8) fired around builds and solves.
+    hooks: Option<Rc<dyn crate::hooks::SimHooks>>,
+    /// Whether the compiled kernels include the `.disto` 2nd/3rd-derivative
+    /// set. `true` by default — `CircuitCompiler::new`'s own default, and
+    /// what makes [`Session::disto`] usable straight after a plain
+    /// [`Session::compile`]. Those kernels are a real per-branch-combination
+    /// Cranelift cost, so a caller that will never run `.disto` on this
+    /// circuit opts out with [`SessionBuilder::disto`]`(false)`.
+    disto: bool,
+}
+
+impl Default for BuildOptions {
+    fn default() -> Self {
+        Self { provider: None, hooks: None, disto: true }
+    }
+}
+
+/// Configure a [`Session`] compilation: `Session::builder(&design, "Top")`,
+/// then any of [`Self::provider`] / [`Self::hooks`] / [`Self::disto`] /
+/// [`Self::stage`], then [`Self::compile`]. [`Session::compile`] is the
+/// no-options shorthand.
+pub struct SessionBuilder<'a> {
+    design: &'a Design,
+    module: String,
+    opts: BuildOptions,
+    staged: Vec<(String, String, piperine_lang::Value)>,
+}
+
+impl SessionBuilder<'_> {
+    /// Wire a plugin host as the device provider for this session's builds
+    /// (`@device` instances, SPEC Part VI §7).
+    pub fn provider(mut self, provider: Rc<dyn piperine_codegen::device::DeviceProvider>) -> Self {
+        self.opts.provider = Some(provider);
+        self
+    }
+
+    /// Wire the lifecycle hooks (a plugin host) into this session: they fire
+    /// around the build (`transform_design`, `before_lower`) and after every
+    /// analysis solve (`after_solve`).
+    pub fn hooks(mut self, hooks: Rc<dyn crate::hooks::SimHooks>) -> Self {
+        self.opts.hooks = Some(hooks);
+        self
+    }
+
+    /// Include (`true`, the default) or skip (`false`) the `.disto`
+    /// 2nd/3rd-derivative kernels. Skipping them saves a real Cranelift
+    /// compile cost on a many-branch device; [`Session::disto`] then fails
+    /// loud rather than solving against kernels that were never compiled.
+    pub fn disto(mut self, enabled: bool) -> Self {
+        self.opts.disto = enabled;
+        self
+    }
+
+    /// Stage a parameter override on the instance labeled `label` (or the
+    /// module itself, for an empty label), consumed by [`Self::compile`].
+    /// Applied to this builder's own fork of the design, so the caller's
+    /// design is never written to.
+    pub fn stage(mut self, label: &str, param: &str, value: piperine_lang::Value) -> Self {
+        self.staged.push((label.to_string(), param.to_string(), value));
+        self
+    }
+
+    /// Fork the design, replay the staged overrides onto the fork, then
+    /// build: elaborate + JIT **once** and hold the circuit (MD-18).
+    pub fn compile(self) -> Result<Session, Error> {
+        // The fork installs a fresh (empty) override layer, so the staged
+        // writes below are this session's alone — the caller's design keeps
+        // whatever it had.
+        let forked = self.design.fork();
+        for (label, param, value) in &self.staged {
+            forked.set_param(label, param, value.clone());
+        }
+        let (circuit, info, applied) = build_circuit(&forked, &self.module, &self.opts)?;
+        Ok(Session {
+            design: applied,
+            module: self.module,
+            circuit,
+            info,
+            rebuilds: 0,
+            pending_sets: Vec::new(),
+            opts: self.opts,
+        })
+    }
+}
+
+/// The one build recipe: consume `design`'s staged overrides, lower to
+/// resolved bodies, JIT the circuit. The hook order is part of the contract —
+/// `transform_design` (the host's chance to stage its own mutations) →
+/// overrides consumed → `before_lower` (read-only, on the applied design) →
+/// lower → compile. Returns the applied design alongside the build so the
+/// session can restage against it later.
+fn build_circuit(
+    design: &Design,
+    module: &str,
+    opts: &BuildOptions,
+) -> Result<(piperine_solver::prelude::CircuitInstance, CircuitBuildInfo, Design), Error> {
+    if let Some(h) = &opts.hooks {
+        h.transform_design(design).map_err(Error::Plugin)?;
+    }
+    let applied = design.with_overrides_applied(module)?.fork();
+    if let Some(h) = &opts.hooks {
+        h.before_lower(&applied).map_err(Error::Plugin)?;
+    }
+    let bodies = piperine_codegen::resolve::lower_bodies(&applied)?;
+    let mut compiler = CircuitCompiler::new(&applied, &bodies).with_disto(opts.disto);
+    if let Some(provider) = &opts.provider {
+        compiler = compiler.with_device_provider(provider.as_ref());
+    }
+    let (mut circuit, info) = compiler.build_circuit_mapped(module)?;
+    circuit.init_digital()?;
+    circuit.rebuild_digital_topology();
+    Ok((circuit, info, applied))
 }
 
 // ─── Sweep / SweepPoint (HOST-18) ───────────────────────────────────────────
