@@ -40,7 +40,7 @@ Pillars. V1 ships when the V1-marked ones are green.
 | # | Pillar | One-line bar |
 |---|--------|--------------|
 | P1 | **Solver complete** | Every analysis a working SPICE user expects, plus PSS; engine gaps closed or explicitly documented as post-V1 |
-| P2 | **Low-level device ABI** | Element ABI maturity complete (rollback, limiting, lifecycle, events, introspection); PHDL introspection attributes are the follow-up |
+| P2 | **Low-level device ABI** | ✅ Element ABI maturity complete (rollback, limiting, lifecycle, events, introspection) + PHDL introspection attributes delivered 2026-07-23 |
 | P3 | ✅ **Python library polished** — CLOSED 2026-07-24 | `import piperine` is the single host: benches, validation, plugins scripting; documented, docstringed, stub-complete |
 | P3b | ✅ **Blocking-bug fixes** — CLOSED 2026-07-24 | The gap-catalog items that *block a simulation or full user use* — `piperine build` stub, digital-codegen completeness, `.tf` correctness. |
 | P4 | ✅ **Language server 100%** — CLOSED 2026-07-25 | Scope-aware resolution, project-wide navigation, attribute-schema + `///` doc-comment IDE support, protocol-level tests |
@@ -256,7 +256,11 @@ transient predictor (CP-16 first-order Newton seed). Remaining:
 
 ---
 
-## P2 — Low-level device ABI (`libloading` + PHDL declaration)
+## P2 — Low-level device ABI (`libloading` + PHDL declaration) ✅ CLOSED (2026-07-23)
+
+**DELIVERED** — the reflective half by `element-abi-maturity`, the declarative
+half by `phdl-introspection-attributes` (both with Verifier PASS; see the
+follow-up block below). One Minor residue is listed there.
 
 The plugin device path exists (native backend, `@device(plugin=…)`,
 `DeviceProvider`). OSDI/ngspice are used as a **checklist for integration
@@ -347,11 +351,12 @@ The PHDL language declarations are a follow-up (bottom of this section).
       `DampedNewton` wired.
 
 **Follow-up: PHDL introspection attributes (language declarations) —
-SPEC'D 2026-07-23** (feature `phdl-introspection-attributes`,
-`.specs/features/phdl-introspection-attributes/spec.md`; 4 stories, 20
-requirements PIA-01..20; Design pending). The ABI/codegen bridge above is
-reflective (host reads kernel data), not declarative (device author cannot
-control it from PHDL). This feature adds the language surface.
+DELIVERED 2026-07-23** (feature `phdl-introspection-attributes`:
+`spec.md` 4 stories / 20 requirements PIA-01..20, `design.md`, `tasks.md` 8/8,
+`validation.md` independent Verifier **PASS** — 19/20 ACs matched, 3/3 sensor
+mutations killed, gate 849 passed / 0 failed). The ABI/codegen bridge above is
+reflective (host reads kernel data); this feature added the declarative half, so
+a device author controls every catalog from PHDL.
 
 **Design shape (user 2026-07-23): atomic single-purpose attributes, not role
 bundles.** Metadata is expressed with small composable attributes — `@name`,
@@ -365,20 +370,36 @@ the opvar-name vs observable-name inconsistency *dissolves* — one `@name` on a
 `var` feeds both catalogs, nothing to unify; `@kind` is placement-resolved
 (`var` → `ObservableKind`, terminal → `TerminalKind`).
 
-- [ ] **Model identity** — `@model(type = "mos", version = "3")` on modules
+- [x] **Model identity** — `@model(type = "mos", version = "3")` on modules
       populates `ModelDescriptor` instead of echoing the module name (PIA-01..04).
-- [ ] **Var metadata** — `@name`/`@unit`/`@description`/`@kind` on vars name and
+      `device/mod.rs:569-586`; `codegen/tests/model_descriptor.rs`.
+- [x] **Var metadata** — `@name`/`@unit`/`@description`/`@kind` on vars name and
       annotate the opvar query catalog AND the observable catalog from one
       declaration; replaces positional `ddt[k]` observable naming (PIA-05..09).
-- [ ] **Terminal classification** — `@name`/`@kind`/`@description` on ports and
+      One `var_display_name` helper feeds both (`device/mod.rs:161-171`);
+      `codegen/tests/{opvar_bridge,observable_catalog}.rs`.
+- [x] **Terminal classification** — `@name`/`@kind`/`@description` on ports and
       internal wires feed `TerminalDescriptor` (external/internal/auxiliary).
       A **new** attribute family, NOT `@port` (plugin device-wiring, plugin-only
       scope) and NOT `@rfport` (RF S-param ports) — distinct purpose, distinct
-      surface (PIA-10..14).
-- [ ] **Named limiters** — thread the existing `$limit(kind, ...)` `kind` (plus
-      an optional reason) into `LimitingReport.limiter_name`/`reason` so a MOSFET
-      distinguishes `fetlim` from `limvds`; currently hardcoded `"pnjlim"`/
-      `VoltageStep`. An operator argument, not an attribute (PIA-15..18).
+      surface (PIA-10..14). `device/mod.rs:503-559`;
+      `codegen/tests/terminal_bridge.rs`.
+- [x] **Named limiters** — the `$limit(kind, …)` `kind` now reaches
+      `LimitingReport.limiter_name`/`reason` through a per-slot catalog on
+      `AnalogKernel` (`kernel/analog/limits.rs:24-52`,
+      `kernel/analog/mod.rs:433-439`), so a MOSFET distinguishes `fetlim` from
+      `limvds` instead of reporting a hardcoded `"pnjlim"`/`VoltageStep`. An
+      operator argument, not an attribute (PIA-15..18).
+      **Residue:** PIA-16's *optional explicit reason* argument is a
+      design-approved MVP deferral — the reason is inferred from the kind
+      (`limvds`→`VdsStep`, else `VoltageStep`); no stdlib model needs an
+      override today.
+- [ ] **Residue — orphan-metadata check (Minor, from the PIA Verifier).**
+      `@unit`/`@description` on a **shadowed or non-opvar** var is accepted by
+      the lang resolver (shadowing is a codegen concept, unknowable at
+      elaboration) and then dropped by codegen — the annotation silently does
+      nothing. A codegen-boundary orphan check is the tracked remedy (lesson
+      L-012); not a correctness bug.
 
 ---
 
