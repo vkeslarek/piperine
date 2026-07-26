@@ -1,0 +1,13 @@
+// four_diode — same circuit as four_diode.cir; the harness runs a
+// transient (3 µs) and Waveform::fourier(1e6, 10) on v(out), comparing THD
+// and the normalized harmonic magnitudes against ngspice's fourier table.
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::diode;
+mod Top() {
+    wire gnd: Electrical; wire in: Electrical; wire out: Electrical;
+    v1: vsrc (.p = in, .n = gnd) { .dc = 0.3, .wave = 1, .sin_vo = 0.3, .sin_va = 0.3, .sin_freq = 1e6 };
+    r1: res  (.p = in, .n = out) { .r = 1000.0 };
+    d1: dio  (.p = out, .n = gnd) { .model = DioModel { .is = 1.0e-14, .n = 1.0, .rs = 0.0 } };
+}

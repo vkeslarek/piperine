@@ -152,7 +152,66 @@ verified by the per-crate `-- --list` diff and the `//!`-header guard (T6).
 
 ## 6. Verdict amendments during migration
 
-*(appended by T8–T16; empty at T2)*
+*(appended by T8–T16)*
+
+---
+
+## 6b. T5 — dead-suite triage (CLN-05/06/07)
+
+Both `#![cfg(any())]` files are deleted. 38 dead tests → **20 restored**, 18
+deleted with named survivors.
+
+### Restored
+
+| New file | Tests | From |
+|---|---|---|
+| `crates/piperine-codegen/tests/resolve_lowering.rs` | 14 | `ppr_ir.rs` — contribution/force bind shape, `ddt`/`idtmod`/`transition` state slots, white/flicker noise sources, cross-event guard, above event, global fn in symbols, String-param default, digital body present, both unresolved-name cases |
+| `crates/piperine-codegen/tests/analog_kernel.rs` | 6 | `analog_jit.rs` — capacitor charge + charge Jacobian, `$vt` from `SimCtx` (residual **and** Jacobian), `$simparam("temperature")`, guard folding, fn inlining, `transition` runtime slot |
+
+### Deleted with survivors
+
+| Deleted | Survivor |
+|---|---|
+| `ppr_ir.rs::resistor_printer_smoke`, `::capacitor_printer_reactive` | `resolve_lowering.rs::a_resistive_contribution_lowers_to_a_contrib_bind`, `::ddt_registers_one_ddt_state_slot` — the printer smokes asserted `format!("{ir:?}")` substrings; the structural tests assert the same facts directly |
+| `ppr_ir.rs::local_var_inlined_into_contrib` | `analog_kernel.rs::a_user_function_is_inlined_into_the_contribution` (numeric) + `silent_bugs.rs` (temp-tape behaviour) |
+| `ppr_ir.rs::diode_nonlinear_contrib` | `codegen_ir.rs::test_diode_residual_forward_bias`, `::test_diode_jacobian_forward_bias` |
+| `ppr_ir.rs::if_stmt_both_branches_preserved`, `::nested_if_structure_preserved`, `::match_desugars_to_if_chain`, `::else_if_expression_chain`, `::logical_and_or_lower_to_ir_binop` | `analog_kernel.rs::a_guarded_contribution_conducts_only_above_its_threshold` + `spec_simulation.rs`. These asserted `IrStmt::If`/`IrExpr::Select` shapes; desugaring is no longer a *lowering* contract (`AnalogBody::stmts` is the POM tree), so the behaviour is asserted numerically instead of structurally |
+| `ppr_ir.rs::module_ports_and_params_present` | `codegen_ir.rs::test_compile_resistor` (terminal/param counts) |
+| `ppr_ir.rs::single_arg_current_access` | none available structurally (it asserted `"minus: NodeId(0)"` in a Debug dump) → **recorded as a gap below** |
+| `ppr_ir.rs::simparam_query`, `::bound_step_stmt` | `analog_kernel.rs::simparam_reads_the_sim_context_temperature`; `$bound_step` → **gap below** |
+| `analog_jit.rs::resistor_residual_and_jacobian_match_ohms_law` | `codegen_ir.rs::test_resistor_residual_ohms_law`, `::test_resistor_jacobian_conductance` |
+| `analog_jit.rs::dc_current_source_into_resistor`, `::dc_voltage_divider_with_force_source`, `::dc_diode_resistor_operating_point`, `::transient_rc_charges_toward_source` | `from_ir.rs::from_ir_ppr_resistor_yields_circuit` + the root host suite (`tests/session.rs`, `tests/dc_host_proof.rs`, `tests/spice_smoke.rs`) — same circuits, solved through the real pipeline |
+| `analog_jit.rs::unsupported_operator_fails_loud_with_name` | `disto_jit.rs::disto2_branch_current_read_fails_loud_naming_device` + `digital_codegen_gaps.rs` (three `CodegenError::Unsupported` cases) — see finding 2 |
+| `analog_jit.rs::validation_rejects_mismatched_contrib_kind` | none — **gap below** (it corrupted a hand-built `IrStmt`, which is unconstructable now) |
+
+### Findings (CLN-07 — loud, tracked, not silently dropped)
+
+1. **`white_noise`/`flicker_noise` lost their label argument.** The dead test
+   called `white_noise(psd, "rn1")`; the declared signature is
+   `white_noise(pwr)` (`headers/operators.phdl:24-25`). `NoiseSource.label`
+   (`resolve/symbols.rs:186`) is therefore unreachable from PHDL — a vestigial
+   field. Flagged, not removed (outside P6's scope).
+2. **`transition` is implemented, not a gap.** `CLAUDE.md`'s known-gaps list
+   says "`transition`, `laplace_*`, `zi_*` — recognised in the resolved form,
+   no companion model yet". `transition` has a full runtime
+   (`device/analog/operators.rs:71-120`) and compiles; `laplace_*`/`zi_*` have
+   **no `extern operator` declaration at all**, so MD-24 stops them at
+   elaboration and they can never reach codegen. Corrected in T24.
+3. **Unresolved-name refusal moved boundary.** `lower_bodies` now keeps an
+   unknown identifier as a POM `Ident`; the refusal happens at
+   `AnalogKernel::compile` ("IR validation failed: unresolved analog
+   identifier `x`"). The guarantee holds, but the message **no longer names the
+   module** (the old contract did). Flagged; a one-line codegen improvement,
+   deliberately not done here.
+4. **`$simparam` with an unrecognised key silently returns its default** (or
+   `0.0` with no default) — `emit/analog_expr.rs:214-228`. Consistent with
+   ngspice, but it is a silent fallback in a fail-loud codebase. Flagged.
+5. **Coverage gaps left by deletion** (no survivor exists):
+   `I(p)` single-argument branch access (was a Debug-dump assertion);
+   `$bound_step` at codegen level (only lang parse-level coverage exists); and
+   `LoweredBody::validate`'s mismatched-contribution-kind diagnostic, whose
+   only trigger was a hand-corrupted `IrStmt`. All three are recorded here as
+   P6 findings rather than reintroduced by inventing new API surface.
 
 ---
 

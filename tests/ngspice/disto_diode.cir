@@ -1,0 +1,14 @@
+* disto_diode — diode distortion cross-check (.disto)
+* v(out)@f1 from the .ac run gives the fundamental; the two DISTORTION
+* tables give the 2nd/3rd harmonic components (distof1 = ac = 0.05).
+Vin in 0 dc 0.3 ac 0.05 distof1 0.05
+R1 in out 1000
+D1 out 0 DMOD
+.model DMOD D(IS=1e-14 N=1)
+.control
+ac dec 1 1e6 1e6
+print v(out)
+disto dec 1 1e6 1e6
+.endc
+.print disto v(out)
+.end

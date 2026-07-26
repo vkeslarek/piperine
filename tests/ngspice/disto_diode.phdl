@@ -1,0 +1,14 @@
+// disto_diode — same circuit as disto_diode.cir; the harness runs
+// run_disto(f1=1e6, amplitude=1.0) so the input tone is ac_mag × 1.0 = 0.05
+// (ngspice's distof1), and compares HD2/HD3 against ngspice's harmonic
+// components normalized by its AC fundamental.
+use piperine::disciplines;
+use spice::sources;
+use spice::passives;
+use spice::diode;
+mod Top() {
+    wire gnd: Electrical; wire in: Electrical; wire out: Electrical;
+    v1: vsrc (.p = in, .n = gnd) { .dc = 0.3, .ac_mag = 0.05 };
+    r1: res  (.p = in, .n = out) { .r = 1000.0 };
+    d1: dio  (.p = out, .n = gnd) { .model = DioModel { .is = 1.0e-14, .n = 1.0, .rs = 0.0 } };
+}
