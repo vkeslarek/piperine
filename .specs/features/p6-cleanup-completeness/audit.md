@@ -154,6 +154,26 @@ verified by the per-crate `-- --list` diff and the `//!`-header guard (T6).
 
 *(appended by T8–T16)*
 
+### T13 — `piperine-lang`
+
+| Change | Detail |
+|---|---|
+| **deleted** `tests/run_examples.rs` (1 test) | survivor `tests/run_examples.rs::every_example_phdl_elaborates` (root) — the third same-layer copy of the example gate; the second was removed in T9 |
+
+Everything else stays. The 27 remaining targets are already named for what
+they cover (`extern_grammar`, `overload_resolution`, `introspection_meta`,
+`pom_serde`, `spice_headers`, …), and the 61 inline cases sit with the parser
+and elaborator internals they exercise.
+
+Two targets are large — `elab.rs` (62 tests) and `spec_simulation.rs` (39) —
+but each is cohesive (the elaboration stage; SPEC-driven simulation dynamics).
+Splitting them further would be a taste call, which the spec's Out of Scope
+explicitly excludes ("rewriting test content beyond the touched files").
+
+`cargo test -p piperine-lang`: 355 passed (354 tests + 1 doctest target minus
+the deleted one, plus the 2 lang doctests), 0 failed. `--check piperine-lang`:
+0 violations.
+
 ### T12 — `piperine-codegen`
 
 Placement was already correct (0 violations after T5); the change is

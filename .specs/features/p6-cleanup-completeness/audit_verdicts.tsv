@@ -542,7 +542,6 @@ crates/piperine-lang/tests/rfport.rs	test_rfport_on_port	keep	tests	hint:integra
 crates/piperine-lang/tests/rfport.rs	test_rfport_two_ports	keep	tests	hint:integration
 crates/piperine-lang/tests/rfport.rs	test_rfport_unknown_module_fails_loud	keep	tests	hint:integration
 crates/piperine-lang/tests/rfport.rs	test_rfport_z0_defaults_to_50	keep	tests	hint:integration
-crates/piperine-lang/tests/run_examples.rs	test_all_examples_compile	delete	tests	survivor: tests/run_examples.rs::every_example_phdl_elaborates (third same-layer copy of the example gate)
 crates/piperine-lang/tests/spec_simulation.rs	analog_var_reuse_does_not_explode	keep	tests	hint:integration
 crates/piperine-lang/tests/spec_simulation.rs	digital_cross_module_flops_sample_simultaneously	keep	tests	hint:integration
 crates/piperine-lang/tests/spec_simulation.rs	digital_network_fuses_combinational_chain	keep	tests	hint:integration
