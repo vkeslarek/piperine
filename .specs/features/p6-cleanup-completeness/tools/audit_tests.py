@@ -13,10 +13,13 @@ Usage:
                                              # placement violation
     audit_tests.py --root . --check-all      # every crate, exit 1 on any
 
-Placement violations are `unit`-hinted tests living in a `tests/` target, or
-`integration`-hinted tests living inline in `src/`. A verdict that knowingly
-contradicts the hint is recorded in `tools/audit_allow.tsv`
-(`<file>::<test>\treason`) and skipped by `--check`.
+`--check` does NOT re-derive the heuristic: it validates the tree against the
+recorded verdicts in `audit_verdicts.tsv` (`file<TAB>test<TAB>verdict<TAB>
+target_placement<TAB>note`). It fails when a test's placement disagrees with
+its recorded target, when a test has no verdict at all (a new test must be
+allocated deliberately), or when a non-`delete` verdict names a test that no
+longer exists. The heuristic `kind_hint` is evidence for *writing* verdicts,
+never the gate itself.
 """
 
 import argparse
@@ -27,6 +30,7 @@ import sys
 # ── What makes a test "integration": it drives a pipeline boundary ───────────
 # Each entry is a needle searched in the test's own body and its file preamble.
 PIPELINE_MARKERS = (
+    "parse_str",
     "parse_and_elaborate",
     "parse_and_elaborate_seeded",
     "lower_bodies",
@@ -39,6 +43,8 @@ PIPELINE_MARKERS = (
     "PluginHost",
     "Command::new",
     "Connection::memory",
+    "Interpreter::",
+    "DocumentState",
     "run_script",
     "CircuitBuilder",
     "DcSolver",
@@ -66,20 +72,31 @@ DISABLED_FILE = re.compile(r"^\s*#!\[cfg\(any\(\)\)\]")
 class TestCase:
     """One `#[test]` function and the facts that classify it."""
 
-    def __init__(self, crate, path, name, placement, body, preamble, disabled, ignored):
+    def __init__(self, crate, path, name, placement, body, file_text, disabled, ignored):
         self.crate = crate
         self.path = path
         self.name = name
         self.placement = placement  # "inline" | "tests"
         self.body = body
-        self.preamble = preamble
+        self.file_text = file_text
         self.disabled = disabled
         self.ignored = ignored
 
     @property
     def markers(self):
-        haystack = self.body + "\n" + self.preamble
-        return [m for m in PIPELINE_MARKERS if m in haystack]
+        """Entry points the test's own body reaches — the strong signal."""
+        return [m for m in PIPELINE_MARKERS if m in self.body]
+
+    @property
+    def file_markers(self):
+        """Entry points reached elsewhere in the file — the test's helpers.
+
+        A test that calls a file-local `fn elab(src)` never names
+        `parse_and_elaborate` in its own body, but it still drives that
+        pipeline; without this the helper-using suites all read as unit.
+        """
+        own = set(self.markers)
+        return [m for m in PIPELINE_MARKERS if m in self.file_text and m not in own]
 
     @property
     def global_state(self):
@@ -87,7 +104,7 @@ class TestCase:
 
     @property
     def kind_hint(self):
-        if self.markers:
+        if self.markers or self.file_markers:
             return "integration"
         if self.placement == "tests" and len(self.body.splitlines()) > 60:
             # A long test in an integration target with no recognised entry
@@ -100,6 +117,8 @@ class TestCase:
         parts = []
         if self.markers:
             parts.append("entry:" + ",".join(self.markers))
+        if self.file_markers:
+            parts.append("helper-entry:" + ",".join(self.file_markers))
         if self.global_state:
             parts.append("global:" + ",".join(self.global_state))
         if self.disabled:
@@ -172,7 +191,6 @@ class Scanner:
             text = handle.read()
         lines = text.splitlines()
         disabled = bool(lines and DISABLED_FILE.match(lines[0]))
-        preamble = "\n".join(lines[:40])
         crate = self.crate_of(path)
         rel = os.path.relpath(path, self.root)
         placement = self.placement_of(path)
@@ -195,7 +213,7 @@ class Scanner:
                             name,
                             placement,
                             self.body_after(lines, cursor),
-                            preamble,
+                            text,
                             disabled,
                             ignored,
                         )
@@ -212,22 +230,34 @@ class Scanner:
         return cases
 
 
-def load_allowlist(root):
-    """`<file>::<test>` entries whose verdict knowingly contradicts the hint."""
-    path = os.path.join(
-        root, ".specs", "features", "p6-cleanup-completeness", "tools", "audit_allow.tsv"
-    )
-    allowed = {}
-    if not os.path.isfile(path):
-        return allowed
-    with open(path, encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            key, _, reason = line.partition("\t")
-            allowed[key.strip()] = reason.strip()
-    return allowed
+class Verdicts:
+    """The recorded allocation decisions — the gate `--check` enforces."""
+
+    PATH = os.path.join(".specs", "features", "p6-cleanup-completeness", "audit_verdicts.tsv")
+    KINDS = ("keep", "move-inline", "move-to-tests", "regroup", "delete")
+
+    def __init__(self, root):
+        self.rows = {}
+        path = os.path.join(root, self.PATH)
+        if not os.path.isfile(path):
+            return
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.rstrip("\n")
+                if not line.strip() or line.startswith("#"):
+                    continue
+                fields = line.split("\t")
+                if len(fields) < 4:
+                    continue
+                path_, test, verdict, target = fields[:4]
+                note = fields[4] if len(fields) > 4 else ""
+                self.rows[f"{path_}::{test}"] = (verdict, target, note)
+
+    def get(self, key):
+        return self.rows.get(key)
+
+    def deleted(self):
+        return {k for k, (v, _, _) in self.rows.items() if v == "delete"}
 
 
 def report(cases):
@@ -263,16 +293,43 @@ def summary(cases):
                     + [str(sum(b[k] for b in crates.values())) for k in header[2:]]))
 
 
-def check(cases, allowed, crate=None):
-    violations = [
-        c for c in cases
-        if c.violation and (crate is None or c.crate == crate) and c.key() not in allowed
-    ]
-    for case in violations:
-        print(f"{case.path}::{case.name}: {case.violation} ({case.evidence})", file=sys.stderr)
-    if violations:
-        scope = crate or "workspace"
-        print(f"{len(violations)} placement violation(s) in {scope}", file=sys.stderr)
+def check(cases, verdicts, crate=None):
+    """Validate the tree against the recorded verdicts (never the heuristic)."""
+    if not verdicts.rows:
+        print("no audit_verdicts.tsv — record verdicts before checking", file=sys.stderr)
+        return 1
+    scope = crate or "workspace"
+    in_scope = [c for c in cases if crate is None or c.crate == crate]
+    failures = []
+    seen = set()
+    for case in in_scope:
+        key = case.key()
+        seen.add(key)
+        row = verdicts.get(key)
+        if row is None:
+            failures.append(f"{key}: no recorded verdict (allocate it in audit_verdicts.tsv)")
+            continue
+        verdict, target, _ = row
+        if verdict not in Verdicts.KINDS:
+            failures.append(f"{key}: unknown verdict `{verdict}`")
+            continue
+        if verdict == "delete":
+            failures.append(f"{key}: verdict is `delete` but the test still exists")
+            continue
+        if case.placement != target:
+            failures.append(
+                f"{key}: placement `{case.placement}` disagrees with recorded target `{target}`"
+            )
+    for key, (verdict, _, _) in verdicts.rows.items():
+        if verdict == "delete" or key in seen:
+            continue
+        if crate is not None and f"crates/{crate}/" not in key and crate != "piperine":
+            continue
+        failures.append(f"{key}: recorded `{verdict}` but the test no longer exists")
+    for line in failures:
+        print(line, file=sys.stderr)
+    if failures:
+        print(f"{len(failures)} allocation violation(s) in {scope}", file=sys.stderr)
         return 1
     return 0
 
@@ -286,10 +343,9 @@ def main():
     args = parser.parse_args()
 
     cases = Scanner(args.root).scan()
-    allowed = load_allowlist(args.root)
 
     if args.check or args.check_all:
-        return check(cases, allowed, args.check)
+        return check(cases, Verdicts(args.root), args.check)
     if args.summary:
         summary(cases)
         return 0
