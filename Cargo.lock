@@ -1785,6 +1785,8 @@ dependencies = [
  "ndarray 0.17.2",
  "num-complex",
  "num-traits",
+ "piperine-codegen",
+ "piperine-lang",
  "rand_distr",
  "rayon",
  "tempfile",
